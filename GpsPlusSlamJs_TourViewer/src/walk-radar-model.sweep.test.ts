@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 import {
   walkRadarAdaptiveRangeM,
   walkRadarModel,
-  WALK_RADAR_RANGE_M,
   type WalkRadarBlip,
   type WalkRadarStation,
 } from "./walk-radar-model";
@@ -22,9 +21,16 @@ import {
  * the range, by the plan's criterion - not by the one picture W4 showed.
  *
  * - **Rules:** a fixed 150 / 300 / 600 m, and the adaptive range (the
- *   distance to the k-th nearest station still to find, k 3-6, times
- *   1.2-1.5, clamped 30-600 m).
+ *   distance to the k-th nearest station still to find, k 1-6, times
+ *   1.0-1.5, clamped between a floor of 5-30 m and 600 m).
  * - **Sizes:** 96-144 px (shipped 132 portrait, 108 landscape).
+ * - **The GPS blur's share:** a low floor clears a museum's blips but
+ *   blows the visitor's GPS blur up over the radar (its radius is the
+ *   accuracy on the same square-root scale), so each rule also reports
+ *   the blur's radius over the rim's at an accuracy of 5, 10 and 20 m. A
+ *   floor tied to the accuracy (max(5 m, a x accuracy)) is read off the
+ *   table: under a code it is the 5 m row, under GPS of 5 m with a = 3
+ *   the 15 m row.
  * - **Tours:** a town walk (25-50 m between stations; 4, 12, 30 and 100
  *   stations, the 100 being the large tour) and a museum (3-6 m; 4, 12,
  *   30), each a random walk of stations (turns up to 60° in town, 120° in
@@ -46,10 +52,14 @@ import {
  *
  * The table goes to WALK_RADAR_SWEEP_OUT (a file path) when set; the
  * assertion pins the shipped rule's verdict, so a change to the radar's
- * geometry that breaks it fails here.
+ * geometry that breaks it fails here. The default run sweeps the shipped
+ * sizes and the shipped rule's neighbourhood (k 1-3, factor 1.0-1.2,
+ * every floor); WALK_RADAR_SWEEP_FULL=1 adds every size, k 4-6, factors
+ * up to 1.5 and smaller blips.
  */
 
 const OUT = process.env["WALK_RADAR_SWEEP_OUT"];
+const FULL = process.env["WALK_RADAR_SWEEP_FULL"] !== undefined;
 
 /** A deterministic random source (mulberry32). */
 function prng(seed: number): () => number {
@@ -82,21 +92,39 @@ const SHIPPED_SIZES = [132, 108];
 
 type Rule =
   | { readonly kind: "fixed"; readonly m: number }
-  | { readonly kind: "adaptive"; readonly k: number; readonly factor: number };
+  | {
+      readonly kind: "adaptive";
+      readonly k: number;
+      readonly factor: number;
+      readonly floorM: number;
+    };
+
+/** The floors swept, m (the default run: 5, 10 and 30). */
+const FLOORS = FULL ? [5, 10, 15, 20, 30] : [5, 10, 30];
+
+const adaptiveRules = (
+  ks: readonly number[],
+  factors: readonly number[],
+): Rule[] =>
+  ks.flatMap((k) =>
+    factors.flatMap((factor) =>
+      FLOORS.map((floorM): Rule => ({ kind: "adaptive", k, factor, floorM })),
+    ),
+  );
 
 const RULES: readonly Rule[] = [
   { kind: "fixed", m: 300 },
   { kind: "fixed", m: 150 },
   { kind: "fixed", m: 600 },
-  ...[3, 4, 5, 6].flatMap((k) =>
-    [1.2, 1.35, 1.5].map((factor): Rule => ({ kind: "adaptive", k, factor })),
-  ),
+  ...adaptiveRules([1, 2, 3], [1, 1.1, 1.2, 1.35]),
+  ...(FULL ? adaptiveRules([1, 2, 3], [1.5]) : []),
+  ...(FULL ? adaptiveRules([4, 5, 6], [1.2, 1.35, 1.5]) : []),
 ];
 
 function ruleName(rule: Rule): string {
   return rule.kind === "fixed"
     ? `fixed ${String(rule.m)} m`
-    : `adaptive k${String(rule.k)} x${String(rule.factor)}`;
+    : `adaptive k${String(rule.k)} x${String(rule.factor)} floor ${String(rule.floorM)} m`;
 }
 
 function tour(family: Family, count: number, seed: number): P[] {
@@ -158,21 +186,16 @@ function samples(points: readonly P[]): Sample[] {
   return out;
 }
 
-/** One cell of the sweep: a rule at a size, and two informational knobs
- *  (what would reverse the verdict): the blips' scale and the adaptive
- *  range's floor. */
+/** One cell of the sweep: a rule at a size, and an informational knob
+ *  (what would reverse the verdict): the blips' scale. */
 interface Variant {
   readonly rule: Rule;
   readonly sizePx: number;
   readonly blipScale: number;
-  readonly floorM: number;
 }
 
 function variantName(v: Variant): string {
-  const extra = [
-    v.blipScale === 1 ? "" : ` blips x${String(v.blipScale)}`,
-    v.floorM === 30 ? "" : ` floor ${String(v.floorM)} m`,
-  ].join("");
+  const extra = v.blipScale === 1 ? "" : ` blips x${String(v.blipScale)}`;
   return `${ruleName(v.rule)} @${String(v.sizePx)}px${extra}`;
 }
 
@@ -183,7 +206,7 @@ function rangeOf(v: Variant, sample: Sample, previousM: number | null): number {
   return walkRadarAdaptiveRangeM(sample.unfoundDistances, previousM, {
     k: v.rule.k,
     factor: v.rule.factor,
-    minM: v.floorM,
+    minM: v.rule.floorM,
   });
 }
 
@@ -239,6 +262,20 @@ interface Cell {
   focusClear: number;
   unfound: number;
   overlapping: number;
+  /** Positions, and the GPS blur's radius over the rim's summed over them
+   *  at each of `BLUR_ACCURACIES_M`. */
+  positions: number;
+  blur: number[];
+}
+
+/** The GPS accuracies the blur's share is reported at, m. */
+const BLUR_ACCURACIES_M = [5, 10, 20];
+
+/** The GPS blur's radius over the rim's at this range (the model's rule:
+ *  the accuracy on the square-root scale, at least 7 px). */
+function blurShare(rangeM: number, rimR: number, accuracyM: number): number {
+  const r = rimR * Math.sqrt(Math.min(accuracyM, rangeM) / rangeM);
+  return Math.min(1, Math.max(7, r) / rimR);
 }
 
 const passes = (c: Cell): boolean =>
@@ -255,32 +292,29 @@ const TOURS = FAMILIES.flatMap((f) =>
   })),
 );
 
+/** The rule the radar ships (`WALK_RADAR_ADAPTIVE` in the model). */
+const SHIPPED: Rule = { kind: "adaptive", k: 2, factor: 1.2, floorM: 10 };
+
 const VARIANTS: readonly Variant[] = [
   ...RULES.flatMap((rule) =>
-    SIZES.map((sizePx): Variant => ({
+    (FULL ? SIZES : SHIPPED_SIZES).map((sizePx): Variant => ({
       rule,
       sizePx,
       blipScale: 1,
-      floorM: 30,
     })),
   ),
-  // What would reverse it: smaller blips, a lower floor for a museum.
-  ...[0.5, 0.75].flatMap((blipScale) =>
-    SHIPPED_SIZES.flatMap((sizePx) =>
-      [RULES[0]!, RULES[3]!].map((rule): Variant => ({
-        rule,
-        sizePx,
-        blipScale,
-        floorM: 30,
-      })),
-    ),
-  ),
-  ...SHIPPED_SIZES.map((sizePx): Variant => ({
-    rule: RULES[3]!,
-    sizePx,
-    blipScale: 1,
-    floorM: 10,
-  })),
+  // What would reverse it: smaller blips.
+  ...(FULL
+    ? [0.5, 0.75].flatMap((blipScale) =>
+        SHIPPED_SIZES.flatMap((sizePx) =>
+          [RULES[0]!, SHIPPED].map((rule): Variant => ({
+            rule,
+            sizePx,
+            blipScale,
+          })),
+        ),
+      )
+    : []),
 ];
 
 describe("walk radar range sweep - overlapping blips over generated tours", () => {
@@ -316,8 +350,14 @@ describe("walk radar range sweep - overlapping blips over generated tours", () =
               focusClear: 0,
               unfound: 0,
               overlapping: 0,
+              positions: 0,
+              blur: BLUR_ACCURACIES_M.map(() => 0),
             };
             byTour.set(t.key, c);
+            c.positions += 1;
+            BLUR_ACCURACIES_M.forEach((a, i) => {
+              c.blur[i]! += blurShare(m.rangeM, m.rimR, a);
+            });
             if (j.focusClear !== null) {
               c.focusPositions += 1;
               if (j.focusClear) c.focusClear += 1;
@@ -331,12 +371,7 @@ describe("walk radar range sweep - overlapping blips over generated tours", () =
     const cell = (v: Variant, key: string): Cell =>
       results.get(variantName(v))!.get(key)!;
     const shippedOf = (rule: Rule): Variant[] =>
-      SHIPPED_SIZES.map((sizePx) => ({
-        rule,
-        sizePx,
-        blipScale: 1,
-        floorM: 30,
-      }));
+      SHIPPED_SIZES.map((sizePx) => ({ rule, sizePx, blipScale: 1 }));
     const passesAll = (rule: Rule): boolean =>
       shippedOf(rule).every((v) => TOURS.every((t) => passes(cell(v, t.key))));
     /** What a rule leaves overlapping at the shipped sizes, each tour
@@ -345,15 +380,21 @@ describe("walk radar range sweep - overlapping blips over generated tours", () =
      *  and the share of unfound blips overlapping. */
     const overlapOf = (
       rule: Rule,
-    ): { focus: number; unfound: number; score: number } => {
+      family?: Family["name"],
+    ): { focus: number; unfound: number; score: number; blur: number[] } => {
       let focus = 0;
       let unfound = 0;
       let n = 0;
+      const blur = BLUR_ACCURACIES_M.map(() => 0);
       for (const v of shippedOf(rule)) {
         for (const t of TOURS) {
+          if (family !== undefined && t.family.name !== family) continue;
           const c = cell(v, t.key);
           focus += 1 - c.focusClear / c.focusPositions;
           unfound += c.overlapping / c.unfound;
+          c.blur.forEach((b, i) => {
+            blur[i]! += b / c.positions;
+          });
           n += 1;
         }
       }
@@ -361,7 +402,12 @@ describe("walk radar range sweep - overlapping blips over generated tours", () =
         focus: focus / n,
         unfound: unfound / n,
         score: (focus + unfound) / (2 * n),
+        blur: blur.map((b) => b / n),
       };
+    };
+    const describeRule = (r: Rule, family?: Family["name"]): string => {
+      const o = overlapOf(r, family);
+      return `${ruleName(r)}: focus overlapped ${(100 * o.focus).toFixed(1)}%, unfound overlapping ${(100 * o.unfound).toFixed(1)}%, GPS blur over the rim at 5/10/20 m ${o.blur.map((b) => b.toFixed(2)).join("/")}`;
     };
 
     const lines = [
@@ -380,20 +426,38 @@ describe("walk radar range sweep - overlapping blips over generated tours", () =
       (a, b) => overlapOf(a).score - overlapOf(b).score,
     )[0]!;
     lines.push(
-      ...RULES.map((r) => {
-        const o = overlapOf(r);
-        return `at 132 and 108 px, each tour alike: ${ruleName(r)} focus overlapped ${(100 * o.focus).toFixed(1)}%, unfound overlapping ${(100 * o.unfound).toFixed(1)}%`;
-      }),
+      "at 132 and 108 px, each tour alike:",
+      ...RULES.map((r) => `  all: ${describeRule(r)}`),
+      ...RULES.map((r) => `  town: ${describeRule(r, "town")}`),
+      ...RULES.map((r) => `  museum: ${describeRule(r, "museum")}`),
       passing === undefined
-        ? `ships: none passes every family; the adaptive rule with the least overlap is ${ruleName(best)}`
-        : `ships: ${ruleName(passing)}`,
+        ? `least overlap: none passes every family; the adaptive rule with the least overlap is ${ruleName(best)}`
+        : `least overlap: ${ruleName(passing)}`,
     );
     if (OUT !== undefined) writeFileSync(OUT, `${lines.join("\n")}\n`);
 
     // The verdict the radar ships (see the sidecar): no rule passes, so
-    // the adaptive rule with the least overlap, a named limit.
+    // an adaptive rule from the plateau of least overlap, its overlap a
+    // named limit. The plateau is flat (k 2-3, factor 1.1-1.35, floor
+    // 5-15 m within about a point): the shipped rule is within half a
+    // point of the best, not necessarily the best of one seed set.
     expect(passing).toBeUndefined();
-    expect(ruleName(best)).toBe("adaptive k3 x1.2");
-    expect(WALK_RADAR_RANGE_M).toBe(300);
+    expect(overlapOf(SHIPPED).score).toBeLessThanOrEqual(
+      overlapOf(best).score + 0.005,
+    );
+    // The floor is the museum's lever: 10 m against 30 m.
+    const at = (floorM: number): Rule => ({ ...SHIPPED, floorM });
+    expect(overlapOf(at(10), "museum").score).toBeLessThan(
+      overlapOf(at(30), "museum").score - 0.2,
+    );
+    // ... and 5 m buys nothing more ...
+    expect(overlapOf(at(5)).score).toBeGreaterThan(
+      overlapOf(at(10)).score - 0.005,
+    );
+    // ... while a lower floor lets a 10 m GPS blur cover more of the
+    // radar (the price, named in the sidecar).
+    expect(overlapOf(at(10), "museum").blur[1]!).toBeGreaterThan(
+      overlapOf(at(30), "museum").blur[1]!,
+    );
   }, 300_000);
 });

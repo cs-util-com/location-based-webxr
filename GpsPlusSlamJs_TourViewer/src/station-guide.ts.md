@@ -566,12 +566,15 @@ distances, quick, note }`: the line's station, how the position stands
   visitor (`nueBearingDeg`, 0 when standing on its spot).
 - `GuideView.headingDeg` - the camera's bearing (its forward through the
   alignment, `visitor-position.ts` `forwardNue`) once the heading latch
-  holds; the last bearing is kept while the camera points straight down
-  or a pose has no orientation; null before the latch, reset at
-  `endSession`.
+  holds; the last bearing is kept while the forward's horizontal share is
+  below `WALK_HEADING_MIN_SHARE` (`camera-heading.ts`: within about 14.5
+  degrees of straight down, where a degree of tremor swung the bearing by
+  tens of degrees) or a pose has no orientation; null before the latch,
+  reset at `endSession`.
 - `GuideView.snapshot` - the last geometry (distances, bearings,
-  heading) judged while a code, GPS or too-weak GPS spoke for the
-  position and the store's `trackingLost` was false; a frozen radar draws
+  heading) judged while a code or GPS within the ceiling spoke for the
+  position and the store's `trackingLost` was false (never a too-weak
+  fix's: a later freeze must not draw where it put the stations); a frozen radar draws
   from it. A closure cache rebuilt from the measurement, never the
   store's; null after `endSession`.
 - Tests: `station-guide.radar.test.ts`.

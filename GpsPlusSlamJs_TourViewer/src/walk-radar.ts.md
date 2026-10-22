@@ -36,11 +36,14 @@ the ms each draw took.
   that is no positive finite number (the first frame) is skipped; returns
   the unregister.
 - `wireWalkRadar({ dom, toggleList, now, setTimer, clearTimer,
-projection0, aspect, devicePixelRatio, reduceMotion }) =>
+projection0, aspect, devicePixelRatio, reduceMotion, observeSize }) =>
 WalkRadarView`
   - `render(frame | null)` - null hides the radar; otherwise writes the
     chip's words and `data-kind`, the wrap's `data-mode` (`frozen` greys
-    the canvas in CSS) and requests a draw;
+    the canvas in CSS), the button's `aria-expanded` from the frame's
+    `listOpen`, and requests a draw;
+  - `observeSize(onChange)` - the page's `ResizeObserver` on the canvas:
+    a resize makes the next draw read the canvas's size again;
   - `drawStats(nowMs)` - the draws' rolling 2 s summary;
   - `reset()` - the range, the bursts and the stats start anew (the
     session's end).
@@ -56,6 +59,14 @@ WalkRadarView`
   a real timer, so the last state is always drawn.
 - The canvas is `clientWidth * min(max(dpr, 1), 2)` device pixels; a
   canvas without a size (hidden) is not drawn.
+- The canvas's size is read once and again only after a resize (or while
+  it read 8 px or less): reading `clientWidth` is a layout read, and a
+  draw follows the sheet's DOM writes of the same render, so a read per
+  draw forced a layout up to 15 times a second.
+- The canvas's tints (`rgba()` of the GPS blur, the weak blur, the
+  focus's pulse, a find's burst) are derived from `WALK_RADAR_COLOURS`,
+  whose values `index.html`'s `--walk-*` tokens hold (`walk-radar.test.ts`
+  ties the two, and every `rgb()` tint of the walk's CSS to a token).
 - The range follows the live distances of the stations still to find
   (next, left, and a tour in order's later ones), and
   holds the shown range while frozen.
@@ -81,6 +92,11 @@ time a second, reported and not gated (the phone decides, field checklist
   change: bounded by the store's changes rather than the frame rate; not
   built, since 15 Hz already stays far below the 50 ms frame budget here.
 
+**What the draw time covers:** the JavaScript of one draw, the 2D
+canvas calls recorded; the raster of those calls and the compositing of
+the canvas happen later in the browser's own pipeline and are not in it.
+The frame line is the one to judge the radar's cost by on the phone.
+
 The frame line reads "-" headless: the fakes run no XR render loop, so
 nothing calls the frame loop's callbacks; the phone's readout fills it. A
 desktop is not a phone: the field check's numbers are the phone's.
@@ -98,8 +114,9 @@ const radar = wireWalkRadar({
   aspect: () => innerWidth / innerHeight,
   devicePixelRatio: () => devicePixelRatio,
   reduceMotion: () => matchMedia("(prefers-reduced-motion: reduce)").matches,
+  observeSize: (onChange) => new ResizeObserver(onChange).observe(canvas),
 });
-radar.render({ stations, order, kind, accuracyM, live, snapshot });
+radar.render({ stations, order, kind, accuracyM, live, snapshot, listOpen });
 ```
 
 ## Tests
@@ -109,8 +126,10 @@ radar.render({ stations, order, kind, accuracyM, live, snapshot });
   station distance label, frozen greys and "?", reduced motion, a burst
   ring), the view (chip words and modes, the tap, device pixels and the
   throttle, no size no draw, the range's hysteresis and reset, a tour in
-  order's later stations in the range), the colour tokens against
-  `index.html`, the debug lines, the frame sampler.
+  order's later stations in the range, `aria-expanded`, the size read
+  once until a resize), the colour tokens against `index.html` (and every
+  `rgb()` tint of the walk's CSS, and the canvas's tints), the debug
+  lines, the frame sampler.
 - The page: `playwright-tests/visitor-walk-radar.spec.js` (the radar opens
   the list, the chip per precision, the rows' and the peek's directions,
   tracking lost, the frozen radar that a move leaves and a skip changes,

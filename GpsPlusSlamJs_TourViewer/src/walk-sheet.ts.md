@@ -87,9 +87,12 @@ view.render(model, { sheet: "peek", quick, position: "distance", story: null });
   is an arrow (`#walk-distance-arrow`) and a text (`#walk-distance-text`)
   inside `#walk-distance`, which keeps its test id and its "N m" text.
 - A row's sub line is an arrow and a text span inside its `small`.
-- `setArrow(el, deg)` - writes `data-deg` and `rotate(Ndeg)` only when the
-  whole degree changed; null removes both (the CSS hides an arrow without
-  `data-deg`).
+- `setArrow(el, deg)` - writes `data-deg` (the angle asked) and the
+  transform only when the whole degree changed; null removes both (the
+  CSS hides an arrow without `data-deg`). The transform turns the short
+  way from the angle shown (`data-turn`, which may leave -180..180): the
+  arrow's CSS eases its turns, and 170 to -170 must turn 20 degrees to
+  190, not 340 back. Shown again after a hide, it starts at its angle.
 - The rows' redraw key leaves the arrows out: an angle changes every
   frame, so the arrows turn in place while the rows rebuild only when
   something else changed.

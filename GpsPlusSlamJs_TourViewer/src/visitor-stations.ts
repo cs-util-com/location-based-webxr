@@ -73,7 +73,7 @@ import {
 } from "./walk-sheet-model.js";
 import type { WalkToast } from "./walk-toast.js";
 import { createWalkDirections } from "./walk-direction.js";
-import { createRollingWindow } from "./rolling-window.js";
+import { createRollingWindow, type RollingWindow } from "./rolling-window.js";
 import {
   sampleFrameTimes,
   walkRadarDebugLines,
@@ -234,8 +234,9 @@ export function wireVisitorStations(deps: {
     /** The sheet came or went: the AR status re-routes its sentence
      *  (a placement wait gives way to a shown walk). */
     onShownChange?: () => void;
-    /** The radar and the precision chip (W4 build plan M3); absent: none. */
-    radar?: WalkRadarDom;
+    /** The radar and the precision chip (W4 build plan M3); absent: none.
+     *  Its canvas is an element: its size is observed. */
+    radar?: WalkRadarDom & { readonly canvas: Element };
   };
 }): VisitorStations {
   const { ctx, arStore, seams, dom } = deps;
@@ -418,11 +419,12 @@ export function wireVisitorStations(deps: {
   const win = dom.doc.defaultView;
   /** The frame time over the last 2 s, for `?debug=1` (DEC-PERF). */
   const frames = createRollingWindow();
+  const radarDom = walk?.radar;
   const radarView: WalkRadarView | null =
-    walk?.radar === undefined || win === null
+    radarDom === undefined || win === null
       ? null
       : wireWalkRadar({
-          dom: walk.radar,
+          dom: radarDom,
           toggleList: () => {
             const open = selectWalkSheet(arStore.getState()) === "list";
             arStore.dispatch(sheetSet(open ? "peek" : "list"));
@@ -440,6 +442,14 @@ export function wireVisitorStations(deps: {
           devicePixelRatio: () => win.devicePixelRatio,
           reduceMotion: () =>
             win.matchMedia("(prefers-reduced-motion: reduce)").matches,
+          observeSize: (onChange) => {
+            const Observer = win.ResizeObserver as
+              typeof ResizeObserver | undefined;
+            if (Observer === undefined) return;
+            new Observer(() => {
+              onChange();
+            }).observe(radarDom.canvas);
+          },
         });
   /** The frame-time sampler of this AR session: registered with the
    *  session's first radar render, since a session's end clears the
@@ -529,6 +539,7 @@ export function wireVisitorStations(deps: {
       accuracyM: guideView.accuracyM,
       live: guideView,
       snapshot: guideView.snapshot,
+      listOpen: sheet === "list",
     });
     sheetView.render(model, {
       sheet,
@@ -634,12 +645,26 @@ export function wireVisitorStations(deps: {
     },
     progressKept: () => keptWalk() !== null,
     walkShown: () => sheetShown,
-    debugLines: () => {
-      if (radarView === null || win === null) return [];
-      const now = win.performance.now();
-      return walkRadarDebugLines(radarView.drawStats(now), frames.summary(now));
-    },
+    debugLines: () =>
+      win === null
+        ? []
+        : walkDebugLines(deps.mode, radarView, frames, win.performance.now()),
   };
+}
+
+/**
+ * The walk's `?debug=1` lines (W4 build plan M3, DEC-PERF): the radar's
+ * draw time and the frame time, for a visitor's radar only - a creator
+ * has no radar, and two lines reading "-" would only crowd the readout.
+ */
+export function walkDebugLines(
+  mode: ViewerMode,
+  radar: Pick<WalkRadarView, "drawStats"> | null,
+  frames: Pick<RollingWindow, "summary">,
+  nowMs: number,
+): string[] {
+  if (mode !== "visitor" || radar === null) return [];
+  return walkRadarDebugLines(radar.drawStats(nowMs), frames.summary(nowMs));
 }
 
 /**

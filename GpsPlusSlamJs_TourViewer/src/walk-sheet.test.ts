@@ -157,11 +157,55 @@ describe("setArrow (the direction arrows, W4 build plan M3)", () => {
     setArrow(a.el, 62);
     expect(a.writes()).toBe(1);
     setArrow(a.el, -170);
-    expect(a.el.style.transform).toBe("rotate(-170deg)");
+    // The short way round: 128 degrees on from 62.
+    expect(a.el.dataset["deg"]).toBe("-170");
+    expect(a.el.style.transform).toBe("rotate(190deg)");
     setArrow(a.el, null);
     expect(a.el.dataset["deg"]).toBeUndefined();
     expect(a.el.style.transform).toBe("");
     setArrow(a.el, null);
     expect(a.writes()).toBe(3);
+    // Shown again, it starts at its angle.
+    setArrow(a.el, -170);
+    expect(a.el.style.transform).toBe("rotate(-170deg)");
+  });
+
+  // Why this test matters: the arrow eases between angles (a CSS
+  // transition on its transform), and an angle that crosses straight
+  // behind (170 to -170) would spin it 340 degrees the long way round
+  // for a 20 degree turn of the visitor.
+  it("turns the short way across straight behind", () => {
+    const a = arrow();
+    setArrow(a.el, 170);
+    setArrow(a.el, -170);
+    expect(a.el.style.transform).toBe("rotate(190deg)");
+    setArrow(a.el, 170);
+    expect(a.el.style.transform).toBe("rotate(170deg)");
+  });
+
+  it("every step turns at most half a turn, to an angle equal to the one asked modulo 360", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: -180, max: 180 }), {
+          minLength: 1,
+          maxLength: 40,
+        }),
+        (angles) => {
+          const a = arrow();
+          let previous: number | null = null;
+          for (const deg of angles) {
+            setArrow(a.el, deg);
+            const turned = Number(
+              /^rotate\((-?[\d.]+)deg\)$/.exec(a.el.style.transform)?.[1],
+            );
+            expect((((turned - deg) % 360) + 360) % 360).toBe(0);
+            expect(Math.abs(turned - (previous ?? turned))).toBeLessThanOrEqual(
+              180,
+            );
+            previous = turned;
+          }
+        },
+      ),
+    );
   });
 });

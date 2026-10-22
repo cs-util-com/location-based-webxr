@@ -188,12 +188,16 @@ for (const tour of TOURS) {
       "Stations around you - open the list",
     );
     const sheet = page.getByTestId("walk-sheet");
+    // It says whether its list is open, as the grab does.
+    await expect(radar).toHaveAttribute("aria-expanded", "false");
     await radar.click();
     await expect(sheet).toHaveAttribute("data-sheet", "list");
     await expect(page.getByTestId("walk-list")).toBeVisible();
+    await expect(radar).toHaveAttribute("aria-expanded", "true");
     await radar.click();
     await expect(sheet).toHaveAttribute("data-sheet", "peek");
     await expect(page.getByTestId("walk-list")).toBeHidden();
+    await expect(radar).toHaveAttribute("aria-expanded", "false");
     // The canvas is drawn at the device's pixels (at most 2x).
     const ratio = await page.evaluate(() => {
       const c = /** @type {HTMLCanvasElement} */ (

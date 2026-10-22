@@ -173,7 +173,12 @@ hooks.tickStations = stations.tick;
   every frame's `dt` (ms, first frame skipped) into a 2 s rolling window, registered at the
   session's first radar render and dropped in `stop()` (a session's end
   clears the frame loop's callbacks); `debugLines()` returns
-  `walkRadarDebugLines`' two lines (empty without a radar).
-- The seam `xrProjection0` gives the radar its cone.
-- Tests: `walkDirectionsOf` in `visitor-stations.test.ts`; the composition
+  `walkDebugLines(mode, radar, frames, now)`: `walkRadarDebugLines`' two
+  lines for a visitor's radar, none for a creator (who has no radar) or a
+  page without one.
+- The seam `xrProjection0` gives the radar its cone; the radar's canvas
+  is observed by a `ResizeObserver` (`observeSize`) so its size is read
+  only after a resize; its `listOpen` is the store's sheet.
+- Tests: `walkDirectionsOf` and `walkDebugLines` in
+  `visitor-stations.test.ts`; the composition
   in `playwright-tests/visitor-walk.spec.js`.

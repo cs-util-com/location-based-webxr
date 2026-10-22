@@ -178,7 +178,10 @@ function createArrow(doc: Document): SVGElement {
 /**
  * Turn an arrow to `deg` (whole degrees, positive to the right); null
  * hides it (the CSS hides an arrow without `data-deg`). Written only on a
- * change: the angle moves with every camera frame.
+ * change: the angle moves with every camera frame. `data-deg` holds the
+ * angle asked; the transform turns the short way from the angle shown
+ * (`data-turn`), so the eased turn never spins the long way round when
+ * the station crosses straight behind (170 to -170 turns to 190).
  */
 export function setArrow(
   el: Pick<SVGElement, "dataset" | "style">,
@@ -186,13 +189,20 @@ export function setArrow(
 ): void {
   const value = deg === null ? null : String(deg);
   if ((el.dataset["deg"] ?? null) === value) return;
-  if (value === null) {
+  if (deg === null) {
     delete el.dataset["deg"];
+    delete el.dataset["turn"];
     el.style.transform = "";
-  } else {
-    el.dataset["deg"] = value;
-    el.style.transform = `rotate(${value}deg)`;
+    return;
   }
+  const shown = Number(el.dataset["turn"]);
+  const turn =
+    el.dataset["turn"] === undefined || !Number.isFinite(shown)
+      ? deg
+      : shown + ((((deg - shown) % 360) + 540) % 360) - 180;
+  el.dataset["deg"] = String(deg);
+  el.dataset["turn"] = String(turn);
+  el.style.transform = `rotate(${String(turn)}deg)`;
 }
 
 function setData(el: El, key: string, value: string | null): void {

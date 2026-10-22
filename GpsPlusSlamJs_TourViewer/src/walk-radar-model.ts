@@ -122,7 +122,7 @@ export interface WalkRadarModel {
    *  without a heading. */
   readonly north: number | null;
   /** The view cone's half width, radians, centred on up; null without a
-   *  heading. */
+   *  heading and while frozen. */
   readonly cone: number | null;
   readonly visitor: WalkRadarVisitor;
   readonly blips: readonly WalkRadarBlip[];
@@ -225,7 +225,7 @@ export function walkRadarRings(
  * (`walk-radar-model.sweep.test.ts`; the sidecar has the verdict): the
  * distance to the k-th nearest station still to find, times `factor`,
  * rounded UP to a step of 1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a
- * power of ten (so the scale rings stay round), clamped to 30-600 m. It
+ * power of ten (so the scale rings stay round), clamped to 10-600 m. It
  * grows at once (a station would otherwise sit on the rim) and shrinks
  * only once the raw range is below `shrinkBelow` of the shown one, so
  * GPS jitter at a step's edge does not make the scale breathe.
@@ -238,10 +238,12 @@ export interface WalkRadarAdaptiveRule {
   readonly shrinkBelow: number;
 }
 
+/** k 2, factor 1.2, floor 10 m: the sweep's plateau of least overlap
+ *  (k 2-3, factor 1.1-1.35, floor 5-15 m; the sidecar has the table). */
 const WALK_RADAR_ADAPTIVE: WalkRadarAdaptiveRule = {
-  k: 3,
+  k: 2,
   factor: 1.2,
-  minM: 30,
+  minM: 10,
   maxM: 600,
   shrinkBelow: 0.65,
 };
@@ -430,7 +432,8 @@ export function walkRadarModel(input: WalkRadarInput): WalkRadarModel {
     ...empty,
     mode,
     north,
-    cone: half,
+    // Heading-up: a cone drawn frozen would claim a live view of nothing.
+    cone: frozen ? null : half,
     visitor,
     blips,
     rimArc,

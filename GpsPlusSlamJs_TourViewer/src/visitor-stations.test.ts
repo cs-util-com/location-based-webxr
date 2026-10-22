@@ -8,6 +8,7 @@ import { createTourViewerStore } from "./tour-viewer-session";
 import {
   createCallGuard,
   stationAlignmentSignals,
+  walkDebugLines,
   walkDirectionsOf,
 } from "./visitor-stations";
 import { createWalkDirections } from "./walk-direction";
@@ -183,5 +184,25 @@ describe("walkDirectionsOf (W4 build plan M3, §1.5)", () => {
     expect(walkDirectionsOf(at(26), "gps", memory).get("a")?.word).toBe(
       "ahead",
     );
+  });
+});
+
+describe("walkDebugLines (the ?debug=1 readout, W4 build plan M3)", () => {
+  // Why this test matters: the radar and its frame line are the visitor
+  // walk's; a creator with ?debug=1 has no radar, and two lines reading
+  // "-" for ever would be dead weight in the readout the creator works by.
+  const radar = { drawStats: () => ({ mean: 0.5, worst: 1, count: 3 }) };
+  const frames = { summary: () => ({ mean: 16, worst: 20, count: 9 }) };
+
+  it("a visitor's radar reads its draw and frame lines", () => {
+    expect(walkDebugLines("visitor", radar, frames, 0)).toEqual([
+      "radar draw: 0.50 ms mean, 1.00 ms worst (3 in 2 s)",
+      "frame: 16.0 ms mean, 20.0 ms worst (9 in 2 s)",
+    ]);
+  });
+
+  it("a creator, or a page without a radar, reads none", () => {
+    expect(walkDebugLines("creator", radar, frames, 0)).toEqual([]);
+    expect(walkDebugLines("visitor", null, frames, 0)).toEqual([]);
   });
 });

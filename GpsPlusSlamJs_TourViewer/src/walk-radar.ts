@@ -58,10 +58,16 @@ export const WALK_RADAR_COLOURS = {
   weak: "#fbbf24",
 } as const;
 
-const GPS_RGB = "147,197,253";
-const WEAK_RGB = "251,191,36";
-const ACCENT_RGB = "251,146,60";
-const FOUND_RGB = "45,212,191";
+/** A `#rrggbb` colour's channels as "r,g,b", for the canvas's `rgba()`
+ *  tints. */
+function rgbOf(hex: string): string {
+  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(",");
+}
+
+const GPS_RGB = rgbOf(WALK_RADAR_COLOURS.gps);
+const WEAK_RGB = rgbOf(WALK_RADAR_COLOURS.weak);
+const ACCENT_RGB = rgbOf(WALK_RADAR_COLOURS.accent);
+const FOUND_RGB = rgbOf(WALK_RADAR_COLOURS.found);
 /** The frozen radar's greys (W4). */
 const FROZEN_FOUND = "#b9c1c9";
 const FROZEN_OTHER = "#8b949d";
@@ -463,6 +469,8 @@ export interface WalkRadarFrame {
   readonly accuracyM: number | null;
   readonly live: WalkRadarGeometry | null;
   readonly snapshot: WalkRadarGeometry | null;
+  /** The list is open: the button says so (`aria-expanded`). */
+  readonly listOpen: boolean;
 }
 
 /** The elements the radar writes (structural, so a test needs no DOM). */
@@ -470,7 +478,10 @@ export interface WalkRadarDom {
   /** The radar and the chip's column (`#walk-radar-wrap`). */
   readonly wrap: Pick<HTMLElement, "hidden" | "dataset">;
   /** The round button (`#walk-radar`). */
-  readonly button: Pick<HTMLElement, "addEventListener">;
+  readonly button: Pick<
+    HTMLElement,
+    "addEventListener" | "getAttribute" | "setAttribute"
+  >;
   readonly canvas: {
     readonly clientWidth: number;
     width: number;
@@ -511,12 +522,22 @@ export function wireWalkRadar(deps: {
   aspect(): number;
   devicePixelRatio(): number;
   reduceMotion(): boolean;
+  /** Call `onChange` whenever the canvas's box is resized (a
+   *  `ResizeObserver` on the page, for the page's life). */
+  observeSize(onChange: () => void): void;
 }): WalkRadarView {
   const { dom } = deps;
   const draws = createRollingWindow();
   const bursts = createRadarBursts();
   let frame: WalkRadarFrame | null = null;
   let rangeM: number | null = null;
+  /** The canvas's CSS size as last read: reading it is a layout read, and
+   *  a draw follows the sheet's DOM writes of the same render, so it is
+   *  read once and again only after a resize (or while it had none). */
+  let sizePx: number | null = null;
+  deps.observeSize(() => {
+    sizePx = null;
+  });
   dom.button.addEventListener("click", () => {
     deps.toggleList();
   });
@@ -525,7 +546,7 @@ export function wireWalkRadar(deps: {
     const f = frame;
     if (f === null) return;
     const started = deps.now();
-    const sizePx = dom.canvas.clientWidth;
+    if (sizePx === null || sizePx <= 8) sizePx = dom.canvas.clientWidth;
     if (sizePx <= 8) return;
     const dpr = Math.min(Math.max(deps.devicePixelRatio(), 1), 2);
     const px = Math.round(sizePx * dpr);
@@ -593,6 +614,10 @@ export function wireWalkRadar(deps: {
       const mode =
         next.kind === "none" || next.kind === "lost" ? "frozen" : "live";
       if (dom.wrap.dataset["mode"] !== mode) dom.wrap.dataset["mode"] = mode;
+      const expanded = String(next.listOpen);
+      if (dom.button.getAttribute("aria-expanded") !== expanded) {
+        dom.button.setAttribute("aria-expanded", expanded);
+      }
       throttle.request();
     },
     drawStats(nowMs) {

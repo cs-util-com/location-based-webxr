@@ -294,13 +294,18 @@ describe("walkRadarModel - the visitor's mark by precision (§1.2)", () => {
     // A status changed since the snapshot shows at once.
     expect(blip(m, "tower")?.look).toBe("skipped");
     expect(m.rimArc).toBeNull();
+    // North from the snapshot's heading; no view cone: the radar is
+    // heading-up, so a frozen cone would claim a live view of nothing.
+    expect(m.north).toBeCloseTo(0, 9);
+    expect(m.cone).toBeNull();
   });
 
-  it("tracking lost: frozen like 'none'", () => {
+  it("tracking lost: frozen like 'none', with no view cone", () => {
     const m = walkRadarModel(input({ kind: "lost", accuracyM: 8 }));
     expect(m.mode).toBe("frozen");
     expect(m.visitor).toEqual({ kind: "unknown" });
     expect(m.blips.some((b) => b.look === "focus")).toBe(false);
+    expect(m.cone).toBeNull();
   });
 
   it("frozen with no snapshot: the '?' alone", () => {
@@ -376,14 +381,14 @@ describe("walkRadarModel - its guards", () => {
 });
 
 describe("walkRadarAdaptiveRangeM - the range the sweep ships", () => {
-  it("is the 3rd nearest station still to find times 1.2, rounded up to a step", () => {
-    // 3rd nearest 50 m: 60 m, a step.
-    expect(walkRadarAdaptiveRangeM([10, 30, 50, 400], null)).toBe(60);
-    // 3rd nearest 70 m: 84 m, rounded up to 100.
-    expect(walkRadarAdaptiveRangeM([70, 20, 40], null)).toBe(100);
+  it("is the 2nd nearest station still to find times 1.2, rounded up to a step", () => {
+    // 2nd nearest 50 m: 60 m, a step.
+    expect(walkRadarAdaptiveRangeM([10, 50, 430], null)).toBe(60);
+    // 2nd nearest 40 m: 48 m, rounded up to 50.
+    expect(walkRadarAdaptiveRangeM([70, 20, 40], null)).toBe(50);
   });
 
-  it("reads the farthest when fewer than three are left, and keeps the range with none", () => {
+  it("reads the farthest when fewer than two are left, and keeps the range with none", () => {
     expect(walkRadarAdaptiveRangeM([100], null)).toBe(125);
     expect(walkRadarAdaptiveRangeM([], 80)).toBe(80);
     expect(walkRadarAdaptiveRangeM([], null)).toBe(WALK_RADAR_RANGE_M);
@@ -392,18 +397,21 @@ describe("walkRadarAdaptiveRangeM - the range the sweep ships", () => {
     );
   });
 
-  it("clamps to 30-600 m", () => {
-    expect(walkRadarAdaptiveRangeM([1, 2, 3], null)).toBe(30);
+  it("clamps to 10-600 m", () => {
+    // A museum's stations a few metres apart: the 10 m floor (the sweep's
+    // museum tours overlap far less at 10 m than at 30 m).
+    expect(walkRadarAdaptiveRangeM([1, 2, 3], null)).toBe(10);
+    expect(walkRadarAdaptiveRangeM([4, 7, 9], null)).toBe(10);
     expect(walkRadarAdaptiveRangeM([900, 1000, 5000], null)).toBe(600);
   });
 
   it("grows at once and shrinks only below 65 % of the range shown", () => {
     // Raw 60 m above the shown 50: grows.
-    expect(walkRadarAdaptiveRangeM([10, 20, 50], 50)).toBe(60);
+    expect(walkRadarAdaptiveRangeM([10, 50, 90], 50)).toBe(60);
     // Raw 48 m under the shown 60 (80 %): kept.
-    expect(walkRadarAdaptiveRangeM([10, 20, 40], 60)).toBe(60);
+    expect(walkRadarAdaptiveRangeM([10, 40, 90], 60)).toBe(60);
     // Raw 36 m (60 % of 60): shrinks to its own step.
-    expect(walkRadarAdaptiveRangeM([10, 20, 30], 60)).toBe(40);
+    expect(walkRadarAdaptiveRangeM([10, 30, 90], 60)).toBe(40);
   });
 
   it("draws its rings at round distances for the range", () => {

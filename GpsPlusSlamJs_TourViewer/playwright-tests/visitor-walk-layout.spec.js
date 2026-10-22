@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 import {
   installTourViewerArFakes,
   lockFixtureCode,
+  reportArTracking,
   seedAlignment,
   standAt,
 } from "./ar-fakes.js";
@@ -473,3 +474,73 @@ test("sideways, 'Back to the tour' is on screen without scrolling", async ({
   expect(start.y).toBeGreaterThanOrEqual(0);
   expect(start.y + start.height).toBeLessThanOrEqual(390);
 });
+
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+]) {
+  const label = `${String(viewport.width)}x${String(viewport.height)}`;
+  test(`the chip's longest words wrap to two lines under the radar, right-aligned, at ${label}`, async ({
+    page,
+  }) => {
+    // Why (W4 build plan M3 review): the code state's one short line hid
+    // whether the chip's longest words ("GPS - about N m, too weak") keep
+    // W4's place - 6 px under the radar, its right edge on the radar's,
+    // at most 36 px wider - when they wrap, sideways too.
+    await page.setViewportSize(viewport);
+    await installTourViewerArFakes(page);
+    await openTheWalk(page);
+    await page.getByTestId("enter-ar").click();
+    await seedAlignment(page);
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__tourViewerTest.fireTimers();
+    });
+    await page.getByTestId("scan-escape").click();
+    await reportArTracking(page, true);
+    for (let i = 0; i < 10; i += 1) await standAt(page, 0, 0, "now", 60);
+    // The tracking report not ready: the fresh fix stands in, judged by
+    // its own accuracy (the radar spec's path to too weak).
+    await page.evaluate(() => {
+      const t = /** @type {any} */ (window).__tourViewerTest;
+      t.alignmentStore.dispatch({
+        type: "trackingQuality/reportUpdated",
+        payload: {
+          state: "degraded",
+          confidence: 0.2,
+          subScores: {
+            convergence: 0.2,
+            residualConsensus: 0.2,
+            gpsAccuracy: 1,
+            coverage: 0.2,
+          },
+          diagnostics: {},
+        },
+      });
+      t.emitFrames(1);
+    });
+    const text = page.getByTestId("walk-precision-text");
+    await expect(text).toHaveText(/^GPS - about \d+ m, too weak$/);
+    const size = sideways(viewport) ? 108 : 132;
+    const radar = await box(page, "walk-radar");
+    const chip = await box(page, "walk-precision");
+    expect(chip.y - (radar.y + radar.height)).toBeCloseTo(6, 0);
+    expect(chip.x + chip.width).toBeCloseTo(radar.x + radar.width, 0);
+    expect(chip.width).toBeLessThanOrEqual(size + 36 + 0.5);
+    // Two lines of 12 px type at a line height of 1.2, inside 5 px of
+    // padding and a 1 px border: the words wrap rather than overflow.
+    const lines = await box(page, "walk-precision-text");
+    expect(lines.height).toBeGreaterThanOrEqual(2 * 14.4 - 0.5);
+    expect(lines.height).toBeLessThan(3 * 14.4 - 0.5);
+    expect(
+      await page
+        .getByTestId("walk-precision")
+        .evaluate((el) => el.scrollWidth <= el.clientWidth + 0.5),
+    ).toBe(true);
+    for (const other of [
+      await box(page, "enter-ar"),
+      await box(page, "walk-sheet"),
+    ]) {
+      expect(overlaps(chip, other)).toBe(false);
+    }
+  });
+}

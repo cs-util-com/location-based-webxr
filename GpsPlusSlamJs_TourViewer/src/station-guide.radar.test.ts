@@ -61,6 +61,26 @@ function facing(deg: number): [number, number, number] {
   return [Math.cos(r), 0, Math.sin(r)];
 }
 
+/** A unit forward in NUE at a bearing, pitched `pitchDeg` down and rolled
+ *  `rollDeg` about the bearing's horizontal axis (a phone held flat over
+ *  the ground tips its camera sideways when it rolls). */
+function pitched(
+  bearingDeg: number,
+  pitchDeg: number,
+  rollDeg: number,
+): [number, number, number] {
+  const b = (bearingDeg * Math.PI) / 180;
+  const p = (pitchDeg * Math.PI) / 180;
+  const t = (rollDeg * Math.PI) / 180;
+  const along = Math.cos(p);
+  const side = Math.sin(p) * Math.sin(t);
+  return [
+    along * Math.cos(b) - side * Math.sin(b),
+    -Math.sin(p) * Math.cos(t),
+    along * Math.sin(b) + side * Math.cos(b),
+  ];
+}
+
 function harness() {
   const store = createTourViewerStore();
   const dispatched: UnknownAction[] = [];
@@ -111,7 +131,7 @@ function harness() {
       north: number,
       east: number,
       accuracyM: number | null = 4,
-      bearing: number | "down" | null = 0,
+      bearing: number | "down" | [number, number, number] | null = 0,
     ) {
       visitor = {
         nue: [north, 401.5, east],
@@ -125,7 +145,9 @@ function harness() {
             ? null
             : bearing === "down"
               ? [0, -1, 0]
-              : facing(bearing),
+              : Array.isArray(bearing)
+                ? bearing
+                : facing(bearing),
       };
       guide.tick();
     },
@@ -225,6 +247,23 @@ describe("the guide's heading and bearings (W4 build plan M3, §1.2)", () => {
     expect(h.guide.view()?.headingDeg).toBeCloseTo(30, 9);
   });
 
+  // Why this test matters: a phone held nearly flat over the ground has
+  // almost no horizontal forward, and a degree of hand tremor swings its
+  // bearing by tens of degrees (26.6 at 88 degrees down) - the radar would
+  // spin and the direction words flip while the visitor holds still. Below
+  // a horizontal share the guide keeps the last heading.
+  it("holds the heading while the camera points 88 degrees down, rolled a degree either way", () => {
+    const h = harness();
+    h.at(20, 0, 4, 30);
+    for (const roll of [-1, 1, 0]) {
+      h.at(20, 0, 4, pitched(200, 88, roll));
+      expect(h.guide.view()?.headingDeg).toBeCloseTo(30, 9);
+    }
+    // Raised to 60 degrees down, the camera's bearing counts again.
+    h.at(20, 0, 4, pitched(120, 60, 0));
+    expect(h.guide.view()?.headingDeg).toBeCloseTo(120, 9);
+  });
+
   it("measures every station's bearing from the visitor", () => {
     const h = harness();
     h.at(20, 0);
@@ -247,9 +286,21 @@ describe("the frozen radar's snapshot (W4 build plan M3, §1.2)", () => {
     h.at(20, 0, 4, 10);
     expect(h.guide.view()?.snapshot).toMatchObject({ headingDeg: 10 });
     expect(h.guide.view()?.snapshot?.distances.get("well")).toBeCloseTo(10, 6);
-    h.at(25, 0, 40, 20);
-    // Too weak is drawn live too (the amber blur).
+    h.at(25, 0, 4, 20);
     expect(h.guide.view()?.snapshot?.distances.get("well")).toBeCloseTo(5, 6);
+  });
+
+  // Why this test matters: the snapshot is what a frozen radar draws, and
+  // only a judged position (a code's, or GPS within the ceiling) may put
+  // stations there. GPS too weak to guide by is drawn live as an amber
+  // blur, but a later freeze must not draw where that fix put them.
+  it("keeps the last judged geometry while the GPS is too weak", () => {
+    const h = harness();
+    h.at(20, 0, 4, 10);
+    h.at(25, 0, 40, 20);
+    expect(h.guide.view()?.precision).toBe("weak");
+    expect(h.guide.view()?.snapshot?.distances.get("well")).toBeCloseTo(10, 6);
+    expect(h.guide.view()?.snapshot?.headingDeg).toBeCloseTo(10, 9);
   });
 
   it("freezes under 'none': the visitor moves, the snapshot does not", () => {

@@ -22,6 +22,7 @@ import {
   walkRadarDebugLines,
   wireWalkRadar,
   type RadarCanvas,
+  type WalkRadarDom,
   type WalkRadarFrame,
 } from "./walk-radar";
 import {
@@ -304,18 +305,35 @@ describe("drawWalkRadar", () => {
 /** A structural DOM for the view. */
 function dom(width = 132) {
   const listeners: (() => void)[] = [];
+  const attributes = new Map<string, string>();
   const { g, calls } = recordingCanvas();
+  /** The canvas's CSS width, and how often a draw read it (a layout
+   *  read). */
+  const size = { width, reads: 0 };
   return {
     calls,
     listeners,
+    size,
     dom: {
       wrap: { hidden: true, dataset: {} as DOMStringMap },
       button: {
         addEventListener: (_: string, fn: () => void) => {
           listeners.push(fn);
         },
-      } as unknown as Pick<HTMLElement, "addEventListener">,
-      canvas: { clientWidth: width, width: 0, height: 0, getContext: () => g },
+        getAttribute: (name: string) => attributes.get(name) ?? null,
+        setAttribute: (name: string, value: string) => {
+          attributes.set(name, value);
+        },
+      } as unknown as WalkRadarDom["button"],
+      canvas: {
+        get clientWidth() {
+          size.reads += 1;
+          return size.width;
+        },
+        width: 0,
+        height: 0,
+        getContext: () => g,
+      },
       chip: { dataset: {} as DOMStringMap },
       chipText: { textContent: "" as string },
     },
@@ -330,6 +348,7 @@ function frame(over: Partial<WalkRadarFrame> = {}): WalkRadarFrame {
     accuracyM: 6,
     live: GEO,
     snapshot: GEO,
+    listOpen: false,
     ...over,
   };
 }
@@ -338,6 +357,9 @@ function view(width = 132) {
   const c = clock();
   const d = dom(width);
   let toggles = 0;
+  /** The size observer's callback, once the view observed the canvas. */
+  let resized: (() => void) | null = null;
+  let observing = 0;
   const radar = wireWalkRadar({
     dom: d.dom,
     toggleList: () => {
@@ -348,8 +370,22 @@ function view(width = 132) {
     aspect: () => 0.5,
     devicePixelRatio: () => 3,
     reduceMotion: () => false,
+    observeSize: (onChange) => {
+      resized = onChange;
+      observing += 1;
+    },
   });
-  return { c, d, radar, toggles: () => toggles };
+  return {
+    c,
+    d,
+    radar,
+    toggles: () => toggles,
+    resize(width: number) {
+      d.size.width = width;
+      resized?.();
+    },
+    observing: () => observing,
+  };
 }
 
 describe("wireWalkRadar", () => {
@@ -371,6 +407,45 @@ describe("wireWalkRadar", () => {
     const v = view();
     for (const fn of v.d.listeners) fn();
     expect(v.toggles()).toBe(1);
+  });
+
+  // Why this test matters: the radar is a button that opens and closes
+  // the list, as the grab is; a screen reader hears whether its list is
+  // open only from `aria-expanded`.
+  it("says on its button whether the list is open", () => {
+    const v = view();
+    v.radar.render(frame());
+    expect(v.d.dom.button.getAttribute("aria-expanded")).toBe("false");
+    v.radar.render(frame({ listOpen: true }));
+    expect(v.d.dom.button.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  // Why this test matters: reading the canvas's CSS size is a layout read,
+  // and a draw follows the sheet's DOM writes of the same render, so a
+  // read per draw forces a layout up to 15 times a second. The size is
+  // read once and again only after the canvas was resized.
+  it("reads the canvas's size once, and again only after it was resized", () => {
+    const v = view();
+    for (let i = 0; i < 4; i += 1) {
+      v.radar.render(frame());
+      v.c.advance(100);
+    }
+    expect(v.d.calls.filter((c) => c.op === "clearRect").length).toBe(4);
+    expect(v.d.size.reads).toBe(1);
+    v.resize(108);
+    v.radar.render(frame());
+    expect(v.d.size.reads).toBe(2);
+    expect(v.d.dom.canvas.width).toBe(216);
+    expect(v.observing()).toBe(1);
+  });
+
+  it("a canvas with no size yet (hidden) is read again on the next draw", () => {
+    const v = view(0);
+    v.radar.render(frame());
+    v.d.size.width = 132;
+    v.c.advance(100);
+    v.radar.render(frame());
+    expect(v.d.dom.canvas.width).toBe(264);
   });
 
   it("draws at the device's pixel ratio, capped at 2, throttled", () => {
@@ -463,6 +538,71 @@ describe("the canvas colours are the page's tokens", () => {
     expect(token("weak")).toBe(WALK_RADAR_COLOURS.weak);
     expect(token("accent")).toBe(WALK_RADAR_COLOURS.accent);
     expect(token("found")).toBe(WALK_RADAR_COLOURS.found);
+  });
+
+  // Why: the stylesheet's validator refuses `color-mix()`, so the walk's
+  // CSS writes its tints (the chip's glow, a row's wash) as `rgb()`
+  // literals; each must be one of the walk's own colour tokens (or a
+  // neutral: black, white, the walk's two surfaces), else a token changed
+  // alone leaves its tints behind in the old colour.
+  it("every rgb() tint in the walk's CSS is a --walk-* colour or a neutral", () => {
+    const html = readFileSync(
+      new URL("../index.html", import.meta.url),
+      "utf8",
+    );
+    const start = html.indexOf("/* ===== The visitor's walk in AR");
+    const end = html.indexOf("/* ===== The creator's HUD in AR");
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const css = html.slice(start, end);
+    const hexTriple = (hex: string) =>
+      [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(" ");
+    const tokens = new Set(
+      [...css.matchAll(/--walk-[a-z0-9-]+:\s*(#[0-9a-f]{6});/gi)].map((m) =>
+        hexTriple(m[1]!),
+      ),
+    );
+    const neutrals = new Set(["0 0 0", "255 255 255", "10 14 19", "12 16 21"]);
+    const literals = [...css.matchAll(/rgb\((\d+ \d+ \d+)/g)].map((m) => m[1]!);
+    // Non-vacuous: the chip's blue and amber glows are among them.
+    expect(literals).toContain(hexTriple(WALK_RADAR_COLOURS.gps));
+    expect(literals).toContain(hexTriple(WALK_RADAR_COLOURS.weak));
+    expect(literals.filter((t) => !tokens.has(t) && !neutrals.has(t))).toEqual(
+      [],
+    );
+  });
+
+  it("the canvas's tints are its colours' own", () => {
+    const triple = (hex: string) =>
+      [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(",");
+    const strokes = (kind: WalkRadarFrame["kind"], accuracyM = 6) => {
+      const { g, calls } = recordingCanvas();
+      drawWalkRadar(
+        g,
+        walkRadarModel({
+          stations: STATIONS,
+          order: "fixed",
+          kind,
+          accuracyM,
+          live: GEO,
+          snapshot: GEO,
+          fovDeg: 64,
+          sizePx: 132,
+        }),
+        { ...DRAW, burstOf: (id) => (id === "gate" ? 0.5 : undefined) },
+      );
+      return calls
+        .filter((c) => c.op === "stroke" && typeof c.style === "string")
+        .map((c) => c.style as string);
+    };
+    const tinted = (styles: string[], hex: string) =>
+      styles.some((s) => s.startsWith(`rgba(${triple(hex)},`));
+    expect(tinted(strokes("pending"), WALK_RADAR_COLOURS.gps)).toBe(true);
+    expect(tinted(strokes("gps"), WALK_RADAR_COLOURS.gps)).toBe(true);
+    expect(tinted(strokes("weak", 40), WALK_RADAR_COLOURS.weak)).toBe(true);
+    // The focus's pulse and the found station's burst.
+    expect(tinted(strokes("gps"), WALK_RADAR_COLOURS.accent)).toBe(true);
+    expect(tinted(strokes("gps"), WALK_RADAR_COLOURS.found)).toBe(true);
   });
 });
 

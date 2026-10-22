@@ -72,11 +72,12 @@
  *   the precision kind (`pending | code | gps | weak | none`, the line's
  *   own rules, published to the store only on a change), the camera's
  *   heading once the latch above holds (its forward through the alignment;
- *   the last bearing kept while the camera points straight down), every
- *   station's bearing, and the last judged snapshot of that geometry - kept
- *   while a code, GPS or too-weak GPS speaks for the position and tracking
- *   is not lost, so a frozen radar (`'none'`, tracking lost) never draws
- *   from a position nobody vouches for. Cleared at the session's end.
+ *   the last bearing kept while the camera points near straight down,
+ *   `camera-heading.ts`), every station's bearing, and the last judged
+ *   snapshot of that geometry - kept while a code or GPS within the
+ *   ceiling speaks for the position and tracking is not lost, so a frozen
+ *   radar (`'none'`, tracking lost) never draws from a position nobody
+ *   vouches for, nor from a too-weak fix. Cleared at the session's end.
  * - **The walk lives in the page's store** (visitor walk W4 build plan
  *   2026-10-21-1105, M1): the run's statuses, the last skip, the note and
  *   the skip's arm are `visitorWalk` (`visitor-walk-slice.ts`), whose
@@ -100,6 +101,7 @@ import { nueBearingDeg } from "gps-plus-slam-app-framework/utils/nue-bearing";
 import { configureStore, type UnknownAction } from "@reduxjs/toolkit";
 import { Vector3 } from "three";
 
+import { cameraHeadingDeg } from "./camera-heading.js";
 import { objectPoseNue } from "./content-placement.js";
 import type { StagePose } from "./scene-stage.js";
 import {
@@ -382,7 +384,8 @@ interface Measurement {
   readonly bearings: Map<string, number>;
   /** The camera's bearing (its forward through the alignment), degrees
    *  from north, while `headingNue` is set; the last one is kept while
-   *  the forward has none (straight down, a dropped pose). */
+   *  the forward has too little of a horizontal part (near straight down,
+   *  `camera-heading.ts`) or there is no pose. */
   readonly headingDeg: number | null;
 }
 
@@ -745,12 +748,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     }
   }
 
-  /** The snapshot follows the measurement while a code, GPS or too-weak
-   *  GPS speaks for the position and the tracking is not lost (the store's
-   *  `trackingLost`); otherwise it holds the last such geometry. */
+  /** The snapshot follows the measurement while a judged position (a
+   *  code's, or GPS within the ceiling) speaks for it and the tracking is
+   *  not lost (the store's `trackingLost`); otherwise it holds the last
+   *  such geometry - never one a too-weak fix put there. */
   function keepSnapshot(m: Measurement, kind: WalkPrecisionKind): void {
     const lost = deps.guideStore?.getState().visitorGuide.trackingLost === true;
-    if (lost || (kind !== "code" && kind !== "gps" && kind !== "weak")) return;
+    if (lost || (kind !== "code" && kind !== "gps")) return;
     snapshot = {
       distances: m.distances,
       bearings: m.bearings,
@@ -835,13 +839,12 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   /** The camera's bearing from its forward; the last one this AR entry
-   *  while the forward has none (straight down, no pose). */
+   *  while the forward has too little of a horizontal part (near straight
+   *  down, `camera-heading.ts`) or there is no pose. */
   function cameraHeading(
     forward: readonly [number, number, number] | null,
   ): number | null {
-    const bearing =
-      forward === null ? undefined : nueBearingDeg(forward[0], forward[2]);
-    if (bearing !== undefined) lastHeadingDeg = bearing;
+    lastHeadingDeg = cameraHeadingDeg(forward, lastHeadingDeg);
     return lastHeadingDeg;
   }
 
