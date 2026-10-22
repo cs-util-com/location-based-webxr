@@ -918,6 +918,26 @@ function emptyAutomatic(state: TourDocumentState): string[] {
     .map((s) => s.id);
 }
 
+/** Where `state` breaks the station rule, in words; none when it keeps
+ *  it: every object names one of the document's stations (in the frames
+ *  and in the tour as it stands), and no emptied automatic station stays. */
+function stationRuleBreaches(state: TourDocumentState): string[] {
+  const now = new Set(manifestNow(state)!.stations.map((s) => s.id));
+  const frames = new Set(state.stations.map((s) => s.id));
+  const homeless = documentObjects(state)
+    .filter(
+      ({ object }) =>
+        object.station === undefined ||
+        !frames.has(object.station) ||
+        !now.has(object.station),
+    )
+    .map(({ object }) => `${object.id} names ${String(object.station)}`);
+  return [
+    ...homeless,
+    ...emptyAutomatic(state).map((id) => `${id} stays empty`),
+  ];
+}
+
 /** The ways a station of OPENED is kept or not by its own minor 2 fields:
  *  a description, a card image naming the tour's image asset, a card
  *  image naming its own photo (only `f`'s station has one), or nothing. */
@@ -962,17 +982,50 @@ describe("tour document (properties): every object belongs to a station", () => 
     fc.assert(
       fc.property(fc.array(stationOpArb, { maxLength: 30 }), (ops) => {
         for (const state of stationRun(ops)) {
-          const now = new Set(manifestNow(state)!.stations.map((s) => s.id));
-          const frames = new Set(state.stations.map((s) => s.id));
-          for (const { object } of documentObjects(state)) {
-            expect(object.station).toBeDefined();
-            expect(frames.has(object.station!)).toBe(true);
-            expect(now.has(object.station!)).toBe(true);
-          }
-          expect(emptyAutomatic(state)).toEqual([]);
+          expect(stationRuleBreaches(state)).toEqual([]);
         }
       }),
       { numRuns: 300 },
+    );
+  });
+
+  it("a step back to a view whose object stood in a station only that view names puts the object back in it (shrunk counterexamples)", () => {
+    // Why (found by the property above, seeds -991391345 and 4246602): a
+    // step goes back to a view, and an object of the view the written
+    // file also holds counts as the file's own, not pending, when it
+    // matches the file's copy. While the view's frames were read without
+    // the view's objects, a station only a pending object names (one the
+    // rule started) was missing from that reading - and with its station
+    // missing, the object's re-assignment counted as no move, the object
+    // matched the file's copy in its old station, and the station it
+    // stood in in the view was left empty. First: a draft's pin seated in
+    // a new station, restored again into the first station, saved, and
+    // the restore undone. Second: a pin moved out of its station into a
+    // new one, that station moved, undone and redone.
+    const back = stationRun([
+      { kind: "restore", north: -37.5, east: 137.5, dangling: true },
+      { kind: "restore", north: -37.5, east: 137.5, dangling: false },
+      { kind: "save" },
+      { kind: "undo" },
+    ]);
+    for (const state of back) expect(stationRuleBreaches(state)).toEqual([]);
+    const undone = back.at(-1)!;
+    const r1 = documentObjects(undone).find((o) => o.object.id === "r1");
+    expect(r1?.object.station).toBe("n1");
+    expect(manifestToWrite(undone)!.stations.map((s) => s.id)).toContain("n1");
+
+    const again = stationRun([
+      { kind: "move", id: "a", north: 0, east: -37.5 },
+      { kind: "frame", id: "a", north: 0 },
+      { kind: "undo" },
+      { kind: "redo" },
+    ]);
+    for (const state of again) expect(stationRuleBreaches(state)).toEqual([]);
+    const redone = again.at(-1)!;
+    const a = documentObjects(redone).find((o) => o.object.id === "a");
+    expect(a?.object.station).toBe("n1");
+    expect(manifestToWrite(redone)!.stations.map((s) => s.id)).toEqual(
+      redone.stations.map((s) => s.id),
     );
   });
 

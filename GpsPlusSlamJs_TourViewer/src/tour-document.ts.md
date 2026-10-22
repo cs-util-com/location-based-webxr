@@ -184,7 +184,13 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   VIEW's frames, as `documentObjects` reads the objects: an item the file
   keeps at a local pose under a frame the view moved stands elsewhere, so it
   stays an entry (a save under a moved frame, then an undo of the move -
-  found by the "undoing everything" property). A save that lands after a
+  found by the "undoing everything" property). The view's OBJECTS are part
+  of that reading too: a station only a pending object of the view names
+  (one the rule started) is in it, so an object the view seats there
+  counts as moved, never as the file's copy in its old station - which
+  would leave the view's station empty and the object in a station the
+  frames lack (an undo across a save of a restore, a redo after a station
+  move; found by the station-rule property). A save that lands after a
   frame moved prunes the same way. A step marks the station poses as the
   draft's to keep (`stationsRecorded`, `touched.stations`) only when a
   frame both views carry differs: a station the rule started or dropped
@@ -627,7 +633,10 @@ store.dispatch(tourDocumentActions.undone());
   on the edge of and beyond the 25 m radius), moves, deletes, station
   moves, restores, carried work, saves, undos and redos, every object
   names one of the document's stations and no empty automatic station
-  stays; from a tour whose stations carry any mix of descriptions and card
+  stays (its two shrunk counterexamples pinned as a named example - an
+  undo across a save of a restore, a redo after a station move - each
+  seen red with the view's objects left out of `contentAt`'s reading);
+  from a tour whose stations carry any mix of descriptions and card
   images, no station a description or an image asset keeps ever leaves the
   frames or the written file; an undo of a placement
   gives the stations back exactly.

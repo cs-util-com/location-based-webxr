@@ -1218,7 +1218,11 @@ export function viewOf(state: TourDocumentState): TourDocumentView {
  * through the VIEW's frames, as `documentObjects` reads it: an item the
  * file holds at a local pose under a frame the view moves elsewhere
  * stands elsewhere, so it needs an entry (a save under a moved frame,
- * then an undo of the move). `keptBare` as `withFrames` reads it.
+ * then an undo of the move). The view's objects ride along as entries,
+ * so a station only one of them names (one the rule started) is in that
+ * reading: without it, an object the view seats there would match the
+ * file's copy in its old station and leave its own station empty.
+ * `keptBare` as `withFrames` reads it.
  */
 function contentAt(
   written: TourManifest,
