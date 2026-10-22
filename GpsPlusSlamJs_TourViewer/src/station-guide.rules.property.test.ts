@@ -326,7 +326,10 @@ describe("the walk's rules over random walks", () => {
       { numRuns: 300 },
     );
     // Not vacuous: the no-guess condition was reached and checked often.
-    expect(r2Checks).toBeGreaterThan(100);
+    // The count depends on the random walks: 91 to 199 over 21 seeds
+    // (2026-10-22), so the floor sits well under the lowest; it guards
+    // against the condition never being reached, not against a number.
+    expect(r2Checks).toBeGreaterThan(30);
   });
 
   // R9 re-stated over the story card and R-2's three tap paths: "Can't get
