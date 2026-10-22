@@ -1,6 +1,6 @@
 /**
- * Why these tests matter: the 3D view opens tilted as the chosen design
- * does (the chosen design's start: 148 m east, 210 m up and 177 m south of the
+ * Why these tests matter: the 3D view opens tilted at the editor's start
+ * view (148 m east, 210 m up and 177 m south of the
  * tour's centre), and that start must sit above the morph band, or the
  * first view a creator sees is the flat top-down one. The tilt the morph
  * reads is the orbit's angle from straight down in degrees; and the clip
@@ -27,8 +27,8 @@ const SPHERE = {
 } as unknown as Parameters<typeof editorClipPlanes>[0]["ellipsoid"];
 
 describe("the editor's camera", () => {
-  // Why: the chosen design's limits and start.
-  it("starts where the chosen design does, within its limits", () => {
+  // Why: the editor's start view and orbit limits.
+  it("starts at the editor's start view, within its limits", () => {
     expect(EDITOR_CAMERA).toMatchObject({
       fovDeg: 50,
       minDistanceM: 2.5,

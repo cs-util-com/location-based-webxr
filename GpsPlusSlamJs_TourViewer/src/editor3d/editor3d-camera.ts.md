@@ -2,8 +2,8 @@
 
 ## Purpose
 
-The 3D editor's camera: an orbit around the tour with the chosen design's
-start and limits, the tilt the morph reads, and the clip planes that
+The 3D editor's camera: an orbit around the tour with the editor's start
+view and limits, the tilt the morph reads, and the clip planes that
 follow the camera's clearance over the drawn ground.
 
 ## Public API

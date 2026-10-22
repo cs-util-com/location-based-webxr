@@ -33,6 +33,8 @@ tour's centre for the view's frame and first orbit.
   point at that latitude and longitude, height alt - N.
 - **One matrix per point**, never one for the tour: a single tour frame
   would bend a station a few hundred metres out by the frame's flatness.
+- **`modelScale` lives here, not in the Globe package:** `sizeM` is the
+  tour format's field, and the globe draws no tour items.
 - **The centre is a plain mean of degrees:** right for a tour of a few
   hundred metres; a tour across the antimeridian is not handled.
 - Module-level scratch matrices: not re-entrant, fine for a single-thread

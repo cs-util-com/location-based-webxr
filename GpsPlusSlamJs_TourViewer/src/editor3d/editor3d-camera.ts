@@ -1,6 +1,6 @@
 /**
- * The 3D editor's camera: an orbit around the tour with the chosen design's
- * start and limits (the chosen design's: 148 m east, 210 m up and 177 m south of the
+ * The 3D editor's camera: an orbit around the tour with the editor's start
+ * view and limits (the start: 148 m east, 210 m up and 177 m south of the
  * centre, so about 312 m out and 47.7 degrees from straight down, above
  * the morph band's 42; between 2.5 m and 1100 m from its centre, never
  * below 1.48 rad from straight down), the tilt the morph reads, and the
@@ -21,7 +21,7 @@ import {
   reliefClearanceM,
 } from "gps-plus-slam-globe/editor";
 
-/** The chosen design's camera. */
+/** The editor's camera: its lens, start view and orbit limits. */
 export const EDITOR_CAMERA = Object.freeze({
   fovDeg: 50,
   /** The start, from the orbit's centre (m: x east, y up, z south). */

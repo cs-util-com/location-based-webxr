@@ -1,7 +1,7 @@
 /**
  * The 3D editor's drawn marks, browser only (each draws on a canvas):
  *
- * - a station's billboard, the chosen design's tag: a dark pill with the station's
+ * - a station's billboard, a tag: a dark pill with the station's
  *   number in a blue box (amber when selected) and its name, the same
  *   size on screen at any distance (`sizeAttenuation` off), drawn over
  *   the scene;

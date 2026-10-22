@@ -8,7 +8,7 @@
  * What it draws: the globe's relief on Mapterhorn's heights with the
  * OpenStreetMap map on it (`editor3d-terrain.ts`), the tour in it
  * (`editor3d-stations.ts`) and the credits both owe, under an orbit at
- * the chosen design's start (`editor3d-camera.ts`). It reads the tour from
+ * the editor's start view (`editor3d-camera.ts`). It reads the tour from
  * the store - what a save would write now (`manifestToWrite`), and again
  * whenever the document changes - and the selection from `editorView`; it
  * writes nothing.

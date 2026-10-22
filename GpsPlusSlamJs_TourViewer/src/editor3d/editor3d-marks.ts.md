@@ -51,4 +51,4 @@ face.dispose();
 
 No unit test (a canvas is needed; the stations layer's tests hand in
 stand-ins). Drawn in `playwright-tests/editor3d.spec.js`, and compared by
-eye with the chosen prototype at 1440 x 900 and 1024 x 768.
+eye at 1440 x 900 and 1024 x 768.

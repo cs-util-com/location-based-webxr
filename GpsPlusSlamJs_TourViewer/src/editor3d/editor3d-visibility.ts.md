@@ -37,7 +37,7 @@ station near-K must keep.
   exist once per package): the framework's `utils/smoothstep.ts` is not a
   deep-import entry of its build, and making it one would pull every
   dependent of the framework into this change.
-- The band 8-42 is the chosen design's. The tests run the edge rule over
+- The band is 8-42 degrees. The tests run the edge rule over
   other bands too (3-22, 15-60); nothing else here depends on its values.
 
 ## Examples

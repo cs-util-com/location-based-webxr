@@ -19,7 +19,7 @@ import {
 } from "./editor3d-visibility.js";
 
 describe("morphStanding", () => {
-  // Why: the chosen band (8-42 degrees of tilt from straight
+  // Why: the morph band (8-42 degrees of tilt from straight
   // down): flat at the band's start and below, upright at its end and
   // above, a smooth step between.
   it("is flat at 8 degrees and below, upright at 42 and above", () => {
@@ -33,8 +33,8 @@ describe("morphStanding", () => {
     expect(morphStanding(8 + 34 / 4)).toBeCloseTo(0.15625, 9);
   });
 
-  // Why: the band is a parameter that may move (3-22 was the
-  // prototype's first default, 15-60 the other end of the range); each
+  // Why: the band is a parameter that may move (3-22 and
+  // 15-60 are the ends of the range it was tried over); each
   // must give the same shape at its own edges.
   it("takes another band with the same edges rule", () => {
     for (const band of [
