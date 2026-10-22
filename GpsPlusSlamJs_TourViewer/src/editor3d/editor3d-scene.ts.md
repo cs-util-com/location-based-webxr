@@ -20,10 +20,12 @@ the map page's own code nor the phone's pages hold any of it.
   - Rejects with an error whose `reason` is `empty` (nothing with a
     position) or `webgl` (no WebGL); any other rejection (the geoid's
     chunk) the view switch reads as `chunk`.
-- `Editor3dView`: `dispose()`; `stats()` (`Editor3dStats`: frames, tilt,
-  standing, the stations layer's counts, the map's stats, and each
+- `Editor3dView`: `dispose()`; `stats()` (`Editor3dStats`: frames, the
+  last frame's clip planes `near` and `far`, tilt, standing, the stations layer's counts, the map's stats, and each
   station's drawn height and the drawn ground under it); `setTilt(deg)`
-  (the page's checks: the orbit's tilt, its distance and heading kept).
+  (the page's checks: the orbit's tilt, its distance and heading kept);
+  `setDistance(m)` (the orbit's distance within its limits, its tilt and
+  heading kept).
 - Types `Editor3dDeps`, `Editor3dStats` (the store it takes is structural:
   `getState()` with `tourDocument` and `editorView`, and `subscribe`).
 
@@ -40,7 +42,10 @@ the map page's own code nor the phone's pages hold any of it.
   (`manifestToWrite`), read again only when the document changes (never
   per frame); the selection is read each frame for near-K.
 - **Each frame:** the controls, the morph from the tilt, the clip planes
-  from the clearance over the ground under the camera and its target, the
+  from the camera's own ECEF point and its clearance over the ground under
+  it and under its target (the camera's point is a vector of its own: the
+  ground samples reuse a scratch vector, and sharing it put the clip
+  planes at the target, the near plane at its 0.2 m floor everywhere), the
   ground and the map, the layer, the render.
 - **Sizes:** the box is hidden while the view loads (the map stays in
   view), so the window's size stands in until it shows; a ResizeObserver
@@ -70,8 +75,11 @@ view.dispose();
 
 No unit test (WebGL is needed; its parts are unit-tested in their own
 files). `playwright-tests/editor3d.spec.js` opens it on the sample tour
-with the relief's and the map's hosts answered: the loading state, the
-view with its credits, every station placed and near, the map asked for
+with the relief's and the map's hosts answered (a flat ground at the
+sample square's height): the loading state, the view with its credits,
+every station placed and near and within 2 m of the drawn ground, the
+near plane about 0.3 of the camera's height at the start, larger at the
+orbit's far end and under 2 m beside a station, the map asked for
 at the start view, the morph at 8 and 42 degrees, the map again with the
 selection and the save status kept, and nothing asking for the globe's
 imagery; and a 3D view whose code cannot load landing back on the map,

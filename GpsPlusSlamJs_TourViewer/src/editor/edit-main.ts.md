@@ -475,10 +475,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   view reads the tour from the store and the codes the open read
   (`openedLevels`); it edits nothing.
 - **The dev server's test hook** `window.__tourEditor` (`{ editor(),
-edited(), view3d(), view3dTilt(deg) }`): an e2e reaches the editor session's edits no control of
+edited(), view3d(), view3dTilt(deg), view3dDistance(m) }`): an e2e reaches the editor session's edits no control of
   this page offers yet, then `edited()` follows them as an edit made here
   would (refresh, autosave told); `view3d()` is the shown 3D view's
-  `stats()` (null on the map) and `view3dTilt(deg)` tilts its orbit. Guarded by `import.meta.env.DEV &&
+  `stats()` (null on the map), `view3dTilt(deg)` tilts its orbit and
+  `view3dDistance(m)` moves it in or out. Guarded by `import.meta.env.DEV &&
 !import.meta.env.VITEST`, so a production build strips it.
 
 - Once everything is wired the page sets `body[data-editor="ready"]`;

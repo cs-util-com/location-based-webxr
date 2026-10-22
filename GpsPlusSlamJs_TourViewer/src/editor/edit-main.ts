@@ -458,6 +458,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
         edited: () => void;
         view3d: () => Editor3dStats | null;
         view3dTilt: (deg: number) => void;
+        view3dDistance: (m: number) => void;
       };
     }
   ).__tourEditor = {
@@ -469,6 +470,9 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     view3d: () => shown3d?.stats() ?? null,
     view3dTilt: (deg) => {
       shown3d?.setTilt(deg);
+    },
+    view3dDistance: (m) => {
+      shown3d?.setDistance(m);
     },
   };
 }

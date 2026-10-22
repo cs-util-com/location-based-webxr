@@ -77,10 +77,16 @@ export interface Editor3dView {
   /** Tilt the orbit to `deg` from straight down, keeping its distance
    *  and heading (the page's checks; no control of the page uses it). */
   setTilt(deg: number): void;
+  /** Move the orbit to `m` from its centre, keeping its tilt and heading
+   *  (the page's checks), within the orbit's limits. */
+  setDistance(m: number): void;
 }
 
 export interface Editor3dStats {
   readonly frames: number;
+  /** The camera's clip planes in the last frame (m). */
+  readonly near: number;
+  readonly far: number;
   readonly tiltDeg: number;
   readonly standing: number;
   readonly stations: number;
@@ -258,6 +264,9 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
   let frames = 0;
   let standing = 1;
   const ecef = new THREE.Vector3();
+  // The camera's own: `groundUnder` reuses `ecef`, and the clip planes
+  // read this after both samples are taken.
+  const cameraEcef = new THREE.Vector3();
   const groundUnder = (worldPoint: THREE.Vector3): number | null => {
     ecef.copy(worldPoint).applyMatrix4(ecefFromWorld);
     const at = ellipsoid.getPositionToCartographic(ecef, {}) as {
@@ -275,7 +284,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     standing = morphStanding(cam.tiltDeg());
     const planes = editorClipPlanes({
       ellipsoid,
-      cameraEcef: ecef.copy(camera.position).applyMatrix4(ecefFromWorld),
+      cameraEcef: cameraEcef.copy(camera.position).applyMatrix4(ecefFromWorld),
       samples: [
         { distanceM: 0, groundM: groundUnder(camera.position) },
         {
@@ -333,10 +342,23 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         .add(new THREE.Vector3().setFromSpherical(spherical));
       controls.update();
     },
+    setDistance(m) {
+      const offset = camera.position.clone().sub(controls.target);
+      offset.setLength(
+        Math.min(
+          EDITOR_CAMERA.maxDistanceM,
+          Math.max(EDITOR_CAMERA.minDistanceM, m),
+        ),
+      );
+      camera.position.copy(controls.target).add(offset);
+      controls.update();
+    },
     stats() {
       const now = tourNow;
       return {
         frames,
+        near: camera.near,
+        far: camera.far,
         tiltDeg: cam.tiltDeg(),
         standing,
         ...layer.stats(),

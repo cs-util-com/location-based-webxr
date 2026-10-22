@@ -1,6 +1,5 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
-import { syntheticPixelHeightM } from "gps-plus-slam-globe/test-utils/synthetic-heights";
 
 import { terrariumPng } from "../../scripts/e2e/terrarium-png.mjs";
 
@@ -8,8 +7,8 @@ import { terrariumPng } from "../../scripts/e2e/terrarium-png.mjs";
  * Why these tests matter: the desktop editor's view switch opens the tour
  * in 3D over the map, and the 3D view loads three ways (its code, its
  * ground, WebGL). These drive the real switch on the sample tour, with the
- * relief's and the map's hosts answered here (the globe's shared synthetic
- * heights, a plain map tile), and check what a creator sees: the button
+ * relief's and the map's hosts answered here (a flat ground at the sample
+ * square's own height, a plain map tile), and check what a creator sees: the button
  * saying it loads while the 3D view's code is held back, then the view
  * with its credits and the map asked for at the start view, the morph
  * flat looking down and upright tilted, and the map again with the
@@ -26,28 +25,28 @@ const MAP_TILE = Buffer.from(
 
 const LOADING = "Loading 3D view…";
 
+/** The sample square's ground over sea level (m): Mapterhorn there, to
+ *  within a metre. A flat relief at it puts the sample's stations on the
+ *  ground, and a camera above it, as on the real hosts. */
+const SQUARE_GROUND_M = 515.5;
+
 /**
- * Answer the relief's host with the shared synthetic heights (512 px
+ * Answer the relief's host with a flat ground at the square's height (512 px
  * Terrarium tiles, as Mapterhorn serves them) and the map's with a plain
  * tile; refuse the globe's whole-Earth imagery, counting any ask.
  * @param {import("@playwright/test").Page} page
  */
 async function answerHosts(page) {
-  /** @type {Map<string, Buffer>} */
-  const tiles = new Map();
+  const flat = terrariumPng(512, 512, () => SQUARE_GROUND_M);
   await page.route("https://tiles.mapterhorn.com/**", (route) => {
-    const m = /\/(\d+)\/(\d+)\/(\d+)\.webp/.exec(route.request().url());
-    if (m === null) return route.abort();
-    const [z, x, y] = m.slice(1).map(Number);
-    const key = `${z}/${x}/${y}`;
-    let body = tiles.get(key);
-    if (body === undefined) {
-      body = terrariumPng(512, 512, (col, row) =>
-        syntheticPixelHeightM({ z, x, y }, col, row, { size: 512 }),
-      );
-      tiles.set(key, body);
+    if (!/\/\d+\/\d+\/\d+\.webp/.test(route.request().url())) {
+      return route.abort();
     }
-    return route.fulfill({ status: 200, contentType: "image/png", body });
+    return route.fulfill({
+      status: 200,
+      contentType: "image/png",
+      body: flat,
+    });
   });
   await page.route("https://tile.openstreetmap.org/**", (route) =>
     route.fulfill({ status: 200, contentType: "image/png", body: MAP_TILE }),
@@ -130,6 +129,32 @@ test("opens the sample tour in 3D after a loading state, and back to the map wit
   const start = await view3d(page);
   expect(start.tiltDeg).toBeGreaterThan(42);
   expect(start.standing).toBe(1);
+  // The clip planes follow the camera's own height over the ground
+  // (about 210 m at the start, 0.3 of it): a near plane at its 0.2 m
+  // floor there leaves the depth buffer no precision for rings and codes
+  // on the ground, and one taken from anywhere else clips what is in
+  // front of a camera brought close.
+  // Every station on the drawn ground, within 2 m.
+  for (const s of start.ground) {
+    expect(Math.abs(s.drawnM - s.groundM), s.id).toBeLessThan(2);
+  }
+  expect(start.near).toBeGreaterThan(1);
+  expect(start.near).toBeLessThan(0.3 * 260);
+  /** @param {number} m */
+  const orbitAt = async (m) => {
+    await page.evaluate((d) => {
+      /** @type {any} */ (window).__tourEditor.view3dDistance(d);
+    }, m);
+  };
+  // Further out at the orbit's far end,
+  await orbitAt(1100);
+  await expect
+    .poll(async () => (await view3d(page))?.near)
+    .toBeGreaterThan(start.near * 2);
+  // and down to centimetres beside a station.
+  await orbitAt(5);
+  await expect.poll(async () => (await view3d(page))?.near).toBeLessThan(2);
+  await orbitAt(312);
 
   // The morph: flat looking down, upright tilted (the band 8-42).
   await page.evaluate(() => {
