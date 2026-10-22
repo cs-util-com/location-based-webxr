@@ -187,6 +187,12 @@ export async function installTourViewerArFakes(page, options = {}) {
          *  (K4), and how many audio elements the page made. */
         audioPlays: /** @type {string[]} */ ([]),
         audioElements: 0,
+        /** The AR start (visitor walk W4 build plan M2): hold the next
+         *  initAR until `releaseInitAR()` (the coach's "Starting AR…"
+         *  stays up), or fail it once (`failNextInitAR`). */
+        holdInitAR: false,
+        releaseInitAR: () => undefined,
+        failNextInitAR: false,
         /** The scan gate's escape clock (M5): armed timers the spec fires. */
         timers:
           /** @type {{ fn: () => void, ms: number, cancelled: boolean }[]} */ ([]),
@@ -312,6 +318,10 @@ export async function installTourViewerArFakes(page, options = {}) {
           stopGpsWatch: () => {},
           stopOrientationWatch: () => {},
           initAR: (container, isolationOptions, features, callbacks) => {
+            if (test.failNextInitAR) {
+              test.failNextInitAR = false;
+              return Promise.reject(new Error("The camera could not start."));
+            }
             // As the framework does (webxr-session.ts initAR): a canvas the
             // size of the window, inserted as the overlay root's FIRST child.
             // Without it no e2e could see a panel pushed below the screen by
@@ -334,7 +344,13 @@ export async function installTourViewerArFakes(page, options = {}) {
             // The controller's WRAPPED onSessionEnd — invoking it simulates
             // the XR session dying out from under the app.
             test.sessionEndCallback = callbacks?.onSessionEnd ?? null;
-            return Promise.resolve();
+            if (!test.holdInitAR) return Promise.resolve();
+            return new Promise((resolve) => {
+              test.releaseInitAR = () => {
+                test.holdInitAR = false;
+                resolve(undefined);
+              };
+            });
           },
           endARSession: () => {
             test.endARSessionCalls += 1;
@@ -840,4 +856,28 @@ export async function finishAndDownload(page, index) {
       ),
     )
     .toBe(index + 1);
+}
+
+/**
+ * Lock the fixture's printed code: arm the detection and feed frames until
+ * the gate reports that the CODE passed it (a GPS-only pass also reads
+ * "placing"). The walk specs share it (visitor walk W4 build plan M2).
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+export async function lockFixtureCode(page) {
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").getAttribute("data-gate");
+      },
+      { timeout: 20000 },
+    )
+    .toBe("passed-code");
 }

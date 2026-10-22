@@ -58,6 +58,7 @@ import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization
 
 import { FIX_MAX_AGE_MS, wireStationGuide } from "./station-guide";
 import { visitorGuideReducer } from "./visitor-guide-slice";
+import { createTourViewerStore } from "./tour-viewer-session";
 import { visitorPosition } from "./visitor-position";
 
 // The core's geodesy needs an activated store (the framework's factory).
@@ -184,14 +185,24 @@ interface TickRecord {
   readonly crumbs: string | null;
 }
 
-/** Every tick of one stream through the guide as the page wires it. */
-function runStream(s: Scenario): TickRecord[] {
+/**
+ * Every tick of one stream through the guide as the page wires it.
+ * `reenter` (visitor walk W4 build plan 2026-10-21-1105, M1): the page's
+ * own store, whose subscription ticks the guide on every dispatch as
+ * `ar-entry.ts` does, so the guide's own dispatches re-enter it; the
+ * prefetch's approach is then recorded once per station and tick (an
+ * extra tick at the same instant repeats the same approach).
+ */
+function runStream(s: Scenario, reenter = false): TickRecord[] {
   const rng = mulberry32(
     [...s.name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7),
   );
-  const store = configureStore({
-    reducer: { visitorGuide: visitorGuideReducer },
-  });
+  const pageStore = reenter ? createTourViewerStore() : null;
+  const store =
+    pageStore ??
+    configureStore({
+      reducer: { visitorGuide: visitorGuideReducer },
+    });
   const points: GpsPoint[] = [];
   let now = T0;
   let current: TickInput = s.input(0);
@@ -233,6 +244,7 @@ function runStream(s: Scenario): TickRecord[] {
     },
     now: () => now,
     guideStore: store,
+    ...(pageStore === null ? {} : { walkStore: pageStore }),
     onFound: (st) => found.push(st.id),
     onDone: (id) => done.push(id),
     onApproach: (st, d, activateM) =>
@@ -244,6 +256,7 @@ function runStream(s: Scenario): TickRecord[] {
           : `${from === null ? "-" : "v"}>${target.id}/${String(target.stopM)}`;
     },
   });
+  if (reenter) store.subscribe(() => guide.tick());
   const out: TickRecord[] = [];
   for (let t = 0; t < s.seconds; t += 1) {
     current = s.input(t);
@@ -290,7 +303,7 @@ function runStream(s: Scenario): TickRecord[] {
         (x) =>
           `${x.id ?? "?"}:${String(x.distanceMin)}:${String(x.distanceMax)}`,
       ),
-      approach: [...approach],
+      approach: reenter ? [...new Set(approach)] : [...approach],
       crumbs,
     });
   }
@@ -711,6 +724,31 @@ describe("the station guide's precision parity oracle (frozen before M2's switch
     // Two streams come back from the exception (a rescan, a new entry's
     // lock): the comparison after the window is not vacuous.
     expect(afterWindow).toBeGreaterThan(0);
+  });
+
+  // Why this test matters (visitor walk W4 build plan 2026-10-21-1105, M1,
+  // the cold review's blocker): the page ticks the guide from its store's
+  // subscription (`ar-entry.ts`), so every dispatch of the guide's own
+  // re-enters it mid-way; the bare store above never shows that. Through
+  // the page's store with that subscription, every stream must give the
+  // same golden on every tick it is held to, and the same as the bare run
+  // on every tick (the exception windows included).
+  it("reproduces the same golden through the page's store, re-entered by its subscription", () => {
+    const frozen = JSON.parse(readFileSync(GOLDEN, "utf8")) as Record<
+      string,
+      TickRecord[]
+    >;
+    for (const s of [...PARITY, ...EXCEPTION]) {
+      const got = runStream(s, true);
+      expect(got, s.name).toEqual(now[s.name]);
+      // Held to the golden outside the exception window, as above.
+      const ticks = exceptionTicks(s);
+      const want = frozen[s.name]!;
+      for (let t = 0; t < want.length; t += 1) {
+        if (ticks.length > 0 && t >= ticks[0]! && t <= ticks.at(-1)!) continue;
+        expect(got[t], `${s.name} t=${String(t)}`).toEqual(want[t]);
+      }
+    }
   });
 
   // Why this test matters (plan §12, S3): it is the ONE place the shared

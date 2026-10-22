@@ -1,0 +1,66 @@
+# walk-sheet.ts
+
+## Purpose
+
+The visitor's sheet on the page (visitor walk W4 build plan
+`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md`,
+M2, §1.5, §1.6, §1.8): writes `walk-sheet-model.ts`'s model into the
+sheet's elements inside `#ar-root` (`#walk-sheet`) and the away block on
+the start page (`#walk-away`), and turns taps and drags on the grab and
+the peek into the store's `sheetSet`. A thin writer, wired by
+`visitor-stations.ts`.
+
+## Public API
+
+- `WALK_SHEET_DRAG_PX = 24` - W4's drag threshold; the range 16-40 px is
+  a phone test (plan §5).
+- `sheetAfterDrag(dy, thresholdPx?)` - up past the threshold `"list"`,
+  down `"peek"`, a shorter (or non-finite) drag `null` (a tap).
+- `quickKind(quick)` - the quick action's look: `ask` (Can't get there?),
+  `suggested` (the labelled skip), `undo`; null for the story's end
+  controls, which are the story card's.
+- `wireWalkSheet({ dom, setSheet, sheet, keepListening, exit }): WalkSheetView`
+  - `render(model | null, { sheet, quick, position, story })` - null hides
+    the sheet (the guide does not run).
+  - `renderAway(model | null)` - null hides the away block.
+- `WalkSheetDom` - the elements (ids in `index.html.md`).
+
+## Invariants & assumptions
+
+- Every text and state comes from the model; the writer writes a node
+  only when what it shows changed (the sheet is redrawn on every guide
+  call, a camera frame among them), so a screen reader is not re-told.
+- Taps and the keyboard go through `click` (a toggle); drags through
+  pointer events. A drag that changed the sheet swallows the click that
+  follows it. A tap on a button inside the peek (the quick action) is
+  that button's.
+- Data attributes for the CSS and the tests: `data-sheet` and
+  `data-complete` on the root, `data-kind` and `data-position` on the
+  peek, `data-kind` on the quick action and the segments, `data-kind`
+  end|ask on the story's end control, `data-state` and `data-id` on rows,
+  `data-s` (on, now, off) and `data-timed` on the story's dots.
+- "Keep listening" shows only beside the confirm ("End this story" asked).
+- The guide writes the labels of `#station-skip` and `#walk-story-end`;
+  this module writes only their looks.
+
+## Examples
+
+```ts
+const view = wireWalkSheet({
+  dom,
+  sheet: () => selectWalkSheet(store.getState()),
+  setSheet: (s) => store.dispatch(sheetSet(s)),
+  keepListening: () => guide.cancelAsk(),
+  exit: () => enterAr.click(),
+});
+view.render(model, { sheet: "peek", quick, position: "distance", story: null });
+```
+
+## Tests
+
+- `walk-sheet.test.ts` - `sheetAfterDrag` (a property over thresholds
+  16-40 px) and `quickKind`.
+- The DOM half is driven end to end by
+  `playwright-tests/visitor-walk.spec.js` (open and close by tap and
+  drag, the story card, the completion, the away block) and
+  `playwright-tests/visitor-walk-layout.spec.js` (positions and gaps).

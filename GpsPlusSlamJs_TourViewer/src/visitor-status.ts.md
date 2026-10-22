@@ -149,3 +149,16 @@ code, and is the placed line again after the re-scan, codes only too);
 station where the visitor stands); `viewer-moved-code.test.ts`
 (the veto records the ignored code by its scanned text, the key its
 evaluations carry).
+
+## The parts, for the walk's routing (visitor walk W4 build plan M2)
+
+- `VISITOR_STATUS_STATES` / `VisitorStatusState` - every state the
+  sentence names, listed once, so `walk-status-routing.ts` must route each
+  (its table is a `Record` over them).
+- `visitorStatusParts(input): VisitorStatusParts` - the state, its own
+  sentence (`text`) and what could not load (`notes`) apart;
+  `statusSentence(parts)` joins them; `visitorStatus(input)` is the two
+  composed, its output unchanged (every existing test kept).
+- `GPS_PLACED`, `FIND_CODE`, `WALK` exported: the routing recognises the
+  GPS placement's news, the code request (moved to the peek) and the
+  request for steps (kept on the coach) by them.

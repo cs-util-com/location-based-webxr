@@ -48,6 +48,7 @@ import {
   type CreatorCodesState,
 } from "./creator-codes-slice.js";
 import { visitorGuideReducer } from "./visitor-guide-slice.js";
+import { visitorWalkReducer } from "./visitor-walk-slice.js";
 
 import type {
   HitTestReticleHandle,
@@ -95,7 +96,10 @@ type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
  *
  * `visitorGuide` is the visitor's present station and its "show all"
  * override (`visitor-guide-slice.ts`, visitor plan 2026-10-18-2349 §3),
- * not written into the recording either.
+ * not written into the recording either; nor is `visitorWalk`, the
+ * visitor's walk through the tour (`visitor-walk-slice.ts`, visitor walk
+ * W4 build plan 2026-10-21-1105, M1), which the guide dispatches from
+ * inside the store's subscriber.
  *
  * It also holds the tour a creator edits (`tourDocument`,
  * `tour-document.ts`, D29-D31) - not written into the recording - and
@@ -132,6 +136,7 @@ export function createTourViewerStore<
     qrDetected: qrDetectedReducer,
     tourDocument: tourDocumentReducer,
     visitorGuide: visitorGuideReducer,
+    visitorWalk: visitorWalkReducer,
     creatorCodes: creatorCodesReducer,
   };
   const clash = Object.keys(pageReducers ?? {}).filter((key) => key in own);

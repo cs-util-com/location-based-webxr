@@ -86,3 +86,17 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   waiting line while the stage holds it, cleared once it stands (M-B);
   a voice that plays while the figure waits or still loads keeps that
   line, and a refused voice is said beside the wait and outlives it (M1).
+
+## Progress and change (visitor walk W4 build plan M2)
+
+- `SceneViewDeps.onChange?()` - called after every render of a step, at
+  a story's end and on `stopAll()`, so the sheet's story card (its dots,
+  the peek in its place) follows without polling.
+- `SceneView.progress(): StoryProgress | null` -
+  `{ index, count, autoMs }` of the story playing: the step shown, the
+  playable step count (`scene-player.ts` `playableStepCount`) and the
+  current step's auto-advance time (null for a step that waits for a
+  tap); null without a story or for a story with a choice.
+- Tested in `scene-view.test.ts` (the step, the count and the auto
+  step's time, nothing without a story, no dots with a choice, `onChange`
+  on a start, each step, the end and `stopAll`).

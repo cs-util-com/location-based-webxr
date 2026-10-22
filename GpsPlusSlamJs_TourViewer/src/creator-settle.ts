@@ -71,7 +71,8 @@ import type { TourViewerSeams } from "./seams.js";
 import { buildSummaryModel, codeLabel } from "./summary-model.js";
 import type { SummaryPanel } from "./summary-panel.js";
 import { visitSettled } from "./tour-authoring-actions.js";
-import { manifestNow } from "./tour-document.js";
+import { manifestNow, nextStep } from "./tour-document.js";
+import { settleUndoTarget, type SettleCodeChange } from "./creator-undo.js";
 import type {
   TourViewerSession,
   TourViewerStore,
@@ -241,6 +242,14 @@ export interface CreatorSettle {
   endVisit(): void;
   /** A tour closed: its move boundaries and decisions go. */
   reset(): void;
+  /** The strip's Undo took `visit`'s settle back (the persistent Undo,
+   *  W4 build plan MU): what that settle decided per code goes with it -
+   *  the result line's outcomes, the move boundaries, the decisions a
+   *  re-settle would re-apply. */
+  settleUndone(visit: number): void;
+  /** How many Finishes wrote the tour since it opened: a settle's undo
+   *  compares it with the count at its offer (the zip has the change). */
+  finishesWritten(): number;
 }
 
 export function wireCreatorSettle(deps: {
@@ -274,6 +283,15 @@ export function wireCreatorSettle(deps: {
   /** The printed size a code's text is solved at (`creator-measuring`'s
    *  `sizeOf`, M4c-3). */
   sizeOf: (text: string) => number;
+  /** A settle of `visit` just took a step that changed a stored code
+   *  automatically: the AR strip's persistent Undo offers it, named
+   *  `target` (W4 build plan MU, `creator-undo.ts`).
+   *  Absent: nothing offers it. */
+  offerUndo?: (target: string, visit: number) => void;
+  /** `visit`'s settle was forgotten (a Finish that wrote nothing): its
+   *  offer goes - the re-settle re-applies its decisions, so there is
+   *  nothing new to take back. */
+  withdrawUndo?: (visit: number) => void;
 }): CreatorSettle {
   const { ctx, arStore, seams } = deps;
   /** Codes moved to a new spot, or back by an undo (the automatic
@@ -282,8 +300,12 @@ export function wireCreatorSettle(deps: {
    *  boundary: every visit saw that one poster. */
   const movedInVisit = new Map<string, number>();
   /** What each settle since the last Finish decided, per code (M5c): the
-   *  result screen's line (`positionSentence`). */
-  let codePositionOutcomes: (CodePositionOutcome & { levelId: string })[] = [];
+   *  result screen's line (`positionSentence`); `visit`, the settle's, so
+   *  the strip's Undo of that settle takes its outcomes back. */
+  let codePositionOutcomes: (CodePositionOutcome & {
+    levelId: string;
+    visit: number;
+  })[] = [];
   /** By level: the visit whose settle CHANGED that code's saved position,
    *  and the plan it applied - re-applied when a failed Finish settles it
    *  again (M5c: one per code). */
@@ -299,6 +321,8 @@ export function wireCreatorSettle(deps: {
     string,
     { visit: number; result: CodeSpotResult }
   >();
+  /** Finishes that wrote the tour since it opened (`finishesWritten`). */
+  let finishes = 0;
 
   /** The code correction this visit's latest sighting would make, when
    *  the plausibility bound refused it (M2c review #2): the panel says so
@@ -848,6 +872,7 @@ export function wireCreatorSettle(deps: {
         decision: { kind: "undo" },
         applied: true,
         levelId,
+        visit,
       });
     }
     // How far the visit's own alignment was turned to fit the code it was
@@ -872,6 +897,7 @@ export function wireCreatorSettle(deps: {
           decision: d.plan.decision,
           applied: d.applied,
           levelId: d.code.id,
+          visit,
           ...turnOf(d.code.id),
         });
       }
@@ -1055,9 +1081,28 @@ export function wireCreatorSettle(deps: {
       if (moved.length > 0) movedWithCodes = true;
       logged[i]?.movedWithCode.push(...moved);
     });
-    noteUnlanded(
-      deps.codes.applySettle(batch, settledLevels, "the settle of this visit"),
+    const taken = deps.codes.applySettle(
+      batch,
+      settledLevels,
+      "the settle of this visit",
     );
+    noteUnlanded(taken);
+    if (taken !== null) {
+      // The step's codes, each named by the automatic decision that
+      // changed it: offered only when one is among them. A decision
+      // re-applied after a failed Finish is no new change (its first
+      // settle's offer went with the unsettle).
+      const changes = (
+        nextStep(ctx.tourDocument.state(), "undo")?.codes ?? []
+      ).map((c): SettleCodeChange => {
+        const d = decisions.find((x) => x.applied && x.code.id === c.id);
+        if (d === undefined || d.reapplied) return null;
+        if (d.plan.decision.kind === "replace") return "improvement";
+        return d.plan.decision.kind === "move" ? "move" : null;
+      });
+      const target = settleUndoTarget(changes);
+      if (target !== null) deps.offerUndo?.(target, visit);
+    }
     if (movedWithCodes) deps.previews.sync();
     logSettle(
       visit,
@@ -1541,6 +1586,7 @@ export function wireCreatorSettle(deps: {
   function unsettleRunningVisit(visit: number | null): void {
     if (visit !== null && visit === ctx.arSessionGeneration) {
       visitSettles.delete(visit);
+      deps.withdrawUndo?.(visit);
     }
   }
 
@@ -1637,6 +1683,7 @@ export function wireCreatorSettle(deps: {
     positionSentence,
     afterFinish: () => {
       codePositionOutcomes = [];
+      finishes += 1;
     },
     showSummary,
     endVisit: () => {
@@ -1647,6 +1694,22 @@ export function wireCreatorSettle(deps: {
       codePositionOutcomes = [];
       appliedCodes.clear();
       spotDecisions.clear();
+      finishes = 0;
+    },
+    finishesWritten: () => finishes,
+    settleUndone: (visit) => {
+      codePositionOutcomes = codePositionOutcomes.filter(
+        (o) => o.visit !== visit,
+      );
+      for (const [levelId, at] of movedInVisit) {
+        if (at === visit) movedInVisit.delete(levelId);
+      }
+      for (const [levelId, done] of appliedCodes) {
+        if (done.visit === visit) appliedCodes.delete(levelId);
+      }
+      for (const [levelId, done] of spotDecisions) {
+        if (done.visit === visit) spotDecisions.delete(levelId);
+      }
     },
   };
 }

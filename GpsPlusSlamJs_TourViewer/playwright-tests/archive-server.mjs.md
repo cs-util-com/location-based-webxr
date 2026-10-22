@@ -29,7 +29,15 @@ choice; the level's geo is where the fakes' armed pose puts the code under
 the seeded alignment, so its votes agree with the walk), "The well" 30 m
 north (a minimal `.glb` built here), "The tower" 300 m east (skipped).
 The gate and the well each hold one pin, so the suite sees which station's
-content stands in the scene (only the present one's). And
+content stands in the scene (only the present one's).
+`/ranges-ok/walk-tour.zip` (any order) and `/ranges-ok/walk-tour-fixed.zip`
+(fixed order) are the visitor walk W4 prototype's "Old town walk" (visitor
+walk W4 build plan M2, `visitor-walk.spec.js` and
+`visitor-walk-layout.spec.js`): four stations at the prototype's spots (the
+gate 28 m north, the well 82 N 34 E, the tower 170 N 48 W, the garden
+240 N 46 E), found within the prototype's radius, offered within 60 m,
+each a story of the prototype's lines advancing by themselves after 6 s
+(the fakes' timers); the printed code is the stations tour's. And
 `/api/drive-proxy?id=…` - the standard zip with ranges, on the Drive
 proxy's own path so the app treats it as a Drive tour without a Google host
 (Drive replace plan §5 #12): `id=e2e-drive` sends `content-disposition`

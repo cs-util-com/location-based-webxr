@@ -68,6 +68,16 @@
  *   asks for a few steps (`visitor-status.ts`); the figure keeps waiting.
  * - **Progress lives as long as the tour stays open** (several AR entries;
  *   saving it across page lives is K3). A different tour starts a new run.
+ * - **The walk lives in the page's store** (visitor walk W4 build plan
+ *   2026-10-21-1105, M1): the run's statuses, the last skip, the note and
+ *   the skip's arm are `visitorWalk` (`visitor-walk-slice.ts`), whose
+ *   reducer applies the run's rules. One call of the guide (a tick, a tap,
+ *   a story's end) reads the store's walk with its own pending changes
+ *   over it, and dispatches them as ONE batch at its very end, after the
+ *   tick's reads and its other dispatches: a store subscriber that
+ *   re-enters the guide (`ar-entry.ts` ticks it on every dispatch) sees one
+ *   consistent walk. A walk another writer resets is no run: the guide
+ *   starts none again for the same tour.
  */
 
 import type {
@@ -77,7 +87,7 @@ import type {
 import type { LatLong } from "gps-plus-slam-app-framework/core";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 import { formatDistance } from "gps-plus-slam-app-framework/utils/format-distance";
-import { DEFAULT_TOAST_LINGER_MS } from "gps-plus-slam-app-framework/utils/toast-core";
+import { configureStore, type UnknownAction } from "@reduxjs/toolkit";
 import { Vector3 } from "three";
 
 import { objectPoseNue } from "./content-placement.js";
@@ -89,8 +99,10 @@ import {
 
 import { judgedStationBands, type StationBands } from "./station-bands.js";
 import {
-  createStationRun,
+  applyWalkStep,
+  stationRunOver,
   stationTitle,
+  walkRoute,
   type StationEvent,
   type StationRun,
 } from "./station-run.js";
@@ -105,11 +117,66 @@ import {
   type VisitorGuideStore,
 } from "./visitor-guide-slice.js";
 import type { VisitorPosition } from "./visitor-position.js";
+import {
+  noteCleared,
+  quickArmed,
+  selectNote,
+  selectUndoableSkip,
+  SKIP_UNDO_MS,
+  skipSettled,
+  skipTaken,
+  skipUndone,
+  visitorWalkReducer,
+  walkBatched,
+  walkCleared,
+  walkStarted,
+  walkStepped,
+  type VisitorWalkState,
+  type VisitorWalkStore,
+} from "./visitor-walk-slice.js";
 
 /** The station line and the skip button, inside `#ar-root`. */
 export interface StationGuideDom {
   readonly line: Pick<HTMLElement, "textContent" | "hidden">;
   readonly skip: Pick<HTMLElement, "textContent" | "hidden">;
+  /** The story card's end control (W4 build plan M2, §1.5): when given,
+   *  "End this story?" and its confirm are written here and the skip
+   *  button stays hidden meanwhile; absent, the skip button carries them. */
+  readonly end?: Pick<HTMLElement, "textContent" | "hidden">;
+}
+
+/** What a tap on the skip button (or the story card's end control) does;
+ *  its label says which. */
+export interface SkipAction {
+  readonly kind: "ask-skip" | "skip" | "ask-end" | "end" | "undo";
+  readonly id: string;
+}
+
+/**
+ * The position the line speaks of (`lineText`), for the sheet's peek and
+ * rows (W4 build plan M2): no position yet (`pending`), GPS too weak to
+ * guide by (`weak`, with its accuracy), nothing vouching for it (`none`),
+ * or a distance.
+ */
+type GuidePositionKind = "pending" | "weak" | "none" | "distance";
+
+/** What the sheet reads of the guide (W4 build plan M2): the station the
+ *  line is about, the position's kind, every station's distance and the
+ *  quick action shown. */
+export interface GuideView {
+  /** The nearest offered station not yet found (the line's station);
+   *  null when none is (a story plays, or the tour is complete). */
+  readonly focusId: string | null;
+  readonly position: GuidePositionKind;
+  /** The fixes' accuracy behind `weak`, m; null otherwise. */
+  readonly accuracyM: number | null;
+  /** Every placeable station's horizontal distance, m (the measurement's). */
+  readonly distances: ReadonlyMap<string, number>;
+  /** What the skip button (or the card's end control) shows now. */
+  readonly quick: SkipAction | null;
+  /** What just happened ("Skipped The well."), while its moment lasts
+   *  (`selectNote`); null otherwise. W4 says it in a toast. */
+  readonly note: string | null;
 }
 
 /** The open tour's stations, as the guide reads them each tick. */
@@ -157,6 +224,11 @@ export interface StationGuideDeps {
    *  (`visitor-guide-slice.ts`): the guide dispatches a judged position
    *  only when it changes the answer. Absent: no presence is judged. */
   readonly guideStore?: VisitorGuideStore;
+  /** The page's store, where the visitor's walk lives
+   *  (`visitor-walk-slice.ts`): the run's statuses, the last skip, the note
+   *  and the skip's arm. Absent: the guide keeps an internal store of that
+   *  slice alone, so it works the same without the page. */
+  readonly walkStore?: VisitorWalkStore;
   /** A station was found: play its story. */
   onFound(station: TourStation): void;
   /** Each tick, for each offered station with a distance: how far it is,
@@ -196,8 +268,13 @@ export interface StationGuide {
   codeLocked(): void;
   /** A station's story played to its end. */
   storyEnded(stationId: string): void;
-  /** The skip button. */
+  /** The skip button (or the story card's end control). */
   skipTapped(): void;
+  /** "Keep listening": the ask to end the story is taken back. */
+  cancelAsk(): void;
+  /** What the sheet reads (W4 build plan M2); null while the guide does
+   *  not run (no run, or the scan gate shut). */
+  view(): GuideView | null;
   /** The AR session ended: the HUD goes; the progress stays. */
   endSession(): void;
   /** A station's pose at the scene root, or null (no zero yet). */
@@ -209,15 +286,9 @@ export interface StationGuide {
   figurePoseOf(stationId: string): StagePose | null;
 }
 
-/**
- * How long a skip can be undone (K4 review R14): the framework's toast
- * linger (6 s), so it reads like every other transient message. Argued,
- * not measured: 3 s is about the time to read "Skipped X. Next: Y, 80 m"
- * (8 words at 4 words a second) and react; 10 s would hold the next
- * station's skip back that long. Reversed by a field test showing stray
- * skips noticed later than 6 s, or visitors waiting on the undo.
- */
-export const SKIP_UNDO_MS = DEFAULT_TOAST_LINGER_MS;
+/** How long a skip can be undone, and its note shows (K4 review R14):
+ *  the walk slice's window, named here too for the guide's readers. */
+export { SKIP_UNDO_MS } from "./visitor-walk-slice.js";
 
 /**
  * The oldest a device fix may be to stand in for the visitor's position
@@ -279,12 +350,6 @@ interface Judgement {
   readonly precision: PositionPrecision;
 }
 
-/** What a tap on the skip button does (its label says which). */
-interface SkipAction {
-  readonly kind: "ask-skip" | "skip" | "ask-end" | "end" | "undo";
-  readonly id: string;
-}
-
 /**
  * The `count` items nearest by `distanceOf` (undefined: farthest), kept
  * in their own order; ties go to the earlier item. Exported for the HUD's
@@ -306,6 +371,23 @@ export function nearestOf<T>(
   return items.filter((_, index) => keep.has(index));
 }
 
+/**
+ * The line once the tour is complete (the sheet's completion card names it
+ * too, W4 build plan M2). A branch tour ends with its path; the other
+ * branches' stations were never offered, so "every station" would be false
+ * (R16).
+ */
+export function completionLine(order: TourOrder, skipped: number): string {
+  if (order === "branch") {
+    return skipped === 0
+      ? "Tour complete - you reached the end of your path."
+      : `Tour complete - you reached the end of your path, ${String(skipped)} skipped.`;
+  }
+  return skipped === 0
+    ? "Tour complete - every station visited."
+    : `Tour complete - ${String(skipped)} skipped.`;
+}
+
 /** Whole metres: GPS-guided distances are not more precise than that. */
 function distanceText(m: number): string {
   return formatDistance(m, { metreDecimals: 0 });
@@ -314,23 +396,33 @@ function distanceText(m: number): string {
 export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   const { dom } = deps;
   const fixMaxAgeMs = deps.fixMaxAgeMs ?? FIX_MAX_AGE_MS;
-  let run: StationRun | null = null;
+  /** Where the walk lives: the page's store, else one of its own. */
+  const walkStore: VisitorWalkStore =
+    deps.walkStore ??
+    configureStore({ reducer: { visitorWalk: visitorWalkReducer } });
+  /** The changes this call made to the walk and has not dispatched yet:
+   *  they reach the store as one batch when the outermost call ends. A
+   *  nested call (a store subscriber's tick inside one, a story ended from
+   *  a tap) adds to them. */
+  const pendingWalk: UnknownAction[] = [];
+  let callDepth = 0;
+  /** The run's calls over the walk for the open tour's stations: a view
+   *  (it holds the stations for the found radius), no state of its own;
+   *  read through `liveRun`, which hands it out only while its walk
+   *  exists. */
+  let runView: StationRun | null = null;
+  /** The open tour's stations the walk is for: the identity that tells
+   *  another tour (D29-D32: the guide's own bookkeeping). */
   let runStations: readonly TourStation[] | null = null;
+  /** The HUD for this AR session: a resource. */
   let hud: { dispose(): void } | null = null;
   /** The session ended: a found station's story was cut short and plays
-   *  again on the next session's first tick. */
+   *  again on the next session's first tick (the guide's own bookkeeping
+   *  of a rule only it applies). */
   let replayFound = false;
-  /** The visitor asked for the skip ("Can't get there?"), for this id. */
-  let skipArmedFor: string | null = null;
-  /** What the skip button showed at the last render: a tap does that. */
+  /** What the skip button showed at the last render: a tap does that (R14;
+   *  goes when a tap carries its own action, W4 plan M4). */
   let rendered: SkipAction | null = null;
-  /** The last skip while it can be undone (R14); its "done" reaches the
-   *  prefetch only when the moment passes or the tour moves on. */
-  let undoable: { id: string; untilMs: number } | null = null;
-  /** A one-line note of what just happened ("Skipped the well."). */
-  let note: string | null = null;
-  /** The note goes with the moment a skip can be undone (R14). */
-  let noteUntilMs = 0;
   /** The last measurement: the visitor, and every placeable station's
    *  horizontal distance from the best position (all stations, so an offer
    *  that changes between ticks has its distances already). Taken once per
@@ -357,6 +449,97 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   /** The present station was last judged on a position a code held:
    *  once the code goes (a veto) and nothing else can judge, it ends. */
   let presentByCode = false;
+
+  /** The walk now, as this call sees it: the store's as it is now, with
+   *  this call's pending changes applied over it - what the store will
+   *  hold once they are dispatched. Read anew each time, so a change
+   *  another writer makes mid-call is part of it at once. */
+  function walk(): VisitorWalkState {
+    return pendingWalk.reduce(
+      visitorWalkReducer,
+      walkStore.getState().visitorWalk,
+    );
+  }
+
+  /** One change to this call's walk; it reaches the store at the call's
+   *  end. */
+  function change(action: UnknownAction): void {
+    pendingWalk.push(action);
+  }
+
+  /** The run, while its walk exists; null with no walk - no tour, none
+   *  placed yet, or one another writer reset. The guide starts no walk
+   *  again for the same tour (a restart would drop the visitor's
+   *  progress), and every reader fetches the run anew rather than across
+   *  a callback, so the run's view never reads a walk that is gone. */
+  function liveRun(): StationRun | null {
+    return walk().progress === null ? null : runView;
+  }
+
+  /** One call of the guide's: its walk changes are dispatched together
+   *  when the outermost call ends, after everything it read and
+   *  dispatched (a subscriber woken by the batch ticks a fresh call). */
+  function inCall(body: () => void): void {
+    callDepth += 1;
+    try {
+      body();
+    } finally {
+      callDepth -= 1;
+      if (callDepth === 0) commitWalk();
+    }
+  }
+
+  function commitWalk(): void {
+    if (pendingWalk.length === 0) return;
+    walkStore.dispatch(walkBatched(pendingWalk.splice(0)));
+  }
+
+  /** The run's calls over this call's walk (`station-run.ts`): a step the
+   *  rule allows becomes one change; one it does not, nothing. */
+  function runOver(stations: readonly TourStation[]): StationRun {
+    return stationRunOver(stations, {
+      read() {
+        const progress = walk().progress;
+        // `liveRun` hands the view out only while its walk exists.
+        if (progress === null) {
+          throw new Error("station-guide: the run was read with no walk");
+        }
+        return progress;
+      },
+      perform(step) {
+        const before = walk().progress;
+        if (before === null) return [];
+        const { progress, events } = applyWalkStep(before, step);
+        if (progress !== before) change(walkStepped(step));
+        return events;
+      },
+    });
+  }
+
+  /** The last skip not settled yet (R14): its "done" reaches the prefetch
+   *  only when it settles - its moment passed, or the tour moved on. What
+   *  the button offers is `selectUndoableSkip`, its window; this is what
+   *  the settle and a tap on the undo the button showed act on. */
+  function unsettledSkip(): { id: string; atMs: number } | null {
+    const skip = walk().lastSkip;
+    return skip === null || skip.settled ? null : skip;
+  }
+
+  /** The note of what just happened ("Skipped the well."), while its
+   *  moment lasts (R14, `selectNote`): read over the page's time. */
+  function noteText(): string | null {
+    const note = selectNote({ visitorWalk: walk() }, deps.now());
+    if (note === null) return null;
+    const title = stationTitle(stationById(note.id) ?? {});
+    return note.kind === "skipped"
+      ? `Skipped ${title}.`
+      : `Brought back ${title}.`;
+  }
+
+  /** The quick action asks for no station any more. */
+  function disarm(): void {
+    if (walk().quickArmedId !== null) change(quickArmed(null));
+  }
 
   function stationById(id: string): TourStation | undefined {
     return runStations?.find((s) => s.id === id);
@@ -422,8 +605,9 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function currentRun(): StationRun | null {
     const tour = deps.tour();
     if (tour === null || tour.stations.length === 0) {
-      if (run !== null) tourChangePending = true;
-      run = null;
+      if (runView !== null) tourChangePending = true;
+      if (walk().progress !== null) change(walkCleared());
+      runView = null;
       runStations = null;
       return null;
     }
@@ -433,17 +617,14 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       // first tick stays (PR review S5).
       if (runStations !== null) tourChangePending = true;
       runStations = tour.stations;
-      run = createStationRun({
-        stations: tour.stations,
-        order: tour.order,
-        nowMs: deps.now(),
-      });
-      skipArmedFor = null;
+      // A new walk: its last skip, note and arm start anew with it.
+      change(
+        walkStarted({ order: tour.order, route: walkRoute(tour.stations) }),
+      );
+      runView = runOver(tour.stations);
       rendered = null;
-      undoable = null;
-      note = null;
     }
-    return run;
+    return liveRun();
   }
 
   /** The phone's current best position (D16): the alignment's, else -
@@ -572,7 +753,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         if (station !== undefined) deps.onFound(station);
       } else if (event.kind === "done") {
         // A skip that can still be undone reaches the prefetch later.
-        if (event.skipped && undoable?.id === event.id) continue;
+        if (event.skipped && unsettledSkip()?.id === event.id) continue;
         settleUndo();
         deps.onDone?.(event.id);
       }
@@ -581,10 +762,10 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
 
   /** The last skip can no longer be undone: tell the prefetch it is done. */
   function settleUndo(): void {
-    if (undoable === null) return;
-    const id = undoable.id;
-    undoable = null;
-    deps.onDone?.(id);
+    const skip = unsettledSkip();
+    if (skip === null) return;
+    change(skipSettled());
+    deps.onDone?.(skip.id);
   }
 
   /** Nothing vouches for this measurement's alignment (`'none'`): nothing
@@ -598,6 +779,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  none while the position is `unjudged`. */
   function approach(m: Measurement): void {
     const { distances } = m;
+    const run = liveRun();
     if (deps.onApproach === undefined || run === null || unjudged(m)) return;
     for (const id of run.offered()) {
       const d = distances.get(id);
@@ -610,10 +792,11 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   /** The offered station the skip and the line are about: the nearest
    *  one not yet found (the first in list order without a distance). */
   function focusStation(): string | null {
+    const run = liveRun();
     if (run === null) return null;
     const unfound = run
       .offered()
-      .filter((id) => run?.status(id)?.state !== "found");
+      .filter((id) => run.status(id)?.state !== "found");
     if (unfound.length === 0) return null;
     const distances = last?.distances ?? new Map<string, number>();
     return [...unfound].sort(
@@ -627,6 +810,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  is found already, so these are the stations whose content is hidden.
    *  None while the position is `unjudged`. */
   function hudTargets(): WayfindingTarget[] {
+    const run = liveRun();
     if (run === null || last === null || last.headingNue === null) return [];
     if (unjudged(last)) return [];
     const eyeHeight = last.headingNue[1];
@@ -657,20 +841,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   function lineText(): string {
+    const run = liveRun();
     if (run === null) return "";
     if (run.isComplete()) {
       const skipped = run.statuses().filter((s) => s.skipped).length;
-      // A branch tour ends with its path; the other branches' stations
-      // were never offered, so "every station" would be false (R16).
-      if (deps.tour()?.order === "branch") {
-        return skipped === 0
-          ? "Tour complete - you reached the end of your path."
-          : `Tour complete - you reached the end of your path, ${String(skipped)} skipped.`;
-      }
-      return skipped === 0
-        ? "Tour complete - every station visited."
-        : `Tour complete - ${String(skipped)} skipped.`;
+      return completionLine(deps.tour()?.order ?? "any", skipped);
     }
+    const note = noteText();
     const lead = note === null ? "" : `${note} `;
     const focus = focusStation();
     if (focus === null) return `${lead}Station found - its story is playing.`;
@@ -681,32 +858,62 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     const which = offered > 1 ? `${String(offered)} stations to find` : null;
     const waiting =
       which === null ? `Next: ${title}` : `${which} - nearest: ${title}`;
-    if (last === null) return `${lead}${waiting} - waiting for your position…`;
-    // Before the position: a fix too weak to guide by is what the visitor
-    // can act on (step into the open), with a position or still without.
-    const { precision } = last;
+    switch (positionKind(last, d)) {
+      case "pending":
+        return `${lead}${waiting} - waiting for your position…`;
+      case "weak":
+        return `${lead}${waiting} - GPS too weak to guide you (±${distanceText(last!.precision.accuracyM!)}); step into the open.`;
+      case "none":
+        return `${lead}${which ?? `Next: ${title}`} - ${NO_PRECISION_HINT}`;
+      case "distance":
+        return `${lead}${waiting}, ${distanceText(d!)}`;
+    }
+  }
+
+  /**
+   * What the line says of the position, `d` being the focus's distance
+   * (the one rule of `lineText` and `view`):
+   * - no measurement yet: pending;
+   * - before the position, a fix too weak to guide by, which the visitor
+   *   can act on (step into the open), with a position or still without;
+   * - no position, or no distance yet (every station has a spot of its
+   *   own, version 3, D9: no distance means no session zero to measure it
+   *   in yet): pending;
+   * - no code and no accuracy speaks for the position (without location
+   *   once a code's trust ended): none - no distance that looks measured,
+   *   no "nearest" by that position, and the one thing that helps;
+   * - otherwise the distance.
+   */
+  function positionKind(
+    m: Measurement | null,
+    d: number | undefined,
+  ): GuidePositionKind {
+    if (m === null) return "pending";
+    const { precision } = m;
     if (
       precision.source === "gps" &&
       precision.tooWeak &&
       precision.accuracyM !== null
     ) {
-      return `${lead}${waiting} - GPS too weak to guide you (±${distanceText(precision.accuracyM)}); step into the open.`;
+      return "weak";
     }
-    if (last.best === null) {
-      return `${lead}${waiting} - waiting for your position…`;
-    }
-    // Every station has a spot of its own (version 3, D9): no distance
-    // yet means no session zero to measure it in yet.
-    if (d === undefined) {
-      return `${lead}${waiting} - waiting for your position…`;
-    }
-    // No code and no accuracy speaks for the position (without location
-    // once a code's trust ended): no distance that looks measured, no
-    // "nearest" by that position, and the one thing that helps.
-    if (unjudged(last)) {
-      return `${lead}${which ?? `Next: ${title}`} - ${NO_PRECISION_HINT}`;
-    }
-    return `${lead}${waiting}, ${distanceText(d)}`;
+    if (m.best === null || d === undefined) return "pending";
+    if (unjudged(m)) return "none";
+    return "distance";
+  }
+
+  /** Whether the guide runs now: a run, and the scan gate open. */
+  function running(): boolean {
+    return liveRun() !== null && deps.placementAllowed();
+  }
+
+  /** Nothing to show: the line, the button and the card's end control go,
+   *  and a tap that still arrives does nothing. */
+  function hideAll(): void {
+    show(dom.line, "");
+    show(dom.skip, "");
+    if (dom.end !== undefined) show(dom.end, "");
+    rendered = null;
   }
 
   /** Write a text only when it changed (R13: the line is a polite live
@@ -721,14 +928,21 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   function render(): void {
+    // A tap or a story's end while the scan gate is shut (a later AR
+    // entry waiting behind its own scan) writes nothing (W4 build plan
+    // §10, the stale line): the next frame would only hide it again.
+    if (!running()) {
+      hideAll();
+      return;
+    }
     // A code lock can find a station before the guide has ticked at all.
     if (last === null) measure();
     // An unjudged position lays no trail: with no visitor there is none.
     deps.onGuide?.(unjudged(last!) ? null : last!.headingNue, guideTarget());
-    const upcoming = run?.upcoming() ?? null;
+    const upcoming = liveRun()?.upcoming() ?? null;
     const next = upcoming === null ? undefined : stationById(upcoming);
     if (next !== undefined) deps.onUpcoming?.(next);
-    if (run?.isComplete() === true) {
+    if (liveRun()?.isComplete() === true) {
       // Nothing left to point at, whichever action completed the tour.
       hud?.dispose();
       hud = null;
@@ -736,16 +950,24 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       // Whichever action brought the run here (a tick, a code lock).
       ensureHud();
     }
-    if (undoable !== null && deps.now() >= undoable.untilMs) settleUndo();
-    if (note !== null && deps.now() >= noteUntilMs) note = null;
+    // The settle is an event: once, when the undo's moment has passed.
+    const skip = unsettledSkip();
+    if (skip !== null && deps.now() >= skip.atMs + SKIP_UNDO_MS) settleUndo();
     show(dom.line, lineText());
     rendered = skipAction();
-    show(dom.skip, rendered === null ? "" : skipLabel(rendered));
+    const label = rendered === null ? "" : skipLabel(rendered);
+    // The end control lives on the story card when the page has one.
+    const onCard =
+      dom.end !== undefined &&
+      (rendered?.kind === "ask-end" || rendered?.kind === "end");
+    show(dom.skip, onCard ? "" : label);
+    if (dom.end !== undefined) show(dom.end, onCard ? label : "");
   }
 
   /** What the skip button offers now. The station in focus starts its skip
    *  clock here, when it becomes the focus (K4 review R14). */
   function skipAction(): SkipAction | null {
+    const run = liveRun();
     if (run === null) return null;
     const focus = focusStation();
     // The skip clock starts with the first distance, sized by it (r881
@@ -757,21 +979,23 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       run.focus(focus, deps.now(), focusDistance);
     }
     // A skip that can still be undone: the button undoes it (R14).
-    if (undoable !== null) return { kind: "undo", id: undoable.id };
+    const skip = selectUndoableSkip({ visitorWalk: walk() }, deps.now());
+    if (skip !== null) return { kind: "undo", id: skip.id };
     const story = focus === null ? storyFocus() : null;
     const target = focus ?? story;
     if (target === null) {
-      skipArmedFor = null;
+      disarm();
       return null;
     }
-    if (skipArmedFor !== null && skipArmedFor !== target) skipArmedFor = null;
+    // A focus that moved takes the ask with it.
+    if (walk().quickArmedId !== target) disarm();
+    const armedFor = walk().quickArmedId;
     if (story !== null) {
       // Nothing unfound is offered: the button ends the story playing, so
       // one that never ends cannot hold the tour (K4 review R9).
-      return { kind: skipArmedFor === story ? "end" : "ask-end", id: story };
+      return { kind: armedFor === story ? "end" : "ask-end", id: story };
     }
-    const ripe =
-      skipArmedFor === target || run.skipSuggested(target, deps.now());
+    const ripe = armedFor === target || run.skipSuggested(target, deps.now());
     return { kind: ripe ? "skip" : "ask-skip", id: target };
   }
 
@@ -794,9 +1018,10 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   /** When no unfound station is offered: the found offered station whose
    *  story the visitor may end (the first in list order), else null. */
   function storyFocus(): string | null {
+    const run = liveRun();
     if (run === null) return null;
     return (
-      run.offered().find((id) => run?.status(id)?.state === "found") ?? null
+      run.offered().find((id) => run.status(id)?.state === "found") ?? null
     );
   }
 
@@ -819,103 +1044,145 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   function ensureHud(): void {
+    const run = liveRun();
     if (hud !== null || run === null || run.isComplete()) return;
     hud = deps.startHud(hudTargets);
   }
 
-  const guide: StationGuide = {
-    tick() {
-      const current = currentRun();
-      // The scan gate is checked every tick, not only when the run was
-      // created (K4 review R8): a later AR session waits behind its own.
-      if (current === null || !deps.placementAllowed()) {
-        show(dom.line, "");
-        show(dom.skip, "");
-        deps.onGuide?.(null, null);
-        publishPresence(null, null);
-        publishHeadingPending(false);
-        return;
-      }
-      measure();
-      const m = last!;
-      // A story cut short by the session's end plays again on the same
-      // terms as its first play: a position and the GPS zero (R8: before
-      // them its figure had no pose; r881 re-review M-C: a camera position
-      // was required, which a session never ready never has). Its figure
-      // waits for the heading as on a first play (`figurePoseOf`).
-      if (replayFound && measuredZero !== null && m.best !== null) {
-        replayFound = false;
-        for (const status of current.statuses()) {
-          const station = stationById(status.id);
-          if (status.state === "found" && station !== undefined) {
-            deps.onFound(station);
-          }
+  /** One tick (`tick`), inside its call. */
+  function tick(): void {
+    const current = currentRun();
+    // The scan gate is checked every tick, not only when the run was
+    // created (K4 review R8): a later AR session waits behind its own.
+    // The run is fetched anew after each callback below (`liveRun`).
+    if (current === null || !deps.placementAllowed()) {
+      hideAll();
+      deps.onGuide?.(null, null);
+      publishPresence(null, null);
+      publishHeadingPending(false);
+      return;
+    }
+    measure();
+    const m = last!;
+    // A story cut short by the session's end plays again on the same
+    // terms as its first play: a position and the GPS zero (R8: before
+    // them its figure had no pose; r881 re-review M-C: a camera position
+    // was required, which a session never ready never has). Its figure
+    // waits for the heading as on a first play (`figurePoseOf`).
+    if (replayFound && measuredZero !== null && m.best !== null) {
+      replayFound = false;
+      for (const status of current.statuses()) {
+        const station = stationById(status.id);
+        if (status.state === "found" && station !== undefined) {
+          deps.onFound(station);
         }
       }
-      if (m.headingNue !== null) deps.onVisitor?.(m.headingNue);
-      approach(m);
-      const judgement = judged(m);
-      if (judgement !== null) {
-        handle(
-          current.observe({
-            distances: judgement.distances,
-            nowMs: deps.now(),
-            precision: judgement.precision,
-          }),
-        );
-      }
-      render();
-      publishPresence(m, judgement);
-      // Stations still to point at, and no heading to point with (D34).
-      publishHeadingPending(!headingReady && !current.isComplete());
+    }
+    if (m.headingNue !== null) deps.onVisitor?.(m.headingNue);
+    approach(m);
+    const judgement = judged(m);
+    const run = liveRun();
+    if (judgement !== null && run !== null) {
+      handle(
+        run.observe({
+          distances: judgement.distances,
+          nowMs: deps.now(),
+          precision: judgement.precision,
+        }),
+      );
+    }
+    render();
+    publishPresence(m, judgement);
+    // Stations still to point at, and no heading to point with (D34).
+    publishHeadingPending(!headingReady && liveRun()?.isComplete() === false);
+  }
+
+  /** The skip button's tap (`skipTapped`), inside its call. */
+  function skipTapped(): void {
+    // The tap does what the label showed, for the station it named (R14):
+    // a clock that ran out since, or a focus that moved, changes nothing.
+    const action = rendered;
+    const run = liveRun();
+    if (run === null || action === null) return;
+    switch (action.kind) {
+      case "ask-skip":
+      case "ask-end":
+        // On demand: the first tap asks, the second acts.
+        if (walk().quickArmedId !== action.id) change(quickArmed(action.id));
+        break;
+      case "skip":
+        disarm();
+        // Recorded before the skip's own "done", which it holds back.
+        change(skipTaken({ id: action.id, atMs: deps.now() }));
+        handle(run.skip(action.id, deps.now()));
+        break;
+      case "end":
+        disarm();
+        if (deps.onEndStory !== undefined) {
+          // The story panel ends it and reports back (`storyEnded`).
+          deps.onEndStory(action.id);
+          return;
+        }
+        handle(run.finish(action.id, deps.now()));
+        break;
+      case "undo":
+        if (unsettledSkip()?.id !== action.id) break;
+        change(skipUndone({ id: action.id, atMs: deps.now() }));
+        handle(run.unskip(action.id, deps.now()));
+        break;
+    }
+    render();
+  }
+
+  const guide: StationGuide = {
+    tick() {
+      inCall(tick);
     },
     codeLocked() {
       guide.tick();
     },
     storyEnded(stationId) {
-      if (run === null) return;
-      handle(run.finish(stationId, deps.now()));
-      note = null;
-      render();
+      inCall(() => {
+        const run = liveRun();
+        if (run === null) return;
+        handle(run.finish(stationId, deps.now()));
+        if (walk().note !== null) change(noteCleared());
+        render();
+      });
     },
     skipTapped() {
-      // The tap does what the label showed, for the station it named (R14):
-      // a clock that ran out since, or a focus that moved, changes nothing.
-      const action = rendered;
-      if (run === null || action === null) return;
-      const title = stationTitle(stationById(action.id)!);
-      switch (action.kind) {
-        case "ask-skip":
-        case "ask-end":
-          // On demand: the first tap asks, the second acts.
-          skipArmedFor = action.id;
-          break;
-        case "skip":
-          skipArmedFor = null;
-          undoable = { id: action.id, untilMs: deps.now() + SKIP_UNDO_MS };
-          handle(run.skip(action.id, deps.now()));
-          note = `Skipped ${title}.`;
-          noteUntilMs = deps.now() + SKIP_UNDO_MS;
-          break;
-        case "end":
-          skipArmedFor = null;
-          if (deps.onEndStory !== undefined) {
-            // The story panel ends it and reports back (`storyEnded`).
-            deps.onEndStory(action.id);
-            return;
-          }
-          handle(run.finish(action.id, deps.now()));
-          break;
-        case "undo":
-          if (undoable?.id !== action.id) break;
-          undoable = null;
-          handle(run.unskip(action.id, deps.now()));
-          note = `Brought back ${title}.`;
-          noteUntilMs = deps.now() + SKIP_UNDO_MS;
-          break;
-      }
-      render();
+      inCall(skipTapped);
     },
+    cancelAsk() {
+      inCall(() => {
+        if (liveRun() === null) return;
+        disarm();
+        render();
+      });
+    },
+    view() {
+      if (!running()) return null;
+      const focusId = focusStation();
+      const distances = last?.distances ?? new Map<string, number>();
+      // Without a focus (a story plays, the tour is complete) any
+      // distance speaks for the position.
+      const d =
+        focusId !== null
+          ? distances.get(focusId)
+          : distances.size > 0
+            ? 0
+            : undefined;
+      const position = positionKind(last, d);
+      return {
+        focusId,
+        position,
+        accuracyM: position === "weak" ? last!.precision.accuracyM : null,
+        distances,
+        quick: rendered,
+        note: noteText(),
+      };
+    },
+
     endSession() {
       hud?.dispose();
       hud = null;
@@ -932,6 +1199,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       deps.onGuide?.(null, null);
       dom.line.hidden = true;
       dom.skip.hidden = true;
+      if (dom.end !== undefined) dom.end.hidden = true;
     },
     poseOf,
     figurePoseOf: (stationId) => (headingReady ? poseOf(stationId) : null),
