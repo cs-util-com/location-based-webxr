@@ -21,6 +21,7 @@ import {
   GLOBE_SURFACE,
   createGlobeImagery,
   createGlobeSurface,
+  firstLookStep,
   disposeLitMaterials,
   litCopy,
   tileMeshes,
@@ -171,6 +172,7 @@ describe("createGlobeSurface", () => {
       mapsLoaded: 0,
       mapErrors: 0,
       mapsTotal: 2,
+      firstLookReady: false,
     });
     // The credits line reads this: every source drawn is the registry's.
     expect(globe.activeSources()).toEqual(GLOBE_SOURCES.map((s) => s.id));
@@ -182,7 +184,9 @@ describe("createGlobeSurface", () => {
     const loader = stubLoader();
     const globe = createGlobeSurface(loader);
     const equirect = GLOBE_SOURCES.filter((s) => s.kind === "equirect");
-    expect(loader.loaded).toEqual(equirect);
+    expect(loader.loaded.filter((s) => s.kind === "equirect")).toEqual(
+      equirect,
+    );
     const u = globe.surfaceUniforms;
     const bySource = {
       "black-marble": u.uNight.value,
@@ -200,6 +204,10 @@ describe("createGlobeSurface", () => {
     // The clouds are read as numbers (coverage).
     expect(u.uClouds.value.colorSpace).toBe(THREE.NoColorSpace);
     expect(u.uNight.value.colorSpace).toBe(THREE.SRGBColorSpace);
+    // The grey cloud map goes to the GPU as one channel (round-3 plan
+    // 2026-10-08-2345 M1): at 4096 x 2048 that is 8 MB, not 32, on a phone.
+    expect(u.uClouds.value.format).toBe(THREE.RedFormat);
+    expect(u.uNight.value.format).toBe(THREE.RGBAFormat);
     globe.dispose();
   });
 
@@ -216,15 +224,260 @@ describe("createGlobeSurface", () => {
     globe.dispose();
   });
 
+  // Why (round-2 plan 2026-10-07-2350 DEC-FR2-6; the owner: "the globe is
+  // plain blue for a second before its texture loads"): until a tile's
+  // imagery arrives the sphere under the sky was untextured (measured: 7 s
+  // of one blue in a smoke). The pyramid's level 0, the whole Earth in two
+  // tiles, loads with the global maps, long before the tile renderer asks.
+  it("loads the imagery's level 0 as the first look, ready once both halves are in", () => {
+    const loader = stubLoader();
+    const globe = createGlobeSurface(loader);
+    const u = globe.surfaceUniforms;
+    const paths = loader.loaded.map((s) => s.path);
+    expect(paths).toContain("/globe-assets/blue-marble-4326/0/0/0.webp");
+    expect(paths).toContain("/globe-assets/blue-marble-4326/0/1/0.webp");
+    expect(u.uDayWest.value.colorSpace).toBe(THREE.SRGBColorSpace);
+    expect(u.uDayEast.value.colorSpace).toBe(THREE.SRGBColorSpace);
+    expect(u.uDayReady.value).toBe(0);
+    const west = paths.indexOf("/globe-assets/blue-marble-4326/0/0/0.webp");
+    const east = paths.indexOf("/globe-assets/blue-marble-4326/0/1/0.webp");
+    loader.finish[west]!();
+    expect(u.uDayReady.value).toBe(0);
+    loader.finish[east]!();
+    expect(u.uDayReady.value).toBe(1);
+    // Ready to show once the cloud map is in too (round-3 plan M1).
+    expect(globe.state().firstLookReady).toBe(false);
+    loader.finish[loader.loaded.findIndex((s) => s.id === "clouds")]!();
+    expect(globe.state().firstLookReady).toBe(true);
+    // Not counted with the global maps: the loading label is about those.
+    expect(globe.state().mapsTotal).toBe(2);
+    globe.dispose();
+  });
+
+  // Why (DEC-FR2-6, measured in the browser): the tile renderer draws a
+  // tile only once its imagery is in, so before that there is no sphere at
+  // all, only the atmosphere's veil over black. The first look is a sphere
+  // of its own, a fraction under the ellipsoid in the tiles' frame, in the
+  // surface's own material without a map (so it shows the level 0, lit and
+  // clouded as the tiles are), drawn until the globe can draw its view.
+  it("draws the first look on a sphere of its own until the globe can draw its view", () => {
+    const loader = stubLoader();
+    const globe = createGlobeSurface(loader);
+    loader.finish[loader.loaded.findIndex((s) => s.id === "clouds")]!();
+    const look = globe.firstLook;
+    expect(look.parent?.parent).toBe(globe.group);
+    // Hidden until an update decides (R4/R5 milestone review: a page that
+    // never calls update, the terrain lab, drew it under its relief, where
+    // its crack check counts the background as a crack).
+    expect(look.visible).toBe(false);
+    // A camera high up (the first look ends for good below 2,000 km).
+    const highCamera = new THREE.PerspectiveCamera();
+    highCamera.position.set(30_000_000, 0, 0);
+    // Shown only once its images are in (before, a plain white ball).
+    globe.update(highCamera, {
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(2, 2),
+    } as unknown as THREE.WebGLRenderer);
+    expect(look.visible).toBe(false);
+    globe.surfaceUniforms.uDayReady.value = 1;
+    globe.update(highCamera, {
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(2, 2),
+    } as unknown as THREE.WebGLRenderer);
+    expect(look.visible).toBe(true);
+    const material = look.material as THREE.MeshStandardMaterial;
+    expect(material.map).toBeNull();
+    expect(material.customProgramCacheKey()).toBe(
+      globe.template.customProgramCacheKey(),
+    );
+    // A fraction under the ellipsoid: the tiles cover it wherever drawn.
+    const r = globe.tiles.ellipsoid.radius;
+    expect(look.scale.x).toBeLessThan(r.x);
+    expect(look.scale.x).toBeGreaterThan(r.x * 0.995);
+    expect(look.scale.z / look.scale.x).toBeCloseTo(r.z / r.x, 9);
+    globe.dispose();
+  });
+
+  // Why (round-3 plan M1, the full browser run 2026-10-09; §18): the first
+  // look shows the Earth as the tiles will, clouds included. M1's 4,096
+  // map arrived after the two halves, so the first look at Bern was
+  // cloudless and the clouds popped in (centre 49,84,106 against
+  // 180,211,250 once the tiles drew). It waits for the clouds' 1,024
+  // PREVIEW too (DEC-R3-15: never for the full map's pieces); a preview
+  // that fails does not hold it back (a failure keeps the plain look).
+  it("shows the first look only once the clouds' preview is in too, or has failed", () => {
+    const highCamera = new THREE.PerspectiveCamera();
+    highCamera.position.set(30_000_000, 0, 0);
+    const renderer = {
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(2, 2),
+    } as unknown as THREE.WebGLRenderer;
+    for (const ending of ["finish", "fail"] as const) {
+      const loader = stubLoader();
+      const globe = createGlobeSurface(loader);
+      const at = (path: string) =>
+        loader.loaded.findIndex((s) => s.path === path);
+      loader.finish[at("/globe-assets/blue-marble-4326/0/0/0.webp")]!();
+      loader.finish[at("/globe-assets/blue-marble-4326/0/1/0.webp")]!();
+      globe.update(highCamera, renderer);
+      expect(globe.firstLook.visible, ending).toBe(false);
+      expect(globe.state().firstLookReady, ending).toBe(false);
+      loader[ending][loader.loaded.findIndex((s) => s.id === "clouds")]!();
+      globe.update(highCamera, renderer);
+      expect(globe.firstLook.visible, ending).toBe(true);
+      expect(globe.state().firstLookReady, ending).toBe(true);
+      globe.dispose();
+    }
+  });
+
+  // Why (the full browser run, 2026-10-08): the first look is for the start
+  // only. Shown again whenever the globe could not draw its view (zooming out
+  // of the band), it filled the very holes the handover's positive control
+  // must see. Once the globe has drawn its whole view, it is done for good.
+  it("shows the first look only before the globe has first drawn its whole view", () => {
+    const high = GLOBE_SURFACE.firstLookFloorM * 2;
+    const low = GLOBE_SURFACE.firstLookFloorM / 2;
+    const step = (
+      done: boolean,
+      imagesIn: boolean,
+      drawn: boolean,
+      h: number,
+    ) => firstLookStep(done, imagesIn, drawn, h);
+    expect(step(false, false, false, high)).toEqual({
+      done: false,
+      shown: false,
+    });
+    expect(step(false, true, false, high)).toEqual({
+      done: false,
+      shown: true,
+    });
+    expect(step(false, true, true, high)).toEqual({ done: true, shown: false });
+    // Done stays done, whatever the globe does later.
+    expect(step(true, true, false, high)).toEqual({ done: true, shown: false });
+    // And it ends for good once the camera goes low (the band and the relief
+    // take the pixels there; kept on, it drew a whole sphere under the relief
+    // every frame: a city dive recorded 9 frames, not more than 10, and the
+    // stencil fill's cost smoke ran out of time).
+    expect(step(false, true, false, low)).toEqual({ done: true, shown: false });
+    // An altitude not known (a camera still at the Earth's centre on the
+    // first frame reads 0) decides nothing.
+    for (const h of [0, -1, Number.NaN]) {
+      expect(step(false, true, false, h), String(h)).toEqual({
+        done: false,
+        shown: true,
+      });
+    }
+  });
+
+  // Why: a tile set with nothing of it in view counts as ready (the band
+  // gate's rule, so a camera under the relief hands over), but the first
+  // look must not end on such a frame: a camera that starts looking away
+  // from the Earth would end it for good, and turning to the Earth would
+  // show the holes it exists to fill. The surface ends it only once the
+  // globe has drawn a view that held some of it.
+  it("keeps the first look while the globe's top level is visited but out of view", () => {
+    const loader = stubLoader();
+    const globe = createGlobeSurface(loader);
+    loader.finish[loader.loaded.findIndex((s) => s.id === "clouds")]!();
+    globe.surfaceUniforms.uDayReady.value = 1;
+    const highCamera = new THREE.PerspectiveCamera();
+    highCamera.position.set(30_000_000, 0, 0);
+    const renderer = {
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(2, 2),
+    } as unknown as THREE.WebGLRenderer;
+    // The library's traversal replaced by a top level this test sets.
+    const top = {
+      internal: { loadingState: 4 },
+      traversal: { lastFrameVisited: 7, inFrustum: false },
+      children: [],
+    };
+    const root = { children: [top] };
+    vi.spyOn(globe.tiles, "update").mockImplementation(() => {});
+    Object.defineProperty(globe.tiles, "root", { get: () => root });
+    (globe.tiles as unknown as { frameCount: number }).frameCount = 7;
+    // Visited and loaded, out of view: ready, yet nothing of it drawn.
+    globe.update(highCamera, renderer);
+    expect(globe.firstLook.visible).toBe(true);
+    globe.update(highCamera, renderer);
+    expect(globe.firstLook.visible).toBe(true);
+    // In view and loaded: the globe has drawn its view; the look is done.
+    top.traversal.inFrustum = true;
+    globe.update(highCamera, renderer);
+    expect(globe.firstLook.visible).toBe(false);
+    top.traversal.inFrustum = false;
+    globe.update(highCamera, renderer);
+    expect(globe.firstLook.visible).toBe(false);
+    globe.dispose();
+  });
+
+  it("frees the first look's two images on dispose", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const west = vi.spyOn(globe.surfaceUniforms.uDayWest.value, "dispose");
+    const east = vi.spyOn(globe.surfaceUniforms.uDayEast.value, "dispose");
+    globe.dispose();
+    expect(west).toHaveBeenCalled();
+    expect(east).toHaveBeenCalled();
+  });
+
+  it("keeps the plain look if a half of the first look fails", () => {
+    const loader = stubLoader();
+    const globe = createGlobeSurface(loader);
+    const paths = loader.loaded.map((s) => s.path);
+    loader.finish[
+      paths.indexOf("/globe-assets/blue-marble-4326/0/0/0.webp")
+    ]!();
+    loader.fail[paths.indexOf("/globe-assets/blue-marble-4326/0/1/0.webp")]!();
+    expect(globe.surfaceUniforms.uDayReady.value).toBe(0);
+    expect(globe.state().mapErrors).toBe(0);
+    globe.dispose();
+  });
+
   // The loading label and the tests wait on these: a map still downloading
   // must not read as "loaded", and a failed one must reach the error box.
+  // The clouds (round-3 plan §18) count once nothing more will come for
+  // them: the preview AND the full map's pieces; as failed only when none
+  // of it can be drawn.
   it("counts the global maps as they load and as they fail", () => {
     const loader = stubLoader();
     const globe = createGlobeSurface(loader);
-    loader.finish[0]!();
-    loader.fail[1]!();
-    const s = globe.state();
-    expect([s.mapsLoaded, s.mapErrors, s.mapsTotal]).toEqual([1, 1, 2]);
+    const camera = new THREE.PerspectiveCamera();
+    camera.position.set(30_000_000, 0, 0);
+    const renderer = {
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(2, 2),
+      // Too small for the full map: nothing more will come for the clouds.
+      capabilities: { maxTextureSize: 1024 },
+    } as unknown as THREE.WebGLRenderer;
+    vi.spyOn(globe.tiles, "update").mockImplementation(() => {});
+    const at = (id: string) => loader.loaded.findIndex((s) => s.id === id);
+    loader.finish[at("black-marble")]!();
+    loader.fail[at("clouds")]!();
+    const counts = () => {
+      const s = globe.state();
+      return [s.mapsLoaded, s.mapErrors, s.mapsTotal];
+    };
+    // The clouds count at the preview (M1b review, item 7): a failed
+    // preview reads as a failed map until a full map is drawn.
+    expect(counts()).toEqual([1, 1, 2]);
+    globe.update(camera, renderer);
+    expect(counts()).toEqual([1, 1, 2]);
+    globe.dispose();
+  });
+
+  // Every cloud reader (the surface, its shadow, the shell, the volume's
+  // coverage) samples `surfaceUniforms.uClouds` (the shell's sharing is
+  // pinned in globe-cloud-shell.test.ts): the swap to the full map happens
+  // there, every frame, so each of them sees it at once.
+  it("hands the cloud map's current texture to the shared cloud uniform every frame", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const full = new THREE.Texture();
+    vi.spyOn(globe.cloudMap, "texture", "get").mockReturnValue(full);
+    vi.spyOn(globe.tiles, "update").mockImplementation(() => {});
+    globe.update(new THREE.PerspectiveCamera(), {
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(2, 2),
+    } as unknown as THREE.WebGLRenderer);
+    expect(globe.surfaceUniforms.uClouds.value).toBe(full);
+    // And the relief-only page's step does the same.
+    const other = new THREE.Texture();
+    vi.spyOn(globe.cloudMap, "texture", "get").mockReturnValue(other);
+    globe.updateClouds({} as THREE.WebGLRenderer);
+    expect(globe.surfaceUniforms.uClouds.value).toBe(other);
     globe.dispose();
   });
 
@@ -251,6 +504,65 @@ describe("createGlobeSurface", () => {
     expect(globe.surfaceUniforms.uSunEcef.value.distanceTo(ecef)).toBeLessThan(
       1e-12,
     );
+    globe.dispose();
+  });
+
+  // Why (round-6 plan 2026-10-04-1050 G6-2): the clouds move off the ground
+  // onto their own shell only as far as the page asks (the relief's share of
+  // the band, so the orbit keeps the approved painted look); every other
+  // page keeps them painted, as before. The shell sits in the tiles' ECEF
+  // frame wherever the tiles are placed, and its share takes exactly that
+  // much paint out of the ground's colour.
+  it("splits the clouds between the paint and the shell by a share, the shell in the tiles' frame", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const u = globe.surfaceUniforms;
+    expect(globe.cloudShell.mesh.visible).toBe(false);
+    expect(u.uCloudInSurface.value).toBe(1);
+    globe.setCloudShellShare(0.25);
+    expect(globe.cloudShell.mesh.visible).toBe(true);
+    expect(globe.cloudShell.share()).toBe(0.25);
+    expect(u.uCloudInSurface.value).toBe(0.75);
+    globe.setCloudShellShare(1);
+    expect(u.uCloudInSurface.value).toBe(0);
+    expect(() => globe.setCloudShellShare(1.5)).toThrow(RangeError);
+    globe.cloudShell.setHeightM(9_000);
+    globe.tiles.group.rotation.set(0.3, -1.1, 0.7);
+    globe.tiles.group.position.set(10, 20, 30);
+    globe.tiles.group.updateMatrix();
+    globe.setSun(new THREE.Vector3(1, 0, 0));
+    globe.group.updateMatrixWorld(true);
+    // A point on the shell's equator (local x) lands where the tiles put the
+    // ECEF point (a + h, 0, 0).
+    const shellPoint = new THREE.Vector3(1, 0, 0).applyMatrix4(
+      globe.cloudShell.mesh.matrixWorld,
+    );
+    const tilesPoint = new THREE.Vector3(6_378_137 + 9_000, 0, 0).applyMatrix4(
+      globe.tiles.group.matrixWorld,
+    );
+    expect(shellPoint.distanceTo(tilesPoint)).toBeLessThan(1e-3);
+    globe.setCloudShellShare(0);
+    expect(u.uCloudInSurface.value).toBe(1);
+    expect(globe.cloudShell.mesh.visible).toBe(false);
+    globe.dispose();
+  });
+
+  // Why (round-2 plan 2026-10-07-2350 DEC-FR2-5): the flat cloud layer
+  // fades with altitude; both its forms (the paint and the shell) and the
+  // water's cloud mask fade together, never the global cloud opacity (the
+  // volume reads that too).
+  it("fades both of the clouds' forms, and the glint's cloud mask, by a flat share", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const u = globe.surfaceUniforms;
+    expect(u.uCloudFlat.value).toBe(1);
+    globe.setCloudShellShare(0.25, 0.5);
+    expect(globe.cloudShell.share()).toBe(0.125);
+    expect(u.uCloudInSurface.value).toBe(0.375);
+    expect(u.uCloudFlat.value).toBe(0.5);
+    const opacity = u.uCloudOpacity.value;
+    globe.setCloudShellShare(0.25);
+    expect(u.uCloudFlat.value).toBe(1);
+    expect(u.uCloudOpacity.value).toBe(opacity);
+    expect(() => globe.setCloudShellShare(0.25, 1.5)).toThrow(RangeError);
     globe.dispose();
   });
 

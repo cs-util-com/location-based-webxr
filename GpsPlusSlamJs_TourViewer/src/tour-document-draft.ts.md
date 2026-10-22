@@ -9,29 +9,72 @@ after the reducer, never from `store.subscribe`.
 
 ## Public API
 
-- `TourSettingsRecord` - `{ needsNoGps, details?, stations? }` (`stations`:
-  `StationPose[]`, each station's `{ id, geo }`), the draft's settings
-  record (`editor/editor-draft.ts`'s `EditorTourSettings` has the same
-  shape).
+- `TourSettingsRecord` - `{ needsNoGps, details?, stations?,
+createdStations?, frames?, order?, deletedStations? }` (`stations`: `StationPose[]`, each station's
+  `{ id, geo }`; `createdStations`: the whole frames of the stations this
+  page created, `createdStationFrames` of `tour-document.ts`, absent when
+  none), the draft's settings record (`editor/editor-draft.ts`'s
+  `EditorTourSettings` has the same shape). Every object belongs to a
+  station from its placement on, and the objects' records only NAME it:
+  the record keeps the frame, so a reload brings a pin's station back
+  where it stood (`restored` puts it back before the objects).
+  Once a station was edited, added, deleted, reordered or copied
+  (`framesRecorded`), the record also carries `frames` (`recordedFrames`:
+  the frames the opened or the written tour lacks or carries otherwise
+  beyond their pose, whole, card image included; empty when none),
+  `order` (`recordedOrder`: every station's id in order, only when a
+  restore would not give that order by itself) and `deletedStations`
+  (`stationsGoneSinceOpen`: the opened or written tour's stations it no
+  longer carries, an emptied automatic one a write dropped excepted;
+  absent when none): what `restored` needs to bring those edits back,
+  since no object's record names them. A station edited only elsewhere
+  is in none of them, so a restore over a file changed on another device
+  keeps that file's version of it, and its pose.
 - `TourDocumentDraft` - `DraftObjectWrites` (`draft-actions.ts`) plus
-  `saveSettings(record)`.
+  `saveSettings(record)`, and `saveCodes(codes)` for a page that keeps a
+  codes record (the phone's; the desktop measures no code and has none).
+- `TourCodesRecord` `{ level, levels }` (plan M3b) - the codes a draft
+  keeps: the code in hand (the page's, not the document's, so the caller
+  names it) and `levelsNotHosted`, the hand's code among them; written as
+  `draft-persistence.ts`'s `CODES_KEY` file. Built inside the module
+  (`codesRecord(state, hand)`, not exported).
 - `SETTINGS_KEY` (`"settings"`) - the record's file in a draft
   namespace, on both pages; `readDraft` skips it.
-- `parseSettingsRecord(text)` - a stored record, or undefined when it does
-  not read (a bad station pose or detail costs the record, never the
-  objects beside it).
+- `parseSettingsRecord(text, against?)` - a stored record, or undefined
+  when it does not read (a bad station pose or detail costs the record,
+  never the objects beside it). `against` is the opened tour: its
+  stations count as siblings a route may name, and its assets as what a
+  story step may name (without it, a frame whose step names an asset is
+  lost). The created frames and the `frames` are read one by one as the
+  format reads a station (`parseTourManifest`, without items, with a
+  stand-in for each sibling that reads, so a route between them
+  resolves); of two under one id the first is kept. A frame that does not
+  read is lost - the objects naming it are seated by the station rule as
+  they come back - and so is every frame whose route names a lost one:
+  the frames are read again against the ones that read until none more
+  drops, so no kept frame routes to a created station the record lost.
+  The format's reader drops a card image naming a photo (the probe holds
+  no items), so a well-formed `image` id of the record is put back on the
+  frame it read from: a copied station's card showing its own copied
+  photo comes back with it. `deletedStations` and `order` keep the
+  well-formed ids, once each.
+  A record without the newer fields reads as before.
 - `changedStations(wanted, against)` - the ids of `wanted`'s stations
   whose pose differs from `against`'s (by data, whatever its key order:
   `same-json.ts`); none without an opinion, none for a station `against`
   does not carry.
 - `settingsRecord(state)` - the record as the document holds it: the
   details only once `detailsRecorded`, the station poses (every station's,
-  in the document's order) only once `stationsRecorded`.
-- `followDocument(draft, before, after, pictureOf)` - issues, in order,
-  each id's writes for its change of standing against the written file
-  (an entry, a tombstone, or nothing), then the settings record when it
-  changed. Writes nothing when `before` and `after` belong to different
-  opens (`generation`).
+  in the document's order) only once `stationsRecorded`, the frames, the
+  order and the stations gone only once `framesRecorded`
+  (`recordedFrames`, `recordedOrder`, `stationsGoneSinceOpen`).
+- `followDocument(draft, before, after, pictureOf, hands?)` - issues, in
+  order, each id's writes for its change of standing against the written
+  file (an entry, a tombstone, or nothing), then the settings record when
+  it changed, then the codes record when it changed (only with a
+  `saveCodes` and `hands`, the code in hand before and after). Writes
+  nothing when `before` and `after` belong to different opens
+  (`generation`).
 
 ## Invariants & assumptions
 
@@ -84,7 +127,25 @@ const stop = store.listenToDocument({
   undo (no tombstone), a photo's picture,
   the settings record with and without details, the station poses once a
   station moved (review #1), nothing for a save landing
-  or across an open.
+  or across an open; the created stations' frames written by a placement
+  that starts one (none for one that joins), read back as they were, and
+  a record whose frames do not read keeping the rest, and one broken frame
+  among good ones costing only itself; a frame routing to a broken
+  sibling lost with it, and one routing to that frame too, so no kept
+  frame routes to a lost station; the codes record written when a code's
+  text or the hand changes, not for the same codes, and never for a
+  draft without `saveCodes`.
+- `tour-document-stations-draft.test.ts` - the stations through the
+  record and a restore: renamed, added, deleted (its route pruned),
+  reordered, an item copied; only the edited frames recorded, an order
+  only when needed, a recorded frame restored at the document's pose, an
+  emptied automatic station a save dropped not recorded as deleted; a copied station's own photo as its card
+  image (seen red with the image re-attach off); a frame with an image
+  step read against the opened tour's assets and lost without them; a
+  deleted station an object still names kept; a record of the earlier
+  format restoring its poses.
+- `tour-document.property.test.ts` - any sequence of edits written to the
+  records and restored over the opened tour gives back the same write.
 - The record's reading and comparing, through both drafts:
   `editor/editor-draft.test.ts` and `creator-setup.test.ts` "the draft
   keeps a moved station's pose".

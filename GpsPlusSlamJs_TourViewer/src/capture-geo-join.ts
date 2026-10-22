@@ -1,14 +1,15 @@
 /**
  * The capture-time geo join (plan `2026-08-26-1130-capture-time-geo-join`,
  * Revision 2): turn a REPLAYED recording state into world poses for every
- * captured photo, so the AR view places each photo where it was taken
- * instead of ringing them around the QR code.
+ * camera capture, so each one is shown where it was taken. Its one caller
+ * is the desktop editor's debug layer (`debug-captures.ts`): a visitor
+ * never sees a capture and never runs a join.
  *
  * Pure decision + transform layer — no DOM, no three scene, no fetching.
  * The caller replays the tour zip (`replayRecording` over the streaming
  * ByteSource) and hands this module the result plus the action-type list;
- * this module decides whether the join is TRUSTWORTHY (every decline
- * reason falls back to the existing ring) and computes the poses.
+ * this module decides whether the join is TRUSTWORTHY (a declined join
+ * places no capture) and computes the poses.
  *
  * FRAME CONTRACT: inputs are the REPLAYED STATE (NUE — the reducer
  * converted raw WebXR action payloads on dispatch); outputs are geo
@@ -112,15 +113,15 @@ const MIN_SUPPORTED_ODOM_COORD_VERSION = 4;
  * The newest recording era this viewer knows (the recorder's
  * `session-metadata-record.ts` writes 5). A newer era replays, as
  * `preflightCaptureJoin` only refuses older ones, but what its replay
- * does NOT show proves nothing: its photo actions may be named or framed
- * in a way this build cannot read (PR #638 review).
+ * does NOT show proves nothing: its capture actions may be named or
+ * framed in a way this build cannot read (PR #638 review).
  */
 export const NEWEST_KNOWN_ODOM_COORD_VERSION = 5;
 
 /**
  * The BEFORE-replay half of the decision: era and segment gates run on the
  * cheap inputs (meta + action types) so a declined zip never pays the
- * seconds-long replay. Every `ok: false` means: keep the ring.
+ * seconds-long replay. Every `ok: false` means: place no capture.
  */
 export function preflightCaptureJoin(
   meta: { odomCoordVersion?: unknown } | null,
@@ -153,8 +154,8 @@ export function preflightCaptureJoin(
 
 /**
  * The AFTER-replay half: quality gates on the replayed state. Every
- * `ok: false` carries a plain-words reason (surfaced in the AR status) and
- * means: keep the ring.
+ * `ok: false` carries a plain-words reason (the decline the debug layer
+ * shows) and means: place no capture.
  */
 export function assessReplayedJoin(state: ReplayedJoinState): JoinAssessment {
   const gpsData = state.gpsData;
@@ -200,7 +201,7 @@ export function assessReplayedJoin(state: ReplayedJoinState): JoinAssessment {
     return { ok: false, reason: "the recording's alignment data is malformed" };
   }
   if (gpsData.odometryPath.points.length === 0) {
-    return { ok: false, reason: "the recording contains no captured photos" };
+    return { ok: false, reason: "the recording contains no camera captures" };
   }
   return {
     ok: true,
@@ -301,8 +302,7 @@ export function computeCaptureGeoJoin(
     // IS absolute altitude - the old `altitude ?? 0` put every such photo at
     // sea level, hundreds of metres below the visitor at any inland site,
     // while the status line still reported "N photos at capture spots". The
-    // caller falls back to the photo ring when nothing survives, which is the
-    // honest answer. Note zero is a VALID altitude here (the fixture's own
+    // join declines when nothing survives, which is the honest answer. Note zero is a VALID altitude here (the fixture's own
     // zero sits at 0), so this keys on missing-or-non-finite, never on falsy.
     if (
       !Number.isFinite(geo.lat) ||
@@ -376,7 +376,7 @@ export interface PickTrackerState {
   } | null;
 }
 
-/** Each recorded photo's alignment by D33's rule, built during the replay. */
+/** Each camera capture's alignment by D33's rule, built during the replay. */
 export interface CapturePickTracker {
   /** Feed every replayed action with the state it produced, in order. */
   observe(
@@ -397,7 +397,7 @@ function captureImageFile(payload: unknown): string | undefined {
 }
 
 /**
- * Picks each recorded photo's alignment as the replay runs (scan-pass plan
+ * Picks each camera capture's alignment as the replay runs (scan-pass plan
  * S-D11): the first alignment at or after the photo whose session GPS
  * extent reached the shared maturity floor (`state/alignment-maturity`,
  * the same rule as D33's authoring settle), else the last usable one when

@@ -47,7 +47,9 @@ export type TourDetailsField = keyof TourDetails;
 
 /** Why a detail was left out when the value itself is well formed:
  *  `image-gone` - a cover naming no image of the tour (a deleted photo),
- *  the one drop a writer accepts quietly. Absent: the value is malformed. */
+ *  the one detail drop a writer accepts quietly (a station's card image
+ *  has its own, `station-image-gone`, in `tour-stations.ts`). Absent: the
+ *  value is malformed. */
 type TourDetailsDropCause = 'image-gone';
 
 /** A detail a reader left out, and why. */

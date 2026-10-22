@@ -118,7 +118,10 @@ troubleshooting recording's record of each placement. Split out of
     the document's guard - but only into the visit it was taken in (a
     visit that ended disarmed it for good). Checks that fail before the
     commit never take it: no text typed, the label input cancelled, no
-    surface under the ring, no GPS fix, no camera frame.
+    surface under the ring, no GPS fix, no camera frame. A refusal by the
+    document's guard is named by its reason (`placeRefusal`): an id the
+    tour deleted, one it carries already, or a spot too far from its
+    station.
   - **The late arrival is logged with the photo as the document took
     it** (naming its own station). The settle's log records each object's
     id and geo only, so the station itself is not in that record.

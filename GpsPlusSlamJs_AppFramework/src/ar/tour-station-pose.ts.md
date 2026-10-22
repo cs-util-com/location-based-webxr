@@ -5,8 +5,8 @@
 A station's frame in `tour.json` version 3 (tour editor plan
 `GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md`,
 W3): converts an item's LOCAL pose to its world geo pose and back, and gives
-the WORLD VIEW of a tour (every pin, photo and recorded photo with its geo
-pose and its station) - what a viewer places and a creator's drafts hold.
+the WORLD VIEW of a tour (every pin, photo and model with its geo pose and
+its station) - what a viewer places and a creator's drafts hold.
 
 ## Public API
 
@@ -20,9 +20,6 @@ pose and its station) - what a viewer places and a creator's drafts hold.
   rotation also carries the compat `headingDeg`, as every minted pose).
 - `tourObjects(manifest): TourObject[]` - every item in the world, with
   `station` set, in station order.
-- `tourCaptureGeos(manifest): TourCaptureGeo[]` - the baked recorded
-  photos in the world (`{ image, station, geo }`), in capture order; empty
-  without spots.
 
 ## Invariants & assumptions
 
@@ -42,8 +39,6 @@ pose and its station) - what a viewer places and a creator's drafts hold.
 - **Nothing here writes a local pose back.** A local pose changes only when
   an editor sets a new one; a station's move (D17) changes the station's
   geo pose, and every item follows by construction.
-- A capture whose station a hand-built manifest lacks is left out of the
-  world view (the parser guarantees it in a read file).
 - The world view of a manifest and the session-zero placement differ by
   the curvature between the station's tangent plane and the session
   zero's. It grows linearly with the distance between them: measured
@@ -66,4 +61,4 @@ const all = tourObjects(manifest); // [{ id, kind, geo, station, ... }]
   (by rotation and by heading), turns relative to the station's, a local
   pose placed in the world; properties: geo->local->geo and
   local->geo->local within a millimetre, a station's move keeps the
-  distances between its items; the world view of items and captures.
+  distances between its items; the world view of items.

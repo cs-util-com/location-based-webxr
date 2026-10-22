@@ -102,6 +102,9 @@ export function wireCreatorHandoff(deps: {
    *  `written`, the tour.json of the file the question was asked about;
    *  whether that landed. Absent: the question is never asked. */
   onUploaded?: (written: TourManifest) => Promise<boolean>;
+  /** A save delivered this file, of the tour still open (debug-captures
+   *  plan, Q-I: the draft follows the key it opens under). */
+  onDelivered?: (rebuilt: { blob: Blob; filename: string }) => void;
 }): CreatorHandoff {
   const { ctx, seams, dom } = deps;
   /** The file the question on screen is about, and the tour.json it
@@ -208,6 +211,7 @@ export function wireCreatorHandoff(deps: {
           // they are the flow's last instruction (PR #439 review #3). Only
           // `reset`, on a tour close, hides them again.
           if (delivered) {
+            deps.onDelivered?.(rebuilt);
             presentReplaceSteps(rebuilt.filename);
             dom.replaceHelp.hidden = false;
             // Asked after each save that delivered the file, until a yes

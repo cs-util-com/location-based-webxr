@@ -19,10 +19,12 @@ timeAt(monoMs), driftTimeAt(monoMs) }`. `epochMs` (`Date.now()`) is "now" for an
     from. The effective scale is the setting's, or 0 with a pinned start (it
     stands still, as `time=` always did) and 1 without one (the wall
     clock). `timeAt(mono) = start + (mono - monoMs) * scale`.
-    `driftTimeAt(mono) = start + (mono - monoMs) * min(scale, 1)`: the time
-    the clouds drift on, so a fast clock does not strobe them (at 600x the
-    drift per real second equals the 1x rate); a pinned, stopped clock's
-    drift stands still, so pinned links stay reproducible. A speed change
+    `driftTimeAt(mono) = start + (mono - monoMs) * min(scale, 1)` (rate 1
+    when the scale is 0): the time the clouds drift on, so a fast clock does
+    not strobe them (at 600x the drift per real second equals the 1x rate);
+    a pinned, stopped clock's drift runs in real time (round-5 plan
+    2026-10-12-0612 C1: every `time=` link froze the cloud carpet; a link
+    pins the sun, not the clouds; `cloudDrift=0` stills them). A speed change
     starts a new clock from the current instant (the lab writes `time=`),
     so the clouds jump once there.
   - `sameGlobeClockSetting(a, b)` - whether a hash change needs a new clock.

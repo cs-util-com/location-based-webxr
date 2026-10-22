@@ -29,7 +29,6 @@ function input(overrides: Partial<ArStatusInput> = {}): ArStatusInput {
     },
     readiness: null,
     placement: { kind: "idle" },
-    planesError: null,
     contentError: null,
     gate: { kind: "scanning", escapeOffered: false },
     content: { kind: "none" },
@@ -135,52 +134,11 @@ describe("visitorStatus - one plain sentence per state", () => {
       "warming-up",
       "Walk a few steps so the phone finds its bearings.",
     ],
-    [
-      "loading the photos",
-      {
-        gate: { kind: "passed", via: "code" },
-        placement: {
-          kind: "placing",
-          phase: "loading-photos",
-          done: 3,
-          total: 12,
-        },
-      },
-      "placing",
-      "Loading the photos…",
-    ],
-    [
-      "reading the walk",
-      {
-        gate: { kind: "passed", via: "code" },
-        placement: {
-          kind: "placing",
-          phase: "reading-walk",
-          done: 50,
-          total: 900,
-        },
-      },
-      "placing",
-      "Placing the photos…",
-    ],
+    // (A row "placed through the code" stood here with the walk's recorded
+    // photos placed; a visitor no longer sees them, so a placed tour is its
+    // content placed - the next row.)
     [
       "placed through the code",
-      {
-        gate: { kind: "passed", via: "code" },
-        qr: qr(LINED_UP),
-        placement: {
-          kind: "placed",
-          placedKind: "capture-spots",
-          count: 12,
-          fixes: 34,
-          gpsAccuracyMedianM: 3.2,
-        },
-      },
-      "placed",
-      "Tour placed. Look around.",
-    ],
-    [
-      "only the tour's content placed",
       {
         gate: { kind: "passed", via: "code" },
         qr: qr(LINED_UP),
@@ -193,7 +151,7 @@ describe("visitorStatus - one plain sentence per state", () => {
       "placed by GPS after the escape",
       {
         gate: { kind: "passed", via: "skipped" },
-        placement: { kind: "placed", placedKind: "ring", count: 3 },
+        content: { kind: "placed", count: 3, skipped: 0 },
       },
       "placed-gps",
       "Tour placed by GPS (less exact). Look around. Find the poster's code to line it up.",
@@ -211,24 +169,10 @@ describe("visitorStatus - one plain sentence per state", () => {
       "the tour's code file unreadable",
       {
         gate: { kind: "not-required", reason: "levels-unavailable" },
-        placement: {
-          kind: "placing",
-          phase: "loading-photos",
-          done: 1,
-          total: 4,
-        },
+        placement: { kind: "idle" },
       },
       "placing",
-      "Loading the photos…",
-    ],
-    [
-      "a tour with nothing to show",
-      {
-        gate: { kind: "not-required", reason: "no-lockable-level" },
-        placement: { kind: "nothing-to-place" },
-      },
-      "nothing",
-      "This tour has nothing to show here.",
+      "Placing the tour by GPS (less exact)…",
     ],
   ])("%s", (_name, overrides, state, text) => {
     expect(visitorStatus(input(overrides))).toEqual({ state, text });
@@ -265,34 +209,10 @@ describe("visitorStatus - why AR did not start, in plain words (review F5)", () 
 describe("visitorStatus - states the first version got wrong (U1 milestone review)", () => {
   // Why: the review drove the reachable states the example table missed,
   // and each one below read a stuck or misleading sentence.
-  it("a tour with no codes whose photo join declined says there is nothing to show, not 'Placing' forever (#2, the F3 case)", () => {
-    expect(
-      visitorStatus(
-        input({
-          tour: { kind: "open", levelCount: 0 },
-          gate: { kind: "not-required", reason: "no-lockable-level" },
-          placement: { kind: "declined", reason: "no recording in this tour" },
-        }),
-      ),
-    ).toEqual({
-      state: "nothing",
-      text: "This tour has nothing to show here.",
-    });
-  });
-
-  it("after the GPS escape, a declined photo join with nothing placed asks for the code instead of placing forever (#2)", () => {
-    expect(
-      visitorStatus(
-        input({
-          gate: { kind: "passed", via: "skipped" },
-          placement: { kind: "declined", reason: "no recording in this tour" },
-        }),
-      ),
-    ).toEqual({
-      state: "needs-code",
-      text: "Nothing to show by GPS alone. Point your phone at the tour's code to show the photos.",
-    });
-  });
+  // (Two tests of review #2 stood here: a declined photo join with no
+  // usable code, and after the escape, as dead ends. They went with the
+  // walk's recorded photos, which a visitor no longer sees: the
+  // placement has no declined state.)
 
   it("a stray code does not take over a placed tour (#3)", () => {
     expect(
@@ -300,7 +220,7 @@ describe("visitorStatus - states the first version got wrong (U1 milestone revie
         input({
           gate: { kind: "passed", via: "code" },
           qr: qr({ ...LINED_UP, unknownCode: "https://shop.example/product" }),
-          placement: { kind: "placed", placedKind: "ring", count: 3 },
+          content: { kind: "placed", count: 3, skipped: 0 },
         }),
       ),
     ).toEqual({ state: "placed", text: "Tour placed. Look around." });
@@ -325,7 +245,7 @@ describe("visitorStatus - states the first version got wrong (U1 milestone revie
         input({
           gate: { kind: "passed", via: "skipped" },
           qr: qr({ status: "tracking", lockedText: "t", votedLocks: 2 }),
-          placement: { kind: "placed", placedKind: "ring", count: 3 },
+          content: { kind: "placed", count: 3, skipped: 0 },
         }),
       ),
     ).toEqual({ state: "placed", text: "Tour placed. Look around." });
@@ -353,23 +273,6 @@ describe("visitorStatus - states the first version got wrong (U1 milestone revie
     },
   );
 
-  it("a moved code does not hide the progress while the tour is still loading (#4)", () => {
-    expect(
-      visitorStatus(
-        input({
-          gate: { kind: "passed", via: "ignored" },
-          qr: qr({ ignoredCode: "https://example.test/t" }),
-          placement: {
-            kind: "placing",
-            phase: "loading-photos",
-            done: 1,
-            total: 4,
-          },
-        }),
-      ).state,
-    ).toBe("placing");
-  });
-
   it("the framework's location refusal reads as location, not camera (#5)", () => {
     expect(
       visitorStatus(
@@ -384,6 +287,38 @@ describe("visitorStatus - states the first version got wrong (U1 milestone revie
     });
   });
 
+  it("an unfinished tour says so, with whom to ask, whatever else the line knows", () => {
+    // Why: the printed code may point at the hosted file before its first
+    // Finish; a visitor in AR must not be told to scan or wait for a tour
+    // that has nothing to show yet.
+    expect(
+      visitorStatus(
+        input({
+          tour: {
+            kind: "open",
+            levelCount: 0,
+            unfinished: { contact: "mailto:guide@example.org" },
+          },
+          gate: { kind: "not-required", reason: "no-lockable-level" },
+        }),
+      ),
+    ).toEqual({
+      state: "unfinished",
+      text: "This tour is not finished yet. Questions about this tour? Contact its maker: guide@example.org",
+    });
+    expect(
+      visitorStatus(
+        input({
+          tour: {
+            kind: "open",
+            levelCount: 1,
+            unfinished: { contact: undefined },
+          },
+        }),
+      ),
+    ).toEqual({ state: "unfinished", text: "This tour is not finished yet." });
+  });
+
   it("AR with no tour open says so (#6)", () => {
     expect(visitorStatus(input({ tour: { kind: "none" } }))).toEqual({
       state: "no-tour",
@@ -396,7 +331,7 @@ describe("visitorStatus - states the first version got wrong (U1 milestone revie
       visitorStatus(
         input({
           gate: { kind: "passed", via: "code" },
-          placement: { kind: "placed", placedKind: "ring", count: 3 },
+          content: { kind: "placed", count: 3, skipped: 0 },
           readiness: {
             phase: "ar-lost",
             hint: "Tracking lost - move slowly.",
@@ -419,13 +354,7 @@ describe("visitorStatus - what must never reach a visitor", () => {
           votedLocks: 2,
           reprojectionErrorPx: 1.3,
         }),
-        placement: {
-          kind: "placed",
-          placedKind: "capture-spots",
-          count: 12,
-          fixes: 34,
-          gpsAccuracyMedianM: 3.2,
-        },
+        content: { kind: "placed", count: 12, skipped: 0 },
       },
     ];
     for (const s of states) {
@@ -446,7 +375,7 @@ describe("visitorStatus - what must never reach a visitor", () => {
           votedLocks: 10,
           hold: { kind: "ended", text: "t" } as never,
         }),
-        placement: { kind: "placed", placedKind: "ring", count: 3 },
+        content: { kind: "placed", count: 3, skipped: 0 },
       }),
     );
     expect(state).toBe("placed");
@@ -460,12 +389,14 @@ describe("visitorStatus - what must never reach a visitor", () => {
           gate: { kind: "passed", via: "code" },
           qr: qr(LINED_UP),
           content: { kind: "placed", count: 4, skipped: 2 },
-          planesError: "HTTP 404",
+          contentError: "HTTP 404",
         }),
       ),
     ).toEqual({
       state: "placed",
-      text: "Tour placed. Look around. 2 items could not load. Some photos could not load.",
+      // (It said "Some photos could not load." for the walk's photos, which
+      // a visitor no longer sees; the content's own failure is said here.)
+      text: "Tour placed. Look around. 2 items could not load. Some of the tour's content could not load.",
     });
   });
 });
@@ -499,7 +430,7 @@ describe("visitorStatus - codes only, no location (QR-first M1b-1)", () => {
       input({
         codesOnly: true,
         gate: { kind: "not-required", reason: "no-detector" },
-        placement: { kind: "placed", count: 3 } as never,
+        content: { kind: "placed", count: 3, skipped: 0 },
       }),
     );
     expect(status.state).toBe("nothing");
@@ -564,12 +495,9 @@ describe("visitorStatus - away from every station", () => {
   const placedAway = {
     gate: { kind: "passed", via: "code" } as const,
     qr: qr(LINED_UP),
-    placement: {
-      kind: "placed",
-      placedKind: "ring",
-      count: 0,
-      atStations: 3,
-    } as const,
+    // (The walk's recorded photos placed, once; a visitor no longer sees
+    // them, so a placed tour is its content placed.)
+    content: { kind: "placed", count: 3, skipped: 0 } as const,
     awayFromStations: true,
   };
 
@@ -694,13 +622,15 @@ describe("visitorStatus - the guide waits for a heading (D34)", () => {
           gate: { kind: "passed", via: "code" },
           placement: { kind: "waiting-ready" },
           readiness: tracking,
-          planesError: "boom",
+          contentError: "boom",
           stationsAwaitHeading: true,
         }),
       ),
     ).toEqual({
       state: "warming-up",
-      text: `Move the phone slowly. ${WALK} Some photos could not load.`,
+      // (It said "Some photos could not load." for the walk's photos, which
+      // a visitor no longer sees; the content's own failure is said here.)
+      text: `Move the phone slowly. ${WALK} Some of the tour's content could not load.`,
     });
   });
 
@@ -792,36 +722,24 @@ describe("visitorStatus - the guide waits for a heading (D34)", () => {
     ).toEqual({ state: "warming-up", text: "Tracking lost - move slowly." });
   });
 
-  // Why: walking earns a heading for a guide that has
-  // something to show; after "nothing to show here" or "nothing to show by
-  // GPS alone" it sends the visitor walking for nothing.
-  it("is not added to a dead end: nothing to show here, or nothing by GPS alone", () => {
+  // Why: walking earns a heading for a guide that has something to show;
+  // at a dead end it sends the visitor walking for nothing. (The two dead
+  // ends of a declined photo join pinned here went with the walk's
+  // recorded photos; the one left is a codes-only session that cannot
+  // read codes.)
+  it("is not added to a dead end: nothing can place the tour", () => {
     expect(
       visitorStatus(
         input({
-          tour: { kind: "open", levelCount: 0 },
-          gate: { kind: "not-required", reason: "no-lockable-level" },
-          placement: { kind: "declined", reason: "no recording in this tour" },
+          codesOnly: true,
+          gate: { kind: "not-required", reason: "no-detector" },
           readiness: tracking,
           stationsAwaitHeading: true,
         }),
       ),
     ).toEqual({
       state: "nothing",
-      text: "This tour has nothing to show here.",
-    });
-    expect(
-      visitorStatus(
-        input({
-          gate: { kind: "passed", via: "skipped" },
-          placement: { kind: "declined", reason: "no recording in this tour" },
-          readiness: tracking,
-          stationsAwaitHeading: true,
-        }),
-      ),
-    ).toEqual({
-      state: "needs-code",
-      text: "Nothing to show by GPS alone. Point your phone at the tour's code to show the photos.",
+      text: "This browser can't read the tour's codes, and without location nothing can place the tour.",
     });
   });
 
@@ -857,7 +775,9 @@ describe("visitorStatus - a code's trust ended (an odometry-frame change)", () =
     gate: { kind: "passed", via: "code" } as const,
     // The gate passed on the code; the frame change reset its count.
     qr: qr({ status: "tracking", lockedText: null, votedLocks: 0 }),
-    placement: { kind: "placed", placedKind: "ring", count: 3 } as const,
+    // (The walk's recorded photos placed, once; a visitor no longer sees
+    // them, so a placed tour is its content placed.)
+    content: { kind: "placed", count: 3, skipped: 0 } as const,
   };
 
   it("asks for the code after the placed line", () => {

@@ -178,3 +178,22 @@ export function ellipsoidToModel([a, b, c], groundKm) {
   }
   return [groundKm / a, groundKm / b, groundKm / c];
 }
+
+/**
+ * The observer's altitude for the ground sky (km), from the camera's ECEF
+ * position in metres (F2 plan 2026-10-03-1922, "the radius mapping and the
+ * observer's altitude"): its distance from the centre in the model's frame
+ * (`ellipsoidToModel`) minus the model's ground radius `groundKm`. The
+ * height above the ELLIPSOID's image, not above the exaggerated ground;
+ * negative below the ellipsoid. RangeError for a non-finite position (and
+ * as `ellipsoidToModel` for the radii).
+ */
+export function observerAltitudeKm([x, y, z], ellipsoidRadii, groundKm) {
+  if (![x, y, z].every(Number.isFinite)) {
+    throw new RangeError(
+      `the camera's position must be finite, got ${[x, y, z]}`,
+    );
+  }
+  const [kx, ky, kz] = ellipsoidToModel(ellipsoidRadii, groundKm);
+  return Math.hypot(x * kx, y * ky, z * kz) - groundKm;
+}
