@@ -207,8 +207,9 @@ export interface TourSession {
    * content. NULL when the archive has none (every recorder zip); a
    * manifest that exists but is broken REJECTS, the framework's rule for
    * this file (unlike a single bad level, it is the whole placement).
-   * `options.onDropped` hears each detail the reader left out (the
-   * desktop editor says them, M4a review #6).
+   * `options.onDropped` hears each detail, station description and
+   * station card image the reader left out (the desktop editor says
+   * them, M4a review #6).
    */
   loadTourManifest(
     options?: TourManifestReadOptions,

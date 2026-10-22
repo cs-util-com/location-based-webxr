@@ -17,7 +17,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   droppedDetailsLine,
-  droppedStationImagesLine,
+  droppedStationFieldsLine,
   NOT_A_TOUR,
   NOT_A_ZIP,
   openTourForEditing,
@@ -84,21 +84,24 @@ describe("openTourForEditing", () => {
     await out.session.close();
   });
 
-  it("names the stations whose card image the reader dropped, apart from the details (G2 build plan M1a)", async () => {
+  it("names the stations whose description or card image the reader dropped, by their names, apart from the details (G2 build plan M1a)", async () => {
     // Why: a station's card image (format minor 2) whose photo or image
-    // is gone is dropped by the reader instead of failing the tour (Q14).
-    // It must be said like a dropped detail - never lost silently by the
-    // next save - but it is no tour detail, so it is not told to be set
-    // again in the tour's details.
+    // is gone, or a description or image a hand edit broke, is dropped by
+    // the reader instead of failing the tour (Q14). It must be said like a
+    // dropped detail - never lost silently by the next save - but it is no
+    // tour detail, so it is neither counted as one nor told to be set again
+    // in the tour's details. A station is named as the rail names it (its
+    // title, else "Station N"), never by the random id a creator never
+    // sees.
     const at = { lat: 48.1, lon: 11.5, alt: 520, rotation: [0, 0, 0, 1] };
-    const bare = (id: string, image: string) => ({
+    const bare = (id: string, extra: Record<string, unknown>) => ({
       id,
       geo: at,
       activateRadiusM: 50,
       foundRadiusM: 25,
       steps: [],
       items: [],
-      image,
+      ...extra,
     });
     const file = await zipFile([
       {
@@ -106,7 +109,11 @@ describe("openTourForEditing", () => {
         data: JSON.stringify({
           version: 3,
           minor: 2,
-          stations: [bare("well", "gone"), bare("gate", "lost")],
+          stations: [
+            bare("k3f9", { title: "The old well", image: "gone" }),
+            bare("q7x2", { image: "lost" }),
+            bare("z1m8", { description: 42 }),
+          ],
           cover: "gone",
         }),
       },
@@ -117,18 +124,33 @@ describe("openTourForEditing", () => {
     expect(out.dropped.map((d) => d.field)).toEqual([
       "image",
       "image",
+      "description",
       "cover",
     ]);
     expect(droppedDetailsLine(out.dropped)).toBe(
       "This tour's cover could not be read, so the editor left it out: the next save writes the tour without it. Set it again in the tour's details.",
     );
-    expect(droppedStationImagesLine(out.dropped)).toBe(
-      'The card images of 2 stations ("well" and "gate") name pictures this tour no longer has, so the editor left them out: the next save writes those stations without them.',
+    expect(droppedStationFieldsLine(out.dropped, out.manifest)).toBe(
+      'The card images of "The old well" and "Station 2" name pictures this tour no longer has. The description of "Station 3" could not be read. The editor left them out: the next save writes those stations without them.',
     );
-    expect(droppedStationImagesLine(out.dropped.slice(1))).toBe(
-      'The card image of station "gate" names a picture this tour no longer has, so the editor left it out: the next save writes the station without it.',
+    expect(droppedStationFieldsLine(out.dropped.slice(1), out.manifest)).toBe(
+      'The card image of "Station 2" names a picture this tour no longer has. The description of "Station 3" could not be read. The editor left them out: the next save writes those stations without them.',
     );
-    expect(droppedStationImagesLine(out.dropped.slice(2))).toBeNull();
+    expect(droppedStationFieldsLine(out.dropped.slice(2), out.manifest)).toBe(
+      'The description of "Station 3" could not be read. The editor left it out: the next save writes the station without it.',
+    );
+    // A malformed card image (no cause) is unreadable, not gone.
+    expect(
+      droppedStationFieldsLine(
+        [{ field: "image", station: "z1m8", reason: "not an id" }],
+        out.manifest,
+      ),
+    ).toBe(
+      'The card image of "Station 3" could not be read. The editor left it out: the next save writes the station without it.',
+    );
+    expect(droppedStationFieldsLine(out.dropped.slice(3), out.manifest)).toBe(
+      null,
+    );
     await out.session.close();
   });
 

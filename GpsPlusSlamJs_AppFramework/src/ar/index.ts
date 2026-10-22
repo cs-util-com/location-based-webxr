@@ -289,7 +289,7 @@ export {
   tourItems,
   type TourManifestDrop,
   type TourManifestReadOptions,
-  type TourStationImageDrop,
+  type TourStationDrop,
 } from './tour-manifest.js';
 export {
   geoPoseRotation,

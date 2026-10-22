@@ -60,7 +60,7 @@ import {
 } from "./editor-model.js";
 import {
   droppedDetailsLine,
-  droppedStationImagesLine,
+  droppedStationFieldsLine,
   openTourForEditing,
 } from "./editor-open.js";
 import { holdPageInert } from "./page-inert.js";
@@ -1594,12 +1594,12 @@ async function openFile(
   renderSaveState();
   toast(`Opened ${outcome.fileName}: ${openedSummary(model)}`);
   sayNoBackup();
-  // Details and station card images the reader dropped are said, never
-  // lost silently by the next save (M4a review #6); kept until closed, as
-  // an instruction.
+  // Details, station descriptions and card images the reader dropped are
+  // said, never lost silently by the next save (M4a review #6); kept until
+  // closed, as an instruction.
   for (const line of [
     droppedDetailsLine(outcome.dropped),
-    droppedStationImagesLine(outcome.dropped),
+    droppedStationFieldsLine(outcome.dropped, outcome.manifest),
   ]) {
     if (line !== null) fileToasts.push(toast(line, undefined, null));
   }

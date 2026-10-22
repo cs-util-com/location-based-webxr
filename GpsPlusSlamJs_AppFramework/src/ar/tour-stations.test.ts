@@ -779,11 +779,11 @@ describe("a station's description and card image (minor 2, G2 build plan M1a)", 
   // Why: the 3D editor's station cards show a description and a picture
   // (G2 build plan 2026-10-21-2247, §3.4, §4.2.4). Both are station fields
   // a creator types or picks, so the reader keeps exactly what the editor
-  // writes (a description trimmed, as the tour's own), refuses a value of
-  // the wrong shape at its own minor, and never fails a tour because the
-  // picture went: a card image whose photo or asset was deleted is
-  // dropped, reported like the cover's `image-gone`, and the write still
-  // succeeds (Q14).
+  // writes (a description trimmed, as the tour's own), and never fails a
+  // tour over either: a value of the wrong shape is dropped and reported
+  // (the writer refuses it), and a card image whose photo or asset was
+  // deleted is dropped, reported like the cover's `image-gone`, and the
+  // write still succeeds (Q14).
   const photoItem = (id: string) => ({
     id,
     kind: 'photo',
@@ -827,13 +827,20 @@ describe("a station's description and card image (minor 2, G2 build plan M1a)", 
     expect(blank).not.toHaveProperty('description');
   });
 
-  it("refuses a description that is not text or is longer than the tour's own limit, at its own minor", () => {
-    expect(() => parse([station({ description: 42 })])).toThrow(
-      /"stations\[0\]\.description" must be text/
+  it("drops a description that is not text or is longer than the tour's own limit, and says so, never failing the tour", () => {
+    // Why (as the tour details, M4a review #6): a hand-edited 2001
+    // character description must cost the description, not the tour - a
+    // refused tour cannot even be opened in the editor to fix it. The drop
+    // carries no cause, so the writer still refuses such a value loudly.
+    const { parsed, dropped } = parseWithDrops([
+      station({ description: 42 }),
+      station({ id: 's2', description: 'x'.repeat(2001) }),
+    ]);
+    for (const s of parsed) expect(s).not.toHaveProperty('description');
+    expect(dropped).toEqual(
+      ['s1', 's2'].map((id) => ({ field: 'description', station: id }))
     );
-    expect(() => parse([station({ description: 'x'.repeat(2001) })])).toThrow(
-      /"stations\[0\]\.description" must be text of at most 2000/
-    );
+    expect(() => parse([station({ description: 42 })])).not.toThrow();
     // The limit counts characters, as the tour's description does: 2000
     // emoji are 4000 UTF-16 units and still fit.
     expect(
@@ -869,11 +876,16 @@ describe("a station's description and card image (minor 2, G2 build plan M1a)", 
     );
   });
 
-  it('refuses an image that is not an id at its own minor; a newer minor reads it as none', () => {
+  it('drops an image that is not an id and says so, with no cause (the writer refuses it)', () => {
     for (const image of [42, 'not/an id', '']) {
-      expect(() => parse([station({ image })])).toThrow(
-        /"stations\[0\]\.image" must be an image id/
-      );
+      const { parsed, dropped } = parseWithDrops([station({ image })]);
+      expect(parsed[0]).not.toHaveProperty('image');
+      expect(dropped).toEqual([{ field: 'image', station: 's1' }]);
+    }
+  });
+
+  it("a newer minor's malformed values read as none, unreported: that minor may have widened the rule", () => {
+    for (const image of [42, 'not/an id', '']) {
       const { parsed, dropped } = parseWithDrops(
         [station({ image, description: 7 })],
         true
@@ -882,5 +894,24 @@ describe("a station's description and card image (minor 2, G2 build plan M1a)", 
       expect(parsed[0]).not.toHaveProperty('description');
       expect(dropped).toEqual([]);
     }
+  });
+
+  it("a newer minor's image naming what this reader skipped is left out unreported, never called gone", () => {
+    // Why: a lenient read leaves out what it cannot show (a photo of a
+    // newer image type, an asset of a newer media type); the picture is
+    // not gone, this reader just cannot see it. Saying "gone" would be
+    // false, and such a tour is never written back here anyway.
+    const { parsed, dropped } = parseWithDrops(
+      [
+        station({
+          image: 'f9',
+          items: [{ ...photoItem('f9'), image: 'content/f9.heic' }],
+        }),
+      ],
+      true
+    );
+    expect(parsed[0]?.items).toEqual([]);
+    expect(parsed[0]).not.toHaveProperty('image');
+    expect(dropped).toEqual([]);
   });
 });

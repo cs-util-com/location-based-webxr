@@ -28,9 +28,11 @@ Guided-setup plan DEC-N7/N8/N9 for the original pins and photos
     `"stations[0].steps[2].block.asset" …`). Unknown kinds and duplicate
     ids reject - except in a file of a NEWER minor, where an unknown value
     of a closed list degrades (below). `options.onDropped(drop)` hears
-    each tour detail and each station card image left out (below), as a
-    `TourManifestDrop` (`TourDetailsDrop | TourStationImageDrop`; a card
-    image's has `field: "image"` and the station's id).
+    each tour detail and each station description or card image left out
+    (below), as a `TourManifestDrop` (`TourDetailsDrop | TourStationDrop`;
+    only a station's carries `station`, the station's id, so
+    `'station' in drop` tells them apart). A drop with no `cause` is a
+    malformed value.
 - `serializeTourManifest(manifest, options?): string` - re-validates
   through the reader, refuses a manifest of a newer minor, then
   pretty-prints `{ version: 3, minor, ... }` at the lowest minor the tour
@@ -112,15 +114,14 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
   (trimmed, at most 2000 characters), the image an id naming a photo item
   of THAT station or an image asset of the tour. Decision record:
   `GpsPlusSlamJs_Docs/docs/2026-10-21-2247-g2-3d-editor-build-plan.md`
-  §4.2.4 and Q14 (the image referent; its recommended default, built
-  pending a veto).
+  §4.2.4 and Q14 (the image referent).
 - **The writer writes minor 2 while any station carries either**, else
   the minor it needed before (1 with a model, else 0), so a tour without
   them is written exactly as before. A 3.1 reader ignores both fields as
   unknown ones; were the tour written at 3.1, that reader would open it
   strictly and write it back WITHOUT them. At 3.2 it reads it leniently and
-  refuses to save it - which is what deployed viewers and npm 1.30.0 do,
-  by the version policy below.
+  refuses to save it - which is what npm 1.30.0 (minor 0) and viewers
+  built since 3.1 (minor 1) do, by the version policy below.
 - **A card image whose picture went is dropped, never failed**, at every
   minor: a well-formed id naming no photo of the station and no image
   asset (a deleted photo or asset, a photo moved to another station) is
@@ -129,9 +130,13 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
   drop quietly, beside the cover's `image-gone` - so deleting the photo a
   card shows never fails a save - and writes the lowest minor the tour
   still needs (a tour whose only minor 2 content was that image falls back).
-  An image that is not an id, or a description that is not text or too
-  long, is a broken file at this reader's minor (the writer fails loud: a
-  programming error) and none from a newer one.
+- **A malformed description or image is dropped too, never failed** (the
+  tour details' model): an image that is not an id, or a description that
+  is not text or too long, is left out and reported through `onDropped`
+  with no `cause`, so a hand-edited value costs the value and the tour
+  still opens in the editor to fix it. The writer refuses such a drop (a
+  programming error fails loud). From a newer minor both read as none,
+  unreported.
 
 ## An earlier file's `captureSpots` (removed)
 
@@ -259,8 +264,9 @@ parseTourManifest({ version: 2, objects: [] }); // throws: an older format
   written back exactly at minor 2; the minor per field - 2 for either, 1
   for a model alone, else 0; a minor 1 file opening and saving as 1; the
   writer dropping an image whose photo went with `station-image-gone`
-  and falling back a minor; the writer refusing a malformed image or
-  description).
+  and falling back a minor; the reader dropping a malformed image and
+  description with no cause and opening the tour; the writer refusing
+  them).
 - `tour-manifest.property.test.ts` - over generated stations, items
   (placed models among them), station descriptions (blank and padded
   among them) and card images (the station's own photo, the image asset,

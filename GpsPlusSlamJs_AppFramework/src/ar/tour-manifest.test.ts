@@ -525,7 +525,35 @@ describe("a station's description and card image (minor 2, G2 build plan M1a)", 
     ]);
   });
 
-  it('the writer refuses a station image or description its reader refuses: a programming error fails loud', () => {
+  it('the reader drops a malformed station description or image and opens the tour, saying which', () => {
+    // Why (as the tour details, M4a review #6): a hand-edited value costs
+    // the value, never the tour - refused, the tour could not even be
+    // opened in the editor to fix it.
+    const dropped: string[] = [];
+    const manifest = parseTourManifest(
+      tour({
+        stations: [
+          station([pin, photo], {
+            description: 'x'.repeat(2001),
+            image: 'not/an id',
+          }),
+        ],
+      }),
+      {
+        onDropped: (drop) => {
+          dropped.push(`${drop.field}: ${drop.reason}`);
+        },
+      }
+    );
+    expect(manifest.stations[0]).not.toHaveProperty('description');
+    expect(manifest.stations[0]).not.toHaveProperty('image');
+    expect(dropped).toEqual([
+      'description: "stations[0].description" must be text of at most 2000 characters',
+      'image: "stations[0].image" must be an image id',
+    ]);
+  });
+
+  it('the writer refuses a station image or description its reader drops as malformed: a programming error fails loud', () => {
     const manifest = parseTourManifest(tour());
     const withStation = (extra: Record<string, unknown>) => ({
       ...manifest,

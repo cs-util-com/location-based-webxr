@@ -54,19 +54,23 @@ import { tourMediaTypeOf } from './tour-media.js';
 type Fail = (message: string) => never;
 
 /**
- * A station's card image the reader left out (minor 2): its id names no
+ * A station's description or card image the reader left out (minor 2), the
+ * tour details' model: a malformed value carries no `cause`, and a writer
+ * refuses it (the editor checks with the same rules, so one reaching the
+ * writer is a programming error). A well-formed card image naming no
  * picture the station can show - no photo of that station and no image
- * asset of the tour (a deleted photo or asset). The one station drop a
- * writer accepts quietly, beside the cover's `image-gone`, so deleting the
- * photo a card shows never fails a save (G2 build plan 2026-10-21-2247,
- * Q14).
+ * asset of the tour (a deleted photo or asset) - carries
+ * `station-image-gone`: the one station drop a writer accepts quietly,
+ * beside the cover's `image-gone`, so deleting the photo a card shows never
+ * fails a save (G2 build plan 2026-10-21-2247, Q14).
  */
-export interface TourStationImageDrop {
-  readonly field: 'image';
-  /** The id of the station whose image was left out. */
+export interface TourStationDrop {
+  readonly field: 'description' | 'image';
+  /** The id of the station whose value was left out. */
   readonly station: string;
   readonly reason: string;
-  readonly cause: 'station-image-gone';
+  /** Absent: the value is malformed. */
+  readonly cause?: 'station-image-gone';
 }
 
 /** Thrown inside a step's parse when a lenient reader cannot show it; the
@@ -367,8 +371,8 @@ interface BlockContext {
   readonly fail: Fail;
   /** A newer minor: what this reader cannot show is skipped (R4). */
   readonly lenient: boolean;
-  /** Hears each station card image left out (minor 2). */
-  readonly onDropped: ((drop: TourStationImageDrop) => void) | undefined;
+  /** Hears each station description or card image left out (minor 2). */
+  readonly onDropped: ((drop: TourStationDrop) => void) | undefined;
 }
 
 function requireAsset(
@@ -787,8 +791,8 @@ function parseStation(
   return {
     id,
     ...(title === undefined ? {} : { title }),
-    ...descriptionOf(value.description, at, ctx),
-    ...imageOf(value.image, { id, items }, at, ctx),
+    ...descriptionOf(value.description, { id, at }, ctx),
+    ...imageOf(value.image, { id, at, items }, ctx),
     geo: parseGeoPose(value.geo, { path: `${at}.geo`, fail }),
     ...parseRadii(value, at, fail),
     hint: 'arrow',
@@ -807,54 +811,69 @@ function parseStation(
  * (`checkTourDescription`: trimmed, at most
  * {@link TOUR_DESCRIPTION_MAX_CHARS} characters), so what an editor's field
  * accepts is what a reader keeps. A blank one is none, as a blank title.
- * Any other value is a broken file at this reader's minor, and none in a
- * file of a newer minor (which may widen the rule).
+ * Any other value is dropped, never failing the tour (a refused tour could
+ * not even be opened to fix it): reported with no cause at this reader's
+ * minor, silently in a file of a newer minor (which may widen the rule).
  */
 function descriptionOf(
   value: unknown,
-  at: string,
+  station: { readonly id: string; readonly at: string },
   ctx: BlockContext
 ): { description?: string } {
   if (value === undefined) return {};
   if (typeof value === 'string' && value.trim() === '') return {};
   const checked = checkTourDescription(value);
   if (checked.ok) return { description: checked.value };
-  if (ctx.lenient) return {};
-  return ctx.fail(
-    `"${at}.description" must be text of at most ${String(TOUR_DESCRIPTION_MAX_CHARS)} characters`
-  );
+  if (!ctx.lenient) {
+    ctx.onDropped?.({
+      field: 'description',
+      station: station.id,
+      reason: `"${station.at}.description" must be text of at most ${String(TOUR_DESCRIPTION_MAX_CHARS)} characters`,
+    });
+  }
+  return {};
 }
 
 /**
  * A station's card image (minor 2): an id naming a photo item of this
- * station or an image asset of the tour. A well-formed id naming neither
- * (the photo or asset was deleted) is left out and reported as
- * `station-image-gone` - never a failure, at any minor (Q14). A value that
- * is not an id is a broken file at this reader's minor, and none in a file
- * of a newer minor.
+ * station or an image asset of the tour. Never a failure (Q14), and at this
+ * reader's minor always reported: a well-formed id naming neither (the
+ * photo or asset was deleted) as `station-image-gone`, a value that is not
+ * an id with no cause. In a file of a newer minor either is left out
+ * silently: that minor may widen the rule, and the picture may be one this
+ * reader skipped (a newer media type), which is not gone.
  */
 function imageOf(
   value: unknown,
-  station: { readonly id: string; readonly items: readonly TourItem[] },
-  at: string,
+  station: {
+    readonly id: string;
+    readonly at: string;
+    readonly items: readonly TourItem[];
+  },
   ctx: BlockContext
 ): { image?: string } {
   if (value === undefined) return {};
-  if (!isId(value)) {
-    if (ctx.lenient) return {};
-    return ctx.fail(`"${at}.image" must be an image id`);
-  }
   const images = tourImageIds({
     objects: station.items,
     assets: [...ctx.assets.values()],
   });
-  if (images.has(value)) return { image: value };
-  ctx.onDropped?.({
-    field: 'image',
-    station: station.id,
-    reason: `"${at}.image" names no photo of this station and no image of this tour`,
-    cause: 'station-image-gone',
-  });
+  if (isId(value) && images.has(value)) return { image: value };
+  if (ctx.lenient) return {};
+  const at = `${station.at}.image`;
+  ctx.onDropped?.(
+    isId(value)
+      ? {
+          field: 'image',
+          station: station.id,
+          reason: `"${at}" names no photo of this station and no image of this tour`,
+          cause: 'station-image-gone',
+        }
+      : {
+          field: 'image',
+          station: station.id,
+          reason: `"${at}" must be an image id`,
+        }
+  );
   return {};
 }
 
@@ -945,8 +964,9 @@ function checkStepReferences(
  * block names exists and is of the block's kind; every choice target, next
  * station and route target resolves. `lenient` (a newer minor) skips what
  * this reader cannot show instead of failing (see the module comment).
- * `onDropped` hears each station card image left out because its picture
- * is gone (minor 2, {@link TourStationImageDrop}).
+ * `onDropped` hears each station description or card image left out
+ * (minor 2, {@link TourStationDrop}): malformed, or an image whose picture
+ * is gone. Neither fails the tour.
  */
 export function parseTourStations(
   value: unknown,
@@ -954,7 +974,7 @@ export function parseTourStations(
     assets: readonly TourAsset[];
     fail: Fail;
     lenient?: boolean;
-    onDropped?: (drop: TourStationImageDrop) => void;
+    onDropped?: (drop: TourStationDrop) => void;
   }
 ): TourStation[] {
   const { fail } = options;

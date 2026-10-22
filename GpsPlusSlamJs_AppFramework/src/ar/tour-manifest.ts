@@ -44,8 +44,10 @@
  *   (`tour-stations.ts`; G2 build plan 2026-10-21-2247, §4.2.4). Written
  *   at 2 while any station carries either: a 3.1 reader ignores both as
  *   unknown fields, so it reads such a tour leniently and refuses to save
- *   it, instead of writing it back without them. A card image whose
- *   picture went is dropped (`station-image-gone`), like the cover.
+ *   it, instead of writing it back without them. Neither ever fails a
+ *   tour: a card image whose picture went is dropped
+ *   (`station-image-gone`), like the cover, and a malformed value is
+ *   dropped and reported with no cause, like a malformed detail.
  * - A newer minor may also add VALUES to a closed list (K1 milestone
  *   review R4): an item kind, an order, and the lists of
  *   `tour-stations.ts`. Read from a file of a newer minor, an unknown value
@@ -93,7 +95,7 @@ import {
   type TourAsset,
   type TourOrder,
   type TourStation,
-  type TourStationImageDrop,
+  type TourStationDrop,
 } from './tour-stations.js';
 
 export type {
@@ -106,7 +108,7 @@ export type {
   TourQuizOption,
   TourQuizRoute,
   TourStation,
-  TourStationImageDrop,
+  TourStationDrop,
   TourStep,
   TourStepAdvance,
 } from './tour-stations.js';
@@ -171,12 +173,16 @@ export interface TourManifest extends TourDetails {
 }
 
 /** What a reader left out without failing the tour: a tour detail
- *  (`tour-details.ts`), or a station's card image whose picture went
- *  (`field` `image`, with the station's id). */
-export type TourManifestDrop = TourDetailsDrop | TourStationImageDrop;
+ *  (`tour-details.ts`), or a station's description or card image
+ *  (`tour-stations.ts`; the one kind that carries `station`, the station's
+ *  id). A drop with no `cause` is a malformed value. */
+export type TourManifestDrop = TourDetailsDrop | TourStationDrop;
 
-/** How a reader or writer reports what it left out: a detail is cosmetic,
- *  and so is a card image, so a bad one costs the value, never the tour. */
+/** How a reader or writer reports what it left out. The tour's details and
+ *  a station's description and card image are cosmetic, so a bad one -
+ *  malformed, or an image whose picture went - costs the value, never the
+ *  tour. The writer accepts only the drops with a `cause` (a picture that
+ *  went); a malformed value handed to it fails loud. */
 export interface TourManifestReadOptions {
   readonly onDropped?: (drop: TourManifestDrop) => void;
 }
@@ -397,8 +403,9 @@ export function parseTourManifest(
  * drop's `cause` `image-gone`) is left out, reported through
  * `onDropped`, and so is a station's card image whose picture went
  * (`station-image-gone`). Any other drop - a cover that is not an image
- * id, a description or a contact the reader would drop - is a programming
- * error here (the editor checks them with the same rules) and fails loud.
+ * id, a description or a contact the reader would drop, a station
+ * description or card image that is malformed - is a programming error
+ * here (the editor checks them with the same rules) and fails loud.
  */
 export function serializeTourManifest(
   manifest: TourManifest,

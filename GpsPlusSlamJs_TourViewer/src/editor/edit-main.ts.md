@@ -40,8 +40,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 - **Details the reader dropped** (a hand-edited description, contact or
   cover; M4a review #6) are said in a toast that stays until closed
   (`droppedDetailsLine`): which ones, and that the next save writes the
-  tour without them; station card images whose picture is gone (format
-  minor 2) in a toast of their own (`droppedStationImagesLine`).
+  tour without them; station descriptions and card images the reader
+  left out (format minor 2: a picture gone, or a value a hand edit broke)
+  in a toast of their own, naming each station by its rail name
+  (`droppedStationFieldsLine`).
 - **A failure latched during the open** (`integrityFailure()` right after
   it) refuses the tour (E1 review #6).
 - **A late integrity failure** (`onIntegrityFailure`, the background

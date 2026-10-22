@@ -167,7 +167,11 @@ const stations = fc
 
 /** What a reader of `minor` keeps of `m`: a minor 0 reader no placed model
  *  (its unknown kind), a minor 1 reader no station description or card
- *  image (its unknown fields). */
+ *  image (its unknown fields). This is a hand-written MODEL of the older
+ *  readers, not an independent oracle: it lists the same per-minor features
+ *  `minorNeeded` lists, so a feature added to both in the same wrong way
+ *  would still pass. What it catches is a minor too LOW for what the
+ *  manifest carries and, through the minimality check, one too HIGH. */
 function keptAtMinor(m: TourManifest, minor: number): TourManifest {
   return {
     ...m,
