@@ -30,6 +30,9 @@ describe("editorView", () => {
       undelivered: false,
       message: null,
       picking: false,
+      viewMode: "2d",
+      view3dLoad: "idle",
+      view3dFailure: null,
     });
   });
 
@@ -79,6 +82,9 @@ describe("editorView", () => {
       undelivered: true,
       message: { id: "x", text: "No.", refused: true },
       picking: true,
+      viewMode: "2d",
+      view3dLoad: "idle",
+      view3dFailure: null,
     });
     // Selecting another item keeps the line: the page clears it itself.
     expect(reduce(state, act.selected({ id: null })).message).toEqual(
@@ -107,5 +113,84 @@ describe("createTourViewerStore with extra reducers", () => {
 
   it("the phone's store carries no editor slice", () => {
     expect("editorView" in createTourViewerStore().getState()).toBe(false);
+  });
+});
+
+describe("the view switch's state", () => {
+  // Why: the 3D view loads in three async ways (its chunk, its ground,
+  // WebGL), and the switch must show each state the CLAUDE.md async-UI
+  // rule asks for: loading while it loads, then the 3D view, or the map
+  // again with why. A late answer of a load the creator already left (a
+  // tour opened, the map asked for) must not throw the page into 3D.
+  it("goes from the map to loading to the 3D view and back", () => {
+    let state = reduce(initialEditorViewState, act.view3dRequested());
+    expect(state).toMatchObject({
+      viewMode: "2d",
+      view3dLoad: "loading",
+      view3dFailure: null,
+    });
+    state = reduce(state, act.view3dShown());
+    expect(state).toMatchObject({ viewMode: "3d", view3dLoad: "idle" });
+    state = reduce(state, act.view2dRequested());
+    expect(state).toMatchObject({
+      viewMode: "2d",
+      view3dLoad: "idle",
+      view3dFailure: null,
+    });
+  });
+
+  it("lands on the map with the reason when the load fails", () => {
+    for (const reason of ["chunk", "webgl", "empty"] as const) {
+      const state = [
+        act.view3dRequested(),
+        act.view3dFailed({ reason }),
+      ].reduce(reduce, initialEditorViewState);
+      expect(state).toMatchObject({
+        viewMode: "2d",
+        view3dLoad: "failed",
+        view3dFailure: reason,
+      });
+    }
+  });
+
+  it("falls back to the map when the 3D view loses its context", () => {
+    const state = [
+      act.view3dRequested(),
+      act.view3dShown(),
+      act.view3dFailed({ reason: "context-lost" }),
+    ].reduce(reduce, initialEditorViewState);
+    expect(state).toMatchObject({
+      viewMode: "2d",
+      view3dLoad: "failed",
+      view3dFailure: "context-lost",
+    });
+  });
+
+  it("ignores a load's late answer once the creator left it", () => {
+    const left = [act.view3dRequested(), act.view2dRequested()].reduce(
+      reduce,
+      initialEditorViewState,
+    );
+    expect(reduce(left, act.view3dShown())).toEqual(left);
+    expect(reduce(left, act.view3dFailed({ reason: "chunk" }))).toEqual(left);
+    // Shown with no load running, or asked again while it loads: nothing.
+    expect(reduce(initialEditorViewState, act.view3dShown())).toEqual(
+      initialEditorViewState,
+    );
+    const loading = reduce(initialEditorViewState, act.view3dRequested());
+    expect(reduce(loading, act.view3dRequested())).toEqual(loading);
+  });
+
+  it("keeps the selection and every other field through the switch", () => {
+    const before = reduce(initialEditorViewState, act.selected({ id: "s" }));
+    const after = [
+      act.view3dRequested(),
+      act.view3dShown(),
+      act.view3dFailed({ reason: "context-lost" }),
+      act.view3dRequested(),
+      act.view3dShown(),
+      act.view2dRequested(),
+    ].reduce(reduce, before);
+    expect(after).toEqual(before);
   });
 });

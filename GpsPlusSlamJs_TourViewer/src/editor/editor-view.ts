@@ -2,8 +2,9 @@
  * The desktop editor's page state that is not the tour (`editorView`):
  * which item is selected, whether an edit is in flight, the marker being
  * dragged, the walk's flags, the card's last outcome line, Done's and the
- * file picker's in-progress states, and whether a save waits to be
- * delivered again. The tour itself is `tourDocument`'s; this slice holds
+ * file picker's in-progress states, whether a save waits to be
+ * delivered again, and the view switch: the map or the 3D view, and the
+ * 3D view's load and why it last failed. The tour itself is `tourDocument`'s; this slice holds
  * what the page's chrome reads, so any view of the page (the map page,
  * a 3D view) reads one copy.
  *
@@ -37,6 +38,11 @@ export interface EditorMessage {
   readonly refused?: true;
 }
 
+/** Why the 3D view is not shown: its code did not load (`chunk`), the
+ *  browser has no WebGL (`webgl`), the view lost its WebGL context while
+ *  shown (`context-lost`), or the tour has nothing to place (`empty`). */
+export type View3dFailure = "chunk" | "webgl" | "context-lost" | "empty";
+
 export interface EditorViewState {
   /** The selected item's id (the model's: `station:<id>` for a station). */
   readonly selected: string | null;
@@ -55,6 +61,13 @@ export interface EditorViewState {
   readonly message: EditorMessage | null;
   /** The browser's file picker is open: a second click opens nothing. */
   readonly picking: boolean;
+  /** The view the page shows: the map, or the 3D view. */
+  readonly viewMode: "2d" | "3d";
+  /** The 3D view's load: none running, loading, or the last one failed.
+   *  Never `loading` or `failed` while the 3D view shows. */
+  readonly view3dLoad: "idle" | "loading" | "failed";
+  /** Why the last load failed, exactly while `view3dLoad` is `failed`. */
+  readonly view3dFailure: View3dFailure | null;
 }
 
 export const initialEditorViewState: EditorViewState = {
@@ -67,6 +80,9 @@ export const initialEditorViewState: EditorViewState = {
   undelivered: false,
   message: null,
   picking: false,
+  viewMode: "2d",
+  view3dLoad: "idle",
+  view3dFailure: null,
 };
 
 /** Whether `spot` is a spot a map can draw: finite numbers. */
@@ -120,6 +136,35 @@ const editorViewSlice = createSlice({
     },
     pickingChanged(state, action: PayloadAction<{ picking: boolean }>) {
       state.picking = action.payload.picking;
+    },
+    /** The 3D view asked for, from the map: its load starts. Asked again
+     *  while it loads, or while it shows, nothing changes. */
+    view3dRequested(state) {
+      if (state.viewMode === "3d" || state.view3dLoad === "loading") return;
+      state.view3dLoad = "loading";
+      state.view3dFailure = null;
+    },
+    /** The load ended with the 3D view drawn. Only for a load that runs: a
+     *  late answer after the creator went back to the map changes nothing. */
+    view3dShown(state) {
+      if (state.view3dLoad !== "loading") return;
+      state.viewMode = "3d";
+      state.view3dLoad = "idle";
+    },
+    /** The load failed, or the shown view lost its context: the map again,
+     *  with why. A late failure of a load already left changes nothing. */
+    view3dFailed(state, action: PayloadAction<{ reason: View3dFailure }>) {
+      if (state.view3dLoad !== "loading" && state.viewMode !== "3d") return;
+      state.viewMode = "2d";
+      state.view3dLoad = "failed";
+      state.view3dFailure = action.payload.reason;
+    },
+    /** The map asked for (or the tour closed): any load is left, and the
+     *  last failure is forgotten. */
+    view2dRequested(state) {
+      state.viewMode = "2d";
+      state.view3dLoad = "idle";
+      state.view3dFailure = null;
     },
   },
 });

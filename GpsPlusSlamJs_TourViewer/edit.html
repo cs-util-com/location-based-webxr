@@ -12,6 +12,13 @@
   <body>
     <div id="map" aria-label="Tour map"></div>
 
+    <!-- The 3D view (view-switch.ts, src/editor3d/): over the map while it
+         shows, its code loaded only when the switch asks for it. The
+         panels stay above it; the credits are the relief's and the map's. -->
+    <div id="view3d" aria-label="The tour in 3D" hidden>
+      <p class="view3d-credits" id="view3d-credits"></p>
+    </div>
+
     <!-- The debug layer (debug-capture-layer.ts): the walk's camera
          captures on the map, for a tour whose file carries a walk or with
          debug data added beside it ("Add debug data…", a file input or a
@@ -56,6 +63,9 @@
         </div>
       </div>
       <div class="topbar-spacer"></div>
+      <!-- The view switch: the map or the 3D view of the same tour; it says
+           when the 3D view loads and why it could not open. -->
+      <button class="btn" id="view-switch" type="button">3D view</button>
       <label class="keep-walk" id="keep-walk" hidden>
         <input type="checkbox" id="keep-walk-input" />
         Keep the debug data in the tour file
