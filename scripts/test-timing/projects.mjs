@@ -534,10 +534,17 @@ export const PROJECTS = [
   },
   demoAppProject("GpsPlusSlamJs_AnchorStarter"),
   // The mesh cursor's worker (polish round M5) is spawned from a URL, which
-  // dpdm cannot follow: its own root keeps it inside the cycle gate.
-  demoAppProject("GpsPlusSlamJs_TourViewer", [
-    "./src/workers/occlusion-mesher.worker.ts",
-  ]),
+  // dpdm cannot follow: its own root keeps it inside the cycle gate. Its 3D
+  // editor imports gps-plus-slam-osm through `exports` -> dist (the geoid,
+  // the relief's constants), so the OSM build runs FIRST, before the first
+  // stage that reads a dist, for the reason OsmDemo's does (see there).
+  {
+    ...demoAppProject("GpsPlusSlamJs_TourViewer"),
+    stages: [
+      BUILD_OSM_STAGE,
+      ...demoAppStages(["./src/workers/occlusion-mesher.worker.ts"]),
+    ],
+  },
   {
     name: "GpsPlusSlamJs_MinimalExample",
     dir: "GpsPlusSlamJs_MinimalExample",

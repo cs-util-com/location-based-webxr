@@ -267,15 +267,22 @@ function archGlb() {
 }
 
 // --- The tour. Marienplatz, Munich: the Mariensaeule (the column) and two
-// spots about 30 m from it. Ground altitude about 519 m.
+// spots about 30 m from it.
 const COLUMN = { lat: 48.137393, lon: 11.575493 };
 const M_PER_DEG = 111_320;
-function geoAt(northM, eastM) {
+// Each station's `alt` is ELLIPSOIDAL, as a phone's GPS reports it: the
+// ground there (orthometric, about 516 m above sea level) plus the geoid's
+// undulation N (EGM96, 45.68 m here). The ground was read from Mapterhorn's
+// z14 tile 14/8718/5685 (fetched 2026-10-22, Terrarium-decoded, bilinear
+// between pixel centres): 515.83 m at the column, 514.17 m at the gate,
+// 516.23 m at the steps. The 3D editor draws a station at alt - N, so each
+// stands on the ground it draws (src/sample-tour.test.ts holds it).
+function geoAt(northM, eastM, altM) {
   return {
     lat: COLUMN.lat + northM / M_PER_DEG,
     lon:
       COLUMN.lon + eastM / (M_PER_DEG * Math.cos((COLUMN.lat * Math.PI) / 180)),
-    alt: 519,
+    alt: altM,
     headingDeg: 0,
   };
 }
@@ -304,7 +311,7 @@ export function buildSampleTour() {
         {
           id: "column",
           title: "The column",
-          geo: geoAt(0, 0),
+          geo: geoAt(0, 0, 561.5),
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
@@ -351,7 +358,7 @@ export function buildSampleTour() {
         {
           id: "gate",
           title: "The old gate",
-          geo: geoAt(-10, 28),
+          geo: geoAt(-10, 28, 559.9),
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
@@ -370,7 +377,7 @@ export function buildSampleTour() {
         {
           id: "steps",
           title: "The town hall steps",
-          geo: geoAt(25, 12),
+          geo: geoAt(25, 12, 561.9),
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",

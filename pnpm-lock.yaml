@@ -823,6 +823,9 @@ importers:
       gps-plus-slam-globe:
         specifier: workspace:*
         version: link:../GpsPlusSlamJs_Globe
+      gps-plus-slam-osm:
+        specifier: workspace:*
+        version: link:../GpsPlusSlamJs_Osm
       leaflet:
         specifier: ^1.9.4
         version: 1.9.4
