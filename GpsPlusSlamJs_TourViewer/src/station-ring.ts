@@ -44,18 +44,30 @@ export interface StationRing {
   hide(): void;
 }
 
+/** The ring's look, for a caller other than the creator's view (the
+ *  visitor's focus ring, `walk-focus-cues.ts`). */
+export interface StationRingLook {
+  /** Default the design system's accent, `#f2971f`. */
+  readonly colour?: string;
+  /** Default 0.7. */
+  readonly opacity?: number;
+  /** The mesh's name, how a test finds it; default `STATION_RING_NAME`. */
+  readonly name?: string;
+}
+
 /**
- * One ring per page wiring (`creator-stations.ts`), kept for the page's
- * life: every AR session shows and hides the same mesh and material, so
- * there is no teardown - a session's end only hides it, and nothing frees
- * the material a later session reuses.
+ * One ring per page wiring (`creator-stations.ts`, `walk-focus-cues.ts`),
+ * kept for the page's life: every AR session shows and hides the same
+ * mesh and material, so there is no teardown - a session's end only hides
+ * it, and nothing frees the material a later session reuses.
  */
-export function createStationRing(): StationRing {
+export function createStationRing(look: StationRingLook = {}): StationRing {
+  const name = look.name ?? STATION_RING_NAME;
   const material = new MeshBasicMaterial({
-    color: RING_COLOUR,
+    color: look.colour ?? RING_COLOUR,
     side: DoubleSide,
     transparent: true,
-    opacity: 0.7,
+    opacity: look.opacity ?? 0.7,
     depthWrite: false,
   });
   let mesh: Mesh | null = null;
@@ -75,7 +87,7 @@ export function createStationRing(): StationRing {
     // Flat on the ground: the ring lies in XY, the ground plane is XZ.
     geometry.rotateX(-Math.PI / 2);
     const next = new Mesh(geometry, material);
-    next.name = STATION_RING_NAME;
+    next.name = name;
     // Never what a tap picks: taps select the objects inside the ring.
     next.raycast = () => undefined;
     if (old !== null) {

@@ -16,6 +16,7 @@ import {
   saveFinePrint,
   InPlaceRefusal,
   type WritableFileHandle,
+  isSameFile,
 } from "./save-target.js";
 
 /** A file on a fake disk: its bytes and modified time, and the calls. */
@@ -25,6 +26,10 @@ function fakeHandle(initial: string, name = "tour.zip") {
     modified: 1000,
     gone: false,
     failWrite: false,
+    /** The read right after a write still sees the old bytes (with the
+     *  new time): a lagging read of what was just written. */
+    lagging: false,
+    staleNext: null as string | null,
     calls: [] as string[],
     permission: "granted" as PermissionState | "throws",
   };
@@ -36,8 +41,10 @@ function fakeHandle(initial: string, name = "tour.zip") {
       if (state.gone) {
         return Promise.reject(new DOMException("gone", "NotFoundError"));
       }
+      const bytes = state.staleNext ?? state.bytes;
+      state.staleNext = null;
       return Promise.resolve(
-        new File([state.bytes], name, { lastModified: state.modified }),
+        new File([bytes], name, { lastModified: state.modified }),
       );
     },
     createWritable: () => {
@@ -49,6 +56,7 @@ function fakeHandle(initial: string, name = "tour.zip") {
           pending += await (data as Blob).text();
         },
         close: () => {
+          if (state.lagging) state.staleNext = state.bytes;
           state.bytes = pending;
           state.modified += 1;
           return Promise.resolve();
@@ -193,6 +201,18 @@ describe("createSaveTarget", () => {
     expect(state.bytes).toBe("fits");
   });
 
+  it("takes the written size from the bytes it wrote, as the tail, so a lagging read back is no change", async () => {
+    // Why: the baseline after a write read the size (and time) back from
+    // the file but the tail from the bytes written. A read back that still
+    // saw the old size left a baseline that described no file, and the
+    // next save was refused as "changed" though nothing else wrote it.
+    const { handle, state } = fakeHandle("version one");
+    const target = await createSaveTarget(handle, await handle.getFile());
+    state.lagging = true;
+    await target.write(new Blob(["version two, longer"]));
+    expect(await target.check()).toBe("same");
+  });
+
   it("keeps its baseline when a write fails, so the next check is honest", async () => {
     const { handle, state } = fakeHandle("version one");
     const target = await createSaveTarget(handle, await handle.getFile());
@@ -259,6 +279,36 @@ describe("SaveTarget.isSame", () => {
     );
     expect(await throwing.isSame(named("castle.zip"))).toBe(true);
     expect(await throwing.isSame(named("castle-walk.zip"))).toBe(false);
+  });
+});
+
+describe("isSameFile", () => {
+  // Why (r901 review #5): "Save the debug data" reads the opened file, so
+  // a bundle written over it loses the walk from both. A file opened
+  // without a handle (the file input, a drop) can only be told by its
+  // name - which then decides, as for the move's target.
+  const named = (name: string) => ({ kind: "file", name }) as FileSystemHandle;
+
+  it("is the browser's answer where the opened file has a handle that gives one", async () => {
+    const handle = Object.assign(named("castle.zip"), {
+      isSameEntry: (other: FileSystemHandle) =>
+        Promise.resolve(other.name === "elsewhere.zip"),
+    });
+    const opened = { name: "castle.zip", handle };
+    expect(await isSameFile(opened, named("castle.zip"))).toBe(false);
+    expect(await isSameFile(opened, named("elsewhere.zip"))).toBe(true);
+  });
+
+  it("counts the same name as the same file without a handle, or with one that cannot tell", async () => {
+    const cannotTell = Object.assign(named("castle.zip"), {
+      isSameEntry: () =>
+        Promise.reject(new DOMException("no", "SecurityError")),
+    }) as FileSystemHandle;
+    for (const handle of [null, named("castle.zip"), cannotTell]) {
+      const opened = { name: "castle.zip", handle };
+      expect(await isSameFile(opened, named("castle.zip"))).toBe(true);
+      expect(await isSameFile(opened, named("castle-debug.zip"))).toBe(false);
+    }
   });
 });
 

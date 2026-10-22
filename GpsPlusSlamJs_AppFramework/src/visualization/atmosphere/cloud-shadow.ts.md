@@ -18,17 +18,42 @@ shadows drift with the clouds and fall where the sky draws them.
 - `sync(source)`: takes an atmosphere's clouds (`SkyAtmosphere.cloudUniforms`
   satisfies `CloudShadowSource`): the noise texture, the drift offset and
   the far fade as the OBJECTS themselves (the shadows drift with the sky,
-  no per-frame call), the threshold and the anchor as copies (call again
-  after a cover or mode change).
+  no per-frame call), the threshold, the anchor and the hex switch
+  (`atmCloudHex`, hex-tiling plan H1; absent: off) as copies (call again
+  after a cover, mode or hex change). With the switch the shadow's noise
+  hex-tiles its first octave exactly as the sky's, with the continuous
+  uv's gradients, and its map threshold comes from the hex table
+  (`configureMap` sets both). The live noise (round-3 plan N1): the
+  source's `atmCloudLive` switch and `atmCloudLattice` are copied, its
+  `atmCloudLiveBasis` and `atmCloudLiveAmp` taken as the OBJECTS (so the
+  shadows follow the anchor, its drift and the fine gain with no per-frame
+  call); with the switch the
+  shadow reads the live field (`atmCloudLiveGrad`) and its map threshold
+  comes from the live table (`configureMap` sets all three). A source
+  without them is the tile.
 - `setEnabled(on)` and `enabled`: a uniform, no recompile.
 - `apply(material)`: patches one lit material (Lambert, Phong, Standard,
   Physical, Toon), chaining its `onBeforeCompile` and adding `|cloud-shadow`
   to its program key. Idempotent (ownership in a WeakMap). `TypeError` for
   a material without three's light loop; `Error` for one another
   `CloudShadow` owns; `CloudShadowAnchorError` at compile time when three's
-  `#include <lights_pars_begin>` or `void main() {` is gone.
+  `#include <lights_pars_begin>` or the fragment's main is gone. The main
+  is found however an earlier hook spaced it (`void main(` and `) {` on two lines, as
+  3d-tiles-renderer's overlay wrapper leaves it): an anchor error thrown
+  in the render loop stops three's animation loop for good.
 - `applyToObject(root)`: patches every lit material under `root` not yet
   patched; returns how many.
+
+- **A coverage map, a disc and a lift** (globe volume-cloud plan
+  2026-10-05-0016, C3), so the volume's shadow falls from the clouds the
+  volume draws: `configureMap({ coverage?, disc? })` (the shared chunk,
+  [`cloud-coverage.ts.md`](cloud-coverage.ts.md); fixed before the first
+  patched material, since it changes the shader text: `Error` after it,
+  `RangeError` for a chunk without `atmCloudCoverageAt`), and three
+  uniforms set live: `setLiftM(m)` (the layer lifted above its own height),
+  `setDiscRadiusM(m)`, `setDiscCentre({ x, z } | null)` (the disc's
+  centre, the camera when null; volume-cloud plan §15) and `setCover(c)`
+  (the global cover the map's is multiplied by). The program key gains `-map` and `-disc`.
 
 ## Invariants & assumptions
 
@@ -82,6 +107,13 @@ haze.applyToObject(scene);
 cloudShadow.sync(atmosphere);
 ```
 
+- **The threshold where the light crosses the layer** (C3): the lifted
+  point moved along the light to the layer's middle
+  (`atmColumnDistance`), then `atmCloudThresholdAt` there. Without a map
+  or a disc it is the sky's threshold, so the default shadow is unchanged
+  and the same from every viewpoint; with the disc (the volume's) it
+  depends on the camera by design.
+
 ## Tests
 
 - `cloud-shadow.test.ts`: three's real standard, physical, Lambert, Phong
@@ -89,7 +121,9 @@ cloudShadow.sync(atmosphere);
   before the light loop, three's function called by its real name, each
   light's own direction, the world point); the chained hook and the program
   key; the haze chained in either order with each text once; the refusals;
-  the missing anchor; `applyToObject`; the shared texture and offset, the
+  the missing anchor; a main re-spaced by an earlier hook (the overlay
+  wrapper's, a space, a line break), patched once before it;
+  `applyToObject`; the shared texture and offset, the
   copied threshold, one switch for every material.
 - `GpsPlusSlamJs_DesignSystem/3d/sun-clouds.smoke.spec.mjs`: on the GPU,
   ground under a cloud darker than with the patch off where the CPU twin

@@ -35,9 +35,12 @@ const altitude = fc
 const duration = fc.integer({ min: 1, max: 120_000 });
 
 describe("GLOBE_DIVE", () => {
-  it("holds the owner's numbers: about 15 s, handed over at 150 km", () => {
+  // The dive lands in the globe's own city now (globe city plan 2026-10-05
+  // -0040 §12.5 C6): 2 km above the ellipsoid, about 1.5 km over Bern and
+  // Zurich; it ended at 150 km where the page handed over to OsmDemo.
+  it("holds the owner's numbers: about 15 s, landing 2 km up", () => {
     expect(GLOBE_DIVE.durationMs).toBe(15_000);
-    expect(GLOBE_DIVE.handOverAltitudeM).toBe(150_000);
+    expect(GLOBE_DIVE.landAltitudeM).toBe(2_000);
     expect(GLOBE_DIVE.turnShare).toBeGreaterThan(0);
     expect(GLOBE_DIVE.turnShare).toBeLessThan(1);
   });

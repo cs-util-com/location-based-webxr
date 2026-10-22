@@ -16,10 +16,11 @@
  * writer re-validates through the reader so a programming error fails
  * loud here instead of producing a file a visitor cannot open.
  *
- * Items (DEC-N9): a text `pin` and a captured `photo`, as a discriminated
- * union so a renderer never has to assert a field the parser already
- * guaranteed (M1 review #6). A reader that meets an unknown kind rejects
- * the document (at its own minor).
+ * Items (DEC-N9): a text `pin`, a captured `photo` and (minor 1) a placed
+ * 3D `model` with its size in metres, as a discriminated union so a
+ * renderer never has to assert a field the parser already guaranteed (M1
+ * review #6). A reader that meets an unknown kind rejects the document (at
+ * its own minor).
  *
  * VERSION POLICY:
  * - `version` is the format's major number. Version 3 is the only one this
@@ -35,24 +36,46 @@
  *   optional field reads as absent - but the WRITER refuses a tour of a
  *   newer minor than its own: rewriting it would silently drop what this
  *   version cannot read.
+ * - MINOR 1 adds the placed 3D model (`tour-items.ts`). The writer writes
+ *   the LOWEST minor the tour needs: 1 while it carries a model, else 0, so
+ *   a tour without one stays editable by a 3.0 reader, and a 3.0 reader of a tour with a model leaves the model out (its
+ *   lenient read) instead of refusing the tour.
+ * - MINOR 2 adds a station's `description` and card `image`
+ *   (`tour-stations.ts`; G2 build plan 2026-10-21-2247, §4.2.4). Written
+ *   at 2 while any station carries either: a 3.1 reader ignores both as
+ *   unknown fields, so it reads such a tour leniently and refuses to save
+ *   it, instead of writing it back without them. Neither ever fails a
+ *   tour: a card image whose picture went is dropped
+ *   (`station-image-gone`), like the cover, and a malformed value is
+ *   dropped and reported with no cause, like a malformed detail.
  * - A newer minor may also add VALUES to a closed list (K1 milestone
  *   review R4): an item kind, an order, and the lists of
  *   `tour-stations.ts`. Read from a file of a newer minor, an unknown value
  *   degrades - the item or step is left out, an unknown order offers
  *   every station (`any`, which can never deadlock) - instead of failing
  *   the tour; at this reader's own minor or below it is a broken file.
+ * - `tourId` (optional, no minor of its own) is additive in the plain
+ *   sense: a reader that does not know it ignores it, and a writer that
+ *   does not know it drops it - which costs only the creator's draft its
+ *   key on that tour's next open, never the tour. A minor for it would
+ *   make every older writer refuse every tour that carries one.
+ * - `captureSpots` (the walk's camera captures, which earlier apps baked
+ *   into the tour) is no longer part of the format: they are debug data,
+ *   never tour content. A file that still carries the field opens without
+ *   it, like any unknown field (its stations stay as written), and no write
+ *   carries it.
  * Series id and version number do not live here: `manifest.json` is their
- * one place (§8 G7, `tour-signed-manifest.ts`).
+ * one place (§8 G7, `tour-signed-manifest.ts`). The `tourId` is not a
+ * series id: it is unsigned, names no version, and only keys a creator's
+ * on-device draft of a tour opened from a file.
  *
  * @see tour-manifest.ts.md
  */
 
-import { assertSafeZipEntryPaths } from '../storage/zip-entry-path.js';
-import { isFiniteNumber, isRecord } from '../utils/json-guards.js';
+import { isRecord } from '../utils/json-guards.js';
 import { parseGeoPose } from './qr/geo-pose.js';
 import type { QrGeoPose } from './qr/qr-gps-vote.js';
 import { TOUR_ID_PATTERN } from './tour-archive.js';
-import { tourMediaTypeOfEntry } from './tour-media.js';
 import {
   parseTourDetails,
   tourImageIds,
@@ -61,9 +84,8 @@ import {
 } from './tour-details.js';
 import {
   parseTourContentFields,
-  parseTourLocalPose,
   type TourItem,
-  type TourLocalPose,
+  type TourModelFields,
   type TourPhotoFields,
   type TourPinFields,
 } from './tour-items.js';
@@ -73,6 +95,7 @@ import {
   type TourAsset,
   type TourOrder,
   type TourStation,
+  type TourStationDrop,
 } from './tour-stations.js';
 
 export type {
@@ -85,12 +108,14 @@ export type {
   TourQuizOption,
   TourQuizRoute,
   TourStation,
+  TourStationDrop,
   TourStep,
   TourStepAdvance,
 } from './tour-stations.js';
 export type {
   TourItem,
   TourLocalPose,
+  TourModelItem,
   TourPhotoItem,
   TourPinItem,
 } from './tour-items.js';
@@ -99,9 +124,9 @@ export type {
 export const TOUR_MANIFEST_VERSION = 3;
 
 /** The newest additive revision of version 3 this module knows. */
-export const TOUR_MANIFEST_MINOR = 0;
+export const TOUR_MANIFEST_MINOR = 2;
 
-/** Where a pin or photo stands in the WORLD: the view the viewer places
+/** Where a pin, photo or model stands in the WORLD: the view the viewer places
  *  and the creator's drafts hold (`tour-station-pose.ts` `tourObjects`). */
 interface TourPlacement {
   /** Exact pose: lat/lon, absolute altitude, rotation against north. */
@@ -115,36 +140,10 @@ interface TourPlacement {
 export type TourPin = TourPinFields & TourPlacement;
 /** A captured photo, in the world, placed as a plane. */
 export type TourPhoto = TourPhotoFields & TourPlacement;
-export type TourObject = TourPin | TourPhoto;
+/** A placed 3D model, in the world. */
+export type TourModel = TourModelFields & TourPlacement;
+export type TourObject = TourPin | TourPhoto | TourModel;
 export type TourObjectKind = TourObject['kind'];
-
-/** One recorded photo's spot, baked at the creator's Finish, held by a
- *  station at a local pose (always with a rotation: photos face as
- *  captured). */
-export interface TourCapture {
-  /** The photo's entry name as the recording wrote it (`add2dImage`). */
-  readonly image: string;
-  /** The station holding it (by the automatic-station rule, in capture
-   *  order). */
-  readonly station: string;
-  readonly pose: TourLocalPose;
-}
-
-/**
- * The recorded photos' spots, computed ONCE at the creator's Finish
- * (scan-pass plan S1, S-D11: each photo through the first settled
- * alignment after it was taken), so a visitor neither downloads the walk
- * nor replays it. Its presence is the "baked" marker: a viewer places
- * these and never runs its live join; a tour without it keeps the join.
- */
-export interface TourCaptureSpots {
-  /** The walk's GPS fixes paired with odometry, and their median accuracy
-   *  (null when the fixes reported none): the quality line a visitor sees,
-   *  as the live join reported it. */
-  readonly fixes: number;
-  readonly gpsAccuracyMedianM: number | null;
-  readonly captures: readonly TourCapture[];
-}
 
 export interface TourManifest extends TourDetails {
   version: typeof TOUR_MANIFEST_VERSION;
@@ -152,14 +151,19 @@ export interface TourManifest extends TourDetails {
   minor: number;
   /** The tour's name, for lists and the visitor's screen. */
   title?: string;
+  /**
+   * The tour's own id: minted once by the app that first saves the tour,
+   * then kept by every save, so a tour opened from a file is known by the
+   * same key across saves (a creator's draft is kept under it). Short and
+   * path-safe ({@link TOUR_ID_PATTERN}); a bad one reads as none.
+   */
+  tourId?: string;
   /** Which stations are offered: in order, all at once, or by answer. */
   order: TourOrder;
   /** Media files named by their own ids (§8 G5). */
   assets: TourAsset[];
   /** The stations, each with its pins and photos (no loose ones). */
   stations: TourStation[];
-  /** The recorded photos' baked spots (see the type). */
-  captureSpots?: TourCaptureSpots;
   /**
    * The tour's printed codes place it on their own, so a viewer never asks
    * its visitors for their location and starts without it. Only `true` is
@@ -168,10 +172,19 @@ export interface TourManifest extends TourDetails {
   needsNoGps?: true;
 }
 
-/** How a reader or writer reports a detail it left out (`tour-details.ts`):
- *  a detail is cosmetic, so a bad one costs the detail, never the tour. */
+/** What a reader left out without failing the tour: a tour detail
+ *  (`tour-details.ts`), or a station's description or card image
+ *  (`tour-stations.ts`; the one kind that carries `station`, the station's
+ *  id). A drop with no `cause` is a malformed value. */
+export type TourManifestDrop = TourDetailsDrop | TourStationDrop;
+
+/** How a reader or writer reports what it left out. The tour's details and
+ *  a station's description and card image are cosmetic, so a bad one -
+ *  malformed, or an image whose picture went - costs the value, never the
+ *  tour. The writer accepts only the drops with a `cause` (a picture that
+ *  went); a malformed value handed to it fails loud. */
 export interface TourManifestReadOptions {
-  readonly onDropped?: (drop: TourDetailsDrop) => void;
+  readonly onDropped?: (drop: TourManifestDrop) => void;
 }
 
 const ORDERS: ReadonlySet<string> = new Set(['fixed', 'any', 'branch']);
@@ -186,10 +199,6 @@ export class TourManifestValidationError extends Error {
 
 function fail(message: string): never {
   throw new TourManifestValidationError(message);
-}
-
-function isPositiveInteger(v: unknown): v is number {
-  return isFiniteNumber(v) && Number.isInteger(v) && v > 0;
 }
 
 /** An empty manifest at the current version - the starter zip's content. */
@@ -211,9 +220,11 @@ export function tourItems(tour: {
 }
 
 /**
- * Validate one WORLD-VIEW object (a pin or photo with a geo pose, and the
- * station holding it if any): the records a creator's on-device draft
- * keeps between sessions. Throws {@link TourManifestValidationError}.
+ * Validate one WORLD-VIEW object (a pin, photo or model with a geo pose,
+ * and the station holding it if any): the records a creator's on-device
+ * draft keeps between sessions. Throws {@link TourManifestValidationError}.
+ * A model's asset is checked for its shape only: a draft record has no
+ * assets beside it, and the manifest's write re-validates the reference.
  */
 export function parseTourObject(value: unknown, at = 'object'): TourObject {
   const fields = parseTourContentFields(value, at, { fail });
@@ -233,79 +244,6 @@ export function parseTourObject(value: unknown, at = 'object'): TourObject {
     geo,
     ...(station === undefined ? {} : { station }),
   };
-}
-
-function parseCapture(value: unknown, at: string): TourCapture {
-  if (!isRecord(value)) fail(`"${at}" must be an object`);
-  const { image, station } = value;
-  if (typeof image !== 'string') fail(`"${at}.image" must be a string`);
-  try {
-    assertSafeZipEntryPaths([image]);
-  } catch (err) {
-    fail(`"${at}.image": ${err instanceof Error ? err.message : String(err)}`);
-  }
-  if (tourMediaTypeOfEntry(image)?.kind !== 'image') {
-    fail(`"${at}.image" must be an image type`);
-  }
-  if (typeof station !== 'string' || !TOUR_ID_PATTERN.test(station)) {
-    fail(`"${at}.station" must be a station id`);
-  }
-  return {
-    image,
-    station,
-    pose: parseTourLocalPose(value.pose, `${at}.pose`, fail),
-  };
-}
-
-/** The baked spots, or undefined when the document has none. */
-function parseCaptureSpots(
-  value: unknown,
-  stationIds: ReadonlySet<string>
-): TourCaptureSpots | undefined {
-  if (value === undefined) return undefined;
-  if (!isRecord(value)) fail('"captureSpots" must be an object');
-  const { fixes, gpsAccuracyMedianM, captures } = value;
-  if (!isPositiveInteger(fixes)) {
-    fail('"captureSpots.fixes" must be a positive integer');
-  }
-  if (
-    gpsAccuracyMedianM !== null &&
-    (!isFiniteNumber(gpsAccuracyMedianM) || gpsAccuracyMedianM < 0)
-  ) {
-    fail('"captureSpots.gpsAccuracyMedianM" must be null or a number >= 0');
-  }
-  // A bake that placed nothing is never written: the marker would stop the
-  // viewer's own join for a tour with nothing to show.
-  if (!Array.isArray(captures) || captures.length === 0) {
-    fail('"captureSpots.captures" must be a non-empty array');
-  }
-  const parsed = captures.map((c, i) =>
-    parseCapture(c, `captureSpots.captures[${String(i)}]`)
-  );
-  if (new Set(parsed.map((c) => c.image)).size !== parsed.length) {
-    fail('"captureSpots.captures" names a photo twice');
-  }
-  parsed.forEach((capture, i) => {
-    if (!stationIds.has(capture.station)) {
-      fail(`"captureSpots.captures[${String(i)}].station" must name a station`);
-    }
-  });
-  return { fixes, gpsAccuracyMedianM, captures: parsed };
-}
-
-/** A newer minor's spots this reader cannot read degrade to none (K1 R4,
- *  S1 milestone review #8): the viewer then falls back to its own join or
- *  the ring, instead of the whole tour failing to open. */
-function captureSpotsOrNone(
-  value: unknown,
-  stationIds: ReadonlySet<string>
-): TourCaptureSpots | undefined {
-  try {
-    return parseCaptureSpots(value, stationIds);
-  } catch (err) {
-    if (err instanceof TourManifestValidationError) return undefined;
-    throw err;
-  }
 }
 
 /** The format version, checked: 3; an older or a newer one is named. */
@@ -358,8 +296,10 @@ function orderOf(value: unknown, lenient: boolean): TourOrder {
   return value as TourOrder;
 }
 
-/** Item ids are unique across the whole tour, and no asset has one: both
- *  name a content file by id (`content/<id>.<ext>`). */
+/** One id namespace across the tour's items and assets: an item id is
+ *  unique, and no asset has one. A photo's and an asset's ids are their
+ *  content files' stems (`content/<id>.<ext>`), and a model names an asset
+ *  by id, so a shared id would make a reference ambiguous. */
 function checkContentIds(
   stations: readonly TourStation[],
   assets: readonly TourAsset[]
@@ -374,6 +314,15 @@ function checkContentIds(
       fail(`"assets[${String(i)}].id" "${asset.id}" is already an item id`);
     }
   });
+}
+
+/** The tour's id when it is one (the one id rule), else none: the id only
+ *  keys a creator's draft, so a bad one costs the id, never the tour - at
+ *  every minor. */
+function tourIdOf(value: unknown): string | undefined {
+  return typeof value === 'string' && TOUR_ID_PATTERN.test(value)
+    ? value
+    : undefined;
 }
 
 /** The title and the tour details, each present only when set. */
@@ -423,21 +372,21 @@ export function parseTourManifest(
     assets,
     fail,
     lenient,
+    ...(options.onDropped === undefined
+      ? {}
+      : { onDropped: options.onDropped }),
   });
   checkContentIds(stations, assets);
   const needsNoGps = needsNoGpsOf(data.needsNoGps, lenient);
-  const stationIds = new Set(stations.map((s) => s.id));
-  const captureSpots = lenient
-    ? captureSpotsOrNone(data.captureSpots, stationIds)
-    : parseCaptureSpots(data.captureSpots, stationIds);
+  const tourId = tourIdOf(data.tourId);
   return {
     version: TOUR_MANIFEST_VERSION,
     minor,
+    ...(tourId === undefined ? {} : { tourId }),
     ...titleAndDetailsOf(data, { stations, assets }, options),
     order: orderOf(data.order, lenient),
     assets,
     stations,
-    ...(captureSpots === undefined ? {} : { captureSpots }),
     ...(needsNoGps === undefined ? {} : { needsNoGps }),
   };
 }
@@ -448,21 +397,36 @@ export function parseTourManifest(
  * instead of producing a broken file a creator uploads. A manifest of a
  * NEWER minor than {@link TOUR_MANIFEST_MINOR} is refused: it was read with
  * its unknown fields dropped, and writing it back would lose them. Written
- * at minor 0: version 3 has no additive revision yet.
+ * at the lowest minor the tour needs (see the version policy).
  *
  * Of the details, only a cover whose image went (a deleted photo, the
  * drop's `cause` `image-gone`) is left out, reported through
- * `onDropped`. Any other drop - a cover that is not an image id, a
- * description or a contact the reader would drop - is a programming error
+ * `onDropped`, and so is a station's card image whose picture went
+ * (`station-image-gone`). Any other drop - a cover that is not an image
+ * id, a description or a contact the reader would drop, a station
+ * description or card image that is malformed - is a programming error
  * here (the editor checks them with the same rules) and fails loud.
  */
 export function serializeTourManifest(
   manifest: TourManifest,
   options: TourManifestReadOptions = {}
 ): string {
+  // The reader drops a bad id quietly (it is a file's); one handed to the
+  // writer is the page's bug, and writing the tour without it would hide
+  // that.
+  if (
+    manifest.tourId !== undefined &&
+    tourIdOf(manifest.tourId) === undefined
+  ) {
+    fail(
+      `"tourId" must be 1-64 letters, digits, "_" or "-", got ${JSON.stringify(manifest.tourId)}`
+    );
+  }
   const parsed = parseTourManifest(manifest, {
     onDropped: (drop) => {
-      if (drop.cause !== 'image-gone') fail(drop.reason);
+      if (drop.cause !== 'image-gone' && drop.cause !== 'station-image-gone') {
+        fail(drop.reason);
+      }
       options.onDropped?.(drop);
     },
   });
@@ -471,5 +435,18 @@ export function serializeTourManifest(
       `this tour was made with a newer version of the app (format ${String(TOUR_MANIFEST_VERSION)}.${String(parsed.minor)}); saving it here would drop what this version cannot read`
     );
   }
-  return JSON.stringify({ ...parsed, minor: TOUR_MANIFEST_MINOR }, null, 2);
+  return JSON.stringify({ ...parsed, minor: minorNeeded(parsed) }, null, 2);
+}
+
+/** The lowest minor that carries the tour: 2 with a station's description
+ *  or card image, else 1 with a model, else 0. */
+function minorNeeded(manifest: TourManifest): number {
+  if (
+    manifest.stations.some(
+      (s) => s.description !== undefined || s.image !== undefined
+    )
+  ) {
+    return 2;
+  }
+  return tourItems(manifest).some((item) => item.kind === 'model') ? 1 : 0;
 }

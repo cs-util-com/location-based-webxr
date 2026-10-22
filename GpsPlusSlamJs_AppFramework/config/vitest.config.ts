@@ -15,6 +15,15 @@ export default defineConfig({
     ],
     setupFiles: [
       fileURLToPath(new URL('../src/test-setup.ts', import.meta.url)),
+      // The shared fast-check time limit (every interruption is red), so a
+      // failing property cannot shrink for hours where testTimeout cannot
+      // reach: scripts/test-timing/fast-check-time-limit.mjs.md.
+      fileURLToPath(
+        new URL(
+          '../../scripts/test-timing/fast-check-time-limit.mjs',
+          import.meta.url
+        )
+      ),
     ],
     silent: true,
     // RAISED FROM THE 5 s DEFAULT ON 2026-08-11, for the reason spelled out in

@@ -19,7 +19,7 @@ createSlamAppStore({ storageBackend: new NullStorageBackend() });
  * Why these tests matter (geo-join plan Rev 2): every decline reason in the
  * assessment IS the product's fallback contract — a wrong `ok` places a
  * coherent-looking cloud of photos at wrong positions (the cold review's
- * findings 3 and 8), and a wrong decline silently keeps the ring forever.
+ * findings 3 and 8), and a wrong decline silently bakes no spot at all.
  * The transform test pins the frame contract end-to-end with hand-checkable
  * numbers: identity-rotation alignment with a pure translation, so the
  * expected geo offsets are readable by eye.
@@ -232,8 +232,8 @@ describe("computeCaptureGeoJoin — captures it must refuse to place", () => {
     // sea level, which at any inland site is hundreds of metres under the
     // visitor's feet. And the status line still said "N photos at capture
     // spots", so the visitor was told the join SUCCEEDED while seeing
-    // nothing. Dropping it lets the caller fall back to the ring, which is
-    // the honest outcome.
+    // nothing. Dropping it lets the bake decline, which is the honest
+    // outcome.
     const poses = computeCaptureGeoJoin(
       baseState({
         points: [

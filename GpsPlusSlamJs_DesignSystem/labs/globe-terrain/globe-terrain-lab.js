@@ -10,7 +10,7 @@ import { GLOBE_TERRAIN, createGlobeTerrain } from "/globe/globe-terrain.js";
 import {
   SYNTHETIC_HEIGHTS_URL,
   installSyntheticHeights,
-} from "./synthetic-heights.js";
+} from "/globe/test-utils/synthetic-heights.js";
 import {
   TERRARIUM_ATTRIBUTION,
   TERRARIUM_URL_TEMPLATE,
@@ -159,6 +159,9 @@ function start() {
       imagery: globe.overlay,
       template: globe.template,
       heightScale: LOOK.heightScale,
+      // The 256 px heights' phone budget (64 MiB), the cache this page
+      // has always looked at.
+      device: "phone",
     });
     terrain.tiles.errorTarget = LOOK.errorTarget;
     terrain.tiles.addEventListener("load-model", ({ scene: model }) => {
@@ -207,8 +210,14 @@ function start() {
   };
   const frame = () => {
     pose();
-    if (terrain) terrain.tiles.update();
-    else globe.update(camera, renderer);
+    if (terrain) {
+      terrain.tiles.update();
+      // The globe's own update is not called here: the clouds step alone
+      // (the full map replaces the preview, round-3 plan §18).
+      globe.updateClouds(renderer);
+    } else {
+      globe.update(camera, renderer);
+    }
     renderer.render(scene, camera);
   };
   const loop = () => {

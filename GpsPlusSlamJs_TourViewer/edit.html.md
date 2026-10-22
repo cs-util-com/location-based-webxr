@@ -17,12 +17,56 @@ AR (tour editor plan 2026-10-17-1816, W1).
 
 ## Structure
 
-- `#map` - the full-window map (`src/editor/editor-map.ts`).
+- `#topbar` comes first in the body (described below), so Tab starts in
+  the top bar and walks it left to right.
+- `#map` - the full-window map (`src/editor/editor-map.ts`); `inert`
+  while the 3D view shows over it, so Tab never walks the hidden map.
+- `#view3d` - the 3D view's box over the map, hidden until the view
+  shows (`src/editor3d/editor3d-scene.ts` puts its canvas in it), with its
+  credits line `#view3d-credits` (Mapterhorn, its elevation data,
+  OpenStreetMap) as its last child, so its links come after the docks in
+  the Tab order (the docks' z-index keeps them painted over it). Inside it the studio shell's parts
+  (`src/editor/editor-shell/editor-shell.ts`): the tree dock
+  `#shell-tree` (`#tree-stations`, `#tree-fold`, `#tree-body`), the
+  inspector dock `#shell-inspector` (`#inspector-head`,
+  `#inspector-body`, hidden without a selection), the map controls
+  `#map-controls` (`#compass` with `#compass-needle`, `#zoom-in`,
+  `#zoom-out`) and the help `#shell-help`.
+- `#shell-bar` - the 3D view's bottom bar: `#shell-view`, `#shell-hint`,
+  the debug readout (`#shell-history`, `#shell-calls`, `#shell-frame`)
+  and its toggle `#shell-debug`. Hidden on the map.
+- `body[data-view]` - `3d` while the 3D view shows, else `2d`: the
+  shell's stylesheet (`src/editor/editor-shell/editor-shell.css`, the
+  page's second link) dresses the top bar dark, places the view between
+  a 40 px top bar and the 24 px bottom bar, and hides the rail, the card,
+  the debug panel and the off-screen chip; the studio's controls
+  (`.studio`) and `#shell-bar` show only then.
+- `#debug-panel` - shown for every open tour: the debug layer's "Show
+  debug data" switch (`#debug-switch` around `#debug-data-input`,
+  ticked; shown only while the layer has a source - the tour's walk or
+  added debug data), its line (`#debug-status`, a live region) and "Add
+  debug data…" (`#debug-add`, with its hidden `#debug-add-input`; a file
+  dropped on the panel too; M2 step 5 of the debug-captures plan)
+  (`src/editor/debug-capture-layer.ts`, `src/editor/added-debug-data.ts`).
+  It stacks under the note card (`editor.css`), which may open over the
+  same corner.
 - `#topbar` - the tour's title (`#tour-name`, a button that opens the
-  tour's details, W2) and file name, the "Keep the walk recording"
-  switch (`#keep-walk`, only for a tour carrying a walk), `#save-status`,
+  tour's details, W2) and file name, the "Keep the debug data in
+  the tour file" switch (`#keep-walk`, only for a tour carrying a walk,
+  unticked; hidden for a file opened for writing, which keeps its walk;
+  its words in `.keep-walk-text` and its `title`, so the 3D view's narrow
+  bar can show the checkbox alone and keep its name), `#save-status`
+  (its words also in its `title`),
   `#save-btn` (Save downloads the tour, M6 E2a), `#done-btn` ("Done",
-  W2), "Open another tour".
+  W2), "Open another tour"; first of them, after the spacer, `#view-switch`
+  ("3D view", the view switch: `src/editor/view-switch.ts`). The 3D
+  view's studio controls sit in it too, hidden on the map: the pencil
+  (`#studio-details`), Undo and Redo (`#studio-undo`, `#studio-redo`)
+  after the title, and Frame, Top view, Help and "Add debug data…"
+  (`#studio-frame`, `#studio-top`, `#studio-help`, `#studio-debug-add`:
+  the map's debug panel is hidden over the 3D view, and this button opens
+  the same `#debug-add-input`) before the switch; their icons are
+  `<i data-icon>` slots the shell fills.
 - `#rail` - the codes, pins and photos (`src/editor/editor-rail.ts`).
 - `#card`, `#offscreen-chip` - the card beside the selected marker
   (`src/editor/editor-card.ts`).
@@ -55,7 +99,9 @@ AR (tour editor plan 2026-10-17-1816, W1).
   `edit-main.ts`) with `#done-update`, `#done-public`, `#done-drive-tip`
   (hidden: `DRIVE_MOUNT_TIP_SHOWN` is off until the owner's check),
   `#done-walk` (only while the file carries the walk: `#done-walk-text`,
-  `#done-move` "Move the walk out", `#done-move-status`), a Privacy link
+  `#done-move` "Move the debug data out", `#done-save-debug` "Save the
+  debug data" after a save that left it out, `#done-move-status`), a
+  Privacy link
   (`legal.html#privacy`) and Close. Above the toasts (z-index).
 - `#toasts` - "Opened <file>: N codes, M notes".
 
@@ -72,6 +118,10 @@ AR (tour editor plan 2026-10-17-1816, W1).
 - The visitor page never imports `src/editor/` (dependency-cruiser rule
   `viewer-not-to-editor`), so a visitor never downloads the editor's
   Leaflet.
+- The 3D view's modules load only by the switch's `import()`:
+  `src/editor3d-lazy.test.ts` reads a production build and fails when any
+  page loads the globe, the tile renderer, the elevation package or
+  `src/editor3d/` before an `import()` runs.
 
 ## Tests
 
@@ -82,4 +132,6 @@ back: the editor's paper, not the browser's plain page),
 `playwright-tests/editor.spec.js` (the real file chooser, the rail and the
 markers, the card beside its marker, a capped photo, a refused non-tour,
 the layout at three viewports, the details dialog, the fine print, Done
-and the walk's move).
+and the walk's move), `playwright-tests/editor3d.spec.js` (the 3D view
+and back), `playwright-tests/editor3d-shell.spec.js` (the studio shell's
+layout at four viewports and its tree clicks).

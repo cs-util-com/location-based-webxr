@@ -14,9 +14,9 @@ Since M6 E0 the page-free rules below - the manifest with the edits, the
 title, the files written and removed, the series successor, the newest
 bytes as input, the session's budget - run in `finish-rebuild.ts`
 (`rebuildFinishedTour`), shared with the desktop editor; since E0b also
-the photo-spot rule (`captureSpotsForRebuild`, this file passes its
-progress line) and the bookkeeping after a write (`pendingAfterRebuild`). This file keeps
-the page: readiness, the settle, the capture-spot bake, progress, the
+the bookkeeping after a write (`pendingAfterRebuild`). The walk's camera
+captures are debug data: no open bakes them and no Finish writes them.
+This file keeps the page: readiness, the settle, progress, the
 re-checks of `ctx.session`, what the written zip changes on the page, and
 the hand-off. The rules are described here as the Finish's behaviour; the
 module's sidecar states them as its contract.
@@ -39,6 +39,12 @@ module's sidecar states them as its contract.
     it?" question left from the previous Finish's file goes, so its yes is
     never read as this Finish's (F19 review #2). The rebuilt zip carries
     its `written` tour.json, which a yes notes.
+  - Each Finish that made its zip tells `debugSave` (`creator-debug-save.ts`,
+    debug-captures plan M2) of it: the bytes it read (`FinishedTour.source`,
+    kept from the first Finish of the open tour), whether it left the walk
+    out, and the bundle's identity (the written tour's id among it, r901
+    review #2) - so the Done step offers "Save the debug data", also when
+    a later step of the Finish fails.
   - A Finish that fails AFTER making its zip still hands that zip over the
     same way (review #1); an earlier Finish's zip stays saveable from the
     button. The button is disabled while a Finish runs, so a tap cannot
@@ -83,7 +89,7 @@ module's sidecar states them as its contract.
   `config/.dependency-cruiser.cjs`), which takes the status into the store
   and leaves only the Blob beside it. Not done with the desktop's, because
   it would change this page's behaviour: the Finish reads its entries
-  after the photo bake (the thunk, before its first await), ends the
+  after its first await (the thunk, before it), ends the
   document's save only after the AR session's end and the wizard's step
   (the thunk ends it at the landing, so an undo would be let in earlier),
   and rebuilds with the code levels, a progress line and a stop check the
@@ -134,12 +140,7 @@ module's sidecar states them as its contract.
   `saveStarted` before the snapshot (an undo waits while it runs),
   `saved` when the zip is built, `saveEnded` in every outcome. On success
   `ctx.rebuiltZip` is set, the document's written tour **advances to what
-  was just written** (`saved`),
-  `ctx.walkDecidedFor` is set to the open session when the walk is
-  settled - its spots written, or no photo to place - so the creator's
-  station HUD drops its hedge (PR #642 review); NOT after a declined bake
-  (`notPlaced`), which writes nothing, so the next Finish bakes again
-  (PR #643 review) - and
+  was just written** (`saved`), and
   the written work leaves the page's entries (`saved`), the AR session is ended through the
   controller (the framework's session-end path runs the app teardown) and
   the wizard opens step 6, "done" (polish round M2, B9: a completion step
@@ -177,31 +178,27 @@ module's sidecar states them as its contract.
   what the zip carries WITH THE SAME CONTENT, and clears the applied
   deletions. The draft's tombstones stay until the hosted zip lacks the
   ids, the same proof the objects wait for.
-- **The Finish bakes a recording's photo spots** (scan-pass plan S1,
-  S-D11): a tour that carries a recording and no `captureSpots` yet is
-  replayed once (`capture-bake.ts`, busy line `FINISH_LABELS.placingPhotos`)
-  and `tour.json` gains the spots, written at minor 1. Spots the tour
-  already carries are kept, not baked again. A recording that cannot be
-  read or joined never fails the Finish (the tour keeps the visitor's live
-  join, as before); a cap's refusal and a failed integrity check do, as
-  every read's does.
+- **The Finish writes no debug camera captures**: the format no longer
+  has the field (an earlier file's `captureSpots` is ignored by the
+  reader), so `tour.json` carries none; the Finish replays nothing and
+  assigns nothing.
 - **The published copy leaves the creator's walk out** (scan-pass plan
-  S1, S-D10): unless the creator ticks "Keep the walk recording in the tour
+  S1, S-D10): unless the creator ticks "Keep the debug data in the tour
   file" (`keepScanRow` / `keepScanInput`, on the page BEFORE AR since UI
   round 1, U2 - hidden in a session, since the Finish there reads it -,
   shown only for a tour that carries a walk, counted once per tour and
   manifest), the Finish removes
   `scanEntryNames` of the manifest it writes (`tour-read-set.ts`): the
-  action stream, `session.json` and the recorded frames no visitor sees.
+  action stream, `session.json` and every recorded frame.
   A file the recording did not write (a README, credits) always stays.
-  **Never without baked spots** (S1 milestone review #2): a recording the
-  bake declined or could not read keeps its walk, and the ready line says
-  why (`FINISH_LABELS.photosNotPlaced`); the walk is then the only way a
-  viewer can place the photos - unless the walk places nothing (it names
-  no recorded photo the tour carries, `placesNothing`, passed on as
-  `walkPlacesNothing`): it is then left out like any walk, with no word
-  about photos (the M4b milestone review #3). The tick is cleared with the Finish step
-  when the tour closes (review #9).
+  **The switch starts UNTICKED** (M2 of the debug-captures plan, E2; set
+  once per open in `renderKeepScan`, keyed on the open's `TourSession`,
+  so a later render never undoes the creator's tick, and set while the
+  row is hidden too): the walk is saved apart from the tour. (In M1 it
+  started ticked whenever the file carried a walk, and before that only
+  when the open's bake could not place the recorded photos.) The tick is
+  cleared with the Finish step when the tour closes (review #9), and the
+  next open sets its own default.
   The ready line then says so (`FINISH_LABELS.scanLeftOut`), because the
   hosted file may be the creator's only copy of the walk.
 - The finish's append is **id-deduplicating**, because the serializer
@@ -216,8 +213,10 @@ module's sidecar states them as its contract.
 ## Tests
 
 Composed, through `wireCreatorSetup`: `creator-finish.test.ts` (what the
-rebuilt zip holds, the budget, the listed series, the baked spots, the walk
-left out, the save guard's inputs, a finished photo's bytes) and the e2e
+rebuilt zip holds, the budget, the listed series, no debug camera
+capture written (also none a `tour.json` carried) and nothing replayed at
+the Finish, the walk left out, the switch's default per open - unticked,
+and the walk left out, for a file that carries one; an untick surviving the Finish's render - the save guard's inputs, a finished photo's bytes) and the e2e
 finish specs; the entry list itself in `finish-entries.test.ts`. The
 sampled mutants of the region "finish"
 (`scripts/fixtures/creator-setup.mutants.json`) are killed.

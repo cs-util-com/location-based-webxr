@@ -57,6 +57,10 @@ Memory-efficient variant of `loadSessionMetadata` that accepts a `Blob` (or `Fil
 - **Output:** Parsed metadata object, or `null` if `session.json` is missing
 - **Errors:** Throws if `session.json` `uncompressedSize` exceeds `maxFileSize` (DoS protection)
 
+### `isSessionJsonEntryName(filename: string): boolean`
+
+Is `filename` a recording's `session.json`: the name as a whole path segment, at the root or under a wrapping folder (`session.json`, `mytour/session.json`, `./session.json`), never a look-alike such as `backup-session.json`. The ONE rule for every reader and writer of the entry - both metadata loaders here and `zip-coverage-embed.ts`, which rewrites the entry this picks - so they never disagree about which file is the session.
+
 ### `RecordedAction` (type)
 
 Canonical shape of a single recorded Redux action, shared across production and test code:
@@ -105,6 +109,7 @@ Shared implementation for both `loadSessionMetadata` and `loadSessionMetadataFro
 ## Invariants & Assumptions
 
 - ZIP files follow the RecorderApp export format: `actions/NNNNNN.json` for actions, optional `frames/` for images, optional `session.json` for metadata.
+- **Folder names are matched as path SEGMENTS.** An action entry is a `.json` under an `actions/` segment (`(?:^|/)actions/`), the session is a `session.json` segment (`isSessionJsonEntryName`). A wrapping folder reads (`mytour/actions/000001.json`, `mytour/session.json` - what re-zipping a folder or a cloud host's folder download produces); a sibling whose name only ENDS in the folder name (`myactions/`, `old-actions/`, `backup-session.json`) is ignored. Before 2026-10-21 both were bare substring/suffix matches, so such a sibling was replayed into the action stream (and drawn into the GPS path), and a look-alike sorted first was read as the session. `qr-level-archive.ts` and `tour-archive.ts` use the same `(?:^|/)` shape.
 - Action filenames use 6-digit zero-padded indices starting at 1 (e.g., `000001.json`).
 - Actions are sorted by `filename.localeCompare()` which preserves numeric order for zero-padded names.
 - The `Uint8Array` input works with both `fs.readFileSync()` (Node.js/tests) and `fetch().arrayBuffer()` (browser).
@@ -136,7 +141,7 @@ const meta = await loadSessionMetadata(data);
 
 ## Tests
 
-- Unit tests: `zip-reader.test.ts` — covering entry reading, action loading, index extraction, payload preservation, graceful null return for missing `session.json`, size-limit enforcement for both actions and session metadata, warning logging for non-numeric action filenames, malformed JSON resilience (skip + warn + return remaining valid actions), `loadSessionMetadataFromBlob` (Blob-based metadata reading with BlobReader), `loadGpsPathFromBlob` (GPS-only extraction including happy path, filtering, device fixes only (synthetic QR votes and unknown stamps left out), empty GPS, corrupted zip, File support, and chronological ordering), and the `ZipSource` lazy-Reader path (result equivalence vs `Uint8Array` for all four helpers, lazy `getText()` after helper return, concurrent triple use of one shared Reader instance, `toZipReader` capability-marker pin), and the decompression budget (the archive total, also when every action entry carries ONE name - K0 milestone review R3), and packed depth samples (the JSON and the packed form read to the same action; a damaged grid skipped with a warning).
+- Unit tests: `zip-reader.test.ts` — covering entry reading, action loading, index extraction, payload preservation, graceful null return for missing `session.json`, size-limit enforcement for both actions and session metadata, warning logging for non-numeric action filenames, malformed JSON resilience (skip + warn + return remaining valid actions), `loadSessionMetadataFromBlob` (Blob-based metadata reading with BlobReader), `loadGpsPathFromBlob` (GPS-only extraction including happy path, filtering, device fixes only (synthetic QR votes and unknown stamps left out), empty GPS, corrupted zip, File support, and chronological ordering), and the `ZipSource` lazy-Reader path (result equivalence vs `Uint8Array` for all four helpers, lazy `getText()` after helper return, concurrent triple use of one shared Reader instance, `toZipReader` capability-marker pin), and the decompression budget (the archive total, also when every action entry carries ONE name - K0 milestone review R3), and packed depth samples (the JSON and the packed form read to the same action; a damaged grid skipped with a warning), and the path-segment rule (a sibling `myactions/` / `old-actions/` / `rec/backup_actions/` neither replayed nor read through a caller's reader nor drawn into the GPS path, a wrapping folder still read; `session.json` taken over a look-alike sorted before it, a wrapped one read, a look-alike alone giving `null`).
 - `zip-reader-session-count.test.ts` - the `session.json` count alone stopping an entry that understates its size. It replaces zip.js's reader with one that inflates without zip.js's own declared-size check, because with zip.js 2.11.2 that check (or the declared-size refusal) always fires first, so no real archive can show the count working (K0 milestone review R11).
 - Integration consumer: `recording-replay.integration.test.ts` — uses `loadActionsFromZip` and `loadSessionMetadata` for full replay verification.
 - Test data: produced programmatically via `produceTestZip()` from `test-utils/zip-round-trip-helpers.ts` — no static test zip files.

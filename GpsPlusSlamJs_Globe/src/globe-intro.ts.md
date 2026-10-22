@@ -54,6 +54,11 @@ endFovDeg })`: `{ direction, distanceKm, fovDeg }` at `t` (clamped to
     rounded to the zero vector and threw, which would have aborted the
     intro. Pinned in `globe-intro.test.ts`; the properties pass over 20
     seeds of 500 runs each (2 of 20 seeds failed before the fix).
+  - Just past that cut-off (a start about 1e-7 short of opposite) the
+    perpendicular is taken once more without its part along the start:
+    the target's part across it is a difference of nearly equal numbers,
+    and its rounding left the pose's direction about 5e-10 off unit
+    length (a fast-check counterexample, pinned in `globe-intro.test.ts`).
   - Distances are from the centre, as the controls' limit is.
 - Example:
 
