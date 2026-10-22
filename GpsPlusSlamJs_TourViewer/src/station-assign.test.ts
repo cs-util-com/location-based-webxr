@@ -7,7 +7,9 @@ import {
   assignToStations,
   nearestStationWithin,
   STATION_RADIUS_M,
+  stationHolding,
 } from "./station-assign";
+import { horizontalM } from "./move-with-code";
 
 /**
  * Why these tests matter: the automatic-station rule (tour editor plan
@@ -63,6 +65,15 @@ describe("nearestStationWithin", () => {
     expect(
       nearestStationWithin([seats[0]!], at(0, -10 + STATION_RADIUS_M + 0.01)),
     ).toBeNull();
+    // Why: the 1 cm margins above pass whether the rule says `<=` or `<`.
+    // Exactly on the radius - the distance the rule measures, passed as
+    // the radius - is inside; a hair less radius is outside.
+    const edge = at(3, 17);
+    const exact = horizontalM(seats[0]!.anchor, edge);
+    expect(nearestStationWithin([seats[0]!], edge, exact)).toBe("a");
+    expect(
+      nearestStationWithin([seats[0]!], edge, exact * (1 - 1e-9)),
+    ).toBeNull();
   });
 
   it("measures horizontally: a height difference does not push an element out", () => {
@@ -70,6 +81,70 @@ describe("nearestStationWithin", () => {
     // 100 m higher, 20 m away (an element on a tower's top).
     const high = { ...at(0, 20), alt: 400 + 100 };
     expect(nearestStationWithin(seats, high)).toBe("a");
+  });
+});
+
+// Why: since every object belongs to a station from the moment it is
+// placed, the rule reads each station's OWN found radius (a creator may
+// change it in the editor) instead of one R for all. These pin its edges:
+// the radius itself is inside, a tie goes to the earlier station, the
+// nearest of two that hold wins, and a small radius does not hold what a
+// larger R would have.
+describe("stationHolding", () => {
+  const station = (
+    id: string,
+    north: number,
+    east: number,
+    foundRadiusM = 25,
+  ) => ({ id, geo: at(north, east), foundRadiusM });
+
+  it("counts its own found radius itself as inside, and a hair beyond it as outside", () => {
+    const s = station("a", 0, -10);
+    // A 1 cm margin either side of the radius (25 m, then 7 m): the
+    // geodesy's round trip is far finer than that.
+    expect(stationHolding([s], at(0, -10 + 25 - 0.01))).toBe("a");
+    expect(stationHolding([s], at(0, -10 + 25 + 0.01))).toBeNull();
+    const small = station("b", 0, 0, 7);
+    expect(stationHolding([small], at(0, 6.99))).toBe("b");
+    expect(stationHolding([small], at(0, 7.01))).toBeNull();
+    // Exactly on the radius: the distance the rule measures, as the
+    // radius.
+    const spot = at(3, 17);
+    const exact = horizontalM(s.geo, spot);
+    expect(stationHolding([{ ...s, foundRadiusM: exact }], spot)).toBe("a");
+  });
+
+  it("reads each station's own radius: 10 m from a 5 m station is outside, from a 40 m one inside", () => {
+    expect(stationHolding([station("a", 0, 0, 5)], at(0, 10))).toBeNull();
+    expect(stationHolding([station("a", 0, 0, 40)], at(0, 39))).toBe("a");
+  });
+
+  it("gives a tie to the earlier station, and two that hold to the nearer", () => {
+    const tie = [station("a", 0, -10), station("b", 0, 10)];
+    expect(stationHolding(tie, at(0, 0))).toBe("a");
+    expect(stationHolding([...tie].reverse(), at(0, 0))).toBe("b");
+    expect(stationHolding(tie, at(0, 1))).toBe("b");
+    // The nearer one wins even when the farther one's radius is larger.
+    expect(
+      stationHolding(
+        [station("big", 0, -20, 40), station("small", 0, 5, 6)],
+        at(0, 0),
+      ),
+    ).toBe("small");
+  });
+
+  it("measures horizontally, and holds nothing with no stations", () => {
+    // 100 m higher, 20 m away (an object on a tower's top).
+    const high = { ...at(0, 20), alt: 500 };
+    expect(stationHolding([station("a", 0, 0)], high)).toBe("a");
+    expect(stationHolding([], at(0, 0))).toBeNull();
+  });
+
+  it("holds nothing for a radius that is not a positive finite number", () => {
+    // A hand-edited file's broken radius must not swallow every object.
+    for (const r of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(stationHolding([station("a", 0, 0, r)], at(0, 0))).toBeNull();
+    }
   });
 });
 

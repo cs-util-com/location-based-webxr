@@ -15,6 +15,8 @@ import {
   checkImageWithinCap,
   tourMediaTypeOfEntry,
 } from "gps-plus-slam-app-framework/ar/tour-media";
+import { drawnHeightM } from "gps-plus-slam-globe/editor";
+import { egm96Geoid } from "gps-plus-slam-osm/elevation/egm96";
 
 // Why these tests matter: the sample tour (owner decision S-D9) is the
 // owner's first phone test of stations before in-app authoring exists. It is
@@ -91,6 +93,42 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
       }
     }
   });
+
+  // Why: a station's `alt` is ellipsoidal (a phone's GPS height); the 3D
+  // view draws it at alt - N over a relief of orthometric heights. Written
+  // as 519 m (about the square's height above sea level), every station
+  // stood about 45 m under the drawn ground. The ground below is measured
+  // independently of the 3D view: Mapterhorn's z14 tile 14/8718/5685
+  // (fetched 2026-10-22), Terrarium-decoded and read bilinearly between
+  // pixel centres at each station (the design system's globe lab drew
+  // 515.9 m at the column on the same data). The tolerance is swept: the
+  // verdict holds from 0.5 m to 2 m.
+  it.each([0.5, 1, 2])(
+    "stands each station within %s m of the ground the 3D view draws",
+    async (toleranceM) => {
+      const files = await entries();
+      const manifest = parseTourManifest(
+        JSON.parse(new TextDecoder().decode(files.get("tour.json"))) as unknown,
+      );
+      const groundM: Record<string, number> = {
+        column: 515.83,
+        gate: 514.17,
+        steps: 516.23,
+      };
+      const geoid = egm96Geoid();
+      for (const station of manifest.stations) {
+        const geo = station.geo;
+        const drawn = drawnHeightM(
+          geo.alt,
+          { lat: geo.lat, lng: geo.lon },
+          geoid,
+        );
+        expect(Math.abs(drawn - groundM[station.id]!), station.id).toBeLessThan(
+          toleranceM,
+        );
+      }
+    },
+  );
 
   it("carries every asset it names, each allowed, capped and inert", async () => {
     const files = await entries();

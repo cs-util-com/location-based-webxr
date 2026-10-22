@@ -21,7 +21,12 @@ import type {
   TourStep,
 } from "gps-plus-slam-app-framework/ar/tour-stations";
 
-import { createScenePlayer, type ScenePlayer } from "./scene-player.js";
+import {
+  createScenePlayer,
+  isPlayableInK4,
+  playableStepCount,
+  type ScenePlayer,
+} from "./scene-player.js";
 import { stationTitle } from "./station-run.js";
 
 /** The story panel's elements, all inside `#ar-root` (the DOM overlay). */
@@ -84,6 +89,20 @@ export interface SceneViewDeps {
   };
   /** A story played to its end: the station is done. */
   onStoryEnd(stationId: string): void;
+  /** The story started, moved to another step, ended or stopped, or the
+   *  queue changed: what the sheet draws of it (`progress`) may differ
+   *  (W4 build plan M2). */
+  onChange?(): void;
+}
+
+/** Where a choice-free story is (the story card's dots, W4 build plan M2). */
+export interface StoryProgress {
+  /** The step showing, from 0. */
+  readonly index: number;
+  /** The scene's steps (`playableStepCount`). */
+  readonly count: number;
+  /** The step's own timer (an auto step), ms; null for a tap step. */
+  readonly autoMs: number | null;
 }
 
 export interface SceneView {
@@ -102,11 +121,18 @@ export interface SceneView {
   stopAll(): void;
   /** The station whose story plays, or null. */
   playing(): string | null;
+  /** Where the story playing is; null with none, or for a scene with a
+   *  choice (no fixed number of steps). */
+  progress(): StoryProgress | null;
 }
 
 export function createSceneView(deps: SceneViewDeps): SceneView {
   const { dom } = deps;
-  let story: { station: TourStation; player: ScenePlayer } | null = null;
+  let story: {
+    station: TourStation;
+    player: ScenePlayer;
+    count: number | null;
+  } | null = null;
   const queue: TourStation[] = [];
   /** Bumped per rendered step: a load that lands later is dropped. */
   let renderToken = 0;
@@ -303,11 +329,16 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         if (story !== null) render(story.player.next());
       }, step.advance.afterS * 1000);
     }
+    deps.onChange?.();
   }
 
   function start(station: TourStation): void {
     deps.stage.clear();
-    story = { station, player: createScenePlayer(station.steps) };
+    story = {
+      station,
+      player: createScenePlayer(station.steps),
+      count: playableStepCount(station.steps),
+    };
     dom.panel.hidden = false;
     dom.title.textContent = stationTitle(station);
     renderQueue();
@@ -324,6 +355,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     const next = queue.shift();
     if (next !== undefined) start(next);
     else renderQueue();
+    deps.onChange?.();
   }
 
   return {
@@ -368,7 +400,19 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       deps.stage.clear();
       dom.panel.hidden = true;
       renderQueue();
+      deps.onChange?.();
     },
     playing: () => story?.station.id ?? null,
+    progress() {
+      const step = story?.player.current() ?? null;
+      if (story === null || story.count === null || step === null) return null;
+      const playable = story.station.steps.filter(isPlayableInK4);
+      return {
+        index: playable.indexOf(step),
+        count: story.count,
+        autoMs:
+          step.advance.mode === "auto" ? step.advance.afterS * 1000 : null,
+      };
+    },
   };
 }

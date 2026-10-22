@@ -87,6 +87,61 @@ button:disabled {
   background: #e8e6df;
 }
 
+/* The 3D view, over the map while it shows (the panels stay above it). */
+#view3d {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: #232427;
+}
+
+#view3d[hidden] {
+  display: none;
+}
+
+.view3d-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  touch-action: none;
+}
+
+.view3d-credits {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  margin: 0;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: rgba(24, 25, 28, 0.72);
+  color: rgba(230, 232, 236, 0.85);
+  font-size: 11px;
+}
+
+.view3d-credits a {
+  color: inherit;
+}
+
+#view-switch[data-state="loading"] {
+  cursor: progress;
+}
+
+/* A phone-wide window: the switch says its short word (`data-short`),
+ * so the top bar keeps every control inside it; its full label stays its
+ * text, and so its name for a screen reader. */
+@media (width <= 720px) {
+  #view-switch {
+    font-size: 0;
+    padding: 0 10px;
+  }
+
+  #view-switch::after {
+    content: attr(data-short) / "";
+    font-size: 14px;
+  }
+}
+
 /* A muted, paper-toned base map, so the tour's own markers carry the colour. */
 .leaflet-tile-pane {
   filter: saturate(0.35) sepia(0.12) brightness(1.03) contrast(0.95);
@@ -1093,6 +1148,72 @@ kbd {
 .setting-warnings .note-line {
   margin: 8px 0 0;
   font-size: 12px;
+}
+
+/* The debug layer: the walk's camera captures, debug data only. A dot
+   until its thumbnail is decoded; centred on its point; never under the
+   pointer (its pane takes no events either). */
+.debug-panel {
+  position: fixed;
+  right: 12px;
+  bottom: 28px;
+  /* Under the card (850): shown for every open tour since "Add debug
+     data…", it must never cover the card it shares the corner with. */
+  z-index: 840;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+.debug-panel[hidden] {
+  display: none;
+}
+
+.debug-data {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.debug-data[hidden] {
+  display: none;
+}
+
+.debug-panel.over {
+  outline: 2px dashed var(--ink-dim);
+}
+
+.debug-add {
+  align-self: flex-start;
+}
+
+.mk-debug {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 85%);
+  border: 1px solid rgb(0 0 0 / 55%);
+  pointer-events: none;
+}
+
+.mk-debug.has-thumb {
+  width: auto;
+  height: auto;
+  border-radius: 2px;
+  background: none;
+  line-height: 0;
+  opacity: 0.85;
+}
+
+.mk-debug img {
+  display: block;
+  height: auto;
 }
 
 .keep-walk {

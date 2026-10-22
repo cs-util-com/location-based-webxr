@@ -21,7 +21,7 @@ export function sampleRecordingBytes(): Uint8Array<ArrayBuffer> {
   return new Uint8Array(readFileSync(SAMPLE_RECORDING));
 }
 
-/** The sample's recorded photos, by entry name. */
+/** The sample's camera captures, by entry name. */
 export const SAMPLE_PHOTOS: readonly string[] = [1, 2, 3, 4, 5, 6].map(
   (n) => `images/frame-00000${String(n)}.jpg`,
 );

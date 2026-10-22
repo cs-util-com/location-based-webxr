@@ -101,7 +101,9 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   one line under it, by flex `order`), then `#visitor-more` after the
   stage ("What happens?" `#visitor-what`, whose "Stays on your phone"
   says the app sends none of your data - no camera image, no location -
-  and links the privacy page,
+  and links the privacy page; hidden on a phone without AR and for a
+  tour not finished yet, whose Start is withheld (`#enter-ar`
+  `data-start="withheld"`),
   `visitor-privacy`; and `make-your-own`). The safety line
   `#visitor-safety` stands before the round button (W6, D13: "Watch where
   you walk..."), shown on the visitor's start page only. All of it
@@ -169,7 +171,9 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   `#setup-controls` (the code is measured on its own and its position
   decided by the settle: the measure button, the explicit replace and its
   confirm are gone, UI round 1, U3, and the move question since code book
-  plan M6), the placement controls `setup-pin` / `pin-label` / `pin-save` /
+  plan M6), first the strip's persistent Undo `setup-undo` (its label
+  `setup-undo-label`, W4 build plan MU, `creator-undo.ts`), then the
+  placement controls `setup-pin` / `pin-label` / `pin-save` /
   `pin-cancel` / `setup-photo`; then `setup-finish`, and LAST, outside
   the controls because it works on the page too, the object list
   `#object-list` (drawn by `object-list.ts`, M4; last so that in AR it
@@ -199,7 +203,9 @@ drawn `map-station-<step>`), `setup-card` (owns `setup-badge`, `setup-of`,
 `print-settings` (`author-size`, `print-paper`, `author-c`), `print-pdf`,
 `print-info`,
 `print-tiles` (its tiles `print-tile`, the first canvas `print-canvas`), `visitor-link` - opens in a
-new tab, polish round A17), `make-your-own` (on the visitor screen: the
+new tab, polish round A17), `visitor-link-note` (under it, shown while
+the hosted file is not finished yet: what a visitor reads then,
+`tour-unfinished.ts`), `make-your-own` (on the visitor screen: the
 setup page in a new tab, polish round A8), `visitor-safety`, `visitor-privacy`,
 `setup-foot`, `step-hang`, `hang-done`, `step-measure` (owns
 `draft-offer`,
@@ -209,7 +215,10 @@ setup page in a new tab, polish round A8), `visitor-safety`, `visitor-privacy`,
 `have-tour-link`, `have-tour-open`, `have-tour-status`, `have-tour-ask`,
 `have-tour-play`, `have-tour-continue`),
 `step-done` (owns `done-pending`, `finish-block`,
-`finish-status`, `finish-download`, `summary` (the summary after Finish,
+`finish-status`, `finish-download`, `debug-save` ("Save the debug data"
+after a Finish that left the walk out, above the replace steps:
+`debug-save-text`, `debug-save-btn`, `debug-save-status`;
+`creator-debug-save.ts`), `summary` (the summary after Finish,
 authoring plan 2026-09-28-0953 M3b: owns `summary-codes`, `summary-map`,
 `summary-map-status`, `summary-start-ar`; written by `summary-panel.ts`,
 its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns
@@ -225,8 +234,8 @@ its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns
 whole on the page), `object-list-heading`, `object-list-hint`, `object-list-note` and,
 beside it after a delete, `object-undo`; in AR the selected row's
 `object-close` - the chooser is gone since polish round M3),
-`setup-pin`, `pin-label`, `pin-save`, `pin-cancel`, `setup-photo`,
-`setup-finish`, `scan-escape`, `station-line`, `station-skip`, `scene-panel`
+`setup-undo`, `setup-undo-label`, `setup-pin`, `pin-label`, `pin-save`,
+`pin-cancel`, `setup-photo`, `setup-finish`, `scan-escape`, `station-line`, `station-skip`, `scene-panel`
 (owns `scene-title`, `scene-speaker`, `scene-image`, `scene-text`,
 `scene-status`, `scene-choices` with its `scene-choice` buttons,
 `scene-continue`), `scene-play-next`, `recording-block` (owns `recording-offer`
@@ -269,6 +278,35 @@ playing) are inside `#ar-root`: the visitor stays in AR the whole tour
 them. `#relocate-note` ("Test mode: this tour was moved to where you
 are.") shows only when the test switch `?relocate=here` moved the tour
 (`tour-relocation.ts`).
+The visitor's walk in AR (visitor walk W4 build plan
+`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md`,
+M2; the prototype `public/prototypes/visitor-walk-4-radar-and-list/`),
+all inside `#ar-root`: `#station-line` is visually hidden since M2 (the
+hidden copy the tests and a screen reader read; the sheet shows it in two
+lines); `#walk-coach` (`walk-coach`, its `data-look` spinner, sway or
+plain, and `walk-coach-text`); `#walk-toast-root` (`walk-toast-root`; the
+toast element `#walk-toast` is created in it); and the sheet
+`#walk-sheet` (`walk-sheet`, `data-sheet` peek or list, `data-complete`),
+which owns the grab `walk-grab`, the peek `walk-peek` (`walk-segments`,
+`walk-peek-row`, `walk-eyebrow`, `walk-title`, `walk-distance`,
+`walk-tail`, `walk-code-tail`, and `#station-skip` as its quick action),
+the story card `walk-story` (`#scene-panel` and its parts, `walk-dots`,
+`walk-story-acts` with `#scene-continue`, `story-end` (`#walk-story-end`)
+and `keep-listening`, then `#scene-play-next`), and the list `walk-list`
+(`walk-list-title`, `walk-chip`, `walk-close`, the completion card
+`walk-done` with `walk-done-title` and `walk-done-text`, `walk-progress`,
+`walk-rows` whose rows carry `walk-row`, `data-state`, `data-id` and a
+`walk-row-sub`, and `walk-list-foot` with `walk-exit`). In AR a visitor's
+`#enter-ar` is W4's round Exit button at the top left and `#ar-status`
+is visually hidden (kept for `data-state` and `?debug=1`). The scan
+card's found look is `#scan-card[data-look="found"]` (a check in its
+animation's place). On the start page, `#walk-away` (`walk-away`,
+`walk-away-text`, `walk-away-segments`, `walk-away-rows` with
+`walk-away-row` items) shows the progress after leaving AR. The walk's
+colours are `--walk-*` tokens on `html`; design.css's `.radar`,
+`.toast` and `.hint` classes are not used (plan §1.2). The walk's
+surfaces set `font-variant-numeric: lining-nums`, since the app font's
+old-style numerals shrink a row's number and a distance next to W4's.
 `#ar-debug` (a `<pre>` in `#ar-root`, hidden unless `?debug=1`) holds the
 QR readout (QR near-frontal pose plan §66).
 Renaming one is an e2e-breaking change. `#ar-hint`, `#ar-status`,
@@ -325,7 +363,8 @@ auto`) and their labels wrap inside the chip; up to 380 px the chips take a
   so it fit locally while a Linux browser's wider fallback pushed the row
   4 px off a 360 px screen (24 px at 320). `ar-layout.spec.js` checks the
   H1 HUD in a forced wide face at 412, 360, 320 and 915 px, both edges of
-  the row included.
+  the row included, and the Undo chip (its own line above "New station
+  here", a long label ending in an ellipsis) at 390 and 320 px.
 
 ## Tests
 

@@ -327,4 +327,27 @@ describe("the great-circle interpolation at degenerate pairs", () => {
       );
     }
   });
+
+  // Why (a fast-check counterexample, 2026-10-22): a start about 1.4e-7
+  // short of opposite to its target is past the parallel cut-off, so the
+  // great circle's perpendicular comes from `target - cos * start`, a
+  // difference of nearly equal numbers. Its rounding left it about 1e-7
+  // off perpendicular, and the pose's direction about 5e-10 off unit
+  // length, which the property's 1e-9 rejects. The perpendicular must be
+  // perpendicular, so the direction stays a unit vector on the way.
+  it("keeps the direction a unit vector for a start just short of opposite", () => {
+    const start: Vec3 = [-0.9999999999999899, 1.4253799930397765e-7, 0];
+    for (const t of [0.05, 0.16219, 0.5, 0.84]) {
+      const p = introCameraPose(t, {
+        variant: "distance",
+        start,
+        target: [1, 0, 0],
+        startKm: 7000,
+        endKm: 7000,
+        endFovDeg: 50,
+      });
+      expect(p.direction.every((c) => Number.isFinite(c))).toBe(true);
+      expect(Math.hypot(...p.direction)).toBeCloseTo(1, 12);
+    }
+  });
 });

@@ -48,7 +48,10 @@
 - Invariants & assumptions:
   - The carrier wears the globe's template and reads the globe's uniforms
     (`createGlobeSurface().template`); the globe's tiles are hidden and
-    not updated in carrier mode, its sun light still lights the scene.
+    not updated in carrier mode, its sun light still lights the scene,
+    and its clouds are stepped alone (`updateClouds`), so the full
+    8,192 map replaces the preview here too (round-3 plan 2026-10-08-2345
+    §18).
   - Both carriers are drawn in ECEF here.
   - The synthetic tiles' PNG sizes are not representative of real
     Terrarium tiles: the data smoke writes the requested tiles to

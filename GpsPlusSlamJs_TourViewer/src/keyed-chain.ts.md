@@ -14,6 +14,12 @@ meta file, one per object id within a tour (authoring plan
     earlier under `key` has settled; resolves or rejects with the task's
     own outcome.
   - `pendingKeys() -> number` - keys with a task queued or running.
+  - `exclusive(task) -> Promise<T>` - runs `task` alone: after every task
+    queued so far under any key has settled (failures included), and
+    before any task queued after the call starts; its outcome is the
+    task's, and a failure stalls nothing. The phone draft copies its
+    namespace to a new key inside it (debug-captures plan, Q-I), so a write
+    issued during the copy lands after it.
 
 ## Invariants & assumptions
 
@@ -49,5 +55,6 @@ void writes.run(`object:${id}`, () => removeDraftObject(store, id));
 
 `keyed-chain.test.ts`: a slow first task holds the second, a failure goes
 to its caller and the queue continues, keys are independent, drained keys
-are forgotten, and a property that every key's tasks land in call order
+are forgotten, an exclusive task runs after what was queued before it
+and before what came after (failures included on both sides), and a property that every key's tasks land in call order
 for any mix of costs and failures.

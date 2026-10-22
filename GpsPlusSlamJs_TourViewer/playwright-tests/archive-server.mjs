@@ -30,10 +30,17 @@
  *   editor plan 2026-10-17-1816, W2): a name, a description, a
  *   contact, and a cover that is its SECOND photo (3 px wide; the first is
  *   1 px), so a page that took the first photo is told apart.
+ * - `/ranges-ok/unfinished-tour.zip` - a tour not finished yet: a name,
+ *   a contact and the fixture's code, no station.
  * - `/ranges-ok/stations-tour.zip` - a tour with three stations (tour
  *   kit plan K4): one at the fixture's printed code (a knight with a voice
  *   and a scene choice), one found by walking to it (a `.glb` model), one
  *   far away for the skip.
+ * - `/ranges-ok/walk-tour.zip` (any order) and
+ *   `/ranges-ok/walk-tour-fixed.zip` (fixed order) - the visitor walk W4
+ *   prototype's "Old town walk" (visitor walk W4 build plan M2): four
+ *   stations at the prototype's spots, each a story of auto-advancing
+ *   lines, for the sheet's and the layout's specs.
  *
  * Every `tour.json` here is version 3 (tour editor plan W3): stations at
  * geo poses, pins and photos as their items.
@@ -58,6 +65,9 @@ import { inOwnStation, stationAt } from "./v3-fixture.mjs";
 
 const port = Number(process.argv[2] ?? "5197");
 
+/** The default tour's photo items, in its pin's station. */
+const FIXTURE_PHOTO_IDS = ["fixturephoto1", "fixturephoto2", "fixturephoto3"];
+
 /** 1×1 red PNG — a real decodable image, 67 bytes. */
 const TINY_PNG = Uint8Array.from(
   atob(
@@ -66,18 +76,29 @@ const TINY_PNG = Uint8Array.from(
   (c) => c.codePointAt(0),
 );
 
-/** The default tour: images, an authored level, padding. `withLevel: false`
- *  is the PLAIN tour (flows plan M4) - images only, no recording and no
- *  printed code: the "nothing to place" case the status line must name.
+/** The default tour: an authored level, a station holding a pin and three
+ *  photos (each its own `content/` image), five other images, padding -
+ *  eight images in all. `withLevel: false` is the PLAIN tour - eight
+ *  images only, no `tour.json`, no recording and no printed code: a tour
+ *  not finished yet.
  *  `needsNoGps`: the same tour, its `tour.json` marked as needing no GPS. */
 async function buildZip({ withLevel = true, needsNoGps = false } = {}) {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
   await writer.add("session.json", new TextReader('{"kind":"e2e-tour"}'));
-  for (let i = 0; i < 8; i += 1) {
+  for (let i = 0; i < (withLevel ? 5 : 8); i += 1) {
     await writer.add(
       `images/frame-${String(i)}.png`,
       new Uint8ArrayReader(TINY_PNG.slice()),
     );
+  }
+  // The station's photos: what a visitor sees besides the pin.
+  if (withLevel) {
+    for (const id of FIXTURE_PHOTO_IDS) {
+      await writer.add(
+        `content/${id}.png`,
+        new Uint8ArrayReader(TINY_PNG.slice()),
+      );
+    }
   }
   // An authored QR level (QR-pose plan M4): the viewer spec relocalizes
   // against it. Geo sits ~13 m from the spec's zero reference.
@@ -116,13 +137,28 @@ async function buildZip({ withLevel = true, needsNoGps = false } = {}) {
           minor: 0,
           ...(needsNoGps ? { needsNoGps: true } : {}),
           stations: [
-            inOwnStation({
-              id: "fixturepin01",
-              kind: "pin",
-              geo: { lat: 47.50009, lon: 8.7, alt: 400 },
-              createdAtIso: "2026-09-08T12:00:00.000Z",
-              label: "Fixture pin",
-            }),
+            stationAt(
+              "st-fixturepin01",
+              { lat: 47.50009, lon: 8.7, alt: 400 },
+              [
+                {
+                  id: "fixturepin01",
+                  kind: "pin",
+                  createdAtIso: "2026-09-08T12:00:00.000Z",
+                  label: "Fixture pin",
+                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                },
+                ...FIXTURE_PHOTO_IDS.map((id, i) => ({
+                  id,
+                  kind: "photo",
+                  image: `content/${id}.png`,
+                  imageWidth: 1,
+                  imageHeight: 1,
+                  createdAtIso: "2026-09-08T12:00:00.000Z",
+                  pose: { position: [i + 1, 0, 0], rotation: [0, 0, 0, 1] },
+                })),
+              ],
+            ),
           ],
         }),
       ),
@@ -314,11 +350,96 @@ async function buildStationsZip() {
 }
 
 /**
+ * The prototype's "Old town walk" (visitor walk W4 build plan M2;
+ * `public/prototypes/visitor-walk-4-radar-and-list/`): its four stations
+ * at its spots (the prototype's x east, z south, here north and east),
+ * found within the prototype's radius, offered within 60 m, each a story
+ * of the prototype's lines that advance by themselves after 6 s (the
+ * fakes' timers, so a spec moves them on). The printed code is the
+ * stations tour's (2 m north, 1 m east).
+ */
+async function buildWalkZip(order) {
+  const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
+  await writer.add("session.json", new TextReader('{"kind":"e2e-walk"}'));
+  await writer.add(
+    await e2eQrLevelEntryName(),
+    new TextReader(
+      JSON.stringify({
+        version: 1,
+        qr: {
+          physicalSizeM: 0.2,
+          geo: {
+            lat: 47.5 + 2 * DEG_PER_M_LAT,
+            lon: 8.7 + 1 * DEG_PER_M_LON,
+            alt: 400,
+            rotation: MEASURED_CODE_ROTATION,
+          },
+        },
+      }),
+    ),
+  );
+  const geo = (north, east) => ({
+    lat: 47.5 + north * DEG_PER_M_LAT,
+    lon: 8.7 + east * DEG_PER_M_LON,
+    alt: 400,
+    headingDeg: 0,
+  });
+  const station = (id, title, north, east, radiusM, lines) => ({
+    id,
+    title,
+    geo: geo(north, east),
+    activateRadiusM: 60,
+    foundRadiusM: radiusM,
+    hint: "arrow",
+    items: [],
+    steps: lines.map((text, i) => ({
+      id: `${id}-${String(i)}`,
+      block: { kind: "text", text },
+      advance: { mode: "auto", afterS: 6 },
+    })),
+  });
+  await writer.add(
+    "tour.json",
+    new TextReader(
+      JSON.stringify({
+        version: 3,
+        minor: 0,
+        title: "Old town walk",
+        order,
+        assets: [],
+        stations: [
+          station("gate", "The gate", 28, 0, 10, [
+            "Until 1840 this gate was shut every night at dusk.",
+            "Traders who came late slept outside the walls, beside their carts.",
+            "Look up: the hinges of the old doors are still in the stone.",
+          ]),
+          station("well", "The well", 82, 34, 12, [
+            "Everyone came here - for water first, and for the news second.",
+            "The shaft is nineteen metres deep and was dug by hand.",
+            "In dry summers the queue reached the far end of the square.",
+          ]),
+          station("tower", "The tower", 170, -48, 12, [
+            "The watchman rang the bell for fire, for flood and for weddings.",
+            "Its stairs have 142 steps; the top ones are new.",
+          ]),
+          station("garden", "The garden", 240, 46, 14, [
+            "This garden was planted for medicine, not for beauty.",
+            "Every bed still grows a herb from the old list.",
+            "This is the last station - thank you for walking with us.",
+          ]),
+        ],
+      }),
+    ),
+  );
+  return writer.close();
+}
+
+/**
  * A tour zip that IS a recording (geo-join e2e): era-5 session.json plus an
  * action stream whose four consistent GPS↔odom pairs solve a clean
  * translation alignment ([+2 m N] and the 400 m altitude datum), and two
- * captures taken AFTER the zero — so the viewer's capture-time join
- * accepts and places photos at capture spots instead of the ring.
+ * captures taken AFTER the zero - so the capture-time join (the editor's
+ * debug layer, `debug-captures.ts`) accepts and places both captures.
  * Payload frames match the recorder's writes exactly: odom positions are
  * RAW WEBXR ([E, y, −N] for a NUE (N, E)); the reducer converts on replay.
  */
@@ -404,12 +525,13 @@ async function buildRecordingZip() {
 }
 
 /**
- * A tour zip whose recorded photos' spots were BAKED at a Finish (scan-pass
- * plan S1): `tour.json` carries `captureSpots` (7 fixes, unlike the
- * recording zip's 4, so a status line proves which source placed them),
- * the two photos and a level - plus a walk a copy kept for a co-author
- * (`session.json`, an action and a frame no spot shows), which a visitor
- * must neither show in the gallery nor replay (scan-pass plan S1).
+ * A tour zip whose `tour.json` carries debug camera captures
+ * (`captureSpots`, 7 fixes: an earlier app wrote them at a creator's open;
+ * the field is gone from the format and the reader ignores it) in
+ * stations of their own, one of which
+ * also holds a pin; the captured frames, a level, and a walk
+ * (`session.json`, an action). A visitor draws the pin and none of the
+ * frames, and takes no cover from one.
  */
 async function buildBakedZip() {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
@@ -425,7 +547,15 @@ async function buildBakedZip() {
         version: 3,
         minor: 0,
         stations: [
-          stationAt("walk-0", { lat: 47.50002, lon: 8.7, alt: 400 }),
+          stationAt("walk-0", { lat: 47.50002, lon: 8.7, alt: 400 }, [
+            {
+              id: "bakedpin01",
+              kind: "pin",
+              createdAtIso: "2026-09-08T12:00:00.000Z",
+              label: "A pin beside the captures",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+          ]),
           stationAt("walk-1", { lat: 47.50011, lon: 8.7, alt: 400 }),
         ],
         captureSpots: {
@@ -536,13 +666,56 @@ async function buildDetailsZip() {
   return writer.close();
 }
 
+/**
+ * A tour not finished yet: a `tour.json` with a name and a contact but no
+ * station, and the fixture's measured code - a creator who hung the code
+ * and hosted the file before placing anything. Its visitor reads that the
+ * tour is not finished, with the contact, and is never asked for the code.
+ */
+async function buildUnfinishedZip() {
+  const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
+  await writer.add(
+    "tour.json",
+    new TextReader(
+      JSON.stringify({
+        version: 3,
+        minor: 0,
+        title: "Harbour Lights",
+        contact: "guide@example.org",
+        stations: [],
+      }),
+    ),
+  );
+  await writer.add(
+    await e2eQrLevelEntryName(),
+    new TextReader(
+      JSON.stringify({
+        version: 1,
+        qr: {
+          physicalSizeM: 0.2,
+          geo: {
+            lat: 47.5001,
+            lon: 8.7001,
+            alt: 400,
+            rotation: MEASURED_CODE_ROTATION,
+          },
+        },
+      }),
+    ),
+  );
+  return writer.close();
+}
+
 const zipBytes = await buildZip();
 const detailsZipBytes = await buildDetailsZip();
+const unfinishedZipBytes = await buildUnfinishedZip();
 const bakedZipBytes = await buildBakedZip();
 const plainZipBytes = await buildZip({ withLevel: false });
 const noGpsZipBytes = await buildZip({ needsNoGps: true });
 const recordingZipBytes = await buildRecordingZip();
 const stationsZipBytes = await buildStationsZip();
+const walkZipBytes = await buildWalkZip("any");
+const walkFixedZipBytes = await buildWalkZip("fixed");
 const sampleZipBytes = new Uint8Array(
   readFileSync(
     new URL("../public/samples/marienplatz-tour.zip", import.meta.url),
@@ -707,8 +880,26 @@ createServer((req, res) => {
     handleArchive(req, res, "ranges-ok", detailsZipBytes, '"e2e-details-v1"');
     return;
   }
+  if (url.pathname === "/ranges-ok/unfinished-tour.zip") {
+    handleArchive(
+      req,
+      res,
+      "ranges-ok",
+      unfinishedZipBytes,
+      '"e2e-unfinished-v1"',
+    );
+    return;
+  }
   if (url.pathname === "/ranges-ok/stations-tour.zip") {
     handleArchive(req, res, "ranges-ok", stationsZipBytes, '"e2e-stations-v1"');
+    return;
+  }
+  if (url.pathname === "/ranges-ok/walk-tour.zip") {
+    handleArchive(req, res, "ranges-ok", walkZipBytes, '"e2e-walk-v1"');
+    return;
+  }
+  if (url.pathname === "/ranges-ok/walk-tour-fixed.zip") {
+    handleArchive(req, res, "ranges-ok", walkFixedZipBytes, '"e2e-walk-f-v1"');
     return;
   }
   if (url.pathname === "/ranges-ok/sample-tour.zip") {

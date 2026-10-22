@@ -25,6 +25,7 @@ import {
   openTourFile,
   openTourSession,
   readArchiveInSlices,
+  tourFileKeyOfFile,
   tourLabel,
 } from "./tour-session.js";
 import { tourOf } from "./test-support/v3-tour.js";
@@ -253,7 +254,7 @@ describe("openTourSession", () => {
 // Why these tests matter (geo-join M-B): the join's inputs come through
 // these two accessors, and BOTH are null-tolerant by contract — a
 // hand-built tour zip (no recording) and a corrupt stream must read as
-// "keep the ring", never as a broken archive.
+// "no walk to bake", never as a broken archive.
 /** Exactly the given entries - no defaults; the recording tests need to
  *  control session.json themselves. */
 async function buildExactZip(
@@ -312,7 +313,7 @@ describe("loadRecordingActions / loadSessionMeta", () => {
     expect(wrapped.hasRecording).toBe(true);
   });
 
-  it("returns null for a hand-built zip without a recording — the ring path, not an error", async () => {
+  it("returns null for a hand-built zip without a recording - nothing to bake, not an error", async () => {
     const fetchImpl = rangeServer(
       await buildExactZip({ "qr/1.json": LEVEL_JSON }),
     );
@@ -974,6 +975,40 @@ describe("openTourFile (K0)", () => {
     const a = await openTourFile(await tourFile("tour.zip"));
     const b = await openTourFile(await tourFile("tour (2).zip"));
     expect(a.archive.url).toBe(b.archive.url);
+  });
+
+  // Why (debug-captures plan, Q-I): a tour of the tour kit's files alone
+  // was keyed by its content, which each save rewrites. A tour.json that
+  // carries the tour's own id keys the file by it, whatever else changed;
+  // one that does not read (or carries no id) keeps the content key.
+  it("keys a file whose tour carries its own id by that id, whatever its content", async () => {
+    const withId = async (title: string): Promise<File> => {
+      const manifest = {
+        ...createEmptyTourManifest(),
+        tourId: "TourId123",
+        title,
+      };
+      const bytes = await buildZip({
+        "tour.json": serializeTourManifest(manifest),
+      });
+      return new File([bytes as BlobPart], "t.zip", {
+        type: "application/zip",
+      });
+    };
+    const a = await openTourFile(await withId("First"));
+    const b = await openTourFile(await withId("Second"));
+    expect(a.archive.url).toBe("local-file:tour:TourId123");
+    expect(b.archive.url).toBe(a.archive.url);
+    expect(await tourFileKeyOfFile(await withId("Third"))).toBe(a.archive.url);
+    for (const text of ['{"version":3,"tourId":"bad id"}', "{not json"]) {
+      const bytes = await buildZip({ "tour.json": text });
+      const file = new File([bytes as BlobPart], "t.zip");
+      expect(await tourFileKeyOfFile(file)).toMatch(
+        /^local-file:[0-9a-f]{32}$/,
+      );
+    }
+    await a.close();
+    await b.close();
   });
 
   it("says in plain words when the file is not a zip", async () => {

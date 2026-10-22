@@ -28,7 +28,8 @@ createAudioElement }`
     null while there is none; the station targets carry their own arrival
     band, and the HUD-level band is `station-bands.ts`'s floors (1.5 m /
     3.0 m). The e2e fake records the targets getter instead.
-  - `loadGlbModel(blob)` (K4) - three's `GLTFLoader`, imported on first
+  - `loadGlbModel(blob)` (K4) - `glb-model.ts`, shared with the desktop
+    editor's 3D view: three's `GLTFLoader`, imported on first
     use (a visitor without a model never downloads it), `parseAsync` with
     no path, no DRACO, KTX2 or meshopt decoder: the tour session already
     refused external URIs and decoder extensions (`checkGlbInert`, K0).
@@ -59,7 +60,8 @@ createAudioElement }`
     reticle under the world group; the camera frame → JPEG encoder, which is
     the framework's `rgbaImageToJpegBlob` behind an opacity guard, async
     throughout; the framework text sprite for a pin's label at a 2:1
-    canvas/scale with a transparent pill) and the
+    canvas/scale with a transparent pill, `createLabel`, which is
+    `pin-label.ts`'s recipe, shared with the desktop editor's 3D view) and the
     one-shot clock behind the scan gate's escape (M5; the e2e fires it instead
     of waiting); `startDepthCapture` / `stopDepthCapture` are the framework's
     depth sampler controls, used by an entry that asks for depth: every

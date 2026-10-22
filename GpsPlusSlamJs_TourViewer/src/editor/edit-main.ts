@@ -10,7 +10,12 @@
  * few seconds after a change (M6 E2b-2, `autosave.ts`). The tour's name in
  * the top bar opens its details (W2 of the tour editor plan,
  * `details-dialog.ts`); "Done" says where the changes are and what is
- * left to do, and moves the walk out (`done-dialog.ts`). Linked from the
+ * left to do, and moves the walk out (`done-dialog.ts`). A tour whose file
+ * carries a walk shows its debug camera captures on the map once it has
+ * opened (`debug-capture-layer.ts`; debug data, never the tour's
+ * content), behind a "Show debug data" switch. The view switch opens the
+ * same tour in 3D over the map (`view-switch.ts`; the 3D view's code,
+ * `src/editor3d/`, is a dynamic import made only then). Linked from the
  * setup page's "You already have a tour?" box and its step 5 on a device
  * without AR.
  *
@@ -21,8 +26,14 @@ import {
   downloadZip,
   writeFileOrAbort,
 } from "gps-plus-slam-app-framework/storage";
-import { FINISH_LABELS } from "../qr-author-mode.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
+import {
+  editorViewActions,
+  editorViewReducer,
+  selectEditorView,
+  type EditorMessage,
+  type EditorViewState,
+} from "./editor-view.js";
 import {
   selectTourDocument,
   tourDocumentActions,
@@ -30,6 +41,8 @@ import {
   type TourSaveStatus,
 } from "../tour-document.js";
 import { describeIntegrityError } from "../open-errors.js";
+import { debugCapturesOf } from "../debug-captures.js";
+import { pictureProblem } from "../image-cap.js";
 import { scanEntryNames } from "../tour-read-set.js";
 import { openDraftStore } from "../draft-store-root.js";
 import {
@@ -44,11 +57,21 @@ import {
 } from "./editor-card.js";
 import { createEditorMap } from "./editor-map.js";
 import {
+  createDebugCaptureLayer,
+  decodeDebugThumbnail,
+  revokeDebugThumbnail,
+  type DebugLayer,
+} from "./debug-capture-layer.js";
+import {
   photoSource,
   type EditorItem,
   type EditorModel,
 } from "./editor-model.js";
-import { droppedDetailsLine, openTourForEditing } from "./editor-open.js";
+import {
+  droppedDetailsLine,
+  droppedStationFieldsLine,
+  openTourForEditing,
+} from "./editor-open.js";
 import { holdPageInert } from "./page-inert.js";
 import { fetchTourFile, linkOpenErrorText } from "./editor-link.js";
 import { driveProxyBaseUrl } from "../drive-proxy-url.js";
@@ -60,10 +83,14 @@ import {
   type NoBackupReason,
 } from "./editor-draft.js";
 import { createPhotoCopies } from "./photo-copy.js";
+import { savedToastWords } from "./save-toast.js";
 import { wireDetailsDialog } from "./details-dialog.js";
 import {
   DRIVE_MOUNT_TIP_SHOWN,
+  SAVE_DEBUG_LABELS,
+  debugSaveResultLine,
   wireDoneDialog,
+  type DebugSaveOutcome,
   type DoneSaved,
   type WalkMoveOutcome,
 } from "./done-dialog.js";
@@ -83,17 +110,34 @@ import {
 } from "./autosave.js";
 import {
   createEditorSession,
-  walkFileName,
   type EditorSave,
   type EditorSession,
 } from "./editor-session.js";
+import {
+  bundleMatchesTour,
+  debugBundleFileName,
+  readDebugBundle,
+  type DebugBundleTour,
+} from "../debug-bundle.js";
+import {
+  addedDebugLine,
+  createAddDebugButton,
+  notAddedLine,
+} from "./added-debug-data.js";
 import { noGpsWarnings } from "./no-gps-check.js";
 import { revealPadding, type Box } from "./popover-place.js";
 import { createStatusLines } from "./status-lines.js";
+import { createViewSwitch, type View3dHandle } from "./view-switch.js";
+import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import type {
+  Editor3dStats,
+  Editor3dView,
+} from "../editor3d/editor3d-scene.js";
 import {
   createSaveTarget,
   holdEditorDraftLock,
   holdEditorLock,
+  isSameFile,
   pickSaveFile,
   pickTourFile,
   saveFinePrint,
@@ -189,7 +233,29 @@ function element<T extends HTMLElement>(id: string): T {
 // its history and its save status - lives here, not in this module's
 // variables. Creating it also starts the library's licence (its geo maths
 // runs once a store exists).
-const store = createTourViewerStore();
+const store = createTourViewerStore(undefined, {
+  editorView: editorViewReducer,
+});
+
+/** The page's chrome state (`editorView`): what is selected, in flight,
+ *  dragged, and the card's last line. */
+function ui(): EditorViewState {
+  return selectEditorView(store.getState());
+}
+
+/** The card's outcome line for an item, or none. */
+function say(message: EditorMessage | null): void {
+  store.dispatch(editorViewActions.said({ message }));
+}
+
+/** A save the browser did not deliver, or none: kept here (it holds a
+ *  Blob), and its waiting said to the store. */
+function setUndelivered(save: EditorSave | null): void {
+  undelivered = save;
+  store.dispatch(
+    editorViewActions.undeliveredChanged({ waits: save !== null }),
+  );
+}
 
 /** The open tour's save status (`tour-document.ts`). */
 function saveState(): TourSaveStatus {
@@ -240,6 +306,15 @@ const doneButton = element<HTMLButtonElement>("done-btn");
 const saveStatus = element("save-status");
 const keepWalk = element("keep-walk");
 const keepWalkInput = element<HTMLInputElement>("keep-walk-input");
+/** The debug layer's switch and its line (`debug-capture-layer.ts`). */
+const debugPanel = element("debug-panel");
+const debugSwitch = element("debug-switch");
+const debugInput = element<HTMLInputElement>("debug-data-input");
+const debugStatus = element("debug-status");
+/** "Add debug data…" and its file input (M2 step 5 of the debug-captures
+ *  plan). */
+const debugAddButton = element<HTMLButtonElement>("debug-add");
+const debugAddInput = element<HTMLInputElement>("debug-add-input");
 /** The tour's "needs no GPS" setting and its warnings (QR-first M1b-2). */
 const noGpsInput = element<HTMLInputElement>("no-gps-input");
 /** Its warnings' live region: never hidden (an empty one is zero-height),
@@ -261,11 +336,15 @@ const photos = createPhotoCopies((file) => openTourFile(file));
 /** The open tour's draft writes, bound to it: a save of a tour closed
  *  meanwhile moves nothing of the next one's (E2b-2 milestone review #1). */
 let tourDraft: EditorTourDraft | null = null;
-/** The photos a save could not place were said for this tour (E2b-2
- *  milestone review #6): an autosave says it once. */
-let toldNotPlaced = false;
 /** The opened file itself, when it may be written in place (E2b-1). */
 let target: SaveTarget | null = null;
+/** The opened tour's file: its name, and the handle it was picked through
+ *  (writable or not; null from the file input, a drop or a link). "Save
+ *  the debug data" reads it, so never writes over it (r901 review #5). */
+let openedFile: {
+  readonly name: string;
+  readonly handle: FileSystemHandle | null;
+} | null = null;
 /** This tab's hold on the opened file's name (E2b plan review #6), and
  *  when the last one let go: the same name asked again before that is
  *  refused (E2b-1 review #3). */
@@ -273,28 +352,23 @@ let lock: EditorLock | null = null;
 let letGo: Promise<void> = Promise.resolve();
 /** Toasts about this file that mean nothing once another tour is open. */
 const fileToasts: HTMLElement[] = [];
-/** The browser's file picker is open: a second click opens nothing. */
-let picking = false;
-/** The tour was opened to be saved in place: its saves keep the walk, even
- *  after a refusal turned them into downloads (E2b plan review #1). */
-let keepsWalk = false;
 let editor: EditorSession | null = null;
+/** The open tour's codes as opened (the 3D view draws them; read-only). */
+let openedLevels: ReadonlyMap<string, QrLevel> = new Map();
+/** The 3D view while it shows (the view switch holds its handle too). */
+let shown3d: Editor3dView | null = null;
 /** The open tour's draft key: its opened file's, then the key of each
- *  in-place write that landed (M6 E2c). */
+ *  in-place write that landed (M6 E2c) and of a download whose key differs
+ *  (the first save that wrote the tour's own id, Q-I). */
 let fileKey: string | null = null;
 let model: EditorModel | null = null;
-let selected: string | null = null;
-let busy = false;
 /** A save the browser did not deliver (the picker dismissed, a failed
- *  download): Save offers it again before anything else. */
+ *  download): Save offers it again before anything else. The save holds
+ *  its zip (a Blob, never state), so it stays here; `editorView` holds
+ *  only that one waits (`setUndelivered`). */
 let undelivered: EditorSave | null = null;
-/** The marker being dragged, and where it was dropped so far. */
-let moving: { id: string; drop: { lat: number; lng: number } | null } | null =
-  null;
 /** Notes moved since the last save: their card says the height was kept. */
 const moved = new Set<string>();
-/** The card's last outcome line, for the item it was said about. */
-let message: { id: string; text: string; refused?: true } | null = null;
 /** The open delete's Undo toast, until it times out or a newer edit
  *  comes. */
 let undoOffer: { toast: HTMLElement; timer: number } | null = null;
@@ -304,8 +378,6 @@ let resaveTimer: number | null = null;
 let refusalToast: HTMLElement | null = null;
 /** The host of the link the open tour was fetched from, if it was. */
 let linkHost: TourHost | null = null;
-/** Done is saving before it opens its dialog. */
-let doneBusy = false;
 /** The end of the save that runs, for Done to wait on. */
 let saveEnd: Promise<void> = Promise.resolve();
 /** A move of the walk, as the session builds it. */
@@ -348,7 +420,7 @@ async function savesSettled(): Promise<void> {
  *  bring the note back after a closed tab (`editor-draft.ts` places
  *  nothing new). */
 function editing(): boolean {
-  return undoOffer !== null || card.dirty() || moving !== null;
+  return undoOffer !== null || card.dirty() || ui().moving !== null;
 }
 
 /** The page saves by itself, a few seconds after a committed change, while
@@ -360,7 +432,7 @@ function editing(): boolean {
  *  the middle of an open would belong to neither tour cleanly. */
 const autosave = createAutosave({
   ...autosaveTimings,
-  held: () => saving() || busy || !modal.hidden || editing(),
+  held: () => saving() || ui().busy || !modal.hidden || editing(),
   pending: () => (editor?.changeCount() ?? 0) > 0,
   save: () => saveTour("auto"),
   onState: (state) => {
@@ -369,6 +441,41 @@ const autosave = createAutosave({
   },
 });
 document.body.dataset["autosave"] = autosave.state();
+
+/**
+ * The dev server's test hook (`window.__tourEditor`): an e2e reaches the
+ * editor session's edits no control of this page offers yet (a station's
+ * name), then `edited()` follows them as an edit made here would - the
+ * rail, the map, the card and the status, and the autosave told. Inert in
+ * a production build: `import.meta.env.DEV` is statically false there, so
+ * the hook is stripped (`seams.ts`'s guarantee).
+ */
+if (import.meta.env.DEV && !import.meta.env.VITEST) {
+  (
+    window as {
+      __tourEditor?: {
+        editor: () => EditorSession | null;
+        edited: () => void;
+        view3d: () => Editor3dStats | null;
+        view3dTilt: (deg: number) => void;
+        view3dDistance: (m: number) => void;
+      };
+    }
+  ).__tourEditor = {
+    editor: () => editor,
+    edited: () => {
+      refresh();
+      autosave.changed();
+    },
+    view3d: () => shown3d?.stats() ?? null,
+    view3dTilt: (deg) => {
+      shown3d?.setTilt(deg);
+    },
+    view3dDistance: (m) => {
+      shown3d?.setDistance(m);
+    },
+  };
+}
 
 /** The open tour's edits, backed up in this browser (M6 E2c): the page
  *  says once when they are not, and marks when every write landed
@@ -382,7 +489,7 @@ const draft = createEditorDraft({
     noBackupNote = NO_BACKUP[reason];
     // Said during an open, it waits until the tour shows: switching tours
     // takes the old file's toasts away.
-    if (!busy) sayNoBackup();
+    if (!ui().busy) sayNoBackup();
   },
   onWriting: (writing) => {
     if (document.body.dataset["draft"] === "off") return;
@@ -413,7 +520,8 @@ function openedSummary(opened: EditorModel): string {
 
 interface ToastAction {
   readonly label: string;
-  readonly run: () => void;
+  /** Called in the click, with the action's own button. */
+  readonly run: (button: HTMLButtonElement) => void;
 }
 
 /**
@@ -438,7 +546,9 @@ function toast(
     b.type = "button";
     b.className = "btn small";
     b.textContent = a.label;
-    b.addEventListener("click", a.run);
+    b.addEventListener("click", () => {
+      a.run(b);
+    });
     t.append(b);
   }
   if (holdMs === null && closable) {
@@ -481,20 +591,28 @@ function reveal(id: string): void {
   );
 }
 
-function placeCard(): void {
-  if (selected === null) return;
-  card.place(map.anchorOf(selected), freeArea());
+/** The debug panel's box while it shows: the card keeps clear of it
+ *  (r901 review #4; the panel shares the window's lower right corner). */
+function debugPanelBox(): Box | null {
+  if (debugPanel.hidden) return null;
+  const r = debugPanel.getBoundingClientRect();
+  return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
 }
 
-/** A pin or photo of the tour can be edited; codes, stations and the
- *  walk's recorded photos cannot (yet). */
+function placeCard(): void {
+  const { selected } = ui();
+  if (selected === null) return;
+  card.place(map.anchorOf(selected), freeArea(), debugPanelBox());
+}
+
+/** A pin or photo of the tour can be edited; codes and stations cannot
+ *  (yet). */
 function editable(item: EditorItem): boolean {
-  return (
-    (item.kind === "pin" || item.kind === "photo") && item.recorded !== true
-  );
+  return item.kind === "pin" || item.kind === "photo";
 }
 
 function viewOf(item: EditorItem): CardView {
+  const { moving, message } = ui();
   return {
     editable: editable(item),
     moving: moving?.id === item.id,
@@ -504,8 +622,10 @@ function viewOf(item: EditorItem): CardView {
 }
 
 function showCard(): void {
-  const item = model?.items.find((i) => i.id === selected) ?? null;
-  if (item === null) {
+  const item = model?.items.find((i) => i.id === ui().selected) ?? null;
+  // The card points at a marker of the map: not over the 3D view, whose
+  // panels come later. The selection stays (the store's).
+  if (item === null || ui().viewMode === "3d") {
     card.hide();
     return;
   }
@@ -515,18 +635,20 @@ function showCard(): void {
 
 function select(id: string | null, pan = false): void {
   // Typing in the card's field is committed before it shows something else.
-  if (id !== selected) {
+  if (id !== ui().selected) {
     card.commit();
     // What was typed was refused, and the card is about to show something
     // else: the refusal goes to a toast, never silently away (PR #611
     // review).
+    const { message, selected } = ui();
     if (message?.refused === true && message.id === selected) {
       toast(message.text);
     }
   }
+  const { moving } = ui();
   if (moving !== null && moving.id !== id) cancelMove();
-  selected = id;
-  message = null;
+  store.dispatch(editorViewActions.selected({ id }));
+  say(null);
   map.select(id);
   rail.select(id);
   showCard();
@@ -538,7 +660,7 @@ function select(id: string | null, pan = false): void {
 
 function renderSaveState(): void {
   const count = editor?.changeCount() ?? 0;
-  if (!doneBusy) doneButton.disabled = editor === null || walkMoving();
+  if (!ui().doneBusy) doneButton.disabled = editor === null || walkMoving();
   if (saving()) {
     saveStatus.dataset["state"] = "saving";
     saveStatus.textContent = "Saving…";
@@ -611,11 +733,12 @@ function refresh(): void {
   renderTourName();
   rail.update(model);
   map.update(model);
+  const { selected } = ui();
   if (selected !== null && !model.items.some((i) => i.id === selected)) {
-    selected = null;
+    store.dispatch(editorViewActions.selected({ id: null }));
   }
-  map.select(selected);
-  rail.select(selected);
+  map.select(ui().selected);
+  rail.select(ui().selected);
   showCard();
   renderNoGps();
   renderSaveState();
@@ -643,10 +766,10 @@ const STEP_WORDS = {
  *  step of the session's edit stack (W2), an edit like any other. */
 function runStep(which: "undo" | "redo"): void {
   if (editor === null) return;
-  if (moving !== null) cancelMove();
+  if (ui().moving !== null) cancelMove();
   card.commit();
   const outcome = which === "undo" ? editor.undo() : editor.redo();
-  message = null;
+  say(null);
   refresh();
   if (outcome.kind === "refused") {
     // A delete toast stays: its Undo can be tapped again once the save ends.
@@ -716,41 +839,41 @@ function resaveMayStart(): boolean {
     !saving() &&
     resaveTimer === null &&
     !editing() &&
-    !busy &&
+    !ui().busy &&
     Boolean(modal.hidden)
   );
 }
 
 function startMove(id: string): void {
-  moving = { id, drop: null };
+  store.dispatch(editorViewActions.moveStarted({ id }));
   map.drag(id, (lat, lng) => {
-    if (moving?.id === id) moving.drop = { lat, lng };
+    store.dispatch(editorViewActions.moveDropped({ id, drop: { lat, lng } }));
   });
   showCard();
 }
 
 function finishMove(): void {
-  const done = moving;
+  const done = ui().moving;
   if (done === null || editor === null) return;
   map.drag(done.id, null);
-  moving = null;
+  store.dispatch(editorViewActions.moveEnded());
   if (done.drop !== null) {
     try {
       const outcome = editor.move(done.id, done.drop.lat, done.drop.lng);
       if (outcome.kind === "moved") {
         moved.add(done.id);
-        message = { id: done.id, text: "Moved - not saved yet." };
+        say({ id: done.id, text: "Moved - not saved yet." });
         endUndo();
         autosave.changed();
       } else {
         // Said, never dropped (PR #622 bot finding C).
-        message = { id: done.id, text: outcome.reason, refused: true };
+        say({ id: done.id, text: outcome.reason, refused: true });
       }
     } catch (err) {
-      message = {
+      say({
         id: done.id,
         text: `It cannot go there: ${err instanceof Error ? err.message : String(err)}`,
-      };
+      });
     }
   }
   refresh();
@@ -759,10 +882,10 @@ function finishMove(): void {
 }
 
 function cancelMove(): void {
-  const done = moving;
+  const done = ui().moving;
   if (done === null) return;
   map.drag(done.id, null);
-  moving = null;
+  store.dispatch(editorViewActions.moveEnded());
   // Redrawn from the model: the marker goes back to where it was.
   refresh();
   autosave.poke();
@@ -778,7 +901,7 @@ const map = createEditorMap(element("map"), {
     rail.hover(id, on);
   },
   onBackground: () => {
-    if (moving === null) select(null);
+    if (ui().moving === null) select(null);
   },
   onView: placeCard,
 });
@@ -827,31 +950,31 @@ const card = createEditorCard(
       if (open === null || source === null) {
         return Promise.reject(new Error("no tour is open"));
       }
-      return source.kind === "content"
-        ? open.loadContentEntry(source.path)
-        : open.loadEntry(source.path);
+      return open.loadContentEntry(source);
     },
     onClose: () => {
       select(null);
     },
     onReveal: () => {
+      const { selected } = ui();
       if (selected !== null) reveal(selected);
     },
     onText: (id, text) => {
       if (editor === null) return;
       const outcome = editor.editText(id, text);
-      message =
+      say(
         outcome.kind === "refused"
           ? { id, text: outcome.reason, refused: true }
           : outcome.kind === "edited"
             ? { id, text: "Changed - not saved yet." }
-            : null;
+            : null,
+      );
       // In place: the click that blurred the field must still land on the
       // button or row under the pointer (E2a review #3).
       model = editor.model();
       rail.update(model);
       map.update(model);
-      card.note(message?.text ?? "");
+      card.note(ui().message?.text ?? "");
       renderSaveState();
       // Committed (or given back unchanged): the typing hold is over.
       if (outcome.kind === "edited") {
@@ -1028,7 +1151,7 @@ const details = wireDetailsDialog({
 });
 
 tourName.addEventListener("click", () => {
-  if (editor === null || busy) return;
+  if (editor === null || ui().busy) return;
   // Typing in the card is committed first: the dialog shows the tour as it
   // stands.
   card.commit();
@@ -1122,16 +1245,16 @@ document.addEventListener("keydown", (event) => {
     done.close();
     return;
   }
-  if (moving !== null) {
+  if (ui().moving !== null) {
     cancelMove();
     return;
   }
-  if (!modal.hidden && session !== null && !busy) showModal(false);
+  if (!modal.hidden && session !== null && !ui().busy) showModal(false);
   else select(null);
 });
 
 function setBusy(on: boolean, text: string): void {
-  busy = on;
+  store.dispatch(editorViewActions.busyChanged({ busy: on }));
   sampleButton.disabled = on;
   zipInput.disabled = on;
   chooseButton.disabled = on;
@@ -1149,23 +1272,209 @@ function leaveFile(): void {
   was?.release();
   letGo = was?.released ?? Promise.resolve();
   target = null;
+  openedFile = null;
   autosave.stop();
   stopResaveTimer();
   refusalToast = null;
-  keepsWalk = false;
+  store.dispatch(
+    editorViewActions.walkChanged({ keepsWalk: false, openedWalk: false }),
+  );
   for (const t of fileToasts.splice(0)) t.remove();
   photos.clear();
+  debugLayer?.stop();
+  debugLayer = null;
+  tourWalk = null;
+  forgetAddedDebug();
+  debugPanel.hidden = true;
+  debugSwitch.hidden = true;
+  debugStatus.textContent = "";
+}
+
+/** The open tour's debug layer: view state only, never in the tour
+ *  document, a save or the draft. */
+let debugLayer: DebugLayer | null = null;
+/** The opened file, when it carries a walk: the layer's source unless
+ *  debug data was added. */
+let tourWalk: TourSession | null = null;
+/** Debug data added beside the tour ("Add debug data…", M2 step 5 of the
+ *  debug-captures plan): a second, read-only archive. Never saved, never
+ *  drafted, gone at a reload (Q-H) and with the tour. */
+let addedDebug: {
+  readonly session: TourSession;
+  readonly line: string;
+} | null = null;
+/** "Add debug data…" while an add reads its file: disabled, saying so,
+ *  and a second add starts nothing (`createAddDebugButton`). */
+const debugAdd = createAddDebugButton(debugAddButton);
+
+/** Where the debug layer reads (one seam, so a point cloud reads the
+ *  same place): debug data added wins over the tour's own walk - the
+ *  creator chose it - and its line says which it shows; null when there
+ *  is neither. */
+function debugSource(): {
+  readonly source: TourSession;
+  readonly loadPicture: (image: string) => Promise<Blob>;
+  readonly line: string | null;
+} | null {
+  if (addedDebug !== null) {
+    const added = addedDebug.session;
+    return {
+      source: added,
+      loadPicture: (image) => added.loadEntry(image),
+      line: addedDebug.line,
+    };
+  }
+  const walk = tourWalk;
+  if (walk === null) return null;
+  return {
+    source: walk,
+    // From the copy the page reads now: the opened file stops reading
+    // once a save rewrote it (as the card's photos, E2b plan review #2).
+    loadPicture: (image) => (photos.current() ?? walk).loadEntry(image),
+    line: null,
+  };
+}
+
+/** The added debug data goes, its archive closed. */
+function forgetAddedDebug(): void {
+  const was = addedDebug;
+  addedDebug = null;
+  if (was !== null) void was.session.close().catch(() => undefined);
+}
+
+/**
+ * Show the debug camera captures of `debugSource()`, after the tour
+ * opened: the join replays the walk once (`debugCapturesOf`), then a
+ * thumbnail per capture is decoded, one at a time. Shown by default; the
+ * switch hides them. A tour closed meanwhile, or a source replaced, stops
+ * it. With no source the panel offers only "Add debug data…".
+ */
+function startDebugLayer(): void {
+  debugLayer?.stop();
+  debugLayer = null;
+  const from = debugSource();
+  debugSwitch.hidden = from === null;
+  debugStatus.textContent = from?.line ?? "";
+  if (from === null) return;
+  debugInput.checked = true;
+  const layer = createDebugCaptureLayer<HTMLElement>({
+    read: (options) => debugCapturesOf(from.source, options),
+    loadPicture: from.loadPicture,
+    pictureProblem,
+    thumbnail: decodeDebugThumbnail,
+    view: {
+      draw: (captures) => {
+        map.debugDraw(captures);
+      },
+      thumb: (image, picture) => {
+        map.debugThumb(image, picture);
+      },
+      visible: (on) => {
+        map.debugVisible(on);
+      },
+      clear: () => {
+        map.debugClear();
+      },
+    },
+    status: (line) => {
+      debugStatus.textContent =
+        from.line === null ? line : `${from.line} ${line}`;
+    },
+    discard: revokeDebugThumbnail,
+  });
+  debugLayer = layer;
+  void layer.start();
+}
+
+/**
+ * "Add debug data…" (M2 step 5 of the debug-captures plan): a debug
+ * bundle or a plain Recorder zip, opened as any zip is (its archive caps,
+ * and the picture cap for its thumbnails), read for whose it is
+ * (`readDebugBundle`, `bundleMatchesTour`) and shown in place of the
+ * tour's own walk. Another tour's is shown with a line saying so (Q-C);
+ * a file that is no debug data is refused in words, the layer kept. The
+ * button says it is reading meanwhile (the async-UI rule).
+ */
+async function addDebugData(file: File): Promise<void> {
+  const mine = editor;
+  if (mine === null) return;
+  await debugAdd.run(async () => {
+    const added = await readAddedDebug(
+      file,
+      mine.debugTour(),
+      tourWalk !== null,
+    );
+    if (editor !== mine) {
+      // Another tour opened meanwhile: this file is not its debug data.
+      if (added.kind === "added") {
+        void added.session.close().catch(() => undefined);
+      }
+      return;
+    }
+    if (added.kind === "refused") {
+      fileToasts.push(toast(notAddedLine(added.reason)));
+      return;
+    }
+    forgetAddedDebug();
+    addedDebug = { session: added.session, line: added.line };
+    startDebugLayer();
+  });
+}
+
+/** A file added as debug data, opened and read for whose it is, or why
+ *  not; a refused file's archive is closed. */
+async function readAddedDebug(
+  file: File,
+  tour: DebugBundleTour,
+  tourCarriesWalk: boolean,
+): Promise<
+  | {
+      readonly kind: "added";
+      readonly session: TourSession;
+      readonly line: string;
+    }
+  | { readonly kind: "refused"; readonly reason: string }
+> {
+  let opened: TourSession;
+  try {
+    opened = await openTourFile(file);
+  } catch (err) {
+    return {
+      kind: "refused",
+      reason: `${file.name} could not be read (${err instanceof Error ? err.message : String(err)}).`,
+    };
+  }
+  const read = await readDebugBundle(
+    opened.entries.map((e) => e.filename),
+    (name) => opened.loadEntry(name),
+    {
+      sizeOf: (name) => opened.entries.find((e) => e.filename === name)?.size,
+    },
+  );
+  if (read.kind === "refused") {
+    void opened.close().catch(() => undefined);
+    return { kind: "refused", reason: read.reason };
+  }
+  return {
+    kind: "added",
+    session: opened,
+    line: addedDebugLine({
+      fileName: file.name,
+      match: bundleMatchesTour(read, tour),
+      identity: read.kind === "bundle" ? read.identity : null,
+      tourCarriesWalk,
+    }),
+  };
 }
 
 /** What this page keeps of the tour beside the store's document (whose
  *  save status an open or a close resets). */
 function resetEditing(): void {
-  toldNotPlaced = false;
   endUndo();
-  moving = null;
+  store.dispatch(editorViewActions.moveEnded());
   moved.clear();
-  message = null;
-  undelivered = null;
+  say(null);
+  setUndelivered(null);
   delete saveStatus.dataset["saved"];
 }
 
@@ -1175,6 +1484,8 @@ function dropTour(reason: string): void {
   details.close();
   // Closed even while a move runs: its tour is gone.
   done.close(true);
+  viewSwitch.close();
+  viewSwitch.setEnabled(false);
   select(null);
   const open = session;
   session = null;
@@ -1208,7 +1519,7 @@ async function attachTarget(
   // lock's answer: a download saved before "Edit here anyway" must not
   // drop the walk the later in-place write would then carry over the
   // original (E2b-1 review #1).
-  keepsWalk = true;
+  store.dispatch(editorViewActions.walkChanged({ keepsWalk: true }));
   keepWalk.hidden = true;
   await letGo;
   const held = await holdEditorLock(navigator.locks, file.name);
@@ -1261,8 +1572,10 @@ async function attachTarget(
 async function openFile(
   file: File,
   handle: WritableFileHandle | null = null,
+  /** The handle the file was picked through, writable or not. */
+  picked: FileSystemHandle | null = handle,
 ): Promise<boolean> {
-  if (busy) return false;
+  if (ui().busy) return false;
   openError.hidden = true;
   setBusy(true, `Opening ${file.name}…`);
   // The open tour stays until the new one has opened: a refused file must
@@ -1298,13 +1611,17 @@ async function openFile(
   setBusy(false, "");
   details.close();
   done.close(true);
+  // The 3D view showed the tour that goes now.
+  viewSwitch.close();
   linkHost = null;
   select(null);
   const previous = session;
   session = outcome.session;
+  viewSwitch.setEnabled(true);
   void previous?.close().catch(() => undefined);
   resetEditing();
   leaveFile();
+  openedFile = { name: outcome.fileName, handle: picked };
   fileKey = outcome.session.archive.url;
   const writes = draft.writes();
   tourDraft = writes;
@@ -1325,15 +1642,21 @@ async function openFile(
     store,
   });
   model = editor.model();
-  // The walk-recording switch only for a tour that carries one (S-D10:
-  // the saved copy leaves it out unless asked, E2 plan review #4).
-  keepWalkInput.checked = false;
-  keepWalk.hidden =
+  openedLevels = outcome.levels;
+  // The debug data switch only for a tour that carries a walk (S-D10:
+  // the saved copy leaves it out unless asked, E2 plan review #4), and
+  // unticked (M2 of the debug-captures plan, E2): the walk is saved apart.
+  // A file opened to be written keeps its walk whatever the switch says
+  // (`keepsWalk`, `attachTarget`).
+  const carriesWalk =
     scanEntryNames(
       outcome.session.entries.map((e) => e.filename),
       outcome.manifest,
       outcome.session.manifestWrap,
-    ).length === 0;
+    ).length > 0;
+  keepWalkInput.checked = false;
+  keepWalk.hidden = !carriesWalk;
+  store.dispatch(editorViewActions.walkChanged({ openedWalk: carriesWalk }));
   renderTourName();
   element("tour-file").textContent = outcome.fileName;
   topbar.hidden = false;
@@ -1347,15 +1670,24 @@ async function openFile(
   renderSaveState();
   toast(`Opened ${outcome.fileName}: ${openedSummary(model)}`);
   sayNoBackup();
-  // Details the reader dropped are said, never lost silently by the next
-  // save (M4a review #6); kept until closed, as an instruction.
-  const dropped = droppedDetailsLine(outcome.dropped);
-  if (dropped !== null) fileToasts.push(toast(dropped, undefined, null));
+  // Details, station descriptions and card images the reader dropped are
+  // said, never lost silently by the next save (M4a review #6); kept until
+  // closed, as an instruction.
+  for (const line of [
+    droppedDetailsLine(outcome.dropped),
+    droppedStationFieldsLine(outcome.dropped, outcome.manifest),
+  ]) {
+    if (line !== null) fileToasts.push(toast(line, undefined, null));
+  }
   if (drafted.superseded !== null) {
     fileToasts.push(toast(drafted.superseded, undefined, null));
   }
   if (drafted.offer !== null) offerDraft(editor, drafted.offer);
   if (handle !== null) void attachTarget(editor, handle, file);
+  // After the open, never before it: the replay must not hold up the tour.
+  tourWalk = carriesWalk ? opened : null;
+  debugPanel.hidden = false;
+  startDebugLayer();
   return true;
 }
 
@@ -1411,11 +1743,11 @@ function offerDraft(mine: EditorSession, offer: EditorDraftOffer): void {
 /** "Choose…" and the drop box: the browser's file picker where it exists,
  *  for a file that can be saved in place, else the file input. */
 async function chooseTour(): Promise<void> {
-  if (busy || picking) return;
-  picking = true;
+  if (ui().busy || ui().picking) return;
+  store.dispatch(editorViewActions.pickingChanged({ picking: true }));
   const outcome = await pickTourFile(window as unknown as PickerWindow).finally(
     () => {
-      picking = false;
+      store.dispatch(editorViewActions.pickingChanged({ picking: false }));
     },
   );
   if (outcome.kind === "unavailable") {
@@ -1431,6 +1763,7 @@ async function chooseTour(): Promise<void> {
   const opened = await openFile(
     outcome.file,
     outcome.writable ? outcome.handle : null,
+    outcome.handle,
   );
   // Said about the tour just opened, never over the one that stayed.
   if (opened && !outcome.writable) {
@@ -1538,10 +1871,19 @@ async function deliver(
   if (into === null) {
     const arrived = await download(save);
     if (arrived) {
-      await readPhotosFrom(
-        mine,
-        new File([save.blob], save.filename, { type: "application/zip" }),
-      );
+      const saved = new File([save.blob], save.filename, {
+        type: "application/zip",
+      });
+      // The first save of a tour without an id writes one, so the file it
+      // makes opens under the id's key (Q-I): the draft follows it there,
+      // or an edit made after the download is not offered by that file.
+      // Unreadable (never for a zip this page built): the draft stays.
+      const savedKey = await tourFileKeyOfFile(saved).catch(() => null);
+      if (editor === mine && savedKey !== null && savedKey !== fileKey) {
+        writes?.moved(savedKey);
+        fileKey = savedKey;
+      }
+      await readPhotosFrom(mine, saved);
     }
     return { arrived, inPlace: false };
   }
@@ -1602,7 +1944,7 @@ async function runSave(): Promise<void> {
     if (saveState().by === "auto") {
       // Committed now, saved right after the autosave that runs.
       card.commit();
-      if (moving !== null) finishMove();
+      if (ui().moving !== null) finishMove();
       store.dispatch(tourDocumentActions.saveQueued({ queued: true }));
     }
     return;
@@ -1631,7 +1973,7 @@ async function saveTour(mode: "explicit" | "auto"): Promise<AutosaveOutcome> {
   try {
     if (mode === "explicit") {
       card.commit();
-      if (moving !== null) finishMove();
+      if (ui().moving !== null) finishMove();
     }
     if (mine.changeCount() === 0 && undelivered === null) {
       releaseSave();
@@ -1728,7 +2070,7 @@ async function buildAndDeliver(
         : // In place the walk always stays: the file written over may be
           // the creator's only copy of it (E2b plan review #1).
           await mine.save({
-            keepScan: keepsWalk || keepWalkInput.checked,
+            keepScan: ui().keepsWalk || keepWalkInput.checked,
             inPlace: into !== null,
           });
     if (editor !== mine) return abandon();
@@ -1745,46 +2087,36 @@ async function buildAndDeliver(
     // anyway" attached one while it was built (E2b-1 review #1).
     const { arrived, inPlace } = await deliver(mine, save, into, writes);
     if (editor !== mine) return abandon();
-    undelivered = arrived ? null : save;
+    setUndelivered(arrived ? null : save);
     if (arrived) {
       // A move made during the save is still pending: its line stays.
       const pending = new Set(mine.pendingIds());
       for (const id of [...moved]) if (!pending.has(id)) moved.delete(id);
-      message = null;
+      say(null);
       noteDelivered(inPlace, into, save);
     }
     // Quiet: an autosave says it saved in the status line only (it is
     // always in place, which keeps the walk, so the result has nothing
     // more to say).
-    if (arrived && mode === "auto" && save.notPlaced !== undefined) {
-      // The one thing an autosave says beyond the status line, once per
-      // tour (E2b-2 milestone review #6): nobody may ever press Save.
-      if (!toldNotPlaced) {
-        fileToasts.push(
-          toast(FINISH_LABELS.photosNotPlaced(save.notPlaced), undefined, null),
-        );
-      }
-      toldNotPlaced = true;
-    }
     if (arrived && mode === "explicit") {
-      if (save.notPlaced !== undefined) toldNotPlaced = true;
-      // The Finish's own result sentences (E2a review #2).
-      toast(
-        [
-          inPlace
-            ? `Saved to ${into?.name ?? save.filename}.`
-            : `Saved as ${save.filename}. Put it in place of the old file, under the same name, so the printed codes keep opening it.`,
-          ...(save.scanLeftOut.length === 0
-            ? []
-            : [FINISH_LABELS.scanLeftOut(save.scanLeftOut.length)]),
-          ...(save.notPlaced === undefined
-            ? []
-            : [FINISH_LABELS.photosNotPlaced(save.notPlaced)]),
-        ].join(" "),
-        undefined,
+      // The Finish's own result sentences (E2a review #2). A download
+      // that left the walk out says to save it first, and offers that
+      // save: it reads the opened file, which putting the copy in its
+      // place overwrites (r901 review #1).
+      const words = savedToastWords({
+        inPlace,
+        name: inPlace ? (into?.name ?? save.filename) : save.filename,
+        leftOut: save.scanLeftOut.length,
+      });
+      const saved = toast(
+        words.text,
+        words.offerDebugSave
+          ? { label: SAVE_DEBUG_LABELS.idle, run: saveDebugFromToast }
+          : undefined,
         // The download's result carries an instruction; in place it does not.
         inPlace ? UNDO_MS : null,
       );
+      if (words.offerDebugSave) fileToasts.push(saved);
     }
     releaseSave();
     refresh();
@@ -1808,6 +2140,33 @@ async function buildAndDeliver(
 
 saveButton.addEventListener("click", () => {
   void runSave();
+});
+// The debug layer's switch: view state only - no edit, nothing pending.
+debugInput.addEventListener("change", () => {
+  debugLayer?.setVisible(debugInput.checked);
+});
+// "Add debug data…": its file input, or a file dropped on the panel. The
+// document's own drop guard keeps the browser from opening the file.
+debugAddButton.addEventListener("click", () => {
+  debugAddInput.click();
+});
+debugAddInput.addEventListener("change", () => {
+  const file = debugAddInput.files?.[0];
+  debugAddInput.value = "";
+  if (file !== undefined) void addDebugData(file);
+});
+debugPanel.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  debugPanel.classList.add("over");
+});
+debugPanel.addEventListener("dragleave", () => {
+  debugPanel.classList.remove("over");
+});
+debugPanel.addEventListener("drop", (event) => {
+  event.preventDefault();
+  debugPanel.classList.remove("over");
+  const file = event.dataTransfer?.files[0];
+  if (file !== undefined) void addDebugData(file);
 });
 // A tour-level edit (QR-first M1b-2): pending like a note's, backed up by
 // the draft, saved by itself like any change.
@@ -1855,7 +2214,7 @@ drop.addEventListener("drop", (event) => {
   if (file !== undefined) void openFile(file);
 });
 sampleButton.addEventListener("click", () => {
-  if (busy) return;
+  if (ui().busy) return;
   openError.hidden = true;
   setBusy(true, "Fetching the sample tour…");
   fetch(SAMPLE_URL)
@@ -1882,7 +2241,7 @@ sampleButton.addEventListener("click", () => {
 // (no file handle: Save downloads the new copy).
 linkForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  if (busy) return;
+  if (ui().busy) return;
   const link = linkInput.value;
   openError.hidden = true;
   setBusy(true, "Fetching the tour from its link…");
@@ -1951,14 +2310,20 @@ function doneSaved(): DoneSaved {
  *  it runs (the async-UI rule) - then the dialog opens; a save that did not
  *  land keeps it shut and says why. */
 async function finishEditing(): Promise<void> {
-  if (editor === null || busy || doneBusy || walkMoving() || dialogOpen()) {
+  if (
+    editor === null ||
+    ui().busy ||
+    ui().doneBusy ||
+    walkMoving() ||
+    dialogOpen()
+  ) {
     return;
   }
   const mine = editor;
   card.commit();
-  if (moving !== null) finishMove();
+  if (ui().moving !== null) finishMove();
   if (unsavedWork()) {
-    doneBusy = true;
+    store.dispatch(editorViewActions.doneBusyChanged({ busy: true }));
     doneButton.disabled = true;
     doneButton.textContent = "Saving…";
     try {
@@ -1967,7 +2332,7 @@ async function finishEditing(): Promise<void> {
       if (editor === mine && unsavedWork()) await runSave();
       await savesSettled();
     } finally {
-      doneBusy = false;
+      store.dispatch(editorViewActions.doneBusyChanged({ busy: false }));
       doneButton.textContent = "Done";
       doneButton.disabled = editor === null;
     }
@@ -1985,14 +2350,18 @@ async function finishEditing(): Promise<void> {
     saved: doneSaved(),
     host: doneHost(),
     carriesWalk: walk === null ? "unknown" : walk.length > 0,
+    // A file opened for writing keeps its walk (`keepsWalk`): only a save
+    // as a new file can leave it out.
+    debugLeftOut:
+      ui().openedWalk && !ui().keepsWalk && walk !== null && walk.length === 0,
     driveMountTip: DRIVE_MOUNT_TIP_SHOWN,
   });
   releaseOutside = holdOutside(element("done-modal"));
 }
 
 /**
- * "Move the walk out" (W2, D19): the walk's own zip is written first, then
- * the tour without it - in place, or downloaded - and only once both
+ * "Move the debug data out" (W2, D19): the debug bundle (`debug-bundle.ts`,
+ * M2 of the debug-captures plan) is written first, then the tour without it - in place, or downloaded - and only once both
  * landed does the session take the walk-free bytes as its newest; a failed
  * write of either leaves the tour file as it was. The move holds the
  * page's save (`claimSave`): every save waits, and Done with it.
@@ -2013,14 +2382,109 @@ function moveWalk(): Promise<WalkMoveOutcome> {
   // First, before any await: the dialog needs the click.
   const pick = pickSaveFile(
     window as unknown as SavePickerWindow,
-    walkFileName(mine.savedName()),
+    debugBundleFileName(mine.savedName()),
   );
   return holdForMove(mine, () => buildMove(mine, pick));
 }
 
+/**
+ * "Save the debug data" (M2 of the debug-captures plan): after a save as a
+ * new file left the walk out, the opened file still carries it, and the
+ * debug bundle is built from it (`EditorSession.debugData`) - the newest
+ * bytes have none. The file is asked for IN the click, as the move's
+ * (`pickSaveFile`); without a save dialog it is downloaded. Nothing of the
+ * tour changes, so it holds no save.
+ */
+function saveDebugData(): Promise<DebugSaveOutcome> {
+  const mine = editor;
+  if (mine === null) {
+    return Promise.resolve({ kind: "refused", reason: "No tour is open." });
+  }
+  const source = openedFile;
+  // First, before any await: the dialog needs the click.
+  const pick = pickSaveFile(
+    window as unknown as SavePickerWindow,
+    debugBundleFileName(mine.savedName()),
+  );
+  return (async (): Promise<DebugSaveOutcome> => {
+    const picked = await pick;
+    if (editor !== mine || picked.kind === "cancelled") {
+      return { kind: "cancelled" };
+    }
+    // The opened file chosen: the bundle would land over the file it is
+    // read from, and the walk would be in neither (r901 review #5, the
+    // move's rule). Refused before anything is read or written.
+    if (
+      picked.kind === "picked" &&
+      source !== null &&
+      (await isSameFile(source, picked.handle))
+    ) {
+      return {
+        kind: "refused",
+        reason: `${picked.handle.name} has the name of the tour file you opened - save the debug data under another name, so it cannot land over the tour. Nothing was written.`,
+      };
+    }
+    if (editor !== mine) return { kind: "cancelled" };
+    const unused =
+      picked.kind === "picked"
+        ? ` Nothing was written into ${picked.handle.name}; if the save dialog created it as a new, empty file, delete it.`
+        : "";
+    let built: Awaited<ReturnType<EditorSession["debugData"]>>;
+    try {
+      built = await mine.debugData();
+    } catch (err) {
+      return {
+        kind: "refused",
+        reason: `The debug data was not saved: ${err instanceof Error ? err.message : String(err)}.${unused}`,
+      };
+    }
+    if (editor !== mine) return { kind: "cancelled" };
+    if (built.kind === "refused") {
+      return { kind: "refused", reason: `${built.reason}${unused}` };
+    }
+    if (picked.kind === "picked") {
+      try {
+        await writeFileOrAbort(picked.handle, built.blob);
+      } catch (err) {
+        return {
+          kind: "refused",
+          reason: `The debug data could not be written into ${picked.handle.name} (${err instanceof Error ? err.message : String(err)}).`,
+        };
+      }
+      return { kind: "saved", name: picked.handle.name };
+    }
+    if (!(await download(built))) return { kind: "cancelled" };
+    return { kind: "saved", name: built.filename };
+  })();
+}
+
+/** The lean download toast's "Save the debug data": the same save as
+ *  the Done dialog's, its progress on the button, its result in a toast
+ *  (the async-UI rule). Called in the click: the save dialog needs it. */
+function saveDebugFromToast(button: HTMLButtonElement): void {
+  if (button.disabled) return;
+  button.disabled = true;
+  button.textContent = SAVE_DEBUG_LABELS.saving;
+  const mine = editor;
+  void saveDebugData()
+    .catch((err: unknown): DebugSaveOutcome => ({
+      kind: "refused",
+      reason: `The debug data was not saved: ${err instanceof Error ? err.message : String(err)}.`,
+    }))
+    .then((outcome) => {
+      button.disabled = false;
+      button.textContent =
+        outcome.kind === "saved"
+          ? SAVE_DEBUG_LABELS.again
+          : SAVE_DEBUG_LABELS.idle;
+      if (editor !== mine) return;
+      fileToasts.push(toast(debugSaveResultLine(outcome), undefined, null));
+    });
+}
+
 const SAVE_RUNS: WalkMoveOutcome = {
   kind: "refused",
-  reason: "A save is running - move the walk once it has finished.",
+  reason: "A save is running - move the debug data once it has finished.",
 };
 
 /** Run one step of a move holding the page's save (review #1): Done is
@@ -2037,7 +2501,7 @@ async function holdForMove(
     if (editor !== mine) return { kind: "cancelled" };
     return {
       kind: "refused",
-      reason: `The walk was not moved: ${err instanceof Error ? err.message : String(err)}`,
+      reason: `The debug data was not moved: ${err instanceof Error ? err.message : String(err)}`,
     };
   } finally {
     // Let go whatever happened to the tour: a claim left set would hold
@@ -2072,7 +2536,7 @@ async function buildMove(
   ) {
     return {
       kind: "refused",
-      reason: `${into.name} is the tour itself - save the walk under another name. Nothing was written, so the tour keeps its walk.`,
+      reason: `${into.name} is the tour itself - save the debug data under another name. Nothing was written, so the tour keeps its debug data.`,
     };
   }
   if (editor !== mine) return { kind: "cancelled" };
@@ -2088,7 +2552,7 @@ async function buildMove(
     if (state !== "same") {
       return {
         kind: "refused",
-        reason: `${new InPlaceRefusal(state).message} The tour keeps its walk.${unused}`,
+        reason: `${new InPlaceRefusal(state).message} The tour keeps its debug data.${unused}`,
       };
     }
   }
@@ -2103,7 +2567,7 @@ async function buildMove(
     } catch (err) {
       return {
         kind: "refused",
-        reason: `The walk could not be written into ${picked.handle.name} (${err instanceof Error ? err.message : String(err)}), so the tour keeps its walk.`,
+        reason: `The debug data could not be written into ${picked.handle.name} (${err instanceof Error ? err.message : String(err)}), so the tour keeps it.`,
       };
     }
     if (editor !== mine) return { kind: "cancelled" };
@@ -2159,7 +2623,7 @@ async function writeMovedTour(
   if (!move.current()) {
     return {
       kind: "refused",
-      reason: `${name} was saved meanwhile, so the walk was not taken out of it - move the walk again.`,
+      reason: `${name} was saved meanwhile, so the debug data was not taken out of it - move it again.`,
     };
   }
   tourDraft?.built(move.save.written);
@@ -2174,13 +2638,15 @@ async function writeMovedTour(
   if (!arrived) {
     return {
       kind: "refused",
-      reason: `${walkName} was saved, but ${name} could not be written${refusal === undefined ? "" : ` (${refusal})`}, so the tour keeps its walk.`,
+      reason: `${walkName} was saved, but ${name} could not be written${refusal === undefined ? "" : ` (${refusal})`}, so the tour keeps its debug data.`,
     };
   }
   move.commit(inPlace);
+  // Moved out into a file of its own: nothing is left to offer to save.
+  store.dispatch(editorViewActions.walkChanged({ openedWalk: false }));
   store.dispatch(tourDocumentActions.saveBuilt());
   keepWalk.hidden = true;
-  undelivered = null;
+  setUndelivered(null);
   noteDelivered(inPlace, into, move.save);
   return { kind: "moved", walkName, tourName: name, saved: doneSaved() };
 }
@@ -2203,11 +2669,13 @@ const done = wireDoneDialog({
     walk: element("done-walk"),
     walkText: element("done-walk-text"),
     moveButton: element<HTMLButtonElement>("done-move"),
+    saveDebugButton: element<HTMLButtonElement>("done-save-debug"),
     moveStatus: element("done-move-status"),
     driveTip: element("done-drive-tip"),
     close: element<HTMLButtonElement>("done-close"),
   },
   moveWalk,
+  saveDebugData,
   onClose: () => {
     releaseOutside?.();
     releaseOutside = null;
@@ -2224,6 +2692,67 @@ doneButton.addEventListener("click", () => {
 element("open-fineprint").textContent = saveFinePrint(
   window as unknown as PickerWindow,
 );
+
+/**
+ * The view switch (`view-switch.ts`): the 3D view over the map. Its code
+ * is imported here, at the click, never before; it reads the tour and the
+ * selection from the store, and its photos and models from the copy the
+ * page reads now. A failure is said and kept until closed (the async-UI
+ * rule: the creator asked for something that did not happen), or until a
+ * later open shows the view: then it says what is no longer so.
+ */
+const view3dBox = element("view3d");
+let view3dFailureToast: HTMLElement | null = null;
+const viewSwitch = createViewSwitch({
+  button: element<HTMLButtonElement>("view-switch"),
+  store,
+  open: async (events) => {
+    // A module that does not arrive is the connection's (`chunk`).
+    const { openEditor3d } =
+      await import("../editor3d/editor3d-scene.js").catch((error: unknown) => {
+        throw Object.assign(
+          new Error(`the 3D view did not load: ${String(error)}`),
+          { reason: "chunk" },
+        );
+      });
+    const view = await openEditor3d({
+      container: view3dBox,
+      credits: element("view3d-credits"),
+      store,
+      levels: () => openedLevels,
+      loadContent: (name) => {
+        const open = photos.current() ?? session;
+        if (open === null) return Promise.reject(new Error("no tour is open"));
+        return open.loadContentEntry(name);
+      },
+      events,
+    });
+    shown3d = view;
+    const handle: View3dHandle = {
+      dispose: () => {
+        if (shown3d === view) shown3d = null;
+        view.dispose();
+      },
+    };
+    return handle;
+  },
+  say: (text) => {
+    view3dFailureToast?.remove();
+    view3dFailureToast = toast(text, undefined, null);
+    fileToasts.push(view3dFailureToast);
+  },
+  onShown: (on) => {
+    view3dBox.hidden = !on;
+    if (on) {
+      view3dFailureToast?.remove();
+      view3dFailureToast = null;
+    }
+    // The card and its chip belong to the map; back on it, they return.
+    showCard();
+  },
+});
+// Nothing to show in 3D until a tour is open.
+viewSwitch.setEnabled(session !== null);
 
 // Everything above is wired: the open dialog's controls answer from here
 // on (a keyboard press before the module ran would go nowhere - the e2e

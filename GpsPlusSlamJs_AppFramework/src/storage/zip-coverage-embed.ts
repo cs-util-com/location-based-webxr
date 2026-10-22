@@ -29,6 +29,7 @@ import {
 } from '@zip.js/zip.js';
 import { createLogger } from '../utils/logger';
 import { rebuildZipWithEntries } from './zip-rebuild.js';
+import { isSessionJsonEntryName } from './zip-reader.js';
 
 const log = createLogger('ZipCoverageEmbed');
 
@@ -60,7 +61,7 @@ export async function embedCoverageInSessionJson(
   try {
     const entries = await reader.getEntries();
     const sessionEntry = entries.find(
-      (e): e is FileEntry => !e.directory && e.filename.endsWith('session.json')
+      (e): e is FileEntry => !e.directory && isSessionJsonEntryName(e.filename)
     );
     if (!sessionEntry) {
       log.warn('No session.json found; leaving zip untouched');

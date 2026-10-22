@@ -18,8 +18,11 @@ visitor knows who to ask.
   without `mailto:`, or for a web link the same value as `href`, so the
   visitor reads the address they open. Null for no contact or one the framework's check refuses.
 - `renderTourContact(dom, error, contact)` - shows the line (`dom.line`)
-  with the link (`dom.link`) while `error` (the error box's text) says
-  something and the contact is followable; hides it otherwise.
+  with the link (`dom.link`) while `error` says something and the
+  contact is followable; hides it otherwise. `main.ts` passes the error
+  box's text, or "This tour is not finished yet." while the open tour is
+  not finished (`tour-unfinished.ts`), so a visitor of an unfinished tour
+  is told whom to ask too.
 - `TourContactDom`, `ContactLink`.
 
 ## Invariants & assumptions
@@ -48,4 +51,5 @@ renderTourContact(
   parsed), refused and absent
   contacts, shown only while an error shows.
 - `playwright-tests/visitor-start.spec.js` - the details tour: the line
-  appears under an error with a `mailto:` link and goes with the error.
+  appears under an error with a `mailto:` link and goes with the error;
+  a tour not finished yet shows it under its start page's sentence.

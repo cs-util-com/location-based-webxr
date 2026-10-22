@@ -9,7 +9,9 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
 `GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`,
 `GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md` (D9, D16),
 `GpsPlusSlamJs_Docs/docs/2026-10-18-2349-visitor-station-content-at-radius-plan.md`
-(M1: the present station).
+(M1: the present station),
+`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md` (M1:
+the walk's state in the page's store).
 
 ## Public API
 
@@ -30,7 +32,10 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
     (no heading yet; the stage waits, r881 re-review M-B).
 - Deps: `dom` (`line`, `skip`), `tour()` (stations, order),
   `placementAllowed()`, `zero()`, `visitor()` (`visitor-position.ts`),
-  `codeLinedUp()` (a code's votes lined the alignment up, `tour-flow.ts`),
+  `codeLinedUp()` (a code's votes lined the alignment up, `tour-flow.ts`;
+  the guide passes it to the framework's precision rule as `codeHold`, so
+  it ends only on events: a veto, an odometry-frame change, leaving AR,
+  another tour),
   `alignmentReady()` (the alignment may be judged on: tracking ready or a
   code, re-read each tick by the find, latched per AR entry by what needs
   a heading, `tour-flow.ts` `alignmentReady`), `trackingReady()` (the
@@ -39,7 +44,10 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
   `startHud(getTargets)`, `now()`, `fixMaxAgeMs?` (default
   `FIX_MAX_AGE_MS`, 5 s), `guideStore?` (the page's store with the
   `visitorGuide` slice, `visitor-guide-slice.ts`: the present station is
-  dispatched there; absent, none is judged),
+  dispatched there; absent, none is judged), `walkStore?` (the page's store
+  with the `visitorWalk` slice, `visitor-walk-slice.ts`: the walk lives
+  there; absent, the guide makes an internal store of that slice alone, so
+  it behaves the same without the page),
   `onFound(station)`, `onEndStory?(stationId)` (R9), `onVisitor?(nue)`, `onApproach?(station, distanceM,
 activateM)` (each tick, each offered station with a distance: the
   prefetch), `onDone?(stationId)` (a story's end or a skip: the prefetch may
@@ -53,6 +61,97 @@ activateM)` (each tick, each offered station with a distance: the
 
 ## Invariants & assumptions
 
+- **The walk lives in the page's store** (W4 plan M1, §2.2): the run's
+  statuses and skip clocks (`progress`), the last skip (`lastSkip`, was
+  `undoable`), the line's note (`note`) and the skip button's ask
+  (`quickArmedId`, was `skipArmedFor`) are `visitorWalk`; the run's rules
+  are applied by its reducer (`station-run.ts` `applyWalkStep`).
+  - **One batch per call, at its very end.** `tick`, `skipTapped` and
+    `storyEnded` each queue their changes (`change`, `pendingWalk`) and
+    dispatch them as one `walkBatched` when the outermost call ends
+    (`inCall`) - after the tick's reads, its line and button, and its own
+    presence and heading dispatches. A nested call (the page's subscriber
+    ticking on a presence dispatch inside a tick, a story ended from a tap)
+    adds to the same queue. A subscriber woken by the batch ticks a fresh
+    call over the walk the batch left: it has nothing more to change
+    unless the batch newly offered a station, which that call then judges
+    in the same frame (the timing bullet below). So the guide never
+    dispatches the walk mid-tick, and never per frame: a tick with no event
+    (no find, no new focus, no settle) dispatches nothing.
+  - **The guide's walk is the store's, read anew** (`walk`): the store's
+    walk as it is now with the call's pending changes applied over it
+    (`pendingWalk.reduce(visitorWalkReducer, store walk)`) - exactly what
+    the store holds once the batch lands. No copy is kept, so a change
+    another writer makes mid-call (from a callback) is in the guide's walk
+    at once, and the guide never shows one walk while the store holds
+    another.
+  - **No walk is no run** (`liveRun`): a walk reset behind the guide's
+    back leaves the tour with no run - nothing shown, nothing judged -
+    until another tour. The guide does not start one again for the same
+    tour (that would drop every station the visitor found or skipped), and
+    no empty walk stands in (an empty offer reads as "Tour complete"). Each
+    reader fetches the run anew rather than across a callback, so the
+    run's view is never read with no walk. Nothing resets the walk behind
+    the guide today: its own `guideTourChanged` is followed by the new
+    tour's walk in the same call's batch.
+  - **The settle is an event:** once 6 s have passed since the last skip,
+    the next render dispatches `skipSettled` (and the prefetch hears the
+    skip's `onDone`); a find or another station done settles it at once,
+    as before. The note's 6 s are read over `now` through the slice's
+    `selectNote` (`noteText`), no timer; the button's undo through
+    `selectUndoableSkip`. The settle and a tap on the undo the button
+    showed act on the skip still unsettled (`unsettledSkip`), so a skip's
+    `onDone` is held back and delivered by the same rule, once.
+  - **Another tour:** `walkStarted` resets the walk (its last skip, note
+    and ask with it); no tour, `walkCleared`. The guide slice's
+    `guideTourChanged` resets the walk too, and is dispatched before the
+    batch, so the new walk lands after it.
+  - **What stays in the closure, and why** (the Redux rule): the HUD
+    handle (a resource); `last` and the pose cache (derived data, rebuilt
+    every tick); `trackedHeading` / `headingReady` (a latch only the guide
+    reads; its visible effect is the store's `headingPending`);
+    `replayFound` and `presentByCode` (the guide's own bookkeeping of
+    rules it alone applies); `runStations` (the identity that tells
+    another tour); `tourChangePending` (one tick's note to its own end);
+    `rendered` (what the button showed, so a tap does that, R14; goes in
+    M4 when a tap carries its action); `runView` (a view of the run's
+    calls over the walk for the tour's stations, no state of its own); the
+    call's pending changes (one call's, gone at its end).
+  - **The listeners stay callbacks**, each for its own reason (M1's
+    guide-level differential checked each fired as before; it was deleted
+    in M2's first commit, since M2 changes the guide's writes by design):
+    - `onFound` and `onDone` fire once per transition, from its events
+      (`onFound` again for a story the session's end cut short): they
+      start and end a story and release the prefetch's media - players and
+      fetched assets, resources the store must not hold - and a store
+      subscriber would fire again on every re-entered dispatch.
+    - `onUpcoming` fires on every render while a story plays under a fixed
+      or branch order, not once: the prefetch joins a request it has made
+      already (`request`), so a repeat costs nothing, and the station it
+      names is derived from the walk, no state of its own.
+    - `onApproach` fires every tick with each offered station's distance:
+      per-frame data from the measurement, which in the store would be a
+      dispatch every frame (plan §4, store churn).
+    - `onVisitor` hands the stage the camera position every tick with a
+      heading: per-frame pose data the stage applies to its figure, a
+      three.js object.
+    - `onGuide` hands the breadcrumbs their visitor and target every
+      render: per-frame data for a scene object, derived from the walk and
+      the measurement.
+    - `onEndStory` is a command, not state: the guide asks the story panel
+      to stop a player only it holds, and the panel answers through
+      `storyEnded`.
+    - `startHud` creates a resource (the HUD, which the guide disposes)
+      whose targets the HUD reads on its own frame (`hudTargets`), derived
+      from the walk and the measurement.
+  - **Timing under the page's subscription:** the walk's own batch wakes
+    `ar-entry.ts`'s subscriber, which ticks the guide at once, so a
+    station a find, skip or story's end newly offers (the next under fixed
+    or branch order) is judged in the same frame rather than the next. The
+    visitor sees the same; M1's guide-level differential compared the
+    settled page under the subscription and every single call without it
+    (deleted in M2: W4 build plan §10, the frozen copies' end of life).
+
 - **The wait for a heading is published** (D34): after each tick the guide
   sets the store's `headingPending` to `!headingReady && !run.isComplete()`
   (dispatched only on a change), false with no run, at no tour and at the
@@ -60,13 +159,13 @@ activateM)` (each tick, each offered station with a distance: the
   steps" sentence.
 - **One gate for found and presence** (visitor plan M1, §3): `judged` is
   the one function that says what a tick may judge - the measured best
-  position's distances and the judged accuracy, or nothing (no position, no
-  GPS zero, `tooWeakToGuide`). The run's `observe` and the present station
+  position's distances and its precision, or nothing (no position, no GPS
+  zero, a precision that is `tooWeak`: GPS above the ceiling, or `'none'`). The run's `observe` and the present station
   both read only it, so a station is never found where presence would not
   count the visitor, nor present on a fix the arrival refused.
 - **The present station** (`station-presence.ts`): every station of the
   tour is a candidate, with its judged bands (`judgedStationBands`) and the
-  judged accuracy's margin (`takeoverMarginM`), whatever the order (V-D5).
+  precision's margin (`takeoverMarginM`), whatever the order (V-D5).
   The guide dispatches `presenceJudged` only when `presenceAfter` differs
   from the store's answer, and only at the END of its tick (the store's
   subscriber ticks again, and finds nothing to change). No position (a
@@ -111,14 +210,32 @@ activateM)` (each tick, each offered station with a distance: the
   inside its authored found radius: whatever the raw accuracy when a code
   lined the aligned position up (the accuracy is the raw fixes' and says
   nothing about a code's position, M5c review #1), and otherwise only
-  while the raw accuracy is within the ceiling (`tooWeakToGuide`, PR #640
-  review): the median of the latest fixes for the aligned position, the
-  worse of that and the fix's own (`fixAccuracyM`) for a lone fix (r881
-  re-review M-A: one ±40 m fix after a ±5 m run hid behind the median).
-  When neither the median nor the fix states an accuracy the radius alone
-  judges, as for any unknown accuracy: a real device fix always states one
-  (the Geolocation spec requires it), so only injected points (a test
-  page, a replay) lack it (third review L4).
+  while the raw accuracy is within the ceiling (PR #640 review): the
+  median of the latest device fixes for the aligned position, the worse of
+  that and the fix's own (`fixAccuracyM`) for a lone fix (r881 re-review
+  M-A: one ±40 m fix after a ±5 m run hid behind the median). Both are
+  the framework's one rule (`gps-plus-slam-app-framework/state/position-precision`,
+  `precisionOf` here), which the guide adopted in M2 of
+  `GpsPlusSlamJs_Docs/docs/2026-10-19-1345-shared-position-precision-plan.md`
+  behind a frozen parity oracle (`station-guide.parity.test.ts`).
+  **The one change it made (the plan's §12, S3):** a position no code holds
+  and no stated accuracy speaks for - without location once a code's trust
+  ended while the tracking report still reads ready on the code's
+  readings, the next AR entry before its own code locks, or fixes that
+  state no accuracy, aligned or alone - is `'none'`. Nothing is found on
+  it, presence holds (a station a code made present ends with the code),
+  nothing points or measures by it (no HUD target, so no arrow or
+  distance; no prefetch approach; no breadcrumb trail from the visitor),
+  and the line asks for a code instead of a distance, naming no
+  "nearest" station ("Next: <title> - scan one of the tour's codes so the
+  guide knows where you are." or "N stations to find - scan one of the
+  tour's codes so the guide knows where you are."). The skip still
+  follows the nearest unfound station by that position. Before, such a
+  position was judged by the radius alone with the widest bands, and
+  without location kept one exhibit present for 30 s while the visitor
+  stood at others. A real device fix always states an accuracy (the
+  Geolocation spec requires it), so the fix cases come only from injected
+  points (a test page, a replay; third review L4).
   The accuracy never widens the radius. With neither position nothing is
   reached. A GPS-only session whose tracking quality drops is not ready
   any more and falls back to the fresh fix; only a session that stays
@@ -209,10 +326,14 @@ activateM)` (each tick, each offered station with a distance: the
     a regular grid none up to 6. Five stays under one overlap in ten
     views; markers about 10° wide on a phone would favour four, a
     grid-like layout allows seven.
-- **One accuracy rule for every band** (PR #642 review): the prefetch's
-  activation, the HUD's band and the breadcrumbs' stop read the same rule
-  as the line and the run (`station-bands.ts` `judgedAccuracy` /
-  `judgedStationBands`, on the measurement's `codeLinedUp`). A visitor a
+- **One precision rule for every band** (PR #642 review): the prefetch's
+  activation, the HUD's band and the breadcrumbs' stop read the same
+  precision as the line and the run (`station-bands.ts`
+  `judgedStationBands`, on the measurement's `precision`). With no position
+  this tick (a tracking drop, a stale fix) the precision is still the
+  session's alignment's (a code's while it holds, else the device fixes'),
+  so the bands keep their width and the line can still say the GPS is too
+  weak, while the gate judges nothing. A visitor a
   code lined up takes the HUD's own band, so a ±40 m raw fix beside a
   code-placed position widens nothing; every other position - a raw fix,
   or an alignment no code lined up - keeps the raw accuracy's band. The HUD is started once per
@@ -233,8 +354,10 @@ activateM)` (each tick, each offered station with a distance: the
     (`rendered`): a clock that ran out since, or a focus that moved,
     changes nothing;
   - a skip can be undone for `SKIP_UNDO_MS` (6 s, the framework toast's
-    linger; argued, not measured): the button reads "Undo: bring back
-    <title>", the line "Skipped <title>." (the confirmation); the undo
+    linger; argued, not measured; defined by the walk slice and
+    re-exported here; the button reads its window through
+    `selectUndoableSkip`): the button reads "Undo: bring back <title>",
+    the line "Skipped <title>." (the confirmation); the undo
     brings the station back to the order ("Brought back <title>.") with a
     fresh clock. The prefetch hears of a skip (`onDone`) only once it can
     no longer be undone, or when the tour moves on (a find or another
@@ -250,11 +373,14 @@ activateM)` (each tick, each offered station with a distance: the
   format, and the button now covers it.
 - **The line:** "Next: <title>, N m", "N stations to find - nearest:
   <title>, N m", "... - waiting for your position…", "... - GPS too weak to
-  guide you (±N m); step into the open." (when no code lined the
-  position up and the raw fixes' accuracy is above the ceiling,
-  `tooWeakToGuide` - checked before "waiting", so it shows while the
-  alignment is not ready too; the run then judges no arrival either,
-  PR #640 review, M5c review #1),
+  guide you (±N m); step into the open." (a `'gps'` precision above the
+  ceiling - checked before "waiting", so it shows while the alignment is
+  not ready too; the run then judges no arrival either, PR #640 review,
+  M5c review #1), "Next: <title> - scan one of the tour's codes so the
+  guide knows where you are." or "N stations to find - scan one of the
+  tour's codes so the guide knows where you are." (a position with a
+  distance whose precision is `'none'`: no code holds it and no accuracy
+  speaks for it; no "nearest", which that position would have chosen),
   "Station found - its story is
   playing.", "Tour complete - every station visited." or "- N skipped.";
   under branch order "Tour complete - you reached the end of your path."
@@ -271,11 +397,13 @@ activateM)` (each tick, each offered station with a distance: the
 - **With no device fix ever (QR-first M1b-1, codes only):** the visitor's
   position (`visitor-position.ts`) is the camera through the code-placed
   alignment - null before a scan, odometry from the code after it - with
-  `accuracyM` and `fixNue` null. So nothing is reached before a scan,
-  and after it every station by the distance from the code-placed
-  position (D16), as with GPS; the line says "waiting for your
-  position..." before a scan and the distance after it - never "GPS too
-  weak", which needs an accuracy. Under `?relocate=here` the stations stay
+  no device fix among its readings and `fixNue` null. So nothing is
+  reached before a scan, and after it every station by the distance from
+  the code-placed position (D16), as with GPS; the line says "waiting for
+  your position..." before a scan and the distance after it - never "GPS
+  too weak", which needs an accuracy. Once the code's trust ends (an
+  odometry-frame change) the position is `'none'` (above): no find, and
+  the line asks for a code. Under `?relocate=here` the stations stay
   held back (the relocation waits for a first device fix that never comes).
 
 ## Examples
@@ -298,6 +426,23 @@ store.subscribe(() => guide.tick());
 
 ## Tests
 
+- M1's guide-level differential (against a frozen copy of the guide from
+  before the walk moved into the store) proved the move behaviour-neutral
+  and was deleted in M2's first commit, because M2 changes the guide's
+  writes by design (W4 build plan §10). The run-level differential and its
+  frozen run stay until M4.
+- `station-guide.walk-store.test.ts` (W4 M1) - on the page's store: no walk
+  dispatch over frames without an event; one batch per call, last, with the
+  line already written from it, and none on a second tick with the same
+  inputs in every steady state (the skip asked, a note run out, GPS too
+  weak, a story playing, the tour complete; each counted as reached); the
+  R9 property through the store with the subscription re-entering; another
+  writer mid-call (a skip armed from a callback is shown in that call) and
+  a walk reset behind the guide (no walk started again, nothing shown, no
+  false "Tour complete").
+- `station-guide.parity.test.ts` - also reproduces its golden through the
+  page's store with the subscription re-entering (W4 M1).
+
 - `station-guide.property.test.ts` - stories that never end, stations
   nobody reaches, random orders and `next` links (cycles included): the
   tour completes within two taps per station (R9); and a raw fix finds a
@@ -318,7 +463,8 @@ store.subscribe(() => guide.tick());
   that is not offered; a code-lined-up visitor's prefetch, HUD band and
   breadcrumb stop not widened by a raw fix of ±5-100 m or none, an aligned
   visitor with no code and a raw fix alone keeping the raw accuracy's band
-  (swept, PR #642 review; changed r881); a code-lined-up visitor found
+  (swept, PR #642 review; changed r881), and with no accuracy at all
+  (`'none'`) showing no approach, HUD target or trail; a code-lined-up visitor found
   however weak the fix, one without a code not (r881); the cold start on
   the real store (r881): one fix aligns the session with no rotation, a
   ±500 m first fix inside a 10 m station finds nothing and says the GPS
@@ -347,7 +493,9 @@ store.subscribe(() => guide.tick());
   cold-start harness feeds the raw signals (tracking, a code) and the
   page's readiness rule over them, so the latch tested is the guide's.
   `station-guide.property.test.ts` also pins that a lone-fix find means
-  the worse known accuracy is within the ceiling (L4).
+  the worse known accuracy is within the ceiling, and that a lone fix
+  with no accuracy anywhere finds nothing (L4; since the shared precision
+  rule).
 - `station-guide.test.ts` ("the present station", visitor plan M1) -
   enter at the found radius, leave past the exit, a dispatch only per
   change; a too-weak fix neither finds nor makes present, no position and a
@@ -357,6 +505,44 @@ store.subscribe(() => guide.tick());
   "show all" set before the first tick stays; a code's 1.5 m band; a later
   station of a fixed tour present but not found (V-D5); cleared at the
   session's end, reset with "show all" by another tour.
+- `station-guide.parity.test.ts` - the switch to the framework's
+  precision rule held to a golden oracle frozen before it
+  (`__golden__/station-guide-precision.golden.json`; regenerate only with
+  `GOLDEN_UPDATE=1`, refused in CI): eleven streams (a code's hold, its
+  fade, an odometry-frame change, a veto, codes only, a GPS gap, lone
+  outlier fixes, a tracking drop, weak GPS, a re-entry on GPS, a code
+  holding while GPS is above the ceiling) give the same line, skip, finds,
+  presence, HUD, approach and breadcrumbs at every tick; five streams of
+  the named exception agree on every tick outside its window, and on it
+  find nothing (one with exhibits still unfound when the code's trust
+  ends, which the old guide found there), hold or end presence, show no
+  HUD target, approach or trail, and ask for a code without a "nearest". The two streams added after the switch
+  were recorded from the pre-switch sources (183f03d2), which reproduced
+  every earlier stream exactly.
 - `visitor-stations.test.ts` - `stationAlignmentSignals` against the real
   tracking-quality slice (L3).
 - `playwright-tests/stations.spec.js` - the whole flow on the page.
+
+## What the sheet reads (visitor walk W4 build plan M2)
+
+- `view(): GuideView | null` - `{ focusId, position, accuracyM,
+distances, quick, note }`: the line's station, how the position stands
+  (`GuidePositionKind`: pending, weak, none, distance - the same
+  classification `lineText` uses, `positionKind`), the fixes' accuracy
+  behind `weak`, every placeable station's distance, what the quick
+  action shows (`rendered`, so a tap does what the label showed) and the
+  note while its moment lasts. Null while the guide does not run.
+- `StationGuideDom.end?` - the story card's end control. Given, the
+  "End this story?" / "End this story" labels go there and the skip
+  button is hidden meanwhile; absent, the skip button carries them as
+  before.
+- `cancelAsk()` - "Keep listening": the ask is disarmed.
+- `completionLine(order, skipped)` exported: the completion card reuses
+  the line's words.
+- **No stale line while the scan gate is shut** (plan §10 follow-up):
+  `render()` hides the line, the skip button and the end control whenever
+  the guide does not run (`running()`: a live run and placement allowed),
+  and `view()` is null then.
+- Tests: `station-guide.view.test.ts` (the view per position kind, the
+  quick action, the note, the end control and Keep listening, the stale
+  line); `walk-sheet-model.property.test.ts` drives the real guide.

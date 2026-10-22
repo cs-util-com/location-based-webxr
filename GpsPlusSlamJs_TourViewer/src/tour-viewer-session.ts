@@ -17,7 +17,10 @@ import type { QrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-bud
 import type { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
-import { createListenerMiddleware } from "@reduxjs/toolkit";
+import {
+  createListenerMiddleware,
+  type ReducersMapObject,
+} from "@reduxjs/toolkit";
 import {
   createSlamAppStore,
   qrDetectedReducer,
@@ -32,10 +35,20 @@ import {
 import { objectPlaced } from "./tour-authoring-actions.js";
 import { codeLocked } from "./tour-viewing-actions.js";
 import {
+  hostedLevels,
+  hostedLevelTexts,
+  hostedLevelsUnreadable,
+  selectTourDocument,
+  tourDocumentActions,
   tourDocumentReducer,
   type TourDocumentState,
 } from "./tour-document.js";
+import {
+  creatorCodesReducer,
+  type CreatorCodesState,
+} from "./creator-codes-slice.js";
 import { visitorGuideReducer } from "./visitor-guide-slice.js";
+import { visitorWalkReducer } from "./visitor-walk-slice.js";
 
 import type {
   HitTestReticleHandle,
@@ -51,7 +64,6 @@ import type { MovedCodeChecks } from "./moved-code-check.js";
 import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { ViewerVoteSink } from "./viewer-vote-sink.js";
 import type { ScanGate } from "./scan-gate.js";
-import type { PlacedImagePlanes } from "./image-planes.js";
 import type { StationContent } from "./station-content.js";
 import type { TourViewerSeams } from "./seams.js";
 import type { PlacementState } from "./tour-flow.js";
@@ -84,7 +96,10 @@ type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
  *
  * `visitorGuide` is the visitor's present station and its "show all"
  * override (`visitor-guide-slice.ts`, visitor plan 2026-10-18-2349 §3),
- * not written into the recording either.
+ * not written into the recording either; nor is `visitorWalk`, the
+ * visitor's walk through the tour (`visitor-walk-slice.ts`, visitor walk
+ * W4 build plan 2026-10-21-1105, M1), which the guide dispatches from
+ * inside the store's subscriber.
  *
  * It also holds the tour a creator edits (`tourDocument`,
  * `tour-document.ts`, D29-D31) - not written into the recording - and
@@ -93,24 +108,49 @@ type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
  * after the reducer, never from `store.subscribe`. Its own middleware,
  * not an `addListener` dispatch: that would land in whichever of the
  * framework's listener middlewares comes first.
+ *
+ * `creatorCodes` is the creator's code in hand and its visit's sightings
+ * (`creator-codes-slice.ts`, debug-captures plan M3a), not written into
+ * the recording either.
+ *
+ * `pageReducers` are one page's own slices beside these (the desktop
+ * editor's `editorView`): only the page that passes them has them, so the
+ * phone's store never names an editor slice. A key one of the store's own
+ * slices has throws (it would silently replace that slice); the
+ * framework's own keys are refused by `createSlamAppStore`.
  */
-export function createTourViewerStore(recording?: {
-  storageBackend: StorageBackend;
-  persistWhile: () => boolean;
-}) {
+export function createTourViewerStore<
+  Page extends ReducersMapObject = Record<never, never>,
+>(
+  recording?: {
+    storageBackend: StorageBackend;
+    persistWhile: () => boolean;
+  },
+  pageReducers?: Page,
+) {
   const documentListener = createListenerMiddleware<{
     tourDocument: TourDocumentState;
+    creatorCodes: CreatorCodesState;
   }>();
+  const own = {
+    qrDetected: qrDetectedReducer,
+    tourDocument: tourDocumentReducer,
+    visitorGuide: visitorGuideReducer,
+    visitorWalk: visitorWalkReducer,
+    creatorCodes: creatorCodesReducer,
+  };
+  const clash = Object.keys(pageReducers ?? {}).filter((key) => key in own);
+  if (clash.length > 0) {
+    throw new Error(
+      `createTourViewerStore: the page's slices ${clash.join(", ")} would replace the store's own`,
+    );
+  }
   const store = createSlamAppStore({
     storageBackend: recording?.storageBackend ?? new NullStorageBackend(),
     ...(recording === undefined
       ? {}
       : { persistWhile: recording.persistWhile, continuousActionIndex: true }),
-    extraReducers: {
-      qrDetected: qrDetectedReducer,
-      tourDocument: tourDocumentReducer,
-      visitorGuide: visitorGuideReducer,
-    },
+    extraReducers: { ...own, ...pageReducers } as typeof own & Page,
     extraMiddleware: [documentListener.middleware],
     // Beyond the framework's built-ins (GPS with its paired poses, the
     // recording lifecycle, diagnostics): the QR detections the votes and
@@ -127,7 +167,18 @@ export function createTourViewerStore(recording?: {
     listenToDocument: documentListener.startListening,
   });
 }
-export type TourViewerStore = ReturnType<typeof createTourViewerStore>;
+export type TourViewerStore = ReturnType<
+  typeof createTourViewerStore<Record<never, never>>
+>;
+
+/** The page's store as the session reaches it: the tour document with its
+ *  codes, and the creator's code state (`creatorCodes`). */
+export interface TourViewerPageStore extends CreatorDocumentStore {
+  getState(): {
+    readonly tourDocument: TourDocumentState;
+    readonly creatorCodes: CreatorCodesState;
+  };
+}
 export type ArController = ReturnType<typeof createEnableGpsArController>;
 
 /**
@@ -172,12 +223,16 @@ export interface TourViewerHooks {
    *  GPS" start follow whether a code can place the tour (r857 review #4,
    *  #5). */
   presentTourLevels(): void;
-  /** The open tour's manifest arrived (null: no tour any more): the
-   *  visitor's start page shows its name, its subline and its cover,
-   *  read from the zip by its archive path (polish round M4a). */
+  /** The open tour's manifest settled (`manifest` null: the zip has no
+   *  `tour.json`), or no tour is open any more (`tour` null): the
+   *  visitor's start page leads with the tour itself - its name, its
+   *  subline and its cover, read from the zip by its archive path through
+   *  `loadImage` - or says that it is not finished yet. */
   presentTourInfo(
-    manifest: TourManifest | null,
-    loadImage: (path: string) => Promise<Blob>,
+    tour: {
+      readonly manifest: TourManifest | null;
+      readonly loadImage: (path: string) => Promise<Blob>;
+    } | null,
   ): void;
   /** A tour closed: the finish step's page-side state is stale. */
   resetFinishStep(): void;
@@ -263,16 +318,30 @@ export function createUnwiredHooks(): TourViewerHooks {
 export interface TourViewerSession {
   // --- the open tour (archive-open.ts) ------------------------------------
   session: TourSession | null;
-  /** The open tour's authored QR levels — the viewer pipeline's level source. */
+  /** The open tour's authored QR levels — the viewer pipeline's level
+   *  source. A view of the store like `currentLevelTexts`: the tour
+   *  document's parsed levels (`hostedLevels`, plan M3b), which the
+   *  creator's codes read too. Assigning dispatches `levelsParsed` for the
+   *  current open. */
   currentLevels: ReadonlyMap<string, QrLevel> | null;
   /** The same levels' raw file texts, parseable or not
    *  (`TourSession.levelTexts`): what the hosted zip holds for each code
-   *  (code book plan M1). */
+   *  (code book plan M1). A view of the store: the tour document's hosted
+   *  levels (`hostedLevelTexts`, debug-captures plan M3a), which
+   *  `archive-open.ts` dispatches with its open's generation. Assigning it
+   *  dispatches the same for the current open (`levelsArrived`; null:
+   *  `levelsCleared`). */
   currentLevelTexts: ReadonlyMap<string, string> | null;
   /** The open tour's levels could not be read (their load rejected): they
    *  never come, so the tour has no usable code (`tourCodesUsable`, r857
-   *  review #4). Reset when the tour closes. */
+   *  review #4). Reset when the tour closes. A view of the store like
+   *  `currentLevelTexts` (`hostedLevelsUnreadable`); assigning true
+   *  dispatches `levelsUnreadable` for the current open, false clears a
+   *  failed read (`levelsCleared`). */
   levelsUnreadable: boolean;
+  /** The page's store: the tour document's codes and the creator's code
+   *  state live there (`creator-codes.ts` reads and writes them). */
+  readonly store: TourViewerPageStore;
   /** The tour as the page edits it: the shared `tourDocument` slice
    *  through the page's handle (`creator-document.ts`, D29-D31) - the
    *  open tour's `tour.json` (`manifest()`, null: none, or not loaded
@@ -286,7 +355,7 @@ export interface TourViewerSession {
   tourManifestStatus: "pending" | "settled" | "broken";
   /** The creator's walk in the open tour (scan-pass plan S1,
    *  `tour-read-set.ts`), set when `tour.json` settles: the gallery and
-   *  the photo ring leave it out. Empty with no manifest. */
+   *  the visitor's download leave it out. Empty with no manifest. */
   scanEntries: ReadonlySet<string>;
   /** Bumped per open; a slower open that finishes after a newer one started
    *  must close itself instead of clobbering the newer session. */
@@ -373,13 +442,6 @@ export interface TourViewerSession {
     /** A save delivered it (UI round 1, U2: the leave guard). */
     delivered?: boolean;
   } | null;
-  /** The open tour whose Finish, in THIS page, settled the walk's recorded
-   *  photos (their spots written, or none to place - not a declined bake,
-   *  which the next Finish tries again, PR #643 review): the creator's
-   *  station HUD drops its hedge for it (`creator-stations.ts`
-   *  `walkPhotosPending`, PR #642 review). A per-page view hint, not
-   *  document state: a reopened tour (a new session) hedges again. */
-  walkDecidedFor: TourSession | null;
   /** What the panel calls the open tour (`tourLabel`); null with none. */
   tourLabel: string | null;
   /** The creator's hit-test reticle for the running session. */
@@ -451,36 +513,19 @@ export interface TourViewerSession {
   scanGateCodeText: string | null;
 
   // --- placement (viewer-placement.ts) ------------------------------------
-  /** What the photo placement did — rendered by tour-flow. */
+  /** Whether the placement still waits for readiness - rendered by
+   *  tour-flow. */
   placement: PlacementState;
-  /** A failed image-plane placement, surfaced in the AR status line —
-   *  `#error` is a sibling of `#ar-root` and invisible during the session
-   *  (the milestone-review-#4 trap; PR #366 review). */
-  viewerPlanesError: string | null;
-  /** A failed `tour.json` content render, on its own channel: the
-   *  capture-plane paths write `viewerPlanesError`, and whichever failed
-   *  second used to erase the other's message (M5 review #5). */
+  /** A failed `tour.json` content render, surfaced in the AR status line
+   *  on its own channel (M5 review #5) - `#error` is a sibling of
+   *  `#ar-root` and invisible during the session (the milestone-review-#4
+   *  trap; PR #366 review). */
   contentError: string | null;
-  /** The walk's photos or the ring, placed in the tour (since visitor plan
-   *  M2 as parts of their stations in `stationContent`, decoded only while
-   *  shown); its `dispose` takes those parts out. */
-  imagePlanes: PlacedImagePlanes | null;
-  /** In-flight guard: without it every voted lock during the decode window
-   *  started ANOTHER placement run (M4 milestone review #4). */
-  imagePlanesLoading: boolean;
-  /** Bumped on session end and tour teardown: an in-flight placement run
-   *  captures the value and every post-await step re-checks it — a run its
-   *  session outlived frees its textures instead of planting planes into a
-   *  dead scene (milestone review, finding 6). */
-  planesRunGeneration: number;
   /** The store subscription while a viewer session runs (flows plan M4). */
   placementUnsubscribe: (() => void) | null;
-  /** Whether this session+tour already attempted the ready-triggered
-   *  placement. */
+  /** Whether this session+tour's wait for readiness ended (tracking ready,
+   *  or a code lined the tour up): the coaching does not come back. */
   placementAttempted: boolean;
-  /** Whether the join declined - a later lock goes straight to the ring
-   *  instead of replaying the walk again. */
-  joinDeclined: boolean;
 
   // --- the scan gate and the placed content (viewer-placement.ts, M5) ------
   /** This AR entry runs without location (QR-first M1b-1): the visitor
@@ -489,9 +534,9 @@ export interface TourViewerSession {
   scanGate: ScanGate;
   /** Cancels the escape clock while the gate scans. */
   cancelEscapeClock: (() => void) | null;
-  /** The visitor's content per station (`station-content.ts`, visitor plan
-   *  2026-10-18-2349 M2): the tour's items, the walk's photos and the ring
-   *  as parts of their stations, drawn only while the store shows them.
+  /** The visitor's content per station (`station-content.ts`): the
+   *  tour's items as parts of their stations, drawn only while the store
+   *  shows them.
    *  Created with the first part after the gate; disposed at the session's
    *  end and when its tour closes. */
   stationContent: StationContent | null;
@@ -560,13 +605,51 @@ export function isCodeIgnored(
 /** The page's session object; `store` holds its tour document (the
  *  page's store; a fresh one in tests that need no other). */
 export function createTourViewerSession(
-  store: CreatorDocumentStore = createTourViewerStore(),
+  store: TourViewerPageStore = createTourViewerStore(),
 ): TourViewerSession {
-  return {
+  const document = () => selectTourDocument(store.getState());
+  const ctx: TourViewerSession = {
     session: null,
-    currentLevels: null,
-    currentLevelTexts: null,
-    levelsUnreadable: false,
+    get currentLevels() {
+      return hostedLevels(document());
+    },
+    set currentLevels(levels) {
+      store.dispatch(
+        tourDocumentActions.levelsParsed({
+          session: ctx.openGeneration,
+          levels:
+            levels === null
+              ? null
+              : [...levels].map(([id, level]) => ({ id, level })),
+        }),
+      );
+    },
+    get currentLevelTexts() {
+      return hostedLevelTexts(document());
+    },
+    set currentLevelTexts(texts) {
+      const session = ctx.openGeneration;
+      store.dispatch(
+        texts === null
+          ? tourDocumentActions.levelsCleared({ session })
+          : tourDocumentActions.levelsArrived({
+              session,
+              texts: [...texts].map(([id, json]) => ({ id, json })),
+            }),
+      );
+    },
+    get levelsUnreadable() {
+      return hostedLevelsUnreadable(document());
+    },
+    set levelsUnreadable(unreadable) {
+      const session = ctx.openGeneration;
+      if (unreadable) {
+        store.dispatch(tourDocumentActions.levelsUnreadable({ session }));
+      } else if (hostedLevelsUnreadable(document())) {
+        store.dispatch(tourDocumentActions.levelsCleared({ session }));
+      }
+    },
+    store,
     tourDocument: createCreatorDocument(store),
     tourManifestStatus: "settled",
     scanEntries: new Set(),
@@ -590,7 +673,6 @@ export function createTourViewerSession(
     finishProgress: "",
     finishError: null,
     rebuiltZip: null,
-    walkDecidedFor: null,
     tourLabel: null,
     arSessionGeneration: 0,
     reticle: null,
@@ -613,18 +695,14 @@ export function createTourViewerSession(
     viewerIgnoredText: null,
     scanGateCodeText: null,
     placement: { kind: "idle" },
-    viewerPlanesError: null,
     contentError: null,
-    imagePlanes: null,
-    imagePlanesLoading: false,
-    planesRunGeneration: 0,
     placementUnsubscribe: null,
     placementAttempted: false,
-    joinDeclined: false,
     codesOnly: false,
     scanGate: { kind: "idle" },
     cancelEscapeClock: null,
     stationContent: null,
     contentAttempted: false,
   };
+  return ctx;
 }

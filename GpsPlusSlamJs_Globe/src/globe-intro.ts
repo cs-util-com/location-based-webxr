@@ -83,7 +83,19 @@ function slerp(a: Vec3, b: Vec3, s: number): Vec3 {
       "a perpendicular",
     );
   } else {
-    ortho = [rest[0] / restLength, rest[1] / restLength, rest[2] / restLength];
+    // Once more without its part along `a`: for nearly opposite pairs
+    // `rest` is a difference of nearly equal numbers, and its rounding
+    // left it off perpendicular, the result off unit length.
+    const r: Vec3 = [
+      rest[0] / restLength,
+      rest[1] / restLength,
+      rest[2] / restLength,
+    ];
+    const d = dot(r, a);
+    ortho = unit(
+      [r[0] - d * a[0], r[1] - d * a[1], r[2] - d * a[2]],
+      "a perpendicular",
+    );
   }
   const phi = theta * s;
   const c = Math.cos(phi);
