@@ -39,9 +39,11 @@ export interface EditorMessage {
 }
 
 /** Why the 3D view is not shown: its code did not load (`chunk`), the
- *  browser has no WebGL (`webgl`), the view lost its WebGL context while
- *  shown (`context-lost`), or the tour has nothing to place (`empty`). */
-export type View3dFailure = "chunk" | "webgl" | "context-lost" | "empty";
+ *  browser has no WebGL (`webgl`), the view lost its WebGL context
+ *  (`context-lost`), the tour has nothing to place (`empty`), or anything
+ *  else went wrong in it (`error`). */
+export type View3dFailure =
+  "chunk" | "webgl" | "context-lost" | "empty" | "error";
 
 export interface EditorViewState {
   /** The selected item's id (the model's: `station:<id>` for a station). */

@@ -199,3 +199,88 @@ test("a 3D view whose code cannot load lands back on the map, said", async ({
   await expect(page.locator("#view3d")).toBeHidden();
   await expect(page.locator(".mk-station")).toHaveCount(3);
 });
+
+// Why: a failure's line stays until closed (the creator asked for
+// something that did not happen) - but once a later open shows the view
+// it says what is no longer so, and must go. The first open fails for want
+// of WebGL (the page refuses one WebGL context); the second shows. (A chunk
+// that failed cannot stand in: the browser keeps a failed import's answer
+// for the page's life.)
+test("a later open that shows the 3D view takes the earlier failure's line away", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await answerHosts(page);
+  await openSample(page);
+  await page.evaluate(() => {
+    const real = HTMLCanvasElement.prototype.getContext;
+    let refused = false;
+    /** @type {any} */ (HTMLCanvasElement.prototype).getContext = function (
+      /** @type {string} */ kind,
+      /** @type {unknown[]} */ ...rest
+    ) {
+      if (!refused && kind.startsWith("webgl")) {
+        refused = true;
+        return null;
+      }
+      return real.call(this, kind, ...rest);
+    };
+  });
+  const button = page.locator("#view-switch");
+  const line = page.locator(".toast", { hasText: "cannot draw the 3D view" });
+  await button.click();
+  await expect(line).toBeVisible();
+  await expect(button).toHaveText("3D view");
+  await expect(page.locator("#view3d canvas")).toHaveCount(0);
+  await button.click();
+  await expect(button).toHaveText("Map view", { timeout: 60_000 });
+  await expect(line).toHaveCount(0);
+  await expect(page.locator("#view3d canvas")).toHaveCount(1);
+});
+
+// Why: an error inside the 3D view's frame loop before its first frame
+// left the open waiting for a frame that never came - the button stuck on
+// "Loading 3D view…" - and a failure after the renderer was made left its
+// canvas in the box (a second one on the next open). The open must end on
+// the map with the reason said and nothing of the view left behind. The
+// page's WebGL draw calls throw once, inside three's render.
+test("a 3D view whose first frame fails lands back on the map, said, with nothing left", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await answerHosts(page);
+  await openSample(page);
+  await page.evaluate(() => {
+    let thrown = false;
+    for (const proto of [
+      WebGL2RenderingContext.prototype,
+      WebGLRenderingContext.prototype,
+    ]) {
+      for (const name of /** @type {const} */ ([
+        "drawElements",
+        "drawArrays",
+      ])) {
+        const real = /** @type {any} */ (proto)[name];
+        /** @type {any} */ (proto)[name] = function (
+          /** @type {unknown[]} */ ...args
+        ) {
+          if (!thrown) {
+            thrown = true;
+            throw new Error("a draw call failed (test)");
+          }
+          return real.apply(this, args);
+        };
+      }
+    }
+  });
+  const button = page.locator("#view-switch");
+  await button.click();
+  await expect(
+    page.locator(".toast", { hasText: "stopped on an error" }),
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(button).toHaveText("3D view");
+  await expect(button).toBeEnabled();
+  await expect(page.locator("#view3d")).toBeHidden();
+  await expect(page.locator("#view3d canvas")).toHaveCount(0);
+  await expect(page.locator("#view3d-credits")).toBeEmpty();
+});

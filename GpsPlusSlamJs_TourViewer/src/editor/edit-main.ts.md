@@ -469,7 +469,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   stays; once it shows, `#view3d` is unhidden and the card hides (it
   points at a map marker); back on the map the card shows again for the
   same selection. A failure (its code, no WebGL, nothing placed, a lost
-  context) lands on the map with a toast saying why. Opening another tour
+  context, an error) lands on the map with a toast saying why; an import
+  that does not arrive is tagged `chunk` here, so only it speaks of the
+  connection. The failure's toast stays until closed, or until a later
+  open shows the view. Opening another tour
   or closing this one closes the 3D view (`viewSwitch.close()`); the
   switch is off while no tour is open. The 3D
   view reads the tour from the store and the codes the open read

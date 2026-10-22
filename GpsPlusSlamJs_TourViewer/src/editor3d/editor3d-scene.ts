@@ -66,7 +66,9 @@ export interface Editor3dDeps {
   levels(): ReadonlyMap<string, QrLevel>;
   /** A content entry of the open tour (photos, models). */
   loadContent(entryName: string): Promise<Blob>;
-  readonly events: { contextLost(): void };
+  /** A lost context or an error once the view shows (before, the open
+   *  rejects instead). */
+  readonly events: { contextLost(): void; failed(): void };
 }
 
 /** A shown 3D view. */
@@ -104,7 +106,10 @@ export interface Editor3dStats {
 }
 
 /** A failure with the reason the view switch says. */
-function failure(reason: "empty" | "webgl", message: string): Error {
+function failure(
+  reason: "empty" | "webgl" | "chunk" | "context-lost",
+  message: string,
+): Error {
   return Object.assign(new Error(message), { reason });
 }
 
@@ -157,218 +162,262 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
   if (centre === null) {
     throw failure("empty", "the tour has nothing with a position");
   }
-  const { egm96Geoid } = await import("gps-plus-slam-osm/elevation/egm96");
+  const { egm96Geoid } =
+    await import("gps-plus-slam-osm/elevation/egm96").catch(
+      (error: unknown) => {
+        throw failure("chunk", `the geoid did not load: ${String(error)}`);
+      },
+    );
   const geoid = egm96Geoid();
   const undulationAt = (p: { lat: number; lon: number }) =>
     geoid.undulationMetres({ lat: p.lat, lng: p.lon });
 
   const renderer = createRenderer();
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  const canvas = renderer.domElement;
-  canvas.className = "view3d-canvas";
-  deps.container.prepend(canvas);
-  // The box is hidden until the first frame is drawn (the map stays in
-  // view while the view loads): the window's size until it shows.
-  const size = () => ({
-    w: Math.max(1, deps.container.clientWidth || window.innerWidth),
-    h: Math.max(1, deps.container.clientHeight || window.innerHeight),
-  });
-  renderer.setSize(size().w, size().h, false);
-
-  const ground = createEditorTerrain({
-    renderer,
-    centre: { lat: centre.lat, lng: centre.lng },
-    device: reliefDeviceClass(window.innerWidth),
-  });
-  const { ellipsoid } = ground.terrain.tiles;
-  const ecefFromWorld = ground.worldFromEcef.clone().invert();
-
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(BACKGROUND);
-  scene.fog = new THREE.Fog(
-    BACKGROUND,
-    EDITOR_CLIP.fogStartM,
-    EDITOR_CLIP.fogEndM,
-  );
-  scene.add(new THREE.HemisphereLight(0xe9eef5, 0x5d5a52, 1.25));
-  const sun = new THREE.DirectionalLight(0xfff6e8, 1.75);
-  sun.position.set(-160, 260, 120);
-  scene.add(sun);
-  scene.add(ground.terrain.tiles.group);
-
-  const target = new THREE.Vector3(
-    0,
-    centre.altM - undulationAt({ lat: centre.lat, lon: centre.lng }),
-    0,
-  );
-  const cam = createEditorCamera({
-    domElement: canvas,
-    target,
-    aspect: size().w / size().h,
-  });
-  const { camera, controls } = cam;
-  const billboardView = () => ({
-    viewportPx: size().h,
-    fovDeg: EDITOR_CAMERA.fovDeg,
-  });
-
-  const layer = createStationsLayer({
-    parent: scene,
-    ellipsoid,
-    worldFromEcef: ground.worldFromEcef,
-    undulationAt,
-    makeLabel: createPinLabel,
-    loadPhotoTexture: async (entry) =>
-      decodeFrameTexture(await deps.loadContent(entry), 2, {
-        maxPixels: TOUR_MAX_IMAGE_PIXELS,
-      }),
-    loadContent: (entry) => deps.loadContent(entry),
-    loadGlbModel,
-    makeBillboard: (number, title, selected) =>
-      createBillboard(number, title, selected, billboardView()),
-    makeCodeSquare: createCodeSquare,
-  });
-  layer.setTour(manifest, levels);
-  fillCredits(deps.credits, ground.credits);
-
-  // The tour as the view draws it, read again only when the document
-  // changes (never per frame: it is the save's manifest).
-  let documentNow = state.tourDocument;
-  let tourNow = manifest;
-  const unsubscribe = deps.store.subscribe(() => {
-    const next = deps.store.getState().tourDocument;
-    if (next === documentNow) return;
-    documentNow = next;
-    tourNow = manifestToWrite(next);
-    layer.setTour(tourNow, deps.levels());
-  });
-
-  const resize = new ResizeObserver(() => {
-    const { w, h } = size();
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-    layer.group.traverse((o) => {
-      if ((o as THREE.Sprite).isSprite && o.name.startsWith("billboard")) {
-        resizeBillboard(o as THREE.Sprite, billboardView());
-      }
-    });
-  });
-  resize.observe(deps.container);
-
-  const onLost = () => {
-    deps.events.contextLost();
-  };
-  canvas.addEventListener("webglcontextlost", onLost);
-
-  let frames = 0;
-  let standing = 1;
-  const ecef = new THREE.Vector3();
-  // The camera's own: `groundUnder` reuses `ecef`, and the clip planes
-  // read this after both samples are taken.
-  const cameraEcef = new THREE.Vector3();
-  const groundUnder = (worldPoint: THREE.Vector3): number | null => {
-    ecef.copy(worldPoint).applyMatrix4(ecefFromWorld);
-    const at = ellipsoid.getPositionToCartographic(ecef, {}) as {
-      lat: number;
-      lon: number;
-    };
-    return ground.groundAt(at.lat, at.lon);
-  };
-  let firstFrame: () => void = () => undefined;
-  const ready = new Promise<void>((resolve) => {
-    firstFrame = resolve;
-  });
-  renderer.setAnimationLoop((now) => {
-    controls.update();
-    standing = morphStanding(cam.tiltDeg());
-    const planes = editorClipPlanes({
-      ellipsoid,
-      cameraEcef: cameraEcef.copy(camera.position).applyMatrix4(ecefFromWorld),
-      samples: [
-        { distanceM: 0, groundM: groundUnder(camera.position) },
-        {
-          distanceM: Math.hypot(
-            camera.position.x - controls.target.x,
-            camera.position.z - controls.target.z,
-          ),
-          groundM: groundUnder(controls.target),
-        },
-      ],
-    });
-    camera.near = planes.near;
-    camera.far = planes.far;
-    camera.updateProjectionMatrix();
-    ground.update(camera, renderer, now);
-    const ui = deps.store.getState().editorView;
-    layer.update({
-      centre: controls.target,
-      selectedStation: selectedStationOf(ui.selected, tourNow),
-      standing,
-    });
-    renderer.render(scene, camera);
-    frames++;
-    if (frames === 1) firstFrame();
-  });
-
+  // Everything made from here on is undone, last first, by `dispose` - and
+  // by a failure before the first frame, so a failed open leaves no canvas
+  // and no renderer behind.
+  const undo: (() => void)[] = [];
   let disposed = false;
   const dispose = () => {
     if (disposed) return;
     disposed = true;
-    renderer.setAnimationLoop(null);
-    canvas.removeEventListener("webglcontextlost", onLost);
-    resize.disconnect();
-    unsubscribe();
-    layer.dispose();
-    ground.dispose();
-    cam.dispose();
+    for (const step of undo.splice(0).reverse()) {
+      try {
+        step();
+      } catch {
+        // One step that fails to free leaves the others to run.
+      }
+    }
+  };
+  undo.push(() => {
     renderer.dispose();
-    canvas.remove();
-    deps.credits.replaceChildren();
-  };
+    renderer.domElement.remove();
+  });
+  /** True once the first frame is drawn and the view is handed out. */
+  let shown = false;
+  try {
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const canvas = renderer.domElement;
+    canvas.className = "view3d-canvas";
+    deps.container.prepend(canvas);
+    // The box is hidden until the first frame is drawn (the map stays in
+    // view while the view loads): the window's size until it shows.
+    const size = () => ({
+      w: Math.max(1, deps.container.clientWidth || window.innerWidth),
+      h: Math.max(1, deps.container.clientHeight || window.innerHeight),
+    });
+    renderer.setSize(size().w, size().h, false);
 
-  await ready;
-  return {
-    dispose,
-    setTilt(deg) {
-      const offset = camera.position.clone().sub(controls.target);
-      const spherical = new THREE.Spherical().setFromVector3(offset);
-      spherical.phi = Math.min(
-        EDITOR_CAMERA.maxPolarAngle,
-        Math.max(1e-4, deg * DEG),
-      );
-      camera.position
-        .copy(controls.target)
-        .add(new THREE.Vector3().setFromSpherical(spherical));
-      controls.update();
-    },
-    setDistance(m) {
-      const offset = camera.position.clone().sub(controls.target);
-      offset.setLength(
-        Math.min(
-          EDITOR_CAMERA.maxDistanceM,
-          Math.max(EDITOR_CAMERA.minDistanceM, m),
-        ),
-      );
-      camera.position.copy(controls.target).add(offset);
-      controls.update();
-    },
-    stats() {
-      const now = tourNow;
-      return {
-        frames,
-        near: camera.near,
-        far: camera.far,
-        tiltDeg: cam.tiltDeg(),
-        standing,
-        ...layer.stats(),
-        osm: ground.osm.stats(),
-        ground: (now?.stations ?? []).map((s) => ({
-          id: s.id,
-          drawnM: s.geo.alt - undulationAt(s.geo),
-          groundM: ground.groundAt(s.geo.lat * DEG, s.geo.lon * DEG),
-        })),
+    const ground = createEditorTerrain({
+      renderer,
+      centre: { lat: centre.lat, lng: centre.lng },
+      device: reliefDeviceClass(window.innerWidth),
+    });
+    undo.push(() => ground.dispose());
+    const { ellipsoid } = ground.terrain.tiles;
+    const ecefFromWorld = ground.worldFromEcef.clone().invert();
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(BACKGROUND);
+    scene.fog = new THREE.Fog(
+      BACKGROUND,
+      EDITOR_CLIP.fogStartM,
+      EDITOR_CLIP.fogEndM,
+    );
+    scene.add(new THREE.HemisphereLight(0xe9eef5, 0x5d5a52, 1.25));
+    const sun = new THREE.DirectionalLight(0xfff6e8, 1.75);
+    sun.position.set(-160, 260, 120);
+    scene.add(sun);
+    scene.add(ground.terrain.tiles.group);
+
+    const target = new THREE.Vector3(
+      0,
+      centre.altM - undulationAt({ lat: centre.lat, lon: centre.lng }),
+      0,
+    );
+    const cam = createEditorCamera({
+      domElement: canvas,
+      target,
+      aspect: size().w / size().h,
+    });
+    undo.push(() => cam.dispose());
+    const { camera, controls } = cam;
+    const billboardView = () => ({
+      viewportPx: size().h,
+      fovDeg: EDITOR_CAMERA.fovDeg,
+    });
+
+    const layer = createStationsLayer({
+      parent: scene,
+      ellipsoid,
+      worldFromEcef: ground.worldFromEcef,
+      undulationAt,
+      makeLabel: createPinLabel,
+      loadPhotoTexture: async (entry) =>
+        decodeFrameTexture(await deps.loadContent(entry), 2, {
+          maxPixels: TOUR_MAX_IMAGE_PIXELS,
+        }),
+      loadContent: (entry) => deps.loadContent(entry),
+      loadGlbModel,
+      makeBillboard: (number, title, selected) =>
+        createBillboard(number, title, selected, billboardView()),
+      makeCodeSquare: createCodeSquare,
+    });
+    undo.push(() => layer.dispose());
+    layer.setTour(manifest, levels);
+    fillCredits(deps.credits, ground.credits);
+    undo.push(() => deps.credits.replaceChildren());
+
+    // The tour as the view draws it, read again only when the document
+    // changes (never per frame: it is the save's manifest).
+    let documentNow = state.tourDocument;
+    let tourNow = manifest;
+    const unsubscribe = deps.store.subscribe(() => {
+      const next = deps.store.getState().tourDocument;
+      if (next === documentNow) return;
+      documentNow = next;
+      tourNow = manifestToWrite(next);
+      layer.setTour(tourNow, deps.levels());
+    });
+    undo.push(unsubscribe);
+
+    const resize = new ResizeObserver(() => {
+      const { w, h } = size();
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      layer.group.traverse((o) => {
+        if ((o as THREE.Sprite).isSprite && o.name.startsWith("billboard")) {
+          resizeBillboard(o as THREE.Sprite, billboardView());
+        }
+      });
+    });
+    resize.observe(deps.container);
+    undo.push(() => resize.disconnect());
+
+    let firstFrame: () => void = () => undefined;
+    let notShown: (error: unknown) => void = () => undefined;
+    const ready = new Promise<void>((resolve, reject) => {
+      firstFrame = resolve;
+      notShown = reject;
+    });
+    // A lost context: before the first frame the open fails with it (else it
+    // would resolve on a black canvas); once shown the page is told.
+    const onLost = () => {
+      if (shown) deps.events.contextLost();
+      else notShown(failure("context-lost", "the WebGL context was lost"));
+    };
+    canvas.addEventListener("webglcontextlost", onLost);
+    undo.push(() => canvas.removeEventListener("webglcontextlost", onLost));
+
+    let frames = 0;
+    let standing = 1;
+    const ecef = new THREE.Vector3();
+    // The camera's own: `groundUnder` reuses `ecef`, and the clip planes
+    // read this after both samples are taken.
+    const cameraEcef = new THREE.Vector3();
+    const groundUnder = (worldPoint: THREE.Vector3): number | null => {
+      ecef.copy(worldPoint).applyMatrix4(ecefFromWorld);
+      const at = ellipsoid.getPositionToCartographic(ecef, {}) as {
+        lat: number;
+        lon: number;
       };
-    },
-  };
+      return ground.groundAt(at.lat, at.lon);
+    };
+    const frame = (now: number) => {
+      controls.update();
+      standing = morphStanding(cam.tiltDeg());
+      const planes = editorClipPlanes({
+        ellipsoid,
+        cameraEcef: cameraEcef
+          .copy(camera.position)
+          .applyMatrix4(ecefFromWorld),
+        samples: [
+          { distanceM: 0, groundM: groundUnder(camera.position) },
+          {
+            distanceM: Math.hypot(
+              camera.position.x - controls.target.x,
+              camera.position.z - controls.target.z,
+            ),
+            groundM: groundUnder(controls.target),
+          },
+        ],
+      });
+      camera.near = planes.near;
+      camera.far = planes.far;
+      camera.updateProjectionMatrix();
+      ground.update(camera, renderer, now);
+      const ui = deps.store.getState().editorView;
+      layer.update({
+        centre: controls.target,
+        selectedStation: selectedStationOf(ui.selected, tourNow),
+        standing,
+      });
+      renderer.render(scene, camera);
+      frames++;
+      if (frames === 1) firstFrame();
+    };
+    // An error in a frame stops the drawing: before the first frame the
+    // open fails with it, once shown the page is told (never a frozen view,
+    // nor a load that never ends).
+    renderer.setAnimationLoop((now) => {
+      try {
+        frame(now);
+      } catch (error) {
+        renderer.setAnimationLoop(null);
+        if (shown) deps.events.failed();
+        else notShown(error);
+      }
+    });
+    undo.push(() => renderer.setAnimationLoop(null));
+
+    await ready;
+    shown = true;
+    return {
+      dispose,
+      setTilt(deg) {
+        const offset = camera.position.clone().sub(controls.target);
+        const spherical = new THREE.Spherical().setFromVector3(offset);
+        spherical.phi = Math.min(
+          EDITOR_CAMERA.maxPolarAngle,
+          Math.max(1e-4, deg * DEG),
+        );
+        camera.position
+          .copy(controls.target)
+          .add(new THREE.Vector3().setFromSpherical(spherical));
+        controls.update();
+      },
+      setDistance(m) {
+        const offset = camera.position.clone().sub(controls.target);
+        offset.setLength(
+          Math.min(
+            EDITOR_CAMERA.maxDistanceM,
+            Math.max(EDITOR_CAMERA.minDistanceM, m),
+          ),
+        );
+        camera.position.copy(controls.target).add(offset);
+        controls.update();
+      },
+      stats() {
+        const now = tourNow;
+        return {
+          frames,
+          near: camera.near,
+          far: camera.far,
+          tiltDeg: cam.tiltDeg(),
+          standing,
+          ...layer.stats(),
+          osm: ground.osm.stats(),
+          ground: (now?.stations ?? []).map((s) => ({
+            id: s.id,
+            drawnM: s.geo.alt - undulationAt(s.geo),
+            groundM: ground.groundAt(s.geo.lat * DEG, s.geo.lon * DEG),
+          })),
+        };
+      },
+    };
+  } catch (error) {
+    dispose();
+    throw error;
+  }
 }

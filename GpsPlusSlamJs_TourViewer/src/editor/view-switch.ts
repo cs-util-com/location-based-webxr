@@ -50,6 +50,8 @@ const FAILURE_TEXT: Readonly<Record<View3dFailure, string>> = {
     "The 3D view stopped: the browser reset its graphics. The map shows the tour; try the 3D view again.",
   empty:
     "This tour has nothing with a position to show in 3D yet. The map shows the tour.",
+  error:
+    "The 3D view stopped on an error. The map shows the tour; try the 3D view again.",
 };
 
 /** What the page says when the 3D view fails for `reason`. */
@@ -59,14 +61,12 @@ export function view3dFailureText(reason: View3dFailure): string {
 
 const REASONS = new Set<string>(Object.keys(FAILURE_TEXT));
 
-/** The failure an open's error names, or the chunk's. */
+/** The failure an open's error names (its `reason`), or `error`. */
 function reasonOf(error: unknown): View3dFailure {
   const reason = (error as { reason?: unknown } | null)?.reason;
-  return typeof reason === "string" &&
-    REASONS.has(reason) &&
-    reason !== "context-lost"
+  return typeof reason === "string" && REASONS.has(reason)
     ? (reason as View3dFailure)
-    : "chunk";
+    : "error";
 }
 
 /** The part of a button this module uses (structural, for tests). */
@@ -75,6 +75,13 @@ export interface ViewSwitchButton {
   disabled: boolean;
   readonly dataset: Record<string, string | undefined>;
   addEventListener(type: "click", listener: () => void): void;
+}
+
+/** What the 3D view reports once it is asked for: its WebGL context lost,
+ *  or an error that stopped its drawing (while it loads or once shown). */
+export interface View3dEvents {
+  contextLost(): void;
+  failed(): void;
 }
 
 /** A shown 3D view, as the switch holds it. */
@@ -111,7 +118,7 @@ export interface ViewSwitch {
 export function createViewSwitch(deps: {
   readonly button: ViewSwitchButton;
   readonly store: ViewSwitchStore;
-  readonly open: (events: { contextLost(): void }) => Promise<View3dHandle>;
+  readonly open: (events: View3dEvents) => Promise<View3dHandle>;
   readonly say: (text: string) => void;
   readonly onShown?: (on: boolean) => void;
 }): ViewSwitch {
@@ -157,12 +164,20 @@ export function createViewSwitch(deps: {
     const mine = ++attempt;
     let opened: View3dHandle;
     try {
+      // A view that stops, while it loads or once shown, lands on the map
+      // with the reason said; one already left says nothing.
+      const stopped = (reason: "context-lost" | "error") => {
+        if (mine !== attempt) return;
+        const loading = view === null && ui().view3dLoad === "loading";
+        if (!loading && view !== opened) return;
+        // A view that still arrives for this open is dropped.
+        if (loading) attempt++;
+        leave(editorViewActions.view3dFailed({ reason }));
+        deps.say(view3dFailureText(reason));
+      };
       opened = await deps.open({
-        contextLost: () => {
-          if (mine !== attempt || view !== opened) return;
-          leave(editorViewActions.view3dFailed({ reason: "context-lost" }));
-          deps.say(view3dFailureText("context-lost"));
-        },
+        contextLost: () => stopped("context-lost"),
+        failed: () => stopped("error"),
       });
     } catch (error) {
       if (mine !== attempt || ui().view3dLoad !== "loading") return;

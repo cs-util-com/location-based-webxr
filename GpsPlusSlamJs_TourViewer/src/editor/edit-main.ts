@@ -2698,14 +2698,23 @@ element("open-fineprint").textContent = saveFinePrint(
  * is imported here, at the click, never before; it reads the tour and the
  * selection from the store, and its photos and models from the copy the
  * page reads now. A failure is said and kept until closed (the async-UI
- * rule: the creator asked for something that did not happen).
+ * rule: the creator asked for something that did not happen), or until a
+ * later open shows the view: then it says what is no longer so.
  */
 const view3dBox = element("view3d");
+let view3dFailureToast: HTMLElement | null = null;
 const viewSwitch = createViewSwitch({
   button: element<HTMLButtonElement>("view-switch"),
   store,
   open: async (events) => {
-    const { openEditor3d } = await import("../editor3d/editor3d-scene.js");
+    // A module that does not arrive is the connection's (`chunk`).
+    const { openEditor3d } =
+      await import("../editor3d/editor3d-scene.js").catch((error: unknown) => {
+        throw Object.assign(
+          new Error(`the 3D view did not load: ${String(error)}`),
+          { reason: "chunk" },
+        );
+      });
     const view = await openEditor3d({
       container: view3dBox,
       credits: element("view3d-credits"),
@@ -2728,10 +2737,16 @@ const viewSwitch = createViewSwitch({
     return handle;
   },
   say: (text) => {
-    fileToasts.push(toast(text, undefined, null));
+    view3dFailureToast?.remove();
+    view3dFailureToast = toast(text, undefined, null);
+    fileToasts.push(view3dFailureToast);
   },
   onShown: (on) => {
     view3dBox.hidden = !on;
+    if (on) {
+      view3dFailureToast?.remove();
+      view3dFailureToast = null;
+    }
     // The card and its chip belong to the map; back on it, they return.
     showCard();
   },

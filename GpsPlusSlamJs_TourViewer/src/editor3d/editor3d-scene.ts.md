@@ -16,10 +16,13 @@ the map page's own code nor the phone's pages hold any of it.
   - `store` - the page's store (`tourDocument`, `editorView`);
   - `levels()` - the open tour's codes; `loadContent(entry)` - a content
     entry's bytes;
-  - `events.contextLost()` - called when WebGL loses the context later.
+  - `events.contextLost()` / `events.failed()` - once the view shows, its
+    WebGL context lost, or an error in a frame that stopped its drawing.
   - Rejects with an error whose `reason` is `empty` (nothing with a
-    position) or `webgl` (no WebGL); any other rejection (the geoid's
-    chunk) the view switch reads as `chunk`.
+    position), `webgl` (no WebGL), `chunk` (the geoid's module did not
+    arrive) or `context-lost` (lost before the first frame); an error in
+    a frame before the first one rejects with that error (the switch
+    says `error`).
 - `Editor3dView`: `dispose()`; `stats()` (`Editor3dStats`: frames, the
   last frame's clip planes `near` and `far`, tilt, standing, the stations layer's counts, the map's stats, and each
   station's drawn height and the drawn ground under it); `setTilt(deg)`
@@ -52,8 +55,14 @@ the map page's own code nor the phone's pages hold any of it.
   follows the box and keeps the billboards' screen size.
 - **The geoid** (`gps-plus-slam-osm/elevation/egm96`, about 170 KB) is
   imported here, so only the 3D view pays for it.
-- `dispose()` is idempotent and frees the loop, the listeners, the layer,
-  the ground, the controls, the renderer, the canvas and the credits.
+- **Nothing outlives a failure:** everything made after the renderer is
+  pushed on an undo list as it is made; `dispose()` runs it last first
+  (idempotent; a step that fails leaves the rest to run), and so
+  does a failure before the first frame, so a failed open leaves no
+  canvas, renderer, listener or credits behind.
+- **The frame loop never freezes silently:** an error in a frame stops
+  the loop; before the first frame the open rejects with
+  it, after it `events.failed()` is called.
 
 ## Examples
 
@@ -83,5 +92,7 @@ orbit's far end and under 2 m beside a station, the map asked for
 at the start view, the morph at 8 and 42 degrees, the map again with the
 selection and the save status kept, and nothing asking for the globe's
 imagery; and a 3D view whose code cannot load landing back on the map,
-said. `editor3d-lazy.test.ts` checks no page loads it before an
+said; a later open that shows the view taking the earlier failure's
+line away; a first frame that fails landing on the map, said, with no
+canvas and no credits left. `editor3d-lazy.test.ts` checks no page loads it before an
 `import()` runs.

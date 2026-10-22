@@ -33,7 +33,8 @@ chrome reads, one copy for every view of the page.
     and WebGL are coming) or `"failed"` (the last load failed; the map
     shows);
   - `view3dFailure` - why the last load or the shown view failed
-    (`View3dFailure`: `chunk`, `webgl`, `context-lost`, `empty`), or null.
+    (`View3dFailure`: `chunk`, `webgl`, `context-lost`, `empty`, `error`),
+    or null.
 - `editorViewActions`:
   - `selected({ id })`;
   - `busyChanged({ busy })`, `doneBusyChanged({ busy })`,

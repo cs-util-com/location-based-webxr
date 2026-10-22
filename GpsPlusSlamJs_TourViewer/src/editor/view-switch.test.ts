@@ -48,12 +48,18 @@ function opener() {
     resolve: (view: View3dHandle) => void;
     reject: (err: unknown) => void;
     contextLost: () => void;
+    failed: () => void;
   }[] = [];
   return {
     calls,
-    open: (events: { contextLost(): void }) =>
+    open: (events: { contextLost(): void; failed(): void }) =>
       new Promise<View3dHandle>((resolve, reject) => {
-        calls.push({ resolve, reject, contextLost: events.contextLost });
+        calls.push({
+          resolve,
+          reject,
+          contextLost: () => events.contextLost(),
+          failed: () => events.failed(),
+        });
       }),
   };
 }
@@ -123,9 +129,20 @@ describe("createViewSwitch", () => {
   it.each<[string, unknown, View3dFailure]>([
     [
       "chunk",
-      new TypeError("Failed to fetch dynamically imported module"),
+      Object.assign(
+        new TypeError("Failed to fetch dynamically imported module"),
+        {
+          reason: "chunk",
+        },
+      ),
       "chunk",
     ],
+    [
+      "context-lost",
+      Object.assign(new Error("lost"), { reason: "context-lost" }),
+      "context-lost",
+    ],
+    ["an error without a reason", new TypeError("x is undefined"), "error"],
     [
       "webgl",
       Object.assign(new Error("no WebGL"), { reason: "webgl" }),
@@ -135,7 +152,7 @@ describe("createViewSwitch", () => {
     [
       "a reason it does not know",
       Object.assign(new Error("x"), { reason: "odd" }),
-      "chunk",
+      "error",
     ],
   ])(
     "lands on the map with the reason said when the load fails (%s)",
@@ -176,6 +193,44 @@ describe("createViewSwitch", () => {
     // And the switch opens it again.
     b.click();
     expect(o.calls).toHaveLength(2);
+  });
+
+  // Why: a context lost while the view loads (the browser resets the
+  // graphics before the first frame) reached a switch with no view yet and
+  // was dropped: the open then resolved on a black canvas. The load must
+  // end on the map, said, and the late view be disposed.
+  it("lands on the map, said, when the context is lost while it loads", async () => {
+    const { b, o, said, shown, ui } = setup();
+    b.click();
+    o.calls[0]!.contextLost();
+    expect(ui()).toMatchObject({
+      viewMode: "2d",
+      view3dLoad: "failed",
+      view3dFailure: "context-lost",
+    });
+    expect(b.textContent).toBe(VIEW_SWITCH_LABELS.idle);
+    expect(said).toEqual([view3dFailureText("context-lost")]);
+    const v = view();
+    o.calls[0]!.resolve(v);
+    await settle();
+    expect(v.disposed).toBe(1);
+    expect(ui().viewMode).toBe("2d");
+    expect(shown).toEqual([]);
+  });
+
+  // Why: an error in the shown view's frame loop stops its drawing; the
+  // page must go back to the map with a reason, as for a lost context.
+  it("falls back to the map, said, when the shown view fails", async () => {
+    const { b, o, said, shown, ui } = setup();
+    b.click();
+    const v = view();
+    o.calls[0]!.resolve(v);
+    await settle();
+    o.calls[0]!.failed();
+    expect(ui()).toMatchObject({ viewMode: "2d", view3dFailure: "error" });
+    expect(v.disposed).toBe(1);
+    expect(said).toEqual([view3dFailureText("error")]);
+    expect(shown).toEqual([true, false]);
   });
 
   it("drops a view that arrives after the creator left the load", async () => {
@@ -265,12 +320,21 @@ describe("createViewSwitch", () => {
 
 describe("view3dFailureText", () => {
   it("names each failure in plain words, and says the map shows the tour", () => {
-    for (const reason of ["chunk", "webgl", "context-lost", "empty"] as const) {
+    for (const reason of [
+      "chunk",
+      "webgl",
+      "context-lost",
+      "empty",
+      "error",
+    ] as const) {
       const text = view3dFailureText(reason);
       expect(text.length).toBeGreaterThan(20);
       expect(text).not.toMatch(/undefined|null/);
     }
     expect(view3dFailureText("webgl")).toMatch(/WebGL/);
     expect(view3dFailureText("context-lost")).toMatch(/map/);
+    // Only a chunk that did not load is the connection's.
+    expect(view3dFailureText("chunk")).toMatch(/connection/);
+    expect(view3dFailureText("error")).not.toMatch(/connection/);
   });
 });
