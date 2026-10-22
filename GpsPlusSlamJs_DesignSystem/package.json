@@ -15,6 +15,7 @@
     "shoot": "node shoot.mjs",
     "shoot:3d": "node shoot-3d.mjs",
     "measure:globe": "node measure-globe.mjs",
+    "measure:city": "node measure-city-load.mjs",
     "serve": "node serve.mjs",
     "vendor": "node vendor.mjs",
     "leaks": "node leaks.mjs"

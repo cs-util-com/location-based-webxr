@@ -1,7 +1,7 @@
 # Globe imagery provenance
 
 Written by `scripts/fetch-globe-assets.mjs` (globe plan 2026-09-26-0539
-§7.4). Fetched: 2026-09-29; files added: 2026-09-30. All sources are NASA, public domain; the
+§7.4). Fetched: 2026-09-29; files added: 2026-10-09. All sources are NASA, public domain; the
 globe's credits line names each. Every file is WebP at quality
 75, encoded once from a lossless source (round-4 plan
 2026-09-28-2105 DEC-GL4-10).
@@ -17,8 +17,17 @@ globe's credits line names each. Every file is WebP at quality
 - `equirect/night-2016-2048.webp`: NASA Black Marble (VIIRS), 2016, via
   NASA GIBS (WMS `VIIRS_Black_Marble` as PNG, TIME 2016-01-01, 2048x1024,
   60 KiB).
-- `equirect/clouds-2048.webp`: NASA Visible Earth, Blue Marble clouds
-  (R. Stöckli), `cloud_combined_2048.tif` (2048x1024, 346 KiB).
+- `equirect/clouds-8192-{col}-{row}.webp` and `equirect/clouds-1024.webp`:
+  NASA Visible Earth, Blue Marble clouds (R. Stöckli),
+  `cloud_combined_8192.tif` (8192x4096) at full resolution, its date-line
+  seam eased over 16 columns from each edge (the source's edges do
+  not match), cut into four 4096x2048 pieces (column 0 the west, row 0 the
+  north), 3885 KiB, and resampled (Lanczos) to a
+  1024x512 preview, 102 KiB. Its Visible Earth record (image 57747)
+  now redirects to a generic page; the file still downloads from NASA's
+  image server. The clouds are the 2002 Blue Marble's, which has no live
+  page of its own: the credit links NASA's Blue Marble: Next Generation
+  page, its successor by the same author.
 
 We acknowledge the use of imagery provided by services from NASA's Global
 Imagery Browse Services (GIBS), part of NASA's Earth Science Data and

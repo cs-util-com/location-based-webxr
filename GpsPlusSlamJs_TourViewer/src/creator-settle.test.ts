@@ -138,7 +138,6 @@ describe("the settle hands the planner every code of the visit (M4c-2)", () => {
         }),
       },
       draft: {
-        saveMeta: () => Promise.resolve(true),
         warnNoBackup: () => undefined,
         recordVisit: () => undefined,
       },

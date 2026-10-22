@@ -34,7 +34,7 @@ import {
   createUnwiredHooks,
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
-import { endQrPipeline } from "./tour-viewer-session.js";
+import { endQrPipeline, type TourViewerStore } from "./tour-viewer-session.js";
 import { wireCreatorSetup, type CreatorSetupDom } from "./creator-setup.js";
 import type { CodeTourStatus, ScanOpen } from "./scan-open.js";
 import { readSideM, writeSideM } from "./printed-side.js";
@@ -312,6 +312,10 @@ describe("the creator measures and mints with the fused pose", () => {
     "objectList",
     "keepScanRow",
     "keepScanInput",
+    "debugSave",
+    "debugSaveText",
+    "debugSaveButton",
+    "debugSaveStatus",
   ] as const;
   function el() {
     const handlers = new Map<string, () => void>();
@@ -333,9 +337,7 @@ describe("the creator measures and mints with the fused pose", () => {
   /** The real store, with a solved GPS alignment laid over its state: the
    *  detections still flow through the real reducers, and the mint gate's
    *  second half (the alignment) is met, so Save can unlock. */
-  function alignedOver(
-    real: ReturnType<typeof createTourViewerStore>,
-  ): ReturnType<typeof createTourViewerStore> {
+  function alignedOver(real: TourViewerStore): TourViewerStore {
     const gpsData = {
       zero: { lat: 47.5, lon: 8.7 },
       gpsEvents: {

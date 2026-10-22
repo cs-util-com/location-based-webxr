@@ -16,6 +16,7 @@ import type { TourSession } from "./tour-session.js";
 import {
   createTourViewerSession,
   createTourViewerStore,
+  type TourViewerStore,
 } from "./tour-viewer-session.js";
 
 const ZERO = { lat: 47.5, lon: 8.7 };
@@ -52,7 +53,7 @@ function harness(objects: readonly AuthoringObject[]) {
   const arStore = {
     ...real,
     getState: () => ({ ...real.getState(), gpsData: { zero: ZERO } }) as never,
-  } as unknown as ReturnType<typeof createTourViewerStore>;
+  } as unknown as TourViewerStore;
   const scene = new Group();
   const decoded: Blob[] = [];
   const previews = wireCreatorPreviews({

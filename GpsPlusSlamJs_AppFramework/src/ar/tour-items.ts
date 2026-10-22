@@ -1,7 +1,8 @@
 /**
  * A station's ITEMS in `tour.json` version 3 (tour editor plan
- * 2026-10-17-1816, W3): the text pins and captured photos a creator placed,
- * each with a LOCAL pose relative to its station (`tour-stations.ts`). A
+ * 2026-10-17-1816, W3): the text pins, captured photos and 3D models a
+ * creator placed, each with a LOCAL pose relative to its station
+ * (`tour-stations.ts`). A
  * station carries the geo pose; its items move with it (D17: a station
  * moves rigidly, its items' local poses never change).
  *
@@ -10,10 +11,26 @@
  * (`TourObject`, which carries a geo pose instead of a local one), so the
  * two parsers can never disagree about what a pin or a photo is (DEC-H3).
  *
+ * A placed MODEL (minor 1, the editor's round-3 decision on sizes) names a
+ * model asset of the tour's `assets` (`tour-stations.ts` resolves the
+ * reference, since only it sees the assets) and carries its size in METRES:
+ * the scaled model's largest side, from {@link TOUR_MODEL_MIN_SIZE_M} to
+ * {@link TOUR_MODEL_MAX_SIZE_M}. A factor would be the wrong unit for a
+ * bound: its sensible range depends on the model's own size (a 0.1 m model
+ * at 100x is 10 m, a 20 m one 2 km). "Largest side" is measured ONE way,
+ * by every renderer and the editor: the axis-aligned box of the glTF's
+ * default scene at rest pose, node transforms included, in the glb's own
+ * units (glTF metres), before the item's own rotation - the largest of its
+ * three extents. The scale factor is `sizeM` over that length. Pins and
+ * photos have no size: they keep the fixed size they are drawn at.
+ *
  * Defensive by the rule of `tour-manifest.ts`: hand-editable external data,
  * every field checked at the boundary. LENIENT for a newer minor (K1
- * milestone review R4): an item of an unknown kind, or a photo of an image
- * type this reader does not know, is left out instead of failing the tour.
+ * milestone review R4): an item of an unknown kind, a photo of an image
+ * type this reader does not know, or a model whose positive size lies
+ * beyond this reader's bound (a later minor may widen it), is left out
+ * instead of failing the tour. A size that is not a positive finite number
+ * fails at every minor: no revision can make it a size.
  *
  * @see tour-items.ts.md
  */
@@ -41,9 +58,16 @@ export type TourLocalPose = Pose;
  */
 export const TOUR_ITEM_MAX_OFFSET_M = 10_000;
 
-/** What a pin or a photo is, wherever it stands. */
+/** The smallest a placed model's largest side may be (m), inclusive. */
+export const TOUR_MODEL_MIN_SIZE_M = 0.05;
+/** The largest a placed model's largest side may be (m), inclusive. */
+export const TOUR_MODEL_MAX_SIZE_M = 500;
+
+/** What a pin, a photo or a model is, wherever it stands. */
 interface TourContentBase {
-  /** Short id, unique in the tour; also the content file's stem. */
+  /** Short id, unique in the tour among items and assets alike (one id
+   *  namespace). For a photo also its content file's stem; a model's file
+   *  is named by its asset. */
   readonly id: string;
   /** ISO-8601 timestamp of the placement (must parse as a date). */
   readonly createdAtIso: string;
@@ -68,13 +92,27 @@ export interface TourPhotoFields extends TourContentBase {
   readonly label?: string;
 }
 
-export type TourContentFields = TourPinFields | TourPhotoFields;
+/** A placed 3D model's own fields. */
+export interface TourModelFields extends TourContentBase {
+  readonly kind: 'model';
+  /** The id of a model asset of the tour (`assets`, a `.glb`). */
+  readonly asset: string;
+  /** The scaled model's largest side, in metres, within the bounds. */
+  readonly sizeM: number;
+  /** An optional caption. */
+  readonly label?: string;
+}
+
+export type TourContentFields =
+  TourPinFields | TourPhotoFields | TourModelFields;
 
 /** A pin of a station, at its local pose. */
 export type TourPinItem = TourPinFields & { readonly pose: TourLocalPose };
 /** A photo of a station, at its local pose. */
 export type TourPhotoItem = TourPhotoFields & { readonly pose: TourLocalPose };
-export type TourItem = TourPinItem | TourPhotoItem;
+/** A model of a station, at its local pose. */
+export type TourModelItem = TourModelFields & { readonly pose: TourLocalPose };
+export type TourItem = TourPinItem | TourPhotoItem | TourModelItem;
 
 /** The content path's extension, after `content/<id>.`. */
 const IMAGE_ENTRY = /^content\/[A-Za-z0-9_-]+\.([a-z0-9]{1,5})$/;
@@ -154,6 +192,44 @@ function parsePhoto(
   };
 }
 
+/** Within this reader's bound for a model's size. */
+function isModelSizeInBounds(sizeM: number): boolean {
+  return sizeM >= TOUR_MODEL_MIN_SIZE_M && sizeM <= TOUR_MODEL_MAX_SIZE_M;
+}
+
+/**
+ * A model's fields, or null when a lenient reader meets a positive size
+ * beyond its bound (a newer minor's). Refused, never clamped: a clamp
+ * would make the next save rewrite the creator's number without a word,
+ * and a size outside the bound in a file of this minor is a broken file.
+ */
+function parseModel(
+  value: Record<string, unknown>,
+  at: string,
+  fail: Fail,
+  lenient: boolean
+): TourModelFields | null {
+  const base = parseBase(value, at, fail);
+  const { asset, sizeM } = value;
+  if (typeof asset !== 'string' || !TOUR_ID_PATTERN.test(asset)) {
+    fail(`"${at}.asset" must name a model asset (a short path-safe id)`);
+  }
+  const sizeMessage = `"${at}.sizeM" must be a number of metres from ${String(TOUR_MODEL_MIN_SIZE_M)} to ${String(TOUR_MODEL_MAX_SIZE_M)}`;
+  if (!isFiniteNumber(sizeM) || sizeM <= 0) fail(sizeMessage);
+  if (!isModelSizeInBounds(sizeM)) {
+    if (lenient) return null;
+    fail(sizeMessage);
+  }
+  const label = nonEmptyLabel(value.label);
+  return {
+    ...base,
+    kind: 'model',
+    asset,
+    sizeM,
+    ...(label === undefined ? {} : { label }),
+  };
+}
+
 /** A photo whose image is of a media type this reader does not know: a
  *  newer minor's, so a lenient reader leaves the item out (R4). */
 function isUnknownImageType(value: Record<string, unknown>): boolean {
@@ -165,7 +241,7 @@ function isUnknownImageType(value: Record<string, unknown>): boolean {
 }
 
 /**
- * The kind-specific fields of a pin or a photo at `at`, or null when a
+ * The kind-specific fields of a pin, a photo or a model at `at`, or null when a
  * lenient reader cannot show it (R4). Shared by the station item and the
  * world-view object (`tour-manifest.ts` `parseTourObject`).
  */
@@ -183,9 +259,11 @@ export function parseTourContentFields(
     case 'photo':
       if (lenient && isUnknownImageType(value)) return null;
       return parsePhoto(value, at, fail);
+    case 'model':
+      return parseModel(value, at, fail, lenient);
     default:
       if (lenient) return null;
-      return fail(`"${at}.kind" must be "pin" or "photo"`);
+      return fail(`"${at}.kind" must be "pin", "photo" or "model"`);
   }
 }
 
