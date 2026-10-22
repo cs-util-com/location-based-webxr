@@ -275,6 +275,7 @@ describe('narrowed root paths and doc-only markdown', () => {
     'GpsPlusSlamJs_Globe',
     'GpsPlusSlamJs_DesignSystem',
     'GpsPlusSlamJs_TourViewer',
+    'GpsPlusSlamJs_Osm',
   ];
   const sel = (
     /** @type {string[]} */ paths,
@@ -387,6 +388,14 @@ describe('narrowed root paths and doc-only markdown', () => {
         'public/ is shipped as it is',
       ],
       ['GpsPlusSlamJs_TourViewer/public/notes.ts.md', 'public/ is shipped as it is'],
+      [
+        'GpsPlusSlamJs_DesignSystem/labs/terrain/fixtures/README.md',
+        'the terrain fixtures budget sums every file under fixtures/',
+      ],
+      [
+        'GpsPlusSlamJs_Osm/src/testdata/README.md',
+        'testdata/ is test input, read by the tests that load it',
+      ],
     ]) {
       const dir = path.split('/')[0];
       // The Globe keeps its served-by edge to the design system too.

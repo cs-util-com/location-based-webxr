@@ -78,19 +78,22 @@ const ROOT_NARROW = [
 
 /**
  * Package markdown that no package stage reads as input: a sidecar (`name.ext.md`), a README or CHANGELOG, or
- * anything under a `docs/` dir; never anything under `assets/` or `public/`.
+ * anything under a `docs/` dir; never anything under `assets/`, `public/`,
+ * `fixtures/` or `testdata/`.
  * The free-standing markdown a stage does read keeps its package gate by not
  * matching: the design system's `hud-design-brief.md` (check-tokens.mjs), a
  * fixtures `PROVENANCE.md` (terrain-fixtures.test.mjs). `assets/` is out
  * because the Globe's asset budget sums every file there and the design
- * system's lookdev build lists its README; `public/` because it is shipped.
+ * system's lookdev build lists its README; `public/` because it is shipped;
+ * `fixtures/` and `testdata/` because they are test input (the terrain
+ * fixtures budget sums every file under its `fixtures/`).
  *
  * @param {string} path - normalized, inside a package
  * @returns {boolean}
  */
 function isPackageDocMarkdown(path) {
   if (!path.toLowerCase().endsWith('.md')) return false;
-  if (/\/(?:assets|public)\//.test(path)) return false;
+  if (/\/(?:assets|public|fixtures|testdata)\//.test(path)) return false;
   const base = path.split('/').pop() ?? '';
   return (
     /\.[A-Za-z0-9]+\.md$/.test(base) ||

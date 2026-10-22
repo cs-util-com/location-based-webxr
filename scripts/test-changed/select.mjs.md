@@ -5,7 +5,7 @@
   dependents the shell then adds via pnpm's workspace graph).
 - Public API: `selectPackages({ trackedChanges, untracked, packageDirs }) →
   { mode: 'all', reason } | { mode: 'packages', packages, rootChecks?,
-  rootFiles?, docsOnly? }` — `packages` is sorted and deduped; `reason` is
+  rootFiles?, docsOnly? }`: `packages` is sorted and deduped; `reason` is
   the first path that forces the cascade; the three optional lists appear
   only when non-empty (see "Narrowed changes" below). `docOnlyDirs(docsOnly)`
   maps doc-only files to their package dirs; `describeRun(selection, ref)` is
@@ -43,7 +43,7 @@ The command SPLIT, kept pure so DEC-G2 is testable. Emits, in order:
    consumer: a fresh dist costs one mtime walk, and the selections it could
    skip are rare. FIRST, before the repo-config tests, because one of them
    (`framework-dts-portability.test.js`) reads `dist` when present;
-2. `pnpm run test:repo-config` — always; cheap, and it guards the config
+2. `pnpm run test:repo-config`, always: cheap, and it guards the config
    this logic itself reads;
    - then each doc-only package's `format` stage and each root check
      (`check:deadcode`), see "Narrowed changes" below;
@@ -83,11 +83,11 @@ owner decision filed with the W7 M0 record. Tested in `select.test.mjs`
 ## Narrowed changes: what a change can skip
 
 A path whose every reader is known needs those readers, not the whole
-cascade. Replayed over the 1,771 non-merge commits from 2026-08-21 to
-2026-10-21 (each commit's own file list, today's package list), the
-full cascade falls from 154 commits to 64, and 51 commits drop a package
+cascade. Replayed over the about 1,770 non-merge commits of the two months
+to 2026-10-22 (each commit's own file list, today's package list), the
+full cascade falls from 156 commits to 66, and 49 commits drop a package
 gate for doc-only markdown. Most of what remains is the lockfile (25),
-the gate tooling (19) and `package.json` (9).
+the gate tooling (21) and `package.json` (9).
 
 - `tests/repo-config/**`
   - runs: build, repo-config, `check:deadcode`;
@@ -102,8 +102,8 @@ the gate tooling (19) and `package.json` (9).
   - runs: repo-config;
   - read by: CI and the editor; locally only the `cla-config` guard.
 - package doc markdown: a sidecar `name.ext.md`, a `README.md` or
-  `CHANGELOG.md`, or any `.md` under a `docs/` dir, never under `assets/`
-  or `public/`
+  `CHANGELOG.md`, or any `.md` under a `docs/` dir, never under `assets/`,
+  `public/`, `fixtures/` or `testdata/`
   - runs: repo-config and that package's `format` stage;
   - read by: its `format` stage and the repo-config guards.
 - anything else outside a package
@@ -127,6 +127,9 @@ the gate tooling (19) and `package.json` (9).
     `globe-sources.test.ts`;
   - `GpsPlusSlamJs_DesignSystem/assets/README.md`, listed by
     `build-lookdev.test.mjs`;
+  - anything under a `fixtures/` or `testdata/` dir, which is test input
+    (the terrain fixtures budget sums every file under its `fixtures/`, a
+    README there included; `GpsPlusSlamJs_Osm/src/testdata/` holds READMEs);
   - and anything under a `public/` dir, which is shipped as it is.
 - **Stays on the full cascade:** `pnpm-lock.yaml`, `package.json`,
   `pnpm-workspace.yaml`, `patches/**`, `.nvmrc` (shared inputs);
