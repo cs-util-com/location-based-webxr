@@ -52,9 +52,7 @@ camera captures are debug data, never in a station (an earlier file's
   station carries the creator's own work, which keeps it when its last
   item leaves: a title, story steps, a non-blank description (a blank one
   is none, as the reader reads it, and as a blank title), or a card image naming
-  one of `imageAssets` (G2 build plan
-  `GpsPlusSlamJs_Docs/docs/2026-10-21-2247-g2-3d-editor-build-plan.md`,
-  §4.2.4). The one rule both this write (`withTourContent`) and the tour
+  one of `imageAssets`. The one rule both this write (`withTourContent`) and the tour
   document (`withoutEmptied`) ask.
 - `imageAssetIds(assets) -> ReadonlySet<string>`: the image assets' ids,
   through the framework's `tourImageIds` (what `keepsItself` takes).
@@ -104,12 +102,12 @@ camera captures are debug data, never in a station (an earlier file's
   (`withoutEmptied`); this covers a written station the document's frames
   no longer name.
 - **A card image keeps a station only while it still names a picture.**
-  The plan's rule is "a description or an image keeps a station" (G2 build
-  plan §4.2.4); read here as an image that still resolves. An emptied
+  "A description or an image keeps a station" is read here as an image
+  that still resolves. An emptied
   station holds no photo, so a card image of its own (now moved or
   deleted) photo names nothing: the framework's writer drops it
   (`station-image-gone`), and keeping the station for it would leave the
-  bare spot D20 removes. An image asset still resolves, so it keeps the
+  bare spot the station rule removes. An image asset still resolves, so it keeps the
   station.
 - The order of the world view read back is the stations' order, then the
   items' order within each station, which can differ from the order the

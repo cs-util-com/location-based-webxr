@@ -69,8 +69,8 @@ reducers' building blocks, so a page cannot apply them differently.
   (in place or downloaded, under which name), `largeTour`, `cannotSave`,
   `inPlaceAt` and `resave` (D33, below).
 
-- `newStationArmed` - the phone's "New station here" is armed (owner
-  decision D8 of `GpsPlusSlamJs_Docs/docs/2026-10-18-2210-editor3d-prototypes-round-2-plan.md`): the next placement starts its own station. An
+- `newStationArmed` - the phone's "New station here" is armed: the
+  next placement starts its own station. An
   authoring flag of the page, kept here because this is the slice that
   holds the page's authoring state (the save slot too); `tourAuthoring/*`
   has no reducer by design. Not an edit: no history, no revision, no draft
@@ -595,7 +595,7 @@ store.dispatch(tourDocumentActions.undone());
   names one of the document's stations and no empty automatic station
   stays; from a tour whose stations carry any mix of descriptions and card
   images, no station a description or an image asset keeps ever leaves the
-  frames or the written file (G2 build plan M1a); an undo of a placement
+  frames or the written file; an undo of a placement
   gives the stations back exactly.
 - `tour-document-parity.test.ts` - the phone's and the desktop's paths
   write the same tour and draft, the station rule included (a pin

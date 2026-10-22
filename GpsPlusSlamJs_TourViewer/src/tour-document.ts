@@ -273,8 +273,8 @@ export interface TourDocumentState {
    *  (`save.inPlaceAt`). */
   readonly position: number;
   readonly save: TourSaveStatus;
-  /** The phone's "New station here" is armed (owner decision D8 of the
-   *  editor round-2 plan): the next placed item starts its own station.
+  /** The phone's "New station here" is armed: the next placed item
+   *  starts its own station.
    *  An authoring flag of the page, not of the tour - no edit, no undo
    *  step, no draft write; gone with the tour (`opened`, `closed`). */
   readonly newStationArmed: boolean;

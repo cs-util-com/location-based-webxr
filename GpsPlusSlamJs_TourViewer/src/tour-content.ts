@@ -205,7 +205,7 @@ export function imageAssetIds(
 
 /**
  * Whether an EMPTY station carries the creator's own work, which keeps it
- * when its last item leaves (D20; G2 build plan 2026-10-21-2247, §4.2.4):
+ * when its last item leaves:
  * a title, story steps, a non-blank description, or a card image naming
  * one of the tour's image assets (`imageAssets`). An image of the
  * station's own photo keeps nothing here: an emptied station holds no
