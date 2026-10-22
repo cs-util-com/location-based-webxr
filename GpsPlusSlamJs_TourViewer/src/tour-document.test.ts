@@ -32,6 +32,7 @@ import {
   documentObjects,
   effectiveDetails,
   framesOf,
+  historyAssetIds,
   initialTourDocumentState,
   manifestNow,
   manifestToWrite,
@@ -416,6 +417,62 @@ describe("tour document: a station's frame (D17)", () => {
       }),
     );
     expect(next).toEqual(state);
+  });
+});
+
+describe("tour document: a station's description and card image (G2 build plan M1a)", () => {
+  // Why: a station's description and card image (format minor 2) are the
+  // creator's work on the station, as its title is: deleting the
+  // station's last item must not delete the station with them, and an
+  // image asset a card shows must survive every write while the history
+  // can still step back to it (G2 build plan 2026-10-21-2247, §4.2.4).
+  const ART = {
+    id: "art",
+    path: "content/art.png",
+    kind: "image",
+  } as const;
+  /** OPENED with its image asset, `extra` on the station of `objectId`. */
+  function openedWith(
+    objectId: string,
+    extra: Partial<TourStation>,
+  ): TourDocumentState {
+    return open({
+      ...OPENED,
+      assets: [ART],
+      stations: OPENED.stations.map((s) =>
+        s.id === stationIdOf(objectId) ? { ...s, ...extra } : s,
+      ),
+    });
+  }
+  const stationIds = (state: TourDocumentState) => ({
+    frames: state.stations.map((s) => s.id),
+    written: manifestToWrite(state)!.stations.map((s) => s.id),
+  });
+
+  it("deleting the last item of a station with a description keeps the station", () => {
+    let state = openedWith("b", { description: "The old well." });
+    state = reduce(state, act.deleted({ id: "b", what: "the delete" }));
+    const all = OPENED.stations.map((s) => s.id);
+    expect(stationIds(state)).toEqual({ frames: all, written: all });
+  });
+
+  it("an image asset keeps it too; an image of its own deleted photo keeps nothing", () => {
+    let pictured = openedWith("b", { image: "art" });
+    pictured = reduce(pictured, act.deleted({ id: "b", what: "the delete" }));
+    expect(stationIds(pictured).written).toContain(stationIdOf("b"));
+    let own = openedWith("f", { image: "f" });
+    own = reduce(own, act.deleted({ id: "f", what: "the delete" }));
+    expect(stationIds(own).frames).not.toContain(stationIdOf("f"));
+    expect(stationIds(own).written).not.toContain(stationIdOf("f"));
+  });
+
+  it("the history's card images are kept by a write: an image asset an earlier view names", () => {
+    let state = openedWith("a", { image: "art" });
+    state = reduce(
+      state,
+      act.settingsChanged({ needsNoGps: true, what: "setting" }),
+    );
+    expect(historyAssetIds(state).has("art")).toBe(true);
   });
 });
 

@@ -34,6 +34,19 @@ module.exports = {
       to: { path: "^src/editor/" },
     },
 
+    // The 3D editor (`src/editor3d/`) brings the globe and the 3D tiles
+    // renderer: like the desktop editor, the visitor's and the phone's
+    // pages must never reach it. That no module outside the editors
+    // imports those PACKAGES is held by `src/editor-only-packages.test.ts`
+    // (this config reads only `src/`, so a package import is invisible
+    // here).
+    {
+      name: "viewer-not-to-editor3d",
+      severity: "error",
+      from: { path: "^src/[^/]+\\.ts$", pathNot: "\\.test\\.ts$" },
+      to: { path: "^src/editor3d/" },
+    },
+
     // The walk's camera captures are debug data, shown only in the desktop
     // editor's debug layer (`src/editor/debug-capture-layer.ts`, M1 of the
     // debug-captures plan): no phone or visitor module places them, so

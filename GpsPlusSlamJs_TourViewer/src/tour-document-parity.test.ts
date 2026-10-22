@@ -48,7 +48,10 @@ import { objectContentKey } from "./authoring-draft.js";
 import { wireCreatorSetup, type CreatorSetupDom } from "./creator-setup.js";
 import { readDraft } from "./draft-persistence.js";
 import { createEditorDraft } from "./editor/editor-draft.js";
-import { createEditorSession } from "./editor/editor-session.js";
+import {
+  createEditorSession,
+  type EditorSession,
+} from "./editor/editor-session.js";
 import type { EditorLock } from "./editor/save-target.js";
 import type { ObjectListHandlers } from "./object-list.js";
 import {
@@ -206,6 +209,11 @@ interface Page {
   /** The stations the page holds now that the opened tour lacks: id and
    *  position, sorted by id. */
   addedStations(): AddedStation[];
+  /** The 3D editor's station edits, through the editor session (a
+   *  station's details, added, deleted, reordered or copied; an item
+   *  copied, grounded or moved into a station of its own): the desktop's
+   *  alone - the phone edits stations only by placing in AR. */
+  editStations(edit: (editor: EditorSession) => unknown): Promise<void>;
 }
 
 /** The desktop page, with its download (the save path's other half). */
@@ -349,6 +357,10 @@ async function desktopPage(
       draft.writes().moved(await tourFileKeyOfFile(saved));
       await draft.idle();
       return { file: saved, written: made.written };
+    },
+    editStations: async (edit) => {
+      await edit(editor);
+      await draft.idle();
     },
     records: async () => readRecords(await stores(key), false),
     objects: () =>
@@ -574,6 +586,10 @@ async function phonePage(
     },
     setNeedsNoGps: () =>
       Promise.reject(new NoSuchOperation("phone: the needs-no-GPS setting")),
+    editStations: () =>
+      Promise.reject(
+        new NoSuchOperation("phone: the 3D editor's station edits"),
+      ),
     setDetails: (change) => {
       if (change.description !== undefined || change.contact !== undefined) {
         return Promise.reject(
@@ -659,8 +675,22 @@ interface Row {
 
 const NORTH = 48.5205;
 
+/** Why the station rows run on the desktop alone. */
+const STATIONS_DESKTOP_ONLY =
+  "by design: the 3D editor's station edits are the desktop's; the phone edits stations only by placing in AR";
+
 /** The item ids of a written tour, station by station: the opened tour's
  *  stations, and the stations the write added. */
+/** A station's title, or its id when it has none. */
+function titleOrId(station: TourStation): string {
+  return station.title ?? station.id;
+}
+
+/** An item's kind. */
+function kindOf(item: TourStation["items"][number]): string {
+  return item.kind;
+}
+
 function itemsByStation(written: TourManifest): {
   opened: string[][];
   added: string[][];
@@ -980,6 +1010,107 @@ const ROWS: readonly Row[] = [
     },
   },
   {
+    // Why: a station's details are the 3D editor's (desktop only); they
+    // must reach the saved tour and survive a reload through the draft.
+    name: "rename a station and set its radius, reload and restore the draft, save",
+    records: false,
+    byDesign: true,
+    diverges: STATIONS_DESKTOP_ONLY,
+    run: async (p) => {
+      await p.editStations((e) =>
+        e.editStation("st-a", { title: "The gate", foundRadiusM: 40 }),
+      );
+      return p.reopenRestored();
+    },
+    each: ({ written }) => {
+      expect(written.stations.find((s) => s.id === "st-a")).toMatchObject({
+        title: "The gate",
+        foundRadiusM: 40,
+        activateRadiusM: 80,
+      });
+    },
+  },
+  {
+    // Why: an added, a deleted and a reordered station each change the
+    // tour's stations without any object's record naming them: only the
+    // draft's whole frames bring them back after a reload.
+    name: "add a station, delete another, reverse the order, reload and restore the draft, save",
+    records: false,
+    byDesign: true,
+    diverges: STATIONS_DESKTOP_ONLY,
+    run: async (p) => {
+      await p.editStations((e) => {
+        e.addStation({ lat: NORTH, lon: 9.0505, alt: 340 });
+        e.deleteStation("st-b");
+        e.reorderStations(
+          e
+            .model()
+            .items.filter((i) => i.kind === "station")
+            .map((i) => i.id.slice("station:".length))
+            .reverse(),
+        );
+      });
+      return p.reopenRestored();
+    },
+    each: ({ written }) => {
+      expect(written.stations.map(titleOrId)).toEqual([
+        "Station 4",
+        "st-f",
+        "st-a",
+      ]);
+      expect(itemsByStation(written).opened).toEqual([["f"], ["a"]]);
+    },
+  },
+  {
+    // Why: a copy of a photo names a content file of its own; the copy
+    // must save with its picture, and come back from the draft with it.
+    name: "copy a photo's station and a pin, reload and restore the draft, save",
+    records: false,
+    byDesign: true,
+    diverges: STATIONS_DESKTOP_ONLY,
+    run: async (p) => {
+      await p.editStations(async (e) => {
+        await e.duplicateStation("st-f");
+        await e.duplicateObject("a");
+      });
+      return p.reopenRestored();
+    },
+    each: ({ written }) => {
+      const copy = written.stations[3];
+      expect(copy?.title).toBe("Station 3 copy");
+      expect(copy?.items.map(kindOf)).toEqual(["photo"]);
+      expect(itemsByStation(written).opened[0]).toHaveLength(2);
+    },
+  },
+  {
+    // Why: "Move to a new station" starts a station where the item stands
+    // even within its own station's radius, and "put on the ground" sets
+    // its height; both must reach the saved tour after a reload.
+    name: "move a pin into a station of its own and set its height, reload and restore the draft, save",
+    records: false,
+    byDesign: true,
+    diverges: STATIONS_DESKTOP_ONLY,
+    run: async (p) => {
+      await p.editStations((e) => {
+        e.pose(
+          "a",
+          { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+          { newStation: true },
+        );
+        e.groundItems([{ id: "a", alt: 338.5 }]);
+      });
+      return p.reopenRestored();
+    },
+    each: ({ written }) => {
+      expect(itemsByStation(written)).toEqual({
+        opened: [["b"], ["f"]],
+        added: [["a"]],
+      });
+      const home = stationHolding(written, "a");
+      expect(home?.items[0]?.pose.position[1]).toBeCloseTo(-1.5, 6);
+    },
+  },
+  {
     name: "a name longer than 80 characters is refused, save",
     records: true,
     run: async (p) => {
@@ -1096,6 +1227,17 @@ async function samePages(row: Row): Promise<void> {
       row.byDesign === true
         ? err instanceof NoSuchOperation
         : isDivergence(err);
+    // The phone lacking an operation by design: the desktop's half ran and
+    // must leave what the row says, or the row is red - only then the
+    // phone's reason ends it.
+    if (named && row.byDesign === true) {
+      try {
+        expectEach(row, desktop);
+      } catch (desktopErr) {
+        broken(row, desktopErr);
+        return;
+      }
+    }
     if (named) throw err;
     broken(row, err);
     return;

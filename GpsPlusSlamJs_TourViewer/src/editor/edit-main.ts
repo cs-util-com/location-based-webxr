@@ -26,6 +26,13 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import {
+  editorViewActions,
+  editorViewReducer,
+  selectEditorView,
+  type EditorMessage,
+  type EditorViewState,
+} from "./editor-view.js";
+import {
   selectTourDocument,
   tourDocumentActions,
   type TourSaveHolder,
@@ -58,7 +65,11 @@ import {
   type EditorItem,
   type EditorModel,
 } from "./editor-model.js";
-import { droppedDetailsLine, openTourForEditing } from "./editor-open.js";
+import {
+  droppedDetailsLine,
+  droppedStationFieldsLine,
+  openTourForEditing,
+} from "./editor-open.js";
 import { holdPageInert } from "./page-inert.js";
 import { fetchTourFile, linkOpenErrorText } from "./editor-link.js";
 import { driveProxyBaseUrl } from "../drive-proxy-url.js";
@@ -214,7 +225,29 @@ function element<T extends HTMLElement>(id: string): T {
 // its history and its save status - lives here, not in this module's
 // variables. Creating it also starts the library's licence (its geo maths
 // runs once a store exists).
-const store = createTourViewerStore();
+const store = createTourViewerStore(undefined, {
+  editorView: editorViewReducer,
+});
+
+/** The page's chrome state (`editorView`): what is selected, in flight,
+ *  dragged, and the card's last line. */
+function ui(): EditorViewState {
+  return selectEditorView(store.getState());
+}
+
+/** The card's outcome line for an item, or none. */
+function say(message: EditorMessage | null): void {
+  store.dispatch(editorViewActions.said({ message }));
+}
+
+/** A save the browser did not deliver, or none: kept here (it holds a
+ *  Blob), and its waiting said to the store. */
+function setUndelivered(save: EditorSave | null): void {
+  undelivered = save;
+  store.dispatch(
+    editorViewActions.undeliveredChanged({ waits: save !== null }),
+  );
+}
 
 /** The open tour's save status (`tour-document.ts`). */
 function saveState(): TourSaveStatus {
@@ -311,33 +344,19 @@ let lock: EditorLock | null = null;
 let letGo: Promise<void> = Promise.resolve();
 /** Toasts about this file that mean nothing once another tour is open. */
 const fileToasts: HTMLElement[] = [];
-/** The browser's file picker is open: a second click opens nothing. */
-let picking = false;
-/** The tour was opened to be saved in place: its saves keep the walk, even
- *  after a refusal turned them into downloads (E2b plan review #1). */
-let keepsWalk = false;
-/** The opened file carries a walk, and none of it was moved out since:
- *  a save that leaves it out offers "Save the debug data" (M2 of the
- *  debug-captures plan). */
-let openedWalk = false;
 let editor: EditorSession | null = null;
 /** The open tour's draft key: its opened file's, then the key of each
  *  in-place write that landed (M6 E2c) and of a download whose key differs
  *  (the first save that wrote the tour's own id, Q-I). */
 let fileKey: string | null = null;
 let model: EditorModel | null = null;
-let selected: string | null = null;
-let busy = false;
 /** A save the browser did not deliver (the picker dismissed, a failed
- *  download): Save offers it again before anything else. */
+ *  download): Save offers it again before anything else. The save holds
+ *  its zip (a Blob, never state), so it stays here; `editorView` holds
+ *  only that one waits (`setUndelivered`). */
 let undelivered: EditorSave | null = null;
-/** The marker being dragged, and where it was dropped so far. */
-let moving: { id: string; drop: { lat: number; lng: number } | null } | null =
-  null;
 /** Notes moved since the last save: their card says the height was kept. */
 const moved = new Set<string>();
-/** The card's last outcome line, for the item it was said about. */
-let message: { id: string; text: string; refused?: true } | null = null;
 /** The open delete's Undo toast, until it times out or a newer edit
  *  comes. */
 let undoOffer: { toast: HTMLElement; timer: number } | null = null;
@@ -347,8 +366,6 @@ let resaveTimer: number | null = null;
 let refusalToast: HTMLElement | null = null;
 /** The host of the link the open tour was fetched from, if it was. */
 let linkHost: TourHost | null = null;
-/** Done is saving before it opens its dialog. */
-let doneBusy = false;
 /** The end of the save that runs, for Done to wait on. */
 let saveEnd: Promise<void> = Promise.resolve();
 /** A move of the walk, as the session builds it. */
@@ -391,7 +408,7 @@ async function savesSettled(): Promise<void> {
  *  bring the note back after a closed tab (`editor-draft.ts` places
  *  nothing new). */
 function editing(): boolean {
-  return undoOffer !== null || card.dirty() || moving !== null;
+  return undoOffer !== null || card.dirty() || ui().moving !== null;
 }
 
 /** The page saves by itself, a few seconds after a committed change, while
@@ -403,7 +420,7 @@ function editing(): boolean {
  *  the middle of an open would belong to neither tour cleanly. */
 const autosave = createAutosave({
   ...autosaveTimings,
-  held: () => saving() || busy || !modal.hidden || editing(),
+  held: () => saving() || ui().busy || !modal.hidden || editing(),
   pending: () => (editor?.changeCount() ?? 0) > 0,
   save: () => saveTour("auto"),
   onState: (state) => {
@@ -412,6 +429,31 @@ const autosave = createAutosave({
   },
 });
 document.body.dataset["autosave"] = autosave.state();
+
+/**
+ * The dev server's test hook (`window.__tourEditor`): an e2e reaches the
+ * editor session's edits no control of this page offers yet (a station's
+ * name), then `edited()` follows them as an edit made here would - the
+ * rail, the map, the card and the status, and the autosave told. Inert in
+ * a production build: `import.meta.env.DEV` is statically false there, so
+ * the hook is stripped (`seams.ts`'s guarantee).
+ */
+if (import.meta.env.DEV && !import.meta.env.VITEST) {
+  (
+    window as {
+      __tourEditor?: {
+        editor: () => EditorSession | null;
+        edited: () => void;
+      };
+    }
+  ).__tourEditor = {
+    editor: () => editor,
+    edited: () => {
+      refresh();
+      autosave.changed();
+    },
+  };
+}
 
 /** The open tour's edits, backed up in this browser (M6 E2c): the page
  *  says once when they are not, and marks when every write landed
@@ -425,7 +467,7 @@ const draft = createEditorDraft({
     noBackupNote = NO_BACKUP[reason];
     // Said during an open, it waits until the tour shows: switching tours
     // takes the old file's toasts away.
-    if (!busy) sayNoBackup();
+    if (!ui().busy) sayNoBackup();
   },
   onWriting: (writing) => {
     if (document.body.dataset["draft"] === "off") return;
@@ -536,6 +578,7 @@ function debugPanelBox(): Box | null {
 }
 
 function placeCard(): void {
+  const { selected } = ui();
   if (selected === null) return;
   card.place(map.anchorOf(selected), freeArea(), debugPanelBox());
 }
@@ -547,6 +590,7 @@ function editable(item: EditorItem): boolean {
 }
 
 function viewOf(item: EditorItem): CardView {
+  const { moving, message } = ui();
   return {
     editable: editable(item),
     moving: moving?.id === item.id,
@@ -556,7 +600,7 @@ function viewOf(item: EditorItem): CardView {
 }
 
 function showCard(): void {
-  const item = model?.items.find((i) => i.id === selected) ?? null;
+  const item = model?.items.find((i) => i.id === ui().selected) ?? null;
   if (item === null) {
     card.hide();
     return;
@@ -567,18 +611,20 @@ function showCard(): void {
 
 function select(id: string | null, pan = false): void {
   // Typing in the card's field is committed before it shows something else.
-  if (id !== selected) {
+  if (id !== ui().selected) {
     card.commit();
     // What was typed was refused, and the card is about to show something
     // else: the refusal goes to a toast, never silently away (PR #611
     // review).
+    const { message, selected } = ui();
     if (message?.refused === true && message.id === selected) {
       toast(message.text);
     }
   }
+  const { moving } = ui();
   if (moving !== null && moving.id !== id) cancelMove();
-  selected = id;
-  message = null;
+  store.dispatch(editorViewActions.selected({ id }));
+  say(null);
   map.select(id);
   rail.select(id);
   showCard();
@@ -590,7 +636,7 @@ function select(id: string | null, pan = false): void {
 
 function renderSaveState(): void {
   const count = editor?.changeCount() ?? 0;
-  if (!doneBusy) doneButton.disabled = editor === null || walkMoving();
+  if (!ui().doneBusy) doneButton.disabled = editor === null || walkMoving();
   if (saving()) {
     saveStatus.dataset["state"] = "saving";
     saveStatus.textContent = "Saving…";
@@ -663,11 +709,12 @@ function refresh(): void {
   renderTourName();
   rail.update(model);
   map.update(model);
+  const { selected } = ui();
   if (selected !== null && !model.items.some((i) => i.id === selected)) {
-    selected = null;
+    store.dispatch(editorViewActions.selected({ id: null }));
   }
-  map.select(selected);
-  rail.select(selected);
+  map.select(ui().selected);
+  rail.select(ui().selected);
   showCard();
   renderNoGps();
   renderSaveState();
@@ -695,10 +742,10 @@ const STEP_WORDS = {
  *  step of the session's edit stack (W2), an edit like any other. */
 function runStep(which: "undo" | "redo"): void {
   if (editor === null) return;
-  if (moving !== null) cancelMove();
+  if (ui().moving !== null) cancelMove();
   card.commit();
   const outcome = which === "undo" ? editor.undo() : editor.redo();
-  message = null;
+  say(null);
   refresh();
   if (outcome.kind === "refused") {
     // A delete toast stays: its Undo can be tapped again once the save ends.
@@ -768,41 +815,41 @@ function resaveMayStart(): boolean {
     !saving() &&
     resaveTimer === null &&
     !editing() &&
-    !busy &&
+    !ui().busy &&
     Boolean(modal.hidden)
   );
 }
 
 function startMove(id: string): void {
-  moving = { id, drop: null };
+  store.dispatch(editorViewActions.moveStarted({ id }));
   map.drag(id, (lat, lng) => {
-    if (moving?.id === id) moving.drop = { lat, lng };
+    store.dispatch(editorViewActions.moveDropped({ id, drop: { lat, lng } }));
   });
   showCard();
 }
 
 function finishMove(): void {
-  const done = moving;
+  const done = ui().moving;
   if (done === null || editor === null) return;
   map.drag(done.id, null);
-  moving = null;
+  store.dispatch(editorViewActions.moveEnded());
   if (done.drop !== null) {
     try {
       const outcome = editor.move(done.id, done.drop.lat, done.drop.lng);
       if (outcome.kind === "moved") {
         moved.add(done.id);
-        message = { id: done.id, text: "Moved - not saved yet." };
+        say({ id: done.id, text: "Moved - not saved yet." });
         endUndo();
         autosave.changed();
       } else {
         // Said, never dropped (PR #622 bot finding C).
-        message = { id: done.id, text: outcome.reason, refused: true };
+        say({ id: done.id, text: outcome.reason, refused: true });
       }
     } catch (err) {
-      message = {
+      say({
         id: done.id,
         text: `It cannot go there: ${err instanceof Error ? err.message : String(err)}`,
-      };
+      });
     }
   }
   refresh();
@@ -811,10 +858,10 @@ function finishMove(): void {
 }
 
 function cancelMove(): void {
-  const done = moving;
+  const done = ui().moving;
   if (done === null) return;
   map.drag(done.id, null);
-  moving = null;
+  store.dispatch(editorViewActions.moveEnded());
   // Redrawn from the model: the marker goes back to where it was.
   refresh();
   autosave.poke();
@@ -830,7 +877,7 @@ const map = createEditorMap(element("map"), {
     rail.hover(id, on);
   },
   onBackground: () => {
-    if (moving === null) select(null);
+    if (ui().moving === null) select(null);
   },
   onView: placeCard,
 });
@@ -885,23 +932,25 @@ const card = createEditorCard(
       select(null);
     },
     onReveal: () => {
+      const { selected } = ui();
       if (selected !== null) reveal(selected);
     },
     onText: (id, text) => {
       if (editor === null) return;
       const outcome = editor.editText(id, text);
-      message =
+      say(
         outcome.kind === "refused"
           ? { id, text: outcome.reason, refused: true }
           : outcome.kind === "edited"
             ? { id, text: "Changed - not saved yet." }
-            : null;
+            : null,
+      );
       // In place: the click that blurred the field must still land on the
       // button or row under the pointer (E2a review #3).
       model = editor.model();
       rail.update(model);
       map.update(model);
-      card.note(message?.text ?? "");
+      card.note(ui().message?.text ?? "");
       renderSaveState();
       // Committed (or given back unchanged): the typing hold is over.
       if (outcome.kind === "edited") {
@@ -1078,7 +1127,7 @@ const details = wireDetailsDialog({
 });
 
 tourName.addEventListener("click", () => {
-  if (editor === null || busy) return;
+  if (editor === null || ui().busy) return;
   // Typing in the card is committed first: the dialog shows the tour as it
   // stands.
   card.commit();
@@ -1172,16 +1221,16 @@ document.addEventListener("keydown", (event) => {
     done.close();
     return;
   }
-  if (moving !== null) {
+  if (ui().moving !== null) {
     cancelMove();
     return;
   }
-  if (!modal.hidden && session !== null && !busy) showModal(false);
+  if (!modal.hidden && session !== null && !ui().busy) showModal(false);
   else select(null);
 });
 
 function setBusy(on: boolean, text: string): void {
-  busy = on;
+  store.dispatch(editorViewActions.busyChanged({ busy: on }));
   sampleButton.disabled = on;
   zipInput.disabled = on;
   chooseButton.disabled = on;
@@ -1203,8 +1252,9 @@ function leaveFile(): void {
   autosave.stop();
   stopResaveTimer();
   refusalToast = null;
-  keepsWalk = false;
-  openedWalk = false;
+  store.dispatch(
+    editorViewActions.walkChanged({ keepsWalk: false, openedWalk: false }),
+  );
   for (const t of fileToasts.splice(0)) t.remove();
   photos.clear();
   debugLayer?.stop();
@@ -1397,10 +1447,10 @@ async function readAddedDebug(
  *  save status an open or a close resets). */
 function resetEditing(): void {
   endUndo();
-  moving = null;
+  store.dispatch(editorViewActions.moveEnded());
   moved.clear();
-  message = null;
-  undelivered = null;
+  say(null);
+  setUndelivered(null);
   delete saveStatus.dataset["saved"];
 }
 
@@ -1443,7 +1493,7 @@ async function attachTarget(
   // lock's answer: a download saved before "Edit here anyway" must not
   // drop the walk the later in-place write would then carry over the
   // original (E2b-1 review #1).
-  keepsWalk = true;
+  store.dispatch(editorViewActions.walkChanged({ keepsWalk: true }));
   keepWalk.hidden = true;
   await letGo;
   const held = await holdEditorLock(navigator.locks, file.name);
@@ -1499,7 +1549,7 @@ async function openFile(
   /** The handle the file was picked through, writable or not. */
   picked: FileSystemHandle | null = handle,
 ): Promise<boolean> {
-  if (busy) return false;
+  if (ui().busy) return false;
   openError.hidden = true;
   setBusy(true, `Opening ${file.name}…`);
   // The open tour stays until the new one has opened: a refused file must
@@ -1576,7 +1626,7 @@ async function openFile(
     ).length > 0;
   keepWalkInput.checked = false;
   keepWalk.hidden = !carriesWalk;
-  openedWalk = carriesWalk;
+  store.dispatch(editorViewActions.walkChanged({ openedWalk: carriesWalk }));
   renderTourName();
   element("tour-file").textContent = outcome.fileName;
   topbar.hidden = false;
@@ -1590,10 +1640,15 @@ async function openFile(
   renderSaveState();
   toast(`Opened ${outcome.fileName}: ${openedSummary(model)}`);
   sayNoBackup();
-  // Details the reader dropped are said, never lost silently by the next
-  // save (M4a review #6); kept until closed, as an instruction.
-  const dropped = droppedDetailsLine(outcome.dropped);
-  if (dropped !== null) fileToasts.push(toast(dropped, undefined, null));
+  // Details, station descriptions and card images the reader dropped are
+  // said, never lost silently by the next save (M4a review #6); kept until
+  // closed, as an instruction.
+  for (const line of [
+    droppedDetailsLine(outcome.dropped),
+    droppedStationFieldsLine(outcome.dropped, outcome.manifest),
+  ]) {
+    if (line !== null) fileToasts.push(toast(line, undefined, null));
+  }
   if (drafted.superseded !== null) {
     fileToasts.push(toast(drafted.superseded, undefined, null));
   }
@@ -1658,11 +1713,11 @@ function offerDraft(mine: EditorSession, offer: EditorDraftOffer): void {
 /** "Choose…" and the drop box: the browser's file picker where it exists,
  *  for a file that can be saved in place, else the file input. */
 async function chooseTour(): Promise<void> {
-  if (busy || picking) return;
-  picking = true;
+  if (ui().busy || ui().picking) return;
+  store.dispatch(editorViewActions.pickingChanged({ picking: true }));
   const outcome = await pickTourFile(window as unknown as PickerWindow).finally(
     () => {
-      picking = false;
+      store.dispatch(editorViewActions.pickingChanged({ picking: false }));
     },
   );
   if (outcome.kind === "unavailable") {
@@ -1859,7 +1914,7 @@ async function runSave(): Promise<void> {
     if (saveState().by === "auto") {
       // Committed now, saved right after the autosave that runs.
       card.commit();
-      if (moving !== null) finishMove();
+      if (ui().moving !== null) finishMove();
       store.dispatch(tourDocumentActions.saveQueued({ queued: true }));
     }
     return;
@@ -1888,7 +1943,7 @@ async function saveTour(mode: "explicit" | "auto"): Promise<AutosaveOutcome> {
   try {
     if (mode === "explicit") {
       card.commit();
-      if (moving !== null) finishMove();
+      if (ui().moving !== null) finishMove();
     }
     if (mine.changeCount() === 0 && undelivered === null) {
       releaseSave();
@@ -1985,7 +2040,7 @@ async function buildAndDeliver(
         : // In place the walk always stays: the file written over may be
           // the creator's only copy of it (E2b plan review #1).
           await mine.save({
-            keepScan: keepsWalk || keepWalkInput.checked,
+            keepScan: ui().keepsWalk || keepWalkInput.checked,
             inPlace: into !== null,
           });
     if (editor !== mine) return abandon();
@@ -2002,12 +2057,12 @@ async function buildAndDeliver(
     // anyway" attached one while it was built (E2b-1 review #1).
     const { arrived, inPlace } = await deliver(mine, save, into, writes);
     if (editor !== mine) return abandon();
-    undelivered = arrived ? null : save;
+    setUndelivered(arrived ? null : save);
     if (arrived) {
       // A move made during the save is still pending: its line stays.
       const pending = new Set(mine.pendingIds());
       for (const id of [...moved]) if (!pending.has(id)) moved.delete(id);
-      message = null;
+      say(null);
       noteDelivered(inPlace, into, save);
     }
     // Quiet: an autosave says it saved in the status line only (it is
@@ -2129,7 +2184,7 @@ drop.addEventListener("drop", (event) => {
   if (file !== undefined) void openFile(file);
 });
 sampleButton.addEventListener("click", () => {
-  if (busy) return;
+  if (ui().busy) return;
   openError.hidden = true;
   setBusy(true, "Fetching the sample tour…");
   fetch(SAMPLE_URL)
@@ -2156,7 +2211,7 @@ sampleButton.addEventListener("click", () => {
 // (no file handle: Save downloads the new copy).
 linkForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  if (busy) return;
+  if (ui().busy) return;
   const link = linkInput.value;
   openError.hidden = true;
   setBusy(true, "Fetching the tour from its link…");
@@ -2225,14 +2280,20 @@ function doneSaved(): DoneSaved {
  *  it runs (the async-UI rule) - then the dialog opens; a save that did not
  *  land keeps it shut and says why. */
 async function finishEditing(): Promise<void> {
-  if (editor === null || busy || doneBusy || walkMoving() || dialogOpen()) {
+  if (
+    editor === null ||
+    ui().busy ||
+    ui().doneBusy ||
+    walkMoving() ||
+    dialogOpen()
+  ) {
     return;
   }
   const mine = editor;
   card.commit();
-  if (moving !== null) finishMove();
+  if (ui().moving !== null) finishMove();
   if (unsavedWork()) {
-    doneBusy = true;
+    store.dispatch(editorViewActions.doneBusyChanged({ busy: true }));
     doneButton.disabled = true;
     doneButton.textContent = "Saving…";
     try {
@@ -2241,7 +2302,7 @@ async function finishEditing(): Promise<void> {
       if (editor === mine && unsavedWork()) await runSave();
       await savesSettled();
     } finally {
-      doneBusy = false;
+      store.dispatch(editorViewActions.doneBusyChanged({ busy: false }));
       doneButton.textContent = "Done";
       doneButton.disabled = editor === null;
     }
@@ -2262,7 +2323,7 @@ async function finishEditing(): Promise<void> {
     // A file opened for writing keeps its walk (`keepsWalk`): only a save
     // as a new file can leave it out.
     debugLeftOut:
-      openedWalk && !keepsWalk && walk !== null && walk.length === 0,
+      ui().openedWalk && !ui().keepsWalk && walk !== null && walk.length === 0,
     driveMountTip: DRIVE_MOUNT_TIP_SHOWN,
   });
   releaseOutside = holdOutside(element("done-modal"));
@@ -2552,10 +2613,10 @@ async function writeMovedTour(
   }
   move.commit(inPlace);
   // Moved out into a file of its own: nothing is left to offer to save.
-  openedWalk = false;
+  store.dispatch(editorViewActions.walkChanged({ openedWalk: false }));
   store.dispatch(tourDocumentActions.saveBuilt());
   keepWalk.hidden = true;
-  undelivered = null;
+  setUndelivered(null);
   noteDelivered(inPlace, into, move.save);
   return { kind: "moved", walkName, tourName: name, saved: doneSaved() };
 }

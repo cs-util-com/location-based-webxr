@@ -34,6 +34,7 @@ import {
   type TourDocumentState,
   type TourDocumentView,
 } from "./tour-document.js";
+import { parseSettingsRecord, settingsRecord } from "./tour-document-draft.js";
 
 function pin(id: string, lat: number): TourObject {
   return {
@@ -109,6 +110,15 @@ type Op =
   | { kind: "station"; id: string; dLat: number }
   | { kind: "setting"; on: boolean }
   | { kind: "details"; title: string }
+  | { kind: "rename"; id: string; title: string }
+  | { kind: "radius"; id: string; radius: number }
+  | { kind: "addStation"; stationId: string; dLat: number }
+  | { kind: "deleteStation"; id: string }
+  | { kind: "reorder" }
+  | { kind: "copyStation"; id: string; copy: string }
+  | { kind: "copyItem"; id: string; copy: string }
+  | { kind: "ground"; id: string; alt: number }
+  | { kind: "ownStation"; id: string; stationId: string }
   | { kind: "undo" }
   | { kind: "redo" }
   | { kind: "save" };
@@ -132,6 +142,46 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
   fc.record({
     kind: fc.constant("details" as const),
     title: fc.constantFrom("", "Old town", "New"),
+  }),
+  // The 3D editor's station edits. Copies are of the pins' stations only:
+  // a copied photo needs its picture, which the rebuild property does not
+  // hold (the session's tests do).
+  fc.record({
+    kind: fc.constant("rename" as const),
+    id,
+    title: fc.constantFrom("", "Gate", "Well"),
+  }),
+  fc.record({
+    kind: fc.constant("radius" as const),
+    id,
+    radius: fc.constantFrom(2, 25, 300),
+  }),
+  fc.record({
+    kind: fc.constant("addStation" as const),
+    stationId: fc.constantFrom("s1", "s2"),
+    dLat: shift,
+  }),
+  fc.record({ kind: fc.constant("deleteStation" as const), id }),
+  fc.constant({ kind: "reorder" as const }),
+  fc.record({
+    kind: fc.constant("copyStation" as const),
+    id: fc.constantFrom("a", "b"),
+    copy: fc.constantFrom("c1", "c2"),
+  }),
+  fc.record({
+    kind: fc.constant("copyItem" as const),
+    id: fc.constantFrom("a", "b"),
+    copy: fc.constantFrom("d1", "d2"),
+  }),
+  fc.record({
+    kind: fc.constant("ground" as const),
+    id,
+    alt: fc.constantFrom(398, 400.5),
+  }),
+  fc.record({
+    kind: fc.constant("ownStation" as const),
+    id,
+    stationId: fc.constantFrom("o1", "o2"),
   }),
   fc.constant({ kind: "undo" as const }),
   fc.constant({ kind: "redo" as const }),
@@ -201,6 +251,90 @@ function apply(state: TourDocumentState, op: Op): TourDocumentState {
           what: "details",
         }),
       );
+    case "rename":
+      return reduce(
+        state,
+        act.stationEdited({
+          stationId: stationIdOf(op.id),
+          edit: { title: op.title },
+          what: "rename",
+        }),
+      );
+    case "radius":
+      return reduce(
+        state,
+        act.stationEdited({
+          stationId: stationIdOf(op.id),
+          edit: { foundRadiusM: op.radius },
+          what: "radius",
+        }),
+      );
+    case "addStation":
+      return reduce(
+        state,
+        act.stationAdded({
+          at: { lat: 48.525 + op.dLat, lon: 9.05, alt: 400 },
+          stationId: op.stationId,
+          what: "add",
+        }),
+      );
+    case "deleteStation":
+      return reduce(
+        state,
+        act.stationDeleted({ stationId: stationIdOf(op.id), what: "delete" }),
+      );
+    case "reorder": {
+      const order = (manifestNow(state)?.stations ?? [])
+        .map((s) => s.id)
+        .reverse();
+      return reduce(state, act.stationsReordered({ order, what: "reorder" }));
+    }
+    case "copyStation": {
+      const stationId = stationIdOf(op.id);
+      const items = documentObjects(state).filter(
+        (o) => o.object.station === stationId,
+      );
+      return reduce(
+        state,
+        act.stationDuplicated({
+          stationId,
+          newStationId: op.copy,
+          newItemIds: Object.fromEntries(
+            items.map((o) => [o.object.id, `${o.object.id}${op.copy}`]),
+          ),
+          createdAtIso: "2026-10-22T00:00:00.000Z",
+          what: "copy",
+        }),
+      );
+    }
+    case "copyItem":
+      return reduce(
+        state,
+        act.objectDuplicated({
+          id: op.id,
+          newId: op.copy,
+          createdAtIso: "2026-10-22T00:00:00.000Z",
+          what: "copy",
+        }),
+      );
+    case "ground":
+      return reduce(
+        state,
+        act.itemsGrounded({ items: [{ id: op.id, alt: op.alt }], what: "g" }),
+      );
+    case "ownStation": {
+      const object = current(op.id);
+      if (object === undefined) return state;
+      return reduce(
+        state,
+        act.moved({
+          object,
+          newStation: true,
+          newStationId: op.stationId,
+          what: "own station",
+        }),
+      );
+    }
     case "undo":
       return reduce(state, act.undone());
     case "redo":
@@ -289,6 +423,49 @@ describe("tour document (properties)", () => {
         expect(
           difference(comparable(viewOf(back)), comparable(viewOf(state))),
         ).toBeNull();
+        expectAlike(manifestToWrite(back)!, manifestToWrite(state)!);
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  it("any sequence of edits, recorded in the draft and restored after a reload, gives back the same document", () => {
+    // Why: the draft is the only copy of unsaved work across a reload. Its
+    // records (the objects', the deletions, the settings record with the
+    // stations whole) must bring back exactly the document they were
+    // written from, whatever mix of object and station edits made it.
+    const noSave = opArb.filter((op) => op.kind !== "save");
+    fc.assert(
+      fc.property(fc.array(noSave, { maxLength: 20 }), (ops) => {
+        const state = ops.reduce(apply, opened);
+        const record = parseSettingsRecord(
+          JSON.stringify(settingsRecord(state)),
+          OPENED,
+        );
+        expect(record).toBeDefined();
+        const back = reduce(
+          opened,
+          act.restored({
+            objects: state.placed.map((p) => p.object),
+            deleted: [...state.deleted],
+            needsNoGps: record?.needsNoGps ?? false,
+            ...(record?.details === undefined
+              ? {}
+              : { details: record.details }),
+            ...(record?.stations === undefined
+              ? {}
+              : { stations: record.stations }),
+            ...(record?.createdStations === undefined
+              ? {}
+              : { createdStations: record.createdStations }),
+            ...(record?.frames === undefined ? {} : { frames: record.frames }),
+            ...(record?.order === undefined ? {} : { order: record.order }),
+            ...(record?.deletedStations === undefined
+              ? {}
+              : { deletedStations: record.deletedStations }),
+            what: "restore",
+          }),
+        );
         expectAlike(manifestToWrite(back)!, manifestToWrite(state)!);
       }),
       { numRuns: 300 },
@@ -595,13 +772,16 @@ const stationOpArb: fc.Arbitrary<StationOp> = fc.oneof(
 
 /** The station ops as the pages dispatch them, every state on the way;
  *  station ids minted in order (as `prepare` would, but repeatable). */
-function stationRun(ops: readonly StationOp[]): TourDocumentState[] {
+function stationRun(
+  ops: readonly StationOp[],
+  start: TourDocumentState = opened,
+): TourDocumentState[] {
   let minted = 0;
   const mint = (): string => {
     minted += 1;
     return `n${String(minted)}`;
   };
-  let state = opened;
+  let state = start;
   const states = [state];
   const current = (oid: string) =>
     documentObjects(state).find((o) => o.object.id === oid)?.object;
@@ -674,7 +854,7 @@ function stationRun(ops: readonly StationOp[]): TourDocumentState[] {
         const carried = documentObjects(state)
           .filter((o) => !o.hosted)
           .map((o) => o.object);
-        state = reduce(state, act.opened({ manifest: OPENED }));
+        state = reduce(state, act.opened({ manifest: start.opened! }));
         states.push(state);
         state = reduce(
           state,
@@ -712,11 +892,18 @@ function stationRun(ops: readonly StationOp[]): TourDocumentState[] {
 }
 
 /** The ids of `state`'s EMPTY AUTOMATIC stations: no object names them,
- *  and nothing else keeps them (no title, no steps, no route to them). */
+ *  and nothing else keeps them (no title, no steps, no route to them, no
+ *  description, no card image naming an image asset - an empty station
+ *  holds no photo for one to name). */
 function emptyAutomatic(state: TourDocumentState): string[] {
   const named = new Set(documentObjects(state).map((o) => o.object.station));
   const routed = new Set(
     state.stations.flatMap((s) => (s.next === undefined ? [] : [s.next])),
+  );
+  const imageAssets = new Set(
+    (state.written?.assets ?? [])
+      .filter((a) => a.kind === "image")
+      .map((a) => a.id),
   );
   return state.stations
     .filter(
@@ -724,9 +911,61 @@ function emptyAutomatic(state: TourDocumentState): string[] {
         !named.has(s.id) &&
         !routed.has(s.id) &&
         (s.title ?? "").trim() === "" &&
-        s.steps.length === 0,
+        s.steps.length === 0 &&
+        (s.description ?? "").trim() === "" &&
+        !(s.image !== undefined && imageAssets.has(s.image)),
     )
     .map((s) => s.id);
+}
+
+/** Where `state` breaks the station rule, in words; none when it keeps
+ *  it: every object names one of the document's stations (in the frames
+ *  and in the tour as it stands), and no emptied automatic station stays. */
+function stationRuleBreaches(state: TourDocumentState): string[] {
+  const now = new Set(manifestNow(state)!.stations.map((s) => s.id));
+  const frames = new Set(state.stations.map((s) => s.id));
+  const homeless = documentObjects(state)
+    .filter(
+      ({ object }) =>
+        object.station === undefined ||
+        !frames.has(object.station) ||
+        !now.has(object.station),
+    )
+    .map(({ object }) => `${object.id} names ${String(object.station)}`);
+  return [
+    ...homeless,
+    ...emptyAutomatic(state).map((id) => `${id} stays empty`),
+  ];
+}
+
+/** The ways a station of OPENED is kept or not by its own minor 2 fields:
+ *  a description, a card image naming the tour's image asset, a card
+ *  image naming its own photo (only `f`'s station has one), or nothing. */
+const keeperArb = fc.constantFrom("none", "description", "asset", "own");
+
+/** OPENED with an image asset and `keepers` on its three stations, as the
+ *  framework's reader gives it (a pin's station's "own" image, which names
+ *  no photo, is dropped by that read). */
+function openedWithKeepers(keepers: readonly string[]): TourDocumentState {
+  const manifest: TourManifest = {
+    ...OPENED,
+    assets: [{ id: "art", path: "content/art.png", kind: "image" }],
+    stations: OPENED.stations.map((s, i) => {
+      const keeper = keepers[i];
+      if (keeper === "description") return { ...s, description: "Kept." };
+      if (keeper === "asset") return { ...s, image: "art" };
+      if (keeper === "own") return { ...s, image: s.items[0]!.id };
+      return s;
+    }),
+  };
+  return reduce(
+    initialTourDocumentState,
+    act.opened({
+      manifest: parseTourManifest(
+        JSON.parse(serializeTourManifest(manifest)) as unknown,
+      ),
+    }),
+  );
 }
 
 describe("tour document (properties): every object belongs to a station", () => {
@@ -743,16 +982,85 @@ describe("tour document (properties): every object belongs to a station", () => 
     fc.assert(
       fc.property(fc.array(stationOpArb, { maxLength: 30 }), (ops) => {
         for (const state of stationRun(ops)) {
-          const now = new Set(manifestNow(state)!.stations.map((s) => s.id));
-          const frames = new Set(state.stations.map((s) => s.id));
-          for (const { object } of documentObjects(state)) {
-            expect(object.station).toBeDefined();
-            expect(frames.has(object.station!)).toBe(true);
-            expect(now.has(object.station!)).toBe(true);
-          }
-          expect(emptyAutomatic(state)).toEqual([]);
+          expect(stationRuleBreaches(state)).toEqual([]);
         }
       }),
+      { numRuns: 300 },
+    );
+  });
+
+  it("a step back to a view whose object stood in a station only that view names puts the object back in it (shrunk counterexamples)", () => {
+    // Why (found by the property above, seeds -991391345 and 4246602): a
+    // step goes back to a view, and an object of the view the written
+    // file also holds counts as the file's own, not pending, when it
+    // matches the file's copy. While the view's frames were read without
+    // the view's objects, a station only a pending object names (one the
+    // rule started) was missing from that reading - and with its station
+    // missing, the object's re-assignment counted as no move, the object
+    // matched the file's copy in its old station, and the station it
+    // stood in in the view was left empty. First: a draft's pin seated in
+    // a new station, restored again into the first station, saved, and
+    // the restore undone. Second: a pin moved out of its station into a
+    // new one, that station moved, undone and redone.
+    const back = stationRun([
+      { kind: "restore", north: -37.5, east: 137.5, dangling: true },
+      { kind: "restore", north: -37.5, east: 137.5, dangling: false },
+      { kind: "save" },
+      { kind: "undo" },
+    ]);
+    for (const state of back) expect(stationRuleBreaches(state)).toEqual([]);
+    const undone = back.at(-1)!;
+    const r1 = documentObjects(undone).find((o) => o.object.id === "r1");
+    expect(r1?.object.station).toBe("n1");
+    expect(manifestToWrite(undone)!.stations.map((s) => s.id)).toContain("n1");
+
+    const again = stationRun([
+      { kind: "move", id: "a", north: 0, east: -37.5 },
+      { kind: "frame", id: "a", north: 0 },
+      { kind: "undo" },
+      { kind: "redo" },
+    ]);
+    for (const state of again) expect(stationRuleBreaches(state)).toEqual([]);
+    const redone = again.at(-1)!;
+    const a = documentObjects(redone).find((o) => o.object.id === "a");
+    expect(a?.object.station).toBe("n1");
+    expect(manifestToWrite(redone)!.stations.map((s) => s.id)).toEqual(
+      redone.stations.map((s) => s.id),
+    );
+  });
+
+  it("a station with a description or a card image asset is never emptied away; an emptied one with neither still goes (G2 build plan M1a)", () => {
+    // Why: a description and a card image (format minor 2) are the
+    // creator's work on the station, as a title is (G2 build plan
+    // 2026-10-21-2247, §4.2.4): no delete or move of its items, no save,
+    // undo or redo may take the station with them - neither from the
+    // document's frames nor from the file a save writes. A card image of
+    // the station's own photo keeps nothing once the station is emptied
+    // (the photo has left it), so that station goes like a bare one. Over
+    // the same op mix as above, from a tour whose stations carry any mix
+    // of the two fields.
+    fc.assert(
+      fc.property(
+        fc.array(keeperArb, { minLength: 3, maxLength: 3 }),
+        fc.array(stationOpArb, { maxLength: 30 }),
+        (keepers, ops) => {
+          const start = openedWithKeepers(keepers);
+          const kept = start.stations
+            .filter(
+              (s) => (s.description ?? "").trim() !== "" || s.image === "art",
+            )
+            .map((s) => s.id);
+          for (const state of stationRun(ops, start)) {
+            const frames = state.stations.map((s) => s.id);
+            const written = manifestToWrite(state)!.stations.map((s) => s.id);
+            for (const id of kept) {
+              expect(frames).toContain(id);
+              expect(written).toContain(id);
+            }
+            expect(emptyAutomatic(state)).toEqual([]);
+          }
+        },
+      ),
       { numRuns: 300 },
     );
   });

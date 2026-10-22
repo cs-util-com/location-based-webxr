@@ -287,7 +287,9 @@ export {
   parseTourObject,
   serializeTourManifest,
   tourItems,
+  type TourManifestDrop,
   type TourManifestReadOptions,
+  type TourStationDrop,
 } from './tour-manifest.js';
 export {
   geoPoseRotation,

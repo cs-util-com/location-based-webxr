@@ -51,6 +51,7 @@ import {
   createTourViewerSession,
   createTourViewerStore,
   endQrPipeline,
+  type TourViewerStore,
 } from "./tour-viewer-session.js";
 import {
   isCodeChange,
@@ -442,7 +443,7 @@ function authoring(
       dispatched.push(action);
       return real.dispatch(action as never);
     },
-  } as unknown as ReturnType<typeof createTourViewerStore>;
+  } as unknown as TourViewerStore;
 
   const scene = new Group();
   const world = new Group();

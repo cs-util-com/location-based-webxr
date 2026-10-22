@@ -40,7 +40,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 - **Details the reader dropped** (a hand-edited description, contact or
   cover; M4a review #6) are said in a toast that stays until closed
   (`droppedDetailsLine`): which ones, and that the next save writes the
-  tour without them.
+  tour without them; station descriptions and card images the reader
+  left out (format minor 2: a picture gone, or a value a hand edit broke)
+  in a toast of their own, naming each station by its rail name
+  (`droppedStationFieldsLine`).
 - **A failure latched during the open** (`integrityFailure()` right after
   it) refuses the tour (E1 review #6).
 - **A late integrity failure** (`onIntegrityFailure`, the background
@@ -447,18 +450,23 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   it lets it go once it sees its tour gone. What stays in this module is
   imperative: DOM nodes, the file target and its lock, the draft handle,
   timers and toasts, and the built file a browser did not deliver
-  (`undelivered`, a Blob).
-- **A named deviation from the root rule "App state lives in the Redux
-  store"** (the r875 milestone review #5): four module variables are app
-  state and stay here for now - `selected` (the note the card and the map
-  show), `busy` (an open running), `doneBusy` (Done saving before its
-  dialog) and `keepsWalk` (the tour was opened to be saved in place). The
-  selection is not transient UI: with the 3D editor it is shared by more
-  than one view (the map, the rail, the 3D scene), and that is where it
-  belongs in a store. Follow-up: a view slice, built with G2 of the tour
-  editor 3D programme, takes these four (and the marker being dragged, the
-  card's message and Done's own "Saving…", which are this page's alone).
-  Until then a page that reads them reads this module.
+  (`undelivered`, a Blob; the store holds only that one waits).
+- **The page's chrome state is the store's too** (`editorView`,
+  `editor-view.ts`, mounted only here: `createTourViewerStore(undefined,
+{ editorView })`): the selection, `busy`, the marker being dragged and
+  its drop, `keepsWalk`, `openedWalk`, `doneBusy`, whether a save waits
+  to be delivered, the card's outcome line and the file picker's
+  `picking`. The page reads them through `ui()` and changes them only by
+  `editorViewActions` (`say(message)` for the card's line,
+  `setUndelivered(save)` for the waiting save), so another view of the
+  page reads the same copy. Kept here on purpose: `moved` (the notes
+  moved since the last save, a `Set` only the card reads) and everything
+  imperative above.
+- **The dev server's test hook** `window.__tourEditor` (`{ editor(),
+edited() }`): an e2e reaches the editor session's edits no control of
+  this page offers yet, then `edited()` follows them as an edit made here
+  would (refresh, autosave told). Guarded by `import.meta.env.DEV &&
+!import.meta.env.VITEST`, so a production build strips it.
 
 - Once everything is wired the page sets `body[data-editor="ready"]`;
   the keyboard e2e waits for it (a press before the module ran went
@@ -488,3 +496,8 @@ another tour's and a plain recording's lines, a refusal, no save carrying
 it, a reload forgetting it, a drop on the panel shown in place of the
 tour's walk) and `editor-entry.spec.js` (the
 "Nothing to save" toast, the open from a link); `way-in.spec.js` checks its first paint.
+
+`editor.spec.js` also renames a station through the test hook, closes the
+tab, and sees the draft offer the change and Restore bring it back (seen
+red with the settings record's stations left out). The chrome state's
+slice: `editor-view.test.ts`.

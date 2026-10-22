@@ -43,6 +43,18 @@ editor's own namespace, one tab at a time. Design:
     note it can seat, names nothing in the offer's words (it is not a
     change of its own; `settingsWhat` is then absent, and `restoredLine`
     speaks of the notes alone), and goes at an open with no note to offer.
+    Once a station was edited, added, deleted, reordered or copied here,
+    the record also holds `frames` (the stations edited beyond their pose
+    or added here, whole), `order` (when a restore needs one) and
+    `deletedStations`: the stations' differences from the compared file
+    (`changedFrames`: a frame edited beyond its pose - `sameBeyondPose`,
+    by data whatever its key order, so a frame the file carries alike is
+    no change and the record goes once an in-place save wrote it - added,
+    deleted, or the shared stations in another `order`) count as changes,
+    offered and named - "the
+    details of a station" / "of N stations", "a station added" / "N
+    stations added", "a station deleted" / "N stations deleted", "the order of the stations",
+    and `settingsWhat` "this tour's stations".
   - `writes(): EditorTourDraft` - those five, and `built` and `landed`
     below, bound to the tour open NOW, which the page gives the editor
     session and its saves: once another tour opens they are dropped
@@ -53,7 +65,9 @@ editor's own namespace, one tab at a time. Design:
   - `open(fileKey, manifest)` - closes the last tour's hold, holds
     `editor:<fileKey>`, reads it, clears what the file carries, and
     resolves `{ offer, superseded, backedUp }`: `offer` (`objects`,
-    `deleted`, `settings?` - the record when the file does not carry it,
+    `deleted`, `made?` - the ids among `objects` that are copies made here
+    (below), `pictures?` - those copies' photo bytes by id, `settings?` -
+    the record when the file does not carry it,
     `text` from `restoreOfferText`, changes and deletions named apart, a
     changed setting counted as a change and NAMED with its value - "It is
     "This tour needs no GPS" turned on." alone, "One of the changes is
@@ -122,8 +136,16 @@ editor's own namespace, one tab at a time. Design:
   one of them; otherwise it gave way to a newer edit elsewhere and goes,
   said once. **A deletion has no base**: a restored deletion deletes a
   newer edit made elsewhere since (named, not covered).
-- **The editor places nothing new**, so a record of an id the file no
-  longer carries counts as given way (said with the replaced ones).
+- **The editor places nothing new - but it copies**: a record of an id
+  the file does not carry is offered back as a copy made here (`made`)
+  only when no file this browser opened showed the id (no `seen` base),
+  it names a station the file or the record knows, and, for a photo, the
+  draft holds its bytes (a copy's picture is in no file yet: it is
+  written with the record and offered in `pictures`). Any other such
+  record counts as given way (said with the replaced ones), as before.
+  The same rule also lets an object an undo re-added after an in-place
+  save wrote its delete through, when its record carries no `seen` base
+  (it was never edited before that delete): no test pins that case yet.
 - **A photo note's record has no bytes** (milestone review #1): they are
   in the file the editor opened, and the rebuild keeps that entry, so the
   draft is read with `readDraft(store, { photoBytesRequired: false })` - the
@@ -229,8 +251,8 @@ editor's own namespace, one tab at a time. Design:
   waiting; storage in a private
   window may go with the window; a restored delete has no Undo toast of
   its own (the whole restore is one Ctrl+Z step, W2); an object an undo
-  re-adds after a save wrote its delete is backed up, but this draft's
-  "places nothing new" rule (above) does not offer it after a closed tab.
+  re-adds after a save wrote its delete is backed up, but offered after a
+  closed tab only when its record carries no `seen` base (above).
 
 ## Examples
 
@@ -276,6 +298,15 @@ reopened in the same tab; a moved photo note and the undo of a delete of
 one (no bytes); the old namespace kept until the carried records landed,
 and kept when they did not; "Delete it" right after a key move; a closed
 tour's late write dropped; the hold kept until the queued writes landed;
+the stations through the real draft (`editor-session-stations.test.ts`:
+renamed, added, copied, deleted and reordered stations, and a copied
+photo's picture, back after a reload as the save had them; an added
+station and a photo card saved in place, then nothing offered after a
+reload - seen red, the record outlived the save; a record restored over
+a file moved and renamed elsewhere bringing back only the station edited
+here, at the file's pose - seen red, "the details of 2 stations"; a copy
+made here, saved in place, deleted, saved in place and undone, offered
+after a reload);
 an edit claimed against the meta on disk when the pruning write was refused
 (PR #622 A); a close right after "Delete it" holding until its meta write
 landed (PR #622 B); a refused first meta write said, and the backup no

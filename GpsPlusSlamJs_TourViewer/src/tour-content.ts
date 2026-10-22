@@ -19,13 +19,14 @@
  *   earlier file's `captureSpots` is an unknown field to the framework's
  *   reader, which ignores it).
  * - A station this write EMPTIED (it held items, it holds none) goes when
- *   nothing else keeps it: no title, no story steps, and no other
+ *   nothing else keeps it: no title, no story steps, no description, no
+ *   card image that still names a picture (`keepsItself`), and no other
  *   station routing to it. It existed for its elements
  *   (D20); left behind, the visitor's guide would still lead to it. An
  *   empty station the tour already had is left alone.
  * - An asset nothing names any more is dropped (`withReferencedAssets`):
  *   no step block (an image, a character's image or voice, an audio, a
- *   video, a model) and not the cover.
+ *   video, a model), no station's card image and not the cover.
  *
  * Pure.
  *
@@ -33,12 +34,14 @@
  */
 
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
+import { tourImageIds } from "gps-plus-slam-app-framework/ar/tour-details";
 import type { TourContentFields } from "gps-plus-slam-app-framework/ar/tour-items";
 import type {
   TourBlock,
   TourItem,
   TourManifest,
   TourObject,
+  TourQuizRoute,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
@@ -166,27 +169,58 @@ export function withTourContent(
     items: items.get(station.id) ?? [],
   }));
   const kept = new Set(filled.flatMap(routedTo));
+  const imageAssets = imageAssetIds(manifest.assets);
   return {
     ...manifest,
     stations: filled.filter(
-      (s) => !emptiedAndBare(s, stationById.get(s.id), kept),
+      (s) => !emptiedAndBare(s, stationById.get(s.id), kept, imageAssets),
     ),
   };
 }
 
 /** Whether this write emptied `station` (`before` held items) and
- *  nothing else keeps it: no title, no steps, not in `kept`. */
+ *  nothing else keeps it: nothing of its own (`keepsItself`), not in
+ *  `kept`. */
 function emptiedAndBare(
   station: TourStation,
   before: TourStation | undefined,
   kept: ReadonlySet<string>,
+  imageAssets: ReadonlySet<string>,
 ): boolean {
   return (
     station.items.length === 0 &&
     (before?.items.length ?? 0) > 0 &&
-    (station.title ?? "").trim() === "" &&
-    station.steps.length === 0 &&
+    !keepsItself(station, imageAssets) &&
     !kept.has(station.id)
+  );
+}
+
+/** The ids of the image assets among `assets`: what an EMPTY station's
+ *  card image can still name (it holds no photo any more). */
+export function imageAssetIds(
+  assets: TourManifest["assets"],
+): ReadonlySet<string> {
+  return tourImageIds({ objects: [], assets });
+}
+
+/**
+ * Whether an EMPTY station carries the creator's own work, which keeps it
+ * when its last item leaves:
+ * a title, story steps, a non-blank description, or a card image naming
+ * one of the tour's image assets (`imageAssets`). An image of the
+ * station's own photo keeps nothing here: an emptied station holds no
+ * photo, so the write drops that image (`station-image-gone`) and the
+ * station is bare.
+ */
+export function keepsItself(
+  station: Pick<TourStation, "title" | "steps" | "description" | "image">,
+  imageAssets: ReadonlySet<string>,
+): boolean {
+  return (
+    (station.title ?? "").trim() !== "" ||
+    station.steps.length > 0 ||
+    (station.description ?? "").trim() !== "" ||
+    (station.image !== undefined && imageAssets.has(station.image))
   );
 }
 
@@ -201,6 +235,56 @@ export function routedTo(station: Omit<TourStation, "items">): string[] {
     ids.push(...Object.values(byOption ?? {}));
   }
   return ids;
+}
+
+/** `route` without the targets in `gone`: a byOption left empty goes, and
+ *  so does a route left with no target at all (undefined). */
+function routeWithout(
+  route: TourQuizRoute,
+  gone: ReadonlySet<string>,
+): TourQuizRoute | undefined {
+  const byOption = Object.fromEntries(
+    Object.entries(route.byOption ?? {}).filter(([, to]) => !gone.has(to)),
+  );
+  const kept: TourQuizRoute = {
+    ...(route.correct === undefined || gone.has(route.correct)
+      ? {}
+      : { correct: route.correct }),
+    ...(route.wrong === undefined || gone.has(route.wrong)
+      ? {}
+      : { wrong: route.wrong }),
+    ...(Object.keys(byOption).length === 0 ? {} : { byOption }),
+  };
+  return Object.keys(kept).length === 0 ? undefined : kept;
+}
+
+/**
+ * `station` without a route to any station of `gone` (deleted stations):
+ * its `next` goes, and each quiz route loses those targets (a route left
+ * with none goes whole). The same object when it names none of them, so a
+ * caller can tell an untouched frame by identity.
+ */
+export function withoutRoutesTo(
+  station: Omit<TourStation, "items">,
+  gone: ReadonlySet<string>,
+): Omit<TourStation, "items"> {
+  if (!routedTo(station).some((id) => gone.has(id))) return station;
+  const steps = station.steps.map((step) => {
+    const { block } = step;
+    if (block.kind !== "quiz" || block.route === undefined) return step;
+    const route = routeWithout(block.route, gone);
+    const { route: _old, ...rest } = block;
+    return {
+      ...step,
+      block: route === undefined ? rest : { ...rest, route },
+    };
+  });
+  const { next, ...rest } = station;
+  return {
+    ...rest,
+    ...(next === undefined || gone.has(next) ? {} : { next }),
+    steps,
+  };
 }
 
 /** The assets `block` names: its media, a character's image and voice. */
@@ -246,13 +330,15 @@ export function stepAssetIds(
 
 /**
  * The ids of the assets `manifest` uses: every step block's of every
- * station, every item's, and the cover (which may name an image asset).
+ * station, every item's, every station's card image and the cover (each
+ * of the last two may name an image asset).
  */
 function referencedAssetIds(manifest: TourManifest): Set<string> {
   return new Set([
     ...manifest.stations.flatMap((station) => [
       ...stepAssetIds(station),
       ...station.items.flatMap(objectAssetIds),
+      ...(station.image === undefined ? [] : [station.image]),
     ]),
     ...(manifest.cover === undefined ? [] : [manifest.cover]),
   ]);

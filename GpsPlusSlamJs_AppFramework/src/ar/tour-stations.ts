@@ -43,10 +43,35 @@
 import { isFiniteNumber, isRecord } from '../utils/json-guards.js';
 import { parseGeoPose } from './qr/geo-pose.js';
 import type { QrGeoPose } from './qr/qr-gps-vote.js';
+import {
+  checkTourDescription,
+  TOUR_DESCRIPTION_MAX_CHARS,
+  tourImageIds,
+} from './tour-details.js';
 import { parseTourItems, type TourItem } from './tour-items.js';
 import { tourMediaTypeOf } from './tour-media.js';
 
 type Fail = (message: string) => never;
+
+/**
+ * A station's description or card image the reader left out (minor 2), the
+ * tour details' model: a malformed value carries no `cause`, and a writer
+ * refuses it (the editor checks with the same rules, so one reaching the
+ * writer is a programming error). A well-formed card image naming no
+ * picture the station can show - no photo of that station and no image
+ * asset of the tour (a deleted photo or asset) - carries
+ * `station-image-gone`: the one station drop a writer accepts quietly,
+ * beside the cover's `image-gone`, so deleting the photo a card shows never
+ * fails a save (G2 build plan 2026-10-21-2247, Q14).
+ */
+export interface TourStationDrop {
+  readonly field: 'description' | 'image';
+  /** The id of the station whose value was left out. */
+  readonly station: string;
+  readonly reason: string;
+  /** Absent: the value is malformed. */
+  readonly cause?: 'station-image-gone';
+}
 
 /** Thrown inside a step's parse when a lenient reader cannot show it; the
  *  step catches it and is left out (R4). Never escapes this module. */
@@ -174,6 +199,14 @@ export interface TourStep {
 export interface TourStation {
   readonly id: string;
   readonly title?: string;
+  /** Minor 2: a few sentences for the station's card, trimmed, line
+   *  breaks kept, at most {@link TOUR_DESCRIPTION_MAX_CHARS} characters
+   *  (the tour description's rule, `checkTourDescription`). */
+  readonly description?: string;
+  /** Minor 2: the station's card image - the id of a photo item of THIS
+   *  station or of an image asset of the tour (one id namespace, so no id
+   *  is both; `tourImageIds` over the station's items). */
+  readonly image?: string;
   /** Where the station is and how it is turned against north: the frame
    *  its items' local poses are relative to. */
   readonly geo: QrGeoPose;
@@ -338,6 +371,8 @@ interface BlockContext {
   readonly fail: Fail;
   /** A newer minor: what this reader cannot show is skipped (R4). */
   readonly lenient: boolean;
+  /** Hears each station description or card image left out (minor 2). */
+  readonly onDropped: ((drop: TourStationDrop) => void) | undefined;
 }
 
 function requireAsset(
@@ -744,9 +779,20 @@ function parseStation(
     return step === null ? [] : [step];
   });
   const title = textOf(value.title);
+  const id = requireId(value.id, `${at}.id`, fail);
+  const items = withResolvedModels(
+    parseTourItems(value.items, `${at}.items`, {
+      fail,
+      lenient: ctx.lenient,
+    }),
+    `${at}.items`,
+    ctx
+  );
   return {
-    id: requireId(value.id, `${at}.id`, fail),
+    id,
     ...(title === undefined ? {} : { title }),
+    ...descriptionOf(value.description, { id, at }, ctx),
+    ...imageOf(value.image, { id, at, items }, ctx),
     geo: parseGeoPose(value.geo, { path: `${at}.geo`, fail }),
     ...parseRadii(value, at, fail),
     hint: 'arrow',
@@ -756,15 +802,79 @@ function parseStation(
     ...(value.next === undefined
       ? {}
       : { next: requireId(value.next, `${at}.next`, fail) }),
-    items: withResolvedModels(
-      parseTourItems(value.items, `${at}.items`, {
-        fail,
-        lenient: ctx.lenient,
-      }),
-      `${at}.items`,
-      ctx
-    ),
+    items,
   };
+}
+
+/**
+ * A station's description (minor 2) by the tour description's rule
+ * (`checkTourDescription`: trimmed, at most
+ * {@link TOUR_DESCRIPTION_MAX_CHARS} characters), so what an editor's field
+ * accepts is what a reader keeps. A blank one is none, as a blank title.
+ * Any other value is dropped, never failing the tour (a refused tour could
+ * not even be opened to fix it): reported with no cause at this reader's
+ * minor, silently in a file of a newer minor (which may widen the rule).
+ */
+function descriptionOf(
+  value: unknown,
+  station: { readonly id: string; readonly at: string },
+  ctx: BlockContext
+): { description?: string } {
+  if (value === undefined) return {};
+  if (typeof value === 'string' && value.trim() === '') return {};
+  const checked = checkTourDescription(value);
+  if (checked.ok) return { description: checked.value };
+  if (!ctx.lenient) {
+    ctx.onDropped?.({
+      field: 'description',
+      station: station.id,
+      reason: `"${station.at}.description" must be text of at most ${String(TOUR_DESCRIPTION_MAX_CHARS)} characters`,
+    });
+  }
+  return {};
+}
+
+/**
+ * A station's card image (minor 2): an id naming a photo item of this
+ * station or an image asset of the tour. Never a failure (Q14), and at this
+ * reader's minor always reported: a well-formed id naming neither (the
+ * photo or asset was deleted) as `station-image-gone`, a value that is not
+ * an id with no cause. In a file of a newer minor either is left out
+ * silently: that minor may widen the rule, and the picture may be one this
+ * reader skipped (a newer media type), which is not gone.
+ */
+function imageOf(
+  value: unknown,
+  station: {
+    readonly id: string;
+    readonly at: string;
+    readonly items: readonly TourItem[];
+  },
+  ctx: BlockContext
+): { image?: string } {
+  if (value === undefined) return {};
+  const images = tourImageIds({
+    objects: station.items,
+    assets: [...ctx.assets.values()],
+  });
+  if (isId(value) && images.has(value)) return { image: value };
+  if (ctx.lenient) return {};
+  const at = `${station.at}.image`;
+  ctx.onDropped?.(
+    isId(value)
+      ? {
+          field: 'image',
+          station: station.id,
+          reason: `"${at}" names no photo of this station and no image of this tour`,
+          cause: 'station-image-gone',
+        }
+      : {
+          field: 'image',
+          station: station.id,
+          reason: `"${at}" must be an image id`,
+        }
+  );
+  return {};
 }
 
 /**
@@ -854,16 +964,25 @@ function checkStepReferences(
  * block names exists and is of the block's kind; every choice target, next
  * station and route target resolves. `lenient` (a newer minor) skips what
  * this reader cannot show instead of failing (see the module comment).
+ * `onDropped` hears each station description or card image left out
+ * (minor 2, {@link TourStationDrop}): malformed, or an image whose picture
+ * is gone. Neither fails the tour.
  */
 export function parseTourStations(
   value: unknown,
-  options: { assets: readonly TourAsset[]; fail: Fail; lenient?: boolean }
+  options: {
+    assets: readonly TourAsset[];
+    fail: Fail;
+    lenient?: boolean;
+    onDropped?: (drop: TourStationDrop) => void;
+  }
 ): TourStation[] {
   const { fail } = options;
   const ctx: BlockContext = {
     assets: new Map(options.assets.map((a) => [a.id, a])),
     fail,
     lenient: options.lenient === true,
+    onDropped: options.onDropped,
   };
   const stations = requireArray(value, 'stations', fail).map((s, i) =>
     parseStation(s, `stations[${String(i)}]`, ctx)

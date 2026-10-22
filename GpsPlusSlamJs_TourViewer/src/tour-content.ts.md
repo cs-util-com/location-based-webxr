@@ -26,6 +26,12 @@ camera captures are debug data, never in a station (an earlier file's
   (below), the one the tour document's station rule starts.
 - `routedTo(station)`: the stations `station` routes to (its `next` and
   its quizzes' routes): what keeps an emptied station from being dropped.
+- `withoutRoutesTo(station, gone)`: `station` without a route to any
+  station of `gone` (deleted stations): its `next` goes, each quiz route
+  loses those targets, a `byOption` left empty goes, and a route left
+  with no target goes whole. The same object when it names none of them,
+  so a caller can tell an untouched frame by identity. The format refuses
+  a dangling route, so a station's delete and a restore prune with it.
 - `withTourContent(manifest, { objects }) -> TourManifest`: the manifest
   with `objects` as its pins and photos, each in the station it names (or,
   naming none, the one the manifest holds it in), the stations kept as
@@ -40,7 +46,16 @@ camera captures are debug data, never in a station (an earlier file's
   (`finish-rebuild.ts`). Used means (module-private
   `referencedAssetIds`): every step block's (an image, a character's image and voice,
   an audio, a video, a model) in any station, every item's (none for a pin
-  or a photo; a placed model its model file), and the cover.
+  or a photo; a placed model its model file), every station's card image
+  (format minor 2; it may name an image asset) and the cover.
+- `keepsItself(station, imageAssets) -> boolean`: whether an EMPTY
+  station carries the creator's own work, which keeps it when its last
+  item leaves: a title, story steps, a non-blank description (a blank one
+  is none, as the reader reads it, and as a blank title), or a card image naming
+  one of `imageAssets`. The one rule both this write (`withTourContent`) and the tour
+  document (`withoutEmptied`) ask.
+- `imageAssetIds(assets) -> ReadonlySet<string>`: the image assets' ids,
+  through the framework's `tourImageIds` (what `keepsItself` takes).
 - `stepAssetIds(station)`, `objectAssetIds(object)`: the assets a
   station's (or a frame's) steps name, and a pin's, photo's or model's,
   as a station's item or in its world view (none for a pin or a photo, a
@@ -76,13 +91,24 @@ camera captures are debug data, never in a station (an earlier file's
   field).
 - An object missing from `objects` leaves its station. A station this
   write EMPTIED (it held items and holds none now) goes when nothing else
-  keeps it: no title, no steps, and no other station routing to it (`next`, a quiz route). It existed for its
+  keeps it: nothing of its own (`keepsItself`: no title, no steps, no non-blank
+  description, no card image naming an image asset), and no other station
+  routing to it (`next`, a quiz route). It existed for its
   elements (D20); left behind, it was an untitled spot the visitor's
-  guide still led to. A titled or storied station stays, and so does an
+  guide still led to. A titled, storied, described or pictured station
+  stays, and so does an
   empty station the tour already had (a later editor may add a station
   before filling it). The tour document drops such a station itself
   (`withoutEmptied`); this covers a written station the document's frames
   no longer name.
+- **A card image keeps a station only while it still names a picture.**
+  "A description or an image keeps a station" is read here as an image
+  that still resolves. An emptied
+  station holds no photo, so a card image of its own (now moved or
+  deleted) photo names nothing: the framework's writer drops it
+  (`station-image-gone`), and keeping the station for it would leave the
+  bare spot the station rule removes. An image asset still resolves, so it keeps the
+  station.
 - The order of the world view read back is the stations' order, then the
   items' order within each station, which can differ from the order the
   objects were placed in.
@@ -117,12 +143,14 @@ const written = withTourContent(opened, {
   into the station it names however far from it, and one naming none kept
   in its own; an object in no station of the tour refused in words; the
   stations' order kept; removal; an emptied station dropped unless titled,
-  storied or routed to; and the `asStored`
+  storied or routed to; kept by a description or an image asset, not by a
+  blank description (`keepsItself` asked directly) nor by an
+  image of its own deleted photo; and the `asStored`
   property (it is what a written tour holds, by content key);
   `withReferencedAssets` keeping each block kind's assets (an image, a
   character with and without a voice, an audio, a video, a model; a text
-  block names none) and dropping the rest, the cover kept though no step
-  names it, a block in any station counted, the tour's asset order kept,
+  block names none) and dropping the rest, the cover and a station's card
+  image kept though no step names them, a block in any station counted, the tour's asset order kept,
   and the same manifest when every asset is used.
 - Through `finish-rebuild.test.ts` (a micrometre stored copy counted as
   written, a placed model's file
@@ -132,3 +160,8 @@ const written = withTourContent(opened, {
   `tour-document.test.ts` and `tour-document.property.test.ts` (the open
   dropping a file's captures, and no write carrying them),
   `authoring-draft.test.ts` and `creator-finish.test.ts`.
+- `withoutRoutesTo` through `tour-document-stations.test.ts` (a delete
+  pruning a `next` and quiz targets, a route left with no target going
+  whole, and the property that any order of station deletes leaves no
+  route to a missing station) and `tour-document-stations-draft.test.ts`
+  (a restore pruning a route to a station gone).

@@ -12,8 +12,46 @@
   shape; the stations it named stay as written), and the writer never
   writes it. This breaks the API and still ships in a minor release, by
   decision, because no tours exist yet that carry the field.
+- **`TourManifestReadOptions.onDropped` hears a `TourManifestDrop`**
+  (`TourDetailsDrop | TourStationDrop`) instead of a `TourDetailsDrop`:
+  a reader now also reports a station description or card image it left
+  out (below). A handler typed for `TourDetailsDrop` alone no longer
+  compiles; narrow on `'station' in drop` (only a `TourStationDrop`
+  carries it). This breaks the API and still ships in a minor release, by
+  decision, because `onDropped` is new in 1.30.0 and its one known handler
+  is this repository's Tour Viewer, changed with it.
 
 ### Added
+
+- **A placed 3D model, `tour.json` version 3 minor 1** (`ar/tour-items`,
+  `ar/tour-manifest`): a station item of kind `model` (`TourModelItem`; in
+  the world view `TourModel`) names a model asset of the tour (`asset`, a
+  `.glb` in `assets`) and carries its size in metres, `sizeM`: the scaled
+  model's largest side, from `TOUR_MODEL_MIN_SIZE_M` (0.05) to
+  `TOUR_MODEL_MAX_SIZE_M` (500), both inclusive. A size outside the bound
+  is refused, never clamped; a lenient read (a newer minor) leaves out a
+  model whose positive size lies beyond the bound, and nothing that is not
+  a positive finite number is a size at any minor. Pins and photos have no
+  size. The writer writes the lowest minor the tour needs (at least 1
+  while it carries a model), so a tour without models is written exactly
+  as before. Nothing renders a placed model yet. For older writers: npm
+  1.30.0 (minor 0) reads a minor 1 tour leniently, without its models, and
+  refuses to save it.
+- **A station's description and card image, `tour.json` version 3 minor
+  2** (`ar/tour-stations`, `ar/tour-manifest`): `TourStation.description`
+  (the tour description's rule: trimmed, at most 2000 characters; blank
+  reads as none) and `TourStation.image` (the id of a photo item of that
+  station or an image asset of the tour). An image whose photo or asset
+  is gone is left out and reported through `onDropped` as a
+  `TourStationDrop` (`cause: 'station-image-gone'`), and the writer
+  accepts that drop as it does the cover's `image-gone`. An image that is
+  not an id, or a description that is not text or too long, is left out
+  and reported with no cause, as a malformed tour detail is, and the writer
+  refuses it. Neither ever fails a read. `TOUR_MANIFEST_MINOR` is 2; the
+  writer writes 2 only while a station carries either field, so every
+  other tour is written exactly as before. For older writers: npm 1.30.0
+  (minor 0) and viewers built since 3.1 (minor 1) read a 3.2 tour
+  leniently, without the two fields, and refuse to save it.
 
 - **`TourManifest.tourId`**: an optional id a tour carries in its
   `tour.json`, minted once by the app that first saves the tour and kept
@@ -54,7 +92,7 @@
 
 - **`tour.json` format version 3** (`ar/tour-manifest`): every pin and
   photo is now an item of a station. `TOUR_MANIFEST_VERSION` is 3 and
-  version 3 starts at minor 0; minor 1 (below) adds the placed model. Version 1 and 2 files are not
+  version 3 starts at minor 0. Version 1 and 2 files are not
   migrated: the reader refuses them with words ("this tour is in an older
   format ... it has to be made again"), and a version 2 reader refuses a
   version 3 file the same way ("update the app"), so neither opens the
@@ -63,18 +101,6 @@
 
 ### Added
 
-- **A placed 3D model, `tour.json` version 3 minor 1** (`ar/tour-items`,
-  `ar/tour-manifest`): a station item of kind `model` (`TourModelItem`; in
-  the world view `TourModel`) names a model asset of the tour (`asset`, a
-  `.glb` in `assets`) and carries its size in metres, `sizeM`: the scaled
-  model's largest side, from `TOUR_MODEL_MIN_SIZE_M` (0.05) to
-  `TOUR_MODEL_MAX_SIZE_M` (500), both inclusive. A size outside the bound
-  is refused, never clamped; a lenient read (a newer minor) leaves out a
-  model whose positive size lies beyond the bound, and nothing that is not
-  a positive finite number is a size at any minor. Pins and photos have no
-  size. `TOUR_MANIFEST_MINOR` is 1; the writer writes the lowest minor the
-  tour needs (1 only while it carries a model), so a tour without models is
-  written exactly as before. Nothing renders a placed model yet.
 - **Stations own their items at local poses** (`ar/tour-manifest`):
   `TourStation.items` holds the station's pins and photos (`TourItem`:
   `TourPinItem` or `TourPhotoItem`), each with a `TourLocalPose` relative

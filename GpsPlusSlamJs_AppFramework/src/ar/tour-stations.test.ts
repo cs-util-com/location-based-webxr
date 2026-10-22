@@ -774,3 +774,144 @@ describe('version 3 stations (tour editor plan 2026-10-17-1816, W3)', () => {
     expect(parsed).not.toHaveProperty('anchor');
   });
 });
+
+describe("a station's description and card image (minor 2, G2 build plan M1a)", () => {
+  // Why: the 3D editor's station cards show a description and a picture
+  // (G2 build plan 2026-10-21-2247, §3.4, §4.2.4). Both are station fields
+  // a creator types or picks, so the reader keeps exactly what the editor
+  // writes (a description trimmed, as the tour's own), and never fails a
+  // tour over either: a value of the wrong shape is dropped and reported
+  // (the writer refuses it), and a card image whose photo or asset was
+  // deleted is dropped, reported like the cover's `image-gone`, and the
+  // write still succeeds (Q14).
+  const photoItem = (id: string) => ({
+    id,
+    kind: 'photo',
+    image: `content/${id}.jpg`,
+    imageWidth: 640,
+    imageHeight: 480,
+    createdAtIso: '2026-10-21T06:01:00.000Z',
+    pose: { position: [3, 1.6, 0], rotation: [0, 0, 0, 1] },
+  });
+  const pinItem = {
+    id: 'p1',
+    kind: 'pin',
+    label: 'The well',
+    createdAtIso: '2026-10-21T06:00:00.000Z',
+    pose: { position: [1, 0.5, -2], rotation: [0, 0, 0, 1] },
+  };
+  type Drop = { field: string; station: string; cause?: string };
+  function parseWithDrops(stations: unknown, lenient = false) {
+    const dropped: Drop[] = [];
+    const parsed = parseTourStations(stations, {
+      assets: assets(),
+      fail,
+      lenient,
+      onDropped: (drop) => {
+        dropped.push({
+          field: drop.field,
+          station: drop.station,
+          cause: drop.cause,
+        });
+      },
+    });
+    return { parsed, dropped };
+  }
+
+  it('reads a description trimmed, line breaks kept, and a blank one as none', () => {
+    const [kept, blank] = parse([
+      station({ description: '  Up the hill.\nThen left.  ' }),
+      station({ id: 's2', description: ' \n ' }),
+    ]);
+    expect(kept?.description).toBe('Up the hill.\nThen left.');
+    expect(blank).not.toHaveProperty('description');
+  });
+
+  it("drops a description that is not text or is longer than the tour's own limit, and says so, never failing the tour", () => {
+    // Why (as the tour details, M4a review #6): a hand-edited 2001
+    // character description must cost the description, not the tour - a
+    // refused tour cannot even be opened in the editor to fix it. The drop
+    // carries no cause, so the writer still refuses such a value loudly.
+    const { parsed, dropped } = parseWithDrops([
+      station({ description: 42 }),
+      station({ id: 's2', description: 'x'.repeat(2001) }),
+    ]);
+    for (const s of parsed) expect(s).not.toHaveProperty('description');
+    expect(dropped).toEqual(
+      ['s1', 's2'].map((id) => ({ field: 'description', station: id }))
+    );
+    expect(() => parse([station({ description: 42 })])).not.toThrow();
+    // The limit counts characters, as the tour's description does: 2000
+    // emoji are 4000 UTF-16 units and still fit.
+    expect(
+      parse([station({ description: '\u{1F3F0}'.repeat(2000) })])[0]
+        ?.description
+    ).toHaveLength(4000);
+  });
+
+  it('names a photo of the same station or an image asset of the tour', () => {
+    const { parsed, dropped } = parseWithDrops([
+      station({ image: 'f1', items: [photoItem('f1')] }),
+      station({ id: 's2', image: 'gate' }),
+    ]);
+    expect(parsed.map((s) => s.image)).toEqual(['f1', 'gate']);
+    expect(dropped).toEqual([]);
+  });
+
+  it("drops an image naming no picture of the station - another station's photo, a pin, an audio or model asset, a missing id - and says so, never failing the tour", () => {
+    const { parsed, dropped } = parseWithDrops([
+      station({ image: 'f2', items: [pinItem] }),
+      station({ id: 's2', image: 'p1', items: [photoItem('f2')] }),
+      station({ id: 's3', image: 'voice' }),
+      station({ id: 's4', image: 'arch' }),
+      station({ id: 's5', image: 'gone' }),
+    ]);
+    for (const s of parsed) expect(s).not.toHaveProperty('image');
+    expect(dropped).toEqual(
+      ['s1', 's2', 's3', 's4', 's5'].map((id) => ({
+        field: 'image',
+        station: id,
+        cause: 'station-image-gone',
+      }))
+    );
+  });
+
+  it('drops an image that is not an id and says so, with no cause (the writer refuses it)', () => {
+    for (const image of [42, 'not/an id', '']) {
+      const { parsed, dropped } = parseWithDrops([station({ image })]);
+      expect(parsed[0]).not.toHaveProperty('image');
+      expect(dropped).toEqual([{ field: 'image', station: 's1' }]);
+    }
+  });
+
+  it("a newer minor's malformed values read as none, unreported: that minor may have widened the rule", () => {
+    for (const image of [42, 'not/an id', '']) {
+      const { parsed, dropped } = parseWithDrops(
+        [station({ image, description: 7 })],
+        true
+      );
+      expect(parsed[0]).not.toHaveProperty('image');
+      expect(parsed[0]).not.toHaveProperty('description');
+      expect(dropped).toEqual([]);
+    }
+  });
+
+  it("a newer minor's image naming what this reader skipped is left out unreported, never called gone", () => {
+    // Why: a lenient read leaves out what it cannot show (a photo of a
+    // newer image type, an asset of a newer media type); the picture is
+    // not gone, this reader just cannot see it. Saying "gone" would be
+    // false, and such a tour is never written back here anyway.
+    const { parsed, dropped } = parseWithDrops(
+      [
+        station({
+          image: 'f9',
+          items: [{ ...photoItem('f9'), image: 'content/f9.heic' }],
+        }),
+      ],
+      true
+    );
+    expect(parsed[0]?.items).toEqual([]);
+    expect(parsed[0]).not.toHaveProperty('image');
+    expect(dropped).toEqual([]);
+  });
+});
