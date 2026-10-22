@@ -34,6 +34,17 @@
  * `codes-only-trust-ended-early`); their outputs were recorded by running
  * this file against the guide's sources as they were before it (commit
  * 183f03d2), which reproduced every earlier stream exactly.
+ * THE SECOND NAMED EXCEPTION (visitor walk W4 build plan 2026-10-21-1105,
+ * M4, §1.9 R-0 and R-2): field by field, never a whole tick. While no
+ * distance is shown an any-order tour guesses no station, and again only
+ * once the distance has held for R-2's hold - so on a tick where R-2
+ * holds the `line` (no "nearest: <title>"), the `crumbs` (no trail
+ * without a focus) and the `skip` (no clock suggestion without a focus)
+ * may differ; and on a tick without a distance (pending, too weak,
+ * `'none'`) the `hud` may (no marker, each carries a distance label).
+ * Every other field equals the golden on every tick, and every field
+ * once R-2's hold has run out with a distance shown.
+ *
  * Regenerate ONLY when a guide output is meant to change, say why in the
  * commit, and never in CI:
  * `GOLDEN_UPDATE=1 pnpm run test:unit src/station-guide.parity.test.ts`.
@@ -170,6 +181,35 @@ interface Scenario {
   readonly input: (t: number) => TickInput;
 }
 
+/** What the guide's view said of a tick (not in the golden): whether R-2
+ *  held, and whether a distance was shown - the M4 exception's states. */
+interface TickSide {
+  readonly noGuess: boolean;
+  readonly distance: boolean;
+}
+
+/** The fields M4 may change on a tick, by its state (the header). */
+function m4Exempt(side: TickSide): ReadonlySet<string> {
+  const out = new Set<string>();
+  if (side.noGuess) for (const k of ["line", "crumbs", "skip"]) out.add(k);
+  if (!side.distance) out.add("hud");
+  return out;
+}
+
+/** A tick held to the golden, but for the fields M4's exception names. */
+function expectTick(
+  got: TickRecord,
+  want: TickRecord,
+  side: TickSide,
+  at: string,
+): void {
+  const exempt = m4Exempt(side);
+  for (const key of Object.keys(want) as (keyof TickRecord)[]) {
+    if (exempt.has(key)) continue;
+    expect(got[key], `${at} ${key}`).toEqual(want[key]);
+  }
+}
+
 /** What one tick showed and decided. Numbers exact: the same arithmetic
  *  must give the same doubles. */
 interface TickRecord {
@@ -192,8 +232,13 @@ interface TickRecord {
  * `ar-entry.ts` does, so the guide's own dispatches re-enter it; the
  * prefetch's approach is then recorded once per station and tick (an
  * extra tick at the same instant repeats the same approach).
+ *
+ * Each tick's `TickSide` comes with it: the M4 exception's states.
  */
-function runStream(s: Scenario, reenter = false): TickRecord[] {
+function runWithSides(
+  s: Scenario,
+  reenter = false,
+): { records: TickRecord[]; sides: TickSide[] } {
   const rng = mulberry32(
     [...s.name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7),
   );
@@ -218,8 +263,9 @@ function runStream(s: Scenario, reenter = false): TickRecord[] {
   let crumbs: string | null = null;
   const dom = {
     line: { textContent: "", hidden: true },
-    skip: { textContent: "", hidden: true },
+    skip: { textContent: "", hidden: true, dataset: {} as DOMStringMap },
   };
+  const sides: TickSide[] = [];
   const guide = wireStationGuide({
     dom,
     tour: () => ({ stations: s.stations, order: "any" }),
@@ -289,6 +335,11 @@ function runStream(s: Scenario, reenter = false): TickRecord[] {
       if (at === t - 4) guide.storyEnded(id);
     }
     guide.tick();
+    const view = guide.view();
+    sides.push({
+      noGuess: view?.noGuess ?? false,
+      distance: view?.precision === "code" || view?.precision === "gps",
+    });
     for (const id of found) foundAt.set(id, t);
     const targets = hud.targets?.() ?? [];
     out.push({
@@ -307,7 +358,7 @@ function runStream(s: Scenario, reenter = false): TickRecord[] {
       crumbs,
     });
   }
-  return out;
+  return { records: out, sides };
 
   function gpsPoint(
     id: string,
@@ -607,9 +658,13 @@ const EXCEPTION: readonly Scenario[] = [
 ];
 
 describe("the station guide's precision parity oracle (frozen before M2's switch)", () => {
-  const now = Object.fromEntries(
-    [...PARITY, ...EXCEPTION].map((s) => [s.name, runStream(s)]),
+  const runs = Object.fromEntries(
+    [...PARITY, ...EXCEPTION].map((s) => [s.name, runWithSides(s)]),
   );
+  const now = Object.fromEntries(
+    Object.entries(runs).map(([name, r]) => [name, r.records]),
+  );
+  const sidesOf = (name: string) => runs[name]!.sides;
 
   it("no parity stream contains the named exception", () => {
     for (const s of PARITY) expect(exceptionTicks(s), s.name).toEqual([]);
@@ -703,8 +758,9 @@ describe("the station guide's precision parity oracle (frozen before M2's switch
       // exception tick; the window itself is the next test's.
       const ticks = exceptionTicks(s);
       const until = ticks[0] ?? want.length;
+      const sides = sidesOf(s.name);
       for (let t = 0; t < until; t += 1) {
-        expect(got[t], `${s.name} t=${String(t)}`).toEqual(want[t]);
+        expectTick(got[t]!, want[t]!, sides[t]!, `${s.name} t=${String(t)}`);
       }
       if (ticks.length === 0) continue;
       // After the window every tick is the old guide's again, presence
@@ -715,8 +771,11 @@ describe("the station guide's precision parity oracle (frozen before M2's switch
       // position at once, so they meet on the first tick after the window;
       // a stream where they did not would need its own named exception.
       for (let t = ticks.at(-1)! + 1; t < want.length; t += 1) {
-        expect(got[t], `${s.name} t=${String(t)} (after the window)`).toEqual(
-          want[t],
+        expectTick(
+          got[t]!,
+          want[t]!,
+          sides[t]!,
+          `${s.name} t=${String(t)} (after the window)`,
         );
         afterWindow += 1;
       }
@@ -739,16 +798,52 @@ describe("the station guide's precision parity oracle (frozen before M2's switch
       TickRecord[]
     >;
     for (const s of [...PARITY, ...EXCEPTION]) {
-      const got = runStream(s, true);
+      const { records: got, sides } = runWithSides(s, true);
       expect(got, s.name).toEqual(now[s.name]);
+      expect(sides, s.name).toEqual(sidesOf(s.name));
       // Held to the golden outside the exception window, as above.
       const ticks = exceptionTicks(s);
       const want = frozen[s.name]!;
       for (let t = 0; t < want.length; t += 1) {
         if (ticks.length > 0 && t >= ticks[0]! && t <= ticks.at(-1)!) continue;
-        expect(got[t], `${s.name} t=${String(t)}`).toEqual(want[t]);
+        expectTick(got[t]!, want[t]!, sides[t]!, `${s.name} t=${String(t)}`);
       }
     }
+  });
+
+  // Why this test matters (W4 build plan M4, the parity golden's
+  // field-level exception): an exception that never applies proves
+  // nothing, and one that swallowed whole ticks would hide a change in
+  // the fields M4 never meant to touch. The streams reach R-2 under each
+  // of its no-distance states, the exempt fields really differ there, and
+  // a tick with a distance and R-2 over is held to every field (the test
+  // above).
+  it("M4's exception applies field by field, on ticks that reach it", () => {
+    const frozen = JSON.parse(readFileSync(GOLDEN, "utf8")) as Record<
+      string,
+      TickRecord[]
+    >;
+    let noGuess = 0;
+    let lineChanged = 0;
+    let hudChanged = 0;
+    let fullTicks = 0;
+    for (const s of PARITY) {
+      const sides = sidesOf(s.name);
+      const got = now[s.name]!;
+      const want = frozen[s.name]!;
+      sides.forEach((side, t) => {
+        if (side.noGuess) noGuess += 1;
+        if (side.noGuess && got[t]!.line !== want[t]!.line) lineChanged += 1;
+        if (!side.distance && got[t]!.hud.join() !== want[t]!.hud.join()) {
+          hudChanged += 1;
+        }
+        if (m4Exempt(side).size === 0) fullTicks += 1;
+      });
+    }
+    expect(noGuess).toBeGreaterThan(0);
+    expect(lineChanged).toBeGreaterThan(0);
+    expect(hudChanged).toBeGreaterThan(0);
+    expect(fullTicks).toBeGreaterThan(noGuess);
   });
 
   // Why this test matters (plan §12, S3): it is the ONE place the shared

@@ -290,20 +290,11 @@ export function walkRadarAdaptiveRangeM(
 
 const RAD = Math.PI / 180;
 
-/** Whether the radar may name a focus (§1.9 R-2, forward-compatible):
- *  not while the guide shows no distance in an any-order tour with a
- *  choice of two or more stations, and never frozen. */
-function focusShown(input: WalkRadarInput, frozen: boolean): boolean {
-  if (frozen) return false;
-  const noDistance =
-    input.kind === "weak" ||
-    input.kind === "pending" ||
-    input.kind === "none" ||
-    input.kind === "lost";
-  const unfound = input.stations.filter(
-    (s) => s.state === "next" || s.state === "left",
-  ).length;
-  return !(noDistance && input.order === "any" && unfound >= 2);
+/** Whether the radar may name a focus: never frozen. Which station is
+ *  the focus is the guide's (§1.9 R-1, R-2): in R-2's condition it names
+ *  none, so no row is "next"; a chosen target stays one (R-4). */
+function focusShown(frozen: boolean): boolean {
+  return !frozen;
 }
 
 function lookOf(state: WalkRowState, focus: boolean): WalkBlipLook {
@@ -381,7 +372,7 @@ export function walkRadarModel(input: WalkRadarInput): WalkRadarModel {
   if (geo === null) {
     return { ...empty, mode, north: null, cone: null, visitor };
   }
-  const withFocus = focusShown(input, frozen);
+  const withFocus = focusShown(frozen);
   if (heading === null) {
     // How far, not which way; found and skipped stations left out.
     const distanceRings = input.stations.flatMap((s) => {

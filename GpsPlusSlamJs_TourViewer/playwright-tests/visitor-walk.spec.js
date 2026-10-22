@@ -5,8 +5,11 @@ import {
   forceTrackingReady,
   installTourViewerArFakes,
   lockFixtureCode,
+  reportArTracking,
   seedAlignment,
   standAt,
+  waitForTheGuess,
+  walkRowControl,
 } from "./ar-fakes.js";
 
 /**
@@ -59,13 +62,16 @@ async function openTheWalk(page, archive = WALK_ARCHIVE) {
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
 }
 
-/** Start AR at the code: aligned, standing at the zero, the code locked. */
-async function enterAtTheCode(page) {
+/** Start AR at the code: aligned, standing at the zero, the code locked;
+ *  then, unless `guess` is false, wait for R-2's hold (M4) so the peek
+ *  names a station. */
+async function enterAtTheCode(page, { guess = true } = {}) {
   await page.getByTestId("enter-ar").click();
   await seedAlignment(page);
   await standAt(page, 0, 0, 0);
   await lockFixtureCode(page);
   await expect(page.getByTestId("walk-sheet")).toBeVisible();
+  if (guess) await waitForTheGuess(page);
 }
 
 /** One tracking-quality report: "ok" through the shared fake, any other
@@ -110,6 +116,18 @@ async function statusWith(page, state, expected) {
       { timeout: 20000 },
     )
     .toBe(expected);
+}
+
+/** AR tracking with a pose, and the report ready around a camera frame
+ *  (the fakes deliver no poses, so the report reads lost after every
+ *  recompute until one is reported; as the radar spec does). */
+async function trackingOk(page) {
+  await reportArTracking(page, true);
+  await forceTrackingReady(page);
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+  });
+  await forceTrackingReady(page);
 }
 
 /** Skip the scan by its escape: the tour is placed by GPS. */
@@ -239,8 +257,8 @@ test("a found station's story takes the peek's place with its dots, and its end 
   // where the peek was, its dots follow the lines, and "End this story"
   // (two taps, with "Keep listening" beside the confirm) moved from the
   // skip button to the card. Opening the list hides the card; a find
-  // closes the list again. Fixed order: today's rule offers the end only
-  // while nothing unfound is offered (K4 review R9).
+  // closes the list again. While the end is asked the story waits: its
+  // step's timer stops, and "Keep listening" starts it again (R-5, M4).
   await openTheWalk(page, FIXED_WALK_ARCHIVE);
   await enterAtTheCode(page);
   await page.getByTestId("walk-grab").click();
@@ -276,11 +294,23 @@ test("a found station's story takes the peek's place with its dots, and its end 
   await expect(end).toHaveText("End this story?");
   await expect(page.getByTestId("station-skip")).toBeHidden();
   await expect(page.getByTestId("keep-listening")).toBeHidden();
+  await expect(page.getByTestId("scene-continue")).toBeVisible();
   await end.click();
   await expect(end).toHaveText("End the story of The gate now");
   await expect(page.getByTestId("keep-listening")).toBeVisible();
+  // Under the question the card offers only its two answers (W4): the
+  // next step waits for Keep listening.
+  await expect(page.getByTestId("scene-continue")).toBeHidden();
+  // Held: no timer runs under the question, the dot shows no timed fill.
+  await expect(dots.nth(1)).not.toHaveAttribute("data-timed", "true");
+  await fireTimers(page);
+  await expect(page.getByTestId("scene-text")).toHaveText(
+    "Traders who came late slept outside the walls, beside their carts.",
+  );
   await page.getByTestId("keep-listening").click();
   await expect(end).toHaveText("End this story?");
+  await expect(page.getByTestId("scene-continue")).toBeVisible();
+  await expect(dots.nth(1)).toHaveAttribute("data-timed", "true");
   await expect(page.getByTestId("keep-listening")).toBeHidden();
   await expect(story).toBeVisible();
   // The focus is not dropped with the hidden button (W4 M2 review): it
@@ -365,31 +395,242 @@ test("a tour of stories placed by GPS still asks for steps while no heading is e
   );
 });
 
-test("the quick skip takes two taps and its undo one; each is said in a toast", async ({
+test("'Can't get there?' opens the list on its row; the confirm skips, the row's undo brings it back; each is said in a toast", async ({
   page,
 }) => {
-  // Why this test matters (§1.4, today's rules kept): the skip still asks
-  // first and names the station, the undo still brings it back for a
-  // moment - and what happened is said in the toast now, not the line.
+  // Why this test matters (W4 build plan M4, §1.6, R-2's taps): the quick
+  // action opens the list with the focus's row asking for its confirm
+  // (W4), the rows carry Skip, its confirm, the undo with its bar and
+  // Bring back, and what happened is said in the toast (the async-UI
+  // rule's final state). The focus follows each tap's control to what
+  // takes its place.
   await openTheWalk(page);
   await enterAtTheCode(page);
+  const sheet = page.getByTestId("walk-sheet");
   const quick = page.getByTestId("station-skip");
   await expect(quick).toHaveText("Can't get there?");
   await expect(quick).toHaveAttribute("data-kind", "ask");
   await quick.click();
-  await expect(quick).toHaveText("Skip The gate - I can't get there");
-  await expect(quick).toHaveAttribute("data-kind", "suggested");
-  await quick.click();
+  await expect(sheet).toHaveAttribute("data-sheet", "list");
+  // The quick action goes while the list is open; its focus moves to the
+  // armed row's confirm.
+  await expect(quick).toBeHidden();
+  const confirm = walkRowControl(page, "The gate", "confirm");
+  await expect(confirm).toHaveText("Skip The gate - I can't get there");
+  await expect(confirm).toBeFocused();
+  await expect(walkRowControl(page, "The gate", "cancel")).toBeVisible();
+  await expect(walkRowControl(page, "The gate", "act")).toHaveCount(0);
+  await confirm.click();
   const toast = page.locator("#walk-toast");
   await expect(toast).toHaveText("Skipped The gate.");
-  await expect(quick).toHaveText("Undo: bring back The gate");
-  await expect(quick).toHaveAttribute("data-kind", "undo");
+  const undo = walkRowControl(page, "The gate", "act");
+  await expect(undo).toHaveText("Undo: bring back The gate");
+  await expect(undo).toHaveAttribute("data-k", "undo");
+  await expect(undo).toBeFocused();
+  await expect(
+    page.getByTestId("walk-row").filter({ hasText: "The gate" }),
+  ).toHaveAttribute("data-state", "skipped");
+  await expect(page.getByTestId("walk-undobar")).toBeVisible();
   await expect(
     page.getByTestId("walk-segments").locator("i").first(),
   ).toHaveAttribute("data-s", "skipped");
-  await quick.click();
+  await undo.click();
   await expect(toast).toHaveText("Brought back The gate.");
+  await expect(walkRowControl(page, "The gate", "act")).toHaveText("Skip");
+  await expect(page.getByTestId("walk-undobar")).toHaveCount(0);
+
+  // Another row's Skip asks first; Cancel takes the ask back.
+  await walkRowControl(page, "The tower", "act").click();
+  await expect(walkRowControl(page, "The tower", "confirm")).toHaveText(
+    "Skip The tower - I can't get there",
+  );
+  await walkRowControl(page, "The tower", "cancel").click();
+  await expect(walkRowControl(page, "The tower", "act")).toBeFocused();
+  await expect(walkRowControl(page, "The tower", "confirm")).toHaveCount(0);
+
+  // The quick action's own undo, with the list closed.
+  await walkRowControl(page, "The tower", "act").click();
+  await walkRowControl(page, "The tower", "confirm").click();
+  await expect(toast).toHaveText("Skipped The tower.");
+  await page.getByTestId("walk-close").click();
+  await expect(quick).toHaveText("Undo: bring back The tower");
+  await expect(quick).toHaveAttribute("data-kind", "undo");
+  await quick.click();
+  await expect(toast).toHaveText("Brought back The tower.");
   await expect(quick).toHaveText("Can't get there?");
+});
+
+test("a chosen target leads the peek, the line and its row until it is tapped again", async ({
+  page,
+}) => {
+  // Why this test matters (W4 build plan M4, R-4): "Guide me here" on a
+  // row makes that station the walk's target - the peek, the hidden line
+  // and the row say so - whatever is nearest; tapped again, the nearest
+  // leads again.
+  await openTheWalk(page);
+  await enterAtTheCode(page);
+  await expect(page.getByTestId("walk-title")).toHaveText("The gate");
+  await page.getByTestId("walk-grab").click();
+  const tower = walkRowControl(page, "The tower", "main");
+  await expect(tower).toHaveAttribute(
+    "aria-label",
+    /^The tower: \d+ m.*\. Guide me here$/,
+  );
+  await tower.click();
+  const row = page.getByTestId("walk-row").filter({ hasText: "The tower" });
+  await expect(row).toHaveAttribute("data-chosen", "true");
+  await expect(row).toHaveAttribute("data-state", "next");
+  await expect(tower).toHaveAttribute("aria-pressed", "true");
+  await expect(tower).toBeFocused();
+  await expect(row.getByTestId("walk-row-sub")).toHaveText(
+    /^\d+ m.* - your choice$/,
+  );
+  await expect(page.getByTestId("walk-eyebrow")).toHaveText(
+    "4 stations to find - your choice",
+  );
+  await expect(page.getByTestId("walk-title")).toHaveText("The tower");
+  await expect(page.getByTestId("station-line")).toHaveText(
+    /^4 stations to find - your choice: The tower, \d+ m$/,
+  );
+  // Tapped again: no choice, the nearest leads.
+  await tower.click();
+  await expect(row).not.toHaveAttribute("data-chosen", "true");
+  await expect(page.getByTestId("walk-title")).toHaveText("The gate");
+  await expect(page.getByTestId("walk-eyebrow")).toHaveText(
+    "4 stations to find - nearest",
+  );
+});
+
+test("with no position the walk names no station: the chooser asks which one, and one tap on a row skips it", async ({
+  page,
+}) => {
+  // Why this test matters (W4 build plan M4, W-D3 and R-2): a visitor
+  // without location whose code lost its trust (an odometry frame change)
+  // has no position anyone vouches for; no text may name a station as
+  // next or nearest - not the peek, not the hidden line, not the quick
+  // action - and "Can't get there?" opens the list to ask which one.
+  await page.addInitScript(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    if (t) t.locationPermission = "denied";
+  });
+  await openTheWalk(page);
+  const button = page.getByTestId("enter-ar");
+  await button.click();
+  await expect(button).toHaveText("Exit AR");
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.arPose = {
+      position: { x: 0, y: 1.4, z: 0 },
+      orientation: { x: 0, y: 0, z: 0, w: 1 },
+    };
+  });
+  await lockFixtureCode(page);
+  await trackingOk(page);
+  await waitForTheGuess(page);
+  await expect(page.getByTestId("walk-title")).toHaveText("The gate");
+  // The code goes out of sight and the odometry frame changes.
+  await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    t.nextDetection = null;
+    t.alignmentStore.dispatch({ type: "qrDetected/qrFrameChanged" });
+  });
+  await trackingOk(page);
+  const peek = page.getByTestId("walk-peek");
+  await expect(peek).toHaveAttribute("data-kind", "none");
+  await expect(page.getByTestId("walk-eyebrow")).toHaveText("Position unknown");
+  await expect(page.getByTestId("walk-title")).toHaveText("4 stations to find");
+  const line = page.getByTestId("station-line");
+  await expect(line).toHaveText(
+    "4 stations to find - scan one of the tour's codes so the guide knows where you are.",
+  );
+  const quick = page.getByTestId("station-skip");
+  await expect(quick).toHaveText("Can't get there?");
+  for (const station of STATIONS) {
+    await expect(page.getByTestId("walk-peek")).not.toContainText(
+      station.title,
+    );
+    await expect(line).not.toContainText(station.title);
+    await expect(quick).not.toContainText(station.title);
+  }
+  await quick.click();
+  await expect(page.getByTestId("walk-sheet")).toHaveAttribute(
+    "data-sheet",
+    "list",
+  );
+  await expect(page.getByTestId("walk-hint")).toHaveText(
+    "Your position is unknown, so the guide can't tell which station is nearest. Which one can't you reach?",
+  );
+  // No row is the next one, and none shows a distance (R-0).
+  const rows = page.getByTestId("walk-row");
+  await expect(
+    page.locator('[data-testid="walk-row"][data-state="next"]'),
+  ).toHaveCount(0);
+  for (const station of STATIONS) {
+    const row = rows.filter({ hasText: station.title });
+    await expect(row).toHaveAttribute("data-state", "left");
+    await expect(row.getByTestId("walk-row-sub")).toHaveText(
+      "Distance unknown",
+    );
+  }
+  // In the chooser one tap on a row's Skip skips it; the undo covers a
+  // mistake.
+  await walkRowControl(page, "The well", "act").click();
+  await expect(page.locator("#walk-toast")).toHaveText("Skipped The well.");
+  await expect(walkRowControl(page, "The well", "act")).toHaveText(
+    "Undo: bring back The well",
+  );
+  await expect(page.getByTestId("walk-hint")).toHaveText(
+    "Your position is unknown - scan one of the tour's codes, or pick a station below.",
+  );
+});
+
+test("a skipped station is brought back after the tour is complete, and the tour completes again", async ({
+  page,
+}) => {
+  // Why this test matters (W4 build plan M4, W-D2 and R-3): a skip is
+  // never final - "Bring back" stays on a skipped row at any time, even
+  // once the tour is complete, and the complete tour becomes incomplete
+  // everywhere (the card, the segments, the peek), then complete again.
+  await openTheWalk(page);
+  await enterAtTheCode(page);
+  await visit(page, STATIONS[0], 1);
+  await visit(page, STATIONS[1], 2);
+  await page.getByTestId("walk-grab").click();
+  // Two skips: the second settles the first, whose row now says "Bring
+  // back" rather than the undo.
+  await walkRowControl(page, "The tower", "act").click();
+  await walkRowControl(page, "The tower", "confirm").click();
+  await walkRowControl(page, "The garden", "act").click();
+  await walkRowControl(page, "The garden", "confirm").click();
+  const sheet = page.getByTestId("walk-sheet");
+  await expect(sheet).toHaveAttribute("data-complete", "true");
+  await expect(page.getByTestId("walk-done-title")).toHaveText(
+    "Tour complete - 2 skipped.",
+  );
+  await expect(page.getByTestId("walk-done-text")).toHaveText(
+    "2 of 4 found. A skipped station can still be brought back.",
+  );
+  const bring = walkRowControl(page, "The tower", "act");
+  await expect(bring).toHaveText("Bring back");
+  await expect(bring).toHaveAttribute("aria-label", "Bring back The tower");
+  await bring.click();
+  await expect(page.locator("#walk-toast")).toHaveText(
+    "Brought back The tower.",
+  );
+  await expect(sheet).toHaveAttribute("data-complete", "false");
+  await expect(page.getByTestId("walk-done")).toBeHidden();
+  await expect(
+    page.getByTestId("walk-segments").locator("i").nth(2),
+  ).not.toHaveAttribute("data-s", "skipped");
+  await expect(page.getByTestId("station-line")).toHaveText(
+    /^(Brought back The tower\. )?Next: The tower, \d+ m$/,
+  );
+  // Skipped again, the tour is complete again.
+  await walkRowControl(page, "The tower", "act").click();
+  await walkRowControl(page, "The tower", "confirm").click();
+  await expect(sheet).toHaveAttribute("data-complete", "true");
+  await expect(page.getByTestId("walk-done-title")).toHaveText(
+    "Tour complete - 2 skipped.",
+  );
 });
 
 test("the completion opens the list once, with its card and the way out", async ({
@@ -463,7 +704,7 @@ test("leaving AR shows the progress on the start page; coming back is welcomed",
   await expect(page.getByTestId("enter-ar")).toHaveText("Back to the tour");
   await expect(page.getByTestId("walk-sheet")).toBeHidden();
 
-  await enterAtTheCode(page);
+  await enterAtTheCode(page, { guess: false });
   await expect(away).toBeHidden();
   await expect(page.locator("#walk-toast")).toHaveText(
     "Welcome back - your progress is kept.",
@@ -481,6 +722,7 @@ test("leaving AR shows the progress on the start page; coming back is welcomed",
     "data-sheet",
     "peek",
   );
+  await waitForTheGuess(page);
   await expect(page.getByTestId("walk-eyebrow")).toHaveText(
     "3 stations to find - nearest",
   );

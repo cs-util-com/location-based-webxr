@@ -11,6 +11,7 @@ import {
   reportArTracking,
   seedAlignment,
   standAt,
+  waitForTheGuess,
 } from "./ar-fakes.js";
 
 /**
@@ -84,6 +85,8 @@ async function enterAtTheCode(page) {
   await lockFixtureCode(page);
   await expect(page.getByTestId("walk-sheet")).toBeVisible();
   await trackingOk(page);
+  // R-2's hold (M4): the peek names a station once the distance held.
+  await waitForTheGuess(page);
 }
 
 /** End a playing story by its card's control (ask, then confirm). On
@@ -289,6 +292,8 @@ test("placed by GPS: the chip says how well, too weak says so, and no heading dr
     "data-kind",
     "gps",
   );
+  // R-2's hold (M4): a distance is named once it held.
+  await waitForTheGuess(page);
   await expect(page.getByTestId("walk-distance-text")).toHaveText(/^\d+ m$/);
   await expect(page.getByTestId("walk-tail")).not.toHaveText(
     /^(Ahead|To your|Behind)/,
@@ -397,12 +402,19 @@ for (const tour of TOURS) {
     });
     await expect(chip).toHaveText("Position unknown");
     expect(await settledPicture(page)).toBe(frozen);
-    // A skip (today's quick skip: ask, then confirm) changes a blip.
-    const quick = page.getByTestId("station-skip");
-    await quick.click();
-    await expect(quick).toHaveText(/^Skip .+ - I can't get there$/);
-    await quick.click();
-    await expect(quick).toHaveText(/^Undo: bring back /);
+    // A skip changes a blip: "Can't get there?" opens the list - asking
+    // which station on the tour of stories, which names none without a
+    // position (R-2), on the focus's row on the tour in order - and the
+    // row's Skip or confirm skips it (W4 build plan M4).
+    await page.getByTestId("station-skip").click();
+    const confirm = page.getByTestId("walk-row-confirm");
+    if ((await confirm.count()) > 0) await confirm.click();
+    else await page.getByTestId("walk-row-act").first().click();
+    await expect(page.getByTestId("walk-row-act").first()).toHaveText(
+      /^Undo: bring back /,
+    );
+    // The list closed again: the picture compared is the radar's alone.
+    await page.getByTestId("walk-close").click();
     await expect(chip).toHaveText("Position unknown");
     await expect(page.getByTestId("walk-radar-wrap")).toHaveAttribute(
       "data-mode",

@@ -2,13 +2,17 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
+  focusAfterTap,
   focusLostToHiding,
   hideKeepingFocus,
   quickKind,
+  rowsDrawKey,
+  rowTapOf,
   setArrow,
   sheetAfterDrag,
   WALK_SHEET_DRAG_PX,
 } from "./walk-sheet";
+import type { WalkRow } from "./walk-sheet-model";
 
 /**
  * Why these tests matter (visitor walk W4 build plan M2, §1.5): the list
@@ -207,5 +211,65 @@ describe("setArrow (the direction arrows, W4 build plan M3)", () => {
         },
       ),
     );
+  });
+});
+
+describe("the rows' controls (W4 build plan M4, §1.6)", () => {
+  const row = (over: Partial<WalkRow> = {}): WalkRow => ({
+    id: "well",
+    number: 2,
+    title: "The well",
+    state: "next",
+    sub: "46 m",
+    arrowDeg: 10,
+    action: { kind: "skip", label: "Skip", ariaLabel: "Skip The well" },
+    confirm: null,
+    undoLeftMs: null,
+    chosen: false,
+    choosable: true,
+    mainLabel: "The well: 46 m. Guide me here",
+    ...over,
+  });
+
+  // Why: the sheet redraws on every camera frame; a redraw rebuilds the
+  // rows' buttons, restarts the undo's bar and moves the focus. The arrow
+  // and the undo's time left change every frame, so they must not redraw
+  // the rows - while the undo appearing or going, or any text, must.
+  it("the redraw key ignores the arrow and the undo's time left, not the undo itself", () => {
+    const undo = row({
+      action: { kind: "undo", label: "Undo", ariaLabel: "Undo" },
+      undoLeftMs: 5_000,
+    });
+    expect(rowsDrawKey([row({ arrowDeg: 80 })])).toBe(rowsDrawKey([row()]));
+    expect(rowsDrawKey([{ ...undo, undoLeftMs: 120 }])).toBe(
+      rowsDrawKey([undo]),
+    );
+    expect(rowsDrawKey([{ ...undo, undoLeftMs: null }])).not.toBe(
+      rowsDrawKey([undo]),
+    );
+    expect(rowsDrawKey([row({ sub: "47 m" })])).not.toBe(rowsDrawKey([row()]));
+    expect(rowsDrawKey([row({ chosen: true })])).not.toBe(rowsDrawKey([row()]));
+  });
+
+  it("a control's data-tap is the guide's row tap; the undo is a bring back", () => {
+    for (const tap of ["skip", "confirm", "cancel", "bring", "choose"]) {
+      expect(rowTapOf(tap)).toBe(tap);
+    }
+    expect(rowTapOf("undo")).toBe("bring");
+    expect(rowTapOf(undefined)).toBeNull();
+    expect(rowTapOf("end")).toBeNull();
+  });
+
+  // Why: the tapped control is rebuilt (or gone) after its tap; a keyboard
+  // or switch user's focus must land on what took its place - the confirm
+  // after Skip, the undo after the confirm, Skip again after Cancel or a
+  // bring back - never on the page's body.
+  it("the focus after a tap goes to what took the control's place", () => {
+    expect(focusAfterTap("skip")[0]).toBe("confirm");
+    expect(focusAfterTap("confirm")[0]).toBe("undo");
+    expect(focusAfterTap("cancel")).toEqual(["skip"]);
+    expect(focusAfterTap("undo")[0]).toBe("skip");
+    expect(focusAfterTap("bring")[0]).toBe("skip");
+    expect(focusAfterTap("choose")).toEqual(["choose"]);
   });
 });

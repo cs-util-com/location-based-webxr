@@ -917,6 +917,7 @@ const stations = wireVisitorStations({
       doneTitle: element("walk-done-title"),
       doneText: element("walk-done-text"),
       progress: element("walk-progress"),
+      hint: element("walk-hint"),
       rows: element("walk-rows"),
       foot: element("walk-list-foot"),
       exit: element("walk-exit"),

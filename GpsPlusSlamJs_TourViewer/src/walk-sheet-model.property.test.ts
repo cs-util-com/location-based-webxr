@@ -94,7 +94,9 @@ function linePattern(peek: { kind: string; title: string }): RegExp {
     case "story":
       return /Station found - its story is playing\.$/;
     case "none":
-      return new RegExp(`${peek.title} - scan one of the tour's codes`);
+      // No station guessed (R-2): the line names the count and the
+      // position's state, as the peek's title does.
+      return new RegExp(`^${peek.title} - `);
     default:
       return new RegExp(`(: |Next: )${peek.title}`);
   }
@@ -112,8 +114,8 @@ function guideOver(order: TourOrder) {
   };
   const dom = {
     line: { textContent: "", hidden: true },
-    skip: { textContent: "", hidden: true },
-    end: { textContent: "", hidden: true },
+    skip: { textContent: "", hidden: true, dataset: {} as DOMStringMap },
+    end: { textContent: "", hidden: true, dataset: {} as DOMStringMap },
   };
   const guide = wireStationGuide({
     dom,

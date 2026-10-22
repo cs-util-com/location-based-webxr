@@ -98,3 +98,34 @@ view.render(model, { sheet: "peek", quick, position: "distance", story: null });
   something else changed.
 - Tests: `setArrow` in `walk-sheet.test.ts`; the page in
   `playwright-tests/visitor-walk.spec.js`.
+
+## The rows' controls and the hint (visitor walk W4 build plan M4)
+
+- `wireWalkSheet` takes `rowTapped(stationId, tap)` (the guide's
+  `rowTapped`), and `render` takes `end` (the story card's end control's
+  action, R-5; its `data-kind` end|ask follows it, no longer the quick).
+- A row is `li.walk-row[data-state][data-id][data-chosen]` with its glyph,
+  a title button `.walk-row-main` (`data-tap="choose"`, "Guide me here":
+  `aria-pressed` where a target can be chosen, `disabled` otherwise), its
+  action `.walk-row-act` (`data-tap` and `data-k` skip|bring|undo), the
+  confirm `.walk-confirm` ("Skip <title> - I can't get there" beside
+  Cancel) and the undo's bar `.walk-undobar`. Taps reach the rows'
+  container by delegation (the rows are rebuilt on a change); `rowTapOf`
+  maps a control's `data-tap` to the guide's tap (`undo` is a bring back).
+- **The redraw key** (`rowsDrawKey`, exported, pure) leaves out the
+  arrow's angle and the undo's time left: both change every frame. The
+  undo's bar runs down by its own CSS animation from the share left when
+  the row was drawn (`--walk-undo-from`, `--walk-undo-ms`).
+- **The focus after a row tap:** the tapped control is rebuilt or gone,
+  so the focus goes to what took its place (`focusAfterTap`, exported,
+  pure): Skip to its confirm, the confirm to the undo, Cancel and a bring
+  back to Skip, "Guide me here" to itself; else the list's close button.
+- **The quick action hides while the list is open** (W4; CSS on
+  `data-sheet="list"`): the rows carry Skip, its confirm and the undo. A
+  focus it held when it opened the list goes to the armed row's confirm,
+  else to the close button.
+- `WalkSheetDom.hint` (`#walk-hint`) - the list's hint while no station is
+  guessed (R-2), between the progress line and the rows; hidden otherwise.
+- Tests: `rowsDrawKey`, `rowTapOf` and `focusAfterTap` in
+  `walk-sheet.test.ts`; the page in `playwright-tests/visitor-walk.spec.js`
+  and `playwright-tests/visitor-walk-layout.spec.js`.

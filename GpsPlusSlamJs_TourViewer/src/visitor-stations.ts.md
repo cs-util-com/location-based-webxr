@@ -120,11 +120,23 @@ hooks.tickStations = stations.tick;
   (`selectWalkProgress`, `selectWalkSheet`) and the tour (the guide's own
   reader, `guideTour`). Hidden while the guide does not run.
 - The story card's end control (`#walk-story-end`) is the guide's `end`
-  dom and taps like the skip button (`skipTapped`); "Keep listening"
+  dom; a tap on it or on the skip button hands the guide the tapped
+  control (`skipTapped(control)`), whose `data-action` says what it
+  showed (M4); "Keep listening"
   calls `cancelAsk`; the completion card's "Exit AR" calls `exitAr`
   (`main.ts`: a tap on `#enter-ar`, the session's one way out).
+- **M4's wiring:** a row's taps go to the guide (`rowTapped`, inside a
+  call) and the sheet is drawn after; `onUndone` tells the prefetch of a
+  station brought back after its skip settled (`prefetch.undone`);
+  `storyPlaying` is the story panel's `playing()`, the story "End this
+  story?" names. Each render holds the story's step while its end is
+  asked (`view.holdStep(end?.kind === "end")`, before the story's
+  progress is read): the step's timer stops under the question and
+  "Keep listening" starts it again from its full length (R-5, W4).
 - Toasts: the guide's note ("Skipped X." / "Brought back X.") once per
-  note, and `WELCOME_BACK` ("Welcome back - your progress is kept.") at
+  note - the final state of a skip and of a bring back, from the list or
+  the quick action alike (choosing a target shows on the peek and its
+  row at once, and has no toast), and `WELCOME_BACK` ("Welcome back - your progress is kept.") at
   the first drawn sheet of an entry after leaving AR with progress; one
   render's words go out as ONE toast (`walk.toast.say(words)`).
 - **The store rule** (W4 build plan M2 review): the welcome waiting is
@@ -138,7 +150,7 @@ hooks.tickStations = stations.tick;
   inside one (a find starts the story) while the guide's view is half made
   and its walk batch has not reached the store. `createCallGuard(render)`
   (exported) wraps every guide call made here (`tick`, `codeLocked`,
-  `skipTapped`, `cancelAsk`, `storyEnded`, the stop's `stopAll` and
+  `skipTapped`, `rowTapped`, `cancelAsk`, `storyEnded`, the stop's `stopAll` and
   `endSession`); `request()` inside one defers the draw to the end of the
   outermost call, once, and outside any call draws at once. A call that
   throws still draws (try/finally). Tests: `visitor-stations.test.ts`

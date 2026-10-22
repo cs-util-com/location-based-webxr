@@ -17,11 +17,14 @@ the rules as pure transitions, applied by the page's store).
 - **The rules as pure transitions** (W4 plan M1, §2.2): the page's store
   applies them in its `visitorWalk` reducer (`visitor-walk-slice.ts`), so
   the walk's state lives in the store and the rule once, here.
-  - `type WalkProgress` - `{ order, stations, branchCurrent }`: per
+  - `type WalkProgress` - `{ order, stations, branchCurrent,
+branchReturns }`: per
     station in list order its status (`id`, `state`, `skipped`,
     `focusedAtMs`, `focusDistanceM`) and the two tour facts the rules
-    read (`next`, a station of this tour or null; `stepless`); the offer
-    is derived, never stored. Plain, serializable data.
+    read (`next`, a station of this tour or null; `stepless`); under
+    `branch` order the return points of stations brought back (W4 M4,
+    R-3, below); the offer is derived, never stored. Plain, serializable
+    data.
   - `walkRoute(stations)` - those tour facts (`type WalkRoute`); a `next`
     naming no station of the tour is null (the list successor then).
   - `startWalk(route, order)` - every station waiting, `branch` at the
@@ -73,9 +76,11 @@ focusDistanceM }`.
     skip clock starts at the first call, with the distance then (else the
     first observed after) - K4 review R14, the clock used to start at the
     offer, which under `any` order is the tour's start;
-  - `unskip(id, nowMs)` - undo a skip: the station waits again, unskipped,
-    with a fresh clock, offered as before the skip (branch order makes it
-    the current station again); a station not skipped: nothing;
+  - `unskip(id, nowMs)` - bring a skipped station back, at any time (W4
+    M4, W-D2): it waits again, unskipped, with a fresh clock, offered as
+    before the skip; under branch order the path goes to it and the
+    station the path was on is kept as a return point; a station not
+    skipped: nothing;
   - `upcoming()` - under `fixed` or `branch` order, while the one offered
     station is found: the station offered once it is done (the prefetch
     reads it ahead, K4 review R5); null otherwise and always under `any`.
@@ -109,7 +114,14 @@ focusDistanceM }`.
     station is done, its `next`, else its list successor; a target already
     done falls through to the first undone station after it in list order;
     the path ends when nothing follows. Stations off the path stay unvisited
-    (plan §7's open question; answer routes are K5's).
+    (plan §7's open question; answer routes are K5's). A station brought
+    back (`unskip`) takes the path to it; the station the path was on (or
+    null, the path had ended) is pushed on `branchReturns`, and once the
+    brought-back station is done the path pops it: back to that station,
+    not on to the brought-back one's `next` (W4 M4, R-3: before M4 the
+    abandoned station was never offered again). A popped station already
+    done hands on by its own `next`; a popped null ends the path again.
+    A stack, so stations brought back in a row return in turn.
 - **No deadlock (§8 D5):** each completion reduces the undone stations by
   one, every offered station can be skipped, and the next offer is computed
   from the list, never from a cycle; property-tested over generated tours
@@ -134,19 +146,14 @@ run.finish("gate", nowMs); // done, the next station offered
 
 ## Tests
 
-- `station-run.differential.property.test.ts` - random sequences of
-  observe, finish, skip, unskip and focus (ids the tour lacks, non-finite
-  distances and every precision included) over generated tours and the
-  three orders: the same events and the same view (offer, statuses,
-  completion, upcoming, suggestion) through this run - held in its
-  closure, and through a store of the walk's slice - as through the
-  frozen copy from before the transitions (`test-support/frozen-m1/`).
 - `visitor-walk-slice.test.ts` - each step's guard through the reducer.
 
 - `station-run.test.ts` - each transition, the radius alone (at the radius
   yes, a centimetre beyond no), non-finite distances, the empty station, each order preset (a branch
   station whose next is itself, skipped, hands on: its next is read after it is done), the skip,
-  the suggestion clock; properties: no deadlock and completion within one
+  the suggestion clock, a station brought back under branch order and the
+  path's return (seen red against the old `unskip`), after the path
+  ended too; properties: no deadlock and completion within one
   action per station for every preset, a done station never offered and
   never changed; `stationTitle`: the trimmed title, "Station N" by its
   place, "the next station" without one (a blank title included).

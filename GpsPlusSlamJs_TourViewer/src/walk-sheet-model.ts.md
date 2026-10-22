@@ -22,13 +22,18 @@ the station guide's `view()` and the tour; the DOM writer is
     playing), `sheet: "peek" | "list"`.
   - `peek: { kind, eyebrow, title, distance, tail }`:
     - `walk`: eyebrow "Next - station N of M" (fixed and branch), "N
-      stations to find - nearest" (several offered) or "Next"; the
+      stations to find - nearest" (several offered; "- your choice" for
+      the visitor's chosen target, R-4) or "Next"; the
       distance ("N m") only while the position vouches for one; the tail
       "Waiting for your position…", "GPS too weak to guide you (±N m);
       step into the open." or "Scan one of the tour's codes so the guide
       knows where you are." otherwise;
-    - `none`: several offered and nothing vouches for the position:
-      "Position unknown" / "N stations to find";
+    - `none` (M4, R-2): no station guessed while stations are still to
+      find: eyebrow "Position unknown" (`'none'`) or the chip's words
+      ("GPS - about N m, too weak", "Finding your position…", "GPS -
+      about N m" during the hold), title "N stations to find", tail by
+      the position (the scan ask, "GPS too weak ...", "Waiting for your
+      position…", "Waiting for a steady position…");
     - `story`: nothing unfound offered while a story plays: "Station
       found" / its title / "Its story is playing.";
     - `complete`: the tour's title / "Tour complete" / "K skipped." or
@@ -39,16 +44,29 @@ the station guide's `view()` and the tour; the DOM writer is
   - `segments` - `each` (one state per listed station) up to
     `WALK_SEGMENT_LIMIT`, else `bar` (found, skipped, to find, by count).
   - `grabLabel` - "Show all stations" / "Hide the list".
-  - `list: { title, chip, progress: { lead, rest }, completion, rows }`:
+  - `list: { title, chip, progress: { lead, rest }, completion, hint, rows }`:
     chip "Any order", "In order" or "Your path"; progress "N of M found"
     then "K skipped", "L to find" (branch: "N found"); `completion`
-    (`completionLine` plus "M of N found." or "Thank you for walking with
-    us.") once complete; rows `{ id, number, title, state, sub }` with
+    (`completionLine` plus "M of N found. A skipped station can still be
+    brought back." - under branch order that sentence alone - or "Thank
+    you for walking with us.") once complete; `hint` (M4) while no
+    station is guessed: why, by the position, and "Which one can't you
+    reach?" once "Can't get there?" opened the chooser; rows `{ id,
+number, title, state, sub, arrowDeg, action, confirm, undoLeftMs,
+chosen, choosable, mainLabel }` with
     `state` (`WalkRowState`) one of next (the focus), left (offered, not
     the focus), found (done), here (found, its story playing), skipped,
     later (not offered yet) and the subs Found, "You are here - its story
     is playing", Skipped, Later, "Distance unknown" (no position, or GPS
-    too weak), "Waiting…", "N m".
+    too weak), "Waiting…", "N m" (" - your choice" on the chosen target).
+    M4's row fields: `action` - `skip` ("Skip", for a station to find),
+    `bring` ("Bring back", a skipped one) or `undo` ("Undo: bring back
+    <title>", the last skip inside its window, with `undoLeftMs` for its
+    bar), each with its `ariaLabel` naming the station; null otherwise and
+    while the row's `confirm` ("Skip <title> - I can't get there") shows;
+    `chosen` (the orange edge); `choosable` (a waiting station of a tour
+    with a choice: its title button reads "<title>: <sub>. Guide me
+    here", `mainLabel`).
 - `awayModel({ stations, order, progress }): AwayModel` - the start
   page's block after leaving AR: `text` ("You left AR. Your progress is
   kept while this page is open."), the same segments and a row per listed
@@ -70,8 +88,10 @@ the station guide's `view()` and the tour; the DOM writer is
 - Branch order lists only the stations the path reached: offered now, or
   found, done or skipped (a station the path may never reach is not
   promised).
-- The completion card drops W4's "A skipped station can still be brought
-  back." until M4, where the rows carry the bring back (plan §1.6).
+- The completion card says "A skipped station can still be brought
+  back." (W4) since M4, whose rows carry the bring back at any time.
+- In R-2's condition no text names a station as next or nearest: the
+  peek is `none`, every unfound row `left` (the guide's focus is null).
 - Defensive: a station the progress lacks reads as "later" (never
   offered); a station without a measured distance reads "Waiting…".
   Whether the progress is the open tour's walk at all is the caller's
@@ -97,7 +117,10 @@ model.peek; // { kind: "walk", eyebrow: "3 stations to find - nearest", ... }
 - `walk-sheet-model.test.ts` - every peek kind and tail, the eyebrow per
   order, segments and the bar above the limit, rows and their subs, the
   chip, the progress line, the completion card, the story card, branch
-  listing, the away model.
+  listing, the away model; M4: the peek with no station guessed per
+  no-distance state and the hold, the hint per position and chooser, the
+  rows' actions (Skip, confirm, undo with its time, Bring back), the
+  chosen target in the peek and its row, the completion's bring back.
 - `walk-sheet-model.property.test.ts` - the real guide on the page's
   store, random steps and measurements: the peek agrees with the hidden
   line, the named station is offered and waiting, the distance matches,

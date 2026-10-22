@@ -8,11 +8,14 @@
  * `GuideView`: the station in focus, the position's kind, the distances)
  * and the sheet's state; `walk-sheet.ts` writes it to the page.
  *
- * Every text is today's (kept) or W4's, as the plan names them; M2 keeps
- * today's rules, so nothing here decides what the walk offers. M3 adds the
- * direction words (`walk-direction.ts`) and their arrows wherever a
- * distance is shown and a heading exists; the caller keeps each station's
- * word with its hysteresis and hands it in (`directions`).
+ * Every text is today's (kept) or W4's, as the plan names them; nothing
+ * here decides what the walk offers. M3 adds the direction words
+ * (`walk-direction.ts`) and their arrows wherever a distance is shown and
+ * a heading exists; the caller keeps each station's word with its
+ * hysteresis and hands it in (`directions`). M4 adds the rows' actions
+ * (Skip, its confirm, Bring back, the undo with its bar), the chosen
+ * target ("Guide me here", " - your choice"), the list's hint and the
+ * peek with no station guessed (R-2), as the guide's view states them.
  *
  * @see walk-sheet-model.ts.md
  */
@@ -24,6 +27,7 @@ import type {
 import { formatDistance } from "gps-plus-slam-app-framework/utils/format-distance";
 
 import { completionLine, type GuideView } from "./station-guide.js";
+import { walkPrecisionChip } from "./walk-radar-model.js";
 import {
   stationTitle,
   walkOffered,
@@ -106,6 +110,27 @@ export interface WalkRow {
   readonly sub: string;
   /** The sub line's arrow, as the peek's; null without one. */
   readonly arrowDeg: number | null;
+  /** The row's action button (W4 M4, §1.6): "Skip" for a station to
+   *  find, "Bring back" for a skipped one, "Undo: bring back <title>"
+   *  for the last skip in its window; null with none, and while the
+   *  row's confirm shows instead. */
+  readonly action: {
+    readonly kind: "skip" | "bring" | "undo";
+    readonly label: string;
+    readonly ariaLabel: string;
+  } | null;
+  /** The armed row's confirm ("Skip <title> - I can't get there") beside
+   *  Cancel; null when not armed. */
+  readonly confirm: string | null;
+  /** The undo's time left, ms, for its bar; null without an undo. */
+  readonly undoLeftMs: number | null;
+  /** The visitor's chosen target (R-4): the orange bar on its edge. */
+  readonly chosen: boolean;
+  /** "Guide me here" is offered on its title (R-4). */
+  readonly choosable: boolean;
+  /** The title button's accessible name (ends "Guide me here" when
+   *  choosable). */
+  readonly mainLabel: string;
 }
 
 export interface WalkSheetModel {
@@ -123,11 +148,16 @@ export interface WalkSheetModel {
       readonly title: string;
       readonly text: string;
     } | null;
+    /** The hint above the rows while no station is guessed (R-2, §1.6);
+     *  null otherwise. */
+    readonly hint: string | null;
     readonly rows: readonly WalkRow[];
   };
 }
 
 const WAITING = "Waiting for your position…";
+/** R-2's hold: the distance is back, no station named yet. */
+const SETTLING = "Waiting for a steady position…";
 const NO_PRECISION_TAIL =
   "Scan one of the tour's codes so the guide knows where you are.";
 
@@ -211,7 +241,63 @@ function arrowOf(direction: WalkSheetDirection | undefined): number | null {
     : Math.round(direction.angleDeg);
 }
 
+/** The row's action, its confirm and its undo bar (W4 M4, §1.6). */
+function rowActions(
+  state: WalkRowState,
+  view: GuideView,
+  id: string,
+  title: string,
+): Pick<WalkRow, "action" | "confirm" | "undoLeftMs"> {
+  const undo = view.undo?.id === id ? view.undo : null;
+  if (undo !== null) {
+    const label = `Undo: bring back ${title}`;
+    return {
+      action: { kind: "undo", label, ariaLabel: label },
+      confirm: null,
+      undoLeftMs: undo.leftMs,
+    };
+  }
+  if (state === "skipped") {
+    return {
+      action: {
+        kind: "bring",
+        label: "Bring back",
+        ariaLabel: `Bring back ${title}`,
+      },
+      confirm: null,
+      undoLeftMs: null,
+    };
+  }
+  if (state !== "next" && state !== "left") {
+    return { action: null, confirm: null, undoLeftMs: null };
+  }
+  if (view.rowArmedId === id) {
+    return {
+      action: null,
+      confirm: `Skip ${title} - I can't get there`,
+      undoLeftMs: null,
+    };
+  }
+  return {
+    action: { kind: "skip", label: "Skip", ariaLabel: `Skip ${title}` },
+    confirm: null,
+    undoLeftMs: null,
+  };
+}
+
 function rowSub(
+  state: WalkRowState,
+  view: GuideView,
+  id: string,
+  direction: WalkSheetDirection | undefined,
+): { sub: string; arrowDeg: number | null } {
+  const sub = rowSubOf(state, view, id, direction);
+  return view.chosenId === id && (state === "next" || state === "left")
+    ? { ...sub, sub: `${sub.sub} - your choice` }
+    : sub;
+}
+
+function rowSubOf(
   state: WalkRowState,
   view: GuideView,
   id: string,
@@ -269,6 +355,31 @@ function peekOf(
     };
   }
   const focus = view.focusId === null ? undefined : byId.get(view.focusId);
+  const toFind = offered.filter(
+    (id) => walkStatus(progress, id)?.state !== "found",
+  );
+  if (focus === undefined && toFind.length > 0) {
+    // R-2: no station guessed - the position's state alone (W4 under
+    // `'none'`; the chip's words for the other no-distance states).
+    return {
+      kind: "none",
+      eyebrow:
+        view.position === "none"
+          ? "Position unknown"
+          : walkPrecisionChip(view.precision, view.accuracyM),
+      title: `${String(offered.length)} stations to find`,
+      distance: null,
+      arrowDeg: null,
+      tail:
+        view.position === "pending"
+          ? WAITING
+          : view.position === "weak"
+            ? `GPS too weak to guide you (±${distanceText(view.accuracyM ?? 0)}); step into the open.`
+            : view.position === "none"
+              ? NO_PRECISION_TAIL
+              : SETTLING,
+    };
+  }
   if (focus === undefined) {
     const playing =
       input.story === null ? undefined : byId.get(input.story.stationId);
@@ -287,22 +398,12 @@ function peekOf(
     };
   }
   const several = offered.length > 1;
-  if (view.position === "none" && several && input.order === "any") {
-    return {
-      kind: "none",
-      eyebrow: "Position unknown",
-      title: `${String(offered.length)} stations to find`,
-      distance: null,
-      arrowDeg: null,
-      tail: NO_PRECISION_TAIL,
-    };
-  }
   const number = input.stations.findIndex((s) => s.id === focus.id) + 1;
   const eyebrow =
     input.order === "fixed"
       ? `Next - station ${String(number)} of ${String(input.stations.length)}`
       : several
-        ? `${String(offered.length)} stations to find - nearest`
+        ? `${String(offered.length)} stations to find - ${view.chosenId === focus.id ? "your choice" : "nearest"}`
         : "Next";
   const d = view.distances.get(focus.id);
   const shown = view.position === "distance" && d !== undefined;
@@ -350,14 +451,17 @@ function completionOf(
   progress: WalkProgress,
 ): { title: string; text: string } {
   const { found, skipped, total } = counts(progress);
-  // "A skipped station can still be brought back." (W4) waits for M4's
-  // bring back at any time; until then it would be false after 6 s.
+  // A skipped station comes back at any time (W-D2, M4); under branch
+  // order the path decides how many there are, so no count.
+  const again = "A skipped station can still be brought back.";
   return {
     title: completionLine(order, skipped),
     text:
-      skipped > 0 && order !== "branch"
-        ? `${String(found)} of ${String(total)} found.`
-        : "Thank you for walking with us.",
+      skipped === 0
+        ? "Thank you for walking with us."
+        : order === "branch"
+          ? again
+          : `${String(found)} of ${String(total)} found. ${again}`,
   };
 }
 
@@ -366,6 +470,32 @@ const CHIPS: Record<TourOrder, string> = {
   fixed: "In order",
   branch: "Your path",
 };
+
+/** The list's hint while no station is guessed (R-2, §1.6): what the
+ *  position is doing, and, opened by "Can't get there?", which station. */
+function hintOf(view: GuideView): string | null {
+  if (!view.noGuess) return null;
+  const cause: Record<GuideView["position"], [string, string]> = {
+    none: [
+      "Your position is unknown - scan one of the tour's codes, or pick a station below.",
+      "Your position is unknown, so the guide can't tell which station is nearest.",
+    ],
+    weak: [
+      "GPS is too weak - step into the open, or pick a station below.",
+      "GPS is too weak, so the guide can't tell which station is nearest.",
+    ],
+    pending: [
+      "The guide is still waiting for your position - or pick a station below.",
+      "The guide is still waiting for your position, so it can't tell which station is nearest.",
+    ],
+    distance: [
+      "Your position is settling - or pick a station below.",
+      "Your position is still settling, so the guide can't tell which station is nearest yet.",
+    ],
+  };
+  const [plain, asked] = cause[view.position];
+  return view.chooser ? `${asked} Which one can't you reach?` : plain;
+}
 
 /** The sheet, from the walk, the guide's view and the sheet's state. */
 export function walkSheetModel(input: WalkSheetInput): WalkSheetModel {
@@ -376,12 +506,28 @@ export function walkSheetModel(input: WalkSheetInput): WalkSheetModel {
   const shown = listed(input.stations, progress);
   const rows = shown.map(({ station, number }): WalkRow => {
     const state = rowState(progress, station.id, view.focusId, offered);
+    const title = stationTitle(station, number);
+    const { sub, arrowDeg } = rowSub(
+      state,
+      view,
+      station.id,
+      input.directions?.get(station.id),
+    );
+    const choosable =
+      view.canChoose && walkStatus(progress, station.id)?.state === "waiting";
     return {
       id: station.id,
       number,
-      title: stationTitle(station, number),
+      title,
       state,
-      ...rowSub(state, view, station.id, input.directions?.get(station.id)),
+      sub,
+      arrowDeg,
+      ...rowActions(state, view, station.id, title),
+      chosen: view.chosenId === station.id,
+      choosable,
+      mainLabel: choosable
+        ? `${title}: ${sub}. Guide me here`
+        : `${title}: ${sub}`,
     };
   });
   const playing =
@@ -400,6 +546,7 @@ export function walkSheetModel(input: WalkSheetInput): WalkSheetModel {
       progress: progressLine(input.order, progress),
       completion:
         offeredList.length === 0 ? completionOf(input.order, progress) : null,
+      hint: offeredList.length === 0 ? null : hintOf(view),
       rows,
     },
   };

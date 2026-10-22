@@ -573,6 +573,49 @@ describe("the story card's dots and its redraw (W4 build plan M2)", () => {
     expect(h.view.progress()).toBeNull();
   });
 
+  // Why this test matters (W4 build plan M4, R-5): while the visitor is
+  // asked whether to end the story, the step must not move on under the
+  // question; "Keep listening" starts the step's timer again from its
+  // full length (W4), and the dots show it (no timed fill while held).
+  it("a held step stops its timer; released, it runs again from the start", () => {
+    const h = harness();
+    h.view.offer(
+      station("s", [
+        { ...tap("a", "One"), advance: { mode: "auto", afterS: 4 } },
+        tap("b", "Two"),
+      ]),
+    );
+    const first = h.timers.at(-1)!;
+    h.view.holdStep(true);
+    expect(first.cancelled).toBe(true);
+    expect(h.view.progress()).toEqual({ index: 0, count: 2, autoMs: null });
+    h.view.holdStep(true);
+    expect(h.timers.filter((t) => !t.cancelled)).toEqual([]);
+    h.view.holdStep(false);
+    const again = h.timers.at(-1)!;
+    expect(again).not.toBe(first);
+    expect(again).toMatchObject({ ms: 4000, cancelled: false });
+    expect(h.view.progress()).toEqual({ index: 0, count: 2, autoMs: 4000 });
+    again.fn();
+    expect(h.dom.text.textContent).toBe("Two");
+    // A tap step has no timer to hold or start.
+    const scheduled = h.timers.length;
+    h.view.holdStep(true);
+    h.view.holdStep(false);
+    expect(h.timers.length).toBe(scheduled);
+  });
+
+  it("a hold set with no story is dropped when the next story starts", () => {
+    const h = harness();
+    h.view.holdStep(true);
+    h.view.offer(
+      station("s", [
+        { ...tap("a", "One"), advance: { mode: "auto", afterS: 2 } },
+      ]),
+    );
+    expect(h.timers.at(-1)).toMatchObject({ ms: 2000, cancelled: false });
+  });
+
   it("has no dots for a scene with a choice", () => {
     const h = harness();
     h.view.offer(

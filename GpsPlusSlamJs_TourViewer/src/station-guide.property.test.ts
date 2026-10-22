@@ -104,7 +104,7 @@ describe("wireStationGuide (properties)", () => {
         };
         const dom = {
           line: { textContent: "", hidden: true },
-          skip: { textContent: "", hidden: true },
+          skip: { textContent: "", hidden: true, dataset: {} as DOMStringMap },
         };
         const guide = wireStationGuide({
           dom,
@@ -204,7 +204,7 @@ describe("wireStationGuide (properties)", () => {
           const guide = wireStationGuide({
             dom: {
               line: { textContent: "", hidden: true },
-              skip: { textContent: "", hidden: true },
+              skip: { textContent: "", hidden: true, dataset: {} },
             },
             tour: () => ({ stations: [station], order: "fixed" }),
             placementAllowed: () => true,
@@ -279,7 +279,7 @@ describe("wireStationGuide (properties)", () => {
           const guide = wireStationGuide({
             dom: {
               line: { textContent: "", hidden: true },
-              skip: { textContent: "", hidden: true },
+              skip: { textContent: "", hidden: true, dataset: {} },
             },
             tour: () => ({ stations: [station], order: "fixed" }),
             placementAllowed: () => true,

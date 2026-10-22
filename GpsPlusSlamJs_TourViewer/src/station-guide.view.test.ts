@@ -21,6 +21,7 @@ import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
 import { wireStationGuide } from "./station-guide";
 import type { VisitorPosition } from "./visitor-position";
+import { WALK_NO_GUESS_HOLD_MS } from "./walk-no-guess";
 
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
@@ -61,8 +62,10 @@ function harness(
   let visitor: VisitorPosition | null = null;
   const dom = {
     line: { textContent: "", hidden: true },
-    skip: { textContent: "", hidden: true },
-    ...(options.end === true ? { end: { textContent: "", hidden: true } } : {}),
+    skip: { textContent: "", hidden: true, dataset: {} as DOMStringMap },
+    ...(options.end === true
+      ? { end: { textContent: "", hidden: true, dataset: {} as DOMStringMap } }
+      : {}),
   };
   const stations = options.stations ?? TOUR;
   const guide = wireStationGuide({
@@ -128,15 +131,27 @@ describe("the guide's view (W4 build plan M2)", () => {
     expect(h.guide.view()).toBeNull();
   });
 
+  // Changed in M4 (§1.9 R-2): an any-order tour guesses no station while
+  // no distance is shown, and again only once the distance held for the
+  // hold; before, "gate" was named while pending, first in list order.
   it("names the line's station and the position's kind: distance, pending, weak, none", () => {
     const h = harness("any");
     h.guide.tick();
     expect(h.guide.view()).toMatchObject({
-      focusId: "gate",
+      focusId: null,
       position: "pending",
     });
-    expect(h.dom.line.textContent).toMatch(/waiting for your position…$/);
+    expect(h.dom.line.textContent).toBe(
+      "3 stations to find - waiting for your position…",
+    );
 
+    // The distance is back, held for the hold before a station is named.
+    h.at(20, 0);
+    expect(h.guide.view()).toMatchObject({
+      focusId: null,
+      position: "distance",
+    });
+    h.advance(WALK_NO_GUESS_HOLD_MS);
     h.at(20, 0);
     expect(h.guide.view()).toMatchObject({
       focusId: "well",
@@ -151,7 +166,11 @@ describe("the guide's view (W4 build plan M2)", () => {
     );
 
     h.at(20, 0, 60);
-    expect(h.guide.view()).toMatchObject({ position: "weak", accuracyM: 60 });
+    expect(h.guide.view()).toMatchObject({
+      focusId: null,
+      position: "weak",
+      accuracyM: 60,
+    });
     expect(h.dom.line.textContent).toMatch(
       /GPS too weak to guide you \(±60 m\)/,
     );
@@ -187,19 +206,21 @@ describe("the guide's view (W4 build plan M2)", () => {
 
 describe("the end control on the story card (W4 build plan M2, §1.5)", () => {
   // Why this test matters: from M2 the end control lives on the story card,
-  // and only there; under today's R9 condition (nothing unfound offered)
-  // the card's button asks, a second tap ends, and "Keep listening" takes
-  // the ask back - while the peek's quick action stays hidden.
+  // and only there; the card's button asks, a second tap ends, and "Keep
+  // listening" takes the ask back - while the peek's quick action stays
+  // hidden with nothing unfound offered. From M4 (R-5) it is there
+  // whenever a story's station is found, and a tap on it carries its own
+  // action (`data-action`).
   it("writes the ask to the card, not to the skip button, and a second tap ends", () => {
     const h = harness("fixed", { end: true });
     h.at(0, 0);
     expect(h.dom.end?.textContent).toBe("End this story?");
     expect(h.dom.end?.hidden).toBe(false);
     expect(h.dom.skip.hidden).toBe(true);
-    h.guide.skipTapped();
+    h.guide.skipTapped(h.dom.end);
     expect(h.dom.end?.textContent).toBe("End the story of GATE now");
-    expect(h.guide.view()?.quick).toEqual({ kind: "end", id: "gate" });
-    h.guide.skipTapped();
+    expect(h.guide.view()?.end).toEqual({ kind: "end", id: "gate" });
+    h.guide.skipTapped(h.dom.end);
     expect(h.dom.end?.hidden).toBe(true);
     expect(h.dom.line.textContent).toMatch(/^Next: WELL/);
     expect(h.dom.skip.textContent).toBe("Can't get there?");
@@ -208,10 +229,10 @@ describe("the end control on the story card (W4 build plan M2, §1.5)", () => {
   it("'Keep listening' takes the ask back", () => {
     const h = harness("fixed", { end: true });
     h.at(0, 0);
-    h.guide.skipTapped();
+    h.guide.skipTapped(h.dom.end);
     h.guide.cancelAsk();
     expect(h.dom.end?.textContent).toBe("End this story?");
-    expect(h.guide.view()?.quick).toEqual({ kind: "ask-end", id: "gate" });
+    expect(h.guide.view()?.end).toEqual({ kind: "ask-end", id: "gate" });
   });
 
   it("without a card the skip button carries it, as before", () => {

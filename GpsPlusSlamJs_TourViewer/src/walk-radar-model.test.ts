@@ -256,13 +256,37 @@ describe("walkRadarModel - the visitor's mark by precision (§1.2)", () => {
     expect(tiny.visitor).toEqual({ kind: "blur", tone: "gps", r: 7 });
   });
 
-  it("too weak: an amber blur, the stations at half opacity, no orange in an any-order choice", () => {
-    const m = walkRadarModel(
-      input({ kind: "weak", accuracyM: 40, order: "any" }),
+  // Changed in M4 (§1.9 R-2, R-4): the guide decides the focus, so the
+  // radar draws the row it names. Under too-weak GPS an any-order tour
+  // names none (every row "left") - unless the visitor chose a target,
+  // which stays the focus whatever the precision; before M4 the radar
+  // hid that orange itself, and with it the visitor's own choice.
+  it("too weak: an amber blur, the stations at half opacity, orange only for the focus the guide names", () => {
+    const rows = (well: "next" | "left") => [
+      { id: "gate", number: 1, state: "found" as const },
+      { id: "well", number: 2, state: well },
+      { id: "tower", number: 3, state: "left" as const },
+    ];
+    const guessed = walkRadarModel(
+      input({
+        kind: "weak",
+        accuracyM: 40,
+        order: "any",
+        stations: rows("left"),
+      }),
     );
-    expect(m.visitor).toEqual({ kind: "blur", tone: "weak", r: map(40) });
-    expect(m.blips.every((b) => b.alpha === 0.5)).toBe(true);
-    expect(m.blips.some((b) => b.look === "focus")).toBe(false);
+    expect(guessed.visitor).toEqual({ kind: "blur", tone: "weak", r: map(40) });
+    expect(guessed.blips.every((b) => b.alpha === 0.5)).toBe(true);
+    expect(guessed.blips.some((b) => b.look === "focus")).toBe(false);
+    const chosen = walkRadarModel(
+      input({
+        kind: "weak",
+        accuracyM: 40,
+        order: "any",
+        stations: rows("next"),
+      }),
+    );
+    expect(blip(chosen, "well")?.look).toBe("focus");
     // In a fixed order there is no guess to make: the focus stays.
     const fixed = walkRadarModel(input({ kind: "weak", accuracyM: 40 }));
     expect(blip(fixed, "well")?.look).toBe("focus");

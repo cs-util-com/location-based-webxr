@@ -2,11 +2,14 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  forceTrackingReady,
   installTourViewerArFakes,
   lockFixtureCode,
   reportArTracking,
   seedAlignment,
   standAt,
+  waitForTheGuess,
+  walkRowControl,
 } from "./ar-fakes.js";
 
 /**
@@ -66,6 +69,60 @@ async function enterTheWalk(page, archive = WALK_ARCHIVE) {
   await standAt(page, 0, 0, 0);
   await lockFixtureCode(page);
   await expect(page.getByTestId("walk-sheet")).toBeVisible();
+  // R-2's hold (M4): the peek names a station once the distance held.
+  await waitForTheGuess(page);
+}
+
+/** AR tracking with a pose, and the report ready around a camera frame
+ *  (the fakes deliver no poses: the report reads lost until one is
+ *  reported). */
+async function trackingOk(page) {
+  await reportArTracking(page, true);
+  await forceTrackingReady(page);
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+  });
+  await forceTrackingReady(page);
+}
+
+/** The walk with no position anyone vouches for (M4, R-2): no location,
+ *  the code locked, then its trust ended by an odometry frame change. */
+async function enterWithoutAPosition(page) {
+  await page.addInitScript(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    if (t) t.locationPermission = "denied";
+  });
+  await openTheWalk(page);
+  const button = page.getByTestId("enter-ar");
+  await button.click();
+  await expect(button).toHaveText("Exit AR");
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.arPose = {
+      position: { x: 0, y: 1.4, z: 0 },
+      orientation: { x: 0, y: 0, z: 0, w: 1 },
+    };
+  });
+  await lockFixtureCode(page);
+  await trackingOk(page);
+  await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    t.nextDetection = null;
+    t.alignmentStore.dispatch({ type: "qrDetected/qrFrameChanged" });
+  });
+  await trackingOk(page);
+  await expect(page.getByTestId("walk-peek")).toHaveAttribute(
+    "data-kind",
+    "none",
+  );
+}
+
+/** A locator's box, at the list's current scroll: each group of boxes
+ *  compared is taken between two taps, never across a scroll (a tap
+ *  scrolls its target into view). */
+async function boxOf(locator) {
+  const b = await locator.boundingBox();
+  if (b === null) throw new Error("no box");
+  return b;
 }
 
 for (const viewport of VIEWPORTS) {
@@ -219,10 +276,11 @@ for (const viewport of VIEWPORTS) {
     );
     await page.getByTestId("walk-close").click();
     // A skip's toast: in W4's place, left of the radar's corner (132 px
-    // at the top right) on a phone, centred on a desktop.
+    // at the top right) on a phone, centred on a desktop. "Can't get
+    // there?" opens the list on the gate's row; its confirm skips (M4).
     const quick = page.getByTestId("station-skip");
     await quick.click();
-    await quick.click();
+    await page.getByTestId("walk-row-confirm").click();
     const toast = page.locator("#walk-toast");
     await expect(toast).toHaveText("Skipped The gate.");
     // The toast's place is its root's: the toast itself slides in a few
@@ -243,7 +301,9 @@ for (const viewport of VIEWPORTS) {
       expect(t.x + t.width).toBeLessThanOrEqual(viewport.width - 132);
       expect(t.y).toBeCloseTo(84, 0);
     }
-    // A suggestion or an undo takes the row's full width, on its own line.
+    // A suggestion or an undo takes the row's full width, on its own line
+    // (the list closed: the quick action is not shown over it).
+    await page.getByTestId("walk-close").click();
     const undo = await box(page, "station-skip");
     const row = await box(page, "walk-peek-row");
     expect(undo.width).toBeCloseTo(row.width, 0);
@@ -312,6 +372,85 @@ for (const viewport of VIEWPORTS) {
 
 for (const viewport of VIEWPORTS) {
   const label = `${String(viewport.width)}x${String(viewport.height)}`;
+  test(`the list's hint, a row's title, action, confirm and undo bar sit where W4 puts them at ${label}`, async ({
+    page,
+  }) => {
+    // Why (W4 build plan M4, §1.6, §3.1): the rows' controls are W4's - a
+    // 34 px glyph column, the title a 44 px button, the action at the
+    // row's right edge, the confirm on its own line 44 px in under the
+    // title, the undo's 3 px bar under the title and the action - and the
+    // hint sits between the progress line and the rows, 16 px in from the
+    // list's sides. The design system zeroes paragraph margins, so these
+    // gaps are pinned, not only the elements' presence.
+    await page.setViewportSize(viewport);
+    await installTourViewerArFakes(page);
+    await enterWithoutAPosition(page);
+    // "Can't get there?" with no station guessed: the list asks which.
+    await page.getByTestId("station-skip").click();
+    const list = await box(page, "walk-list");
+    const hint = await boxOf(page.getByTestId("walk-hint"));
+    await expect(page.getByTestId("walk-hint")).toHaveText(
+      /Which one can't you reach\?$/,
+    );
+    expect(hint.x - list.x).toBeCloseTo(16, 0);
+    expect(list.x + list.width - (hint.x + hint.width)).toBeCloseTo(16, 0);
+    await expect(page.getByTestId("walk-hint")).toHaveCSS(
+      "background-color",
+      "rgba(147, 197, 253, 0.1)",
+    );
+    const progress = await boxOf(page.getByTestId("walk-progress"));
+    expect(hint.y).toBeGreaterThanOrEqual(progress.y + progress.height - 0.5);
+    const firstRow = await boxOf(page.getByTestId("walk-row").first());
+    expect(firstRow.y - (hint.y + hint.height)).toBeCloseTo(10, 0);
+    // Closed and opened by the grab (no chooser): a row's Skip asks first.
+    await page.getByTestId("walk-close").click();
+    await page.getByTestId("walk-grab").click();
+    const towerRow = page
+      .getByTestId("walk-row")
+      .filter({ hasText: "The tower" });
+    const row = await boxOf(towerRow);
+    const main = await boxOf(walkRowControl(page, "The tower", "main"));
+    const act = await boxOf(walkRowControl(page, "The tower", "act"));
+    // The glyph's 34 px column and the 10 px gap, inside 8 px of padding.
+    expect(main.x - row.x).toBeCloseTo(8 + 34 + 10, 0);
+    expect(main.height).toBeGreaterThanOrEqual(44);
+    expect(row.x + row.width - (act.x + act.width)).toBeCloseTo(8, 0);
+    expect(act.x - (main.x + main.width)).toBeCloseTo(10, 0);
+    expect(act.width).toBeGreaterThanOrEqual(44);
+    expect(act.height).toBeGreaterThanOrEqual(44);
+    await walkRowControl(page, "The tower", "act").click();
+    const title = await boxOf(walkRowControl(page, "The tower", "main"));
+    const confirm = await boxOf(walkRowControl(page, "The tower", "confirm"));
+    const cancel = await boxOf(walkRowControl(page, "The tower", "cancel"));
+    const armed = await boxOf(towerRow);
+    // The confirm's line: under the title, 44 px in from the row's
+    // padding, Cancel 8 px beside it (or wrapped under it on a narrow
+    // row), both at least 44 px tall.
+    expect(confirm.x - armed.x).toBeCloseTo(8 + 44, 0);
+    expect(confirm.y).toBeGreaterThanOrEqual(title.y + title.height - 0.5);
+    expect(confirm.height).toBeGreaterThanOrEqual(44);
+    expect(cancel.height).toBeGreaterThanOrEqual(44);
+    if (Math.abs(cancel.y - confirm.y) <= 1) {
+      expect(cancel.x - (confirm.x + confirm.width)).toBeCloseTo(8, 0);
+    } else {
+      expect(cancel.y - (confirm.y + confirm.height)).toBeCloseTo(8, 0);
+    }
+    expect(cancel.x + cancel.width).toBeLessThanOrEqual(
+      armed.x + armed.width - 8 + 0.5,
+    );
+    await walkRowControl(page, "The tower", "confirm").click();
+    const undo = await boxOf(walkRowControl(page, "The tower", "act"));
+    const bar = await boxOf(towerRow.getByTestId("walk-undobar"));
+    const skipped = await boxOf(towerRow);
+    // The undo's bar spans the title and the action columns, 3 px tall,
+    // under both; the undo wraps within 170 px.
+    expect(bar.x - skipped.x).toBeCloseTo(8 + 34 + 10, 0);
+    expect(skipped.x + skipped.width - (bar.x + bar.width)).toBeCloseTo(8, 0);
+    expect(bar.height).toBeCloseTo(3, 0);
+    expect(bar.y).toBeGreaterThanOrEqual(undo.y + undo.height - 0.5);
+    expect(undo.width).toBeLessThanOrEqual(170 + 0.5);
+  });
+
   test(`the away block's segments span it in W4's colours, inside the start's card, at ${label}`, async ({
     page,
   }) => {
@@ -421,7 +560,7 @@ for (const viewport of VIEWPORTS) {
       if (archive !== WALK_ARCHIVE) return;
       const quick = page.getByTestId("station-skip");
       await quick.click();
-      await quick.click();
+      await page.getByTestId("walk-row-confirm").click();
       await expect(page.locator("#walk-toast")).toBeVisible();
       const toast = await page.locator("#walk-toast").boundingBox();
       if (toast === null) throw new Error("no toast");

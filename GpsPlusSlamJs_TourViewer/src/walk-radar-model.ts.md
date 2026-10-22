@@ -72,8 +72,11 @@ minM: 10, maxM: 600, shrinkBelow: 0.65 }` (module-local; the default
 - Weak fades every blip to 0.5 (W4's prototype; the plan says "nearby").
 - No station is labelled with a distance: the rings carry the scale, the
   list the distances (§1.2).
-- At most one focus; none in an any-order tour while no distance is shown
-  and two or more stations are still to find (§1.9 R-2).
+- At most one focus: the row the guide names `next`, never while frozen.
+  Which station that is (and that there is none in R-2's condition, §1.9)
+  is the guide's since M4 (`walkFocus`); the radar no longer hides it
+  itself, so a target the visitor chose stays orange under too-weak GPS
+  (R-4).
 
 ## Examples
 
@@ -100,8 +103,8 @@ walkPrecisionChip("weak", 42); // "GPS - about 42 m, too weak"
   heading, the guards, the adaptive range.
 - `walk-radar-model.property.test.ts` - a blip's angle is the bearing's
   delta; its radius grows with distance and stays inside the rim for
-  96-144 px; at most one focus, none under the any-order no-distance
-  rule; the blur grows with accuracy and is at least 7 px; a frozen model
+  96-144 px; at most one focus, only on the guide's `next` row, none
+  frozen; the blur grows with accuracy and is at least 7 px; a frozen model
   is the same for two different live geometries.
 - `walk-radar-model.sweep.test.ts` (about 8 s; the full grid with
   `WALK_RADAR_SWEEP_FULL=1`, about 2 min) - the overlap sweep, table to

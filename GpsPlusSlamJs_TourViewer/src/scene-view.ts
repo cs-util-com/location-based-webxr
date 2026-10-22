@@ -124,6 +124,11 @@ export interface SceneView {
   /** Where the story playing is; null with none, or for a scene with a
    *  choice (no fixed number of steps). */
   progress(): StoryProgress | null;
+  /** Hold the step while the visitor is asked whether to end the story
+   *  (W4 build plan M4, R-5): an auto step's timer stops (its `autoMs`
+   *  reads null); released, it starts again from its full length. A new
+   *  story starts unheld. */
+  holdStep(held: boolean): void;
 }
 
 export function createSceneView(deps: SceneViewDeps): SceneView {
@@ -137,6 +142,8 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   /** Bumped per rendered step: a load that lands later is dropped. */
   let renderToken = 0;
   let cancelTimer: (() => void) | null = null;
+  /** The step held (`holdStep`): no timer runs. */
+  let held = false;
   let liveUrl: string | null = null;
   /** The step's media share one status line (r881 re-review M1: one
    *  asset's settle blanked another's line). What it says, per step: */
@@ -323,16 +330,23 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     dom.speaker.textContent = block.kind === "character" ? block.name : "";
     dom.continueButton.hidden = block.kind === "choice";
     showBlock(story.station, block);
-    if (step.advance.mode === "auto" && block.kind !== "choice") {
-      cancelTimer = deps.schedule(() => {
-        cancelTimer = null;
-        if (story !== null) render(story.player.next());
-      }, step.advance.afterS * 1000);
-    }
+    armTimer(step);
     deps.onChange?.();
   }
 
+  /** An auto step's timer, from its full length; none while held. */
+  function armTimer(step: TourStep): void {
+    if (held || step.advance.mode !== "auto" || step.block.kind === "choice") {
+      return;
+    }
+    cancelTimer = deps.schedule(() => {
+      cancelTimer = null;
+      if (story !== null) render(story.player.next());
+    }, step.advance.afterS * 1000);
+  }
+
   function start(station: TourStation): void {
+    held = false;
     deps.stage.clear();
     story = {
       station,
@@ -411,8 +425,18 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         index: playable.indexOf(step),
         count: story.count,
         autoMs:
-          step.advance.mode === "auto" ? step.advance.afterS * 1000 : null,
+          step.advance.mode === "auto" && !held
+            ? step.advance.afterS * 1000
+            : null,
       };
+    },
+    holdStep(hold) {
+      if (hold === held) return;
+      held = hold;
+      cancelTimer?.();
+      cancelTimer = null;
+      const step = story?.player.current() ?? null;
+      if (!hold && step !== null) armTimer(step);
     },
   };
 }

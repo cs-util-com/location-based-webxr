@@ -143,7 +143,11 @@ function harness(
       },
       hidden: true,
     },
-    skip: { textContent: "" as string, hidden: true },
+    skip: {
+      textContent: "" as string,
+      hidden: true,
+      dataset: {} as DOMStringMap,
+    },
   };
   let tour: StationTour | null = tourValue;
   const guide = wireStationGuide({
@@ -378,7 +382,7 @@ describe("wireStationGuide", () => {
       order: "fixed",
     });
     h.at(0, 0);
-    expect(h.dom.skip).toEqual({
+    expect(h.dom.skip).toMatchObject({
       hidden: false,
       textContent: "Can't get there?",
     });
@@ -496,7 +500,7 @@ describe("wireStationGuide", () => {
     });
     h.at(0, 0);
     expect(h.found).toEqual(["gate"]);
-    expect(h.dom.skip).toEqual({
+    expect(h.dom.skip).toMatchObject({
       hidden: false,
       textContent: "End this story?",
     });
@@ -809,11 +813,14 @@ describe("arrival by the station radius alone (D16)", () => {
       gpsOnly.at(0, 0, accuracyM);
       expect(gpsOnly.approaches.at(-1)).toEqual(["gate", 50, own.activateM]);
       expect(gpsOnly.guides.at(-1)).toBe(`gate@50,0/${own.foundExitM}`);
-      const [own0] = gpsOnly.huds[0]!.getTargets();
-      expect([own0!.distanceMin, own0!.distanceMax]).toEqual([
-        own.foundM,
-        own.foundExitM,
-      ]);
+      // Above the ceiling no HUD target at all (W4 build plan M4, R-0:
+      // each marker carries a distance label the line does not show).
+      expect(
+        gpsOnly.huds[0]!.getTargets().map((t) => [
+          t.distanceMin,
+          t.distanceMax,
+        ]),
+      ).toEqual(accuracyM <= 25 ? [[own.foundM, own.foundExitM]] : []);
       // No alignment: the raw fix IS the position, and its accuracy its band.
       const raw = harness(tour);
       raw.fixOnly(0, 0, accuracyM);
@@ -1004,7 +1011,11 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
     const guides: (string | null)[] = [];
     const dom = {
       line: { textContent: "" as string, hidden: true },
-      skip: { textContent: "" as string, hidden: true },
+      skip: {
+        textContent: "" as string,
+        hidden: true,
+        dataset: {} as DOMStringMap,
+      },
     };
     const guide = wireStationGuide({
       dom,
@@ -1152,7 +1163,7 @@ describe("a visitor without a code while tracking is not ready (real store)", ()
     const guide = wireStationGuide({
       dom: {
         line: { textContent: "", hidden: true },
-        skip: { textContent: "", hidden: true },
+        skip: { textContent: "", hidden: true, dataset: {} },
       },
       tour: () => ({ stations: [target], order: "fixed" }),
       placementAllowed: () => true,

@@ -957,3 +957,44 @@ export async function lockFixtureCode(page) {
     )
     .toBe("passed-code");
 }
+
+/**
+ * Wait for the guide to name a station again (visitor walk W4 build plan
+ * M4, §1.9 R-2): an any-order tour names none while no distance is shown
+ * (pending at the start of AR among them), and again only once the
+ * distance has been back for the hold - 3 s of the page's own clock. The
+ * guide re-judges on events, so camera frames are sent until the peek
+ * names one (a peek of kind `none` names none). A fixed-order tour, or one
+ * with a single station left, names one at once.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+export async function waitForTheGuess(page) {
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("walk-peek").getAttribute("data-kind");
+      },
+      { timeout: 15000, intervals: [250, 500, 1000] },
+    )
+    .not.toBe("none");
+}
+
+/**
+ * Tap a row's control in the walk's list (visitor walk W4 build plan M4):
+ * `act` (Skip, Bring back, the undo), `main` ("Guide me here"), `confirm`
+ * or `cancel`.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {string} title the row's station title
+ * @param {"act" | "main" | "confirm" | "cancel"} control
+ */
+export function walkRowControl(page, title, control) {
+  return page
+    .getByTestId("walk-row")
+    .filter({ hasText: title })
+    .getByTestId(`walk-row-${control}`);
+}

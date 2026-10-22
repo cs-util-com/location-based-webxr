@@ -581,7 +581,7 @@ describe("after a code-set zero the content shows on the first voted lock (no co
     const guide = wireStationGuide({
       dom: {
         line: { textContent: "", hidden: true },
-        skip: { textContent: "", hidden: true },
+        skip: { textContent: "", hidden: true, dataset: {} },
       },
       tour: () => ({ stations, order: "fixed" }),
       // The page's own gate (`visitor-stations.ts`).

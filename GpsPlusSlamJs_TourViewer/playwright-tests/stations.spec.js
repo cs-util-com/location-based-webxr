@@ -6,6 +6,7 @@ import {
   installTourViewerArFakes,
   seedAlignment,
   standAt,
+  walkRowControl,
 } from "./ar-fakes.js";
 import { E2E_QR_TEXT } from "./qr-fixture.mjs";
 
@@ -164,26 +165,32 @@ test("a station tour: the visitor at the code finds the first station, its knigh
   await expect(page.getByTestId("scene-status")).toHaveText("");
   await page.getByTestId("scene-continue").click();
 
-  // The tower is far: skipped on demand, in two taps (§8 D5).
+  // The tower is far: skipped on demand, in two taps (§8 D5): "Can't get
+  // there?" opens the list on its row, whose confirm skips it (W4 build
+  // plan M4).
   await expect(line).toHaveText(/^Next: The tower, \d+ m$/);
   const skip = page.getByTestId("station-skip");
   await expect(skip).toHaveText("Can't get there?");
   await skip.click();
-  await expect(skip).toHaveText("Skip The tower - I can't get there");
-  await skip.click();
+  const confirm = walkRowControl(page, "The tower", "confirm");
+  await expect(confirm).toHaveText("Skip The tower - I can't get there");
+  await confirm.click();
   await expect(line).toHaveText("Tour complete - 1 skipped.");
-  // The skip can be undone for a moment (K4 review R14): the tower comes
-  // back; skipped again, the button goes once the moment has passed (the
-  // next camera frames re-render it).
-  await expect(skip).toHaveText("Undo: bring back The tower");
-  await skip.click();
+  // The skip can be undone for a moment (K4 review R14), on its row: the
+  // tower comes back; skipped again, the quick action's undo goes once
+  // the moment has passed (the next camera frames re-render it).
+  const act = walkRowControl(page, "The tower", "act");
+  await expect(act).toHaveText("Undo: bring back The tower");
+  await act.click();
   await expect(line).toHaveText(
     /^Brought back The tower\. Next: The tower, \d+ m$/,
   );
   await expect(skip).toHaveText("Can't get there?");
-  await skip.click();
-  await skip.click();
+  await act.click();
+  await walkRowControl(page, "The tower", "confirm").click();
   await expect(line).toHaveText("Tour complete - 1 skipped.");
+  await page.getByTestId("walk-close").click();
+  await expect(skip).toHaveText("Undo: bring back The tower");
   await expect
     .poll(
       async () => {

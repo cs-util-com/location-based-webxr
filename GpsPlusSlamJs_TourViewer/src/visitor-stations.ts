@@ -390,6 +390,13 @@ export function wireVisitorStations(deps: {
     onDone: (stationId) => {
       prefetch.done(stationId);
     },
+    // A station brought back after its skip settled is read ahead again
+    // (W4 build plan M4, R-3).
+    onUndone: (stationId) => {
+      prefetch.undone(stationId);
+    },
+    // The story the visitor may end is the one playing (R-5).
+    storyPlaying: () => view.playing(),
     onUpcoming: (station) => {
       prefetch.ahead(station);
     },
@@ -479,6 +486,12 @@ export function wireVisitorStations(deps: {
             });
             renderSheet();
           },
+          rowTapped: (stationId, tap) => {
+            calls.during(() => {
+              guide.rowTapped(stationId, tap);
+            });
+            renderSheet();
+          },
           exit: () => {
             walk.exitAr();
           },
@@ -518,6 +531,8 @@ export function wireVisitorStations(deps: {
       return;
     }
     const chip = selectWalkChipKind(state);
+    // The story waits while the visitor is asked whether to end it (R-5).
+    view.holdStep(guideView.end?.kind === "end");
     const playing = view.playing();
     const sheet = selectWalkSheet(state);
     const model = walkSheetModel({
@@ -544,6 +559,7 @@ export function wireVisitorStations(deps: {
     sheetView.render(model, {
       sheet,
       quick: guideView.quick,
+      end: guideView.end,
       position: guideView.position,
       story:
         playing === null
@@ -584,16 +600,21 @@ export function wireVisitorStations(deps: {
   }
 
   /** A tap on the skip button or the story card's end control: the guide
-   *  does what the label showed. */
-  function quickTapped(): void {
+   *  does the action the tapped control carries. */
+  function quickTapped(control: { readonly dataset: DOMStringMap }): void {
     calls.during(() => {
-      guide.skipTapped();
+      guide.skipTapped(control);
     });
     renderSheet();
   }
 
-  dom.skipButton.addEventListener("click", quickTapped);
-  walk?.dom.storyEnd.addEventListener("click", quickTapped);
+  dom.skipButton.addEventListener("click", () => {
+    quickTapped(dom.skipButton);
+  });
+  const storyEnd = walk?.dom.storyEnd;
+  storyEnd?.addEventListener("click", () => {
+    quickTapped(storyEnd);
+  });
   dom.continueButton.addEventListener("click", () => {
     view.continueTapped();
   });
@@ -704,6 +725,7 @@ export function createCallGuard(render: () => void): {
 const NO_SHEET = {
   sheet: "peek",
   quick: null,
+  end: null,
   position: "pending",
   story: null,
 } as const;

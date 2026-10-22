@@ -156,7 +156,11 @@ describe("walkRadarModel - properties", () => {
     );
   });
 
-  it("at most one orange blip, and none where the guide shows no distance in an any-order choice", () => {
+  // Changed in M4: which station is the focus is the guide's (§1.9 R-1,
+  // R-2) - in R-2's condition it names none, so no row is "next" (the
+  // guide's and the sheet's properties hold that); the radar draws
+  // exactly the row the guide names, and none while frozen.
+  it("at most one orange blip, only on the guide's focus, none frozen", () => {
     fc.assert(
       fc.property(
         stationsArb,
@@ -170,12 +174,14 @@ describe("walkRadarModel - properties", () => {
             m.blips.filter((b) => b.look === "focus").length +
             m.distanceRings.filter((r) => r.focus).length;
           expect(oranges).toBeLessThanOrEqual(1);
-          const unfound = list.filter(
-            (s) => s.state === "next" || s.state === "left",
-          ).length;
-          const noDistance = kind !== "code" && kind !== "gps";
-          const noChoice = noDistance && order === "any" && unfound >= 2;
-          expect(noChoice ? oranges : 0).toBe(0);
+          const frozen = kind === "none" || kind === "lost";
+          const named = list.some((s) => s.state === "next");
+          expect(frozen || !named ? oranges : 0).toBe(0);
+          const orange = m.blips.find((b) => b.look === "focus");
+          expect(
+            orange === undefined ||
+              list.find((s) => s.id === orange.id)?.state === "next",
+          ).toBe(true);
           expect(m.rimArc === null || oranges === 1).toBe(true);
         },
       ),

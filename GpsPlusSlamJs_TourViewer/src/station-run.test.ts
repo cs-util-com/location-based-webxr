@@ -370,6 +370,59 @@ describe("skip suggestion clock", () => {
     }
   });
 
+  // Why this test matters (visitor walk W4 build plan M4, R-3): under
+  // branch order bringing a station back used to set the path to it and
+  // forget the station the path was on, so the walk went on at the
+  // brought-back station's `next` and the abandoned one was never offered
+  // again. The path now returns to where it was.
+  it("branch: a station brought back is offered, then the path resumes at the station it left", () => {
+    const run = createStationRun({
+      stations: [
+        station("a", { next: "c" }),
+        station("b", { next: "d" }),
+        station("c", { next: "e" }),
+        station("d"),
+        station("e"),
+      ],
+      order: "branch",
+      nowMs: 0,
+    });
+    run.skip("a", 1);
+    expect(run.offered()).toEqual(["c"]);
+    run.unskip("a", 2);
+    expect(run.offered()).toEqual(["a"]);
+    run.skip("a", 3);
+    expect(run.offered()).toEqual(["c"]);
+    run.skip("c", 4);
+    expect(run.offered()).toEqual(["e"]);
+    // Two brought back in a row return in turn: c, then a, then e - never
+    // c's next (e) straight after c, nor a's list successor b.
+    run.unskip("a", 5);
+    run.unskip("c", 6);
+    expect(run.offered()).toEqual(["c"]);
+    run.observe({ distances: at({ c: 1 }), nowMs: 7 });
+    run.finish("c", 8);
+    expect(run.offered()).toEqual(["a"]);
+    run.skip("a", 9);
+    expect(run.offered()).toEqual(["e"]);
+  });
+
+  it("branch: a station brought back after the path ended ends it again once done", () => {
+    const run = createStationRun({
+      stations: [station("a", { next: "c" }), station("b"), station("c")],
+      order: "branch",
+      nowMs: 0,
+    });
+    run.skip("a", 1);
+    run.skip("c", 2);
+    expect(run.isComplete()).toBe(true);
+    run.unskip("a", 3);
+    expect(run.offered()).toEqual(["a"]);
+    // Not on to a's next (c, done) and its successor b: the path had ended.
+    expect(run.skip("a", 4).at(-1)).toEqual({ kind: "complete" });
+    expect(run.offered()).toEqual([]);
+  });
+
   it("scales with the distance at the offer: a slow walker's time plus a fixed allowance", () => {
     expect(skipSuggestAfterMs(null)).toBe(SKIP_SUGGEST_BASE_MS);
     expect(skipSuggestAfterMs(100)).toBe(

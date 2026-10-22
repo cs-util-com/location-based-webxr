@@ -22,7 +22,7 @@ import { wireStationGuide, type StationGuideDeps } from "./station-guide";
 import { walkOffered, walkStatus } from "./station-run";
 import { createTourViewerStore } from "./tour-viewer-session";
 import type { VisitorPosition } from "./visitor-position";
-import { quickArmed, walkCleared } from "./visitor-walk-slice";
+import { targetChosen, walkCleared } from "./visitor-walk-slice";
 import {
   LogLevel,
   subscribeToLogs,
@@ -101,7 +101,7 @@ function onThePage(
   const atBatch: { line: string; foundInStore: string[] }[] = [];
   const dom = {
     line: { textContent: "", hidden: true },
-    skip: { textContent: "", hidden: true },
+    skip: { textContent: "", hidden: true, dataset: {} as DOMStringMap },
   };
   const logging = {
     getState: () => store.getState(),
@@ -179,7 +179,9 @@ function countSteady(
   const complete = line.startsWith("Tour complete");
   const noteShown =
     line.startsWith("Skipped ") || line.startsWith("Brought back ");
-  if (state.quickArmedId !== null) steady.armed += 1;
+  if (state.quickArmedId !== null || state.rowArmedId !== null) {
+    steady.armed += 1;
+  }
   if (state.note !== null && !complete && !noteShown) steady.noteRunOut += 1;
   if (line.includes("GPS too weak")) steady.weakGps += 1;
   if (line.includes("its story is playing")) steady.story += 1;
@@ -259,20 +261,27 @@ describe("the station guide on the page's store (W4 M1)", () => {
   // holds after it, never a copy taken before that change.
   it("reads a change another writer makes mid-call at once: the call shows what the store holds after it", () => {
     const other: { store?: ReturnType<typeof createTourViewerStore> } = {};
-    const page = onThePage([station("a", 0, 0), station("b", 30, 0)], "any", {
-      // Another writer asks the skip for b when a is found.
-      onFound: (id) => {
-        if (id === "a") other.store?.dispatch(quickArmed("b"));
+    const page = onThePage(
+      [station("a", 0, 0), station("b", 30, 0), station("c", 60, 0)],
+      "any",
+      {
+        // Another writer chooses c as the target when a is found (M4: a
+        // row arm would go with the story the find starts).
+        onFound: (id) => {
+          if (id === "a") other.store?.dispatch(targetChosen("c"));
+        },
       },
-    });
+    );
     other.store = page.store;
     page.move(10, 0);
     page.guide.tick();
-    // Into a's found radius: a is found, b is in focus, and armed.
+    // Into a's found radius: a is found, and c is in focus by the choice.
     page.move(1, 0);
     page.guide.tick();
-    expect(page.store.getState().visitorWalk.quickArmedId).toBe("b");
-    expect(page.dom.skip.textContent).toBe("Skip B - I can't get there");
+    expect(page.store.getState().visitorWalk.chosenId).toBe("c");
+    expect(page.dom.line.textContent).toBe(
+      "3 stations to find - your choice: C, 59 m",
+    );
   });
 
   // Why (W4 M1 review): a walk reset behind the guide's back is no run. A

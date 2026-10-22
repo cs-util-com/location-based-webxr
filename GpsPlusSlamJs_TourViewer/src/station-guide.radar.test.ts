@@ -98,7 +98,7 @@ function harness() {
   const guide = wireStationGuide({
     dom: {
       line: { textContent: "", hidden: true },
-      skip: { textContent: "", hidden: true },
+      skip: { textContent: "", hidden: true, dataset: {} },
     },
     tour: () => ({ stations: TOUR, order: "any" }),
     placementAllowed: () => true,

@@ -12,8 +12,14 @@ import { walkOffered, walkRoute, walkStatus } from "./station-run";
 import { createTourViewerStore } from "./tour-viewer-session";
 import { guideTourChanged } from "./visitor-guide-slice";
 import {
+  listOpened,
+  noGuessSet,
   quickArmed,
   noteCleared,
+  rowArmed,
+  targetChosen,
+  walkFocus,
+  walkNoGuess,
   sheetSet,
   selectNote,
   selectUndoableSkip,
@@ -88,6 +94,10 @@ describe("visitorWalkReducer", () => {
       sheet: "peek",
       completionSeen: false,
       welcomePending: false,
+      rowArmedId: null,
+      chooser: false,
+      noGuess: false,
+      chosenId: null,
     });
     expect(walkOffered(progress(started("any")))).toEqual(["a", "b", "c"]);
     expect(walkOffered(progress(started("fixed")))).toEqual(["a"]);
@@ -533,5 +543,171 @@ describe("the welcome back (W4 build plan M2, §1.8)", () => {
     state = visitorWalkReducer(state, welcomeSet(true));
     state = visitorWalkReducer(state, walkCleared());
     expect(selectWelcomePending(wrap())).toBe(false);
+  });
+});
+
+describe("the walk's rules of M4 (W4 build plan §1.9 R-1 to R-4)", () => {
+  const near = (pairs: Record<string, number>) =>
+    new Map(Object.entries(pairs));
+
+  // Why this test matters (R-1): one selector decides the station the
+  // peek, the radar's orange, the breadcrumbs and the skip clock are
+  // about. In an any-order tour with several stations to find, a guess
+  // made with no distance shown named a station the visitor had no reason
+  // to walk to (W-D3); the visitor's own pick is no guess.
+  it("walkFocus: the order's station, the chosen one, else the nearest - none while no distance is guessed", () => {
+    const d = near({ a: 30, b: 10, c: 50 });
+    expect(walkFocus(started("fixed"), d)).toBe("a");
+    expect(walkFocus(started("branch"), d)).toBe("a");
+    expect(walkFocus(started("any"), d)).toBe("b");
+    // No distance shown (R-2): no guess in an any-order tour ...
+    const blind = visitorWalkReducer(started("any"), noGuessSet(true));
+    expect(walkFocus(blind, d)).toBeNull();
+    // ... but the order's station, and a choice, stay.
+    expect(
+      walkFocus(visitorWalkReducer(started("fixed"), noGuessSet(true)), d),
+    ).toBe("a");
+    expect(walkFocus(visitorWalkReducer(blind, targetChosen("c")), d)).toBe(
+      "c",
+    );
+    // One unfound station offered: no guess is needed.
+    let one = visitorWalkReducer(blind, walkStepped({ kind: "skip", id: "a" }));
+    one = visitorWalkReducer(one, walkStepped({ kind: "skip", id: "b" }));
+    expect(walkFocus(one, d)).toBe("c");
+    // A station whose story plays is no focus; none without a walk.
+    const playing = visitorWalkReducer(
+      started("any"),
+      walkStepped({ kind: "found", id: "b" }),
+    );
+    expect(walkFocus(playing, d)).toBe("a");
+    expect(
+      walkFocus(visitorWalkReducer(undefined, { type: "@@init" }), d),
+    ).toBeNull();
+    // Without distances the first in list order (pending, outside R-2).
+    expect(walkFocus(started("any"), near({}))).toBe("a");
+  });
+
+  it("walkNoGuess: R-2's condition - any order, two or more to find, no choice, no distance", () => {
+    const blind = visitorWalkReducer(started("any"), noGuessSet(true));
+    expect(walkNoGuess(blind)).toBe(true);
+    expect(walkNoGuess(started("any"))).toBe(false);
+    expect(
+      walkNoGuess(visitorWalkReducer(started("fixed"), noGuessSet(true))),
+    ).toBe(false);
+    expect(walkNoGuess(visitorWalkReducer(blind, targetChosen("a")))).toBe(
+      false,
+    );
+  });
+
+  // Why (R-4): at most one chosen target, only a waiting offered station
+  // in an any-order tour with a choice to make, cleared when it is found
+  // or skipped and with the tour; tapping it again clears it.
+  it("targetChosen: one waiting offered station in an any-order tour, cleared on find, skip and tour change", () => {
+    const chosen = visitorWalkReducer(started("any"), targetChosen("c"));
+    expect(chosen.chosenId).toBe("c");
+    expect(visitorWalkReducer(chosen, targetChosen("c"))).toBe(chosen);
+    expect(visitorWalkReducer(chosen, targetChosen(null)).chosenId).toBeNull();
+    expect(visitorWalkReducer(chosen, targetChosen("b")).chosenId).toBe("b");
+    expect(
+      visitorWalkReducer(started("fixed"), targetChosen("b")).chosenId,
+    ).toBeNull();
+    expect(visitorWalkReducer(chosen, targetChosen("nope")).chosenId).toBe("c");
+    expect(
+      visitorWalkReducer(chosen, walkStepped({ kind: "found", id: "c" }))
+        .chosenId,
+    ).toBeNull();
+    expect(
+      visitorWalkReducer(chosen, walkStepped({ kind: "skip", id: "c" }))
+        .chosenId,
+    ).toBeNull();
+    expect(
+      visitorWalkReducer(chosen, walkStepped({ kind: "skip", id: "a" }))
+        .chosenId,
+    ).toBe("c");
+    expect(visitorWalkReducer(chosen, guideTourChanged()).chosenId).toBeNull();
+    // The step that completes the tour clears it too (found by the
+    // property over random walks: the completion's own rule returned
+    // before the offer rules, and a bring back made it the target again).
+    const last = [
+      walkStepped({ kind: "skip", id: "a" }),
+      walkStepped({ kind: "skip", id: "b" }),
+    ].reduce(visitorWalkReducer, chosen);
+    expect(last.chosenId).toBe("c");
+    expect(
+      visitorWalkReducer(last, walkStepped({ kind: "skip", id: "c" })).chosenId,
+    ).toBeNull();
+    // A found station cannot be chosen.
+    const found = visitorWalkReducer(
+      started("any"),
+      walkStepped({ kind: "found", id: "a" }),
+    );
+    expect(visitorWalkReducer(found, targetChosen("a")).chosenId).toBeNull();
+  });
+
+  // Why (R-2's taps): "Can't get there?" opens the list - with the focus
+  // row armed, or in chooser mode without a focus. The row's arm is its
+  // own field: closing the list, a story starting or the station's skip
+  // clear it; a focus change or a degradation never does.
+  it("listOpened arms a row or the chooser; closing the list, a story or the skip clears them", () => {
+    const armed = visitorWalkReducer(
+      started("any"),
+      listOpened({ armedId: "b", chooser: false }),
+    );
+    expect(armed).toMatchObject({
+      sheet: "list",
+      rowArmedId: "b",
+      chooser: false,
+    });
+    const chooser = visitorWalkReducer(
+      visitorWalkReducer(started("any"), noGuessSet(true)),
+      listOpened({ armedId: null, chooser: true }),
+    );
+    expect(chooser).toMatchObject({
+      sheet: "list",
+      rowArmedId: null,
+      chooser: true,
+    });
+    expect(visitorWalkReducer(armed, sheetSet("peek"))).toMatchObject({
+      rowArmedId: null,
+      chooser: false,
+    });
+    expect(visitorWalkReducer(chooser, sheetSet("peek")).chooser).toBe(false);
+    expect(visitorWalkReducer(armed, noGuessSet(true)).rowArmedId).toBe("b");
+    expect(visitorWalkReducer(armed, rowArmed("a")).rowArmedId).toBe("a");
+    expect(visitorWalkReducer(armed, rowArmed(null)).rowArmedId).toBeNull();
+    const story = visitorWalkReducer(
+      armed,
+      walkStepped({ kind: "found", id: "a" }),
+    );
+    expect(story).toMatchObject({ sheet: "peek", rowArmedId: null });
+    const skipped = visitorWalkReducer(armed, skipTaken({ id: "b", atMs: 1 }));
+    expect(skipped).toMatchObject({
+      rowArmedId: null,
+      chooser: false,
+      sheet: "list",
+    });
+    // The distance back for its hold: the chooser goes, rows take two taps.
+    expect(visitorWalkReducer(chooser, noGuessSet(false)).chooser).toBe(false);
+  });
+
+  it("a station brought back that was not the last skip leaves the last skip's undo alone", () => {
+    let state = visitorWalkReducer(
+      started("any"),
+      skipTaken({ id: "a", atMs: 1 }),
+    );
+    state = visitorWalkReducer(state, skipTaken({ id: "b", atMs: 2 }));
+    const back = visitorWalkReducer(state, skipUndone({ id: "a", atMs: 3 }));
+    expect(back.lastSkip).toEqual({ id: "b", atMs: 2, settled: false });
+    expect(back.note).toEqual({ kind: "brought-back", id: "a", atMs: 3 });
+  });
+
+  it("the new fields start empty and reset with the walk", () => {
+    const s0 = started("any");
+    expect(s0).toMatchObject({
+      rowArmedId: null,
+      chooser: false,
+      noGuess: false,
+      chosenId: null,
+    });
   });
 });

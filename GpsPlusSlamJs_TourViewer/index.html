@@ -2280,12 +2280,20 @@
         background: var(--walk-found);
         color: var(--walk-found-ink);
       }
-      /* The end's confirm (W4's warn look) beside "Keep listening". */
+      /* The end's confirm (W4's warn look) beside "Keep listening", and a
+         row's Skip confirm beside its Cancel (M4). */
+      .walk-sheet .walk-btn-warn,
       .walk-sheet #walk-story-end[data-kind="end"] {
         flex: 1;
         border-color: var(--walk-danger);
         background: rgb(248 113 113 / 16%);
         color: #fecaca;
+      }
+      /* Under the end's question the card offers only its two answers
+         (W4): the next step waits for "Keep listening". */
+      .walk-story-acts:has(> #walk-story-end[data-kind="end"])
+        > #scene-continue {
+        display: none;
       }
       .walk-story #scene-play-next {
         margin-top: 10px;
@@ -2352,6 +2360,17 @@
       .walk-progress b {
         color: var(--walk-ink);
       }
+      /* While no station is guessed (R-2, M4): why, and which one to skip
+         once asked (W4). */
+      .walk-hint {
+        margin: 0 16px 10px;
+        padding: 10px 12px;
+        border: 1px solid rgb(147 197 253 / 35%);
+        border-radius: 12px;
+        background: rgb(147 197 253 / 10%);
+        font-size: 13.5px;
+        line-height: 1.4;
+      }
       .walk-done {
         display: flex;
         align-items: center;
@@ -2382,7 +2401,7 @@
       }
       .walk-row {
         display: grid;
-        grid-template-columns: 34px 1fr;
+        grid-template-columns: 34px 1fr auto;
         align-items: center;
         gap: 6px 10px;
         min-height: 44px;
@@ -2394,6 +2413,10 @@
       }
       .walk-row[data-state="next"] {
         background: rgb(251 146 60 / 10%);
+      }
+      /* The visitor's chosen target (R-4). */
+      .walk-row[data-chosen="true"] {
+        box-shadow: inset 3px 0 0 var(--walk-accent);
       }
       .walk-glyph {
         display: grid;
@@ -2430,9 +2453,22 @@
         color: rgb(255 255 255 / 50%);
         font-size: 11px;
       }
+      /* The title is a button: "Guide me here" where a target can be
+         chosen (R-4, M4), inert otherwise. */
       .walk-row-main {
+        display: block;
         min-width: 0;
+        min-height: 44px;
         padding: 4px 0;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+        appearance: none;
+      }
+      .walk-row-main:disabled {
+        cursor: default;
       }
       .walk-row-main b {
         display: block;
@@ -2459,21 +2495,82 @@
         width: 13px;
         height: 13px;
       }
+      /* A row's action (M4, W4): Skip, Bring back, the undo. */
+      .walk-row-act {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 8px 13px;
+        border: 1px solid rgb(255 255 255 / 28%);
+        border-radius: 12px;
+        background: var(--walk-surface-2);
+        color: var(--walk-ink);
+        font-size: 13.5px;
+        font-weight: 600;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .walk-row-act[data-k="bring"] {
+        border-color: var(--walk-found);
+        color: #99f6e4;
+      }
+      .walk-row-act[data-k="undo"] {
+        max-width: 170px;
+        border-color: var(--walk-found);
+        background: rgb(45 212 191 / 14%);
+        text-align: center;
+        white-space: normal;
+      }
+      .walk-confirm {
+        display: flex;
+        flex-wrap: wrap;
+        grid-column: 1 / -1;
+        gap: 8px;
+        padding: 2px 0 6px 44px;
+      }
+      .walk-sheet .walk-confirm .walk-btn {
+        font-size: 13.5px;
+      }
+      /* The undo's time left, run down by its own animation. */
+      .walk-undobar {
+        grid-column: 2 / -1;
+        height: 3px;
+        overflow: hidden;
+        border-radius: 2px;
+        background: rgb(255 255 255 / 12%);
+      }
+      /* stylelint-disable-next-line no-descending-specificity -- the undo's bar and the segments are different elements. */
+      .walk-undobar > i {
+        display: block;
+        height: 100%;
+        background: var(--walk-found);
+        transform-origin: left;
+        animation: walk-undo var(--walk-undo-ms, 6000ms) linear forwards;
+      }
+
+      @keyframes walk-undo {
+        from {
+          transform: scaleX(var(--walk-undo-from, 1));
+        }
+
+        to {
+          transform: scaleX(0);
+        }
+      }
       .walk-list-foot {
         display: flex;
         gap: 8px;
         padding: 6px 16px 14px;
       }
+      /* stylelint-disable-next-line no-descending-specificity -- the foot's button and a row's confirm are different elements. */
       .walk-list-foot .walk-btn {
         flex: 1;
       }
 
-      /* The list open: the peek's row goes once the tour is complete (the
-         card says it), the story card gives the peek back (W4). An undo
-         still offered stays (today's rule; W4 puts it on the row, M4). */
-      .walk-sheet[data-sheet="list"][data-complete="true"]
-        #walk-peek-row:not(:has(#station-skip:not([hidden]))),
-      .walk-sheet[data-sheet="list"][data-complete="true"] .walk-peek-main {
+      /* The list open: the quick action goes (W4: the rows carry Skip,
+         its confirm and the undo, M4), and the peek's row once the tour is
+         complete (the card says it); the story card gives the peek back. */
+      .walk-sheet[data-sheet="list"] #station-skip,
+      .walk-sheet[data-sheet="list"][data-complete="true"] #walk-peek-row {
         display: none;
       }
 
@@ -4980,6 +5077,12 @@
                     id="walk-progress"
                     class="walk-progress"
                     data-testid="walk-progress"
+                  ></p>
+                  <p
+                    id="walk-hint"
+                    class="walk-hint"
+                    data-testid="walk-hint"
+                    hidden
                   ></p>
                   <ul
                     id="walk-rows"

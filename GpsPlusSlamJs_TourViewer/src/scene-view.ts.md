@@ -100,3 +100,17 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
 - Tested in `scene-view.test.ts` (the step, the count and the auto
   step's time, nothing without a story, no dots with a choice, `onChange`
   on a start, each step, the end and `stopAll`).
+
+## The held step (visitor walk W4 build plan M4, R-5)
+
+- `SceneView.holdStep(held)` - while the visitor is asked whether to end
+  the story ("End the story of <title> now" showing), the step holds: an
+  auto step's timer is cancelled and `progress().autoMs` reads null (the
+  dots show no timed fill); released ("Keep listening"), the timer starts
+  again from the step's full length (W4). A step shown while held starts
+  no timer; a new story starts unheld. The caller derives the hold on
+  every sheet render (`visitor-stations.ts`), so it never drifts from
+  the end control.
+- Tests: "a held step stops its timer; released, it runs again from the
+  start" and "a hold set with no story is dropped when the next story
+  starts" in `scene-view.test.ts`.

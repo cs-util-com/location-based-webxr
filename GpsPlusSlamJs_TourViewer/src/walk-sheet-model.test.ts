@@ -85,6 +85,13 @@ function view(over: Partial<GuideView> = {}): GuideView {
       ["garden", 190],
     ]),
     quick: { kind: "ask-skip", id: "well" },
+    end: null,
+    chosenId: null,
+    canChoose: true,
+    rowArmedId: null,
+    noGuess: false,
+    chooser: false,
+    undo: null,
     note: null,
     ...over,
   };
@@ -160,7 +167,16 @@ describe("the peek (§1.5)", () => {
   });
 
   it("nothing vouches for the position, several offered: no station named (W4 'Position unknown')", () => {
-    const m = walkSheetModel(input({ view: view({ position: "none" }) }));
+    const m = walkSheetModel(
+      input({
+        view: view({
+          position: "none",
+          precision: "none",
+          focusId: null,
+          noGuess: true,
+        }),
+      }),
+    );
     expect(m.peek).toEqual({
       kind: "none",
       eyebrow: "Position unknown",
@@ -464,7 +480,10 @@ describe("the completion card (§1.6)", () => {
     });
   });
 
-  it("with a station skipped: 'M of N found.'", () => {
+  // Changed in M4 (W-D2): a skipped station comes back at any time, so
+  // the card says so (W4's words); before M4 it would have been false
+  // once the 6 s undo had passed.
+  it("with a station skipped: 'M of N found. A skipped station can still be brought back.'", () => {
     const skipped = walk("any", [
       ...done("gate"),
       ...done("well"),
@@ -475,7 +494,10 @@ describe("the completion card (§1.6)", () => {
       walkSheetModel(
         input({ progress: skipped, view: view({ focusId: null }) }),
       ).list.completion,
-    ).toEqual({ title: "Tour complete - 1 skipped.", text: "3 of 4 found." });
+    ).toEqual({
+      title: "Tour complete - 1 skipped.",
+      text: "3 of 4 found. A skipped station can still be brought back.",
+    });
   });
 
   it("branch order: the path's line, and no count", () => {
@@ -492,7 +514,7 @@ describe("the completion card (§1.6)", () => {
     );
     expect(m.list.completion).toEqual({
       title: "Tour complete - you reached the end of your path, 1 skipped.",
-      text: "Thank you for walking with us.",
+      text: "A skipped station can still be brought back.",
     });
   });
 });
@@ -532,5 +554,132 @@ describe("leaving AR (§1.8)", () => {
       kind: "each",
       states: ["found", "here", "skipped", "left"],
     });
+  });
+});
+
+describe("the walk's rules in the sheet (W4 build plan M4, §1.5, §1.6, §1.9)", () => {
+  // Why: with no station guessed (R-2) the peek names none and says what
+  // the position is doing, in the chip's words where W4 had none.
+  it("the peek with no station guessed: the position's state under each no-distance kind and the hold", () => {
+    const r2 = (over: Partial<GuideView>) =>
+      walkSheetModel(
+        input({ view: view({ focusId: null, noGuess: true, ...over }) }),
+      ).peek;
+    expect(r2({ position: "weak", precision: "weak", accuracyM: 40 })).toEqual({
+      kind: "none",
+      eyebrow: "GPS - about 40 m, too weak",
+      title: "3 stations to find",
+      distance: null,
+      arrowDeg: null,
+      tail: "GPS too weak to guide you (±40 m); step into the open.",
+    });
+    expect(r2({ position: "pending", precision: "pending" })).toMatchObject({
+      eyebrow: "Finding your position…",
+      tail: "Waiting for your position…",
+    });
+    expect(
+      r2({ position: "distance", precision: "gps", accuracyM: 6 }),
+    ).toMatchObject({
+      eyebrow: "GPS - about 6 m",
+      title: "3 stations to find",
+      distance: null,
+      tail: "Waiting for a steady position…",
+    });
+    // A story playing with stations still to find: still no guess.
+    expect(
+      walkSheetModel(
+        input({
+          progress: walk("any", [{ kind: "found", id: "gate" }]),
+          view: view({ focusId: null, noGuess: true, position: "none" }),
+        }),
+      ).peek.kind,
+    ).toBe("none");
+  });
+
+  it("the list's hint: the position's cause, and 'which one' once asked to skip", () => {
+    const hint = (over: Partial<GuideView>) =>
+      walkSheetModel(input({ view: view({ focusId: null, ...over }) })).list
+        .hint;
+    expect(hint({})).toBeNull();
+    expect(hint({ noGuess: true, position: "none" })).toBe(
+      "Your position is unknown - scan one of the tour's codes, or pick a station below.",
+    );
+    expect(hint({ noGuess: true, chooser: true, position: "none" })).toBe(
+      "Your position is unknown, so the guide can't tell which station is nearest. Which one can't you reach?",
+    );
+    expect(hint({ noGuess: true, chooser: true, position: "weak" })).toBe(
+      "GPS is too weak, so the guide can't tell which station is nearest. Which one can't you reach?",
+    );
+    expect(hint({ noGuess: true, chooser: true, position: "pending" })).toBe(
+      "The guide is still waiting for your position, so it can't tell which station is nearest. Which one can't you reach?",
+    );
+  });
+
+  // Why (§1.6, W-D2): every row carries its own action - Skip for a
+  // station to find, its confirm once armed, "Undo: bring back" with its
+  // bar for the last skip, "Bring back" for any other skipped one, at any
+  // time - so a skip is never more than a row away and never final.
+  it("the rows' actions: Skip, the armed confirm, the undo with its time, Bring back", () => {
+    const m = walkSheetModel(
+      input({
+        progress: walk("any", [
+          ...done("gate"),
+          { kind: "skip", id: "tower" },
+          { kind: "skip", id: "garden" },
+        ]),
+        view: view({
+          rowArmedId: "well",
+          undo: { id: "garden", leftMs: 2_500 },
+        }),
+      }),
+    );
+    const [gate, well, tower, garden] = m.list.rows;
+    expect(gate).toMatchObject({ action: null, confirm: null });
+    expect(well).toMatchObject({
+      action: null,
+      confirm: "Skip The well - I can't get there",
+    });
+    expect(tower!.action).toEqual({
+      kind: "bring",
+      label: "Bring back",
+      ariaLabel: "Bring back The tower",
+    });
+    expect(garden).toMatchObject({
+      action: {
+        kind: "undo",
+        label: "Undo: bring back The garden",
+        ariaLabel: "Undo: bring back The garden",
+      },
+      undoLeftMs: 2_500,
+    });
+    const plain = walkSheetModel(input()).list.rows[2]!;
+    expect(plain.action).toEqual({
+      kind: "skip",
+      label: "Skip",
+      ariaLabel: "Skip The tower",
+    });
+  });
+
+  // Why (R-4): the chosen target is the peek's, marked on its row, and
+  // only a waiting station of a tour with a choice can be chosen.
+  it("the chosen target: 'your choice' in the peek and its row, 'Guide me here' on a choosable row", () => {
+    const m = walkSheetModel(
+      input({ view: view({ focusId: "tower", chosenId: "tower" }) }),
+    );
+    expect(m.peek.eyebrow).toBe("3 stations to find - your choice");
+    const tower = m.list.rows[2]!;
+    expect(tower).toMatchObject({
+      chosen: true,
+      choosable: true,
+      sub: "120 m - your choice",
+      mainLabel: "The tower: 120 m - your choice. Guide me here",
+    });
+    expect(m.list.rows[0]).toMatchObject({
+      choosable: false,
+      mainLabel: "The gate: Found",
+    });
+    const fixed = walkSheetModel(input({ view: view({ canChoose: false }) }))
+      .list.rows[1]!;
+    expect(fixed.choosable).toBe(false);
   });
 });

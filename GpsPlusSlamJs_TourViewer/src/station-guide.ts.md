@@ -11,7 +11,7 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
 `GpsPlusSlamJs_Docs/docs/2026-10-18-2349-visitor-station-content-at-radius-plan.md`
 (M1: the present station),
 `GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md` (M1:
-the walk's state in the page's store).
+the walk's state in the page's store; M4: the walk's rules, below).
 
 ## Public API
 
@@ -21,7 +21,12 @@ the walk's state in the page's store).
     only a re-judge now, since the lock improved the position;
   - `storyEnded(stationId)` - the story played to its end: the station is
     done;
-  - `skipTapped()`;
+  - `skipTapped(control?)` - a tap on the skip button or the story
+    card's end control: the action the control carries (`data-action`,
+    `data-station`, written with its label; `skipActionOf`), the skip
+    button's when no control is given;
+  - `rowTapped(stationId, tap)` - a tap on a row of the list
+    (`WalkRowTap`: `skip`, `confirm`, `cancel`, `bring`, `choose`; M4);
   - `endSession()` - the HUD goes, the line hides; the progress stays, and
     a found station's story plays again on the next session's first tick
     with a position and the GPS zero;
@@ -30,7 +35,7 @@ the walk's state in the page's store).
   - `figurePoseOf(stationId)` - where the stage stands a story's figure:
     the same pose once this AR entry's alignment was ready, null before
     (no heading yet; the stage waits, r881 re-review M-B).
-- Deps: `dom` (`line`, `skip`), `tour()` (stations, order),
+- Deps: `dom` (`line`, `skip`, `end?`; the controls carry a `dataset`), `tour()` (stations, order),
   `placementAllowed()`, `zero()`, `visitor()` (`visitor-position.ts`),
   `codeLinedUp()` (a code's votes lined the alignment up, `tour-flow.ts`;
   the guide passes it to the framework's precision rule as `codeHold`, so
@@ -51,7 +56,11 @@ the walk's state in the page's store).
   `onFound(station)`, `onEndStory?(stationId)` (R9), `onVisitor?(nue)`, `onApproach?(station, distanceM,
 activateM)` (each tick, each offered station with a distance: the
   prefetch), `onDone?(stationId)` (a story's end or a skip: the prefetch may
-  release it), `onUpcoming?(station)` (every render while the current
+  release it), `onUndone?(stationId)` (M4: a station brought back after
+  its skip settled - the prefetch reads it again; never for an undo inside
+  the window, which the prefetch never heard of), `storyPlaying?()` (M4:
+  the station whose story the panel plays, the one "End this story?"
+  names), `onUpcoming?(station)` (every render while the current
   station is found under a fixed or branch order: the station that comes
   next, which the prefetch reads ahead, K4 review R5), `onGuide?(visitor, target)` (every render: the breadcrumbs'
   target, the station in focus with its arrival band as `stopM`; null when
@@ -116,8 +125,9 @@ activateM)` (each tick, each offered station with a distance: the
     `replayFound` and `presentByCode` (the guide's own bookkeeping of
     rules it alone applies); `runStations` (the identity that tells
     another tour); `tourChangePending` (one tick's note to its own end);
-    `rendered` (what the button showed, so a tap does that, R14; goes in
-    M4 when a tap carries its action); `runView` (a view of the run's
+    `noGuessBackAtMs` (when the distance came back under R-2's hold: its
+    clock's own side, `walk-no-guess.ts`; the store holds `noGuess`);
+    `runView` (a view of the run's
     calls over the walk for the tour's stations, no state of its own); the
     call's pending changes (one call's, gone at its end).
   - **The listeners stay callbacks**, each for its own reason (M1's
@@ -354,8 +364,8 @@ activateM)` (each tick, each offered station with a distance: the
     one, the bare 2 min allowance suggested the skip to a visitor still
     waiting for a position);
   - a tap does what the button's label showed, for the station it named
-    (`rendered`): a clock that ran out since, or a focus that moved,
-    changes nothing;
+    (the control's `data-action` and `data-station`, M4): a clock that
+    ran out since, or a focus that moved, changes nothing;
   - a skip can be undone for `SKIP_UNDO_MS` (6 s, the framework toast's
     linger; argued, not measured; defined by the walk slice and
     re-exported here; the button reads its window through
@@ -365,9 +375,11 @@ activateM)` (each tick, each offered station with a distance: the
     fresh clock. The prefetch hears of a skip (`onDone`) only once it can
     no longer be undone, or when the tour moves on (a find or another
     station done). The notes go after the same 6 s.
-- **Ending a story (K4 review R9):** when no unfound station is offered, the
-  same button is about the found offered station whose story plays: "End
-  this story?", then "End the story of <title> now"; the second tap asks
+- **Ending a story (K4 review R9; R-5 from M4):** whenever a found station
+  is offered (the one playing first, `storyPlaying`), the story card's end
+  control (or, without one, the skip button while it has nothing else to
+  show) is about it: "End this story?", then "End the story of <title>
+  now"; the second tap asks
   the story panel to end it (`onEndStory`; without one the guide marks the
   station done). A story whose choices all loop back therefore cannot hold
   a tour: with the run's own guarantee, every order completes within two
@@ -380,10 +392,14 @@ activateM)` (each tick, each offered station with a distance: the
   ceiling - checked before "waiting", so it shows while the alignment is
   not ready too; the run then judges no arrival either, PR #640 review,
   M5c review #1), "Next: <title> - scan one of the tour's codes so the
-  guide knows where you are." or "N stations to find - scan one of the
-  tour's codes so the guide knows where you are." (a position with a
-  distance whose precision is `'none'`: no code holds it and no accuracy
-  speaks for it; no "nearest", which that position would have chosen),
+  guide knows where you are." (a position with a distance whose
+  precision is `'none'`: no code holds it and no accuracy speaks for it);
+  from M4 an any-order tour with two or more to find names no station
+  without a distance (R-2): "N stations to find - waiting for your
+  position…", "... - GPS too weak ...", "... - scan one of the tour's
+  codes ...", and "... - waiting for a steady position…" during the
+  hold; a chosen target is named in every state ("N stations to find -
+  your choice: <title>, N m" or "... - your choice: <title> - scan ..."),
   "Station found - its story is
   playing.", "Tour complete - every station visited." or "- N skipped.";
   under branch order "Tour complete - you reached the end of your path."
@@ -433,7 +449,21 @@ store.subscribe(() => guide.tick());
   before the walk moved into the store) proved the move behaviour-neutral
   and was deleted in M2's first commit, because M2 changes the guide's
   writes by design (W4 build plan §10). The run-level differential and its
-  frozen run stay until M4.
+  frozen run went in M4, whose bring back and branch return change the
+  run by design.
+- `station-guide.rules.test.ts` (M4) - R-0 and R-2 per no-distance state
+  (too weak, `'none'`, the hold), fixed order unchanged; the three tap
+  paths, an armed row surviving a degradation, a story's end clearing the
+  end's ask but never a row's arm, a found station never skipped from a
+  row; R-3 (a second skip settling the first, `onUndone` only after the
+  window, a complete tour brought back); R-4 (the chosen target in every
+  precision, named under `'none'`, not offered under fixed order); R-5.
+- `station-guide.rules.property.test.ts` (M4) - over random tours,
+  orders and sequences of visits, precision changes, waits, quick, end
+  and row taps: no deadlock, complete exactly when nothing is offered, a
+  found station never reverts, at most one chosen target and only a
+  waiting offered one, no focus while R-2 holds; and every tour completes
+  within two taps per station over the three tap paths.
 - `station-guide.walk-store.test.ts` (W4 M1) - on the page's store: no walk
   dispatch over frames without an event; one batch per call, last, with the
   line already written from it, and none on a second tick with the same
@@ -444,7 +474,8 @@ store.subscribe(() => guide.tick());
   a walk reset behind the guide (no walk started again, nothing shown, no
   false "Tour complete").
 - `station-guide.parity.test.ts` - also reproduces its golden through the
-  page's store with the subscription re-entering (W4 M1).
+  page's store with the subscription re-entering (W4 M1), and holds M4's
+  field-level exception (below).
 
 - `station-guide.property.test.ts` - stories that never end, stations
   nobody reaches, random orders and `next` links (cycles included): the
@@ -529,12 +560,13 @@ store.subscribe(() => guide.tick());
 ## What the sheet reads (visitor walk W4 build plan M2)
 
 - `view(): GuideView | null` - `{ focusId, position, accuracyM,
-distances, quick, note }`: the line's station, how the position stands
+distances, quick, end, chosenId, canChoose, rowArmedId, noGuess, chooser,
+undo, note }`: the line's station, how the position stands
   (`GuidePositionKind`: pending, weak, none, distance - the same
   classification `lineText` uses, `positionKind`), the fixes' accuracy
   behind `weak`, every placeable station's distance, what the quick
-  action shows (`rendered`, so a tap does what the label showed) and the
-  note while its moment lasts. Null while the guide does not run.
+  action shows and what the end control shows (M4), and the note while
+  its moment lasts. Null while the guide does not run.
 - `StationGuideDom.end?` - the story card's end control. Given, the
   "End this story?" / "End this story" labels go there and the skip
   button is hidden meanwhile; absent, the skip button carries them as
@@ -578,3 +610,38 @@ distances, quick, note }`: the line's station, how the position stands
   from it. A closure cache rebuilt from the measurement, never the
   store's; null after `endSession`.
 - Tests: `station-guide.radar.test.ts`.
+
+## The walk's rules (visitor walk W4 build plan M4, §1.9)
+
+- **R-0:** with no distance shown (`precision` not `code` or `gps`) no
+  HUD target (each carries a distance label), no "nearest", no trail.
+- **R-1:** the focus is the slice's `walkFocus`: the chosen target, else
+  (any order) the nearest unfound offered station by the measured
+  distances, else the first unfound offered; the breadcrumbs and the
+  peek follow it.
+- **R-2:** an any-order tour with two or more unfound offered and no
+  chosen target guesses no station while no distance is shown, and again
+  only once the distance held for `WALK_NO_GUESS_HOLD_MS` (3 s, swept,
+  `walk-no-guess.ts`). Meanwhile the focus is null, the quick action is
+  "Can't get there?" naming none (`data-station` empty), and the figure
+  keeps its last turn (`onVisitor` is not called).
+- **R-2's taps:** "Can't get there?" opens the list with the focus's row
+  armed (`listOpened`), or, with no focus, in chooser mode; a row's Skip
+  arms its row (its confirm "Skip <title> - I can't get there" beside
+  Cancel), except in chooser mode where one tap skips (the undo covers a
+  mistake). Only a waiting station is skipped: a found one's story ends
+  on its card (R-5), and a skip would let a bring back undo its find.
+- **R-3:** a skipped station comes back at any time ("Bring back", or
+  the undo in its 6 s); a second skip inside the first's window settles
+  the first; `onUndone` fires only for a skip that had settled.
+- **R-4:** "Guide me here" on a waiting row chooses it (tapped again,
+  unchooses), only in an any-order tour with two or more to find; the
+  chosen target is the focus whatever the precision, until it is found,
+  skipped or no longer offered.
+- **R-5:** the end control is shown whenever a found station is offered;
+  its ask is disarmed when the story it named is no longer the target.
+- **The parity golden's exception (M4), field by field:** on a tick where
+  R-2 holds the `line`, `crumbs` and `skip` may differ from the golden;
+  on a tick with no distance the `hud` may; every other field equals the
+  golden on every tick, and every field once the hold has run out with a
+  distance shown (`station-guide.parity.test.ts`).

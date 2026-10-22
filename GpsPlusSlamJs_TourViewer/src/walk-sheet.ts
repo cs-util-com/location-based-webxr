@@ -8,13 +8,17 @@
  * on every guide call, a camera frame among them). M3's direction arrows
  * turn in place: an arrow's angle changes with every camera frame, so it
  * is kept out of the rows' redraw key and written only when it changed.
+ * M4 gives each row its controls (W4 §1.6): "Guide me here" on its title,
+ * its action (Skip, Bring back, the undo with its bar) and the Skip's
+ * confirm; a tap goes to the guide as `rowTapped`, and a redraw hands
+ * the focus to the control that took the tapped one's place.
  *
  * @see walk-sheet.ts.md
  */
 
-import type { SkipAction } from "./station-guide.js";
+import type { SkipAction, WalkRowTap } from "./station-guide.js";
 import type { StoryProgress } from "./scene-view.js";
-import type { WalkSheet } from "./visitor-walk-slice.js";
+import { SKIP_UNDO_MS, type WalkSheet } from "./visitor-walk-slice.js";
 import type {
   AwayModel,
   WalkRow,
@@ -93,6 +97,62 @@ export function focusLostToHiding(
   return !target.isConnected || target.closest("[hidden]") !== null;
 }
 
+/**
+ * The rows' redraw key: everything a row shows but its arrow's angle and
+ * its undo's time left, which change with every frame - the arrow turns
+ * in place and the undo's bar runs on its own animation, so a redraw (the
+ * row's buttons rebuilt, the bar restarted, the focus moved) happens only
+ * when what the row says or offers changed.
+ */
+export function rowsDrawKey(rows: readonly WalkRow[]): string {
+  return JSON.stringify(
+    rows.map(({ arrowDeg: _a, undoLeftMs, ...row }) => ({
+      ...row,
+      undo: undoLeftMs !== null,
+    })),
+  );
+}
+
+/** What a row control does, from its `data-tap` ("undo" is a bring
+ *  back inside the window); null for anything else. */
+export function rowTapOf(tap: string | undefined): WalkRowTap | null {
+  switch (tap) {
+    case "skip":
+    case "confirm":
+    case "cancel":
+    case "bring":
+    case "choose":
+      return tap;
+    case "undo":
+      return "bring";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Where the focus goes after a row control was tapped and the rows were
+ * redrawn (its `data-tap`s, first found first): a Skip's place is taken
+ * by its confirm, a confirm's by the undo, Cancel and a bring back by the
+ * Skip again; otherwise the same control. A row without any of them hands
+ * the focus to the list's close button (the caller).
+ */
+export function focusAfterTap(tap: string): readonly string[] {
+  switch (tap) {
+    case "skip":
+      return ["confirm", "undo", "skip"];
+    case "confirm":
+      return ["undo", "bring", "skip"];
+    case "cancel":
+      return ["skip"];
+    case "bring":
+    case "undo":
+      return ["skip", "bring"];
+    default:
+      return [tap];
+  }
+}
+
 type El = HTMLElement;
 
 export interface WalkSheetDom {
@@ -123,6 +183,8 @@ export interface WalkSheetDom {
   readonly doneTitle: El;
   readonly doneText: El;
   readonly progress: El;
+  /** The list's hint while no station is guessed (R-2). */
+  readonly hint: El;
   readonly rows: El;
   readonly foot: El;
   readonly exit: El;
@@ -141,6 +203,8 @@ export interface WalkSheetView {
     extra: {
       readonly sheet: WalkSheet;
       readonly quick: SkipAction | null;
+      /** The story card's end control's action (R-5). */
+      readonly end: SkipAction | null;
       readonly position: string;
       readonly story: {
         readonly stationId: string;
@@ -221,6 +285,8 @@ export function wireWalkSheet(deps: {
   sheet(): WalkSheet;
   /** "Keep listening" (the guide's `cancelAsk`). */
   keepListening(): void;
+  /** A tap on a row's control (the guide's `rowTapped`). */
+  rowTapped(stationId: string, tap: WalkRowTap): void;
   /** The completion card's "Exit AR": the session's own way out. */
   exit(): void;
 }): WalkSheetView {
@@ -229,6 +295,9 @@ export function wireWalkSheet(deps: {
   const drawn = new Map<El, string>();
   /** The rows' arrows as last built, in the rows' order. */
   let rowArrows: SVGElement[] = [];
+  /** The row control last tapped: the redraw it causes hands the focus
+   *  on (`focusAfterTap`). */
+  let focusTap: { id: string; tap: string } | null = null;
 
   function toggle(): void {
     deps.setSheet(deps.sheet() === "list" ? "peek" : "list");
@@ -295,6 +364,19 @@ export function wireWalkSheet(deps: {
   dom.keepListening.addEventListener("click", () => {
     deps.keepListening();
   });
+  // A row's controls, by delegation: the rows are rebuilt on a change.
+  dom.rows.addEventListener("click", (event) => {
+    const control =
+      event.target instanceof Element
+        ? event.target.closest<HTMLElement>("button[data-tap]")
+        : null;
+    const id = control?.closest<HTMLElement>(".walk-row")?.dataset["id"];
+    const tap = rowTapOf(control?.dataset["tap"]);
+    if (control === null || id === undefined || tap === null) return;
+    if (control instanceof HTMLButtonElement && control.disabled) return;
+    focusTap = { id, tap: control.dataset["tap"] ?? "" };
+    deps.rowTapped(id, tap);
+  });
   dom.exit.addEventListener("click", () => {
     deps.exit();
   });
@@ -324,16 +406,48 @@ export function wireWalkSheet(deps: {
 
   function drawRows(rows: readonly WalkRow[]): void {
     // The arrows turn in place (below); everything else redraws the rows.
-    const key = JSON.stringify(rows.map(({ arrowDeg: _, ...row }) => row));
+    const key = rowsDrawKey(rows);
     if (drawn.get(dom.rows) !== key) {
       drawn.set(dom.rows, key);
       rowArrows = [];
+      const active = dom.doc.activeElement;
+      const held =
+        focusTap !== null && active !== null && dom.rows.contains(active);
       rebuildRows(rows);
+      if (held) refocus(focusTap!);
     }
+    focusTap = null;
     rows.forEach((row, i) => {
       const arrow = rowArrows[i];
       if (arrow !== undefined) setArrow(arrow, row.arrowDeg);
     });
+  }
+
+  /** After a tapped control's row was redrawn: the focus to what took
+   *  its place, else to the list's close button. */
+  function refocus(from: { id: string; tap: string }): void {
+    const row = [...dom.rows.children].find(
+      (li) => li instanceof HTMLElement && li.dataset["id"] === from.id,
+    );
+    for (const tap of focusAfterTap(from.tap)) {
+      const control = row?.querySelector<HTMLElement>(
+        `button[data-tap="${tap}"]:not(:disabled)`,
+      );
+      if (control != null) {
+        control.focus();
+        return;
+      }
+    }
+    dom.close.focus();
+  }
+
+  function button(className: string, tap: string, text: string): El {
+    const el = dom.doc.createElement("button");
+    el.type = "button";
+    el.className = className;
+    el.dataset["tap"] = tap;
+    el.textContent = text;
+    return el;
   }
 
   function rebuildRows(rows: readonly WalkRow[]): void {
@@ -344,12 +458,18 @@ export function wireWalkSheet(deps: {
         li.dataset["state"] = row.state;
         li.dataset["id"] = row.id;
         li.dataset["testid"] = "walk-row";
+        if (row.chosen) li.dataset["chosen"] = "true";
         const glyph = dom.doc.createElement("span");
         glyph.className = "walk-glyph";
         glyph.setAttribute("aria-hidden", "true");
         glyph.textContent = String(row.number);
-        const main = dom.doc.createElement("div");
-        main.className = "walk-row-main";
+        // The title is "Guide me here" where a target can be chosen (R-4).
+        const main = button("walk-row-main", "choose", "");
+        main.dataset["testid"] = "walk-row-main";
+        main.setAttribute("aria-label", row.mainLabel);
+        if (row.choosable)
+          main.setAttribute("aria-pressed", String(row.chosen));
+        else (main as HTMLButtonElement).disabled = true;
         const title = dom.doc.createElement("b");
         title.textContent = row.title;
         const sub = dom.doc.createElement("small");
@@ -361,6 +481,48 @@ export function wireWalkSheet(deps: {
         sub.append(arrow, subText);
         main.append(title, sub);
         li.append(glyph, main);
+        if (row.action !== null) {
+          const act = button("walk-row-act", row.action.kind, row.action.label);
+          act.dataset["k"] = row.action.kind;
+          act.dataset["testid"] = "walk-row-act";
+          act.setAttribute("aria-label", row.action.ariaLabel);
+          li.append(act);
+        }
+        if (row.confirm !== null) {
+          const confirm = dom.doc.createElement("div");
+          confirm.className = "walk-confirm";
+          const yes = button(
+            "btn btn--prose walk-btn walk-btn-warn",
+            "confirm",
+            row.confirm,
+          );
+          yes.dataset["testid"] = "walk-row-confirm";
+          const no = button("btn btn--prose walk-btn", "cancel", "Cancel");
+          no.dataset["testid"] = "walk-row-cancel";
+          no.setAttribute("aria-label", `Cancel - keep ${row.title}`);
+          confirm.append(yes, no);
+          li.append(confirm);
+        }
+        if (row.undoLeftMs !== null) {
+          // The undo's time left, run down by its own animation from the
+          // share left when the row was drawn.
+          const bar = dom.doc.createElement("div");
+          bar.className = "walk-undobar";
+          bar.dataset["testid"] = "walk-undobar";
+          bar.setAttribute("aria-hidden", "true");
+          const left = Math.max(0, Math.min(row.undoLeftMs, SKIP_UNDO_MS));
+          const fill = dom.doc.createElement("i");
+          fill.style.setProperty(
+            "--walk-undo-from",
+            (left / SKIP_UNDO_MS).toFixed(3),
+          );
+          fill.style.setProperty(
+            "--walk-undo-ms",
+            `${String(Math.round(left))}ms`,
+          );
+          bar.append(fill);
+          li.append(bar);
+        }
         return li;
       }),
     );
@@ -428,7 +590,7 @@ export function wireWalkSheet(deps: {
       setData(dom.quick, "kind", quickKind(extra.quick));
       // The story card: its dots, and "Keep listening" beside the confirm.
       drawDots(extra.story);
-      const confirming = extra.quick?.kind === "end";
+      const confirming = extra.end?.kind === "end";
       setData(dom.storyEnd, "kind", confirming ? "end" : "ask");
       // "Keep listening" hides once tapped: the end control takes its
       // focus.
@@ -448,6 +610,8 @@ export function wireWalkSheet(deps: {
       setText(dom.doneTitle, done?.title ?? "");
       setText(dom.doneText, done?.text ?? "");
       setHidden(dom.progress, done !== null);
+      setText(dom.hint, model.list.hint ?? "");
+      setHidden(dom.hint, model.list.hint === null);
       const progressKey = JSON.stringify(model.list.progress);
       if (drawn.get(dom.progress) !== progressKey) {
         drawn.set(dom.progress, progressKey);
@@ -458,7 +622,17 @@ export function wireWalkSheet(deps: {
           ...model.list.progress.rest.map((part) => ` - ${part}`),
         );
       }
+      // The quick action hides while the list is open (W4; the CSS): a
+      // focus it held when it opened the list goes to the armed row's
+      // confirm, else to the list's close button.
+      const fromQuick = list && dom.doc.activeElement === dom.quick;
       drawRows(model.list.rows);
+      if (fromQuick) {
+        const confirm = dom.rows.querySelector<HTMLElement>(
+          'button[data-tap="confirm"]',
+        );
+        (confirm ?? dom.close).focus();
+      }
     },
     renderAway(model) {
       setHidden(dom.away.root, model === null);
