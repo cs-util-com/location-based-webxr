@@ -4,9 +4,10 @@
  * dragged, the walk's flags, the card's last outcome line, Done's and the
  * file picker's in-progress states, whether a save waits to be
  * delivered again, and the view switch: the map or the 3D view, and the
- * 3D view's load and why it last failed, and the 3D view's shell: the
+ * 3D view's load and why it last failed, the 3D view's shell: the
  * tree's folds, the docks' folds, the layers turned off and the debug
- * readout. The tour itself is `tourDocument`'s; this slice holds
+ * readout, and the 3D view's gesture under way (its start and end only;
+ * the drag's preview is the scene's). The tour itself is `tourDocument`'s; this slice holds
  * what the page's chrome reads, so any view of the page (the map page,
  * a 3D view) reads one copy.
  *
@@ -58,6 +59,18 @@ export type ShellLayer = "codes" | "names" | "walk" | "depth" | "buildings";
 
 const TREE_SECTIONS: readonly string[] = ["stations", "codes", "layers"];
 const SHELL_DOCKS: readonly string[] = ["tree", "inspector"];
+/** What a 3D gesture holds: the middle (a move), the turn knob, a dot (a
+ *  station's radius or a model's size), or a held key (a nudge, a turn, a
+ *  lift). */
+type GestureHandle = "move" | "turn" | "dot" | "key";
+const GESTURE_HANDLES: readonly string[] = ["move", "turn", "dot", "key"];
+
+/** A gesture of the 3D view in flight: on what, and with which handle. */
+interface EditorGesture {
+  readonly id: string;
+  readonly handle: GestureHandle;
+}
+
 const SHELL_LAYERS: readonly string[] = [
   "codes",
   "names",
@@ -91,6 +104,10 @@ export interface EditorViewState {
   readonly view3dLoad: "idle" | "loading" | "failed";
   /** Why the last load failed, exactly while `view3dLoad` is `failed`. */
   readonly view3dFailure: View3dFailure | null;
+  /** A 3D gesture in flight (a drag, a held key), or none. Set when it
+   *  starts and cleared when it is committed or cancelled - never moved
+   *  per frame: where the object is mid-gesture is the 3D view's own. */
+  readonly gesture: EditorGesture | null;
   /** The 3D view's tree: the stations it lists the items of (unfolded),
    *  by id, in the order they were unfolded; an id the tour no longer
    *  has is ignored by the tree. */
@@ -118,6 +135,7 @@ export const initialEditorViewState: EditorViewState = {
   viewMode: "2d",
   view3dLoad: "idle",
   view3dFailure: null,
+  gesture: null,
   openStations: [],
   openSections: { stations: true, codes: true, layers: true },
   foldedDocks: { tree: false, inspector: false },
@@ -204,6 +222,18 @@ const editorViewSlice = createSlice({
       state.view3dLoad = "failed";
       state.view3dFailure = action.payload.reason;
     },
+    /** A 3D gesture started: on `id`, by `handle`. A start without an id
+     *  or with a handle it does not know changes nothing. */
+    gestureStarted(state, action: PayloadAction<EditorGesture>) {
+      const { id, handle } = action.payload;
+      if (typeof id !== "string" || id === "") return;
+      if (!GESTURE_HANDLES.includes(handle)) return;
+      state.gesture = { id, handle };
+    },
+    /** The gesture ended: committed or cancelled. */
+    gestureEnded(state) {
+      state.gesture = null;
+    },
     /** A station of the tree unfolded (its items listed) or folded. */
     stationFolded(state, action: PayloadAction<{ id: string; open: boolean }>) {
       const { id, open } = action.payload;
@@ -254,8 +284,13 @@ const editorViewSlice = createSlice({
   extraReducers: (builder) => {
     // The unfolded stations are the open tour's ids: another tour, or
     // none, starts with every station folded.
-    const foldAll = (state: { openStations: string[] }) => {
+    const foldAll = (state: {
+      openStations: string[];
+      gesture: EditorGesture | null;
+    }) => {
       state.openStations = [];
+      // A gesture belongs to the tour it started on.
+      state.gesture = null;
     };
     builder
       .addCase(tourDocumentActions.opened, foldAll)

@@ -22,6 +22,7 @@ import { tourDocumentActions, tourDocumentReducer } from "../tour-document.js";
 /** The 3D view's shell at the start: every station folded, every section
  *  open, both docks unfolded, every layer shown, no debug readout. */
 const SHELL_START = {
+  gesture: null,
   openStations: [],
   openSections: { stations: true, codes: true, layers: true },
   foldedDocks: { tree: false, inspector: false },
@@ -309,5 +310,49 @@ describe("the 3D view's shell state", () => {
       act.selected({ id: null }),
     ].reduce(reduce, before);
     expect(after).toEqual(before);
+  });
+});
+
+describe("the 3D view's gesture", () => {
+  // Why: the 3D view tells the store only that a drag (or a held key)
+  // started and that it ended - committed or cancelled - never where the
+  // object is mid-gesture. The page reads the flag to hold its autosave
+  // and to end a gesture before an undo; a malformed start must not leave
+  // the page believing an edit is in flight forever.
+  it("starts for an id with its handle, and ends", () => {
+    const started = reduce(
+      initialEditorViewState,
+      act.gestureStarted({ id: "pin-1", handle: "move" }),
+    );
+    expect(started.gesture).toEqual({ id: "pin-1", handle: "move" });
+    expect(reduce(started, act.gestureEnded()).gesture).toBeNull();
+  });
+
+  it("ignores a start without an id or with a handle it does not know", () => {
+    for (const bad of [
+      { id: "", handle: "move" },
+      { id: "a", handle: "fly" },
+      { id: 3, handle: "turn" },
+    ]) {
+      expect(
+        reduce(
+          initialEditorViewState,
+          act.gestureStarted(bad as { id: string; handle: "move" }),
+        ).gesture,
+      ).toBeNull();
+    }
+  });
+
+  it("ends any gesture when another tour opens", () => {
+    const started = reduce(
+      initialEditorViewState,
+      act.gestureStarted({ id: "a", handle: "key" }),
+    );
+    expect(
+      reduce(
+        started,
+        tourDocumentActions.opened({ manifest: createEmptyTourManifest() }),
+      ).gesture,
+    ).toBeNull();
   });
 });

@@ -35,6 +35,10 @@ chrome reads, one copy for every view of the page.
   - `view3dFailure` - why the last load or the shown view failed
     (`View3dFailure`: `chunk`, `webgl`, `context-lost`, `empty`, `error`),
     or null;
+  - `gesture` - `{ id, handle }`: the 3D view's edit under way - a drag
+    of a gizmo handle (`move`, `turn`, `dot`) or a held key (`key`) on
+    the selection `id` - or null; emptied when a tour is opened or
+    closed. The page holds the autosave while one runs (`editing()`);
   - the 3D view's shell (`editor-shell/`):
     - `openStations` - the tree's unfolded stations, by id, in the order
       they were unfolded (an id the tour no longer has is ignored by the
@@ -65,7 +69,11 @@ chrome reads, one copy for every view of the page.
     `dockFolded({ dock, folded })`, `layerShown({ layer, shown })` (each
     ignoring a key it does not know), `readoutShown({ shown })`; each of
     them ignores a flag that is not a boolean (`open`, `folded`,
-    `shown`), as the drag guard ignores a spot nobody can draw.
+    `shown`), as the drag guard ignores a spot nobody can draw;
+  - the 3D view's (`editor3d-input.ts` dispatches them):
+    `gestureStarted({ id, handle })` (ignored for an empty id or a handle
+    it does not know), `gestureEnded()`.
+- `GESTURE_HANDLES` (the gesture field's handles: move, turn, dot, key).
 - `editorViewReducer`, `selectEditorView(root)`.
 - `View3dFailure` - the reasons the 3D view did not show.
 - `EditorMessage` - the card line's shape (`MapSpot` and `EditorMoving`, the drag's, are module-private).
@@ -92,7 +100,8 @@ chrome reads, one copy for every view of the page.
 - **Kept out on purpose:** the drag preview and the camera target are
   scene resources, and the set of items moved since the last save
   (`moved`, a `Set` the card reads) stays the page's; nothing is
-  dispatched per frame.
+  dispatched per frame. A 3D gesture dispatches its start and its end
+  only (`gesture`); its one edit is the tour's.
 
 ## Examples
 
