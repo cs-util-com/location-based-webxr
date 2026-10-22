@@ -1,0 +1,1710 @@
+<!doctype html>
+<!-- Prototype W3 - The guide speaks (the visitor's walk in AR). Throwaway; not wired to the app. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Visitor walk W3</title>
+<style>
+:root{
+  --paper:#f5f1e8;
+  --paper-2:#ebe5d8;
+  --ink:#17191c;
+  --muted:#5c605d;
+  --line:#ddd6c7;
+  --accent:#c2410c;
+  --accent-ink:#9a3412;
+  --teal:#0f766e;
+  --teal-hi:#2dd4bf;
+  --amber:#f59e0b;
+  --amber-ink:#78350f;
+  --none:#9ca3af;
+  --glass:rgba(12,16,20,.66);
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua","Noto Serif",Georgia,serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --gut:16px;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{font:16px/1.4 var(--sans);background:#101317;color:#fff;overflow:hidden;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit}
+.sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* ---------- the phone: full screen on a phone, a frame on a desktop ---------- */
+.device{position:fixed;inset:0;overflow:hidden;background:linear-gradient(#6f9cc0,#c9d6dc 55%,#8d8a7c 56%);container-type:size}
+#cam{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#cam:active{cursor:grabbing}
+.vignette{position:absolute;inset:0;pointer-events:none;background:linear-gradient(to top,rgba(0,0,0,.5),rgba(0,0,0,0) 40%),linear-gradient(to bottom,rgba(0,0,0,.32),rgba(0,0,0,0) 18%)}
+.blackout{position:absolute;inset:0;background:#05070a;opacity:0;pointer-events:none;transition:opacity .9s}
+.device[data-phase=starting] .blackout{opacity:.9}
+.device[data-phase=lost] #cam,.device[data-phase=warming] #cam{filter:blur(3px) saturate(.6)}
+#cam{transition:filter .6s}
+
+/* ---------- the layer over the camera ---------- */
+.ui{position:absolute;inset:0;pointer-events:none;padding:calc(8px + env(safe-area-inset-top)) calc(var(--gut) + env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) calc(var(--gut) + env(safe-area-inset-left));display:flex;flex-direction:column}
+.top{display:flex;align-items:center;gap:8px;min-height:44px}
+.top .sp{flex:1}
+.iconbtn{pointer-events:auto;flex:none;width:44px;height:44px;border-radius:50%;border:1px solid rgba(255,255,255,.4);background:rgba(10,14,18,.5);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);display:grid;place-items:center;cursor:pointer;color:#fff;padding:0}
+.iconbtn svg{width:18px;height:18px}
+.iconbtn.txt{width:auto;padding:0 14px;border-radius:22px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.proto-label{font:600 11px/1.2 var(--sans);letter-spacing:.02em;padding:4px 9px;border-radius:999px;background:rgba(0,0,0,.55);color:#fff;white-space:nowrap;pointer-events:none;overflow:hidden;text-overflow:ellipsis;min-width:0}
+
+/* the chapter strip: progress at a glance; a tap lists the chapters */
+.stripwrap{position:relative;align-self:center;margin-top:8px;display:flex;flex-direction:column;align-items:center;max-width:100%}
+.strip{pointer-events:auto;display:flex;align-items:center;gap:10px;min-height:44px;padding:0 14px 0 16px;border-radius:22px;background:var(--glass);border:1px solid rgba(255,255,255,.18);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);font-size:13.5px;font-weight:650;cursor:pointer;max-width:100%}
+.strip .st{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pips{display:flex;gap:5px;flex:none}
+.pip{width:11px;height:11px;border-radius:50%;border:1.6px solid rgba(255,255,255,.75);position:relative}
+.pip.done{background:#fff;border-color:#fff}
+.pip.found{background:var(--accent);border-color:#fff}
+.pip.next{border-color:#ffd27a;box-shadow:0 0 0 3px rgba(255,210,122,.3)}
+.pip.skipped{border-style:dashed;opacity:.8}
+.pip.skipped::after{content:"";position:absolute;left:-2px;right:-2px;top:50%;height:1.6px;margin-top:-.8px;background:rgba(255,255,255,.85);transform:rotate(-45deg)}
+.chev{width:12px;height:12px;flex:none;transition:transform .25s;opacity:.8}
+.strip[aria-expanded=true] .chev{transform:rotate(180deg)}
+.chapters{pointer-events:auto;position:absolute;top:52px;left:50%;transform:translateX(-50%);width:min(320px,calc(100cqw - 32px));background:rgba(245,241,232,.98);color:var(--ink);border-radius:18px;padding:8px;box-shadow:0 14px 34px rgba(0,0,0,.35);z-index:5}
+.chapters ol{list-style:none;margin:0;padding:0}
+.chapters li{display:grid;grid-template-columns:30px 1fr auto;align-items:center;gap:8px;padding:8px 8px;border-radius:12px;font-size:15px}
+.chapters li + li{border-top:1px solid var(--line)}
+.chapters .no{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:700 12px var(--sans);background:var(--paper-2);color:var(--muted)}
+.chapters li.done .no{background:var(--teal);color:#fff}
+.chapters li.found .no{background:var(--accent);color:#fff}
+.chapters li.next .no{background:#ffd27a;color:#4a3000}
+.chapters li.skipped .no{background:none;border:1.5px dashed var(--muted)}
+.chapters .t{font-family:var(--serif);font-size:16.5px}
+.chapters .w{font-size:12.5px;color:var(--muted);text-align:right}
+.chapters .foot{margin:6px 8px 4px;font-size:12.5px;color:var(--muted)}
+
+/* the middle: chapter title card and the scan card */
+.mid{flex:1;position:relative;min-height:0}
+.chapter{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%) scale(.96);text-align:center;opacity:0;transition:opacity .7s,transform .9s cubic-bezier(.2,.8,.2,1);pointer-events:none;width:min(320px,90cqw);padding:22px 18px 20px;border-radius:24px;background:radial-gradient(closest-side,rgba(0,0,0,.42),rgba(0,0,0,0))}
+.chapter.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.chapter small{display:block;font:700 12px var(--sans);letter-spacing:.28em;text-transform:uppercase;color:#ffd27a;text-shadow:0 1px 6px rgba(0,0,0,.7)}
+.chapter b{display:block;margin-top:6px;font:600 44px/1.02 var(--serif);letter-spacing:-.01em;text-shadow:0 2px 14px rgba(0,0,0,.7)}
+.chapter i{display:block;width:60px;height:2px;margin:12px auto 0;background:linear-gradient(90deg,transparent,#ffd27a,transparent)}
+.scancard{position:absolute;left:50%;top:34%;transform:translate(-50%,-50%);width:min(74cqw,286px);padding:12px 18px 14px;border-radius:24px;text-align:center;background:rgba(10,15,20,.4);border:1px solid rgba(255,255,255,.24);box-shadow:0 12px 32px rgba(0,0,0,.18);transition:border-color .3s,background .3s,opacity .4s}
+.scancard .anim-wrap{position:relative;width:150px;height:112px;margin:0 auto 4px}
+.scancard .anim{width:100%;height:100%;display:block;overflow:visible;transition:opacity .3s}
+.scancard .bigok{position:absolute;inset:0;margin:auto;width:64px;height:64px;opacity:0;transform:scale(.4);transition:opacity .25s,transform .45s cubic-bezier(.3,1.6,.5,1)}
+.scancard h2{margin:0;font-size:16px;font-weight:650;line-height:1.3;text-shadow:0 1px 3px rgba(0,0,0,.45)}
+.scancard.ok{border-color:rgba(74,222,128,.8);background:rgba(8,40,22,.42)}
+.scancard.ok .anim{opacity:0}
+.scancard.ok .bigok{opacity:1;transform:none}
+.demo-tap{pointer-events:auto;margin-top:10px;min-height:36px;padding:0 12px;border-radius:10px;border:1px dashed rgba(255,255,255,.55);background:rgba(0,0,0,.25);color:#e5e7eb;font-size:12px;cursor:pointer}
+.a-phone{transform-box:fill-box;transform-origin:50% 50%;animation:aPhone 4.2s cubic-bezier(.45,.05,.3,1) infinite}
+@keyframes aPhone{0%{transform:translate(58px,26px) rotate(14deg);opacity:0}14%{opacity:1}42%,80%{transform:translate(0,0) rotate(0deg);opacity:1}94%,100%{transform:translate(58px,26px) rotate(14deg);opacity:0}}
+.a-brk{animation:aBrk 4.2s linear infinite}
+@keyframes aBrk{0%,50%{stroke:#fff}54%,80%{stroke:#4ade80}86%,100%{stroke:#fff}}
+
+/* the edge cue: the guide's lamp when it is off screen */
+.edge{position:absolute;top:42%;width:44px;height:56px;display:grid;place-items:center;pointer-events:none;opacity:0;transition:opacity .3s}
+.edge.show{opacity:1}
+.edge.left{left:calc(4px + env(safe-area-inset-left))}
+.edge.right{right:calc(4px + env(safe-area-inset-right))}
+.edge svg{width:44px;height:56px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.55))}
+.edge.right svg{transform:scaleX(-1)}
+
+/* ---------- the guide's dock ---------- */
+.dock{display:flex;flex-direction:column;gap:10px;transition:opacity .4s,transform .4s}
+.dock.off{opacity:0;transform:translateY(16px);visibility:hidden}
+.speech{display:flex;align-items:flex-end;gap:10px}
+.avwrap{pointer-events:auto;position:relative;flex:none;width:72px;height:72px;border:0;background:none;padding:0;cursor:pointer;border-radius:50%}
+.av{position:absolute;inset:6px;border-radius:50%;overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.4);transition:filter .4s}
+.av svg{width:100%;height:100%;display:block}
+.ring{position:absolute;inset:0;width:72px;height:72px;overflow:visible;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:3.5;transition:stroke .3s}
+.avwrap[data-trust=code] .ring circle{stroke:var(--teal-hi)}
+.avwrap[data-trust=gps] .ring circle{stroke:#fff}
+.avwrap[data-trust=gps] .ring{filter:drop-shadow(0 0 5px rgba(255,255,255,.7))}
+.avwrap[data-trust=weak] .ring circle{stroke:var(--amber);stroke-dasharray:9 6}
+.avwrap[data-trust=weak] .ring{animation:spin 9s linear infinite}
+.avwrap[data-trust=none] .ring circle{stroke:var(--none);stroke-dasharray:2 7;stroke-linecap:round}
+.avwrap[data-trust=none] .av,.avwrap[data-trust=lost] .av{filter:grayscale(.75) brightness(.85)}
+.avwrap[data-trust=lost] .ring circle{stroke:var(--none);stroke-dasharray:14 10}
+.avwrap[data-trust=story] .ring circle{stroke:#fdba74}
+.paused .round.auto{box-shadow:0 0 0 5px #ffd27a}
+.avwrap[data-trust=pending] .ring circle{stroke:#fff;stroke-dasharray:50 160;stroke-linecap:round}
+.avwrap[data-trust=pending] .ring{animation:spin 1.2s linear infinite}
+@keyframes spin{to{transform:rotate(270deg)}}
+.badge{position:absolute;right:-2px;bottom:-2px;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;border:2px solid #0d1114;font:800 13px/1 var(--sans)}
+.badge svg{width:15px;height:15px}
+.avwrap[data-trust=code] .badge{background:var(--teal);color:#fff}
+.avwrap[data-trust=gps] .badge{background:#fff;color:#111}
+.avwrap[data-trust=weak] .badge{background:var(--amber);color:#2a1500}
+.avwrap[data-trust=none] .badge,.avwrap[data-trust=lost] .badge{background:#4b5563;color:#fff}
+.avwrap[data-trust=pending] .badge{display:none}
+.mini{position:absolute;left:-4px;top:-4px;width:28px;height:28px;border-radius:50%;overflow:hidden;border:2px solid var(--paper);box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.mini svg{width:100%;height:100%;display:block}
+.stack{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.bubble{pointer-events:auto;background:rgba(245,241,232,.97);color:var(--ink);border-radius:18px 18px 18px 6px;padding:9px 14px 11px;box-shadow:0 8px 24px rgba(0,0,0,.28);transform-origin:0 100%;animation:pop .35s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes pop{from{opacity:0;transform:scale(.92) translateY(6px)}}
+.who{font-size:11px;font-weight:750;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-ink);margin-bottom:2px;display:flex;justify-content:space-between;gap:8px}
+.who .steps{letter-spacing:.02em;text-transform:none;font-weight:600;color:var(--muted);white-space:nowrap;flex:none}
+.who #whoName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.line{margin:0;font-family:var(--serif);font-size:18.5px;line-height:1.3}
+.line .list{display:block;margin-top:4px;font-family:var(--sans);font-size:14.5px;color:var(--muted)}
+.dock.quiet .bubble{display:none}
+.memo{pointer-events:auto;background:var(--glass);border:1px solid rgba(255,255,255,.16);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);border-radius:16px;padding:7px 12px 8px 8px;display:grid;grid-template-columns:34px 1fr;column-gap:8px;align-items:center;min-height:52px}
+.memo .dir{grid-row:1/3;width:34px;height:34px;display:grid;place-items:center}
+.memo .dir svg{width:34px;height:34px;display:block}
+.memo .mn{font-weight:700;font-size:16.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.memo .md{font-size:13.5px;line-height:1.3;color:#e2e8ee;display:flex;gap:6px 8px;align-items:center;flex-wrap:wrap}
+.tag{font-size:11.5px;font-weight:750;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.tag[data-trust=code]{background:var(--teal);color:#fff}
+.tag[data-trust=gps]{background:rgba(255,255,255,.9);color:#111}
+.tag[data-trust=weak]{background:var(--amber);color:#2a1500}
+.tag[data-trust=none],.tag[data-trust=lost]{background:#4b5563;color:#fff}
+.tag[data-trust=pending]{background:rgba(255,255,255,.2);color:#fff}
+.chips{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+.chip{pointer-events:auto;position:relative;overflow:hidden;min-height:44px;padding:0 15px;border-radius:22px;border:1px solid rgba(255,255,255,.6);background:rgba(10,14,18,.6);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);color:#fff;font-size:14.5px;font-weight:620;cursor:pointer;line-height:1.2;text-align:center;animation:chipIn .3s ease both}
+.chip:nth-child(2){animation-delay:.05s}.chip:nth-child(3){animation-delay:.1s}.chip:nth-child(4){animation-delay:.15s}
+@keyframes chipIn{from{opacity:0;transform:translateY(6px)}}
+.chip.primary{background:var(--accent);border-color:var(--accent)}
+.chip:active{transform:scale(.97)}
+.chip.auto{box-shadow:0 0 0 3px #ffd27a;animation:autoTap .5s ease}
+@keyframes autoTap{50%{transform:scale(.95)}}
+.chip .timer{position:absolute;left:0;bottom:0;height:3px;background:#ffd27a;width:100%;transform-origin:0 50%;animation:drain linear forwards}
+@keyframes drain{to{transform:scaleX(0)}}
+
+/* ---------- full sheets: the end of the walk, leaving AR, the design note ---------- */
+.sheet{position:absolute;inset:0;z-index:30;display:grid;place-items:center;padding:calc(20px + env(safe-area-inset-top)) calc(var(--gut) + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(var(--gut) + env(safe-area-inset-left));background:rgba(5,7,10,.35)}
+.card{width:min(380px,100%);max-height:100%;overflow:auto;background:var(--paper);color:var(--ink);border-radius:26px;padding:22px 20px 18px;box-shadow:0 24px 60px rgba(0,0,0,.45);animation:pop .45s cubic-bezier(.2,.9,.3,1.1)}
+.card .eyebrow{font:750 12px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--accent-ink)}
+.card h2{margin:6px 0 4px;font:600 32px/1.05 var(--serif);letter-spacing:-.01em}
+.card .real{margin:0 0 12px;color:var(--muted);font-size:15px}
+.card .quote{display:flex;gap:10px;align-items:flex-start;margin:12px 0 14px}
+.card .quote .q-av{flex:none;width:44px;height:44px;border-radius:50%;overflow:hidden}
+.card .quote .q-av svg{width:100%;height:100%;display:block}
+.card .quote p{margin:0;font-family:var(--serif);font-size:17px;line-height:1.35}
+.card ol{list-style:none;margin:0 0 16px;padding:0;border-top:1px solid var(--line)}
+.card ol li{display:flex;justify-content:space-between;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);font-size:15px}
+.card ol li span:first-child{font-family:var(--serif);font-size:16.5px}
+.card ol li span:last-child{color:var(--muted);font-size:13px;white-space:nowrap}
+.card ol li.sk span:last-child{color:var(--accent-ink)}
+.bigbtn{display:block;width:100%;min-height:52px;border:0;border-radius:16px;background:var(--accent);color:#fff;font-size:17px;font-weight:700;cursor:pointer}
+.bigbtn.ghost{background:none;color:var(--accent-ink);border:1.5px solid var(--line);margin-top:8px;font-size:15.5px;min-height:46px}
+.paused{position:absolute;inset:0;z-index:30;background:var(--paper);color:var(--ink);display:flex;flex-direction:column;overflow:auto;padding:calc(64px + env(safe-area-inset-top)) calc(24px + env(safe-area-inset-right)) calc(22px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left))}
+.paused .in{max-width:440px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:14px;flex:1}
+.paused .eyebrow{font:750 12.5px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--accent-ink)}
+.paused h1{margin:0;font:600 clamp(40px,12vw,60px)/1 var(--serif);letter-spacing:-.02em}
+.paused .desc{margin:0;color:var(--muted);font-size:18px;line-height:1.4}
+.paused .quote{display:flex;gap:12px;align-items:center;margin-top:auto}
+.paused .quote .q-av{flex:none;width:52px;height:52px;border-radius:50%;overflow:hidden}
+.paused .quote .q-av svg{width:100%;height:100%;display:block}
+.paused .quote p{margin:0;font-family:var(--serif);font-size:18px}
+.paused .round{align-self:center;width:clamp(150px,22dvh,188px);height:clamp(150px,22dvh,188px);border-radius:50%;border:0;background:var(--accent);color:#fff;font-size:18px;font-weight:700;cursor:pointer;box-shadow:0 14px 30px rgba(194,65,12,.3);margin:8px 0}
+.note{position:absolute;inset:0;z-index:40;background:var(--paper);color:var(--ink);overflow:auto;padding:calc(16px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left))}
+.note .in{max-width:620px;margin:0 auto}
+.note .close{position:sticky;top:0;float:right;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:20px;color:var(--ink)}
+.note h2{font:600 28px/1.1 var(--serif);margin:6px 0 10px}
+.note h3{font:750 12.5px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--accent-ink);margin:20px 0 6px}
+.note p,.note li{font-size:15px;line-height:1.5}
+.note ul{padding-left:20px;margin:6px 0}
+.note li{margin:3px 0}
+.note .txt{display:grid;gap:6px;margin:6px 0}
+.note .txt div{background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 10px;font-size:13.5px;line-height:1.4}
+.note .txt b{display:block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.note .txt q{display:block;quotes:none}
+.note .txt .now{color:var(--muted)}
+.note .txt .w3{font-family:var(--serif);font-size:15px}
+
+/* ---------- demo controls (not part of the design) ---------- */
+.demo{position:fixed;z-index:60;right:calc(10px + env(safe-area-inset-right));top:calc(62px + env(safe-area-inset-top));width:min(300px,calc(100vw - 20px));max-height:calc(100dvh - 80px);overflow:auto;background:rgba(14,18,23,.94);border:1px solid rgba(255,255,255,.16);border-radius:14px;font-size:13px;color:#e8edf2;box-shadow:0 8px 24px rgba(0,0,0,.4);padding:10px}
+.demo h4{margin:2px 2px 6px;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#a9b4bf}
+.demo .about{margin:0 2px 10px;line-height:1.45;color:#c6d0da;font-size:13px}
+.demo .about b{color:#fff}
+.demo .row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.demo button{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#fff;border-radius:10px;padding:8px 10px;min-height:36px;text-align:left;cursor:pointer;font-size:12.5px}
+.demo button.primary{background:#16a34a;border-color:#16a34a;font-weight:700}
+.demo button[aria-pressed=true]{background:#fff;color:#111}
+.demo .grp{font-size:11px;color:#8f9aa5;margin:8px 2px 4px}
+.demo .states{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.demo .states button{font-size:12px;padding:6px 8px}
+.demo .states button.cur{outline:2px solid #ffd27a}
+.demo .status{font-size:12px;color:#a9b4bf;min-height:16px;margin:4px 2px 0}
+
+@container (orientation:landscape) and (max-height:520px){
+  .ui{padding-top:calc(6px + env(safe-area-inset-top));padding-bottom:calc(8px + env(safe-area-inset-bottom))}
+  .stripwrap{position:absolute;top:calc(6px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);margin:0;max-width:52cqw}
+  .proto-label{display:none}
+  .dock{width:min(420px,47cqw)}
+  .sheet .card{width:min(720px,100%);display:grid;grid-template-columns:1fr 1fr;column-gap:22px;align-content:start;padding:18px 20px 16px}
+  .sheet .card > *{grid-column:1}
+  .sheet .card ol{grid-column:2;grid-row:1 / span 5;margin:0}
+  .sheet .card h2{font-size:28px}
+  .avwrap{width:60px;height:60px}
+  .ring{width:60px;height:60px}
+  .av{inset:5px}
+  .line{font-size:17px}
+  .chips{justify-content:flex-start}
+  .chapter{top:44%}
+  .chapter b{font-size:36px}
+  .scancard{display:grid;grid-template-columns:112px 1fr;column-gap:14px;align-items:center;text-align:left;width:min(62cqw,420px);top:40%;padding:10px 18px 10px 10px}
+  .scancard .anim-wrap{width:112px;height:84px;margin:0;grid-row:1/3}
+  .paused{padding-top:calc(24px + env(safe-area-inset-top))}
+  .paused .in{max-width:760px;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto auto 1fr;column-gap:30px}
+  .paused .round{grid-column:2;grid-row:1/5;align-self:center;width:150px;height:150px}
+  .paused .quote{margin-top:4px}
+  .demo{top:calc(56px + env(safe-area-inset-top));max-height:calc(100dvh - 66px)}
+}
+@media (min-width:960px) and (min-height:720px){
+  body{display:flex;align-items:center;justify-content:center;gap:40px;padding:40px;background:radial-gradient(1200px 700px at 30% 20%,#26303a,#12151a)}
+  .device{position:relative;inset:auto;flex:none;width:414px;height:min(844px,calc(100vh - 80px));border-radius:48px;border:12px solid #0a0c0f;box-shadow:0 0 0 2px #2d333b,0 40px 90px rgba(0,0,0,.6)}
+  .demo{position:static;width:320px;max-height:calc(100vh - 80px);font-size:13.5px}
+  .demo[hidden]{display:block!important}
+  #demoBtn{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .a-phone,.a-brk,.avwrap .ring{animation:none!important}
+  .bubble,.card,.chip{animation:none}
+  .chapter{transition:opacity .3s}
+}
+</style>
+<script type="importmap">
+  { "imports": {
+      "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+  } }
+</script>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="qr" viewBox="-2 -2 29 29"><rect x="-2" y="-2" width="29" height="29" fill="#fff"/><path id="qrPath" fill="#14181d" fill-rule="evenodd"/></symbol>
+  </defs>
+</svg>
+
+<main class="device" id="device" data-phase="walk">
+  <canvas id="cam" aria-label="Simulated camera view of an old town. Drag to look around."></canvas>
+  <div class="vignette"></div>
+  <div class="blackout"></div>
+
+  <div class="ui">
+    <div class="top">
+      <button class="iconbtn" id="exitBtn" type="button" aria-label="Leave AR"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></button>
+      <span class="sp"></span>
+      <span class="proto-label" id="protoLabel">Prototype W3</span>
+      <span class="sp"></span>
+      <button class="iconbtn" id="noteBtn" type="button" aria-label="Design note"><svg viewBox="0 0 16 16"><circle cx="8" cy="4" r="1.3" fill="#fff"/><path d="M8 7v6" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></button>
+      <button class="iconbtn txt" id="demoBtn" type="button" aria-expanded="false" aria-controls="demo">Demo</button>
+    </div>
+
+    <div class="stripwrap" id="stripwrap">
+      <button class="strip" id="strip" type="button" aria-expanded="false" aria-controls="chapters">
+        <span class="st" id="stripText">Chapter 1 of 4</span>
+        <span class="pips" id="pips" aria-hidden="true"></span>
+        <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="chapters" id="chapters" hidden><ol id="chapterList"></ol><p class="foot" id="chapterFoot"></p></div>
+    </div>
+
+    <div class="mid">
+      <div class="chapter" id="chapterCard" aria-hidden="true"><small id="chapterNo">Chapter 2</small><b id="chapterTitle">The well</b><i></i></div>
+      <div class="scancard" id="scanCard" hidden>
+        <div class="anim-wrap">
+          <svg class="anim" data-anim aria-hidden="true"></svg>
+          <svg class="bigok" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="#22c55e"/><path d="M19 33l9 9 17-19" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div>
+          <h2 id="scanTitle">Scan the code again so the tour can start</h2>
+          <button class="demo-tap" id="demoSeen" type="button">Demo: the camera sees the code</button>
+        </div>
+      </div>
+    </div>
+
+    <section class="dock" id="dock" aria-label="Your guide">
+      <div class="speech">
+        <button class="avwrap" id="avwrap" type="button" data-trust="code" aria-label="Your guide - tap to hear the last line again">
+          <svg class="ring" viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="36" r="33.5"/></svg>
+          <span class="av" id="av"></span>
+          <span class="mini" id="mini" hidden></span>
+          <span class="badge" id="badge" aria-hidden="true"></span>
+        </button>
+        <div class="stack">
+          <div class="bubble" id="bubble" role="status" aria-live="polite">
+            <div class="who"><span id="whoName">Mara, your guide</span><span class="steps" id="whoSteps"></span></div>
+            <p class="line" id="line"></p>
+          </div>
+          <div class="memo" id="memo">
+            <span class="dir" id="dir" aria-hidden="true"></span>
+            <span class="mn" id="memoName"></span>
+            <span class="md"><span id="memoDetail"></span><span class="tag" id="tag" data-trust="code"></span></span>
+          </div>
+        </div>
+      </div>
+      <div class="chips" id="chips" role="group" aria-label="Your replies"></div>
+    </section>
+  </div>
+
+  <div class="edge left" id="edgeL" aria-hidden="true"><svg viewBox="0 0 44 56"><path d="M14 28l12-12v24z" fill="#ffd27a"/><circle cx="32" cy="28" r="8" fill="#ffd27a" opacity=".35"/><circle cx="32" cy="28" r="4.5" fill="#fff4d6"/></svg></div>
+  <div class="edge right" id="edgeR" aria-hidden="true"><svg viewBox="0 0 44 56"><path d="M14 28l12-12v24z" fill="#ffd27a"/><circle cx="32" cy="28" r="8" fill="#ffd27a" opacity=".35"/><circle cx="32" cy="28" r="4.5" fill="#fff4d6"/></svg></div>
+
+  <div class="sheet" id="endSheet" hidden>
+    <div class="card" role="dialog" aria-labelledby="endTitle">
+      <div class="eyebrow" id="endEyebrow">The old town walk</div>
+      <h2 id="endTitle">The end of the walk</h2>
+      <p class="real" id="endReal">Tour complete - every station visited.</p>
+      <ol id="endList"></ol>
+      <div class="quote"><span class="q-av" data-av="guide"></span><p id="endQuote">That's our walk. Thank you for coming along.</p></div>
+      <button class="bigbtn" id="endLeave" type="button">Leave AR</button>
+    </div>
+  </div>
+
+  <section class="paused" id="paused" hidden aria-labelledby="pausedTitle">
+    <div class="in">
+      <div class="eyebrow" id="pausedEyebrow">The old town walk</div>
+      <h1 id="pausedTitle">Paused</h1>
+      <p class="desc" id="pausedDesc"></p>
+      <button class="round" id="backBtn" type="button">Back into AR</button>
+      <div class="quote"><span class="q-av" data-av="guide"></span><p id="pausedQuote"></p></div>
+    </div>
+  </section>
+
+  <section class="note" id="note" hidden aria-labelledby="noteTitle">
+    <div class="in">
+      <button class="close" id="noteClose" type="button" aria-label="Close the design note">&#215;</button>
+      <div style="font:750 12px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--accent-ink)">Design note - W3</div>
+      <h2 id="noteTitle">The guide speaks</h2>
+      <p>The tour's guide walks with you, and every status is something the guide says, at the moment it matters; your answers are reply chips under it. Between those moments the guide falls quiet, and the strip under its face keeps the essentials for a glance: where to go, how far, and how much the guide trusts your position. Each station is a chapter: arriving shows its title, and the guide hands over to the station's own speaker until the story ends.</p>
+
+      <h3>Reading it at a glance</h3>
+      <ul>
+        <li><b>The ring round the guide is the trust.</b> Teal and solid with a code mark: a code placed you, good to a step, so no number. White: GPS, and the strip says "about 8 m". Amber and broken: GPS too weak to guide. Grey dots and a question mark: no trusted position.</li>
+        <li><b>The distance follows the trust.</b> Plain metres with a code, "about" with GPS, no number at all when the GPS is too weak or the position is unknown - and no arrow when there is no position to point from.</li>
+        <li><b>The lamps in the scene</b> are the guide's: one over the next station (fixed order), or over the nearest five still to find (any order). They flicker dimly when the GPS is too weak and go out when the guide has lost you. Off screen, a lamp waits at the screen's edge.</li>
+        <li><b>The chapter strip</b> at the top: found, next, skipped and left; a tap lists the chapters.</li>
+      </ul>
+
+      <h3>When the guide speaks</h3>
+      <p>Only at moments that change what you do: AR starting and the camera's tracking, the code seen, a change of trust, the way to a new chapter, arriving, a story's end, the skip suggestion, leaving and coming back, the end. Never because a distance changed. After about 8 s the line folds away into the strip; a tap on the guide or "Tell me again" brings it back.</p>
+
+      <h3>What it trades away</h3>
+      <ul>
+        <li>While the guide speaks, the bubble covers the lower part of the camera.</li>
+        <li>More words than a bare display: a visitor who knows the tour reads a sentence where a number would do. The strip is the shortcut.</li>
+        <li>A character has a tone. Each tour needs a guide (or a neutral default like this one), and a cheerful voice may not suit every subject.</li>
+        <li>The replies are a small fixed menu; anything outside it needs another way in.</li>
+        <li>More text to write and translate.</li>
+      </ul>
+
+      <h3>The skip when nothing vouches for the position (any order)</h3>
+      <p><b>The guide never names a "nearest" it cannot measure, and the skip stays offered.</b> "I can't get there" answers: "I can't tell where you are, so I won't guess which one is closest. Which can't you reach?", with one "Skip &lt;title&gt;" reply per station still to find, in the tour's order, and "Show me a code instead". Still two taps; the visitor, who can see where they stand, makes the choice the guide cannot. In a fixed-order tour the order names the station, so the skip names it as usual. The two-minute suggestion is not made without a distance, which sizes it. The same rule holds while the GPS is too weak (a proposal: today the skip follows the nearest station by that position).</p>
+
+      <h3>Texts - today's, and the guide's (proposals)</h3>
+      <p>The reply labels for the skip, the undo and ending a story are today's texts unchanged. The guide's lines replace the station line and the status sentence; the strip carries the short form. A station title is used as written, except that a leading "The" is lower-cased inside the guide's sentences.</p>
+      <div class="txt" id="noteTexts"></div>
+
+      <h3>Not covered here</h3>
+      <ul>
+        <li>The station's real story content (photos, audio, choices) is faked as a figure, a sign and a few lines.</li>
+        <li>Branch-order tours, quizzes and a tour that is not finished yet.</li>
+        <li>Walking is sped up in "Play the walk"; the two-minute skip clock is fast-forwarded.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<div class="demo" id="demo" hidden>
+  <p class="about"><b>W3 - The guide speaks.</b> A guide character carries the walk: its lines are the status, your replies are chips, the strip under it is the glance. Drag the camera to look around.</p>
+  <div class="row">
+    <button class="primary" id="dPlay" type="button">Play the walk</button>
+    <button id="dStop" type="button">Stop</button>
+  </div>
+  <h4>Tour</h4>
+  <div class="row">
+    <button id="dFixed" type="button" aria-pressed="true">Fixed order</button>
+    <button id="dAny" type="button" aria-pressed="false">Any order</button>
+  </div>
+  <div class="row"><button id="dMotion" type="button">Turn with the phone</button><button id="dSkipClock" type="button">Fast-forward 2 min</button></div>
+  <h4>States</h4>
+  <div class="states" id="dStates"></div>
+  <div class="status" id="dStatus"></div>
+</div>
+
+<script type="module">
+'use strict';
+const $ = (s) => document.querySelector(s);
+const device = $('#device');
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const DEG = Math.PI / 180;
+
+// ---------------------------------------------------------------- data
+// A sample tour: four stations of an invented old town, 28-130 m apart.
+const STATIONS = [
+  { id: 'gate', title: 'The gate', x: 0, z: -28, r: 8,
+    sp: { name: 'The gatekeeper', hat: 'helmet', coat: '#7a5230', bg: '#3b2d22' },
+    story: [
+      { t: 'Halt, traveller! Until a hundred years ago these gates shut at the ninth bell.' },
+      { t: 'Anyone late slept outside the walls - or paid me a copper to open the small door.' },
+      { t: 'In you go. Mind the cobbles, they are older than I am.' },
+    ] },
+  { id: 'well', title: 'The well', x: 22, z: -85, r: 8,
+    sp: { name: 'The water carrier', hat: 'scarf', coat: '#2f5d7c', bg: '#1f3442' },
+    story: [
+      { t: 'Every house on this square drew its water here, twice a day.' },
+      { t: 'The rope wore that groove into the stone. Run your hand along it.' },
+      { t: 'When the pipes came, the square went quiet. I miss the gossip.' },
+    ] },
+  { id: 'tower', title: 'The tower', x: 150, z: -118, r: 10,
+    sp: { name: 'The bell ringer', hat: 'hood', coat: '#5b3a6b', bg: '#2e2238' },
+    story: [
+      { t: 'Two hundred and twelve steps. I climbed them twice a day.' },
+      { t: 'The big bell cracked one hard winter and was cast again right here in the yard.' },
+    ] },
+  { id: 'garden', title: 'The garden', x: 70, z: -12, r: 12,
+    sp: { name: 'The gardener', hat: 'straw', coat: '#4f6b2f', bg: '#28361c' },
+    story: [
+      { t: "This was the monks' herb garden long before it was anyone's park." },
+      { t: 'Which shall I tell you about?', choices: [
+        { label: 'The roses', t: 'The roses were planted for a wedding. Nobody remembers whose - the roses do not mind.' },
+        { label: 'The old oak', t: 'The oak is older than the town wall. They laid the path around it, not through it.' },
+      ] },
+      { t: 'Come back in June, when the whole corner smells of thyme.' },
+    ] },
+];
+const S = (id) => STATIONS.find((s) => s.id === id);
+const TOURS = {
+  fixed: { name: 'The old town walk', order: 'fixed' },
+  any: { name: 'The courtyard trail', order: 'any' },
+};
+const GUIDE = { name: 'Mara', role: 'your guide', hat: 'top', coat: '#0f5f59', bg: '#163a37', lantern: true };
+const SKIP_UNDO_MS = 6000; // today's undo window
+const SCAN_ESCAPE_MS = 10000; // today's scan escape
+const QUIET_AFTER_MS = 8000; // the guide's line folds into the strip
+
+// ---------------------------------------------------------------- the visitor's state (faked, not the app's logic)
+const M = {
+  tour: 'fixed', phase: 'walk', trust: 'code', acc: 0, status: {}, story: null,
+  headingReady: true, headingFrom: null, quiet: false, speech: null, lastGuide: null,
+  undo: null, scanFound: false, chaptersOpen: false, stateName: '', presentId: null,
+  pickList: false,
+};
+const cam = { x: 0, z: 0, yaw: 0, pitch: -0.02, look: 0, dev: 0 };
+const TOUR = () => TOURS[M.tour];
+const isAny = () => TOUR().order === 'any';
+const measurable = () => M.trust === 'code' || M.trust === 'gps';
+const inSentence = (title) => title.replace(/^The /, 'the ');
+const left = () => STATIONS.filter((s) => M.status[s.id] === 'waiting');
+const offered = () => {
+  const open = STATIONS.filter((s) => M.status[s.id] === 'waiting' || M.status[s.id] === 'found');
+  return isAny() ? open : open.slice(0, 1);
+};
+const unfoundOffered = () => offered().filter((s) => M.status[s.id] === 'waiting');
+const dist = (s) => Math.hypot(s.x - cam.x, s.z - cam.z);
+const viewYaw = () => cam.yaw + cam.look + cam.dev;
+function relBearing(s) {
+  let a = Math.atan2(-(s.x - cam.x), -(s.z - cam.z)) - viewYaw();
+  while (a > Math.PI) a -= 2 * Math.PI;
+  while (a < -Math.PI) a += 2 * Math.PI;
+  return a; // positive: to the left
+}
+function dirWord(s) {
+  const d = relBearing(s) / DEG, a = Math.abs(d), side = d > 0 ? 'left' : 'right';
+  if (a < 25) return 'ahead';
+  if (a < 70) return 'ahead on your ' + side;
+  if (a < 135) return 'to your ' + side;
+  return 'behind you';
+}
+function nearest(list) {
+  return list.slice().sort((a, b) => dist(a) - dist(b))[0] || null;
+}
+// The station the guide talks about: under fixed order the offered one;
+// under any order the nearest, but only when the position can be measured.
+function focus() {
+  if (M.story) return S(M.story.id);
+  const u = unfoundOffered();
+  if (!isAny()) return u[0] || null;
+  return measurable() ? nearest(u) : null;
+}
+function metres(s) {
+  const d = dist(s);
+  if (M.trust === 'code') return Math.max(1, Math.round(d)) + ' m';
+  if (d < 10) return 'a few metres';
+  return 'about ' + Math.max(5, Math.round(d / 5) * 5) + ' m';
+}
+function chapterNo(s) {
+  if (!isAny()) return STATIONS.indexOf(s) + 1;
+  return STATIONS.filter((x) => M.status[x.id] === 'done' || M.status[x.id] === 'skipped').length + 1;
+}
+
+// ---------------------------------------------------------------- avatars (original drawings)
+function avatarSVG(p) {
+  const hats = {
+    top: '<path d="M18 23.5h28" stroke="#1c1f22" stroke-width="3.6" stroke-linecap="round"/><rect x="23.5" y="8" width="17" height="15" rx="2" fill="#1c1f22"/><rect x="23.5" y="18" width="17" height="2.8" fill="#c2410c"/>',
+    helmet: '<path d="M20.5 28a11.5 11.5 0 0 1 23 0z" fill="#8b9096"/><path d="M32 17v13" stroke="#5f646a" stroke-width="2.2"/><path d="M19 28h26" stroke="#5f646a" stroke-width="2.4" stroke-linecap="round"/>',
+    scarf: '<path d="M20 33a12 12.5 0 0 1 24 0l-1.5 6-2.5-5.5v-1a8 8 0 0 0-16 0v1L21.5 39z" fill="#d8a33f"/><circle cx="25" cy="22" r="1.4" fill="#f4dfa8"/><circle cx="37" cy="24" r="1.4" fill="#f4dfa8"/>',
+    hood: '<path d="M16.5 44c0-17 6-26 15.5-26s15.5 9 15.5 26l-4.5-2.5c-.5-10-4.5-15.5-11-15.5s-10.5 5.5-11 15.5z" fill="' + p.coat + '"/><path d="M16.5 44c0-17 6-26 15.5-26" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>',
+    straw: '<ellipse cx="32" cy="23.5" rx="17.5" ry="3.8" fill="#d9b65f"/><path d="M24 23.5a8 7 0 0 1 16 0z" fill="#e7c876"/><path d="M24.3 21.4h15.4" stroke="#6b8e3a" stroke-width="2"/>',
+  };
+  const lantern = p.lantern
+    ? '<g transform="translate(47 45)"><circle r="8" fill="#ffd27a" opacity=".42"/><path d="M-2 -5.5v-2.5h4v2.5" stroke="#3d2a10" stroke-width="1.3" fill="none"/><rect x="-3.4" y="-5.5" width="6.8" height="9" rx="1.6" fill="#ffcf6b" stroke="#3d2a10" stroke-width="1.3"/></g>'
+    : '';
+  return '<svg viewBox="0 0 64 64" aria-hidden="true">' +
+    '<rect width="64" height="64" fill="' + p.bg + '"/>' +
+    '<circle cx="46" cy="14" r="16" fill="rgba(255,255,255,.06)"/>' +
+    '<path d="M10 66c2-14 10.5-20 22-20s20 6 22 20z" fill="' + p.coat + '"/>' +
+    '<path d="M26 46.5l6 6.5 6-6.5" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="2"/>' +
+    '<rect x="29" y="38" width="6" height="8" fill="#d7ae86"/>' +
+    '<circle cx="32" cy="31" r="9.6" fill="#e8c4a0"/>' +
+    '<circle cx="28.6" cy="31" r="1.3" fill="#2b2420"/><circle cx="35.4" cy="31" r="1.3" fill="#2b2420"/>' +
+    '<path d="M29.2 35.2q2.8 2 5.6 0" stroke="#7a4a35" stroke-width="1.4" fill="none" stroke-linecap="round"/>' +
+    (hats[p.hat] || '') + lantern + '</svg>';
+}
+const GUIDE_SVG = avatarSVG(GUIDE);
+document.querySelectorAll('[data-av=guide]').forEach((el) => { el.innerHTML = GUIDE_SVG; });
+$('#mini').innerHTML = GUIDE_SVG;
+
+// The S1 scan card's phone-over-code animation (same pattern as the app's scan overlay).
+(function scanArt() {
+  let s = 20261011 >>> 0;
+  const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+  const n = 25, a = n - 9;
+  const reserved = (x, y) => (x < 8 && y < 8) || (x >= n - 8 && y < 8) || (x < 8 && y >= n - 8) || (x >= a && x < a + 5 && y >= a && y < a + 5);
+  let d = '';
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    if (reserved(x, y)) continue;
+    if ((x === 6 || y === 6) ? (x + y) % 2 === 0 : rnd() < 0.48) d += 'M' + x + ' ' + y + 'h1v1h-1z';
+  }
+  for (const [fx, fy] of [[0, 0], [n - 7, 0], [0, n - 7]]) d += 'M' + fx + ' ' + fy + 'h7v7h-7zM' + (fx + 1) + ' ' + (fy + 1) + 'v5h5v-5zM' + (fx + 2) + ' ' + (fy + 2) + 'h3v3h-3z';
+  d += 'M' + a + ' ' + a + 'h5v5h-5zM' + (a + 1) + ' ' + (a + 1) + 'v3h3v-3zM' + (a + 2) + ' ' + (a + 2) + 'h1v1h-1z';
+  $('#qrPath').setAttribute('d', d);
+  const svg = document.querySelector('svg[data-anim]');
+  svg.setAttribute('viewBox', '0 0 160 120');
+  svg.innerHTML = '<rect x="34" y="16" width="72" height="96" rx="4" fill="#000" opacity=".2"/><rect x="30" y="12" width="72" height="96" rx="4" fill="#fbf9f3"/><use href="#qr" x="42" y="22" width="48" height="48"/><rect x="44" y="80" width="44" height="5" rx="2.5" fill="#c9c2b4"/><rect x="50" y="91" width="32" height="4" rx="2" fill="#ddd7cb"/><g class="a-phone"><rect x="36" y="4" width="60" height="100" rx="11" fill="rgba(12,18,24,.28)" stroke="#fff" stroke-width="3"/><rect x="57" y="9" width="18" height="3.5" rx="1.75" fill="#fff" opacity=".85"/><path class="a-brk" d="M40 28v-8h8M84 20h8v8M92 64v8h-8M48 72h-8v-8" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g>';
+})();
+
+// ---------------------------------------------------------------- timers that belong to a state
+const TS = { k: 1 }; // time scale: play() may speed the walk up
+let timers = [];
+function after(ms, fn) { const id = setTimeout(() => { timers = timers.filter((t) => t !== id); fn(); }, ms / TS.k); timers.push(id); return id; }
+function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+let quietTimer = 0;
+
+// ---------------------------------------------------------------- the guide's lines
+function walkLine() {
+  if (M.trust === 'pending') return "One moment - I'm still finding where you are.";
+  if (M.trust === 'weak') return 'My GPS is too rough here - about ' + M.acc + ' m. Step into the open, or show me one of the codes.';
+  if (M.trust === 'none') {
+    const n = left().length;
+    return "I have lost you - show me one of the tour's codes." + (isAny() && n > 1 ? ' ' + cap(words(n)) + ' places are still waiting.' : '');
+  }
+  const f = focus();
+  if (!f) return 'Nothing left to find.';
+  if (!M.headingReady) return 'Walk a few steps so I know which way you are facing.';
+  if (isAny()) {
+    const n = left().length;
+    if (n > 1) return cap(words(n)) + ' places left, in any order. The nearest is ' + inSentence(f.title) + ', ' + metres(f) + ' ' + dirWord(f) + '.';
+  }
+  return 'Head for ' + inSentence(f.title) + ', ' + metres(f) + ' ' + dirWord(f) + '.';
+}
+const words = (n) => ['no', 'one', 'two', 'three', 'four', 'five'][n] || String(n);
+const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+
+function walkChips() {
+  if (M.trust === 'pending') return [{ label: 'Show me a code', act: 'code' }];
+  if (!measurable()) return [
+    { label: 'Show me a code', act: 'code', primary: true },
+    { label: "I can't get there", act: 'cant' },
+    { label: 'Where am I?', act: 'where' },
+  ];
+  if (!M.headingReady) return [{ label: "I can't get there", act: 'cant' }, { label: 'Where am I?', act: 'where' }];
+  return [
+    { label: "I can't get there", act: 'cant' },
+    { label: 'Where am I?', act: 'where' },
+    { label: 'Tell me again', act: 'again' },
+  ];
+}
+
+// speak: the one way anything reaches the visitor as a sentence.
+function speak({ who = 'guide', text, chips = [], quietAfter = QUIET_AFTER_MS, steps = '' }) {
+  M.speech = { who, text, chips, steps };
+  M.quiet = false;
+  if (who === 'guide') M.lastGuide = text;
+  clearTimeout(quietTimer);
+  if (quietAfter > 0) quietTimer = setTimeout(() => { M.quiet = true; render(); }, quietAfter / TS.k);
+  render(true);
+}
+function startWalk(prefix = '') {
+  M.phase = 'walk';
+  M.story = null;
+  M.pickList = false;
+  speak({ text: prefix + walkLine(), chips: walkChips() });
+}
+
+// ---------------------------------------------------------------- transitions
+function arrive(id) {
+  const s = S(id);
+  M.status[id] = 'found';
+  M.phase = 'arriving';
+  M.undo = null;
+  showChapterCard(s);
+  speak({ text: 'Here we are - ' + inSentence(s.title) + '. ' + s.sp.name + ' has a story for you.', chips: [], quietAfter: 0 });
+  after(3200, () => beginStory(id));
+}
+function showChapterCard(s) {
+  $('#chapterNo').textContent = 'Chapter ' + chapterNo(s);
+  $('#chapterTitle').textContent = s.title;
+  const c = $('#chapterCard');
+  c.classList.add('show');
+  after(3000, () => c.classList.remove('show'));
+}
+function beginStory(id, step = 0) {
+  M.phase = 'story';
+  M.story = { id, step, sub: null };
+  storyStep();
+}
+function storyStep() {
+  const s = S(M.story.id), st = s.story[M.story.step];
+  const n = s.story.length, last = M.story.step === n - 1;
+  const steps = (M.story.step + 1) + ' of ' + n;
+  let text = st.t, chips;
+  if (M.story.sub != null) {
+    text = st.choices[M.story.sub].t;
+    chips = [{ label: last ? 'Finish the story' : 'Go on', act: last ? 'finish' : 'next', primary: true }, { label: 'End this story?', act: 'endask' }];
+  } else if (st.choices) {
+    chips = st.choices.map((c, k) => ({ label: c.label, act: 'choice:' + k }));
+    chips.push({ label: 'End this story?', act: 'endask' });
+  } else if (last) {
+    chips = [{ label: 'Finish the story', act: 'finish', primary: true }];
+  } else {
+    chips = [{ label: 'Go on', act: 'next', primary: true }, { label: 'End this story?', act: 'endask' }];
+  }
+  speak({ who: s.id, text, chips, quietAfter: 0, steps });
+}
+function storyNext() {
+  if (!M.story) return;
+  M.story.step++;
+  M.story.sub = null;
+  storyStep();
+}
+function endAsk() {
+  const s = S(M.story.id);
+  M.speech.chips = [
+    { label: 'End the story of ' + s.title + ' now', act: 'endnow', primary: true },
+    { label: 'Keep listening', act: 'keeplisten' },
+  ];
+  render(true);
+}
+function endStory() {
+  if (!M.story) return;
+  const s = S(M.story.id);
+  M.status[s.id] = 'done';
+  M.story = null;
+  if (!left().length) { complete(); return; }
+  M.phase = 'walk';
+  const f = focus();
+  let text;
+  if (!measurable()) text = 'That was ' + inSentence(s.title) + '. ' + walkLine();
+  else if (isAny()) text = 'That was ' + inSentence(s.title) + '. ' + (left().length > 1 ? cap(words(left().length)) + ' places left - the nearest is ' + inSentence(f.title) + ', ' + metres(f) + '.' : 'One place left: ' + inSentence(f.title) + ', ' + metres(f) + '.');
+  else text = 'That was ' + inSentence(s.title) + '. Next, ' + inSentence(f.title) + ' - ' + metres(f) + ' ' + dirWord(f) + '.';
+  speak({ text, chips: walkChips() });
+}
+function complete() {
+  M.phase = 'complete';
+  M.story = null;
+  render(true);
+}
+function whereAmI() {
+  const f = focus();
+  const t = {
+    code: 'A code placed us, so I know where you are to a step or two.' + (f ? ' ' + cap(inSentence(f.title)) + ' is ' + metres(f) + ' ' + dirWord(f) + '.' : ''),
+    gps: 'By GPS, give or take ' + M.acc + ' m. Near a station I may call it a few steps early or late.',
+    weak: 'GPS says somewhere within ' + M.acc + ' m of here - too rough to guide you by. Out in the open it gets better.',
+    none: "I don't know. The code's hold has ended and there is no usable GPS. Any of the tour's codes puts me right.",
+    pending: "Not yet - I'm still waiting for the first position.",
+  }[M.trust];
+  speak({ text: t, chips: walkChips(), quietAfter: 10000 });
+}
+function askSkip() {
+  const u = unfoundOffered();
+  if (!u.length) return;
+  if (isAny() && !measurable()) {
+    M.pickList = true;
+    const chips = u.map((s) => ({ label: 'Skip ' + s.title, act: 'skip:' + s.id }));
+    chips.push({ label: 'Show me a code instead', act: 'code', primary: true });
+    speak({ text: "I can't tell where you are, so I won't guess which one is closest. Which can't you reach?", chips, quietAfter: 0 });
+    return;
+  }
+  const f = isAny() ? nearest(u) : u[0];
+  const nextAfter = isAny() ? null : STATIONS.find((s) => M.status[s.id] === 'waiting' && s !== f);
+  speak({
+    text: "Can't reach " + inSentence(f.title) + "? I'll skip it" + (nextAfter ? ', and we go on to ' + inSentence(nextAfter.title) + '.' : '.'),
+    chips: [{ label: 'Skip ' + f.title + " - I can't get there", act: 'skip:' + f.id, primary: true }, { label: "No, I'll keep going", act: 'keep' }],
+    quietAfter: 0,
+  });
+}
+function suggestSkip() {
+  const f = focus();
+  if (!f || !measurable()) return;
+  speak({
+    text: cap(inSentence(f.title)) + " is further than it looks. If you can't get there, I can skip it.",
+    chips: [{ label: 'Skip ' + f.title + " - I can't get there", act: 'skip:' + f.id, primary: true }, { label: 'Keep going', act: 'keep' }],
+    quietAfter: 0,
+  });
+}
+function doSkip(id) {
+  const s = S(id);
+  M.status[id] = 'skipped';
+  M.pickList = false;
+  M.undo = { id, until: performance.now() + SKIP_UNDO_MS / TS.k };
+  if (!left().length) { after(SKIP_UNDO_MS, () => { M.undo = null; complete(); }); }
+  const f = focus();
+  const tail = !left().length ? '' : (f && measurable() ? ' On to ' + inSentence(f.title) + ', ' + metres(f) + '.' : '');
+  speak({ text: 'Skipped ' + s.title + '.' + tail, chips: [{ label: 'Undo: bring back ' + s.title, act: 'undo', timer: SKIP_UNDO_MS }], quietAfter: 0 });
+  after(SKIP_UNDO_MS, () => {
+    if (!M.undo || M.undo.id !== id) return;
+    M.undo = null;
+    if (left().length) { M.phase = 'walk'; speak({ text: walkLine(), chips: walkChips(), quietAfter: 1 }); }
+  });
+}
+function undoSkip() {
+  if (!M.undo) return;
+  const s = S(M.undo.id);
+  M.status[s.id] = 'waiting';
+  M.undo = null;
+  clearTimers();
+  M.phase = 'walk';
+  speak({ text: 'Brought back ' + s.title + '. ' + walkLine(), chips: walkChips() });
+}
+function toScan() {
+  clearTimers();
+  M.phase = 'scan';
+  M.scanFound = false;
+  M.prevTrust = M.trust;
+  M.trust = M.trust === 'none' || M.trust === 'weak' ? M.trust : 'pending';
+  speak({ text: "Show me the tour's code on the poster, and I'll know exactly where we stand.", chips: [], quietAfter: 0 });
+  after(SCAN_ESCAPE_MS, () => {
+    if (M.phase !== 'scan' || M.scanFound) return;
+    M.speech.chips = [{ label: 'Skip - use GPS only (less exact)', act: 'gpsonly' }];
+    render(true);
+  });
+}
+function codeSeen() {
+  if (M.phase !== 'scan') return;
+  M.scanFound = true;
+  M.trust = 'code';
+  M.acc = 0;
+  M.headingReady = true;
+  speak({ text: 'Got it - now I know exactly where we stand.', chips: [], quietAfter: 0 });
+  after(1900, () => startWalk());
+}
+function setTrust(t, acc = 0, say = true) {
+  const was = M.trust;
+  M.trust = t;
+  M.acc = acc;
+  if (!say || M.phase !== 'walk') { render(true); return; }
+  let pre = '';
+  if (t === 'gps' && was === 'code') pre = "From here I'm going by GPS, good to about " + acc + ' m. ';
+  else if (t === 'gps' && (was === 'weak' || was === 'none')) pre = 'That is better - I have you again, to about ' + acc + ' m. ';
+  else if (t === 'none' && was === 'code') pre = "The code's hold has ended. ";
+  startWalk(pre);
+}
+function trackingLost() {
+  M.phase = 'lost';
+  speak({ text: "I can't see where we are any more. Point the camera at something with detail, and move slowly.", chips: [], quietAfter: 0 });
+}
+function trackingBack() { startWalk('There we are again. '); }
+function leaveAr() {
+  clearTimers();
+  M.phase = 'paused';
+  M.chaptersOpen = false;
+  render(true);
+}
+function backInAr() {
+  clearTimers();
+  const f = unfoundOffered()[0];
+  M.phase = 'walk';
+  M.headingReady = false;
+  M.headingFrom = { x: cam.x, z: cam.z };
+  speak({ text: 'Welcome back.' + (f && !isAny() ? ' We were on our way to ' + inSentence(f.title) + '.' : '') + ' Walk a few steps so I know which way you are facing.', chips: walkChips() });
+}
+function resetTour() {
+  M.status = {};
+  STATIONS.forEach((s) => { M.status[s.id] = 'waiting'; });
+}
+
+// One dispatcher for every reply chip.
+function act(a) {
+  if (a === 'cant') askSkip();
+  else if (a === 'where') whereAmI();
+  else if (a === 'again') speak({ text: M.phase === 'walk' ? walkLine() : (M.lastGuide || walkLine()), chips: walkChips() });
+  else if (a === 'code') toScan();
+  else if (a === 'gpsonly') { M.trust = 'gps'; M.acc = 9; M.scanFound = false; startWalk('All right, GPS it is - good to about 9 m. '); }
+  else if (a.startsWith('skip:')) doSkip(a.slice(5));
+  else if (a === 'keep') { M.pickList = false; speak({ text: walkLine(), chips: walkChips() }); }
+  else if (a === 'undo') undoSkip();
+  else if (a === 'next') storyNext();
+  else if (a.startsWith('choice:')) { M.story.sub = +a.slice(7); storyStep(); }
+  else if (a === 'finish') endStory();
+  else if (a === 'endask') endAsk();
+  else if (a === 'endnow') endStory();
+  else if (a === 'keeplisten') storyStep();
+}
+
+// ---------------------------------------------------------------- rendering the layer
+const dom = {
+  dock: $('#dock'), bubble: $('#bubble'), line: $('#line'), whoName: $('#whoName'), whoSteps: $('#whoSteps'),
+  chips: $('#chips'), av: $('#av'), avwrap: $('#avwrap'), mini: $('#mini'), badge: $('#badge'),
+  memo: $('#memo'), memoName: $('#memoName'), memoDetail: $('#memoDetail'), tag: $('#tag'), dir: $('#dir'),
+  strip: $('#strip'), stripText: $('#stripText'), pips: $('#pips'), chapters: $('#chapters'),
+  chapterList: $('#chapterList'), chapterFoot: $('#chapterFoot'), scan: $('#scanCard'),
+};
+let lastSpeechKey = '';
+let lastAvKey = '';
+const BADGES = {
+  code: '<svg viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" fill="currentColor"/><rect x="9" y="2" width="5" height="5" fill="currentColor"/><rect x="2" y="9" width="5" height="5" fill="currentColor"/><rect x="10" y="10" width="2" height="2" fill="currentColor"/><rect x="12.5" y="12.5" width="1.5" height="1.5" fill="currentColor"/></svg>',
+  gps: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.4" fill="currentColor"/><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>',
+  weak: '!', none: '?', lost: '<svg viewBox="0 0 16 16"><path d="M3 8h2M7 8h2M11 8h2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>', pending: '',
+};
+function trustOf() { return M.phase === 'lost' ? 'lost' : M.trust; }
+function tagText() {
+  const t = trustOf();
+  if (t === 'code') return 'Placed by a code';
+  if (t === 'gps') return 'GPS · about ' + M.acc + ' m';
+  if (t === 'weak') return 'GPS too weak · ±' + M.acc + ' m';
+  if (t === 'none') return 'Position unknown';
+  if (t === 'lost') return 'Camera lost';
+  return 'Finding you…';
+}
+
+function render(speechChanged) {
+  device.dataset.phase = M.phase;
+  device.dataset.tour = M.tour;
+  device.dataset.trust = M.trust;
+  const inAr = !['paused'].includes(M.phase);
+  const walkish = ['walk', 'arriving', 'story', 'lost'].includes(M.phase);
+
+  // the scan card (S1's, taken by the app)
+  dom.scan.hidden = M.phase !== 'scan';
+  dom.scan.classList.toggle('ok', M.scanFound);
+  $('#scanTitle').textContent = M.scanFound ? 'Code found - starting the tour' : 'Scan the code again so the tour can start';
+  $('#demoSeen').hidden = M.scanFound;
+
+  // dock
+  dom.dock.classList.toggle('off', !inAr || M.phase === 'complete');
+  dom.dock.classList.toggle('quiet', M.quiet && M.phase === 'walk');
+  const sp = M.speech;
+  const speaker = sp && sp.who !== 'guide' ? S(sp.who) : null;
+  const avKey = speaker ? speaker.id : 'guide';
+  if (avKey !== lastAvKey) { dom.av.innerHTML = speaker ? avatarSVG(speaker.sp) : GUIDE_SVG; lastAvKey = avKey; }
+  dom.mini.hidden = !speaker;
+  const t = speaker ? 'code' : trustOf();
+  dom.avwrap.dataset.trust = speaker ? 'story' : t;
+  dom.badge.innerHTML = speaker ? '' : BADGES[t] || '';
+  dom.badge.hidden = !!speaker;
+  if (sp) {
+    const key = sp.who + '|' + sp.text + '|' + sp.chips.map((c) => c.label).join('/');
+    if (key !== lastSpeechKey || speechChanged) {
+      if (key !== lastSpeechKey) {
+        // restart the pop animation for a new line
+        dom.bubble.style.animation = 'none'; void dom.bubble.offsetWidth; dom.bubble.style.animation = '';
+      }
+      lastSpeechKey = key;
+      dom.whoName.textContent = speaker ? speaker.sp.name + ' · ' + speaker.title : GUIDE.name + ', ' + GUIDE.role;
+      dom.whoSteps.textContent = sp.steps || '';
+      dom.line.textContent = sp.text;
+      dom.chips.replaceChildren(...sp.chips.map((c) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'chip' + (c.primary ? ' primary' : '');
+        b.dataset.act = c.act;
+        b.textContent = c.label;
+        if (c.timer) {
+          const bar = document.createElement('i');
+          bar.className = 'timer';
+          const leftMs = M.undo ? Math.max(0, M.undo.until - performance.now()) : c.timer / TS.k;
+          bar.style.animationDuration = leftMs + 'ms';
+          b.appendChild(bar);
+        }
+        b.addEventListener('click', () => act(c.act));
+        return b;
+      }));
+    }
+  }
+  dom.bubble.hidden = !sp || !sp.text;
+  dom.memo.hidden = !(walkish || M.phase === 'walk');
+
+  // strip
+  const started = !['starting', 'warming', 'scan'].includes(M.phase) || STATIONS.some((s) => M.status[s.id] !== 'waiting');
+  const f = focus();
+  if (!started) dom.stripText.textContent = TOUR().name + ' · 4 ' + (isAny() ? 'places' : 'chapters');
+  else if (M.phase === 'complete') dom.stripText.textContent = 'All 4 chapters';
+  else if (isAny()) dom.stripText.textContent = STATIONS.filter((s) => ['found', 'done'].includes(M.status[s.id])).length + ' of 4 found · any order';
+  else { const cur = f || STATIONS.find((s) => M.status[s.id] === 'found'); dom.stripText.textContent = 'Chapter ' + (cur ? chapterNo(cur) : 4) + ' of 4'; }
+  dom.pips.replaceChildren(...STATIONS.map((s) => {
+    const i = document.createElement('i');
+    const st = M.status[s.id];
+    i.className = 'pip ' + (st === 'waiting' ? (f === s ? 'next' : '') : st);
+    return i;
+  }));
+  dom.strip.setAttribute('aria-expanded', String(M.chaptersOpen));
+  dom.chapters.hidden = !M.chaptersOpen;
+  if (M.chaptersOpen) renderChapters();
+  $('#stripwrap').hidden = M.phase === 'paused' || M.phase === 'starting' || M.phase === 'complete';
+
+  // full sheets
+  $('#endSheet').hidden = M.phase !== 'complete';
+  if (M.phase === 'complete') renderEnd();
+  $('#paused').hidden = M.phase !== 'paused';
+  if (M.phase === 'paused') renderPaused();
+  updateLive(true);
+  demoStatus();
+}
+function stateWord(s) {
+  const st = M.status[s.id];
+  if (st === 'done') return 'found';
+  if (st === 'found') return 'story playing';
+  if (st === 'skipped') return 'skipped';
+  if (focus() === s && !isAny()) return 'next';
+  if (isAny() && measurable()) return metres(s);
+  return isAny() ? 'to find' : 'later';
+}
+function renderChapters() {
+  const f = focus();
+  dom.chapterList.replaceChildren(...STATIONS.map((s, i) => {
+    const li = document.createElement('li');
+    const st = M.status[s.id];
+    li.className = st === 'waiting' ? (f === s ? 'next' : '') : st;
+    li.innerHTML = '<span class="no"></span><span class="t"></span><span class="w"></span>';
+    li.children[0].textContent = st === 'done' ? '✓' : st === 'skipped' ? '' : (isAny() ? '·' : String(i + 1));
+    li.children[1].textContent = s.title;
+    li.children[2].textContent = stateWord(s);
+    return li;
+  }));
+  dom.chapterFoot.textContent = isAny() ? 'Any order: the guide points at the nearest five still to find.' : 'Fixed order: the guide offers one chapter at a time.';
+}
+function renderEnd() {
+  const sk = STATIONS.filter((s) => M.status[s.id] === 'skipped').length;
+  $('#endEyebrow').textContent = TOUR().name;
+  $('#endReal').textContent = sk ? 'Tour complete - ' + sk + ' skipped.' : 'Tour complete - every station visited.';
+  $('#endList').replaceChildren(...STATIONS.map((s) => {
+    const li = document.createElement('li');
+    li.className = M.status[s.id] === 'skipped' ? 'sk' : '';
+    li.innerHTML = '<span></span><span></span>';
+    li.children[0].textContent = s.title;
+    li.children[1].textContent = M.status[s.id] === 'skipped' ? 'skipped' : 'found';
+    return li;
+  }));
+  const skippedOne = STATIONS.find((s) => M.status[s.id] === 'skipped');
+  $('#endQuote').textContent = "That's our walk. Thank you for coming along" + (skippedOne ? ' - ' + inSentence(skippedOne.title) + ' will still be there another day.' : '.');
+}
+function renderPaused() {
+  const found = STATIONS.filter((s) => M.status[s.id] === 'done' || M.status[s.id] === 'found').length;
+  const allDone = !left().length;
+  const f = unfoundOffered()[0];
+  $('#pausedEyebrow').textContent = TOUR().name;
+  $('#pausedTitle').textContent = allDone ? 'Walk complete' : 'Paused';
+  $('#pausedDesc').textContent = allDone
+    ? 'You saw ' + found + ' of 4 chapters. The tour stays open on this page.'
+    : found + ' of 4 found. Your progress stays while this page is open' + (f && !isAny() ? '; next is ' + inSentence(f.title) + '.' : '.');
+  $('#backBtn').textContent = allDone ? 'Walk it again' : 'Back into AR';
+  $('#pausedQuote').textContent = allDone ? 'Come back any time.' : (f && !isAny() ? "I'll wait for you on the way to " + inSentence(f.title) + '.' : "I'll wait right here.");
+}
+
+// Per frame: the strip's live facts (distance, direction), the lamps, the edge cue.
+let lastMemo = '';
+function updateLive(force) {
+  const f = focus();
+  let name = '', detail = '', icon = 'none', rot = 0;
+  const t = trustOf();
+  if (M.phase === 'story' && M.story) {
+    const s = S(M.story.id);
+    name = 'Chapter ' + chapterNo(s) + ' · ' + s.title;
+    detail = 'story playing';
+    icon = 'book';
+  } else if (M.phase === 'arriving') {
+    const s = STATIONS.find((x) => M.status[x.id] === 'found');
+    name = s ? s.title : '';
+    detail = 'you are here';
+    icon = 'here';
+  } else if (M.phase === 'lost') {
+    const s = unfoundOffered()[0];
+    name = s ? s.title : '';
+    detail = 'waiting for the camera';
+    icon = 'lost';
+  } else if (t === 'none' || t === 'weak') {
+    const n = left().length;
+    name = isAny() && n > 1 ? n + ' places left' : (unfoundOffered()[0] || {}).title || '';
+    detail = t === 'none' ? 'no distance without a code' : 'too rough to measure';
+    icon = t === 'weak' ? 'weak' : 'unknown';
+    if (t === 'weak' && f) rot = -relBearing(f) / DEG;
+  } else if (t === 'pending') {
+    name = (unfoundOffered()[0] || {}).title || '';
+    detail = 'waiting for your position…';
+    icon = 'pending';
+  } else if (f) {
+    name = f.title;
+    if (!M.headingReady) { detail = 'walk a few steps'; icon = 'pending'; }
+    else {
+      detail = metres(f) + ' · ' + dirWord(f);
+      if (isAny() && left().length > 1) detail = 'nearest · ' + detail;
+      icon = 'arrow';
+      rot = -relBearing(f) / DEG;
+    }
+  }
+  const key = name + '|' + detail + '|' + icon + '|' + t;
+  if (force || key !== lastMemo) {
+    lastMemo = key;
+    dom.memoName.textContent = name;
+    dom.memoDetail.textContent = detail;
+    dom.tag.textContent = tagText();
+    dom.tag.dataset.trust = t;
+    dom.tag.hidden = M.phase === 'story' || M.phase === 'arriving';
+    dom.dir.innerHTML = ICONS[icon] || '';
+  }
+  const arrow = dom.dir.querySelector('.rot');
+  if (arrow) arrow.setAttribute('transform', 'rotate(' + rot.toFixed(1) + ' 17 17)');
+}
+const ICONS = {
+  arrow: '<svg viewBox="0 0 34 34"><circle cx="17" cy="17" r="16" fill="rgba(255,210,122,.18)" stroke="#ffd27a" stroke-width="1.5"/><g class="rot"><path d="M17 5l7 10h-4.6v11h-4.8V15H10z" fill="#ffd27a"/></g></svg>',
+  weak: '<svg viewBox="0 0 34 34"><circle cx="17" cy="17" r="16" fill="rgba(245,158,11,.16)" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4 3"/><g class="rot"><path d="M17 7l5 10h-10z" fill="#f59e0b" opacity=".75"/></g><path d="M10 24q3.5-3 7 0t7 0" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round"/></svg>',
+  unknown: '<svg viewBox="0 0 34 34"><circle cx="17" cy="17" r="16" fill="rgba(255,255,255,.08)" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="1.5 4" stroke-linecap="round"/><text x="17" y="23" text-anchor="middle" font-size="17" font-weight="800" fill="#e5e7eb" font-family="system-ui,sans-serif">?</text></svg>',
+  pending: '<svg viewBox="0 0 34 34"><circle cx="17" cy="17" r="16" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="1.5"/><path d="M17 1a16 16 0 0 1 16 16" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 17 17" to="360 17 17" dur="1.2s" repeatCount="indefinite"/></path></svg>',
+  book: '<svg viewBox="0 0 34 34"><circle cx="17" cy="17" r="16" fill="rgba(194,65,12,.3)" stroke="#fdba74" stroke-width="1.5"/><path d="M9 11.5q4-1.5 8 1v11q-4-2.5-8-1zM25 11.5q-4-1.5-8 1v11q4-2.5 8-1z" fill="none" stroke="#fff" stroke-width="1.7" stroke-linejoin="round"/></svg>',
+  here: '<svg viewBox="0 0 34 34"><circle cx="17" cy="17" r="16" fill="rgba(45,212,191,.2)" stroke="#2dd4bf" stroke-width="1.5"/><circle cx="17" cy="17" r="5" fill="#2dd4bf"/><circle cx="17" cy="17" r="9.5" fill="none" stroke="#2dd4bf" stroke-width="1.5" opacity=".6"/></svg>',
+  lost: '<svg viewBox="0 0 34 34"><circle cx="17" cy="17" r="16" fill="rgba(255,255,255,.08)" stroke="#9ca3af" stroke-width="1.5"/><path d="M9 17q8-8 16 0q-8 8-16 0z" fill="none" stroke="#e5e7eb" stroke-width="1.6"/><path d="M10 25L24 9" stroke="#e5e7eb" stroke-width="1.8" stroke-linecap="round"/></svg>',
+};
+
+// ---------------------------------------------------------------- input: drag, phone motion
+(function input() {
+  const c = $('#cam');
+  let down = null;
+  c.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; c.setPointerCapture(e.pointerId); });
+  c.addEventListener('pointermove', (e) => {
+    if (!down) return;
+    const dx = e.clientX - down.x, dy = e.clientY - down.y;
+    down = { x: e.clientX, y: e.clientY };
+    if (play.on) cam.look += dx * 0.005; else cam.yaw += dx * 0.005;
+    cam.pitch = Math.max(-0.5, Math.min(0.45, cam.pitch + dy * 0.004));
+  });
+  const up = () => { down = null; };
+  c.addEventListener('pointerup', up);
+  c.addEventListener('pointercancel', up);
+  let alpha0 = null;
+  function onOrient(e) {
+    if (e.alpha == null) return;
+    if (alpha0 == null) alpha0 = e.alpha;
+    cam.dev = (e.alpha - alpha0) * DEG;
+    if (e.beta != null) cam.pitch = Math.max(-0.5, Math.min(0.45, (e.beta - 85) * DEG * 0.8));
+  }
+  $('#dMotion').addEventListener('click', async () => {
+    try {
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        const r = await DeviceOrientationEvent.requestPermission();
+        if (r !== 'granted') { $('#dMotion').textContent = 'Phone motion refused'; return; }
+      }
+      window.addEventListener('deviceorientation', onOrient);
+      $('#dMotion').textContent = 'Turning with the phone';
+      $('#dMotion').setAttribute('aria-pressed', 'true');
+    } catch (err) { $('#dMotion').textContent = 'No phone motion here'; }
+  });
+})();
+
+// ---------------------------------------------------------------- the faked camera: a small procedural town
+let W = null; // the three.js world, or null when three.js could not load
+async function initWorld() {
+  let THREE;
+  try { THREE = await import('three'); } catch (err) {
+    console.warn('three.js did not load; the camera stays a flat backdrop.', err);
+    return null;
+  }
+  const canvas = $('#cam');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0xc9d6dc, 70, 340);
+  const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 1000);
+  camera.rotation.order = 'YXZ';
+  scene.add(new THREE.HemisphereLight(0xe3edf3, 0x6b5a48, 1.25));
+  const sun = new THREE.DirectionalLight(0xfff1d6, 1.7);
+  sun.position.set(-80, 120, 60);
+  scene.add(sun);
+
+  // sky dome with a vertical gradient
+  {
+    const g = new THREE.SphereGeometry(900, 24, 12);
+    const col = [], pos = g.attributes.position, top = new THREE.Color(0x5f90b8), hor = new THREE.Color(0xc9d6dc), c = new THREE.Color();
+    for (let i = 0; i < pos.count; i++) { const y = pos.getY(i) / 900; c.copy(hor).lerp(top, Math.max(0, Math.min(1, y * 2.2))); col.push(c.r, c.g, c.b); }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    scene.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false })));
+  }
+  let seed = 7;
+  const rnd = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+  const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
+
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400), lam(0x8f8b7d));
+  ground.rotation.x = -Math.PI / 2;
+  scene.add(ground);
+
+  // streets: the walk's own route plus a few side lanes
+  const P = { start: [0, 6], gate: [0, -28], well: [22, -85], tower: [150, -118], garden: [70, -12] };
+  const segs = [
+    [P.start, P.gate, 9], [P.gate, P.well, 9], [P.well, P.tower, 9], [P.tower, P.garden, 8], [P.garden, P.start, 8],
+    [[66, -97], P.garden, 6], [[-60, -50], [100, -60], 7], [[40, 40], [40, -160], 7], [P.start, [0, 60], 9],
+  ];
+  const streetMat = lam(0x6f6a63);
+  for (const [a, b, w] of segs) {
+    const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
+    const g = new THREE.PlaneGeometry(w, L + w);
+    g.rotateX(-Math.PI / 2);
+    const m = new THREE.Mesh(g, streetMat);
+    m.position.set((a[0] + b[0]) / 2, 0.02, (a[1] + b[1]) / 2);
+    m.rotation.y = Math.atan2(dx, dz);
+    scene.add(m);
+  }
+  const segDist = (x, z, a, b) => {
+    const dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz;
+    const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / L2));
+    return [Math.hypot(x - a[0] - t * dx, z - a[1] - t * dz), Math.atan2(dx, dz)];
+  };
+
+  // houses along the streets
+  const box = new THREE.BoxGeometry(1, 1, 1); box.translate(0, 0.5, 0);
+  const roof = new THREE.ConeGeometry(0.72, 1, 4); roof.rotateY(Math.PI / 4); roof.translate(0, 0.5, 0);
+  const walls = ['#d9c7a7', '#c9b18f', '#e3d5bd', '#b98f6e', '#d4b48c', '#cbbfa8', '#a98b6f', '#e0cfae'].map(lam);
+  const roofs = ['#8a3b2a', '#6b3a2c', '#5a4a44', '#7a4b33'].map(lam);
+  const inst = new Map(); // material -> matrices
+  const put = (geo, mat, x, y, z, sx, sy, sz, ry) => {
+    const key = geo.uuid + mat.uuid;
+    if (!inst.has(key)) inst.set(key, { geo, mat, list: [] });
+    const m4 = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry), new THREE.Vector3(sx, sy, sz));
+    inst.get(key).list.push(m4);
+  };
+  let placed = 0;
+  for (let k = 0; k < 2400 && placed < 170; k++) {
+    const x = -160 + rnd() * 420, z = -240 + rnd() * 330;
+    let near = Infinity, ang = 0;
+    for (const [a, b, w] of segs) { const [d, an] = segDist(x, z, a, b); if (d - w / 2 < near) { near = d - w / 2; ang = an; } }
+    const w = 7 + rnd() * 7, d = 7 + rnd() * 7;
+    if (near < Math.max(w, d) / 2 + 1.5 || near > 26) continue;
+    if (STATIONS.some((s) => Math.hypot(s.x - x, s.z - z) < s.r + 10 + Math.max(w, d) / 2)) continue;
+    if (Math.hypot(x, z) < 14) continue;
+    const h = 6 + rnd() * 9;
+    put(box, walls[Math.floor(rnd() * walls.length)], x, 0, z, w, h, d, ang);
+    put(roof, roofs[Math.floor(rnd() * roofs.length)], x, h, z, w * 1.02, 3 + rnd() * 2.5, d * 1.02, ang);
+    placed++;
+  }
+
+  // landmarks that belong to the town, always there
+  const stone = lam(0xb8a98f);
+  { // the gate
+    const g = S('gate');
+    for (const sx of [-5.2, 5.2]) { const p = new THREE.Mesh(box, stone); p.scale.set(2.4, 8, 2.4); p.position.set(g.x + sx, 0, g.z - 4); scene.add(p); }
+    const l = new THREE.Mesh(box, stone); l.scale.set(12.8, 2.2, 2.6); l.position.set(g.x, 8, g.z - 4); scene.add(l);
+  }
+  { // the well
+    const g = S('well');
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.5, 0.95, 20, 1, true), stone); ring.position.set(g.x + 3, 0.47, g.z - 3); ring.material.side = THREE.DoubleSide;
+    const water = new THREE.Mesh(new THREE.CircleGeometry(1.35, 20), lam(0x24323a)); water.rotation.x = -Math.PI / 2; water.position.set(g.x + 3, 0.3, g.z - 3);
+    const wood = lam(0x5a3f2a);
+    for (const sx of [-1.5, 1.5]) { const p = new THREE.Mesh(box, wood); p.scale.set(0.18, 2.6, 0.18); p.position.set(g.x + 3 + sx, 0, g.z - 3); scene.add(p); }
+    const bar = new THREE.Mesh(box, wood); bar.scale.set(3.4, 0.2, 0.2); bar.position.set(g.x + 3, 2.5, g.z - 3);
+    scene.add(ring, water, bar);
+  }
+  { // the tower
+    const g = S('tower');
+    const t = new THREE.Mesh(box, lam(0xa69a86)); t.scale.set(8, 30, 8); t.position.set(g.x + 7, 0, g.z - 9);
+    const r = new THREE.Mesh(roof, lam(0x3f4a52)); r.scale.set(8.6, 10, 8.6); r.position.set(g.x + 7, 30, g.z - 9);
+    scene.add(t, r);
+  }
+  { // the garden
+    const g = S('garden');
+    const lawn = new THREE.Mesh(new THREE.CircleGeometry(19, 40), lam(0x6f8f4e)); lawn.rotation.x = -Math.PI / 2; lawn.position.set(g.x, 0.035, g.z);
+    scene.add(lawn);
+    const trunk = new THREE.CylinderGeometry(0.22, 0.3, 2.6, 6); trunk.translate(0, 1.3, 0);
+    const crown = new THREE.IcosahedronGeometry(1, 1);
+    const greens = [0x4d7a3a, 0x5f9146, 0x3f6b30].map(lam), bark = lam(0x5b4330);
+    for (let i = 0; i < 11; i++) {
+      const a = rnd() * Math.PI * 2, rr = 7 + rnd() * 10;
+      const x = g.x + Math.cos(a) * rr, z = g.z + Math.sin(a) * rr;
+      const s = 1.8 + rnd() * 1.2;
+      put(trunk, bark, x, 0, z, 1, 1, 1, 0);
+      put(crown, greens[i % 3], x, 2.6 + s * 0.7, z, s, s * 1.1, s, 0);
+    }
+  }
+  for (const { geo, mat, list } of inst.values()) {
+    const im = new THREE.InstancedMesh(geo, mat, list.length);
+    list.forEach((m4, i) => im.setMatrixAt(i, m4));
+    im.instanceMatrix.needsUpdate = true;
+    im.computeBoundingSphere();
+    scene.add(im);
+  }
+  { // the tour's notice board with its code, by the start
+    const tex = posterTexture(THREE);
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.5), new THREE.MeshBasicMaterial({ map: tex }));
+    board.position.set(2.3, 1.75, -4.5); board.rotation.y = -0.45;
+    const post = new THREE.Mesh(box, lam(0x3a3f44)); post.scale.set(0.12, 1.1, 0.12); post.position.set(2.3, 0, -4.52); post.rotation.y = -0.45;
+    const frame = new THREE.Mesh(new THREE.PlaneGeometry(1.24, 1.64), lam(0x2b2f33)); frame.position.set(2.31, 1.75, -4.53); frame.rotation.y = -0.45;
+    scene.add(post, frame, board);
+  }
+
+  // station content (shown only inside its radius) and the guide's lamps (where it points)
+  const glow = glowTexture(THREE);
+  const content = new Map(), lamps = new Map();
+  STATIONS.forEach((s, i) => {
+    const g = new THREE.Group();
+    const mats = [];
+    const m = (c) => { const mm = new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: 0 }); mats.push(mm); return mm; };
+    const fig = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.ConeGeometry(0.48, 1.35, 10), m(s.sp.coat)); body.position.y = 0.68;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.21, 14, 10), m(0xe8c4a0)); head.position.y = 1.58;
+    const hatC = { helmet: 0x8b9096, scarf: 0xd8a33f, hood: s.sp.coat, straw: 0xd9b65f }[s.sp.hat] || 0x333333;
+    const hat = s.sp.hat === 'straw'
+      ? new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.05, 16), m(hatC))
+      : new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), m(hatC));
+    hat.position.y = s.sp.hat === 'straw' ? 1.72 : 1.62;
+    fig.add(body, head, hat);
+    fig.position.set(1.4, 0, 0);
+    const signTex = signTexture(THREE, s, i + 1);
+    const signMat = new THREE.MeshBasicMaterial({ map: signTex, transparent: true, opacity: 0 }); mats.push(signMat);
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.82), signMat); sign.position.set(-1.1, 1.75, 0);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.4, 6), m(0x3a2c20)); pole.position.set(-1.1, 0.7, -0.02);
+    g.add(fig, sign, pole);
+    g.position.set(s.x, 0, s.z);
+    g.visible = false;
+    scene.add(g);
+    content.set(s.id, { g, mats, fig, op: 0 });
+
+    const lamp = new THREE.Group();
+    const sm = new THREE.SpriteMaterial({ map: glow, color: 0xffd27a, transparent: true, depthWrite: false, depthTest: false, sizeAttenuation: false, opacity: 0, fog: false });
+    const sprite = new THREE.Sprite(sm); sprite.scale.set(0.085, 0.085, 1); sprite.position.y = 9; sprite.renderOrder = 10;
+    const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xffffff, transparent: true, depthWrite: false, depthTest: false, sizeAttenuation: false, opacity: 0, fog: false }));
+    core.scale.set(0.03, 0.03, 1); core.position.y = 9; core.renderOrder = 11;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 9, 6, 1, true), new THREE.MeshBasicMaterial({ color: 0xffc860, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    beam.position.y = 4.5;
+    lamp.add(beam, sprite, core);
+    lamp.position.set(s.x, 0, s.z);
+    scene.add(lamp);
+    lamps.set(s.id, { lamp, mats: [sm, core.material, beam.material], op: 0 });
+  });
+
+  const resize = () => {
+    const r = device.getBoundingClientRect();
+    const w = Math.max(1, Math.round(device.clientWidth || r.width)), h = Math.max(1, Math.round(device.clientHeight || r.height));
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  };
+  new ResizeObserver(resize).observe(device);
+  resize();
+  return { THREE, renderer, scene, camera, content, lamps, v: new THREE.Vector3() };
+}
+function posterTexture(THREE) {
+  const c = document.createElement('canvas'); c.width = 220; c.height = 300;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fbf9f3'; x.fillRect(0, 0, 220, 300);
+  x.fillStyle = '#1c232b'; x.font = '700 19px system-ui,sans-serif'; x.textAlign = 'center'; x.fillText('OLD TOWN WALK', 110, 34);
+  x.fillStyle = '#c2410c'; x.font = '600 14px system-ui,sans-serif'; x.fillText('AR tour - start here', 110, 56);
+  let s = 99; const r = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+  const n = 21, u = 7, ox = 110 - n * u / 2, oy = 72;
+  x.fillStyle = '#14181d';
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    const fin = (i < 7 && j < 7) || (i >= n - 7 && j < 7) || (i < 7 && j >= n - 7);
+    if (fin) { const fi = i % 14, fj = j % 14, a = i < 7 ? i : i - (n - 7), b = j < 7 ? j : j - (n - 7); void fi; void fj; if (a === 0 || a === 6 || b === 0 || b === 6 || (a > 1 && a < 5 && b > 1 && b < 5)) x.fillRect(ox + i * u, oy + j * u, u, u); }
+    else if (r() < 0.47) x.fillRect(ox + i * u, oy + j * u, u, u);
+  }
+  x.fillStyle = '#5b6570'; x.font = '13px system-ui,sans-serif'; x.fillText('Scan with your phone camera', 110, 250);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function glowTexture(THREE) {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.25, 'rgba(255,240,200,.9)'); g.addColorStop(0.6, 'rgba(255,200,110,.28)'); g.addColorStop(1, 'rgba(255,200,110,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+function signTexture(THREE, s, n) {
+  const c = document.createElement('canvas'); c.width = 300; c.height = 164;
+  const x = c.getContext('2d');
+  x.fillStyle = '#f5f1e8'; x.fillRect(0, 0, 300, 164);
+  x.strokeStyle = '#9a3412'; x.lineWidth = 6; x.strokeRect(6, 6, 288, 152);
+  x.fillStyle = '#9a3412'; x.font = '700 18px system-ui,sans-serif'; x.textAlign = 'center'; x.fillText('CHAPTER ' + n, 150, 48);
+  x.fillStyle = '#17191c'; x.font = '600 42px Georgia,serif'; x.fillText(s.title, 150, 104);
+  x.fillStyle = '#5c605d'; x.font = '16px system-ui,sans-serif'; x.fillText(s.sp.name, 150, 136);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+
+// ---------------------------------------------------------------- the frame loop
+const frameTimes = [];
+let lastT = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - lastT) / 1000);
+  frameTimes.push(now - lastT);
+  if (frameTimes.length > 600) frameTimes.shift();
+  lastT = now;
+  if (play.on && cam.look) cam.look *= Math.max(0, 1 - dt * 0.8); // a look-around during play drifts back
+  stepWalk(dt);
+  judge();
+  updateLive(false);
+  if (W) drawWorld(dt, now);
+  requestAnimationFrame(frame);
+}
+// The faked find: a station is found inside its radius, only on a position the guide may judge by.
+function judge() {
+  if (M.phase === 'walk' && measurable()) {
+    for (const s of unfoundOffered()) if (dist(s) <= s.r) { arrive(s.id); break; }
+  }
+  if (M.phase === 'walk' && !M.headingReady && M.headingFrom && Math.hypot(cam.x - M.headingFrom.x, cam.z - M.headingFrom.z) > 3) {
+    M.headingReady = true;
+    M.headingFrom = null;
+    startWalk('Thank you. ');
+  }
+  // the present station: inside its radius on a judged position; it leaves a little past it
+  let present = null;
+  if (measurable() && M.phase !== 'paused') {
+    for (const s of STATIONS) {
+      const d = dist(s);
+      if (d <= s.r || (M.presentId === s.id && d <= s.r + 3)) { present = s.id; break; }
+    }
+  } else if (M.trust === 'weak' && M.presentId && dist(S(M.presentId)) <= S(M.presentId).r + 3) present = M.presentId;
+  M.presentId = present;
+}
+function drawWorld(dt, now) {
+  const { camera, renderer, scene, content, lamps } = W;
+  camera.position.set(cam.x, 1.6, cam.z);
+  camera.rotation.set(cam.pitch, viewYaw(), 0);
+  // content: fades in inside the radius, one station at a time
+  const k = Math.min(1, dt / 0.4);
+  const busy = [...content.entries()].some(([id, c]) => id !== M.presentId && c.op > 0.02);
+  for (const [id, c] of content) {
+    const target = id === M.presentId && !busy ? 1 : 0;
+    c.op += (target - c.op) * (target > c.op ? k * 2.2 : k * 2.6);
+    if (Math.abs(target - c.op) < 0.005) c.op = target;
+    c.g.visible = c.op > 0.003;
+    if (c.g.visible) {
+      c.mats.forEach((m) => { m.opacity = c.op; });
+      const s = S(id);
+      c.fig.rotation.y = Math.atan2(cam.x - (s.x + 1.4), cam.z - s.z);
+    }
+  }
+  // lamps: the guide's pointers; dim and unsteady on weak GPS, out without a position
+  const pointing = M.phase === 'walk' && M.headingReady && (measurable() || M.trust === 'weak');
+  const targets = new Set();
+  if (pointing) {
+    const u = unfoundOffered();
+    (isAny() ? u.slice().sort((a, b) => dist(a) - dist(b)).slice(0, 5) : u.slice(0, 1)).forEach((s) => targets.add(s.id));
+  }
+  const flick = M.trust === 'weak' ? 0.28 + 0.14 * Math.sin(now / 130) * Math.sin(now / 370) : 1;
+  for (const [id, l] of lamps) {
+    const target = targets.has(id) ? flick : 0;
+    l.op += (target - l.op) * Math.min(1, dt * 4);
+    l.lamp.visible = l.op > 0.01;
+    l.mats[0].opacity = l.op; l.mats[1].opacity = l.op; l.mats[2].opacity = l.op * 0.35;
+  }
+  // the edge cue for the focus station
+  const f = focus();
+  let side = '';
+  if (f && targets.has(f.id)) {
+    W.v.set(f.x, 9, f.z).project(camera);
+    const behind = Math.abs(relBearing(f)) > Math.PI / 2;
+    if (behind || Math.abs(W.v.x) > 0.96) side = relBearing(f) > 0 ? 'left' : 'right';
+  }
+  $('#edgeL').classList.toggle('show', side === 'left');
+  $('#edgeR').classList.toggle('show', side === 'right');
+  renderer.render(scene, camera);
+}
+
+// ---------------------------------------------------------------- the scripted walk
+const play = { on: false, tok: 0, walk: null };
+function stepWalk(dt) {
+  const w = play.walk;
+  if (!w) return;
+  const dx = w.x - cam.x, dz = w.z - cam.z, d = Math.hypot(dx, dz);
+  const want = Math.atan2(-dx, -dz);
+  let diff = want - cam.yaw;
+  while (diff > Math.PI) diff -= 2 * Math.PI;
+  while (diff < -Math.PI) diff += 2 * Math.PI;
+  cam.yaw += Math.max(-2.2 * dt, Math.min(2.2 * dt, diff));
+  if (Math.abs(diff) < 0.7 && d > 0.05) {
+    const step = Math.min(d, w.speed * dt * TS.k);
+    cam.x += (dx / d) * step; cam.z += (dz / d) * step;
+  }
+  if (d <= (w.stop || 0.3) || w.cancelled) { play.walk = null; w.done(); }
+}
+function walkTo(x, z, speed = 7, stop = 0.3) {
+  return new Promise((done) => { play.walk = { x, z, speed, stop, done }; });
+}
+function stopPlay() {
+  if (!play.on) return;
+  play.on = false;
+  play.tok++;
+  if (play.walk) { const w = play.walk; play.walk = null; w.done(); }
+  TS.k = 1;
+  $('#protoLabel').textContent = 'Prototype W3';
+  demoStatus();
+}
+const until = (cond, ms = 15000) => new Promise((res) => {
+  const t0 = performance.now();
+  const id = setInterval(() => { if (cond() || performance.now() - t0 > ms / TS.k) { clearInterval(id); res(); } }, 60);
+});
+async function choose(actName, ms = 1300) {
+  const btn = () => [...dom.chips.querySelectorAll('.chip')].find((b) => b.dataset.act === actName);
+  const b = btn();
+  if (!b) return false;
+  b.classList.add('auto');
+  await wait(ms);
+  const b2 = btn();
+  if (b2) { b2.click(); return true; }
+  return false; // the visitor tapped something else first
+}
+const wait = (ms) => new Promise((r) => setTimeout(r, ms / TS.k));
+async function storyAuto(lineMs = 2600, pick = 0) {
+  while (M.phase === 'story' || M.phase === 'arriving') {
+    if (M.phase === 'arriving') { await wait(300); continue; }
+    await wait(lineMs);
+    if (!M.story) break;
+    const acts = M.speech.chips.map((c) => c.act);
+    if (acts.includes('choice:' + pick)) await choose('choice:' + pick, 900);
+    else if (acts.includes('next')) await choose('next', 600);
+    else if (acts.includes('finish')) { await choose('finish', 700); break; }
+    else break;
+  }
+}
+
+async function playFixed(tok) {
+  const live = () => play.tok === tok;
+  enter('ar-starting'); await wait(2400); if (!live()) return;
+  enter('tracking-warming'); await wait(2800); if (!live()) return;
+  enter('scan-prompt'); await wait(3200); if (!live()) return;
+  codeSeen(); await wait(2600); if (!live()) return;
+  // to the gate, guided by the code
+  await wait(1800); if (!live()) return;
+  await walkTo(S('gate').x, S('gate').z, 6, 4); if (!live()) return;
+  await until(() => M.phase === 'story'); await storyAuto(); if (!live()) return;
+  await wait(2600); if (!live()) return;
+  // the code's hold ends: GPS from here; a weak patch on the way
+  setTrust('gps', 8); await wait(3000); if (!live()) return;
+  await walkTo(10, -55, 7); if (!live()) return;
+  setTrust('weak', 40); await wait(3600); if (!live()) return;
+  setTrust('gps', 6); await wait(2600); if (!live()) return;
+  await walkTo(S('well').x, S('well').z, 7, 4); if (!live()) return;
+  await until(() => M.phase === 'story'); if (!live()) return;
+  await wait(2600); await choose('endask', 900); await wait(900); await choose('endnow', 1000); if (!live()) return;
+  await wait(3600); if (!live()) return;
+  // leaving AR and coming back
+  leaveAr(); await wait(2800); if (!live()) return;
+  $('#backBtn').classList.add('auto'); await wait(500); $('#backBtn').classList.remove('auto');
+  backInAr(); await wait(2600); if (!live()) return;
+  await walkTo(30, -88, 3); if (!live()) return;
+  await wait(2400); if (!live()) return;
+  // toward the tower: the camera loses track, then the skip is suggested
+  await walkTo(50, -91, 7); if (!live()) return;
+  trackingLost(); await wait(3000); if (!live()) return;
+  trackingBack(); await wait(2200); if (!live()) return;
+  await walkTo(66, -97, 7); if (!live()) return;
+  suggestSkip(); await wait(2600); if (!live()) return;
+  await choose('skip:tower', 1100); await wait(3400); if (!live()) return;
+  // to the garden
+  await walkTo(S('garden').x, S('garden').z, 8, 5); if (!live()) return;
+  await until(() => M.phase === 'story'); await storyAuto(2400, 1); if (!live()) return;
+  await until(() => M.phase === 'complete', 8000);
+}
+async function playAny(tok) {
+  const live = () => play.tok === tok;
+  enter('ar-starting', { tour: 'any' }); await wait(2000); if (!live()) return;
+  enter('scan-prompt', { tour: 'any' }); await wait(2800); if (!live()) return;
+  codeSeen(); await wait(4200); if (!live()) return;
+  await walkTo(S('gate').x, S('gate').z, 6, 4); if (!live()) return;
+  await until(() => M.phase === 'story'); await wait(2400); await choose('endask', 800); await wait(700); await choose('endnow', 900); if (!live()) return;
+  await wait(3000); if (!live()) return;
+  // the code's hold ends with no usable GPS: the open question
+  setTrust('none'); await wait(3400); if (!live()) return;
+  await choose('cant', 1000); await wait(3200); if (!live()) return;
+  await choose('skip:tower', 1100); await wait(3200); if (!live()) return;
+  await wait(3000); await choose('code', 900); await wait(2600); if (!live()) return;
+  codeSeen(); await wait(3600); if (!live()) return;
+  await walkTo(S('well').x, S('well').z, 7, 4); if (!live()) return;
+  await until(() => M.phase === 'story'); await wait(2400); await choose('endask', 800); await wait(700); await choose('endnow', 900); if (!live()) return;
+  await wait(3200); if (!live()) return;
+  await walkTo(S('garden').x, S('garden').z, 8, 5); if (!live()) return;
+  await until(() => M.phase === 'story'); await storyAuto(2200, 0); if (!live()) return;
+  await until(() => M.phase === 'complete', 8000);
+}
+async function runPlay(which = M.tour, speed = 1) {
+  stopPlay();
+  play.on = true;
+  const tok = ++play.tok;
+  TS.k = speed;
+  $('#protoLabel').textContent = 'Playing the walk';
+  demoStatus();
+  try { await (which === 'any' ? playAny(tok) : playFixed(tok)); }
+  finally { if (play.tok === tok) { play.on = false; TS.k = 1; $('#protoLabel').textContent = 'Prototype W3'; demoStatus(); } }
+  return M.phase;
+}
+
+// ---------------------------------------------------------------- the states (each a snapshot of the walk)
+function base(tour, st = {}) {
+  clearTimers();
+  clearTimeout(quietTimer);
+  M.tour = tour;
+  resetTour();
+  Object.assign(M.status, st);
+  Object.assign(M, { phase: 'walk', trust: 'code', acc: 0, story: null, headingReady: true, headingFrom: null, quiet: false, undo: null, scanFound: false, chaptersOpen: false, presentId: null, pickList: false, speech: null });
+  cam.look = 0; cam.pitch = -0.02;
+  $('#chapterCard').classList.remove('show');
+}
+function camAt(x, z, faceId, offDeg = 0) {
+  cam.x = x; cam.z = z;
+  const s = typeof faceId === 'string' ? S(faceId) : { x: faceId[0], z: faceId[1] };
+  cam.yaw = Math.atan2(-(s.x - x), -(s.z - z)) + offDeg * DEG;
+}
+const lerp = (a, b, t) => [a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t];
+const G2W = (t) => lerp(S('gate'), S('well'), t);
+const W2T = (t) => lerp(S('well'), S('tower'), t);
+const PRESETS = {
+  'ar-starting': (o) => { base(o.tour || 'fixed'); camAt(0, 2, 'gate', 8); M.phase = 'starting'; M.trust = 'pending'; speak({ text: 'Starting the camera…', quietAfter: 0 }); },
+  'tracking-warming': (o) => { base(o.tour || 'fixed'); camAt(0, 2, 'gate', 30); M.phase = 'warming'; M.trust = 'pending'; speak({ text: "Hold the phone steady a moment - I'm getting my bearings.", quietAfter: 0 }); },
+  'tracking-lost': () => { base('fixed', { gate: 'done', well: 'done' }); camAt(...W2T(0.22), 'tower', -10); M.trust = 'gps'; M.acc = 6; trackingLost(); },
+  'waiting-position': () => { base('fixed'); camAt(0, 2, 'gate', 20); M.trust = 'pending'; speak({ text: walkLine(), chips: walkChips(), quietAfter: 0 }); },
+  'scan-prompt': (o) => { base(o.tour || 'fixed'); camAt(0, 1.5, [2.3, -4.5], -11); cam.pitch = 0.2; toScan(); },
+  'code-lined-up': () => { base('fixed'); camAt(0, 1.5, [2.3, -4.5], -16); cam.pitch = 0.2; M.phase = 'scan'; M.scanFound = true; M.trust = 'code'; speak({ text: 'Got it - now I know exactly where we stand.', quietAfter: 0 }); },
+  'guided-code': () => { base('fixed'); camAt(0, 2, 'gate', 4); startWalk(); },
+  'guided-gps': () => { base('fixed', { gate: 'done' }); camAt(...G2W(0.12), 'well', -6); M.trust = 'gps'; M.acc = 8; startWalk("From here I'm going by GPS, good to about 8 m. "); },
+  'gps-weak': () => { base('fixed', { gate: 'done' }); camAt(...G2W(0.45), 'well', 12); M.trust = 'weak'; M.acc = 40; startWalk(); },
+  'no-trust': () => { base('fixed', { gate: 'done' }); camAt(...G2W(0.5), 'well', 8); M.trust = 'none'; startWalk(); },
+  'on-the-way': () => { base('fixed', { gate: 'done', well: 'done' }); camAt(...W2T(0.35), 'tower', 28); M.trust = 'gps'; M.acc = 6; startWalk(); M.quiet = true; render(true); },
+  'behind-you': () => { base('fixed', { gate: 'done', well: 'done' }); camAt(...W2T(0.35), 'tower', 160); M.trust = 'gps'; M.acc = 6; startWalk(); M.quiet = true; render(true); },
+  'where-am-i': () => { base('fixed', { gate: 'done', well: 'done' }); camAt(...W2T(0.35), 'tower', 6); M.trust = 'gps'; M.acc = 6; M.phase = 'walk'; whereAmI(); },
+  'arriving': () => { base('fixed', { gate: 'done' }); camAt(19, -79, 'well', 0); M.trust = 'gps'; M.acc = 6; M.presentId = 'well'; arrive('well'); },
+  'story': () => { base('fixed', { gate: 'done', well: 'found' }); camAt(19, -79, 'well', 0); M.trust = 'gps'; M.acc = 6; M.presentId = 'well'; beginStory('well', 1); },
+  'story-end-ask': () => { base('fixed', { gate: 'done', well: 'found' }); camAt(19, -79, 'well', 0); M.trust = 'gps'; M.acc = 6; M.presentId = 'well'; beginStory('well', 1); endAsk(); },
+  'chapter-done': () => { base('fixed', { gate: 'done', well: 'found' }); camAt(19, -79, 'tower', 0); M.trust = 'gps'; M.acc = 6; M.presentId = 'well'; M.story = { id: 'well', step: 2, sub: null }; endStory(); },
+  'skip-ask': () => { base('fixed', { gate: 'done', well: 'done' }); camAt(...W2T(0.35), 'tower', 4); M.trust = 'gps'; M.acc = 6; askSkip(); },
+  'skip-suggested': () => { base('fixed', { gate: 'done', well: 'done' }); camAt(...W2T(0.36), 'tower', -4); M.trust = 'gps'; M.acc = 6; suggestSkip(); },
+  'skip-undo': () => { base('fixed', { gate: 'done', well: 'done' }); camAt(...W2T(0.36), 'garden', 0); M.trust = 'gps'; M.acc = 6; M.lastGuide = walkLine(); doSkip('tower'); },
+  'any-order': () => { base('any', { gate: 'done' }); camAt(3, -36, 'well', 10); M.trust = 'gps'; M.acc = 7; startWalk(); },
+  'any-order-list': () => { base('any', { gate: 'done' }); camAt(3, -36, 'well', 10); M.trust = 'gps'; M.acc = 7; startWalk(); M.chaptersOpen = true; M.quiet = true; render(true); },
+  'any-no-trust': () => { base('any', { gate: 'done' }); camAt(3, -36, 'well', 10); setTrust('none', 0, false); startWalk("The code's hold has ended. "); },
+  'any-no-trust-skip': () => { base('any', { gate: 'done' }); camAt(3, -36, 'well', 10); M.trust = 'none'; askSkip(); },
+  'tour-complete': () => { base('fixed', { gate: 'done', well: 'done', tower: 'skipped', garden: 'done' }); camAt(70, -14, 'garden', 0); M.trust = 'gps'; M.acc = 5; complete(); },
+  'left-ar': () => { base('fixed', { gate: 'done', well: 'done' }); camAt(19, -79, 'tower', 0); M.trust = 'gps'; M.acc = 6; leaveAr(); },
+  'back-in-ar': () => { base('fixed', { gate: 'done', well: 'done' }); camAt(19, -79, 'tower', 40); M.trust = 'gps'; M.acc = 6; backInAr(); },
+};
+const STATE_GROUPS = [
+  ['AR and tracking', ['ar-starting', 'tracking-warming', 'tracking-lost']],
+  ['Position', ['waiting-position', 'scan-prompt', 'code-lined-up']],
+  ['Precision', ['guided-code', 'guided-gps', 'gps-weak', 'no-trust', 'where-am-i']],
+  ['On the way', ['on-the-way', 'behind-you']],
+  ['Arriving', ['arriving', 'story', 'story-end-ask', 'chapter-done']],
+  ["Can't get there", ['skip-ask', 'skip-suggested', 'skip-undo']],
+  ['Any order', ['any-order', 'any-order-list', 'any-no-trust', 'any-no-trust-skip']],
+  ['End, leave, return', ['tour-complete', 'left-ar', 'back-in-ar']],
+];
+function enter(name, o = {}) {
+  const p = PRESETS[name];
+  if (!p) throw new Error('unknown state: ' + name);
+  play.walk = null;
+  p(o);
+  M.stateName = name;
+  render(true);
+  demoStatus();
+}
+
+// ---------------------------------------------------------------- demo panel and the design note
+(function demo() {
+  const box = $('#dStates');
+  for (const [g, names] of STATE_GROUPS) {
+    const h = document.createElement('div'); h.className = 'grp'; h.style.gridColumn = '1 / -1'; h.textContent = g; box.appendChild(h);
+    for (const n of names) {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = n; b.dataset.state = n;
+      b.addEventListener('click', () => { stopPlay(); enter(n); if (matchMedia('(max-width: 959px), (max-height: 719px)').matches) setDemo(false); });
+      box.appendChild(b);
+    }
+  }
+  $('#dPlay').addEventListener('click', () => { runPlay(M.tour); if (matchMedia('(max-width: 959px), (max-height: 719px)').matches) setDemo(false); });
+  $('#dStop').addEventListener('click', stopPlay);
+  const setTour = (t) => {
+    stopPlay();
+    $('#dFixed').setAttribute('aria-pressed', String(t === 'fixed'));
+    $('#dAny').setAttribute('aria-pressed', String(t === 'any'));
+    enter(t === 'any' ? 'any-order' : 'guided-code');
+  };
+  $('#dFixed').addEventListener('click', () => setTour('fixed'));
+  $('#dAny').addEventListener('click', () => setTour('any'));
+  $('#dSkipClock').addEventListener('click', () => { if (M.phase === 'walk' && measurable() && focus()) suggestSkip(); else { stopPlay(); enter('skip-suggested'); } });
+  const setDemo = (open) => { $('#demo').hidden = !open; $('#demoBtn').setAttribute('aria-expanded', String(open)); };
+  $('#demoBtn').addEventListener('click', () => setDemo($('#demo').hidden));
+  if (location.hash.includes('states')) setDemo(true);
+  window.addEventListener('hashchange', () => { if (location.hash.includes('states')) setDemo(true); });
+})();
+function demoStatus() {
+  const st = $('#dStatus');
+  if (!st) return;
+  st.textContent = (play.on ? 'Playing · ' : '') + 'state: ' + (M.stateName || '-') + ' · phase: ' + M.phase + ' · trust: ' + M.trust;
+  document.querySelectorAll('#dStates button').forEach((b) => b.classList.toggle('cur', b.dataset.state === M.stateName));
+  $('#dFixed').setAttribute('aria-pressed', String(M.tour === 'fixed'));
+  $('#dAny').setAttribute('aria-pressed', String(M.tour === 'any'));
+}
+$('#noteBtn').addEventListener('click', () => { $('#note').hidden = false; $('#noteClose').focus(); });
+$('#noteClose').addEventListener('click', () => { $('#note').hidden = true; });
+$('#strip').addEventListener('click', () => { M.chaptersOpen = !M.chaptersOpen; render(); });
+$('#avwrap').addEventListener('click', () => {
+  if (M.phase === 'walk') act('again');
+  else { M.quiet = false; render(true); }
+});
+$('#exitBtn').addEventListener('click', () => { stopPlay(); leaveAr(); M.stateName = 'left-ar'; demoStatus(); });
+$('#backBtn').addEventListener('click', () => {
+  if (!left().length) { stopPlay(); enter('guided-code'); return; }
+  backInAr(); M.stateName = 'back-in-ar'; demoStatus();
+});
+$('#endLeave').addEventListener('click', () => { stopPlay(); leaveAr(); });
+$('#demoSeen').addEventListener('click', codeSeen);
+// the texts table in the design note
+(function noteTexts() {
+  const rows = [
+    ['Next station (fixed)', 'Next: The well, 30 m', 'Head for the well, about 30 m ahead.'],
+    ['Next station (any order)', '3 stations to find - nearest: The well, 60 m', 'Three places left, in any order. The nearest is the well, about 60 m ahead.'],
+    ['Waiting for a position', '... - waiting for your position…', "One moment - I'm still finding where you are."],
+    ['GPS too weak', 'GPS too weak to guide you (±40 m); step into the open.', 'My GPS is too rough here - about 40 m. Step into the open, or show me one of the codes.'],
+    ['No trusted position', "Next: The well - scan one of the tour's codes so the guide knows where you are.", "I have lost you - show me one of the tour's codes."],
+    ['Found', 'Station found - its story is playing.', 'Here we are - the well. The water carrier has a story for you.'],
+    ['Heading wait', 'Walk a few steps so the guide knows the direction.', 'Walk a few steps so I know which way you are facing.'],
+    ['Skip (two taps)', "Can't get there? → Skip The tower - I can't get there", "I can't get there → (the guide: Can't reach the tower? I'll skip it...) → Skip The tower - I can't get there"],
+    ['Skip done / undo', 'Skipped The tower. · Undo: bring back The tower · Brought back The tower.', 'unchanged, spoken by the guide'],
+    ['Ending a story', 'End this story? → End the story of The well now', 'unchanged, as replies'],
+    ['Tour complete', 'Tour complete - every station visited. / Tour complete - 1 skipped.', 'unchanged on the closing card, with the guide\'s goodbye'],
+    ['Scan', 'Scan the code again so the tour can start · Skip - use GPS only (less exact)', "unchanged on S1's card; the guide adds: Show me the tour's code on the poster, and I'll know exactly where we stand."],
+    ['Tracking warming up / lost', "the framework's coaching hints", "Hold the phone steady a moment - I'm getting my bearings. / I can't see where we are any more. Point the camera at something with detail, and move slowly."],
+    ['New: Where am I?', '-', 'A code placed us, so I know where you are to a step or two. / By GPS, give or take 8 m. / ... too rough to guide you by. / I don\'t know. The code\'s hold has ended and there is no usable GPS.'],
+    ['New: skip suggested', '(the button turns one-tap)', "The tower is further than it looks. If you can't get there, I can skip it."],
+    ['New: no-trust skip (any order)', '(skip follows the nearest by the untrusted position)', "I can't tell where you are, so I won't guess which one is closest. Which can't you reach?"],
+  ];
+  $('#noteTexts').replaceChildren(...rows.map(([w, now, w3]) => {
+    const d = document.createElement('div');
+    d.innerHTML = '<b></b><q class="now"></q><q class="w3"></q>';
+    d.children[0].textContent = w;
+    d.children[1].textContent = 'Today: ' + now;
+    d.children[2].textContent = 'W3: ' + w3;
+    return d;
+  }));
+})();
+
+// ---------------------------------------------------------------- test hook
+// window.__visitorWalk drives this prototype only (no app logic behind it):
+//   states()        - the names of every state the switcher can jump to;
+//   goto(name)      - stops any playing walk and sets up that state's snapshot
+//                     (tour, progress, trust, camera pose and the guide's line);
+//                     a state's own timers (the bubble folding away, the undo window,
+//                     the arrival handing over to the story) then run as usual;
+//   play(tour?, speed?) - runs the scripted walk ('fixed' by default, or 'any') and
+//                     resolves with the final phase ('complete' when it reached the end);
+//                     speed > 1 shortens every wait and walk for tests;
+//   state()         - { name, phase, trust, tour, status } of the snapshot now shown;
+//   frameMs()       - the mean of the last 600 frame intervals in ms.
+window.__visitorWalk = {
+  states: () => STATE_GROUPS.flatMap(([, n]) => n),
+  goto: (name) => { stopPlay(); enter(name); return M.stateName; },
+  play: (tour = 'fixed', speed = 1) => runPlay(tour, speed),
+  state: () => ({ name: M.stateName, phase: M.phase, trust: M.trust, tour: M.tour, status: { ...M.status } }),
+  frameMs: () => frameTimes.length ? frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length : NaN,
+};
+
+// ---------------------------------------------------------------- start
+enter('guided-code');
+requestAnimationFrame(frame);
+initWorld().then((w) => { W = w; });
+</script>
+</body>
+</html>

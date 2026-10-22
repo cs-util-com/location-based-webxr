@@ -87,6 +87,17 @@ const APP_OVERLAY_CONTRACTS = [
       'setup-panel',
       'size-offer',
       'scan-escape',
+      // The visitor walk in AR (W4 build plan M2): over the camera, so in
+      // the overlay.
+      'walk-sheet',
+      'walk-coach',
+      'walk-toast-root',
+      // The radar and its precision chip (W4 build plan M3).
+      'walk-radar-wrap',
+      'walk-radar',
+      'walk-precision',
+      // The focus's edge pill.
+      'walk-edge-pill',
     ],
   },
 ];

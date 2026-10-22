@@ -31,9 +31,6 @@ const CODE_LINE =
 const STATION_LINE =
   "A station of the story: visitors reach it here. Its steps are edited in a later version.";
 
-const RECORDED_LINE =
-  "Recorded on the walk and placed for visitors when the tour was finished.";
-
 export interface EditorCardDom {
   readonly card: HTMLElement;
   readonly inner: HTMLElement;
@@ -70,8 +67,13 @@ export interface EditorCard {
   show(item: EditorItem, view?: CardView): void;
   hide(): void;
   /** Follow the marker: `anchor` its ground point in window pixels (null
-   *  without one), `free` the window's free part. */
-  place(anchor: { x: number; y: number } | null, free: Box): void;
+   *  without one), `free` the window's free part, `avoid` a box in it the
+   *  card keeps clear of (`placePopover`). */
+  place(
+    anchor: { x: number; y: number } | null,
+    free: Box,
+    avoid?: Box | null,
+  ): void;
   /** The item shown, or null. */
   shown(): EditorItem | null;
   /** Set the outcome line in place - no rebuild, so a click that blurred
@@ -86,15 +88,14 @@ export interface EditorCard {
 function kindLabel(item: EditorItem): string {
   if (item.kind === "code") return item.title;
   if (item.kind === "station") return "Station";
-  if (item.recorded === true) return "Recorded photo";
   return item.kind === "photo" ? "Photo note" : "Pin note";
 }
 
 export function createEditorCard(
   dom: EditorCardDom,
   deps: {
-    /** A photo's bytes from the open tour (`TourSession.loadContentEntry`
-     *  for a placed photo, `loadEntry` for a recorded one). */
+    /** A photo's bytes from the open tour
+     *  (`TourSession.loadContentEntry`). */
     readonly loadImage: (item: EditorItem) => Promise<Blob>;
     readonly onClose: () => void;
     readonly onReveal: () => void;
@@ -313,9 +314,7 @@ export function createEditorCard(
             ? CODE_LINE
             : item.kind === "station"
               ? STATION_LINE
-              : item.recorded === true
-                ? RECORDED_LINE
-                : PRECISION_LINE,
+              : PRECISION_LINE,
         ),
         line(item.meta),
       );
@@ -358,7 +357,7 @@ export function createEditorCard(
       dom.chip.hidden = true;
       dom.inner.replaceChildren();
     },
-    place(anchor, free) {
+    place(anchor, free, avoid) {
       if (current === null) return;
       // Never wider than the free area: on a phone a 320 px card covered
       // the folded rail (E1 review #7).
@@ -389,6 +388,7 @@ export function createEditorCard(
           height: dom.card.offsetHeight,
         },
         free,
+        avoid,
       });
       if (!placement.visible) {
         dom.card.hidden = true;

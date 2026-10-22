@@ -22,13 +22,23 @@ queryGeolocationPermission;
 requestLocationOnce; shareOrDownloadZip; downloadZip; canShareZip; downloadPdf; openPdfTab; copyText;
 startHitTestReticle; pickObjectInView; encodeFrameJpeg;
 createLabel; schedule; createWayfindingHud; loadGlbModel;
-createAudioElement }`
-  - `createWayfindingHud({ getTargets })` (tour kit plan K4) - the
+createAudioElement; xrProjection0 }`
+  - `xrProjection0()` - the session
+    camera's `projectionMatrix.elements[0]`, null without a camera; the
+    radar's view cone is `2*atan(1/P[0])` (`walk-radar-model.ts`
+    `walkRadarFovDeg`), its fallback the prototype's camera (64 deg vertical on a
+    screen taller than wide, else 44 deg) at the screen's aspect.
+    Not faked in the e2e: no camera, so the fallback cone.
+  - `createWayfindingHud({ getTargets, look? })` (tour kit plan K4) - the
     framework's wayfinding HUD over the session camera (`getCamera()`),
     null while there is none; the station targets carry their own arrival
     band, and the HUD-level band is `station-bands.ts`'s floors (1.5 m /
-    3.0 m). The e2e fake records the targets getter instead.
-  - `loadGlbModel(blob)` (K4) - three's `GLTFLoader`, imported on first
+    3.0 m). `look` spreads `walk-hud.ts`'s `WALK_HUD_LOOKS[look]`: the
+    station the walk is about in orange at 1.25 times the size, the
+    others white; without one the framework's defaults. The e2e fake
+    records the targets getter and the look instead.
+  - `loadGlbModel(blob)` (K4) - `glb-model.ts`, shared with the desktop
+    editor's 3D view: three's `GLTFLoader`, imported on first
     use (a visitor without a model never downloads it), `parseAsync` with
     no path, no DRACO, KTX2 or meshopt decoder: the tour session already
     refused external URIs and decoder extensions (`checkGlbInert`, K0).
@@ -59,7 +69,8 @@ createAudioElement }`
     reticle under the world group; the camera frame → JPEG encoder, which is
     the framework's `rgbaImageToJpegBlob` behind an opacity guard, async
     throughout; the framework text sprite for a pin's label at a 2:1
-    canvas/scale with a transparent pill) and the
+    canvas/scale with a transparent pill, `createLabel`, which is
+    `pin-label.ts`'s recipe, shared with the desktop editor's 3D view) and the
     one-shot clock behind the scan gate's escape (M5; the e2e fires it instead
     of waiting); `startDepthCapture` / `stopDepthCapture` are the framework's
     depth sampler controls, used by an entry that asks for depth: every

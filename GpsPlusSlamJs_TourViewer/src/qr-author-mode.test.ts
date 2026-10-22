@@ -761,3 +761,6 @@ describe("driveFileAddress (polish round M2, step 6)", () => {
     expect(driveFileAddress("https://example.com/file/d/AbC/view")).toBeNull();
   });
 });
+
+// (The tests of `walkBakeLine`, the line about the bake at open, stood
+// here: the open bakes no walk any more, and the line went with it.)

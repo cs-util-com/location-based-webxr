@@ -122,6 +122,10 @@ export interface StationPrefetch {
   ahead(station: TourStation): void;
   /** A station is done: the media only it needed may be released. */
   done(stationId: string): void;
+  /** A done station was brought back: it waits
+   *  again, so its media are no longer releasable for it, and a path
+   *  released meanwhile is read again on its next approach. */
+  undone(stationId: string): void;
   /** Read an asset: from the cache, joining a read in flight, or now. */
   load(path: string): Promise<Blob>;
   /** Bytes held (for the budget's test). */
@@ -301,6 +305,10 @@ export function createStationPrefetch(deps: {
     done(stationId) {
       sync();
       if (!doneSeq.has(stationId)) doneSeq.set(stationId, (doneCount += 1));
+    },
+    undone(stationId) {
+      sync();
+      doneSeq.delete(stationId);
     },
     load(path) {
       sync();

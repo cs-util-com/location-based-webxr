@@ -34,7 +34,15 @@ elapsedMs: 0, progress: 0, done: false }`: the cold pace before the
     signals land on shared frame boundaries. When a signal lands between
     frames, the coarser clock acts on it up to one frame later, so the two
     differ by at most (warm - cold) x the coarse frame (48 ms: about 0.44 %
-    of the path at the defaults).
+    of the path at the defaults). That bound is for a progress that does
+    not fall, which is what the prefetch reports (`cityLoadProgress`: each
+    job counted once against fixed totals). A progress that rises and
+    falls back between two coarse frames is read by the finer clock only:
+    the clock is given samples and cannot act on a value it is never
+    given, so the two clocks then fly different targets for the rest of
+    the path (seed 769195592: 0.0211 apart against a bound of 0.0167,
+    pinned in `flight-pace.test.ts`). The ratchet still keeps such a fall
+    from slowing either clock down.
   - Once the progress reaches 1 at a state with path fraction `s_d`, the
     flight ends within `(1 - s_d) x minMs + smoothingMs` (plus one frame).
   - Defensive: a NaN or negative progress is "no signal" (0); above 1 is 1;
@@ -75,4 +83,5 @@ elapsedMs: 0, progress: 0, done: false }`: the cold pace before the
 - Tests: `flight-pace.test.ts` (worked timelines, validation) and
   `flight-pace.property.test.ts` (the invariants over random parameters,
   progress histories and frame steps, including signals that land between
-  frames).
+  frames; that property draws histories that do not fall, the others
+  histories that do).

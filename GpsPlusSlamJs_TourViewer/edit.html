@@ -12,6 +12,41 @@
   <body>
     <div id="map" aria-label="Tour map"></div>
 
+    <!-- The 3D view (view-switch.ts, src/editor3d/): over the map while it
+         shows, its code loaded only when the switch asks for it. The
+         panels stay above it; the credits are the relief's and the map's. -->
+    <div id="view3d" aria-label="The tour in 3D" hidden>
+      <p class="view3d-credits" id="view3d-credits"></p>
+    </div>
+
+    <!-- The debug layer (debug-capture-layer.ts): the walk's camera
+         captures on the map, for a tour whose file carries a walk or with
+         debug data added beside it ("Add debug data…", a file input or a
+         drop on this panel; added-debug-data.ts). Debug data, never the
+         tour's content: an added file is never saved, drafted or kept
+         across a reload. The switch only while the layer shows something. -->
+    <div
+      id="debug-panel"
+      class="panel debug-panel"
+      aria-label="Debug data"
+      hidden
+    >
+      <label class="debug-data" id="debug-switch" hidden>
+        <input type="checkbox" id="debug-data-input" checked />
+        Show debug data
+      </label>
+      <span id="debug-status" role="status" aria-live="polite"></span>
+      <button class="btn debug-add" id="debug-add" type="button">
+        Add debug data…
+      </button>
+      <input
+        type="file"
+        id="debug-add-input"
+        accept=".zip,application/zip"
+        hidden
+      />
+    </div>
+
     <header id="topbar" class="panel" hidden>
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">T</div>
@@ -28,9 +63,12 @@
         </div>
       </div>
       <div class="topbar-spacer"></div>
+      <!-- The view switch: the map or the 3D view of the same tour; it says
+           when the 3D view loads and why it could not open. -->
+      <button class="btn" id="view-switch" type="button">3D view</button>
       <label class="keep-walk" id="keep-walk" hidden>
         <input type="checkbox" id="keep-walk-input" />
-        Keep the walk recording in the saved file
+        Keep the debug data in the tour file
       </label>
       <span id="save-status" role="status" aria-live="polite" data-state="clean"
         >No changes</span
@@ -286,7 +324,7 @@
 
     <!-- "Done" (W2 of the tour editor plan, D18, D19): where the changes
          are, how the tour at its link is updated, that a file at a link is
-         public, and - while the file carries the walk - "Move the walk out"
+         public, and - while the file carries the walk - "Move the debug data out"
          (done-dialog.ts). The Drive-mount tip is off until the owner's
          check (DRIVE_MOUNT_TIP_SHOWN). -->
     <div class="backdrop" id="done-modal" hidden>
@@ -304,10 +342,13 @@
         <p id="done-update"></p>
         <p class="note-line" id="done-public"></p>
         <p class="note-line" id="done-drive-tip" hidden></p>
-        <section id="done-walk" aria-label="The walk recording" hidden>
+        <section id="done-walk" aria-label="The debug data" hidden>
           <p class="note-line warn" id="done-walk-text"></p>
           <button class="btn" id="done-move" type="button">
-            Move the walk out
+            Move the debug data out
+          </button>
+          <button class="btn" id="done-save-debug" type="button" hidden>
+            Save the debug data
           </button>
           <p id="done-move-status" role="status" aria-live="polite"></p>
         </section>

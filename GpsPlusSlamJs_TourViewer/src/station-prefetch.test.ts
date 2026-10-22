@@ -310,6 +310,37 @@ describe("createStationPrefetch", () => {
     expect(h.reads.at(-1)).toBe("content/knight.png");
   });
 
+  // Why this test matters: a skipped
+  // station can be brought back at any time, after its skip settled and
+  // told the prefetch it was done. Without `undone` it stayed "done" for
+  // good: the first to be released although the visitor now walks to it.
+  it("a station brought back is no longer released first, and one already released is read again", async () => {
+    const h = harness(100);
+    h.prefetch.approach(station("a", ["knight"]), 10, 38);
+    await h.land(60);
+    h.prefetch.done("a");
+    h.prefetch.undone("a");
+    // a waits again: c does not fit without releasing it, and is not kept.
+    h.prefetch.approach(station("c", ["big"]), 10, 38);
+    await h.land(60);
+    expect(h.prefetch.heldBytes()).toBe(60);
+    void h.prefetch.load("content/knight.png");
+    expect(h.reads).toEqual(["content/knight.png", "content/big.png"]);
+    // Done again and released for d; brought back once more, its approach
+    // reads it again and holds it ahead of the done d.
+    h.prefetch.done("a");
+    h.prefetch.approach(station("d", ["arch"]), 10, 38);
+    await h.land(60);
+    h.prefetch.done("d");
+    h.prefetch.undone("a");
+    h.prefetch.approach(station("a", ["knight"]), 10, 38);
+    expect(h.reads.at(-1)).toBe("content/knight.png");
+    await h.land(60);
+    expect(h.prefetch.heldBytes()).toBe(60);
+    void h.prefetch.load("content/knight.png");
+    expect(h.reads.filter((p) => p === "content/knight.png")).toHaveLength(2);
+  });
+
   it("a tour change drops everything, and a read landing after it is not kept", async () => {
     const h = harness();
     h.prefetch.approach(station("gate", ["knight", "arch"]), 10, 38);

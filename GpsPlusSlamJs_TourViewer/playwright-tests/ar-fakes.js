@@ -177,16 +177,27 @@ export async function installTourViewerArFakes(page, options = {}) {
         /** Photos "encoded" by the fake (a 3-byte stand-in per capture). */
         encodedFrames: 0,
         /** The stations' HUD (tour kit plan K4): the targets getter the
-         *  page handed the last HUD it started, how many it started, and
-         *  whether that one was disposed. */
+         *  page handed the last HUD it started (the walk's two together),
+         *  how many it started, and whether that one was disposed. */
         hud: /** @type {null | { getTargets: () => any[], disposed: boolean }} */ (
           null
         ),
         hudStarts: 0,
+        /** Every HUD the page started, with its look, and the HUDs of the
+         *  last start (the walk starts two together). */
+        huds: /** @type {{ getTargets: () => any[], look: string | null, disposed: boolean }[]} */ ([]),
+        hudPair:
+          /** @type {{ getTargets: () => any[], look: string | null, disposed: boolean }[]} */ ([]),
         /** Every source the stories' one audio element was asked to play
          *  (K4), and how many audio elements the page made. */
         audioPlays: /** @type {string[]} */ ([]),
         audioElements: 0,
+        /** The AR start: hold the next
+         *  initAR until `releaseInitAR()` (the coach's "Starting AR…"
+         *  stays up), or fail it once (`failNextInitAR`). */
+        holdInitAR: false,
+        releaseInitAR: () => undefined,
+        failNextInitAR: false,
         /** The scan gate's escape clock (M5): armed timers the spec fires. */
         timers:
           /** @type {{ fn: () => void, ms: number, cancelled: boolean }[]} */ ([]),
@@ -203,6 +214,10 @@ export async function installTourViewerArFakes(page, options = {}) {
          *  seam): `{ position: {x, y, z}, orientation: {x, y, z, w} }`,
          *  raw WebXR, or null (the handler then drops the fix). */
         arPose: /** @type {any} */ (null),
+        /** The camera's orientation every later fix's pose carries (raw
+         *  WebXR quaternion; `faceBearing` sets it): the identity looks
+         *  along raw -Z. */
+        facing: { x: 0, y: 0, z: 0, w: 1 },
         /** The GPS watch the session started (the controller's
          *  `startGpsWatch`), and a fix delivered through it - the page's
          *  own path: coordinator, `recordDeviceFix`, the vote sink. */
@@ -216,7 +231,7 @@ export async function installTourViewerArFakes(page, options = {}) {
           const [x, y, z] = fix.arPosition;
           test.arPose = {
             position: { x, y, z },
-            orientation: { x: 0, y: 0, z: 0, w: 1 },
+            orientation: { ...test.facing },
           };
           test.gpsCallback?.({
             lat: fix.lat,
@@ -312,6 +327,10 @@ export async function installTourViewerArFakes(page, options = {}) {
           stopGpsWatch: () => {},
           stopOrientationWatch: () => {},
           initAR: (container, isolationOptions, features, callbacks) => {
+            if (test.failNextInitAR) {
+              test.failNextInitAR = false;
+              return Promise.reject(new Error("The camera could not start."));
+            }
             // As the framework does (webxr-session.ts initAR): a canvas the
             // size of the window, inserted as the overlay root's FIRST child.
             // Without it no e2e could see a panel pushed below the screen by
@@ -334,7 +353,13 @@ export async function installTourViewerArFakes(page, options = {}) {
             // The controller's WRAPPED onSessionEnd — invoking it simulates
             // the XR session dying out from under the app.
             test.sessionEndCallback = callbacks?.onSessionEnd ?? null;
-            return Promise.resolve();
+            if (!test.holdInitAR) return Promise.resolve();
+            return new Promise((resolve) => {
+              test.releaseInitAR = () => {
+                test.holdInitAR = false;
+                resolve(undefined);
+              };
+            });
           },
           endARSession: () => {
             test.endARSessionCalls += 1;
@@ -489,10 +514,28 @@ export async function installTourViewerArFakes(page, options = {}) {
         },
         // The stations' HUD (K4): no camera here, so the spec reads the
         // targets the page would point at.
+        // The walk runs two HUDs, the focus's and the others' (their
+        // `look`): each start is kept in `test.huds`, and `test.hud` reads
+        // as the one HUD a spec asserts on - the targets of the HUDs of the
+        // last start together, the focus's first, disposed once all are.
         createWayfindingHud: (options) => {
           test.hudStarts += 1;
-          const handle = { getTargets: options.getTargets, disposed: false };
-          test.hud = handle;
+          const handle = {
+            getTargets: options.getTargets,
+            look: options.look ?? null,
+            disposed: false,
+          };
+          // A start with the focus's look begins a new pair.
+          if (handle.look !== "others") test.hudPair = [];
+          test.hudPair.push(handle);
+          test.huds.push(handle);
+          const pair = test.hudPair;
+          test.hud = {
+            getTargets: () => pair.flatMap((h) => h.getTargets()),
+            get disposed() {
+              return pair.every((h) => h.disposed);
+            },
+          };
           return {
             dispose() {
               handle.disposed = true;
@@ -695,10 +738,17 @@ const DEG_PER_M_LON = 1.32966e-5;
  * GPS-world terms: the fix reads that spot, and the AR pose is that spot
  * taken back through the store's CURRENT alignment (whatever the code's
  * votes made of it), so the camera stands exactly there.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {number} north
+ * @param {number} east
+ * @param {number | "now"} second the fix's second on the fakes' clock,
+ *   or "now": a fix the guide's wall clock calls fresh
+ * @param {number} [accuracy]
  */
-export async function standAt(page, north, east, second) {
+export async function standAt(page, north, east, second, accuracy = 4) {
   await page.evaluate(
-    ({ north, east, lat, lon, timestamp }) => {
+    ({ north, east, lat, lon, timestamp, accuracy }) => {
       const test = /** @type {any} */ (window).__tourViewerTest;
       const m =
         test.alignmentStore.getState().gpsData?.gpsEvents?.alignmentMatrix;
@@ -714,8 +764,9 @@ export async function standAt(page, north, east, second) {
       test.emitGps({
         lat,
         lon,
-        accuracy: 4,
-        timestamp,
+        accuracy,
+        // A fix of now (`second` "now"): fresh to the guide's clock.
+        timestamp: timestamp ?? Date.now(),
         arPosition: [e, u, -n], // raw WebXR: x East, y Up, z South
       });
     },
@@ -724,9 +775,73 @@ export async function standAt(page, north, east, second) {
       east,
       lat: 47.5 + north * DEG_PER_M_LAT,
       lon: 8.7 + east * DEG_PER_M_LON,
-      timestamp: 1_790_000_000_000 + second * 1000,
+      timestamp: second === "now" ? null : 1_790_000_000_000 + second * 1000,
+      accuracy,
     },
   );
+}
+
+/**
+ * The AR session's own tracking, as the framework's tracking slice hears it:
+ * `true` delivers one pose (the phase
+ * becomes `tracking`), `false` reports it lost. The fakes deliver no poses
+ * otherwise, so the tracking-quality report reads `ar-lost` ("not
+ * tracking") after every recompute - a device fix, a code's vote - until a
+ * spec reports a pose; a forced `ok` report does not survive the next one.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {boolean} [tracking]
+ */
+export async function reportArTracking(page, tracking = true) {
+  await page.evaluate((tracking) => {
+    const test = /** @type {any} */ (window).__tourViewerTest;
+    test.alignmentStore.dispatch(
+      tracking
+        ? {
+            type: "tracking/poseReceived",
+            payload: {
+              pose: test.arPose ?? {
+                position: { x: 0, y: 1.4, z: 0 },
+                orientation: { x: 0, y: 0, z: 0, w: 1 },
+              },
+              sensorOrientation: null,
+            },
+          }
+        : { type: "tracking/poseLost" },
+    );
+    test.emitFrames(1);
+  }, tracking);
+}
+
+/**
+ * Turn the camera to look along `bearingDeg` (degrees from north) in
+ * GPS-world terms, through the store's CURRENT alignment: a yaw about raw
+ * +Y. The pose keeps its position; later fixes keep the orientation. A
+ * camera frame re-judges the stations.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {number} bearingDeg
+ */
+export async function faceBearing(page, bearingDeg) {
+  await page.evaluate((bearingDeg) => {
+    const test = /** @type {any} */ (window).__tourViewerTest;
+    const m =
+      test.alignmentStore.getState().gpsData?.gpsEvents?.alignmentMatrix;
+    const a =
+      m != null && m.length === 16
+        ? Array.from(m)
+        : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    // The alignment's yaw: where odometry north points in the world.
+    const alignYaw = Math.atan2(a[2], a[0]);
+    // A raw yaw t looks at odometry bearing -t, so the world bearing is
+    // alignYaw - t.
+    const t = alignYaw - (bearingDeg * Math.PI) / 180;
+    test.facing = { x: 0, y: Math.sin(t / 2), z: 0, w: Math.cos(t / 2) };
+    if (test.arPose !== null) {
+      test.arPose = { ...test.arPose, orientation: { ...test.facing } };
+    }
+    test.emitFrames(1);
+  }, bearingDeg);
 }
 
 /** Every file entry's name, and each JSON entry's text, of a zip's bytes. */
@@ -840,4 +955,68 @@ export async function finishAndDownload(page, index) {
       ),
     )
     .toBe(index + 1);
+}
+
+/**
+ * Lock the fixture's printed code: arm the detection and feed frames until
+ * the gate reports that the CODE passed it (a GPS-only pass also reads
+ * "placing"). Every spec that locks the code uses this one.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+export async function lockFixtureCode(page) {
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").getAttribute("data-gate");
+      },
+      { timeout: 20000 },
+    )
+    .toBe("passed-code");
+}
+
+/**
+ * Wait for the guide to name a station again: an any-order tour names none while no distance is shown
+ * (pending at the start of AR among them), and again only once the
+ * distance has been back for the hold - 3 s of the page's own clock. The
+ * guide re-judges on events, so camera frames are sent until the peek
+ * names one (a peek of kind `none` names none). A fixed-order tour, or one
+ * with a single station left, names one at once.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+export async function waitForTheGuess(page) {
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("walk-peek").getAttribute("data-kind");
+      },
+      { timeout: 15000, intervals: [250, 500, 1000] },
+    )
+    .not.toBe("none");
+}
+
+/**
+ * Tap a row's control in the walk's list:
+ * `act` (Skip, Bring back, the undo), `main` ("Guide me here"), `confirm`
+ * or `cancel`.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {string} title the row's station title
+ * @param {"act" | "main" | "confirm" | "cancel"} control
+ */
+export function walkRowControl(page, title, control) {
+  return page
+    .getByTestId("walk-row")
+    .filter({ hasText: title })
+    .getByTestId(`walk-row-${control}`);
 }

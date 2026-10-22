@@ -115,11 +115,11 @@ test("after Finish the page shows each code with its facing line and verdict, an
   // The stored pose's own error is unknown here, so the visit's ring is
   // what says how far off the code may be.
   await expect(map.locator("path.tv-summary-estimate-ring")).toHaveCount(1);
-  // The fixture tour's own pin and the one just placed: the summary shows
-  // what the rebuilt zip carries.
+  // The fixture tour's own pin and photos and the pin just placed: the
+  // summary shows what the rebuilt zip carries.
   await expect(map.locator("path.tv-summary-pin")).toHaveCount(2);
   await expect(map.locator(".tv-summary-object-label")).toHaveText(
-    ["Fixture pin", "Summary pin"],
+    ["Fixture pin", "Photo", "Photo", "Photo", "Summary pin"],
     { useInnerText: true },
   );
   await expect(map.locator(".tv-summary-code-label")).toHaveText(/^The code: /);

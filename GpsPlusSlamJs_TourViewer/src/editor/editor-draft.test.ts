@@ -372,6 +372,67 @@ describe("createEditorDraft", () => {
     expect(opened.offer?.deleted).toEqual([]);
   });
 
+  it("a download whose bytes have another key moves the draft there: the edit after it is offered under the new key, the original still offers what it did", async () => {
+    // Why (debug-captures plan, Q-I): the first save of a tour without an
+    // id writes one, so the file it makes - downloaded, not written in
+    // place - opens under the id's key. The draft must follow it there, or
+    // an edit made after the download is lost to the file the creator
+    // opens next. A download clears nothing (as since E2c): the
+    // original opened again still offers the edit made before it.
+    const b = browser();
+    const draft = draftIn(b);
+    const original = tour(pin("a"), pin("b"));
+    await draft.open(K1, original);
+    void draft.saveObject(pin("a", "saved"));
+    const written = tour(pin("a", "saved"), pin("b"));
+    draft.writes().built(written);
+    draft.writes().moved(K2);
+    void draft.saveObject(pin("b", "after"));
+    await draft.idle();
+    draft.close();
+    const opened = await draftIn(b).open(K2, written);
+    expect(opened.offer?.objects.map((o) => o.label)).toEqual(["after"]);
+    const before = await draftIn(b).open(K1, original);
+    expect(before.offer?.objects.map((o) => o.label)).toEqual(["saved"]);
+  });
+
+  it("a download's move spends nothing: a download never put anywhere leaves every edit offered", async () => {
+    // Why: unlike an in-place write, a download is not known to be the
+    // file anyone opens - the creator may never use it. So the move takes
+    // every record along as it is; only an open of a file that carries an
+    // edit spends it.
+    const b = browser();
+    const draft = draftIn(b);
+    const original = tour(pin("a"), pin("b"));
+    await draft.open(K1, original);
+    void draft.saveObject(pin("a", "saved"));
+    draft.writes().built(tour(pin("a", "saved"), pin("b")));
+    draft.writes().moved(K2);
+    void draft.saveObject(pin("b", "after"));
+    await draft.idle();
+    draft.close();
+    const opened = await draftIn(b).open(K2, original);
+    expect(opened.offer?.objects.map((o) => o.label).sort()).toEqual([
+      "after",
+      "saved",
+    ]);
+  });
+
+  it("a download to the key the draft has already moves nothing", async () => {
+    // Why: every save after the first carries the same id, so most
+    // downloads land on the draft's own key - and must leave it be.
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    void draft.saveObject(pin("a", "saved"));
+    draft.writes().moved(K1);
+    await draft.idle();
+    draft.close();
+    expect([...(b.spaces.get(editorDraftKey(K1))?.keys() ?? [])]).toContain(
+      objectKey("a"),
+    );
+  });
+
   it("a key move carries an edit made while the save ran, and an offer not yet answered", async () => {
     // Why (review #5, #7): the edit's write was queued in the OLD
     // namespace; the offer's records were never this page's - both must
@@ -1275,10 +1336,12 @@ describe("restoredLine (M1b-2 milestone review #6)", () => {
   // Why: Restore's "nothing restored" line spoke of notes even when the
   // offer was the setting alone.
   const notes = { objects: [pin("a")], deleted: [] };
+  // As the open hands it over: a settings part names itself.
   const setting = {
     objects: [],
     deleted: [],
     settings: { needsNoGps: true },
+    settingsWhat: `this tour's "needs no GPS" setting`,
   };
 
   it("counts what came back", () => {
@@ -1302,6 +1365,12 @@ describe("restoredLine (M1b-2 milestone review #6)", () => {
     );
     expect(restoredLine(0, { ...setting, objects: [pin("a")] })).toBe(
       "Nothing was restored: the notes and the setting those changes were for are changed here already.",
+    );
+    // A record that names nothing (only stations the page created) speaks
+    // of the notes alone.
+    const { settingsWhat: _named, ...unnamed } = setting;
+    expect(restoredLine(0, { ...unnamed, objects: [pin("a")] })).toBe(
+      "Nothing was restored: the notes those changes were for are edited here already.",
     );
   });
 });
@@ -1488,5 +1557,105 @@ describe("createEditorDraft, the tour's details (W2)", () => {
         JSON.stringify({ needsNoGps: false, details: { title: 7 } }),
       );
     expect((await draftIn(b).open(K1, opened)).offer).toBeNull();
+  });
+});
+
+describe("createEditorDraft, the stations the page created", () => {
+  // Why these tests matter: a note moved beyond its station's radius starts
+  // a station the opened file lacks, and the note's record names it. A
+  // settings record holding nothing but that station is still work: if it
+  // is dropped (or not offered), a reload seats the note again by the rule
+  // under a NEW station id, and the station the creator saw is gone.
+  const SETTINGS = "settings";
+  const frame = (id: string, lat = 48.5205) => ({
+    id,
+    geo: { lat, lon: 9.0, alt: 340, rotation: [0, 0, 0, 1] as const },
+    activateRadiusM: 50,
+    foundRadiusM: 25,
+    hint: "arrow" as const,
+    steps: [],
+  });
+  const movedA = (): TourObject => ({
+    ...pin("a"),
+    geo: { lat: 48.5205, lon: 9.0, alt: 340, headingDeg: 0 },
+    station: "s-new",
+  });
+
+  it("a record holding only created stations is kept, and offered with the note that names them", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = tour(pin("a"), pin("b"));
+    await first.open(K1, opened);
+    void first.saveObject(movedA());
+    void first.saveSettings({
+      needsNoGps: false,
+      createdStations: [frame("s-new")],
+    });
+    await first.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(true);
+    first.close();
+    const { offer } = await draftIn(b).open(K1, opened);
+    expect(offer?.settings?.createdStations).toEqual([frame("s-new")]);
+    expect(offer?.objects.map((o) => o.id)).toEqual(["a"]);
+    // The created station is not a change of its own, and no setting is
+    // named that did not change.
+    expect(offer?.text).toContain("1 change");
+    expect(offer?.text).not.toContain("GPS");
+  });
+
+  it("a created station moved since keeps its moved pose", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = tour(pin("a"), pin("b"));
+    await first.open(K1, opened);
+    void first.saveObject(movedA());
+    void first.saveSettings({
+      needsNoGps: false,
+      createdStations: [frame("s-new")],
+    });
+    void first.saveSettings({
+      needsNoGps: false,
+      createdStations: [frame("s-new", 48.5207)],
+    });
+    await first.idle();
+    first.close();
+    const { offer } = await draftIn(b).open(K1, opened);
+    expect(offer?.settings?.createdStations).toEqual([frame("s-new", 48.5207)]);
+  });
+
+  it("a file that carries the created station spends the record", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = tour(pin("a"), pin("b"));
+    await first.open(K1, opened);
+    void first.saveSettings({
+      needsNoGps: false,
+      createdStations: [frame("s-new")],
+    });
+    await first.idle();
+    const carried: TourManifest = {
+      ...opened,
+      stations: [...opened.stations, { ...frame("s-new"), items: [] }],
+    };
+    first.writes().landed(carried, K1);
+    await first.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
+  });
+
+  it("created stations with no note left to offer are no offer, and go", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = tour(pin("a"), pin("b"));
+    await first.open(K1, opened);
+    void first.saveSettings({
+      needsNoGps: false,
+      createdStations: [frame("s-new")],
+    });
+    await first.idle();
+    first.close();
+    const again = draftIn(b);
+    expect((await again.open(K1, opened)).offer).toBeNull();
+    await again.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
   });
 });

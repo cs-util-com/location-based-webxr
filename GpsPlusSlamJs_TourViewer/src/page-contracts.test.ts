@@ -102,3 +102,26 @@ describe("the desktop's details fields hold every value the format accepts", () 
     expect(checkTourTitle(`${name}\u{1F5FA}`).ok).toBe(false);
   });
 });
+
+describe("the visitor walk keeps out of the design system's walk classes", () => {
+  // Why: design.css ships `.radar`,
+  // `.toast` and `.hint` with their own positions and looks. The walk
+  // restates the prototype's look on its own classes; an element carrying one of
+  // those would take the design system's position over the camera, and
+  // the framework toast would wear `.toast` by default unless told not to.
+  it("no element carries the class radar, toast or hint", () => {
+    const classes = [...html.matchAll(/\bclass="([^"]*)"/g)].flatMap((m) =>
+      (m[1] ?? "").split(/\s+/),
+    );
+    expect(
+      classes.filter((c) => ["radar", "toast", "hint"].includes(c)),
+    ).toEqual([]);
+  });
+
+  it("the walk's toast is created with its own class", () => {
+    const main = readFileSync(resolve(packageRoot, "src/main.ts"), "utf8");
+    expect(main).toMatch(
+      /createToast\(element\("walk-toast-root"\),\s*\{\s*className:\s*"walk-toast"/,
+    );
+  });
+});

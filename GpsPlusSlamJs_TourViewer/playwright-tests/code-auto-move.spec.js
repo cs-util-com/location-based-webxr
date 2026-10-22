@@ -5,10 +5,11 @@ import {
   downloadedZip,
   finishAndDownload,
   installTourViewerArFakes,
+  levelTexts,
   openFixtureTour,
   tapFinish,
 } from "./ar-fakes.js";
-import { E2E_QR_TEXT } from "./qr-fixture.mjs";
+import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
 
 /**
  * The automatic move of a stored code, end to end (code book plan M6 v5.1;
@@ -203,3 +204,58 @@ test("the moved spot survives a reload: the draft restores it and the Finish wri
     0.0003,
   );
 });
+
+test("the next visit's strip offers the automatic move in its Undo, and one tap takes it back", async ({
+  page,
+}) => {
+  // Q-D and the persistent Undo: the settle's automatic
+  // code change is one undo step, and the strip's persistent Undo is its
+  // button. The settle lands at the visit's end, so the next visit offers
+  // it, named by what it takes back; the tap says what was undone.
+  await openFixtureTour(page);
+  await walkUnderShiftedGps(page);
+  await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
+  await page.getByTestId("enter-ar").click();
+  const chip = page.getByTestId("setup-undo");
+  await expect(chip).toBeEnabled({ timeout: 10000 });
+  await expect(chip).toHaveText("Undo: the code's move");
+  // The code's saved spot as the fixture zip carries it, and as the page's
+  // tour document holds it now (moved about 44 m North: the more than
+  // 0.0003 degrees of latitude this spec's other tests read).
+  const fixture = await page.request.get(E2E_QR_ARCHIVE);
+  const texts = Object.values(
+    await levelTexts(new Uint8Array(await fixture.body())),
+  );
+  expect(texts).toHaveLength(1);
+  const original = JSON.parse(/** @type {string} */ (texts[0])).qr.geo;
+  const moved = await savedCodeGeo(page);
+  expect(moved.lat - original.lat).toBeGreaterThan(0.0003);
+
+  await chip.click();
+  await expect(page.getByTestId("object-list-note")).toHaveText(
+    /^Undone: the code's move - the code and everything that moved with it are back where they were\./,
+  );
+  await expect(chip).toBeDisabled();
+  await expect(chip).toHaveText("Undo");
+  // The code is back at its saved spot, exactly.
+  const back = await savedCodeGeo(page);
+  expect(Math.abs(back.lat - original.lat)).toBeLessThan(1e-7);
+  expect(Math.abs(back.lon - original.lon)).toBeLessThan(1e-7);
+});
+
+/**
+ * The geo of the one code the page's tour document holds, from its saved
+ * level text. The fakes hand the page's store over when AR starts.
+ * @param {import("@playwright/test").Page} page
+ */
+async function savedCodeGeo(page) {
+  const texts = await page.evaluate(
+    (key) =>
+      /** @type {any} */ (window)[key].alignmentStore
+        .getState()
+        .tourDocument.codes.book.map((/** @type {any} */ c) => c.saved),
+    TEST_KEY,
+  );
+  expect(texts).toHaveLength(1);
+  return JSON.parse(texts[0]).qr.geo;
+}

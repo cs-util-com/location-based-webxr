@@ -59,6 +59,7 @@ describe("rebuildFinishedTour (property)", () => {
       new File([zip], "t.zip", { type: "application/zip" }),
     );
     const manifest = tourOf(hosted);
+    const here = manifest.stations[0]!.id;
     await fc.assert(
       fc.asyncProperty(
         fc.subarray([...HOSTED]),
@@ -67,7 +68,11 @@ describe("rebuildFinishedTour (property)", () => {
         async (deleted, edited, added) => {
           const placed = [
             ...edited.map((id) => ({ object: pin(id, `edited ${id}`) })),
-            ...added.map((id) => ({ object: pin(id, `new ${id}`) })),
+            // A new pin as the tour document hands it over: seated in the
+            // station holding it (the writer assigns none).
+            ...added.map((id) => ({
+              object: { ...pin(id, `new ${id}`), station: here },
+            })),
           ];
           const result = await rebuildFinishedTour({
             tour,

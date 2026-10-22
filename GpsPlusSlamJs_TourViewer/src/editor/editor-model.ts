@@ -14,7 +14,6 @@ import type {
   TourManifest,
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { tourCaptureGeos } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { horizontalM } from "../move-with-code.js";
 import { codeDistanceLine, objectTitle } from "../object-describe.js";
 import { stationTitle } from "../station-run.js";
@@ -39,12 +38,8 @@ export interface EditorItem {
   readonly at: MapPoint | null;
   /** A code's number (1-based) in the phone's numbering. */
   readonly number?: number;
-  /** A photo's image entry: the content path of a placed photo, the
-   *  recording's frame of a recorded one. */
+  /** A photo's image: its content path inside the tour's folder. */
   readonly image?: string;
-  /** A recorded photo (`captureSpots`), placed for visitors at the Finish
-   *  and not editable as a note. */
-  readonly recorded?: boolean;
   /** A station standing at a code's point (within {@link ON_CODE_M}): the
    *  map draws it beside the code, never under it (PR #609 review). */
   readonly onCode?: true;
@@ -63,9 +58,6 @@ export interface EditorModel {
   /** Everything with a position, for framing the map. */
   readonly fitPoints: readonly MapPoint[];
 }
-
-/** A recorded photo's id: its frame's entry name, which is unique. */
-const RECORDED_PREFIX = "recorded:";
 
 /** A station's id in the editor: stations and objects have separate id
  *  spaces in the manifest. */
@@ -119,38 +111,28 @@ export function buildEditorModel(input: {
   // list without a mark, so it can still be found (E1 review #9). The
   // summary keeps only the drawable ones.
   const drawable = new Map(summary.objects.map((s) => [s.id, s]));
-  const notes: EditorItem[] = objects.map((object) => {
+  // Pins and photos only: this 2D editor lists no placed 3D model (format
+  // minor 1) rather than a mislabelled note; the tour keeps it untouched.
+  const notes: EditorItem[] = objects.flatMap((object): EditorItem[] => {
+    if (object.kind === "model") return [];
     const mark = drawable.get(object.id);
-    return {
-      id: object.id,
-      kind: object.kind,
-      title: objectTitle(object),
-      meta:
-        mark === undefined
-          ? `${object.kind === "pin" ? "Text note" : "Photo note"} · no position`
-          : noteMeta(object, stored),
-      at: mark === undefined ? null : { lat: mark.lat, lng: mark.lng },
-      ...(object.kind === "photo" ? { image: object.image } : {}),
-    };
+    return [
+      {
+        id: object.id,
+        kind: object.kind,
+        title: objectTitle(object),
+        meta:
+          mark === undefined
+            ? `${object.kind === "pin" ? "Text note" : "Photo note"} · no position`
+            : noteMeta(object, stored),
+        at: mark === undefined ? null : { lat: mark.lat, lng: mark.lng },
+        ...(object.kind === "photo" ? { image: object.image } : {}),
+      },
+    ];
   });
-  const recorded: EditorItem[] = tourCaptureGeos(manifest)
-    .map((c) => ({ capture: c, at: { lat: c.geo.lat, lng: c.geo.lon } }))
-    // A fix that cannot be drawn keeps its row, as a note's does (E1 review
-    // #9, PR #609 review): off the map, still findable and counted.
-    .map(({ capture, at }) => {
-      const onMap = readablePoint(at);
-      return {
-        id: `${RECORDED_PREFIX}${capture.image}`,
-        kind: "photo",
-        title: "Recorded photo",
-        meta: onMap
-          ? "Photo · recorded on the walk"
-          : "Photo · recorded on the walk · no position",
-        at: onMap ? at : null,
-        image: capture.image,
-        recorded: true,
-      };
-    });
+  // The walk's debug camera captures are never items: they are debug
+  // data, not the tour's content (the map's debug layer draws them,
+  // `debug-capture-layer.ts`).
   // The stations (tour kit plan K4; version 3: each at its own position,
   // the frame of its pins and photos, D9). A story tour may carry nothing
   // else (the committed sample).
@@ -173,7 +155,7 @@ export function buildEditorModel(input: {
       };
     },
   );
-  const items = [...codes, ...notes, ...recorded, ...stations];
+  const items = [...codes, ...notes, ...stations];
   const count = (kind: EditorItemKind): number =>
     items.filter((i) => i.kind === kind).length;
   const title = manifest.title?.trim() ?? "";
@@ -204,16 +186,10 @@ export function filterItems(
   );
 }
 
-/** Where a photo item's bytes are (E1 review #1): a placed photo's image
- *  is a content path inside the tour's folder (`TourSession
- *  .loadContentEntry`), a recorded one's the archive's own entry name
- *  (`loadEntry`, as the viewer reads it); null without a photo. */
-export function photoSource(
-  item: EditorItem,
-): { kind: "content" | "entry"; path: string } | null {
+/** Where a photo item's bytes are (E1 review #1): its image, a content
+ *  path inside the tour's folder (`TourSession.loadContentEntry`); null
+ *  without a photo. */
+export function photoSource(item: EditorItem): string | null {
   if (item.kind !== "photo" || item.image === undefined) return null;
-  return {
-    kind: item.recorded === true ? "entry" : "content",
-    path: item.image,
-  };
+  return item.image;
 }

@@ -68,7 +68,10 @@ import {
 } from "./tour-authoring-actions.js";
 import { votesCast } from "./tour-viewing-actions.js";
 import { endTourArRuntime, startTourArRuntime } from "./ar-mode.js";
-import { createTourViewerStore } from "./tour-viewer-session.js";
+import {
+  createTourViewerStore,
+  type TourViewerStore,
+} from "./tour-viewer-session.js";
 
 const T0 = Date.UTC(2026, 8, 28, 10, 0, 0);
 const START = new Date(T0);
@@ -94,7 +97,7 @@ const VISIT_2: Pair[] = [
   { odom: [15, 0, 0], lat: 47.499865, lon: 8.7 },
 ];
 
-type Store = ReturnType<typeof createTourViewerStore>;
+type Store = TourViewerStore;
 
 function feed(store: Store, pairs: Pair[], firstId: number): void {
   for (const [i, p] of pairs.entries()) {
