@@ -2629,12 +2629,22 @@
         }
       }
 
+      /* Each animated rule of the walk is named here by its own selector:
+         a shorter one loses to the animated rule's specificity
+         (walk-sheet.test.ts holds the two lists together). */
       @media (prefers-reduced-motion: reduce) {
-        .walk-coach-spin,
+        .walk-coach[data-look="spinner"] .walk-coach-spin,
         .walk-coach-sway rect,
         .walk-dots > i[data-s="now"][data-timed="true"]::after,
-        .walk-precision[data-kind="pending"] .walk-precision-mark {
+        .walk-precision[data-kind="pending"] .walk-precision-mark,
+        .walk-toast {
           animation: none;
+        }
+        /* The undo's bar stands still at the share left when it was
+           drawn; the row's undo still ends on time. */
+        .walk-undobar > i {
+          animation: none;
+          transform: scaleX(var(--walk-undo-from, 1));
         }
         .walk-arrow,
         .walk-radar-canvas {

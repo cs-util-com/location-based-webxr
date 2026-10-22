@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
@@ -271,5 +272,74 @@ describe("the rows' controls (W4 build plan M4, §1.6)", () => {
     expect(focusAfterTap("undo")[0]).toBe("skip");
     expect(focusAfterTap("bring")[0]).toBe("skip");
     expect(focusAfterTap("choose")).toEqual(["choose"]);
+  });
+});
+
+describe("the walk's CSS under reduced motion", () => {
+  /** The blocks that open at each match of `head`, braces balanced: their
+   *  bodies, and the CSS with them cut out. */
+  function cutBlocks(
+    css: string,
+    head: RegExp,
+  ): { bodies: string[]; rest: string } {
+    const bodies: string[] = [];
+    let rest = "";
+    let from = 0;
+    for (const m of css.matchAll(head)) {
+      if (m.index < from) continue;
+      let depth = 0;
+      let i = m.index + m[0].length - 1;
+      for (; i < css.length; i += 1) {
+        if (css[i] === "{") depth += 1;
+        else if (css[i] === "}" && --depth === 0) break;
+      }
+      rest += css.slice(from, m.index);
+      bodies.push(css.slice(m.index + m[0].length, i));
+      from = i + 1;
+    }
+    return { bodies, rest: rest + css.slice(from) };
+  }
+
+  /** Each selector of the rules in `css` whose body matches `body`. */
+  function selectorsOf(css: string, body: RegExp): Set<string> {
+    const out = new Set<string>();
+    for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (!body.test(m[2]!)) continue;
+      const selectors = m[1]!.replace(/\/\*[\s\S]*?\*\//g, "");
+      for (const sel of selectors.split(",")) {
+        out.add(sel.trim().replace(/\s+/g, " "));
+      }
+    }
+    return out;
+  }
+
+  // Why: a visitor who asked the system for reduced motion must get no
+  // running animation from the walk - the coach's spinner, the story's
+  // timed dot, the undo's running bar among them. Each animated rule
+  // must be stilled in a reduced-motion block; one added without its
+  // counterpart is caught here, by name.
+  it("every animation in the walk's CSS is stilled under prefers-reduced-motion", () => {
+    const html = readFileSync(
+      new URL("../index.html", import.meta.url),
+      "utf8",
+    );
+    const start = html.indexOf("/* ===== The visitor's walk in AR");
+    const end = html.indexOf("/* ===== The creator's HUD in AR");
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const css = html.slice(start, end);
+    const reduced = cutBlocks(
+      css,
+      /@media \(prefers-reduced-motion: reduce\)\s*\{/g,
+    );
+    const rest = cutBlocks(reduced.rest, /@keyframes [\w-]+\s*\{/g).rest;
+    const animated = selectorsOf(rest, /(^|;|\s)animation:\s*(?!none)/);
+    const stilled = selectorsOf(reduced.bodies.join("\n"), /animation:\s*none/);
+    // Non-vacuous: the undo's bar and the coach's spinner are animated.
+    expect(animated).toContain(".walk-undobar > i");
+    expect(animated).toContain(
+      `.walk-coach[data-look="spinner"] .walk-coach-spin`,
+    );
+    expect([...animated].filter((sel) => !stilled.has(sel))).toEqual([]);
   });
 });
