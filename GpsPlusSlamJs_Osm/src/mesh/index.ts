@@ -7,6 +7,8 @@
 
 export type { EnuFrame, EnuPoint } from "./enu.js";
 export {
+  ENU_METRES_PER_DEG_LAT,
+  ENU_METRES_PER_DEG_LNG_EQUATOR,
   enuFrameAt,
   isCounterClockwise,
   ringToEnu,
@@ -177,3 +179,9 @@ export {
   stableRotationY,
   unit,
 } from "./stable-jitter.js";
+
+// The city a renderer draws, assembled once for every consumer (globe city
+// plan 2026-10-05-0040 §14 L3; it was inline in OsmDemo's worker).
+export type { City, CityGround, CityOptions } from "./city.js";
+export { buildCity, cityGround } from "./city.js";
+export { shellRandFor } from "./shell-rand.js";

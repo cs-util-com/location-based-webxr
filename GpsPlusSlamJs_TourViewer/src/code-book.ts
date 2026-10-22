@@ -14,7 +14,7 @@
 import type { CodeMeasurement } from "./visit-settle.js";
 
 /** One code of the open tour, as authoring knows it. */
-interface TourCode {
+export interface TourCode {
   readonly levelId: string;
   /** The level file text visitors get after the next Finish: the hosted
    *  file's, a restored draft's, or one this page measured or improved;
@@ -194,6 +194,18 @@ export function withReference(book: CodeBook, levelId: string): CodeBook {
 export function withSaved(book: CodeBook, level: LevelText): CodeBook {
   const code = book.get(level.id) ?? blank(level.id);
   return put(book, { ...code, saved: level.json });
+}
+
+/**
+ * The code in hand's text wins for its own code: a change that replaced
+ * it (a draft restored over a code with no live change, a dropped
+ * measurement) is undone, as the hand still holds it (code book plan
+ * M5d-2, the review's #1). The one rule every change of the book ends in.
+ */
+export function withHand(book: CodeBook, hand: LevelText | null): CodeBook {
+  return hand === null || book.get(hand.id)?.saved === hand.json
+    ? book
+    : withReference(withSaved(book, hand), hand.id);
 }
 
 /** The codes a Finish must write: a saved pose that differs from what the

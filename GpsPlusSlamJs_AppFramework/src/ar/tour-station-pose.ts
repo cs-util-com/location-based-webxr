@@ -2,8 +2,8 @@
  * A station's frame in `tour.json` version 3 (tour editor plan
  * 2026-10-17-1816, W3): converts an item's LOCAL pose (relative to its
  * station) to its world geo pose and back, and gives the WORLD VIEW of a
- * tour - every pin, photo and recorded photo with its geo pose and the
- * station holding it - which a viewer places and a creator's drafts hold.
+ * tour - every pin, photo and model with its geo pose and the station
+ * holding it - which a viewer places and a creator's drafts hold.
  *
  * THE FRAME. A station's geo pose is the origin of a local tangent frame:
  * North, Up and East metres from its latitude and longitude (Up is the
@@ -34,7 +34,7 @@ import {
 } from './qr/qr-geo-pose-minting.js';
 import { rotateVectorByQuaternion } from './qr/qr-pose.js';
 import type { TourItem, TourLocalPose } from './tour-items.js';
-import type { TourManifest, TourObject, TourCapture } from './tour-manifest.js';
+import type { TourManifest, TourObject } from './tour-manifest.js';
 
 const IDENTITY: Quaternion = [0, 0, 0, 1];
 
@@ -132,37 +132,5 @@ export function tourObjects(
 ): TourObject[] {
   return manifest.stations.flatMap((station) =>
     station.items.map((item) => placed(item, station))
-  );
-}
-
-/** A recorded photo's spot in the world. */
-export interface TourCaptureGeo {
-  readonly image: string;
-  readonly station: string;
-  /** Always carries a rotation (photos face as captured). */
-  readonly geo: QrGeoPose;
-}
-
-/** The baked recorded photos in the world, in capture order; empty
- *  without baked spots. */
-export function tourCaptureGeos(
-  manifest: Pick<TourManifest, 'stations' | 'captureSpots'>
-): TourCaptureGeo[] {
-  const stations = new Map(manifest.stations.map((s) => [s.id, s.geo]));
-  return (manifest.captureSpots?.captures ?? []).flatMap(
-    (capture: TourCapture) => {
-      // The parser guarantees the station; a hand-built manifest that
-      // breaks it loses the capture, never the tour.
-      const station = stations.get(capture.station);
-      return station === undefined
-        ? []
-        : [
-            {
-              image: capture.image,
-              station: capture.station,
-              geo: itemGeoPose(capture.pose, station),
-            },
-          ];
-    }
   );
 }

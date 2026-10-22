@@ -6,7 +6,8 @@
   implementation for both pages (DEC-H3).
 - Public API:
   - `SYNTHETIC_HEIGHTS_URL`: the URL template the pages hand the carrier.
-  - `syntheticTile(z, x, y, seaM = 0)` -> `Promise<Blob>`: a 256 px
+  - `syntheticTile(z, x, y, seaM = 0, size = 256)` -> `Promise<Blob>`: a `size` px
+    (256, or 512 for a smoke serving Mapterhorn's tile size)
     Terrarium PNG of a 1 km plateau with ridges of about 5-50 km
     (0-2,200 m), lowered by `seaM` (a coast where it goes below 0).
   - `installSyntheticHeights({ seaM })` -> `{ requests, bytes() }`: wraps

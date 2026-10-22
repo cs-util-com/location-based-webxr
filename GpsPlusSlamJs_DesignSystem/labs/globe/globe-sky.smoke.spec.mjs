@@ -22,6 +22,7 @@ import {
   gridAround,
   luminance,
   meanOf,
+  plainGlobe,
   withPreRound4Look,
 } from "./globe-smoke-helpers.mjs";
 
@@ -34,7 +35,7 @@ async function bootLab(page, hash) {
     if (m.type() === "error") errors.push(m.text());
   });
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(`/labs/globe/#${hash}`);
+  await page.goto(`/labs/globe/#${plainGlobe(hash)}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
     null,
@@ -160,12 +161,59 @@ test("at 600x the clouds drift at the real-time rate", async ({ page }) => {
     let d = (b.cloudLonOffsetRad - a.cloudLonOffsetRad) % turn;
     if (d > Math.PI) d -= turn;
     if (d < -Math.PI) d += turn;
-    return { degPerS: (d * 180) / Math.PI / seconds, drift: b.cloudDrift };
+    // The rate at the camera's altitude (round-5 plan §9): far out here.
+    return { degPerS: (d * 180) / Math.PI / seconds, drift: b.cloudDriftNow };
   });
   console.log(
     `drift at 600x: ${rate.degPerS.toFixed(3)} °/s (the 1x rate ${rate.drift} °/s)`,
   );
   expect(Math.abs(rate.degPerS - rate.drift)).toBeLessThan(rate.drift * 0.25);
+  expect(errors).toEqual([]);
+});
+
+// WHY (round-5 plan 2026-10-12-0612 §9, DEC-R5-3; the owner on r826): one
+// drift rate read too slow while the whole Earth was in view and far too
+// fast near the clouds. The page must take the rate for the camera's
+// altitude (the far rate above 20,000 km, proportional below), and the
+// offset the three cloud layers read must move at that rate, not at the far
+// one (the uniform, not only the state's number).
+test("the clouds drift slower the nearer the camera is to the ground", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const at = (km) => `spinMs=0&turnMs=0&time=${PINNED}&view=30,15,${km},0,-90`;
+  const errors = await bootLab(page, at(30_000));
+  await page.evaluate(() => window.__globeLab.timeFrames(2));
+  const far = await page.evaluate(
+    () => window.__globeLab.state().cloudDriftNow,
+  );
+  await applyHash(page, at(50));
+  await page.evaluate(() => window.__globeLab.timeFrames(2));
+  const near = await page.evaluate(async () => {
+    const a = window.__globeLab.state();
+    const t0 = performance.now();
+    await new Promise((r) => setTimeout(r, 1_000));
+    const b = window.__globeLab.state();
+    const seconds = (performance.now() - t0) / 1000;
+    const turn = 2 * Math.PI;
+    let d = (b.cloudLonOffsetRad - a.cloudLonOffsetRad) % turn;
+    if (d > Math.PI) d -= turn;
+    if (d < -Math.PI) d += turn;
+    return {
+      rate: b.cloudDriftNow,
+      degPerS: (d * 180) / Math.PI / seconds,
+    };
+  });
+  const expected = (0.375 * 50) / 20_000;
+  console.log(
+    `drift: ${far} °/s at 30,000 km; ${near.rate.toFixed(6)} °/s at 50 km (law ${expected.toFixed(6)}), the offset moving ${near.degPerS.toFixed(6)} °/s`,
+  );
+  expect(far).toBe(0.375);
+  // The view's altitude is the camera's within a few percent.
+  expect(near.rate / expected).toBeGreaterThan(0.9);
+  expect(near.rate / expected).toBeLessThan(1.1);
+  // The far rate would move it 400 times faster than this bound allows.
+  expect(Math.abs(near.degPerS - near.rate)).toBeLessThan(near.rate * 0.25);
   expect(errors).toEqual([]);
 });
 
@@ -226,30 +274,54 @@ const angleBetween = (a, b) => {
 // pixels: with the drift on, the same view at the same instant shows the
 // clouds elsewhere, and with the clouds off it cannot (the control that
 // proves the difference is the clouds, not anything else).
+// Since round 5 (plan 2026-10-12-0612, C1) the drift runs in real time while
+// the hour is held, and since its §9 it is summed per frame: a new hour
+// seeds the offset at rate x the instant, and from there it moves by at
+// most the far rate x the real time since. So each reading is bounded by
+// the window around its hash change (the exact equality this test asserted
+// before C1 had failed since r823; found on r827).
 test("the clouds drift with the clock", async ({ page }) => {
   test.setTimeout(300_000);
   // The look its floor was measured on (none of these keys varies below).
   const view = withPreRound4Look("at=30,15&spinMs=0&turnMs=0");
+  const t0 = "2026-03-20T10:59:00Z";
   const t1 = PINNED;
   const t2 = "2026-03-20T11:01:00Z";
-  const errors = await bootLab(page, `${view}&time=${t1}&cloudDrift=0.5`);
-  const a = await page.evaluate(() => window.__globeLab.state());
-  await applyHash(page, `${view}&time=${t2}&cloudDrift=0.5`);
-  const b = await page.evaluate(() => window.__globeLab.state());
-  // 60 s at 0.5 °/s: 30° further east, modulo a turn.
-  const moved =
-    (b.cloudLonOffsetRad - a.cloudLonOffsetRad + 4 * Math.PI) % (2 * Math.PI);
+  const errors = await bootLab(page, `${view}&time=${t0}&cloudDrift=0.5`);
+  /** The offset after a new hour, and the real seconds around the change. */
+  const seeded = async (time) => {
+    const start = await page.evaluate(() => performance.now());
+    await applyHash(page, `${view}&time=${time}&cloudDrift=0.5`);
+    return page.evaluate(
+      (from) => ({
+        offset: window.__globeLab.state().cloudLonOffsetRad,
+        windowS: (performance.now() - from) / 1000,
+      }),
+      start,
+    );
+  };
+  const a = await seeded(t1);
+  const b = await seeded(t2);
+  // 60 s at 0.5 °/s: 30° further east, modulo a turn, give or take the
+  // drift inside the two windows.
+  const moved = (b.offset - a.offset + 4 * Math.PI) % (2 * Math.PI);
+  const slack = 0.5 * (a.windowS + b.windowS) * DEG;
   console.log(
-    `cloud offset: ${(a.cloudLonOffsetRad / DEG).toFixed(4)}° at ${t1}, ${(b.cloudLonOffsetRad / DEG).toFixed(4)}° at ${t2}, moved ${(moved / DEG).toFixed(4)}°`,
+    `cloud offset: ${(a.offset / DEG).toFixed(4)}° at ${t1}, ${(b.offset / DEG).toFixed(4)}° at ${t2}, moved ${(moved / DEG).toFixed(4)}° (slack ${(slack / DEG).toFixed(4)}° over ${(a.windowS + b.windowS).toFixed(2)} s)`,
   );
-  expect(angleBetween(moved, 30 * DEG)).toBeLessThan(1e-6);
-  expect(b.cloudDrift).toBe(0.5);
-  // Pinned: the same instant gives the same offset again.
-  await applyHash(page, `${view}&time=${t1}&cloudDrift=0.5`);
-  await applyHash(page, `${view}&time=${t2}&cloudDrift=0.5`);
-  expect(
-    await page.evaluate(() => window.__globeLab.state().cloudLonOffsetRad),
-  ).toBe(b.cloudLonOffsetRad);
+  // The windows stay short, so the slack is far from the 30° it bounds.
+  expect(a.windowS + b.windowS).toBeLessThan(4);
+  expect(angleBetween(moved, 30 * DEG)).toBeLessThanOrEqual(slack);
+  expect(await page.evaluate(() => window.__globeLab.state().cloudDrift)).toBe(
+    0.5,
+  );
+  // Pinned: the same instant gives the same offset again (within the
+  // drift inside the two windows).
+  await seeded(t1);
+  const again = await seeded(t2);
+  expect(angleBetween(again.offset, b.offset)).toBeLessThanOrEqual(
+    0.5 * (b.windowS + again.windowS) * DEG,
+  );
   await applyHash(page, `${view}&time=${t1}&cloudDrift=0`);
   expect(
     await page.evaluate(() => window.__globeLab.state().cloudLonOffsetRad),
@@ -562,14 +634,16 @@ test("the Milky Way is visible towards the galactic centre", async ({
 }) => {
   const time = "time=2026-03-20T12:00:00Z&cloudDrift=0&stars=0";
   const errors = await bootLab(page, `at=0,0&spinMs=0&turnMs=0&${time}`);
-  // The galactic centre (J2000) in the world frame the sky pass renders.
+  // The galactic centre (J2000) in ECEF as the sky pass renders it (the
+  // world is the target's local frame since F2a; the view below is placed
+  // by latitude and longitude).
   const gcCelestial = [
     Math.cos(-28.93617 * DEG) * Math.cos(266.40499 * DEG),
     Math.cos(-28.93617 * DEG) * Math.sin(266.40499 * DEG),
     Math.sin(-28.93617 * DEG),
   ];
   const g = await page.evaluate(
-    (v) => window.__globeLab.celestialToWorld(v),
+    (v) => window.__globeLab.celestialToEcef(v),
     gcCelestial,
   );
   // The view's axis 30° east of the centre (so it sits beside the Earth,

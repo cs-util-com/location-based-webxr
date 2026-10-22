@@ -433,33 +433,34 @@ test("?allstations=1 shows every station's content at once", async ({
     .toEqual(["station-content:gate", "station-content:well"]);
 });
 
-/** The ring's photo planes in one station's group: meshes standing
- *  directly in it (the station's own items hang one level deeper, under
- *  their frame), each with its opacity. */
-function ringOpacitiesIn(page, group) {
-  return page.evaluate(
-    (name) =>
-      /** @type {any} */ (
-        window.__tourViewerTest.fakeScene.children.find(
-          (/** @type {any} */ c) => c.name === name,
-        )?.children ?? []
-      )
-        .filter((/** @type {any} */ o) => o.isMesh === true)
-        .map((/** @type {any} */ o) => o.material.opacity),
-    group,
-  );
+/** What one station's group draws, however deep (its items hang under
+ *  their frame): every mesh (a photo plane) and sprite (a pin), each
+ *  with its opacity. */
+function drawnOpacitiesIn(page, group) {
+  return page.evaluate((name) => {
+    /** @param {any} o @returns {number[]} */
+    const opacities = (o) => [
+      ...(o.isMesh === true || o.isSprite === true ? [o.material.opacity] : []),
+      ...(o.children ?? []).flatMap(opacities),
+    ];
+    const root = /** @type {any} */ (
+      window
+    ).__tourViewerTest.fakeScene.children.find(
+      (/** @type {any} */ c) => c.name === name,
+    );
+    return root === undefined ? [] : opacities(root);
+  }, group);
 }
 
-test("the ring around the code stands with its station: in the gate's group there, fading out on the walk away, and between the stations the line asks for one", async ({
+test("the gate's content stands with its station: in the gate's group there, fading out on the walk away, and between the stations the line asks for one", async ({
   page,
 }) => {
-  // Why this test matters: on the default path (no
-  // ?allstations) the ring around a code goes with the station within the
-  // station radius of the code, so it must stand while the visitor is at
-  // that station, fade out with it, and leave nothing in view between the
-  // stations - where "Look around." would send the visitor looking for
-  // nothing, so the line asks for a station instead. The stations tour has
-  // no recording: its one image is the ring, and the gate is at the code.
+  // Why this test matters: on the default path (no ?allstations) a
+  // station's content must stand while the visitor is at that station, fade
+  // out with it, and leave nothing in view between the stations - where
+  // "Look around." would send the visitor looking for nothing, so the line
+  // asks for a station instead. The gate is at the code, and its pin is
+  // what it draws.
   await startTheTour(page);
   await standAt(page, 0, 0, 0);
   await lockTheCode(page);
@@ -468,7 +469,7 @@ test("the ring around the code stands with its station: in the gate's group ther
       await page.evaluate(() => {
         /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
       });
-      return ringOpacitiesIn(page, "station-content:gate");
+      return drawnOpacitiesIn(page, "station-content:gate");
     })
     .toEqual([1]);
   const status = page.getByTestId("ar-status");
@@ -495,10 +496,13 @@ test("the ring around the code stands with its station: in the gate's group ther
       const gate = t.fakeScene.children.find(
         (/** @type {any} */ c) => c.name === "station-content:gate",
       );
-      const plane = gate?.children.find(
-        (/** @type {any} */ o) => o.isMesh === true,
-      );
-      t.ringSamples.push(plane === undefined ? null : plane.material.opacity);
+      /** @param {any} o @returns {any} */
+      const drawn = (o) =>
+        o.isMesh === true || o.isSprite === true
+          ? o
+          : (o.children ?? []).map(drawn).find((/** @type {any} */ d) => d);
+      const object = gate === undefined ? undefined : drawn(gate);
+      t.ringSamples.push(object === undefined ? null : object.material.opacity);
     }, 16);
   });
   for (let m = 5, s = 1; m <= 15; m += 5, s += 1) await standAt(page, m, 0, s);

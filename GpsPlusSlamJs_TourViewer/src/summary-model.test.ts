@@ -386,6 +386,33 @@ describe("buildSummaryModel", () => {
     expect(distanceM(model.objects[0]!, at(1, 2))).toBeLessThan(0.01);
   });
 
+  // Why: a placed 3D model (format minor 1) is not one of the summary's
+  // pins or photos, and its map and list draw only those two kinds; it
+  // stays in the tour untouched, and is not drawn as a pin or a photo.
+  it("leaves a placed 3D model out of the pins and photos it draws", () => {
+    const model = buildSummaryModel({
+      visits: [],
+      references: [],
+      objects: [
+        pin("a", "Old gate", at(1, 2)),
+        {
+          id: "m",
+          kind: "model",
+          asset: "statue",
+          sizeM: 3,
+          createdAtIso: "2026-10-19T00:00:00.000Z",
+          geo: {
+            lat: at(2, 2).lat,
+            lon: at(2, 2).lng,
+            alt: 400,
+            rotation: [0, 0, 0, 1],
+          },
+        },
+      ],
+    });
+    expect(model.objects.map((o) => o.id)).toEqual(["a"]);
+  });
+
   it("keeps each visit's walk apart and drops points it cannot place", () => {
     const model = buildSummaryModel({
       visits: [

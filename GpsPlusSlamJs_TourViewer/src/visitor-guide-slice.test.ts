@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { PositionPrecision } from "gps-plus-slam-app-framework/state/position-precision";
+
 import { createTourViewerStore } from "./tour-viewer-session";
 import type { PresenceCandidate } from "./station-presence";
 import {
@@ -23,6 +25,16 @@ import {
  * per station) read one answer, and the guide dispatches only when it
  * changes. The page's own store must carry the slice.
  */
+
+/** Precisions as the guide judges them: a code's, a GPS one's. */
+const CODE: PositionPrecision = {
+  source: "code",
+  accuracyM: null,
+  tooWeak: false,
+};
+function gps(accuracyM: number): PositionPrecision {
+  return { source: "gps", accuracyM, tooWeak: accuracyM > 25 };
+}
 
 function at(id: string, d: number): PresenceCandidate {
   return { id, distanceM: d, foundM: 2, foundExitM: 3.5 };
@@ -55,8 +67,7 @@ describe("visitorGuide slice", () => {
     store.dispatch(
       presenceJudged({
         candidates: [at("a", 1)],
-        accuracyM: null,
-        codeLinedUp: true,
+        precision: CODE,
       }),
     );
     expect(selectPresentStationId(store.getState())).toBe("a");
@@ -66,15 +77,13 @@ describe("visitorGuide slice", () => {
     expect(
       presenceAfter(store.getState().visitorGuide, {
         candidates: nearer,
-        accuracyM: 4,
-        codeLinedUp: false,
+        precision: gps(4),
       }),
     ).toBe("a");
     store.dispatch(
       presenceJudged({
         candidates: nearer,
-        accuracyM: null,
-        codeLinedUp: true,
+        precision: CODE,
       }),
     );
     expect(selectPresentStationId(store.getState())).toBe("b");
@@ -86,14 +95,13 @@ describe("visitorGuide slice", () => {
     // ends presence (an underpass).
     const store = createTourViewerStore();
     const weak = (candidates: PresenceCandidate[]) =>
-      presenceJudged({ candidates, accuracyM: 40, codeLinedUp: false });
+      presenceJudged({ candidates, precision: gps(40) });
     store.dispatch(weak([at("a", 0)]));
     expect(selectPresentStationId(store.getState())).toBeNull();
     store.dispatch(
       presenceJudged({
         candidates: [at("a", 1)],
-        accuracyM: 3,
-        codeLinedUp: false,
+        precision: gps(3),
       }),
     );
     store.dispatch(weak([at("a", 30), at("b", 0)]));
@@ -102,18 +110,37 @@ describe("visitorGuide slice", () => {
     expect(selectPresentStationId(store.getState())).toBeNull();
   });
 
+  // Why (shared position-precision plan §12, S2/S3): `tooWeak` on 'none'
+  // is a fail-safe, not a GPS verdict - nothing to judge by must never end
+  // or move presence the way a weak GPS fix past the exit does.
+  it("holds on nothing to judge by ('none'), whatever the candidates say", () => {
+    const store = createTourViewerStore();
+    store.dispatch(
+      presenceJudged({ candidates: [at("a", 1)], precision: gps(3) }),
+    );
+    const none: PositionPrecision = {
+      source: "none",
+      accuracyM: null,
+      tooWeak: true,
+    };
+    store.dispatch(
+      presenceJudged({
+        candidates: [at("a", 60), at("b", 0)],
+        precision: none,
+      }),
+    );
+    expect(selectPresentStationId(store.getState())).toBe("a");
+  });
+
   it("holds on no judged position and clears at the session's end", () => {
     const store = createTourViewerStore();
     store.dispatch(
       presenceJudged({
         candidates: [at("a", 1)],
-        accuracyM: 3,
-        codeLinedUp: false,
+        precision: gps(3),
       }),
     );
-    store.dispatch(
-      presenceJudged({ candidates: null, accuracyM: null, codeLinedUp: true }),
-    );
+    store.dispatch(presenceJudged({ candidates: null, precision: CODE }));
     expect(selectPresentStationId(store.getState())).toBe("a");
     store.dispatch(presenceCleared());
     expect(selectPresentStationId(store.getState())).toBeNull();
@@ -124,8 +151,7 @@ describe("visitorGuide slice", () => {
     store.dispatch(
       presenceJudged({
         candidates: [at("a", 1)],
-        accuracyM: 3,
-        codeLinedUp: false,
+        precision: gps(3),
       }),
     );
     expect(selectStationContentShown(store.getState(), "a")).toBe(true);

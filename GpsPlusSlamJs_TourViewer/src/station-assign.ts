@@ -1,7 +1,7 @@
 /**
  * The automatic-station rule (tour editor plan 2026-10-17-1816, W3, D20,
- * D21): which station a new element (a pin, a photo, a recorded photo,
- * later a model) belongs to. A version 3 tour has no loose items: each
+ * D21): which station a new element (a pin, a photo, later a model)
+ * belongs to. A version 3 tour has no loose items: each
  * lives in a station, its pose relative to the station's anchor.
  *
  * - A station's ANCHOR is fixed at its first element and is never
@@ -71,6 +71,39 @@ export function nearestStationWithin(
   for (const station of stations) {
     const d = horizontalM(station.anchor, at);
     if (d <= radiusM && (best === null || d < best.d)) {
+      best = { id: station.id, d };
+    }
+  }
+  return best?.id ?? null;
+}
+
+/** A station as the per-station rule reads it: its id, its anchor and its
+ *  own found radius (m), which the creator may have changed. */
+export interface HoldingStation {
+  readonly id: string;
+  readonly geo: { readonly lat: number; readonly lon: number };
+  readonly foundRadiusM: number;
+}
+
+/**
+ * The station that holds `at`: the nearest whose anchor is within ITS OWN
+ * `foundRadiusM` (horizontally, inclusive; a tie goes to the earlier
+ * station), else null. The rule every placement and move of a tour runs
+ * (the tour document's `placed` and `moved`): a station's own radius
+ * decides, so a radius set in the editor is
+ * respected. A radius that is not a positive finite number holds nothing
+ * (a broken hand-edited file must not swallow every object).
+ */
+export function stationHolding(
+  stations: readonly HoldingStation[],
+  at: { readonly lat: number; readonly lon: number },
+): string | null {
+  let best: { id: string; d: number } | null = null;
+  for (const station of stations) {
+    const r = station.foundRadiusM;
+    if (!Number.isFinite(r) || r <= 0) continue;
+    const d = horizontalM(station.geo, at);
+    if (d <= r && (best === null || d < best.d)) {
       best = { id: station.id, d };
     }
   }

@@ -12,7 +12,10 @@ import {
   skipSuggestAfterMs,
   stationTitle,
 } from "./station-run";
-import { ACCURACY_CEILING_M } from "./station-bands";
+import {
+  POSITION_PRECISION_CEILING_M,
+  type PositionPrecision,
+} from "gps-plus-slam-app-framework/state/position-precision";
 
 /**
  * Why these tests matter: the station run is the tour's whole game state on
@@ -102,6 +105,15 @@ describe("createStationRun: states", () => {
     ]);
   });
 
+  /** A GPS position's precision at this accuracy. */
+  function gps(accuracyM: number): PositionPrecision {
+    return {
+      source: "gps",
+      accuracyM,
+      tooWeak: accuracyM > POSITION_PRECISION_CEILING_M,
+    };
+  }
+
   // Why (PR #640 review): D16 forbids WIDENING the radius by the accuracy,
   // not judging on a fix the guide itself calls too weak. A ±500 m
   // cold-start fix inside a 10 m station latched "found" while the line
@@ -114,11 +126,11 @@ describe("createStationRun: states", () => {
       nowMs: 0,
     });
     expect(
-      run.observe({ distances: at({ a: 3 }), nowMs: 1, accuracyM: 500 }),
+      run.observe({ distances: at({ a: 3 }), nowMs: 1, precision: gps(500) }),
     ).toEqual([]);
     expect(run.status("a")?.state).toBe("waiting");
     expect(
-      run.observe({ distances: at({ a: 3 }), nowMs: 2, accuracyM: 5 }),
+      run.observe({ distances: at({ a: 3 }), nowMs: 2, precision: gps(5) }),
     ).toEqual([{ kind: "found", id: "a" }]);
   });
 
@@ -130,21 +142,40 @@ describe("createStationRun: states", () => {
         order: "fixed",
         nowMs: 0,
       });
-      run.observe({ distances: at({ a: 3 }), nowMs: 1, accuracyM });
+      run.observe({
+        distances: at({ a: 3 }),
+        nowMs: 1,
+        precision: gps(accuracyM),
+      });
       expect(run.status("a")?.state).toBe(
-        accuracyM <= ACCURACY_CEILING_M ? "found" : "waiting",
+        accuracyM <= POSITION_PRECISION_CEILING_M ? "found" : "waiting",
       );
     },
   );
 
-  it("judges an unknown accuracy (a position by a code alone) by the radius alone (D16)", () => {
+  // Changed (shared position-precision plan, M2): the run reads the
+  // framework's precision. A code's position (no number) is judged by the
+  // radius alone, as an unknown accuracy was; nothing to judge by
+  // (`'none'`) judges nothing, as a fix too weak to guide by.
+  it("judges a code's position by the radius alone (D16), and nothing on no precision at all", () => {
     const run = createStationRun({
       stations: [station("a")],
       order: "fixed",
       nowMs: 0,
     });
     expect(
-      run.observe({ distances: at({ a: 4 }), nowMs: 1, accuracyM: null }),
+      run.observe({
+        distances: at({ a: 4 }),
+        nowMs: 1,
+        precision: { source: "none", accuracyM: null, tooWeak: true },
+      }),
+    ).toEqual([]);
+    expect(
+      run.observe({
+        distances: at({ a: 4 }),
+        nowMs: 2,
+        precision: { source: "code", accuracyM: null, tooWeak: false },
+      }),
     ).toEqual([{ kind: "found", id: "a" }]);
   });
 

@@ -37,8 +37,7 @@ with the file name "My tour.zip", any other id sends none (the fallback).
 `content-disposition` is in the exposed headers, because the app (port 5187) reads this server (port 5197) cross-origin.
 
 Every `tour.json` it writes is version 3 (tour editor plan 2026-10-17-1816,
-W3): stations at geo poses, the pins and photos as their items, the baked
-photos in stations of their own. The station shapes come from
+W3): stations at geo poses, the pins and photos as their items. The station shapes come from
 `v3-fixture.mjs` (`stationAt`, `inOwnStation`: anchored exactly at the
 element, turned like north, so its local pose is a zero offset), which the
 editor spec uses too.
@@ -48,13 +47,17 @@ editor spec uses too.
 `node archive-server.mjs <port>` (default 5197 — registered in
 `../../docs/dev-server-ports.md` under auxiliary e2e servers). Routes:
 `/health` (readiness for the playwright `webServer` gate), the four archive
-routes, `/ranges-ok/recording-tour.zip` (a recording: era-5 session.json +
-an action stream, for the capture-spots placement), `/ranges-ok/baked-tour.zip`
-(a `tour.json` with baked `captureSpots`, 7 fixes, the two photos, and a
-walk kept for a co-author - `session.json`, an action, a third frame no spot
-shows - that a visitor must neither show nor replay: scan-pass plan S1), `/ranges-ok/plain-tour.zip`
-(images only - no level, no recording: the "nothing to place" case, flows
-plan M4), `/ranges-ok/details-tour.zip` (a `tour.json` at minor 3 carrying
+routes, `/ranges-ok/recording-tour.zip` (a recording without `tour.json`:
+era-5 session.json + an action stream; a creator opens it as an empty tour,
+a visitor reads that the tour is not finished yet), `/ranges-ok/baked-tour.zip`
+(an earlier `tour.json` carrying debug camera captures - `captureSpots`,
+a field gone from the format, which the reader ignores; 7 fixes, two frames in stations of their own, one of which
+holds a pin - and a walk: `session.json`, an action, a third frame. A
+visitor draws the pin and none of the frames, and takes no cover from one), `/ranges-ok/plain-tour.zip`
+(images only - no `tour.json`, no level, no recording: a tour not finished
+yet), `/ranges-ok/unfinished-tour.zip` (a `tour.json` with a name and a
+contact but no station, and the fixture's code: a tour not finished yet
+whose visitor is told whom to ask and never asked for the code), `/ranges-ok/details-tour.zip` (a `tour.json` at minor 3 carrying
 its details - name, description, contact - and a cover that is its SECOND
 photo, 3 px wide against the first's 1 px, so a page that took the first
 photo is told apart: tour editor plan 2026-10-17-1816 W2), `/flip`, `/warm-gate`, and a CORS preflight handler.
