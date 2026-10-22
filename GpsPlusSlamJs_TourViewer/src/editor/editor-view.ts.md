@@ -38,7 +38,9 @@ chrome reads, one copy for every view of the page.
   - the 3D view's shell (`editor-shell/`):
     - `openStations` - the tree's unfolded stations, by id, in the order
       they were unfolded (an id the tour no longer has is ignored by the
-      tree);
+      tree); emptied when a tour is opened or closed
+      (`tourDocumentActions.opened` / `closed`), so another tour's
+      station of the same id does not open unfolded;
     - `openSections` - `TreeSection` (`stations`, `codes`, `layers`) to
       open, all open at start;
     - `foldedDocks` - `ShellDock` (`tree`, `inspector`) to folded, none
@@ -61,7 +63,9 @@ chrome reads, one copy for every view of the page.
   - the shell's: `stationFolded({ id, open })` (an empty id ignored, no
     id twice), `sectionFolded({ section, open })`,
     `dockFolded({ dock, folded })`, `layerShown({ layer, shown })` (each
-    ignoring a key it does not know), `readoutShown({ shown })`.
+    ignoring a key it does not know), `readoutShown({ shown })`; each of
+    them ignores a flag that is not a boolean (`open`, `folded`,
+    `shown`), as the drag guard ignores a spot nobody can draw.
 - `editorViewReducer`, `selectEditorView(root)`.
 - `View3dFailure` - the reasons the 3D view did not show.
 - `EditorMessage` - the card line's shape (`MapSpot` and `EditorMoving`, the drag's, are module-private).
@@ -110,8 +114,9 @@ marker being dragged and only for a drawable spot (another marker's late
 event, NaN, Infinity and a drop after the drag ended all ignored); each
 flag set on its own, and `selected` keeping the line; the view switch's
 fields through each action, and late or doubled actions ignored; the
-shell's folds, layers and readout, with unknown keys and empty ids
-ignored; the slice mounted
+shell's folds, layers and readout, with unknown keys, empty ids and
+flags that are not booleans ignored; the unfolded stations emptied when
+another tour opens or the tour closes; the slice mounted
 beside the shared ones by `createTourViewerStore`, a colliding key
 refused, and the phone's store without it.
 `editor-view.property.test.ts`: any run of the view actions keeps the

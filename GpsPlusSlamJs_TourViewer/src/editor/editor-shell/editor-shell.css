@@ -1,7 +1,8 @@
 /*
- * The 3D view's shell (`editor-shell.ts`): the chosen studio prototype's
- * (`public/prototypes/editor3d-1-studio-r3/`) dark top bar, docks, map
- * controls and bottom bar. Applied while `body[data-view="3d"]`: the map
+ * The 3D view's shell (`editor-shell.ts`): a dark 40 px top bar that
+ * folds its controls in steps as the window narrows, the docks over the
+ * scene, the map controls and a 24 px bottom bar, drawn after the studio
+ * prototype (`public/prototypes/editor3d-1-studio-r3/`). Applied while `body[data-view="3d"]`: the map
  * page keeps its own look (`editor.css`), and the shell's own parts are
  * hidden there.
  */
@@ -31,6 +32,11 @@
     "Segoe UI", system-ui, -apple-system, "Helvetica Neue", arial, sans-serif;
   --s-top-h: 40px;
   --s-bar-h: 24px;
+  /* The narrowest the brand (its mark and the tour's name) and the save
+   * status get before the bar's other controls fold: the breakpoints
+   * below are set so the bar fits with both at these. */
+  --s-name-min: 132px;
+  --s-status-min: 88px;
 }
 
 /* The studio's parts exist only in the 3D view. */
@@ -80,6 +86,7 @@ body[data-view="3d"] #topbar .brand {
   margin-right: 2px;
   border-right: 1px solid var(--s-line);
   flex: 0 1 auto;
+  min-width: var(--s-name-min);
 }
 
 body[data-view="3d"] #topbar .brand-mark {
@@ -190,11 +197,19 @@ body[data-view="3d"] #topbar .btn.primary:hover:not(:disabled) {
   background: #f0b257;
 }
 
+/* The save status gives way first: a long line ends in an ellipsis, its
+ * whole text its title (and still announced). */
 body[data-view="3d"] #save-status {
+  display: block;
+  flex: 0 6 auto;
+  min-width: var(--s-status-min);
+  max-width: 220px;
+  overflow: hidden;
   padding: 2px 8px;
   background: var(--s-bg2);
   color: var(--s-muted);
   font-size: 11px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -210,6 +225,8 @@ body[data-view="3d"] #save-status[data-state="error"] {
 }
 
 body[data-view="3d"] .keep-walk {
+  flex: none;
+  gap: 5px;
   color: var(--s-muted);
   font-size: 11px;
 }
@@ -353,9 +370,32 @@ body[data-view="3d"] #toasts {
   );
 }
 
-.hero > * {
+/* The picture is one button over the whole hero (its number, name and
+ * description inside it); the fold arrow sits over it, beside it in the
+ * page's order, never inside it. */
+.hero .pick {
   position: absolute;
+  inset: 0;
   z-index: 1;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hero .pick > * {
+  position: absolute;
+}
+
+.hero .pick:focus-visible {
+  outline: 2px solid var(--s-accent);
+  outline-offset: -2px;
 }
 
 .hero .n {
@@ -374,6 +414,8 @@ body[data-view="3d"] #toasts {
 }
 
 .hero .tw {
+  position: absolute;
+  z-index: 2;
   top: 4px;
   right: 5px;
   display: flex;
@@ -430,10 +472,22 @@ body[data-view="3d"] #toasts {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
   height: 24px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: default;
   user-select: none;
   white-space: nowrap;
+}
+
+:is(.kid, .row, .chip, .sech, .tw, .ib, .disc):focus-visible {
+  outline: 2px solid var(--s-accent);
+  outline-offset: -2px;
 }
 
 .kid {
@@ -643,14 +697,14 @@ body[data-view="3d"] #toasts {
   align-items: start;
 }
 
-.f > label {
+.f > :is(label, .flabel) {
   overflow: hidden;
   color: var(--s-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.f.top > label {
+.f.top > :is(label, .flabel) {
   padding-top: 3px;
 }
 
@@ -685,6 +739,10 @@ body[data-view="3d"] #toasts {
   gap: 4px;
 }
 
+.vec.n2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .ax {
   display: flex;
   align-self: stretch;
@@ -707,6 +765,7 @@ body[data-view="3d"] #toasts {
 }
 
 .ro-text {
+  display: block;
   padding: 3px 0;
   overflow-wrap: anywhere;
   color: var(--s-text);
@@ -724,6 +783,7 @@ body[data-view="3d"] #toasts {
 }
 
 .thumb {
+  display: block;
   width: 54px;
   height: 32px;
   border: 1px solid var(--s-line2);
@@ -934,10 +994,34 @@ body[data-view="3d"] #toasts {
 }
 
 /* --- narrow windows ------------------------------------------------------- */
-/* Between a tablet and a desktop the page's own controls share the bar:
- * Undo and Redo lose their words and the key hints go, so the tour's name
- * keeps room; "Open another tour" says "Open". */
-@media (width <= 980px) {
+/* The top bar folds in steps as the window narrows. Each step starts where
+ * the bar would no longer hold every control with the tour's name and the
+ * save status at their floors (--s-name-min, --s-status-min), with a
+ * margin for a wider platform face; the shell's layout e2e checks the
+ * states that crowd it most (the keep-walk switch, the longest status
+ * line) at the widths around each step. */
+
+/* 1. Below a wide desktop: the keep-walk switch is its checkbox - its
+ * words out of sight, still the checkbox's name, and its title on hover -
+ * and "Add debug data" is its icon. */
+@media (width <= 1420px) {
+  body[data-view="3d"] .keep-walk-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  body[data-view="3d"] #studio-debug-add .lbl {
+    display: none;
+  }
+}
+
+/* 2. A small desktop: Undo and Redo lose their words, the key hints go,
+ * and "Open another tour" says "Open". */
+@media (width <= 1140px) {
   body[data-view="3d"] :is(#studio-undo, #studio-redo) .lbl,
   body[data-view="3d"] .tbtn kbd {
     display: none;
@@ -952,7 +1036,14 @@ body[data-view="3d"] #toasts {
   }
 }
 
-@media (width <= 820px) {
+/* 3. A tablet: every studio button is its icon, the view switch says its
+ * short word, and the gaps narrow. */
+@media (width <= 940px) {
+  :root {
+    --s-name-min: 104px;
+    --s-status-min: 72px;
+  }
+
   .tbtn .lbl,
   .tbtn kbd {
     display: none;
@@ -964,7 +1055,6 @@ body[data-view="3d"] #toasts {
   }
 
   body[data-view="3d"] #topbar .brand {
-    min-width: 0;
     padding-right: 6px;
   }
 
@@ -989,7 +1079,11 @@ body[data-view="3d"] #toasts {
     content: attr(data-short) / "";
     font-size: 12px;
   }
+}
 
+/* A tablet in portrait: the docks take at most about half the width each
+ * (one is open at a time, `dock-rule.ts`), and the hint goes. */
+@media (width <= 820px) {
   #shell-tree {
     width: min(272px, 56vw);
   }
@@ -1004,18 +1098,37 @@ body[data-view="3d"] #toasts {
   }
 }
 
-/* A phone: every control stays inside the top bar - the help (keys and
- * a mouse) and the pencil (the tour's name opens the same details) go,
- * the save status shows as a dot (its words stay its name), and Done and
- * Open show as icons. */
+/* 4. A phone: the brand's mark, the help (keys and a mouse) and the
+ * pencil (the tour's name opens the same details) go, the save status
+ * shows as a dot (its words stay its name and its title), Done and Open
+ * show as icons, and the buttons narrow. */
 @media (width <= 720px) {
-  body[data-view="3d"] :is(#studio-help-group, #studio-details) {
+  :root {
+    --s-name-min: 64px;
+  }
+
+  body[data-view="3d"] #topbar .brand-mark,
+  body[data-view="3d"] #studio-details,
+  body[data-view="3d"] #studio-help {
     display: none;
+  }
+
+  body[data-view="3d"] #topbar .tour-name {
+    margin-left: 0;
+  }
+
+  .tbtn {
+    padding: 0 5px;
+  }
+
+  body[data-view="3d"] #topbar .btn {
+    padding: 0 7px;
   }
 
   body[data-view="3d"] #save-status {
     flex: none;
     width: 10px;
+    min-width: 0;
     max-width: none;
     height: 10px;
     padding: 0;
@@ -1035,6 +1148,7 @@ body[data-view="3d"] #toasts {
   }
 
   body[data-view="3d"] #topbar :is(#done-btn, #open-another) {
+    flex: none;
     width: 28px;
     padding: 0;
     font-size: 0;
@@ -1058,5 +1172,45 @@ body[data-view="3d"] #toasts {
 
   body[data-view="3d"] #open-another {
     --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.4' stroke-linejoin='round'%3E%3Cpath d='M2 4.5a1 1 0 0 1 1-1h3.2l1.4 1.6H13a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z'/%3E%3C/svg%3E");
+  }
+}
+
+/* 5. A small phone: Redo goes (Undo stays; Redo comes back on a wider
+ * window or the map), and the groups and the tour's name close up. */
+@media (width <= 440px) {
+  :root {
+    --s-name-min: 40px;
+  }
+
+  body[data-view="3d"] #studio-redo {
+    display: none;
+  }
+
+  .grp {
+    padding: 0 1px;
+  }
+
+  .tbtn {
+    padding: 0 4px;
+  }
+}
+
+/* 6. The narrowest phones (320-375 px): "Add debug data" goes too (the
+ * map's panel keeps it), and the bar's edges close up. */
+@media (width <= 375px) {
+  :root {
+    --s-name-min: 32px;
+  }
+
+  body[data-view="3d"] #studio-debug-add {
+    display: none;
+  }
+
+  body[data-view="3d"] #topbar {
+    padding: 0 2px;
+  }
+
+  body[data-view="3d"] #topbar .btn {
+    padding: 0 5px;
   }
 }

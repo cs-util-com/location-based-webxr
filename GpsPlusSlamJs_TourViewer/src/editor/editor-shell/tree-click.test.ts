@@ -89,10 +89,48 @@ describe("treeClick", () => {
     expect(out.outcome).toBe("deselect");
   });
 
-  // Why: whatever the clicks and their timing, a toggle (deselect) only
-  // ever follows a slow click on the selected card, and a click on any
-  // other card always selects it.
-  it("never toggles inside the interval, for any run of clicks", () => {
+  it("does nothing on a quick second click on the card it just deselected", () => {
+    // Why: a double click on the selected card deselected it on
+    // the first click and selected it again - and flew - on the second.
+    const first = treeClick({
+      id: "station:a",
+      at: 5000,
+      detail: 1,
+      selected: "station:a",
+      last: { id: "station:a", at: 1000 },
+    });
+    expect(first.outcome).toBe("deselect");
+    const second = treeClick({
+      id: "station:a",
+      at: 5100,
+      detail: 2,
+      selected: null,
+      last: first.memory,
+    });
+    expect(second.outcome).toBe("none");
+  });
+
+  // The rule, stated apart from the code: what a click does by whether its
+  // card is selected, whether the click before was on the same card, and
+  // whether it came inside the double-click interval (by the clock, or by
+  // the browser's count). Only the first click of a quick run on one card
+  // counts.
+  const RULE: Readonly<
+    Record<`${"sel" | "unsel"}/${"same" | "other"}/${"quick" | "slow"}`, string>
+  > = {
+    "unsel/other/quick": "select",
+    "unsel/other/slow": "select",
+    "unsel/same/quick": "none",
+    "unsel/same/slow": "select",
+    "sel/other/quick": "deselect",
+    "sel/other/slow": "deselect",
+    "sel/same/quick": "none",
+    "sel/same/slow": "deselect",
+  };
+
+  // Why: any run of clicks, with any timing and click counts, follows the
+  // table - in particular no quick run on one card ever toggles it.
+  it("follows the rule's table for any run of clicks", () => {
     fc.assert(
       fc.property(
         fc.array(
@@ -106,17 +144,21 @@ describe("treeClick", () => {
         (clicks) => {
           let selected: string | null = null;
           let last = NO_TREE_CLICK;
+          let previous: { id: string; at: number } | null = null;
           let at = 0;
           for (const click of clicks) {
             at += click.gap;
-            const rapid =
-              click.detail > 1 ||
-              (last.id === click.id && at - last.at < TREE_DOUBLE_CLICK_MS);
+            const same = previous?.id === click.id;
+            const quick =
+              same &&
+              (click.detail > 1 ||
+                at - (previous?.at ?? 0) < TREE_DOUBLE_CLICK_MS);
+            const key =
+              `${click.id === selected ? "sel" : "unsel"}/${same ? "same" : "other"}/${quick ? "quick" : "slow"}` as const;
             const out = treeClick({ ...click, at, selected, last });
-            let expected: string = rapid ? "none" : "deselect";
-            if (click.id !== selected) expected = "select";
-            expect(out.outcome).toBe(expected);
+            expect(out.outcome).toBe(RULE[key]);
             last = out.memory;
+            previous = { id: click.id, at };
             if (out.outcome === "select") selected = click.id;
             if (out.outcome === "deselect") selected = null;
           }

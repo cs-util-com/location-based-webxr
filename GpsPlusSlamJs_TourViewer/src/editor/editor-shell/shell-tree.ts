@@ -1,7 +1,10 @@
 /**
  * The 3D view's tree dock, drawn from its model (`tree-model.ts`): the
  * stations' story cards with their items, the codes and the layer chips.
- * Everything from the tour is set as text, never as markup. The clicks
+ * Everything from the tour is set as text, never as markup. Every control
+ * is a button (a card's picture, its fold arrow, an item's and a code's
+ * row, a header, a chip), none inside another, so the tree works from the
+ * keyboard; a draw keeps the focus on the control that had it. The clicks
  * are the shell's (`editor-shell.ts`), read from the drawn elements' data:
  *
  * - `data-select` - a card's picture, an item's or a code's row: the
@@ -28,23 +31,57 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return made;
 }
 
+function button(className: string): HTMLButtonElement {
+  const made = el("button", className);
+  made.type = "button";
+  return made;
+}
+
+/** The data attributes a control of the tree is known by across draws. */
+const KEYS = ["select", "unfold", "section", "layer"] as const;
+
+type ControlKey = (typeof KEYS)[number];
+
+/** Which control of `body` has the focus, by its data, or null. */
+function focusedControl(
+  body: HTMLElement,
+): { key: ControlKey; value: string } | null {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || !body.contains(active)) return null;
+  for (const key of KEYS) {
+    const value = active.dataset[key];
+    if (value !== undefined) return { key, value };
+  }
+  return null;
+}
+
+/** The control of `body` known by `control`, or none. */
+function controlOf(
+  body: HTMLElement,
+  control: { key: ControlKey; value: string },
+): HTMLElement | undefined {
+  return [...body.querySelectorAll<HTMLElement>(`[data-${control.key}]`)].find(
+    (e) => e.dataset[control.key] === control.value,
+  );
+}
+
 /** A section's header button: its fold arrow, its name and its count. */
 function sectionHeader(
-  button: HTMLButtonElement,
+  head: HTMLButtonElement,
   section: TreeSection,
   label: string,
   open: boolean,
   count: number | null,
 ): HTMLButtonElement {
-  button.dataset["section"] = section;
-  button.setAttribute("aria-expanded", String(open));
+  head.dataset["section"] = section;
+  head.setAttribute("aria-expanded", String(open));
   const parts: Node[] = [
     shellIcon(open ? "down" : "right"),
     el("span", "", label),
   ];
   if (count !== null) parts.push(el("span", "count", String(count)));
-  button.replaceChildren(...parts);
-  return button;
+  head.replaceChildren(...parts);
+  return head;
 }
 
 function cardOf(card: TreeCard, pictures: ShellPictures): HTMLElement {
@@ -54,30 +91,34 @@ function cardOf(card: TreeCard, pictures: ShellPictures): HTMLElement {
   box.dataset["station"] = card.id;
   const hero = el("div", "hero");
   hero.classList.toggle("nodesc", card.description === null);
-  hero.dataset["select"] = card.selection;
-  hero.title = card.title;
   if (card.imagePath !== null) pictures.show(hero, card.imagePath);
-  const fold = el("button", "tw");
-  fold.type = "button";
+  // The picture is a button over the whole hero; the fold arrow sits
+  // beside it, never inside it.
+  const pick = button("pick");
+  pick.dataset["select"] = card.selection;
+  pick.title = card.title;
+  pick.setAttribute("aria-pressed", String(card.selected));
+  const fold = button("tw");
   fold.dataset["unfold"] = card.id;
   fold.setAttribute("aria-expanded", String(card.open));
   fold.title = card.open ? "Hide the items" : "Show the items";
   fold.setAttribute("aria-label", fold.title);
   fold.append(shellIcon(card.open ? "down" : "right"));
-  hero.append(
+  pick.append(
     el("span", "n", String(card.number)),
-    fold,
     el("span", "nm", card.title),
   );
   if (card.description !== null) {
-    hero.append(el("span", "ds", card.description));
+    pick.append(el("span", "ds", card.description));
   }
+  hero.append(pick, fold);
   box.append(hero);
   if (card.open) {
     const kids = el("div", "kids");
     for (const child of card.children) {
-      const row = el("div", "kid");
+      const row = button("kid");
       row.classList.toggle("sel", child.selected);
+      row.setAttribute("aria-pressed", String(child.selected));
       row.dataset["select"] = child.id;
       const icon = el("span", `ic ${child.kind}`);
       icon.append(shellIcon(child.kind));
@@ -108,6 +149,7 @@ export function drawTree(
   folded: boolean,
   pictures: ShellPictures,
 ): void {
+  const focused = focusedControl(dock.body);
   dock.root.classList.toggle("collapsed", folded);
   dock.fold.replaceChildren(shellIcon(folded ? "down" : "up"));
   dock.fold.title = folded ? "Show the panel" : "Collapse the panel";
@@ -129,7 +171,7 @@ export function drawTree(
   const codesHead = el("div", "sec");
   codesHead.append(
     sectionHeader(
-      el("button", "sech"),
+      button("sech"),
       "codes",
       "Codes",
       tree.sections.codes,
@@ -139,8 +181,9 @@ export function drawTree(
   parts.push(codesHead);
   if (tree.sections.codes) {
     for (const code of tree.codes) {
-      const row = el("div", "row");
+      const row = button("row");
       row.classList.toggle("sel", code.selected);
+      row.setAttribute("aria-pressed", String(code.selected));
       row.dataset["select"] = code.id;
       row.title = code.meta;
       const icon = el("span", "ic code");
@@ -152,7 +195,7 @@ export function drawTree(
   const layersHead = el("div", "sec");
   layersHead.append(
     sectionHeader(
-      el("button", "sech"),
+      button("sech"),
       "layers",
       "Visible layers",
       tree.sections.layers,
@@ -163,20 +206,15 @@ export function drawTree(
   if (tree.sections.layers) {
     const chips = el("div", "layers");
     for (const chip of tree.chips) {
-      const button = el("button", "chip");
-      button.type = "button";
-      button.classList.toggle("on", chip.on);
-      button.dataset["layer"] = chip.layer;
-      button.setAttribute("aria-pressed", String(chip.on));
-      button.append(el("i", ""), chip.label);
-      chips.append(button);
+      const toggle = button("chip");
+      toggle.classList.toggle("on", chip.on);
+      toggle.dataset["layer"] = chip.layer;
+      toggle.setAttribute("aria-pressed", String(chip.on));
+      toggle.append(el("i", ""), chip.label);
+      chips.append(toggle);
     }
     parts.push(chips);
   }
-  for (const b of parts.flatMap((p) =>
-    p instanceof HTMLElement ? [...p.querySelectorAll("button.sech")] : [],
-  )) {
-    (b as HTMLButtonElement).type = "button";
-  }
   dock.body.replaceChildren(...parts);
+  if (focused !== null) controlOf(dock.body, focused)?.focus();
 }

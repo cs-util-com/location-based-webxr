@@ -21,6 +21,8 @@
 
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
+import { tourDocumentActions } from "../tour-document.js";
+
 /** A spot on the map, as a drag drops a marker. */
 interface MapSpot {
   readonly lat: number;
@@ -123,6 +125,11 @@ export const initialEditorViewState: EditorViewState = {
   readout: false,
 };
 
+/** Whether a payload's flag is a flag: anything else changes nothing. */
+function isFlag(value: unknown): value is boolean {
+  return typeof value === "boolean";
+}
+
 /** Whether `spot` is a spot a map can draw: finite numbers. */
 function isSpot(spot: MapSpot): boolean {
   return Number.isFinite(spot.lat) && Number.isFinite(spot.lng);
@@ -200,7 +207,7 @@ const editorViewSlice = createSlice({
     /** A station of the tree unfolded (its items listed) or folded. */
     stationFolded(state, action: PayloadAction<{ id: string; open: boolean }>) {
       const { id, open } = action.payload;
-      if (typeof id !== "string" || id === "") return;
+      if (typeof id !== "string" || id === "" || !isFlag(open)) return;
       const at = state.openStations.indexOf(id);
       if (open && at < 0) state.openStations.push(id);
       if (!open && at >= 0) state.openStations.splice(at, 1);
@@ -210,27 +217,31 @@ const editorViewSlice = createSlice({
       action: PayloadAction<{ section: TreeSection; open: boolean }>,
     ) {
       const { section, open } = action.payload;
-      if (TREE_SECTIONS.includes(section)) state.openSections[section] = open;
+      if (TREE_SECTIONS.includes(section) && isFlag(open)) {
+        state.openSections[section] = open;
+      }
     },
     dockFolded(
       state,
       action: PayloadAction<{ dock: ShellDock; folded: boolean }>,
     ) {
       const { dock, folded } = action.payload;
-      if (SHELL_DOCKS.includes(dock)) state.foldedDocks[dock] = folded;
+      if (SHELL_DOCKS.includes(dock) && isFlag(folded)) {
+        state.foldedDocks[dock] = folded;
+      }
     },
     layerShown(
       state,
       action: PayloadAction<{ layer: ShellLayer; shown: boolean }>,
     ) {
       const { layer, shown } = action.payload;
-      if (!SHELL_LAYERS.includes(layer)) return;
+      if (!SHELL_LAYERS.includes(layer) || !isFlag(shown)) return;
       const hidden = state.hiddenLayers.filter((l) => l !== layer);
       if (!shown) hidden.push(layer);
       state.hiddenLayers = hidden;
     },
     readoutShown(state, action: PayloadAction<{ shown: boolean }>) {
-      state.readout = action.payload.shown;
+      if (isFlag(action.payload.shown)) state.readout = action.payload.shown;
     },
     /** The map asked for (or the tour closed): any load is left, and the
      *  last failure is forgotten. */
@@ -239,6 +250,16 @@ const editorViewSlice = createSlice({
       state.view3dLoad = "idle";
       state.view3dFailure = null;
     },
+  },
+  extraReducers: (builder) => {
+    // The unfolded stations are the open tour's ids: another tour, or
+    // none, starts with every station folded.
+    const foldAll = (state: { openStations: string[] }) => {
+      state.openStations = [];
+    };
+    builder
+      .addCase(tourDocumentActions.opened, foldAll)
+      .addCase(tourDocumentActions.closed, foldAll);
   },
 });
 

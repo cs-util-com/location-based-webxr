@@ -4,12 +4,14 @@
  * `shell-inspector.ts`'s.
  *
  * - A station: its name, "Station n of N", its description and card
- *   picture, its found and preload radii, and where it stands (latitude,
- *   longitude, height over the ellipsoid, heading).
+ *   picture, its found and preload radii, and where it stands: metres east
+ *   and north of the tour's centre (the 3D view's origin,
+ *   `tour-origin.ts`), its height over the ellipsoid and its heading.
  * - An item (pin, photo, 3D model): its name, its kind and station, a
  *   model's size, its offset in the station's frame and its heading
  *   there.
- * - A code: its name, its line, its print size and where it stands.
+ * - A code: its name, its line, its print size and where it stands, in
+ *   the same metres.
  *
  * @see inspector-model.ts.md
  */
@@ -20,12 +22,16 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { stationTitle } from "../../station-run.js";
+import { eastNorthOf, tourCentre } from "../tour-origin.js";
 import { stationImagePath } from "./tree-model.js";
 
-/** Where something stands, as the file says. */
+/** Where something stands: as the 3D view frames it, and as the file
+ *  says its height and heading. */
 export interface InspectorPosition {
-  readonly lat: number;
-  readonly lon: number;
+  /** Metres east of the tour's centre (the 3D view's origin). */
+  readonly eastM: number;
+  /** Metres north of the tour's centre. */
+  readonly northM: number;
   /** Over the ellipsoid (m), as the file writes heights. */
   readonly altM: number;
   /** Clockwise from north; null when the file gives none. */
@@ -40,7 +46,8 @@ interface StationInspector {
   readonly imagePath: string | null;
   readonly foundRadiusM: number;
   readonly activateRadiusM: number;
-  readonly position: InspectorPosition;
+  /** Null for a station the file does not place. */
+  readonly position: InspectorPosition | null;
 }
 
 interface ItemInspector {
@@ -65,7 +72,7 @@ interface CodeInspector {
   readonly title: string;
   readonly sub: string;
   readonly printSizeM: number | null;
-  /** Null for a code with no stored position. */
+  /** Null for a code with no stored position, or one not placed. */
   readonly position: InspectorPosition | null;
 }
 
@@ -110,11 +117,16 @@ export function headingOfRotation(
   return ((deg % 360) + 360) % 360;
 }
 
-function positionOf(geo: NonNullable<InspectorCode["geo"]>): InspectorPosition {
+function positionOf(
+  geo: NonNullable<InspectorCode["geo"]>,
+  origin: { readonly lat: number; readonly lng: number } | null,
+): InspectorPosition | null {
+  const at = origin === null ? null : eastNorthOf(geo, origin);
+  if (at === null || !Number.isFinite(geo.alt)) return null;
   const heading =
     geo.headingDeg ??
     (geo.rotation === undefined ? null : headingOfRotation(geo.rotation));
-  return { lat: geo.lat, lon: geo.lon, altM: geo.alt, headingDeg: heading };
+  return { ...at, altM: geo.alt, headingDeg: heading };
 }
 
 function itemTitle(item: TourItem): string {
@@ -133,6 +145,11 @@ export function buildInspector(input: {
 }): InspectorModel | null {
   const { selected, stations } = input;
   if (selected === null) return null;
+  // The 3D view's origin: the same centre its frame is built on.
+  const origin = tourCentre(
+    stations,
+    input.codes.flatMap((c) => (c.geo === null ? [] : [c.geo])),
+  );
   if (selected.startsWith("station:")) {
     const id = selected.slice("station:".length);
     const index = stations.findIndex((s) => s.id === id);
@@ -147,7 +164,7 @@ export function buildInspector(input: {
       imagePath: stationImagePath(station, input.assets),
       foundRadiusM: station.foundRadiusM,
       activateRadiusM: station.activateRadiusM,
-      position: positionOf(station.geo),
+      position: positionOf(station.geo, origin),
     };
   }
   for (const [index, station] of stations.entries()) {
@@ -171,6 +188,6 @@ export function buildInspector(input: {
     title: code.title,
     sub: code.meta,
     printSizeM: code.printSizeM,
-    position: code.geo === null ? null : positionOf(code.geo),
+    position: code.geo === null ? null : positionOf(code.geo, origin),
   };
 }

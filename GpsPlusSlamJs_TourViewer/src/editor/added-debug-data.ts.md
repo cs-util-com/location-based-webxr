@@ -23,20 +23,22 @@ says it. Pure; `edit-main.ts` opens the file and runs the layer.
   - `match: "recording"`: "It is a recording, not saved from this tour.";
   - `tourCarriesWalk`: "It is shown in place of the tour's own walk."
 - `notAddedLine(reason)` - "Not added: <reason>" for a refused file.
-- `createAddDebugButton(button) -> { run(work), busy() }` - the button
-  through one add (the async-UI rule, r901 review #3): `run` disables it
-  with the in-progress label, runs `work`, and gives it back idle and
-  enabled however `work` settles (a file shown, refused, or a read that
-  threw - the throw passes on). A `run` while one is running starts
-  nothing and resolves null. The button is structural
-  (`{ disabled, textContent }`), so the tests run in node.
+- `createAddDebugButton(...buttons) -> { run(work), busy() }` - the
+  buttons through one add (the async-UI rule, r901 review #3): `run`
+  disables every one with the in-progress label, runs `work`, and gives
+  them back idle and enabled however `work` settles (a file shown,
+  refused, or a read that threw - the throw passes on). A `run` while one
+  is running starts nothing and resolves null, whichever button started
+  it (the map's panel and the 3D view's top bar each have one). A button
+  is structural (`{ disabled, textContent }`), so the tests run in node;
+  the top bar's passes its label's text through.
 
 ## Invariants & assumptions
 
 - Plan Q-C: a bundle from another tour is shown, never refused; the line
   must never call another tour's walk this tour's.
 - Pure text apart from `createAddDebugButton`, which touches only the
-  button it is given: no DOM lookups, no I/O. Names come from the user's file and the
+  buttons it is given: no DOM lookups, no I/O. Names come from the user's file and the
   bundle's identity, and the page sets them as text, never as markup.
 
 ## Examples
@@ -57,7 +59,7 @@ addedDebugLine({
 - `added-debug-data.test.ts` - each line, an identity naming nothing,
   the refusal and the labels; the button's adding state and its return
   to idle and enabled after a file shown, refused or unreadable, and a
-  second add refused while one runs.
+  second add refused while one runs; two buttons driven together.
 - `playwright-tests/editor.spec.js` - "adds the debug data back...",
   "says whose added debug data is...", "shows debug data dropped on its
   panel...": the button and the drop, the lines on the page, no save

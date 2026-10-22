@@ -14,11 +14,7 @@ import { describe, expect, it } from "vitest";
 
 import { worldFromEcefAt } from "gps-plus-slam-globe/editor";
 
-import {
-  modelScale,
-  pointRootMatrix,
-  tourCentre,
-} from "./editor3d-tour-root.js";
+import { modelScale, pointRootMatrix } from "./editor3d-tour-root.js";
 
 const FRAME = { lat: 48.137393, lng: 11.575493 };
 const DEG = Math.PI / 180;
@@ -163,36 +159,5 @@ describe("modelScale", () => {
     model.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)));
     expect(() => modelScale(model, 0)).toThrow(RangeError);
     expect(() => modelScale(model, Number.NaN)).toThrow(RangeError);
-  });
-});
-
-describe("tourCentre", () => {
-  const geo = (lat: number, lon: number, alt: number) => ({
-    geo: { lat, lon, alt },
-  });
-
-  // Why: the 3D view's frame and its first orbit centre on the tour: the
-  // mean of its stations' positions and heights; a tour without stations
-  // centres on its codes; one with neither has nothing to show.
-  it("is the mean of the stations, else of the codes, else none", () => {
-    const centre = tourCentre([geo(48, 11, 500), geo(48.002, 11.004, 520)], []);
-    expect(centre?.lat).toBeCloseTo(48.001, 12);
-    expect(centre?.lng).toBeCloseTo(11.002, 12);
-    expect(centre?.altM).toBeCloseTo(510, 9);
-    expect(tourCentre([], [geo(47, 8, 400).geo])).toEqual({
-      lat: 47,
-      lng: 8,
-      altM: 400,
-    });
-    expect(tourCentre([], [])).toBeNull();
-  });
-
-  // Why: a point the file cannot place (NaN) must not drag the frame to
-  // the middle of nowhere; it is left out of the mean.
-  it("leaves out points that cannot be placed", () => {
-    expect(
-      tourCentre([geo(48, 11, 500), geo(Number.NaN, 11, 500)], []),
-    ).toEqual({ lat: 48, lng: 11, altM: 500 });
-    expect(tourCentre([geo(Number.NaN, 0, 0)], [])).toBeNull();
   });
 });

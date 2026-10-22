@@ -2,9 +2,10 @@
  * The 3D view's inspector dock, drawn from its model
  * (`inspector-model.ts`): the selection's name, what it is, and its
  * fields read-only, the position folded away under a disclosure. Text
- * only, never markup. The head's fold and close buttons and the
- * disclosure carry `data-act` (`fold`, `close`, `position`); the shell
- * answers them.
+ * only, never markup. Every value is an `<output>` tied to its label, so
+ * a screen reader reads the two together. The head's fold and close
+ * buttons and the disclosure carry `data-act` (`fold`, `close`,
+ * `position`); the shell answers them.
  *
  * @see shell-inspector.ts.md
  */
@@ -29,6 +30,14 @@ function fixed(value: number, digits: number): string {
   return Number(text) === 0 ? (0).toFixed(digits) : text;
 }
 
+/** A fresh id for a field's value: labels point at their value by it.
+ *  Only one inspector exists, and each draw replaces every field. */
+let fieldCount = 0;
+function fieldId(): string {
+  fieldCount += 1;
+  return `inspector-field-${String(fieldCount)}`;
+}
+
 function iconButton(
   icon: ShellIcon,
   label: string,
@@ -43,40 +52,84 @@ function iconButton(
   return b;
 }
 
-/** A read-only field: its label and its value (with a unit). */
-function field(label: string, value: string, unit = ""): HTMLElement {
+/** A row: `label` tied to the value `value` (given an id here), the row
+ *  showing `shown` (the value, or a box holding it). */
+function labelled(
+  label: string,
+  value: HTMLElement,
+  shown: HTMLElement = value,
+): HTMLElement {
   const row = el("div", "f");
-  const box = el("div", "num ro");
-  box.append(el("output", "val", value));
-  if (unit !== "") box.append(el("span", "unit", unit));
-  row.append(el("label", "", label), box);
+  value.id = fieldId();
+  const tag = el("label", "", label);
+  tag.htmlFor = value.id;
+  row.append(tag, shown);
   return row;
 }
 
+/** A read-only number: its label and its value (with a unit). */
+function field(label: string, value: string, unit = ""): HTMLElement {
+  const box = el("div", "num ro");
+  const out = el("output", "val", value);
+  box.append(out);
+  if (unit !== "") box.append(el("span", "unit", unit));
+  return labelled(label, out, box);
+}
+
 function textField(label: string, value: string): HTMLElement {
-  const row = el("div", "f top");
-  row.append(el("label", "", label), el("div", "ro-text", value));
+  const row = labelled(label, el("output", "ro-text", value));
+  row.classList.add("top");
   return row;
+}
+
+/** A vector's axes in one row: the row's label names the group, and each
+ *  axis is named by it ("Offset north"). */
+function vectorField(
+  label: string,
+  axes: readonly (readonly [axis: string, name: string, value: string])[],
+): HTMLElement {
+  const row = el("div", "f");
+  const tag = el("span", "flabel", label);
+  tag.id = fieldId();
+  const vec = el("div", `vec n${String(axes.length)}`);
+  vec.setAttribute("role", "group");
+  vec.setAttribute("aria-labelledby", tag.id);
+  for (const [axis, name, value] of axes) {
+    const box = el("div", "num ro");
+    const out = el("output", "val", value);
+    out.setAttribute("aria-label", `${label} ${name}`);
+    box.append(el("span", `ax ${axis.toLowerCase()}`, axis), out);
+    vec.append(box);
+  }
+  row.append(tag, vec);
+  return row;
+}
+
+function headingText(deg: number | null): string {
+  return deg === null ? "-" : fixed(deg, 0);
 }
 
 function positionFields(p: InspectorPosition): HTMLElement[] {
   return [
-    field("Latitude", fixed(p.lat, 6), "deg"),
-    field("Longitude", fixed(p.lon, 6), "deg"),
+    vectorField("Anchor", [
+      ["E", "east", fixed(p.eastM, 1)],
+      ["N", "north", fixed(p.northM, 1)],
+    ]),
     field("Height", fixed(p.altM, 1), "m"),
-    field(
-      "Heading",
-      p.headingDeg === null ? "-" : fixed(p.headingDeg, 0),
-      "deg",
+    field("Heading", headingText(p.headingDeg), "deg"),
+    el(
+      "div",
+      "note",
+      "Metres east / north of the tour's centre, where the 3D view is centred; the height over the ellipsoid, as the file writes it; the heading clockwise from north.",
     ),
   ];
 }
 
-/** The folded position's one-line summary. */
+/** The folded position's one-line summary, as the plan writes it. */
 function positionSummary(p: InspectorPosition): string {
   const heading =
     p.headingDeg === null ? "" : `  ${fixed(p.headingDeg, 0)} deg`;
-  return `${fixed(p.lat, 5)}, ${fixed(p.lon, 5)}${heading}`;
+  return `E ${fixed(p.eastM, 1)}  N ${fixed(p.northM, 1)}${heading}`;
 }
 
 function disclosure(
@@ -99,6 +152,16 @@ function disclosure(
   const body = el("div", "pos");
   body.append(...fields);
   return [b, body];
+}
+
+/** The position's disclosure, or a note when there is none to show. */
+function positionPart(
+  position: InspectorPosition | null,
+  open: boolean,
+  none: string,
+): HTMLElement[] {
+  if (position === null) return [el("div", "note pad", none)];
+  return disclosure(open, positionSummary(position), positionFields(position));
 }
 
 const KIND_ICON: Readonly<Record<string, ShellIcon>> = {
@@ -149,15 +212,15 @@ export function drawInspector(
   const section = el("div", "isec");
   if (model.kind === "station") {
     section.append(textField("Description", model.description ?? "None"));
-    const picture = el("div", "f");
-    const thumb = el("div", "thumb");
-    if (model.imagePath !== null) pictures.show(thumb, model.imagePath);
-    picture.append(
-      el("label", "", "Card image"),
-      model.imagePath === null ? el("div", "ro-text", "None") : thumb,
-    );
+    if (model.imagePath === null) {
+      section.append(textField("Card image", "None"));
+    } else {
+      const thumb = el("output", "thumb");
+      thumb.setAttribute("role", "img");
+      pictures.show(thumb, model.imagePath);
+      section.append(labelled("Card image", thumb));
+    }
     section.append(
-      picture,
       field("Radius", fixed(model.foundRadiusM, 1), "m"),
       el(
         "div",
@@ -167,10 +230,10 @@ export function drawInspector(
     );
     parts.push(
       section,
-      ...disclosure(
+      ...positionPart(
+        model.position,
         state.positionOpen,
-        positionSummary(model.position),
-        positionFields(model.position),
+        "The file gives this station no position.",
       ),
     );
   } else if (model.kind === "item") {
@@ -178,30 +241,18 @@ export function drawInspector(
       section.append(field("Size", fixed(model.sizeM, 2), "m"));
     }
     const o = model.offset;
-    const offset = el("div", "f");
-    const vec = el("div", "vec");
-    for (const [axis, value] of [
-      ["N", o.northM],
-      ["U", o.upM],
-      ["E", o.eastM],
-    ] as const) {
-      const box = el("div", "num ro");
-      box.append(
-        el("span", `ax ${axis.toLowerCase()}`, axis),
-        el("output", "val", fixed(value, 2)),
-      );
-      vec.append(box);
-    }
-    offset.append(el("label", "", "Offset"), vec);
-    const heading =
-      model.headingDeg === null ? "-" : fixed(model.headingDeg, 0);
+    const heading = headingText(model.headingDeg);
     parts.push(
       ...(section.childElementCount > 0 ? [section] : []),
       ...disclosure(
         state.positionOpen,
         `${fixed(o.upM, 1)} m up  ${heading} deg`,
         [
-          offset,
+          vectorField("Offset", [
+            ["N", "north", fixed(o.northM, 2)],
+            ["U", "up", fixed(o.upM, 2)],
+            ["E", "east", fixed(o.eastM, 2)],
+          ]),
           field("Heading", heading, "deg"),
           el(
             "div",
@@ -219,18 +270,14 @@ export function drawInspector(
         "m",
       ),
     );
-    parts.push(section);
-    if (model.position === null) {
-      parts.push(el("div", "note pad", "No position stored yet."));
-    } else {
-      parts.push(
-        ...disclosure(
-          state.positionOpen,
-          positionSummary(model.position),
-          positionFields(model.position),
-        ),
-      );
-    }
+    parts.push(
+      section,
+      ...positionPart(
+        model.position,
+        state.positionOpen,
+        "No position stored yet.",
+      ),
+    );
   }
   dock.body.replaceChildren(...parts);
 }

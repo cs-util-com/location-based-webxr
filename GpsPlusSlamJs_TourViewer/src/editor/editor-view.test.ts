@@ -8,6 +8,7 @@
  * moves the item to.
  */
 
+import { createEmptyTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 import {
   editorViewActions as act,
@@ -16,7 +17,7 @@ import {
   selectEditorView,
 } from "./editor-view.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
-import { tourDocumentReducer } from "../tour-document.js";
+import { tourDocumentActions, tourDocumentReducer } from "../tour-document.js";
 
 /** The 3D view's shell at the start: every station folded, every section
  *  open, both docks unfolded, every layer shown, no debug readout. */
@@ -262,6 +263,36 @@ describe("the 3D view's shell state", () => {
     expect(unknown.reduce(reduce, initialEditorViewState)).toEqual(
       initialEditorViewState,
     );
+  });
+
+  // Why: a payload from a stale or malformed dispatch must not
+  // write a value the shell would read as a fold or a layer state.
+  it("ignores a fold, a dock, a layer or a readout that is not a boolean", () => {
+    const unread = [
+      act.stationFolded({ id: "a", open: "yes" as never }),
+      act.sectionFolded({ section: "codes", open: undefined as never }),
+      act.dockFolded({ dock: "tree", folded: 1 as never }),
+      act.layerShown({ layer: "names", shown: null as never }),
+      act.readoutShown({ shown: "true" as never }),
+    ];
+    expect(unread.reduce(reduce, initialEditorViewState)).toEqual(
+      initialEditorViewState,
+    );
+  });
+
+  // Why: the unfolded stations are ids of the open tour; another
+  // tour may reuse an id, and must open with every station folded.
+  it("folds every station when another tour opens, or the tour closes", () => {
+    const open = reduce(
+      initialEditorViewState,
+      act.stationFolded({ id: "a", open: true }),
+    );
+    const another = reduce(
+      open,
+      tourDocumentActions.opened({ manifest: createEmptyTourManifest() }),
+    );
+    expect(another.openStations).toEqual([]);
+    expect(reduce(open, tourDocumentActions.closed()).openStations).toEqual([]);
   });
 
   it("keeps the shell's state through the view switch and a selection", () => {

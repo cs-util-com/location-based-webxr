@@ -17,11 +17,15 @@ AR (tour editor plan 2026-10-17-1816, W1).
 
 ## Structure
 
-- `#map` - the full-window map (`src/editor/editor-map.ts`).
+- `#topbar` comes first in the body (described below), so Tab starts in
+  the top bar and walks it left to right.
+- `#map` - the full-window map (`src/editor/editor-map.ts`); `inert`
+  while the 3D view shows over it, so Tab never walks the hidden map.
 - `#view3d` - the 3D view's box over the map, hidden until the view
   shows (`src/editor3d/editor3d-scene.ts` puts its canvas in it), with its
   credits line `#view3d-credits` (Mapterhorn, its elevation data,
-  OpenStreetMap). Inside it the studio shell's parts
+  OpenStreetMap) as its last child, so its links come after the docks in
+  the Tab order (the docks' z-index keeps them painted over it). Inside it the studio shell's parts
   (`src/editor/editor-shell/editor-shell.ts`): the tree dock
   `#shell-tree` (`#tree-stations`, `#tree-fold`, `#tree-body`), the
   inspector dock `#shell-inspector` (`#inspector-head`,
@@ -49,14 +53,19 @@ AR (tour editor plan 2026-10-17-1816, W1).
 - `#topbar` - the tour's title (`#tour-name`, a button that opens the
   tour's details, W2) and file name, the "Keep the debug data in
   the tour file" switch (`#keep-walk`, only for a tour carrying a walk,
-  unticked; hidden for a file opened for writing, which keeps its walk), `#save-status`,
+  unticked; hidden for a file opened for writing, which keeps its walk;
+  its words in `.keep-walk-text` and its `title`, so the 3D view's narrow
+  bar can show the checkbox alone and keep its name), `#save-status`
+  (its words also in its `title`),
   `#save-btn` (Save downloads the tour, M6 E2a), `#done-btn` ("Done",
   W2), "Open another tour"; first of them, after the spacer, `#view-switch`
   ("3D view", the view switch: `src/editor/view-switch.ts`). The 3D
   view's studio controls sit in it too, hidden on the map: the pencil
   (`#studio-details`), Undo and Redo (`#studio-undo`, `#studio-redo`)
-  after the title, and Frame, Top view and Help (`#studio-frame`,
-  `#studio-top`, `#studio-help`) before the switch; their icons are
+  after the title, and Frame, Top view, Help and "Add debug data…"
+  (`#studio-frame`, `#studio-top`, `#studio-help`, `#studio-debug-add`:
+  the map's debug panel is hidden over the 3D view, and this button opens
+  the same `#debug-add-input`) before the switch; their icons are
   `<i data-icon>` slots the shell fills.
 - `#rail` - the codes, pins and photos (`src/editor/editor-rail.ts`).
 - `#card`, `#offscreen-chip` - the card beside the selected marker

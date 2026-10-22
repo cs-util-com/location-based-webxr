@@ -37,6 +37,7 @@ import { loadGlbModel } from "../glb-model.js";
 import { createPinLabel } from "../pin-label.js";
 import { manifestToWrite, type TourDocumentState } from "../tour-document.js";
 import type { EditorViewState, ShellLayer } from "../editor/editor-view.js";
+import { tourCentre } from "../editor/tour-origin.js";
 import {
   EDITOR_CAMERA,
   EDITOR_CLIP,
@@ -65,7 +66,6 @@ import {
   createStationsLayer,
 } from "./editor3d-stations.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
-import { tourCentre } from "./editor3d-tour-root.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
 
 /** The store, as the 3D view reads it. */
@@ -153,6 +153,8 @@ export interface Editor3dStats {
   readonly osm: Record<string, unknown>;
   /** The orbit's centre in the world (m). */
   readonly target: readonly [number, number, number];
+  /** The camera in the world (m). */
+  readonly camera: readonly [number, number, number];
   readonly distanceM: number;
   /** A flight is under way. */
   readonly flying: boolean;
@@ -390,15 +392,16 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     } | null = null;
     const poseNow = (): OrbitPose =>
       orbitPoseOf(camera.position, controls.target);
-    /** OrbitControls keeps a little momentum after a drag; a flight drops
-     *  it, or the orbit would drift on from where the flight ended. */
+    /** OrbitControls keeps a little momentum after a drag; a flight ends
+     *  it, or the orbit would drift on from where the flight ended. Its
+     *  public way: one update without damping spends what is left of the
+     *  coast at once (the distance the orbit would have coasted anyway,
+     *  a fraction of the drag's last move) and leaves no momentum; the
+     *  flight then starts from there. */
     const dropMomentum = () => {
-      const inner = controls as unknown as {
-        _sphericalDelta?: THREE.Spherical;
-        _panOffset?: THREE.Vector3;
-      };
-      inner._sphericalDelta?.set(0, 0, 0);
-      inner._panOffset?.set(0, 0, 0);
+      controls.enableDamping = false;
+      controls.update();
+      controls.enableDamping = true;
     };
     const placeOrbit = (pose: OrbitPose) => {
       controls.target.copy(pose.target);
@@ -676,6 +679,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
           ...layer.stats(),
           osm: ground.osm.stats(),
           target: [controls.target.x, controls.target.y, controls.target.z],
+          camera: [camera.position.x, camera.position.y, camera.position.z],
           distanceM: camera.position.distanceTo(controls.target),
           flying: flight !== null,
           top,

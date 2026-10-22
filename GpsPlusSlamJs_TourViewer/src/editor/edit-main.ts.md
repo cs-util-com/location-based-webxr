@@ -138,7 +138,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   debug data is refused in a toast (`notAddedLine`), the layer kept.
   The button reads "Adding the debug data…" and is disabled meanwhile,
   and is idle and enabled again however the add ends
-  (`createAddDebugButton`).
+  (`createAddDebugButton`). The 3D view's top bar has the same entry
+  (`#studio-debug-add`, since the map's panel is hidden there): both
+  buttons open the one `#debug-add-input` and `createAddDebugButton`
+  drives both (the studio button through an adapter that keeps its icon
+  and says "Adding…" in its label).
   Never saved, never drafted, closed with the tour and forgotten at a
   reload (Q-H); a newer add replaces it; an add that ends after another
   tour opened is closed unseen.
@@ -442,7 +446,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   an autosave (`saveQueued`), a save built (`saveBuilt`), where the last
   one arrived (`saveDelivered`, read by Done and by the status line's
   "Saved to …" / "Saved as …", `savedLine()`; `#save-status[data-saved]`
-  is only a view of it, for the e2e, never read back), the save's own
+  is only a view of it, for the e2e, never read back; every write of the
+  line goes through `showSaveStatus`, which sets its state, its words and
+  its `title` together, so a line the 3D view's bar cuts short still
+  shows whole on hover), the save's own
   rebuilds (the session's thunks, `../tour-document-save.ts`), and what the opened file
   allows (`saveLimited`: `largeTour`, `cannotSave`). An open resets them
   (`opened`), and so does a tour dropped for a late integrity failure
@@ -479,8 +486,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`openedLevels`); it edits nothing.
 - **The 3D view's studio shell** (`editor-shell/editor-shell.ts`): made
   once at start; the switch's `onShown` sets `body[data-view]` (`3d` or
-  `2d`, which the shell's stylesheet follows) and shows the shell over
-  the shown view or hides it. Its selection is the page's `select` (so
+  `2d`, which the shell's stylesheet follows), makes the map `inert`
+  while the 3D view shows (out of the Tab order under it), and shows the
+  shell over the shown view or hides it. Its selection is the page's `select` (so
   the map's markers follow), Undo and Redo are `runStep`, the pencil is
   `openDetails` (the tour's name opens the same dialog), its pictures
   and the scene's content are read through `readContent` (the copy the

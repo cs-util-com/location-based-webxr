@@ -72,22 +72,30 @@ export interface AddDebugButton {
   busy(): boolean;
 }
 
+/** One add at a time, shown on every button that starts one (the map's
+ *  panel and the 3D view's top bar). */
 export function createAddDebugButton(
-  button: AddDebugButtonDom,
+  ...buttons: readonly AddDebugButtonDom[]
 ): AddDebugButton {
   let running = false;
+  const show = (adding: boolean) => {
+    for (const button of buttons) {
+      button.disabled = adding;
+      button.textContent = adding
+        ? ADD_DEBUG_LABELS.adding
+        : ADD_DEBUG_LABELS.idle;
+    }
+  };
   return {
     async run(work) {
       if (running) return null;
       running = true;
-      button.disabled = true;
-      button.textContent = ADD_DEBUG_LABELS.adding;
+      show(true);
       try {
         return await work();
       } finally {
         running = false;
-        button.disabled = false;
-        button.textContent = ADD_DEBUG_LABELS.idle;
+        show(false);
       }
     },
     busy: () => running,

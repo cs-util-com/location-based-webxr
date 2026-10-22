@@ -3,8 +3,10 @@
 ## Purpose
 
 Where a tour's points stand in the 3D editor's world: one matrix per
-point (a station, a code), the size rule for a placed model, and the
-tour's centre for the view's frame and first orbit.
+point (a station, a code) and the size rule for a placed model. The
+tour's centre for the view's frame and first orbit is
+`../editor/tour-origin.ts`'s `tourCentre` (the inspector reads the same
+centre, and the 3D view's code stays out of the page's first load).
 
 ## Public API
 
@@ -19,9 +21,6 @@ tour's centre for the view's frame and first orbit.
   the model's box at rest `sizeM` (node transforms included, the model's
   own transform left out); 1 for a model with no extent. RangeError for a
   size that is not finite and > 0.
-- `tourCentre(stations, codes)` -> `{ lat, lng, altM }`: the mean of the
-  stations' points, else of the codes'; null with neither. Points with a
-  coordinate that is not finite are left out.
 - `GlobeEllipsoid` - the ellipsoid type the globe's frame functions take.
 
 ## Invariants & assumptions
@@ -35,15 +34,12 @@ tour's centre for the view's frame and first orbit.
   would bend a station a few hundred metres out by the frame's flatness.
 - **`modelScale` lives here, not in the Globe package:** `sizeM` is the
   tour format's field, and the globe draws no tour items.
-- **The centre is a plain mean of degrees:** right for a tour of a few
-  hundred metres; a tour across the antimeridian is not handled.
 - Module-level scratch matrices: not re-entrant, fine for a single-thread
   frame loop.
 
 ## Examples
 
 ```ts
-const centre = tourCentre(manifest.stations, codeGeos);
 pointRootMatrix(
   { ellipsoid, worldFromEcef, place: station.geo, undulationM: n },
   root.matrix,
@@ -56,6 +52,4 @@ model.scale.setScalar(modelScale(model, item.sizeM));
 `editor3d-tour-root.test.ts`: NUE to east, up less N, south at the
 frame's centre; a point's height where the ellipsoid puts it, away from
 the centre; refusals; the model's largest side scaled to its size, a
-model with no extent kept, a bad size refused; the centre of the
-stations, else the codes, else none, and points that cannot be placed
-left out.
+model with no extent kept, a bad size refused.

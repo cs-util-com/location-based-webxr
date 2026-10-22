@@ -120,9 +120,11 @@ import {
   type DebugBundleTour,
 } from "../debug-bundle.js";
 import {
+  ADD_DEBUG_LABELS,
   addedDebugLine,
   createAddDebugButton,
   notAddedLine,
+  type AddDebugButtonDom,
 } from "./added-debug-data.js";
 import { noGpsWarnings } from "./no-gps-check.js";
 import { revealPadding, type Box } from "./popover-place.js";
@@ -317,6 +319,7 @@ const debugStatus = element("debug-status");
  *  plan). */
 const debugAddButton = element<HTMLButtonElement>("debug-add");
 const debugAddInput = element<HTMLInputElement>("debug-add-input");
+const studioDebugAdd = element<HTMLButtonElement>("studio-debug-add");
 /** The tour's "needs no GPS" setting and its warnings (QR-first M1b-2). */
 const noGpsInput = element<HTMLInputElement>("no-gps-input");
 /** Its warnings' live region: never hidden (an empty one is zero-height),
@@ -664,12 +667,20 @@ function select(id: string | null, pan = false): void {
   }
 }
 
+/** The save status: its state and its words, the words also its title
+ *  (the 3D view's top bar cuts a long line short with an ellipsis; the
+ *  whole line stays announced, and shows on hover). */
+function showSaveStatus(state: string, text: string): void {
+  saveStatus.dataset["state"] = state;
+  saveStatus.textContent = text;
+  saveStatus.title = text;
+}
+
 function renderSaveState(): void {
   const count = editor?.changeCount() ?? 0;
   if (!ui().doneBusy) doneButton.disabled = editor === null || walkMoving();
   if (saving()) {
-    saveStatus.dataset["state"] = "saving";
-    saveStatus.textContent = "Saving…";
+    showSaveStatus("saving", "Saving…");
     saveButton.disabled = true;
     return;
   }
@@ -677,21 +688,18 @@ function renderSaveState(): void {
   // so a disabled button would swallow the first edit (E2a review #3).
   saveButton.disabled = editor === null;
   if (undelivered !== null && count === 0) {
-    saveStatus.dataset["state"] = "error";
-    saveStatus.textContent = "Not saved yet - tap Save again";
+    showSaveStatus("error", "Not saved yet - tap Save again");
     return;
   }
   if (count === 0) {
-    saveStatus.dataset["state"] = "clean";
-    saveStatus.textContent = savedLine() ?? "No changes";
+    showSaveStatus("clean", savedLine() ?? "No changes");
     return;
   }
-  saveStatus.dataset["state"] = "pending";
   const changes = `${String(count)} ${count === 1 ? "change" : "changes"} not saved`;
   // A pause is said where the creator looks for the save's state (M6
   // E2b-2), and so are the two cases where Save is the only way - or no
   // way at all (milestone review #3, #8).
-  saveStatus.textContent = `${changes}${pendingSuffix()}`;
+  showSaveStatus("pending", `${changes}${pendingSuffix()}`);
 }
 
 /** Why the pending changes are not saved by themselves, if they are not. */
@@ -898,7 +906,8 @@ function cancelMove(): void {
   void resaveIfDue();
 }
 
-const map = createEditorMap(element("map"), {
+const mapBox = element("map");
+const map = createEditorMap(mapBox, {
   onSelect: (id) => {
     select(id);
   },
@@ -1315,7 +1324,29 @@ let addedDebug: {
 } | null = null;
 /** "Add debug data…" while an add reads its file: disabled, saying so,
  *  and a second add starts nothing (`createAddDebugButton`). */
-const debugAdd = createAddDebugButton(debugAddButton);
+const debugAdd = createAddDebugButton(debugAddButton, studioDebugAddDom());
+
+/** The 3D view's top bar's "Add debug data" as the add drives it: its
+ *  name says what it does or that it is adding, its short word too. */
+function studioDebugAddDom(): AddDebugButtonDom {
+  const label = studioDebugAdd.querySelector(".lbl");
+  return {
+    get disabled() {
+      return studioDebugAdd.disabled;
+    },
+    set disabled(on: boolean) {
+      studioDebugAdd.disabled = on;
+    },
+    get textContent() {
+      return studioDebugAdd.getAttribute("aria-label");
+    },
+    set textContent(text: string | null) {
+      const adding = text === ADD_DEBUG_LABELS.adding;
+      studioDebugAdd.setAttribute("aria-label", text ?? "");
+      if (label !== null) label.textContent = adding ? "Adding…" : "Debug data";
+    },
+  };
+}
 
 /** Where the debug layer reads (one seam, so a point cloud reads the
  *  same place): debug data added wins over the tour's own walk - the
@@ -1989,8 +2020,7 @@ async function saveTour(mode: "explicit" | "auto"): Promise<AutosaveOutcome> {
       releaseSave();
       renderSaveState();
       if (mode === "explicit") {
-        saveStatus.dataset["state"] = "clean";
-        saveStatus.textContent = "Nothing to save";
+        showSaveStatus("clean", "Nothing to save");
         // Said where a click's answer is looked for too (plan
         // 2026-10-15-0348 M0): the status line already read "No changes",
         // so the swap alone looked like nothing happened.
@@ -2141,8 +2171,7 @@ async function buildAndDeliver(
         : `Not saved: ${err instanceof Error ? err.message : String(err)}`;
     releaseSave(said);
     renderSaveState();
-    saveStatus.dataset["state"] = "error";
-    saveStatus.textContent = said;
+    showSaveStatus("error", said);
     saveButton.disabled = false;
     return "failed";
   }
@@ -2157,9 +2186,11 @@ debugInput.addEventListener("change", () => {
 });
 // "Add debug data…": its file input, or a file dropped on the panel. The
 // document's own drop guard keeps the browser from opening the file.
-debugAddButton.addEventListener("click", () => {
-  debugAddInput.click();
-});
+for (const button of [debugAddButton, studioDebugAdd]) {
+  button.addEventListener("click", () => {
+    debugAddInput.click();
+  });
+}
 debugAddInput.addEventListener("change", () => {
   const file = debugAddInput.files?.[0];
   debugAddInput.value = "";
@@ -2792,6 +2823,9 @@ const viewSwitch = createViewSwitch({
     // The page's look follows the view: the studio's dark shell in 3D
     // (`editor-shell.css`), the paper map page otherwise.
     document.body.dataset["view"] = on ? "3d" : "2d";
+    // Covered by the 3D view, the map's markers and controls leave the
+    // tab order and the accessibility tree.
+    mapBox.inert = on;
     if (on && shown3d !== null) shell.show(shown3d);
     else shell.hide();
     if (on) {

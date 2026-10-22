@@ -46,15 +46,15 @@ the map page's own code nor the phone's pages hold any of it.
     other layers have nothing drawn yet);
   - `pointOf(selection)` - where it stands in the world (the page's
     checks).
-- `stats()` also carries the orbit's `target`, `distanceM`, whether a
-  flight is `flying`, and `top`.
+- `stats()` also carries the orbit's `target`, `distanceM`, the
+  `camera`'s position, whether a flight is `flying`, and `top`.
 - Types `Editor3dDeps`, `Editor3dStats` (the store it takes is structural:
   `getState()` with `tourDocument` and `editorView`, and `subscribe`).
 
 ## Invariants & assumptions
 
 - **What it draws:** the ground (`editor3d-terrain.ts`, framed at the
-  tour's centre, `tourCentre`), the tour (`editor3d-stations.ts`) with the
+  tour's centre, `tourCentre` of `../editor/tour-origin.ts`), the tour (`editor3d-stations.ts`) with the
   phone's pin labels, photo decoding (capped at `TOUR_MAX_IMAGE_PIXELS`)
   and model loader, the billboards and code squares
   (`editor3d-marks.ts`), the credits as links, under an orbit at the
@@ -65,7 +65,9 @@ the map page's own code nor the phone's pages hold any of it.
   per frame); the selection is read each frame for near-K.
 - **Flights:** while one runs it places the orbit each frame in place of
   the controls (their momentum dropped first, or the orbit would drift on
-  from where the flight ends); the controls' `start` (any drag, wheel or
+  from where the flight ends: one `update()` with damping off spends the
+  rest of the coast at once and zeroes it, through the controls' public
+  API only); the controls' `start` (any drag, wheel or
   touch by the creator) ends it where it is.
 - **Each frame:** the flight or the controls, the morph from the tilt, the clip planes
   from the camera's own ECEF point and its clearance over the ground under
@@ -126,6 +128,7 @@ line away; a first frame that fails landing on the map, said, with no
 canvas and no credits left; and twenty switches to 3D and back without
 the browser's "too many active WebGL contexts" warning and with no canvas
 left. `playwright-tests/editor3d-shell.spec.js` drives the shell's
-commands: a card's flight ending at its station, Frame, Top view, the
+commands: a card's flight ending at its station, the camera not
+drifting after a flight that followed a drag, Frame, Top view, the
 zoom steps, north up and the layer chips. `editor3d-lazy.test.ts` checks no page loads it before an
 `import()` runs.

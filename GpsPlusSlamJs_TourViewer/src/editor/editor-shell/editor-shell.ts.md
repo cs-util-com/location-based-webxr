@@ -25,7 +25,8 @@ view shows.
 - `EditorShell.show(view)` - the 3D view shows: the shell draws from the
   store, applies the dock rule's `opened`, follows the store, the window's
   size and the keys, and reads the camera every 200 ms (`READOUT_MS`).
-- `EditorShell.hide()` - stops all of that and lets the pictures go.
+- `EditorShell.hide()` - stops all of that and lets the pictures go
+  (each draw also sweeps the cards a redraw replaced).
 - `ShellView` - the 3D view's commands it drives (`flyTo`, `frame`,
   `setTop`, `zoom`, `northUp`, `readout`, `setLayers`); a type only, so
   the page's code never holds the 3D view's.
@@ -58,13 +59,28 @@ view shows.
 - **The stylesheet** (`editor-shell.css`, applied under
   `body[data-view="3d"]`): a 40 px top bar and a 24 px bottom bar with the
   view between them; the tree 272 px and the inspector 290 px wide, flush
-  with the window's edges. At 980 px and below Undo and Redo lose their
-  words and the key hints go ("Open another tour" says "Open"); at 820 px
-  and below the labels go, the view switch says its short word and the
-  docks shrink to 56 % and 60 % of the width where that is less; at
-  720 px and below the help and the pencil go (the tour's name opens the
-  same details), the save status is a dot (its words stay its name) and
-  Done and Open are icons - so every control stays inside the bar.
+  with the window's edges. The save status is cut short with an ellipsis
+  past 220 px (its words stay its text and its title). The tour's name
+  and the status keep a floor (`--s-name-min`, `--s-status-min`), and the
+  bar folds in steps before the name goes under it:
+  - at 1420 px and below the keep-walk switch is its checkbox (its words
+    out of sight, still its name, and its title) and "Add debug data" its
+    icon;
+  - at 1140 px Undo and Redo lose their words and the key hints go
+    ("Open another tour" says "Open");
+  - at 940 px every studio button is its icon, the view switch says its
+    short word and the gaps narrow;
+  - at 820 px the docks shrink to 56 % and 60 % of the width where that
+    is less, and the hint goes;
+  - at 720 px the help, the pencil and the mark go (the tour's name opens
+    the same details), the save status is a dot (its words stay its name
+    and title), and Done and Open are icons;
+  - at 440 px Redo goes (Undo stays);
+  - at 375 px "Add debug data" goes (the map's panel keeps it).
+  - Each step starts where the bar, in its most crowded state (the
+    keep-walk switch shown and the longest status) in a wide platform
+    face (Verdana, with DejaVu Sans' metrics), would no longer hold every
+    control; measured, every state fits from 320 px up.
 
 ## Examples
 
@@ -88,10 +104,14 @@ else shell.hide();
 The rules it applies are unit-tested in their own files
 (`tree-click.test.ts`, `tree-model.test.ts`,
 `tree-model.property.test.ts`, `inspector-model.test.ts`,
-`dock-rule.test.ts`). The DOM (no jsdom here) is covered by
-`playwright-tests/editor3d-shell.spec.js`: the layout at 390x844,
+`dock-rule.test.ts`), and its drawing parts under jsdom
+(`shell-tree.test.ts`, `shell-inspector.test.ts`,
+`shell-pictures.test.ts`, `shell-icons.test.ts`). The page is covered
+by `playwright-tests/editor3d-shell.spec.js`: the layout at 390x844,
 844x390, 820x1180 and 1440x900 (bars, docks, map controls, every top-bar
-control inside the bar and none over another), a card's click selecting,
+control inside the bar and none over another, the name over its floor),
+the most crowded bar at each step's edges, the tree from the keyboard
+alone (Tab order: the top bar left to right, then the tree), a card's click selecting,
 unfolding and flying, a double click not toggling, a later click
 deselecting and folding, the folds and a layer kept across a trip to the
 map, Top view by its button and T, the zoom steps and the debug readout.

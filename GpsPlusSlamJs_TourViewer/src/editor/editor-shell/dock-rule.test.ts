@@ -8,16 +8,48 @@
  * folded. Whatever happens, a narrow window never shows both docks open.
  */
 import fc from "fast-check";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
   DOCKS_SIDE_BY_SIDE_PX,
+  INSPECTOR_DOCK_PX,
+  SCENE_FLOOR_PX,
+  TREE_DOCK_PX,
   TREE_STARTS_FOLDED_PX,
   docksAfter,
   type DockChange,
 } from "./dock-rule.js";
 
 const OPEN = { tree: false, inspector: false };
+
+describe("the breakpoint", () => {
+  // Why: the breakpoint is not a free number but the narrowest scene the
+  // rule accepts between two open docks; the strips it rests on are
+  // written down, and a change to a dock's width moves it with them.
+  it("is the two docks plus the scene's floor between them", () => {
+    expect(DOCKS_SIDE_BY_SIDE_PX).toBe(
+      TREE_DOCK_PX + INSPECTOR_DOCK_PX + SCENE_FLOOR_PX,
+    );
+    const between = (widthPx: number) =>
+      widthPx - TREE_DOCK_PX - INSPECTOR_DOCK_PX;
+    expect([768, 820, 900, 1024].map(between)).toEqual([206, 258, 338, 462]);
+    expect(between(DOCKS_SIDE_BY_SIDE_PX - 1)).toBeLessThan(SCENE_FLOOR_PX);
+  });
+
+  // Why: the stylesheet draws the docks; the rule reads their widths from
+  // here, so the two must not drift apart.
+  it("reads the docks' widths the stylesheet draws", () => {
+    const css = readFileSync(
+      new URL("./editor-shell.css", import.meta.url),
+      "utf8",
+    );
+    const width = (id: string) =>
+      new RegExp(String.raw`#${id} [{][^}]*?\bwidth: (\d+)px;`).exec(css)?.[1];
+    expect(width("shell-tree")).toBe(String(TREE_DOCK_PX));
+    expect(width("shell-inspector")).toBe(String(INSPECTOR_DOCK_PX));
+  });
+});
 
 describe("docksAfter", () => {
   it("keeps both docks open side by side on a wide window", () => {

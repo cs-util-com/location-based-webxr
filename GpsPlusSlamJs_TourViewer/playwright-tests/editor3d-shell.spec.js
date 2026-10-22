@@ -8,6 +8,7 @@ import {
   rejections,
   view3d,
 } from "./editor3d-fixture.js";
+import { useWideFont } from "./wide-font.js";
 
 /**
  * Why these tests matter: the 3D view's studio shell is a layout over the
@@ -16,7 +17,10 @@ import {
  * presence check passes a broken one. These pin positions, sizes and gaps
  * at a phone, a phone in landscape, a tablet in portrait and a desktop,
  * the narrow-window rule (below 900 px one dock at a time), every top-bar
- * control inside the window and none over another; and the tree's click
+ * control inside the window and none over another, the tour's name never
+ * squeezed away - also in the bar's most crowded state, at every step it
+ * folds, in a wide face; the tree from the keyboard alone, the top bar's
+ * Add debug data, a flight leaving no coast behind; and the tree's click
  * rule on the sample tour: a click selects, unfolds and flies there, a
  * second click deselects and folds, a quick second click (a double
  * click) does not toggle, and the folds outlive a trip to the map.
@@ -51,8 +55,21 @@ async function box(locator) {
 }
 
 /**
+ * The narrowest the tour's name may get in the top bar at `width`: the
+ * bar folds its other controls before the name goes below this.
+ * @param {number} width
+ */
+function nameFloorPx(width) {
+  if (width > 720) return 96;
+  if (width > 440) return 56;
+  if (width > 375) return 40;
+  return 20;
+}
+
+/**
  * The layout every viewport shares: the bars, the viewport between them,
- * the map controls, and the top bar's controls in a row inside it.
+ * the map controls, and the top bar's controls in a row inside it, the
+ * tour's name no narrower than its floor.
  * @param {import("@playwright/test").Page} page
  * @param {{ width: number, height: number }} size
  */
@@ -86,25 +103,38 @@ async function expectFrame(page, size) {
   expect(size.height - 24 - (zoomOut.y + zoomOut.height)).toBe(14);
   // Every top-bar control shown sits inside the bar, left to right, none
   // over the next.
-  const shown = [];
-  for (const c of await page
-    .locator("#topbar :is(button, #save-status, label)")
-    .all()) {
-    if (await c.isVisible()) shown.push(await box(c));
-  }
+  // Read in one go (as Playwright's isVisible does: a box, not hidden):
+  // the crowded sweep checks 34 frames.
+  const shown = await page.evaluate(() =>
+    [...document.querySelectorAll("#topbar :is(button, #save-status, label)")]
+      .map((c) => ({ c, r: c.getBoundingClientRect() }))
+      .filter(
+        ({ c, r }) =>
+          r.width > 0 &&
+          r.height > 0 &&
+          getComputedStyle(c).visibility !== "hidden",
+      )
+      .map(({ r }) => ({ x: r.x, y: r.y, width: r.width, height: r.height })),
+  );
   shown.sort((a, b) => a.x - b.x);
+  const at = `at ${String(size.width)} px`;
   for (const [i, b] of shown.entries()) {
-    expect(b.x).toBeGreaterThanOrEqual(0);
-    expect(b.x + b.width).toBeLessThanOrEqual(size.width);
-    expect(b.y).toBeGreaterThanOrEqual(0);
-    expect(b.y + b.height).toBeLessThanOrEqual(40);
+    expect(b.x, at).toBeGreaterThanOrEqual(0);
+    expect(b.x + b.width, at).toBeLessThanOrEqual(size.width);
+    expect(b.y, at).toBeGreaterThanOrEqual(0);
+    expect(b.y + b.height, at).toBeLessThanOrEqual(40);
     const next = shown[i + 1];
     if (next !== undefined) {
-      expect(next.x, `control ${String(i + 1)}`).toBeGreaterThanOrEqual(
+      expect(next.x, `control ${String(i + 1)} ${at}`).toBeGreaterThanOrEqual(
         b.x + b.width - 0.5,
       );
     }
   }
+  // The name's room: the part of the brand it shows in.
+  const name = await box(page.locator("#topbar .brand-text"));
+  expect(name.width, `the name ${at}`).toBeGreaterThanOrEqual(
+    nameFloorPx(size.width),
+  );
 }
 
 /**
@@ -140,6 +170,7 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   page,
 }) => {
   test.setTimeout(150_000);
+  await useWideFont(page);
   // A phone: the tree starts folded; opening it and selecting a station
   // opens the inspector and folds the tree again.
   const phone = { width: 390, height: 844 };
@@ -311,4 +342,200 @@ test("the top bar's Top view and the zoom buttons drive the camera", async ({
   await expect(page.locator("#shell-calls")).toContainText("draw calls");
   expect((await view3d(page)).osm.requests).toBeGreaterThan(0);
   expect(await rejections(page)).toEqual([]);
+});
+
+/**
+ * The page's own longest status line (a save that failed because the
+ * opened file changed on disk): the line the bar must cut short.
+ */
+const LONGEST_STATUS =
+  "Not saved: the opened file changed on disk and can no longer be read - open it again";
+
+/**
+ * The bar's most crowded state: the keep-walk switch shown (a tour opened
+ * with its walk) and the longest status line.
+ * @param {import("@playwright/test").Page} page
+ */
+async function crowdTheBar(page) {
+  await page.evaluate((line) => {
+    const keep = /** @type {HTMLElement} */ (
+      document.getElementById("keep-walk")
+    );
+    keep.hidden = false;
+    const status = /** @type {HTMLElement} */ (
+      document.getElementById("save-status")
+    );
+    status.dataset["state"] = "error";
+    status.textContent = line;
+  }, LONGEST_STATUS);
+}
+
+test("the top bar holds every control in its most crowded state, at every step it folds", async ({
+  page,
+}) => {
+  // Why: the layout test saw only the sample's clean state, and
+  // the keep-walk switch or a long status line pushed Done and Open out of
+  // the bar at 1024, 900 and 390 px. The bar folds in steps (1420, 1140,
+  // 940, 720, 440 and 375 px); each is checked at its edges with the
+  // switch shown and the longest status, in a wide face. The crowded bar
+  // is the hardest case: without the switch, or with a shorter status,
+  // every control only has more room.
+  test.setTimeout(300_000);
+  await useWideFont(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open3d(page);
+  // The page writes the status's words into its title too: cut short on
+  // a narrow bar, the whole line still shows on hover.
+  const status = page.locator("#save-status");
+  await expect(status).toHaveAttribute(
+    "title",
+    (await status.textContent()) ?? "",
+  );
+  await crowdTheBar(page);
+  for (const width of [
+    1440, 1421, 1420, 1141, 1140, 1024, 941, 940, 900, 821, 720, 441, 440, 390,
+    376, 375, 320,
+  ]) {
+    const size = { width, height: width < 721 ? 844 : 800 };
+    await page.setViewportSize(size);
+    await expectFrame(page, size);
+  }
+  // Folded to its checkbox, the keep-walk switch keeps its name.
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Keep the debug data in the tour file",
+    }),
+  ).toBeVisible();
+});
+
+test("the tree can be used from the keyboard alone", async ({ page }) => {
+  // Why: the cards and rows were plain boxes, out of the tab
+  // order; a keyboard user could not select a station at all. Tab walks
+  // the top bar left to right, then the tree's head and its cards; Enter
+  // selects and flies, and the focus stays on the card it pressed.
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open3d(page);
+  // From the start of the page: a click on the bar's empty corner puts
+  // Tab's starting point there (a blur would leave it at the view switch
+  // the 3D view was opened with).
+  await page.mouse.click(2, 2);
+  const visited = [];
+  for (let i = 0; i < 40; i += 1) {
+    await page.keyboard.press("Tab");
+    const at = await page.evaluate(() => {
+      const a = /** @type {HTMLElement} */ (document.activeElement);
+      const b = a.getBoundingClientRect();
+      return {
+        key:
+          a.dataset["select"] ??
+          (a.dataset["unfold"] === undefined
+            ? a.id
+            : `unfold:${a.dataset["unfold"]}`),
+        inBar: a.closest("#topbar") !== null,
+        x: b.x,
+      };
+    });
+    visited.push(at);
+    if (at.key === "station:gate") break;
+  }
+  const keys = visited.map((v) => v.key);
+  expect(keys.at(-1)).toBe("station:gate");
+  // The top bar first, left to right.
+  const bar = visited.filter((v) => v.inBar);
+  expect(bar.map((v) => v.key)).toContain("studio-frame");
+  expect(bar.map((v) => v.key)).toContain("open-another");
+  for (const [i, v] of bar.entries()) {
+    if (i > 0) expect(v.x).toBeGreaterThan(bar[i - 1]?.x ?? 0);
+  }
+  // The bar is visited first; the next stop is the tree's head (the
+  // scene's credits close the view, after the docks).
+  expect(visited.findIndex((v) => !v.inBar)).toBe(bar.length);
+  expect(keys[bar.length]).toBe("tree-stations");
+  // Then the tree: its head, then the first card and its fold arrow.
+  expect(keys.slice(-5)).toEqual([
+    "tree-stations",
+    "tree-fold",
+    "station:column",
+    "unfold:column",
+    "station:gate",
+  ]);
+  await page.keyboard.press("Enter");
+  const gate = card(page, "The old gate");
+  await expect(gate).toHaveClass(/\bsel\b/);
+  await expect(page.locator("#inspector-head .ttl")).toHaveText("The old gate");
+  await expect(gate.locator(".pick")).toBeFocused();
+  await expect(gate.locator(".kids")).toBeVisible();
+  // Space on the fold arrow folds the card's items away again.
+  await page.keyboard.press("Tab");
+  await expect(gate.locator(".tw")).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(gate.locator(".kids")).toHaveCount(0);
+  await expect(gate.locator(".tw")).toBeFocused();
+});
+
+test("the top bar's Add debug data opens the same add as the map's panel", async ({
+  page,
+}) => {
+  // Why: the map's debug panel is hidden over the 3D view, so
+  // "Add debug data" could not be reached there at all. The top bar's
+  // button opens the same file input and runs the same add: a file that
+  // is no debug data is refused in the same words, and the button comes
+  // back idle.
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open3d(page);
+  const add = page.locator("#studio-debug-add");
+  await expect(add).toBeVisible();
+  await expect(page.locator("#debug-add")).toBeHidden();
+  const sample = await (
+    await page.request.get("/samples/marienplatz-tour.zip")
+  ).body();
+  const chooser = page.waitForEvent("filechooser");
+  await add.click();
+  await (
+    await chooser
+  ).setFiles({
+    name: "plain.zip",
+    mimeType: "application/zip",
+    buffer: sample,
+  });
+  await expect(
+    page.locator(".toast", {
+      hasText:
+        "Not added: This file carries no recording: it is neither debug data nor a Recorder zip.",
+    }),
+  ).toBeVisible();
+  await expect(add).toBeEnabled();
+  await expect(add).toHaveAttribute("aria-label", "Add debug data…");
+});
+
+test("a flight ends the orbit's coast: the camera stays where it lands", async ({
+  page,
+}) => {
+  // Why: the orbit coasts on after a drag; a flight started
+  // straight after one must not hand the coast back when it lands, or the
+  // camera drifts on from the station it flew to.
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open3d(page);
+  const canvas = page.locator("#view3d canvas").first();
+  const b = await box(canvas);
+  const [cx, cy] = [b.x + b.width / 2, b.y + b.height / 2];
+  // A quick drag: it leaves the orbit coasting.
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i += 1) await page.mouse.move(cx + i * 40, cy);
+  await page.mouse.up();
+  await card(page, "The old gate").locator(".hero").click();
+  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
+  // The coast decays frame by frame (the orbit's damping runs per
+  // update), so the check counts drawn frames, not time.
+  const { camera: landed, frames } = await view3d(page);
+  await expect
+    .poll(async () => (await view3d(page)).frames)
+    .toBeGreaterThan(frames + 30);
+  const after = (await view3d(page)).camera;
+  expect(Math.hypot(...after.map((v, i) => v - landed[i]))).toBeLessThan(1e-3);
 });

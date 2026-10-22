@@ -1,9 +1,10 @@
 /**
  * The 3D view's tree click rule, pure: one click on a card selects it,
  * unfolds it and flies there; a second click on the selected card
- * deselects it and folds it, the camera staying; and a second click that
- * comes inside the double-click interval - a double click, a double tap -
- * is not a second click, so nothing toggles.
+ * deselects it and folds it, the camera staying; and a click that comes
+ * inside the double-click interval after one on the same card - the rest
+ * of a double click, a double tap - does nothing: only the first click of
+ * a quick run on one card counts, whether it selected or deselected.
  *
  * The interval is the browser's own click count where it reports one
  * (`detail` > 1 follows the system's double-click setting), and a time
@@ -34,7 +35,10 @@ export type TreeClickOutcome = "select" | "deselect" | "none";
  * What a click on the card `id` does, at `at` (the event's time stamp,
  * ms) with the browser's click count `detail`, while `selected` is
  * selected and `last` was the click before; and the memory for the next
- * one. A time that is not finite reads as a slow click.
+ * one. A click on the card of the click before, inside the interval or
+ * counted by the browser as a double click, does nothing; any other click
+ * selects its card, or deselects it when it is the selected one. A time
+ * that is not finite reads as a slow click.
  */
 export function treeClick(input: {
   readonly id: string;
@@ -45,14 +49,13 @@ export function treeClick(input: {
 }): { outcome: TreeClickOutcome; memory: TreeClickMemory } {
   const { id, at, detail, selected, last } = input;
   const memory: TreeClickMemory = { id, at };
-  if (id !== selected) return { outcome: "select", memory };
-  const quick =
+  const soon =
     Number.isFinite(at) &&
-    last.id === id &&
     at - last.at >= 0 &&
     at - last.at < TREE_DOUBLE_CLICK_MS;
-  const rapid = quick || (Number.isFinite(detail) && detail > 1);
-  return { outcome: rapid ? "none" : "deselect", memory };
+  const counted = Number.isFinite(detail) && detail > 1;
+  if (last.id === id && (soon || counted)) return { outcome: "none", memory };
+  return { outcome: id === selected ? "deselect" : "select", memory };
 }
 
 /** What the shell does for a click's outcome. */

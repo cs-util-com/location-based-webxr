@@ -145,6 +145,26 @@ describe("the button while a file is added", () => {
     });
   }
 
+  // Why: the map's panel and the 3D view's top bar each have the button;
+  // an add from either holds both, so neither starts a second one.
+  it("drives every button it is given", async () => {
+    const panel = button();
+    const bar = button();
+    const add = createAddDebugButton(panel, bar);
+    const work = deferred<string>();
+    const run = add.run(() => work.promise);
+    for (const b of [panel, bar]) {
+      expect(b.disabled).toBe(true);
+      expect(b.textContent).toBe(ADD_DEBUG_LABELS.adding);
+    }
+    work.resolve("added");
+    await run;
+    for (const b of [panel, bar]) {
+      expect(b.disabled).toBe(false);
+      expect(b.textContent).toBe(ADD_DEBUG_LABELS.idle);
+    }
+  });
+
   it("starts nothing while an add runs, and the next one once it ended", async () => {
     const b = button();
     const add = createAddDebugButton(b);

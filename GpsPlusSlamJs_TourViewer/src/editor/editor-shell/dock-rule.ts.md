@@ -5,12 +5,24 @@
 The 3D view's docks on a narrow window, pure. The tree (left, 272 px) and
 the inspector (right, 290 px) lie over the scene; from
 `DOCKS_SIDE_BY_SIDE_PX` up they sit side by side. Below it two open docks
-would leave a strip of about 200-260 px of scene, so one is open at a
-time. Below `TREE_STARTS_FOLDED_PX` (a phone) the tree also starts folded.
+would leave less scene between them than `SCENE_FLOOR_PX`, so one is open
+at a time. Below `TREE_STARTS_FOLDED_PX` (a phone) the tree also starts folded.
 
 ## Public API
 
-- `DOCKS_SIDE_BY_SIDE_PX` - 900; `TREE_STARTS_FOLDED_PX` - 700.
+- `TREE_DOCK_PX` - 272 and `INSPECTOR_DOCK_PX` - 290, the docks' widths
+  as `editor-shell.css` draws them (a test reads the CSS and holds the two
+  to each other).
+- `SCENE_FLOOR_PX` - 338, the narrowest strip of scene left between two
+  open docks. It is a judgement, not a measurement: about a third of a
+  landscape phone, which still shows a station and its surroundings. The
+  strip two open docks leave is:
+  - 206 px at 768 (a tablet in portrait);
+  - 258 px at 820;
+  - 338 px at 900;
+  - 462 px at 1024.
+- `DOCKS_SIDE_BY_SIDE_PX` - `TREE_DOCK_PX + INSPECTOR_DOCK_PX +
+SCENE_FLOOR_PX`, so 900; `TREE_STARTS_FOLDED_PX` - 700.
 - `DockChange` - `"opened" | "selected" | "resized" | "tree-unfolded" |
 "inspector-unfolded"`; `DockFolds` - `{ tree, inspector }`.
 - `docksAfter(change, { widthPx, folded, inspectorShows })` -> the folds:
@@ -40,5 +52,6 @@ const folds = docksAfter("selected", {
 ## Tests
 
 `dock-rule.test.ts`: wide windows untouched, the tablet widths (768,
-820), each unfold folding the other, the phone start, no inspector, and
+820), each unfold folding the other, the breakpoint as the sum of the
+docks and the floor (and the docks' widths read from the CSS), the phone start, no inspector, and
 the property over any width and change.

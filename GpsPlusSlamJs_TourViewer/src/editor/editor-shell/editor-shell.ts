@@ -256,6 +256,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         : `${model.title} - F frames it, Esc deselects`;
     bar.root.classList.toggle("debug", ui.readout);
     bar.debug.setAttribute("aria-pressed", String(ui.readout));
+    // The cards and the thumbnail a draw replaced are no longer watched.
+    pictures.sweep();
     drawHistory(doc);
     if (before === null || before.hiddenLayers !== ui.hiddenLayers) {
       view?.setLayers(ui.hiddenLayers);
