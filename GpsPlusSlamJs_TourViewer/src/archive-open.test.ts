@@ -192,19 +192,8 @@ describe("a tour switch forgets the closing tour's failed finish", () => {
   });
 });
 
-describe("a tour switch forgets that the closing tour's walk was decided", () => {
-  it("clears walkDecidedFor, so the next tour hedges its stations and the closed one is not kept alive", async () => {
-    // Why this test matters (PR #642 review): the hint is keyed by the open
-    // session, so a reopened tour hedges again either way; clearing it also
-    // drops the page's last reference to the closed tour's archive.
-    const ctx = createTourViewerSession();
-    ctx.session = openTour();
-    ctx.walkDecidedFor = ctx.session;
-    const dom = openAnotherTour(ctx);
-    await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
-    expect(ctx.walkDecidedFor).toBeNull();
-  });
-});
+// (A test that a tour switch forgot the closing tour's bake stood here: the
+// open bakes no walk any more, so there is no bake to carry across.)
 
 describe("the teardown clears tour-scoped state only when a tour closes", () => {
   // Why these tests matter (TourViewer scan-to-open plan §5 #1, §9 #1): a

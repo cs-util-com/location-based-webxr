@@ -52,6 +52,11 @@ the automatic save is in
   (`creator-draft.ts`), which resolves whether it was noted. Without it the
   question is never asked. `dom.uploadAsk`, `uploadAskText`, `uploadYes`,
   `uploadNo` are its box, line and answers; `UPLOAD_ASK_LABELS` its words.
+- `onDelivered?(rebuilt)` (debug-captures plan, Q-I) - a save delivered
+  `rebuilt` (its blob and file name) for the tour still open; not called
+  for a save that did not deliver or that settled after the tour closed.
+  `creator-setup.ts` takes the draft to the delivered file's key with it
+  (`creator-draft.ts` `follow`).
 
 ## Invariants & assumptions
 

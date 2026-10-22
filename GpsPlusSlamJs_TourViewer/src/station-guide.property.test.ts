@@ -8,7 +8,11 @@ import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
-import { ACCURACY_CEILING_M } from "./station-bands";
+import {
+  POSITION_PRECISION_CEILING_M,
+  type PrecisionGpsPoint,
+} from "gps-plus-slam-app-framework/state/position-precision";
+
 import { FIX_MAX_AGE_MS, wireStationGuide } from "./station-guide";
 import type { VisitorPosition } from "./visitor-position";
 
@@ -22,6 +26,12 @@ import type { VisitorPosition } from "./visitor-position";
  * order preset, with any `next` links (cycles included), completes within
  * two taps per station.
  */
+
+/** The store's GPS readings as the shared precision rule reads them: one
+ *  device fix stating `accuracyM` (its median), or none for null. */
+function fixesAt(accuracyM: number | null): PrecisionGpsPoint[] {
+  return accuracyM === null ? [] : [{ latLongAccuracy: accuracyM }];
+}
 
 // The core's geodesy needs an activated store (the framework's factory).
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -86,7 +96,7 @@ describe("wireStationGuide (properties)", () => {
         let now = 0;
         let visitor = {
           nue: [1000, 401.5, 1000] as [number, number, number],
-          accuracyM: 4,
+          gpsPoints: fixesAt(4),
           fixNue: [1000, 400, 1000] as [number, number, number],
           aligned: true,
           fixAtMs: 0,
@@ -118,7 +128,7 @@ describe("wireStationGuide (properties)", () => {
         for (const [north, east, tap] of wander) {
           visitor = {
             nue: [north, 401.5, east],
-            accuracyM: 4,
+            gpsPoints: fixesAt(4),
             fixNue: [north, 400, east],
             aligned: true,
             fixAtMs: now,
@@ -131,7 +141,7 @@ describe("wireStationGuide (properties)", () => {
         // From here on the visitor stands far from everything and only taps.
         visitor = {
           nue: [1000, 401.5, 1000],
-          accuracyM: 4,
+          gpsPoints: fixesAt(4),
           fixNue: [1000, 400, 1000],
           aligned: true,
           fixAtMs: now,
@@ -184,7 +194,7 @@ describe("wireStationGuide (properties)", () => {
           const now = 100_000;
           const visitor: VisitorPosition = {
             nue: null,
-            accuracyM: 4,
+            gpsPoints: fixesAt(4),
             fixNue: [north, 400, east],
             aligned,
             fixAtMs: now - ageMs,
@@ -220,12 +230,14 @@ describe("wireStationGuide (properties)", () => {
   // Why (r881 third review L4): a lone fix (no alignment, or one not
   // ready) is judged by the worse of the median and its own accuracy. For
   // any pair - either may be unknown - and a visitor on the station's spot,
-  // a find means the worse known one is within the ceiling. Both unknown
-  // is judged by the radius alone: a real device fix always states an
-  // accuracy (the Geolocation spec requires it), so only injected points
-  // (a test page, a replay) can lack one, and refusing them would refuse
-  // nothing a phone sends.
-  it("a lone-fix find implies the worse of the median and the fix's own accuracy is within the ceiling", () => {
+  // a find means the worse known one is within the ceiling.
+  // Changed (shared position-precision plan, M2): both unknown used to be
+  // judged by the radius alone; the framework's one rule reads a position
+  // nothing states an accuracy for as 'none', which judges nothing. A real
+  // device fix always states an accuracy (the Geolocation spec requires
+  // it), so only injected points (a test page, a replay) lack one, and
+  // refusing them refuses nothing a phone sends.
+  it("a lone-fix find implies the worse of the median and the fix's own accuracy is known and within the ceiling", () => {
     const accuracy = fc.option(fc.integer({ min: 1, max: 500 }), {
       nil: null,
     });
@@ -257,7 +269,7 @@ describe("wireStationGuide (properties)", () => {
           // no alignment at all: either way the fix alone is the position.
           const visitor: VisitorPosition = {
             nue: alignedNotReady ? [40, 401.5, 0] : null,
-            accuracyM: medianM,
+            gpsPoints: fixesAt(medianM),
             fixNue: [1, 400, 1],
             aligned: alignedNotReady,
             fixAtMs: now,
@@ -283,7 +295,8 @@ describe("wireStationGuide (properties)", () => {
           guide.tick();
           const known = [medianM, ownM].filter((m) => m !== null);
           const worse = known.length === 0 ? null : Math.max(...known);
-          const expected = worse === null || worse <= ACCURACY_CEILING_M;
+          const expected =
+            worse !== null && worse <= POSITION_PRECISION_CEILING_M;
           expect(found).toEqual(expected ? ["s"] : []);
         },
       ),

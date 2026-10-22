@@ -86,6 +86,38 @@ const EXEMPT = new Map([
     'GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-4-map-r3/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-1-narrated-text/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2-short-text/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-3-pictures/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-4-video/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-5-models/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-6-primitives/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-7-character/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-8-audio/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
 ]);
 
 const RANGE_IN_HTML = /<input\b[^>]*\btype\s*=\s*["']?range\b/is;

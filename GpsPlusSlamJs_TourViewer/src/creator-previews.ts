@@ -41,6 +41,20 @@ interface EarlierCodeFrame {
   readonly geo: LatLong;
 }
 
+/** What a preview's look is made from: a pin's text, a photo's image, a
+ *  placed model's asset and size (drawn by no renderer yet, but a change
+ *  of either is a new look). */
+function lookOf(object: AuthoringObject["object"]): unknown {
+  switch (object.kind) {
+    case "pin":
+      return object.label;
+    case "photo":
+      return object.image;
+    case "model":
+      return [object.asset, object.sizeM];
+  }
+}
+
 export interface CreatorPreviews {
   /** Bring the previews in line with the tour's objects now. */
   sync(): void;
@@ -198,7 +212,7 @@ export function wireCreatorPreviews(deps: {
       placement !== undefined && placement.visit === ctx.arSessionGeneration;
     return JSON.stringify([
       object.kind,
-      object.kind === "pin" ? object.label : object.image,
+      lookOf(object),
       rigid ? placement.local : object.geo,
     ]);
   }

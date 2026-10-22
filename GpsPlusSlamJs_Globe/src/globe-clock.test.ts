@@ -8,7 +8,10 @@
  * malformed hash as a time would put the scene at 1970. The clouds drift
  * on the clock's DRIFT time, which never runs faster than real time: at an
  * hour a second the drift would otherwise strobe at hundreds of degrees a
- * second (stream F review, finding 1).
+ * second (stream F review, finding 1). And it runs in real time while the
+ * hour is pinned and stopped (round-5 plan 2026-10-12-0612 C1, the owner:
+ * "the cloud carpet must move"): a link pins the sun, not the clouds; a
+ * test that needs them still sets `cloudDrift=0`.
  */
 
 import fc from "fast-check";
@@ -134,7 +137,7 @@ describe("driftTimeAt", () => {
         fc.integer({ min: 0, max: 1e8 }),
         (startMs, scale, elapsed) => {
           const clock = startGlobeClock({ startMs, scale }, wall);
-          const rate = Math.min(clock.scale, 1);
+          const rate = clock.scale === 0 ? 1 : Math.min(clock.scale, 1);
           const start = clock.driftTimeAt(wall.monoMs);
           expect(start).toBe(startMs ?? wall.epochMs);
           expect(clock.driftTimeAt(wall.monoMs + elapsed) - start).toBeCloseTo(
@@ -153,9 +156,13 @@ describe("driftTimeAt", () => {
       c.driftTimeAt(wall.monoMs + 2000) - c.driftTimeAt(wall.monoMs + 1000);
     expect(second(fast)).toBe(1000);
     expect(second(real)).toBe(1000);
-    // A pinned, stopped clock: the drift stands still with the scene.
+    // A pinned, stopped clock: the sun stands still, the clouds drift in
+    // real time (round-5 C1: every `time=` link froze the carpet).
     const pinned = startGlobeClock({ startMs: EQUINOX, scale: null }, wall);
-    expect(pinned.driftTimeAt(wall.monoMs + 5000)).toBe(EQUINOX);
+    expect(pinned.timeAt(wall.monoMs + 5000)).toBe(EQUINOX);
+    expect(pinned.driftTimeAt(wall.monoMs + 5000)).toBe(EQUINOX + 5000);
+    const stopped = startGlobeClock({ startMs: EQUINOX, scale: 0 }, wall);
+    expect(second(stopped)).toBe(1000);
   });
 });
 

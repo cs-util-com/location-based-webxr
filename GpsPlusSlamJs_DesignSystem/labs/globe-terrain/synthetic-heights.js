@@ -10,10 +10,10 @@ export const SYNTHETIC_HEIGHTS_URL = "/globe-terrain-synthetic/{z}/{x}/{y}.png";
 /**
  * A synthetic Terrarium tile: a 1 km plateau with ridges of about 5-50 km
  * (0-2,200 m) lowered by `seaM` (a coast where it goes below 0). Encoded
- * as Terrarium: h + 32768 = r * 256 + g + b / 256.
+ * as Terrarium: h + 32768 = r * 256 + g + b / 256. `size` px square
+ * (256, AWS Terrarium's; a smoke serving Mapterhorn's tiles asks for 512).
  */
-export async function syntheticTile(z, x, y, seaM = 0) {
-  const size = 256;
+export async function syntheticTile(z, x, y, seaM = 0, size = 256) {
   const canvas = new OffscreenCanvas(size, size);
   const ctx = canvas.getContext("2d");
   const img = ctx.createImageData(size, size);

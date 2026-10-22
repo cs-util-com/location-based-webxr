@@ -1,9 +1,12 @@
 // @ts-check
 /**
  * The pin's arrival prefetch in the globe lab (round-5 plan 2026-10-01-0945
- * §3.6 step 1): at "pin", the lab loads OsmDemo's prefetch lazily, warms the
- * city's data during the dive, shows how far it got, and paces the dive by
- * it (`/globe/flight-pace.js`), within the 30 s cap (DEC-GL5-6).
+ * §3.6 step 1): at "pin", the lab starts the city's own load lazily (its
+ * worker and the Osm library load only then; round-4 plan 2026-10-11-0122
+ * §5: the warm-up and the city's build are one load), shows how far it got,
+ * and paces the dive by it (`/globe/flight-pace.js`), within the 30 s cap
+ * (DEC-GL5-6). The relief is on (its synthetic heights, made in the page):
+ * the city, and with it the load, exists only where the relief does.
  *
  * Why this file matters: every part of this fails quietly in a browser
  * only. A prefetch module that does not load leaves a dive that simply runs
@@ -15,13 +18,17 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { routeCityData, withPreRound4Look } from "./globe-smoke-helpers.mjs";
+import {
+  plainGlobe,
+  routeCityData,
+  withPreRound4Look,
+} from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const COLOGNE = { latitude: 50.94128, longitude: 6.95817 };
-/** A settled daylight view, the hand-over off so the page stays. */
+/** A settled daylight view. */
 const VIEW = withPreRound4Look(
-  "at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&handOver=0",
+  "at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic",
 );
 
 /** Boots with a granted GPS at Cologne; returns console errors and requests. */
@@ -35,7 +42,7 @@ async function boot(page, context, hash = VIEW) {
   page.on("request", (r) => requests.push(r.url()));
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(COLOGNE);
-  await page.goto(`/labs/globe/#${hash}`);
+  await page.goto(`/labs/globe/#${plainGlobe(hash)}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
     null,
@@ -58,11 +65,15 @@ const arrival = (page) =>
     phase: window.__globeLab.state().phase,
   }));
 
-/** Requests that only the prefetch's lazily loaded graph makes. */
+/**
+ * Requests that only the city load's lazily loaded graph makes: the city's
+ * worker and its graph (the worker view), H3, and the city's three.js entry.
+ * Not the relief's own Osm-library modules (its Terrarium decoder and ENU
+ * frame, `/osm-lib/elevation/`, `/osm-lib/mesh/enu.js`), which it loads
+ * whenever it draws.
+ */
 const prefetchGraph = (requests) =>
-  requests.filter((u) =>
-    /\/osm-lib\/|\/vendor\/h3-js\/|\/osm\/arrival-prefetch\.js/.test(u),
-  );
+  requests.filter((u) => /\/w\/|\/vendor\/h3-js\/|\/osm-lib\/three\//.test(u));
 
 // WHY: the pin starts the prefetch (loaded only now, not at boot), the
 // status line shows a cold load in progress and then its end, and the dive
@@ -107,7 +118,7 @@ test("the pin loads the prefetch lazily, shows its progress and paces the dive",
   );
   const done = await arrival(page);
   expect(done.line).toMatch(/ready/i);
-  // It lands (held: the hand-over is off) well inside the cap.
+  // It lands (held) well inside the cap.
   await page.waitForFunction(
     () => window.__globeLab.state().pin.phase === "idle",
     null,
@@ -192,5 +203,55 @@ test("stopping the flight aborts the prefetch and says so", async ({
   );
   expect((await arrival(page)).line).toMatch(/stopped/i);
   city.release();
+  expect(errors).toEqual([]);
+});
+
+// WHY (the city plan 2026-10-05-0040, K0): a link that names a place warms
+// its city data from load, while the globe still turns, not only from the
+// pin's press, so a direct link to Zurich lands warm. With prefetch=0 it
+// waits, as every other smoke does by pinning cityWarm=0.
+test("a link that names a place warms its city data before any press", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(240_000);
+  const ZURICH =
+    "at=47.3769,8.5417&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic";
+  const city = await routeCityData(page);
+  const { errors, requests } = await boot(
+    page,
+    context,
+    `${ZURICH}&cityWarm=1`,
+  );
+  await page.waitForFunction(
+    () => window.__globeLab.state().pin.arrival?.counts?.overpass?.total > 0,
+    null,
+    { timeout: 120_000 },
+  );
+  const warming = await arrival(page);
+  console.log(
+    `warm from load at Zurich: pin ${warming.pin}, overpass ${JSON.stringify(warming.counts.overpass)}, line "${warming.line}", city requests ${city.seen.overpass}`,
+  );
+  expect(warming.pin).toBe("idle");
+  expect(prefetchGraph(requests).length).toBeGreaterThan(0);
+  expect(city.seen.overpass).toBeGreaterThan(0);
+  expect(errors).toEqual([]);
+});
+
+test("with prefetch=0 a link that names a place loads no city data", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(240_000);
+  await routeCityData(page);
+  const { errors, requests } = await boot(
+    page,
+    context,
+    "at=47.3769,8.5417&spinMs=0&turnMs=0&cloudDrift=0&cityWarm=1&prefetch=0",
+  );
+  expect(
+    await page.evaluate(() => window.__globeLab.state().pin.arrival),
+  ).toBeNull();
+  expect(prefetchGraph(requests)).toEqual([]);
   expect(errors).toEqual([]);
 });

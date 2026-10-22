@@ -29,12 +29,23 @@ import type { CreatorPreviews } from "./creator-previews.js";
 import { usablePhotoFrame } from "./photo-frame.js";
 import type { TourViewerSeams } from "./seams.js";
 import { objectPlaced } from "./tour-authoring-actions.js";
+import { placeRefusal } from "./tour-document.js";
 import type {
   ArController,
   TourViewerSession,
   TourViewerStore,
 } from "./tour-viewer-session.js";
 import { odomNueFromWebXr } from "./visit-anchoring.js";
+
+/** What the creator is told when the document refuses a placement, by
+ *  its reason (`placeRefusal`). */
+const PLACE_REFUSED: Readonly<
+  Record<NonNullable<ReturnType<typeof placeRefusal>>, string>
+> = {
+  deleted: "That item was deleted from this tour - nothing was placed.",
+  exists: "That item is in the tour already - nothing was placed.",
+  "too-far": "That spot is too far from its station - nothing was placed.",
+};
 
 /** The placement controls, inside `#setup-controls`. */
 export interface CreatorPlacementDom {
@@ -161,9 +172,11 @@ export function wireCreatorPlacement(deps: {
   ): { object: TourObject; ownStation: boolean } | null {
     const what =
       object.kind === "pin" ? `the pin "${object.label}"` : "a photo";
-    const change = ctx.tourDocument.place(object, extras, what);
+    const refusal = placeRefusal(ctx.tourDocument.state(), object);
+    const change =
+      refusal === null ? ctx.tourDocument.place(object, extras, what) : null;
     if (change === null) {
-      note("That spot is too far from its station - nothing was placed.");
+      note(PLACE_REFUSED[refusal ?? "too-far"]);
       return null;
     }
     void change.backedUp.then((ok) => {

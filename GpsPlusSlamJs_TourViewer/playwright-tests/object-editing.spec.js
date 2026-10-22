@@ -185,10 +185,17 @@ test("a deleted photo leaves the zip with its jpg, and a deleted hosted pin leav
   // is step 5's; the Finish lands on step 6 (polish round M2, B9), and
   // editing means going back to step 5 (the owner's words).
   await page.getByTestId("station-measure").click();
-  await row(page, "Photo").getByTestId("object-delete").click();
-  await expect(page.getByTestId("object-list-note")).toHaveText(
-    /Deleted the photo - it leaves the zip when you save the tour/,
-  );
+  // The fixture's station holds three photos of its own, beside the one
+  // just taken: every photo goes, one at a time.
+  const photos = row(page, "Photo");
+  await expect(photos).toHaveCount(4);
+  for (let left = 3; left >= 0; left -= 1) {
+    await photos.first().getByTestId("object-delete").click();
+    await expect(page.getByTestId("object-list-note")).toHaveText(
+      /Deleted the photo - it leaves the zip when you save the tour/,
+    );
+    await expect(photos).toHaveCount(left);
+  }
   await row(page, "Fixture pin").getByTestId("object-delete").click();
   await expect(row(page, "Fixture pin")).toHaveCount(0);
 

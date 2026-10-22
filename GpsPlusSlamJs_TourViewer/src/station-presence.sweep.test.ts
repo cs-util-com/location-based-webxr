@@ -61,10 +61,12 @@ import {
 } from "gps-plus-slam-app-framework/test-utils/integrated-slam-drift";
 
 import {
-  ACCURACY_CEILING_M,
-  HUD_ARRIVAL_BAND_M,
-  tooWeakToGuide,
-} from "./station-bands";
+  POSITION_PRECISION_CEILING_M,
+  positionPrecision,
+  type PositionPrecision,
+} from "gps-plus-slam-app-framework/state/position-precision";
+
+import { HUD_ARRIVAL_BAND_M } from "./station-bands";
 import {
   nextPresentStation,
   presentAfterWeakFix,
@@ -95,6 +97,16 @@ const MARGIN_KEYS: readonly MarginKey[] = [
   "rule capped",
 ];
 
+/** The precision the shared rule gives a position judged by this
+ *  reported accuracy (one device fix stating it), or a code's (null). */
+function precisionAt(reportedM: number | null): PositionPrecision {
+  return positionPrecision({
+    position: "aligned",
+    codeHold: reportedM === null,
+    gpsPoints: reportedM === null ? [] : [{ latLongAccuracy: reportedM }],
+  });
+}
+
 /** The margin a key gives for a walk: the reported accuracy (null for a
  *  code's position) and the row's spacing. */
 function marginOf(
@@ -102,7 +114,7 @@ function marginOf(
   reportedM: number | null,
   spacing: number,
 ): number {
-  const rule = takeoverMarginM(reportedM, reportedM === null);
+  const rule = takeoverMarginM(precisionAt(reportedM));
   if (key === "rule capped") return Math.min(rule, spacing / 2);
   if (key.startsWith("rule x")) return rule * Number(key.slice(6));
   return Number(key.slice(2));
@@ -400,10 +412,10 @@ function gpsCell(
   const stations = row(spacing);
   const reported = ratio * accuracy;
   const band = Math.max(
-    Math.min(reported, ACCURACY_CEILING_M),
+    Math.min(reported, POSITION_PRECISION_CEILING_M),
     HUD_ARRIVAL_BAND_M,
   );
-  const weak = tooWeakToGuide(reported) ? reported : null;
+  const weak = precisionAt(reported).tooWeak ? reported : null;
   const out = emptyCell();
   for (let seed = 0; seed < walkShape.seeds; seed += 1) {
     const rng = mulberry32(
@@ -505,7 +517,7 @@ function computeAll(): void {
     ),
     ...OUTDOOR_CEILING_SPACINGS.map((s): [number, number] => [
       s,
-      ACCURACY_CEILING_M,
+      POSITION_PRECISION_CEILING_M,
     ]),
   ];
   for (const [spacing, accuracy] of outdoor) {
@@ -641,7 +653,7 @@ describe(
     // ratio to the rule, so no cell hinges on one value near a threshold).
     it("outdoor (raw fixes, honest accuracy): the rule flickers at most half as often as any fixed margin at 8-25 m, within half a point of its wrong-station rate", () => {
       computeAll();
-      for (const a of [...OUTDOOR_ACCURACIES, ACCURACY_CEILING_M]) {
+      for (const a of [...OUTDOOR_ACCURACIES, POSITION_PRECISION_CEILING_M]) {
         for (const ratio of REPORTED_RATIOS) {
           summary(
             `outdoor acc ${String(a)} ratio ${String(ratio)}`,
@@ -649,7 +661,7 @@ describe(
           );
         }
       }
-      for (const a of [8, 12, 20, ACCURACY_CEILING_M]) {
+      for (const a of [8, 12, 20, POSITION_PRECISION_CEILING_M]) {
         const rule = total(outdoor(a, 1), RULE);
         for (const m of FIXED_MARGINS) {
           const fixed = total(outdoor(a, 1), fixedKey(m));
@@ -671,7 +683,7 @@ describe(
     // judges nothing in.
     it("outdoor margin factor: 1x wins on an honest report; a report of half the error reverses it to 2x, one of double to 0.5x", () => {
       computeAll();
-      for (const a of [8, 12, 20, ACCURACY_CEILING_M]) {
+      for (const a of [8, 12, 20, POSITION_PRECISION_CEILING_M]) {
         const honest = (f: number) => total(outdoor(a, 1), ruleKey(f));
         expect(flickerPerVisit(honest(0.75))).toBeGreaterThan(
           flickerPerVisit(honest(1)),
@@ -691,7 +703,7 @@ describe(
           wrongRate(pessimistic(1)) - 0.02,
         );
       }
-      for (const a of [20, ACCURACY_CEILING_M]) {
+      for (const a of [20, POSITION_PRECISION_CEILING_M]) {
         expect(missRate(total(outdoor(a, 2), RULE))).toBe(1);
       }
     });

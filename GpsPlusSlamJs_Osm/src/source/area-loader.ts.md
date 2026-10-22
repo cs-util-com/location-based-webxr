@@ -5,6 +5,14 @@
 The one code path that loads fetch tiles, shared by the explicit prefetch API
 and the movement trigger.
 
+**No production caller in this workspace today.** The OSM demo loads per pass
+with its own loop over `CachingSource.fetchTile`, because
+`ensureWorkingSetLoaded` always loads the widest working set and the demo's
+first answer must wait only for the tiles its first ring needs
+(`ARCHITECTURE.md` §4 has the measured cost). This module is the load path
+for consumers that score a whole area at once, and the only offline-prefetch
+code; it is kept on purpose (owner decision 2026-10-05).
+
 ## Public API
 
 - `ensureAreaLoaded(source, center: LatLng, radiusMetres, options?)` — the

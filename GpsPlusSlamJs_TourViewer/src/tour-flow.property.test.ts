@@ -30,32 +30,11 @@ const QR_QUIET: ArStatusInput["qr"] = {
   reprojectionErrorPx: null,
 };
 
+/** Every non-idle placement state. The walk's recorded photos' `placed`
+ *  and `declined` states went with them (a visitor no longer sees them),
+ *  so `waiting-ready` is the one left. */
 const arbNonIdlePlacement = (): fc.Arbitrary<PlacementState> =>
-  fc.oneof(
-    fc.record({
-      kind: fc.constant("placing" as const),
-      phase: fc.constantFrom(
-        "reading-walk" as const,
-        "loading-photos" as const,
-      ),
-      done: fc.nat({ max: 500 }),
-      total: fc.nat({ max: 500 }),
-    }),
-    fc.record({
-      kind: fc.constant("placed" as const),
-      placedKind: fc.constant("capture-spots" as const),
-      count: fc.nat({ max: 500 }),
-      fixes: fc.nat({ max: 500 }),
-      gpsAccuracyMedianM: fc.option(
-        fc.double({ min: 0, max: 100, noNaN: true }),
-        { nil: null },
-      ),
-    }),
-    fc.record({
-      kind: fc.constant("declined" as const),
-      reason: fc.string({ minLength: 1, maxLength: 40 }),
-    }),
-  );
+  fc.constant({ kind: "waiting-ready" as const });
 
 const base = (
   tour: ArStatusInput["tour"],
@@ -68,7 +47,6 @@ const base = (
   qr: QR_QUIET,
   readiness: null,
   placement,
-  planesError: null,
   contentError: null,
   gate: { kind: "idle" },
   content: { kind: "none" },
@@ -131,16 +109,6 @@ describe("tour-flow - copy rules", () => {
           base({ kind: "open", levelCount: 1 }, placement),
         );
         expect(line.endsWith(` · ${segment}`)).toBe(true);
-      }),
-    );
-  });
-
-  it("a decline reason appears verbatim", () => {
-    fc.assert(
-      fc.property(fc.string({ minLength: 1, maxLength: 40 }), (reason) => {
-        expect(placementSegment({ kind: "declined", reason })).toContain(
-          reason,
-        );
       }),
     );
   });

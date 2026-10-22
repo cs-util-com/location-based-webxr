@@ -8,8 +8,8 @@
  * by the document (`saveStarted` / `saveEnded`): its save status is the
  * one place that says a save runs, landed or failed, and an undo waits
  * for it (`canStep`). What a save keeps between saves is imperative only -
- * the newest bytes, the photo spots' decision, the queue's tail - and
- * lives in the handle `createTourSaves` returns, one per open.
+ * the newest bytes and the queue's tail - and lives in the handle
+ * `createTourSaves` returns, one per open.
  *
  * @see tour-document-save.ts.md
  */
@@ -22,13 +22,12 @@ import type {
 import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import { hostedObjects } from "./authoring-draft.js";
 import {
-  captureSpotsForRebuild,
   finishedFileName,
   rebuildFinishedTour,
   type FinishedTour,
-  type RebuildPhotoSpots,
 } from "./finish-rebuild.js";
 import {
+  historyAssetIds,
   manifestNow,
   tourDocumentActions,
   type StationFrame,
@@ -95,18 +94,14 @@ interface TourSaveSnapshot {
   readonly deleted: readonly string[];
   /** The manifest the write starts from (`manifestNow`). */
   readonly manifest: TourManifest;
+  /** The assets the history still names (`historyAssetIds`): kept. */
+  readonly keepAssets: ReadonlySet<string>;
   /** The frames it starts from: one moved while it runs stays the
    *  document's (`saved`). */
   readonly stationsAtStart: readonly StationFrame[];
   /** The history position of the view it writes (`TourDocumentState`
    *  `position`): an in-place write names it (`saved`'s `inPlaceAt`). */
   readonly position: number;
-}
-
-/** A save that landed: the file it built and the photo spots it used. */
-export interface TourSaveBuilt {
-  readonly finished: FinishedTour;
-  readonly photos: RebuildPhotoSpots;
 }
 
 interface TourSaves {
@@ -117,7 +112,8 @@ interface TourSaves {
    *  (a rebuild then reads the opened file). */
   newest(): NewestBytes | null;
   /** One save, queued behind the ones before it: the snapshot taken when
-   *  it starts, the photo spots, the rebuild, the landing. Rejects with
+   *  it starts, the pictures' reads, the rebuild, the landing; it resolves
+   *  to the file built. Rejects with
    *  `TOUR_REPLACED` when another open replaced this one before it
    *  started, and with the rebuild's own error; the slice says either
    *  (`saveEnded`'s `error`). */
@@ -127,7 +123,7 @@ interface TourSaves {
      *  place): the document then knows where in its history the file on
      *  disk stands (D33). Default: a download. */
     readonly inPlace?: boolean;
-  }): TourDocumentThunk<Promise<TourSaveBuilt>>;
+  }): TourDocumentThunk<Promise<FinishedTour>>;
   /** Run `start` after the saves queued before it (at once when none
    *  runs: its first steps run inside the dispatch), counted by the
    *  document - ended BEFORE the caller hears the end, so an undo asked
@@ -135,16 +131,14 @@ interface TourSaves {
   queued<T>(start: () => Promise<T>): TourDocumentThunk<Promise<T>>;
   /** The document as a save reads it now. */
   snapshot(): TourDocumentThunk<TourSaveSnapshot>;
-  /** The recorded photos' spots, decided once per open (a decline is not
-   *  re-baked on every save, E1 review #11), after the pictures being read
-   *  (before a rebuild replaces the bytes they may be read from). */
-  photoSpots(manifest: TourManifest): Promise<RebuildPhotoSpots>;
+  /** Settles once the pictures being read are read: a rebuild waits for
+   *  it, since it replaces the bytes they may be read from. */
+  picturesRead(): Promise<void>;
   /** The file rebuilt from the newest bytes - or from `whole`, the opened
    *  file as the caller already read it, so it is not read twice. Throws
    *  what the rebuild throws. */
   rebuild(
     snap: TourSaveSnapshot,
-    photos: RebuildPhotoSpots,
     keepScan: boolean,
     whole?: Blob,
   ): Promise<FinishedTour>;
@@ -171,7 +165,6 @@ export function createTourSaves(input: {
 }): TourSaves {
   const { tour, generation } = input;
   let newest: NewestBytes | null = null;
-  let spots: Promise<RebuildPhotoSpots> | null = null;
   /** The end of the last queued run, for the next to start after. */
   let tail: Promise<unknown> = Promise.resolve();
 
@@ -189,6 +182,7 @@ export function createTourSaves(input: {
       }),
       deleted: [...state.deleted],
       manifest,
+      keepAssets: historyAssetIds(state),
       stationsAtStart: state.stations,
       position: state.position,
     };
@@ -206,14 +200,10 @@ export function createTourSaves(input: {
               throw new Error(TOUR_REPLACED);
             }
             const snap = snapshotOf(state);
-            const photos = await saves.photoSpots(snap.manifest);
-            const finished = await saves.rebuild(
-              snap,
-              photos,
-              options.keepScan,
-            );
+            await saves.picturesRead();
+            const finished = await saves.rebuild(snap, options.keepScan);
             dispatch(saves.land(finished, snap, options.inPlace === true));
-            return { finished, photos };
+            return finished;
           }),
         );
     },
@@ -247,12 +237,10 @@ export function createTourSaves(input: {
     snapshot() {
       return (_dispatch, getState) => snapshotOf(getState().tourDocument);
     },
-    async photoSpots(manifest) {
+    async picturesRead() {
       await input.picturesRead();
-      spots ??= captureSpotsForRebuild(tour, manifest);
-      return spots;
     },
-    async rebuild(snap, photos, keepScan, whole) {
+    async rebuild(snap, keepScan, whole) {
       const finished = await rebuildFinishedTour({
         tour:
           whole === undefined
@@ -267,10 +255,9 @@ export function createTourSaves(input: {
         manifest: snap.manifest,
         placed: snap.placed,
         deleted: snap.deleted,
+        keepAssets: snap.keepAssets,
         levels: [],
         keepScan,
-        ...(photos.spots === undefined ? {} : { captureSpots: photos.spots }),
-        walkPlacesNothing: photos.placesNothing === true,
         previous: newest,
       });
       if (finished === null) throw new Error("the save was stopped");

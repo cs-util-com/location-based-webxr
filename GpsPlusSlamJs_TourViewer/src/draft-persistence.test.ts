@@ -27,6 +27,7 @@ import {
   objectKey,
   visitKey,
   writeDraftVisit,
+  CODES_KEY,
   parseDraftObject,
   photoKey,
   readDraft,
@@ -37,11 +38,14 @@ import {
   writeDraftEdit,
   writeDraftDeletion,
   writeDraftLiveRecord,
+  writeDraftCodes,
   writeDraftMeta,
   writeDraftObject,
 } from "./draft-persistence.js";
 import "./test-support/v3-tour.js";
-import { withTourContent } from "./tour-content.js";
+import { createCreatorDocument } from "./creator-document.js";
+import { manifestToWrite } from "./tour-document.js";
+import { createTourViewerStore } from "./tour-viewer-session.js";
 import type { VisitLogEntry } from "./visit-log.js";
 import { objectContentKey } from "./authoring-draft.js";
 
@@ -106,7 +110,7 @@ function photo(
   };
 }
 
-const META = { tourUrl: "https://h/t.zip", sizeM: 0.16, level: null };
+const META = { tourUrl: "https://h/t.zip", sizeM: 0.16 };
 
 describe("readDraft", () => {
   it("round-trips the meta and every placed object", async () => {
@@ -249,7 +253,8 @@ describe("the meta's own validation", () => {
       { id: "", json: "{}" },
     ]) {
       const store = memoryStore();
-      store.files.set("meta", JSON.stringify({ ...META, level }));
+      store.files.set("meta", JSON.stringify(META));
+      store.files.set(CODES_KEY, JSON.stringify({ level }));
       await writeDraftObject(store, pin("a"));
       const read = await readDraft(store);
       expect(read, JSON.stringify(level)).toBeDefined();
@@ -260,9 +265,10 @@ describe("the meta's own validation", () => {
 
   it("accepts the two shapes a level really has", async () => {
     const withLevel = memoryStore();
-    await writeDraftMeta(withLevel, {
-      ...META,
+    await writeDraftMeta(withLevel, META);
+    await writeDraftCodes(withLevel, {
       level: { id: "abc", json: "{}" },
+      levels: [],
     });
     expect((await readDraft(withLevel))?.draft.level).toEqual({
       id: "abc",
@@ -274,42 +280,38 @@ describe("the meta's own validation", () => {
   });
 });
 
-describe("a meta written before the code book (one level) stays readable (code book plan M1)", () => {
-  // Why: M4 writes several codes (`levels`); a draft a creator left behind
-  // before that must still restore its one measured code, its size, its
-  // rejections and its move answers. This is the meta EXACTLY as the
-  // creator setup writes it today (`recordMeta`), frozen as text.
-  const BEFORE_M4 =
-    '{"tourUrl":"https://h/t.zip","sizeM":0.2,"level":{"id":"a1b2c3d4e5f6","json":"{\\"version\\":1}"},"rejected":["gone"],"moveAnswers":[{"levelId":"a1b2c3d4e5f6","northM":40,"eastM":0,"answer":"not-now","savedKey":"k1"}]}';
+describe("the codes an older meta carried are not read (debug-captures plan M3b, D5)", () => {
+  // Why: the codes have a record of their own (`CODES_KEY`), and the
+  // phone's old meta fields are not read - no tours exist yet, so there
+  // is no old draft to carry over (D5). Reading them as a fallback was a
+  // second source of codes: after a claim of a rejected id rewrote the
+  // meta, an old draft's codes were lost anyway. A meta with code fields
+  // still reads for what the meta holds today, its size.
+  const BEFORE_M3B =
+    '{"tourUrl":"https://h/t.zip","sizeM":0.2,"level":{"id":"a1b2c3d4e5f6","json":"{\\"version\\":1}"},"levels":[{"id":"a1b2c3d4e5f6","json":"{\\"version\\":1}"}]}';
 
-  // Its move answers belong to the prompt M6 removed: they are ignored.
-  it("reads its level, size and rejections, ignoring the removed prompt's answers", async () => {
+  it("reads its size, and no codes", async () => {
     const store = memoryStore();
-    await store.put("meta", BEFORE_M4);
+    await store.put("meta", BEFORE_M3B);
+    await writeDraftObject(store, pin("a"));
     const read = await readDraft(store);
-    expect(read?.draft.level).toEqual({
-      id: "a1b2c3d4e5f6",
-      json: '{"version":1}',
-    });
     expect(read?.draft.sizeM).toBe(0.2);
-    // Since M4c-1 the codes are a list; the one level of an older meta is
-    // that list's only entry.
-    expect(read?.draft.levels).toEqual([
-      { id: "a1b2c3d4e5f6", json: '{"version":1}' },
-    ]);
+    expect(read?.draft.level).toBeNull();
+    expect(read?.draft.levels).toEqual([]);
   });
 });
 
-describe("several codes in the meta (code book plan M4c-1)", () => {
+describe("several codes in the draft (code book plan M4c-1)", () => {
   // Why these tests matter: a meta held ONE level, so a crash after a
   // Finish but before its upload lost every other code measured on the
-  // page. `levels` keeps them all; `level` (the code in hand) is still
-  // written, so an older build reading the draft keeps its one code.
-  it("keeps every code, and the code in hand as the legacy level", async () => {
+  // page. `levels` keeps them all, and `level` the code in hand. Kept in
+  // the draft's codes record since plan M3b (`CODES_KEY`).
+  it("keeps every code, and the code in hand", async () => {
     const store = memoryStore();
     const a = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
     const b = { id: "bbbbbbbbbbb2", json: '{"b":1}' };
-    await writeDraftMeta(store, { ...META, level: b, levels: [a, b] });
+    await writeDraftMeta(store, META);
+    await writeDraftCodes(store, { level: b, levels: [a, b] });
     const read = await readDraft(store);
     expect(read?.draft.level).toEqual(b);
     expect(read?.draft.levels).toEqual([a, b]);
@@ -318,10 +320,10 @@ describe("several codes in the meta (code book plan M4c-1)", () => {
   it("drops a code that does not read and keeps the others", async () => {
     const store = memoryStore();
     const a = { id: "aaaaaaaaaaa1", json: "{}" };
+    store.files.set("meta", JSON.stringify(META));
     store.files.set(
-      "meta",
+      CODES_KEY,
       JSON.stringify({
-        ...META,
         level: null,
         levels: [a, { id: "../escape", json: "{}" }, { id: 5 }, 7],
       }),
@@ -635,8 +637,8 @@ describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", (
   // with every object and photo - a draft that silently stopped loading
   // after an update would cost the creator a walk they cannot repeat. A
   // draft holds world poses, not a tour file, so it needs no migration: its
-  // Finish writes version 3 with every object in a station (tour editor
-  // plan W3).
+  // objects are put back into the tour document, which seats each in a
+  // station, and its Finish writes version 3 (tour editor plan W3).
   it("loads a v1 draft from the files the old app wrote, and finishes it as version 3", async () => {
     const store = memoryStore();
     // The files exactly as the pre-K1 app wrote them (literal keys and
@@ -675,11 +677,22 @@ describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", (
     const stored = await readDraft(store);
     expect(stored?.draft.objects.map((o) => o.id)).toEqual(["p1", "f1"]);
     expect(stored?.photos.has("f1")).toBe(true);
+    // As the page does: the draft restored into the tour it opened (here
+    // one without tour.json), then written.
+    const tourStore = createTourViewerStore();
+    const doc = createCreatorDocument(tourStore);
+    doc.open(createEmptyTourManifest());
+    doc.restore(
+      {
+        objects: stored?.draft.objects ?? [],
+        deleted: [],
+        pictures: stored?.photos ?? new Map(),
+      },
+      "the draft",
+    );
     const finished: unknown = JSON.parse(
       serializeTourManifest(
-        withTourContent(createEmptyTourManifest(), {
-          objects: [...(stored?.draft.objects ?? [])],
-        }),
+        manifestToWrite(tourStore.getState().tourDocument)!,
       ),
     );
     expect(finished).toMatchObject({ version: 3, minor: 0 });

@@ -58,6 +58,10 @@ describe("createGlobeSky", () => {
   });
 
   it("follows the view's rotation and field of view, never its position or clip planes", () => {
+    // One sky for every run: each run sets the whole view, so a value left
+    // from the run before would show. A sky per run (its star field built
+    // 50 times) went over the 30 s limit on a loaded machine (2026-10-11).
+    const sky = createGlobeSky();
     fc.assert(
       fc.property(
         fc.tuple(
@@ -75,7 +79,6 @@ describe("createGlobeSky", () => {
           view.position.set(2e7, -1e7, 3e6);
           view.quaternion.set(q[0], q[1], q[2], q[3]).normalize();
           view.updateMatrixWorld();
-          const sky = createGlobeSky();
           sky.syncCamera(view);
           const cam = sky.camera;
           expect(cam.position.length()).toBe(0);
@@ -92,11 +95,11 @@ describe("createGlobeSky", () => {
           expect(cam.projectionMatrix.equals(expected.projectionMatrix)).toBe(
             true,
           );
-          sky.dispose();
         },
       ),
       { numRuns: 50 },
     );
+    sky.dispose();
   });
 
   it("points the sun along a unit direction, and refuses a zero or non-finite one", () => {
@@ -326,9 +329,10 @@ describe("the procedural stars in the sky pass", () => {
   });
 
   it("turns the stars and the Milky Way's pole by the celestial rotation", () => {
+    // One sky for every run, as above: each run sets the rotation outright.
+    const sky = createGlobeSky();
     fc.assert(
       fc.property(fc.double({ min: 0, max: 2 * Math.PI, noNaN: true }), (a) => {
-        const sky = createGlobeSky();
         const q = new THREE.Quaternion().setFromAxisAngle(
           new THREE.Vector3(0, 0, 1),
           -a,
@@ -355,11 +359,11 @@ describe("the procedural stars in the sky pass", () => {
         expect(sky.uniforms.uGalCentre.value.distanceTo(centre)).toBeLessThan(
           1e-9,
         );
-        sky.dispose();
       }),
       // The example is the seed-721839530 counterexample that failed the
       // r757 cascade (2026-09-28): it must stay green on every run.
       { numRuns: 20, examples: [[2.7478541238137337e-5]] },
     );
+    sky.dispose();
   });
 });
