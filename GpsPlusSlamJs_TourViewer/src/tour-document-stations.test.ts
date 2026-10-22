@@ -811,3 +811,119 @@ describe("stationDeleted (property)", () => {
     );
   });
 });
+
+describe("a written station no frame names (emptied, until a write prunes it)", () => {
+  // Why: such a station still shows in the tour the next write carries,
+  // and a delete or a reorder of it worked, but its edit and its copy
+  // looked only at the document's own frames and said "no such station".
+  it("is edited and copied like any other station", () => {
+    const state = reduce(open(), act.deleted({ id: "f", what: "delete" }));
+    expect(state.stations.some((s) => s.id === stationIdOf("f"))).toBe(false);
+    expect(
+      manifestNow(state)?.stations.some((s) => s.id === stationIdOf("f")),
+    ).toBe(true);
+    expect(
+      stationEditChange(state, stationIdOf("f"), { title: "Kept" }).kind,
+    ).toBe("edited");
+    const edited = reduce(
+      state,
+      act.stationEdited({
+        stationId: stationIdOf("f"),
+        edit: { title: "Kept" },
+        what: "rename",
+      }),
+    );
+    expect(
+      readBack(edited).stations.find((s) => s.id === stationIdOf("f"))?.title,
+    ).toBe("Kept");
+    expectOneStep(state, edited);
+    const copied = reduce(
+      state,
+      act.stationDuplicated({
+        stationId: stationIdOf("f"),
+        newStationId: "fcopy",
+        newItemIds: {},
+        createdAtIso: "2026-10-22T00:00:00.000Z",
+        what: "duplicate",
+      }),
+    );
+    const ids = (manifestNow(copied)?.stations ?? []).map((s) => s.id);
+    expect(ids.indexOf("fcopy")).toBe(ids.indexOf(stationIdOf("f")) + 1);
+    readBack(copied);
+  });
+});
+
+describe("stationDuplicated, the copy's title and card image", () => {
+  it("trims a long title so the copy's still fits 80 characters, and keeps a card image of an image asset", () => {
+    // Why: "<title> copy" of an 80-character title is 85, which the title
+    // field refuses (the copy could not be renamed back to it), and an
+    // image asset stays valid on the copy - only an own photo does not.
+    const long = `${"x".repeat(78)}\u{1F30D}`;
+    let state = reduce(
+      open(),
+      act.stationEdited({
+        stationId: "story",
+        edit: { title: long, image: "img1" },
+        what: "edit",
+      }),
+    );
+    expect(frameOf(state, "story").title).toBe(long);
+    state = reduce(
+      state,
+      act.stationDuplicated({
+        stationId: "story",
+        newStationId: "story2",
+        newItemIds: {},
+        createdAtIso: "2026-10-22T00:00:00.000Z",
+        what: "duplicate",
+      }),
+    );
+    const copy = frameOf(state, "story2");
+    expect([...(copy.title ?? "")]).toHaveLength(80);
+    expect(copy.title).toBe(`${"x".repeat(75)} copy`);
+    expect(copy.image).toBe("img1");
+    expect(
+      stationEditChange(state, "story2", { title: copy.title ?? "" }).kind,
+    ).toBe("unchanged");
+    readBack(state);
+  });
+});
+
+describe("a bare empty station of the opened file", () => {
+  it("deleted, saved and undone comes back", () => {
+    // Why: a station with nothing of its own and no items is dropped from
+    // the frames once the written file lacks it, so the undo of its
+    // delete across a save brought nothing back.
+    const bare = {
+      id: "bare",
+      geo: { ...AT, lat: 48.51, rotation: [0, 0, 0, 1] as const },
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      hint: "arrow" as const,
+      steps: [],
+      items: [],
+    };
+    const withBare: TourManifest = parseTourManifest(
+      JSON.parse(
+        serializeTourManifest({
+          ...OPENED,
+          stations: [
+            ...OPENED.stations,
+            { ...bare, geo: { ...bare.geo, rotation: [0, 0, 0, 1] } },
+          ],
+        }),
+      ),
+    );
+    const deleted = reduce(
+      open(withBare),
+      act.stationDeleted({ stationId: "bare", what: "delete" }),
+    );
+    const saved = save(deleted);
+    expect(saved.written?.stations.some((s) => s.id === "bare")).toBe(false);
+    const undone = reduce(saved, act.undone());
+    expect(manifestNow(undone)?.stations.map((s) => s.id)).toEqual(
+      withBare.stations.map((s) => s.id),
+    );
+    expect(readBack(undone).stations.some((s) => s.id === "bare")).toBe(true);
+  });
+});

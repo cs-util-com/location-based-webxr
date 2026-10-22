@@ -799,7 +799,9 @@ export function createEditorSession(input: {
         return { kind: "refused", reason: STATION_REFUSALS[change.reason] };
       }
       if (change.kind === "unchanged") return change;
-      const frame = state.stations.find((s) => s.id === stationId);
+      const frame = manifestNow(state)?.stations.find(
+        (s) => s.id === stationId,
+      );
       store.dispatch(
         tourDocumentActions.stationEdited({
           stationId,
@@ -871,7 +873,10 @@ export function createEditorSession(input: {
     async duplicateStation(stationId) {
       const state = mine();
       if (state === null) return notInTour;
-      const frame = state.stations.find((s) => s.id === stationId);
+      // Any station the next write carries, as the reducer reads it.
+      const frame = manifestNow(state)?.stations.find(
+        (s) => s.id === stationId,
+      );
       if (frame === undefined) return noSuchStation;
       const items = documentObjects(state)
         .map((o) => o.object)
@@ -1064,8 +1069,8 @@ export function createEditorSession(input: {
         ),
         ...made,
       ];
-      // The stations whole (renamed, added, deleted, reordered or copied
-      // there) - unless a station was changed here meanwhile: live work
+      // The stations edited, added, deleted, reordered or copied there,
+      // whole - unless a station was changed here meanwhile: live work
       // wins.
       const framesWork =
         settings === undefined || state.touched.stations
@@ -1074,6 +1079,9 @@ export function createEditorSession(input: {
               ...(settings.frames === undefined
                 ? {}
                 : { frames: settings.frames }),
+              ...(settings.order === undefined
+                ? {}
+                : { order: settings.order }),
               ...(settings.deletedStations === undefined
                 ? {}
                 : { deletedStations: settings.deletedStations }),

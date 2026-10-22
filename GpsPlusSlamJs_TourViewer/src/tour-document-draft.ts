@@ -25,10 +25,11 @@ import { automaticStationFrame } from "./tour-content.js";
 import { DETAIL_FIELDS, type TourDetailFields } from "./tour-details-form.js";
 import {
   createdStationFrames,
-  documentFrames,
   framesOf,
   levelsNotHosted,
   type LevelText,
+  recordedFrames,
+  recordedOrder,
   type StationFrame,
   type StationPose,
   stationsGoneSinceOpen,
@@ -51,11 +52,15 @@ export interface TourSettingsRecord {
    *  (`createdStationFrames`): the objects' records name them, so a reload
    *  puts them back before the objects (`restored`). Absent when none. */
   readonly createdStations?: readonly StationFrame[];
-  /** Every station whole, in the tour's order, once a station was edited
-   *  beyond its pose here (a title, a radius, a description, a card image;
-   *  added, deleted, reordered or copied: `framesRecorded`). Absent: no
-   *  opinion about them. */
+  /** Once a station was edited beyond its pose here (a title, a radius, a
+   *  description, a card image; added, deleted, reordered or copied:
+   *  `framesRecorded`), the stations this page edited beyond their pose or
+   *  added, whole (`recordedFrames`; empty when none). Absent: no opinion
+   *  about them. */
   readonly frames?: readonly StationFrame[];
+  /** The stations' order, recorded with `frames` only when a restore
+   *  would not give it by itself (`recordedOrder`). */
+  readonly order?: readonly string[];
   /** The stations of the opened or written tour the document no longer
    *  carries, recorded with `frames`; absent when none. */
   readonly deletedStations?: readonly string[];
@@ -203,8 +208,8 @@ function parseFrame(
   }
 }
 
-/** A stored record's deleted stations: the well-formed ids, once each;
- *  undefined when absent or not a list. */
+/** A stored record's deleted stations or order: the well-formed ids, once
+ *  each; undefined when absent or not a list. */
 function parseIds(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   return [
@@ -255,6 +260,7 @@ export function parseSettingsRecord(
     if (stations === null) return undefined;
     const created = parseFrames(record["createdStations"], against);
     const frames = parseFrames(record["frames"], against);
+    const order = parseIds(record["order"]);
     const deletedStations = parseIds(record["deletedStations"]);
     return {
       needsNoGps,
@@ -264,6 +270,7 @@ export function parseSettingsRecord(
         ? {}
         : { createdStations: created }),
       ...(frames === undefined ? {} : { frames }),
+      ...(order === undefined || order.length === 0 ? {} : { order }),
       ...(deletedStations === undefined || deletedStations.length === 0
         ? {}
         : { deletedStations }),
@@ -301,6 +308,7 @@ export interface TourDocumentDraft extends DraftObjectWrites {
 export function settingsRecord(state: TourDocumentState): TourSettingsRecord {
   const created = createdStationFrames(state);
   const gone = state.framesRecorded ? stationsGoneSinceOpen(state) : [];
+  const order = state.framesRecorded ? recordedOrder(state) : undefined;
   return {
     needsNoGps: state.needsNoGps,
     ...(state.detailsRecorded ? { details: state.details } : {}),
@@ -308,7 +316,8 @@ export function settingsRecord(state: TourDocumentState): TourSettingsRecord {
       ? { stations: state.stations.map(({ id, geo }) => ({ id, geo })) }
       : {}),
     ...(created.length === 0 ? {} : { createdStations: created }),
-    ...(state.framesRecorded ? { frames: documentFrames(state) } : {}),
+    ...(state.framesRecorded ? { frames: recordedFrames(state) } : {}),
+    ...(order === undefined ? {} : { order }),
     ...(gone.length === 0 ? {} : { deletedStations: gone }),
   };
 }
@@ -419,7 +428,7 @@ export function followDocument(
   }
   const was = settingsRecord(before);
   const now = settingsRecord(after);
-  if (JSON.stringify(was) !== JSON.stringify(now)) {
+  if (!sameJson(was, now)) {
     void draft.saveSettings(now);
   }
   if (draft.saveCodes === undefined || hands === undefined) return;

@@ -204,10 +204,11 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     station was moved here (each station whose pose differs counted; applied
     before the objects, so an item restores under the frame it was placed
     under, and its reach is checked there - review #1 of the tour document
-    milestone); the stations whole (the record's `frames` and
-    `deletedStations`: a station renamed, added, deleted, reordered or
-    copied there) unless a station was changed here (each station change
-    counted, `stationEditsBetween`); a copy made there (the offer's
+    milestone); the stations edited there (the record's `frames`, at the
+    opened file's poses, `order` and `deletedStations`: a station renamed,
+    added, deleted, reordered or copied there; the stations it does not
+    name keep the opened file's version) unless a station was changed
+    here (each station change counted, `stationEditsBetween`); a copy made there (the offer's
     `made`, an id the tour does not carry) put back with its picture
     (`pictures`; a photo copy without one is skipped); what was applied
     is written to the draft again. Returns the counts.

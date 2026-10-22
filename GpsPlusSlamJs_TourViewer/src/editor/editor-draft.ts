@@ -95,9 +95,11 @@ import { createKeyedChain } from "../keyed-chain.js";
 import type { EditorLock } from "./save-target.js";
 import {
   framesOf,
+  sameBeyondPose,
   type StationFrame,
   type StationPose,
 } from "../tour-document.js";
+import { sameJson } from "../same-json.js";
 import {
   changedStations,
   parseSettingsRecord,
@@ -121,10 +123,13 @@ export interface EditorTourSettings {
    *  starts one): the draft's objects name them, so a restore puts them
    *  back first. Not a change of their own. */
   readonly createdStations?: readonly StationFrame[];
-  /** Every station whole, in the tour's order, once a station was edited
-   *  beyond its pose here (renamed, added, deleted, reordered, copied):
-   *  each comes back as recorded. Absent: no opinion about them. */
+  /** Once a station was edited beyond its pose here (renamed, added,
+   *  deleted, reordered, copied), the stations edited beyond their pose or
+   *  added here, whole: each comes back as recorded, at the opened file's
+   *  pose when the file carries it. Absent: no opinion about them. */
   readonly frames?: readonly StationFrame[];
+  /** The stations' order, when the record orders them (`recordedOrder`). */
+  readonly order?: readonly string[];
   /** The stations of the file the record deleted. */
   readonly deletedStations?: readonly string[];
 }
@@ -171,22 +176,16 @@ const NO_FRAME_CHANGES: FrameChanges = {
   reordered: false,
 };
 
-/** A frame without its pose, for "edited beyond its pose". */
-function poseless(frame: StationFrame): string {
-  return JSON.stringify({ ...frame, geo: null });
-}
-
 function changedFrames(
   wanted: EditorTourSettings,
   against: EditorTourSettings,
 ): FrameChanges {
   if (wanted.frames === undefined) return NO_FRAME_CHANGES;
   const theirs = new Map((against.frames ?? []).map((f) => [f.id, f]));
-  const mine = new Set(wanted.frames.map((f) => f.id));
   const edited = wanted.frames
     .filter((f) => {
       const other = theirs.get(f.id);
-      return other !== undefined && poseless(other) !== poseless(f);
+      return other !== undefined && !sameBeyondPose(other, f);
     })
     .map((f) => f.id);
   const added = wanted.frames
@@ -200,8 +199,10 @@ function changedFrames(
     )
     .map((f) => f.id);
   const deleted = (wanted.deletedStations ?? []).filter((id) => theirs.has(id));
-  const shared = wanted.frames.map((f) => f.id).filter((id) => theirs.has(id));
-  const sharedTheirs = [...theirs.keys()].filter((id) => mine.has(id));
+  const order = wanted.order ?? [];
+  const ordered = new Set(order);
+  const shared = order.filter((id) => theirs.has(id));
+  const sharedTheirs = [...theirs.keys()].filter((id) => ordered.has(id));
   return {
     edited,
     added,
@@ -261,15 +262,16 @@ function sameRecord(
   if (a === null || b === null) return a === b;
   if (a.needsNoGps !== b.needsNoGps) return false;
   if ((a.details === undefined) !== (b.details === undefined)) return false;
-  if (JSON.stringify(a.stations) !== JSON.stringify(b.stations)) return false;
-  if (JSON.stringify(a.createdStations) !== JSON.stringify(b.createdStations)) {
-    return false;
-  }
-  if (JSON.stringify(a.frames) !== JSON.stringify(b.frames)) return false;
-  if (JSON.stringify(a.deletedStations) !== JSON.stringify(b.deletedStations)) {
-    return false;
-  }
-  return changedDetails(a.details, b.details).length === 0;
+  const stationsAlike = (
+    [
+      "stations",
+      "createdStations",
+      "frames",
+      "order",
+      "deletedStations",
+    ] as const
+  ).every((key) => sameJson(a[key], b[key]));
+  return stationsAlike && changedDetails(a.details, b.details).length === 0;
 }
 
 /** The setting's name as the page shows it (`edit.html`). */

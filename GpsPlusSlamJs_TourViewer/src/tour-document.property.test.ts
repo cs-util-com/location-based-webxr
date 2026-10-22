@@ -459,6 +459,7 @@ describe("tour document (properties)", () => {
               ? {}
               : { createdStations: record.createdStations }),
             ...(record?.frames === undefined ? {} : { frames: record.frames }),
+            ...(record?.order === undefined ? {} : { order: record.order }),
             ...(record?.deletedStations === undefined
               ? {}
               : { deletedStations: record.deletedStations }),

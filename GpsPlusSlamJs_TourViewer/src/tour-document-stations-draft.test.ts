@@ -110,6 +110,7 @@ function reloaded(state: TourDocumentState): TourDocumentState {
         ? {}
         : { createdStations: record.createdStations }),
       ...(record.frames === undefined ? {} : { frames: record.frames }),
+      ...(record.order === undefined ? {} : { order: record.order }),
       ...(record.deletedStations === undefined
         ? {}
         : { deletedStations: record.deletedStations }),
@@ -185,6 +186,114 @@ describe("the draft keeps the stations whole", () => {
     expect(restored.stations.some((s) => s.id === stationIdOf("b"))).toBe(
       false,
     );
+  });
+
+  it("the record carries only the stations edited here, and an order only when a restore needs one", () => {
+    // Why: a record of every station whole put the poses and the names of
+    // stations nobody edited here back over a file changed elsewhere.
+    const renamed = reduce(
+      open(),
+      act.stationEdited({
+        stationId: stationIdOf("a"),
+        edit: { title: "The gate" },
+        what: "rename",
+      }),
+    );
+    const record = settingsRecord(renamed);
+    expect(record.frames?.map((f) => f.id)).toEqual([stationIdOf("a")]);
+    expect(record.order).toBeUndefined();
+    const reordered = reduce(
+      renamed,
+      act.stationsReordered({
+        order: [...renamed.stations.map((s) => s.id)].reverse(),
+        what: "reorder",
+      }),
+    );
+    expect(settingsRecord(reordered).frames?.map((f) => f.id)).toEqual([
+      stationIdOf("a"),
+    ]);
+    expect(settingsRecord(reordered).order).toEqual(
+      [...renamed.stations.map((s) => s.id)].reverse(),
+    );
+    // A copy stands right after its original: only an order puts it there.
+    const copied = reduce(
+      open(),
+      act.stationDuplicated({
+        stationId: stationIdOf("a"),
+        newStationId: "acopy",
+        newItemIds: { a: "a2" },
+        createdAtIso: "2026-10-22T00:00:00.000Z",
+        what: "copy",
+      }),
+    );
+    expect(settingsRecord(copied).frames?.map((f) => f.id)).toEqual(["acopy"]);
+    const order = settingsRecord(copied).order ?? [];
+    expect(order.indexOf("acopy")).toBe(order.indexOf(stationIdOf("a")) + 1);
+    expectSameDocument(reloaded(copied), copied);
+  });
+
+  it("a recorded frame comes back at the document's pose, not the one it was recorded at", () => {
+    const state = open();
+    const at = state.stations.find((s) => s.id === stationIdOf("a"))!;
+    const restored = reduce(
+      state,
+      act.restored({
+        objects: [],
+        deleted: [],
+        frames: [
+          {
+            ...at,
+            title: "The gate",
+            geo: { ...at.geo, lat: at.geo.lat + 0.001 },
+          },
+        ],
+        what: "restore",
+      }),
+    );
+    const a = restored.stations.find((s) => s.id === stationIdOf("a"));
+    expect(a?.title).toBe("The gate");
+    expect(a?.geo).toEqual(at.geo);
+  });
+
+  it("a station deleted is recorded; an automatic one a save dropped once its last item's delete emptied it is not", () => {
+    // Why: the offer named an emptied automatic station "a station
+    // deleted", though nobody deleted it: it follows its item, as it does
+    // while the item's delete is unwritten, and the item's tombstone drops
+    // it again on a restore.
+    const deleted = reduce(
+      open(),
+      act.stationDeleted({ stationId: "story", what: "delete" }),
+    );
+    expect(settingsRecord(deleted).deletedStations).toEqual(["story"]);
+    const emptied = reduce(
+      reduce(
+        open(),
+        act.stationEdited({
+          stationId: stationIdOf("a"),
+          edit: { title: "The gate" },
+          what: "rename",
+        }),
+      ),
+      act.deleted({ id: "f", what: "delete" }),
+    );
+    const written = manifestToWrite(emptied);
+    if (written === null) throw new Error("nothing open");
+    const saved = reduce(
+      emptied,
+      act.saved({
+        generation: emptied.generation,
+        written,
+        appliedDeletions: [...emptied.deleted],
+        stationsAtStart: emptied.stations,
+      }),
+    );
+    expect(saved.written?.stations.some((s) => s.id === stationIdOf("f"))).toBe(
+      false,
+    );
+    expect(settingsRecord(saved).frames?.map((f) => f.id)).toEqual([
+      stationIdOf("a"),
+    ]);
+    expect(settingsRecord(saved).deletedStations).toBeUndefined();
   });
 
   it("a copied station keeps the card image of its own copied photo through the record", () => {

@@ -72,16 +72,22 @@ const OBJECTS = [
   model("m", 48.5206),
 ];
 
-async function opened(): Promise<{
+/** The tour of `OBJECTS` opened as a file; `changed` edits it first (the
+ *  same tour as changed on another device). */
+async function opened(
+  changed: (manifest: TourManifest) => TourManifest = (m) => m,
+): Promise<{
   session: TourSession;
   manifest: TourManifest;
 }> {
   const manifest = parseTourManifest(
     JSON.parse(
       serializeTourManifest(
-        tourOf(OBJECTS, {
-          assets: [{ id: "m1", path: "content/m1.glb", kind: "model" }],
-        }),
+        changed(
+          tourOf(OBJECTS, {
+            assets: [{ id: "m1", path: "content/m1.glb", kind: "model" }],
+          }),
+        ),
       ),
     ),
   );
@@ -362,6 +368,143 @@ describe("the station edits across a reload", () => {
         );
       }
     }
+    await session.close();
+  });
+
+  /** A draft over `stores`, as one page load opens it. */
+  function draftOver(stores: ReturnType<typeof memoryDraftStores>) {
+    return createEditorDraft({
+      openStore: stores.open,
+      holdLock: freeLocks,
+      noBackup: () => undefined,
+    });
+  }
+
+  it("an in-place save of an added station and a photo card offers nothing after a reload", async () => {
+    // Why: the record's frames were compared with the file's by their JSON
+    // text, so a frame alike in every field but written with its keys in
+    // another order (a card image put back after the rest) read as edited:
+    // the record outlived the save that wrote it, and every reload offered
+    // "the details of a station" that Restore could not change.
+    const { session, manifest } = await opened();
+    const stores = memoryDraftStores();
+    const draft = draftOver(stores);
+    await draft.open(K, manifest);
+    const writes = draft.writes();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft: writes,
+    });
+    expect(
+      editor.addStation({ lat: 48.53, lon: 9.05, alt: 340 }),
+    ).toMatchObject({ kind: "added" });
+    expect(editor.editStation(stationIdOf("f"), { image: "f" })).toEqual({
+      kind: "edited",
+    });
+    const saved = await editor.save({ keepScan: false });
+    writes.built(saved.written);
+    writes.landed(saved.written, K);
+    await draft.idle();
+    draft.close();
+    const { offer } = await draftOver(stores).open(
+      K,
+      await savedTour(saved.blob),
+    );
+    expect(offer).toBeNull();
+    await session.close();
+  });
+
+  it("a record restored over a file changed elsewhere brings back only the stations edited here, at the file's poses", async () => {
+    // Why: the record kept every station whole, its pose included, so a
+    // restore over a file moved and renamed on another device silently put
+    // the old poses and the old names of stations nobody edited here back.
+    const { session: here, manifest } = await opened();
+    const stores = memoryDraftStores();
+    const draft = draftOver(stores);
+    await draft.open(K, manifest);
+    const editor = createEditorSession({
+      session: here,
+      manifest,
+      levels: new Map(),
+      draft: draft.writes(),
+    });
+    expect(editor.editStation(stationIdOf("a"), { title: "The gate" })).toEqual(
+      { kind: "edited" },
+    );
+    await draft.idle();
+    draft.close();
+    await here.close();
+
+    const movedA = { lat: 48.5201, lon: 9.0502, alt: 341 };
+    const { session, manifest: elsewhere } = await opened((m) => ({
+      ...m,
+      stations: m.stations.map((s) =>
+        s.id === stationIdOf("a")
+          ? { ...s, geo: { ...s.geo, ...movedA } }
+          : s.id === stationIdOf("b")
+            ? { ...s, title: "Named elsewhere" }
+            : s,
+      ),
+    }));
+    const again = draftOver(stores);
+    const { offer } = await again.open(K, elsewhere);
+    expect(offer?.text).toMatch(/the details of a station\b/);
+    const reloaded = createEditorSession({
+      session,
+      manifest: elsewhere,
+      levels: new Map(),
+      draft: again.writes(),
+    });
+    expect(reloaded.restore(offer!).changed).toBe(1);
+    const tour = await savedTour(
+      (await reloaded.save({ keepScan: false })).blob,
+    );
+    const a = tour.stations.find((s) => s.id === stationIdOf("a"));
+    expect(a?.title).toBe("The gate");
+    expect(a?.geo).toMatchObject(movedA);
+    expect(tour.stations.find((s) => s.id === stationIdOf("b"))?.title).toBe(
+      "Named elsewhere",
+    );
+    await session.close();
+  });
+
+  it("a copy made here, saved in place, deleted, saved in place and undone is offered after a reload", async () => {
+    // Why: a record of an id the opened file lacks is offered only as a
+    // copy made here (no file this browser opened showed it); one that a
+    // save once wrote must still count as made here once an undo brings it
+    // back after a later save wrote its delete, or the reload loses it.
+    const { session, manifest } = await opened();
+    const stores = memoryDraftStores();
+    const draft = draftOver(stores);
+    await draft.open(K, manifest);
+    const writes = draft.writes();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft: writes,
+    });
+    const copy = await editor.duplicateObject("b");
+    const copyId = copy.kind === "duplicated" ? copy.id : "";
+    expect(copyId).not.toBe("");
+    const first = await editor.save({ keepScan: false });
+    writes.built(first.written);
+    writes.landed(first.written, K);
+    expect(editor.remove(copyId)).toEqual({ kind: "deleted" });
+    const second = await editor.save({ keepScan: false });
+    writes.built(second.written);
+    writes.landed(second.written, K);
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    await draft.idle();
+    draft.close();
+    const { offer } = await draftOver(stores).open(
+      K,
+      await savedTour(second.blob),
+    );
+    expect(offer?.made).toEqual([copyId]);
+    expect(offer?.objects.map((o) => o.id)).toEqual([copyId]);
     await session.close();
   });
 });

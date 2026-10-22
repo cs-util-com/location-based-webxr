@@ -41,10 +41,12 @@ reducers' building blocks, so a page cannot apply them differently.
   station move restored its items under the file's frame, so they landed
   elsewhere).
 - `framesRecorded` - the draft's settings record carries the stations
-  WHOLE (`frames`: every frame in its order) and the written stations gone
-  since the open (`deletedStations`): set by a station's edit, add,
-  delete, reorder or copy, by a step whose frames differ beyond a pose,
-  and by a restore that brought frames back.
+  edited beyond their pose or added here, whole (`frames`,
+  `recordedFrames`), their order when a restore needs it (`order`,
+  `recordedOrder`) and the written stations gone since the open
+  (`deletedStations`): set by a station's edit, add, delete, reorder or
+  copy, by a step whose frames differ beyond a pose, and by a restore that
+  brought any of them back.
 - `deletedStations: string[]` - written stations a station's delete
   removed. A written station no frame names otherwise follows the frames
   when it is bare (`withFrames`, below), so without this list a deleted
@@ -190,7 +192,8 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   saved texts too, under the rule of `settleApplied` above, and the step
   it leaves for the way back carries the codes it set.
 - `restored({ objects, deleted, needsNoGps?, details?, stations?,
-createdStations?, rerun?, what, newStationIds? })` - a draft's work,
+createdStations?, frames?, order?, deletedStations?, rerun?, what,
+newStationIds? })` - a draft's work,
   already filtered by the page's rules, as one step to undo; not live work
   (`touched` unchanged). In order: the station poses (each named
   station's frame takes its pose, `stationsRecorded` set); the CREATED
@@ -201,13 +204,18 @@ createdStations?, rerun?, what, newStationIds? })` - a draft's work,
   object, minted by `prepare`). `rerun` (work carried into a tour just
   opened) seats every object afresh by the rule: the stations they named
   were another document's. The stations left emptied go as for a move.
-  Then the stations WHOLE (`frames`, `deletedStations`, a draft that
-  recorded a station's edit): each recorded frame replaces the
-  document's frame of its id or is added (one whose story steps name an
-  asset the written tour lacks is skipped); each deleted station no
-  restored object names goes (a written one joins `deletedStations`);
-  every route to a station the tour no longer carries is pruned; and the
-  stations follow the recorded order, those it does not name after them.
+  Then the stations edited, added, deleted or reordered there (`frames`,
+  `order`, `deletedStations`, a draft that recorded a station's edit):
+  each recorded frame replaces the document's frame of its id AT THE
+  DOCUMENT'S POSE (the opened file's, or the poses' record's - a frame is
+  recorded for an edit beyond its pose, so a file moved on another device
+  keeps its move) or is added whole (one whose story steps name an asset
+  the written tour lacks is skipped); each deleted station no restored
+  object names goes (a written one joins `deletedStations`); every route
+  to a station the tour no longer carries is pruned; and the stations
+  follow the recorded `order`, those it does not name after them (no
+  order: the opened file's, then the added ones). Stations the record does
+  not name keep the opened file's version, title and all.
   A record without these fields (written before stations were kept
   whole) restores as before. Every frame a restore brings - recorded or
   created - is checked against the tour it is restored into: one whose
@@ -238,7 +246,10 @@ largeTour?, cannotSave? })`.
     (`StationEdit`; `image: null` clears it), by `stationEditChange`'s
     rules: a title of at most 80 characters (`checkTourTitle`, blank
     clears it), a description of at most 2000 (`checkTourDescription`),
-    an image that is a photo of that station or an image asset.
+    an image that is a photo of that station or an image asset. Any
+    station the next write carries is edited, a written one no frame
+    names (it follows its items until a write prunes it) too: it becomes
+    one of the document's frames (`framesHolding`).
   - `stationAdded({ at, stationId?, what })` - an automatic station
     (`automaticStationFrame`) at a point on the globe, titled
     `Station N` after the stations it follows; `prepare` mints the id, a
@@ -252,18 +263,21 @@ largeTour?, cannotSave? })`.
     `manifestNow` carries; anything else (or the same order) changes
     nothing.
   - `stationDuplicated({ stationId, newStationId, newItemIds, createdAtIso,
-geo?, what })` - a copy inserted after the original, titled
-    `<title> copy`, without its card image (it named the original's
-    photo), at `duplicateStationGeo` (twice the found radius plus 5 m
+geo?, what })` - a copy inserted after the original (any station the
+    next write carries, as for `stationEdited`), titled `<title> copy`
+    (the original's title shortened so the copy's fits 80 characters,
+    `copyTitle`), its card image kept when it names an image asset and
+    dropped when it names the original's photo (the copy holds another),
+    at `duplicateStationGeo` (twice the found radius plus 5 m
     east, so the two preload rings never overlap) or `geo`; each item is
     copied under its new id at the same local pose (`rigidlyMoved`), a
     photo naming `content/<new id>.<ext>`. `prepare` mints the station id
     and the time; the page mints the items' ids (it copies their pictures
     first).
   - `objectDuplicated({ id, newId?, createdAtIso?, what })` - an item's
-    copy 1.5 m east (`duplicateItemGeo`), same height and facing, in the
-    same station when it fits there (`objectFits`), else seated by the
-    rule.
+    copy 1.5 m east (`duplicateItemGeo`) or at `geo`, same height and
+    facing, in the same station; a copy its station cannot carry
+    (`objectFits`) is refused, changing nothing - it is never re-seated.
   - `itemsGrounded({ items: [{ id, alt }], what })` - several items' new
     altitudes ("put on the ground", the page measures the ground) as one
     step; an unknown id refuses the whole step.
@@ -333,19 +347,38 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   itself (`keepsItself`) only while an object of the document still
   stands in it, so a station added, saved and undone is gone rather than
   kept by its own title. A frame the file lacks is kept while an edit
-  names it or it keeps itself (a station added or copied here).
-- `stationImageIds(state, stationId)` (module-private) - the images a station's card may
-  show: a photo of that station as the document holds it, or an image
-  asset.
+  names it, it keeps itself (a station added or copied here), or it is a
+  bare empty station of the tour as opened (`bareEmptyStations`: nothing
+  else would keep one, so its delete, saved, then undone, brought nothing
+  back). Not for a bare empty station only a later write held (added,
+  its title cleared, saved): its delete, saved and undone, stays gone.
+- `stationImages(state)` (module-private) - the images each station's
+  card may show, by station id: a photo of that station as the document
+  holds it, or an image asset. One pass over the objects per call.
 - `stationEditChange(state, id, edit)` - `edited` with the frame to
   dispatch, `unchanged`, `refused` with the field the format refuses
   (`title`, `radius`, `description`, `image`), or `missing`.
 - `stationDeleteRefusal(state, id)` - `missing`, `last` (a tour keeps at
   least one station) or null.
-- `documentFrames(state)` and `stationsGoneSinceOpen(state)` - what the
-  draft's settings record keeps when `framesRecorded`: every frame the
-  next write carries, in its order, and the stations of the opened or
-  written tour it no longer carries.
+- `documentFrames(state)` - every frame the next write carries, whole and
+  in its order: what the record below is cut from.
+- `recordedFrames(state)`, `recordedOrder(state)` and
+  `stationsGoneSinceOpen(state)` - what the draft's settings record keeps
+  when `framesRecorded`, measured against the tour as opened (a download
+  leaves it on disk) and as last written (an in-place save): the frames
+  either lacks or carries otherwise beyond their pose (`sameBeyondPose`),
+  never one alike in both - a restore over a file changed elsewhere then
+  keeps that file's version of every station not edited here; the ids of
+  `documentFrames` in order, only when a restore without them would
+  order the stations otherwise (a reorder, a copy inserted mid-tour);
+  and the stations of either tour the next write no longer carries,
+  except one a write dropped as an emptied automatic station (bare,
+  holding items in every file that carries it, no delete of it pending):
+  it follows its items, as it does while their deletes are unwritten, so
+  the offer never calls it "a station deleted".
+- `sameBeyondPose(a, b)` - two frames alike in every field but `geo`, by
+  data whatever their key order (`same-json.ts`): what "edited beyond its
+  pose" means here and in the desktop's draft offer.
 - `stationEditsBetween(before, after)` - the station changes beyond poses
   from one state to another, counted as `changeCount` counts them: what a
   restore says it brought back.
@@ -398,8 +431,9 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
 - `framesOf(manifest)`.
 - Module-internal (not exported: nothing outside the slice needs them, and
   the root dead-code check holds exports to their importers):
-  `contentAt(written, view)`, `withFrames(written, frames, placed, deleted,
-deletedStations)`,
+  `contentAt(written, view, keptBare)`, `withFrames(written, frames,
+placed, deleted, deletedStations, keptBare)`, `bareEmptyStations`,
+  `framesHolding`, `copyTitle`,
   `withNeedsNoGps(manifest, on)`, and the payload and history types
   (`TourHistoryStep`, `TourRestore`, `TourSaved`).
 - `nextStep(state, which)` - the step an undo or a redo would go to (the
@@ -620,15 +654,24 @@ store.dispatch(tourDocumentActions.undone());
   station's delete counting as one change (seen red with the
   `deletedStations` exclusion off), the last station refused; a reorder
   (anything but a permutation refused); a copy of a station (new ids,
-  items rigidly, a photo under its own file; a story's steps and routes)
-  and of an item (1.5 m east, label marked); items grounded as ONE step;
+  items rigidly, a photo under its own file; a story's steps and routes;
+  a long title shortened so the copy's fits 80 characters, counted in
+  code points, and an image asset's card kept - seen red at 84) and of an
+  item (1.5 m east, label marked); a written station no frame names
+  edited and copied (seen red: `missing`); a bare empty station of the
+  opened file deleted, saved and undone comes back (seen red); items
+  grounded as ONE step;
   a model's size at 0.05 m and 500 m and just outside; an item into a
   station of its own; a station the rule started counted once; and as a
   property: any order of station deletes leaves no route to a missing
   station, and a tour the format reads.
 - `tour-document-stations-draft.test.ts` - the settings record carries
-  the stations whole and a restore brings each edit back: a rename, an
-  add, a delete (its route pruned), a reorder and a copy; a copied
+  the stations edited here and a restore brings each edit back: a rename,
+  an add, a delete (its route pruned), a reorder and a copy; only the
+  edited frames, and an order only for a reorder or a copy inserted
+  mid-tour; a recorded frame restored at the document's pose; a station
+  deleted recorded, an automatic one a save dropped once emptied not
+  (seen red with the exclusion off); a copied
   station's card image kept through the record (seen red with the
   record's image re-attach off); a frame whose step names an asset parses
   only against the tour; a deleted station an object still names stays

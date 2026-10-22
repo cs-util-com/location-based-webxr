@@ -44,10 +44,14 @@ editor's own namespace, one tab at a time. Design:
     change of its own; `settingsWhat` is then absent, and `restoredLine`
     speaks of the notes alone), and goes at an open with no note to offer.
     Once a station was edited, added, deleted, reordered or copied here,
-    the record also holds `frames` (every station whole, in its order)
-    and `deletedStations`: the stations' differences from the compared
-    file (`changedFrames`: a frame edited beyond its pose, added,
-    deleted, or a new order) count as changes, offered and named - "the
+    the record also holds `frames` (the stations edited beyond their pose
+    or added here, whole), `order` (when a restore needs one) and
+    `deletedStations`: the stations' differences from the compared file
+    (`changedFrames`: a frame edited beyond its pose - `sameBeyondPose`,
+    by data whatever its key order, so a frame the file carries alike is
+    no change and the record goes once an in-place save wrote it - added,
+    deleted, or the shared stations in another `order`) count as changes,
+    offered and named - "the
     details of a station" / "of N stations", "a station added" / "N
     stations added", "a station deleted" / "N stations deleted", "the order of the stations",
     and `settingsWhat` "this tour's stations".
@@ -294,9 +298,15 @@ reopened in the same tab; a moved photo note and the undo of a delete of
 one (no bytes); the old namespace kept until the carried records landed,
 and kept when they did not; "Delete it" right after a key move; a closed
 tour's late write dropped; the hold kept until the queued writes landed;
-the stations whole through the real draft (`editor-session-stations.test.ts`:
+the stations through the real draft (`editor-session-stations.test.ts`:
 renamed, added, copied, deleted and reordered stations, and a copied
-photo's picture, back after a reload as the save had them);
+photo's picture, back after a reload as the save had them; an added
+station and a photo card saved in place, then nothing offered after a
+reload - seen red, the record outlived the save; a record restored over
+a file moved and renamed elsewhere bringing back only the station edited
+here, at the file's pose - seen red, "the details of 2 stations"; a copy
+made here, saved in place, deleted, saved in place and undone, offered
+after a reload);
 an edit claimed against the meta on disk when the pruning write was refused
 (PR #622 A); a close right after "Delete it" holding until its meta write
 landed (PR #622 B); a refused first meta write said, and the backup no

@@ -31,6 +31,7 @@ import { TOUR_ID_PATTERN } from "gps-plus-slam-app-framework/ar/tour-archive";
 import {
   checkTourDescription,
   checkTourTitle,
+  TOUR_TITLE_MAX_CHARS,
   tourImageIds,
 } from "gps-plus-slam-app-framework/ar/tour-details";
 import {
@@ -540,8 +541,9 @@ export function createdStationFrames(state: TourDocumentState): StationFrame[] {
 
 /** Every station the next write carries, whole and in its order, as the
  *  document holds it (a card image whose picture is gone included: it
- *  comes back with the picture): what a draft records once the stations
- *  were edited beyond a pose (`framesRecorded`). */
+ *  comes back with the picture): what a draft's record is cut from once
+ *  the stations were edited beyond a pose (`recordedFrames`,
+ *  `recordedOrder`). */
 export function documentFrames(state: TourDocumentState): StationFrame[] {
   const base = manifestNow(state);
   if (base === null) return [];
@@ -549,17 +551,89 @@ export function documentFrames(state: TourDocumentState): StationFrame[] {
   return allFrames(state).filter((f) => carried.has(f.id));
 }
 
-/** The stations of the tour as opened or last written that the next write
- *  no longer carries: deleted here, or emptied and dropped. */
+/** Whether two frames are alike in every field but their pose, whatever
+ *  order a writer built their keys in (`sameJson`): no edit beyond a move
+ *  tells them apart. */
+export function sameBeyondPose(a: StationFrame, b: StationFrame): boolean {
+  return sameJson({ ...a, geo: null }, { ...b, geo: null });
+}
+
+/** The tours a draft's record is read against on a reload: the one opened
+ *  here (a download leaves it on disk), and the one last written over it
+ *  in place. */
+function filesOf(state: TourDocumentState): TourManifest[] {
+  return [state.opened, state.written].filter((m) => m !== null);
+}
+
+/**
+ * The frames a draft records once the stations were edited beyond a pose
+ * (`framesRecorded`): those of `documentFrames` that the tour as opened or
+ * as last written lacks (added or copied here), or carries otherwise beyond
+ * its pose (edited here). A frame alike in both is no edit of this page's,
+ * so a restore over a file changed elsewhere keeps that file's version of
+ * it - and a pose is the poses' record's to bring back (`stationsRecorded`).
+ */
+export function recordedFrames(state: TourDocumentState): StationFrame[] {
+  const files = filesOf(state).map(
+    (m) => new Map(framesOf(m).map((f) => [f.id, f])),
+  );
+  return documentFrames(state).filter((frame) =>
+    files.some((file) => {
+      const there = file.get(frame.id);
+      return there === undefined || !sameBeyondPose(frame, there);
+    }),
+  );
+}
+
+/**
+ * The stations' order a draft records with the frames: every id of
+ * `documentFrames` in its order, when a restore without it would order them
+ * otherwise over the tour as opened or as last written - that tour's
+ * stations in their order, then the ones it lacks in the document's - and
+ * undefined when it would not (a delete or an edit alone orders nothing).
+ */
+export function recordedOrder(state: TourDocumentState): string[] | undefined {
+  const ids = documentFrames(state).map((f) => f.id);
+  const kept = new Set(ids);
+  const needed = filesOf(state).some((file) => {
+    const fileIds = file.stations.map((s) => s.id);
+    const inFile = new Set(fileIds);
+    const unordered = [
+      ...fileIds.filter((id) => kept.has(id)),
+      ...ids.filter((id) => !inFile.has(id)),
+    ];
+    return unordered.some((id, i) => id !== ids[i]);
+  });
+  return needed ? ids : undefined;
+}
+
+/**
+ * The stations of the tour as opened or last written that the next write
+ * no longer carries: deleted here, or dropped - except one a write dropped
+ * as an emptied automatic station (bare, no `keepsItself`, holding items
+ * in every file that carries it, and no station's delete pending for it):
+ * it follows its items, as it does while the document holds their deletes
+ * unwritten, so it is no station deleted.
+ */
 export function stationsGoneSinceOpen(state: TourDocumentState): string[] {
   const carried = new Set(
     (manifestNow(state)?.stations ?? []).map((s) => s.id),
   );
-  const ids = [
-    ...(state.opened?.stations ?? []),
-    ...(state.written?.stations ?? []),
-  ].map((s) => s.id);
-  return [...new Set(ids)].filter((id) => !carried.has(id));
+  const listed = new Set<string>();
+  for (const file of filesOf(state)) {
+    const imageAssets = imageAssetIds(file.assets);
+    for (const station of file.stations) {
+      if (carried.has(station.id)) continue;
+      if (
+        state.deletedStations.includes(station.id) ||
+        station.items.length === 0 ||
+        keepsItself(station, imageAssets)
+      ) {
+        listed.add(station.id);
+      }
+    }
+  }
+  return [...listed];
 }
 
 /**
@@ -567,9 +641,11 @@ export function stationsGoneSinceOpen(state: TourDocumentState): string[] {
  * written items of its station (none for a station the file lacks); a
  * frame the file lacks is kept only while an edit names it (a station a
  * placement started, or an undo brought back an object whose emptied
- * station a save dropped - it comes back where it stood) or
- * it carries the creator's own work (`keepsItself`: a station added or
- * duplicated here). A written station no frame names follows unless a
+ * station a save dropped - it comes back where it stood), it carries the
+ * creator's own work (`keepsItself`: a station added or duplicated here),
+ * or it is one of `keptBare` (`bareEmptyStations` of the tour as opened:
+ * a station with nothing of its own and no items, whose delete a save
+ * wrote, comes back with an undo of that delete). A written station no frame names follows unless a
  * station's delete removed it (`deletedStations`): a bare one always (an
  * automatic one a save added after the step went back, or one its items
  * left: its items keep their home, and a write prunes it once they are
@@ -583,6 +659,7 @@ function withFrames(
   placed: readonly EditEntry[],
   deleted: readonly string[] = [],
   deletedStations: readonly string[] = [],
+  keptBare: ReadonlySet<string> = new Set(),
 ): TourManifest {
   const byId = new Map(written.stations.map((s) => [s.id, s]));
   const named = new Set(placed.map((p) => p.object.station));
@@ -607,7 +684,8 @@ function withFrames(
         if (
           own === undefined &&
           !named.has(frame.id) &&
-          !keepsItself(frame, imageAssets)
+          !keepsItself(frame, imageAssets) &&
+          !keptBare.has(frame.id)
         ) {
           return [];
         }
@@ -618,6 +696,18 @@ function withFrames(
       ),
     ],
   };
+}
+
+/** The stations of `manifest` with nothing of their own and no items:
+ *  nothing else keeps one in the frames once a write left it out. */
+function bareEmptyStations(manifest: TourManifest | null): Set<string> {
+  if (manifest === null) return new Set();
+  const imageAssets = imageAssetIds(manifest.assets);
+  return new Set(
+    manifest.stations
+      .filter((s) => s.items.length === 0 && !keepsItself(s, imageAssets))
+      .map((s) => s.id),
+  );
 }
 
 /** `manifest` with the "needs no GPS" flag set, or without the field:
@@ -640,6 +730,7 @@ function framed(state: TourDocumentState): TourManifest | null {
         state.placed,
         state.deleted,
         state.deletedStations,
+        bareEmptyStations(state.opened),
       );
 }
 
@@ -750,19 +841,22 @@ export function manifestNow(state: TourDocumentState): TourManifest | null {
   );
 }
 
-/** The images a station's card may show now: a photo of that station as
- *  the document holds it, or an image asset of the written tour. */
-function stationImageIds(
+/** The images each station's card may show now, by station id: a photo of
+ *  that station as the document holds it, or an image asset of the written
+ *  tour. The tour's objects are read once, however many stations are
+ *  asked. */
+function stationImages(
   state: TourDocumentState,
-  stationId: string,
-): Set<string> {
-  const ids = new Set(imageAssetIds(state.written?.assets ?? []));
+): (stationId: string) => ReadonlySet<string> {
+  const assets = imageAssetIds(state.written?.assets ?? []);
+  const byStation = new Map<string, Set<string>>();
   for (const { object } of documentObjects(state)) {
-    if (object.kind === "photo" && object.station === stationId) {
-      ids.add(object.id);
-    }
+    if (object.kind !== "photo" || object.station === undefined) continue;
+    const ids = byStation.get(object.station) ?? new Set(assets);
+    ids.add(object.id);
+    byStation.set(object.station, ids);
   }
-  return ids;
+  return (stationId) => byStation.get(stationId) ?? assets;
 }
 
 /** `manifest` with each station's card image as shown and written: one
@@ -774,11 +868,11 @@ function withEffectiveImages(
   manifest: TourManifest,
 ): TourManifest {
   if (!manifest.stations.some((s) => s.image !== undefined)) return manifest;
+  const imagesOf = stationImages(state);
   return {
     ...manifest,
     stations: manifest.stations.map((station) =>
-      station.image === undefined ||
-      stationImageIds(state, station.id).has(station.image)
+      station.image === undefined || imagesOf(station.id).has(station.image)
         ? station
         : withoutField(station, "image"),
     ),
@@ -849,6 +943,7 @@ export function unsavedEntries(state: TourDocumentState): EditEntry[] {
       state.placed,
       state.deleted,
       state.deletedStations,
+      bareEmptyStations(state.opened),
     ),
   );
   return state.placed.filter((p) => !hosted.holds(p.object));
@@ -1075,10 +1170,7 @@ export function stationEditsBetween(
   );
   const reworked = now.filter((f) => {
     const other = was.get(f.id);
-    return (
-      other !== undefined &&
-      !sameJson({ ...f, geo: null }, { ...other, geo: null })
-    );
+    return other !== undefined && !sameBeyondPose(f, other);
   }).length;
   const added = now.filter(
     (f) => !was.has(f.id) && !namedAfter.has(f.id),
@@ -1126,11 +1218,12 @@ export function viewOf(state: TourDocumentState): TourDocumentView {
  * through the VIEW's frames, as `documentObjects` reads it: an item the
  * file holds at a local pose under a frame the view moves elsewhere
  * stands elsewhere, so it needs an entry (a save under a moved frame,
- * then an undo of the move).
+ * then an undo of the move). `keptBare` as `withFrames` reads it.
  */
 function contentAt(
   written: TourManifest,
   view: TourDocumentView,
+  keptBare: ReadonlySet<string>,
 ): { placed: EditEntry[]; deleted: string[] } {
   const kept = new Set(view.objects.map((o) => o.id));
   const deleted = tourObjects(written)
@@ -1143,6 +1236,7 @@ function contentAt(
       view.objects.map((object) => ({ object })),
       deleted,
       view.deletedStations,
+      keptBare,
     ),
   );
   return {
@@ -1162,7 +1256,7 @@ export function picturesNeeded(
 ): string[] {
   if (state.written === null) return [];
   const hosted = hostedObjects(state.written);
-  return contentAt(state.written, view)
+  return contentAt(state.written, view, bareEmptyStations(state.opened))
     .placed.filter(
       (p) => p.object.kind === "photo" && hosted.key(p.object.id) === undefined,
     )
@@ -1274,7 +1368,7 @@ function goTo(
   const framesChanged = framesEdited(view.stations, state.stations);
   return {
     ...state,
-    ...contentAt(state.written, view),
+    ...contentAt(state.written, view, bareEmptyStations(state.opened)),
     stations: view.stations,
     deletedStations: view.deletedStations ?? [],
     needsNoGps: view.needsNoGps,
@@ -1303,10 +1397,7 @@ function framesEdited(
   const byId = new Map(b.map((f) => [f.id, f]));
   return a.some((f) => {
     const other = byId.get(f.id);
-    return (
-      other !== undefined &&
-      !sameJson({ ...f, geo: null }, { ...other, geo: null })
-    );
+    return other !== undefined && !sameBeyondPose(f, other);
   });
 }
 
@@ -1386,12 +1477,15 @@ interface TourRestore {
    *  draft keeps them, so a reload brings a pin's station back with it):
    *  added after the poses, before the objects. */
   readonly createdStations?: readonly StationFrame[];
-  /** Every station whole, in its order (a draft that recorded a station's
-   *  edit, add, delete, reorder or copy): each replaces the document's
-   *  frame of its id or is added, after the poses; one whose steps name an
-   *  asset the written tour lacks is skipped. The document's stations
-   *  follow this order, those it does not name after them. */
+  /** The stations a draft recorded edited beyond their pose, or added
+   *  (`recordedFrames`): each replaces the document's frame of its id at
+   *  the document's pose (a pose is `stations`' to move), or is added
+   *  whole, after the poses; one whose steps name an asset the written
+   *  tour lacks is skipped. */
   readonly frames?: readonly StationFrame[];
+  /** The stations' order a draft recorded (`recordedOrder`): the stations
+   *  it names follow it, the others after them in their own order. */
+  readonly order?: readonly string[];
   /** Stations the draft deleted: each goes once the objects are back,
    *  unless an object still names it. */
   readonly deletedStations?: readonly string[];
@@ -1407,16 +1501,14 @@ interface TourRestore {
  * are back): each deleted station no object names goes, every route to a
  * station the tour no longer
  * carries is pruned (the format refuses a dangling one), and the stations
- * follow the recorded frames' order, the others after them.
+ * follow the recorded order, the others after them.
  */
 function restoredStations(
   state: TourDocumentState,
-  work: Pick<TourRestore, "frames" | "deletedStations">,
+  work: Pick<TourRestore, "frames" | "order" | "deletedStations">,
 ): TourDocumentState {
   if (state.written === null) return state;
-  if (work.frames === undefined && work.deletedStations === undefined) {
-    return withoutDanglingRoutes(state);
-  }
+  if (!recordsStations(work)) return withoutDanglingRoutes(state);
   const named = new Set(documentObjects(state).map((o) => o.object.station));
   const gone = new Set(
     (work.deletedStations ?? []).filter((id) => !named.has(id)),
@@ -1434,8 +1526,8 @@ function restoredStations(
     frames.flatMap(routedTo).filter((id) => !ids.has(id)),
   );
   if (missing.size > 0) frames = frames.map((f) => withoutRoutesTo(f, missing));
-  if (work.frames !== undefined) {
-    const order = new Map(work.frames.map((f, i) => [f.id, i]));
+  if (work.order !== undefined) {
+    const order = new Map(work.order.map((id, i) => [id, i]));
     const rank = (f: StationFrame): number =>
       order.get(f.id) ?? Number.POSITIVE_INFINITY;
     // A stable sort: the frames the record does not name keep their order.
@@ -1445,6 +1537,18 @@ function restoredStations(
       .map(({ f }) => f);
   }
   return { ...state, stations: frames, deletedStations };
+}
+
+/** Whether a restore carries a record of the stations beyond their poses
+ *  (frames, an order or deletions): the document records them on. */
+function recordsStations(
+  work: Pick<TourRestore, "frames" | "order" | "deletedStations">,
+): boolean {
+  return (
+    work.frames !== undefined ||
+    work.order !== undefined ||
+    work.deletedStations !== undefined
+  );
 }
 
 /** `state` without a route of its frames to a station the tour does not
@@ -1694,14 +1798,14 @@ function withText(
  * (`checkTourTitle`), a found radius from 2 m to 300 m (`isStationRadius`)
  * with the preload radius twice it, a description of at most 2000
  * (`checkTourDescription`), a card image naming a photo of THIS station or
- * an image asset of the tour (`stationImageIds`).
+ * an image asset of the tour (`stationImages`).
  */
 export function stationEditChange(
   state: TourDocumentState,
   stationId: string,
   edit: StationEdit,
 ): StationEditChange {
-  const frame = state.stations.find((s) => s.id === stationId);
+  const frame = allFrames(state).find((s) => s.id === stationId);
   if (frame === undefined) return { kind: "missing" };
   const titled = withText(frame, "title", edit.title, checkTourTitle);
   if (titled === null) return { kind: "refused", reason: "title" };
@@ -1726,7 +1830,7 @@ export function stationEditChange(
   if (edit.image === null) {
     next = withoutField(next, "image");
   } else if (edit.image !== undefined) {
-    if (!stationImageIds(state, stationId).has(edit.image)) {
+    if (!stationImages(state)(stationId).has(edit.image)) {
       return { kind: "refused", reason: "image" };
     }
     next = { ...next, image: edit.image };
@@ -1801,6 +1905,33 @@ function allFrames(state: TourDocumentState): StationFrame[] {
   ];
 }
 
+/** The frames a station edit of `stationId` replaces or extends: the
+ *  document's own when they name it, else every frame the next write
+ *  carries (`allFrames`: a written station no frame names, which follows
+ *  its items until a write prunes it, is edited as it is shown). */
+function framesHolding(
+  state: TourDocumentState,
+  stationId: string,
+): readonly StationFrame[] {
+  return state.stations.some((s) => s.id === stationId)
+    ? state.stations
+    : allFrames(state);
+}
+
+/** What a copy's title adds to the original's. */
+const COPY_MARK = " copy";
+
+/** A copy's title: `title` and the mark, `title` shortened to fit the
+ *  title's bound (`TOUR_TITLE_MAX_CHARS`, counted as the field counts
+ *  it, in code points). */
+function copyTitle(title: string): string {
+  const room = TOUR_TITLE_MAX_CHARS - [...COPY_MARK].length;
+  const chars = [...title];
+  const kept =
+    chars.length <= room ? title : chars.slice(0, room).join("").trimEnd();
+  return `${kept}${COPY_MARK}`;
+}
+
 /** The title a station without one is shown by: its place in the tour. */
 function shownTitle(state: TourDocumentState, frame: StationFrame): string {
   if (frame.title !== undefined) return frame.title;
@@ -1849,7 +1980,7 @@ function stationEdit(
   return edited(
     before,
     {
-      stations: before.stations.map((s) =>
+      stations: framesHolding(before, payload.stationId).map((s) =>
         s.id === payload.stationId ? change.frame : s,
       ),
       touched: { ...before.touched, stations: true },
@@ -1977,7 +2108,8 @@ function stationDuplicate(
   payload: StationDuplicatePayload,
 ): TourDocumentState {
   if (before.written === null) return before;
-  const frame = before.stations.find((s) => s.id === payload.stationId);
+  const frames = framesHolding(before, payload.stationId);
+  const frame = frames.find((s) => s.id === payload.stationId);
   if (frame === undefined || !freeStationId(before, payload.newStationId)) {
     return before;
   }
@@ -1993,11 +2125,16 @@ function stationDuplicate(
   }
   const geo = payload.geo ?? duplicateStationGeo(frame);
   if (!isGlobePoint(geo)) return before;
+  // A card image of an image asset stays valid on the copy; one of the
+  // station's own photo names a photo the copy does not hold.
+  const keepsImage =
+    frame.image !== undefined &&
+    imageAssetIds(before.written.assets).has(frame.image);
   const copy: StationFrame = {
-    ...withoutField(frame, "image"),
+    ...(keepsImage ? frame : withoutField(frame, "image")),
     id: payload.newStationId,
     geo,
-    title: `${shownTitle(before, frame)} copy`,
+    title: copyTitle(shownTitle(before, frame)),
   };
   let placed = before.placed;
   for (const [i, item] of items.entries()) {
@@ -2012,16 +2149,12 @@ function stationDuplicate(
       }),
     });
   }
-  const at = before.stations.indexOf(frame);
+  const at = frames.indexOf(frame);
   return edited(
     before,
     {
       placed,
-      stations: [
-        ...before.stations.slice(0, at + 1),
-        copy,
-        ...before.stations.slice(at + 1),
-      ],
+      stations: [...frames.slice(0, at + 1), copy, ...frames.slice(at + 1)],
       touched: { ...before.touched, stations: true },
       framesRecorded: true,
     },
@@ -2326,7 +2459,8 @@ const tourDocumentSlice = createSlice({
       return stationsReorder(plain(state), action.payload);
     },
     /** A station copied beside itself (`duplicateStationGeo`) right after
-     *  it, titled "... copy", without its card image, its steps and routes
+     *  it, titled "... copy" (shortened to fit), a card image of its own
+     *  photo dropped (one of an image asset kept), its steps and routes
      *  kept and its items copied rigidly under the new ids the page gives:
      *  one step. A taken id, or an item without a new id, changes nothing. */
     stationDuplicated: {
@@ -2482,8 +2616,14 @@ const tourDocumentSlice = createSlice({
           stepAssetIds(frame).every((id) => writtenAssets.has(id));
         const recorded = (work.frames ?? []).filter(fits);
         const replaced = new Map(recorded.map((f) => [f.id, f]));
+        // A recorded frame the document carries is an edit beyond its pose:
+        // it takes the document's pose (the file's, or the draft's poses'
+        // record above), never the one the frame was recorded at.
         posed = [
-          ...posed.map((s) => replaced.get(s.id) ?? s),
+          ...posed.map((s) => {
+            const frame = replaced.get(s.id);
+            return frame === undefined ? s : { ...frame, geo: s.geo };
+          }),
           ...recorded.filter((f) => !posed.some((s) => s.id === f.id)),
         ];
         const known = new Set(posed.map((f) => f.id));
@@ -2539,7 +2679,7 @@ const tourDocumentSlice = createSlice({
             deletedStations: next.deletedStations,
             stations: withoutEmptied(next, left),
             ...(work.stations === undefined ? {} : { stationsRecorded: true }),
-            ...(work.frames === undefined ? {} : { framesRecorded: true }),
+            ...(recordsStations(work) ? { framesRecorded: true } : {}),
             ...(work.needsNoGps === undefined
               ? {}
               : { needsNoGps: work.needsNoGps }),
@@ -2605,6 +2745,7 @@ const tourDocumentSlice = createSlice({
               before.placed,
               [],
               before.deletedStations,
+              bareEmptyStations(before.opened),
             ),
         appliedDeletions,
       );
