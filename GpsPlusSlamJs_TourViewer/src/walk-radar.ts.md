@@ -45,8 +45,10 @@ WalkRadarView`
   - `observeSize(onChange)` - the page's `ResizeObserver` on the canvas:
     a resize makes the next draw read the canvas's size again;
   - `drawStats(nowMs)` - the draws' rolling 2 s summary;
-  - `reset()` - the range, the bursts and the stats start anew (the
-    session's end).
+  - `reset()` - the range, the bursts and the stats start anew. Called by
+    `visitor-stations.ts` `stop`, which runs at the AR session's end and
+    at an open tour's close (`archive-open.ts`'s teardown,
+    `archive-open.test.ts` holds that).
   - A tap on the radar calls `toggleList` (the list opens or closes).
 
 ## Invariants & assumptions
@@ -124,7 +126,8 @@ radar.render({ stations, order, kind, accuracyM, live, snapshot, listOpen });
 - `walk-radar.test.ts` - the throttle (one trailing draw, 15 a second,
   cancel), the bursts (find, no replay, skip is no find), the drawing (no
   station distance label, frozen greys and "?", reduced motion, a burst
-  ring), the view (chip words and modes, the tap, device pixels and the
+  ring, a non-finite accuracy drawn without a throw on a canvas whose
+  radial gradient refuses non-finite radii), the view (chip words and modes, the tap, device pixels and the
   throttle, no size no draw, the range's hysteresis and reset, a tour in
   order's later stations in the range, `aria-expanded`, the size read
   once until a resize), the colour tokens against `index.html` (and every

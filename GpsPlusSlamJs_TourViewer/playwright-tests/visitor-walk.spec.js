@@ -798,6 +798,31 @@ test("leaving AR shows the progress on the start page; coming back is welcomed",
   );
 });
 
+test("coming back to a tour of stories placed by GPS says both the placement and the welcome", async ({
+  page,
+}) => {
+  // Why this test matters: on a tour of stories only the running walk
+  // makes the tour placed, so the first sheet render of an entry both
+  // re-renders the status (which says the GPS placement as news, once per
+  // entry) and says the welcome back. Both reach the one toast in the
+  // same frame; the second must not replace the first, or the placement
+  // news is lost for the whole entry (it is never said again).
+  await openTheWalk(page);
+  await enterAtTheCode(page);
+  await visit(page, STATIONS[0], 1);
+  await page.getByTestId("enter-ar").click(); // in AR: the way out
+  await expect(page.getByTestId("enter-ar")).toHaveText("Back to the tour");
+
+  await page.getByTestId("enter-ar").click();
+  await seedAlignment(page);
+  await skipTheCode(page);
+  await statusWith(page, "degraded", "placed-gps");
+  await expect(page.getByTestId("walk-sheet")).toBeVisible();
+  const toast = page.locator("#walk-toast");
+  await expect(toast).toContainText("Welcome back - your progress is kept.");
+  await expect(toast).toContainText("Tour placed by GPS (less exact)");
+});
+
 /** A visitor on the start page, ready to start: a fresh tour ("Start
  *  the tour"), or back from AR with progress ("Back to the tour"). */
 const STARTS = [

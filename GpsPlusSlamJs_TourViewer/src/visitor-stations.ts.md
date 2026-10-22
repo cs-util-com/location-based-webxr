@@ -84,8 +84,10 @@ VisitorStations` - `{ tick, loadContent, codeLocked, unlockAudio, stop }`
   loop (`registerFrameUpdate`).
 - The assets by id are built once per manifest (K4 review R13).
 - A choice button is a `.btn` with `data-testid="scene-choice"`.
-- `stop()` stops the story and the HUD; the guide keeps the progress with
-  the open tour, and the prefetch its cache unless the tour closed.
+- `stop()` runs at the AR session's end and at an open tour's close
+  (`hooks.stopStations`, from `ar-entry.ts` and `archive-open.ts`). It
+  stops the story and the HUD; the guide keeps the progress with the open
+  tour, and the prefetch its cache unless the tour closed.
 
 ## Examples
 

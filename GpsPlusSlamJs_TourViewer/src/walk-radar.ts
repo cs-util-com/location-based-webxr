@@ -498,7 +498,8 @@ export interface WalkRadarView {
   render(frame: WalkRadarFrame | null): void;
   /** The ms per draw over the last 2 s (the `?debug=1` readout). */
   drawStats(nowMs: number): RollingSummary | null;
-  /** Another tour, or the session's end: the range and the bursts start
+  /** The AR session's end or the open tour's close (both through the
+   *  stations' `stop`): the range, the bursts and the draw stats start
    *  anew. */
   reset(): void;
 }

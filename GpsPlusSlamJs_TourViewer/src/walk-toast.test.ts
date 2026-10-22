@@ -9,6 +9,13 @@ import { createWalkToast } from "./walk-toast";
  * and be announced again - sixty times a second. Said once per AR entry it
  * reads as news; a new entry may say it again.
  */
+/** The next task: what one render said is joined until then. */
+function nextTask(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
 function fakeToast() {
   const shown: string[] = [];
   let clears = 0;
@@ -27,12 +34,15 @@ function fakeToast() {
 }
 
 describe("createWalkToast", () => {
-  it("says a news item once per AR entry, and again after a new entry", () => {
+  it("says a news item once per AR entry, and again after a new entry", async () => {
     const f = fakeToast();
     const t = createWalkToast(f.toast);
     t.say([], ["Tour placed by GPS (less exact)"]);
+    await nextTask();
     t.say([], ["Tour placed by GPS (less exact)"]);
+    await nextTask();
     t.say([], ["2 items could not load."]);
+    await nextTask();
     expect(f.shown).toEqual([
       "Tour placed by GPS (less exact)",
       "2 items could not load.",
@@ -43,11 +53,13 @@ describe("createWalkToast", () => {
     expect(f.shown).toHaveLength(3);
   });
 
-  it("says an event every time, and never an empty text", () => {
+  it("says an event every time, and never an empty text", async () => {
     const f = fakeToast();
     const t = createWalkToast(f.toast);
     t.say(["Skipped The well."]);
+    await nextTask();
     t.say(["Skipped The well."]);
+    await nextTask();
     t.say([""]);
     t.say([], [""]);
     t.say([]);
@@ -58,7 +70,7 @@ describe("createWalkToast", () => {
   // show in the same render replaced the first before anyone read it,
   // and the lost news counted as said, so it never came back. One
   // render's words are one toast.
-  it("joins one render's events and news into one toast, and marks only what it showed as said", () => {
+  it("joins one render's events and news into one toast, and marks only what it showed as said", async () => {
     const f = fakeToast();
     const t = createWalkToast(f.toast);
     t.say(
@@ -68,9 +80,54 @@ describe("createWalkToast", () => {
     expect(f.shown).toEqual([
       "Skipped The well. Welcome back - your progress is kept. Tour placed by GPS (less exact)",
     ]);
+    await nextTask();
     t.say([], ["Tour placed by GPS (less exact)", "1 item could not load."]);
     expect(f.shown.at(-1)).toBe("1 item could not load.");
     expect(f.shown).toHaveLength(2);
+  });
+});
+
+describe("createWalkToast - two call sites in one frame", () => {
+  // Why: the status (its news, "Tour placed by GPS (less exact)") and the
+  // sheet (its events, the welcome back) each say their words, and on a
+  // tour of stories both run in the same frame - the sheet's first render
+  // re-renders the status. A second show replaced the first unread, and
+  // the lost news counted as said, so it never came back that entry
+  // (`visitor-walk.spec.js`, coming back to a tour placed by GPS).
+  it("joins the words of every say in one task into one toast, and starts afresh in the next", async () => {
+    const f = fakeToast();
+    const t = createWalkToast(f.toast);
+    t.say([], ["Tour placed by GPS (less exact)"]);
+    t.say(["Welcome back - your progress is kept."]);
+    expect(f.shown.at(-1)).toBe(
+      "Tour placed by GPS (less exact) Welcome back - your progress is kept.",
+    );
+    // A word said twice in one task is shown once.
+    t.say(["Welcome back - your progress is kept."]);
+    expect(f.shown.at(-1)).toBe(
+      "Tour placed by GPS (less exact) Welcome back - your progress is kept.",
+    );
+    await nextTask();
+    t.say(["Skipped The well."]);
+    expect(f.shown.at(-1)).toBe("Skipped The well.");
+  });
+
+  it("a say with nothing left to say keeps the frame's toast as it is", () => {
+    const f = fakeToast();
+    const t = createWalkToast(f.toast);
+    t.say([], ["Tour placed by GPS (less exact)"]);
+    t.say([], ["Tour placed by GPS (less exact)"]);
+    t.say([]);
+    expect(f.shown).toEqual(["Tour placed by GPS (less exact)"]);
+  });
+
+  it("a reset ends the frame's toast: the next say starts afresh", () => {
+    const f = fakeToast();
+    const t = createWalkToast(f.toast);
+    t.say(["Skipped The well."]);
+    t.reset();
+    t.say(["Welcome back - your progress is kept."]);
+    expect(f.shown.at(-1)).toBe("Welcome back - your progress is kept.");
   });
 });
 

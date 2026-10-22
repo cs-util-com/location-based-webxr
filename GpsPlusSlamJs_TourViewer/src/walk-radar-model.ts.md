@@ -64,6 +64,12 @@ minM: 10, maxM: 600, shrinkBelow: 0.65 }` (module-local; the default
 - Frozen draws north from the snapshot's heading and no view cone: the
   radar is heading-up, so a frozen cone would claim a live view that does
   not exist (W4's prototype draws none frozen either).
+- The GPS blur is as wide as the accuracy and at least 7 px. An accuracy
+  that is none, NaN, infinite or negative is read as none (the chip's
+  rule, one helper for both): the smallest blur, never a radius sized from
+  it. A NaN radius used to reach the canvas, whose radial gradient throws
+  on it and stopped the draw; today's wiring filters such a value before
+  it gets here, so this is the boundary's own defence.
 - No heading: no blips, no cone, no north; dashed rings for the stations
   still to find (found and skipped left out).
 - `pending` draws no stations at all (W4's searching rings).
@@ -100,7 +106,8 @@ walkPrecisionChip("weak", 42); // "GPS - about 42 m, too weak"
 - `walk-radar-model.test.ts` - the chip's words, the field of view, the
   rings, blip geometry and clamp, the cone, the looks, the rim arc, each
   precision mark, frozen from the snapshot and without one, pending, no
-  heading, the guards, the adaptive range.
+  heading, the guards (an accuracy that is NaN, infinite or negative
+  reads as none), the adaptive range.
 - `walk-radar-model.property.test.ts` - a blip's angle is the bearing's
   delta; its radius grows with distance and stays inside the rim for
   96-144 px; at most one focus, only on the guide's `next` row, none

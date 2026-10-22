@@ -1031,19 +1031,19 @@ describe("tour document (properties): every object belongs to a station", () => 
     );
   });
 
-  it("a step back to a view whose object stood in a station only that view names puts the object back in it (shrunk counterexamples)", () => {
-    // Why (found by the property above, seeds -991391345 and 4246602): a
-    // step goes back to a view, and an object of the view the written
-    // file also holds counts as the file's own, not pending, when it
-    // matches the file's copy. While the view's frames were read without
-    // the view's objects, a station only a pending object names (one the
-    // rule started) was missing from that reading - and with its station
-    // missing, the object's re-assignment counted as no move, the object
-    // matched the file's copy in its old station, and the station it
-    // stood in in the view was left empty. First: a draft's pin seated in
-    // a new station, restored again into the first station, saved, and
-    // the restore undone. Second: a pin moved out of its station into a
-    // new one, that station moved, undone and redone.
+  // Why these two pins matter (found by the property above, seeds
+  // -991391345 and 4246602): a step goes back to a view, and an object of
+  // the view the written file also holds counts as the file's own, not
+  // pending, when it matches the file's copy. While the view's frames were
+  // read without the view's objects, a station only a pending object names
+  // (one the rule started) was missing from that reading - and with its
+  // station missing, the object's re-assignment counted as no move, the
+  // object matched the file's copy in its old station, and the station it
+  // stood in in the view was left empty. Each shrunk counterexample is its
+  // own test, so either can fail without hiding the other.
+  it("a step back to a view whose object stood in a station only that view names puts the object back in it: a restored pin, saved, its restore undone", () => {
+    // Seed -991391345: a draft's pin seated in a new station, restored
+    // again into the first station, saved, and the restore undone.
     const back = stationRun([
       { kind: "restore", north: -37.5, east: 137.5, dangling: true },
       { kind: "restore", north: -37.5, east: 137.5, dangling: false },
@@ -1055,7 +1055,11 @@ describe("tour document (properties): every object belongs to a station", () => 
     const r1 = documentObjects(undone).find((o) => o.object.id === "r1");
     expect(r1?.object.station).toBe("n1");
     expect(manifestToWrite(undone)!.stations.map((s) => s.id)).toContain("n1");
+  });
 
+  it("a step back to a view whose object stood in a station only that view names puts the object back in it: a pin moved to a new station, that station moved, undone and redone", () => {
+    // Seed 4246602: a pin moved out of its station into a new one, that
+    // station moved, undone and redone.
     const again = stationRun([
       { kind: "move", id: "a", north: 0, east: -37.5 },
       { kind: "frame", id: "a", north: 0 },

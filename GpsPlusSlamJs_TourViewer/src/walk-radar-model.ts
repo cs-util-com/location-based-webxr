@@ -143,16 +143,22 @@ function metres(m: number): string {
   return formatDistance(m, { metreDecimals: 0 });
 }
 
+/** An accuracy the chip and the blur may use: a finite, non-negative
+ *  metre count, or null (none, or one no position has). */
+function knownAccuracyM(accuracyM: number | null): number | null {
+  return accuracyM !== null && Number.isFinite(accuracyM) && accuracyM >= 0
+    ? accuracyM
+    : null;
+}
+
 /** The chip's words (§1.3, W4). A missing accuracy is left out, never
  *  invented. */
 export function walkPrecisionChip(
   kind: WalkChipKind,
   accuracyM: number | null,
 ): string {
-  const about =
-    accuracyM !== null && Number.isFinite(accuracyM) && accuracyM >= 0
-      ? `about ${metres(accuracyM)}`
-      : null;
+  const known = knownAccuracyM(accuracyM);
+  const about = known === null ? null : `about ${metres(known)}`;
   switch (kind) {
     case "code":
       // The code's internal 1 m is never shown (precision plan P-D2).
@@ -366,7 +372,9 @@ export function walkRadarModel(input: WalkRadarInput): WalkRadarModel {
       : {
           kind: "blur",
           tone: input.kind === "weak" ? "weak" : "gps",
-          r: Math.max(BLUR_MIN_PX, scale(input.accuracyM ?? 0)),
+          // No usable accuracy (none, NaN, infinite, negative): the
+          // smallest blur, never a radius the canvas cannot draw.
+          r: Math.max(BLUR_MIN_PX, scale(knownAccuracyM(input.accuracyM) ?? 0)),
         };
   const mode = frozen ? "frozen" : "live";
   if (geo === null) {

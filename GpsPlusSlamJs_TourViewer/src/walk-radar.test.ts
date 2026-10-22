@@ -285,6 +285,35 @@ describe("drawWalkRadar", () => {
     expect(arcs(false, 333).at(-1)!.slice(0, 2)).not.toEqual([66, 66]);
   });
 
+  // Why: a canvas's radial gradient throws on a non-finite radius, and a
+  // throw here stops the whole radar draw. A GPS accuracy of NaN once
+  // reached it as the blur's radius; the model reads it as no accuracy.
+  it("a non-finite accuracy draws without throwing, as a canvas's gradient demands", () => {
+    const { g } = recordingCanvas();
+    const strict: RadarCanvas = {
+      ...g,
+      createRadialGradient: (...args) => {
+        if (!args.every(Number.isFinite)) {
+          throw new TypeError("The provided double value is non-finite.");
+        }
+        return g.createRadialGradient(...args);
+      },
+    };
+    const m = walkRadarModel({
+      stations: STATIONS,
+      order: "any",
+      kind: "gps",
+      accuracyM: Number.NaN,
+      live: GEO,
+      snapshot: GEO,
+      fovDeg: 64,
+      sizePx: 132,
+    });
+    expect(() => {
+      drawWalkRadar(strict, m, DRAW);
+    }).not.toThrow();
+  });
+
   it("a burst draws one more ring, teal, around that station", () => {
     const { g, calls } = recordingCanvas();
     drawWalkRadar(g, model(), {

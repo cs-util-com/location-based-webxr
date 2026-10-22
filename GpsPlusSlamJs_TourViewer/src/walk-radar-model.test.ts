@@ -256,6 +256,28 @@ describe("walkRadarModel - the visitor's mark by precision", () => {
     expect(tiny.visitor).toEqual({ kind: "blur", tone: "gps", r: 7 });
   });
 
+  // Why: the radar is a module boundary; an accuracy that is not a finite
+  // metre count (NaN reached the radius as NaN, and the canvas's radial
+  // gradient throws on it) must not stop the draw. It is read as no
+  // accuracy at all, as the chip reads it: the smallest blur, never one
+  // sized from the bad value.
+  it("an accuracy that is not a finite, non-negative number is read as none: the smallest blur", () => {
+    for (const kind of ["gps", "weak"] as const) {
+      const none = walkRadarModel(input({ kind, accuracyM: null })).visitor;
+      expect(none).toEqual({ kind: "blur", tone: kind, r: 7 });
+      for (const bad of [
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        Number.NEGATIVE_INFINITY,
+        -3,
+      ]) {
+        expect(walkRadarModel(input({ kind, accuracyM: bad })).visitor).toEqual(
+          none,
+        );
+      }
+    }
+  });
+
   // Changed in M4 (§1.9 R-2, R-4): the guide decides the focus, so the
   // radar draws the row it names. Under too-weak GPS an any-order tour
   // names none (every row "left") - unless the visitor chose a target,
