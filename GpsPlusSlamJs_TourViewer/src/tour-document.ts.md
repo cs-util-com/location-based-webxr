@@ -136,7 +136,7 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
     strict, so a move a centimetre farther out runs the rule. The station it left goes in the same step when that leaves
     it an EMPTY AUTOMATIC station: no object names it, and nothing of its
     own (`keepsItself` of `tour-content.ts`: a title, a story step, a
-    description, a card image naming an image asset) and no
+    non-blank description, a card image naming an image asset) and no
     route to it (`next`, a quiz's routes) keeps it. An unknown id changes nothing.
   - One step each: an undo gives the stations back exactly as they were.
 - `deleted({ id, what })` - `deleteObject`: the entry goes, a written

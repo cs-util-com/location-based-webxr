@@ -30,6 +30,7 @@ import { describe, expect, it } from "vitest";
 import { objectContentKey } from "./authoring-draft.js";
 import {
   asStored,
+  keepsItself,
   withReferencedAssets,
   withTourContent,
 } from "./tour-content.js";
@@ -283,6 +284,24 @@ describe("withTourContent", () => {
           station("bare", 100, 0),
         ]),
       ).toEqual(["described"]);
+    });
+
+    it("a blank description keeps nothing, as a blank title does", () => {
+      // Why: the reader reads a blank description as none, so a station
+      // kept only by one would be a bare station on the next open - kept
+      // for nothing the creator can see.
+      expect(
+        keepsItself(
+          { ...station("blank", 0, 0), description: " \n " },
+          new Set(),
+        ),
+      ).toBe(false);
+      expect(
+        emptiedIds([
+          { ...station("blank", 0, 0), description: "  " },
+          station("bare", 100, 0),
+        ]),
+      ).toEqual([]);
     });
 
     it("an image asset keeps an emptied station; an image of its own deleted photo does not", () => {

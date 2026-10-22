@@ -44,7 +44,8 @@ camera captures are debug data, never in a station (an earlier file's
   (format minor 2; it may name an image asset) and the cover.
 - `keepsItself(station, imageAssets) -> boolean`: whether an EMPTY
   station carries the creator's own work, which keeps it when its last
-  item leaves: a title, story steps, a description, or a card image naming
+  item leaves: a title, story steps, a non-blank description (a blank one
+  is none, as the reader reads it, and as a blank title), or a card image naming
   one of `imageAssets` (G2 build plan
   `GpsPlusSlamJs_Docs/docs/2026-10-21-2247-g2-3d-editor-build-plan.md`,
   §4.2.4). The one rule both this write (`withTourContent`) and the tour
@@ -86,7 +87,7 @@ camera captures are debug data, never in a station (an earlier file's
   field).
 - An object missing from `objects` leaves its station. A station this
   write EMPTIED (it held items and holds none now) goes when nothing else
-  keeps it: nothing of its own (`keepsItself`: no title, no steps, no
+  keeps it: nothing of its own (`keepsItself`: no title, no steps, no non-blank
   description, no card image naming an image asset), and no other station
   routing to it (`next`, a quiz route). It existed for its
   elements (D20); left behind, it was an untitled spot the visitor's
@@ -138,7 +139,8 @@ const written = withTourContent(opened, {
   into the station it names however far from it, and one naming none kept
   in its own; an object in no station of the tour refused in words; the
   stations' order kept; removal; an emptied station dropped unless titled,
-  storied or routed to; kept by a description or an image asset, not by an
+  storied or routed to; kept by a description or an image asset, not by a
+  blank description (`keepsItself` asked directly) nor by an
   image of its own deleted photo; and the `asStored`
   property (it is what a written tour holds, by content key);
   `withReferencedAssets` keeping each block kind's assets (an image, a

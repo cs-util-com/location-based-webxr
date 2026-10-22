@@ -735,7 +735,7 @@ function emptyAutomatic(state: TourDocumentState): string[] {
         !routed.has(s.id) &&
         (s.title ?? "").trim() === "" &&
         s.steps.length === 0 &&
-        s.description === undefined &&
+        (s.description ?? "").trim() === "" &&
         !(s.image !== undefined && imageAssets.has(s.image)),
     )
     .map((s) => s.id);
@@ -816,7 +816,9 @@ describe("tour document (properties): every object belongs to a station", () => 
         (keepers, ops) => {
           const start = openedWithKeepers(keepers);
           const kept = start.stations
-            .filter((s) => s.description !== undefined || s.image === "art")
+            .filter(
+              (s) => (s.description ?? "").trim() !== "" || s.image === "art",
+            )
             .map((s) => s.id);
           for (const state of stationRun(ops, start)) {
             const frames = state.stations.map((s) => s.id);
