@@ -113,14 +113,20 @@ export function reconsiderScanGate(
 
 /** Whether the visitor's scan card shows (polish round M4b, the owner's
  *  S1): a visitor's running session whose gate waits for the code. It
- *  closes by itself the moment the gate passes, however it passed. */
+ *  closes by itself the moment the gate passes, however it passed. Never
+ *  for a tour that is not finished yet (`unfinished`): its line says so,
+ *  and the card would hide it. */
 export function scanCardShown(
   mode: ViewerMode,
   arStatus: string,
   gate: ScanGate,
+  unfinished = false,
 ): boolean {
   return (
-    mode === "visitor" && arStatus === "running" && gate.kind === "scanning"
+    mode === "visitor" &&
+    arStatus === "running" &&
+    gate.kind === "scanning" &&
+    !unfinished
   );
 }
 

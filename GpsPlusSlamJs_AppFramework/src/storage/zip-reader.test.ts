@@ -1137,3 +1137,133 @@ describe('loadActionsFromEntries: the parse over the caller own list and reader 
     expect(result.map((r) => r.filename)).toEqual(['actions/000001.json']);
   });
 });
+
+describe('a folder name that only ENDS in a framework folder name', () => {
+  // Why this matters: the parsers find their entries by folder name, and a
+  // wrapping folder (`mytour/actions/...`, `mytour/session.json`) is
+  // allowed because re-zipping a folder produces exactly that shape. A
+  // match that is not anchored on a path segment also takes a SIBLING
+  // whose name merely ends in it - `old-actions/` or `myactions/` would be
+  // replayed into the walk's action stream (and drawn into its GPS path),
+  // and a `backup-session.json` could be read as the session. These pin
+  // the segment rule: the sibling is ignored, the wrapping folder still
+  // reads.
+  async function zipOf(
+    files: { name: string; content: string }[]
+  ): Promise<Uint8Array> {
+    const { ZipWriter, Uint8ArrayWriter, TextReader } =
+      await import('@zip.js/zip.js');
+    const writer = new ZipWriter(new Uint8ArrayWriter());
+    for (const f of files) {
+      await writer.add(f.name, new TextReader(f.content));
+    }
+    return new Uint8Array(await writer.close());
+  }
+
+  /** A produced recording's entries, each under every name `rename` gives. */
+  async function rezip(
+    source: Uint8Array,
+    rename: (name: string) => string[]
+  ): Promise<Uint8Array> {
+    const { ZipWriter, Uint8ArrayWriter, Uint8ArrayReader } =
+      await import('@zip.js/zip.js');
+    const writer = new ZipWriter(new Uint8ArrayWriter());
+    const reader = toZipReader(source);
+    try {
+      for (const entry of await reader.getEntries()) {
+        if (entry.directory) continue;
+        const bytes = await entry.getData(new Uint8ArrayWriter());
+        for (const name of rename(entry.filename)) {
+          await writer.add(name, new Uint8ArrayReader(bytes));
+        }
+      }
+    } finally {
+      await reader.close();
+    }
+    return new Uint8Array(await writer.close());
+  }
+
+  it.each(['myactions', 'old-actions', 'rec/backup_actions'])(
+    'does not replay the entries of a sibling folder `%s/`',
+    async (sibling) => {
+      const data = await zipOf([
+        { name: 'actions/000001.json', content: '{"type":"real/a"}' },
+        { name: `${sibling}/000001.json`, content: '{"type":"stale/a"}' },
+        { name: `${sibling}/000002.json`, content: '{"type":"stale/b"}' },
+      ]);
+      const actions = await loadActionsFromZip(data);
+      expect(actions.map((a) => a.action.type)).toEqual(['real/a']);
+    }
+  );
+
+  it('still replays a stream under a wrapping folder, and only that stream', async () => {
+    const data = await zipOf([
+      { name: 'mytour/actions/000001.json', content: '{"type":"real/a"}' },
+      { name: 'mytour/actions/000002.json', content: '{"type":"real/b"}' },
+      { name: 'mytour/myactions/000001.json', content: '{"type":"stale/a"}' },
+    ]);
+    const actions = await loadActionsFromZip(data);
+    expect(actions.map((a) => a.filename)).toEqual([
+      'mytour/actions/000001.json',
+      'mytour/actions/000002.json',
+    ]);
+  });
+
+  it('applies the same rule to a caller-held entry list (loadActionsFromEntries)', async () => {
+    const data = await zipOf([
+      { name: 'actions/000001.json', content: '{"type":"real/a"}' },
+      { name: 'old-actions/000001.json', content: '{"type":"stale/a"}' },
+    ]);
+    const read: string[] = [];
+    const result = await loadActionsFromEntries(
+      await readZipEntries(data),
+      (entry) => {
+        read.push(entry.filename);
+        return Promise.resolve('{"type":"x"}');
+      }
+    );
+    // Not even read: a sibling's bytes must not reach the caller's reader.
+    expect(read).toEqual(['actions/000001.json']);
+    expect(result).toHaveLength(1);
+  });
+
+  it('does not draw a sibling folder into the GPS path (loadGpsPathFromBlob)', async () => {
+    const produced = await produceTestZip({ gpsEventCount: 3 });
+    const doubled = await rezip(produced.zipData, (name) =>
+      name.startsWith('actions/') ? [name, `old-${name}`] : [name]
+    );
+    const coords = await loadGpsPathFromBlob(new Blob([doubled as BlobPart]));
+    expect(coords).toHaveLength(3);
+  });
+
+  it('still draws the GPS path of a wrapping folder', async () => {
+    const produced = await produceTestZip({ gpsEventCount: 3 });
+    const wrapped = await rezip(produced.zipData, (name) => [`mytour/${name}`]);
+    const coords = await loadGpsPathFromBlob(new Blob([wrapped as BlobPart]));
+    expect(coords).toHaveLength(3);
+  });
+
+  it('reads `session.json`, not a sibling file whose name ends in it', async () => {
+    // Sorted first in the archive, so a first-match `endsWith` would take it.
+    const data = await zipOf([
+      { name: 'backup-session.json', content: '{"which":"backup"}' },
+      { name: 'session.json', content: '{"which":"real"}' },
+    ]);
+    expect(await loadSessionMetadata(data)).toEqual({ which: 'real' });
+    expect(
+      await loadSessionMetadataFromBlob(new Blob([data as BlobPart]))
+    ).toEqual({ which: 'real' });
+  });
+
+  it('reads a wrapped `session.json`, and none when only a look-alike exists', async () => {
+    const wrapped = await zipOf([
+      { name: 'mytour/old_session.json', content: '{"which":"backup"}' },
+      { name: 'mytour/session.json', content: '{"which":"real"}' },
+    ]);
+    expect(await loadSessionMetadata(wrapped)).toEqual({ which: 'real' });
+    const lookAlikeOnly = await zipOf([
+      { name: 'mysession.json', content: '{"which":"backup"}' },
+    ]);
+    expect(await loadSessionMetadata(lookAlikeOnly)).toBeNull();
+  });
+});

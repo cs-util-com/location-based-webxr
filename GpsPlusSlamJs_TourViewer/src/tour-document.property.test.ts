@@ -11,13 +11,16 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
+import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
 import {
+  parseTourManifest,
   serializeTourManifest,
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
+import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { rebuildFinishedTour } from "./finish-rebuild.js";
-import type { CaptureSpotsInWorld } from "./tour-content.js";
 import { stationIdOf, tourOf } from "./test-support/v3-tour.js";
 import { openTourFile } from "./tour-session.js";
 import {
@@ -54,30 +57,49 @@ function photo(id: string, lat: number): TourObject {
   };
 }
 
-/** The walk's photo spots a save is given: one beside the tour's photo,
- *  one a kilometre away, which the save puts into a station of its own
- *  (an automatic id, minted by the write). */
-const SPOTS: CaptureSpotsInWorld = {
-  fixes: 3,
-  gpsAccuracyMedianM: 4,
-  captures: [
-    {
-      image: "content/f.jpg",
-      geo: { lat: 48.5204, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
-    },
-    {
-      image: "content/far.jpg",
-      geo: { lat: 48.53, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
-    },
-  ],
-};
-
 const IDS = ["a", "b", "f"] as const;
 const OPENED: TourManifest = tourOf([
   pin("a", 48.52),
   pin("b", 48.5202),
   photo("f", 48.5204),
 ]);
+
+/** OPENED as an earlier file written while the walk's frames were baked
+ *  into the tour: one frame in the photo's station, one a kilometre away
+ *  in an automatic walk-1 station only it kept. The framework's reader
+ *  ignores the field (it is gone from the format), so this is OPENED with
+ *  an empty walk-1 station. */
+const WITH_CAPTURES: TourManifest = parseTourManifest({
+  ...JSON.parse(serializeTourManifest(OPENED)),
+  stations: [
+    ...OPENED.stations,
+    {
+      id: "walk-1",
+      geo: { lat: 48.53, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      hint: "arrow",
+      steps: [],
+      items: [],
+    },
+  ],
+  captureSpots: {
+    fixes: 3,
+    gpsAccuracyMedianM: 4,
+    captures: [
+      {
+        image: "content/f.jpg",
+        station: stationIdOf("f"),
+        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      },
+      {
+        image: "content/far.jpg",
+        station: "walk-1",
+        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      },
+    ],
+  },
+});
 
 type Op =
   | { kind: "edit"; id: string; label: string }
@@ -287,12 +309,13 @@ describe("tour document (properties)", () => {
     );
   });
 
-  it("the manifest the state would write is the one the Finish rebuild writes, with photo spots and across a second save", async () => {
-    // The r875 milestone review #7: the selector takes the save's own
-    // inputs (the photo spots, decided once per open), so it is checked
-    // with them and without, and once more after a save landed in the
-    // middle - the second write starts from the first one's file, whose
-    // automatic stations the spots minted.
+  it("the manifest the state would write is the one the Finish rebuild writes, for a file with debug camera captures and across a second save", async () => {
+    // The r875 milestone review #7: what the page shows as the next write
+    // must be what a save writes, for a tour opened from a file that
+    // carried debug camera captures (written while the walk's frames were
+    // baked into stations; the reader ignores the field, so neither write
+    // may carry it) and from one without, and once more after a save landed
+    // in the middle - the second write starts from the first one's file.
     const zip = await packFilesAsZip([
       { path: "tour.json", data: serializeTourManifest(OPENED) },
       { path: "content/f.jpg", data: "f" },
@@ -307,9 +330,13 @@ describe("tour document (properties)", () => {
         fc.array(noSave, { maxLength: 8 }),
         fc.boolean(),
         async (first, second, withSpots) => {
-          const spots = withSpots ? SPOTS : undefined;
-          const extra = spots === undefined ? {} : { captureSpots: spots };
-          let state = first.reduce(apply, opened);
+          const start = withSpots
+            ? reduce(
+                initialTourDocumentState,
+                act.opened({ manifest: WITH_CAPTURES }),
+              )
+            : opened;
+          let state = first.reduce(apply, start);
           const one = await rebuildFinishedTour({
             tour,
             manifest: manifestNow(state)!,
@@ -318,14 +345,16 @@ describe("tour document (properties)", () => {
             levels: [],
             keepScan: false,
             previous: null,
-            ...extra,
           });
-          expect(
-            difference(
-              renamed(one!.written),
-              renamed(manifestToWrite(state, spots)!),
-            ),
-          ).toBeNull();
+          expect(difference(one!.written, manifestToWrite(state)!)).toBeNull();
+          expect("captureSpots" in one!.written).toBe(false);
+          // Changed expectation: walk-1 was dropped with the captures at
+          // the open. The field is gone from the format, so the earlier
+          // file's empty walk-1 is a station of the tour like any other,
+          // and a write keeps it (it emptied nothing).
+          expect(one!.written.stations.some((s) => s.id === "walk-1")).toBe(
+            withSpots,
+          );
           state = reduce(
             state,
             act.saved({
@@ -344,14 +373,9 @@ describe("tour document (properties)", () => {
             levels: [],
             keepScan: false,
             previous: { blob: one!.blob },
-            ...extra,
           });
-          expect(
-            difference(
-              renamed(two!.written),
-              renamed(manifestToWrite(state, spots)!),
-            ),
-          ).toBeNull();
+          expect(difference(two!.written, manifestToWrite(state)!)).toBeNull();
+          expect("captureSpots" in two!.written).toBe(false);
         },
       ),
       { numRuns: 25 },
@@ -514,6 +538,320 @@ describe("tour document (properties): a step across an in-place save (D33)", () 
         }
       }),
       { numRuns: 400 },
+    );
+  });
+});
+
+// --- every object belongs to a station -------------------------------------
+
+/** A spot `north`/`east` m from OPENED's first pin, at 400 m. */
+function near(north: number, east: number): TourObject["geo"] {
+  const g = calcGpsCoords({ lat: 48.52, lon: 9.05 }, [north, 0, east]);
+  return { lat: g.lat, lon: g.lon, alt: 400, rotation: [0, 0, 0, 1] };
+}
+
+type StationOp =
+  | { kind: "place"; id: string; north: number; east: number; own: boolean }
+  | { kind: "move"; id: string; north: number; east: number }
+  | { kind: "delete"; id: string }
+  | { kind: "frame"; id: string; north: number }
+  | { kind: "restore"; north: number; east: number; dangling: boolean }
+  | { kind: "carry" }
+  | { kind: "save" }
+  | { kind: "undo" }
+  | { kind: "redo" };
+
+/** Metres in 12.5 m steps: inside, on the edge of (25 m) and beyond the
+ *  found radius of OPENED's stations, which stand about 22 m apart. */
+const metres = fc.integer({ min: -12, max: 12 }).map((n) => n * 12.5);
+const anyId = fc.constantFrom("a", "b", "f", "p1", "p2", "p3", "r1");
+const stationOpArb: fc.Arbitrary<StationOp> = fc.oneof(
+  fc.record({
+    kind: fc.constant("place" as const),
+    id: fc.constantFrom("p1", "p2", "p3"),
+    north: metres,
+    east: metres,
+    own: fc.boolean(),
+  }),
+  fc.record({
+    kind: fc.constant("move" as const),
+    id: anyId,
+    north: metres,
+    east: metres,
+  }),
+  fc.record({ kind: fc.constant("delete" as const), id: anyId }),
+  fc.record({ kind: fc.constant("frame" as const), id: anyId, north: metres }),
+  fc.record({
+    kind: fc.constant("restore" as const),
+    north: metres,
+    east: metres,
+    dangling: fc.boolean(),
+  }),
+  fc.constant({ kind: "carry" as const }),
+  fc.constant({ kind: "save" as const }),
+  fc.constant({ kind: "undo" as const }),
+  fc.constant({ kind: "redo" as const }),
+);
+
+/** The station ops as the pages dispatch them, every state on the way;
+ *  station ids minted in order (as `prepare` would, but repeatable). */
+function stationRun(ops: readonly StationOp[]): TourDocumentState[] {
+  let minted = 0;
+  const mint = (): string => {
+    minted += 1;
+    return `n${String(minted)}`;
+  };
+  let state = opened;
+  const states = [state];
+  const current = (oid: string) =>
+    documentObjects(state).find((o) => o.object.id === oid)?.object;
+  for (const op of ops) {
+    switch (op.kind) {
+      case "place":
+        state = reduce(
+          state,
+          act.placed({
+            object: { ...pin(op.id, 0), geo: near(op.north, op.east) },
+            what: "place",
+            newStationId: mint(),
+            ...(op.own ? { newStation: true } : {}),
+          }),
+        );
+        break;
+      case "move": {
+        const object = current(op.id);
+        if (object === undefined) break;
+        state = reduce(
+          state,
+          act.moved({
+            object: { ...object, geo: near(op.north, op.east) },
+            what: "move",
+            newStationId: mint(),
+          }),
+        );
+        break;
+      }
+      case "delete":
+        state = reduce(state, act.deleted({ id: op.id, what: "delete" }));
+        break;
+      case "frame": {
+        const home = current(op.id)?.station;
+        const frame = state.stations.find((s) => s.id === home);
+        if (frame === undefined) break;
+        state = reduce(
+          state,
+          act.stationMoved({
+            stationId: frame.id,
+            geo: { ...frame.geo, ...near(op.north, 0) },
+            what: "station",
+          }),
+        );
+        break;
+      }
+      case "restore":
+        // A draft's pin, naming a station the document carries, or one it
+        // lacks (a draft kept from another open).
+        state = reduce(
+          state,
+          act.restored({
+            objects: [
+              {
+                ...pin("r1", 0),
+                geo: near(op.north, op.east),
+                station: op.dangling
+                  ? "gone"
+                  : (state.stations[0]?.id ?? "gone"),
+              },
+            ],
+            deleted: [],
+            newStationIds: [mint()],
+            what: "restore",
+          }),
+        );
+        break;
+      case "carry": {
+        // The page's own objects carried into the tour opened anew.
+        const carried = documentObjects(state)
+          .filter((o) => !o.hosted)
+          .map((o) => o.object);
+        state = reduce(state, act.opened({ manifest: OPENED }));
+        states.push(state);
+        state = reduce(
+          state,
+          act.restored({
+            objects: carried,
+            deleted: [],
+            rerun: true,
+            newStationIds: carried.map(() => mint()),
+            what: "carried",
+          }),
+        );
+        break;
+      }
+      case "save":
+        state = reduce(
+          state,
+          act.saved({
+            generation: state.generation,
+            written: manifestToWrite(state)!,
+            appliedDeletions: [...state.deleted],
+            stationsAtStart: state.stations,
+          }),
+        );
+        break;
+      case "undo":
+        state = reduce(state, act.undone());
+        break;
+      case "redo":
+        state = reduce(state, act.redone());
+        break;
+    }
+    states.push(state);
+  }
+  return states;
+}
+
+/** The ids of `state`'s EMPTY AUTOMATIC stations: no object names them,
+ *  and nothing else keeps them (no title, no steps, no route to them). */
+function emptyAutomatic(state: TourDocumentState): string[] {
+  const named = new Set(documentObjects(state).map((o) => o.object.station));
+  const routed = new Set(
+    state.stations.flatMap((s) => (s.next === undefined ? [] : [s.next])),
+  );
+  return state.stations
+    .filter(
+      (s) =>
+        !named.has(s.id) &&
+        !routed.has(s.id) &&
+        (s.title ?? "").trim() === "" &&
+        s.steps.length === 0,
+    )
+    .map((s) => s.id);
+}
+
+describe("tour document (properties): every object belongs to a station", () => {
+  it("every object names one of the document's stations, and no emptied automatic station stays", () => {
+    // Why: the station an object belongs to is the document's answer from
+    // the moment it is placed - the creator's display, the settle, the
+    // desktop and the written file all read it. An object naming no
+    // station (or one nobody carries) would be lost to a visitor's guide,
+    // and an automatic station left empty behind a move or a delete would
+    // guide a visitor to nothing. Over any mix of placements (inside, on
+    // the edge of and beyond the 25 m found radius, with and without "New
+    // station here"), moves, deletes, station moves, restored drafts,
+    // carried work, saves, undos and redos.
+    fc.assert(
+      fc.property(fc.array(stationOpArb, { maxLength: 30 }), (ops) => {
+        for (const state of stationRun(ops)) {
+          const now = new Set(manifestNow(state)!.stations.map((s) => s.id));
+          const frames = new Set(state.stations.map((s) => s.id));
+          for (const { object } of documentObjects(state)) {
+            expect(object.station).toBeDefined();
+            expect(frames.has(object.station!)).toBe(true);
+            expect(now.has(object.station!)).toBe(true);
+          }
+          expect(emptyAutomatic(state)).toEqual([]);
+        }
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  it("an undo of a placement gives the stations back exactly", () => {
+    // Why: a placement that starts a station is ONE step - the pin and its
+    // station - so an undo must take both back, and the redo history must
+    // not keep a station nothing names.
+    fc.assert(
+      fc.property(
+        fc.array(stationOpArb, { maxLength: 20 }),
+        metres,
+        metres,
+        fc.boolean(),
+        (ops, north, east, own) => {
+          const before = stationRun(ops).at(-1)!;
+          const after = reduce(
+            before,
+            act.placed({
+              object: { ...pin("last", 0), geo: near(north, east) },
+              what: "place",
+              newStationId: "last-station",
+              ...(own ? { newStation: true } : {}),
+            }),
+          );
+          fc.pre(after !== before);
+          expect(reduce(after, act.undone()).stations).toEqual(before.stations);
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
+  it("whatever a station's found radius, a placed and then moved object stands within the format's reach of its station, where it was moved", () => {
+    // Why: a found radius has no upper bound (a hand-edited file may carry
+    // 50 km), while the format keeps an item within 10 km of its station
+    // per axis. Seated by the radius alone, an object stood beyond that
+    // reach and every later save failed; a move inside such a radius was
+    // dropped without a word. Radii from 1 m to 60 km, spots up to 30 km
+    // out on each axis.
+    const at = (north: number, east: number): TourObject["geo"] => {
+      const g = calcGpsCoords({ lat: 48.6, lon: 9.1 }, [north, 0, east]);
+      return { lat: g.lat, lon: g.lon, alt: 400, rotation: [0, 0, 0, 1] };
+    };
+    const km = fc.integer({ min: -30, max: 30 }).map((n) => n * 1000);
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 60_000 }),
+        km,
+        km,
+        km,
+        km,
+        (radius, n1, e1, n2, e2) => {
+          const manifest: TourManifest = {
+            version: 3,
+            minor: 0,
+            order: "fixed",
+            assets: [],
+            stations: [
+              {
+                id: "big",
+                geo: at(0, 0),
+                activateRadiusM: radius,
+                foundRadiusM: radius,
+                hint: "arrow",
+                steps: [],
+                items: [],
+              },
+            ],
+          };
+          let state = reduce(
+            initialTourDocumentState,
+            act.opened({ manifest }),
+          );
+          const placed = { ...pin("p", 0), geo: at(n1, e1) };
+          state = reduce(
+            state,
+            act.placed({ object: placed, what: "p", newStationId: "first" }),
+          );
+          state = reduce(
+            state,
+            act.moved({
+              object: { ...placed, geo: at(n2, e2) },
+              what: "m",
+              newStationId: "second",
+            }),
+          );
+          const p = documentObjects(state).find(
+            (o) => o.object.id === "p",
+          )!.object;
+          expect(p.geo.lat).toBeCloseTo(at(n2, e2).lat, 7);
+          expect(p.geo.lon).toBeCloseTo(at(n2, e2).lon, 7);
+          const frame = state.stations.find((f) => f.id === p.station)!;
+          for (const v of localPoseOf(p.geo, frame.geo).position) {
+            expect(Math.abs(v)).toBeLessThanOrEqual(TOUR_ITEM_MAX_OFFSET_M);
+          }
+        },
+      ),
+      { numRuns: 300 },
     );
   });
 });

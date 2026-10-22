@@ -44,30 +44,12 @@ const arbInput: fc.Arbitrary<ArStatusInput> = fc.record({
   codesOnly: fc.boolean(),
   stationsAwaitHeading: fc.boolean(),
   awayFromStations: fc.boolean(),
+  // Every placement state there is: the walk's recorded photos' placed
+  // and declined states went with them (a visitor no longer sees them).
   placement: fc.oneof(
     fc.constant({ kind: "idle" as const }),
     fc.constant({ kind: "waiting-ready" as const }),
-    fc.constant({ kind: "nothing-to-place" as const }),
-    fc.record({
-      kind: fc.constant("placing" as const),
-      phase: fc.constantFrom(
-        "reading-walk" as const,
-        "loading-photos" as const,
-      ),
-      done: fc.nat(50),
-      total: fc.nat(50),
-    }),
-    fc.record({
-      kind: fc.constant("placed" as const),
-      placedKind: fc.constant("ring" as const),
-      count: fc.nat(9),
-    }),
-    fc.record({
-      kind: fc.constant("declined" as const),
-      reason: fc.constant("no recording in this tour"),
-    }),
   ),
-  planesError: fc.option(fc.constant("HTTP 404"), { nil: null }),
   contentError: fc.option(fc.constant("bad"), { nil: null }),
   gate: fc.oneof(
     fc.record({

@@ -150,3 +150,13 @@ guarantee it relies on is unit-tested in `src/seams.test.ts`.
 These moved here from `object-editing.spec.js` so that
 `code-auto-move.spec.js` shares them instead of copying them.
 `ar-mode.spec.js` still has its own `readDownloadedZip` (a follow-up).
+
+- `lockFixtureCode(page)` arms the fixture's code and feeds frames until
+  the gate reports that the CODE passed it (`data-gate="passed-code"`).
+  The walk specs (visitor walk W4 build plan M2) share it; `stations.spec.js`
+  and `ar-mode.spec.js` still have their own `lockTheCode` copies (a
+  follow-up).
+- The AR start's switches (W4 build plan M2): `holdInitAR = true` holds the
+  next initAR until `releaseInitAR()` (the coach's "Starting AR…" stays
+  up); `failNextInitAR = true` rejects the next initAR once (the start
+  fails, the button offers "Try again").

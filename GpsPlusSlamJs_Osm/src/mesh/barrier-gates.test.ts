@@ -30,10 +30,10 @@ import {
 } from "./barrier-gates.js";
 import type { LatLng, OsmFeature } from "../model/osm-feature.js";
 import { DEFAULT_BARRIER_THICKNESS_M } from "./barriers.js";
-import { enuFrameAt } from "./enu.js";
+import { ENU_METRES_PER_DEG_LAT, enuFrameAt } from "./enu.js";
 
-/** A metre in degrees of latitude, close enough for a test fixture. */
-const M = 1 / 111_320;
+/** A metre in degrees of latitude, in the frame's own ruler. */
+const M = 1 / ENU_METRES_PER_DEG_LAT;
 
 const ORIGIN: LatLng = { lat: 51.5, lng: -0.1 };
 

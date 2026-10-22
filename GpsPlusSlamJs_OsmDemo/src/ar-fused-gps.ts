@@ -27,7 +27,9 @@
  * activation to obtain six lines of flat-earth arithmetic would be the wrong
  * trade. The OSM package's `enuFrameAt(origin).toLatLng(point)` is the same
  * approximation, already injected into `ar-mode.ts` as `enuFrameAt`, ungated
- * and directly testable — so this reuses that instead.
+ * and directly testable — so this reuses that instead. (The same NUMBERS only
+ * since 2026-10-06: its metres a degree of latitude were 0.34 % longer than
+ * the core's before; `one-ruler.test.ts` now compares the two conversions.)
  *
  * @see ar-fused-gps.ts.md
  */

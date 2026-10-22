@@ -5,13 +5,16 @@
  * parses back to the same records - every station's geo pose and every
  * item's local pose bit for bit (tour editor plan 2026-10-17-1816, D17:
  * nothing may nudge a local pose) - for every mix of stations, pins,
- * photos, recorded photos and details the generators can produce, not only
- * the hand-written examples.
+ * photos, placed models (their size in metres exactly), recorded photos and
+ * details the generators can produce, not only the hand-written examples.
+ * The minor written is the lowest the tour needs: 1 exactly when it carries
+ * a model (a tour id needs none).
  */
 
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
+import { TOUR_MODEL_MAX_SIZE_M, TOUR_MODEL_MIN_SIZE_M } from './tour-items';
 import {
   parseTourManifest,
   serializeTourManifest,
@@ -78,11 +81,34 @@ const photo = fc
   // The image entry is derived from the item's own id (M1 review #5).
   .map((p) => ({ ...p, image: `content/${p.id}.jpg` }));
 
+/** The model assets a placed model may name: ids longer than any item id
+ *  the generator makes (12), since an asset id may not be an item's. */
+const MODEL_ASSETS = [
+  { id: 'model-asset-01', path: 'content/model-asset-01.glb' },
+  { id: 'model-asset-02', path: 'content/model-asset-02.glb' },
+];
+const model = fc.record(
+  {
+    id,
+    kind: fc.constant('model' as const),
+    createdAtIso: iso,
+    asset: fc.constantFrom(...MODEL_ASSETS.map((a) => a.id)),
+    sizeM: fc.double({
+      min: TOUR_MODEL_MIN_SIZE_M,
+      max: TOUR_MODEL_MAX_SIZE_M,
+      noNaN: true,
+    }),
+    label: fc.stringMatching(/^[A-Za-z]{1,20}$/),
+    pose,
+  },
+  { requiredKeys: ['id', 'kind', 'createdAtIso', 'asset', 'sizeM', 'pose'] }
+);
+
 /** Up to four stations sharing up to twelve uniquely named items. */
 const stations = fc
   .tuple(
     fc.uniqueArray(id, { minLength: 1, maxLength: 4 }),
-    fc.uniqueArray(fc.oneof(pin, photo), {
+    fc.uniqueArray(fc.oneof(pin, photo, model), {
       maxLength: 12,
       selector: (o) => o.id,
     }),
@@ -114,6 +140,8 @@ const capture = (stationIds: readonly string[]) =>
 const manifest = stations.chain((s) =>
   fc
     .record({
+      // An earlier file's baked captures: no longer part of the format, so
+      // the reader must ignore them like any unknown field.
       captureSpots: fc.option(
         fc.record({
           fixes: fc.integer({ min: 1, max: 5000 }),
@@ -127,6 +155,9 @@ const manifest = stations.chain((s) =>
         { nil: undefined }
       ),
       needsNoGps: fc.option(fc.boolean(), { nil: undefined }),
+      tourId: fc.option(fc.stringMatching(/^[A-Za-z0-9_-]{1,64}$/), {
+        nil: undefined,
+      }),
       description: fc.option(fc.stringMatching(/^[A-Za-z]{1,40}$/), {
         nil: undefined,
       }),
@@ -134,8 +165,10 @@ const manifest = stations.chain((s) =>
         nil: undefined,
       }),
     })
-    .map(({ captureSpots, needsNoGps, description, cover }) => ({
+    .map(({ captureSpots, needsNoGps, tourId, description, cover }) => ({
       version: 3,
+      ...(tourId === undefined ? {} : { tourId }),
+      assets: MODEL_ASSETS,
       stations: s,
       ...(captureSpots === undefined ? {} : { captureSpots }),
       ...(needsNoGps === undefined ? {} : { needsNoGps }),
@@ -160,12 +193,32 @@ describe('tour manifest version 3 (properties)', () => {
         const again = parseTourManifest(
           JSON.parse(serializeTourManifest(parsed))
         );
-        expect(again).toEqual(parsed);
+        // The minor is the writer's own choice (the lowest the tour needs),
+        // pinned by its own property below; everything else is identity.
+        expect({ ...again, minor: 0 }).toEqual({ ...parsed, minor: 0 });
         // The same numbers exactly, not merely close: JSON round trips a
         // double exactly, and nothing on the way may recompute a pose.
         expect(JSON.stringify(tourItems(again).map((i) => i.pose))).toBe(
           JSON.stringify(tourItems(m).map((i) => i.pose))
         );
+      }),
+      { numRuns: 200 }
+    );
+  });
+
+  it('writes minor 1 exactly when the tour carries a model, and every model size back unchanged', () => {
+    fc.assert(
+      fc.property(manifest, (m) => {
+        const parsed = parseTourManifest(m);
+        const written = JSON.parse(serializeTourManifest(parsed)) as {
+          minor: number;
+        };
+        const models = tourItems(parsed).filter((i) => i.kind === 'model');
+        expect(written.minor).toBe(models.length > 0 ? 1 : 0);
+        const again = tourItems(parseTourManifest(written)).filter(
+          (i) => i.kind === 'model'
+        );
+        expect(again.map((i) => i.sizeM)).toEqual(models.map((i) => i.sizeM));
       }),
       { numRuns: 200 }
     );
@@ -180,10 +233,16 @@ describe('tour manifest version 3 (properties)', () => {
     );
   });
 
-  it('keeps every item in the station it was written in, and a cover only when the tour has that photo', () => {
+  it('keeps every station and every item in the station it was written in, drops the captureSpots of an earlier file, and keeps a cover only when the tour has that photo', () => {
     fc.assert(
       fc.property(manifest, (m) => {
         const parsed = parseTourManifest(m);
+        // An earlier file's captureSpots never reaches the tour, and costs
+        // no station (the stations it named stay as written).
+        expect('captureSpots' in parsed).toBe(false);
+        expect(parsed.stations.map((s) => s.id)).toEqual(
+          m.stations.map((s) => s.id)
+        );
         expect(parsed.stations.map((s) => s.items.map((i) => i.id))).toEqual(
           m.stations.map((s) => s.items.map((i) => i.id))
         );

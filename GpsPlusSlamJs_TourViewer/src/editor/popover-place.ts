@@ -31,6 +31,36 @@ export type PopoverPlacement =
 /** How far outside the free area a marker may sit before the card hides. */
 const SLACK_PX = 6;
 
+/** The card's distance from a box it keeps clear of, px. */
+const AVOID_GAP_PX = 8;
+
+function overlaps(
+  x: number,
+  y: number,
+  size: { readonly width: number; readonly height: number },
+  box: Box,
+): boolean {
+  return (
+    x < box.right &&
+    x + size.width > box.left &&
+    y < box.bottom &&
+    y + size.height > box.top
+  );
+}
+
+/** The card's top at `at`, moved up above `avoid` when it would cover
+ *  it and fits there inside `free`; else where it was. */
+function clearOf(
+  avoid: Box | null,
+  at: { readonly x: number; readonly y: number; readonly h: number },
+  size: { readonly width: number; readonly height: number },
+  free: Box,
+): number {
+  if (avoid === null || !overlaps(at.x, at.y, size, avoid)) return at.y;
+  const above = avoid.top - AVOID_GAP_PX - at.h;
+  return above >= free.top ? above : at.y;
+}
+
 export function placePopover(input: {
   /** The marker's ground point in window pixels. */
   readonly anchor: { readonly x: number; readonly y: number };
@@ -42,6 +72,11 @@ export function placePopover(input: {
   readonly size: { readonly width: number; readonly height: number };
   /** The free part of the window. */
   readonly free: Box;
+  /** A box inside the free area the card keeps clear of (the editor's
+   *  debug panel, r901 review #4): a card that would cover it moves up
+   *  above it where it fits, else stays (the card is drawn on top). It
+   *  hides nothing: a marker under it still has its card. */
+  readonly avoid?: Box | null | undefined;
 }): PopoverPlacement {
   const { anchor, size, free } = input;
   const centreY = anchor.y - input.lift;
@@ -78,6 +113,7 @@ export function placePopover(input: {
       Math.max(free.top, free.bottom - h),
     );
   }
+  y = clearOf(input.avoid ?? null, { x, y, h }, size, free);
   const arrow =
     side === "below"
       ? Math.min(Math.max(anchor.x - x - 7, 16), w - 30)

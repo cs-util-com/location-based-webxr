@@ -15,11 +15,21 @@
   imagery shows dark sea (`src/water-alpha.ts`), lossless: land 255,
   water 0, the colour under the water kept by `exact`; a tile with no
   water has no alpha); `assets/equirect/` night (VIIRS Black Marble 2016,
-  as PNG) and clouds (NASA Visible Earth's `cloud_combined_2048.tif`);
+  as PNG) and clouds (NASA Visible Earth's `cloud_combined_8192.tif` at
+  full resolution, round-3 plan 2026-10-08-2345 §18, DEC-R3-13..15: its
+  date-line seam eased over `SEAM_COLUMNS` (16) columns from each edge by
+  `src/cloud-seam.ts` (§16), cut by the registry's `globeMapPieces` into
+  four 4096x2048 pieces, `clouds-8192-{col}-{row}.webp`, and resampled
+  with Lanczos to the 1024x512 preview, `clouds-1024.webp`; one download
+  makes five files, so the clouds are written by `writeClouds`, not a
+  `jobs` entry; the run logs the wrap before and after against a typical
+  pair of columns);
   and `assets/PROVENANCE.md` (sources, sizes, licence, the GIBS
   acknowledgement). The downloads are kept in `.fetch-cache/`
   (gitignored), so a re-encode at another quality needs no network.
-- Checks: every download by its header (TIFF by decoding it); every mask
+- Checks: every download by its header (TIFF by decoding it, its grey
+  channel read as one channel: sharp writes a one-channel raw input back
+  out as three channels, so every read takes channel 0); every mask
   pixel is water cyan or transparent land (a GIBS style change fails the
   run instead of drawing a wrong coast); every written WebP's size, and
   its alpha present exactly when the tile has water. `sharp` is a
@@ -34,8 +44,11 @@
   MiB (levels 0-3); 2026-09-27 with level 4: 685 files, 4,451,405 bytes
   (level 4 alone 512 files, 2.42 MB, above the plan's 1.9 MiB estimate from
   48 sampled tiles); 2026-09-30 with level 5, as WebP: 2,734 files,
-  8,847,906 bytes (levels 0-5 2,730 tiles, 8,234 KiB). `globe-sources.test.ts`
-  holds the total under 10 MB (4.5 MB until round-4 DEC-GL4-9). GIBS's WMS reports no
+  8,847,906 bytes (levels 0-5 2,730 tiles, 8,234 KiB); 2026-10-09 with the
+  8,192 clouds: 2,736 files, 12,579,146 bytes (the pieces 3,978,662, the
+  preview 104,220). `globe-sources.test.ts` holds the total under 13 MB
+  (DEC-R3-13; 10 MB from round-4 DEC-GL4-9, 4.5 MB before). GIBS's WMS reports no
   `layer-time-actual`, so the Blue Marble month is recorded as not reported.
 - Tests: the pieces it imports are unit-tested (`image-header.ts`,
-  `tile-pyramid.ts`, `provenance-date.ts`); `globe-sources.test.ts` checks what it committed.
+  `tile-pyramid.ts`, `provenance-date.ts`, `cloud-seam.ts`, the
+  registry's `globeMapPieces`); `globe-sources.test.ts` checks what it committed.

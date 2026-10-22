@@ -6,6 +6,7 @@ import {
   installTourViewerArFakes,
   seedAlignment,
   standAt,
+  walkRowControl,
 } from "./ar-fakes.js";
 import { E2E_QR_TEXT } from "./qr-fixture.mjs";
 
@@ -112,8 +113,9 @@ test("a station tour: the visitor at the code finds the first station, its knigh
     )
     .toEqual({ elements: 1, plays: 2 }); // the unlock, then the voice
 
-  // While the story plays, the skip button can end it (K4 review R9).
-  await expect(page.getByTestId("station-skip")).toHaveText("End this story?");
+  // While the story plays, the story card can end it (K4 review R9; the
+  // control moved from the skip button to the card, W4 build plan M2).
+  await expect(page.getByTestId("story-end")).toHaveText("End this story?");
 
   // A scene choice.
   await page.getByTestId("scene-continue").click();
@@ -163,26 +165,32 @@ test("a station tour: the visitor at the code finds the first station, its knigh
   await expect(page.getByTestId("scene-status")).toHaveText("");
   await page.getByTestId("scene-continue").click();
 
-  // The tower is far: skipped on demand, in two taps (§8 D5).
+  // The tower is far: skipped on demand, in two taps (§8 D5): "Can't get
+  // there?" opens the list on its row, whose confirm skips it (W4 build
+  // plan M4).
   await expect(line).toHaveText(/^Next: The tower, \d+ m$/);
   const skip = page.getByTestId("station-skip");
   await expect(skip).toHaveText("Can't get there?");
   await skip.click();
-  await expect(skip).toHaveText("Skip The tower - I can't get there");
-  await skip.click();
+  const confirm = walkRowControl(page, "The tower", "confirm");
+  await expect(confirm).toHaveText("Skip The tower - I can't get there");
+  await confirm.click();
   await expect(line).toHaveText("Tour complete - 1 skipped.");
-  // The skip can be undone for a moment (K4 review R14): the tower comes
-  // back; skipped again, the button goes once the moment has passed (the
-  // next camera frames re-render it).
-  await expect(skip).toHaveText("Undo: bring back The tower");
-  await skip.click();
+  // The skip can be undone for a moment (K4 review R14), on its row: the
+  // tower comes back; skipped again, the quick action's undo goes once
+  // the moment has passed (the next camera frames re-render it).
+  const act = walkRowControl(page, "The tower", "act");
+  await expect(act).toHaveText("Undo: bring back The tower");
+  await act.click();
   await expect(line).toHaveText(
     /^Brought back The tower\. Next: The tower, \d+ m$/,
   );
   await expect(skip).toHaveText("Can't get there?");
-  await skip.click();
-  await skip.click();
+  await act.click();
+  await walkRowControl(page, "The tower", "confirm").click();
   await expect(line).toHaveText("Tour complete - 1 skipped.");
+  await page.getByTestId("walk-close").click();
+  await expect(skip).toHaveText("Undo: bring back The tower");
   await expect
     .poll(
       async () => {
@@ -433,33 +441,34 @@ test("?allstations=1 shows every station's content at once", async ({
     .toEqual(["station-content:gate", "station-content:well"]);
 });
 
-/** The ring's photo planes in one station's group: meshes standing
- *  directly in it (the station's own items hang one level deeper, under
- *  their frame), each with its opacity. */
-function ringOpacitiesIn(page, group) {
-  return page.evaluate(
-    (name) =>
-      /** @type {any} */ (
-        window.__tourViewerTest.fakeScene.children.find(
-          (/** @type {any} */ c) => c.name === name,
-        )?.children ?? []
-      )
-        .filter((/** @type {any} */ o) => o.isMesh === true)
-        .map((/** @type {any} */ o) => o.material.opacity),
-    group,
-  );
+/** What one station's group draws, however deep (its items hang under
+ *  their frame): every mesh (a photo plane) and sprite (a pin), each
+ *  with its opacity. */
+function drawnOpacitiesIn(page, group) {
+  return page.evaluate((name) => {
+    /** @param {any} o @returns {number[]} */
+    const opacities = (o) => [
+      ...(o.isMesh === true || o.isSprite === true ? [o.material.opacity] : []),
+      ...(o.children ?? []).flatMap(opacities),
+    ];
+    const root = /** @type {any} */ (
+      window
+    ).__tourViewerTest.fakeScene.children.find(
+      (/** @type {any} */ c) => c.name === name,
+    );
+    return root === undefined ? [] : opacities(root);
+  }, group);
 }
 
-test("the ring around the code stands with its station: in the gate's group there, fading out on the walk away, and between the stations the line asks for one", async ({
+test("the gate's content stands with its station: in the gate's group there, fading out on the walk away, and between the stations the line asks for one", async ({
   page,
 }) => {
-  // Why this test matters: on the default path (no
-  // ?allstations) the ring around a code goes with the station within the
-  // station radius of the code, so it must stand while the visitor is at
-  // that station, fade out with it, and leave nothing in view between the
-  // stations - where "Look around." would send the visitor looking for
-  // nothing, so the line asks for a station instead. The stations tour has
-  // no recording: its one image is the ring, and the gate is at the code.
+  // Why this test matters: on the default path (no ?allstations) a
+  // station's content must stand while the visitor is at that station, fade
+  // out with it, and leave nothing in view between the stations - where
+  // "Look around." would send the visitor looking for nothing, so the line
+  // asks for a station instead. The gate is at the code, and its pin is
+  // what it draws.
   await startTheTour(page);
   await standAt(page, 0, 0, 0);
   await lockTheCode(page);
@@ -468,7 +477,7 @@ test("the ring around the code stands with its station: in the gate's group ther
       await page.evaluate(() => {
         /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
       });
-      return ringOpacitiesIn(page, "station-content:gate");
+      return drawnOpacitiesIn(page, "station-content:gate");
     })
     .toEqual([1]);
   const status = page.getByTestId("ar-status");
@@ -495,10 +504,13 @@ test("the ring around the code stands with its station: in the gate's group ther
       const gate = t.fakeScene.children.find(
         (/** @type {any} */ c) => c.name === "station-content:gate",
       );
-      const plane = gate?.children.find(
-        (/** @type {any} */ o) => o.isMesh === true,
-      );
-      t.ringSamples.push(plane === undefined ? null : plane.material.opacity);
+      /** @param {any} o @returns {any} */
+      const drawn = (o) =>
+        o.isMesh === true || o.isSprite === true
+          ? o
+          : (o.children ?? []).map(drawn).find((/** @type {any} */ d) => d);
+      const object = gate === undefined ? undefined : drawn(gate);
+      t.ringSamples.push(object === undefined ? null : object.material.opacity);
     }, 16);
   });
   for (let m = 5, s = 1; m <= 15; m += 5, s += 1) await standAt(page, m, 0, s);

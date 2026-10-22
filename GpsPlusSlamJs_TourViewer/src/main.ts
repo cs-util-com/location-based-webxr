@@ -67,6 +67,8 @@ import {
 import { createViewerPlacement } from "./viewer-placement.js";
 import { createViewingLog } from "./viewing-log.js";
 import { wireVisitorStations } from "./visitor-stations.js";
+import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
+import { createWalkToast } from "./walk-toast.js";
 import { relocationRequested } from "./tour-relocation.js";
 import { tourCodesUsable, wireVisitorScreen } from "./visitor-screen.js";
 import { wireVisitorStart } from "./visitor-start.js";
@@ -86,6 +88,11 @@ import {
 } from "./visitor-guide-slice.js";
 import { wireTourNameField } from "./tour-name-field.js";
 import { renderTourContact } from "./tour-contact.js";
+import {
+  NOT_FINISHED,
+  tourUnfinished,
+  unfinishedNote,
+} from "./tour-unfinished.js";
 
 /** Keep at most this many archives cached (LRU) — see BoundedLocalCacheStore. */
 const MAX_CACHED_ARCHIVES = 5;
@@ -102,6 +109,13 @@ function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
   if (found === null) throw new Error(`missing #${id}`);
   return found as T;
+}
+
+/** An SVG element by id (the walk's direction arrow). */
+function svgElement(id: string): SVGElement {
+  const found = document.getElementById(id);
+  if (!(found instanceof SVGElement)) throw new Error(`missing svg #${id}`);
+  return found;
 }
 
 const errorBox = element<HTMLDivElement>("error");
@@ -413,10 +427,13 @@ if (mode === "visitor") {
     line: element("error-contact"),
     link: element<HTMLAnchorElement>("error-contact-link"),
   };
+  /** The open tour is not finished yet (`tour-unfinished.ts`): its
+   *  contact shows under the start page's sentence too. */
+  let unfinished = false;
   const renderContact = (): void => {
     renderTourContact(
       contactDom,
-      errorBox.textContent ?? "",
+      errorBox.textContent || (unfinished ? NOT_FINISHED : ""),
       ctx.tourDocument.manifest()?.contact,
     );
   };
@@ -425,9 +442,10 @@ if (mode === "visitor") {
     characterData: true,
     subtree: true,
   });
-  hooks.presentTourInfo = (manifest, loadImage) => {
-    if (manifest === null) visitorStart.clear();
-    else visitorStart.present(manifest, loadImage);
+  hooks.presentTourInfo = (tour) => {
+    if (tour === null) visitorStart.clear();
+    else visitorStart.present(tour.manifest, tour.loadImage);
+    unfinished = tour !== null && tourUnfinished(tour.manifest);
     renderContact();
     visitor.tourChanged();
   };
@@ -560,11 +578,17 @@ const tourNameField = wireTourNameField(
   },
 );
 if (mode === "creator") {
-  hooks.presentTourInfo = (manifest) => {
+  const visitorLinkNote = element("visitor-link-note");
+  hooks.presentTourInfo = (tour) => {
+    const manifest = tour?.manifest ?? null;
     tourNameField.present(
       manifest?.title ?? null,
       manifest === null ? null : (ctx.session?.archive.url ?? null),
     );
+    // What a visitor of the hosted file reads while it is not finished.
+    const note = tour === null ? null : unfinishedNote(tour.manifest);
+    visitorLinkNote.textContent = note ?? "";
+    visitorLinkNote.hidden = note === null;
   };
 }
 
@@ -621,12 +645,18 @@ const setup = wireCreatorSetup({
     replaceHelpGeneric: element("replace-help-generic"),
     replaceHelpDrive: element("replace-help-drive"),
     replaceDriveCopy: element("replace-drive-copy"),
+    debugSave: element("debug-save"),
+    debugSaveText: element("debug-save-text"),
+    debugSaveButton: element("debug-save-btn"),
+    debugSaveStatus: element("debug-save-status"),
     pinButton: element("setup-pin"),
     pinLabel: element("pin-label"),
     pinSave: element("pin-save"),
     pinCancel: element("pin-cancel"),
     photoButton: element("setup-photo"),
     newStationButton: element<HTMLButtonElement>("setup-new-station"),
+    undoButton: element<HTMLButtonElement>("setup-undo"),
+    undoLabel: element("setup-undo-label"),
     draftOffer: element("draft-offer"),
     draftOfferText: element("draft-offer-text"),
     draftRestore: element("draft-restore"),
@@ -819,7 +849,18 @@ hooks.startScanGate = viewer.startScanGate;
 hooks.resetScanGate = viewer.resetScanGate;
 hooks.reconsiderScanGate = viewer.reconsiderScanGate;
 
-// The visitor's stations and their stories (tour kit plan K4).
+// The visitor's toast in AR (visitor walk W4 build plan M2, §1.4): the
+// framework's one toast, its news said once per AR entry.
+const walkToast = createWalkToast(
+  createToast(element("walk-toast-root"), {
+    className: "walk-toast",
+    id: "walk-toast",
+  }),
+  element("walk-live"),
+);
+
+// The visitor's stations and their stories (tour kit plan K4), and the
+// walk's sheet (W4 build plan M2).
 const stations = wireVisitorStations({
   ctx,
   mode,
@@ -829,6 +870,8 @@ const stations = wireVisitorStations({
     guide: {
       line: element("station-line"),
       skip: element("station-skip"),
+      // The end of a story is the story card's control (W4).
+      end: element("walk-story-end"),
     },
     scene: {
       panel: element("scene-panel"),
@@ -848,6 +891,60 @@ const stations = wireVisitorStations({
   },
   now: () => Date.now(),
   schedule: (fn, ms) => seams.schedule(fn, ms),
+  walk: {
+    dom: {
+      doc: document,
+      root: element("walk-sheet"),
+      grab: element("walk-grab"),
+      peek: element("walk-peek"),
+      segments: element("walk-segments"),
+      eyebrow: element("walk-eyebrow"),
+      title: element("walk-title"),
+      distance: element("walk-distance"),
+      distanceText: element("walk-distance-text"),
+      distanceArrow: svgElement("walk-distance-arrow"),
+      tail: element("walk-tail"),
+      quick: element("station-skip"),
+      story: element("walk-story"),
+      dots: element("walk-dots"),
+      storyEnd: element("walk-story-end"),
+      keepListening: element("walk-keep-listening"),
+      list: element("walk-list"),
+      listTitle: element("walk-list-title"),
+      chip: element("walk-chip"),
+      close: element("walk-close"),
+      done: element("walk-done"),
+      doneTitle: element("walk-done-title"),
+      doneText: element("walk-done-text"),
+      progress: element("walk-progress"),
+      hint: element("walk-hint"),
+      rows: element("walk-rows"),
+      foot: element("walk-list-foot"),
+      exit: element("walk-exit"),
+      away: {
+        root: element("walk-away"),
+        text: element("walk-away-text"),
+        segments: element("walk-away-segments"),
+        rows: element("walk-away-rows"),
+      },
+    },
+    toast: walkToast,
+    // In AR the entry button is the way out (U2): the same teardown.
+    exitAr: () => {
+      element("enter-ar").click();
+    },
+    onShownChange: () => {
+      hooks.renderArStatus();
+    },
+    // The radar and the precision chip (W4 build plan M3).
+    radar: {
+      wrap: element("walk-radar-wrap"),
+      button: element("walk-radar"),
+      canvas: element<HTMLCanvasElement>("walk-radar-canvas"),
+      chip: element("walk-precision"),
+      chipText: element("walk-precision-text"),
+    },
+  },
   // The test switch ?relocate=here (tour-relocation.ts, owner decision S-D9).
   ...(relocationRequested(location.search)
     ? {
@@ -903,8 +1000,20 @@ const arEntry = wireArEntry({
     arStatusLive: element("ar-status-live"),
     scanCard: element("scan-card"),
     scanCardLine: element("scan-card-line"),
+    scanCardTitle: element("scan-card-title"),
+    coach: {
+      root: element("walk-coach"),
+      text: element("walk-coach-text"),
+    },
+    codeTail: element("walk-code-tail"),
   },
   hooks,
+  walk: {
+    toast: walkToast,
+    progressKept: () => mode === "visitor" && stations.progressKept(),
+    sheetShown: () => stations.walkShown(),
+    debugLines: () => stations.debugLines(),
+  },
   ...(recordingPanel === null ? {} : { recording: recordingPanel }),
 });
 hooks.renderArStatus = arEntry.renderArStatus;

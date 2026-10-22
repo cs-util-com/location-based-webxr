@@ -67,9 +67,9 @@ function finite(_key, value) {
  * @param {{ device: unknown, live: unknown, recording: unknown,
  *   events: unknown[] }} parts
  */
-export function debugExportText({ device, live, recording, events }) {
+export function debugExportText({ device, live, recording, events, link }) {
   return JSON.stringify(
-    { format: FORMAT, device, live, recording, events },
+    { format: FORMAT, link: link ?? null, device, live, recording, events },
     finite,
   );
 }
