@@ -22,6 +22,13 @@
  * frame. A station's items are rendered when it enters the near set and
  * freed when it leaves; a tour handed again unchanged renders nothing.
  *
+ * While a drag of the 3D view runs, `setPreview` draws the dragged
+ * station (its items, billboard and found radius with it) or item (a
+ * model at its dragged size) where the drag has it, by moving what is
+ * drawn - nothing is rendered again; cleared, everything is drawn where
+ * the tour has it. `pick` says what a ray meets first: a station by its
+ * billboard, an item by its drawing, a code by its square.
+ *
  * @see editor3d-stations.ts.md
  */
 import * as THREE from "three";
@@ -29,6 +36,7 @@ import * as THREE from "three";
 import { localPlaneToEnu } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type {
   TourManifest,
   TourStation,
@@ -74,6 +82,9 @@ export interface StationsLayerView {
   readonly centre: THREE.Vector3;
   /** The selected station's id (or the station of the selected item). */
   readonly selectedStation: string | null;
+  /** Whether the selection is that station itself, not an item in it:
+   *  its found-radius circle is then drawn as selected. */
+  readonly stationSelected: boolean;
   /** How upright pins and photos stand (`morphStanding`). */
   readonly standing: number;
 }
@@ -87,7 +98,38 @@ export const BILLBOARD_LIFT_M = 4.6;
 /** A billboard's height over its station when flat (m). */
 const BILLBOARD_BASE_M = 0.6;
 
+/** What a drag shows: a station at another pose and found radius, or an
+ *  item at another pose (a model at another size). */
+export type LayerPreview =
+  | {
+      readonly kind: "station";
+      readonly id: string;
+      readonly geo: QrGeoPose;
+      readonly foundRadiusM: number;
+    }
+  | {
+      readonly kind: "item";
+      readonly id: string;
+      readonly geo: QrGeoPose;
+      readonly sizeM: number | null;
+    };
+
+/** The selection an object of the layer stands for (`pick`), on it or
+ *  on an ancestor: a billboard's `station:<id>` and a code's level id
+ *  (`userData.pick`), an item's id (`userData.objectId`). */
+function pickOf(object: THREE.Object3D | null): string | null {
+  for (let o = object; o !== null; o = o.parent) {
+    const pick: unknown = o.userData["pick"] ?? o.userData["objectId"];
+    if (typeof pick === "string") return pick;
+  }
+  return null;
+}
+
 const RING_COLOUR = 0x6fa8dc;
+/** The selected station's circle (the gizmo's amber: its dots sit on it). */
+const RING_SELECTED = 0xe9a23b;
+/** The circle of the station a selected item is in. */
+const RING_CONTEXT = 0xa8c8ea;
 const POLE_COLOUR = 0xdfe3ea;
 
 interface StationContent {
@@ -96,7 +138,8 @@ interface StationContent {
   readonly models: THREE.Object3D[];
   readonly ring: THREE.Mesh;
   readonly pole: THREE.Mesh;
-  /** Each photo plane and its upright quaternion. */
+  /** Each photo plane and its upright quaternion (a drag's preview
+   *  turns it). */
   readonly photos: { mesh: THREE.Mesh; upright: THREE.Quaternion }[];
 }
 
@@ -106,8 +149,13 @@ interface StationEntry {
   readonly key: string;
   readonly station: TourStation;
   readonly root: THREE.Group;
+  /** The root's matrix where the tour has the station (a preview moves
+   *  the root; clearing it puts this back). */
+  readonly base: THREE.Matrix4;
   /** The station's point in the world. */
   readonly point: THREE.Vector3;
+  /** Where its billboard stands: the point, or a preview's. */
+  readonly shownPoint: THREE.Vector3;
   billboard: THREE.Sprite | null;
   billboardSelected: boolean;
   content: StationContent | null;
@@ -123,6 +171,12 @@ const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const flatTurn = new THREE.Quaternion().setFromAxisAngle(X_AXIS, -Math.PI / 2);
 const facing = new THREE.Vector3();
 const flatQ = new THREE.Quaternion();
+const local = new THREE.Matrix4();
+const position = new THREE.Vector3();
+const rotation = new THREE.Quaternion();
+const unit = new THREE.Vector3(1, 1, 1);
+const previewFrame = new THREE.Matrix4();
+const tourFrame = new THREE.Matrix4();
 
 /** The quaternion that lays a plane whose upright pose is `upright` flat,
  *  face up, its heading kept. */
@@ -159,7 +213,7 @@ function ringOf(radiusM: number): THREE.Mesh {
   const geometry = new THREE.RingGeometry(radiusM - width, radiusM, 96);
   // Flat on the station's ground plane (y up in its frame).
   geometry.rotateX(-Math.PI / 2);
-  return new THREE.Mesh(
+  const ring = new THREE.Mesh(
     geometry,
     new THREE.MeshBasicMaterial({
       color: RING_COLOUR,
@@ -169,6 +223,8 @@ function ringOf(radiusM: number): THREE.Mesh {
       side: THREE.DoubleSide,
     }),
   );
+  ring.name = "found-radius";
+  return ring;
 }
 
 function poleOf(): THREE.Mesh {
@@ -231,6 +287,8 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   let shownCodes = true;
   let shown = new Set<string>();
   let renders = 0;
+  /** What a drag shows now (`setPreview`). */
+  let preview: LayerPreview | null = null;
 
   const rootAt = (geo: { lat: number; lon: number }): THREE.Group => {
     const root = new THREE.Group();
@@ -281,9 +339,14 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         freeObject(model);
         return;
       }
-      model.scale.setScalar(modelScale(model, item.sizeM));
+      const scale = modelScale(model, item.sizeM);
+      model.scale.setScalar(scale);
       model.position.set(...item.pose.position);
       model.quaternion.set(...item.pose.rotation);
+      // Picked by its id; a preview of another size scales from here.
+      model.userData["objectId"] = item.id;
+      model.userData["tourScale"] = scale;
+      model.userData["tourSizeM"] = item.sizeM;
       // In the station's frame, as its pins and photos are.
       content.rendered.root.add(model);
       content.models.push(model);
@@ -350,11 +413,23 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       const square = deps.makeCodeSquare(
         level.qr.physicalSizeM ?? DEFAULT_CODE_SIZE_M,
       );
+      square.userData["pick"] = levelId;
       square.position.set(0, geo.alt, 0);
       square.quaternion.copy(codeQuaternionNue(geo));
       root.add(square);
       codes.push(root);
     }
+  };
+
+  const colourRing = (entry: StationEntry, view: StationsLayerView) => {
+    const material = entry.content?.ring.material;
+    if (!(material instanceof THREE.MeshBasicMaterial)) return;
+    const mine = entry.id === view.selectedStation;
+    const selected = mine && view.stationSelected;
+    material.color.setHex(
+      selected ? RING_SELECTED : mine ? RING_CONTEXT : RING_COLOUR,
+    );
+    material.opacity = selected ? 1 : 0.85;
   };
 
   const placeBillboard = (entry: StationEntry, view: StationsLayerView) => {
@@ -367,15 +442,122 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         selected,
       );
       entry.billboardSelected = selected;
+      entry.billboard.userData["pick"] = `station:${entry.id}`;
       group.add(entry.billboard);
     }
     const rise = BILLBOARD_BASE_M + BILLBOARD_LIFT_M * view.standing;
-    entry.billboard.position.copy(entry.point).setY(entry.point.y + rise);
+    entry.billboard.position
+      .copy(entry.shownPoint)
+      .setY(entry.shownPoint.y + rise);
     entry.billboard.visible = shownNames;
     if (entry.content !== null) {
       entry.content.pole.scale.set(1, rise, 1);
       entry.content.pole.visible = shownNames;
     }
+  };
+
+  /** A station's frame in the world at `geo`: its root's matrix there
+   *  times its pose in that root (as `renderTourStation` places it). */
+  const frameAt = (geo: QrGeoPose, out: THREE.Matrix4): THREE.Matrix4 => {
+    pointRootMatrix(
+      {
+        ellipsoid: deps.ellipsoid,
+        worldFromEcef: deps.worldFromEcef,
+        place: { lat: geo.lat, lon: geo.lon },
+        undulationM: deps.undulationAt({ lat: geo.lat, lon: geo.lon }),
+      },
+      out,
+    );
+    const pose = objectPoseNue(geo, { lat: geo.lat, lon: geo.lon });
+    return out.multiply(
+      local.compose(
+        position.set(...pose.positionNue),
+        rotation.set(...pose.rotationNue),
+        unit,
+      ),
+    );
+  };
+
+  const entryOfItem = (id: string): StationEntry | null => {
+    for (const entry of stations.values()) {
+      if (entry.station.items.some((i) => i.id === id)) return entry;
+    }
+    return null;
+  };
+
+  /** Each drawn object of an item (its label or plane, a model). */
+  const drawnOf = (entry: StationEntry, id: string): THREE.Object3D[] => {
+    const found: THREE.Object3D[] = [];
+    entry.content?.rendered?.root.traverse((o) => {
+      if (o.userData["objectId"] === id) found.push(o);
+    });
+    return found;
+  };
+
+  /** Put an item's drawing at `pose` in its station (a model at `sizeM`;
+   *  null: its tour size). */
+  const poseDrawn = (
+    entry: StationEntry,
+    id: string,
+    pose: {
+      readonly position: readonly [number, number, number];
+      readonly rotation: readonly [number, number, number, number];
+    },
+    sizeM: number | null,
+  ) => {
+    const turned = new THREE.Quaternion(...pose.rotation);
+    for (const o of drawnOf(entry, id)) {
+      o.position.set(...pose.position);
+      const photo = entry.content?.photos.find((p) => p.mesh === o);
+      if (photo !== undefined) {
+        photo.upright.copy(turned);
+        continue;
+      }
+      const tourScale: unknown = o.userData["tourScale"];
+      const tourSizeM: unknown = o.userData["tourSizeM"];
+      if (typeof tourScale !== "number" || typeof tourSizeM !== "number") {
+        continue;
+      }
+      o.quaternion.copy(turned);
+      o.scale.setScalar(tourScale * ((sizeM ?? tourSizeM) / tourSizeM));
+    }
+  };
+
+  /** Draw `p` where the drag has it. */
+  const applyPreview = (p: LayerPreview) => {
+    if (p.kind === "station") {
+      const entry = stations.get(p.id);
+      if (entry === undefined) return;
+      const shift = frameAt(p.geo, previewFrame).multiply(
+        frameAt(entry.station.geo, tourFrame).invert(),
+      );
+      entry.root.matrix.multiplyMatrices(shift, entry.base);
+      entry.root.updateMatrixWorld(true);
+      entry.shownPoint.copy(entry.point).applyMatrix4(shift);
+      const k = p.foundRadiusM / entry.station.foundRadiusM;
+      entry.content?.ring.scale.set(k, 1, k);
+      return;
+    }
+    const entry = entryOfItem(p.id);
+    if (entry === null) return;
+    poseDrawn(entry, p.id, localPoseOf(p.geo, entry.station.geo), p.sizeM);
+  };
+
+  /** Draw what `p` showed where the tour has it again. */
+  const clearPreview = (p: LayerPreview) => {
+    if (p.kind === "station") {
+      const entry = stations.get(p.id);
+      if (entry === undefined) return;
+      entry.root.matrix.copy(entry.base);
+      entry.root.updateMatrixWorld(true);
+      entry.shownPoint.copy(entry.point);
+      entry.content?.ring.scale.set(1, 1, 1);
+      return;
+    }
+    const entry = entryOfItem(p.id);
+    const item = entry?.station.items.find((i) => i.id === p.id);
+    if (entry === null || item === undefined) return;
+    poseDrawn(entry, p.id, item.pose, null);
   };
 
   return {
@@ -403,7 +585,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
           key,
           station,
           root,
+          base: root.matrix.clone(),
           point,
+          shownPoint: point.clone(),
           billboard: null,
           billboardSelected: false,
           content: null,
@@ -433,7 +617,13 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         const near = shown.has(entry.id);
         if (near && entry.content === null) renderContent(entry);
         if (!near && entry.content !== null) freeContent(entry);
+      }
+      // Each frame: a station drawn anew, or items that arrived since,
+      // take the drag's preview too.
+      if (preview !== null) applyPreview(preview);
+      for (const entry of stations.values()) {
         placeBillboard(entry, view);
+        if (entry.content !== null) colourRing(entry, view);
         for (const photo of entry.content?.photos ?? []) {
           photo.mesh.quaternion.slerpQuaternions(
             flatOf(photo.upright, flatQ),
@@ -442,6 +632,24 @@ export function createStationsLayer(deps: StationsLayerDeps) {
           );
         }
       }
+    },
+    /** Draw a drag's preview (null: none; what the last one showed is
+     *  drawn where the tour has it again). */
+    setPreview(next: LayerPreview | null) {
+      if (preview !== null) clearPreview(preview);
+      preview = next;
+      if (next !== null) applyPreview(next);
+    },
+    /** The selection the ray meets first (`station:<id>`, an item's
+     *  id, a code's level id), or null; rings and poles are none. */
+    pick(raycaster: THREE.Raycaster): string | null {
+      group.updateMatrixWorld();
+      for (const hit of raycaster.intersectObject(group, true)) {
+        if (!hit.object.visible) continue;
+        const pick = pickOf(hit.object);
+        if (pick !== null) return pick;
+      }
+      return null;
     },
     /** For the page's checks: the stations and what is drawn. */
     stats() {

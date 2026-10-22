@@ -19,6 +19,7 @@ import type {
   TourManifest,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import { worldFromEcefAt } from "gps-plus-slam-globe/editor";
@@ -160,9 +161,11 @@ const view = (
   north: number,
   selected: string | null,
   standing = 1,
+  stationSelected = false,
 ) => ({
   centre: new THREE.Vector3(east, 0, -north),
   selectedStation: selected,
+  stationSelected,
   standing,
 });
 
@@ -419,6 +422,226 @@ describe("createStationsLayer", () => {
     layer.update(view(0, 0, null));
     expect(layer.billboardOf("a")?.visible).toBe(true);
     expect(layer.codesVisible()).toBe(true);
+  });
+
+  // Why: a selected station has no ring of its own in the gizmo - its
+  // found-radius circle IS the ring its radius dots sit on - so the circle
+  // must show the selection's amber, and a selected item's station a
+  // lighter blue, or the creator cannot see which circle the dots resize.
+  it("draws the selected station's circle in the selection's amber, and a selected item's station lighter", async () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    layer.setTour(
+      manifest([station("a", 0, 0, [photo("p")]), station("b", 40, 0)]),
+      new Map(),
+    );
+    const ringColour = (id: string) => {
+      const at = layer.pointOf(id)!;
+      let found: THREE.Mesh | null = null;
+      layer.group.traverse((o) => {
+        if (o.name !== "found-radius") return;
+        o.updateWorldMatrix(true, false);
+        const p = new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
+        if (Math.hypot(p.x - at.x, p.z - at.z) < 1) found = o as THREE.Mesh;
+      });
+      if (found === null) throw new Error(`no circle for ${id}`);
+      return (
+        (found as THREE.Mesh).material as THREE.MeshBasicMaterial
+      ).color.getHex();
+    };
+    layer.update(view(20, 0, "a", 1, true));
+    await settle();
+    expect(ringColour("a")).toBe(0xe9a23b);
+    expect(ringColour("b")).toBe(0x6fa8dc);
+    layer.update(view(20, 0, "a", 1, false));
+    expect(ringColour("a")).toBe(0xa8c8ea);
+    layer.update(view(20, 0, null));
+    expect(ringColour("a")).toBe(0x6fa8dc);
+    layer.dispose();
+  });
+
+  // Why: while a drag runs the station is drawn where the drag has it -
+  // its items, its billboard and its found radius with it - without
+  // rendering anything again (a re-render per frame would blink the
+  // photos and stall); cleared, it is drawn where the tour has it.
+  it("draws a station's preview where the drag has it, and back when cleared", async () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    const a = station("a", 0, 0, [photo("p")]);
+    layer.setTour(manifest([a]), new Map());
+    layer.update(view(0, 0, "a"));
+    await settle();
+    const plane = layer.photoPlanes("a")[0]!;
+    const worldOf = (o: THREE.Object3D) => {
+      o.updateWorldMatrix(true, false);
+      return new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
+    };
+    const ring = () => layer.group.getObjectByName("found-radius")!;
+    const before = worldOf(plane);
+    const billboardBefore = layer.billboardOf("a")!.position.clone();
+    layer.setPreview({
+      kind: "station",
+      id: "a",
+      geo: { ...a.geo, lat: a.geo.lat + 10 / M_PER_DEG_LAT },
+      foundRadiusM: 16,
+    });
+    layer.update(view(0, 0, "a"));
+    const moved = worldOf(plane);
+    expect(moved.z - before.z).toBeCloseTo(-10, 1);
+    expect(moved.x - before.x).toBeCloseTo(0, 1);
+    expect(moved.y - before.y).toBeCloseTo(0, 2);
+    expect(layer.billboardOf("a")!.position.z - billboardBefore.z).toBeCloseTo(
+      -10,
+      1,
+    );
+    expect(ring().scale.x).toBeCloseTo(2, 9);
+    expect(layer.stats().renders).toBe(1);
+    layer.setPreview(null);
+    layer.update(view(0, 0, "a"));
+    expect(worldOf(plane).distanceTo(before)).toBeLessThan(1e-6);
+    expect(ring().scale.x).toBe(1);
+    expect(layer.billboardOf("a")!.position.distanceTo(billboardBefore)).toBe(
+      0,
+    );
+  });
+
+  // Why: an item dragged, turned or (a model) resized is drawn at the
+  // drag's pose in its station's frame - a photo keeps the flat-or-upright
+  // morph, turned with it - and goes back when the drag is cleared.
+  it("draws an item's and a model's preview, and back when cleared", async () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    const a = station("a", 0, 0, [photo("p"), model("m", "horse", 8)]);
+    layer.setTour(
+      manifest(
+        [a],
+        [{ id: "horse", path: "content/horse.glb", kind: "model" }],
+      ),
+      new Map(),
+    );
+    layer.update(view(0, 0, "a"));
+    await settle();
+    const plane = layer.photoPlanes("a")[0]!;
+    const horse = layer.models("a")[0]!;
+    const quarter = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      -Math.PI / 2,
+    );
+    const turnedAway = (position: [number, number, number]) =>
+      itemGeoPose(
+        {
+          position,
+          rotation: [quarter.x, quarter.y, quarter.z, quarter.w],
+        },
+        a.geo,
+      );
+    layer.setPreview({
+      kind: "item",
+      id: "p",
+      geo: turnedAway([1, 1.5, 3]),
+      sizeM: null,
+    });
+    layer.update(view(0, 0, "a", 1));
+    expect(plane.position.x).toBeCloseTo(1, 3);
+    expect(plane.position.z).toBeCloseTo(3, 3);
+    expect(plane.quaternion.angleTo(quarter)).toBeLessThan(1e-6);
+    layer.setPreview({
+      kind: "item",
+      id: "m",
+      geo: turnedAway([0, 0, 5]),
+      sizeM: 16,
+    });
+    layer.update(view(0, 0, "a", 1));
+    // The photo is back where the tour has it.
+    expect(plane.position.toArray()).toEqual([1, 1.5, 0]);
+    expect(plane.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(1e-9);
+    expect(horse.position.z).toBeCloseTo(5, 3);
+    expect(horse.scale.x).toBeCloseTo(4, 9);
+    layer.setPreview(null);
+    layer.update(view(0, 0, "a", 1));
+    expect(horse.position.toArray()).toEqual([0, 0, 2]);
+    expect(horse.scale.x).toBeCloseTo(2, 9);
+  });
+
+  // Why: a click in the view selects what is under the pointer - a
+  // station by its billboard, an item by its drawing (a placed model by
+  // any of its parts), a code by its square; the ring and the pole are
+  // no selection, and a click on nothing is none.
+  it("says what is under a ray", async () => {
+    const { d } = deps({
+      makeBillboard: () => {
+        const sprite = new THREE.Sprite();
+        sprite.scale.set(4, 4, 1);
+        return sprite;
+      },
+    });
+    const layer = createStationsLayer(d);
+    // The model 6 m west, behind the photo seen from the east.
+    const west = {
+      ...model("m", "horse", 8),
+      pose: { position: [0, 0, -6], rotation: [0, 0, 0, 1] },
+    } as TourItem;
+    const a = station("a", 0, 0, [photo("p"), west]);
+    layer.setTour(
+      manifest(
+        [a],
+        [{ id: "horse", path: "content/horse.glb", kind: "model" }],
+      ),
+      new Map([
+        [
+          "c1",
+          {
+            qr: {
+              geo: {
+                lat: ZERO.lat + 30 / M_PER_DEG_LAT,
+                lon: ZERO.lng,
+                alt: 516 + N,
+                headingDeg: 0,
+              },
+              physicalSizeM: 2,
+            },
+          } as QrLevel,
+        ],
+      ]),
+    );
+    layer.update(view(0, 0, "a", 1));
+    await settle();
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+    const ray = (from: THREE.Vector3, to: THREE.Vector3) => {
+      camera.position.copy(from);
+      camera.lookAt(to);
+      camera.updateMatrixWorld(true);
+      const r = new THREE.Raycaster();
+      r.setFromCamera(new THREE.Vector2(0, 0), camera);
+      return r;
+    };
+    const anchor = layer.pointOf("a")!;
+    const look = (target: THREE.Vector3) =>
+      ray(target.clone().add(new THREE.Vector3(0, 0, 20)), target);
+    // The photo, 1 m north and 1.5 m up, facing east: seen from the east.
+    const p = layer.itemPointOf("p")!;
+    expect(layer.pick(ray(p.clone().add(new THREE.Vector3(20, 0, 0)), p))).toBe(
+      "p",
+    );
+    // The model from the south: its box is 4 m by 8 m by 2 m.
+    expect(
+      layer.pick(look(layer.itemPointOf("m")!.add(new THREE.Vector3(0, 2, 0)))),
+    ).toBe("m");
+    expect(layer.pick(look(layer.billboardOf("a")!.position.clone()))).toBe(
+      "station:a",
+    );
+    const code = layer.codePointOf("c1")!;
+    expect(
+      layer.pick(ray(code.clone().add(new THREE.Vector3(20, 0, 0)), code)),
+    ).toBe("c1");
+    expect(
+      layer.pick(
+        ray(
+          anchor.clone().add(new THREE.Vector3(0, 0, 20)),
+          anchor.clone().add(new THREE.Vector3(0, 0, 60)),
+        ),
+      ),
+    ).toBeNull();
   });
 
   it("takes everything out of the scene when disposed", () => {

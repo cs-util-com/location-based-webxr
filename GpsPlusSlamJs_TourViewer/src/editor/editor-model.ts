@@ -61,7 +61,7 @@ export interface EditorModel {
 
 /** A station's id in the editor: stations and objects have separate id
  *  spaces in the manifest. */
-const STATION_PREFIX = "station:";
+export const STATION_PREFIX = "station:";
 
 function noteMeta(object: TourObject, codes: readonly QrGeoPose[]): string {
   const distance = codeDistanceLine(object, codes);

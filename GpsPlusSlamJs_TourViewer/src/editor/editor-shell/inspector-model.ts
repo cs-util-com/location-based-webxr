@@ -78,6 +78,23 @@ interface CodeInspector {
 
 export type InspectorModel = StationInspector | ItemInspector | CodeInspector;
 
+/** The bottom bar's hint for the selection: the handles its gizmo has in
+ *  the 3D view, or how to select when nothing is. A code is read-only
+ *  there (no handles). */
+export function inspectorHint(model: InspectorModel | null): string {
+  if (model === null) {
+    return "Click a station, an item or a code; drag to orbit, right-drag to pan, wheel to zoom";
+  }
+  if (model.kind === "station") {
+    return `${model.title} - drag the middle to move (its items follow), a white dot for the radius, the round arrow to turn`;
+  }
+  if (model.kind === "item") {
+    const resize = model.itemKind === "model" ? ", a white dot to resize" : "";
+    return `${model.title} - drag the middle to move along the ground, the round arrow to turn${resize}`;
+  }
+  return `${model.title} - read-only here; F frames it, Esc deselects`;
+}
+
 /** A code as the inspector reads it. */
 export interface InspectorCode {
   readonly id: string;

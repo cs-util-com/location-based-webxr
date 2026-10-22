@@ -488,6 +488,15 @@ describe("renderTourStation", () => {
     );
     const label = frame.getObjectByName("label:Gate")!;
     expect(label.position.toArray()).toEqual(pinPose.position);
+    // Each placed object names its item (`userData.objectId`): the 3D
+    // editor picks an item by it and moves its drawing while a drag runs.
+    expect(label.userData["objectId"]).toBe("p");
+    const named: string[] = [];
+    frame.traverse((o) => {
+      const id: unknown = o.userData["objectId"];
+      if (typeof id === "string") named.push(id);
+    });
+    expect(named.sort()).toEqual(["g", "p"]);
     rendered.dispose();
     expect(scene.children).toHaveLength(0);
   });

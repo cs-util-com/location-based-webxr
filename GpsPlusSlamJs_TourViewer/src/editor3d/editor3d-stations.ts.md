@@ -2,12 +2,14 @@
 
 ## Purpose
 
-The tour in the 3D editor's world, read-only: every station at its point
+The tour in the 3D editor's world: every station at its point
 with a billboard (its number and name); the stations near the camera's
 centre and the selected one with their items drawn as the phone draws
 them, their placed models, a ring for their found radius and a pole up to
 the billboard; every code with a position as a square of its printed
-size, facing as printed.
+size, facing as printed. It writes nothing: while a gesture runs it
+draws the gesture's preview (`setPreview`), and it says what is under a
+ray (`pick`).
 
 ## Public API
 
@@ -16,7 +18,11 @@ size, facing as printed.
   `loadContent`, `loadGlbModel`, `makeBillboard`, `makeCodeSquare` (the
   drawing is the page's: Node, where the tests run, has no canvas).
 - `StationsLayerView` - per frame: `centre` (the orbit's centre in the
-  world), `selectedStation`, `standing` (`morphStanding`).
+  world), `selectedStation` (the selected station, or the selected item's),
+  `stationSelected` (the selection is that station itself), `standing`
+  (`morphStanding`).
+- `LayerPreview` - `{ kind: "station", id, geo, foundRadiusM }` or
+  `{ kind: "item", id, geo, sizeM }` (ellipsoidal geo poses, as the file).
 - `DEFAULT_CODE_SIZE_M` - 0.2; `BILLBOARD_LIFT_M` - 4.6 (how much higher a
   billboard stands upright than flat; flat it is 0.6 m over its station).
 - `codeQuaternionNue(geo)` - a code's rotation in its north-up-east frame
@@ -34,6 +40,13 @@ size, facing as printed.
     `itemPointOf(id)` (an item's place in the world, its station drawn or
     not), `codePointOf(levelId)` (a code's centre); each null for an id
     the tour does not have;
+  - `setPreview(preview | null)` - a `LayerPreview` shown in place of the
+    tour's pose until null: a station's place (its billboard, ring, items
+    and models follow) and found radius, or an item's place (a model also
+    its size); the tour as drawn is untouched and comes back on null;
+  - `pick(raycaster)` - the nearest visible thing under the ray: a
+    station's billboard (`station:<id>`), an item's label, plane or model
+    (its object id) or a code's square (its level id); null for none;
   - `setShown({ names, codes })` - the billboards and poles, and the code
     squares, off or on (the layer chips); `codesVisible()`;
   - `dispose()` - everything out of the scene and freed.
@@ -52,9 +65,15 @@ size, facing as printed.
   models keep their pose. `renderTourStation` skips models, so the layer
   adds them at their pose, scaled to their size by `modelScale`; a model
   whose file cannot be read is left out.
+- **The found-radius circle** is the selected station's ring: amber (the
+  gizmo's colour, its radius dots sit on it) while the station itself is
+  selected, a lighter blue while an item in it is, else blue.
 - **Shared textures** (`userData.sharedMap`, the code face) are not freed
   with an object.
-- **Writes nothing** to the tour or the store.
+- **Writes nothing** to the tour or the store; a preview moves only the
+  drawn objects, and is re-applied after a station's items render.
+- `pick` is by distance along the ray (the nearest hit wins), not
+  billboards first.
 - **Not yet:** billboards are not decluttered, and photos are drawn at
   their own size, not scaled up to a readable size from far away.
 
@@ -76,6 +95,8 @@ and selected stations rendered, and what leaves freed; a billboard per
 station rising with the morph; photos flat looking down and upright
 tilted; a model at its size and pose; a model that cannot be read left
 out; every code as a square of its printed size; where an item and a
-code stand, drawn or not; names and codes hidden and shown; everything removed on
+code stand, drawn or not; a station's and an item's (a model's) preview
+shown and taken back; the selected station's circle amber and a selected
+item's station lighter; what is under a ray; names and codes hidden and shown; everything removed on
 dispose; `codeQuaternionNue` for a heading and a full rotation. Real
 drawing and real ground: `playwright-tests/editor3d.spec.js`.

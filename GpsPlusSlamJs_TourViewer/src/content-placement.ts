@@ -279,6 +279,7 @@ async function renderContent<T extends TourContentFields>(
 ): Promise<RenderedTourObjects> {
   const labels: { object: Object3D; dispose(): void }[] = [];
   const photoPoses: ObjectPoseNue[] = [];
+  const photoIds: string[] = [];
   const textures: Texture[] = [];
   const skipped: string[] = [];
   // One group, added to the scene only once everything decoded (M5 review
@@ -297,6 +298,8 @@ async function renderContent<T extends TourContentFields>(
       if (object.kind === "pin") {
         const label = deps.makeLabel(object.label);
         label.object.position.set(...pose.positionNue);
+        // Names its item: the 3D editor picks and previews by it.
+        label.object.userData["objectId"] = object.id;
         group.add(label.object);
         labels.push(label);
         continue;
@@ -315,12 +318,18 @@ async function renderContent<T extends TourContentFields>(
         continue;
       }
       photoPoses.push(pose);
+      photoIds.push(object.id);
       textures.push(texture);
     }
     planes = placeCapturedImagePlanes({
       scene: group,
       poses: photoPoses,
       textures,
+    });
+    // The planes follow the labels, one per photo in order.
+    group.children.slice(labels.length).forEach((plane, i) => {
+      const id = photoIds[i];
+      if (id !== undefined) plane.userData["objectId"] = id;
     });
   } catch (error) {
     // A constructor that throws half way (a label without a canvas) must

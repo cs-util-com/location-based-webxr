@@ -35,6 +35,7 @@ import {
   type EditorViewState,
 } from "./editor-view.js";
 import {
+  manifestToWrite,
   selectTourDocument,
   tourDocumentActions,
   type TourSaveHolder,
@@ -63,10 +64,13 @@ import {
   type DebugLayer,
 } from "./debug-capture-layer.js";
 import {
+  STATION_PREFIX,
   photoSource,
   type EditorItem,
   type EditorModel,
 } from "./editor-model.js";
+import { applySceneEdit } from "./scene-edits.js";
+import type { GestureEdit } from "../editor3d/gesture.js";
 import {
   droppedDetailsLine,
   droppedStationFieldsLine,
@@ -425,7 +429,12 @@ async function savesSettled(): Promise<void> {
  *  bring the note back after a closed tab (`editor-draft.ts` places
  *  nothing new). */
 function editing(): boolean {
-  return undoOffer !== null || card.dirty() || ui().moving !== null;
+  return (
+    undoOffer !== null ||
+    card.dirty() ||
+    ui().moving !== null ||
+    ui().gesture !== null
+  );
 }
 
 /** The page saves by itself, a few seconds after a committed change, while
@@ -467,6 +476,13 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
         view3dPointOf: (
           selection: string,
         ) => readonly [number, number, number] | null;
+        view3dScreenOf: (selection: string) => readonly [number, number] | null;
+        view3dHandle: (
+          part: "middle" | "knob" | "dot",
+        ) => readonly [number, number] | null;
+        view3dGizmoSizes: () => ReturnType<Editor3dView["gizmoSizes"]>;
+        manifest: () => ReturnType<typeof manifestToWrite>;
+        selected: () => string | null;
       };
     }
   ).__tourEditor = {
@@ -483,6 +499,11 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
       shown3d?.setDistance(m);
     },
     view3dPointOf: (selection) => shown3d?.pointOf(selection) ?? null,
+    view3dScreenOf: (selection) => shown3d?.screenOf(selection) ?? null,
+    view3dHandle: (part) => shown3d?.handleScreen(part) ?? null,
+    view3dGizmoSizes: () => shown3d?.gizmoSizes() ?? null,
+    manifest: () => manifestToWrite(store.getState().tourDocument),
+    selected: () => ui().selected,
   };
 }
 
@@ -780,6 +801,9 @@ const STEP_WORDS = {
  *  step of the session's edit stack (W2), an edit like any other. */
 function runStep(which: "undo" | "redo"): void {
   if (editor === null) return;
+  // A drag or a held key of the 3D view ends unwritten: the step acts on
+  // the tour as it was.
+  shown3d?.cancelGesture();
   if (ui().moving !== null) cancelMove();
   card.commit();
   const outcome = which === "undo" ? editor.undo() : editor.redo();
@@ -1002,44 +1026,96 @@ const card = createEditorCard(
     onMove: startMove,
     onMoveDone: finishMove,
     onMoveCancel: cancelMove,
-    onDelete: (id) => {
-      if (editor === null) return;
-      const item = model?.items.find((i) => i.id === id);
-      // One delete toast at a time: its Undo takes back the newest edit.
-      endUndo();
-      const outcome = editor.remove(id);
-      if (outcome.kind === "refused") {
-        // Nothing was deleted: no "Deleted" toast, and no Undo that would
-        // answer "too late" (PR #622 bot finding C).
-        select(null);
-        refresh();
-        toast(outcome.reason);
-        return;
-      }
-      select(null);
-      refresh();
-      // The toast's Undo is the stack's (W2), while this delete is the
-      // newest edit; a newer one ends the toast.
-      const mine = editor;
-      const at = editor.revision();
-      const t = toast(`Deleted ${item?.title ?? "the note"}`, {
-        label: "Undo",
-        run: () => {
-          if (editor !== mine || mine.revision() !== at) {
-            endUndo();
-            return;
-          }
-          runStep("undo");
-        },
-      });
-      undoOffer = {
-        toast: t,
-        timer: window.setTimeout(endUndo, UNDO_MS),
-      };
-      autosave.changed();
-    },
+    onDelete: deleteSelection,
   },
 );
+
+/**
+ * Delete a note, or a station with its notes (`station:<id>`; the 3D
+ * view's Del): one step. The toast offers its Undo while it is the newest
+ * edit; a refusal deletes nothing and is said.
+ */
+function deleteSelection(id: string): void {
+  if (editor === null) return;
+  const item = model?.items.find((i) => i.id === id);
+  // One delete toast at a time: its Undo takes back the newest edit.
+  endUndo();
+  const outcome = id.startsWith(STATION_PREFIX)
+    ? editor.deleteStation(id.slice(STATION_PREFIX.length))
+    : editor.remove(id);
+  if (outcome.kind === "refused") {
+    // Nothing was deleted: no "Deleted" toast, and no Undo that would
+    // answer "too late" (PR #622 bot finding C).
+    select(null);
+    refresh();
+    toast(outcome.reason);
+    return;
+  }
+  select(null);
+  refresh();
+  // The toast's Undo is the stack's (W2), while this delete is the
+  // newest edit; a newer one ends the toast.
+  const mine = editor;
+  const at = editor.revision();
+  const t = toast(`Deleted ${item?.title ?? "the note"}`, {
+    label: "Undo",
+    run: () => {
+      if (editor !== mine || mine.revision() !== at) {
+        endUndo();
+        return;
+      }
+      runStep("undo");
+    },
+  });
+  undoOffer = {
+    toast: t,
+    timer: window.setTimeout(endUndo, UNDO_MS),
+  };
+  autosave.changed();
+}
+
+/**
+ * Copy a note, or a station with its notes, beside itself (the 3D view's
+ * Ctrl+D): one step; the copy is selected and a toast names it. A photo's
+ * picture is read first; a tour switched meanwhile drops the result.
+ */
+async function duplicateSelection(id: string): Promise<void> {
+  const mine = editor;
+  if (mine === null) return;
+  const item = model?.items.find((i) => i.id === id);
+  endUndo();
+  const outcome = id.startsWith(STATION_PREFIX)
+    ? await mine.duplicateStation(id.slice(STATION_PREFIX.length))
+    : await mine.duplicateObject(id);
+  if (editor !== mine) return;
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  select(
+    "stationId" in outcome
+      ? `${STATION_PREFIX}${outcome.stationId}`
+      : outcome.id,
+  );
+  toast(`Duplicated ${item?.title ?? "the note"}`);
+  autosave.changed();
+}
+
+/** A gesture of the 3D view written (`scene-edits.ts`): one step; a
+ *  refusal is said. */
+function commitSceneEdit(edit: GestureEdit): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = applySceneEdit(editor, edit);
+  say(null);
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  autosave.changed();
+}
 
 /** The cover choices' thumbnails, let go when the dialog closes. */
 let coverUrls: string[] = [];
@@ -2803,6 +2879,24 @@ const viewSwitch = createViewSwitch({
       levels: () => openedLevels,
       loadContent: readContent,
       events,
+      edits: {
+        commit: commitSceneEdit,
+        select: (id) => {
+          select(id);
+        },
+        remove: deleteSelection,
+        duplicate: (id) => {
+          void duplicateSelection(id);
+        },
+        say: (text) => {
+          toast(text);
+        },
+        keysFree: (event) =>
+          !inField(event.target) &&
+          !dialogOpen() &&
+          Boolean(modal.hidden) &&
+          !ui().busy,
+      },
     });
     shown3d = view;
     const handle: View3dHandle = {

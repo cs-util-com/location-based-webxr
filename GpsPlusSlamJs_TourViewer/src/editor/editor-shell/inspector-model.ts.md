@@ -32,6 +32,10 @@ code's fields, read-only, as the file holds them. The DOM is
   a rotation that is not finite, and null for one that turns the forward
   straight up or down (no bearing then: its north and east parts are
   both under 1e-9).
+- `inspectorHint(model | null)` - the bottom bar's hint: the handles the
+  selection's gizmo has in the 3D view (a station: move, radius dot,
+  turn; an item: move and turn, a model also a size dot; a code: none,
+  read-only), or how to select when nothing is.
 
 ## Invariants & assumptions
 
@@ -57,4 +61,4 @@ if (model?.kind === "station") console.log(model.position?.eastM);
 one; a station's, an item's and a code's fields (and a code without a
 position); a station east and north of the tour's centre in metres;
 `headingOfRotation` for turns about up, and none for a forward turned
-straight up or down.
+straight up or down; `inspectorHint` for each kind and for none.

@@ -2,10 +2,12 @@
 
 ## Purpose
 
-The desktop editor's 3D view, read-only: the renderer, the scene, the
+The desktop editor's 3D view: the renderer, the scene, the
 frame loop, the lost context and the disposal. Loaded by a dynamic import
 from the editor page only when the view switch asks for it, so neither
-the map page's own code nor the phone's pages hold any of it.
+the map page's own code nor the phone's pages hold any of it. It edits by
+hand through `editor3d-editing.ts` (the gizmo, the pointer, touch and
+keys), and writes only through the page's `edits`.
 
 ## Public API
 
@@ -13,7 +15,11 @@ the map page's own code nor the phone's pages hold any of it.
   frame is drawn. `deps` (`Editor3dDeps`):
   - `container` - the view's box over the map (`#view3d`), `credits` -
     the credits' line in it;
-  - `store` - the page's store (`tourDocument`, `editorView`);
+  - `store` - the page's store (`tourDocument`, `editorView`) and its
+    `dispatch` (a gesture's start and end only);
+  - `edits` (`Editor3dEdits`) - the page's `commit(edit)` (one undo
+    step), `select(id)`, `remove(selection)`, `duplicate(selection)`,
+    `say(text)` and `keysFree(event)`;
   - `levels()` - the open tour's codes; `loadContent(entry)` - a content
     entry's bytes;
   - `events.contextLost()` / `events.failed()` - once the view shows, its
@@ -46,10 +52,15 @@ the map page's own code nor the phone's pages hold any of it.
     other layers have nothing drawn yet);
   - `pointOf(selection)` - where it stands in the world (the page's
     checks).
+- Editing on `Editor3dView`: `cancelGesture()` (a gesture under way ends
+  unwritten: the page calls it before an undo or a redo);
+  `screenOf(selection)`, `handleScreen(part)` and `gizmoSizes()` - CSS px
+  on the canvas, for the page's checks.
 - `stats()` also carries the orbit's `target`, `distanceM`, the
   `camera`'s position, whether a flight is `flying`, and `top`.
-- Types `Editor3dDeps`, `Editor3dStats` (the store it takes is structural:
-  `getState()` with `tourDocument` and `editorView`, and `subscribe`).
+- Types `Editor3dDeps`, `Editor3dEdits`, `Editor3dStats` (the store it
+  takes is structural: `getState()` with `tourDocument` and `editorView`,
+  `subscribe` and `dispatch`).
 
 ## Invariants & assumptions
 
@@ -60,9 +71,11 @@ the map page's own code nor the phone's pages hold any of it.
   (`editor3d-marks.ts`), the credits as links, under an orbit at the
   design's start (`editor3d-camera.ts`), with fog and a hemisphere and a
   sun light.
-- **Reads, never writes:** the tour is what a save would write now
-  (`manifestToWrite`), read again only when the document changes (never
-  per frame); the selection is read each frame for near-K.
+- **Reads the tour, writes through the page:** the tour is what a save
+  would write now (`manifestToWrite`), read again only when the document
+  changes (never per frame); the selection is read each frame for near-K.
+  The store hears a gesture's start and end, nothing per frame; a finished
+  gesture is one `edits.commit`.
 - **Flights:** while one runs it places the orbit each frame in place of
   the controls (their momentum dropped first, or the orbit would drift on
   from where the flight ends: one `update()` with damping off spends the
@@ -74,7 +87,8 @@ the map page's own code nor the phone's pages hold any of it.
   it and under its target (the camera's point is a vector of its own: the
   ground samples reuse a scratch vector, and sharing it put the clip
   planes at the target, the near plane at its 0.2 m floor everywhere), the
-  ground and the map, the layer, the render.
+  ground and the map, the editing (its retries, the gizmo, a gesture's
+  preview), the layer, the render.
 - **Sizes:** the box is hidden while the view loads (the map stays in
   view), so the window's size stands in until it shows; a ResizeObserver
   follows the box and keeps the billboards' screen size.
@@ -130,5 +144,8 @@ the browser's "too many active WebGL contexts" warning and with no canvas
 left. `playwright-tests/editor3d-shell.spec.js` drives the shell's
 commands: a card's flight ending at its station, the camera not
 drifting after a flight that followed a drag, Frame, Top view, the
-zoom steps, north up and the layer chips. `editor3d-lazy.test.ts` checks no page loads it before an
+zoom steps, north up and the layer chips.
+`playwright-tests/editor3d-edit.spec.js` edits in it: a mouse drag saved,
+undone and redone; every key; a second finger cancelling a touch drag;
+the gizmo's sizes on the screen at four window sizes in a wide face. `editor3d-lazy.test.ts` checks no page loads it before an
 `import()` runs.

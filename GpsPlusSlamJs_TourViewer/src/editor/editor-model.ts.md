@@ -45,8 +45,9 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
   review #1).
 - `filterItems(items, query)` - the rows whose title or meta contains the
   trimmed query, case-insensitive; all for an empty query.
-- `EditorItem`, `EditorItemKind`, `EditorModel` (the id prefix `station:` is
-  internal).
+- `EditorItem`, `EditorItemKind`, `EditorModel`.
+- `STATION_PREFIX` - `"station:"`, the prefix of a station's item id (the
+  page and the 3D view's editing tell a station's selection by it).
 
 ## Invariants & assumptions
 

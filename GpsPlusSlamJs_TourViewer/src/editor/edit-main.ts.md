@@ -483,7 +483,19 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   or closing this one closes the 3D view (`viewSwitch.close()`); the
   switch is off while no tour is open. The 3D
   view reads the tour from the store and the codes the open read
-  (`openedLevels`); it edits nothing.
+  (`openedLevels`), and edits through the page's `edits`:
+  - `commit` (`commitSceneEdit`) writes a finished gesture as one undo
+    step (`applySceneEdit` of `scene-edits.ts`): it ends a delete's Undo
+    offer, refreshes the views and tells autosave, or toasts a refusal;
+  - `remove` (`deleteSelection`, the card's Delete too) deletes an item
+    with the toast's Undo, or a station (`deleteStation`);
+  - `duplicate` (`duplicateSelection`, Ctrl+D) copies an item or a
+    station beside itself, selects the copy and says "Duplicated ...";
+  - `keysFree` is false in a field, while a dialog or the modal shows and
+    while the page is busy, so the 3D view's keys leave those alone.
+    A gesture under way counts as an edit being made (`editing()`, the
+    `gesture` field of the view slice), and an undo or a redo cancels it
+    first (`runStep`).
 - **The 3D view's studio shell** (`editor-shell/editor-shell.ts`): made
   once at start; the switch's `onShown` sets `body[data-view]` (`3d` or
   `2d`, which the shell's stylesheet follows), makes the map `inert`
@@ -496,12 +508,16 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   codes with their stored position and print size as opened).
 - **The dev server's test hook** `window.__tourEditor` (`{ editor(),
 edited(), view3d(), view3dTilt(deg), view3dDistance(m),
-view3dPointOf(selection) }`): an e2e reaches the editor session's edits no control of
+view3dPointOf(selection), view3dScreenOf(selection), view3dHandle(part),
+view3dGizmoSizes(), manifest(), selected() }`): an e2e reaches the editor session's edits no control of
   this page offers yet, then `edited()` follows them as an edit made here
   would (refresh, autosave told); `view3d()` is the shown 3D view's
   `stats()` (null on the map), `view3dTilt(deg)` tilts its orbit and
   `view3dDistance(m)` moves it in or out, `view3dPointOf(selection)` says
-  where a selection stands in its world. Guarded by `import.meta.env.DEV &&
+  where a selection stands in its world; `view3dScreenOf`, `view3dHandle`
+  and `view3dGizmoSizes` say where a selection and the gizmo's handles are
+  on the canvas and how large; `manifest()` is what a save would write
+  now and `selected()` the selection. Guarded by `import.meta.env.DEV &&
 !import.meta.env.VITEST`, so a production build strips it.
 
 - Once everything is wired the page sets `body[data-editor="ready"]`;
@@ -538,4 +554,6 @@ tab, and sees the draft offer the change and Restore bring it back (seen
 red with the settings record's stations left out). The chrome state's
 slice: `editor-view.test.ts`. The 3D view's switch, its loading and
 failure states and the selection kept: `editor3d.spec.js`; the studio
-shell's layout and its tree clicks: `editor3d-shell.spec.js`.
+shell's layout and its tree clicks: `editor3d-shell.spec.js`; editing in
+the 3D view (a drag saved and undone, every key, Ctrl+D and Del, a second
+finger's cancel): `editor3d-edit.spec.js`.

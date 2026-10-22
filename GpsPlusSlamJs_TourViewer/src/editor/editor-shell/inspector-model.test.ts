@@ -13,7 +13,11 @@ import { describe, expect, it } from "vitest";
 
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { buildInspector, headingOfRotation } from "./inspector-model.js";
+import {
+  buildInspector,
+  headingOfRotation,
+  inspectorHint,
+} from "./inspector-model.js";
 
 const AT = "2026-10-22T10:00:00Z";
 
@@ -181,6 +185,31 @@ describe("buildInspector", () => {
       printSizeM: null,
       position: null,
     });
+  });
+});
+
+// Why this test matters: the bottom bar's hint is the only words that
+// tell a creator how the selection's handles work (which one moves, which
+// turns, which sizes), so each kind must name exactly the handles it has:
+// a pin offering a "dot to resize" it does not have, or a code offering a
+// drag it refuses, sends the creator looking for what is not there.
+describe("inspectorHint", () => {
+  it("names the handles each selection has, and how to select with none", () => {
+    expect(inspectorHint(null)).toBe(
+      "Click a station, an item or a code; drag to orbit, right-drag to pan, wheel to zoom",
+    );
+    expect(inspectorHint(inspect("station:a"))).toBe(
+      "Market Square - drag the middle to move (its items follow), a white dot for the radius, the round arrow to turn",
+    );
+    expect(inspectorHint(inspect("pin-1"))).toBe(
+      "Fountain, 1612 - drag the middle to move along the ground, the round arrow to turn",
+    );
+    expect(inspectorHint(inspect("model-1"))).toBe(
+      "3D model - drag the middle to move along the ground, the round arrow to turn, a white dot to resize",
+    );
+    expect(inspectorHint(inspect("level-1"))).toBe(
+      "Code 1 - read-only here; F frames it, Esc deselects",
+    );
   });
 });
 

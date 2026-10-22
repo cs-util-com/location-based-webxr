@@ -1,5 +1,5 @@
 /**
- * The desktop editor's 3D view, read-only: the renderer, the scene, the
+ * The desktop editor's 3D view: the renderer, the scene, the
  * frame loop, the lost context and the disposal. Loaded by a dynamic
  * import from the editor page only when the view switch asks for it
  * (`view-switch.ts`), so neither the map page's own code nor the phone's
@@ -10,8 +10,13 @@
  * (`editor3d-stations.ts`) and the credits both owe, under an orbit at
  * the editor's start view (`editor3d-camera.ts`). It reads the tour from
  * the store - what a save would write now (`manifestToWrite`), and again
- * whenever the document changes - and the selection from `editorView`; it
- * writes nothing.
+ * whenever the document changes - and the selection from `editorView`.
+ *
+ * Editing (`editor3d-editing.ts`): the gizmo on the selection, its drags,
+ * the keys and two-finger touch. The view writes a gesture's start and end
+ * to `editorView` and nothing during it (the preview is the scene's); the
+ * one edit of a finished gesture, a delete and a duplicate are the page's
+ * (`Editor3dDeps.edits`), each one undo step.
  *
  * The page's shell drives the camera through the view: a flight to a
  * station, an item or a code (`flyTo`), Frame (`frame`), Top view
@@ -27,6 +32,7 @@
  *
  * @see editor3d-scene.ts.md
  */
+import type { UnknownAction } from "@reduxjs/toolkit";
 import * as THREE from "three";
 
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
@@ -37,6 +43,7 @@ import { loadGlbModel } from "../glb-model.js";
 import { createPinLabel } from "../pin-label.js";
 import { manifestToWrite, type TourDocumentState } from "../tour-document.js";
 import type { EditorViewState, ShellLayer } from "../editor/editor-view.js";
+import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
 import { tourCentre } from "../editor/tour-origin.js";
 import {
   EDITOR_CAMERA,
@@ -65,6 +72,8 @@ import {
   DEFAULT_CODE_SIZE_M,
   createStationsLayer,
 } from "./editor3d-stations.js";
+import { createSceneEditing, type GizmoPart } from "./editor3d-editing.js";
+import type { InputPage } from "./editor3d-input.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
 
@@ -75,7 +84,12 @@ interface Editor3dStore {
     readonly editorView: EditorViewState;
   };
   subscribe(listener: () => void): () => void;
+  dispatch(action: UnknownAction): unknown;
 }
+
+/** The page's edits the view asks for (`editor3d-input.ts`'s page, less
+ *  the store the view reads itself). */
+export type Editor3dEdits = Omit<InputPage, "dispatch" | "selected">;
 
 /** What the page hands the 3D view. */
 export interface Editor3dDeps {
@@ -91,6 +105,7 @@ export interface Editor3dDeps {
   /** A lost context or an error once the view shows (before, the open
    *  rejects instead). */
   readonly events: { contextLost(): void; failed(): void };
+  readonly edits: Editor3dEdits;
 }
 
 /** A shown 3D view. */
@@ -124,6 +139,20 @@ export interface Editor3dView {
   setLayers(hidden: readonly ShellLayer[]): void;
   /** Where the selection stands in the world (the page's checks). */
   pointOf(selection: string): readonly [number, number, number] | null;
+  /** Cancel a gesture under way, writing nothing (an undo, a redo). */
+  cancelGesture(): void;
+  /** Where the selection (a station's point, an item's or a code's
+   *  drawing), or a part of its gizmo, is on the canvas (CSS px; the
+   *  page's checks). */
+  screenOf(selection: string): readonly [number, number] | null;
+  handleScreen(part: GizmoPart): readonly [number, number] | null;
+  /** The gizmo's drawn sizes (px), or null without one (the page's
+   *  checks). */
+  gizmoSizes(): {
+    readonly knobPx: number;
+    readonly dotPx: number;
+    readonly ringPx: number;
+  } | null;
 }
 
 /** The camera and the drawing, for the shell's compass, view line and
@@ -473,6 +502,69 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       };
     };
 
+    /** Fit the selection (null: the whole tour) into the view. */
+    const frameView = (selection: string | null) => {
+      const polarRad = Math.min(poseNow().polarRad, FLIGHT.flatCapRad);
+      if (selection === null) {
+        const points = (tourNow?.stations ?? []).flatMap((s) => {
+          const at = layer.pointOf(s.id);
+          return at === null ? [] : [{ at, radiusM: s.foundRadiusM }];
+        });
+        for (const id of deps.levels().keys()) {
+          const at = layer.codePointOf(id);
+          if (at !== null) points.push({ at, radiusM: 0 });
+        }
+        const whole = tourFrame(points);
+        if (whole === null) return;
+        fly(
+          {
+            target: whole.centre,
+            distanceM: frameDistanceM(whole.radiusM),
+            polarRad,
+          },
+          FLIGHT.frameMs,
+        );
+        return;
+      }
+      const place = placeOf(selection);
+      if (place === null) return;
+      const radiusM =
+        place.kind === "station"
+          ? place.radiusM * FLIGHT.stationMargin
+          : place.radiusM;
+      fly(
+        {
+          target: place.at,
+          distanceM: frameDistanceM(radiusM),
+          polarRad,
+        },
+        FLIGHT.frameMs,
+      );
+    };
+
+    const editing = createSceneEditing({
+      container: deps.container,
+      canvas,
+      scene,
+      camera,
+      controls,
+      layer,
+      ground,
+      ecefFromWorld,
+      undulationAt,
+      tour: () => tourNow,
+      page: {
+        ...deps.edits,
+        dispatch: (action) => deps.store.dispatch(action),
+        selected: () => deps.store.getState().editorView.selected,
+      },
+      endFlight,
+      frame: frameView,
+    });
+    undo.push(() => {
+      editing.dispose();
+    });
+
     const frameTimes: number[] = [];
     let lastFrameAt: number | null = null;
     let frames = 0;
@@ -522,10 +614,12 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       camera.far = planes.far;
       camera.updateProjectionMatrix();
       ground.update(camera, renderer, now);
+      editing.update();
       const ui = deps.store.getState().editorView;
       layer.update({
         centre: controls.target,
         selectedStation: selectedStationOf(ui.selected, tourNow),
+        stationSelected: ui.selected?.startsWith(STATION) ?? false,
         standing,
       });
       renderer.render(scene, camera);
@@ -568,44 +662,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         fly(flightGoal(poseNow(), place), FLIGHT.flyMs);
         return true;
       },
-      frame(selection) {
-        const polarRad = Math.min(poseNow().polarRad, FLIGHT.flatCapRad);
-        if (selection === null) {
-          const points = (tourNow?.stations ?? []).flatMap((s) => {
-            const at = layer.pointOf(s.id);
-            return at === null ? [] : [{ at, radiusM: s.foundRadiusM }];
-          });
-          for (const id of deps.levels().keys()) {
-            const at = layer.codePointOf(id);
-            if (at !== null) points.push({ at, radiusM: 0 });
-          }
-          const whole = tourFrame(points);
-          if (whole === null) return;
-          fly(
-            {
-              target: whole.centre,
-              distanceM: frameDistanceM(whole.radiusM),
-              polarRad,
-            },
-            FLIGHT.frameMs,
-          );
-          return;
-        }
-        const place = placeOf(selection);
-        if (place === null) return;
-        const radiusM =
-          place.kind === "station"
-            ? place.radiusM * FLIGHT.stationMargin
-            : place.radiusM;
-        fly(
-          {
-            target: place.at,
-            distanceM: frameDistanceM(radiusM),
-            polarRad,
-          },
-          FLIGHT.frameMs,
-        );
-      },
+      frame: frameView,
       setTop(on) {
         if (on === top) return;
         top = on;
@@ -657,6 +714,18 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         const place = placeOf(selection);
         return place === null ? null : [place.at.x, place.at.y, place.at.z];
       },
+      cancelGesture() {
+        editing.cancel();
+      },
+      screenOf(selection) {
+        const at = editing.screenOf(selection);
+        return at === null ? null : [at.x, at.y];
+      },
+      handleScreen(part) {
+        const at = editing.handleScreen(part);
+        return at === null ? null : [at.x, at.y];
+      },
+      gizmoSizes: () => editing.handleSizes(),
       setDistance(m) {
         const offset = camera.position.clone().sub(controls.target);
         offset.setLength(

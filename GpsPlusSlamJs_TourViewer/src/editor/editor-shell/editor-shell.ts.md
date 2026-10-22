@@ -5,7 +5,8 @@
 The 3D view's studio shell, read-only: the top bar's studio controls
 (pencil, Undo, Redo, Frame, Top view, Help), the tree dock at the left,
 the inspector dock at the right, the compass and the zoom buttons at the
-bottom left, and the bottom bar (the view line, a hint, the debug readout
+bottom left, and the bottom bar (the view line, a hint naming the
+selection's handles (`inspectorHint`), the debug readout
 behind its toggle). The page's own controls (the view switch, Save, Done,
 the save status, Open another tour) stay the page's and keep their logic;
 the shell's stylesheet (`editor-shell.css`) only dresses them while the 3D

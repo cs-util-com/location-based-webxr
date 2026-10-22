@@ -33,7 +33,11 @@ import {
   type TreeSection,
 } from "../editor-view.js";
 import { docksAfter, type DockChange } from "./dock-rule.js";
-import { buildInspector, type InspectorCode } from "./inspector-model.js";
+import {
+  buildInspector,
+  inspectorHint,
+  type InspectorCode,
+} from "./inspector-model.js";
 import { drawInspector } from "./shell-inspector.js";
 import { placeShellIcons } from "./shell-icons.js";
 import { createShellPictures } from "./shell-pictures.js";
@@ -91,9 +95,6 @@ const SHELL_LAYERS: readonly ShellLayer[] = ["codes", "names"];
 /** How often the compass, the view line and the readout follow the
  *  camera (ms). */
 const READOUT_MS = 200;
-
-const HINT_NONE =
-  "Click a station card or a code; drag to orbit, right-drag to pan, wheel to zoom";
 
 function byId<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -250,10 +251,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       { folded: ui.foldedDocks.inspector, positionOpen },
       pictures,
     );
-    bar.hint.textContent =
-      model === null
-        ? HINT_NONE
-        : `${model.title} - F frames it, Esc deselects`;
+    bar.hint.textContent = inspectorHint(model);
     bar.root.classList.toggle("debug", ui.readout);
     bar.debug.setAttribute("aria-pressed", String(ui.readout));
     // The cards and the thumbnail a draw replaced are no longer watched.
