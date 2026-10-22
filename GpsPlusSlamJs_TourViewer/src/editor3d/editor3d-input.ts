@@ -221,10 +221,15 @@ export function createSceneInput(input: {
     if (target === null) return;
     const handle = scene.handleAt(at);
     if (handle === null) return;
-    const gesture = startGesture(handle, target, at, scene.world);
-    if (gesture === null) return;
-    // Before OrbitControls reads this press (the listener captures).
+    // Before OrbitControls reads this press (the listener captures), and
+    // before the gesture reads the pointer: the lock stops a flight or a
+    // coast, so the camera stands still from here.
     scene.lockCamera(true);
+    const gesture = startGesture(handle, target, at, scene.world);
+    if (gesture === null) {
+      scene.lockCamera(touchBlocked);
+      return;
+    }
     event.preventDefault();
     drag = { gesture, selection, pointerId: event.pointerId };
     page.dispatch(editorViewActions.gestureStarted({ id: selection, handle }));
@@ -257,8 +262,13 @@ export function createSceneInput(input: {
       if (d > (press.touch ? INPUT.tapPx : INPUT.clickPx)) press.moved = true;
       return;
     }
-    // A mouse over the view: the handle under it drawn larger.
-    if (event.pointerType === "mouse" && event.buttons === 0) {
+    // A mouse over the scene (not a dock): the handle under it drawn
+    // larger.
+    if (
+      event.pointerType === "mouse" &&
+      event.buttons === 0 &&
+      event.target === surface
+    ) {
       const selection = page.selected();
       const handle =
         selection !== null && scene.target(selection) !== null
@@ -330,9 +340,13 @@ export function createSceneInput(input: {
       else page.duplicate(selection);
       return;
     }
-    // The design's: the arrows are the view's even with nothing selected.
+    // The design's: the arrows are the view's even with nothing selected
+    // (they would scroll the page); the other keys only with a selection.
+    if (selection === null) {
+      if (event.code.startsWith("Arrow")) event.preventDefault();
+      return;
+    }
     event.preventDefault();
-    if (selection === null) return;
     if (held !== null && held.selection !== selection) endHold(true);
     if (held === null) {
       const target = scene.target(selection);
@@ -371,16 +385,20 @@ export function createSceneInput(input: {
   window.addEventListener("blur", onBlur);
 
   return {
-    /** Each frame: a drag waiting for its ground tries again; a gesture
-     *  whose selection changed meanwhile (Esc, a click in the tree) is
-     *  cancelled. */
+    /** Each frame: a drag waiting for its ground tries again (a progress
+     *  cursor while it waits); when the selection changed meanwhile (Esc,
+     *  a click in the tree) a drag is cancelled and a key hold written -
+     *  its nudges were already shown. */
     frame() {
       const selection = page.selected();
       if (drag !== null && drag.selection !== selection) endDrag(false);
-      if (held !== null && held.selection !== selection) endHold(false);
+      if (held !== null && held.selection !== selection) endHold(true);
       if (drag?.gesture.waiting() === true) {
         drag.gesture.retry();
         scene.preview(drag.gesture.target, drag.gesture.preview());
+      }
+      if (drag !== null) {
+        surface.style.cursor = drag.gesture.waiting() ? "progress" : "grabbing";
       }
     },
     /** Cancel a gesture under way, writing nothing (an undo, a redo). */

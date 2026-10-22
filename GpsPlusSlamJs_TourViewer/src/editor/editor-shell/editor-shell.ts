@@ -28,6 +28,7 @@ import {
 } from "../../tour-document.js";
 import {
   editorViewActions,
+  pointerDragRuns,
   type EditorViewState,
   type ShellLayer,
   type TreeSection,
@@ -446,7 +447,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       event.metaKey ||
       event.altKey ||
       inField(event.target) ||
-      deps.dialogOpen()
+      deps.dialogOpen() ||
+      // The camera stands still during a drag of the gizmo.
+      pointerDragRuns(state().editorView)
     ) {
       return;
     }

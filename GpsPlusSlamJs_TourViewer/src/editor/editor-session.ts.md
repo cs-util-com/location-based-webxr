@@ -132,8 +132,11 @@ imperative resources only - that handle and the pictures' side table
   - `moveStation(stationId, geo)` - D17 (`stationMoved`): the frame moves
     and every object of the station moves rigidly with it, each an edit at
     its new spot (its local pose kept), as the phone's settle leaves its
-    lists. Refused for a station the tour does not carry. No gesture yet
-    either (the parity contract drives it).
+    lists. Refused for a station the tour does not carry, and (in the same
+    words as an object's move, "That spot is not on the map.") for a pose
+    that is no spot: a latitude, longitude or height that is not finite,
+    a latitude or longitude out of range, or a heading or rotation that is
+    not finite. The 3D view's drag of a station's middle reaches it.
   - The 3D editor's station and item edits (desktop only; the phone edits
     stations by placing in AR). Each is ONE step through the document's
     actions (`../tour-document.ts.md`), backed up through the draft like

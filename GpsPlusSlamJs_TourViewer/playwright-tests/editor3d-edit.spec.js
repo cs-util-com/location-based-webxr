@@ -252,6 +252,57 @@ test("drags a selected pin over the ground with the mouse: one step, kept above 
     .toEqual(after.item.pose);
 });
 
+/** The view's frame count, for waiting on frames drawn. @param {import("@playwright/test").Page} page */
+async function framesDrawn(page) {
+  return /** @type {number} */ ((await view3d(page))?.frames ?? 0);
+}
+
+/** The camera's position. @param {import("@playwright/test").Page} page */
+async function cameraAt(page) {
+  return /** @type {number[]} */ ((await view3d(page))?.camera ?? []);
+}
+
+/**
+ * Wait until `n` more frames are drawn.
+ * @param {import("@playwright/test").Page} page
+ * @param {number} n
+ */
+async function afterFrames(page, n) {
+  const from = await framesDrawn(page);
+  await expect.poll(() => framesDrawn(page)).toBeGreaterThan(from + n);
+}
+
+// Why: a camera still moving when the gizmo is grabbed (a card's or
+// Frame's flight, the orbit's coast) moves the object under a pointer
+// that holds still, and T, F or Home pressed during a drag would fly the
+// camera away mid-drag. The camera must stand still from the press until
+// the release.
+test("holds the camera still from a press on the gizmo until its release, even mid-flight and against T", async ({
+  page,
+}) => {
+  const station = await openWithPin(page);
+  await selectPin(page, station);
+  const steps = await changes(page);
+  await page.keyboard.press("f");
+  const from = await handle(page, "middle");
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  const held = await cameraAt(page);
+  await afterFrames(page, 20);
+  expect(await cameraAt(page)).toEqual(held);
+  expect((await view3d(page))?.flying).toBe(false);
+  // The shell's camera keys wait for the drag's end.
+  await page.keyboard.press("t");
+  await page.keyboard.press("Home");
+  await afterFrames(page, 10);
+  expect(await cameraAt(page)).toEqual(held);
+  expect((await view3d(page))?.top).toBe(false);
+  // It was a drag of the gizmo all along: a move writes one step.
+  for (let i = 1; i <= 5; i++) await page.mouse.move(from.x + i * 8, from.y);
+  await page.mouse.up();
+  await expect.poll(() => changes(page)).toBe(steps + 1);
+});
+
 test("answers every key: nudges, turns, height, delete, duplicate, Esc, and leaves T, F and Home to the shell", async ({
   page,
 }) => {

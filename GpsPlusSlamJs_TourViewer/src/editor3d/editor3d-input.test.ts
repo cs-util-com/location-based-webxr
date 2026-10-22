@@ -56,6 +56,7 @@ function setup(
     handle?: GizmoHandle | null;
     pick?: string | null;
     keysFree?: boolean;
+    world?: GestureWorld;
   } = {},
 ) {
   const log: string[] = [];
@@ -64,9 +65,9 @@ function setup(
   let selected = options.selected === undefined ? "pin" : options.selected;
   const scene: InputScene = {
     target: (id) => (id === "pin" ? PIN : null),
-    handleAt: () => options.handle ?? null,
+    handleAt: vi.fn(() => options.handle ?? null),
     pickAt: () => options.pick ?? null,
-    world: WORLD,
+    world: options.world ?? WORLD,
     preview: vi.fn((_t, p) => {
       log.push(p === null ? "preview:clear" : "preview");
     }),
@@ -96,14 +97,24 @@ function setup(
     say: vi.fn(),
     keysFree: () => options.keysFree ?? true,
   };
-  const element = document.createElement("div");
-  document.body.append(element);
-  const input = createSceneInput({ element, surface: element, scene, page });
+  // The view's box holds the canvas and a dock over it, as on the page.
+  const box = document.createElement("div");
+  const element = document.createElement("canvas");
+  const dock = document.createElement("aside");
+  box.append(element, dock);
+  document.body.append(box);
+  const input = createSceneInput({
+    element: box,
+    surface: element,
+    scene,
+    page,
+  });
   return {
     input,
     scene,
     page,
     element,
+    dock,
     log,
     dispatched,
     commits,
@@ -122,6 +133,7 @@ function pointer(
     touch?: boolean;
     shift?: boolean;
     buttons?: number;
+    button?: number;
   } = {},
 ): PointerEvent {
   const event = new MouseEvent(type, {
@@ -129,7 +141,7 @@ function pointer(
     cancelable: true,
     clientX: at.x,
     clientY: at.y,
-    button: 0,
+    button: over.button ?? 0,
     buttons: over.buttons ?? 0,
     shiftKey: over.shift ?? false,
   });
@@ -414,6 +426,201 @@ describe("the keys", () => {
     tap("Delete");
     expect(t.page.remove).not.toHaveBeenCalled();
     expect(t.dispatched).toHaveLength(1);
+    t.input.dispose();
+  });
+});
+
+describe("a gesture's other ends", () => {
+  // Why: an undo or a redo pressed while a gesture runs acts on the tour
+  // as it was; the gesture must end unwritten, or its edit would land on
+  // top of the step just taken.
+  it("ends a drag or a key hold unwritten when cancelled (an undo, a redo)", () => {
+    const t = setup({ handle: "move" });
+    t.element.dispatchEvent(pointer("pointerdown", { x: 0, y: 0 }));
+    window.dispatchEvent(
+      pointer("pointermove", { x: 10, y: 0 }, { buttons: 1 }),
+    );
+    t.input.cancel();
+    expect(t.dispatched.at(-1)).toEqual(editorViewActions.gestureEnded());
+    expect(t.input.gesture()).toBeNull();
+    window.dispatchEvent(pointer("pointerup", { x: 10, y: 0 }));
+    key("keydown", "ArrowRight");
+    t.input.cancel();
+    expect(t.dispatched.at(-1)).toEqual(editorViewActions.gestureEnded());
+    key("keyup", "ArrowRight");
+    expect(t.commits).toHaveLength(0);
+    t.input.dispose();
+  });
+
+  // Why: the browser cancels a pointer when it takes the gesture over (a
+  // system swipe, a lost capture); what the drag showed was never a
+  // decision, so nothing is written.
+  it("cancels a drag on pointercancel, writing nothing", () => {
+    const t = setup({ handle: "move" });
+    t.element.dispatchEvent(pointer("pointerdown", { x: 0, y: 0 }));
+    window.dispatchEvent(
+      pointer("pointermove", { x: 10, y: 0 }, { buttons: 1 }),
+    );
+    window.dispatchEvent(pointer("pointercancel", { x: 10, y: 0 }));
+    expect(t.dispatched.at(-1)).toEqual(editorViewActions.gestureEnded());
+    expect(t.commits).toHaveLength(0);
+    t.input.dispose();
+  });
+
+  // Why: the right button is the camera's (OrbitControls pans or tilts
+  // with it), and a press while keys are held would start a second
+  // gesture over the first.
+  it("starts no drag on the right button, or while a key is held", () => {
+    const right = setup({ handle: "move" });
+    right.element.dispatchEvent(
+      pointer("pointerdown", { x: 0, y: 0 }, { button: 2 }),
+    );
+    expect(right.dispatched).toHaveLength(0);
+    expect(right.log).not.toContain("lock:true");
+    right.input.dispose();
+    const keys = setup({ handle: "move" });
+    key("keydown", "ArrowRight");
+    keys.element.dispatchEvent(pointer("pointerdown", { x: 0, y: 0 }));
+    expect(keys.dispatched).toHaveLength(1);
+    expect(keys.input.gesture()).toBe("key");
+    key("keyup", "ArrowRight");
+    keys.input.dispose();
+  });
+
+  // Why: the window losing focus never delivers the keyup, so a hold
+  // would otherwise run for ever; what the creator saw move is kept.
+  it("writes a key hold when the window loses focus", () => {
+    const t = setup();
+    key("keydown", "ArrowRight");
+    window.dispatchEvent(new Event("blur"));
+    expect(t.commits).toHaveLength(1);
+    expect(t.dispatched.at(-1)).toEqual(editorViewActions.gestureEnded());
+    t.input.dispose();
+  });
+
+  // Why: Esc or a click elsewhere while an arrow is held changes the
+  // selection; the nudges already shown on the screen are the creator's
+  // and must be kept, not silently thrown away.
+  it("writes a key hold when the selection changes under it", () => {
+    const t = setup();
+    key("keydown", "ArrowRight");
+    key("keydown", "ArrowRight");
+    t.setSelected(null);
+    t.input.frame();
+    expect(t.commits).toEqual([
+      {
+        kind: "item-pose",
+        id: "pin",
+        geo: nudgedGeo(
+          nudgedGeo(PIN.geo, 0.1, 0, WORLD.groundAt),
+          0.1,
+          0,
+          WORLD.groundAt,
+        ),
+      },
+    ]);
+    key("keyup", "ArrowRight");
+    expect(t.commits).toHaveLength(1);
+    t.input.dispose();
+  });
+
+  // Why: a key pressed after the selection changed but before the next
+  // frame noticed it must not fold into the old hold or drop it: the old
+  // selection's nudges are written first.
+  it("writes a key hold when a key arrives for another selection before the next frame", () => {
+    const t = setup();
+    key("keydown", "ArrowRight");
+    t.setSelected("c1");
+    key("keydown", "ArrowRight");
+    expect(t.commits).toEqual([
+      {
+        kind: "item-pose",
+        id: "pin",
+        geo: nudgedGeo(PIN.geo, 0.1, 0, WORLD.groundAt),
+      },
+    ]);
+    key("keyup", "ArrowRight");
+    t.input.dispose();
+  });
+
+  // Why: the camera's coast or a flight still moving when the gizmo is
+  // grabbed would move the object under a still pointer; the camera is
+  // stopped before the gesture reads where the pointer is.
+  it("locks the camera before the gesture reads the ground under the press", () => {
+    const reads: string[] = [];
+    const world: GestureWorld = {
+      ...WORLD,
+      groundUnder: (p) => {
+        reads.push("ground");
+        return WORLD.groundUnder(p);
+      },
+    };
+    const t = setup({ handle: "move", world });
+    t.scene.lockCamera = vi.fn((on: boolean) => {
+      reads.push(`lock:${String(on)}`);
+    });
+    t.element.dispatchEvent(pointer("pointerdown", { x: 0, y: 0 }));
+    expect(reads[0]).toBe("lock:true");
+    expect(reads).toContain("ground");
+    t.input.dispose();
+  });
+});
+
+describe("the pointer's feedback", () => {
+  // Why: a hover test raycasts the scene; over a dock (the tree, the
+  // inspector) the pointer is not over the scene, and the cursor there is
+  // the dock's.
+  it("asks for the handle under the mouse only over the scene", () => {
+    const t = setup({ handle: "move" });
+    t.dock.dispatchEvent(pointer("pointermove", { x: 5, y: 5 }));
+    expect(t.scene.handleAt).not.toHaveBeenCalled();
+    expect(t.scene.hover).not.toHaveBeenCalled();
+    t.element.dispatchEvent(pointer("pointermove", { x: 5, y: 5 }));
+    expect(t.scene.hover).toHaveBeenCalledWith("move");
+    expect(t.element.style.cursor).toBe("grab");
+    t.input.dispose();
+  });
+
+  // Why: a drag over ground that has not loaded yet waits, and the object
+  // stands still; without a sign the creator would think the drag broke.
+  it("shows a progress cursor while the drag waits for its ground", () => {
+    let loaded = true;
+    const world: GestureWorld = {
+      ...WORLD,
+      groundUnder: (p) =>
+        loaded ? WORLD.groundUnder(p) : { miss: "not-loaded" },
+    };
+    const t = setup({ handle: "move", world });
+    t.element.dispatchEvent(pointer("pointerdown", { x: 0, y: 0 }));
+    expect(t.element.style.cursor).toBe("grabbing");
+    loaded = false;
+    window.dispatchEvent(
+      pointer("pointermove", { x: 10, y: 0 }, { buttons: 1 }),
+    );
+    t.input.frame();
+    expect(t.element.style.cursor).toBe("progress");
+    loaded = true;
+    t.input.frame();
+    expect(t.element.style.cursor).toBe("grabbing");
+    window.dispatchEvent(pointer("pointerup", { x: 10, y: 0 }));
+    expect(t.element.style.cursor).toBe("");
+    expect(t.commits).toHaveLength(1);
+    t.input.dispose();
+  });
+});
+
+describe("the keys with nothing selected", () => {
+  // Why: the design takes only the arrows from the page when nothing is
+  // selected (they would scroll it); Q, E and the page keys keep their
+  // ordinary meaning.
+  it("take the arrows from the page, and leave Q, E, PageUp and PageDown", () => {
+    const t = setup({ selected: null });
+    expect(tap("ArrowRight").defaultPrevented).toBe(true);
+    expect(tap("ArrowUp", { alt: true }).defaultPrevented).toBe(true);
+    for (const code of ["KeyQ", "KeyE", "PageUp", "PageDown"]) {
+      expect(tap(code).defaultPrevented, code).toBe(false);
+    }
+    expect(t.dispatched).toHaveLength(0);
     t.input.dispose();
   });
 });

@@ -73,6 +73,8 @@ export interface SceneEditingDeps {
   /** The camera's flights: a two-finger touch ends one; a double click
    *  frames. */
   endFlight(): void;
+  /** Spend the orbit's coast at once: the camera stops moving. */
+  dropMomentum(): void;
   frame(selection: string): void;
 }
 
@@ -304,6 +306,12 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       hovered = handle;
     },
     lockCamera(on) {
+      // Locked, the camera stands still: a flight or the orbit's coast
+      // would move the object under a pointer that holds still.
+      if (on) {
+        deps.endFlight();
+        deps.dropMomentum();
+      }
       controls.enableRotate = !on;
       controls.enablePan = !on;
       controls.enableZoom = !on;

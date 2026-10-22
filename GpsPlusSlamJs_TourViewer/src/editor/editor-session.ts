@@ -212,6 +212,19 @@ const LAST_STATION =
 /** Said for a station placed where no map has a spot. */
 const NOT_ON_MAP = "That spot is not on the map.";
 
+/** Whether a pose is a spot on the map: finite numbers, latitude and
+ *  longitude in range, and a heading or rotation (where it has one) of
+ *  finite numbers. */
+function onMap(geo: QrGeoPose): boolean {
+  return (
+    [geo.lat, geo.lon, geo.alt].every(Number.isFinite) &&
+    Math.abs(geo.lat) <= 90 &&
+    Math.abs(geo.lon) <= 180 &&
+    (geo.headingDeg === undefined || Number.isFinite(geo.headingDeg)) &&
+    (geo.rotation === undefined || geo.rotation.every(Number.isFinite))
+  );
+}
+
 /** Said for a new order that does not name every station once. */
 const NOT_AN_ORDER = "The new order must name every station of the tour once.";
 
@@ -781,6 +794,7 @@ export function createEditorSession(input: {
       if (station === undefined) {
         return { kind: "refused", reason: NO_SUCH_STATION };
       }
+      if (!onMap(geo)) return { kind: "refused", reason: NOT_ON_MAP };
       store.dispatch(
         tourDocumentActions.stationMoved({
           stationId,

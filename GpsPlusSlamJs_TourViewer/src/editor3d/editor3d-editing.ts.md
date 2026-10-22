@@ -14,7 +14,8 @@ pure gesture maths reads (`GestureWorld`).
     OrbitControls, the tour layer, the editor terrain and the world's
     ECEF frame, the geoid's N, `tour()` (the tour as drawn), `page` (the
     input's page: the store's dispatch and selection, and the page's
-    edits), `endFlight()`, `frame(selection)`.
+    edits), `endFlight()`, `dropMomentum()` (the orbit's coast spent at
+    once), `frame(selection)`.
   - `update()` - each frame before the drawing: the input's retries, then
     the gizmo on the selection (from the tour, or from a gesture's preview
     while one runs).
@@ -37,6 +38,10 @@ pure gesture maths reads (`GestureWorld`).
   radius holds the ground under the pointer (the nearest), else nothing.
 - An item's gizmo centre is the ground under it (where loaded, else its
   own height); a station's is its point.
+- **A locked camera stands still:** `lockCamera(true)` (a press on a
+  handle, two fingers) ends a running flight and drops the orbit's coast
+  before it turns OrbitControls' input off, so nothing moves the object
+  under a pointer that holds still.
 - **Two fingers are the editing's:** OrbitControls' two-finger touch is
   turned off (`touches.TWO = null`); one finger and the mouse stay
   OrbitControls'. Tilt changes the polar angle; a pinch scales the
@@ -73,6 +78,7 @@ parts are tested pure (`gizmo-maths`, `gesture`, `pose-edits`,
 `two-finger`, `editor3d-input`, `editor3d-gizmo`, the layer's preview and
 pick), and the whole in a browser by
 `playwright-tests/editor3d-edit.spec.js` - a mouse drag over the ground
-saved and undone, every key, a second finger's cancel, the gizmo's
-on-screen sizes at four window sizes. The two-finger twist's direction
+saved and undone, every key, a second finger's cancel, the camera held
+still from a press during a flight until the release (T and Home
+waiting), the gizmo's on-screen sizes at four window sizes. The two-finger twist's direction
 and the pan on a real tablet are not covered by any test.

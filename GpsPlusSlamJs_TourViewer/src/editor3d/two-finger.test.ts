@@ -78,6 +78,15 @@ describe("what the gesture does to the camera", () => {
       { x: 100, y: 400 },
     ]);
     expect(twist.distanceScale).toBeCloseTo(1, 9);
-    expect(Math.abs(twist.turnRad)).toBeCloseTo(Math.PI / 2, 9);
+    // Clockwise on the screen (y down) is a positive turn: the editing
+    // adds it to the orbit's azimuth, which swings the camera the other
+    // way round the centre, so the ground turns WITH the fingers, as on a
+    // map.
+    expect(twist.turnRad).toBeCloseTo(Math.PI / 2, 9);
+    const back = mapGestureOf(START, [
+      { x: 100, y: 300 },
+      { x: 100, y: 200 },
+    ]);
+    expect(back.turnRad).toBeCloseTo(-Math.PI / 2, 9);
   });
 });

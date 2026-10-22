@@ -559,6 +559,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         selected: () => deps.store.getState().editorView.selected,
       },
       endFlight,
+      dropMomentum,
       frame: frameView,
     });
     undo.push(() => {

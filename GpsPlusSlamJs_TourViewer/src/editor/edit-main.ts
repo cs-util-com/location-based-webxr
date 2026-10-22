@@ -1044,8 +1044,8 @@ function deleteSelection(id: string): void {
     ? editor.deleteStation(id.slice(STATION_PREFIX.length))
     : editor.remove(id);
   if (outcome.kind === "refused") {
-    // Nothing was deleted: no "Deleted" toast, and no Undo that would
-    // answer "too late" (PR #622 bot finding C).
+    // Nothing was deleted: no "Deleted" toast, and no Undo offered - it
+    // would only answer that there is nothing to take back.
     select(null);
     refresh();
     toast(outcome.reason);

@@ -37,4 +37,5 @@ mapGestureOf(start, spreadApart).distanceScale; // < 1: closer
 
 `two-finger.test.ts`: the dead zone and the one-finger wait; tilt, pinch,
 pan and twist read the same with a dead zone of 5, 10, 15 and 20 px; the
-tilt per pixel; the pinch's scale and the twist's turn.
+tilt per pixel; the pinch's scale and the twist's turn with its sign (clockwise
+on the screen is positive, so the ground turns with the fingers).

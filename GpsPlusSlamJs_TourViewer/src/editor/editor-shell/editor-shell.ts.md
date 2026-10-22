@@ -51,8 +51,10 @@ view shows.
   code.
 - **Keys** while the view shows, outside fields and dialogs and without
   Ctrl, Cmd or Alt: T toggles Top view, F frames the selection (or the
-  tour), Home frames the tour. Esc closes the help first (a capture
-  listener, ahead of the page's Esc, which deselects).
+  tour), Home frames the tour - none of them while a handle of the gizmo
+  is dragged (`pointerDragRuns`: the camera stands still until the
+  release; a key hold does not count). Esc closes the help first (a
+  capture listener, ahead of the page's Esc, which deselects).
 - **Read-only:** nothing here edits the tour; Undo and Redo are the
   page's steps, with their titles from `nextStep`.
 - **Text, never markup:** names and lines from the tour are set as text

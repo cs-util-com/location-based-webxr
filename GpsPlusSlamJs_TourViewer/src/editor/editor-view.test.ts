@@ -14,6 +14,7 @@ import {
   editorViewActions as act,
   editorViewReducer as reduce,
   initialEditorViewState,
+  pointerDragRuns,
   selectEditorView,
 } from "./editor-view.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
@@ -354,5 +355,32 @@ describe("the 3D view's gesture", () => {
         tourDocumentActions.opened({ manifest: createEmptyTourManifest() }),
       ).gesture,
     ).toBeNull();
+  });
+});
+
+// Why: during a drag of the gizmo the shell's camera keys (T, F, Home)
+// would fly the camera under the pointer and move the object with it; a
+// key hold is no drag, and those keys stay the shell's then.
+describe("pointerDragRuns", () => {
+  it("is true only while a handle of the gizmo is dragged", () => {
+    expect(pointerDragRuns(initialEditorViewState)).toBe(false);
+    for (const handle of ["move", "turn", "dot"] as const) {
+      expect(
+        pointerDragRuns(
+          reduce(
+            initialEditorViewState,
+            act.gestureStarted({ id: "a", handle }),
+          ),
+        ),
+      ).toBe(true);
+    }
+    expect(
+      pointerDragRuns(
+        reduce(
+          initialEditorViewState,
+          act.gestureStarted({ id: "a", handle: "key" }),
+        ),
+      ),
+    ).toBe(false);
   });
 });

@@ -301,6 +301,12 @@ const editorViewSlice = createSlice({
 export const editorViewActions = editorViewSlice.actions;
 export const editorViewReducer = editorViewSlice.reducer;
 
+/** Whether a handle of the 3D view's gizmo is being dragged (a key hold
+ *  is no drag): the camera must stand still until it ends. */
+export function pointerDragRuns(view: EditorViewState): boolean {
+  return view.gesture !== null && view.gesture.handle !== "key";
+}
+
 /** The slice in a store's state. */
 export function selectEditorView(root: {
   readonly editorView: EditorViewState;

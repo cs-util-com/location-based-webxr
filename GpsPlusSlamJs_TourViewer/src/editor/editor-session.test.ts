@@ -2236,6 +2236,37 @@ describe("createEditorSession, the tour document (D29-D31)", () => {
     await session.close();
   });
 
+  // Why: a station's move comes from a drag of the 3D view, where a ray
+  // that misses can make a number that is no number; such a pose must be
+  // refused in words and change nothing, as an object's move is, rather
+  // than reach the document (or throw inside the view's frame).
+  it("refuses a station move to a spot that is no number or off the map, changing nothing", async () => {
+    const { session, manifest } = await opened([pin("a")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const station = manifest.stations[0]!;
+    const before = editor.revision();
+    for (const geo of [
+      { ...station.geo, lat: Number.NaN },
+      { ...station.geo, lon: Number.POSITIVE_INFINITY },
+      { ...station.geo, alt: Number.NaN },
+      { ...station.geo, lat: 91 },
+      { ...station.geo, lon: -181 },
+      { ...station.geo, headingDeg: Number.NaN },
+    ]) {
+      expect(editor.moveStation(station.id, geo), JSON.stringify(geo)).toEqual({
+        kind: "refused",
+        reason: "That spot is not on the map.",
+      });
+    }
+    expect(editor.revision()).toBe(before);
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
   it("moves a station with its items (D17): the items keep their local poses, and an undo puts it back", async () => {
     const { session, manifest } = await opened([pin("a"), pin("b")]);
     const editor = createEditorSession({

@@ -75,6 +75,9 @@ chrome reads, one copy for every view of the page.
     it does not know), `gestureEnded()`.
 - `GESTURE_HANDLES` (the gesture field's handles: move, turn, dot, key).
 - `editorViewReducer`, `selectEditorView(root)`.
+- `pointerDragRuns(view)` - whether a handle of the gizmo is being
+  dragged (a gesture whose handle is not `key`): the shell's camera keys
+  wait for its end.
 - `View3dFailure` - the reasons the 3D view did not show.
 - `EditorMessage` - the card line's shape (`MapSpot` and `EditorMoving`, the drag's, are module-private).
 
