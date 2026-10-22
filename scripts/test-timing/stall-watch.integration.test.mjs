@@ -71,9 +71,10 @@ afterEach(() => {
  * @param {string} stage
  * @param {string} limitMin
  * @param {string} [pidFile]
+ * @param {string} [mode] - "natural": the driver ends without process.exit
  */
-function drive(stage, limitMin, pidFile = '') {
-  const child = spawn(process.execPath, [DRIVER, stage, pidFile], {
+function drive(stage, limitMin, pidFile = '', mode = '') {
+  const child = spawn(process.execPath, [DRIVER, stage, pidFile, mode], {
     // A pipe, not a terminal, as in every detached gate run: the watch is on.
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
@@ -109,6 +110,31 @@ describe('the stage watchdog, end to end', () => {
     expect(out).toContain('its process tree was killed (exit 124)');
     expect(out).toContain('RESULT exit=124');
     expect(await gone(grandchild)).toBe(true);
+  }, 30_000);
+
+  // Why: on POSIX the killed stage's `exit` usually arrives before the kill
+  // helper returns (it polls the group in 100 ms steps), so the 10 s cap on
+  // waiting for that `exit` must not be armed once the stage has settled: it
+  // would hold the caller's event loop for 10 s after the verdict. Both gate
+  // entry points call process.exit at once, which hides it; this caller lets
+  // the loop empty instead. On Windows the kill is synchronous and the cap is
+  // always armed before the exit, so only a POSIX run can fail here.
+  it('leaves nothing behind that keeps the caller alive after a stall', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'stall-watch-'));
+    dirs.push(dir);
+    const pidFile = path.join(dir, 'grandchild.pid');
+    const { child, done } = drive('silent', '0.02', pidFile, 'natural');
+    /** @type {number | null} */
+    let verdictAt = null;
+    child.stdout.on('data', (chunk) => {
+      if (verdictAt === null && String(chunk).includes('RESULT exit=')) verdictAt = Date.now();
+    });
+    leftovers.push(await readPid(pidFile));
+    const { code, out } = await done;
+    const exitedAt = Date.now();
+    expect(out).toContain('RESULT exit=124');
+    expect(code).toBe(STALL_EXIT);
+    expect(exitedAt - /** @type {number} */ (verdictAt)).toBeLessThan(5_000);
   }, 30_000);
 
   it('never kills a slow stage that keeps talking', async () => {

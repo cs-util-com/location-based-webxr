@@ -27,3 +27,14 @@ skips CI and filtered runs, and only compares same-machine history.
 
 These modules' own tests run in the root repo-config gate
 (`pnpm run test:repo-config`), wired via the root `vitest.config.js` include.
+
+To run a gate detached, launch it so its log ends in a whole `GATE-RC=<n>`
+line carrying its exit code, then wait on that log with `wait-gate.mjs`
+([wait-gate.mjs.md](wait-gate.mjs.md)). The gate does not write that line
+itself; the launch command does. Braces rather than a subshell, so the
+redirect covers the `echo` too:
+
+```bash
+{ pnpm test; echo "GATE-RC=$?"; } > gate.log 2>&1 &
+node scripts/test-timing/wait-gate.mjs gate.log
+```

@@ -355,9 +355,11 @@ function execShell(command, cwd, env, priority, watch = null) {
         stall = killStageTree(child.pid).then((kill) => {
           console.error(stallMessage(watch.stageName, silentMs, kill));
           // A failed kill may never produce an `exit`: do not wait for one.
-          // A landed kill produces it at once; the cap only bounds the wait.
+          // A landed kill produces it at once; the cap only bounds the wait,
+          // and is not armed when the `exit` already came (on POSIX it
+          // usually does, while the kill still polls the group).
           if (!kill.killed) finish(STALL_EXIT);
-          else exitCap = setTimeout(() => finish(STALL_EXIT), 10_000);
+          else if (!settled) exitCap = setTimeout(() => finish(STALL_EXIT), 10_000);
         });
       }, watch.pollMs);
     }

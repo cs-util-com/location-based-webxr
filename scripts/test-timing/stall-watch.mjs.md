@@ -39,11 +39,18 @@
   for a vitest stage: `GATE_SLOT=take GATE_STALL_MIN=<minutes> pnpm run
   test:unit --reporter=verbose` (a filtered run skips the slot and the watch
   unless asked).
-- `watchLine(env)` / `parseWatchLine(text)` - the line a gate writes at its
-  start, `stage watchdog: 20 min (GATE_STALL_MIN; ...)` or `stage watchdog:
-  off (GATE_STALL_MIN=off)`, and its parse (the last whole line wins, null
-  when there is none). `run-gate.mjs` and `test-changed.mjs` write it;
-  `wait-gate.mjs` reads it.
+- `watchLine(env, { watched })` / `parseWatchLine(text)` - the line a gate
+  writes at its start, `stage watchdog: 20 min (GATE_STALL_MIN; ...)` or
+  `stage watchdog: off (GATE_STALL_MIN=off)`, and its parse (the last whole
+  line wins, null when there is none). `watched: false` (stdout is a
+  terminal, so no stage is piped or watched) gives `stage watchdog: off
+  (output is a terminal, so no stage is watched)` whatever the limit, which
+  parses as off. `run-gate.mjs` and `test-changed.mjs` write it with
+  `watched: !process.stdout.isTTY`; `wait-gate.mjs` reads it.
+- `STALL_SUMMARY` - the reason in the one-line verdict `run-gate.mjs` and
+  `test-changed.mjs` print after a stage was killed. It names the limit by
+  its source (`GATE_STALL_MIN`), never as a number of minutes, since the
+  limit can differ per stage; the banner above it says how long.
 - Constants: `STALL_EXIT`, `STALL_ENV`, `STALL_POLL_ENV`,
   `DEFAULT_STALL_MIN`, `STALL_POLL_MS`, `STALL_KILL_GRACE_MS`.
 
@@ -74,7 +81,8 @@
   browsers it starts in groups of their own).
 - **Cannot catch:** a hang that still prints; a hang outside a stage
   (`pnpm install`, the framework build in `test-changed.mjs`; the waiter's
-  `wait-gate.mjs` is the net there); a run in a terminal; and under `CI=1`
+  `wait-gate.mjs` is the net there); a run in a terminal (its watch line
+  says the watch is off); and under `CI=1`
   it cannot name the FILE, only the stage.
 
 ## Examples
@@ -89,10 +97,14 @@ GATE_SLOT=take GATE_STALL_MIN=40 pnpm run test:unit src/x   # opt a filtered run
 
 - `stall-watch.test.mjs` - the limit's precedence, the filtered opt-in,
   nested gates, the clock, the calibration threshold, the banner wording,
-  the watch line and its parse.
+  the watch line (watched and unwatched) and its parse, and the stall
+  summary's wording.
 - `stall-watch.property.test.mjs` - the clock never stalls while chunks
   arrive closer than the limit, and always does after a full limit of
   silence.
 - `stall-watch.integration.test.mjs` - a real silent fixture stage through
   `runStage`, with a tiny limit: exit 124, the banner, and a forked
-  grandchild gone afterwards (Windows locally, Linux in CI).
+  grandchild gone afterwards (Windows locally, Linux in CI); and a caller
+  that ends without `process.exit` is not held for the 10 s exit cap after
+  the verdict (only a POSIX run can fail that one: on Windows the kill is
+  synchronous and the cap is always armed before the stage's exit).

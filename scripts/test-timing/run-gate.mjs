@@ -37,7 +37,7 @@ import {
   runStage,
   signalLiveStages,
 } from './run-stage.mjs';
-import { STALL_ENV, STALL_EXIT, watchLine } from './stall-watch.mjs';
+import { STALL_EXIT, STALL_SUMMARY, watchLine } from './stall-watch.mjs';
 
 /** @typedef {import('./delta.mjs').TestCounts} TestCounts */
 
@@ -122,7 +122,7 @@ await holdMachineSlotForProcess(`pnpm test in ${project.name}`);
 
 // The watchdog limit this run's stages get, for whoever waits on its log
 // (wait-gate.mjs sizes its quiet window from it).
-console.log(watchLine(process.env));
+console.log(watchLine(process.env, { watched: !process.stdout.isTTY }));
 
 /**
  * ONE GATE RUN PER WORKING TREE — see gate-lock.mjs for why this is a refusal
@@ -262,7 +262,7 @@ for (const stage of stages) {
     // NAMED, like a queue timeout (75), so GATE-RC=124 is never read as a
     // plain red test. A nested package gate passes its leaf's 124 through.
     console.error(
-      `\n✖ gate STALLED at stage "${stage.name}" (exit ${STALL_EXIT}): a stage printed nothing for ${STALL_ENV} minutes and was killed - see the STALLED banner above. Not a red test; do not retry it away.`
+      `\n✖ gate STALLED at stage "${stage.name}" (exit ${STALL_EXIT}): ${STALL_SUMMARY}`
     );
     process.exit(result.exitCode);
   }

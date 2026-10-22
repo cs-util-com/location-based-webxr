@@ -12,9 +12,13 @@
 
 ## Usage
 
-Start the gate first (its `> <log>` redirect empties the log), then the wait:
+Start the gate first (its `> <log>` redirect empties the log), then the wait.
+The gate's exit code has to land in the log as a whole `GATE-RC=<n>` line
+(what `gateRc` reads), and the gate does not write it: the launch command
+does. Braces rather than a subshell, so the redirect covers the `echo` too:
 
 ```bash
+{ pnpm test; echo "GATE-RC=$?"; } > <log> 2>&1 &
 node scripts/test-timing/wait-gate.mjs <log>
 node scripts/test-timing/wait-gate.mjs <log> --long-run "seed sweep" --quiet-min 60
 ```
@@ -63,8 +67,9 @@ node scripts/test-timing/wait-gate.mjs <log> --long-run "seed sweep" --quiet-min
   `GATE_STALL_MIN` need not be the gate's. With the limit known, a stage
   that hangs is always killed by the watchdog first, its banner lands in the
   log and the log moves, so "quiet" means a hang outside a stage. The report
-  says that only in that case (`basis: 'log'`); with the watch off, or the
-  limit unknown, it says the hang may be inside a stage as well.
+  says that only in that case (`basis: 'log'`); with the watch off (also a
+  gate whose output was a terminal, which watches nothing and says so), or
+  the limit unknown, it says the hang may be inside a stage as well.
 - **Silence counts from the log's last change** (its mtime when the wait
   starts, then every size or mtime move), never from the start of this
   wait; an absent log counts from the start.

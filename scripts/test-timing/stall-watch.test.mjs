@@ -12,6 +12,7 @@ import {
   DEFAULT_STALL_MIN,
   STALL_EXIT,
   STALL_POLL_MS,
+  STALL_SUMMARY,
   parseWatchLine,
   shouldReportSilence,
   silenceClock,
@@ -172,6 +173,21 @@ describe('watchLine and parseWatchLine', () => {
     expect(parseWatchLine(watchLine({ GATE_STALL_MIN: 'soon' }))).toEqual({ minutes: 20 });
   });
 
+  // Why: in a run whose output is a terminal no stage is piped, so nothing
+  // is watched (run-stage.mjs). A line claiming a live limit would tell the
+  // reader a hung stage will be killed when it will not be, and would make
+  // wait-gate.mjs report a quiet log as "wedged outside a stage".
+  it('states the watch is off when the run is not watched, whatever the limit', () => {
+    for (const env of [{}, { GATE_STALL_MIN: '7' }, { GATE_STALL_MIN: 'off' }]) {
+      const line = watchLine(env, { watched: false });
+      expect(line).toBe('stage watchdog: off (output is a terminal, so no stage is watched)');
+      expect(parseWatchLine(line)).toEqual({ off: true });
+    }
+    expect(watchLine({ GATE_STALL_MIN: '7' }, { watched: true })).toBe(
+      watchLine({ GATE_STALL_MIN: '7' })
+    );
+  });
+
   it('takes the LAST whole line, and nothing when there is none', () => {
     const log = [
       'x',
@@ -182,5 +198,17 @@ describe('watchLine and parseWatchLine', () => {
     expect(parseWatchLine(log)).toEqual({ minutes: 9 });
     expect(parseWatchLine('echo stage watchdog: 3 min (x)\n')).toBeNull();
     expect(parseWatchLine('')).toBeNull();
+  });
+});
+
+// Why: the one-line verdict a gate prints after a stage was killed is what a
+// reader skimming the end of a log sees. It must not read the variable's
+// NAME as a number of minutes (the limit can differ per stage, or be off),
+// and must keep naming where the limit comes from.
+describe('STALL_SUMMARY', () => {
+  it('names the limit by its source, never as a duration', () => {
+    expect(STALL_SUMMARY).not.toMatch(/GATE_STALL_MIN minutes/);
+    expect(STALL_SUMMARY).toContain('longer than its watchdog limit (set by GATE_STALL_MIN)');
+    expect(STALL_SUMMARY).toContain('Not a red test; do not retry it away.');
   });
 });

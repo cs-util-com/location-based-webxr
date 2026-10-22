@@ -41,7 +41,10 @@
   - **It states its watchdog limit at the start** (`watchLine` in
     `stall-watch.mjs`, e.g. `stage watchdog: 20 min (...)`), so a waiter
     sizes its quiet window from the limit this run has, not from its own
-    shell ([wait-gate.mjs](wait-gate.mjs.md)).
+    shell ([wait-gate.mjs](wait-gate.mjs.md)). A run whose stdout is a
+    terminal watches no stage, and its line says the watch is off. The
+    one-line stall verdict names the limit by its source
+    (`STALL_SUMMARY`), never as a number of minutes.
   - The `total` row is only written when EVERY stage recorded (never on CI
     or partially filtered runs); its test count sums the count-bearing
     stages.

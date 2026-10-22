@@ -129,10 +129,17 @@ export function shouldReportSilence(longestMs, limitMs) {
  * unfiltered stages run with. wait-gate.mjs reads it back (parseWatchLine) to
  * size its quiet window from the gate's limit rather than its own env.
  *
+ * A run whose output is a terminal watches nothing (run-stage.mjs pipes,
+ * and so watches, a stage only when stdout is not a TTY), so its line says
+ * the watch is off whatever the limit; wait-gate.mjs then reads it as off.
+ *
  * @param {Record<string, string | undefined>} env
+ * @param {{ watched?: boolean }} [run] - `watched: false` for a run whose
+ *   stdout is a terminal
  * @returns {string}
  */
-export function watchLine(env) {
+export function watchLine(env, { watched = true } = {}) {
+  if (!watched) return 'stage watchdog: off (output is a terminal, so no stage is watched)';
   const limitMs = stallLimitMs({}, env);
   return limitMs === null
     ? `stage watchdog: off (${STALL_ENV}=off)`
@@ -162,6 +169,12 @@ export function parseWatchLine(text) {
 export function silenceLine(stageName, longestMs, durationMs) {
   return `⏱ longest silence in ${stageName}: ${(longestMs / 60_000).toFixed(1)} min of ${(durationMs / 60_000).toFixed(1)} min (a stage is killed at ${STALL_ENV})`;
 }
+
+/**
+ * The reason in a gate's one-line verdict after a stage was killed. The
+ * limit is named by its source, not as a number: it can differ per stage.
+ */
+export const STALL_SUMMARY = `a stage printed nothing for longer than its watchdog limit (set by ${STALL_ENV}) and was killed - its STALLED banner above says for how long. Not a red test; do not retry it away.`;
 
 /**
  * The banner printed when the watchdog fires. With the fast-check time limit

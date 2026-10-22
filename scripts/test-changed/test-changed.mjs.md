@@ -53,7 +53,10 @@
   - It writes its watchdog limit (`watchLine`, e.g. `stage watchdog: 20
     min (...)`) right after taking the slot, dry run included, for the waiter
     on its log ([wait-gate.mjs](../test-timing/wait-gate.mjs.md)); pinned by
-    `test-changed.test.mjs`.
+    `test-changed.test.mjs`. With stdout a terminal no stage is watched, and
+    the line says the watch is off. After a stalled package gate it prints a
+    one-line STALLED verdict whose reason (`STALL_SUMMARY`) names the limit
+    by its source, never as a number of minutes.
   - Warns when `pnpm-workspace.yaml` contains a `gps-plus-slam-js: link:`
     override — library changes are invisible to selection then.
   - Package dirs are parsed from `pnpm-workspace.yaml` (plain `- Name` list,

@@ -47,8 +47,8 @@ import { fileURLToPath } from 'node:url';
 import { holdMachineSlotForProcess } from '../test-timing/machine-slot.mjs';
 import { SKIP_BROWSER_ENV } from '../test-timing/projects.mjs';
 import {
-  STALL_ENV,
   STALL_EXIT,
+  STALL_SUMMARY,
   watchLine,
 } from '../test-timing/stall-watch.mjs';
 import {
@@ -144,7 +144,7 @@ if (!dryRun) {
 
 // The watchdog limit every stage of this run gets, for whoever waits on its
 // log (wait-gate.mjs sizes its quiet window from it, not from its own env).
-console.log(watchLine(process.env));
+console.log(watchLine(process.env, { watched: !process.stdout.isTTY }));
 
 if (runAll) {
   if (dryRun) {
@@ -227,7 +227,7 @@ function runInOrder(commands) {
     if (status === STALL_EXIT) {
       // NAMED, so GATE-RC=124 is never read as a plain red test.
       console.error(
-        `\ntest-changed: ✖ STALLED (exit ${STALL_EXIT}): a stage printed nothing for ${STALL_ENV} minutes and was killed - see its STALLED banner above. Not a red test; do not retry it away.`
+        `\ntest-changed: ✖ STALLED (exit ${STALL_EXIT}): ${STALL_SUMMARY}`
       );
     }
     if (status !== 0) {

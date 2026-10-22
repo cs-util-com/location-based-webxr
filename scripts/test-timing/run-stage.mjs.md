@@ -66,7 +66,10 @@
     grace, synchronously (a blocking wait), since nothing async runs on the
     way out: a stage that traps or ignores the signal still ends. A failed kill is
     named in the banner (its processes may still run) and the stage still
-    returns 124.
+    returns 124. After a landed kill the stage waits at most 10 s for its
+    `exit`; that cap is not armed once the `exit` has already settled the
+    stage (on POSIX it usually comes while the kill still polls the group),
+    so no timer outlives the verdict.
 - Examples: `await runStage(project, 'test:unit', ['src/foo.test.ts'])` runs
   a filtered, unrecorded unit run scoped to one file.
 - Tests: the pure modules it composes (`timing-store`, `delta`,
@@ -77,4 +80,5 @@
   (a silent fixture stage with a forked grandchild, a stage that keeps
   talking, and on POSIX a SIGINT forwarded to the stage's group ahead of
   the slot's handler, then a SIGKILL for a stage that traps it; the order of
-  the handlers is also checked on Windows).
+  the handlers is also checked on Windows; and a caller that lets its event
+  loop empty ends promptly after a stall's verdict).

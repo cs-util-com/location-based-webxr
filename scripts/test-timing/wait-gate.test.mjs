@@ -89,6 +89,10 @@ describe('quietWindow', () => {
     expect(quietWindow({ GATE_STALL_MIN: '10' }, null, log)).toEqual({ ms: 45 * 60_000, basis: 'log' });
     const off = `${watchLine({ GATE_STALL_MIN: 'off' })}\n`;
     expect(quietWindow({ GATE_STALL_MIN: '10' }, null, off)).toEqual({ ms: 25 * 60_000, basis: 'log-off' });
+    // A run whose output was a terminal watched nothing, whatever its limit:
+    // the report must not claim the gate would have killed a hung stage.
+    const unwatched = `${watchLine({ GATE_STALL_MIN: '40' }, { watched: false })}\n`;
+    expect(quietWindow({ GATE_STALL_MIN: '10' }, null, unwatched)).toEqual({ ms: 25 * 60_000, basis: 'log-off' });
     expect(quietWindow({}, 90, log).basis).toBe('named');
   });
 
