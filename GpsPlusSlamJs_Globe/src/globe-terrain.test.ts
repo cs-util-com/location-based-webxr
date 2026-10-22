@@ -37,6 +37,10 @@ import {
   createGlobeDetailUniforms,
 } from "./globe-detail.js";
 import { reliefCacheBudget } from "./globe-relief-cache.js";
+import {
+  createGlobeSurfaceUniforms,
+  patchGlobeSurfaceShader,
+} from "./globe-surface-material.js";
 
 const DEG = Math.PI / 180;
 /** Normalised Web Mercator y (0 south, 1 north) of a latitude. */
@@ -319,7 +323,7 @@ describe("litTerrainMaterial", () => {
     const shaderOf = (fragmentShader: string) =>
       ({
         vertexShader:
-          "#include <common>\nvoid main() {\n#include <uv_vertex>\n}",
+          "#include <common>\nvoid main() {\n#include <beginnormal_vertex>\n#include <uv_vertex>\n}",
         fragmentShader,
         uniforms: {} as Record<string, THREE.IUniform>,
       }) as unknown as THREE.WebGLProgramParametersWithUniforms;
@@ -360,6 +364,50 @@ describe("litTerrainMaterial", () => {
         {} as THREE.WebGLRenderer,
       ),
     ).toThrow("#include <map_fragment>");
+  });
+
+  // Why: the detail factor reads the geodetic normal `vGeoNormal`, which
+  // only the globe's own surface hook declares. An app that draws the
+  // relief under a template of its own (a plain standard material, no
+  // globe look) got a terrain program that did not compile ("'vGeoNormal'
+  // : undeclared identifier") and no ground at all. On three's real
+  // standard shader the varying must be declared and set exactly once,
+  // with the globe's hook and without it.
+  it("declares the detail's geodetic normal once, with or without the globe's hook", () => {
+    const own = new THREE.MeshLambertMaterial();
+    const bounds = { west: 0.1, south: 0.7, east: 0.2, north: 0.8 };
+    const count = (s: string, part: string) => s.split(part).length - 1;
+    const plain = new THREE.MeshStandardMaterial();
+    const globeLook = new THREE.MeshStandardMaterial();
+    const surface = createGlobeSurfaceUniforms({
+      night: new THREE.Texture(),
+      clouds: new THREE.Texture(),
+    });
+    globeLook.onBeforeCompile = (shader) => {
+      patchGlobeSurfaceShader(shader, surface);
+    };
+    for (const template of [plain, globeLook]) {
+      const lib = THREE.ShaderLib.standard;
+      const shader = {
+        vertexShader: lib.vertexShader,
+        fragmentShader: lib.fragmentShader,
+        uniforms: THREE.UniformsUtils.clone(lib.uniforms),
+      } as THREE.WebGLProgramParametersWithUniforms;
+      litTerrainMaterial(
+        template,
+        own,
+        bounds,
+        createGlobeDetailUniforms(),
+      ).onBeforeCompile(shader, {} as THREE.WebGLRenderer);
+      const vs = shader.vertexShader;
+      const fs = shader.fragmentShader;
+      expect(count(vs, "varying vec3 vGeoNormal;")).toBe(1);
+      expect(count(vs, "vGeoNormal = objectNormal;")).toBe(1);
+      expect(count(fs, "varying vec3 vGeoNormal;")).toBe(1);
+      expect(fs.indexOf("varying vec3 vGeoNormal;")).toBeLessThan(
+        fs.indexOf("normalize( vGeoNormal )"),
+      );
+    }
   });
 
   // Why (G0 spikes 2026-10-17, Q5): a second imagery overlay through the
@@ -565,7 +613,8 @@ describe("createGlobeTerrain", () => {
     // Every loaded tile reads the terrain's one detail uniforms object,
     // off until the page sets a grid.
     const compiled = {
-      vertexShader: "#include <common>\nvoid main() {\n#include <uv_vertex>\n}",
+      vertexShader:
+        "#include <common>\nvoid main() {\n#include <beginnormal_vertex>\n#include <uv_vertex>\n}",
       fragmentShader:
         "#include <common>\nvoid main() {\n#include <map_fragment>\n}",
       uniforms: {} as Record<string, THREE.IUniform>,
