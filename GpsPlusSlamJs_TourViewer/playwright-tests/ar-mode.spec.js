@@ -2819,6 +2819,12 @@ test("placing after Delete it is still saved: a discard ends the draft, not the 
   // creator can measure and place while it sits there, and after the tap
   // the code in hand is still set - which is the one state where placement
   // is allowed with no meta on disk.
+  //
+  // Three sessions (a navigation, three reloads, two code measurements) take
+  // about 17 s alone and more than the default 30 s with six workers: 6 of
+  // 24 runs timed out there, every one with no step failing (0 of 25 with
+  // one worker). Hence the tripled test timeout; no step's own wait changes.
+  test.slow();
   await page.goto("/?nocache=1");
   await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
   await page.getByTestId("open-button").click();
