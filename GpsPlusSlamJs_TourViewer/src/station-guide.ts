@@ -68,6 +68,15 @@
  *   asks for a few steps (`visitor-status.ts`); the figure keeps waiting.
  * - **Progress lives as long as the tour stays open** (several AR entries;
  *   saving it across page lives is K3). A different tour starts a new run.
+ * - **What the radar and the precision chip read** (W4 build plan M3):
+ *   the precision kind (`pending | code | gps | weak | none`, the line's
+ *   own rules, published to the store only on a change), the camera's
+ *   heading once the latch above holds (its forward through the alignment;
+ *   the last bearing kept while the camera points straight down), every
+ *   station's bearing, and the last judged snapshot of that geometry - kept
+ *   while a code, GPS or too-weak GPS speaks for the position and tracking
+ *   is not lost, so a frozen radar (`'none'`, tracking lost) never draws
+ *   from a position nobody vouches for. Cleared at the session's end.
  * - **The walk lives in the page's store** (visitor walk W4 build plan
  *   2026-10-21-1105, M1): the run's statuses, the last skip, the note and
  *   the skip's arm are `visitorWalk` (`visitor-walk-slice.ts`), whose
@@ -87,6 +96,7 @@ import type {
 import type { LatLong } from "gps-plus-slam-app-framework/core";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 import { formatDistance } from "gps-plus-slam-app-framework/utils/format-distance";
+import { nueBearingDeg } from "gps-plus-slam-app-framework/utils/nue-bearing";
 import { configureStore, type UnknownAction } from "@reduxjs/toolkit";
 import { Vector3 } from "three";
 
@@ -112,11 +122,14 @@ import {
   headingPendingSet,
   presenceAfter,
   presenceCleared,
+  precisionKindSet,
   presenceJudged,
   type PresenceJudgement,
   type VisitorGuideStore,
+  type WalkPrecisionKind,
 } from "./visitor-guide-slice.js";
 import type { VisitorPosition } from "./visitor-position.js";
+import type { WalkRadarGeometry } from "./walk-radar-model.js";
 import {
   noteCleared,
   quickArmed,
@@ -180,10 +193,22 @@ export interface GuideView {
    *  null when none is (a story plays, or the tour is complete). */
   readonly focusId: string | null;
   readonly position: GuidePositionKind;
-  /** The fixes' accuracy behind `weak`, m; null otherwise. */
+  /** The position's precision (W4 build plan M3, §1.3): the chip's and
+   *  the radar's kind, published to the store on a change. */
+  readonly precision: WalkPrecisionKind;
+  /** The fixes' accuracy behind `gps` and `weak`, m; null otherwise. */
   readonly accuracyM: number | null;
   /** Every placeable station's horizontal distance, m (the measurement's). */
   readonly distances: ReadonlyMap<string, number>;
+  /** Every placeable station's bearing from the visitor, degrees from
+   *  north (the measurement's). */
+  readonly bearings: ReadonlyMap<string, number>;
+  /** The camera's bearing, degrees from north, once this AR entry earned
+   *  a heading; null before. */
+  readonly headingDeg: number | null;
+  /** The last judged geometry, for a frozen radar (M3, §1.2); null before
+   *  the first this AR entry. */
+  readonly snapshot: WalkRadarGeometry | null;
   /** What the skip button (or the card's end control) shows now. */
   readonly quick: SkipAction | null;
   /** What just happened ("Skipped The well."), while its moment lasts
@@ -353,6 +378,12 @@ interface Measurement {
   readonly headingNue: readonly [number, number, number] | null;
   /** Every placeable station's horizontal distance from `best`. */
   readonly distances: Map<string, number>;
+  /** Every placeable station's bearing from `best`, degrees from north. */
+  readonly bearings: Map<string, number>;
+  /** The camera's bearing (its forward through the alignment), degrees
+   *  from north, while `headingNue` is set; the last one is kept while
+   *  the forward has none (straight down, a dropped pose). */
+  readonly headingDeg: number | null;
 }
 
 /** What one tick may judge (`judged`): the arrival and presence alike. */
@@ -463,6 +494,11 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   /** The present station was last judged on a position a code held:
    *  once the code goes (a veto) and nothing else can judge, it ends. */
   let presentByCode = false;
+  /** The camera's last bearing this AR entry (`Measurement.headingDeg`). */
+  let lastHeadingDeg: number | null = null;
+  /** The last judged geometry, for a frozen radar (W4 build plan M3): a
+   *  derived cache, rebuilt from the measurement, never the store's. */
+  let snapshot: WalkRadarGeometry | null = null;
 
   /** The walk now, as this call sees it: the store's as it is now, with
    *  this call's pending changes applied over it - what the store will
@@ -614,12 +650,15 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       seen.aligned && !ready ? { ...seen, nue: null, aligned: false } : seen;
     const position = bestPosition(visitor);
     const best = position?.nue ?? null;
+    const geometry = stationGeometry(best);
     last = {
       visitor,
       best,
       precision: precisionOf(visitor, position?.loneFix === true, lined),
       headingNue: headingReady ? seen.nue : null,
-      distances: horizontalDistances(best),
+      distances: geometry.distances,
+      bearings: geometry.bearings,
+      headingDeg: headingReady ? cameraHeading(seen.forwardNue ?? null) : null,
     };
   }
 
@@ -696,6 +735,29 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     }
   }
 
+  /** The precision kind in the store (W4 build plan M3); only a change is
+   *  dispatched. */
+  function publishPrecision(kind: WalkPrecisionKind): void {
+    const store = deps.guideStore;
+    if (store === undefined) return;
+    if (store.getState().visitorGuide.precisionKind !== kind) {
+      store.dispatch(precisionKindSet(kind));
+    }
+  }
+
+  /** The snapshot follows the measurement while a code, GPS or too-weak
+   *  GPS speaks for the position and the tracking is not lost (the store's
+   *  `trackingLost`); otherwise it holds the last such geometry. */
+  function keepSnapshot(m: Measurement, kind: WalkPrecisionKind): void {
+    const lost = deps.guideStore?.getState().visitorGuide.trackingLost === true;
+    if (lost || (kind !== "code" && kind !== "gps" && kind !== "weak")) return;
+    snapshot = {
+      distances: m.distances,
+      bearings: m.bearings,
+      headingDeg: m.headingDeg,
+    };
+  }
+
   /** What presence may read this tick: the gate's judgement, else a GPS
    *  fix too weak to guide by - which can only end presence
    *  (`presenceAfter`, PR review S1) - else nothing (null: hold; also for
@@ -750,20 +812,37 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     }
   }
 
-  function horizontalDistances(
-    nue: readonly [number, number, number] | null,
-  ): Map<string, number> {
-    const out = new Map<string, number>();
-    if (nue === null || runStations === null) return out;
+  /** Every placeable station's horizontal distance and bearing from
+   *  `nue`. */
+  function stationGeometry(nue: readonly [number, number, number] | null): {
+    distances: Map<string, number>;
+    bearings: Map<string, number>;
+  } {
+    const distances = new Map<string, number>();
+    const bearings = new Map<string, number>();
+    if (nue === null || runStations === null) return { distances, bearings };
     for (const { id } of runStations) {
       const pose = poseOf(id);
       if (pose === null) continue;
-      out.set(
-        id,
-        Math.hypot(pose.positionNue[0] - nue[0], pose.positionNue[2] - nue[2]),
-      );
+      const dn = pose.positionNue[0] - nue[0];
+      const de = pose.positionNue[2] - nue[2];
+      distances.set(id, Math.hypot(dn, de));
+      // Standing on the station's spot: no bearing (the radar draws it at
+      // the centre either way).
+      bearings.set(id, nueBearingDeg(dn, de) ?? 0);
     }
-    return out;
+    return { distances, bearings };
+  }
+
+  /** The camera's bearing from its forward; the last one this AR entry
+   *  while the forward has none (straight down, no pose). */
+  function cameraHeading(
+    forward: readonly [number, number, number] | null,
+  ): number | null {
+    const bearing =
+      forward === null ? undefined : nueBearingDeg(forward[0], forward[2]);
+    if (bearing !== undefined) lastHeadingDeg = bearing;
+    return lastHeadingDeg;
   }
 
   function handle(events: readonly StationEvent[]): void {
@@ -924,6 +1003,21 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     return "distance";
   }
 
+  /**
+   * The position's precision for the chip and the radar (§1.3), by the
+   * line's rules (`positionKind`) over any station's distance: a fix too
+   * weak to guide by; no position or no distance yet (pending); nothing
+   * vouching for it (`'none'`); else a code's or GPS.
+   */
+  function precisionKind(m: Measurement | null): WalkPrecisionKind {
+    const kind = positionKind(
+      m,
+      m !== null && m.distances.size > 0 ? 0 : undefined,
+    );
+    if (kind !== "distance") return kind;
+    return m!.precision.source === "code" ? "code" : "gps";
+  }
+
   /** Whether the guide runs now: a run, and the scan gate open. */
   function running(): boolean {
     return liveRun() !== null && deps.placementAllowed();
@@ -1082,10 +1176,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       deps.onGuide?.(null, null);
       publishPresence(null, null);
       publishHeadingPending(false);
+      publishPrecision("pending");
       return;
     }
     measure();
     const m = last!;
+    const kind = precisionKind(m);
+    keepSnapshot(m, kind);
     // A story cut short by the session's end plays again on the same
     // terms as its first play: a position and the GPS zero (R8: before
     // them its figure had no pose; r881 re-review M-C: a camera position
@@ -1117,6 +1214,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     publishPresence(m, judgement);
     // Stations still to point at, and no heading to point with (D34).
     publishHeadingPending(!headingReady && liveRun()?.isComplete() === false);
+    publishPrecision(kind);
   }
 
   /** The skip button's tap (`skipTapped`), inside its call. */
@@ -1195,11 +1293,19 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
             ? 0
             : undefined;
       const position = positionKind(last, d);
+      const precision = precisionKind(last);
       return {
         focusId,
         position,
-        accuracyM: position === "weak" ? last!.precision.accuracyM : null,
+        precision,
+        accuracyM:
+          precision === "weak" || precision === "gps"
+            ? last!.precision.accuracyM
+            : null,
         distances,
+        bearings: last?.bearings ?? new Map<string, number>(),
+        headingDeg: last?.headingDeg ?? null,
+        snapshot,
         quick: rendered,
         note: noteText(),
       };
@@ -1212,12 +1318,16 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       // The next AR entry earns its own heading (a new session's odometry).
       trackedHeading = false;
       headingReady = false;
+      lastHeadingDeg = null;
+      // The next AR entry starts with no judged geometry of its own.
+      snapshot = null;
       // Nothing is present outside an AR session (visitor plan §3).
       presentByCode = false;
       if (deps.guideStore?.getState().visitorGuide.presentStationId != null) {
         deps.guideStore.dispatch(presenceCleared());
       }
       publishHeadingPending(false);
+      publishPrecision("pending");
       deps.onGuide?.(null, null);
       dom.line.hidden = true;
       dom.skip.hidden = true;

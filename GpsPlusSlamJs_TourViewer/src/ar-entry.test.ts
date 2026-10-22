@@ -26,6 +26,8 @@ import {
   presenceCleared,
   presenceJudged,
   selectPresentStationId,
+  selectWalkChipKind,
+  trackingLostSet,
 } from "./visitor-guide-slice.js";
 import { RECORDING_DEPTH } from "./authoring-recording.js";
 import { tourDocumentActions } from "./tour-document.js";
@@ -92,6 +94,7 @@ function harness(
     meshCursor?: boolean;
     progressKept?: boolean;
     sheetShown?: () => boolean;
+    debugLines?: () => string[];
   } = {},
 ) {
   // The entry flags a running session on `document.body.dataset`; the
@@ -213,6 +216,9 @@ function harness(
       ...(options.sheetShown === undefined
         ? {}
         : { sheetShown: options.sheetShown }),
+      ...(options.debugLines === undefined
+        ? {}
+        : { debugLines: options.debugLines }),
     },
   });
   return {
@@ -463,6 +469,21 @@ describe("wireArEntry QR readout and visitor hint", () => {
     expect(h.dom.arDebug.textContent).toBe(
       "qr: off\ngps: no fix yet\nno code evaluated yet",
     );
+  });
+
+  // Why (W4 build plan M3, DEC-PERF): the radar is judged on the phone by
+  // its draw time and the frame time; the ?debug=1 block carries the
+  // walk's two lines after the QR and GPS lines.
+  it("ends the block with the walk's radar and frame lines", () => {
+    const h = harness({
+      debugLines: () => ["radar draw: 0.30 ms", "frame: 16.7 ms"],
+    });
+    h.ctx.debug = true;
+    h.entry.renderArStatus();
+    expect(h.dom.arDebug.textContent.split("\n").slice(-2)).toEqual([
+      "radar draw: 0.30 ms",
+      "frame: 16.7 ms",
+    ]);
   });
 
   // Milestone review of b4c #2: the creator pipeline never writes the
@@ -1289,6 +1310,33 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
     h.arStore.dispatch(headingPendingSet(false));
     h.entry.renderArStatus();
     expect(h.dom.arStatus.dataset["state"]).toBe("placed");
+  });
+
+  // Why (W4 build plan M3, §1.3): the chip's "Paused - tracking lost"
+  // and the radar's frozen grey read the store's trackingLost, published
+  // here from the readiness phase the visitor's sentence already uses - on
+  // a change only (this runs per camera frame), never for a creator.
+  it("publishes the tracking loss from the readiness phase, on a change only", () => {
+    const h = placedVisitor();
+    const dispatch = vi.spyOn(h.arStore, "dispatch");
+    const losses = () =>
+      dispatch.mock.calls.filter(([a]) => a.type === trackingLostSet.type);
+    h.arStore.dispatch(reportUpdated(trackingReport("ar-lost")));
+    for (let i = 0; i < 5; i += 1) h.entry.renderArStatus();
+    expect(selectWalkChipKind(h.arStore.getState())).toBe("lost");
+    expect(losses()).toHaveLength(1);
+    h.arStore.dispatch(reportUpdated(trackingReport("warming-up")));
+    for (let i = 0; i < 5; i += 1) h.entry.renderArStatus();
+    expect(selectWalkChipKind(h.arStore.getState())).toBe("pending");
+    expect(losses()).toHaveLength(2);
+  });
+
+  it("never publishes a tracking loss for a creator", () => {
+    const h = harness({ arStatus: "running", mode: "creator" });
+    h.ctx.session = {} as never;
+    h.arStore.dispatch(reportUpdated(trackingReport("ar-lost")));
+    h.entry.renderArStatus();
+    expect(selectWalkChipKind(h.arStore.getState())).toBe("pending");
   });
 
   it("never says it to a creator", () => {

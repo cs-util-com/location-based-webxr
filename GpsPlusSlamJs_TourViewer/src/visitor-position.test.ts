@@ -327,3 +327,87 @@ describe("visitorPosition", () => {
     ).toBeNull();
   });
 });
+
+describe("visitorPosition - the camera's forward (W4 build plan M3)", () => {
+  // Why this test matters: the radar is heading-up, and its heading is the
+  // camera's forward in GPS-world NUE - the AR pose's orientation through
+  // the alignment, the same frame the stations' bearings are taken in. A
+  // forward taken in the odometry frame would turn the whole radar by the
+  // alignment's yaw.
+  const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  const yawRaw = (deg: number) => {
+    const h = (deg * Math.PI) / 360;
+    return { x: 0, y: Math.sin(h), z: 0, w: Math.cos(h) };
+  };
+  const pose = (orientation?: {
+    x: number;
+    y: number;
+    z: number;
+    w: number;
+  }) => ({
+    position: { x: 0, y: 1.4, z: 0 },
+    ...(orientation === undefined ? {} : { orientation }),
+  });
+  const bearing = (f: readonly [number, number, number] | null | undefined) =>
+    f == null
+      ? null
+      : ((((Math.atan2(f[2], f[0]) * 180) / Math.PI) % 360) + 360) % 360;
+
+  it("looks north under the identity with the identity pose (forward -Z)", () => {
+    const v = visitorPosition({
+      alignment: identity,
+      arPose: pose({ x: 0, y: 0, z: 0, w: 1 }),
+      gpsPositions: [],
+    });
+    expect(v.forwardNue?.[0]).toBeCloseTo(1, 9);
+    expect(bearing(v.forwardNue)).toBeCloseTo(0, 9);
+  });
+
+  it("turns with the pose: a quarter turn left (raw +Y) looks west", () => {
+    const v = visitorPosition({
+      alignment: identity,
+      arPose: pose(yawRaw(90)),
+      gpsPositions: [],
+    });
+    expect(bearing(v.forwardNue)).toBeCloseTo(270, 9);
+  });
+
+  it("turns with the alignment: odometry north to world east", () => {
+    // makeRotationY(-90°) in NUE, column-major: north (1,0,0) -> east.
+    const quarter = [0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 5, 0, 7, 1];
+    const v = visitorPosition({
+      alignment: quarter,
+      arPose: pose({ x: 0, y: 0, z: 0, w: 1 }),
+      gpsPositions: [],
+    });
+    expect(bearing(v.forwardNue)).toBeCloseTo(90, 9);
+  });
+
+  it("has no forward without an orientation, an alignment, or for one that is no rotation", () => {
+    expect(
+      visitorPosition({ alignment: identity, arPose: pose(), gpsPositions: [] })
+        .forwardNue,
+    ).toBeNull();
+    expect(
+      visitorPosition({
+        alignment: null,
+        arPose: pose({ x: 0, y: 0, z: 0, w: 1 }),
+        gpsPositions: [],
+      }).forwardNue,
+    ).toBeNull();
+    expect(
+      visitorPosition({
+        alignment: identity,
+        arPose: pose({ x: 0, y: 0, z: 0, w: 0 }),
+        gpsPositions: [],
+      }).forwardNue,
+    ).toBeNull();
+    expect(
+      visitorPosition({
+        alignment: identity,
+        arPose: pose({ x: Number.NaN, y: 0, z: 0, w: 1 }),
+        gpsPositions: [],
+      }).forwardNue,
+    ).toBeNull();
+  });
+});

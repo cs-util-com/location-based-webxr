@@ -9,13 +9,17 @@ import {
   headingPendingSet,
   presenceAfter,
   presenceCleared,
+  precisionKindSet,
   presenceJudged,
   selectHeadingPending,
+  selectPrecisionKind,
+  selectWalkChipKind,
   selectPresentStationId,
   selectShowAllContent,
   selectStationContentShown,
   showAllContentSet,
   showAllStationsFromSearch,
+  trackingLostSet,
 } from "./visitor-guide-slice";
 
 /**
@@ -60,6 +64,28 @@ describe("visitorGuide slice", () => {
     store.dispatch(headingPendingSet(true));
     store.dispatch(guideTourChanged());
     expect(selectHeadingPending(store.getState())).toBe(false);
+  });
+
+  // Why (W4 build plan M3, §1.3): the precision chip and the radar read
+  // one kind from the store, each source with its one publisher - the
+  // guide's judged precision, and the tracking loss from the readiness
+  // phase - and the chip says the loss over any precision.
+  it("records the precision kind and the tracking loss; the chip's kind is lost over any precision", () => {
+    const store = createTourViewerStore();
+    expect(selectPrecisionKind(store.getState())).toBe("pending");
+    expect(selectWalkChipKind(store.getState())).toBe("pending");
+    store.dispatch(precisionKindSet("gps"));
+    expect(selectWalkChipKind(store.getState())).toBe("gps");
+    store.dispatch(trackingLostSet(true));
+    expect(selectPrecisionKind(store.getState())).toBe("gps");
+    expect(selectWalkChipKind(store.getState())).toBe("lost");
+    store.dispatch(trackingLostSet(false));
+    expect(selectWalkChipKind(store.getState())).toBe("gps");
+    store.dispatch(precisionKindSet("code"));
+    store.dispatch(trackingLostSet(true));
+    store.dispatch(guideTourChanged());
+    expect(selectPrecisionKind(store.getState())).toBe("pending");
+    expect(selectWalkChipKind(store.getState())).toBe("pending");
   });
 
   it("applies the presence rule on a judged position, with the margin of its accuracy", () => {

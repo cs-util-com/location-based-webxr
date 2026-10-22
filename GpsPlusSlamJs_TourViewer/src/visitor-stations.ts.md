@@ -155,3 +155,25 @@ hooks.tickStations = stations.tick;
   guide starts after the code locked.
 - Tests: the models and the writer's pure half have their own unit tests;
   this glue is driven by `playwright-tests/visitor-walk.spec.js`.
+
+## The radar and the directions (visitor walk W4 build plan M3)
+
+- `walk.radar?: WalkRadarDom` - the radar and the chip
+  (`walk-radar.ts`), rendered with the sheet from the guide's view and
+  the store's chip kind (`selectWalkChipKind`); hidden when the sheet is.
+  Its stations are the list's rows (the branch rule stays one). A tap
+  toggles the list through `sheetSet`.
+- `walkDirectionsOf(view, chip, memory)` - each station's word and angle
+  (`bearingDeltaDeg(bearing, heading)`) for the sheet model; none without
+  a heading or while the chip is not `code` or `gps`, and the memory is
+  then reset so the next words start cold.
+- The direction memory and the radar's range and bursts reset in
+  `stop()`.
+- The frame time: `sampleFrameTimes` over `registerFrameUpdate` pushes
+  every frame's `dt` (ms, first frame skipped) into a 2 s rolling window, registered at the
+  session's first radar render and dropped in `stop()` (a session's end
+  clears the frame loop's callbacks); `debugLines()` returns
+  `walkRadarDebugLines`' two lines (empty without a radar).
+- The seam `xrProjection0` gives the radar its cone.
+- Tests: `walkDirectionsOf` in `visitor-stations.test.ts`; the composition
+  in `playwright-tests/visitor-walk.spec.js`.

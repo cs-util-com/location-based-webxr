@@ -26,6 +26,7 @@ import {
   type LatLong,
 } from "gps-plus-slam-app-framework/core";
 import type { PrecisionGpsPoint } from "gps-plus-slam-app-framework/state/position-precision";
+import { Quaternion, Vector3 } from "three";
 
 import { odomNueFromWebXr, throughAlignment } from "./visit-anchoring.js";
 
@@ -54,14 +55,27 @@ export interface VisitorPosition {
    *  position, one outlier fix must not hide behind the device fixes'
    *  median (r881 re-review M-A). */
   readonly fixAccuracyM: number | null;
+  /** The camera's forward (its -Z) in GPS-world NUE, a unit vector: the
+   *  AR pose's orientation through the alignment, the frame the stations'
+   *  bearings are taken in (the radar's heading, W4 build plan M3). Null
+   *  without an alignment, a pose, or a pose orientation that is a finite
+   *  rotation; absent where a caller builds a position by hand (tests). */
+  readonly forwardNue?: readonly [number, number, number] | null;
 }
 
-/** A WebXR pose's position (`getCurrentArPose`'s shape). */
+/** A WebXR pose (`getCurrentArPose`'s shape); its orientation is
+ *  optional here (the fakes and older callers pass a position alone). */
 interface ArPoseLike {
   readonly position: {
     readonly x: number;
     readonly y: number;
     readonly z: number;
+  };
+  readonly orientation?: {
+    readonly x: number;
+    readonly y: number;
+    readonly z: number;
+    readonly w: number;
   };
 }
 
@@ -80,6 +94,7 @@ export function visitorPosition(input: {
     aligned: usableAlignment(input.alignment),
     fixAtMs: fix?.atMs ?? null,
     fixAccuracyM: fix?.accuracyM ?? null,
+    forwardNue: cameraForwardNue(input.alignment, input.arPose),
   };
 }
 
@@ -137,6 +152,28 @@ function cameraNue(
   if (world === null) return null;
   const [n, u, e] = world.position;
   return [n, u, e];
+}
+
+/** The camera's forward (-Z) through the alignment, in GPS-world NUE. */
+function cameraForwardNue(
+  alignment: ArrayLike<number> | null,
+  arPose: ArPoseLike | null,
+): readonly [number, number, number] | null {
+  const q = arPose?.orientation;
+  if (alignment === null || q === undefined) return null;
+  const { x, y, z, w } = q;
+  if (![x, y, z, w].every(Number.isFinite) || Math.hypot(x, y, z, w) < 1e-9) {
+    return null;
+  }
+  const world = throughAlignment(
+    odomNueFromWebXr({ position: [0, 0, 0], rotation: [x, y, z, w] }),
+    alignment,
+  );
+  if (world === null) return null;
+  const f = new Vector3(0, 0, -1).applyQuaternion(
+    new Quaternion(...world.rotation),
+  );
+  return [f.x, f.y, f.z];
 }
 
 /** A reported accuracy a fix can be judged by: finite and positive. */

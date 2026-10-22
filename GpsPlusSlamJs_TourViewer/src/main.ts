@@ -111,6 +111,13 @@ function element<T extends HTMLElement>(id: string): T {
   return found as T;
 }
 
+/** An SVG element by id (the walk's direction arrow). */
+function svgElement(id: string): SVGElement {
+  const found = document.getElementById(id);
+  if (!(found instanceof SVGElement)) throw new Error(`missing svg #${id}`);
+  return found;
+}
+
 const errorBox = element<HTMLDivElement>("error");
 
 // `?nocache=1` disables the local copy entirely — the pure-streaming mode the
@@ -894,6 +901,8 @@ const stations = wireVisitorStations({
       eyebrow: element("walk-eyebrow"),
       title: element("walk-title"),
       distance: element("walk-distance"),
+      distanceText: element("walk-distance-text"),
+      distanceArrow: svgElement("walk-distance-arrow"),
       tail: element("walk-tail"),
       quick: element("station-skip"),
       story: element("walk-story"),
@@ -925,6 +934,14 @@ const stations = wireVisitorStations({
     },
     onShownChange: () => {
       hooks.renderArStatus();
+    },
+    // The radar and the precision chip (W4 build plan M3).
+    radar: {
+      wrap: element("walk-radar-wrap"),
+      button: element("walk-radar"),
+      canvas: element<HTMLCanvasElement>("walk-radar-canvas"),
+      chip: element("walk-precision"),
+      chipText: element("walk-precision-text"),
     },
   },
   // The test switch ?relocate=here (tour-relocation.ts, owner decision S-D9).
@@ -994,6 +1011,7 @@ const arEntry = wireArEntry({
     toast: walkToast,
     progressKept: () => mode === "visitor" && stations.progressKept(),
     sheetShown: () => stations.walkShown(),
+    debugLines: () => stations.debugLines(),
   },
   ...(recordingPanel === null ? {} : { recording: recordingPanel }),
 });

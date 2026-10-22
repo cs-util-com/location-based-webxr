@@ -382,3 +382,22 @@ module back and checks the first paint (paper, no header, no empty step)
 for a creator and a visitor; the no-console-errors smoke boots
 exactly this page. `src/printed-size-default.test.ts` reads this file for
 the size default.
+
+## The radar and the precision chip (visitor walk W4 build plan M3)
+
+- `#walk-radar-wrap` (hidden until the walk shows; `data-mode` live or
+  frozen) holds `#walk-radar` (a button, "Stations around you - open the
+  list", `aria-controls="walk-list"`) with `#walk-radar-canvas`, and
+  `#walk-precision` (`data-kind`) with its mark and
+  `#walk-precision-text`.
+- Place: fixed at the top right, 30 px from the top and 12 px from the
+  right, 132 px; a phone held sideways 108 px, 10 px from the top. The
+  chip under the radar, 6 px apart, right-aligned, at most the radar plus
+  36 px wide. Frozen: the canvas grayscale(1) brightness(.85).
+- Tokens: `--walk-gps: #93c5fd`, `--walk-weak: #fbbf24`, `--walk-radar`
+  (app-local, plan §6 Q2; `walk-radar.test.ts` holds the canvas to them).
+- The direction arrows: `#walk-distance-arrow` and `#walk-distance-text`
+  inside `#walk-distance`; `.walk-arrow` 15 px (13 px in a row), hidden
+  without `data-deg`; reduced motion stops the chip's pending pulse and
+  the arrows' turn transition.
+- Pinned by `playwright-tests/visitor-walk-layout.spec.js`.

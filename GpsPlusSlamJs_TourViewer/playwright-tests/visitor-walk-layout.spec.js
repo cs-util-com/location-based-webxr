@@ -353,6 +353,83 @@ for (const viewport of VIEWPORTS) {
   });
 }
 
+/** A tour whose stations hold items (pins): every walk layout also runs
+ *  on one (the walk's lessons). */
+const ITEMS_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/stations-tour.zip";
+
+/** Two boxes overlap (strictly: touching edges do not). */
+const overlaps = (a, b) =>
+  a.x < b.x + b.width - 0.5 &&
+  b.x < a.x + a.width - 0.5 &&
+  a.y < b.y + b.height - 0.5 &&
+  b.y < a.y + a.height - 0.5;
+
+for (const viewport of VIEWPORTS) {
+  const label = `${String(viewport.width)}x${String(viewport.height)}`;
+  for (const archive of [WALK_ARCHIVE, ITEMS_ARCHIVE]) {
+    const tour = archive === WALK_ARCHIVE ? "stories" : "items";
+    test(`the radar sits at the top right with the chip under it, clear of the walk, at ${label} (${tour})`, async ({
+      page,
+    }) => {
+      // Why (visitor walk W4 build plan M3, §1.2): W4's radar is 132 px,
+      // 30 px from the top and 12 px from the right (108 px and 10 px on a
+      // phone held sideways); the chip stands 6 px under it, right-aligned,
+      // at most 36 px wider; neither covers the Exit button, the sheet
+      // (closed or open) or the toast's place.
+      await page.setViewportSize(viewport);
+      await installTourViewerArFakes(page);
+      await enterTheWalk(page, archive);
+      const size = sideways(viewport) ? 108 : 132;
+      const radar = await box(page, "walk-radar");
+      expect(radar.width).toBeCloseTo(size, 0);
+      expect(radar.height).toBeCloseTo(size, 0);
+      expect(viewport.width - (radar.x + radar.width)).toBeCloseTo(12, 0);
+      expect(radar.y).toBeCloseTo(sideways(viewport) ? 10 : 30, 0);
+      await expect(page.getByTestId("walk-radar")).toHaveCSS(
+        "border-radius",
+        "50%",
+      );
+      const chip = await box(page, "walk-precision");
+      expect(chip.y - (radar.y + radar.height)).toBeCloseTo(6, 0);
+      expect(chip.x + chip.width).toBeCloseTo(radar.x + radar.width, 0);
+      expect(chip.width).toBeLessThanOrEqual(size + 36 + 0.5);
+      await expect(page.getByTestId("walk-precision")).toHaveCSS(
+        "font-size",
+        "12px",
+      );
+      await expect(page.getByTestId("walk-precision")).toHaveCSS(
+        "border-radius",
+        "14px",
+      );
+      const exit = await box(page, "enter-ar");
+      const sheet = await box(page, "walk-sheet");
+      for (const other of [exit, sheet]) {
+        expect(overlaps(radar, other)).toBe(false);
+        expect(overlaps(chip, other)).toBe(false);
+      }
+      // The list open: still clear of the radar and the chip.
+      await page.getByTestId("walk-grab").click();
+      await expect(page.getByTestId("walk-list")).toBeVisible();
+      const open = await box(page, "walk-sheet");
+      expect(overlaps(radar, open)).toBe(false);
+      expect(overlaps(chip, open)).toBe(false);
+      await page.getByTestId("walk-close").click();
+      // A skip's toast stands clear of the radar and the chip (the
+      // stories tour: the items tour's first station is found at the
+      // code, its story playing).
+      if (archive !== WALK_ARCHIVE) return;
+      const quick = page.getByTestId("station-skip");
+      await quick.click();
+      await quick.click();
+      await expect(page.locator("#walk-toast")).toBeVisible();
+      const toast = await page.locator("#walk-toast").boundingBox();
+      if (toast === null) throw new Error("no toast");
+      expect(overlaps(radar, toast)).toBe(false);
+      expect(overlaps(chip, toast)).toBe(false);
+    });
+  }
+}
+
 test("the away block sits above the start's safety line, inside a phone's screen", async ({
   page,
 }) => {

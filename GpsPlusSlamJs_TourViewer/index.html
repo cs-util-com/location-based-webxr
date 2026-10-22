@@ -1658,6 +1658,11 @@
         --walk-surface-2: rgb(255 255 255 / 7%);
         --walk-line: rgb(255 255 255 / 15%);
         --walk-danger: #f87171;
+        /* The position's precision (M3): GPS blue, too weak amber; the
+           radar's canvas draws the same (walk-radar.test.ts holds them). */
+        --walk-gps: #93c5fd;
+        --walk-weak: #fbbf24;
+        --walk-radar: 132px;
         /* The away block's segments on the start page (W4's paper). */
         --walk-away-found: #0f766e;
         --walk-away-left: #ddd6c7;
@@ -1819,6 +1824,119 @@
         50% {
           transform: rotate(14deg);
         }
+      }
+
+      /* The radar and the precision chip (W4 build plan M3, §1.2, §1.3):
+         the top right, the chip under the radar, right-aligned with it.
+         The radar is a canvas (walk-radar.ts); frozen (no position,
+         tracking lost) it goes grey. */
+      body[data-mode="visitor"][data-ar-active="true"]
+        .walk-radar-wrap:not([hidden]) {
+        position: fixed;
+        top: calc(30px + env(safe-area-inset-top));
+        right: calc(12px + env(safe-area-inset-right));
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+        width: var(--walk-radar);
+        color: var(--walk-ink);
+        font-family: system-ui, sans-serif;
+        font-variant-numeric: lining-nums;
+      }
+      .walk-radar-wrap[hidden] {
+        display: none;
+      }
+      .walk-radar {
+        display: block;
+        width: var(--walk-radar);
+        height: var(--walk-radar);
+        margin: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        box-shadow: 0 6px 18px rgb(0 0 0 / 28%);
+        cursor: pointer;
+        appearance: none;
+        backdrop-filter: blur(5px);
+      }
+      .walk-radar-canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        transition: filter 0.5s;
+      }
+      .walk-radar-wrap[data-mode="frozen"] .walk-radar-canvas {
+        filter: grayscale(1) brightness(0.85);
+      }
+      .walk-precision {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        width: max-content;
+        max-width: calc(var(--walk-radar) + 36px);
+        margin: 0;
+        padding: 5px 9px;
+        border: 1px solid var(--walk-line);
+        border-radius: 14px;
+        background: rgb(10 14 19 / 72%);
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.2;
+        text-align: right;
+      }
+      .walk-precision-mark {
+        flex: none;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--walk-gps);
+        box-shadow: 0 0 0 3px rgb(147 197 253 / 25%);
+      }
+      .walk-precision[data-kind="code"] .walk-precision-mark {
+        border-radius: 2px;
+        background: #fff;
+        box-shadow: 0 0 0 2px var(--walk-found);
+      }
+      .walk-precision[data-kind="weak"] {
+        border-color: rgb(251 191 36 / 55%);
+      }
+      .walk-precision[data-kind="weak"] .walk-precision-mark {
+        background: var(--walk-weak);
+        box-shadow: 0 0 0 4px rgb(251 191 36 / 25%);
+      }
+      .walk-precision[data-kind="none"] .walk-precision-mark,
+      .walk-precision[data-kind="lost"] .walk-precision-mark {
+        background: #6b7480;
+        box-shadow: none;
+      }
+      .walk-precision[data-kind="pending"] .walk-precision-mark {
+        border: 2px solid var(--walk-gps);
+        background: transparent;
+        box-shadow: none;
+        animation: walk-pulse 1.2s ease-in-out infinite;
+      }
+
+      @keyframes walk-pulse {
+        50% {
+          transform: scale(0.6);
+          opacity: 0.5;
+        }
+      }
+
+      /* The direction arrows (M3, §1.5): turned to the station, hidden
+         without an angle (walk-sheet.ts setArrow). */
+      .walk-arrow {
+        flex: none;
+        width: 15px;
+        height: 15px;
+        transition: transform 0.3s;
+      }
+      .walk-arrow:not([data-deg]) {
+        display: none;
       }
 
       /* The toast (W4's place, the framework's toast in the design
@@ -2004,6 +2122,11 @@
         font-weight: 700;
         /* Both: a value set here replaces the sheet's inherited one. */
         font-variant-numeric: lining-nums tabular-nums;
+      }
+      .walk-distance:not([hidden]) {
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
       }
       .walk-tail {
         margin: 3px 0 0;
@@ -2325,10 +2448,16 @@
         font-weight: 600;
       }
       .walk-row-main small {
-        display: block;
+        display: flex;
+        gap: 5px;
+        align-items: center;
         margin-top: 1px;
         color: var(--walk-muted);
         font-size: 13px;
+      }
+      .walk-row-main small .walk-arrow {
+        width: 13px;
+        height: 13px;
       }
       .walk-list-foot {
         display: flex;
@@ -2352,6 +2481,11 @@
          the coach right of centre, the toast left of the radar. */
       @media (orientation: landscape) and (height <= 520px) {
         body[data-mode="visitor"][data-ar-active="true"] #ar-root #enter-ar {
+          top: calc(10px + env(safe-area-inset-top));
+        }
+        body[data-mode="visitor"][data-ar-active="true"]
+          .walk-radar-wrap:not([hidden]) {
+          --walk-radar: 108px;
           top: calc(10px + env(safe-area-inset-top));
         }
         body[data-mode="visitor"][data-ar-active="true"]
@@ -2401,8 +2535,13 @@
       @media (prefers-reduced-motion: reduce) {
         .walk-coach-spin,
         .walk-coach-sway rect,
-        .walk-dots > i[data-s="now"][data-timed="true"]::after {
+        .walk-dots > i[data-s="now"][data-timed="true"]::after,
+        .walk-precision[data-kind="pending"] .walk-precision-mark {
           animation: none;
+        }
+        .walk-arrow,
+        .walk-radar-canvas {
+          transition: none;
         }
       }
 
@@ -4564,6 +4703,41 @@
                 </svg>
                 <span id="walk-coach-text" data-testid="walk-coach-text"></span>
               </div>
+              <!-- The radar and the precision chip (W4 build plan M3): a tap
+               on the radar opens or closes the list. -->
+              <div
+                id="walk-radar-wrap"
+                class="walk-radar-wrap"
+                data-testid="walk-radar-wrap"
+                data-mode="live"
+                hidden
+              >
+                <button
+                  type="button"
+                  id="walk-radar"
+                  class="walk-radar"
+                  data-testid="walk-radar"
+                  aria-controls="walk-list"
+                  aria-label="Stations around you - open the list"
+                >
+                  <canvas
+                    id="walk-radar-canvas"
+                    class="walk-radar-canvas"
+                  ></canvas>
+                </button>
+                <p
+                  id="walk-precision"
+                  class="walk-precision"
+                  data-testid="walk-precision"
+                  data-kind="pending"
+                >
+                  <i class="walk-precision-mark" aria-hidden="true"></i
+                  ><span
+                    id="walk-precision-text"
+                    data-testid="walk-precision-text"
+                  ></span>
+                </p>
+              </div>
               <!-- The framework's toast is attached here while it shows. -->
               <!-- aria-hidden: its words are announced already, by
                    #ar-status-live or #station-line, and the rest by
@@ -4628,6 +4802,20 @@
                           class="walk-distance"
                           data-testid="walk-distance"
                           hidden
+                          ><svg
+                            id="walk-distance-arrow"
+                            class="walk-arrow"
+                            viewBox="0 0 16 16"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M8 2l5 11-5-3-5 3z"
+                              fill="currentColor"
+                            /></svg
+                          ><span
+                            id="walk-distance-text"
+                            data-testid="walk-distance-text"
+                          ></span
                         ></span>
                       </p>
                       <p

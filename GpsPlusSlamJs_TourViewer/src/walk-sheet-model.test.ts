@@ -73,7 +73,11 @@ function view(over: Partial<GuideView> = {}): GuideView {
   return {
     focusId: "well",
     position: "distance",
+    precision: "gps",
     accuracyM: null,
+    bearings: new Map(),
+    headingDeg: null,
+    snapshot: null,
     distances: new Map([
       ["gate", 30],
       ["well", 46.4],
@@ -107,6 +111,7 @@ describe("the peek (§1.5)", () => {
       eyebrow: "3 stations to find - nearest",
       title: "The well",
       distance: "46 m",
+      arrowDeg: null,
       tail: "",
     });
   });
@@ -161,6 +166,7 @@ describe("the peek (§1.5)", () => {
       eyebrow: "Position unknown",
       title: "3 stations to find",
       distance: null,
+      arrowDeg: null,
       tail: "Scan one of the tour's codes so the guide knows where you are.",
     });
   });
@@ -197,6 +203,7 @@ describe("the peek (§1.5)", () => {
       eyebrow: "Station found",
       title: "The well",
       distance: null,
+      arrowDeg: null,
       tail: "Its story is playing.",
     });
   });
@@ -217,6 +224,7 @@ describe("the peek (§1.5)", () => {
       eyebrow: "Old town walk",
       title: "Tour complete",
       distance: null,
+      arrowDeg: null,
       tail: "Every station visited.",
     });
     const skipped = walk("any", [
@@ -337,6 +345,55 @@ describe("the segments and the rows (§1.5, §1.6)", () => {
       }),
     );
     expect(atLimit.segments.kind).toBe("each");
+  });
+});
+
+describe("the direction words and arrows (M3, §1.5, §1.6)", () => {
+  // Why: with a heading the peek says which way the focus is and the rows
+  // which way each station is, in the one direction rule's words
+  // (`walk-direction.ts`), with an arrow turned to the station; without a
+  // heading only the distance ("N m"), and no arrow anywhere a distance is
+  // not shown (R-0).
+  const directions = new Map([
+    ["well", { word: "right" as const, angleDeg: 61.6 }],
+    ["tower", { word: "behind" as const, angleDeg: -170 }],
+    ["garden", { word: "ahead" as const, angleDeg: 4 }],
+  ]);
+
+  it("the peek's tail says the focus's direction and its arrow turns to it", () => {
+    const m = walkSheetModel(input({ directions }));
+    expect(m.peek).toMatchObject({
+      distance: "46 m",
+      arrowDeg: 62,
+      tail: "To your right.",
+    });
+  });
+
+  it("rows: 'N m - <direction>' with an arrow; found and later rows have none", () => {
+    const m = walkSheetModel(input({ directions }));
+    expect(m.list.rows.map((r) => [r.id, r.sub, r.arrowDeg])).toEqual([
+      ["gate", "Found", null],
+      ["well", "46 m - to your right", 62],
+      ["tower", "120 m - behind you", -170],
+      ["garden", "190 m - ahead", 4],
+    ]);
+  });
+
+  it("without a heading: the distance alone, no arrow", () => {
+    const m = walkSheetModel(input());
+    expect(m.peek).toMatchObject({ arrowDeg: null, tail: "" });
+    expect(m.list.rows[2]).toMatchObject({ sub: "120 m", arrowDeg: null });
+  });
+
+  it("no direction where no distance is shown (R-0)", () => {
+    for (const position of ["weak", "none", "pending"] as const) {
+      const m = walkSheetModel(
+        input({ directions, view: view({ position, accuracyM: 40 }) }),
+      );
+      expect(m.peek.arrowDeg).toBeNull();
+      expect(m.peek.tail).not.toMatch(/^(Ahead|To your|Behind)/);
+      expect(m.list.rows.every((r) => r.arrowDeg === null)).toBe(true);
+    }
   });
 });
 

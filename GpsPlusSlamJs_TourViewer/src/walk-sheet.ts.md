@@ -80,3 +80,18 @@ view.render(model, { sheet: "peek", quick, position: "distance", story: null });
   `playwright-tests/visitor-walk.spec.js` (open and close by tap and
   drag, the story card, the completion, the away block) and
   `playwright-tests/visitor-walk-layout.spec.js` (positions and gaps).
+
+## The direction arrows (visitor walk W4 build plan M3)
+
+- `WalkSheetDom.distanceText` and `distanceArrow` - the peek's distance
+  is an arrow (`#walk-distance-arrow`) and a text (`#walk-distance-text`)
+  inside `#walk-distance`, which keeps its test id and its "N m" text.
+- A row's sub line is an arrow and a text span inside its `small`.
+- `setArrow(el, deg)` - writes `data-deg` and `rotate(Ndeg)` only when the
+  whole degree changed; null removes both (the CSS hides an arrow without
+  `data-deg`).
+- The rows' redraw key leaves the arrows out: an angle changes every
+  frame, so the arrows turn in place while the rows rebuild only when
+  something else changed.
+- Tests: `setArrow` in `walk-sheet.test.ts`; the page in
+  `playwright-tests/visitor-walk.spec.js`.

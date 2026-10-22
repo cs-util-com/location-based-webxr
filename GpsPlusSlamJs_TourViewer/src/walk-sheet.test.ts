@@ -5,6 +5,7 @@ import {
   focusLostToHiding,
   hideKeepingFocus,
   quickKind,
+  setArrow,
   sheetAfterDrag,
   WALK_SHEET_DRAG_PX,
 } from "./walk-sheet";
@@ -120,5 +121,47 @@ describe("focusLostToHiding (W4 build plan M2 review)", () => {
     expect(focusLostToHiding(node(true), { id: "other" })).toBe(false);
     expect(focusLostToHiding(node(false), null)).toBe(false);
     expect(focusLostToHiding(null, null)).toBe(false);
+  });
+});
+
+describe("setArrow (the direction arrows, W4 build plan M3)", () => {
+  // Why: an arrow's angle moves with every camera frame; it must turn in
+  // place and write its style only when the whole degree changed, and an
+  // arrow without an angle (no heading, no distance shown) is hidden.
+  function arrow() {
+    let writes = 0;
+    const style = {
+      get transform() {
+        return this._t;
+      },
+      set transform(v: string) {
+        writes += 1;
+        this._t = v;
+      },
+      _t: "",
+    };
+    return {
+      el: { dataset: {} as DOMStringMap, style } as unknown as Pick<
+        SVGElement,
+        "dataset" | "style"
+      >,
+      writes: () => writes,
+    };
+  }
+
+  it("turns to the angle, writes once per change, and hides on null", () => {
+    const a = arrow();
+    setArrow(a.el, 62);
+    expect(a.el.dataset["deg"]).toBe("62");
+    expect(a.el.style.transform).toBe("rotate(62deg)");
+    setArrow(a.el, 62);
+    expect(a.writes()).toBe(1);
+    setArrow(a.el, -170);
+    expect(a.el.style.transform).toBe("rotate(-170deg)");
+    setArrow(a.el, null);
+    expect(a.el.dataset["deg"]).toBeUndefined();
+    expect(a.el.style.transform).toBe("");
+    setArrow(a.el, null);
+    expect(a.writes()).toBe(3);
   });
 });

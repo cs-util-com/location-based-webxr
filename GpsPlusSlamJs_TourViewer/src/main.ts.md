@@ -184,3 +184,9 @@ sidecars name the unit tests beneath each concern.
 before another tour replaces the open one while the creator's rebuilt file
 was not saved, and a `beforeunload` handler asks the browser's own question
 before the page goes (partial on Android; the draft survives the rest).
+
+## The radar (visitor walk W4 build plan M3)
+
+- Hands the stations the radar's elements (`walk.radar`) and the peek's
+  arrow and text (`distanceArrow` through `svgElement`, `distanceText`),
+  and the AR entry the walk's `debugLines`.

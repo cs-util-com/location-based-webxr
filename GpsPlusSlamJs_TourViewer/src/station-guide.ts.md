@@ -552,3 +552,26 @@ distances, quick, note }`: the line's station, how the position stands
 - Tests: `station-guide.view.test.ts` (the view per position kind, the
   quick action, the note, the end control and Keep listening, the stale
   line); `walk-sheet-model.property.test.ts` drives the real guide.
+
+## What the radar and the chip read (visitor walk W4 build plan M3)
+
+- `GuideView.precision` - `pending | code | gps | weak | none`, by the
+  line's own rules (`positionKind` over any station's distance; a
+  distance is a code's when the precision source is a code). Published to
+  the store (`precisionKindSet`) only on a change, `pending` on an early
+  return of `tick` and at `endSession`.
+- `GuideView.accuracyM` - set for `gps` and `weak` (the chip's "about
+  N m"); null otherwise.
+- `GuideView.bearings` - every placeable station's bearing from the
+  visitor (`nueBearingDeg`, 0 when standing on its spot).
+- `GuideView.headingDeg` - the camera's bearing (its forward through the
+  alignment, `visitor-position.ts` `forwardNue`) once the heading latch
+  holds; the last bearing is kept while the camera points straight down
+  or a pose has no orientation; null before the latch, reset at
+  `endSession`.
+- `GuideView.snapshot` - the last geometry (distances, bearings,
+  heading) judged while a code, GPS or too-weak GPS spoke for the
+  position and the store's `trackingLost` was false; a frozen radar draws
+  from it. A closure cache rebuilt from the measurement, never the
+  store's; null after `endSession`.
+- Tests: `station-guide.radar.test.ts`.

@@ -161,7 +161,7 @@ test("the peek names the nearest station; the list opens by the grab and by a dr
     "4 stations to find - nearest",
   );
   await expect(page.getByTestId("walk-title")).toHaveText("The gate");
-  await expect(page.getByTestId("walk-distance")).toHaveText(/^2\d m$/);
+  await expect(page.getByTestId("walk-distance-text")).toHaveText(/^2\d m$/);
   await expect(page.getByTestId("station-line")).toHaveText(
     /^4 stations to find - nearest: The gate, 2\d m$/,
   );
@@ -191,7 +191,11 @@ test("the peek names the nearest station; the list opens by the grab and by a dr
   const rows = page.getByTestId("walk-row");
   await expect(rows).toHaveCount(4);
   await expect(rows.first()).toHaveAttribute("data-state", "next");
-  await expect(rows.first().getByTestId("walk-row-sub")).toHaveText(/^2\d m$/);
+  // With the code's heading the row says which way too (W4 build plan
+  // M3): the camera looks north, the gate stands north.
+  await expect(rows.first().getByTestId("walk-row-sub")).toHaveText(
+    /^2\d m - ahead$/,
+  );
   await expect(page.getByTestId("walk-grab")).toHaveAttribute(
     "aria-label",
     "Hide the list",

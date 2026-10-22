@@ -22,7 +22,13 @@ queryGeolocationPermission;
 requestLocationOnce; shareOrDownloadZip; downloadZip; canShareZip; downloadPdf; openPdfTab; copyText;
 startHitTestReticle; pickObjectInView; encodeFrameJpeg;
 createLabel; schedule; createWayfindingHud; loadGlbModel;
-createAudioElement }`
+createAudioElement; xrProjection0 }`
+  - `xrProjection0()` (visitor walk W4 build plan M3) - the session
+    camera's `projectionMatrix.elements[0]`, null without a camera; the
+    radar's view cone is `2*atan(1/P[0])` (`walk-radar-model.ts`
+    `walkRadarFovDeg`), its fallback W4's camera (64 deg vertical on a
+    screen taller than wide, else 44 deg) at the screen's aspect.
+    Not faked in the e2e: no camera, so the fallback cone.
   - `createWayfindingHud({ getTargets })` (tour kit plan K4) - the
     framework's wayfinding HUD over the session camera (`getCamera()`),
     null while there is none; the station targets carry their own arrival

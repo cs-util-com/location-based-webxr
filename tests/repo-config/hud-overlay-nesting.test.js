@@ -92,6 +92,10 @@ const APP_OVERLAY_CONTRACTS = [
       'walk-sheet',
       'walk-coach',
       'walk-toast-root',
+      // The radar and its precision chip (W4 build plan M3).
+      'walk-radar-wrap',
+      'walk-radar',
+      'walk-precision',
     ],
   },
 ];

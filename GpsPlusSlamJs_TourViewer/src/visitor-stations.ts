@@ -7,6 +7,9 @@
  * (`playwright-tests/stations.spec.js`). The walk's sheet, its away block
  * and its toasts (visitor walk W4 build plan M2) are drawn from here too,
  * from the guide's `view()` and the store's walk (`walk-sheet-model.ts`).
+ * M3 adds the radar and the precision chip (`walk-radar.ts`), the direction
+ * words' memory (`walk-direction.ts`) and the `?debug=1` lines for both
+ * the radar's draw time and the frame time.
  */
 
 import {
@@ -19,9 +22,14 @@ import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-stations";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import { registerFrameUpdate } from "gps-plus-slam-app-framework/ar/frame-loop";
+import { bearingDeltaDeg } from "gps-plus-slam-app-framework/utils/bearing-degrees";
 
 import type { ViewerMode } from "./mode.js";
-import { selectStationContentShown } from "./visitor-guide-slice.js";
+import {
+  selectStationContentShown,
+  selectWalkChipKind,
+  type WalkChipKind,
+} from "./visitor-guide-slice.js";
 import { pictureProblem } from "./image-cap.js";
 import { createKeyedChain } from "./keyed-chain.js";
 import { createBreadcrumbTrail } from "./breadcrumbs.js";
@@ -32,6 +40,7 @@ import { createSceneView, type SceneViewDom } from "./scene-view.js";
 import type { TourViewerSeams } from "./seams.js";
 import {
   wireStationGuide,
+  type GuideView,
   type StationGuideDom,
   type StationTour,
 } from "./station-guide.js";
@@ -60,8 +69,18 @@ import {
   awayModel,
   walkHasProgress,
   walkSheetModel,
+  type WalkSheetDirection,
 } from "./walk-sheet-model.js";
 import type { WalkToast } from "./walk-toast.js";
+import { createWalkDirections } from "./walk-direction.js";
+import { createRollingWindow } from "./rolling-window.js";
+import {
+  sampleFrameTimes,
+  walkRadarDebugLines,
+  wireWalkRadar,
+  type WalkRadarDom,
+  type WalkRadarView,
+} from "./walk-radar.js";
 
 /** Said once when a visitor comes back into AR with progress (W4). */
 const WELCOME_BACK = "Welcome back - your progress is kept.";
@@ -148,6 +167,35 @@ export interface VisitorStations {
   progressKept: () => boolean;
   /** The walk's sheet shows now: the guide runs (W4 build plan M2). */
   walkShown: () => boolean;
+  /** The `?debug=1` lines: the radar's draw time and the frame time (W4
+   *  build plan M3); empty without a radar. */
+  debugLines: () => string[];
+}
+
+/**
+ * Each station's direction from the guide's view (W4 build plan M3,
+ * §1.5): the angle from straight ahead and the word with its hysteresis.
+ * None without a heading, and none while the chip says the position is
+ * not one to point from (too weak, none, lost, pending): the words stand
+ * where a distance does, and a frozen radar points nowhere new.
+ */
+export function walkDirectionsOf(
+  view: Pick<GuideView, "bearings" | "headingDeg">,
+  chip: WalkChipKind,
+  memory: ReturnType<typeof createWalkDirections>,
+): Map<string, WalkSheetDirection> {
+  const out = new Map<string, WalkSheetDirection>();
+  const heading = view.headingDeg;
+  if (heading === null || (chip !== "code" && chip !== "gps")) {
+    memory.reset();
+    return out;
+  }
+  for (const [id, bearing] of view.bearings) {
+    const angleDeg = bearingDeltaDeg(bearing, heading);
+    const word = memory.of(id, angleDeg);
+    if (word !== null) out.set(id, { word, angleDeg });
+  }
+  return out;
 }
 
 export function wireVisitorStations(deps: {
@@ -161,6 +209,7 @@ export function wireVisitorStations(deps: {
     | "createWayfindingHud"
     | "loadGlbModel"
     | "createAudioElement"
+    | "xrProjection0"
   >;
   dom: {
     guide: StationGuideDom;
@@ -185,6 +234,8 @@ export function wireVisitorStations(deps: {
     /** The sheet came or went: the AR status re-routes its sentence
      *  (a placement wait gives way to a shown walk). */
     onShownChange?: () => void;
+    /** The radar and the precision chip (W4 build plan M3); absent: none. */
+    radar?: WalkRadarDom;
   };
 }): VisitorStations {
   const { ctx, arStore, seams, dom } = deps;
@@ -361,6 +412,47 @@ export function wireVisitorStations(deps: {
   /** What the last render drew (the sheet shown or not): a mirror of the
    *  DOM, read by the status and compared to call `onShownChange`. */
   let sheetShown = false;
+  /** Each station's direction word, held by its hysteresis: a view
+   *  resource like the sheet's DOM, reset with the session. */
+  const directionMemory = createWalkDirections();
+  const win = dom.doc.defaultView;
+  /** The frame time over the last 2 s, for `?debug=1` (DEC-PERF). */
+  const frames = createRollingWindow();
+  const radarView: WalkRadarView | null =
+    walk?.radar === undefined || win === null
+      ? null
+      : wireWalkRadar({
+          dom: walk.radar,
+          toggleList: () => {
+            const open = selectWalkSheet(arStore.getState()) === "list";
+            arStore.dispatch(sheetSet(open ? "peek" : "list"));
+            renderSheet();
+          },
+          now: () => win.performance.now(),
+          // A real timer: the trailing draw is the radar's own clock, not
+          // a step an e2e fires.
+          setTimer: (fn, ms) => win.setTimeout(fn, ms),
+          clearTimer: (handle) => {
+            win.clearTimeout(handle as number);
+          },
+          projection0: () => seams.xrProjection0(),
+          aspect: () => win.innerWidth / win.innerHeight,
+          devicePixelRatio: () => win.devicePixelRatio,
+          reduceMotion: () =>
+            win.matchMedia("(prefers-reduced-motion: reduce)").matches,
+        });
+  /** The frame-time sampler of this AR session: registered with the
+   *  session's first radar render, since a session's end clears the
+   *  frame loop's callbacks (`resetWebXRState`). */
+  let unregisterFrames: (() => void) | null = null;
+  function sampleFrames(): void {
+    if (unregisterFrames !== null || win === null) return;
+    unregisterFrames = sampleFrameTimes(
+      registerFrameUpdate,
+      () => win.performance.now(),
+      frames,
+    );
+  }
   const sheetView: WalkSheetView | null =
     walk === undefined
       ? null
@@ -411,9 +503,11 @@ export function wireVisitorStations(deps: {
     const progress = selectWalkProgress(state);
     if (guideView === null || tour === null || progress === null) {
       sheetView.render(null, NO_SHEET);
+      radarView?.render(null);
       markShown(false);
       return;
     }
+    const chip = selectWalkChipKind(state);
     const playing = view.playing();
     const sheet = selectWalkSheet(state);
     const model = walkSheetModel({
@@ -424,6 +518,17 @@ export function wireVisitorStations(deps: {
       view: guideView,
       story: playing === null ? null : { stationId: playing },
       sheet,
+      directions: walkDirectionsOf(guideView, chip, directionMemory),
+    });
+    // The radar draws the list's stations (its branch rule too).
+    if (radarView !== null) sampleFrames();
+    radarView?.render({
+      stations: model.list.rows,
+      order: tour.order,
+      kind: chip,
+      accuracyM: guideView.accuracyM,
+      live: guideView,
+      snapshot: guideView.snapshot,
     });
     sheetView.render(model, {
       sheet,
@@ -517,6 +622,11 @@ export function wireVisitorStations(deps: {
       // page, and the next entry welcomes the visitor back (W4, §1.8) at
       // the peek, as W4 does, even when the list was open on leaving.
       saidNote = null;
+      directionMemory.reset();
+      radarView?.reset();
+      unregisterFrames?.();
+      unregisterFrames = null;
+      frames.reset();
       arStore.dispatch(welcomeSet(keptWalk() !== null));
       arStore.dispatch(sheetSet("peek"));
       renderSheet();
@@ -524,6 +634,11 @@ export function wireVisitorStations(deps: {
     },
     progressKept: () => keptWalk() !== null,
     walkShown: () => sheetShown,
+    debugLines: () => {
+      if (radarView === null || win === null) return [];
+      const now = win.performance.now();
+      return walkRadarDebugLines(radarView.drawStats(now), frames.summary(now));
+    },
   };
 }
 

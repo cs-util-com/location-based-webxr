@@ -102,3 +102,20 @@ model.peek; // { kind: "walk", eyebrow: "3 stations to find - nearest", ... }
   store, random steps and measurements: the peek agrees with the hidden
   line, the named station is offered and waiting, the distance matches,
   "next" rows are offered, segments equal the rows' states.
+
+## The direction words and arrows (visitor walk W4 build plan M3)
+
+- `WalkSheetInput.directions?: ReadonlyMap<string, WalkSheetDirection>`
+  - each station's word (`walk-direction.ts`, with its hysteresis, kept
+    by the caller) and its angle from straight ahead, degrees, positive to
+    the right. Absent, or a station missing: no heading for it.
+- The peek: `arrowDeg` (whole degrees) and the tail "Ahead." / "To your
+  left." / "To your right." / "Behind you." only while a distance is
+  shown and the focus has a direction; otherwise `arrowDeg: null` and the
+  tail as before.
+- A row still to find: "N m - ahead / to your left / to your right /
+  behind you" with `arrowDeg`; without a direction "N m" and no arrow;
+  found, here, skipped and later rows never have one; no direction where
+  no distance is shown (R-0).
+- Tests: the "direction words and arrows" describe in
+  `walk-sheet-model.test.ts`.

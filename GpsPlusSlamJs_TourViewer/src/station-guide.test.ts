@@ -1603,7 +1603,10 @@ describe("wireStationGuide: the present station", () => {
     expect(selectPresentStationId(store.getState())).toBe("a");
     h.at(10.9, 0);
     expect(selectPresentStationId(store.getState())).toBeNull();
+    // The precision kind (W4 build plan M3) is published once too, on
+    // its first change, and never again while it stays GPS.
     expect(guideActions).toEqual([
+      "visitorGuide/precisionKindSet",
       "visitorGuide/presenceJudged",
       "visitorGuide/presenceJudged",
     ]);

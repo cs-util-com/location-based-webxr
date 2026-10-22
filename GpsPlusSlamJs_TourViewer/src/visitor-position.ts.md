@@ -72,3 +72,16 @@ const p = visitorPosition({
   `aligned` with a dropped pose and without an alignment, and the latest
   device fix's time (never a vote's), null for a missing or non-finite
   timestamp.
+
+## The camera's forward (visitor walk W4 build plan M3)
+
+- `ArPoseLike.orientation?` - the raw WebXR quaternion `[x, y, z, w]`.
+- `VisitorPosition.forwardNue?` - the camera's forward (raw WebXR -Z)
+  in GPS-world NUE through the alignment, a unit vector; null without an
+  alignment or an orientation, or for a non-finite or zero quaternion.
+- `cameraForwardNue(alignment, arPose)` computes it: the pose through
+  `odomNueFromWebXr` and `throughAlignment`, then `(0, 0, -1)` rotated by
+  the result. The station guide turns it into the radar's heading.
+- Tests: the `cameraForwardNue` describe in `visitor-position.test.ts`
+  (identity looks north; a raw +Y quarter turn looks west; an alignment
+  rotating north to east looks east; the null cases).

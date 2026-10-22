@@ -87,3 +87,18 @@ selectStationContentShown(store.getState(), "s2");
   only ends presence; nothing to judge by (`'none'`) holds; hold and clear; "show all" and the tour change; the
   heading wait; the URL flag (only `1` counts).
 - `station-guide.test.ts` ("the present station") - the guide's dispatches.
+
+## The precision events (visitor walk W4 build plan M3)
+
+- `WalkPrecisionKind = "pending" | "code" | "gps" | "weak" | "none"` and
+  `WalkChipKind = WalkPrecisionKind | "lost"`.
+- State `precisionKind` (default `pending`) and `trackingLost` (false),
+  both reset by `guideTourChanged`.
+- Actions `precisionKindSet(kind)` (the station guide, on a change) and
+  `trackingLostSet(lost)` (`ar-entry.ts`, on a change of the visitor's
+  `ar-lost` readiness).
+- Selectors `selectPrecisionKind`, `selectWalkChipKind` (`lost` while
+  the tracking is lost, else the precision kind) - the chip's and the
+  radar's kind.
+- Events only: the radar's geometry, which changes every frame, is never
+  here (the store rule).

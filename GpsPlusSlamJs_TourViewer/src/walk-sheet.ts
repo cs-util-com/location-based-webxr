@@ -5,7 +5,9 @@
  * and turns the grab's and the peek's taps and drags into the store's
  * `sheetSet`. A thin writer: every text and state comes from the model;
  * it writes a node only when what it shows changed (the sheet is redrawn
- * on every guide call, a camera frame among them).
+ * on every guide call, a camera frame among them). M3's direction arrows
+ * turn in place: an arrow's angle changes with every camera frame, so it
+ * is kept out of the rows' redraw key and written only when it changed.
  *
  * @see walk-sheet.ts.md
  */
@@ -101,7 +103,10 @@ export interface WalkSheetDom {
   readonly segments: El;
   readonly eyebrow: El;
   readonly title: El;
+  /** The peek's distance: its arrow and its text inside. */
   readonly distance: El;
+  readonly distanceText: El;
+  readonly distanceArrow: SVGElement;
   readonly tail: El;
   /** `#station-skip`: the guide writes its label, this its look. */
   readonly quick: El;
@@ -155,6 +160,41 @@ function setHidden(el: El, hidden: boolean): void {
   if (el.hidden !== hidden) el.hidden = hidden;
 }
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** W4's direction arrow, pointing up (straight ahead) until turned. */
+function createArrow(doc: Document): SVGElement {
+  const svg = doc.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("class", "walk-arrow");
+  const path = doc.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", "M8 2l5 11-5-3-5 3z");
+  path.setAttribute("fill", "currentColor");
+  svg.append(path);
+  return svg;
+}
+
+/**
+ * Turn an arrow to `deg` (whole degrees, positive to the right); null
+ * hides it (the CSS hides an arrow without `data-deg`). Written only on a
+ * change: the angle moves with every camera frame.
+ */
+export function setArrow(
+  el: Pick<SVGElement, "dataset" | "style">,
+  deg: number | null,
+): void {
+  const value = deg === null ? null : String(deg);
+  if ((el.dataset["deg"] ?? null) === value) return;
+  if (value === null) {
+    delete el.dataset["deg"];
+    el.style.transform = "";
+  } else {
+    el.dataset["deg"] = value;
+    el.style.transform = `rotate(${value}deg)`;
+  }
+}
+
 function setData(el: El, key: string, value: string | null): void {
   if (value === null) {
     if (key in el.dataset) delete el.dataset[key];
@@ -177,6 +217,8 @@ export function wireWalkSheet(deps: {
   const { dom } = deps;
   /** What each list was last drawn from: a redraw only on a change. */
   const drawn = new Map<El, string>();
+  /** The rows' arrows as last built, in the rows' order. */
+  let rowArrows: SVGElement[] = [];
 
   function toggle(): void {
     deps.setSheet(deps.sheet() === "list" ? "peek" : "list");
@@ -271,9 +313,20 @@ export function wireWalkSheet(deps: {
   }
 
   function drawRows(rows: readonly WalkRow[]): void {
-    const key = JSON.stringify(rows);
-    if (drawn.get(dom.rows) === key) return;
-    drawn.set(dom.rows, key);
+    // The arrows turn in place (below); everything else redraws the rows.
+    const key = JSON.stringify(rows.map(({ arrowDeg: _, ...row }) => row));
+    if (drawn.get(dom.rows) !== key) {
+      drawn.set(dom.rows, key);
+      rowArrows = [];
+      rebuildRows(rows);
+    }
+    rows.forEach((row, i) => {
+      const arrow = rowArrows[i];
+      if (arrow !== undefined) setArrow(arrow, row.arrowDeg);
+    });
+  }
+
+  function rebuildRows(rows: readonly WalkRow[]): void {
     dom.rows.replaceChildren(
       ...rows.map((row) => {
         const li = dom.doc.createElement("li");
@@ -291,7 +344,11 @@ export function wireWalkSheet(deps: {
         title.textContent = row.title;
         const sub = dom.doc.createElement("small");
         sub.dataset["testid"] = "walk-row-sub";
-        sub.textContent = row.sub;
+        const arrow = createArrow(dom.doc);
+        rowArrows.push(arrow);
+        const subText = dom.doc.createElement("span");
+        subText.textContent = row.sub;
+        sub.append(arrow, subText);
         main.append(title, sub);
         li.append(glyph, main);
         return li;
@@ -354,7 +411,8 @@ export function wireWalkSheet(deps: {
       drawSegments(dom.segments, model.segments);
       setText(dom.eyebrow, model.peek.eyebrow);
       setText(dom.title, model.peek.title);
-      setText(dom.distance, model.peek.distance ?? "");
+      setText(dom.distanceText, model.peek.distance ?? "");
+      setArrow(dom.distanceArrow, model.peek.arrowDeg);
       setHidden(dom.distance, model.peek.distance === null);
       setText(dom.tail, model.peek.tail);
       setData(dom.quick, "kind", quickKind(extra.quick));

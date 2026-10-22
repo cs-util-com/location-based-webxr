@@ -63,6 +63,7 @@ import { tourUnfinished } from "./tour-unfinished.js";
 import {
   selectHeadingPending,
   selectPresentStationId,
+  trackingLostSet,
 } from "./visitor-guide-slice.js";
 import type { LocationGate } from "./visitor-screen.js";
 import type { RecordingPanel } from "./recording-panel.js";
@@ -148,6 +149,9 @@ export function wireArEntry(deps: {
     /** The walk's sheet shows now (the station guide runs): the status
      *  reads the tour as placed (`ArStatusInput.walkRuns`). */
     sheetShown?(): boolean;
+    /** The `?debug=1` lines of the walk: the radar's draw time and the
+     *  frame time (W4 build plan M3), appended to the block. */
+    debugLines?(): string[];
   };
 }): ArEntry {
   const {
@@ -436,6 +440,22 @@ export function wireArEntry(deps: {
     ) {
       dom.arStatusLive.textContent = live;
     }
+    publishTrackingLost(
+      visitor &&
+        input.arStatus === "running" &&
+        input.readiness?.phase === "ar-lost",
+    );
+  }
+
+  /** The walk's precision chip and radar read the tracking loss from the
+   *  store (W4 build plan M3, §1.3): its one publisher is here, from the
+   *  readiness phase the visitor's sentence uses (the phase the guide's
+   *  own tracking signal follows: both read `selectTrackingQuality`).
+   *  Dispatched last and only on a change - this runs per camera frame. */
+  function publishTrackingLost(lost: boolean): void {
+    if (arStore.getState().visitorGuide.trackingLost !== lost) {
+      arStore.dispatch(trackingLostSet(lost));
+    }
   }
 
   /** The scan gate as one word (`data-gate`): "passed-code" proves the
@@ -490,6 +510,7 @@ export function wireArEntry(deps: {
       .concat(
         meshSurface === null ? [] : [meshSurfaceLine(meshSurface.stats())],
       )
+      .concat(deps.walk?.debugLines?.() ?? [])
       .join("\n");
   }
 

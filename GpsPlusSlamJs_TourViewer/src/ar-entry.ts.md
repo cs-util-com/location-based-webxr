@@ -264,3 +264,16 @@ the session end; an unrecorded one asks for none. The pure pieces: `ar-mode.test
   at the session's end, "Back to the tour", a running walk read as a
   placed tour (live region and toast), one render's news as one toast; a placement wait giving way
   to the shown walk).
+
+## The radar's events and lines (visitor walk W4 build plan M3)
+
+- `renderArStatus` publishes the visitor's tracking loss
+  (`trackingLostSet`): lost while a visitor's session runs with the
+  readiness phase `ar-lost`; dispatched only on a change, never for a
+  creator.
+- `walk.debugLines?()` - the walk's `?debug=1` lines (the radar's draw
+  time and the frame time), appended to the block after the QR, GPS and
+  mesh lines.
+- Tests: the "wait for a heading (D34)" describe (the tracking loss) and
+  "ends the block with the walk's radar and frame lines" in
+  `ar-entry.test.ts`.

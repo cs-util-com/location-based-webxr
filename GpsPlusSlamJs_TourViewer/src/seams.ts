@@ -238,6 +238,12 @@ export interface TourViewerSeams {
   /** The page's one audio element for the stories (unlocked by the start
    *  tap, `scene-audio.ts`). A seam so the e2e records what played. */
   createAudioElement(): AudioElementLike;
+  /** The session camera's `P[0]` (`2*atan(1/P[0])` is its horizontal
+   *  field of view: the radar's view cone, visitor walk W4 build plan M3),
+   *  or null while there is no camera. WebXR owns that projection during
+   *  an immersive session (`getIntrinsics`' precedent). A seam: the e2e
+   *  has no camera, and the radar draws its fallback cone. */
+  xrProjection0(): number | null;
 }
 
 /** A captured photo, encoded. */
@@ -369,6 +375,7 @@ export const realSeams: TourViewerSeams = {
     return gltf.scene;
   },
   createAudioElement: () => new Audio(),
+  xrProjection0: () => getCamera()?.projectionMatrix.elements[0] ?? null,
   createLabel: (text) => {
     // A canvas wide enough for a short label at a readable size, the sprite
     // scaled to the same 2:1 aspect (the wayfinding HUD's recipe); the

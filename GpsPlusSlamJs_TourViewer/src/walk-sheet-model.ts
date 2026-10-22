@@ -9,7 +9,10 @@
  * and the sheet's state; `walk-sheet.ts` writes it to the page.
  *
  * Every text is today's (kept) or W4's, as the plan names them; M2 keeps
- * today's rules, so nothing here decides what the walk offers.
+ * today's rules, so nothing here decides what the walk offers. M3 adds the
+ * direction words (`walk-direction.ts`) and their arrows wherever a
+ * distance is shown and a heading exists; the caller keeps each station's
+ * word with its hysteresis and hands it in (`directions`).
  *
  * @see walk-sheet-model.ts.md
  */
@@ -28,6 +31,11 @@ import {
   type WalkProgress,
 } from "./station-run.js";
 import type { WalkSheet } from "./visitor-walk-slice.js";
+import {
+  walkDirectionPhrase,
+  walkDirectionTail,
+  type WalkDirection,
+} from "./walk-direction.js";
 
 /**
  * Above this many stations the segments give way to one continuous bar
@@ -40,7 +48,8 @@ import type { WalkSheet } from "./visitor-walk-slice.js";
 export const WALK_SEGMENT_LIMIT = 47;
 
 /** A station's look in the segments, the rows and (M3) the radar. */
-type WalkRowState = "next" | "left" | "found" | "here" | "skipped" | "later";
+export type WalkRowState =
+  "next" | "left" | "found" | "here" | "skipped" | "later";
 
 export interface WalkSheetInput {
   readonly stations: readonly TourStation[];
@@ -52,6 +61,15 @@ export interface WalkSheetInput {
   /** The story playing, or null. */
   readonly story: { readonly stationId: string } | null;
   readonly sheet: WalkSheet;
+  /** Each station's direction now (M3): the word with its hysteresis
+   *  (`createWalkDirections`) and its angle from straight ahead, degrees,
+   *  positive to the right; absent or missing a station: no heading. */
+  readonly directions?: ReadonlyMap<string, WalkSheetDirection>;
+}
+
+export interface WalkSheetDirection {
+  readonly word: WalkDirection;
+  readonly angleDeg: number;
 }
 
 interface WalkPeek {
@@ -63,6 +81,10 @@ interface WalkPeek {
   readonly title: string;
   /** "N m", only while the line shows a distance. */
   readonly distance: string | null;
+  /** The distance's arrow, turned to the focus: whole degrees from
+   *  straight ahead, positive to the right; null without a heading or a
+   *  distance shown. */
+  readonly arrowDeg: number | null;
   readonly tail: string;
 }
 
@@ -82,6 +104,8 @@ export interface WalkRow {
   readonly title: string;
   readonly state: WalkRowState;
   readonly sub: string;
+  /** The sub line's arrow, as the peek's; null without one. */
+  readonly arrowDeg: number | null;
 }
 
 export interface WalkSheetModel {
@@ -180,26 +204,44 @@ function segmentsOf(states: readonly WalkRowState[]): WalkSegments {
   };
 }
 
-function rowSub(state: WalkRowState, view: GuideView, id: string): string {
+/** The arrow's turn, whole degrees (a style written only on a change). */
+function arrowOf(direction: WalkSheetDirection | undefined): number | null {
+  return direction === undefined || !Number.isFinite(direction.angleDeg)
+    ? null
+    : Math.round(direction.angleDeg);
+}
+
+function rowSub(
+  state: WalkRowState,
+  view: GuideView,
+  id: string,
+  direction: WalkSheetDirection | undefined,
+): { sub: string; arrowDeg: number | null } {
+  const plain = (sub: string) => ({ sub, arrowDeg: null });
   switch (state) {
     case "found":
-      return "Found";
+      return plain("Found");
     case "here":
-      return "You are here - its story is playing";
+      return plain("You are here - its story is playing");
     case "skipped":
-      return "Skipped";
+      return plain("Skipped");
     case "later":
-      return "Later";
+      return plain("Later");
     case "next":
     case "left": {
       // No "~N m" anywhere (§1.9 R-0): too weak shows no distance either.
       if (view.position === "none" || view.position === "weak") {
-        return "Distance unknown";
+        return plain("Distance unknown");
       }
       const d = view.distances.get(id);
-      return view.position === "pending" || d === undefined
-        ? WAITING
-        : distanceText(d);
+      if (view.position === "pending" || d === undefined) return plain(WAITING);
+      const arrowDeg = arrowOf(direction);
+      return direction === undefined || arrowDeg === null
+        ? plain(distanceText(d))
+        : {
+            sub: `${distanceText(d)} - ${walkDirectionPhrase(direction.word)}`,
+            arrowDeg,
+          };
     }
   }
 }
@@ -217,6 +259,7 @@ function peekOf(
       eyebrow: input.tourTitle,
       title: "Tour complete",
       distance: null,
+      arrowDeg: null,
       tail:
         skipped > 0
           ? `${String(skipped)} skipped.`
@@ -239,6 +282,7 @@ function peekOf(
       eyebrow: "Station found",
       title: found === undefined ? "" : stationTitle(found),
       distance: null,
+      arrowDeg: null,
       tail: "Its story is playing.",
     };
   }
@@ -249,6 +293,7 @@ function peekOf(
       eyebrow: "Position unknown",
       title: `${String(offered.length)} stations to find`,
       distance: null,
+      arrowDeg: null,
       tail: NO_PRECISION_TAIL,
     };
   }
@@ -260,6 +305,9 @@ function peekOf(
         ? `${String(offered.length)} stations to find - nearest`
         : "Next";
   const d = view.distances.get(focus.id);
+  const shown = view.position === "distance" && d !== undefined;
+  const direction = shown ? input.directions?.get(focus.id) : undefined;
+  const arrowDeg = arrowOf(direction);
   const tail =
     view.position === "pending"
       ? WAITING
@@ -267,13 +315,15 @@ function peekOf(
         ? `GPS too weak to guide you (±${distanceText(view.accuracyM ?? 0)}); step into the open.`
         : view.position === "none"
           ? NO_PRECISION_TAIL
-          : "";
+          : direction !== undefined && arrowDeg !== null
+            ? walkDirectionTail(direction.word)
+            : "";
   return {
     kind: "walk",
     eyebrow,
     title: stationTitle(focus),
-    distance:
-      view.position === "distance" && d !== undefined ? distanceText(d) : null,
+    distance: shown ? distanceText(d) : null,
+    arrowDeg,
     tail,
   };
 }
@@ -331,7 +381,7 @@ export function walkSheetModel(input: WalkSheetInput): WalkSheetModel {
       number,
       title: stationTitle(station, number),
       state,
-      sub: rowSub(state, view, station.id),
+      ...rowSub(state, view, station.id, input.directions?.get(station.id)),
     };
   });
   const playing =
