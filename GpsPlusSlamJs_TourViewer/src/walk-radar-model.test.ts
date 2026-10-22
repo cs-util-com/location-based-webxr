@@ -254,25 +254,25 @@ describe("walkRadarModel - the visitor's mark by precision", () => {
     expect(tiny.visitor).toEqual({ kind: "blur", tone: "gps", r: 7 });
   });
 
-  // Why: the radar is a module boundary; an accuracy that is not a finite
-  // metre count (NaN reached the radius as NaN, and the canvas's radial
-  // gradient throws on it) must not stop the draw. It is read as no
-  // accuracy at all, as the chip reads it: the smallest blur, never one
-  // sized from the bad value.
-  it("an accuracy that is not a finite, non-negative number is read as none: the smallest blur", () => {
+  // Why: the radar is a module boundary; an accuracy that is no number
+  // (NaN reached the radius as NaN, and the canvas's radial gradient throws
+  // on it) must not stop the draw, and is read as no accuracy at all: the
+  // smallest blur. Every other value keeps the scale's order - an infinite
+  // accuracy is the WORST there is and draws the widest blur, the rim, as
+  // 1e9 m does; a negative one draws the smallest. Mapped to "none", an
+  // infinite accuracy would draw the most precise-looking mark of all.
+  it("an accuracy that is no number is read as none; any other keeps the scale's order", () => {
     for (const kind of ["gps", "weak"] as const) {
-      const none = walkRadarModel(input({ kind, accuracyM: null })).visitor;
-      expect(none).toEqual({ kind: "blur", tone: kind, r: 7 });
-      for (const bad of [
-        Number.NaN,
-        Number.POSITIVE_INFINITY,
-        Number.NEGATIVE_INFINITY,
-        -3,
-      ]) {
-        expect(walkRadarModel(input({ kind, accuracyM: bad })).visitor).toEqual(
-          none,
-        );
-      }
+      const none = walkRadarModel(input({ kind, accuracyM: null }));
+      expect(none.visitor).toEqual({ kind: "blur", tone: kind, r: 7 });
+      const blurOf = (accuracyM: number) =>
+        walkRadarModel(input({ kind, accuracyM })).visitor;
+      expect(blurOf(Number.NaN)).toEqual(none.visitor);
+      const rim = { kind: "blur", tone: kind, r: none.rimR };
+      expect(blurOf(1e9)).toEqual(rim);
+      expect(blurOf(Number.POSITIVE_INFINITY)).toEqual(rim);
+      expect(blurOf(Number.NEGATIVE_INFINITY)).toEqual(none.visitor);
+      expect(blurOf(-3)).toEqual(none.visitor);
     }
   });
 

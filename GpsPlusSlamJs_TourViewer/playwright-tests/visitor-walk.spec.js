@@ -818,8 +818,11 @@ test("coming back to a tour of stories placed by GPS says both the placement and
   await statusWith(page, "degraded", "placed-gps");
   await expect(page.getByTestId("walk-sheet")).toBeVisible();
   const toast = page.locator("#walk-toast");
-  await expect(toast).toContainText("Welcome back - your progress is kept.");
-  await expect(toast).toContainText("Tour placed by GPS (less exact)");
+  // Both, whole and in the order said: the status's news, then the
+  // sheet's welcome (one toast, never one replacing the other).
+  await expect(toast).toHaveText(
+    "Tour placed by GPS (less exact) Welcome back - your progress is kept.",
+  );
 });
 
 /** A visitor on the start page, ready to start: a fresh tour ("Start

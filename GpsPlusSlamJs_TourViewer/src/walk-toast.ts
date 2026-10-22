@@ -5,7 +5,7 @@
  * <title>.", "Welcome back - your progress is kept.". A news item that
  * keeps applying (the status is re-rendered every camera frame) is said
  * ONCE per AR entry; a new entry may say it again. Everything said in one
- * synchronous run is joined into ONE toast: the framework's toast shows one
+ * task (awaits inside it included) is joined into ONE toast: the framework's toast shows one
  * message, and a second show in the same frame would replace the first
  * unread. Two call sites say in one frame (the status's news and the
  * sheet's events: the sheet's first render re-renders the status), so the
@@ -29,9 +29,9 @@ import type { Toast } from "gps-plus-slam-app-framework/utils/toast-core";
 export interface WalkToast {
   /** Show one render's words now, as one toast: its `events` (said every
    *  time) and its `news` (each said once this AR entry; only what is
-   *  shown counts as said). Words said earlier in the same synchronous run
-   *  stay in front of them (one toast per frame); a toast from an earlier
-   *  run is replaced. "" is never said, and nothing shows when nothing is
+   *  shown counts as said). Words said earlier in the same task stay in
+   *  front of them (one toast per frame); a toast from an earlier task is
+   *  replaced. "" is never said, and nothing shows when nothing new is
    *  left to say. */
   say(events: readonly string[], news?: readonly string[]): void;
   /** Announce a text no other region says (the toast's root is
@@ -47,8 +47,9 @@ export function createWalkToast(
   live?: { textContent: string | null },
 ): WalkToast {
   const said = new Set<string>();
-  /** The words shown in the current synchronous run, or null once it has
-   *  ended (a microtask closes it). */
+  /** The words shown in the current task, or null once it has ended (a
+   *  zero timeout closes it: the toast writes its text in the next task,
+   *  so a say after an await in the same task still joins). */
   let frame: string[] | null = null;
   return {
     announce(text) {
@@ -62,11 +63,15 @@ export function createWalkToast(
       if (frame === null) {
         const opened: string[] = [];
         frame = opened;
-        queueMicrotask(() => {
+        setTimeout(() => {
           if (frame === opened) frame = null;
-        });
+        }, 0);
       }
-      for (const t of words) if (!frame.includes(t)) frame.push(t);
+      const added = words.filter((t) => !frame?.includes(t));
+      // Nothing new: a show would only restart the linger and blank the
+      // text for a task.
+      if (added.length === 0) return;
+      frame.push(...added);
       toast.show(frame.join(" "));
     },
     reset() {

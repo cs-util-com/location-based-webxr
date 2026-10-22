@@ -121,6 +121,35 @@ describe("createWalkToast - two call sites in one frame", () => {
     expect(f.shown).toEqual(["Tour placed by GPS (less exact)"]);
   });
 
+  // Why: the toast writes its text only in the next task (toast-core's
+  // deferred write), so a say after an await - a promise settling inside the
+  // same task - lands before anything was shown. Closed at a microtask, the
+  // frame dropped the first message unread, and it counted as said.
+  it("keeps a say after an await in the same task in the frame's toast", async () => {
+    const f = fakeToast();
+    const t = createWalkToast(f.toast);
+    t.say([], ["Tour placed by GPS (less exact)"]);
+    await Promise.resolve();
+    t.say(["Welcome back - your progress is kept."]);
+    expect(f.shown.at(-1)).toBe(
+      "Tour placed by GPS (less exact) Welcome back - your progress is kept.",
+    );
+  });
+
+  // Why: every show restarts the toast's linger and empties its text for a
+  // task before the deferred write - a say that adds nothing new would keep
+  // the toast up longer and could flash an empty pill.
+  it("does not show again when every word is already in the frame's toast", () => {
+    const f = fakeToast();
+    const t = createWalkToast(f.toast);
+    t.say(["Skipped The well."], ["Tour placed by GPS (less exact)"]);
+    t.say(["Skipped The well."]);
+    t.say(["Tour placed by GPS (less exact)"]);
+    expect(f.shown).toEqual([
+      "Skipped The well. Tour placed by GPS (less exact)",
+    ]);
+  });
+
   it("a reset ends the frame's toast: the next say starts afresh", () => {
     const f = fakeToast();
     const t = createWalkToast(f.toast);

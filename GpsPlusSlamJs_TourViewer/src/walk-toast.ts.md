@@ -15,8 +15,9 @@ frame's words as one toast.
     well.", "Welcome back - your progress is kept.") and its `news`
     once this AR entry (re-derived every camera frame: "Tour placed by
     GPS (less exact)"); only news actually shown counts as said. Words
-    said earlier in the same synchronous run stay in front (a word is
-    shown once); a toast from an earlier run is replaced;
+    said earlier in the same task stay in front (a word is shown once,
+    and a say that adds no new word shows nothing); a toast from an
+    earlier task is replaced;
   - `announce(text)` - write a text no other region announces into
     `live` (absent: nothing); "" is never announced;
   - `reset()` - a new entry: forget what was said, take the toast down,
@@ -30,15 +31,22 @@ frame's words as one toast.
   again), not walk state any view reads.
 - **One frame, one toast**: the framework's toast holds one message, and
   a second `show` replaces the first before it is read. So everything said
-  in one synchronous run is joined, never shown one by one, across calls:
+  in one task is joined, never shown one by one, across calls:
   two sources say in the same frame (`ar-entry.ts`'s status, its news,
   and `visitor-stations.ts`'s sheet, its events; the sheet's first render
   of an entry re-renders the status). Without the join the sheet's welcome
   back replaced the status's "placed by GPS" news, which already counted
   as said and so never came back that entry.
-  - The run is closed by a microtask (`queueMicrotask`), so a say in a
-    later task (the next frame) replaces the toast as before; `reset()`
-    closes it at once.
+  - The task's join is closed by a zero timeout, the same boundary as the
+    framework toast's deferred text write: a say after an await in the
+    same task still joins (a microtask close dropped its first message
+    unread), and a say in a later task (the next frame) replaces the toast
+    as before; `reset()` closes it at once.
+  - A say that adds no word the join holds already shows nothing: a show
+    restarts the linger and blanks the text for a task.
+  - Not covered: news shown in one animation frame and replaced by an
+    event in the NEXT frame is still lost (the toast holds one message;
+    the join spans one task only).
   - The joined text is re-shown whole: the framework's `show` replaces
     the standing message and its deferred write, so only the full join is
     ever written.
@@ -68,9 +76,15 @@ toast.say(["Skipped The well."]); // every time
 
 - `walk-toast.test.ts` - once per entry and again after a reset; an
   event every time; never an empty text; one render's words as one toast;
-  two says in one run joined (a word once), a new toast in the next task,
-  a reset ending the run; the live region written by `announce` and
-  emptied by `reset`.
+  two says in one task joined (a word once), a say after an await in
+  the same task joined too, no show for a say that adds no word, a new
+  toast in the next task, a reset ending the join; the live region
+  written by `announce` and emptied by `reset`.
 - `playwright-tests/visitor-walk.spec.js` - coming back to a tour of
-  stories placed by GPS: the toast carries both the placement and the
+  stories placed by GPS: the toast reads exactly the placement, then the
   welcome back.
+- `playwright-tests/visitor-walk-layout.spec.js` - a toast joining three
+  real messages at 360x740 stays clear of the radar, the coach card and
+  the Exit button (measured: 57 px above the coach, 8 px left of the
+  radar; by the line height, about five long messages would reach the
+  coach - an estimate, not measured).

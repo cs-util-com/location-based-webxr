@@ -129,6 +129,52 @@ async function boxOf(locator) {
   return b;
 }
 
+test("a toast joining three messages stays clear of the radar and the coach at 360x740", async ({
+  page,
+}) => {
+  // Why this test matters: the walk's toast joins everything said in one
+  // task into one toast, so it can carry several messages at once and
+  // grow several lines tall on a narrow phone - where it could reach down
+  // over the coach card (centred at 44 % of the height) or sideways under
+  // the radar's corner. The three are real texts, the longest news
+  // first; the join itself is pinned in `walk-toast.test.ts` and
+  // `visitor-walk.spec.js`, this pins only where the result stands.
+  const viewport = { width: 360, height: 740 };
+  await page.setViewportSize(viewport);
+  await installTourViewerArFakes(page);
+  await enterTheWalk(page);
+  await page.getByTestId("station-skip").click();
+  await page.getByTestId("walk-row-confirm").click();
+  const toast = page.locator("#walk-toast");
+  await expect(toast).toHaveText("Skipped The gate.");
+  // Tracking lost while the toast lingers: the coach stands up.
+  await reportArTracking(page, false);
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+  });
+  await expect(page.getByTestId("walk-coach")).toBeVisible();
+  const three = [
+    "This code seems to have been moved, so the tour is placed by GPS (less exact).",
+    "Welcome back - your progress is kept.",
+    "Skipped The gate.",
+  ].join(" ");
+  await page.evaluate((text) => {
+    const el = document.getElementById("walk-toast");
+    if (el === null) throw new Error("no toast");
+    el.textContent = text;
+  }, three);
+  await expect(toast).toHaveText(three);
+  const t = await boxOf(toast);
+  const radar = await box(page, "walk-radar");
+  const coach = await box(page, "walk-coach");
+  const exit = await box(page, "enter-ar");
+  const measured = JSON.stringify({ toast: t, radar, coach, exit });
+  expect(overlaps(t, radar), measured).toBe(false);
+  expect(overlaps(t, coach), measured).toBe(false);
+  expect(overlaps(t, exit), measured).toBe(false);
+  expect(t.x + t.width, measured).toBeLessThanOrEqual(viewport.width);
+});
+
 for (const viewport of VIEWPORTS) {
   const label = `${String(viewport.width)}x${String(viewport.height)}`;
 

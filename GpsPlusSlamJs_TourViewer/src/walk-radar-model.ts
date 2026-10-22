@@ -142,8 +142,8 @@ function metres(m: number): string {
   return formatDistance(m, { metreDecimals: 0 });
 }
 
-/** An accuracy the chip and the blur may use: a finite, non-negative
- *  metre count, or null (none, or one no position has). */
+/** An accuracy the chip may write: a finite, non-negative metre count,
+ *  or null (none, or one no position has). */
 function knownAccuracyM(accuracyM: number | null): number | null {
   return accuracyM !== null && Number.isFinite(accuracyM) && accuracyM >= 0
     ? accuracyM
@@ -371,9 +371,18 @@ export function walkRadarModel(input: WalkRadarInput): WalkRadarModel {
       : {
           kind: "blur",
           tone: input.kind === "weak" ? "weak" : "gps",
-          // No usable accuracy (none, NaN, infinite, negative): the
-          // smallest blur, never a radius the canvas cannot draw.
-          r: Math.max(BLUR_MIN_PX, scale(knownAccuracyM(input.accuracyM) ?? 0)),
+          // No accuracy (none, NaN): the smallest blur, never a radius
+          // the canvas cannot draw. Any other value keeps the scale's
+          // order: `scale` clamps an infinite one to the rim, a negative
+          // one to the centre.
+          r: Math.max(
+            BLUR_MIN_PX,
+            scale(
+              input.accuracyM === null || Number.isNaN(input.accuracyM)
+                ? 0
+                : input.accuracyM,
+            ),
+          ),
         };
   const mode = frozen ? "frozen" : "live";
   if (geo === null) {
