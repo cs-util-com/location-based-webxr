@@ -1,28 +1,27 @@
 /**
- * The visitor's walk in the page's store (visitor walk W4 build plan
- * 2026-10-21-1105, M1, §2.2; root CLAUDE.md, the Redux rule): the run's
+ * The visitor's walk in the page's store (root CLAUDE.md, the Redux rule): the run's
  * progress (every station's state, its skip clock, the branch path), the
  * last skip while it can still be undone (`lastSkip`, settled by
  * `skipSettled`), the one-line note of what just happened (`note`), and
  * the quick action's arm (`quickArmedId`, "Can't get there?" asked for one
  * station), the sheet's peek or list, and a "Welcome back" waiting for the
- * next AR entry (M2). The reducer applies the run's pure transitions
+ * next AR entry. The reducer applies the run's pure transitions
  * (`station-run.ts` `applyWalkStep`): one rule, in the store. The station
  * guide (`station-guide.ts`) dispatches only on events, never per frame,
  * and one call's changes as ONE batch (`walkBatched`) at its end, so a
  * store subscriber that re-enters the guide sees a consistent walk.
  *
- * The sheet (W4 build plan M2, §1.5, §1.6) is the visitor's choice, with
+ * The sheet is the visitor's choice, with
  * two changes that follow the walk, here so they hold for every writer: a
  * station found (its story starts) closes the list, and the walk's
  * completion opens it once (`completionSeen`).
  *
- * The rules of M4 (§1.9 R-1 to R-4) keep their state here too: the row a
+ * The walk's rules keep their state here too: the row a
  * Skip armed (`rowArmedId`, apart from the quick action's arm), the list
  * opened to choose what to skip with no station guessed (`chooser`), no
- * guess while the guide shows no distance (`noGuess`, R-2, with the
- * guide's hold), and the visitor's chosen target (`chosenId`, R-4). The
- * station the walk is about is one selector over them (`walkFocus`, R-1).
+ * guess while the guide shows no distance (`noGuess`, the no-guess rule, with the
+ * guide's hold), and the visitor's chosen target (`chosenId`, the chosen-target rule). The
+ * station the walk is about is one selector over them (`walkFocus`, the focus rule).
  *
  * The windows of the last skip and the note (6 s, `SKIP_UNDO_MS`) are read
  * over the page's time by their readers, through `selectUndoableSkip` and
@@ -51,7 +50,7 @@ import {
 import { guideTourChanged } from "./visitor-guide-slice.js";
 
 /**
- * How long a skip can be undone (K4 review R14): the framework's toast
+ * How long a skip can be undone: the framework's toast
  * linger (6 s), so it reads like every other transient message. Argued,
  * not measured: 3 s is about the time to read "Skipped X. Next: Y, 80 m"
  * (8 words at 4 words a second) and react; 10 s would hold the next
@@ -61,7 +60,7 @@ import { guideTourChanged } from "./visitor-guide-slice.js";
  */
 export const SKIP_UNDO_MS = DEFAULT_TOAST_LINGER_MS;
 
-/** The last skip (K4 review R14): undoable until it settles. */
+/** The last skip: undoable until it settles. */
 interface LastSkip {
   readonly id: string;
   /** When it was skipped, on the page's clock. */
@@ -85,36 +84,36 @@ export interface VisitorWalkState {
   /** The station the visitor asked to skip ("Can't get there?"); the next
    *  tap confirms. Null: not asked, or the focus moved since. */
   readonly quickArmedId: string | null;
-  /** The sheet: its peek, or the list pulled up (W4 build plan M2). */
+  /** The sheet: its peek, or the list pulled up. */
   readonly sheet: WalkSheet;
   /** The walk is complete and its completion opened the list already:
    *  the list opens once per completion, and a walk no longer complete
    *  (a skip undone) may open it again when it completes again. */
   readonly completionSeen: boolean;
   /** The visitor left AR with progress: the next entry's first sheet says
-   *  "Welcome back", once (W4, §1.8). */
+   *  "Welcome back", once. */
   readonly welcomePending: boolean;
-  /** The row whose Skip asked for its confirm (W4 build plan M4, §1.6): its
+  /** The row whose Skip asked for its confirm: its
    *  own arm, apart from the quick action's; a focus change or a
    *  degradation never clears it, closing the list, a story starting or
    *  the station leaving the offer does. */
   readonly rowArmedId: string | null;
-  /** The list was opened by "Can't get there?" with no station guessed
-   *  (R-2's chooser): its hint asks which station, and a row's Skip acts
-   *  on one tap while R-2 holds. Cleared with the list and when the
+  /** The list was opened by "Can't get there?" with no station guessed:
+   *  its hint asks which station, and a row's Skip acts
+   *  on one tap while the no-guess rule holds. Cleared with the list and when the
    *  distance is back for its hold. */
   readonly chooser: boolean;
-  /** The guide shows no distance, or it has not been back for its hold
-   *  (R-2): an any-order tour guesses no station meanwhile. Dispatched by
+  /** The guide shows no distance, or it has not been back for its hold:
+   *  an any-order tour guesses no station meanwhile. Dispatched by
    *  the guide on entering and leaving, never per frame. */
   readonly noGuess: boolean;
-  /** The visitor's chosen target (R-4): a waiting offered station of an
+  /** The visitor's chosen target: a waiting offered station of an
    *  any-order tour; cleared when it is found or skipped, and with the
    *  walk. Kept across AR entries (it is progress). */
   readonly chosenId: string | null;
 }
 
-/** The sheet's two states (W4 build plan §1.5, §1.6). */
+/** The sheet's two states. */
 export type WalkSheet = "peek" | "list";
 
 const initialVisitorWalkState: VisitorWalkState = {
@@ -148,7 +147,7 @@ export const skipTaken = createAction<{
 /** The last skip can no longer be undone. */
 export const skipSettled = createAction("visitorWalk/skipSettled");
 /** A skipped station was brought back (the last skip's undo, or any
- *  skipped station later, W-D2): the note says so; the last skip's undo
+ *  skipped station later, bring back at any time): the note says so; the last skip's undo
  *  goes only when it was that station's. */
 export const skipUndone = createAction<{
   readonly id: string;
@@ -162,7 +161,7 @@ export const quickArmed = createAction<string | null>("visitorWalk/quickArmed");
 export const sheetSet = createAction<WalkSheet>("visitorWalk/sheetSet");
 /** The welcome back armed (leaving AR with progress) or said. */
 export const welcomeSet = createAction<boolean>("visitorWalk/welcomeSet");
-/** "Can't get there?" opened the list (R-2's taps): the focus's row armed,
+/** "Can't get there?" opened the list: the focus's row armed,
  *  or the chooser with no station guessed. */
 export const listOpened = createAction<{
   readonly armedId: string | null;
@@ -170,9 +169,9 @@ export const listOpened = createAction<{
 }>("visitorWalk/listOpened");
 /** A row's Skip asked for its confirm, or the confirm was cancelled. */
 export const rowArmed = createAction<string | null>("visitorWalk/rowArmed");
-/** R-2 entered (true) or left after its hold (false). */
+/** The no-guess rule entered (true) or left after its hold (false). */
 export const noGuessSet = createAction<boolean>("visitorWalk/noGuessSet");
-/** "Guide me here" (R-4): a station chosen as the target, or none. */
+/** "Guide me here": a station chosen as the target, or none. */
 export const targetChosen = createAction<string | null>(
   "visitorWalk/targetChosen",
 );
@@ -190,7 +189,7 @@ function stepped(state: VisitorWalkState, step: WalkStep): VisitorWalkState {
     : withSheetRules(step, { ...state, progress });
 }
 
-/** The sheet's two changes that follow the walk (W4): a find whose story
+/** The sheet's two changes that follow the walk: a find whose story
  *  starts closes the list, and the completion opens it once. */
 function withSheetRules(
   step: WalkStep,
@@ -235,14 +234,14 @@ function unfoundOffered(progress: WalkProgress): string[] {
   );
 }
 
-/** Whether a target may be chosen now (R-4): an any-order tour with two
+/** Whether a target may be chosen now: an any-order tour with two
  *  or more stations still to find. */
 function choiceOffered(progress: WalkProgress): boolean {
   return progress.order === "any" && unfoundOffered(progress).length >= 2;
 }
 
 /** A row arm and a chosen target go once their station is found, skipped
- *  or no longer offered (R-4). */
+ *  or no longer offered. */
 function withOfferRules(state: VisitorWalkState): VisitorWalkState {
   const { progress } = state;
   if (progress === null) return state;
@@ -392,13 +391,13 @@ export function selectUndoableSkip(
 }
 
 /**
- * The station the walk is about (W4 build plan M4, §1.9 R-1): the peek,
+ * The station the walk is about: the peek,
  * the radar's orange, the breadcrumbs and the skip clock read it.
  * - fixed and branch order: the one offered station not yet found;
  * - any order with one station to find: that one;
- * - any order with several: the chosen target (R-4, whatever the
+ * - any order with several: the chosen target (the chosen-target rule, whatever the
  *   precision: the visitor's own pick is no guess), else none while no
- *   distance is guessed (`noGuess`, R-2), else the nearest by
+ *   distance is guessed (`noGuess`, the no-guess rule), else the nearest by
  *   `distances` (one without a distance counts as farthest; ties go to
  *   list order);
  * - nothing to find (a story plays, or the tour is complete): none.
@@ -438,7 +437,7 @@ function distanceOr(
 
 const NO_DISTANCES: ReadonlyMap<string, number> = new Map();
 
-/** R-2's condition (§1.9): an any-order tour, two or more stations to
+/** The no-guess condition: an any-order tour, two or more stations to
  *  find, no chosen target among them, and no distance guessed - the walk
  *  has no focus, the list's hint shows and the figure holds its turn. */
 export function walkNoGuess(walk: VisitorWalkState): boolean {
@@ -451,7 +450,7 @@ export function walkNoGuess(walk: VisitorWalkState): boolean {
   );
 }
 
-/** Whether a target may be chosen now (R-4): any order, two or more
+/** Whether a target may be chosen now: any order, two or more
  *  stations to find. */
 export function walkChoiceOffered(walk: VisitorWalkState): boolean {
   return walk.progress !== null && choiceOffered(walk.progress);
@@ -462,7 +461,7 @@ export function selectWalkProgress(state: WithWalk): WalkProgress | null {
   return state.visitorWalk.progress;
 }
 
-/** The sheet: its peek, or the list pulled up (W4 build plan M2). */
+/** The sheet: its peek, or the list pulled up. */
 export function selectWalkSheet(state: WithWalk): WalkSheet {
   return state.visitorWalk.sheet;
 }

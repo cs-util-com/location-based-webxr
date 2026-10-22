@@ -2,7 +2,7 @@
 
 ## Purpose
 
-R-2's hold (visitor walk W4 build plan M4, §1.9 R-2): while the guide
+The no-guess hold: while the guide
 shows no distance (pending, GPS too weak, `'none'`), an any-order tour
 with two or more stations to find guesses no station; the guess goes on
 the first tick without a distance and comes back only once the distance

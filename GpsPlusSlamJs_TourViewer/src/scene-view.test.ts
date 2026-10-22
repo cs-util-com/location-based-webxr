@@ -550,7 +550,7 @@ describe("createSceneView", () => {
   });
 });
 
-describe("the story card's dots and its redraw (W4 build plan M2)", () => {
+describe("the story card's dots and its redraw", () => {
   // Why these tests matter: the story card in the sheet draws a dot per
   // step and fills the current one over an auto step's timer, so the view
   // says where the story is; and the sheet redraws when a story starts,
@@ -573,10 +573,10 @@ describe("the story card's dots and its redraw (W4 build plan M2)", () => {
     expect(h.view.progress()).toBeNull();
   });
 
-  // Why this test matters (W4 build plan M4, R-5): while the visitor is
+  // Why this test matters: while the visitor is
   // asked whether to end the story, the step must not move on under the
   // question; "Keep listening" starts the step's timer again from its
-  // full length (W4), and the dots show it (no timed fill while held).
+  // full length, and the dots show it (no timed fill while held).
   it("a held step stops its timer; released, it runs again from the start", () => {
     const h = harness();
     h.view.offer(

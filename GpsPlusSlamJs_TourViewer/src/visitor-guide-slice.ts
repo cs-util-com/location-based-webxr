@@ -7,8 +7,7 @@
  * (`headingPending`, D34 of the tour editor plan 2026-10-17-1816: the
  * visitor's status line then asks for a few steps), and what the walk's
  * precision chip and radar show (`precisionKind` from the guide,
- * `trackingLost` from the readiness phase; visitor walk W4 build plan
- * 2026-10-21-1105, M3, §1.3). Its reducer applies the pure presence rule
+ * `trackingLost` from the readiness phase). Its reducer applies the pure presence rule
  * (`station-presence.ts`), so every view reads one answer; the station
  * guide (`station-guide.ts`) dispatches a judged position only when the
  * answer changes. three.js handles (per-station groups, textures) never
@@ -36,7 +35,7 @@ import {
   type PresenceCandidate,
 } from "./station-presence.js";
 
-/** The position's precision as the guide judges it (W4 build plan §1.3):
+/** The position's precision as the guide judges it:
  *  no position this tick (`pending`), a code's, GPS within the ceiling,
  *  GPS above it (`weak`), or nothing vouching for it (`none`). */
 export type WalkPrecisionKind = "pending" | "code" | "gps" | "weak" | "none";
@@ -134,11 +133,11 @@ const visitorGuideSlice = createSlice({
     headingPendingSet(state, action: PayloadAction<boolean>) {
       state.headingPending = action.payload;
     },
-    /** The guide's judged precision changed (W4 build plan M3). */
+    /** The guide's judged precision changed. */
     precisionKindSet(state, action: PayloadAction<WalkPrecisionKind>) {
       state.precisionKind = action.payload;
     },
-    /** The AR tracking was lost or came back (W4 build plan M3). */
+    /** The AR tracking was lost or came back. */
     trackingLostSet(state, action: PayloadAction<boolean>) {
       state.trackingLost = action.payload;
     },
@@ -183,7 +182,7 @@ export function selectHeadingPending(state: WithGuide): boolean {
   return state.visitorGuide.headingPending;
 }
 
-/** The guide's judged precision kind (W4 build plan M3). */
+/** The guide's judged precision kind. */
 export function selectPrecisionKind(state: WithGuide): WalkPrecisionKind {
   return state.visitorGuide.precisionKind;
 }

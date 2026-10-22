@@ -100,20 +100,20 @@ export interface ArEntryDom {
   scanCard?: Pick<HTMLElement, "hidden" | "dataset">;
   scanCardLine?: Pick<HTMLElement, "textContent">;
   /** The card's title: it reads "Code found - placing the tour…" in the
-   *  card's found look (visitor walk W4 build plan M2, §1.4). */
+   *  card's found look. */
   scanCardTitle?: Pick<HTMLElement, "textContent">;
-  /** The visitor's coach in AR (W4 build plan M2, §1.4): the centred card
+  /** The visitor's coach in AR: the centred card
    *  for a short wait, a tracking hint, or a state with no walk to show. */
   coach?: {
     root: Pick<HTMLElement, "hidden" | "dataset">;
     text: Pick<HTMLElement, "textContent">;
   };
-  /** The peek's line asking for the code (W4: in the peek, not over the
+  /** The peek's line asking for the code (the prototype: in the peek, not over the
    *  camera). */
   codeTail?: Pick<HTMLElement, "hidden" | "textContent">;
 }
 
-/** The scan card's two titles (W4 build plan M2, §1.4; the first kept). */
+/** The scan card's two titles (the first kept). */
 const SCAN_CARD_TITLE = "Scan the code again so the tour can start";
 const SCAN_CARD_FOUND_TITLE = "Code found - placing the tour…";
 
@@ -140,7 +140,7 @@ export function wireArEntry(deps: {
   /** A creator's ring follows a mesh of the surroundings (polish round
    *  M5, Q-Mesh; `main.ts` turns it on unless `?mesh=0`). */
   meshCursor?: boolean;
-  /** The visitor's walk (W4 build plan M2): the toast its news goes to,
+  /** The visitor's walk: the toast its news goes to,
    *  and whether the visitor left AR with progress on the open tour (the
    *  start then reads "Back to the tour"). */
   walk?: {
@@ -150,7 +150,7 @@ export function wireArEntry(deps: {
      *  reads the tour as placed (`ArStatusInput.walkRuns`). */
     sheetShown?(): boolean;
     /** The `?debug=1` lines of the walk: the radar's draw time and the
-     *  frame time (W4 build plan M3), appended to the block. */
+     *  frame time, appended to the block. */
     debugLines?(): string[];
   };
 }): ArEntry {
@@ -265,7 +265,7 @@ export function wireArEntry(deps: {
 
   /** The scan card shows the visitor's sentence while the gate waits, and
    *  "Code found - placing the tour…" with a check once the code passed
-   *  it (W4, `found`); the status line steps aside meanwhile (kept with
+   *  it (the prototype's `found` state); the status line steps aside meanwhile (kept with
    *  ?debug=1, whose technical line the card does not carry). */
   function renderScanCard(
     shown: boolean,
@@ -289,8 +289,7 @@ export function wireArEntry(deps: {
     dom.arStatus.hidden = visible && !ctx.debug;
   }
 
-  /** The walk's surfaces for a visitor's sentence (W4 build plan M2,
-   *  §1.4): the coach, the toast's news, the peek's code line. The
+  /** The walk's surfaces for a visitor's sentence: the coach, the toast's news, the peek's code line. The
    *  sentence itself stays on `#ar-status` and its live copy. */
   function renderWalkRoute(
     route: ReturnType<typeof walkStatusRouting>,
@@ -405,7 +404,7 @@ export function wireArEntry(deps: {
         ctx.stationContent !== null &&
         !ctx.stationContent.showsAny() &&
         selectPresentStationId(arStore.getState()) === null,
-      // The walk's sheet shows: its stations are placed (W4 build plan M2).
+      // The walk's sheet shows: its stations are placed.
       walkRuns: deps.walk?.sheetShown?.() === true,
     };
     // A visitor reads one plain sentence (UI round 1, U1); the technical
@@ -448,7 +447,7 @@ export function wireArEntry(deps: {
   }
 
   /** The walk's precision chip and radar read the tracking loss from the
-   *  store (W4 build plan M3, §1.3): its one publisher is here, from the
+   *  store: its one publisher is here, from the
    *  readiness phase the visitor's sentence uses (the phase the guide's
    *  own tracking signal follows: both read `selectTrackingQuality`).
    *  Dispatched last and only on a change - this runs per camera frame. */

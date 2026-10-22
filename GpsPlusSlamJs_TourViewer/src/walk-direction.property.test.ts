@@ -10,9 +10,7 @@ import {
 } from "./walk-direction";
 
 /**
- * Why these properties matter (visitor walk W4 build plan
- * GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md,
- * M3, Tests): a phone held still jitters by a degree or two, and a visitor
+ * Why these properties matter: a phone held still jitters by a degree or two, and a visitor
  * turning slowly crosses a threshold many times in a second; without the
  * band the peek's tail and the rows would flicker between two words. The
  * property states the band's promise for every threshold, every band

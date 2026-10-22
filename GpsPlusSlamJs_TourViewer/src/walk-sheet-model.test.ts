@@ -21,13 +21,11 @@ import {
 } from "./walk-sheet-model";
 
 /**
- * Why these tests matter (visitor walk W4 build plan
- * GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md,
- * M2, §1.5, §1.6, §1.8): the sheet is what the visitor reads of the walk
+ * Why these tests matter: the sheet is what the visitor reads of the walk
  * in AR - the peek's eyebrow, title, distance and tail split today's
  * station line, the list a row per station, the completion card, and the
- * away block on the start page. Each text and each state is W4's or
- * today's, named in the plan; a wrong one is a wrong instruction in front
+ * away block on the start page. Each text and each state is the prototype's or
+ * today's; a wrong one is a wrong instruction in front
  * of the visitor, so every state of the peek and of a row is pinned here.
  */
 
@@ -396,7 +394,7 @@ describe("the direction words and arrows", () => {
   // which way each station is, in the one direction rule's words
   // (`walk-direction.ts`), with an arrow turned to the station; without a
   // heading only the distance ("N m"), and no arrow anywhere a distance is
-  // not shown (R-0).
+  // not shown.
   const directions = new Map([
     ["well", { word: "right" as const, angleDeg: 61.6 }],
     ["tower", { word: "behind" as const, angleDeg: -170 }],
@@ -507,8 +505,8 @@ describe("the completion card", () => {
     });
   });
 
-  // Changed in M4 (W-D2): a skipped station comes back at any time, so
-  // the card says so (W4's words); before M4 it would have been false
+  // A skipped station comes back at any time, so the card says so (the
+  // prototype's words); before that rule it would have been false
   // once the 6 s undo had passed.
   it("with a station skipped: 'M of N found. A skipped station can still be brought back.'", () => {
     const skipped = walk("any", [
@@ -585,8 +583,8 @@ describe("leaving AR", () => {
 });
 
 describe("the walk's rules in the sheet", () => {
-  // Why: with no station guessed (R-2) the peek names none and says what
-  // the position is doing, in the chip's words where W4 had none.
+  // Why: with no station guessed the peek names none and says what
+  // the position is doing, in the chip's words where the prototype had none.
   it("the peek with no station guessed: the position's state under each no-distance kind and the hold", () => {
     const r2 = (over: Partial<GuideView>) =>
       walkSheetModel(
@@ -661,7 +659,7 @@ describe("the walk's rules in the sheet", () => {
     );
   });
 
-  // Why (§1.6, W-D2): every row carries its own action - Skip for a
+  // Why: every row carries its own action - Skip for a
   // station to find, its confirm once armed, "Undo: bring back" with its
   // bar for the last skip, "Bring back" for any other skipped one, at any
   // time - so a skip is never more than a row away and never final.
@@ -740,7 +738,7 @@ describe("the walk's rules in the sheet", () => {
     ]);
   });
 
-  // Why (R-4): the chosen target is the peek's, marked on its row, and
+  // Why: the chosen target is the peek's, marked on its row, and
   // only a waiting station of a tour with a choice can be chosen.
   it("the chosen target: 'your choice' in the peek and its row, 'Guide me here' on a choosable row", () => {
     const m = walkSheetModel(

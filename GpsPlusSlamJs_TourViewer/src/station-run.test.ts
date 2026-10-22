@@ -370,7 +370,7 @@ describe("skip suggestion clock", () => {
     }
   });
 
-  // Why this test matters (visitor walk W4 build plan M4, R-3): under
+  // Why this test matters: under
   // branch order bringing a station back used to set the path to it and
   // forget the station the path was on, so the walk went on at the
   // brought-back station's `next` and the abandoned one was never offered

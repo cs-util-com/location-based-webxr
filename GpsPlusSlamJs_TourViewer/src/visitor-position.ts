@@ -57,7 +57,7 @@ export interface VisitorPosition {
   readonly fixAccuracyM: number | null;
   /** The camera's forward (its -Z) in GPS-world NUE, a unit vector: the
    *  AR pose's orientation through the alignment, the frame the stations'
-   *  bearings are taken in (the radar's heading, W4 build plan M3). Null
+   *  bearings are taken in (the radar's heading). Null
    *  without an alignment, a pose, or a pose orientation that is a finite
    *  rotation; absent where a caller builds a position by hand (tests). */
   readonly forwardNue?: readonly [number, number, number] | null;

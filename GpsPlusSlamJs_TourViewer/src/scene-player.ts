@@ -19,8 +19,7 @@ export function isPlayableInK4(step: TourStep): boolean {
 }
 
 /**
- * How many steps a choice-free scene shows (the story card's dots, W4
- * build plan M2): its playable steps, quizzes left out. Null for a scene
+ * How many steps a choice-free scene shows (the story card's dots): its playable steps, quizzes left out. Null for a scene
  * with a choice, whose path - and so its number of steps - the visitor's
  * answers decide.
  */

@@ -813,7 +813,7 @@ describe("arrival by the station radius alone (D16)", () => {
       gpsOnly.at(0, 0, accuracyM);
       expect(gpsOnly.approaches.at(-1)).toEqual(["gate", 50, own.activateM]);
       expect(gpsOnly.guides.at(-1)).toBe(`gate@50,0/${own.foundExitM}`);
-      // Above the ceiling no HUD target at all (W4 build plan M4, R-0:
+      // Above the ceiling no HUD target at all (the no-distance rule:
       // each marker carries a distance label the line does not show).
       expect(
         gpsOnly.huds[0]!.getTargets().map((t) => [
@@ -1614,7 +1614,7 @@ describe("wireStationGuide: the present station", () => {
     expect(selectPresentStationId(store.getState())).toBe("a");
     h.at(10.9, 0);
     expect(selectPresentStationId(store.getState())).toBeNull();
-    // The precision kind (W4 build plan M3) is published once too, on
+    // The precision kind is published once too, on
     // its first change, and never again while it stays GPS.
     expect(guideActions).toEqual([
       "visitorGuide/precisionKindSet",

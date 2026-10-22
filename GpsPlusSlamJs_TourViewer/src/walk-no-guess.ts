@@ -1,5 +1,5 @@
 /**
- * R-2's hold (visitor walk W4 build plan 2026-10-21-1105, M4, §1.9 R-2):
+ * The no-guess hold:
  * while the guide shows no distance an any-order tour guesses no station;
  * the guess goes on the first tick without a distance and comes back only
  * once the distance has been back for `WALK_NO_GUESS_HOLD_MS` without a
@@ -13,7 +13,7 @@
 
 /**
  * How long the distance must be back, unbroken, before a station is
- * guessed again: 3 s (the plan's default, kept by the stream sweep in
+ * guessed again: 3 s (the default, kept by the stream sweep in
  * `walk-no-guess.sweep.test.ts` over 1, 3, 5 and 10 s). At 1 s a fix
  * flickering around the 25 m ceiling flips the focus about twice as often
  * as at 3 s (5.2 against 2.5 changes a minute); 5 and 10 s flip less (1.9,
@@ -26,7 +26,7 @@
 export const WALK_NO_GUESS_HOLD_MS = 3_000;
 
 export interface NoGuessClock {
-  /** No station is guessed (R-2's store field). */
+  /** No station is guessed (the no-guess rule's store field). */
   readonly noGuess: boolean;
   /** When the distance came back while no guess was made; null otherwise. */
   readonly backAtMs: number | null;

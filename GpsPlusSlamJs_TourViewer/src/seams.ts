@@ -245,7 +245,7 @@ export interface TourViewerSeams {
    *  tap, `scene-audio.ts`). A seam so the e2e records what played. */
   createAudioElement(): AudioElementLike;
   /** The session camera's `P[0]` (`2*atan(1/P[0])` is its horizontal
-   *  field of view: the radar's view cone, visitor walk W4 build plan M3),
+   *  field of view: the radar's view cone),
    *  or null while there is no camera. WebXR owns that projection during
    *  an immersive session (`getIntrinsics`' precedent). A seam: the e2e
    *  has no camera, and the radar draws its fallback cone. */

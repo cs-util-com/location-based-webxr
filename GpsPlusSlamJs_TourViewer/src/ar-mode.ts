@@ -133,8 +133,7 @@ export function arButtonView(
     running: false,
     failed: false,
   },
-  /** A visitor left AR with progress on the open tour (W4 build plan M2,
-   *  §1.8): the start goes "Back to the tour". */
+  /** A visitor left AR with progress on the open tour: the start goes "Back to the tour". */
   progressKept = false,
 ): ArButtonView {
   switch (state.status) {

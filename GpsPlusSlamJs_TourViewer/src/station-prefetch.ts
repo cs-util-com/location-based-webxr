@@ -122,7 +122,7 @@ export interface StationPrefetch {
   ahead(station: TourStation): void;
   /** A station is done: the media only it needed may be released. */
   done(stationId: string): void;
-  /** A done station was brought back (W4 build plan M4, R-3): it waits
+  /** A done station was brought back: it waits
    *  again, so its media are no longer releasable for it, and a path
    *  released meanwhile is read again on its next approach. */
   undone(stationId: string): void;

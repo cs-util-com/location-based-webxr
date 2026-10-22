@@ -11,8 +11,8 @@ import {
 } from "./creator-undo.js";
 
 /**
- * Why these tests matter (W4 build plan MU): the phone's one-step
- * undo of a settle (plan M3b, Q-D) had no button, and the delete's Undo
+ * Why these tests matter: the phone's one-step
+ * undo of a settle had no button, and the delete's Undo
  * went away after 8 s. The strip's Undo is persistent, so the two things
  * that can go wrong are the ones pinned here: a button that offers a step
  * the document's undo would NOT take back (any later change, or another
@@ -89,7 +89,7 @@ async function flush(): Promise<void> {
   for (let i = 0; i < 10; i += 1) await Promise.resolve();
 }
 
-describe("the Undo chip's words (MU)", () => {
+describe("the Undo chip's words", () => {
   // Why: the label is the promise - it must say what the tap takes back,
   // and say only "Undo" while there is nothing.
   it("says what the tap takes back, and only Undo with nothing to take back", () => {
@@ -106,7 +106,7 @@ describe("the Undo chip's words (MU)", () => {
     expect(undoChipText(null, true)).toBe(UNDO_BUSY);
   });
 
-  // Why: Q-D's scope is an AUTOMATIC change of a stored code. A settle
+  // Why: the undo's scope is an AUTOMATIC change of a stored code. A settle
   // that only re-minted a code this visit measured (no decision, null) is
   // the measurement being refined, and a creator would not know what an
   // Undo of it means - so it is offered only when an automatic decision
@@ -132,7 +132,7 @@ describe("the Undo chip's words (MU)", () => {
   });
 });
 
-describe("the strip's Undo (MU)", () => {
+describe("the strip's Undo", () => {
   it("is disabled and says Undo before anything was offered", () => {
     const { dom, undo } = wired();
     undo.render();
@@ -185,7 +185,7 @@ describe("the strip's Undo (MU)", () => {
     expect(dom.label.textContent).toBe("Undo");
   });
 
-  // Why (the delete Undo's LOW-1, carried over): a change that rendered
+  // Why (carried over from the delete's Undo): a change that rendered
   // nothing may land between the render and the tap; the tap checks again.
   it("takes back nothing when the document moved since the button was drawn", () => {
     const { at, dom, undo } = wired();
@@ -315,7 +315,7 @@ describe("the strip's Undo (MU)", () => {
     expect(dom.button.disabled).toBe(false);
   });
 
-  // Why: object mode (polish round M3) - a selected object's actions take
+  // Why: object mode - a selected object's actions take
   // the strip's place, the Undo with the other chips.
   it("steps aside with the strip in object mode, keeping its offer", () => {
     const selected = { on: true };

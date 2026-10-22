@@ -2,9 +2,7 @@
 
 ## Purpose
 
-The visitor's radar on the page (visitor walk W4 build plan
-`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md`,
-M3, §1.2, §1.3, §5): draws `walk-radar-model.ts`'s model on the canvas in
+The visitor's radar on the page: draws `walk-radar-model.ts`'s model on the canvas in
 `#walk-radar` (inside `#ar-root`), writes the precision chip under it, and
 keeps what only a view keeps - the range shown last (the adaptive range's
 hysteresis), the burst ring of a station just found, the redraw clock and
@@ -17,7 +15,7 @@ the ms each draw took.
 - `WALK_RADAR_COLOURS` - the canvas's colours; `--walk-gps`,
   `--walk-weak`, `--walk-accent` and `--walk-found` in `index.html` hold
   the same values (a test holds them together).
-- `drawWalkRadar(ctx: RadarCanvas, model, options)` - W4's drawing, from
+- `drawWalkRadar(ctx: RadarCanvas, model, options)` - the prototype's drawing, from
   the model's numbers: the background, rings and label, north, the cone,
   the GPS blur, the distance rings, the blips (pulse, burst, the looks),
   the rim arc and the visitor's mark. `options`: `nowMs`, `sizePx`, `dpr`,
@@ -45,8 +43,10 @@ WalkRadarView`
   - `observeSize(onChange)` - the page's `ResizeObserver` on the canvas:
     a resize makes the next draw read the canvas's size again;
   - `drawStats(nowMs)` - the draws' rolling 2 s summary;
-  - `reset()` - the range, the bursts and the stats start anew (the
-    session's end).
+  - `reset()` - the range, the bursts and the stats start anew. Called by
+    `visitor-stations.ts` `stop`, which runs at the AR session's end and
+    at an open tour's close (`archive-open.ts`'s teardown,
+    `archive-open.test.ts` holds that).
   - A tap on the radar calls `toggleList` (the list opens or closes).
 
 ## Invariants & assumptions
@@ -81,9 +81,8 @@ WalkRadarView`
 
 The `?debug=1` e2e reads the draw time on the town tour at the code (two
 runs): **1.32 and 1.47 ms mean per draw, 6.6 and 8.3 ms worst** over 2 s
-(the worst is an early draw). The build plan's candidates (§5), by drawing
-time a second, reported and not gated (the phone decides, field checklist
-§3.2):
+(the worst is an early draw). The candidates, by drawing
+time a second, reported and not gated (the phone decides):
 
 - every frame (60 Hz): about 80-90 ms of drawing a second, 1.3-1.5 ms of
   each 16.7 ms frame;
@@ -124,7 +123,8 @@ radar.render({ stations, order, kind, accuracyM, live, snapshot, listOpen });
 - `walk-radar.test.ts` - the throttle (one trailing draw, 15 a second,
   cancel), the bursts (find, no replay, skip is no find), the drawing (no
   station distance label, frozen greys and "?", reduced motion, a burst
-  ring), the view (chip words and modes, the tap, device pixels and the
+  ring, a non-finite accuracy drawn without a throw on a canvas whose
+  radial gradient refuses non-finite radii), the view (chip words and modes, the tap, device pixels and the
   throttle, no size no draw, the range's hysteresis and reset, a tour in
   order's later stations in the range, `aria-expanded`, the size read
   once until a resize), the colour tokens against `index.html` (and every

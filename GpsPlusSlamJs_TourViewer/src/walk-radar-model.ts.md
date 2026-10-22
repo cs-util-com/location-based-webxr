@@ -2,9 +2,7 @@
 
 ## Purpose
 
-The visitor's radar as data (visitor walk W4 build plan
-`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md`,
-M3, §1.2, §1.3, §5): heading-up and centred on the visitor, a square-root
+The visitor's radar as data: heading-up and centred on the visitor, a square-root
 distance scale, the scale rings, north, the view cone, a blip per station
 in the list's glyph language, the arc on the rim for a focus outside the
 view, and the visitor's own mark by precision. Pure; `walk-radar.ts`
@@ -13,10 +11,10 @@ of view and the adaptive range.
 
 ## Public API
 
-- `WALK_RADAR_RANGE_M = 300` - W4's fixed range, the start before any
+- `WALK_RADAR_RANGE_M = 300` - the prototype's fixed range, the start before any
   distance is known (the radar ships the adaptive range, below).
 - `WALK_RADAR_FALLBACK_VFOV_DEG = { portrait: 64, landscape: 44 }`
-  (module-local) - W4's camera's VERTICAL field of view (three.js `fov`), 64° on a screen
+  (module-local) - the prototype's camera's VERTICAL field of view (three.js `fov`), 64° on a screen
   taller than wide, 44° otherwise.
 - `WALK_BLIP_PX = { focus: 8.5, other: 6.5, later: 3.5 }` (module-local).
 - `walkPrecisionChip(kind, accuracyM) => string` - "Placed by a code",
@@ -24,14 +22,14 @@ of view and the adaptive range.
   "Finding your position…", "Paused - tracking lost"; a missing or
   invalid accuracy is left out ("GPS", "GPS - too weak"), never invented.
 - `walkRadarFovDeg(projection0, aspect) => number` - `2 atan(1/P[0])`
-  in degrees; for a missing, non-finite or non-positive value, W4's
+  in degrees; for a missing, non-finite or non-positive value, the prototype's
   camera at the screen's aspect (width / height),
   `2 atan(tan(v/2) * aspect)`: about 32° on a portrait phone (390 x 844), 82° sideways
   (844 x 390), 66° on a 1440 x 900 desktop; an aspect that is no
   positive finite number reads as square (44°). A `fovDeg` the model is
   handed that is no angle falls back to that square 44°.
 - `walkRadarRings(rangeM) => { m, label }[]` - two round rings near a
-  twelfth and a third of the range (W4's 25 m and 100 m at 300 m); the
+  twelfth and a third of the range (the prototype's 25 m and 100 m at 300 m); the
   outer one labelled.
 - `WALK_RADAR_ADAPTIVE: WalkRadarAdaptiveRule = { k: 2, factor: 1.2,
 minM: 10, maxM: 600, shrinkBelow: 0.65 }` (module-local; the default
@@ -53,7 +51,7 @@ minM: 10, maxM: 600, shrinkBelow: 0.65 }` (module-local; the default
     clamped), `distanceRings` (no heading: how far, not which way),
     `rimArc` (the focus's angle when outside the view);
   - throws `RangeError` for a size too small for a rim or a non-positive
-    range; an invalid field of view falls back to 44° (W4's camera on a
+    range; an invalid field of view falls back to 44° (the prototype's camera on a
     square screen).
 
 ## Invariants & assumptions
@@ -63,20 +61,28 @@ minM: 10, maxM: 600, shrinkBelow: 0.65 }` (module-local; the default
   shows at once). Frozen has no focus, no rim arc and the "?" mark.
 - Frozen draws north from the snapshot's heading and no view cone: the
   radar is heading-up, so a frozen cone would claim a live view that does
-  not exist (W4's prototype draws none frozen either).
+  not exist (the prototype draws none frozen either).
+- The GPS blur is as wide as the accuracy and at least 7 px. An accuracy
+  that is none or NaN is read as none: the smallest blur. Every other
+  value keeps the scale's order, the scale's clamp taking the rest: an
+  infinite accuracy, the worst there is, draws the rim (as 1e9 m does),
+  a negative one the smallest blur. The chip leaves out a number that is
+  not finite and non-negative. A NaN radius used to reach the canvas, whose radial gradient throws
+  on it and stopped the draw; today's wiring filters such a value before
+  it gets here, so this is the boundary's own defence.
 - No heading: no blips, no cone, no north; dashed rings for the stations
   still to find (found and skipped left out).
-- `pending` draws no stations at all (W4's searching rings).
+- `pending` draws no stations at all (the prototype's searching rings).
 - A blip's angle is `bearingDeltaDeg(bearing, heading)`; its radius
   `R * sqrt(min(d, range) / range)`, clamped to `R - 8`.
-- Weak fades every blip to 0.5 (W4's prototype; the plan says "nearby").
+- Weak fades every blip to 0.5 (as the prototype does).
 - No station is labelled with a distance: the rings carry the scale, the
-  list the distances (§1.2).
+  list the distances.
 - At most one focus: the row the guide names `next`, never while frozen.
-  Which station that is (and that there is none in R-2's condition, §1.9)
-  is the guide's since M4 (`walkFocus`); the radar no longer hides it
+  Which station that is (and that there is none in the no-guess condition)
+  is the guide's (`walkFocus`); the radar no longer hides it
   itself, so a target the visitor chose stays orange under too-weak GPS
-  (R-4).
+  .
 
 ## Examples
 
@@ -100,7 +106,8 @@ walkPrecisionChip("weak", 42); // "GPS - about 42 m, too weak"
 - `walk-radar-model.test.ts` - the chip's words, the field of view, the
   rings, blip geometry and clamp, the cone, the looks, the rim arc, each
   precision mark, frozen from the snapshot and without one, pending, no
-  heading, the guards, the adaptive range.
+  heading, the guards (a NaN accuracy reads as none, an infinite one
+  draws the rim, a negative one the smallest blur), the adaptive range.
 - `walk-radar-model.property.test.ts` - a blip's angle is the bearing's
   delta; its radius grows with distance and stays inside the rim for
   96-144 px; at most one focus, only on the guide's `next` row, none

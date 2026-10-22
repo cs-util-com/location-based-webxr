@@ -41,7 +41,7 @@ describe("getSeams", () => {
     expect(typeof realSeams.encodeFrameJpeg).toBe("function");
     expect(typeof realSeams.createLabel).toBe("function");
     expect(typeof realSeams.schedule).toBe("function");
-    // The radar view cone (visitor walk W4 build plan M3): the XR camera's
+    // The radar view cone: the XR camera's
     // P[0]; null without a camera (node has none), so the fallback cone.
     expect(realSeams.xrProjection0()).toBeNull();
   });

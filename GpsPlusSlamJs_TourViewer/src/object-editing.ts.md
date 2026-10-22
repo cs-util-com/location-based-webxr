@@ -44,7 +44,7 @@ draft writes and history. Wired by `creator-setup.ts`, drawn by
   optional `loadPicture` (a hosted photo's picture from the open file,
   kept at its delete so an Undo after a Finish can bring it back), `schedule`
   (the app's one-shot timer seam), `syncPreviews` and
-  `renderAuthorReadout`; the optional `offerUndo` (W4 build plan MU)
+  `renderAuthorReadout`; the optional `offerUndo`
   is handed each delete at once, as an `UndoOffer` named `delete <name>`
   whose run is the same `undoDelete` as the note's. No draft writes: the document's listener writes
   the draft (`creator-document.ts` `follow`), and each change's
@@ -98,7 +98,7 @@ draft writes and history. Wired by `creator-setup.ts`, drawn by
   both in the id's queue - an Undo cut short leaves the object deleted
   rather than half restored) and the log
   (`tourAuthoring/objectDeleteUndone`). **In AR the note shows no Undo of
-  its own** (W4 build plan MU): the strip's persistent Undo
+  its own**: the strip's persistent Undo
   (`creator-undo.ts`), offered the same delete at once, is the one Undo
   there and outlives the hold; on the page the note's Undo stays. Both run
   `undoDelete` under the same revision rule, so they cannot take back two

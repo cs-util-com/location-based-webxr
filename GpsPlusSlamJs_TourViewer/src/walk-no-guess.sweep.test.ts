@@ -13,12 +13,12 @@ import {
 } from "./walk-no-guess";
 
 /**
- * Why this sweep matters (visitor walk W4 build plan M4, §5 "R-2's hold"):
+ * Why this sweep matters:
  * the hold trades a steady focus against the wait for a guess. It is
  * swept at 1, 3, 5 and 10 s over recorded-style precision streams - a
  * weak fix flickering around the 25 m ceiling (one fix a second), and a
  * code session dropping its pose for under a second now and then (a tick
- * per camera frame) - by the focus changes per minute (each R-2
+ * per camera frame) - by the focus changes per minute (each the no-guess rule
  * transition moves the focus between a station and none) and the time to
  * a guess once the distance is stable. The table goes to
  * `WALK_NO_GUESS_SWEEP_OUT` when set.

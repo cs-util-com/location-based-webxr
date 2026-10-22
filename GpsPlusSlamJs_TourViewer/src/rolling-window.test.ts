@@ -3,9 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createRollingWindow, ROLLING_WINDOW_MS } from "./rolling-window";
 
 /**
- * Why these tests matter (visitor walk W4 build plan
- * GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md,
- * M3): the `?debug=1` readout's numbers - the ms per radar draw and the
+ * Why these tests matter: the `?debug=1` readout's numbers - the ms per radar draw and the
  * frame time, each as the mean and the worst of the last 2 s - are what
  * the field check reads against the 50 ms frame budget. A window that kept
  * an old slow frame, or forgot a fresh one, would report a phone as worse

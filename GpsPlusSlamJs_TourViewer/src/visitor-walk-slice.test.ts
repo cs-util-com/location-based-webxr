@@ -38,8 +38,7 @@ import {
 } from "./visitor-walk-slice";
 
 /**
- * Why these tests matter (visitor walk W4 build plan 2026-10-21-1105, M1,
- * §2.2): the visitor's walk - the run's statuses, the last skip, the note
+ * Why these tests matter: the visitor's walk - the run's statuses, the last skip, the note
  * and the skip's arm - lives in the page's store, so every view reads one
  * answer. Each reducer case guards the rule it applies (a station is
  * found only while offered and waiting, skipped only while offered and
@@ -312,7 +311,7 @@ describe("the sheet", () => {
   // Why these tests matter: the sheet's peek / list is UI state in the
   // store (the project's Redux rule), and two of its changes follow
   // the walk rather than a tap - a story starting closes the list, and the
-  // tour's completion opens it once (W4). Done in the reducer, they hold
+  // tour's completion opens it once. Done in the reducer, they hold
   // for every writer of the walk, and a repeated completion does not open
   // the list again over the visitor's own close.
   it("opens and closes on a tap, and the same state when it is already so", () => {
@@ -428,7 +427,7 @@ class CapturingBackend extends NullStorageBackend {
 }
 
 describe("the page's store and the walk", () => {
-  // Why (plan §2.2): `visitorWalk/*` is dispatched from inside the store's
+  // Why: `visitorWalk/*` is dispatched from inside the store's
   // subscriber (the guide ticks there); a persisted action dispatched
   // there would be recorded out of order (lessons-learned), so none is.
   it("mounts the walk as visitorWalk and never writes its actions into a recording", async () => {
@@ -459,8 +458,8 @@ describe("the page's store and the walk", () => {
 });
 
 describe("the walk's windows (selectUndoableSkip, selectNote)", () => {
-  // Why (W4 M1 review): the undo's and the note's 6 s are read by more
-  // than the guide - the sheet of M2 reads the same windows - so they are
+  // Why: the undo's and the note's 6 s are read by more
+  // than the guide - the sheet reads the same windows - so they are
   // selectors of the slice, over the page's time, with no timer.
   it("offers the last skip's undo until it settles or its window ends", () => {
     const at = 10_000;
@@ -550,17 +549,17 @@ describe("the walk's rules: the focus, no guess, the arms, the choice", () => {
   const near = (pairs: Record<string, number>) =>
     new Map(Object.entries(pairs));
 
-  // Why this test matters (R-1): one selector decides the station the
+  // Why this test matters: one selector decides the station the
   // peek, the radar's orange, the breadcrumbs and the skip clock are
   // about. In an any-order tour with several stations to find, a guess
   // made with no distance shown named a station the visitor had no reason
-  // to walk to (W-D3); the visitor's own pick is no guess.
+  // to walk to; the visitor's own pick is no guess.
   it("walkFocus: the order's station, the chosen one, else the nearest - none while no distance is guessed", () => {
     const d = near({ a: 30, b: 10, c: 50 });
     expect(walkFocus(started("fixed"), d)).toBe("a");
     expect(walkFocus(started("branch"), d)).toBe("a");
     expect(walkFocus(started("any"), d)).toBe("b");
-    // No distance shown (R-2): no guess in an any-order tour ...
+    // No distance shown: no guess in an any-order tour ...
     const blind = visitorWalkReducer(started("any"), noGuessSet(true));
     expect(walkFocus(blind, d)).toBeNull();
     // ... but the order's station, and a choice, stay.
@@ -583,7 +582,7 @@ describe("the walk's rules: the focus, no guess, the arms, the choice", () => {
     expect(
       walkFocus(visitorWalkReducer(undefined, { type: "@@init" }), d),
     ).toBeNull();
-    // Without distances the first in list order (pending, outside R-2).
+    // Without distances the first in list order (pending, outside the no-guess rule).
     expect(walkFocus(started("any"), near({}))).toBe("a");
   });
 
@@ -599,7 +598,7 @@ describe("the walk's rules: the focus, no guess, the arms, the choice", () => {
     );
   });
 
-  // Why (R-4): at most one chosen target, only a waiting offered station
+  // Why: at most one chosen target, only a waiting offered station
   // in an any-order tour with a choice to make, cleared when it is found
   // or skipped and with the tour; tapping it again clears it.
   it("targetChosen: one waiting offered station in an any-order tour, cleared on find, skip and tour change", () => {
@@ -644,7 +643,7 @@ describe("the walk's rules: the focus, no guess, the arms, the choice", () => {
     expect(visitorWalkReducer(found, targetChosen("a")).chosenId).toBeNull();
   });
 
-  // Why (R-2's taps): "Can't get there?" opens the list - with the focus
+  // Why: "Can't get there?" opens the list - with the focus
   // row armed, or in chooser mode without a focus. The row's arm is its
   // own field: closing the list, a story starting or the station's skip
   // clear it; a focus change or a degradation never does.

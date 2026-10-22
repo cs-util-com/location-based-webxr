@@ -2,9 +2,7 @@
 
 ## Purpose
 
-The camera's heading for the visitor's walk (visitor walk W4 build plan
-`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md`,
-M3 and its review's finding 1): the bearing of the camera's forward, held
+The camera's heading for the visitor's walk: the bearing of the camera's forward, held
 while the forward has too little of a horizontal part to carry a bearing
 worth showing. The station guide (`station-guide.ts`) reads it each tick;
 the radar turns by it and the direction words (`walk-direction.ts`) are

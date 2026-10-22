@@ -2,11 +2,10 @@
 
 ## Purpose
 
-The persistent Undo of the creator's AR action strip (W4 build plan MU,
-the visitor-walk plans): one chip, `#setup-undo`, that takes back the
+The persistent Undo of the creator's AR action strip: one chip, `#setup-undo`, that takes back the
 tour document's last step when that step is one the page offered - a
 delete, or a settle that changed a stored code automatically, together
-with the stations and objects it moved (one step since plan M3b, Q-D).
+with the stations and objects it moved (one step).
 It says what it will take back.
 
 ## Public API
@@ -61,10 +60,10 @@ say })` - the run of a settle's offer: the document's undo, the
     offered; a later offer stays.
   - `reset()` - a tour closed.
 
-## Decisions (MU), and why
+## Decisions, and why
 
 - **What it undoes: a delete, or a settle's automatic code change - not
-  every step.** These are the two kinds of step the plan names. The
+  every step.** These are the two kinds of step it offers. The
   phone's other steps stay out on purpose: a move in AR keeps the visit's
   odometry placement beside the document (`creator-document.ts` side
   table), so an undone move would be re-applied by the visit's own settle
@@ -72,13 +71,12 @@ say })` - the run of a settle's offer: the document's undo, the
   controls (Delete, Edit, "Delete it"). A step that is not offered leaves
   the chip disabled, because the document's undo takes back only its LAST
   step - a delete before it is not reachable without taking that step
-  back first. For the same reason the plan's "place a pin and undo it"
-  e2e is dropped: a placement is not offered.
+  back first. For the same reason no "place a pin and undo it" e2e
+  exists: a placement is not offered.
 - **A settle is offered only when it changed a stored code automatically**
   (an improvement or a move, the decisions of `code-position-rule.ts` and
   `code-spots.ts`). A settle that only refined this visit's own fresh
-  measurement (no decision) is no "automatic code improvement" (Q-D's
-  wording), and taking it back would put the visit's pins at their less
+  measurement (no decision) is no "automatic code improvement", and taking it back would put the visit's pins at their less
   accurate tap-time positions under a name a creator would not recognise.
   A decision re-applied by a settle redone after a failed Finish is no new
   change either. A code-spot move back is never offered: the code-spot
@@ -93,7 +91,7 @@ say })` - the run of a settle's offer: the document's undo, the
   again (a change that rendered nothing may land between the render and
   the tap). A failed Finish that forgets its visit's settle withdraws that
   settle's offer (`withdraw`). "From this page": nothing is offered after
-  a reload (Q-E/Q-H: the page remembers nothing across a reload), so a
+  a reload (the page remembers nothing across a reload), so a
   restored draft's step is never offered. Disabled while a Finish
   rebuilds (the document refuses an undo then, `canStep`).
 - **Persistent, single level.** The offer outlives the note's 8 s hold and
@@ -103,8 +101,8 @@ say })` - the run of a settle's offer: the document's undo, the
   redo of a settle does not re-take the hand, `creator-codes.ts`). A tap
   the document refused keeps the offer: the chip stays as it was, and the
   note says why.
-- **Hidden in object mode.** The plan's text keeps the chip shown while a
-  selected object's actions replace the strip; it is hidden instead, like
+- **Hidden in object mode.** While a selected object's actions replace
+  the strip the chip is hidden, like
   the strip's other chips: object mode gives the bottom of the screen to
   the selected object's actions, and one chip left among them would read
   as one of them. The offer stays and comes back with the strip.
@@ -144,8 +142,7 @@ say })` - the run of a settle's offer: the document's undo, the
 
 ## Known gaps
 
-Filed in the follow-ups of the
-[W4 build plan](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md#follow-ups-from-mu):
+Filed as follow-ups:
 
 - A settle undone and then settled AGAIN in the same visit (a Finish that
   failed, `unsettle`) is judged afresh and may make the same change again.

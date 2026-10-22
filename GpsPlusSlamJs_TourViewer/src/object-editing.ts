@@ -83,7 +83,7 @@ export interface ObjectEditingDeps {
   /** The panel should re-read state (placement count, Finish). */
   readonly renderAuthorReadout: () => void;
   /** A delete was just taken: the AR strip's persistent Undo offers it
-   *  (W4 build plan MU, `creator-undo.ts`). Absent: only the note's
+   *  (`creator-undo.ts`). Absent: only the note's
    *  Undo offers it. */
   readonly offerUndo?: (offer: UndoOffer) => void;
 }
@@ -196,7 +196,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
         busy,
         locked: ctx.finishing,
         note,
-        // In AR the strip's persistent Undo is the one Undo (MU): the
+        // In AR the strip's persistent Undo is the one Undo: the
         // note says what happened, the strip takes it back.
         undo: undoable !== null && !ctx.finishing && !deps.sessionLive(),
       }),

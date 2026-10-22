@@ -47,7 +47,7 @@ M4 settles every code of the book, not only the one in hand.
   - `endVisit()` / `reset()` - a visit ended (its refusal goes); a tour
     closed (its move boundaries and decisions go).
   - `settleUndone(visit)` - the AR strip's Undo took `visit`'s settle
-    back (W4 build plan MU, `creator-undo.ts`): that settle's per-code
+    back (`creator-undo.ts`): that settle's per-code
     outcomes (the result line), move boundaries and applied decisions go,
     so the Finish's result does not report a change the creator took back.
   - `finishesWritten()` - how many Finishes wrote the tour since it

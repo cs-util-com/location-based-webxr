@@ -34,16 +34,15 @@
  * `codes-only-trust-ended-early`); their outputs were recorded by running
  * this file against the guide's sources as they were before it (commit
  * 183f03d2), which reproduced every earlier stream exactly.
- * THE SECOND NAMED EXCEPTION (visitor walk W4 build plan 2026-10-21-1105,
- * M4, §1.9 R-0 and R-2): field by field, never a whole tick. While no
+ * THE SECOND NAMED EXCEPTION: field by field, never a whole tick. While no
  * distance is shown an any-order tour guesses no station, and again only
- * once the distance has held for R-2's hold - so on a tick where R-2
+ * once the distance has held for the no-guess hold - so on a tick where the no-guess rule
  * holds the `line` (no "nearest: <title>"), the `crumbs` (no trail
  * without a focus) and the `skip` (no clock suggestion without a focus)
  * may differ; and on a tick without a distance (pending, too weak,
  * `'none'`) the `hud` may (no marker, each carries a distance label).
  * Every other field equals the golden on every tick, and every field
- * once R-2's hold has run out with a distance shown.
+ * once the no-guess hold has run out with a distance shown.
  *
  * Regenerate ONLY when a guide output is meant to change, say why in the
  * commit, and never in CI:
@@ -181,14 +180,14 @@ interface Scenario {
   readonly input: (t: number) => TickInput;
 }
 
-/** What the guide's view said of a tick (not in the golden): whether R-2
+/** What the guide's view said of a tick (not in the golden): whether the no-guess rule
  *  held, and whether a distance was shown - the M4 exception's states. */
 interface TickSide {
   readonly noGuess: boolean;
   readonly distance: boolean;
 }
 
-/** The fields M4 may change on a tick, by its state (the header). */
+/** The fields the walk's rules may change on a tick, by its state (the header). */
 function m4Exempt(side: TickSide): ReadonlySet<string> {
   const out = new Set<string>();
   if (side.noGuess) for (const k of ["line", "crumbs", "skip"]) out.add(k);
@@ -196,7 +195,7 @@ function m4Exempt(side: TickSide): ReadonlySet<string> {
   return out;
 }
 
-/** A tick held to the golden, but for the fields M4's exception names. */
+/** A tick held to the golden, but for the fields the rules' exception names. */
 function expectTick(
   got: TickRecord,
   want: TickRecord,
@@ -227,7 +226,7 @@ interface TickRecord {
 
 /**
  * Every tick of one stream through the guide as the page wires it.
- * `reenter` (visitor walk W4 build plan 2026-10-21-1105, M1): the page's
+ * `reenter`: the page's
  * own store, whose subscription ticks the guide on every dispatch as
  * `ar-entry.ts` does, so the guide's own dispatches re-enter it; the
  * prefetch's approach is then recorded once per station and tick (an
@@ -785,8 +784,7 @@ describe("the station guide's precision parity oracle (frozen before the guide m
     expect(afterWindow).toBeGreaterThan(0);
   });
 
-  // Why this test matters (visitor walk W4 build plan 2026-10-21-1105, M1,
-  // the cold review's blocker): the page ticks the guide from its store's
+  // Why this test matters: the page ticks the guide from its store's
   // subscription (`ar-entry.ts`), so every dispatch of the guide's own
   // re-enters it mid-way; the bare store above never shows that. Through
   // the page's store with that subscription, every stream must give the
@@ -811,12 +809,12 @@ describe("the station guide's precision parity oracle (frozen before the guide m
     }
   });
 
-  // Why this test matters (W4 build plan M4, the parity golden's
+  // Why this test matters (the parity golden's
   // field-level exception): an exception that never applies proves
   // nothing, and one that swallowed whole ticks would hide a change in
-  // the fields M4 never meant to touch. The streams reach R-2 under each
+  // the fields the walk's rules never meant to touch. The streams reach the no-guess rule under each
   // of its no-distance states, the exempt fields really differ there, and
-  // a tick with a distance and R-2 over is held to every field (the test
+  // a tick with a distance and the no-guess rule over is held to every field (the test
   // above).
   it("the golden's no-guess exception applies field by field, on ticks that reach it", () => {
     const frozen = JSON.parse(readFileSync(GOLDEN, "utf8")) as Record<

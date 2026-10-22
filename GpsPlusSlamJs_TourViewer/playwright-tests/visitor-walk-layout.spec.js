@@ -14,8 +14,8 @@ import {
 } from "./ar-fakes.js";
 
 /**
- * Why these tests matter (visitor walk W4 build plan M2, §3.1): the walk's
- * layout is W4's, and the design system zeroes paragraph and list margins,
+ * Why these tests matter: the walk's
+ * layout is the prototype's, and the design system zeroes paragraph and list margins,
  * so a port can lose every gap and still pass a test that asks only whether
  * an element is visible (the L5 lesson). These pin positions and gaps of
  * the chosen prototype (`public/prototypes/visitor-walk-4-radar-
@@ -42,7 +42,7 @@ const VIEWPORTS = [
   { width: 1440, height: 900 },
 ];
 
-/** W4's sideways layout: the media query `(orientation: landscape) and
+/** The prototype's sideways layout: the media query `(orientation: landscape) and
  *  (height <= 520px)`. */
 const sideways = (v) => v.width > v.height && v.height <= 520;
 
@@ -73,7 +73,7 @@ async function enterTheWalk(page, archive = WALK_ARCHIVE) {
   // A pose (the fakes deliver none): without it the walk reads tracking
   // lost and offers no skip.
   await trackingOk(page);
-  // R-2's hold (M4): the peek names a station once the distance held.
+  // The no-guess hold: the peek names a station once the distance held.
   await waitForTheGuess(page);
 }
 
@@ -89,7 +89,7 @@ async function trackingOk(page) {
   await forceTrackingReady(page);
 }
 
-/** The walk with no position anyone vouches for (M4, R-2): no location,
+/** The walk with no position anyone vouches for: no location,
  *  the code locked, then its trust ended by an odometry frame change. */
 async function enterWithoutAPosition(page) {
   await page.addInitScript(() => {
@@ -128,6 +128,52 @@ async function boxOf(locator) {
   if (b === null) throw new Error("no box");
   return b;
 }
+
+test("a toast joining three messages stays clear of the radar and the coach at 360x740", async ({
+  page,
+}) => {
+  // Why this test matters: the walk's toast joins everything said in one
+  // task into one toast, so it can carry several messages at once and
+  // grow several lines tall on a narrow phone - where it could reach down
+  // over the coach card (centred at 44 % of the height) or sideways under
+  // the radar's corner. The three are real texts, the longest news
+  // first; the join itself is pinned in `walk-toast.test.ts` and
+  // `visitor-walk.spec.js`, this pins only where the result stands.
+  const viewport = { width: 360, height: 740 };
+  await page.setViewportSize(viewport);
+  await installTourViewerArFakes(page);
+  await enterTheWalk(page);
+  await page.getByTestId("station-skip").click();
+  await page.getByTestId("walk-row-confirm").click();
+  const toast = page.locator("#walk-toast");
+  await expect(toast).toHaveText("Skipped The gate.");
+  // Tracking lost while the toast lingers: the coach stands up.
+  await reportArTracking(page, false);
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+  });
+  await expect(page.getByTestId("walk-coach")).toBeVisible();
+  const three = [
+    "This code seems to have been moved, so the tour is placed by GPS (less exact).",
+    "Welcome back - your progress is kept.",
+    "Skipped The gate.",
+  ].join(" ");
+  await page.evaluate((text) => {
+    const el = document.getElementById("walk-toast");
+    if (el === null) throw new Error("no toast");
+    el.textContent = text;
+  }, three);
+  await expect(toast).toHaveText(three);
+  const t = await boxOf(toast);
+  const radar = await box(page, "walk-radar");
+  const coach = await box(page, "walk-coach");
+  const exit = await box(page, "enter-ar");
+  const measured = JSON.stringify({ toast: t, radar, coach, exit });
+  expect(overlaps(t, radar), measured).toBe(false);
+  expect(overlaps(t, coach), measured).toBe(false);
+  expect(overlaps(t, exit), measured).toBe(false);
+  expect(t.x + t.width, measured).toBeLessThanOrEqual(viewport.width);
+});
 
 for (const viewport of VIEWPORTS) {
   const label = `${String(viewport.width)}x${String(viewport.height)}`;
@@ -291,13 +337,13 @@ for (const viewport of VIEWPORTS) {
       expect(sheet.width).toBeCloseTo(width, 0);
       expect(sheet.x).toBeCloseTo((viewport.width - width) / 2, 0);
     }
-    // The grab is the sheet's top 22 px (its box: the layout is W4's);
+    // The grab is the sheet's top 22 px (its box: the layout is the prototype's);
     // the segments 6 px tall, 4 px apart, 16 px in from the sheet's sides;
     // the peek's row at least 56 px tall (48 sideways).
     const grab = await box(page, "walk-grab");
     expect(grab.y).toBeCloseTo(sheet.y + 1, 0); // under the 1 px border
     expect(grab.height).toBeCloseTo(22, 0);
-    // Its target is 44 px (W4 M2 review): 10 px above the sheet's edge
+    // Its target is 44 px: 10 px above the sheet's edge
     // and 10 px below the grab's box, a tap still lands on the grab.
     expect(
       await page.evaluate(
@@ -347,7 +393,7 @@ for (const viewport of VIEWPORTS) {
       .boundingBox();
     if (column === null) throw new Error("no title column");
     expect(quick.x - (column.x + column.width)).toBeCloseTo(12, 0);
-    // The distance's figures are lining and of one width, as W4's.
+    // The distance's figures are lining and of one width, as the prototype's.
     await expect(page.getByTestId("walk-distance")).toHaveCSS(
       "font-variant-numeric",
       "lining-nums tabular-nums",
@@ -412,16 +458,16 @@ for (const viewport of VIEWPORTS) {
       sheet.y >= exitButton.y + exitButton.height ||
         sheet.x >= exitButton.x + exitButton.width,
     ).toBe(true);
-    // W4's figures are lining: the app font's old-style numerals would
+    // The prototype's figures are lining: the app font's old-style numerals would
     // shrink the rows' numbers.
     await expect(rows.first().locator(".walk-glyph")).toHaveCSS(
       "font-variant-numeric",
       "lining-nums",
     );
     await page.getByTestId("walk-close").click();
-    // A skip's toast: in W4's place, left of the radar's corner (132 px
+    // A skip's toast: in the prototype's place, left of the radar's corner (132 px
     // at the top right) on a phone, centred on a desktop. "Can't get
-    // there?" opens the list on the gate's row; its confirm skips (M4).
+    // there?" opens the list on the gate's row; its confirm skips.
     const quick = page.getByTestId("station-skip");
     await quick.click();
     await page.getByTestId("walk-row-confirm").click();
@@ -501,9 +547,9 @@ for (const viewport of VIEWPORTS) {
         : viewport.height * 0.66 + 1,
     );
     const dots = await box(page, "walk-dots");
-    // The dots stand 10 px under the story's text box, as W4's: the
+    // The dots stand 10 px under the story's text box, as the prototype's: the
     // panel's empty status and choices take no row, and a one-line text
-    // keeps W4's two-line height (3em).
+    // keeps the prototype's two-line height (3em).
     const text = await box(page, "scene-text");
     expect(dots.y - (text.y + text.height)).toBeCloseTo(10, 0);
     const acts = await box(page, "walk-story-acts");
@@ -521,7 +567,7 @@ for (const viewport of VIEWPORTS) {
   test(`the list's hint, a row's title, action, confirm and undo bar sit where the prototype puts them at ${label}`, async ({
     page,
   }) => {
-    // Why (W4 build plan M4, §1.6, §3.1): the rows' controls are W4's - a
+    // Why: the rows' controls are the prototype's - a
     // 34 px glyph column, the title a 44 px button, the action at the
     // row's right edge, the confirm on its own line 44 px in under the
     // title, the undo's 3 px bar under the title and the action - and the
@@ -600,8 +646,8 @@ for (const viewport of VIEWPORTS) {
   test(`the away block's segments span it in the walk's colours, inside the start's card, at ${label}`, async ({
     page,
   }) => {
-    // Why (W4 M2 review): the segments are the block's full width, found
-    // in W4's teal and the rest in its paper line (not the page's map
+    // Why: the segments are the block's full width, found
+    // in the prototype's teal and the rest in its paper line (not the page's map
     // colours); on a desktop the block stays in the start's left column.
     await page.setViewportSize(viewport);
     await installTourViewerArFakes(page);
@@ -624,11 +670,11 @@ for (const viewport of VIEWPORTS) {
       "background-color",
       "rgb(221, 214, 199)",
     );
-    // Its rows are W4's white cards on the paper line.
+    // Its rows are the prototype's white cards on the paper line.
     const row = page.getByTestId("walk-away-row").first();
     await expect(row).toHaveCSS("background-color", "rgb(255, 255, 255)");
     await expect(row).toHaveCSS("border-top-color", "rgb(221, 214, 199)");
-    // ... their titles W4's 15 px bold, not the start page's small type.
+    // ... their titles the prototype's 15 px bold, not the start page's small type.
     await expect(row.locator("b")).toHaveCSS("font-size", "15px");
     await expect(row.locator("b")).toHaveCSS("font-weight", "700");
     const card = await page.locator("#visitor-screen").boundingBox();
@@ -657,7 +703,7 @@ for (const viewport of VIEWPORTS) {
     test(`the radar sits at the top right with the chip under it, clear of the walk, at ${label} (${tour})`, async ({
       page,
     }) => {
-      // Why (visitor walk W4 build plan M3, §1.2): W4's radar is 132 px,
+      // Why: the prototype's radar is 132 px,
       // 30 px from the top and 12 px from the right (108 px and 10 px on a
       // phone held sideways); the chip stands 6 px under it, right-aligned,
       // at most 36 px wider; neither covers the Exit button, the sheet
@@ -729,7 +775,7 @@ test("the away block sits above the start's safety line, inside a phone's screen
   const away = await box(page, "walk-away");
   const root = await page.locator("#ar-root").boundingBox();
   if (root === null) throw new Error("no ar-root");
-  // The block's gap to the start below it: W4's 16 px becomes the start
+  // The block's gap to the start below it: the prototype's 16 px becomes the start
   // page's own spacing (the visitor screen's end, #ar-root's 12 px), with
   // the safety line kept between the block and the button.
   expect(root.y - (away.y + away.height)).toBeCloseTo(29, 0);
@@ -768,9 +814,9 @@ for (const viewport of [
   test(`the chip's longest words wrap to two lines under the radar, right-aligned, at ${label}`, async ({
     page,
   }) => {
-    // Why (W4 build plan M3 review): the code state's one short line hid
+    // Why: the code state's one short line hid
     // whether the chip's longest words ("GPS - about N m, too weak") keep
-    // W4's place - 6 px under the radar, its right edge on the radar's,
+    // The prototype's place - 6 px under the radar, its right edge on the radar's,
     // at most 36 px wider - when they wrap, sideways too.
     await page.setViewportSize(viewport);
     await installTourViewerArFakes(page);

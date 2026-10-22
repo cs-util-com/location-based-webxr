@@ -128,7 +128,7 @@ describe("createScenePlayer", () => {
   });
 });
 
-describe("playableStepCount (the story card's dots, W4 build plan M2)", () => {
+describe("playableStepCount (the story card's dots)", () => {
   // Why this test matters: the story card draws one dot per step the
   // visitor will see. A quiz this version skips is no dot, and a scene with
   // a choice has no fixed number of steps, so it gets no dots at all

@@ -88,7 +88,7 @@ selectStationContentShown(store.getState(), "s2");
   heading wait; the URL flag (only `1` counts).
 - `station-guide.test.ts` ("the present station") - the guide's dispatches.
 
-## The precision events (visitor walk W4 build plan M3)
+## The precision events
 
 - `WalkPrecisionKind = "pending" | "code" | "gps" | "weak" | "none"` and
   `WalkChipKind = WalkPrecisionKind | "lost"`.

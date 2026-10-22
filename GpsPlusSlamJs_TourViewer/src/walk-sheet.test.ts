@@ -16,11 +16,11 @@ import {
 import type { WalkRow } from "./walk-sheet-model";
 
 /**
- * Why these tests matter (visitor walk W4 build plan M2, §1.5): the list
- * opens by a tap on the grab or the peek, or by a drag of more than 24 px
- * (W4); a shorter drag is a tap that slipped, and the direction decides
+ * Why these tests matter: the list
+ * opens by a tap on the grab or the peek, or by a drag of more than 24 px;
+ * a shorter drag is a tap that slipped, and the direction decides
  * open or close. The quick action's look follows what it offers - a
- * suggestion or an undo wraps to its own line (W4) - and the end of a story
+ * suggestion or an undo wraps to its own line - and the end of a story
  * is the story card's, never the peek's.
  */
 describe("sheetAfterDrag", () => {

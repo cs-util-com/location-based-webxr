@@ -11,14 +11,12 @@ import {
 } from "./walk-radar-model";
 
 /**
- * Why this sweep matters (visitor walk W4 build plan
- * GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md,
- * M3 "sweep", §5 "Radar range", "Radar size"): W4 drew a 300 m range on a
+ * Why this sweep matters: the prototype drew a 300 m range on a
  * square-root scale for one four-station tour. A range too short piles
  * every station on the rim; one too long crowds a museum's stations into
  * the centre. Overlapping blips hide the focus and the numbers, so the
  * range rule is chosen here, over generated tours, at every radar size in
- * the range, by the plan's criterion - not by the one picture W4 showed.
+ * the range, by the criterion below - not by the one picture the prototype showed.
  *
  * - **Rules:** a fixed 150 / 300 / 600 m, and the adaptive range (the
  *   distance to the k-th nearest station still to find, k 1-6, times
@@ -40,13 +38,13 @@ import {
  *   size, the crowded case).
  * - **Overlap:** two blips overlap when their centres are closer than
  *   the sum of their radii (a blip's diameter for two alike).
- * - **Pass (plan M3):** a rule passes a tour family when, in at least
+ * - **Pass:** a rule passes a tour family when, in at least
  *   95 % of the sampled positions, the focus's blip overlaps no other
  *   blip, and at most 10 % of the visible unfound blips overlap any
  *   other. Judged per station count (every count of the family must
  *   pass), at the shipped sizes 132 and 108 px.
  * - **What ships:** the simplest passing rule (a fixed range before the
- *   adaptive one, and among fixed ranges W4's 300 m first); if none passes
+ *   adaptive one, and among fixed ranges the prototype's 300 m first); if none passes
  *   every family, the adaptive rule with the lowest overlap, its overlap
  *   named as a limit.
  *

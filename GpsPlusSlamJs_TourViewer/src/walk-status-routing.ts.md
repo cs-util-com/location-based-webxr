@@ -2,9 +2,7 @@
 
 ## Purpose
 
-Where the visitor's sentence goes in AR (visitor walk W4 build plan
-`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md`,
-M2, §1.4). W4 has no status line over the camera; each state of
+Where the visitor's sentence goes in AR. The prototype has no status line over the camera; each state of
 `visitor-status.ts` (still the one source of what is said) is routed to
 the coach (the centred card), the scan card, a toast said once, the
 peek's code line, or nowhere (the sheet already says it). Pure;
@@ -37,7 +35,7 @@ peek's code line, or nowhere (the sheet already says it). Pure;
     when the sentence carries it;
   - walk (placed, to-station, needs-code): nothing; the sheet speaks.
 - While the scan card shows (`scanShown`), it carries the whole sentence,
-  as before W4.
+  as before the prototype.
 - No placement wait stands over the running walk: once the walk runs the
   sentence itself is a placed one (`ArStatusInput.walkRuns`, read by
   `visitor-status.ts`), so it routes as placed, placed-gps or

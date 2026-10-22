@@ -15,8 +15,7 @@ import {
 } from "./ar-fakes.js";
 
 /**
- * The radar and the precision chip (visitor walk W4 build plan M3, §1.2,
- * §1.3, §1.5): the radar at the top right opens the list; the chip under
+ * The radar and the precision chip: the radar at the top right opens the list; the chip under
  * it names how the position is known - by a code, by GPS (and how well),
  * too weak, unknown, tracking lost; the peek and the list's rows say which
  * way each station is once a heading exists; and a frozen radar (no
@@ -85,7 +84,7 @@ async function enterAtTheCode(page) {
   await lockFixtureCode(page);
   await expect(page.getByTestId("walk-sheet")).toBeVisible();
   await trackingOk(page);
-  // R-2's hold (M4): the peek names a station once the distance held.
+  // The no-guess hold: the peek names a station once the distance held.
   await waitForTheGuess(page);
 }
 
@@ -171,8 +170,8 @@ for (const tour of TOURS) {
   test(`the radar opens and closes the list, and the chip says a code placed the visitor, on ${tour.name}`, async ({
     page,
   }) => {
-    // Why this test matters (§1.2, §1.3): the radar is the list's second
-    // door (W4), and the chip names the precision the radar's centre
+    // Why this test matters: the radar is the list's second
+    // door, and the chip names the precision the radar's centre
     // draws; a code's position reads "Placed by a code", never its 1 m.
     await openTour(page, tour.archive);
     await enterAtTheCode(page);
@@ -217,7 +216,7 @@ for (const tour of TOURS) {
   test(`the list's rows say which way each station is, and turn with the camera, on ${tour.name}`, async ({
     page,
   }) => {
-    // Why this test matters (§1.6): with a heading a row still to find
+    // Why this test matters: with a heading a row still to find
     // says where to walk ("46 m - to your right") with an arrow turned
     // there; turning the camera around turns the word to its opposite.
     await openTour(page, tour.archive);
@@ -245,7 +244,7 @@ for (const tour of TOURS) {
 test("the peek says which way the focus is, and its arrow turns with the camera", async ({
   page,
 }) => {
-  // Why this test matters (§1.5): the peek's tail says the focus's
+  // Why this test matters: the peek's tail says the focus's
   // direction ("Ahead.") and the distance's arrow points there; turning
   // the camera turns both. The gate stands 28 m north of the code.
   await openTour(page, WALK_ARCHIVE);
@@ -271,7 +270,7 @@ test("the peek says which way the focus is, and its arrow turns with the camera"
 test("placed by GPS: the chip says how well, too weak says so, and no heading draws no words", async ({
   page,
 }) => {
-  // Why this test matters (§1.3, §1.5): GPS is "about N m" from the fixes'
+  // Why this test matters: GPS is "about N m" from the fixes'
   // own accuracy, and fixes too weak to guide by say so; with no heading
   // the peek shows the distance alone (no direction is invented).
   await openTour(page, WALK_ARCHIVE);
@@ -292,7 +291,7 @@ test("placed by GPS: the chip says how well, too weak says so, and no heading dr
     "data-kind",
     "gps",
   );
-  // R-2's hold (M4): a distance is named once it held.
+  // The no-guess hold: a distance is named once it held.
   await waitForTheGuess(page);
   await expect(page.getByTestId("walk-distance-text")).toHaveText(/^\d+ m$/);
   await expect(page.getByTestId("walk-tail")).not.toHaveText(
@@ -319,7 +318,7 @@ test("placed by GPS: the chip says how well, too weak says so, and no heading dr
 test("tracking lost pauses the radar: the chip says so and the radar goes grey, and comes back", async ({
   page,
 }) => {
-  // Why this test matters (§1.2, §1.3): while AR tracking is lost the
+  // Why this test matters: while AR tracking is lost the
   // position is not trusted; the chip says "Paused - tracking lost" and
   // the radar freezes in grey (its last judged picture), then returns.
   await openTour(page, STATIONS_ARCHIVE);
@@ -348,7 +347,7 @@ for (const tour of TOURS) {
   test(`without a position the radar freezes: a move changes nothing on it, a skip does, on ${tour.name}`, async ({
     page,
   }) => {
-    // Why this test matters (§1.2): a visitor without location whose code
+    // Why this test matters: a visitor without location whose code
     // lost its trust (an odometry frame change) has no position anyone
     // vouches for: the chip says "Position unknown", the radar goes grey
     // with a "?" at its centre and keeps the last judged picture - a walk
@@ -404,8 +403,8 @@ for (const tour of TOURS) {
     expect(await settledPicture(page)).toBe(frozen);
     // A skip changes a blip: "Can't get there?" opens the list - asking
     // which station on the tour of stories, which names none without a
-    // position (R-2), on the focus's row on the tour in order - and the
-    // row's Skip or confirm skips it (W4 build plan M4).
+    // position, on the focus's row on the tour in order - and the
+    // row's Skip or confirm skips it.
     await page.getByTestId("station-skip").click();
     const confirm = page.getByTestId("walk-row-confirm");
     if ((await confirm.count()) > 0) await confirm.click();
@@ -427,7 +426,7 @@ for (const tour of TOURS) {
 test("?debug=1 reads the radar's draw time and the frame time", async ({
   page,
 }) => {
-  // Why this test matters (DEC-PERF: no frame over 50 ms): the phone test
+  // Why this test matters (the 50 ms frame budget: no frame over 50 ms): the phone test
   // judges the radar by these two lines, so they must be on the page; the
   // numbers measured headless are written out when asked for.
   await openTour(page, WALK_ARCHIVE, "&debug=1");

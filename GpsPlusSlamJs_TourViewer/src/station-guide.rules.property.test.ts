@@ -19,17 +19,16 @@ import type { VisitorPosition } from "./visitor-position";
 import { WALK_NO_GUESS_HOLD_MS } from "./walk-no-guess";
 
 /**
- * Why these properties matter (visitor walk W4 build plan 2026-10-21-1105,
- * M4, Tests): the walk's rules (§1.9 R-0 to R-5) are many small decisions
+ * Why these properties matter: the walk's rules are many small decisions
  * that meet in one state - a skip, a bring back at any time, a chosen
  * target, a story to end, the position degrading and coming back. A unit
  * test pins each edge; these pin what must hold over ANY mix of them:
  * the walk never deadlocks, it is complete exactly when nothing is
  * offered, a found station never becomes unfound, at most one target is
  * chosen and only a waiting offered one, an any-order tour names no
- * station while R-2 holds (its condition derived here, from the
+ * station while the no-guess rule holds (its condition derived here, from the
  * harness's own clock), and every tour completes within two taps per
- * station through the story card and the three tap paths of R-2.
+ * station through the story card and the three tap paths of the no-guess rule.
  */
 
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -276,7 +275,7 @@ describe("the walk's rules over random walks", () => {
                   walkStatus(p, chosen)?.state === "waiting"),
               JSON.stringify(w),
             ).toBe(true);
-            // R-2, derived here: an any-order tour with two or more
+            // The no-guess rule, derived here: an any-order tour with two or more
             // stations to find, no chosen target, and no distance shown
             // (or not yet back for the hold) guesses no station - no focus,
             // and a line that names none (a note of a skip may lead it).
@@ -342,7 +341,7 @@ describe("the walk's rules over random walks", () => {
     expect(r2Checks).toBeGreaterThan(60);
   });
 
-  // R9 re-stated over the story card and R-2's three tap paths: "Can't get
+  // "No order can deadlock", re-stated over the story card and the no-guess rule's three tap paths: "Can't get
   // there?" then the armed row's confirm, "Can't get there?" then a row in
   // the chooser, and a row's Skip then its confirm - each two taps; a
   // found station's story ends in two taps on its card.

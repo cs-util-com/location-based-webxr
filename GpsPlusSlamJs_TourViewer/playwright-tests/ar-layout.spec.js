@@ -7,7 +7,7 @@ import { E2E_QR_TEXT } from "./qr-fixture.mjs";
 /**
  * Why these tests matter: in a WebXR DOM overlay `#ar-root` IS the screen,
  * and nothing in it can be scrolled into view by a creator holding a phone
- * at a poster. The owner's r750 field test found the print-size offer's
+ * at a poster. A test on a phone found the print-size offer's
  * buttons below the bottom edge: the framework's AR canvas (window-sized,
  * inserted as `#ar-root`'s first child) sat in the page flow and pushed the
  * whole panel down a screen height. No test saw it because the AR fakes
@@ -319,7 +319,7 @@ for (const viewport of [
     expect(photo.right).toBeLessThanOrEqual(viewport.width);
     expect(newStation.left).toBeGreaterThanOrEqual(0);
     expect(newStation.right).toBeLessThanOrEqual(viewport.width);
-    // The persistent Undo (MU): its own line, centred just above "New
+    // The persistent Undo: its own line, centred just above "New
     // station here", there and dimmed while nothing can be taken back.
     await expect(page.getByTestId("setup-undo")).toBeDisabled();
     await expect(page.getByTestId("setup-undo")).toHaveText("Undo");
@@ -355,7 +355,7 @@ for (const viewport of [
   { width: 390, height: 844 },
   { width: 320, height: 640 },
 ]) {
-  test(`the strip's Undo names a deleted pin's long text without overflowing a ${viewport.width}x${viewport.height} screen (MU)`, async ({
+  test(`the strip's Undo names a deleted pin's long text without overflowing a ${viewport.width}x${viewport.height} screen`, async ({
     page,
   }, testInfo) => {
     // Why: the persistent Undo says what it takes back, so its label is as

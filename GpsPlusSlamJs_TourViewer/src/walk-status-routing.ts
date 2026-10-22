@@ -1,6 +1,5 @@
 /**
- * Where the visitor's sentence goes in AR (visitor walk W4 build plan
- * 2026-10-21-1105, M2, §1.4). W4 has no status line over the camera, so
+ * Where the visitor's sentence goes in AR. The prototype has no status line over the camera, so
  * each state of `visitor-status.ts` (kept as the one source of what is
  * said) is routed explicitly: to the coach (the centred card), the scan
  * card, a toast said once, the peek's tail line, or - where the sheet and
@@ -25,8 +24,8 @@ type CoachLook = "spinner" | "sway" | "plain";
 
 export interface StatusRoute {
   readonly coach: { readonly text: string; readonly look: CoachLook } | null;
-  /** The scan card: the sentence under its title (`scan`, kept S1), or
-   *  "Code found - placing the tour…" with the check (`found`, W4). */
+  /** The scan card: the sentence under its title (`scan`, kept), or
+   *  "Code found - placing the tour…" with the check (`found`, the prototype). */
   readonly scanCard: "scan" | "found" | null;
   /** News, each said once when it first applies (a toast). */
   readonly toasts: readonly string[];
@@ -50,7 +49,7 @@ const ROUTE_OF: Record<VisitorStatusState, Route> = {
   starting: "spinner",
   stopping: "spinner",
   placing: "spinner",
-  // The framework's readiness hints (§1.1).
+  // The framework's readiness hints.
   "warming-up": "sway",
   "tracking-lost": "sway",
   // In AR with no walk running (builder's: the coach is the one centred
@@ -59,7 +58,7 @@ const ROUTE_OF: Record<VisitorStatusState, Route> = {
   unfinished: "plain",
   nothing: "plain",
   "finding-direction": "plain",
-  // The code situations before placement: the scan card (S1, kept).
+  // The code situations before placement: the scan card (kept).
   scan: "code",
   "measuring-code": "code",
   "code-other-tour": "code",
@@ -79,7 +78,7 @@ function without(text: string, part: string): string {
   return text.replace(part, "").replace(/\s+/g, " ").trim();
 }
 
-/** A GPS placement's reason, as W4 shows it: its first sentence, with
+/** A GPS placement's reason, as the prototype shows it: its first sentence, with
  *  its reason clause where it has one ("Tour placed by GPS (less exact)",
  *  "...: this browser can't read codes"). */
 function placedByGpsNews(text: string): string {

@@ -150,7 +150,7 @@ station where the visitor stands); `viewer-moved-code.test.ts`
 (the veto records the ignored code by its scanned text, the key its
 evaluations carry).
 
-## The parts, for the walk's routing (visitor walk W4 build plan M2)
+## The parts, for the walk's routing
 
 - `VISITOR_STATUS_STATES` / `VisitorStatusState` - every state the
   sentence names, listed once, so `walk-status-routing.ts` must route each
@@ -159,8 +159,7 @@ evaluations carry).
   sentence (`text`) and what could not load (`notes`) apart;
   `statusSentence(parts)` joins them; `visitorStatus(input)` is the two
   composed, its output unchanged (every existing test kept).
-- **The walk runs, so the tour is placed** (`input.walkRuns`, W4 build
-  plan M2 review): the guide runs only once the tour's zero is known, so
+- **The walk runs, so the tour is placed** (`input.walkRuns`): the guide runs only once the tour's zero is known, so
   its stations are placed even when no content stands (a tour whose
   stations hold only stories places none). `isPlaced` reads it with the
   content's "placed", so the sentence leaves "placing"/"locking" for the

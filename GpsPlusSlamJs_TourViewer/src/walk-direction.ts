@@ -1,8 +1,7 @@
 /**
- * Which way a station is, in words (visitor walk W4 build plan
- * 2026-10-21-1105, M3, §1.5, §1.6, §5): "ahead", "to your left", "to your
+ * Which way a station is, in words: "ahead", "to your left", "to your
  * right", "behind you" - the one direction rule for the peek's tail, the
- * list's rows and (M5) the edge pill. W4 had two rules ("behind" past 140°
+ * list's rows and the edge pill. The prototype had two rules ("behind" past 140°
  * in its words, past 137.5° in its pill); the build has this one.
  *
  * The angle is the station's bearing relative to the camera's
@@ -19,22 +18,22 @@ import { bearingDeltaDeg } from "gps-plus-slam-app-framework/utils/bearing-degre
 export type WalkDirection = "ahead" | "left" | "right" | "behind";
 
 /**
- * "Ahead" within this angle of the view's centre (W4's `dirWord`). About
- * half a phone's horizontal field of view in portrait (64° in W4): a
+ * "Ahead" within this angle of the view's centre (the prototype's `dirWord`). About
+ * half a phone's horizontal field of view in portrait (64° in the prototype): a
  * station called "ahead" is on screen. Swept 20-35° in
- * `walk-direction.sweep.test.ts`; the phone decides (plan §3.2).
+ * `walk-direction.sweep.test.ts`; the phone decides.
  */
 export const WALK_AHEAD_DEG = 28;
 
 /**
- * "Behind you" beyond this angle (W4's `dirWord`; its pill's 137.5° is the
+ * "Behind you" beyond this angle (the prototype's `dirWord`; its pill's 137.5° is the
  * rule the build does not take). Swept 120-150°.
  */
 export const WALK_BEHIND_DEG = 140;
 
 /**
  * How far past a threshold the angle must go before the word changes
- * (plan §5: default 5°, swept 0-10°). A phone held still jitters by a
+ * (default 5°, swept 0-10°). A phone held still jitters by a
  * degree or two; 5° outlasts that and is still well inside the 28° zone.
  */
 export const WALK_DIRECTION_HYSTERESIS_DEG = 5;

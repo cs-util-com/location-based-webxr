@@ -104,9 +104,9 @@ describe("the desktop's details fields hold every value the format accepts", () 
 });
 
 describe("the visitor walk keeps out of the design system's walk classes", () => {
-  // Why (visitor walk W4 build plan M2, §1.2): design.css ships `.radar`,
+  // Why: design.css ships `.radar`,
   // `.toast` and `.hint` with their own positions and looks. The walk
-  // restates W4's look on its own classes; an element carrying one of
+  // restates the prototype's look on its own classes; an element carrying one of
   // those would take the design system's position over the camera, and
   // the framework toast would wear `.toast` by default unless told not to.
   it("no element carries the class radar, toast or hint", () => {

@@ -5,10 +5,8 @@ import { describe, expect, it } from "vitest";
 import { walkDirection, type WalkDirection } from "./walk-direction";
 
 /**
- * Why this sweep matters (visitor walk W4 build plan
- * GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md,
- * §5 "Direction words"): the shipped 28° / 140° / 5° are W4's and the
- * plan's defaults, and a verdict from one value is provisional. A visitor
+ * Why this sweep matters: the shipped 28° / 140° / 5° are the prototype's and the
+ * defaults, and a verdict from one value is provisional. A visitor
  * turning slowly once around (10°/s, 60 ticks a second) with the camera
  * heading jittering sees the word change; the ideal is four changes a
  * turn (ahead, a side, behind, the other side). The sweep counts the

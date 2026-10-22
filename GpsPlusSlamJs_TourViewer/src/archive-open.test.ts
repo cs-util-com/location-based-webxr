@@ -192,6 +192,25 @@ describe("a tour switch forgets the closing tour's failed finish", () => {
   });
 });
 
+describe("a tour switch stops the closing tour's stations", () => {
+  // Why this test matters: the visitor's stations (`visitor-stations.ts`
+  // `stop`) end at the AR session's end AND at a tour's close - the walk's
+  // views (the radar's range and bursts, the direction words) start anew
+  // with the next tour. The radar's `reset()` names both triggers; this
+  // holds the second, which nothing else pins.
+  it("stops them once when an open tour closes, never with no tour open", async () => {
+    for (const open of [true, false]) {
+      const ctx = createTourViewerSession();
+      if (open) ctx.session = openTour();
+      const hooks = createUnwiredHooks();
+      const stopStations = vi.spyOn(hooks, "stopStations");
+      const dom = openAnotherTour(ctx, hooks);
+      await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
+      expect(stopStations).toHaveBeenCalledTimes(open ? 1 : 0);
+    }
+  });
+});
+
 // (A test that a tour switch forgot the closing tour's bake stood here: the
 // open bakes no walk any more, so there is no bake to carry across.)
 

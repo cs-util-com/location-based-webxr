@@ -87,7 +87,7 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   a voice that plays while the figure waits or still loads keeps that
   line, and a refused voice is said beside the wait and outlives it (M1).
 
-## Progress and change (visitor walk W4 build plan M2)
+## Progress and change
 
 - `SceneViewDeps.onChange?()` - called after every render of a step, at
   a story's end and on `stopAll()`, so the sheet's story card (its dots,
@@ -101,13 +101,13 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   step's time, nothing without a story, no dots with a choice, `onChange`
   on a start, each step, the end and `stopAll`).
 
-## The held step (visitor walk W4 build plan M4, R-5)
+## The held step
 
 - `SceneView.holdStep(held)` - while the visitor is asked whether to end
   the story ("End the story of <title> now" showing), the step holds: an
   auto step's timer is cancelled and `progress().autoMs` reads null (the
   dots show no timed fill); released ("Keep listening"), the timer starts
-  again from the step's full length (W4). A step shown while held starts
+  again from the step's full length. A step shown while held starts
   no timer; a new story starts unheld. The caller derives the hold on
   every sheet render (`visitor-stations.ts`), so it never drifts from
   the end control.

@@ -256,7 +256,9 @@ auto-check on paste and change, once per link; its `openLink` / `openFile`
 block pins the outcome each returns, the link of record `openLink` writes,
 and that a link that did not open (offline, missing) is never handed on. `archive-open.test.ts` drives the real submit handler through
 a failed open: the tour switch clears the fused-pose hint state, the
-failed levels read and the voted-lock count (r857 review #9). Its "the levels' settle reaches the visitor
+failed levels read and the voted-lock count (r857 review #9). It also holds that
+a closing tour stops the stations once (`hooks.stopStations`: the walk's
+views start anew with the next tour), and never with no tour open. Its "the levels' settle reaches the visitor
 screen" block (in `archive-open-file.test.ts`) holds `presentTourLevels`
 on a read and on a failed read, and `levelsUnreadable`. The logic
 beneath: `tour-session.test.ts`,

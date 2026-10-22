@@ -1,6 +1,5 @@
 /**
- * The visitor's radar, as data (visitor walk W4 build plan 2026-10-21-1105,
- * M3, §1.2, §1.3): heading-up and centred on the visitor, a square-root
+ * The visitor's radar, as data: heading-up and centred on the visitor, a square-root
  * distance scale out to the range, the scale rings, north, the view cone,
  * a blip per station in the list's glyph language, the arc on the rim for
  * a focus outside the view, and the visitor's own mark by precision -
@@ -23,7 +22,7 @@ import type { WalkChipKind } from "./visitor-guide-slice.js";
 import type { WalkRowState } from "./walk-sheet-model.js";
 
 /**
- * W4's fixed range, m (square-root scale): the range before any station
+ * The prototype's fixed range, m (square-root scale): the range before any station
  * distance is known. The radar ships the ADAPTIVE range
  * (`walkRadarAdaptiveRangeM`), which the overlap sweep
  * (`walk-radar-model.sweep.test.ts`) ranked above 150, 300 and 600 m;
@@ -31,21 +30,21 @@ import type { WalkRowState } from "./walk-sheet-model.js";
  */
 export const WALK_RADAR_RANGE_M = 300;
 
-/** W4's camera before the XR camera's projection is known: its VERTICAL
+/** The prototype's camera before the XR camera's projection is known: its VERTICAL
  *  field of view (three.js `fov`), 64° on a screen taller than wide and
  *  44° otherwise; the cone is the horizontal one at the screen's aspect. */
 const WALK_RADAR_FALLBACK_VFOV_DEG = { portrait: 64, landscape: 44 };
 
-/** The blips' radii, px (W4): the focus, the others, a "later" one. */
+/** The blips' radii, px: the focus, the others, a "later" one. */
 const WALK_BLIP_PX = { focus: 8.5, other: 6.5, later: 3.5 };
 
-/** The GPS blur's smallest radius, px (W4). */
+/** The GPS blur's smallest radius, px. */
 const BLUR_MIN_PX = 7;
-/** A station beyond the range sits on the rim less this, px (W4). */
+/** A station beyond the range sits on the rim less this, px. */
 const RIM_INSET_PX = 8;
-/** A distance ring without a heading is at least this wide, px (W4). */
+/** A distance ring without a heading is at least this wide, px. */
 const DISTANCE_RING_MIN_PX = 6;
-/** The radar's rim is this far inside its box, px (W4). */
+/** The radar's rim is this far inside its box, px. */
 const RIM_MARGIN_PX = 4;
 
 /** One geometry: every station's bearing (degrees from north) and
@@ -143,19 +142,25 @@ function metres(m: number): string {
   return formatDistance(m, { metreDecimals: 0 });
 }
 
-/** The chip's words (§1.3, W4). A missing accuracy is left out, never
+/** An accuracy the chip may write: a finite, non-negative metre count,
+ *  or null (none, or one no position has). */
+function knownAccuracyM(accuracyM: number | null): number | null {
+  return accuracyM !== null && Number.isFinite(accuracyM) && accuracyM >= 0
+    ? accuracyM
+    : null;
+}
+
+/** The chip's words. A missing accuracy is left out, never
  *  invented. */
 export function walkPrecisionChip(
   kind: WalkChipKind,
   accuracyM: number | null,
 ): string {
-  const about =
-    accuracyM !== null && Number.isFinite(accuracyM) && accuracyM >= 0
-      ? `about ${metres(accuracyM)}`
-      : null;
+  const known = knownAccuracyM(accuracyM);
+  const about = known === null ? null : `about ${metres(known)}`;
   switch (kind) {
     case "code":
-      // The code's internal 1 m is never shown (precision plan P-D2).
+      // The code's internal 1 m is never shown.
       return "Placed by a code";
     case "gps":
       return about === null ? "GPS" : `GPS - ${about}`;
@@ -173,7 +178,7 @@ export function walkPrecisionChip(
 /**
  * The camera's horizontal field of view, degrees: `2 atan(1 / P[0])` of
  * the XR view camera's projection matrix (three.js `elements[0]`); before
- * there is one, or for a value that is no camera's, W4's camera
+ * there is one, or for a value that is no camera's, the prototype's camera
  * (`WALK_RADAR_FALLBACK_VFOV_DEG`) at the screen's `aspect` (width over
  * height; one that is no positive finite number reads as square).
  */
@@ -207,7 +212,7 @@ function roundDown(x: number): number {
 
 /**
  * The scale rings: round distances near a twelfth and a third of the
- * range (W4's 25 m and 100 m at 300 m), the outer one labelled.
+ * range (the prototype's 25 m and 100 m at 300 m), the outer one labelled.
  */
 export function walkRadarRings(
   rangeM: number,
@@ -221,7 +226,7 @@ export function walkRadarRings(
 }
 
 /**
- * The adaptive range's rule (plan §5), shipped by the overlap sweep
+ * The adaptive range's rule, shipped by the overlap sweep
  * (`walk-radar-model.sweep.test.ts`; the sidecar has the verdict): the
  * distance to the k-th nearest station still to find, times `factor`,
  * rounded UP to a step of 1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a
@@ -291,8 +296,8 @@ export function walkRadarAdaptiveRangeM(
 const RAD = Math.PI / 180;
 
 /** Whether the radar may name a focus: never frozen. Which station is
- *  the focus is the guide's (§1.9 R-1, R-2): in R-2's condition it names
- *  none, so no row is "next"; a chosen target stays one (R-4). */
+ *  the focus is the guide's: in the no-guess condition it names
+ *  none, so no row is "next"; a chosen target stays one. */
 function focusShown(frozen: boolean): boolean {
   return !frozen;
 }
@@ -366,7 +371,18 @@ export function walkRadarModel(input: WalkRadarInput): WalkRadarModel {
       : {
           kind: "blur",
           tone: input.kind === "weak" ? "weak" : "gps",
-          r: Math.max(BLUR_MIN_PX, scale(input.accuracyM ?? 0)),
+          // No accuracy (none, NaN): the smallest blur, never a radius
+          // the canvas cannot draw. Any other value keeps the scale's
+          // order: `scale` clamps an infinite one to the rim, a negative
+          // one to the centre.
+          r: Math.max(
+            BLUR_MIN_PX,
+            scale(
+              input.accuracyM === null || Number.isNaN(input.accuracyM)
+                ? 0
+                : input.accuracyM,
+            ),
+          ),
         };
   const mode = frozen ? "frozen" : "live";
   if (geo === null) {

@@ -8,13 +8,11 @@ get there", and when to suggest it. Pure; the caller supplies the clock,
 the distances and the scene ends. Plans:
 `GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`,
 `GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md` (D16: arrival
-by the radius alone),
-`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md` (M1:
-the rules as pure transitions, applied by the page's store).
+by the radius alone).
 
 ## Public API
 
-- **The rules as pure transitions** (W4 plan M1, §2.2): the page's store
+- **The rules as pure transitions:** the page's store
   applies them in its `visitorWalk` reducer (`visitor-walk-slice.ts`), so
   the walk's state lives in the store and the rule once, here.
   - `type WalkProgress` - `{ order, stations, branchCurrent,
@@ -22,8 +20,8 @@ branchReturns }`: per
     station in list order its status (`id`, `state`, `skipped`,
     `focusedAtMs`, `focusDistanceM`) and the two tour facts the rules
     read (`next`, a station of this tour or null; `stepless`); under
-    `branch` order the return points of stations brought back (W4 M4,
-    R-3, below); the offer is derived, never stored. Plain, serializable
+    `branch` order the return points of stations brought back
+    (the bring-back rule, below); the offer is derived, never stored. Plain, serializable
     data.
   - `walkRoute(stations)` - those tour facts (`type WalkRoute`); a `next`
     naming no station of the tour is null (the list successor then).
@@ -76,8 +74,7 @@ focusDistanceM }`.
     skip clock starts at the first call, with the distance then (else the
     first observed after) - K4 review R14, the clock used to start at the
     offer, which under `any` order is the tour's start;
-  - `unskip(id, nowMs)` - bring a skipped station back, at any time (W4
-    M4, W-D2): it waits again, unskipped, with a fresh clock, offered as
+  - `unskip(id, nowMs)` - bring a skipped station back, at any time: it waits again, unskipped, with a fresh clock, offered as
     before the skip; under branch order the path goes to it and the
     station the path was on is kept as a return point; a station not
     skipped: nothing;
@@ -118,7 +115,7 @@ focusDistanceM }`.
     back (`unskip`) takes the path to it; the station the path was on (or
     null, the path had ended) is pushed on `branchReturns`, and once the
     brought-back station is done the path pops it: back to that station,
-    not on to the brought-back one's `next` (W4 M4, R-3: before M4 the
+    not on to the brought-back one's `next` (the bring-back rule: before it the
     abandoned station was never offered again). A popped station already
     done hands on by its own `next`; a popped null ends the path again.
     A stack, so stations brought back in a row return in turn.

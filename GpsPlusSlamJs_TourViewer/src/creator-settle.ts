@@ -242,8 +242,8 @@ export interface CreatorSettle {
   endVisit(): void;
   /** A tour closed: its move boundaries and decisions go. */
   reset(): void;
-  /** The strip's Undo took `visit`'s settle back (the persistent Undo,
-   *  W4 build plan MU): what that settle decided per code goes with it -
+  /** The strip's Undo took `visit`'s settle back (the persistent Undo):
+   *  what that settle decided per code goes with it -
    *  the result line's outcomes, the move boundaries, the decisions a
    *  re-settle would re-apply. */
   settleUndone(visit: number): void;
@@ -285,7 +285,7 @@ export function wireCreatorSettle(deps: {
   sizeOf: (text: string) => number;
   /** A settle of `visit` just took a step that changed a stored code
    *  automatically: the AR strip's persistent Undo offers it, named
-   *  `target` (W4 build plan MU, `creator-undo.ts`).
+   *  `target` (`creator-undo.ts`).
    *  Absent: nothing offers it. */
   offerUndo?: (target: string, visit: number) => void;
   /** `visit`'s settle was forgotten (a Finish that wrote nothing): its

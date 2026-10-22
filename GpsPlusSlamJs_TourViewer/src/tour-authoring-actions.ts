@@ -332,8 +332,7 @@ export interface SettleUndoneLog {
   }[];
 }
 
-/** A settle's step undone from the AR strip (the persistent Undo, W4
- *  build plan MU): what went back, so a replay that applied the `settled`
+/** A settle's step undone from the AR strip (the persistent Undo): what went back, so a replay that applied the `settled`
  *  action can take it back too. */
 export const settleUndone = logAction<SettleUndoneLog>()(
   "tourAuthoring/settleUndone",
