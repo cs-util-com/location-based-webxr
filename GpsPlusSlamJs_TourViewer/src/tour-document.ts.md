@@ -156,6 +156,11 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
 - `deleted({ id, what })` - `deleteObject`: the entry goes, a written
   object gets a tombstone, and its station goes too when that leaves it an
   empty automatic station (as for a move); an unknown id changes nothing.
+  "Written" is the file's view: an object moved out of a station that was
+  then deleted is still in the file (in that station's items), so its
+  delete gets a tombstone too - the draft and the rebuild know a delete by
+  its tombstone alone (without it a reload brought the object back with
+  its station, and a save kept a photo's picture in the zip).
 - `stationMoved({ stationId, geo, what })` - D17: the frame moves, and every
   object of the station becomes an edit at the spot the moved frame gives
   it (its local pose kept), as the phone's settle leaves its lists; an
@@ -261,7 +266,11 @@ largeTour?, cannotSave? })`.
     station is refused (`stationDeleteRefusal`: `missing` or `last`).
   - `stationsReordered({ order, what })` - a permutation of the stations
     `manifestNow` carries; anything else (or the same order) changes
-    nothing.
+    nothing. A written station no frame lists and nothing stands in any
+    more (an emptied automatic one, which the next write leaves out) stays
+    unlisted: listed back as a frame, its place in the order put the items
+    moved out of it ahead of their new station's own, where a reload from
+    the draft puts them after.
   - `stationDuplicated({ stationId, newStationId, newItemIds, createdAtIso,
 geo?, what })` - a copy inserted after the original (any station the
     next write carries, as for `stationEdited`), titled `<title> copy`
@@ -335,7 +344,8 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   in the zip's order, the same map until they change; null before they
   arrived) and `hostedLevelsUnreadable(state)`.
 - `documentObjects(state)` - the objects now (`authoringObjects` over the
-  written tour with the frames), each with its entry.
+  written tour with the frames), each with its entry; `hosted` is whether
+  the written file holds the object, wherever the frames put it.
 - `manifestNow(state)` - the manifest the next write starts from: the
   written tour with the frames (`withFrames`), each station's card image
   as shown and written (one whose picture is gone - a deleted or moved

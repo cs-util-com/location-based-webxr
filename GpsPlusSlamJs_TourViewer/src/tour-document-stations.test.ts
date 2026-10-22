@@ -474,6 +474,37 @@ describe("stationDeleted", () => {
     expectOneStep(before, after);
   });
 
+  it("a written photo moved out of its station, the station then deleted, and the photo deleted, leaves a tombstone", () => {
+    // Why: the file still holds the photo in its old station, so its
+    // delete must be recorded. Without the tombstone the document hid the
+    // photo only because its old station was gone: a reload from the
+    // draft (which records the deletes, not that inference) brought it
+    // back with its station, and a save kept its picture in the zip (the
+    // rebuild removes a picture by the deletes).
+    let state = open();
+    const f = documentObjects(state).find((o) => o.object.id === "f")!.object;
+    state = reduce(
+      state,
+      act.moved({
+        object: f,
+        newStation: true,
+        newStationId: "own1",
+        what: "own",
+      }),
+    );
+    state = reduce(
+      state,
+      act.stationDeleted({ stationId: stationIdOf("f"), what: "delete" }),
+    );
+    expect(
+      documentObjects(state).find((o) => o.object.id === "f")?.hosted,
+    ).toBe(true);
+    state = reduce(state, act.deleted({ id: "f", what: "delete" }));
+    expect(state.deleted).toEqual(["f"]);
+    expect(documentObjects(state).some((o) => o.object.id === "f")).toBe(false);
+    readBack(state);
+  });
+
   it("an empty station deleted counts as one change; a route left with no target goes whole", () => {
     let state = open();
     state = reduce(

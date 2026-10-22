@@ -413,6 +413,36 @@ const opened = reduce(
   act.opened({ manifest: OPENED }),
 );
 
+/** What a reload brings back from the draft `state` wrote: its settings
+ *  record as stored, read against the opened tour, and its objects'
+ *  records, restored into a fresh open. */
+function reloadedFromDraft(state: TourDocumentState): TourDocumentState {
+  const record = parseSettingsRecord(
+    JSON.stringify(settingsRecord(state)),
+    OPENED,
+  );
+  expect(record).toBeDefined();
+  return reduce(
+    opened,
+    act.restored({
+      objects: state.placed.map((p) => p.object),
+      deleted: [...state.deleted],
+      needsNoGps: record?.needsNoGps ?? false,
+      ...(record?.details === undefined ? {} : { details: record.details }),
+      ...(record?.stations === undefined ? {} : { stations: record.stations }),
+      ...(record?.createdStations === undefined
+        ? {}
+        : { createdStations: record.createdStations }),
+      ...(record?.frames === undefined ? {} : { frames: record.frames }),
+      ...(record?.order === undefined ? {} : { order: record.order }),
+      ...(record?.deletedStations === undefined
+        ? {}
+        : { deletedStations: record.deletedStations }),
+      what: "restore",
+    }),
+  );
+}
+
 describe("tour document (properties)", () => {
   it("an undo followed by a redo changes nothing", () => {
     fc.assert(
@@ -438,37 +468,49 @@ describe("tour document (properties)", () => {
     fc.assert(
       fc.property(fc.array(noSave, { maxLength: 20 }), (ops) => {
         const state = ops.reduce(apply, opened);
-        const record = parseSettingsRecord(
-          JSON.stringify(settingsRecord(state)),
-          OPENED,
+        expectAlike(
+          manifestToWrite(reloadedFromDraft(state))!,
+          manifestToWrite(state)!,
         );
-        expect(record).toBeDefined();
-        const back = reduce(
-          opened,
-          act.restored({
-            objects: state.placed.map((p) => p.object),
-            deleted: [...state.deleted],
-            needsNoGps: record?.needsNoGps ?? false,
-            ...(record?.details === undefined
-              ? {}
-              : { details: record.details }),
-            ...(record?.stations === undefined
-              ? {}
-              : { stations: record.stations }),
-            ...(record?.createdStations === undefined
-              ? {}
-              : { createdStations: record.createdStations }),
-            ...(record?.frames === undefined ? {} : { frames: record.frames }),
-            ...(record?.order === undefined ? {} : { order: record.order }),
-            ...(record?.deletedStations === undefined
-              ? {}
-              : { deletedStations: record.deletedStations }),
-            what: "restore",
-          }),
-        );
-        expectAlike(manifestToWrite(back)!, manifestToWrite(state)!);
       }),
       { numRuns: 300 },
+    );
+  });
+
+  it("a pin moved into its own station, its old station deleted and then the pin deleted comes back from the draft the same", () => {
+    // Why: the draft round trip's shrunk counterexample from CI (fast-check
+    // seed -388854626), pinned so it fails on its own whatever the
+    // property's seed. The pin is still in the file, in its deleted old
+    // station; its delete must be recorded as one, or the reload brings
+    // the pin back with that station.
+    const ops: Op[] = [
+      { kind: "ownStation", id: "b", stationId: "o1" },
+      { kind: "deleteStation", id: "b" },
+      { kind: "delete", id: "b" },
+    ];
+    const state = ops.reduce(apply, opened);
+    expectAlike(
+      manifestToWrite(reloadedFromDraft(state))!,
+      manifestToWrite(state)!,
+    );
+  });
+
+  it("a photo moved into a neighbour's station, then the stations reordered, comes back from the draft the same", () => {
+    // Why: the round trip's second shrunk counterexample (seed
+    // -1580933524, about one run in three thousand). The move empties the
+    // photo's own station, which the next write leaves out; a reorder that
+    // listed it back as a frame put the photo first in its new station,
+    // where the reload (which drops it) puts it after the station's own
+    // pin.
+    const ops: Op[] = [
+      { kind: "move", id: "f", dLat: -0.00003 },
+      { kind: "move", id: "f", dLat: -0.0002 },
+      { kind: "reorder" },
+    ];
+    const state = ops.reduce(apply, opened);
+    expectAlike(
+      manifestToWrite(reloadedFromDraft(state))!,
+      manifestToWrite(state)!,
     );
   });
 
