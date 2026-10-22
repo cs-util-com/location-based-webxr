@@ -34,20 +34,32 @@
     is taken once for the WHOLE run (not on `--dry-run`); every gate it
     spawns inherits the token and re-enters, so no other session slips in
     between the repo-config tests and the last dependent.
-  - Root repo-config tests always run first (seconds-cheap, guard the root
-    config the selection itself depends on).
-  - Then, whenever a package gate runs (and before the full cascade too),
-    the framework's `dist` is built if stale (`FRAMEWORK_BUILD_IF_STALE`
-    in `select.mjs`), so no dependent type-checks or unit-tests against a
-    stale `dist` (gate-speed plan G2). The order is pure and tested in
+  - Whenever a package gate or a root check runs (and before the full
+    cascade too), the framework's `dist` is built if stale FIRST
+    (`FRAMEWORK_BUILD_IF_STALE` in `select.mjs`), so neither a repo-config
+    guard nor a dependent reads a stale `dist` (gate-speed plan G2).
+  - Root repo-config tests run in every package-mode run (seconds-cheap,
+    guard the root config the selection itself depends on), then the
+    doc-only `format` stages, then the root checks (`check:deadcode`),
+    then the package gates. The order is pure and tested in
     `select.test.mjs`; this shell runs the commands fail-fast in order.
+  - **A narrowed change runs only what can read it** (`select.mjs.md`,
+    "Narrowed changes"): a root guard or `knip.json` adds
+    `check:deadcode`, root markdown and `.github`/`.vscode` add nothing
+    beyond repo-config, and a package whose only change is doc markdown runs
+    its `format` stage. The run prints ONE line (`describeRun`) naming what
+    it saw and everything it runs, so a run that covers less than the full
+    gate says so.
   - Warns when `pnpm-workspace.yaml` contains a `gps-plus-slam-js: link:`
     override — library changes are invisible to selection then.
   - Package dirs are parsed from `pnpm-workspace.yaml` (plain `- Name` list,
     no globs) and filtered to dirs actually containing a `package.json`.
 - Examples: edit only recorder files → runs repo-config + the recorder gate
   (~3.5 min instead of ~11 min); edit a framework file → framework + all six
-  consumer gates; edit root `package.json` → full cascade.
+  consumer gates; edit root `package.json` → full cascade; edit a
+  repo-config guard and a Tour Viewer file → the build, repo-config,
+  `check:deadcode` and the Tour Viewer gate with its dependents; edit only
+  a Globe sidecar → repo-config and the Globe's `format`.
 - Tests: decision logic in `select.test.mjs` / `select.property.test.mjs`;
   the thin shell is verified by `--dry-run` runs against the live tree (see
   the speedup plan's Phase B acceptance).
