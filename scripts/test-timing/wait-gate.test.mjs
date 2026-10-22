@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { REMIND_EVERY_MS } from './machine-slot.mjs';
 import {
   QUIET_EXIT,
   decideWait,
@@ -66,6 +67,14 @@ describe('quietWindowMs', () => {
 
   it('takes the named override as given', () => {
     expect(quietWindowMs({ GATE_STALL_MIN: '30' }, 90)).toBe(90 * 60_000);
+  });
+
+  // Why: a gate queued for the machine slot prints nothing but the slot's
+  // "still queued" reminder. If that reminder came less often than the quiet
+  // window, a long queue would read as a hang and the waiter would return
+  // "quiet" on a healthy gate. The default window must leave a wide margin.
+  it('is far longer than the gap between two queue reminders', () => {
+    expect(quietWindowMs({}, null)).toBeGreaterThanOrEqual(4 * REMIND_EVERY_MS);
   });
 });
 

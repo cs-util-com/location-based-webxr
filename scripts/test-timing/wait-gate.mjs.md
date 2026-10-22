@@ -45,6 +45,11 @@ node scripts/test-timing/wait-gate.mjs <log> --long-run "seed sweep" --quiet-min
   see.
 - **A change is the log's size or mtime moving**; an absent log counts as
   unchanged from the start of the wait.
+- **A queued gate is not quiet:** while it waits for the machine slot it
+  prints a "still queued" reminder every `REMIND_EVERY_MS` (5 min,
+  `machine-slot.mjs`), a fifth of the default window; a test pins that
+  margin. A window set far below the default (a tiny `GATE_STALL_MIN`) can
+  read a long queue as quiet.
 - **The action names the holder and does not kill it.** The holder may be
   another session's run, which only whoever started it ends; and a gate relaunched
   meanwhile would only queue behind the run that holds the slot.
