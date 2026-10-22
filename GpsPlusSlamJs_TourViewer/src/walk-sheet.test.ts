@@ -352,8 +352,12 @@ describe("the walk's CSS under reduced motion", () => {
       /@media \(prefers-reduced-motion: reduce\)\s*\{/g,
     );
     const rest = cutBlocks(reduced.rest, /@keyframes [\w-]+\s*\{/g).rest;
-    const animated = selectorsOf(rest, /(^|;|\s)animation:\s*(?!none)/);
-    const stilled = selectorsOf(reduced.bodies.join("\n"), /animation:\s*none/);
+    // An animation starts by the shorthand or by `animation-name` alone.
+    const animated = selectorsOf(rest, /(^|;|\s)animation(-name)?:\s*(?!none)/);
+    const stilled = selectorsOf(
+      reduced.bodies.join("\n"),
+      /animation(-name)?:\s*none/,
+    );
     // Non-vacuous: the undo's bar and the coach's spinner are animated.
     expect(animated).toContain(".walk-undobar > i");
     expect(animated).toContain(

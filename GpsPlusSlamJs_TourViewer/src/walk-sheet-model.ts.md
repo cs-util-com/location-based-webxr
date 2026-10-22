@@ -53,7 +53,8 @@ the station guide's `view()` and the tour; the DOM writer is
     brought back." - under branch order that sentence alone - or "Thank
     you for walking with us.") once complete; `hint` (M4) while no
     station is guessed: why, by the position, and "Which one can't you
-    reach?" once "Can't get there?" opened the chooser; rows `{ id,
+    reach?" once "Can't get there?" opened the chooser (not while
+    tracking is lost: no row offers a Skip then); rows `{ id,
 number, title, state, sub, arrowDeg, action, confirm, undoLeftMs,
 chosen, choosable, mainLabel }` with
     `state` (`WalkRowState`) one of next (the focus), left (offered, not

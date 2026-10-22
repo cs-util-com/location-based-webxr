@@ -2693,11 +2693,14 @@
         .walk-toast {
           animation: none;
         }
-        /* The undo's bar stands still at the share left when it was
-           drawn; the row's undo still ends on time. */
+        /* The undo's bar goes: a still bar would show a share of the time
+           that is no longer true. The row's undo button stays while the
+           undo can be made, and goes when it ends. */
         .walk-undobar > i {
           animation: none;
-          transform: scaleX(var(--walk-undo-from, 1));
+        }
+        .walk-undobar {
+          display: none;
         }
         .walk-arrow,
         .walk-radar-canvas {

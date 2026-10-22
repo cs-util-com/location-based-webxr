@@ -500,7 +500,10 @@ function hintOf(view: GuideView): string | null {
     ],
   };
   const [plain, asked] = cause[view.position];
-  return view.chooser ? `${asked} Which one can't you reach?` : plain;
+  // While tracking is lost no row offers a Skip: no question to answer.
+  return view.chooser && !view.trackingLost
+    ? `${asked} Which one can't you reach?`
+    : plain;
 }
 
 /** The sheet, from the walk, the guide's view and the sheet's state. */

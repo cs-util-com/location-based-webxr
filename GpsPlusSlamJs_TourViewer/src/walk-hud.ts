@@ -50,10 +50,10 @@ export interface WalkHudSplit {
 /**
  * Split the guide's targets by the focus: the target whose id is
  * `focusId` goes to the focus's HUD (at most one: ids are the HUD's keys
- * and are unique), every other one to the others' HUD in its own order. A
- * focus that is not among the targets (a chosen station farther than the
- * nearest few) marks none: the HUD shows the nearest stations, as it did
- * with one instance.
+ * and are unique), every other one to the others' HUD in its own order.
+ * The guide keeps an unfound focus among its targets however far it is
+ * (`station-guide.ts` `hudTargets`); a focus not among them (found, or
+ * none) marks none.
  */
 export function splitWalkHudTargets(
   targets: readonly WayfindingTarget[],
@@ -78,7 +78,9 @@ interface Hud {
  * Start both HUDs for one AR session over the guide's targets and its
  * focus; null while either cannot start yet (no camera), the other one
  * disposed again so the next try starts both together. Each HUD polls its
- * own half of the guide's targets every frame.
+ * own half of the guide's targets every frame; the guide's targets are
+ * built once for the two reads (a HUD that reads a split it has read
+ * already starts the next one), so once a frame.
  */
 export function startWalkHuds(deps: {
   readonly create: (options: {
@@ -88,15 +90,23 @@ export function startWalkHuds(deps: {
   readonly targets: () => WayfindingTarget[];
   readonly focusId: () => string | null;
 }): Hud | null {
-  const split = (): WalkHudSplit =>
-    splitWalkHudTargets(deps.targets(), deps.focusId());
+  let current: WalkHudSplit | null = null;
+  const read = new Set<WalkHudLook>();
+  const split = (look: WalkHudLook): WalkHudSplit => {
+    if (current === null || read.has(look)) {
+      current = splitWalkHudTargets(deps.targets(), deps.focusId());
+      read.clear();
+    }
+    read.add(look);
+    return current;
+  };
   const focusHud = deps.create({
-    getTargets: () => [...split().focus],
+    getTargets: () => [...split("focus").focus],
     look: "focus",
   });
   if (focusHud === null) return null;
   const othersHud = deps.create({
-    getTargets: () => [...split().others],
+    getTargets: () => [...split("others").others],
     look: "others",
   });
   if (othersHud === null) {

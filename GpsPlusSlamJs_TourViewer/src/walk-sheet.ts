@@ -643,10 +643,14 @@ export function wireWalkSheet(deps: {
       const hinted = model.list.hint !== null && dom.hint.id !== "";
       // While the hint shows, each Skip is described by it: a screen
       // reader hears the question with the control that answers it.
+      // Written only on a change: this runs with every guide call.
+      const described = hinted ? dom.hint.id : null;
       for (const skip of dom.rows.querySelectorAll<HTMLElement>(
         'button[data-tap="skip"]',
       )) {
-        if (hinted) skip.setAttribute("aria-describedby", dom.hint.id);
+        if (skip.getAttribute("aria-describedby") === described) continue;
+        if (described !== null)
+          skip.setAttribute("aria-describedby", described);
         else skip.removeAttribute("aria-describedby");
       }
       if (fromQuick) {

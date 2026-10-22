@@ -5,6 +5,7 @@ import {
   WALK_EDGE_PILL_BAND_DEG,
   WALK_EDGE_PILL_SHARE,
   walkEdgePill,
+  walkEdgePillHideBandDeg,
   wireWalkEdgePill,
   type WalkEdgePill,
   type WalkEdgePillInput,
@@ -93,19 +94,34 @@ describe("walkEdgePill: when it shows", () => {
 
 describe("walkEdgePill: the band against jitter", () => {
   it("stays until the angle is back inside the edge by the band", () => {
+    const band = walkEdgePillHideBandDeg(FOV);
     const shown = walkEdgePill(input({ angleDeg: EDGE + 1 }));
     expect(shown).not.toBeNull();
     expect(
-      walkEdgePill(
-        input({ angleDeg: EDGE - WALK_EDGE_PILL_BAND_DEG + 0.5 }),
-        shown,
-      ),
+      walkEdgePill(input({ angleDeg: EDGE - band + 0.2 }), shown),
     ).not.toBeNull();
     expect(
-      walkEdgePill(
-        input({ angleDeg: EDGE - WALK_EDGE_PILL_BAND_DEG - 0.5 }),
-        shown,
-      ),
+      walkEdgePill(input({ angleDeg: EDGE - band - 0.2 }), shown),
+    ).toBeNull();
+  });
+
+  // Why: a phone held upright sees about 32 degrees across. A fixed 5
+  // degree band kept the pill until the station was back 61 % of the way
+  // to the centre - over a focus marker plainly on the screen. The band is
+  // at most a tenth of half the view, so the pill goes once the station
+  // is back about 82 % of the way in.
+  it("in a narrow view the pill goes soon after the station is back on the screen", () => {
+    const fov = 32;
+    const edge = (fov / 2) * WALK_EDGE_PILL_SHARE;
+    expect(walkEdgePillHideBandDeg(fov)).toBeCloseTo(1.6, 9);
+    expect(walkEdgePillHideBandDeg(200)).toBe(WALK_EDGE_PILL_BAND_DEG);
+    const shown = walkEdgePill(input({ fovDeg: fov, angleDeg: edge + 0.5 }));
+    expect(shown).not.toBeNull();
+    expect(
+      walkEdgePill(input({ fovDeg: fov, angleDeg: 13.5 }), shown),
+    ).not.toBeNull();
+    expect(
+      walkEdgePill(input({ fovDeg: fov, angleDeg: 13.0 }), shown),
     ).toBeNull();
   });
 
@@ -126,27 +142,26 @@ describe("walkEdgePill: the band against jitter", () => {
     ).toBe("left");
   });
 
-  it("property: a heading jittering by less than the band never toggles the pill nor flips its side", () => {
+  it("property: a heading jittering by less than the band never toggles the pill nor flips its side, at any view", () => {
     fc.assert(
       fc.property(
+        fc.double({ min: 20, max: 110, noNaN: true }),
         fc.double({ min: -180, max: 180, noNaN: true }),
-        fc.array(
-          fc.double({
-            min: -(WALK_EDGE_PILL_BAND_DEG / 2) + 0.01,
-            max: WALK_EDGE_PILL_BAND_DEG / 2 - 0.01,
-            noNaN: true,
-          }),
-          { minLength: 1, maxLength: 40 },
-        ),
-        (centre, jitter) => {
+        fc.array(fc.double({ min: -0.49, max: 0.49, noNaN: true }), {
+          minLength: 1,
+          maxLength: 40,
+        }),
+        (fov, centre, shares) => {
+          // The jitter stays within half the hide band on either side.
+          const band = walkEdgePillHideBandDeg(fov);
+          const at = (deg: number) => input({ fovDeg: fov, angleDeg: deg });
           // Settle on the centre once (two frames: the band's memory).
-          let shown: WalkEdgePill | null = walkEdgePill(
-            input({ angleDeg: centre }),
-          );
-          shown = walkEdgePill(input({ angleDeg: centre }), shown);
+          let shown: WalkEdgePill | null = walkEdgePill(at(centre));
+          shown = walkEdgePill(at(centre), shown);
           const first = shown;
-          for (const j of jitter) {
-            shown = walkEdgePill(input({ angleDeg: centre + j }), shown);
+          for (const share of shares) {
+            const j = share * band;
+            shown = walkEdgePill(at(centre + j), shown);
             // Shown once, it stays shown and on its side (a pill that was
             // not shown may appear on the outward swing, never go away
             // after: it is held by the band from then on).

@@ -39,6 +39,21 @@ export const WALK_EDGE_PILL_SHARE = 0.92;
  */
 export const WALK_EDGE_PILL_BAND_DEG = WALK_DIRECTION_HYSTERESIS_DEG;
 
+/**
+ * The band by which the angle must fall back inside the edge before the
+ * pill goes: the words' band, but at most a tenth of half the view. A
+ * phone held upright sees about 32 degrees across, where a fixed 5 degree
+ * band kept the pill until the station was back 61 % of the way to the
+ * centre, over its marker plainly on the screen. Crossing straight behind
+ * keeps the full band (the view's width does not matter there).
+ */
+export function walkEdgePillHideBandDeg(
+  fovDeg: number,
+  bandDeg: number = WALK_EDGE_PILL_BAND_DEG,
+): number {
+  return Math.min(bandDeg, 0.1 * (fovDeg / 2));
+}
+
 type WalkEdgeSide = "left" | "right";
 
 export interface WalkEdgePillInput {
@@ -103,7 +118,8 @@ export function walkEdgePill(
   }
   const a = bearingDeltaDeg(angleDeg, 0);
   const edge = (input.fovDeg / 2) * share;
-  const off = Math.abs(a) > (previous === null ? edge : edge - band);
+  const hideBand = walkEdgePillHideBandDeg(input.fovDeg, band);
+  const off = Math.abs(a) > (previous === null ? edge : edge - hideBand);
   if (!off) return null;
   const side: WalkEdgeSide =
     previous !== null && Math.abs(a) > 180 - band

@@ -500,19 +500,26 @@ interface Judgement {
 
 /**
  * The `count` items nearest by `distanceOf` (undefined: farthest), kept
- * in their own order; ties go to the earlier item. Exported for the HUD's
- * tests.
+ * in their own order; ties go to the earlier item. An item `always`
+ * accepts (the walk's focus) is kept however far, ahead of the others,
+ * and the nearest others fill the rest of the count. Exported for the
+ * HUD's tests.
  */
 export function nearestOf<T>(
   items: readonly T[],
   count: number,
   distanceOf: (item: T) => number | undefined,
+  always: (item: T) => boolean = () => false,
 ): T[] {
   if (items.length <= count) return [...items];
   const keep = new Set(
     items
-      .map((item, index) => ({ index, d: distanceOf(item) ?? Infinity }))
-      .sort((a, b) => a.d - b.d || a.index - b.index)
+      .map((item, index) => ({
+        index,
+        first: always(item) ? 0 : 1,
+        d: distanceOf(item) ?? Infinity,
+      }))
+      .sort((a, b) => a.first - b.first || a.d - b.d || a.index - b.index)
       .slice(0, Math.max(0, count))
       .map((e) => e.index),
   );
@@ -1034,8 +1041,9 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
 
   /** The HUD's markers: the `HUD_NEAREST_STATIONS` nearest offered
    *  stations not yet found (a station with no distance yet counts as
-   *  farthest), in the offer's order. A present station that is offered
-   *  is found already, so these are the stations whose content is hidden.
+   *  farthest), the focus among them however far, in the offer's
+   *  order. A present station that is offered is found already, so these
+   *  are the stations whose content is hidden.
    *  None while the guide shows no distance (R-0: each marker carries a
    *  distance label) - `'none'`, too weak, pending. */
   function hudTargets(): WayfindingTarget[] {
@@ -1064,8 +1072,14 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         distanceMax: bands.foundExitM,
       });
     }
-    return nearestOf(targets, HUD_NEAREST_STATIONS, (t) =>
-      distances.get(t.id ?? ""),
+    // The focus always has its marker, also a chosen target farther than
+    // the nearest few; the nearest others fill the rest.
+    const focus = focusStation();
+    return nearestOf(
+      targets,
+      HUD_NEAREST_STATIONS,
+      (t) => distances.get(t.id ?? ""),
+      (t) => focus !== null && t.id === focus,
     );
   }
 

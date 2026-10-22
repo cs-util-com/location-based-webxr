@@ -771,3 +771,111 @@ for (const viewport of [
     }
   });
 }
+
+/**
+ * The running CSS animations and transitions inside \`#ar-root\`, each as
+ * \`{ kind, name, on }\`: an animation by its keyframes' name, a transition
+ * by its property; \`on\` is the element's id or class (with a
+ * pseudo-element's name) and \`ms\` the duration.
+ */
+async function runningInAr(page) {
+  return page.evaluate(() =>
+    document
+      .getAnimations()
+      .filter((a) => a.playState === "running")
+      .flatMap((a) => {
+        const effect = /** @type {KeyframeEffect | null} */ (a.effect);
+        const target = effect?.target ?? null;
+        if (target === null || target.closest("#ar-root") === null) return [];
+        const any = /** @type {any} */ (a);
+        const cls =
+          typeof target.className === "string" ? target.className : "";
+        return [
+          {
+            kind: any.animationName === undefined ? "transition" : "animation",
+            name: any.animationName ?? any.transitionProperty ?? "",
+            on: (target.id || cls) + (effect?.pseudoElement ?? ""),
+            ms: Number(effect?.getTiming().duration ?? 0),
+          },
+        ];
+      }),
+  );
+}
+
+for (const reduced of [false, true]) {
+  // Why this test matters: a visitor who asked for reduced motion gets a
+  // walk that holds still - otherwise the coach's spinner, the timed story
+  // dot, the toast, the undo's bar and the radar's and arrow's easing all
+  // move. The CSS guard in \`walk-sheet.test.ts\` checks that each animated
+  // rule is named in the reduced-motion block; only a browser shows that
+  // each one wins its cascade. The run without the preference pins that
+  // the same states do animate, so the reduced run is not quiet by
+  // accident. Not reached here: the chip's pending pulse (the fakes give a
+  // position before the sheet shows); the CSS guard covers it.
+  test(`the walk's states ${reduced ? "hold still under" : "animate without"} reduced motion`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({
+      reducedMotion: reduced ? "reduce" : "no-preference",
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installTourViewerArFakes(page);
+    /** @type {{ state: string, kind: string, name: string, on: string, ms: number }[]} */
+    const seen = [];
+    const look = async (/** @type {string} */ state) => {
+      for (const a of await runningInAr(page)) seen.push({ state, ...a });
+    };
+    await openTheWalk(page);
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__tourViewerTest.holdInitAR = true;
+    });
+    await page.getByTestId("enter-ar").click();
+    await expect(page.getByTestId("walk-coach")).toHaveAttribute(
+      "data-look",
+      "spinner",
+    );
+    await look("the coach's spinner");
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__tourViewerTest.releaseInitAR();
+    });
+    await seedAlignment(page);
+    await standAt(page, 0, 0, 0);
+    await lockFixtureCode(page);
+    await expect(page.getByTestId("walk-sheet")).toBeVisible();
+    await trackingOk(page);
+    await waitForTheGuess(page);
+    await look("the peek");
+    await standAt(page, 26, 0, 1);
+    await expect(page.getByTestId("walk-story")).toBeVisible();
+    await expect(
+      page.getByTestId("walk-dots").locator("i").first(),
+    ).toHaveAttribute("data-timed", "true");
+    await look("a timed story step");
+    await page.getByTestId("story-end").click();
+    await page.getByTestId("story-end").click();
+    await expect(page.getByTestId("walk-story")).toBeHidden();
+    await page.getByTestId("station-skip").click();
+    await page.getByTestId("walk-row-confirm").click();
+    await expect(page.locator("#walk-toast")).toHaveText(/^Skipped /);
+    await look("a skip's toast and undo");
+    if (reduced) {
+      // Nothing in the AR overlay moves: no animation runs, and a
+      // transition lasts at most a frame (the design system shortens its
+      // own to 1 ms under the preference rather than removing them).
+      expect(seen.filter((a) => a.kind === "animation" || a.ms > 16)).toEqual(
+        [],
+      );
+    } else {
+      const named = new Set(seen.map((a) => `${a.state}: ${a.name}`));
+      for (const expected of [
+        "the coach's spinner: walk-spin",
+        "a timed story step: walk-dot",
+        "a skip's toast and undo: enter-rise",
+        "a skip's toast and undo: walk-undo",
+        "the peek: filter",
+      ]) {
+        expect([...named], expected).toContain(expected);
+      }
+    }
+  });
+}

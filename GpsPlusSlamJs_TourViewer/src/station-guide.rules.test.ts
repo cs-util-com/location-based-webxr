@@ -397,6 +397,29 @@ describe("the focus in the scene", () => {
     expect(focusNow()).toBeNull();
   });
 
+  // Why: the HUD marks the nearest five; a target the visitor chose
+  // farther off must still have its marker, or the one station the walk
+  // guides to is the one the HUD does not show.
+  it("keeps a chosen target farther than the nearest five among the HUD's targets", () => {
+    const near = [1, 2, 3, 4, 5, 6].map((i) =>
+      station(`n${String(i)}`, 10 * i, 0),
+    );
+    const h = harness({
+      stations: [...near, station("far", 300, 0)],
+      order: "any",
+    });
+    h.at(0, 0);
+    const ids = () =>
+      h.huds
+        .at(-1)!
+        .getTargets()
+        .map((t) => t.id);
+    expect(ids()).toEqual(["n1", "n2", "n3", "n4", "n5"]);
+    h.guide.rowTapped("far", "choose");
+    h.at(0, 0);
+    expect(ids()).toEqual(["n1", "n2", "n3", "n4", "far"]);
+  });
+
   it("puts the cue at the focus with its found radius and distance, and takes it away without a guess or a distance", () => {
     const h = harness(ANY);
     h.at(0, 0);

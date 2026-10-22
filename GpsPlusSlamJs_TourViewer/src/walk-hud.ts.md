@@ -15,12 +15,17 @@ guide's one list of targets; no framework change (`indicatorColor` and
 - `splitWalkHudTargets(targets, focusId) => { focus, others }`
   - the target whose `id` is `focusId` (at most one; ids are the HUD's
     keys) goes to `focus`, every other one to `others` in its own order;
-  - no focus, or a focus not among the targets (a chosen station farther
-    than the nearest few): every target is the others'.
+  - no focus, or a focus not among the targets (found, or none): every
+    target is the others'. The guide keeps the focus among its targets
+    however far it is (`station-guide.ts` `hudTargets`), so a chosen
+    station farther than the nearest five still gets its marker.
 - `startWalkHuds({ create, targets, focusId }) => { dispose } | null`
   - starts one HUD per look through `create({ getTargets, look })`, each
     polling its half of `targets()` split by `focusId()` every frame, so
     a focus change reaches both HUDs on the next frame without a restart;
+  - builds the split once a frame for both: a HUD that reads a split it
+    has read already starts the next one, so `targets()` (the guide's
+    positions, bands and nearest five) runs once a frame, not twice;
   - null while either cannot start (no camera yet): the other is disposed
     again, so the guide's retry starts both together;
   - `dispose()` disposes both.
@@ -45,7 +50,8 @@ guide's one list of targets; no framework change (`indicatorColor` and
 
 A station that becomes the focus, or stops being it, moves to the other
 HUD and is a fresh target there. `walk-hud.pop.test.ts` drives the real
-framework HUD through that move (a portrait phone, 390 px wide, a 60
+framework HUD, with the shipped looks (`WALK_HUD_LOOKS`, the focus at
+1.25 times), through that move (a portrait phone, 390 px wide, a 60
 degree vertical view, stations 30 m off), sweeping the turn rate (0, 15,
 30, 60 degrees a second) at 30 and 60 frames a second:
 
@@ -87,7 +93,8 @@ hud?.dispose();
 - `walk-hud.test.ts` - the split (the focus alone in its half, the other
   four in order; no focus, a focus not among the targets, no targets);
   the property that the halves are disjoint, at most one focus, and their
-  union is the targets in order; `startWalkHuds` polling each half live
-  and starting both or neither.
+  union is the targets in order; `startWalkHuds` polling each half live,
+  building the targets once a frame for both, and starting both or
+  neither.
 - `walk-hud.pop.test.ts` - the pop, measured on the real framework HUD
-  (above); `WALK_HUD_POP_OUT=<file>` writes the table.
+  with the shipped looks (above); `WALK_HUD_POP_OUT=<file>` writes the table.

@@ -328,7 +328,10 @@ activateM)` (each tick, each offered station with a distance: the
   offered stations not yet found are targets, and of those only the
   `HUD_NEAREST_STATIONS` (5) nearest, in the offer's order (visitor plan
   2026-10-18-2349, the owner's "where the closest five stations are"; a
-  station with no distance yet counts as farthest; `nearestOf`). A present
+  station with no distance yet counts as farthest; `nearestOf`). The
+  focus is always among them, however far: a chosen target beyond the
+  nearest five takes one of the five places (`nearestOf`'s `always`),
+  so the station the walk is about always has its marker. A present
   station that is offered is found already, so the markers are the
   stations whose content is hidden. No distance cap: a visitor far from
   every station still gets markers.

@@ -642,6 +642,25 @@ describe("the walk's rules in the sheet", () => {
     );
   });
 
+  // Why: while tracking is lost no row offers a Skip, so a hint asking
+  // "Which one can't you reach?" would ask a question nothing on the
+  // screen answers. The plain hint stays: a station can still be picked.
+  it("while tracking is lost the hint does not ask which station to skip", () => {
+    const hint = (over: Partial<GuideView>) =>
+      walkSheetModel(input({ view: view({ focusId: null, ...over }) })).list
+        .hint;
+    expect(
+      hint({
+        noGuess: true,
+        chooser: true,
+        position: "none",
+        trackingLost: true,
+      }),
+    ).toBe(
+      "Your position is unknown - scan one of the tour's codes, or pick a station below.",
+    );
+  });
+
   // Why (§1.6, W-D2): every row carries its own action - Skip for a
   // station to find, its confirm once armed, "Undo: bring back" with its
   // bar for the last skip, "Bring back" for any other skipped one, at any

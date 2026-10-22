@@ -41,8 +41,8 @@ describe("splitWalkHudTargets", () => {
   it("without a focus, or with one that is not among the targets, every target is the others'", () => {
     expect(splitWalkHudTargets(FIVE, null).focus).toEqual([]);
     expect(splitWalkHudTargets(FIVE, null).others).toHaveLength(5);
-    // A chosen station farther than the nearest five has no marker, as
-    // with one HUD.
+    // A focus not among the targets (found, or none) marks none; the
+    // guide keeps a chosen one among them however far it is.
     const far = splitWalkHudTargets(FIVE, "far");
     expect(far.focus).toEqual([]);
     expect(far.others.map((t) => t.id)).toEqual(["a", "b", "c", "d", "e"]);
@@ -136,6 +136,36 @@ describe("startWalkHuds", () => {
     expect(byLook("others").getTargets()).toHaveLength(4);
     handle!.dispose();
     expect(f.started.every((h) => h.disposed)).toBe(true);
+  });
+
+  // Why: the guide builds its targets (positions, bands, the nearest
+  // five) on every read; with two HUDs each reading per frame that was
+  // done twice a frame. One build per frame serves both halves.
+  it("builds the guide's targets once per frame for both HUDs", () => {
+    const f = fakes();
+    let builds = 0;
+    const handle = startWalkHuds({
+      create: f.create,
+      targets: () => {
+        builds += 1;
+        return FIVE;
+      },
+      focusId: () => "b",
+    });
+    const byLook = (look: WalkHudLook) =>
+      f.started.find((h) => h.look === look)!;
+    // A frame: each HUD reads its half once, in either order.
+    expect(
+      byLook("focus")
+        .getTargets()
+        .map((t) => t.id),
+    ).toEqual(["b"]);
+    expect(byLook("others").getTargets()).toHaveLength(4);
+    expect(builds).toBe(1);
+    expect(byLook("others").getTargets()).toHaveLength(4);
+    expect(byLook("focus").getTargets()).toHaveLength(1);
+    expect(builds).toBe(2);
+    handle!.dispose();
   });
 
   // Why: the guide retries the start while there is no camera; a half

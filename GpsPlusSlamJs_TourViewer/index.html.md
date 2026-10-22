@@ -417,14 +417,17 @@ the size default.
 
 - One `@media (prefers-reduced-motion: reduce)` block stills every
   animation of the walk: the coach's spinner and sway, the timed story
-  dot, the chip's pending pulse, the toast, and the undo bar (held at its
-  start width, `--walk-undo-from`). Each animated rule is named there by
-  its OWN selector: a shorter one loses to the animated rule's
-  specificity, which is how the spinner and the toast kept moving until
-  the M5 step. `walk-sheet.test.ts` holds the animated rules and the
-  stilled ones together.
+  dot, the chip's pending pulse and the toast; the undo bar is hidden
+  (a still bar would show a share of time that is no longer true; the
+  row's undo button stays while the undo can be made). Each animated rule
+  is named there by its OWN selector: a shorter one loses to the
+  animated rule's specificity, which is how the spinner and the toast
+  once kept moving. `walk-sheet.test.ts` holds the animated rules and the
+  stilled ones together (`animation` and `animation-name` alike), and
+  `visitor-walk-layout.spec.js` asserts that no walk element runs an
+  animation under the emulated preference.
 
-## The focus's edge pill (visitor walk W4 build plan M5)
+## The focus's edge pill
 
 - `#walk-edge-pill` (hidden until it shows; `data-side` left or right;
   `aria-hidden="true"`: the peek says the same, and a pill coming and
