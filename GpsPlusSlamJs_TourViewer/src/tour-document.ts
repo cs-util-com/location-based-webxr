@@ -752,7 +752,7 @@ export function manifestNow(state: TourDocumentState): TourManifest | null {
 
 /** The images a station's card may show now: a photo of that station as
  *  the document holds it, or an image asset of the written tour. */
-export function stationImageIds(
+function stationImageIds(
   state: TourDocumentState,
   stationId: string,
 ): Set<string> {

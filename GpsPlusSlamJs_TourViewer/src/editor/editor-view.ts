@@ -19,13 +19,13 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
 /** A spot on the map, as a drag drops a marker. */
-export interface MapSpot {
+interface MapSpot {
   readonly lat: number;
   readonly lng: number;
 }
 
 /** The marker being dragged, and where it was dropped so far. */
-export interface EditorMoving {
+interface EditorMoving {
   readonly id: string;
   readonly drop: MapSpot | null;
 }

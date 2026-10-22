@@ -334,7 +334,7 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   stands in it, so a station added, saved and undone is gone rather than
   kept by its own title. A frame the file lacks is kept while an edit
   names it or it keeps itself (a station added or copied here).
-- `stationImageIds(state, stationId)` - the images a station's card may
+- `stationImageIds(state, stationId)` (module-private) - the images a station's card may
   show: a photo of that station as the document holds it, or an image
   asset.
 - `stationEditChange(state, id, edit)` - `edited` with the frame to

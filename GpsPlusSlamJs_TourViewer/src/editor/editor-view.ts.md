@@ -36,7 +36,7 @@ chrome reads, one copy for every view of the page.
   - `walkChanged({ keepsWalk?, openedWalk? })` - each given flag set;
   - `said({ message })` - the card's line, or none.
 - `editorViewReducer`, `selectEditorView(root)`.
-- `MapSpot`, `EditorMoving`, `EditorMessage` - the payload shapes.
+- `EditorMessage` - the card line's shape (`MapSpot` and `EditorMoving`, the drag's, are module-private).
 
 ## Invariants & assumptions
 
