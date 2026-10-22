@@ -142,3 +142,12 @@ camera-frame wiring at initAR-callback level, the real-recording-slice `startSes
 alignment/capture arguments, the loud world-group failure, and the full
 button-view table. The composed boot is proven by
 `playwright-tests/ar-mode.spec.js`.
+
+## "Back to the tour" (visitor walk W4 build plan M2, §1.8)
+
+- `arButtonView(state, mode, location, finish, progressKept = false)`:
+  a visitor's ready button reads "Back to the tour" while the open tour
+  has progress (`visitor-stations.ts` `progressKept`), else "Start the
+  tour"; the location steps ("Allow location", "Getting your location…")
+  come first, and a creator's "Start creating" and the running "Exit AR"
+  are unchanged. Tested in `ar-mode.test.ts`.

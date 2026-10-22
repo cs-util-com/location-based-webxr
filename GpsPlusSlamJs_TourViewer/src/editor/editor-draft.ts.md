@@ -34,6 +34,15 @@ editor's own namespace, one tab at a time. Design:
     tour document milestone's review #1) as they stand now: the
     `settings` record is written while it differs from the file on disk
     (or from a build's value), removed once it does not; whether it landed.
+    The record may also hold `createdStations`: a station the page created
+    (whole frames at their current poses: a note moved beyond its station's
+    radius starts one) that the compared file does not carry counts as a
+    difference, so a record holding nothing else is kept: the draft's
+    notes name it, and without it a reload would seat them again by the
+    station rule under a new id. Such a record is offered only beside a
+    note it can seat, names nothing in the offer's words (it is not a
+    change of its own; `settingsWhat` is then absent, and `restoredLine`
+    speaks of the notes alone), and goes at an open with no note to offer.
   - `writes(): EditorTourDraft` - those five, and `built` and `landed`
     below, bound to the tour open NOW, which the page gives the editor
     session and its saves: once another tour opens they are dropped
@@ -73,7 +82,14 @@ editor's own namespace, one tab at a time. Design:
   - `writes().landed(written, fileKey)` - an in-place write landed: pending changes
     the file now carries clear, the file's versions become the `seen`
     source, the setting's keep is decided again; when `fileKey` is another
-    key, the draft moves to it synchronously.
+    key, the draft moves to it synchronously and the old namespace is
+    emptied.
+  - `writes().moved(fileKey)` (debug-captures plan, Q-I) - a download
+    landed whose bytes have `fileKey` (the first save of a tour without an
+    id writes one): the draft follows the key as above, carrying
+    everything - nothing is spent - and the old namespace keeps what it
+    holds (a download clears nothing, as since E2c). A no-op for the
+    key it has.
   - `backsUp()`, `close()`, `idle()`.
 - `restoredLine(count, offer)` - the line said once an offer was restored:
   "N earlier change(s) is/are back - not saved yet.", or, when nothing came
@@ -117,7 +133,10 @@ editor's own namespace, one tab at a time. Design:
   only through their bases.
 - **The key moves only after an in-place write that landed** (review
   #5), to the key of the bytes written (`tourFileKeyOfFile`, computed by
-  the page before the write). The switch is synchronous: later writes go to
+  the page before the write) - **or after a download whose bytes have
+  another key** (`moved`, Q-I: only the first save of a tour without an
+  id, since every later one carries the same id), which carries the same
+  way and leaves the old namespace whole. The switch is synchronous: later writes go to
   the new namespace; pending changes and an unanswered (or "Not now")
   offer are written there with their bases. The old namespace is emptied
   (behind its own queued writes, its meta last) ONLY once every carried

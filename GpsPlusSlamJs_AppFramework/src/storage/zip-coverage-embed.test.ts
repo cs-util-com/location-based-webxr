@@ -128,7 +128,7 @@ describe('embedCoverageInSessionJson', () => {
 describe('a session.json the author-path rules would refuse', () => {
   it('backfills a `./session.json` instead of silently skipping the recording', async () => {
     // The live half of the PR #438 review finding. This function finds the
-    // entry by SUFFIX, so it deliberately tolerates `./session.json` - a
+    // entry by path segment, so it deliberately tolerates `./session.json` - a
     // shape some zip tools and re-zipped folders produce. It then handed
     // that same name to the rebuild as a NEW entry, where the author-path
     // rules refused it; the `catch` turned that into "leave the zip
@@ -172,5 +172,28 @@ describe('a session.json that parses to a non-object', () => {
       const out = await embedCoverageInSessionJson(zip, CELLS, 11);
       expect(out, body).toBe(zip);
     }
+  });
+});
+
+describe('a file whose name only ENDS in `session.json`', () => {
+  it('embeds into `session.json`, never into a look-alike sorted before it', async () => {
+    // Why this test matters: the reader takes `session.json` by path
+    // segment (`zip-reader`'s rule), so this writer must pick the same
+    // entry. A bare suffix match took `backup-session.json` - first in the
+    // archive - and wrote the coverage where the reader never looks: the
+    // recording stayed uncovered and a stray file was rewritten.
+    const zip = await makeZip([
+      { name: 'backup-session.json', text: JSON.stringify({ which: 'b' }) },
+      { name: 'session.json', text: JSON.stringify({ which: 'real' }) },
+    ]);
+    const out = await embedCoverageInSessionJson(zip, CELLS, 11);
+    const after = await readEntryBytes(out);
+    const text = (name: string) =>
+      JSON.parse(new TextDecoder().decode(after.get(name))) as Record<
+        string,
+        unknown
+      >;
+    expect(text('session.json')['h3Cells']).toEqual(CELLS);
+    expect(text('backup-session.json')).toEqual({ which: 'b' });
   });
 });

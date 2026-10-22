@@ -417,47 +417,6 @@
         background: none;
         box-shadow: none;
       }
-      /* The visitor's stations (tour kit plan K4): over the camera, so the
-         line and the story's words wear the status line's halo. The skip
-         is the quiet choice, flat like the gate's escape. */
-      #station-line,
-      #scene-panel {
-        text-shadow: var(--halo-text);
-      }
-      #station-line {
-        font-weight: 600;
-        margin: 0 0 var(--space-2);
-      }
-      #station-skip {
-        background: none;
-        box-shadow: none;
-      }
-      #scene-panel {
-        display: grid;
-        gap: var(--space-2);
-        max-width: 48rem;
-        margin: var(--space-2) 0;
-      }
-      #scene-panel h3,
-      #scene-panel p {
-        margin: 0;
-      }
-      #scene-speaker {
-        font-weight: 600;
-      }
-      #scene-status {
-        font-size: var(--size-hint);
-      }
-      #scene-image {
-        max-width: 100%;
-        max-height: 40vh;
-        object-fit: contain;
-      }
-      #scene-choices {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-2);
-      }
       /* The one link on the page. The UA default is a blue that belongs to
          no palette here and reads as an artefact on the dark ground. */
       #visitor-link {
@@ -1179,7 +1138,9 @@
         flex-direction: column;
       }
       body[data-mode="visitor"]:not([data-ar-active="true"]) #visitor-screen {
+        display: flex;
         flex: 1;
+        flex-direction: column;
       }
       .visitor-kicker {
         display: flex;
@@ -1462,8 +1423,11 @@
       }
 
       /* A phone without AR loses "What happens?": it describes a session
-         this phone cannot start (V4's recovery states). */
+         this phone cannot start (V4's recovery states). So does a tour
+         not finished yet, whose Start is withheld (`ar-entry.ts`). */
       body[data-mode="visitor"]:has(#enter-ar[data-ar-state="unsupported"])
+        #visitor-what,
+      body[data-mode="visitor"]:has(#enter-ar[data-start="withheld"])
         #visitor-what {
         display: none;
       }
@@ -1621,6 +1585,26 @@
       #scan-card #scan-escape[hidden] {
         display: none;
       }
+      /* The found look (visitor walk W4 build plan M2, §1.4): the code
+         passed the gate, the tour is being placed - a green check, no
+         phone, no escape. */
+      .scan-card-ok {
+        opacity: 0;
+      }
+      #scan-card[data-look="found"] .scan-card-panel {
+        border-color: rgb(74 222 128 / 80%);
+        background: rgb(8 40 22 / 58%);
+      }
+      #scan-card[data-look="found"] .scan-card-phone {
+        opacity: 0;
+        animation: none;
+      }
+      #scan-card[data-look="found"] .scan-card-ok {
+        opacity: 1;
+      }
+      #scan-card[data-look="found"] #scan-escape {
+        display: none;
+      }
       /* A phone held sideways: the animation beside the words. */
       @media (orientation: landscape) and (height <= 520px) {
         .scan-card-panel {
@@ -1650,6 +1634,986 @@
         .scan-card-brackets {
           animation: none;
         }
+      }
+
+      /* ===== The visitor's walk in AR (visitor walk W4 build plan M2) =====
+         W4's look (public/prototypes/visitor-walk-4-radar-and-list/):
+         the coach, the toast's place, the sheet with its peek, the story
+         card and the list, and Exit AR as a round button. In AR only; the
+         design system zeroes paragraph and list margins (the L5 lesson),
+         so every gap of W4 is restated here and pinned by
+         playwright-tests/visitor-walk-layout.spec.js. The walk's own
+         colours are app-local tokens (plan §6 Q2); design.css's .radar,
+         .toast and .hint classes are not used (plan §1.2). */
+      html {
+        --walk-accent: #fb923c;
+        --walk-accent-ink: #1f1105;
+        --walk-found: #2dd4bf;
+        --walk-found-ink: #04201c;
+        --walk-skip: #9aa4ae;
+        --walk-left: #f3f5f7;
+        --walk-ink: #f3f5f7;
+        --walk-muted: #b3bcc6;
+        --walk-surface: rgb(12 16 21 / 80%);
+        --walk-surface-2: rgb(255 255 255 / 7%);
+        --walk-line: rgb(255 255 255 / 15%);
+        --walk-danger: #f87171;
+        /* The position's precision (M3): GPS blue, too weak amber; the
+           radar's canvas draws the same (walk-radar.test.ts holds them). */
+        --walk-gps: #93c5fd;
+        --walk-weak: #fbbf24;
+        --walk-radar: 132px;
+        /* The away block's segments on the start page (W4's paper). */
+        --walk-away-found: #0f766e;
+        --walk-away-left: #ddd6c7;
+        --walk-away-row: #fff;
+      }
+      .walk-sheet,
+      .walk-coach,
+      #walk-toast-root {
+        display: none;
+      }
+      /* W4's figures stand on the line: the design system's font sets
+         old-style numerals, which shrink a row's number and a distance. */
+      .walk-sheet,
+      .walk-coach,
+      #walk-toast-root,
+      .walk-away {
+        font-variant-numeric: lining-nums;
+      }
+      #scene-panel h3,
+      #scene-panel p {
+        margin: 0;
+      }
+      #scene-image {
+        max-width: 100%;
+        max-height: 30vh;
+        object-fit: contain;
+      }
+      #scene-choices {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+      }
+      #scene-choices:empty {
+        display: none;
+      }
+
+      /* The visitor's sentence stays in #ar-status for data-state and the
+         tests, read by no one in AR: the coach, the scan card, the toast
+         or the peek carry it (walk-status-routing.ts). ?debug=1 keeps
+         the technical line visible. */
+      body[data-mode="visitor"][data-ar-active="true"]:not([data-debug="true"])
+        #ar-status {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+
+      /* Exit AR (W4): a 44 px round button with a cross, top left; its
+         words stay its text (the e2e and the accessible name). */
+      body[data-mode="visitor"][data-ar-active="true"] #ar-root #enter-ar {
+        position: fixed;
+        top: calc(30px + env(safe-area-inset-top));
+        left: calc(12px + env(safe-area-inset-left));
+        z-index: 30;
+        display: block;
+        width: 44px;
+        min-width: 44px;
+        height: 44px;
+        min-height: 44px;
+        padding: 0;
+        overflow: hidden;
+        border: 1px solid var(--walk-line);
+        border-radius: 50%;
+        background: rgb(10 14 19 / 55%);
+        color: transparent;
+        font-size: 0;
+        box-shadow: none;
+        transform: none;
+        backdrop-filter: blur(6px);
+      }
+      body[data-mode="visitor"][data-ar-active="true"]
+        #ar-root
+        #enter-ar::before,
+      body[data-mode="visitor"][data-ar-active="true"]
+        #ar-root
+        #enter-ar::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 17px;
+        height: 2px;
+        border-radius: 1px;
+        background: #fff;
+        transform: translate(-50%, -50%) rotate(45deg);
+      }
+      body[data-mode="visitor"][data-ar-active="true"]
+        #ar-root
+        #enter-ar::after {
+        transform: translate(-50%, -50%) rotate(-45deg);
+      }
+
+      /* The coach (W4 §1.4): centred, its centre at 44 % of the height. */
+      body[data-mode="visitor"][data-ar-active="true"]
+        .walk-coach:not([hidden]) {
+        position: fixed;
+        top: 44%;
+        left: 50%;
+        z-index: 15;
+        display: block;
+        width: max-content;
+        /* stylelint-disable-next-line csstree/validator -- valid CSS; the bundled css-tree grammar predates it. */
+        max-width: min(320px, calc(100vw - 40px));
+        padding: 12px 16px;
+        border: 1px solid var(--walk-line);
+        border-radius: 16px;
+        background: rgb(10 14 19 / 66%);
+        color: var(--walk-ink);
+        font-size: 15px;
+        font-weight: 600;
+        line-height: 1.35;
+        text-align: center;
+        transform: translate(-50%, -50%);
+        backdrop-filter: blur(6px);
+        pointer-events: none;
+      }
+      .walk-coach-spin,
+      .walk-coach-sway {
+        display: none;
+      }
+      .walk-coach[data-look="spinner"] .walk-coach-spin {
+        display: block;
+        width: 26px;
+        height: 26px;
+        margin: 0 auto 8px;
+        border: 3px solid rgb(255 255 255 / 25%);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: walk-spin 0.9s linear infinite;
+      }
+      .walk-coach[data-look="sway"] .walk-coach-sway {
+        display: block;
+        width: 34px;
+        height: 34px;
+        margin: 0 auto 6px;
+      }
+      .walk-coach-sway rect {
+        transform-box: view-box;
+        transform-origin: 17px 30px;
+        animation: walk-sway 2.2s ease-in-out infinite;
+      }
+
+      @keyframes walk-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes walk-sway {
+        0%,
+        100% {
+          transform: rotate(-14deg);
+        }
+
+        50% {
+          transform: rotate(14deg);
+        }
+      }
+
+      /* The radar and the precision chip (W4 build plan M3, §1.2, §1.3):
+         the top right, the chip under the radar, right-aligned with it.
+         The radar is a canvas (walk-radar.ts); frozen (no position,
+         tracking lost) it goes grey. */
+      body[data-mode="visitor"][data-ar-active="true"]
+        .walk-radar-wrap:not([hidden]) {
+        position: fixed;
+        top: calc(30px + env(safe-area-inset-top));
+        right: calc(12px + env(safe-area-inset-right));
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+        width: var(--walk-radar);
+        color: var(--walk-ink);
+        font-family: system-ui, sans-serif;
+        font-variant-numeric: lining-nums;
+      }
+      .walk-radar-wrap[hidden] {
+        display: none;
+      }
+      .walk-radar {
+        display: block;
+        width: var(--walk-radar);
+        height: var(--walk-radar);
+        margin: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        box-shadow: 0 6px 18px rgb(0 0 0 / 28%);
+        cursor: pointer;
+        appearance: none;
+        backdrop-filter: blur(5px);
+      }
+      .walk-radar-canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        transition: filter 0.5s;
+      }
+      .walk-radar-wrap[data-mode="frozen"] .walk-radar-canvas {
+        filter: grayscale(1) brightness(0.85);
+      }
+      .walk-precision {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        width: max-content;
+        max-width: calc(var(--walk-radar) + 36px);
+        margin: 0;
+        padding: 5px 9px;
+        border: 1px solid var(--walk-line);
+        border-radius: 14px;
+        background: rgb(10 14 19 / 72%);
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.2;
+        text-align: right;
+      }
+      .walk-precision-mark {
+        flex: none;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--walk-gps);
+        box-shadow: 0 0 0 3px rgb(147 197 253 / 25%);
+      }
+      .walk-precision[data-kind="code"] .walk-precision-mark {
+        border-radius: 2px;
+        background: #fff;
+        box-shadow: 0 0 0 2px var(--walk-found);
+      }
+      .walk-precision[data-kind="weak"] {
+        border-color: rgb(251 191 36 / 55%);
+      }
+      .walk-precision[data-kind="weak"] .walk-precision-mark {
+        background: var(--walk-weak);
+        box-shadow: 0 0 0 4px rgb(251 191 36 / 25%);
+      }
+      .walk-precision[data-kind="none"] .walk-precision-mark,
+      .walk-precision[data-kind="lost"] .walk-precision-mark {
+        background: #6b7480;
+        box-shadow: none;
+      }
+      .walk-precision[data-kind="pending"] .walk-precision-mark {
+        border: 2px solid var(--walk-gps);
+        background: transparent;
+        box-shadow: none;
+        animation: walk-pulse 1.2s ease-in-out infinite;
+      }
+
+      @keyframes walk-pulse {
+        50% {
+          transform: scale(0.6);
+          opacity: 0.5;
+        }
+      }
+
+      /* The direction arrows (M3, §1.5): turned to the station, hidden
+         without an angle (walk-sheet.ts setArrow). */
+      .walk-arrow {
+        flex: none;
+        width: 15px;
+        height: 15px;
+        transition: transform 0.3s;
+      }
+      .walk-arrow:not([data-deg]) {
+        display: none;
+      }
+
+      /* The toast (W4's place, the framework's toast in the design
+         system's toast look, restated here: design.css's .toast class is
+         not used, plan §1.2). Below the radar's top at the left; its right
+         edge clear of the radar (M3). */
+      body[data-mode="visitor"][data-ar-active="true"] #walk-toast-root {
+        position: fixed;
+        top: calc(84px + env(safe-area-inset-top));
+        left: calc(12px + env(safe-area-inset-left));
+        z-index: 30;
+        display: block;
+        max-width: calc(100vw - 24px - 132px - 8px);
+        pointer-events: none;
+      }
+      .walk-toast {
+        width: max-content;
+        max-width: 100%;
+        padding: var(--space-2) var(--space-4);
+        border-radius: var(--radius);
+        background: var(--surface-inverse);
+        color: var(--paper);
+        box-shadow: var(--raise-light);
+        font-weight: var(--weight-strong);
+        line-height: 1.35;
+        animation: enter-rise var(--t-enter) var(--ease-out);
+      }
+
+      /* The sheet (W4 §1.5): docked to the bottom edge, the design
+         system's .sheet atom as its base. */
+      body[data-mode="visitor"][data-ar-active="true"]
+        .walk-sheet:not([hidden]) {
+        position: fixed;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 25;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        max-width: 520px;
+        max-height: 66vh;
+        margin: 0 auto;
+        /* stylelint-disable-next-line csstree/validator -- valid CSS; the bundled css-tree grammar predates it. */
+        padding: 0 0 env(safe-area-inset-bottom);
+        border-top: 1px solid var(--walk-line);
+        border-radius: 22px 22px 0 0;
+        background: var(--walk-surface);
+        color: var(--walk-ink);
+        font-size: 15px;
+        line-height: 1.4;
+        text-shadow: none;
+        box-shadow: 0 -10px 30px rgb(0 0 0 / 25%);
+        backdrop-filter: blur(14px) saturate(1.2);
+      }
+      /* stylelint-disable no-descending-specificity -- the creator's .btn
+         rule never matches inside #ar-root (its :not), so the order of the
+         two cannot matter. */
+      .walk-sheet .btn,
+      .walk-sheet .btn:hover,
+      .walk-sheet .btn:active {
+        transform: none;
+        box-shadow: none;
+      }
+      /* stylelint-enable no-descending-specificity */
+      .walk-grab {
+        position: relative;
+        display: block;
+        flex: none;
+        width: 100%;
+        height: 22px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        cursor: grab;
+        touch-action: none;
+        user-select: none;
+      }
+      /* A 44 px target around the 5 px pill (W4 M2 review): 11 px above
+         the sheet's edge and 11 px into the segments, clear of the peek's
+         row and its quick action. The layout stays W4's. */
+      .walk-grab::before {
+        position: absolute;
+        inset: -11px 0;
+        content: "";
+      }
+      .walk-grab .sheet-handle {
+        display: block;
+        width: 40px;
+        height: 5px;
+        margin: 8px auto 0;
+        border-radius: 3px;
+        background: rgb(255 255 255 / 40%);
+      }
+      .walk-peek {
+        flex: none;
+        padding: 0 16px 12px;
+        cursor: pointer;
+        touch-action: none;
+        /* A drag that starts on selected text would be the browser's
+           drag of that text, and its pointer events would stop. */
+        user-select: none;
+      }
+      .walk-segments {
+        display: flex;
+        gap: 4px;
+        margin: 2px 0 10px;
+      }
+      .walk-segments > i {
+        flex: 1;
+        height: 6px;
+        border-radius: 3px;
+        background: rgb(255 255 255 / 22%);
+      }
+      .walk-segments > i[data-s="found"],
+      .walk-segments > i[data-s="here"] {
+        background: var(--walk-found);
+      }
+      .walk-segments > i[data-s="skipped"] {
+        background: repeating-linear-gradient(
+          135deg,
+          var(--walk-skip) 0 3px,
+          rgb(154 164 174 / 35%) 3px 6px
+        );
+      }
+      .walk-segments > i[data-s="next"] {
+        background: var(--walk-accent);
+      }
+      .walk-segments > i[data-s="later"] {
+        background: rgb(255 255 255 / 14%);
+      }
+      /* Above the segment limit: one bar, its parts by their counts. */
+      .walk-segments[data-kind="bar"] {
+        gap: 0;
+        overflow: hidden;
+        border-radius: 3px;
+      }
+      .walk-segments[data-kind="bar"] > i {
+        border-radius: 0;
+      }
+      .walk-peek-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        min-height: 56px;
+      }
+      .walk-peek-main {
+        flex: 1;
+        min-width: 0;
+      }
+      .walk-eyebrow {
+        margin: 0;
+        overflow: hidden;
+        color: var(--walk-muted);
+        font-size: 11.5px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-overflow: ellipsis;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .walk-peek-title {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        margin: 2px 0 0;
+      }
+      .walk-peek-title b {
+        min-width: 0;
+        overflow: hidden;
+        font-size: 21px;
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: -0.01em;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .walk-distance {
+        flex: none;
+        color: var(--walk-accent);
+        font-size: 17px;
+        font-weight: 700;
+        /* Both: a value set here replaces the sheet's inherited one. */
+        font-variant-numeric: lining-nums tabular-nums;
+      }
+      .walk-distance:not([hidden]) {
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+      }
+      .walk-tail {
+        margin: 3px 0 0;
+        color: var(--walk-muted);
+        font-size: 13.5px;
+        line-height: 1.35;
+      }
+      .walk-tail:empty {
+        display: none;
+      }
+      .walk-peek[data-position="weak"] #walk-tail {
+        color: #fde68a;
+      }
+      .walk-peek[data-position="none"] #walk-tail,
+      .walk-peek[data-position="pending"] #walk-tail {
+        color: #dbe2ea;
+      }
+      .walk-sheet .walk-quick {
+        flex: none;
+        max-width: 46%;
+        min-height: 44px;
+        padding: 9px 13px;
+        border: 1px solid rgb(255 255 255 / 30%);
+        border-radius: 14px;
+        background: var(--walk-surface-2);
+        color: var(--walk-ink);
+        font-size: 13.5px;
+        font-weight: 600;
+        line-height: 1.2;
+        text-align: center;
+      }
+      /* A suggestion or an undo wraps to its own line, full width (W4). */
+      .walk-sheet .walk-quick[data-kind="suggested"],
+      .walk-sheet .walk-quick[data-kind="undo"] {
+        flex-basis: 100%;
+        max-width: none;
+        margin-top: 2px;
+      }
+      .walk-sheet .walk-quick[data-kind="suggested"] {
+        border-color: var(--walk-accent);
+        background: rgb(251 146 60 / 16%);
+        color: #fed7aa;
+      }
+      .walk-sheet .walk-quick[data-kind="undo"] {
+        border-color: var(--walk-found);
+        background: rgb(45 212 191 / 14%);
+      }
+
+      /* The story card (W4): in the peek's place, today's story panel
+         inside it. */
+      .walk-story {
+        flex: none;
+        max-height: calc(66vh - 22px);
+        padding: 0 16px 14px;
+        overflow-y: auto;
+      }
+      .walk-story-eyebrow {
+        color: var(--walk-found);
+      }
+      .walk-story #scene-panel {
+        display: grid;
+        gap: 6px;
+      }
+      .walk-story #scene-title {
+        margin: 2px 0 0;
+        font-size: 20px;
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: normal;
+        text-transform: none;
+      }
+      .walk-story #scene-speaker {
+        font-weight: 600;
+      }
+      .walk-story #scene-text {
+        min-height: 3em;
+        font-size: 15.5px;
+        line-height: 1.45;
+      }
+      .walk-story #scene-status {
+        color: var(--walk-muted);
+        font-size: 13px;
+      }
+      .walk-story #scene-status:empty {
+        display: none;
+      }
+      .walk-dots {
+        display: flex;
+        gap: 5px;
+        margin: 10px 0;
+      }
+      .walk-dots:empty {
+        display: none;
+      }
+      /* stylelint-disable-next-line no-descending-specificity -- the dots and the segments are different elements. */
+      .walk-dots > i {
+        position: relative;
+        width: 22px;
+        height: 4px;
+        overflow: hidden;
+        border-radius: 2px;
+        background: rgb(255 255 255 / 22%);
+      }
+      .walk-dots > i[data-s="on"] {
+        background: var(--walk-found);
+      }
+      /* The current step fills with its timer; a tap step shows full. */
+      .walk-dots > i[data-s="now"]::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: var(--walk-found);
+        transform-origin: left;
+      }
+      .walk-dots > i[data-s="now"][data-timed="true"]::after {
+        animation: walk-dot var(--walk-dot-ms, 4000ms) linear forwards;
+      }
+
+      @keyframes walk-dot {
+        from {
+          transform: scaleX(0);
+        }
+
+        to {
+          transform: scaleX(1);
+        }
+      }
+      .walk-story-acts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      /* Without dots (a story with a choice) the buttons keep W4's gap
+         below the words. */
+      .walk-dots:empty + .walk-story-acts {
+        margin-top: 10px;
+      }
+      .walk-sheet .walk-btn {
+        min-height: 44px;
+        padding: 10px 16px;
+        border: 1px solid rgb(255 255 255 / 28%);
+        border-radius: 14px;
+        background: var(--walk-surface-2);
+        color: var(--walk-ink);
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.2;
+      }
+      .walk-sheet .walk-btn-primary {
+        border-color: var(--walk-found);
+        background: var(--walk-found);
+        color: var(--walk-found-ink);
+      }
+      /* The end's confirm (W4's warn look) beside "Keep listening". */
+      .walk-sheet #walk-story-end[data-kind="end"] {
+        flex: 1;
+        border-color: var(--walk-danger);
+        background: rgb(248 113 113 / 16%);
+        color: #fecaca;
+      }
+      .walk-story #scene-play-next {
+        margin-top: 10px;
+      }
+
+      /* The list (W4 §1.6): the sheet grows up to 66 % of the height. */
+      .walk-list {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+      .walk-list-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 4px 16px 8px;
+        border-top: 1px solid var(--walk-line);
+      }
+      #walk-list-title {
+        flex: 1;
+        font-weight: 700;
+        margin: 8px 0 0;
+        font-size: 16px;
+        letter-spacing: normal;
+        text-transform: none;
+      }
+      .walk-chip {
+        margin-top: 8px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: rgb(255 255 255 / 10%);
+        color: var(--walk-muted);
+        font-size: 11.5px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .walk-round {
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        margin-top: 8px;
+        padding: 0;
+        border: 1px solid var(--walk-line);
+        border-radius: 50%;
+        background: rgb(10 14 19 / 55%);
+        color: #fff;
+        cursor: pointer;
+      }
+      .walk-round svg {
+        width: 16px;
+        height: 16px;
+      }
+      .walk-progress {
+        margin: 0;
+        padding: 0 16px 8px;
+        color: var(--walk-muted);
+        font-size: 13.5px;
+      }
+      .walk-progress b {
+        color: var(--walk-ink);
+      }
+      .walk-done {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 4px 16px 10px;
+        padding: 14px;
+        border: 1px solid rgb(45 212 191 / 45%);
+        border-radius: 16px;
+        background: rgb(45 212 191 / 12%);
+      }
+      .walk-done svg {
+        flex: none;
+        width: 40px;
+        height: 40px;
+      }
+      .walk-done b {
+        display: block;
+        font-size: 17px;
+      }
+      .walk-done span {
+        color: var(--walk-muted);
+        font-size: 13.5px;
+      }
+      .walk-rows {
+        margin: 0;
+        padding: 0 8px 8px;
+        list-style: none;
+      }
+      .walk-row {
+        display: grid;
+        grid-template-columns: 34px 1fr;
+        align-items: center;
+        gap: 6px 10px;
+        min-height: 44px;
+        padding: 6px 8px;
+        border-radius: 14px;
+      }
+      .walk-row + .walk-row {
+        margin-top: 2px;
+      }
+      .walk-row[data-state="next"] {
+        background: rgb(251 146 60 / 10%);
+      }
+      .walk-glyph {
+        display: grid;
+        place-items: center;
+        justify-self: center;
+        width: 30px;
+        height: 30px;
+        border: 2px solid var(--walk-left);
+        border-radius: 50%;
+        color: var(--walk-left);
+        font-size: 13px;
+        font-weight: 800;
+      }
+      .walk-row[data-state="next"] .walk-glyph {
+        border-color: var(--walk-accent);
+        background: var(--walk-accent);
+        color: var(--walk-accent-ink);
+      }
+      .walk-row[data-state="found"] .walk-glyph,
+      .walk-row[data-state="here"] .walk-glyph {
+        border-color: var(--walk-found);
+        background: var(--walk-found);
+        color: var(--walk-found-ink);
+      }
+      .walk-row[data-state="skipped"] .walk-glyph {
+        border-style: dashed;
+        border-color: var(--walk-skip);
+        color: var(--walk-skip);
+      }
+      .walk-row[data-state="later"] .walk-glyph {
+        width: 24px;
+        height: 24px;
+        border-color: rgb(255 255 255 / 30%);
+        color: rgb(255 255 255 / 50%);
+        font-size: 11px;
+      }
+      .walk-row-main {
+        min-width: 0;
+        padding: 4px 0;
+      }
+      .walk-row-main b {
+        display: block;
+        overflow: hidden;
+        font-size: 15.5px;
+        font-weight: 650;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .walk-row[data-state="skipped"] .walk-row-main b,
+      .walk-row[data-state="later"] .walk-row-main b {
+        color: var(--walk-muted);
+        font-weight: 600;
+      }
+      .walk-row-main small {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        margin-top: 1px;
+        color: var(--walk-muted);
+        font-size: 13px;
+      }
+      .walk-row-main small .walk-arrow {
+        width: 13px;
+        height: 13px;
+      }
+      .walk-list-foot {
+        display: flex;
+        gap: 8px;
+        padding: 6px 16px 14px;
+      }
+      .walk-list-foot .walk-btn {
+        flex: 1;
+      }
+
+      /* The list open: the peek's row goes once the tour is complete (the
+         card says it), the story card gives the peek back (W4). An undo
+         still offered stays (today's rule; W4 puts it on the row, M4). */
+      .walk-sheet[data-sheet="list"][data-complete="true"]
+        #walk-peek-row:not(:has(#station-skip:not([hidden]))),
+      .walk-sheet[data-sheet="list"][data-complete="true"] .walk-peek-main {
+        display: none;
+      }
+
+      /* A phone held sideways (W4): the sheet a card at the bottom left,
+         the coach right of centre, the toast left of the radar. */
+      @media (orientation: landscape) and (height <= 520px) {
+        body[data-mode="visitor"][data-ar-active="true"] #ar-root #enter-ar {
+          top: calc(10px + env(safe-area-inset-top));
+        }
+        body[data-mode="visitor"][data-ar-active="true"]
+          .walk-radar-wrap:not([hidden]) {
+          --walk-radar: 108px;
+          top: calc(10px + env(safe-area-inset-top));
+        }
+        body[data-mode="visitor"][data-ar-active="true"]
+          .walk-sheet:not([hidden]) {
+          right: auto;
+          bottom: calc(10px + env(safe-area-inset-bottom));
+          left: calc(10px + env(safe-area-inset-left));
+          /* stylelint-disable-next-line csstree/validator -- valid CSS; the bundled css-tree grammar predates it. */
+          width: min(370px, 48vw);
+          max-height: calc(100vh - 74px);
+          margin: 0;
+          padding-bottom: 0;
+          border: 1px solid var(--walk-line);
+          border-radius: 20px;
+        }
+        .walk-story {
+          max-height: calc(100vh - 74px - 22px);
+        }
+        .walk-peek-row {
+          min-height: 48px;
+        }
+        .walk-peek-title b {
+          font-size: 19px;
+        }
+        body[data-mode="visitor"][data-ar-active="true"]
+          .walk-coach:not([hidden]) {
+          top: 50%;
+          left: 60%;
+        }
+        body[data-mode="visitor"][data-ar-active="true"] #walk-toast-root {
+          top: calc(14px + env(safe-area-inset-top));
+          right: calc(130px + env(safe-area-inset-right));
+          left: auto;
+          max-width: 40vw;
+        }
+      }
+      /* Wider than a phone (a tablet, a desktop): the toast centred. */
+      @media (width > 520px) and (height > 520px),
+        (width > 520px) and (orientation: portrait) {
+        body[data-mode="visitor"][data-ar-active="true"] #walk-toast-root {
+          left: 50%;
+          max-width: calc(100vw - 32px - 132px);
+          transform: translateX(-50%);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .walk-coach-spin,
+        .walk-coach-sway rect,
+        .walk-dots > i[data-s="now"][data-timed="true"]::after,
+        .walk-precision[data-kind="pending"] .walk-precision-mark {
+          animation: none;
+        }
+        .walk-arrow,
+        .walk-radar-canvas {
+          transition: none;
+        }
+      }
+
+      /* The away block on the start page (W4 §1.8), in the page's paper
+         look: the tour's name is the page's heading; the photo, the
+         subline and the description step aside while it shows. */
+      #visitor-screen:has(#walk-away:not([hidden])) #visitor-cover,
+      #visitor-screen:has(#walk-away:not([hidden])) #visitor-subline,
+      #visitor-screen:has(#walk-away:not([hidden])) #visitor-description {
+        display: none;
+      }
+      .walk-away {
+        display: grid;
+        gap: 16px;
+        /* Nothing below: the start page's own spacing (the visitor screen's
+           end, #ar-root's 12 px) and its safety line stand between the
+           block and the start. */
+        margin: 16px 0 0;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"]) .walk-away {
+        margin-top: auto;
+        padding-top: 16px;
+      }
+      #walk-away-text {
+        margin: 0;
+        color: var(--ink-dim);
+      }
+      .walk-away .walk-segments {
+        margin: 0;
+      }
+      .walk-away .walk-segments > i {
+        height: 8px;
+        background: var(--walk-away-left);
+      }
+      .walk-away .walk-segments > i[data-s="found"],
+      .walk-away .walk-segments > i[data-s="here"] {
+        background: var(--walk-away-found);
+      }
+      .walk-away .walk-segments > i[data-s="skipped"] {
+        background: repeating-linear-gradient(
+          135deg,
+          #9aa4ae 0 3px,
+          #d9dde1 3px 6px
+        );
+      }
+      .walk-away ul {
+        display: grid;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      /* stylelint-disable-next-line no-descending-specificity -- the setup page's list is the creator's; the two never share an element. */
+      #walk-away-rows > li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 44px;
+        padding: 10px 12px;
+        /* W4's white cards on its paper line (not the page's map card). */
+        border: 1px solid var(--walk-away-left);
+        border-radius: 12px;
+        background: var(--walk-away-row);
+      }
+      #walk-away-rows > li b {
+        font-size: 15px;
+        font-weight: 700;
+      }
+      #walk-away-rows > li span {
+        color: var(--ink-dim);
+        font-size: 14px;
       }
 
       /* ===== The creator's HUD in AR, the owner's H1 (polish round M3) =====
@@ -1825,10 +2789,38 @@
           gap: 8px;
         }
       }
+      /* The persistent Undo (W4 build plan MU): a quieter chip on its
+         own line above "New station here", in H1's dark card look. Its
+         label says what it takes back, so it gets the line's width and a
+         long pin text ends in an ellipsis rather than a second line (the
+         accessible name is the whole text). Disabled, it stays in place,
+         dimmed: the strip does not jump when an offer comes and goes. */
+      body[data-mode="creator"][data-ar-active="true"] #setup-undo {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        max-width: 100%;
+        min-height: 44px;
+        padding: 0 16px;
+        border: 1px solid rgb(255 255 255 / 30%);
+        border-radius: 999px;
+        background: rgb(20 22 26 / 66%);
+        color: #fff;
+        box-shadow: none;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: normal;
+        text-transform: none;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #setup-undo:disabled {
+        opacity: 0.55;
+      }
       body[data-mode="creator"][data-ar-active="true"] #setup-pin[hidden],
       body[data-mode="creator"][data-ar-active="true"] #setup-photo[hidden],
       body[data-mode="creator"][data-ar-active="true"]
-        #setup-new-station[hidden] {
+        #setup-new-station[hidden],
+      body[data-mode="creator"][data-ar-active="true"] #setup-undo[hidden] {
         display: none;
       }
       /* "New station here" armed (D8): the accent ring says the next pin or
@@ -1856,6 +2848,13 @@
         line-height: 1.15;
         text-align: center;
       }
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls
+        #setup-undo-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       /* Typing a new pin's text: the field and its buttons take the row. */
       body[data-mode="creator"][data-ar-active="true"]
         #setup-controls:has(#pin-label:not([hidden]))
@@ -1865,7 +2864,10 @@
         #setup-photo,
       body[data-mode="creator"][data-ar-active="true"]
         #setup-controls:has(#pin-label:not([hidden]))
-        #setup-new-station {
+        #setup-new-station,
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls:has(#pin-label:not([hidden]))
+        #setup-undo {
         display: none;
       }
       body[data-mode="creator"][data-ar-active="true"] #pin-label {
@@ -2012,6 +3014,26 @@
           data-testid="visitor-description"
           hidden
         ></p>
+        <!-- The away block (visitor walk W4 build plan M2, §1.8): after the
+             visitor left AR with progress, read-only; the start button
+             reads "Back to the tour" meanwhile (ar-mode.ts). Written by
+             walk-sheet.ts. -->
+        <section
+          id="walk-away"
+          class="walk-away"
+          data-testid="walk-away"
+          aria-label="Your progress"
+          hidden
+        >
+          <p id="walk-away-text" data-testid="walk-away-text"></p>
+          <div
+            id="walk-away-segments"
+            class="walk-segments"
+            data-testid="walk-away-segments"
+            aria-hidden="true"
+          ></div>
+          <ul id="walk-away-rows" data-testid="walk-away-rows"></ul>
+        </section>
       </section>
       <!-- The setup page in the L5 look (polish round M2b, the owner's
            prototype verdict P1-P5): an intro, then the stage - the map of
@@ -3198,6 +4220,14 @@
                     hidden
                     >Try this tour as a visitor on this phone</a
                   >
+                  <!-- Shown while the hosted file is not finished yet: what
+                   a visitor reads then (main.ts, tour-unfinished.ts). -->
+                  <p
+                    id="visitor-link-note"
+                    class="hint--dim"
+                    data-testid="visitor-link-note"
+                    hidden
+                  ></p>
                 </div>
               </details>
             </li>
@@ -3359,8 +4389,8 @@
             <!-- What the published copy carries (scan-pass plan S1, S-D10),
              chosen BEFORE AR (UI round 1, U2, review #6: the Finish's
              rebuild reads it, so it cannot follow the Finish), shown only
-             for a tour that carries a walk; unticked, Finish leaves it
-             out. -->
+             for a tour that carries a walk; unticked (the default, debug
+             captures plan M2, E2), Finish leaves it out. -->
             <label
               class="switch"
               id="keep-scan-row"
@@ -3369,8 +4399,8 @@
             >
               <input type="checkbox" id="keep-scan" data-testid="keep-scan" />
               <span class="switch-track"></span>
-              Keep the walk recording in the tour file (for a co-author;
-              visitors never need it)
+              Keep the debug data in the tour file (for a co-author; visitors
+              never need it)
             </label>
             <div id="recording-block" data-testid="recording-block" hidden>
               <!-- A recording a killed tab left unsaved (M1b,
@@ -3589,6 +4619,19 @@
                         stroke-linejoin="round"
                       />
                     </g>
+                    <!-- The found look (W4): the check once the code passed
+                     the gate, the phone gone. -->
+                    <g class="scan-card-ok">
+                      <circle cx="80" cy="60" r="30" fill="#22c55e" />
+                      <path
+                        d="M67 61l9 9 17-19"
+                        fill="none"
+                        stroke="#fff"
+                        stroke-width="6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </g>
                   </svg>
                   <h2 id="scan-card-title">
                     Scan the code again so the tour can start
@@ -3605,12 +4648,18 @@
                   Continue with GPS only (less accurate)
                 </button>
               </div>
-              <!-- The visitor's stations (tour kit plan K4): the station line,
-               the labelled skip (§8 D5) and the story panel. Inside
-               #ar-root because the visitor stays in AR the whole tour
-               (K-D9); station-guide.ts and scene-view.ts show them. -->
+              <!-- The visitor's walk in AR (visitor walk W4 build plan M2;
+               tour kit plan K4 before it): the coach, the toast's root and
+               the sheet - the peek, the story card holding the story panel,
+               the list - inside #ar-root because the visitor stays in AR the
+               whole tour (K-D9). walk-sheet.ts writes the sheet,
+               station-guide.ts the line and the skip, scene-view.ts the
+               story, ar-entry.ts the coach and the code's tail line.
+               #station-line keeps today's whole sentence for the screen
+               reader and the tests, visually hidden. -->
               <p
                 id="station-line"
+                class="visually-hidden"
                 data-testid="station-line"
                 aria-live="polite"
                 hidden
@@ -3625,43 +4674,334 @@
               >
                 Test mode: this tour was moved to where you are.
               </p>
-              <button
-                type="button"
-                id="station-skip"
-                class="btn btn--prose"
-                data-testid="station-skip"
+              <!-- The coach (W4 §1.4): the centred card for the coaching
+               states; data-look picks the spinner or the swaying phone.
+               Not a live region: #ar-status-live announces the sentence. -->
+              <div
+                id="walk-coach"
+                class="walk-coach"
+                data-testid="walk-coach"
+                data-look="plain"
                 hidden
               >
-                Can't get there?
-              </button>
-              <section
-                id="scene-panel"
-                data-testid="scene-panel"
-                aria-live="polite"
+                <span class="walk-coach-spin" aria-hidden="true"></span>
+                <svg
+                  class="walk-coach-sway"
+                  viewBox="0 0 34 34"
+                  aria-hidden="true"
+                >
+                  <rect
+                    x="11"
+                    y="4"
+                    width="12"
+                    height="22"
+                    rx="3"
+                    fill="none"
+                    stroke="#fff"
+                    stroke-width="2.4"
+                  />
+                </svg>
+                <span id="walk-coach-text" data-testid="walk-coach-text"></span>
+              </div>
+              <!-- The radar and the precision chip (W4 build plan M3): a tap
+               on the radar opens or closes the list. -->
+              <div
+                id="walk-radar-wrap"
+                class="walk-radar-wrap"
+                data-testid="walk-radar-wrap"
+                data-mode="live"
                 hidden
               >
-                <h3 id="scene-title" data-testid="scene-title"></h3>
-                <p id="scene-speaker" data-testid="scene-speaker" hidden></p>
-                <img id="scene-image" data-testid="scene-image" alt="" hidden />
-                <p id="scene-text" data-testid="scene-text"></p>
-                <p id="scene-status" data-testid="scene-status"></p>
-                <div id="scene-choices" data-testid="scene-choices"></div>
                 <button
                   type="button"
-                  id="scene-continue"
-                  class="btn"
-                  data-testid="scene-continue"
+                  id="walk-radar"
+                  class="walk-radar"
+                  data-testid="walk-radar"
+                  aria-controls="walk-list"
+                  aria-label="Stations around you - open the list"
                 >
-                  Continue
+                  <canvas
+                    id="walk-radar-canvas"
+                    class="walk-radar-canvas"
+                  ></canvas>
                 </button>
-              </section>
-              <button
-                type="button"
-                id="scene-play-next"
-                class="btn btn--prose"
-                data-testid="scene-play-next"
+                <p
+                  id="walk-precision"
+                  class="walk-precision"
+                  data-testid="walk-precision"
+                  data-kind="pending"
+                >
+                  <i class="walk-precision-mark" aria-hidden="true"></i
+                  ><span
+                    id="walk-precision-text"
+                    data-testid="walk-precision-text"
+                  ></span>
+                </p>
+              </div>
+              <!-- The framework's toast is attached here while it shows. -->
+              <!-- aria-hidden: its words are announced already, by
+                   #ar-status-live or #station-line, and the rest by
+                   #walk-live (walk-toast.ts.md). -->
+              <p
+                id="walk-live"
+                class="visually-hidden"
+                data-testid="walk-live"
+                aria-live="polite"
+              ></p>
+              <div
+                id="walk-toast-root"
+                data-testid="walk-toast-root"
+                aria-hidden="true"
+              ></div>
+              <section
+                id="walk-sheet"
+                class="sheet walk-sheet"
+                data-testid="walk-sheet"
+                data-sheet="peek"
+                aria-label="Tour progress"
                 hidden
-              ></button>
+              >
+                <button
+                  type="button"
+                  id="walk-grab"
+                  class="walk-grab"
+                  data-testid="walk-grab"
+                  aria-controls="walk-list"
+                  aria-expanded="false"
+                  aria-label="Show all stations"
+                >
+                  <span class="sheet-handle" aria-hidden="true"></span>
+                </button>
+                <div
+                  id="walk-peek"
+                  class="walk-peek"
+                  data-testid="walk-peek"
+                  data-kind="walk"
+                >
+                  <div
+                    id="walk-segments"
+                    class="walk-segments"
+                    data-testid="walk-segments"
+                    aria-hidden="true"
+                  ></div>
+                  <div
+                    id="walk-peek-row"
+                    class="walk-peek-row"
+                    data-testid="walk-peek-row"
+                  >
+                    <div class="walk-peek-main">
+                      <p
+                        id="walk-eyebrow"
+                        class="walk-eyebrow"
+                        data-testid="walk-eyebrow"
+                      ></p>
+                      <p class="walk-peek-title">
+                        <b id="walk-title" data-testid="walk-title"></b>
+                        <span
+                          id="walk-distance"
+                          class="walk-distance"
+                          data-testid="walk-distance"
+                          hidden
+                          ><svg
+                            id="walk-distance-arrow"
+                            class="walk-arrow"
+                            viewBox="0 0 16 16"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M8 2l5 11-5-3-5 3z"
+                              fill="currentColor"
+                            /></svg
+                          ><span
+                            id="walk-distance-text"
+                            data-testid="walk-distance-text"
+                          ></span
+                        ></span>
+                      </p>
+                      <p
+                        id="walk-tail"
+                        class="walk-tail"
+                        data-testid="walk-tail"
+                      ></p>
+                      <p
+                        id="walk-code-tail"
+                        class="walk-tail"
+                        data-testid="walk-code-tail"
+                        hidden
+                      ></p>
+                    </div>
+                    <!-- The quick action (W4 look, today's labels and taps). -->
+                    <button
+                      type="button"
+                      id="station-skip"
+                      class="btn btn--prose walk-quick"
+                      data-testid="station-skip"
+                      hidden
+                    >
+                      Can't get there?
+                    </button>
+                  </div>
+                </div>
+                <!-- The story card takes the peek's place while a story
+                 plays (W4); it hosts today's story panel. -->
+                <div
+                  id="walk-story"
+                  class="walk-story"
+                  data-testid="walk-story"
+                  hidden
+                >
+                  <p class="walk-eyebrow walk-story-eyebrow">
+                    Station found - its story is playing.
+                  </p>
+                  <section
+                    id="scene-panel"
+                    data-testid="scene-panel"
+                    aria-live="polite"
+                    hidden
+                  >
+                    <h3 id="scene-title" data-testid="scene-title"></h3>
+                    <p
+                      id="scene-speaker"
+                      data-testid="scene-speaker"
+                      hidden
+                    ></p>
+                    <img
+                      id="scene-image"
+                      data-testid="scene-image"
+                      alt=""
+                      hidden
+                    />
+                    <p id="scene-text" data-testid="scene-text"></p>
+                    <p id="scene-status" data-testid="scene-status"></p>
+                    <div id="scene-choices" data-testid="scene-choices"></div>
+                  </section>
+                  <div
+                    id="walk-dots"
+                    class="walk-dots"
+                    data-testid="walk-dots"
+                    aria-hidden="true"
+                  ></div>
+                  <div
+                    id="walk-story-acts"
+                    class="walk-story-acts"
+                    data-testid="walk-story-acts"
+                  >
+                    <button
+                      type="button"
+                      id="scene-continue"
+                      class="btn btn--prose walk-btn walk-btn-primary"
+                      data-testid="scene-continue"
+                    >
+                      Continue
+                    </button>
+                    <button
+                      type="button"
+                      id="walk-story-end"
+                      class="btn btn--prose walk-btn"
+                      data-testid="story-end"
+                      hidden
+                    ></button>
+                    <button
+                      type="button"
+                      id="walk-keep-listening"
+                      class="btn btn--prose walk-btn"
+                      data-testid="keep-listening"
+                      hidden
+                    >
+                      Keep listening
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    id="scene-play-next"
+                    class="btn btn--prose walk-btn"
+                    data-testid="scene-play-next"
+                    hidden
+                  ></button>
+                </div>
+                <div
+                  id="walk-list"
+                  class="walk-list"
+                  data-testid="walk-list"
+                  hidden
+                >
+                  <div class="walk-list-head">
+                    <h2 id="walk-list-title" data-testid="walk-list-title"></h2>
+                    <span
+                      id="walk-chip"
+                      class="walk-chip"
+                      data-testid="walk-chip"
+                    ></span>
+                    <button
+                      type="button"
+                      id="walk-close"
+                      class="walk-round"
+                      data-testid="walk-close"
+                      aria-label="Close the list"
+                    >
+                      <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path
+                          d="M3 6l5 5 5-5"
+                          fill="none"
+                          stroke="currentcolor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                  <div
+                    id="walk-done"
+                    class="walk-done"
+                    data-testid="walk-done"
+                    hidden
+                  >
+                    <svg viewBox="0 0 40 40" aria-hidden="true">
+                      <circle cx="20" cy="20" r="19" fill="#2dd4bf" />
+                      <path
+                        d="M11 21l6 6 12-13"
+                        fill="none"
+                        stroke="#04201c"
+                        stroke-width="3.6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                    <div>
+                      <b id="walk-done-title" data-testid="walk-done-title"></b>
+                      <span
+                        id="walk-done-text"
+                        data-testid="walk-done-text"
+                      ></span>
+                    </div>
+                  </div>
+                  <p
+                    id="walk-progress"
+                    class="walk-progress"
+                    data-testid="walk-progress"
+                  ></p>
+                  <ul
+                    id="walk-rows"
+                    class="walk-rows"
+                    data-testid="walk-rows"
+                  ></ul>
+                  <div
+                    id="walk-list-foot"
+                    class="walk-list-foot"
+                    data-testid="walk-list-foot"
+                    hidden
+                  >
+                    <button
+                      type="button"
+                      id="walk-exit"
+                      class="btn btn--prose walk-btn"
+                      data-testid="walk-exit"
+                    >
+                      Exit AR
+                    </button>
+                  </div>
+                </div>
+              </section>
               <!-- The setup panel (guided-setup plan M3). Inside #ar-root on
                purpose: it must stay visible while the AR session composites
                the DOM overlay. Measure (save the code's position), then
@@ -3707,6 +5047,49 @@
                   hidden
                 ></p>
                 <div id="setup-controls" data-testid="setup-controls" hidden>
+                  <!-- The persistent Undo (W4 build plan MU): takes back
+                   the tour's last step when it is a delete or a settle's
+                   automatic code change, and says which (creator-undo.ts).
+                   FIRST, on its own line above "New station here": its
+                   label names what it takes back and needs the width, and
+                   the reading and focus order is the order on screen. -->
+                  <button
+                    type="button"
+                    id="setup-undo"
+                    class="btn btn--prose"
+                    data-testid="setup-undo"
+                    disabled
+                  >
+                    <!-- An arrow turning back. -->
+                    <svg
+                      class="chip-icon"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M9 14 4 9l5-5"
+                        fill="none"
+                        stroke="currentcolor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                      <path
+                        d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"
+                        fill="none"
+                        stroke="currentcolor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                    <span
+                      id="setup-undo-label"
+                      class="chip-label"
+                      data-testid="setup-undo-label"
+                      >Undo</span
+                    >
+                  </button>
                   <!-- "New station here" (owner decision D8 of the editor
                    round-2 plan): a toggle - the next pin or photo starts a
                    station of its own, even within the automatic radius of
@@ -3952,6 +5335,32 @@
               >
                 Save the tour zip again
               </button>
+              <!-- The debug data the Finish left out of the tour file
+               (debug-captures plan M2, E2): saved apart on a tap, above the
+               replace steps, from the bytes the Finish read
+               (creator-debug-save.ts). -->
+              <div id="debug-save" data-testid="debug-save" hidden>
+                <p
+                  id="debug-save-text"
+                  class="step-copy"
+                  data-testid="debug-save-text"
+                ></p>
+                <button
+                  type="button"
+                  id="debug-save-btn"
+                  class="btn btn--prose"
+                  data-testid="debug-save-btn"
+                >
+                  Save the debug data
+                </button>
+                <p
+                  id="debug-save-status"
+                  class="step-copy hint--dim"
+                  data-testid="debug-save-status"
+                  role="status"
+                  aria-live="polite"
+                ></p>
+              </div>
               <!-- The summary after Finish (authoring plan 2026-09-28-0953 §3.3,
                M3b): each code's verdict, then a map of the visits, the
                codes with their facing lines, and the pins and photos -

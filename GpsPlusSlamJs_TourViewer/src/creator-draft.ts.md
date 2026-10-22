@@ -46,6 +46,31 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
   - `finished(ids, written)` - `creator-finish.ts` after a Finish wrote
     these objects: their versions in `written` are this device's own work.
     The ids (all of this load's Finishes) are kept for `uploaded`.
+  - `follow(tourUrl)` (debug-captures plan, Q-I) - the file a Finish
+    delivered of a tour opened from a file opens under another key once
+    its save wrote the tour's own id: the draft switches to that
+    namespace synchronously (every write from then on lands there), copies
+    every file of the old one into it inside the queue's `exclusive` task
+    (after every write already queued, before every one issued since - so
+    the old copy of a file never lands over a newer write; a photo's bytes
+    as a blob), and re-states the meta under the new key. The old
+    namespace keeps what it holds: the file is not known to be put
+    anywhere ("NOT cleared here" in `creator-finish.ts`), so the opened
+    file opened again offers what it did. True once the draft is under
+    `tourUrl` (or none is open) - also when another follow moved it to
+    the same key while this one waited for its open (two quick Finishes of
+    the same file; that follow's own copy reports its result); false when
+    a listed file could not be read or a write did not land, or another
+    tour opened or the draft moved to another key meanwhile.
+    `creator-setup.ts` calls it from the hand-off's `onDelivered` with
+    `tourFileKeyOfFile` of the delivered file, for a file-opened tour only,
+    and on a false or failed move (still the same tour) says no backup is
+    kept (`warnNoBackup`, r901 review #7): the saved file then opens under
+    a key that holds no draft. Named cost: a move never clears the old
+    namespace, so after a move that landed the draft's files - a placed
+    photo's bytes among them - are stored twice on the phone, each copy
+    until it is cleared where its own file is opened ("Delete it", or the
+    spent-draft sweep); the browser's storage quota bounds it.
   - `uploaded(written)` (follow-up F19, owner decision 2026-10-14) - the
     creator answered yes to "did you upload it?" (`creator-handoff.ts`),
     and `written` is the tour.json of the file the question was asked
@@ -80,11 +105,15 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
   - `reset()` - a tour closed: the offer, the namespace and the
     rejections go.
   - `saveMeta()` - rewrite the open tour's meta (tour, printed size from
-    the FIELD, the code in hand from `creator-codes.ts` and every code the
-    hosted zip does not hold yet as `levels` (M4c-1), the rejections),
-    queued per namespace. Resolves true with no tour open (nothing to
-    write, nothing failed), false where the tour has no store; a refused
-    write may reject, as before the split.
+    the FIELD, the rejections), queued per namespace. Resolves true with
+    no tour open (nothing to write, nothing failed), false where the tour
+    has no store; a refused write may reject, as before the split.
+  - `saveCodes(codes)` (plan M3b) - write the codes record
+    (`draft-persistence.ts`'s `CODES_KEY`: the code in hand and every
+    code the hosted zip does not hold yet), in its own queue, the waiting
+    draft's codes re-stated after the page's. The document's listener
+    calls it (`creator-setup.ts` wires it into `follow`). True with no
+    tour's draft open yet (`present` writes this page's codes then).
   - `recordPlacement(object, blob?)`, `recordVisit(entry)` -
     fire-and-forget, in the id's queue; before the namespace opens they are
     written when it does (`present` writes the document's live work with
@@ -120,7 +149,8 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   failure and does not spend the one warning. When the store is assigned,
   the in-memory placements the read did not return are written (after the
   read, so no branch deletes them), and a level measured before the open is
-  recorded in the meta even when an older draft is being offered.
+  recorded in the codes record (`writeCodes`, the offered draft's codes
+  re-stated after it) even when an older draft is being offered.
 - **A draft is OFFERED, never applied.** It can be days old and can be one
   the creator believes they discarded; restoring it silently would append
   content they did not ask for into a zip they are about to publish. Three
@@ -183,11 +213,20 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   are gone while the meta still rejects it, and an edit of it was hidden at
   the next read and swept - deleted for good; a deletion came back at the
   next Finish (found building M6 E2c, its milestone review #3).
-- **A meta written before the offer is answered keeps the stored draft's
-  codes** (M6 E2c review #3): `level` falls back to the draft's, and its
-  `levels` are re-stated beside the page's (a live code with the same id
-  wins), until Restore makes them the page's or "Delete it" rejects them;
-  "Not now" keeps them. A spent draft re-states nothing.
+- **A write of the codes before the offer is answered keeps the stored
+  draft's codes** (M6 E2c review #3, a codes record since plan M3b): the
+  open reads the codes record first, in the codes queue, into its holder;
+  every later write of the codes runs after that read and re-states them
+  as they stand when it runs - `level` falls back to the draft's, its
+  `levels` after the page's (a live code with the same id wins) - until
+  Restore makes them the page's or a rejection of the draft LANDS; "Not
+  now" keeps them. "Delete it" queues, at the tap, a write of this page's
+  codes that waits for the meta's commit: a commit that is refused writes
+  nothing and keeps them (before M3b a refused discard forgot them, and
+  the next write dropped the draft's measured code); between the commit
+  and that write a reload offers the rejected codes again, the safe
+  direction. A spent draft re-states nothing: the codes are written
+  again, this page's only, once its commit landed.
 - **Work done before the draft opened is written after the read, ALL of
   it** (M4 review #2): an edit or a deletion keeps its id, so the draft
   may hold an older change of the same id, and writing only ids the draft
@@ -227,11 +266,22 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
 ## The settings record (tour editor plan §19 #1)
 
 The tour document's settings record (`tour-document-draft.ts`: the
-setting, the details once set, every station's pose once one moved) is
-one file, `settings` (`SETTINGS_KEY`), in the tour's namespace - the
-desktop's name and shape (`editor/editor-draft.ts`), read by the same
-`parseSettingsRecord`. The document's listener writes it whole on each
-change, in its own queue. The phone reads only its STATION POSES back:
+setting, the details once set, every station's pose once one moved, the
+whole frames of the stations this page created) is one file, `settings`
+(`SETTINGS_KEY`), in the tour's namespace - the desktop's name and shape
+(`editor/editor-draft.ts`), read by the same `parseSettingsRecord`. The
+document's listener writes it whole on each change, in its own queue. The
+phone reads its STATION POSES and its CREATED STATIONS back:
+
+- **Created stations** (every object belongs to a station from its
+  placement on): the offer carries the record's created frames, and the
+  restore hands them to the document before the objects, so a pin comes
+  back in the station it was placed in - not seated anew because the tour
+  file lacks it. A frame of an id the document carries is left as it is.
+  They are not work of their own (the objects naming them are); a page
+  holding created stations counts as live settings work
+  (`settingsLive`), so neither "Delete it" nor a spent draft removes the
+  record their live objects need.
 
 - **Offered**: the poses that differ from the opened tour's
   (`changedStations`) are work like any object - the draft is not spent
@@ -260,6 +310,16 @@ change, in its own queue. The phone reads only its STATION POSES back:
   its commit lands). "Delete it" drops them only once its rejection
   landed: a rejection that did not land leaves the draft, poses and all,
   for a later rename to carry (L3).
+- **Undecided created stations ride along too**, in the same holder
+  (`created`: the stored record's created stations the opened tour
+  lacks). A live record names only this page's own created stations, and
+  a page holding one writes its record live (`settingsLive`) - so without
+  this a placement that starts a station, or the open's own live write,
+  replaced the stored record's created stations before the draft was
+  restored, and a later Restore seated its objects by the rule under new
+  ids. Each write adds the stored frames whose ids the record lacks (the
+  page's own frame of an id wins, `withCreated`); Restore, a landed
+  "Delete it" and a spent draft's sweep clear them.
 - **Removed** with a spent draft (after its meta commit) and by "Delete
   it" (after the rejection lands), unless this page changed the settings
   since the open - then "Delete it" rewrites the live record without the
@@ -295,6 +355,12 @@ change, in its own queue. The phone reads only its STATION POSES back:
 
 ## Tests
 
+The codes record (plan M3b), through `wireCreatorSetup`: the
+characterization tests of the waiting draft's codes and the spent rule,
+moved from the meta to the codes record rule for rule, and a "Delete it"
+whose commit is refused keeping the draft's codes (checked to fail with
+them forgotten at the tap).
+
 Composed, through `wireCreatorSetup` and unchanged by the split:
 `creator-setup.test.ts` (the offer, its three answers after a Finish too,
 the ordered writes, the claims and sweeps; "the draft keeps a moved
@@ -306,9 +372,20 @@ record to a reopen through the same url padded; an edit over an offered
 deletion not offered as deleted again, and one whose record did not land
 keeping the tombstone; Restore's note counting what it put back, beside a
 code measured here and beside visits the log already held; a draft object
-whose id equals a visit id restored), `creator-finish.test.ts` and
+whose id equals a visit id restored; the waiting draft's codes re-stated
+after the page's, the page's winning, kept through "Not now" and dropped
+by "Delete it", and the spent rule judging each code by the hosted zip's
+content - spent when it holds the same text, kept and offered when it holds
+another, none, or cannot be read - pinned before the codes move into the
+store, plan 2026-10-20-1159 M3a), `creator-finish.test.ts` and
 `authoring-settle.test.ts` (the meta a mint or settle writes, the backup
-notice), plus the draft e2e specs. The pure rules are in
+notice), plus the draft e2e specs. `follow` in isolation:
+`creator-draft-follow.test.ts` (every file copied, a photo as a blob, the
+meta re-stated, later writes in the new namespace, the old one kept; a
+write issued during the copy never overwritten by it; an unreadable file
+reported; nothing opened for the same key; two follows to the same key at
+once both true, to two keys the later one false); composed, two Finishes and the
+reopen of the saved file: `tour-document-parity.test.ts`. The pure rules are in
 `authoring-draft.test.ts` and the on-disk shape in
 `draft-persistence.test.ts`. The sampled mutants of the region "draft"
 (`scripts/fixtures/creator-setup.mutants.json`) are killed.

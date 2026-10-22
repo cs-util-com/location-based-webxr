@@ -24,7 +24,7 @@
 // that specific, formally-removed behaviours are not stated as current. A NEW
 // wrong description is still invisible here, and no automated check fixes that.
 
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 
 import { readTracked, trackedFiles } from './tracked-tree.js';
 
@@ -197,6 +197,14 @@ function scanTree() {
 }
 
 describe('removed behaviour is not described as current', () => {
+  // The one scan in setup, not inside the first test that asks for it: under
+  // load (2026-10-11, five red gates, every one a 5 s timeout, never an
+  // assertion) the whole scan was charged to whichever test ran first. A hook
+  // has its own limit, and the default per-test timeout below still holds
+  // (see the note on the last case).
+  beforeAll(() => {
+    scanTree();
+  });
   // Why this test matters: it proves the patterns are not vacuous. A guard that
   // matches nothing passes forever and protects nothing — the exact failure
   // mode the sibling guard was rewritten for.

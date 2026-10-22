@@ -25,8 +25,9 @@ map.
     (`codeVisitPoses`, the move boundary of authoring plan §3.6, M5b).
   - `SummaryModel`: `tracks` (per visit: `gps`, `fused`), `codes`
     (`SummaryCode`), `objects` (`SummaryObject`: id, kind, label, lat,
-    lng; the label is `object-describe.ts` `objectTitle`), `fitPoints`
-    (everything drawn, for framing).
+    lng; the label is `object-describe.ts` `objectTitle`; pins and photos
+    only - a placed 3D model, format minor 1, is not drawn here and stays
+    in the tour untouched), `fitPoints` (everything drawn, for framing).
   - `SummaryCode`: `levelId`, `label` ("The code", or "Code 1", "Code 2"...),
     `reference` (the stored pose as a `CodeMark` plus `ringM`, its own
     predicted error or null when unknown; null without a stored pose),
@@ -133,6 +134,7 @@ when no kept visit saved it (or saved another pose); a code no visit
 measured; a code only the visits know ("no saved position") and the
 numbering; the second mark only past the estimate's predicted error, and
 the floor; the visits' estimate combining only the visits from the code's
-latest move on (the move boundary, M5b); pin and photo labels; walks
+latest move on (the move boundary, M5b); pin and photo labels; a placed
+3D model left out of the drawn objects; walks
 kept apart and unreadable points dropped; framing covering the walk, the
 pins, the line and the ring.
