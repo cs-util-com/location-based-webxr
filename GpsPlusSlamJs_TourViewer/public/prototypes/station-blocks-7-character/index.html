@@ -1,0 +1,1603 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Recurring Character</title>
+<meta name="description" content="Station content block prototype: one recurring character (a cut-out knight) at two stations, shown in five views.">
+<style>
+:root {
+  --bg: #0e1014;
+  --chrome: rgba(14, 16, 21, 0.9);
+  --glass: rgba(17, 20, 27, 0.86);
+  --glass-2: rgba(28, 32, 41, 0.92);
+  --ink: #f4efe6;
+  --muted: #aaa498;
+  --faint: rgba(244, 239, 230, 0.14);
+  --gold: #f2b84b;
+  --gold-ink: #2a1d07;
+  --red: #c4483a;
+  --ok: #8fc49a;
+  --warn: #f0b35a;
+  --sky: #e4e9ee;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --serif: ui-serif, Georgia, "Times New Roman", serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.4 var(--sans); overflow: hidden; -webkit-tap-highlight-color: transparent; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+[hidden] { display: none !important; }
+
+/* ---------- prototype chrome (not part of the app) ---------- */
+#bar { position: fixed; top: 0; left: 0; right: 0; height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 8px; background: var(--chrome); border-bottom: 1px solid var(--faint); z-index: 40; }
+#bar .brand { font-weight: 600; letter-spacing: 0.04em; color: var(--muted); font-size: 12px; margin-right: 6px; white-space: nowrap; }
+.seg { display: inline-flex; background: rgba(255,255,255,0.06); border-radius: 999px; padding: 3px; gap: 2px; }
+.seg button { border: 0; background: transparent; padding: 5px 11px; border-radius: 999px; font-size: 13px; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: #15171c; font-weight: 600; }
+.spacer { flex: 1; }
+.icon { width: 34px; height: 34px; border-radius: 10px; border: 1px solid transparent; background: transparent; display: inline-grid; place-items: center; color: var(--muted); padding: 0; }
+.icon svg { width: 18px; height: 18px; }
+.icon[aria-pressed="true"] { color: var(--gold); border-color: rgba(242,184,75,0.4); background: rgba(242,184,75,0.08); }
+.icon:disabled { opacity: 0.35; cursor: default; }
+@media (max-width: 520px) { #bar .brand { display: none; } .seg button { padding: 5px 9px; } }
+
+#viewport { position: fixed; top: 44px; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; }
+#stage { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--sky); }
+#stage.framed { border-radius: 30px; box-shadow: 0 0 0 9px #050608, 0 0 0 10px #2a2d33, 0 24px 60px rgba(0,0,0,0.55); }
+#canvasWrap { position: absolute; inset: 0; touch-action: none; }
+#canvasWrap canvas { display: block; width: 100%; height: 100%; }
+.ui { position: absolute; z-index: 5; }
+body:not([data-mode="visitor"]) .visitor-only,
+body:not([data-mode="creator"]) .creator-only,
+body:not([data-mode="editor"]) .editor-only { display: none !important; }
+
+#readout { position: fixed; left: 6px; bottom: 4px; z-index: 50; font: 10px/1.2 ui-monospace, "Cascadia Mono", Consolas, monospace; color: rgba(244,239,230,0.75); background: rgba(10,12,16,0.6); padding: 2px 6px; border-radius: 6px; pointer-events: none; }
+
+/* ---------- visitor HUD (the app) ---------- */
+#picker { top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; padding: 4px; max-width: calc(100% - 20px); overflow-x: auto; scrollbar-width: none; background: var(--glass); border-radius: 999px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+#picker::-webkit-scrollbar { display: none; }
+#picker button { flex: none; border: 0; background: transparent; color: var(--muted); font-size: 12px; padding: 5px 10px; border-radius: 999px; white-space: nowrap; }
+#picker button[aria-pressed="true"] { background: rgba(242,184,75,0.16); color: var(--gold); font-weight: 600; }
+#appChip { top: 52px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px; background: var(--glass); border-radius: 999px; font-size: 13px; color: var(--ink); white-space: nowrap; transition: opacity 0.4s; }
+#appChip .arrow { width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,0.1); display: grid; place-items: center; }
+#appChip .arrow svg { width: 14px; height: 14px; transition: transform 0.15s linear; }
+#appChip .dist { color: var(--muted); font-variant-numeric: tabular-nums; }
+#vBottom { left: 0; right: 0; bottom: 22px; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+#hint { font-size: 12px; color: rgba(244,239,230,0.9); background: rgba(14,16,21,0.62); padding: 4px 10px; border-radius: 999px; transition: opacity 0.8s; text-align: center; max-width: 92%; }
+#walkBtns { display: flex; gap: 8px; pointer-events: auto; }
+.pill { border: 0; background: var(--glass-2); color: var(--ink); padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
+.pill.gold { background: var(--gold); color: var(--gold-ink); }
+.pill svg { width: 16px; height: 16px; }
+
+#portrait { bottom: 78px; left: 12px; right: 12px; display: flex; align-items: flex-end; gap: 10px; pointer-events: none; opacity: 0; transform: translateY(14px); transition: opacity 0.5s ease, transform 0.5s ease; }
+#portrait.on { opacity: 1; transform: none; }
+#portrait.right { flex-direction: row-reverse; }
+@media (max-height: 500px) { #portrait { top: 56px; bottom: auto; left: 12px; right: auto; width: min(54%, 470px); align-items: flex-start; } #portrait.right { left: auto; right: 12px; } #portrait .ring, #portrait .ring canvas { width: 60px; height: 60px; } #portrait .tick::before { top: -44px; } #portrait .pline { font-size: 15px; } }
+#portrait .ring { position: relative; flex: none; width: 76px; height: 76px; border-radius: 50%; background: #1b1f27; box-shadow: 0 0 0 3px var(--gold), 0 8px 24px rgba(0,0,0,0.35); pointer-events: auto; cursor: pointer; }
+#portrait .ring canvas { width: 76px; height: 76px; border-radius: 50%; display: block; }
+#portrait .tick { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transition: opacity 0.3s; }
+#portrait .tick::before { content: ""; position: absolute; left: -7px; top: -52px; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 10px solid var(--gold); }
+#portrait .pcard { flex: 1; min-width: 0; max-width: 420px; background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 18px; padding: 10px 14px 10px; pointer-events: auto; }
+#portrait .pname { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); font-weight: 600; margin-bottom: 3px; }
+#portrait .pline { font-size: 16px; line-height: 1.35; }
+#portrait .pline span { transition: color 0.12s; }
+#portrait .pline span.up { color: rgba(244,239,230,0.5); }
+#portrait .pline span.now { color: var(--gold); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+#portrait .pfoot { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+/* ---------- creator (phone in AR) ---------- */
+#cTop { top: 10px; left: 50%; transform: translateX(-50%); background: var(--glass); border-radius: 999px; padding: 6px 14px; font-size: 13px; white-space: nowrap; display: flex; gap: 8px; align-items: center; }
+#cTop b { color: var(--gold); font-weight: 600; }
+#cHint { top: 50px; left: 50%; transform: translateX(-50%); background: rgba(14,16,21,0.7); border-radius: 999px; padding: 5px 12px; font-size: 12px; white-space: nowrap; }
+#cSheet { left: 10px; right: 10px; bottom: 100px; background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 20px; padding: 14px; max-height: calc(100% - 210px); overflow: auto; }
+#cSheet h3 { margin: 0 0 10px; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+#cBar { left: 8px; right: 8px; bottom: 26px; display: flex; gap: 6px; justify-content: center; }
+#cBar button { flex: 1; max-width: 92px; height: 66px; border: 0; border-radius: 18px; background: var(--glass-2); color: var(--ink); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 12px; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
+#cBar button svg { width: 22px; height: 22px; }
+#cBar button[aria-pressed="true"] { background: var(--gold); color: var(--gold-ink); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.04); color: var(--ink); border-radius: 999px; padding: 7px 12px; font-size: 13px; }
+.chip[aria-pressed="true"] { border-color: var(--gold); color: var(--gold); background: rgba(242,184,75,0.1); font-weight: 600; }
+.row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.row label { color: var(--muted); font-size: 12px; min-width: 70px; }
+input[type="range"] { flex: 1; accent-color: var(--gold); }
+textarea, input[type="text"], input[type="number"], select { width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.14); border-radius: 10px; padding: 8px 10px; color: var(--ink); }
+textarea { resize: vertical; min-height: 64px; line-height: 1.4; }
+.val { font-variant-numeric: tabular-nums; min-width: 56px; text-align: right; }
+.status { font-size: 12px; color: var(--muted); margin-top: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
+.badge.ok { background: rgba(143,196,154,0.16); color: var(--ok); }
+.badge.stale { background: rgba(240,179,90,0.16); color: var(--warn); }
+.mini { border: 1px solid rgba(255,255,255,0.18); background: transparent; border-radius: 8px; padding: 4px 10px; font-size: 12px; }
+.mini.gold { border-color: var(--gold); color: var(--gold); }
+
+/* ---------- editor (desktop) ---------- */
+body[data-mode="editor"] #stage { background: #20242b; }
+body[data-mode="editor"] #canvasWrap { left: 232px; right: 312px; }
+#eList { left: 0; top: 0; bottom: 0; width: 232px; background: #15181e; border-right: 1px solid var(--faint); padding: 14px 10px; overflow: auto; }
+#eInsp { right: 0; top: 0; bottom: 0; width: 312px; background: #15181e; border-left: 1px solid var(--faint); padding: 14px; overflow: auto; }
+.eh { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 14px 4px 6px; font-weight: 600; }
+.eh:first-child { margin-top: 0; }
+.eitem { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 8px; border-radius: 8px; color: var(--ink); font-size: 13px; }
+.eitem:hover { background: rgba(255,255,255,0.05); }
+.eitem[aria-current="true"] { background: rgba(242,184,75,0.12); color: var(--gold); }
+.eitem .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); flex: none; }
+.eitem .dot.grey { background: #6d7179; }
+.eitem small { color: var(--muted); margin-left: auto; font-size: 11px; }
+.eitem.dim { color: var(--muted); cursor: default; }
+.sec { border-top: 1px solid var(--faint); padding-top: 12px; margin-top: 12px; }
+.sec:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+.sec h4 { margin: 0 0 8px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.sec h4 small { color: var(--muted); font-weight: 400; font-size: 11px; }
+.f { margin-top: 9px; }
+.f > label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; letter-spacing: 0.02em; }
+.f .code { font: 11px/1.3 ui-monospace, Consolas, monospace; color: #c9c3b6; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.grid3 input { padding: 6px 8px; }
+.segsmall { display: inline-flex; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.14); border-radius: 10px; padding: 2px; }
+.segsmall button { border: 0; background: transparent; padding: 5px 12px; border-radius: 8px; color: var(--muted); font-size: 12px; }
+.segsmall button[aria-pressed="true"] { background: rgba(242,184,75,0.16); color: var(--gold); font-weight: 600; }
+.thumbs { display: flex; gap: 6px; }
+.thumbs figure { margin: 0; text-align: center; font-size: 10px; color: var(--muted); }
+.thumbs canvas { width: 44px; height: 88px; border-radius: 6px; background: repeating-conic-gradient(#2a2e36 0% 25%, #22262d 0% 50%) 50% / 12px 12px; display: block; }
+#eTools { top: 10px; left: calc(232px + 10px); right: calc(312px + 10px); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; pointer-events: none; }
+#eTools > * { pointer-events: auto; }
+#eTools .tip { font-size: 12px; color: var(--muted); background: rgba(14,16,21,0.75); padding: 5px 10px; border-radius: 999px; }
+pre.json { font: 11px/1.35 ui-monospace, Consolas, monospace; background: rgba(0,0,0,0.35); border-radius: 10px; padding: 10px; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; color: #d9d3c6; }
+#eStations { display: none; }
+@media (max-width: 699px) {
+  body[data-mode="editor"] #canvasWrap { left: 0; right: 0; bottom: 54%; }
+  #eList { display: none !important; }
+  #eInsp { top: 46%; left: 0; width: auto; border-left: 0; border-top: 1px solid var(--faint); border-radius: 18px 18px 0 0; }
+  #eTools { left: 10px; right: 10px; }
+  #eStations { display: inline-flex; margin-bottom: 10px; }
+  #eTools .tip { display: none; }
+}
+
+/* ---------- fields panel + notes ---------- */
+#fields { top: 52px; right: 10px; width: min(330px, calc(100% - 20px)); background: var(--glass-2); border-radius: 16px; padding: 12px 14px; font-size: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); max-height: calc(100% - 140px); overflow: auto; z-index: 20; }
+#fields h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); }
+#fields ul { margin: 0; padding: 0; list-style: none; }
+#fields li { padding: 5px 0; border-top: 1px solid var(--faint); }
+#fields li:first-child { border-top: 0; }
+#fields code { color: var(--ink); font: 600 11px ui-monospace, Consolas, monospace; }
+#fields li span { color: var(--muted); display: block; }
+#fields .unused { color: var(--muted); margin-top: 8px; }
+body[data-mode="editor"] #fields { right: 322px; }
+@media (max-width: 699px) { body[data-mode="editor"] #fields { right: 10px; } }
+
+#notes { position: fixed; inset: 44px 0 0 0; z-index: 60; background: rgba(8,9,12,0.94); overflow: auto; padding: 24px 16px 60px; }
+#notes .inner { max-width: 760px; margin: 0 auto; }
+#notes h2 { font-family: var(--serif); font-weight: 500; font-size: 28px; margin: 0 0 6px; }
+#notes .lede { color: var(--muted); margin: 0 0 18px; }
+#notes details { border-top: 1px solid var(--faint); padding: 10px 0; }
+#notes summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+#notes p, #notes li { color: #d8d2c6; line-height: 1.55; }
+#notes ul { padding-left: 20px; }
+#notes b { color: var(--ink); }
+#notes .close { position: sticky; top: 0; float: right; }
+</style>
+<script type="importmap">
+  { "imports": {
+      "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+  } }
+</script>
+</head>
+<body data-mode="visitor">
+<header id="bar">
+  <span class="brand">Recurring character</span>
+  <div class="seg" id="modeSeg" role="group" aria-label="Mode">
+    <button data-mode="visitor" aria-pressed="true">Visitor</button>
+    <button data-mode="creator" aria-pressed="false">Creator</button>
+    <button data-mode="editor" aria-pressed="false">Editor</button>
+  </div>
+  <div class="spacer"></div>
+  <button class="icon" id="btnSound" title="Sound on or off" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path class="w" d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg></button>
+  <button class="icon" id="btnPhone" title="Phone frame" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg></button>
+  <button class="icon" id="btnFields" title="Fields this view uses" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg></button>
+  <button class="icon" id="btnNotes" title="Designer notes" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg></button>
+</header>
+
+<div id="viewport">
+  <div id="stage">
+    <div id="canvasWrap"></div>
+
+    <div id="picker" class="ui visitor-only" role="group" aria-label="View"></div>
+    <div id="appChip" class="ui visitor-only" hidden><span class="arrow"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l6 15-6-3.5L6 18z"/></svg></span><span class="name"></span><span class="dist"></span></div>
+    <div id="portrait" class="ui visitor-only" aria-live="polite">
+      <div class="ring" id="pRing"><canvas width="152" height="152"></canvas><div class="tick"></div></div>
+      <div class="pcard"><div class="pname"></div><div class="pline"></div><div class="pfoot"></div></div>
+    </div>
+    <div id="vBottom" class="ui visitor-only"><div id="hint"></div><div id="walkBtns"></div></div>
+
+    <div id="cTop" class="ui creator-only"></div>
+    <div id="cHint" class="ui creator-only" hidden></div>
+    <div id="cSheet" class="ui creator-only"></div>
+    <nav id="cBar" class="ui creator-only" aria-label="Edit this block"></nav>
+
+    <aside id="eList" class="ui editor-only"></aside>
+    <aside id="eInsp" class="ui editor-only"></aside>
+    <div id="eTools" class="ui editor-only"></div>
+
+    <div id="fields" class="ui" hidden></div>
+  </div>
+</div>
+<div id="readout">frame -</div>
+
+<section id="notes" hidden>
+  <div class="inner">
+    <button class="pill close" id="notesClose">Close</button>
+    <h2>Notes: the recurring character</h2>
+    <p class="lede">One character, defined once for the tour, appearing at two stations with a different line each. Five views on the same record.</p>
+    <div id="notesBody"></div>
+  </div>
+</section>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================
+   Small helpers
+   ============================================================ */
+const $ = (s) => document.querySelector(s);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const smooth = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const DEG = Math.PI / 180;
+const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+const SERIF = 'ui-serif, Georgia, "Times New Roman", serif';
+const wrapAngle = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function fnv1a(str) {
+  let h = 0x811c9dc5;
+  for (const ch of str) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
+  return 'fnv1a:' + h.toString(16).padStart(8, '0');
+}
+function tokenize(text) {
+  const out = []; const re = /\S+/g; let m;
+  while ((m = re.exec(text))) out.push({ text: m[0], from: m.index, to: m.index + m[0].length });
+  return out;
+}
+/** Fake word timing for the generated tone narration (no speech). */
+function makeTiming(text) {
+  const segs = []; let t = 260;
+  for (const w of tokenize(text)) {
+    const letters = w.text.replace(/[^\p{L}\p{N}]/gu, '').length || 1;
+    const dur = clamp(110 + 52 * letters, 170, 640);
+    segs.push({ startMs: Math.round(t), endMs: Math.round(t + dur), from: w.from, to: w.to });
+    t += dur + 70;
+    if (/[.!?]$/.test(w.text)) t += 430; else if (/[,;:]$/.test(w.text)) t += 210;
+  }
+  return { granularity: 'word', segments: segs, textHash: fnv1a(text) };
+}
+const timingEnd = (tm) => (tm && tm.segments.length ? tm.segments[tm.segments.length - 1].endMs : 0);
+const isStale = (ap) => !ap.timing || ap.timing.textHash !== fnv1a(ap.line);
+
+/* ============================================================
+   The example record (the same data in every view)
+   ============================================================ */
+const LINE1 = 'Good day, traveller! My keep stood behind that broken wall. Come, the market road runs east.';
+const LINE2 = 'Here the carts left for the fields. At dusk the guild bell called them home.';
+const LINE_MAX = 120;
+const model = {
+  character: {
+    id: 'wendel',
+    name: 'Wendel the Warden',
+    image: 'media/wendel.png',
+    frames: { image: 'media/wendel-frames.png', frameW: 512, frameH: 1024, names: ['idle', 'talk-a', 'talk-b', 'beckon'] },
+    voiceCredit: 'Tone pattern stand-in, no speech',
+  },
+  stations: [
+    { id: 's1', title: 'Market square', anchor: { x: 0, z: 0 }, radiusM: 25, view: 'bubble',
+      appearance: { characterId: 'wendel', pose: { position: [-3.2, 0, -4.5], yawDeg: 10 }, heightM: 1.85, line: LINE1,
+        narration: 'media/wendel-s1.ogg', timing: makeTiming(LINE1), bubbleSide: 'right' } },
+    { id: 's2', title: 'East road', anchor: { x: 60, z: 0 }, radiusM: 25, view: 'bubble',
+      appearance: { characterId: 'wendel', pose: { position: [1.6, 0, -2.2], yawDeg: -80 }, heightM: 1.85, line: LINE2,
+        narration: 'media/wendel-s2.ogg', timing: makeTiming(LINE2), bubbleSide: 'left' } },
+  ],
+};
+
+const VIEWS = [
+  { name: 'bubble', label: 'Bubble', required: true },
+  { name: 'speak', label: 'Tap to speak', required: true },
+  { name: 'two-stations', label: 'Two stations', required: true },
+  { name: 'portrait', label: 'Portrait', required: false },
+  { name: 'popup', label: 'Pop-up', required: false },
+];
+const VIEW_NAMES = VIEWS.map((v) => v.name);
+const FIELDS = [
+  'character.id', 'character.name', 'character.image', 'character.frames', 'character.voiceCredit',
+  'appearance.characterId', 'appearance.pose', 'appearance.heightM', 'appearance.line',
+  'appearance.narration', 'appearance.timing', 'appearance.bubbleSide',
+];
+const USES = {
+  bubble: {
+    'character.name': 'header of the bubble and of the far tag',
+    'character.image': 'the cut-out (first frame only)',
+    'appearance.characterId': 'resolves the shared character',
+    'appearance.pose': 'where he stands; rest facing, turns up to 60 degrees toward the visitor',
+    'appearance.heightM': 'figure size; the bubble keeps its own reading size',
+    'appearance.line': 'bubble text, opens within 9 m, a name tag farther away',
+    'appearance.bubbleSide': 'which side of his head the bubble hangs (auto picks the side with room)',
+  },
+  speak: {
+    'character.name': 'bubble header',
+    'character.image': 'the cut-out',
+    'character.frames': 'idle, two mouth frames while a word sounds',
+    'character.voiceCredit': 'quiet credit line while he talks',
+    'appearance.characterId': 'resolves the shared character',
+    'appearance.pose': 'position and rest facing',
+    'appearance.heightM': 'figure size',
+    'appearance.line': 'bubble text, read along word by word',
+    'appearance.narration': 'the tone pattern played on tap (silent if sound is off)',
+    'appearance.timing': 'word highlight and mouth frames; stale hash = plain text, no audio',
+    'appearance.bubbleSide': 'bubble side',
+  },
+  'two-stations': {
+    'character.id': 'one definition shared by both appearances',
+    'character.name': 'bubble header at both stations',
+    'character.image': 'the same cut-out at both stations (one asset)',
+    'character.frames': 'beckon frame toward the next station, mouth frames on tap',
+    'character.voiceCredit': 'credit line while he talks',
+    'appearance.characterId': 'both appearances point at the same character',
+    'appearance.pose': 'per station position and facing',
+    'appearance.heightM': 'per station size',
+    'appearance.line': 'a different line per station',
+    'appearance.narration': 'per station tone pattern, on tap',
+    'appearance.timing': 'per station read-along',
+    'appearance.bubbleSide': 'per station bubble side',
+  },
+  portrait: {
+    'character.name': 'name above the caption',
+    'character.image': 'the cut-out in the world and the head crop in the corner',
+    'character.frames': 'the portrait\'s mouth moves with the words',
+    'character.voiceCredit': 'credit under the caption while he talks',
+    'appearance.characterId': 'resolves the shared character',
+    'appearance.pose': 'world position; the portrait\'s gold tick points to it when he is off screen',
+    'appearance.heightM': 'figure size in the world',
+    'appearance.line': 'the caption card, read along',
+    'appearance.narration': 'tone pattern on tap',
+    'appearance.timing': 'caption highlight; stale = plain caption',
+    'appearance.bubbleSide': 'reused: which bottom corner holds the portrait',
+  },
+  popup: {
+    'character.name': 'printed on the front of the stage',
+    'character.image': 'the cut-out standing on the paper stage',
+    'character.frames': 'mouth frames on tap',
+    'character.voiceCredit': 'credit line on the scroll while he talks',
+    'appearance.characterId': 'resolves the shared character',
+    'appearance.pose': 'stage position and its FIXED facing (the stage never turns)',
+    'appearance.heightM': 'scales the whole stage',
+    'appearance.line': 'the scroll above the stage, read along in red ink',
+    'appearance.narration': 'tone pattern on tap',
+    'appearance.timing': 'scroll read-along; stale = plain scroll',
+  },
+};
+
+/* Defensive setters: creator input is clamped, never trusted. */
+const VALID_SIDES = ['left', 'auto', 'right'];
+function setLine(ap, text) { ap.line = String(text ?? '').replace(/\s+/g, ' ').slice(0, LINE_MAX); }
+function setHeight(ap, h) { const v = Number(h); if (Number.isFinite(v)) ap.heightM = clamp(v, 0.5, 3.2); }
+function setYaw(ap, deg) { const v = Number(deg); if (Number.isFinite(v)) ap.pose.yawDeg = Math.round(wrapAngle(v * DEG) / DEG); }
+function setPos(ap, x, z, st) {
+  const nx = Number(x), nz = Number(z);
+  if (!Number.isFinite(nx) || !Number.isFinite(nz)) return;
+  const r = Math.hypot(nx, nz), lim = st.radiusM - 1; const k = r > lim ? lim / r : 1; // stay inside the circle
+  ap.pose.position = [Math.round(nx * k * 100) / 100, 0, Math.round(nz * k * 100) / 100];
+}
+function setSide(ap, s) { if (VALID_SIDES.includes(s)) ap.bubbleSide = s; }
+function exportModel() {
+  const c = model.character;
+  return {
+    character: { id: c.id, name: c.name, image: c.image, frames: { ...c.frames, names: [...c.frames.names] }, voiceCredit: c.voiceCredit },
+    stations: model.stations.map((s) => ({
+      id: s.id,
+      blocks: [{ type: 'character-appearance', view: s.view, appearance: JSON.parse(JSON.stringify(s.appearance)) }],
+    })),
+  };
+}
+
+/* ============================================================
+   Generated media: the knight (4-frame sprite sheet, front and back)
+   ============================================================ */
+const FW = 512, FH = 1024, FIG_TOP = 40, FIG_BOTTOM = 990;
+const K = {
+  ink: '#1c1814', steel: '#a6afb7', steelD: '#727c86', steelL: '#dce1e5', red: '#b63a2d', redD: '#80241b',
+  gold: '#e5ab3e', goldD: '#a8761f', skin: '#eab993', skinD: '#c98e69', beard: '#7a4f33', blue: '#2a4572', blueD: '#1a2c4c',
+  leather: '#5b3b26', leatherD: '#3a2416',
+};
+function fillStroke(ctx, fill, lw = 6) { ctx.fillStyle = fill; ctx.fill(); ctx.lineWidth = lw; ctx.strokeStyle = K.ink; ctx.lineJoin = 'round'; ctx.stroke(); }
+function limb(ctx, pts, w, fill) {
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.strokeStyle = K.ink; ctx.lineWidth = w + 12; ctx.stroke();
+  ctx.strokeStyle = fill; ctx.lineWidth = w; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = w * 0.22;
+  ctx.beginPath(); ctx.moveTo(pts[0][0] - w * 0.18, pts[0][1]); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] - w * 0.18, pts[i][1]); ctx.stroke();
+}
+function disc(ctx, x, y, r, fill, lw = 5) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); fillStroke(ctx, fill, lw); }
+function tabardPath(ctx) {
+  ctx.beginPath(); ctx.moveTo(184, 318); ctx.lineTo(328, 318); ctx.quadraticCurveTo(340, 540, 352, 772);
+  ctx.quadraticCurveTo(256, 792, 160, 772); ctx.quadraticCurveTo(172, 540, 184, 318); ctx.closePath();
+}
+function shieldPath(ctx) {
+  ctx.beginPath(); ctx.moveTo(60, 468); ctx.lineTo(208, 468); ctx.quadraticCurveTo(214, 612, 134, 684); ctx.quadraticCurveTo(54, 612, 60, 468); ctx.closePath();
+}
+function drawKnight(ctx, f) {
+  const open = f === 1, half = f === 2, beckon = f === 3;
+  ctx.save();
+  // cloak
+  ctx.beginPath(); ctx.moveTo(166, 330); ctx.quadraticCurveTo(122, 620, 104, 930); ctx.quadraticCurveTo(256, 950, 408, 930); ctx.quadraticCurveTo(390, 620, 346, 330); ctx.closePath();
+  fillStroke(ctx, K.blue);
+  ctx.strokeStyle = K.blueD; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  for (const [x1, x2] of [[150, 132], [176, 170], [362, 380], [338, 344]]) { ctx.beginPath(); ctx.moveTo(x1, 560); ctx.quadraticCurveTo((x1 + x2) / 2 - 6, 740, x2, 920); ctx.stroke(); }
+  // legs and feet
+  for (const [x0, dir] of [[200, -1], [264, 1]]) {
+    ctx.beginPath(); ctx.roundRect(x0, 736, 48, 220, 14); fillStroke(ctx, K.steel);
+    ctx.fillStyle = K.steelD; ctx.fillRect(x0 + 31, 760, 9, 180);
+    ctx.beginPath(); ctx.ellipse(x0 + 24, 806, 30, 24, 0, 0, Math.PI * 2); fillStroke(ctx, K.steelL);
+    ctx.beginPath();
+    if (dir < 0) { ctx.moveTo(x0 + 48, 946); ctx.lineTo(x0 + 50, 986); ctx.lineTo(x0 - 36, 990); ctx.quadraticCurveTo(x0 - 22, 956, x0, 946); }
+    else { ctx.moveTo(x0, 946); ctx.lineTo(x0 - 2, 986); ctx.lineTo(x0 + 84, 990); ctx.quadraticCurveTo(x0 + 70, 956, x0 + 48, 946); }
+    ctx.closePath(); fillStroke(ctx, K.steelD);
+  }
+  // shield arm (mostly behind the shield)
+  limb(ctx, [[162, 360], [146, 470], [150, 574]], 40, K.steel);
+  // tabard
+  tabardPath(ctx); fillStroke(ctx, K.red);
+  ctx.save(); tabardPath(ctx); ctx.clip();
+  ctx.fillStyle = K.redD; ctx.beginPath(); ctx.moveTo(300, 318); ctx.lineTo(360, 318); ctx.lineTo(360, 790); ctx.lineTo(316, 790); ctx.quadraticCurveTo(312, 560, 300, 318); ctx.fill();
+  ctx.fillStyle = K.gold; ctx.fillRect(140, 742, 240, 50);
+  ctx.fillStyle = K.goldD; ctx.fillRect(140, 742, 240, 6);
+  ctx.restore(); tabardPath(ctx); ctx.lineWidth = 6; ctx.strokeStyle = K.ink; ctx.stroke();
+  // key emblem
+  ctx.lineCap = 'butt';
+  ctx.beginPath(); ctx.arc(256, 416, 24, 0, Math.PI * 2); ctx.strokeStyle = K.ink; ctx.lineWidth = 20; ctx.stroke(); ctx.strokeStyle = K.gold; ctx.lineWidth = 11; ctx.stroke();
+  ctx.beginPath(); ctx.rect(249, 440, 14, 96); fillStroke(ctx, K.gold, 4);
+  ctx.beginPath(); ctx.rect(263, 506, 26, 11); fillStroke(ctx, K.gold, 4);
+  ctx.beginPath(); ctx.rect(263, 524, 18, 11); fillStroke(ctx, K.gold, 4);
+  // belt
+  ctx.beginPath(); ctx.roundRect(170, 554, 174, 28, 8); fillStroke(ctx, K.leather, 5);
+  ctx.beginPath(); ctx.roundRect(240, 550, 32, 36, 6); fillStroke(ctx, K.gold, 5);
+  // sword at the right hip
+  ctx.save(); ctx.translate(334, 590); ctx.rotate(-0.25);
+  ctx.beginPath(); ctx.roundRect(-11, 0, 22, 300, 8); fillStroke(ctx, K.leather, 5);
+  ctx.beginPath(); ctx.roundRect(-13, 270, 26, 34, 8); fillStroke(ctx, K.gold, 5);
+  ctx.beginPath(); ctx.roundRect(-7, -58, 14, 54, 4); fillStroke(ctx, K.leatherD, 5);
+  ctx.beginPath(); ctx.roundRect(-42, -10, 84, 14, 6); fillStroke(ctx, K.gold, 5);
+  disc(ctx, 0, -66, 12, K.gold, 5);
+  ctx.restore();
+  // mail coif over the neck
+  ctx.beginPath(); ctx.moveTo(194, 226); ctx.lineTo(186, 302); ctx.quadraticCurveTo(256, 352, 326, 302); ctx.lineTo(318, 226); ctx.closePath(); fillStroke(ctx, K.steel);
+  ctx.save(); ctx.clip(); ctx.strokeStyle = 'rgba(40,46,54,0.35)'; ctx.lineWidth = 2.5;
+  for (let y = 236; y < 350; y += 11) for (let x = 186 + ((y / 11) % 2) * 6; x < 330; x += 12) { ctx.beginPath(); ctx.arc(x, y, 4, 0.2, Math.PI - 0.2); ctx.stroke(); }
+  ctx.restore();
+  // pauldrons
+  for (const [x, r] of [[158, -0.35], [354, 0.35]]) {
+    ctx.beginPath(); ctx.ellipse(x, 350, 50, 36, r, 0, Math.PI * 2); fillStroke(ctx, K.steel);
+    ctx.strokeStyle = K.steelD; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(x, 362, 40, 22, r, 0.2, Math.PI - 0.2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.ellipse(x - 6, 342, 30, 18, r, Math.PI * 1.1, Math.PI * 1.6); ctx.stroke();
+  }
+  // sword arm
+  if (beckon) {
+    limb(ctx, [[354, 356], [424, 322], [466, 270]], 38, K.steel);
+    disc(ctx, 424, 322, 20, K.steelL);
+    // open hand, fingers toward the next station
+    ctx.save(); ctx.translate(470, 262); ctx.rotate(-0.85);
+    ctx.beginPath(); ctx.roundRect(-16, -30, 32, 40, 10); fillStroke(ctx, K.steelD, 5);
+    ctx.strokeStyle = K.ink; ctx.lineWidth = 3;
+    for (const x of [-8, 0, 8]) { ctx.beginPath(); ctx.moveTo(x, -26); ctx.lineTo(x, -10); ctx.stroke(); }
+    ctx.restore();
+  } else if (half) {
+    limb(ctx, [[354, 362], [388, 472], [418, 418]], 40, K.steel);
+    disc(ctx, 388, 472, 21, K.steelL);
+    disc(ctx, 420, 412, 21, K.steelD);
+  } else {
+    limb(ctx, [[354, 362], [372, 470], [330, 556]], 40, K.steel);
+    disc(ctx, 372, 470, 21, K.steelL);
+    disc(ctx, 328, 556, 22, K.steelD);
+  }
+  // face
+  ctx.beginPath(); ctx.ellipse(256, 254, 44, 54, 0, 0, Math.PI * 2); fillStroke(ctx, K.skin, 5);
+  ctx.save(); ctx.beginPath(); ctx.ellipse(256, 254, 44, 54, 0, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = 'rgba(170,100,70,0.35)'; ctx.beginPath(); ctx.ellipse(300, 260, 30, 60, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(214,110,90,0.35)'; ctx.beginPath(); ctx.ellipse(230, 266, 10, 7, 0, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.ellipse(284, 266, 10, 7, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  // beard
+  ctx.beginPath(); ctx.moveTo(213, 258); ctx.quadraticCurveTo(212, 326, 256, 330); ctx.quadraticCurveTo(300, 326, 299, 258); ctx.quadraticCurveTo(286, 288, 256, 290); ctx.quadraticCurveTo(226, 288, 213, 258); ctx.closePath();
+  fillStroke(ctx, K.beard, 4);
+  // mouth
+  if (open) { ctx.beginPath(); ctx.ellipse(256, 303, 12, 10, 0, 0, Math.PI * 2); fillStroke(ctx, '#3a1712', 4); ctx.fillStyle = '#b55a4d'; ctx.beginPath(); ctx.ellipse(256, 309, 7, 3.5, 0, 0, Math.PI * 2); ctx.fill(); }
+  else if (half) { ctx.beginPath(); ctx.ellipse(256, 301, 11, 5, 0, 0, Math.PI * 2); fillStroke(ctx, '#3a1712', 4); }
+  else { ctx.beginPath(); ctx.moveTo(244, 299); ctx.quadraticCurveTo(256, 305, 268, 299); ctx.strokeStyle = K.ink; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.stroke(); }
+  // moustache
+  for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(256, 289); ctx.quadraticCurveTo(256 + s * 16, 286, 256 + s * 26, 298); ctx.lineCap = 'round'; ctx.strokeStyle = K.ink; ctx.lineWidth = 13; ctx.stroke(); ctx.strokeStyle = K.beard; ctx.lineWidth = 7; ctx.stroke(); }
+  // nose, eyes, brows
+  ctx.strokeStyle = K.skinD; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(257, 250); ctx.lineTo(250, 274); ctx.lineTo(262, 276); ctx.stroke();
+  for (const x of [239, 273]) { ctx.fillStyle = '#f7f0e6'; ctx.beginPath(); ctx.ellipse(x, 246, 7.5, 5.5, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = K.ink; ctx.beginPath(); ctx.arc(x + 1, 247, 3.8, 0, Math.PI * 2); ctx.fill(); }
+  const by = (open || half) ? -4 : 0;
+  ctx.strokeStyle = K.ink; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(227, 234 + by); ctx.lineTo(248, 231 + by); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(264, 231 + by); ctx.lineTo(285, 234 + by); ctx.stroke();
+  // helmet (bascinet with the visor raised)
+  ctx.beginPath(); ctx.moveTo(186, 266); ctx.lineTo(184, 206); ctx.ellipse(256, 206, 72, 82, 0, Math.PI, Math.PI * 2); ctx.lineTo(326, 266);
+  ctx.lineTo(306, 266); ctx.lineTo(304, 214); ctx.quadraticCurveTo(256, 200, 208, 214); ctx.lineTo(206, 266); ctx.closePath();
+  fillStroke(ctx, K.steel);
+  ctx.save(); ctx.clip(); ctx.fillStyle = 'rgba(70,80,90,0.35)'; ctx.fillRect(282, 110, 60, 170); ctx.restore();
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.ellipse(256, 206, 58, 70, 0, Math.PI * 1.08, Math.PI * 1.42); ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(192, 196, 128, 16, 7); fillStroke(ctx, K.steelL, 4);
+  ctx.fillStyle = K.ink; for (const x of [204, 230, 282, 308]) { ctx.beginPath(); ctx.arc(x, 204, 2.6, 0, Math.PI * 2); ctx.fill(); }
+  ctx.beginPath(); ctx.moveTo(200, 194); ctx.quadraticCurveTo(256, 112, 312, 194); ctx.quadraticCurveTo(256, 168, 200, 194); ctx.closePath(); fillStroke(ctx, K.steelD, 5);
+  ctx.strokeStyle = K.ink; ctx.lineWidth = 3; for (const x of [236, 256, 276]) { ctx.beginPath(); ctx.moveTo(x, 162); ctx.lineTo(x, 176); ctx.stroke(); }
+  // plume
+  ctx.beginPath(); ctx.moveTo(262, 130); ctx.bezierCurveTo(250, 70, 300, 38, 352, 56); ctx.bezierCurveTo(318, 70, 300, 98, 292, 136); ctx.closePath(); fillStroke(ctx, K.red, 5);
+  ctx.strokeStyle = K.redD; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(276, 128); ctx.bezierCurveTo(276, 92, 300, 66, 340, 58); ctx.stroke();
+  disc(ctx, 274, 134, 9, K.gold, 4);
+  // shield (on top of the shield arm)
+  shieldPath(ctx); fillStroke(ctx, K.blue, 7);
+  ctx.save(); shieldPath(ctx); ctx.clip(); ctx.strokeStyle = K.gold; ctx.lineWidth = 24; shieldPath(ctx); ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(134, 460, 90, 240); ctx.restore();
+  shieldPath(ctx); ctx.lineWidth = 7; ctx.strokeStyle = K.ink; ctx.stroke();
+  // the keep on the shield
+  ctx.beginPath(); ctx.moveTo(110, 612); ctx.lineTo(110, 532); ctx.lineTo(106, 532); ctx.lineTo(106, 512); ctx.lineTo(118, 512); ctx.lineTo(118, 522); ctx.lineTo(128, 522); ctx.lineTo(128, 512); ctx.lineTo(140, 512);
+  ctx.lineTo(140, 522); ctx.lineTo(150, 522); ctx.lineTo(150, 512); ctx.lineTo(162, 512); ctx.lineTo(162, 532); ctx.lineTo(158, 532); ctx.lineTo(158, 612); ctx.closePath(); fillStroke(ctx, K.gold, 4);
+  ctx.beginPath(); ctx.moveTo(126, 612); ctx.lineTo(126, 590); ctx.arc(134, 590, 8, Math.PI, 0); ctx.lineTo(142, 612); ctx.closePath(); fillStroke(ctx, K.blueD, 3);
+  ctx.restore();
+  // light from the left: one gentle gradient over everything
+  ctx.save(); ctx.globalCompositeOperation = 'source-atop';
+  const g = ctx.createLinearGradient(60, 0, 460, 0); g.addColorStop(0, 'rgba(255,248,235,0.12)'); g.addColorStop(0.55, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(10,8,20,0.16)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, FW, FH); ctx.restore();
+}
+function silhouette(src, color) {
+  const c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
+  const x = c.getContext('2d'); x.drawImage(src, 0, 0); x.globalCompositeOperation = 'source-in'; x.fillStyle = color; x.fillRect(0, 0, c.width, c.height); return c;
+}
+function stamp(ctx, img, r, n = 28) { for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; ctx.drawImage(img, Math.cos(a) * r, Math.sin(a) * r); } }
+function buildSheets() {
+  const front = document.createElement('canvas'); front.width = FW * 4; front.height = FH;
+  const back = document.createElement('canvas'); back.width = FW * 4; back.height = FH;
+  const fctx = front.getContext('2d'), bctx = back.getContext('2d');
+  const frames = [];
+  for (let f = 0; f < 4; f++) {
+    const fig = document.createElement('canvas'); fig.width = FW; fig.height = FH; drawKnight(fig.getContext('2d'), f);
+    const dark = silhouette(fig, 'rgba(20,18,16,0.5)'), white = silhouette(fig, '#fbf8f2'), card = silhouette(fig, '#a98c66');
+    const one = document.createElement('canvas'); one.width = FW; one.height = FH; const o = one.getContext('2d');
+    stamp(o, dark, 14); stamp(o, white, 10); o.drawImage(fig, 0, 0);
+    fctx.drawImage(one, f * FW, 0);
+    // back: white die-cut edge, grey board inside
+    const b = document.createElement('canvas'); b.width = FW; b.height = FH; const bx = b.getContext('2d');
+    stamp(bx, dark, 14); stamp(bx, white, 10); bx.drawImage(card, 0, 0);
+    bx.globalCompositeOperation = 'source-atop'; bx.strokeStyle = 'rgba(80,60,40,0.25)'; bx.lineWidth = 2;
+    for (let y = 0; y < FH; y += 9) { bx.beginPath(); bx.moveTo(0, y); bx.lineTo(FW, y + 3); bx.stroke(); }
+    bctx.drawImage(b, f * FW, 0);
+    frames.push(one);
+  }
+  return { front, back, frames };
+}
+
+/* ============================================================
+   Generated media: paper stage, scroll, chevrons, blob shadow
+   ============================================================ */
+function canvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function paperGrain(ctx, w, h, seed = 1, alpha = 0.05) {
+  let s = seed * 9301; const rnd = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+  for (let i = 0; i < (w * h) / 220; i++) { ctx.fillStyle = `rgba(90,70,40,${alpha * rnd()})`; ctx.fillRect(rnd() * w, rnd() * h, 1 + rnd() * 3, 1); }
+}
+function drawBackdrop() {
+  const W = 1024, H = 1080, c = canvas(W, H), x = c.getContext('2d');
+  const arch = () => { x.beginPath(); x.moveTo(36, H - 4); x.lineTo(36, 430); x.bezierCurveTo(36, 120, 300, 30, 512, 30); x.bezierCurveTo(724, 30, 988, 120, 988, 430); x.lineTo(988, H - 4); x.closePath(); };
+  arch(); x.fillStyle = '#f0e6cf'; x.fill();
+  x.save(); arch(); x.clip();
+  let g = x.createLinearGradient(0, 30, 0, 700); g.addColorStop(0, 'rgba(150,180,200,0.55)'); g.addColorStop(1, 'rgba(150,180,200,0)'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  g = x.createLinearGradient(0, 820, 0, H); g.addColorStop(0, 'rgba(200,160,90,0)'); g.addColorStop(1, 'rgba(200,160,90,0.6)'); x.fillStyle = g; x.fillRect(0, 780, W, H);
+  paperGrain(x, W, H, 3, 0.08);
+  // the keep, ink on paper
+  x.lineJoin = 'round'; x.lineCap = 'round';
+  x.fillStyle = '#e4d2ad'; x.strokeStyle = '#2b2118'; x.lineWidth = 6;
+  x.beginPath(); x.rect(392, 340, 240, 560); x.fill(); x.stroke();
+  x.strokeStyle = 'rgba(43,33,24,0.35)'; x.lineWidth = 2.5;
+  for (let y = 380, r = 0; y < 900; y += 40, r++) { x.beginPath(); x.moveTo(392, y); x.lineTo(632, y); x.stroke(); for (let k = 392 + (r % 2) * 30 + 30; k < 632; k += 60) { x.beginPath(); x.moveTo(k, y - 40); x.lineTo(k, y); x.stroke(); } }
+  x.fillStyle = '#8f5a3c'; x.strokeStyle = '#2b2118'; x.lineWidth = 6;
+  x.beginPath(); x.moveTo(366, 344); x.lineTo(658, 344); x.lineTo(512, 176); x.closePath(); x.fill(); x.stroke();
+  x.strokeStyle = 'rgba(43,33,24,0.5)'; x.lineWidth = 2.5; for (let k = 0; k < 14; k++) { const t = k / 14; x.beginPath(); x.moveTo(lerp(380, 512, t * 0.95), lerp(340, 186, t * 0.95)); x.lineTo(lerp(380, 512, t * 0.95) + 22, 340); x.stroke(); }
+  x.strokeStyle = '#2b2118'; x.lineWidth = 4; x.beginPath(); x.moveTo(512, 176); x.lineTo(512, 120); x.stroke();
+  x.fillStyle = '#b63a2d'; x.beginPath(); x.moveTo(512, 120); x.quadraticCurveTo(545, 128, 570, 122); x.quadraticCurveTo(548, 138, 512, 150); x.closePath(); x.fill(); x.lineWidth = 3; x.stroke();
+  x.fillStyle = '#3b2b20'; x.beginPath(); x.moveTo(467, 900); x.lineTo(467, 800); x.arc(512, 800, 45, Math.PI, 0); x.lineTo(557, 900); x.closePath(); x.fill();
+  for (const [wx, wy] of [[470, 470], [544, 470], [507, 610]]) { x.beginPath(); x.roundRect(wx, wy, 14, 60, 7); x.fill(); }
+  // low walls beside it, with a gap
+  x.fillStyle = '#ddc9a2'; x.strokeStyle = '#2b2118'; x.lineWidth = 5;
+  x.beginPath(); x.moveTo(84, 900); x.lineTo(84, 820); x.lineTo(140, 812); x.lineTo(200, 828); x.lineTo(268, 806); x.lineTo(330, 822); x.lineTo(330, 900); x.closePath(); x.fill(); x.stroke();
+  x.beginPath(); x.moveTo(694, 900); x.lineTo(694, 836); x.lineTo(760, 826); x.lineTo(830, 842); x.lineTo(900, 830); x.lineTo(940, 850); x.lineTo(940, 900); x.closePath(); x.fill(); x.stroke();
+  x.strokeStyle = '#2b2118'; x.lineWidth = 5; x.beginPath(); x.moveTo(36, 900); x.lineTo(988, 900); x.stroke();
+  x.lineWidth = 3; for (const [bx, by] of [[230, 250], [262, 230], [770, 210], [806, 236]]) { x.beginPath(); x.moveTo(bx - 14, by - 6); x.quadraticCurveTo(bx - 6, by - 8, bx, by); x.quadraticCurveTo(bx + 6, by - 8, bx + 14, by - 6); x.stroke(); }
+  x.restore();
+  arch(); x.strokeStyle = '#2b2118'; x.lineWidth = 8; x.stroke();
+  x.save(); x.translate(512, H / 2); x.scale(0.955, 0.965); x.translate(-512, -H / 2); arch(); x.lineWidth = 3; x.stroke(); x.restore();
+  return c;
+}
+function drawStageTop(name) {
+  const W = 1024, H = 560, c = canvas(W, H), x = c.getContext('2d');
+  x.fillStyle = '#efe4cb'; x.fillRect(0, 0, W, H); paperGrain(x, W, H, 7, 0.08);
+  x.strokeStyle = '#2b2118'; x.lineWidth = 6; x.strokeRect(22, 22, W - 44, H - 44); x.lineWidth = 2.5; x.strokeRect(38, 38, W - 76, H - 76);
+  x.fillStyle = '#2b2118'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.font = `600 58px ${SERIF}`; x.letterSpacing = '8px';
+  x.fillText(String(name).toUpperCase(), W / 2, H - 120);
+  x.letterSpacing = '0px';
+  x.lineWidth = 2.5; x.beginPath(); x.moveTo(140, H - 70); x.lineTo(W - 140, H - 70); x.stroke();
+  for (const dx of [-1, 1]) { x.save(); x.translate(W / 2 + dx * 0, H - 70); x.rotate(Math.PI / 4); x.fillRect(-7, -7, 14, 14); x.restore(); }
+  return c;
+}
+function drawChevrons() {
+  const c = canvas(128, 512), x = c.getContext('2d');
+  for (let i = 0; i < 4; i++) {
+    const y = 40 + i * 128;
+    x.beginPath(); x.moveTo(18, y + 64); x.lineTo(64, y + 16); x.lineTo(110, y + 64); x.lineTo(110, y + 92); x.lineTo(64, y + 44); x.lineTo(18, y + 92); x.closePath();
+    x.fillStyle = '#f2b84b'; x.fill(); x.lineWidth = 5; x.strokeStyle = 'rgba(40,26,6,0.55)'; x.stroke();
+  }
+  return c;
+}
+function drawFade() {
+  const c = canvas(8, 256), x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, '#000'); g.addColorStop(0.25, '#fff'); g.addColorStop(0.7, '#fff'); g.addColorStop(1, '#000');
+  x.fillStyle = g; x.fillRect(0, 0, 8, 256); return c;
+}
+function drawBlob() {
+  const c = canvas(256, 128), x = c.getContext('2d');
+  const g = x.createRadialGradient(128, 64, 4, 128, 64, 64); g.addColorStop(0, 'rgba(20,20,24,0.42)'); g.addColorStop(1, 'rgba(20,20,24,0)');
+  x.setTransform(2, 0, 0, 1, 0, 0); x.fillStyle = g; x.beginPath(); x.arc(64, 64, 64, 0, Math.PI * 2); x.fill(); return c;
+}
+function drawPaving() {
+  const c = canvas(512, 512), x = c.getContext('2d');
+  x.fillStyle = '#cfcdc6'; x.fillRect(0, 0, 512, 512);
+  let s = 11; const rnd = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { x.fillStyle = `rgba(${150 + rnd() * 30},${148 + rnd() * 30},${140 + rnd() * 30},0.12)`; x.fillRect(i * 128, j * 128, 128, 128); }
+  x.strokeStyle = 'rgba(120,116,108,0.35)'; x.lineWidth = 2;
+  for (let i = 0; i <= 4; i++) { x.beginPath(); x.moveTo(i * 128, 0); x.lineTo(i * 128, 512); x.stroke(); x.beginPath(); x.moveTo(0, i * 128); x.lineTo(512, i * 128); x.stroke(); }
+  return c;
+}
+
+/* ============================================================
+   Bubble / pip / scroll canvases (text drawn at reading size)
+   ============================================================ */
+function wrapTokens(ctx, tokens, maxW) {
+  const space = ctx.measureText(' ').width; const lines = []; let cur = [], x = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const w = ctx.measureText(tokens[i].text).width;
+    if (cur.length && x + space + w > maxW) { lines.push(cur); cur = []; x = 0; }
+    const px = cur.length ? x + space : 0; cur.push({ i, x: px, w }); x = px + w;
+  }
+  if (cur.length) lines.push(cur);
+  return lines;
+}
+function bubblePath(ctx, x, y, w, h, r, side, tailH) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r); ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  let tipX;
+  if (side === 'left') { tipX = x + w - 26; ctx.lineTo(x + w - 64, y + h); ctx.lineTo(tipX, y + h + tailH); ctx.lineTo(x + w - 128, y + h); }
+  else { tipX = x + 26; ctx.lineTo(x + 128, y + h); ctx.lineTo(tipX, y + h + tailH); ctx.lineTo(x + 64, y + h); }
+  ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r); ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r); ctx.closePath();
+  return tipX;
+}
+/** Draws the speech bubble; returns { resized, tipX, w, h }. Text 64 px of a 1024 px = 1 m canvas, 6.25 cm letters. */
+function drawBubble(c, o) {
+  const pad = 54, font = 64, lh = 82, nameF = 36, footF = 38, tailH = 58;
+  const ctx = c.getContext('2d');
+  ctx.font = `500 ${font}px ${SANS}`;
+  const lines = wrapTokens(ctx, o.tokens, 1024 - 2 * pad - 8);
+  let maxLine = 0; for (const l of lines) { const e = l[l.length - 1]; maxLine = Math.max(maxLine, e.x + e.w); }
+  ctx.font = `700 ${nameF}px ${SANS}`; ctx.letterSpacing = '4px'; const nameW = ctx.measureText(o.name.toUpperCase()).width; ctx.letterSpacing = '0px';
+  ctx.font = `500 ${footF}px ${SANS}`; const footW = o.footer ? ctx.measureText(o.footer).width : 0;
+  const W = Math.ceil(clamp(Math.max(maxLine, nameW, footW) + 2 * pad + 8, 440, 1024));
+  const bodyH = Math.ceil(pad * 0.78 + nameF * 1.55 + lines.length * lh + (o.reserveFooter ? footF * 1.9 : 0) + pad * 0.5);
+  const H = bodyH + tailH + 6;
+  let resized = false;
+  if (c.width !== W || c.height !== H) { c.width = W; c.height = H; resized = true; }
+  ctx.clearRect(0, 0, W, H);
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.0)';
+  const tipX = bubblePath(ctx, 4, 4, W - 8, bodyH - 4, 44, o.side, tailH);
+  ctx.fillStyle = 'rgba(16,19,26,0.92)'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.stroke(); ctx.restore();
+  // name
+  ctx.font = `700 ${nameF}px ${SANS}`; ctx.letterSpacing = '4px'; ctx.fillStyle = '#f2b84b'; ctx.textBaseline = 'alphabetic';
+  let y = pad * 0.78 + nameF; ctx.fillText(o.name.toUpperCase(), pad, y); ctx.letterSpacing = '0px';
+  // line, word by word
+  ctx.font = `500 ${font}px ${SANS}`;
+  y += nameF * 0.55 + lh * 0.82;
+  for (const l of lines) {
+    for (const t of l) {
+      const reading = o.active >= -1 && o.reading;
+      let col = '#f4efe6';
+      if (reading) col = t.i < o.active ? '#f4efe6' : t.i === o.active ? '#f6c45a' : 'rgba(244,239,230,0.46)';
+      ctx.fillStyle = col; ctx.fillText(o.tokens[t.i].text, pad + t.x, y);
+      if (reading && t.i === o.active) { ctx.fillRect(pad + t.x, y + 12, t.w, 5); }
+    }
+    y += lh;
+  }
+  if (o.footer) {
+    ctx.font = `500 ${footF}px ${SANS}`; ctx.fillStyle = o.footerColor || '#aaa498';
+    ctx.fillText(o.footer, pad, bodyH - pad * 0.5 - 6);
+  }
+  return { resized, tipX, w: W, h: H };
+}
+function drawPip(c, name, side) {
+  const W = 560, H = 150, ctx = c.getContext('2d'); let resized = false;
+  if (c.width !== W || c.height !== H) { c.width = W; c.height = H; resized = true; }
+  ctx.clearRect(0, 0, W, H);
+  ctx.font = `700 34px ${SANS}`; ctx.letterSpacing = '4px';
+  const nw = ctx.measureText(name.toUpperCase()).width; const bw = Math.min(W - 8, nw + 150);
+  const bx = side === 'left' ? W - 4 - bw : 4;
+  const tipX = bubblePath(ctx, bx, 4, bw, 92, 40, side, 44);
+  ctx.fillStyle = 'rgba(16,19,26,0.9)'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.stroke();
+  ctx.fillStyle = '#f2b84b'; ctx.textBaseline = 'middle'; ctx.fillText(name.toUpperCase(), bx + 34, 52); ctx.letterSpacing = '0px';
+  ctx.fillStyle = '#f4efe6'; for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(bx + 34 + nw + 30 + i * 22, 54, 6, 0, Math.PI * 2); ctx.fill(); }
+  return { resized, tipX, w: W, h: H };
+}
+function drawScroll(c, o) {
+  const W = 1024, pad = 110, font = 58, lh = 76, ctx = c.getContext('2d');
+  ctx.font = `500 ${font}px ${SERIF}`;
+  const lines = wrapTokens(ctx, o.tokens, W - 2 * pad);
+  const H = Math.ceil(70 + lines.length * lh + (o.footer ? 62 : 18) + 40);
+  let resized = false; if (c.height !== H || c.width !== W) { c.width = W; c.height = H; resized = true; }
+  ctx.clearRect(0, 0, W, H);
+  // paper body
+  ctx.fillStyle = '#f2e8d0'; ctx.beginPath(); ctx.roundRect(46, 10, W - 92, H - 20, 10); ctx.fill();
+  paperGrain(ctx, W, H, 5, 0.09);
+  ctx.strokeStyle = '#2b2118'; ctx.lineWidth = 5; ctx.beginPath(); ctx.roundRect(46, 10, W - 92, H - 20, 10); ctx.stroke();
+  // rolled ends
+  for (const x0 of [8, W - 64]) {
+    const g = ctx.createLinearGradient(x0, 0, x0 + 56, 0); g.addColorStop(0, '#b89a6a'); g.addColorStop(0.45, '#f4ead4'); g.addColorStop(1, '#a8885a');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(x0, 0, 56, H, 22); ctx.fill(); ctx.lineWidth = 5; ctx.stroke();
+  }
+  ctx.font = `500 ${font}px ${SERIF}`; ctx.textBaseline = 'alphabetic';
+  let y = 60 + font * 0.8;
+  for (const l of lines) {
+    const lw = l[l.length - 1].x + l[l.length - 1].w; const x0 = (W - lw) / 2;
+    for (const t of l) {
+      let col = '#2b2118';
+      if (o.reading) col = t.i < o.active ? '#2b2118' : t.i === o.active ? '#a3271f' : 'rgba(43,33,24,0.4)';
+      ctx.fillStyle = col; ctx.fillText(o.tokens[t.i].text, x0 + t.x, y);
+    }
+    y += lh;
+  }
+  if (o.footer) { ctx.font = `italic 36px ${SERIF}`; ctx.fillStyle = 'rgba(43,33,24,0.65)'; ctx.textAlign = 'center'; ctx.fillText(o.footer, W / 2, H - 42); ctx.textAlign = 'left'; }
+  return { resized, w: W, h: H };
+}
+
+/* ============================================================
+   Renderer, scene, the place (stand-in shapes, flat light)
+   ============================================================ */
+const wrap = $('#canvasWrap');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+wrap.appendChild(renderer.domElement);
+const maxAniso = renderer.capabilities.getMaxAnisotropy();
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xe4e9ee);
+scene.fog = new THREE.Fog(0xe4e9ee, 70, 240);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 600);
+camera.rotation.order = 'YXZ';
+scene.add(new THREE.HemisphereLight(0xffffff, 0xbdb8ad, 2.4));
+const sun = new THREE.DirectionalLight(0xffffff, 1.1); sun.position.set(-30, 60, 20); scene.add(sun);
+
+function tex(c, srgb = true) { const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = maxAniso; return t; }
+const grey = (hex) => new THREE.MeshLambertMaterial({ color: hex });
+function box(w, h, d, mat, x, y, z) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); scene.add(m); return m; }
+
+(function buildPlace() {
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), grey(0xc6c9c1)); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; scene.add(ground);
+  const pave = tex(drawPaving()); pave.wrapS = pave.wrapT = THREE.RepeatWrapping; pave.repeat.set(10, 10);
+  const sq = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambertMaterial({ map: pave })); sq.rotation.x = -Math.PI / 2; scene.add(sq);
+  const pathMat = grey(0xd5d2ca);
+  const south = new THREE.Mesh(new THREE.PlaneGeometry(4, 60), pathMat); south.rotation.x = -Math.PI / 2; south.position.set(0, 0.002, 50); scene.add(south);
+  const east = new THREE.Mesh(new THREE.PlaneGeometry(90, 4), pathMat); east.rotation.x = -Math.PI / 2; east.position.set(65, 0.002, 0); scene.add(east);
+  // guild house front (north side)
+  const wall = grey(0xbab7af);
+  box(40, 6, 3, wall, 0, 3, -21.5);
+  box(40.6, 0.35, 3.4, grey(0xa9a69e), 0, 6.1, -21.5);
+  box(1.8, 2.6, 0.2, grey(0x8c8882), 0, 1.3, -19.95);
+  for (const x of [-8, 8]) box(1.6, 1.9, 0.18, grey(0x9ba1a7), x, 3.4, -19.96);
+  // ruined wall (north-west corner), with a gap
+  const ruin = grey(0xaaa69d);
+  for (const [x0, x1, h] of [[-18, -16.4, 1.05], [-16.4, -14.9, 0.82], [-13.4, -11.8, 0.95], [-11.8, -10, 0.66]]) box(x1 - x0, h, 0.7, ruin, (x0 + x1) / 2, h / 2, -13);
+  // bench and tree
+  const bench = grey(0x9d9890);
+  box(1.8, 0.08, 0.5, bench, 7, 0.45, 7);
+  for (const dx of [-0.75, 0.75]) box(0.08, 0.45, 0.45, bench, 7 + dx, 0.22, 7);
+  box(1.8, 0.4, 0.06, bench, 7, 0.75, 7.24);
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 2.6, 10), grey(0x9a948b)); trunk.position.set(11, 1.3, -7); scene.add(trunk);
+  const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.1, 1), new THREE.MeshLambertMaterial({ color: 0xa9b2a2, flatShading: true })); crown.position.set(11, 3.9, -7); scene.add(crown);
+  // station circles and anchors (faint)
+  for (const st of model.stations) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(st.radiusM - 0.07, st.radiusM + 0.07, 160), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(st.anchor.x, 0.012, st.anchor.z); scene.add(ring);
+    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.22, 32), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.28, depthWrite: false }));
+    dot.rotation.x = -Math.PI / 2; dot.position.set(st.anchor.x, 0.013, st.anchor.z); scene.add(dot);
+  }
+  // station 2's other block: a plain stand-in item
+  const s2 = model.stations[1].anchor;
+  box(0.5, 1.1, 0.5, grey(0x8f949a), s2.x - 1, 0.55, s2.z + 2.2);
+  box(0.7, 0.06, 0.6, grey(0x7d8287), s2.x - 1, 1.13, s2.z + 2.2);
+})();
+
+/* Shared textures: ONE image asset for the character, used by every appearance */
+const sheets = buildSheets();
+const sheetFrontTex = tex(sheets.front), sheetBackTex = tex(sheets.back);
+const backdropTex = tex(drawBackdrop());
+const chevronTex = tex(drawChevrons()); chevronTex.wrapT = THREE.RepeatWrapping; chevronTex.repeat.set(1, 1.2);
+const fadeTex = tex(drawFade(), false);
+const blobTex = tex(drawBlob());
+const PLANE_H = FH / (FIG_BOTTOM - FIG_TOP);           // plane height per metre of figure
+const FIG_OFFSET = (FH - FIG_BOTTOM) / (FIG_BOTTOM - FIG_TOP);
+function figureGeo() { const g = new THREE.PlaneGeometry(PLANE_H * 0.5, PLANE_H); g.translate(0, PLANE_H / 2 - FIG_OFFSET, 0); return g; }
+const FIG_GEO = figureGeo();
+
+/* ============================================================
+   Audio: a tone pattern stands in for narration (never speech)
+   ============================================================ */
+let actx = null, master = null, soundOn = true, userGestured = false;
+function ensureAudio() {
+  if (actx || !soundOn || !userGestured) return;
+  try { actx = new AudioContext(); master = actx.createGain(); master.gain.value = 0.85; master.connect(actx.destination); } catch { actx = null; }
+}
+function scheduleVoice(ap, fromMs) {
+  if (!actx || !soundOn || !ap.timing) return [];
+  const nodes = []; const now = actx.currentTime + 0.03; const t0 = now - fromMs / 1000;
+  ap.timing.segments.forEach((s, i) => {
+    if (s.endMs <= fromMs) return;
+    const st = Math.max(now, t0 + s.startMs / 1000), en = t0 + s.endMs / 1000; if (en - st < 0.04) return;
+    const word = ap.line.slice(s.from, s.to); const end = /[.!?]$/.test(word);
+    const letters = word.replace(/[^\p{L}]/gu, '').length || 1; const syl = Math.max(1, Math.round(letters / 3));
+    const base = 124 * (1 + 0.07 * Math.sin(i * 1.7));
+    const o = actx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(base * 1.07, st); o.frequency.linearRampToValueAtTime(end ? base * 0.8 : base * 0.97, en);
+    const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 620 + (i % 3) * 170; bp.Q.value = 1.3;
+    const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
+    const g = actx.createGain(); g.gain.setValueAtTime(0, st);
+    const d = (en - st) / syl;
+    for (let k = 0; k < syl; k++) { g.gain.linearRampToValueAtTime(0.32, st + d * k + Math.min(0.03, d * 0.3)); g.gain.linearRampToValueAtTime(0.1, st + d * (k + 0.92)); }
+    g.gain.linearRampToValueAtTime(0, en);
+    o.connect(bp).connect(lp).connect(g).connect(master); o.start(st); o.stop(en + 0.05); nodes.push(o);
+  });
+  return nodes;
+}
+
+/* ============================================================
+   One appearance of the character at one station
+   ============================================================ */
+const state = { mode: 'visitor', view: 'bubble', framed: false, fieldsOpen: false, selected: 0, snapFrames: 0 };
+let clockMs = 0;
+
+class Appearance3D {
+  constructor(st, index) {
+    this.st = st; this.index = index; this.ap = st.appearance;
+    this.root = new THREE.Group(); scene.add(this.root);
+    this.turn = new THREE.Group(); this.root.add(this.turn);
+    this.body = new THREE.Group(); this.turn.add(this.body);
+    this.frontTex = sheetFrontTex.clone(); this.frontTex.repeat.set(0.25, 1);
+    this.backTex = sheetBackTex.clone(); this.backTex.repeat.set(0.25, 1);
+    const matOpts = { transparent: true, alphaTest: 0.03, depthWrite: true };
+    this.front = new THREE.Mesh(FIG_GEO, new THREE.MeshBasicMaterial({ map: this.frontTex, ...matOpts }));
+    this.back = new THREE.Mesh(FIG_GEO, new THREE.MeshBasicMaterial({ map: this.backTex, ...matOpts }));
+    this.back.rotation.y = Math.PI; this.back.position.z = -0.004;
+    this.front.userData.pick = this; this.back.userData.pick = this;
+    this.body.add(this.front, this.back);
+    this.shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.5), new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false }));
+    this.shadow.rotation.x = -Math.PI / 2; this.shadow.position.y = 0.015; this.root.add(this.shadow);
+    // speaking ring at the feet (portrait view)
+    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.56, 64), new THREE.MeshBasicMaterial({ color: 0xf2b84b, transparent: true, opacity: 0, depthWrite: false }));
+    this.ring.rotation.x = -Math.PI / 2; this.ring.position.y = 0.02; this.root.add(this.ring);
+    // bubble + far tag (in world space, facing the camera)
+    this.bubbleCanvas = canvas(16, 16); this.bubbleTex = tex(this.bubbleCanvas);
+    this.bubble = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: this.bubbleTex, transparent: true, depthTest: false, depthWrite: false }));
+    this.bubble.renderOrder = 20; this.bubble.userData.pick = this; scene.add(this.bubble);
+    this.pipCanvas = canvas(16, 16); this.pipTex = tex(this.pipCanvas);
+    this.pip = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: this.pipTex, transparent: true, depthTest: false, depthWrite: false }));
+    this.pip.renderOrder = 19; this.pip.userData.pick = this; scene.add(this.pip);
+    this.bubbleInfo = null; this.pipInfo = null; this.bubbleKey = ''; this.pipKey = '';
+    // beckon arrow on the ground (two-stations view)
+    this.arrow = new THREE.Group(); scene.add(this.arrow);
+    const at = chevronTex.clone();
+    this.arrowTex = at;
+    const arrowMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 4.6), new THREE.MeshBasicMaterial({ map: at, alphaMap: fadeTex, transparent: true, depthWrite: false, opacity: 0 }));
+    arrowMesh.rotation.x = -Math.PI / 2; arrowMesh.position.set(0, 0.02, -3.4); this.arrow.add(arrowMesh); this.arrowMesh = arrowMesh;
+    // pop-up paper stage
+    this.buildPopup();
+    // animation state
+    this.appear = 0; this.open = 0; this.unfold = 0; this.turnYaw = 0; this.openFor = 0;
+    this.speaking = null; this.spoken = false; this.bubbleShut = false; this.notice = 0;
+  }
+  buildPopup() {
+    const g = new THREE.Group(); this.root.add(g); this.pop = g;
+    const topTex = tex(drawStageTop(model.character.name)); this.popTopTex = topTex;
+    const side = new THREE.MeshLambertMaterial({ color: 0xd9ccb0 });
+    const base = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.05, 1.35), [side, side, new THREE.MeshBasicMaterial({ map: topTex }), side, side, side]);
+    base.position.y = 0.025; g.add(base); this.popBase = base;
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(3.3, 1.9), new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, opacity: 0.8 }));
+    sh.rotation.x = -Math.PI / 2; sh.position.y = 0.01; g.add(sh);
+    const bh = 2.25;
+    this.popBack = new THREE.Group(); this.popBack.position.set(0, 0.05, -0.6); g.add(this.popBack);
+    const bgeo = new THREE.PlaneGeometry(2.3, bh * 1080 / 1080 * 1.05); bgeo.translate(0, bh * 1.05 / 2, 0);
+    const bd = new THREE.Mesh(bgeo, new THREE.MeshBasicMaterial({ map: backdropTex, transparent: true, alphaTest: 0.02, side: THREE.DoubleSide }));
+    bd.userData.pick = this; this.popBack.add(bd);
+    this.popFig = new THREE.Group(); this.popFig.position.set(0.15, 0.05, 0.05); g.add(this.popFig);
+    this.popFigTex = sheetFrontTex.clone(); this.popFigTex.repeat.set(0.25, 1);
+    const fig = new THREE.Mesh(FIG_GEO, new THREE.MeshBasicMaterial({ map: this.popFigTex, transparent: true, alphaTest: 0.03, side: THREE.DoubleSide }));
+    fig.scale.setScalar(1.5); fig.userData.pick = this; this.popFig.add(fig);
+    // cardboard tab holding the figure
+    const tab = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.36), new THREE.MeshLambertMaterial({ color: 0xcdbd9c, side: THREE.DoubleSide }));
+    tab.position.set(0, 0.18, -0.14); tab.rotation.x = -0.6; this.popFig.add(tab);
+    this.scrollCanvas = canvas(16, 16); this.scrollTex = tex(this.scrollCanvas);
+    this.scroll = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: this.scrollTex, transparent: true, side: THREE.DoubleSide }));
+    this.scroll.userData.pick = this; this.popBack.add(this.scroll);
+    this.scrollKey = ''; this.scrollInfo = null;
+  }
+  get worldPos() { const p = this.ap.pose.position; return new THREE.Vector3(this.st.anchor.x + p[0], 0, this.st.anchor.z + p[2]); }
+  setFrame(texture, f, mirror) {
+    if (mirror) { texture.repeat.x = -0.25; texture.offset.x = (f + 1) * 0.25; } else { texture.repeat.x = 0.25; texture.offset.x = f * 0.25; }
+  }
+  currentMs() { return this.speaking ? clockMs - this.speaking.t0 : -1; }
+  activeWord() {
+    if (!this.speaking || isStale(this.ap)) return -1;
+    const ms = this.currentMs(); const segs = this.ap.timing.segments;
+    let idx = -1; for (let i = 0; i < segs.length; i++) { if (ms >= segs[i].startMs) idx = i; else break; }
+    return idx;
+  }
+  talkFrame() {
+    if (!this.speaking || isStale(this.ap)) return -1;
+    const ms = this.currentMs();
+    for (const s of this.ap.timing.segments) if (ms >= s.startMs && ms < s.endMs) return Math.floor((ms - s.startMs) / 115) % 2 ? 2 : 1;
+    return 0;
+  }
+  speak(atMs = 0) {
+    this.stop();
+    if (isStale(this.ap)) { this.notice = 4; return; } // honest: the narration no longer matches the line
+    ensureAudio();
+    this.speaking = { t0: clockMs - atMs, nodes: scheduleVoice(this.ap, atMs) };
+    this.bubbleShut = false;
+  }
+  stop() { if (this.speaking) { for (const n of this.speaking.nodes) { try { n.stop(); } catch { /* already stopped */ } } } this.speaking = null; }
+  view() { return this.st.view; }
+  update(dt, cam, ctx) {
+    const ap = this.ap, view = this.view(), snap = state.snapFrames > 0;
+    const wp = this.worldPos; this.root.position.copy(wp); this.root.rotation.y = ap.pose.yawDeg * DEG;
+    const camPos = cam.position;
+    const dxz = Math.hypot(camPos.x - wp.x, camPos.z - wp.z);
+    const inCircle = Math.hypot(camPos.x - this.st.anchor.x, camPos.z - this.st.anchor.z) <= this.st.radiusM;
+    const always = state.mode !== 'visitor';
+    const visible = always || inCircle;
+    const step = (cur, target, rate) => (snap ? target : cur + clamp(target - cur, -rate * dt, rate * dt));
+    this.appear = step(this.appear, visible ? 1 : 0, 1.4);
+    // speaking clock
+    if (this.speaking && this.currentMs() > timingEnd(ap.timing) + 600) { this.stop(); this.spoken = true; }
+    if (!visible && this.speaking) this.stop();
+    this.notice = Math.max(0, this.notice - dt);
+    // facing: rest yaw from the pose, turning up to 60 degrees toward the viewer (not in the editor)
+    let rel = 0;
+    if (state.mode === 'visitor' || state.mode === 'creator') {
+      const toCam = Math.atan2(camPos.x - wp.x, camPos.z - wp.z);
+      rel = clamp(wrapAngle(toCam - ap.pose.yawDeg * DEG), -60 * DEG, 60 * DEG);
+    }
+    if (view === 'popup') rel = 0; // the stage keeps its fixed facing
+    this.turnYaw = snap ? rel : lerp(this.turnYaw, rel, 1 - Math.exp(-dt * 4));
+    this.turn.rotation.y = this.turnYaw;
+    // breathing and a slight sway (calm, about 4 s)
+    const t = clockMs / 1000 + this.index * 1.3;
+    const a = smooth(this.appear);
+    this.body.scale.set(ap.heightM * (0.97 + 0.03 * a), ap.heightM * (0.9 + 0.1 * a) * (1 + 0.006 * Math.sin(t * 1.6)), 1);
+    this.body.rotation.z = 0.007 * Math.sin(t * 0.8);
+    const figVisible = view !== 'popup' && this.appear > 0.001;
+    this.front.visible = this.back.visible = figVisible;
+    this.front.material.opacity = this.back.material.opacity = a;
+    this.shadow.visible = figVisible; this.shadow.material.opacity = a * 0.9; this.shadow.scale.set(ap.heightM * 0.55, ap.heightM * 0.55, 1);
+    // which frame: talking, beckoning, idle
+    const next = model.stations[this.index + 1];
+    const beckonOn = view === 'two-stations' && !!next && !this.speaking && (this.spoken || this.openFor > 6) && dxz < 14 && state.mode === 'visitor';
+    let frame = 0, mirror = false;
+    const tf = this.talkFrame();
+    const usesFrames = view !== 'bubble';
+    if (usesFrames && tf >= 0) frame = tf;
+    else if (beckonOn) {
+      frame = 3;
+      const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
+      const toNext = new THREE.Vector3(next.anchor.x - wp.x, 0, next.anchor.z - wp.z);
+      mirror = right.dot(toNext) < 0;
+    }
+    this.setFrame(this.frontTex, frame, mirror); this.setFrame(this.backTex, frame, !mirror);
+    this.setFrame(this.popFigTex, view === 'popup' && tf >= 0 ? tf : 0, false);
+    // beckon arrow
+    if (next) {
+      const dir = new THREE.Vector3(next.anchor.x - wp.x, 0, next.anchor.z - wp.z).normalize();
+      this.arrow.position.copy(wp); this.arrow.rotation.y = Math.atan2(-dir.x, -dir.z);
+      const target = beckonOn || (view === 'two-stations' && always) ? 0.85 : 0;
+      this.arrowMesh.material.opacity = step(this.arrowMesh.material.opacity, target, 1.2);
+      this.arrow.visible = this.arrowMesh.material.opacity > 0.01;
+      this.arrowTex.offset.y -= dt * 0.22;
+    } else this.arrow.visible = false;
+    // speaking ring (portrait)
+    this.ring.material.opacity = view === 'portrait' && this.speaking ? (0.5 + 0.3 * Math.sin(t * 6)) * a : 0;
+    this.updateBubble(dt, cam, ctx, dxz, visible, snap, step);
+    this.updatePopup(dt, view, visible, dxz, snap, step);
+  }
+  /** bubbleSide is a preference: a side that would leave the screen flips to the side with room (with hysteresis). */
+  bubbleSideResolved(cam) {
+    const p = this.worldPos.clone(); p.y = this.ap.heightM * 0.86; const dist = Math.max(0.5, cam.position.distanceTo(p)); p.project(cam);
+    if (p.z > 1) return this.lastSide || (this.ap.bubbleSide === 'left' ? 'left' : 'right');
+    const tanH = Math.tan((cam.fov * DEG) / 2) * cam.aspect;
+    const floor = state.mode === 'editor' ? 1 : Math.max(1, dist / 2.4);
+    const wNdc = (((this.bubbleInfo ? this.bubbleInfo.w : 900) / 1024) * floor) / (dist * tanH);
+    const over = { right: Math.max(0, p.x + wNdc - 0.97), left: Math.max(0, -0.97 - (p.x - wNdc)) };
+    let pref = this.ap.bubbleSide === 'auto' ? (p.x > 0.05 ? 'left' : 'right') : this.ap.bubbleSide;
+    const other = pref === 'right' ? 'left' : 'right';
+    if (over[pref] > over[other] + 0.08) pref = other;
+    if (this.lastSide && this.lastSide !== pref && Math.abs(over[pref] - over[this.lastSide]) < 0.12) pref = this.lastSide;
+    this.lastSide = pref; this.overflow = over[pref] * (pref === 'right' ? 1 : -1); this.tanH = tanH;
+    return pref;
+  }
+  updateBubble(dt, cam, ctx, dxz, visible, snap, step) {
+    const view = this.view(), ap = this.ap;
+    const usesBubble = view === 'bubble' || view === 'speak' || view === 'two-stations';
+    const openDist = 9;
+    const near = state.mode !== 'visitor' || dxz < openDist;
+    const wantOpen = usesBubble && visible && near && !this.bubbleShut;
+    this.open = step(this.open, wantOpen ? 1 : 0, 2.6);
+    this.openFor = wantOpen ? (snap ? Math.max(this.openFor, 7) : this.openFor + dt) : 0; // a hook snap fast-forwards to the settled state
+    const wantPip = visible && !wantOpen && (usesBubble || view === 'portrait') && state.mode === 'visitor';
+    const side = this.bubbleSideResolved(cam);
+    // content key: redraw only when something visible changes
+    const stale = isStale(ap);
+    const active = view === 'bubble' ? -1 : this.activeWord();
+    const reading = view !== 'bubble' && !!this.speaking && !stale;
+    let footer = null, footerColor = null;
+    if (view === 'speak' || view === 'two-stations') {
+      if (this.notice > 0 || (stale && view === 'speak')) { footer = 'Narration out of date: plain text'; footerColor = '#f0b35a'; }
+      else if (this.speaking) footer = soundOn ? 'Voice: ' + model.character.voiceCredit : 'Sound off: reading along';
+      else if (view === 'speak') footer = this.spoken ? 'Tap to hear again' : 'Tap to hear him';
+    }
+    const name = model.character.name;
+    const key = [name, ap.line, side, active, reading, footer, view].join('|');
+    if (this.open > 0.001 && key !== this.bubbleKey) {
+      this.bubbleKey = key;
+      const info = drawBubble(this.bubbleCanvas, { name, tokens: tokenize(ap.line), active, reading, footer, footerColor, side, reserveFooter: view === 'speak' || view === 'two-stations' });
+      if (info.resized) this.bubbleTex.dispose();
+      this.bubbleTex.needsUpdate = true; this.bubbleInfo = info;
+    }
+    const pipOpacity = step(this.pip.material.opacity, wantPip ? 1 : 0, 2.6);
+    this.pip.material.opacity = pipOpacity;
+    const pkey = name + '|' + side;
+    if (pipOpacity > 0.001 && pkey !== this.pipKey) { this.pipKey = pkey; const info = drawPip(this.pipCanvas, name, side); if (info.resized) this.pipTex.dispose(); this.pipTex.needsUpdate = true; this.pipInfo = info; }
+    // reading floor: never smaller on screen than body text at 2.4 m (off in the editor, which shows real size)
+    const camPos = cam.position;
+    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0), up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
+    const sgn = side === 'right' ? 1 : -1;
+    const tip = this.worldPos; tip.y = ap.heightM * 0.86; tip.addScaledVector(right, sgn * ap.heightM * 0.16);
+    const dist = Math.max(0.5, camPos.distanceTo(tip));
+    const floor = state.mode === 'editor' ? 1 : Math.max(1, dist / 2.4);
+    const place = (mesh, info, s, grow) => {
+      const m = s / 1024;
+      mesh.quaternion.copy(cam.quaternion);
+      mesh.scale.set(info.w * m * grow, info.h * m * grow, 1);
+      mesh.position.copy(tip).addScaledVector(right, (info.w / 2 - info.tipX) * m * grow).addScaledVector(up, (info.h / 2 - 3) * m * grow);
+    };
+    this.bubble.visible = this.open > 0.001 && !!this.bubbleInfo;
+    if (this.bubble.visible) {
+      const e = smooth(this.open); this.bubble.material.opacity = e; place(this.bubble, this.bubbleInfo, floor, 0.86 + 0.14 * e);
+      // still past the edge on both sides: slide it back on screen (the tail keeps pointing roughly at him)
+      if (this.overflow && state.mode !== 'editor') this.bubble.position.addScaledVector(right, -this.overflow * dist * this.tanH);
+    }
+    this.pip.visible = pipOpacity > 0.001 && !!this.pipInfo;
+    if (this.pip.visible) place(this.pip, this.pipInfo, floor * 0.85, 1);
+  }
+  updatePopup(dt, view, visible, dxz, snap, step) {
+    const on = view === 'popup' && this.appear > 0.001;
+    this.pop.visible = on; if (!on) { this.unfold = 0; return; }
+    const ap = this.ap;
+    this.pop.scale.setScalar(ap.heightM / 1.85);
+    const near = state.mode !== 'visitor' || dxz < (this.unfold > 0.5 ? 16 : 12);
+    this.unfold = step(this.unfold, visible && near ? 1 : 0, 0.65);
+    const u = this.unfold;
+    this.popBack.rotation.x = (Math.PI / 2) * (1 - smooth(u / 0.6));
+    this.popFig.rotation.x = (Math.PI / 2) * (1 - smooth((u - 0.25) / 0.6));
+    const su = smooth((u - 0.62) / 0.38);
+    const stale = isStale(ap);
+    const reading = !!this.speaking && !stale;
+    let footer = null;
+    if (this.notice > 0 || stale) footer = 'The narration no longer matches these words';
+    else if (this.speaking) footer = soundOn ? model.character.voiceCredit : 'Sound off: reading along';
+    else footer = this.spoken ? 'Tap the stage to hear him again' : 'Tap the stage to hear him';
+    const key = [ap.line, this.activeWord(), reading, footer].join('|');
+    if (key !== this.scrollKey) { this.scrollKey = key; const info = drawScroll(this.scrollCanvas, { tokens: tokenize(ap.line), active: this.activeWord(), reading, footer }); if (info.resized) this.scrollTex.dispose(); this.scrollTex.needsUpdate = true; this.scrollInfo = info; }
+    const sw = 2.5, sh = sw * this.scrollInfo.h / this.scrollInfo.w;
+    this.scroll.scale.set(sw * Math.max(0.04, su), sh, 1);
+    this.scroll.position.set(0, 2.25 * 1.05 + 0.08 + sh / 2, 0.02);
+    this.scroll.visible = su > 0.01;
+  }
+  refreshName() { const old = this.popTopTex; this.popTopTex = tex(drawStageTop(model.character.name)); this.popBase.material[2].map = this.popTopTex; this.popBase.material[2].needsUpdate = true; old.dispose(); this.bubbleKey = this.pipKey = ''; }
+}
+const apps = model.stations.map((st, i) => new Appearance3D(st, i));
+
+/* ============================================================
+   Camera and walking
+   ============================================================ */
+const EYE = 1.6;
+const visitor = { x: 0, z: 26.5, yaw: 0, pitch: -0.04, path: [], keys: new Set() };
+const creator = { yaw: 0, pitch: -0.12, x: 0, z: 0 };
+const editorCam = { target: new THREE.Vector3(), radius: 17, theta: 0.55, phi: 0.95 };
+function lookYawPitch(from, to) { const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z; return { yaw: Math.atan2(-dx, -dz), pitch: Math.atan2(dy, Math.hypot(dx, dz)) }; }
+function viewpointFor(i) { const wp = apps[i].worldPos; const st = model.stations[i]; const from = i === 0 ? new THREE.Vector3(0, 0, 26) : new THREE.Vector3(20, 0, 0); const d = from.clone().sub(wp).setY(0).normalize(); return wp.clone().addScaledVector(d, 4.8); }
+function headOf(i) { const p = apps[i].worldPos; p.y = model.stations[i].appearance.heightM * 0.82; return p; }
+function stationOf(x, z) { for (let i = 0; i < model.stations.length; i++) { const s = model.stations[i]; if (Math.hypot(x - s.anchor.x, z - s.anchor.z) <= s.radiusM) return i; } return -1; }
+
+function applyCamera() {
+  if (state.mode === 'visitor') { camera.position.set(visitor.x, EYE, visitor.z); camera.rotation.set(visitor.pitch, visitor.yaw, 0); }
+  else if (state.mode === 'creator') { camera.position.set(creator.x, EYE, creator.z); camera.rotation.set(creator.pitch, creator.yaw, 0); }
+  else {
+    const e = editorCam; const s = Math.sin(e.phi);
+    camera.position.set(e.target.x + e.radius * s * Math.sin(e.theta), e.target.y + e.radius * Math.cos(e.phi), e.target.z + e.radius * s * Math.cos(e.theta));
+    camera.lookAt(e.target);
+  }
+  camera.updateMatrixWorld();
+}
+function updateWalk(dt) {
+  if (state.mode !== 'visitor') return;
+  const v = visitor;
+  if (v.path.length) {
+    const tgt = v.path[0]; const dx = tgt.x - v.x, dz = tgt.z - v.z, d = Math.hypot(dx, dz); const sp = 2.6 * dt;
+    if (d <= sp) { v.x = tgt.x; v.z = tgt.z; v.path.shift(); } else { v.x += (dx / d) * sp; v.z += (dz / d) * sp; }
+    // look where you walk, and at the character once he is close
+    const i = stationOf(v.x, v.z); let want;
+    if (i >= 0 && apps[i].worldPos.distanceTo(new THREE.Vector3(v.x, 0, v.z)) < 16) want = lookYawPitch(new THREE.Vector3(v.x, EYE, v.z), headOf(i));
+    else want = { yaw: Math.atan2(-dx, -dz), pitch: -0.04 };
+    v.yaw += wrapAngle(want.yaw - v.yaw) * (1 - Math.exp(-dt * 3)); v.pitch += (want.pitch - v.pitch) * (1 - Math.exp(-dt * 3));
+  }
+  if (v.keys.size) {
+    const f = (v.keys.has('w') || v.keys.has('arrowup') ? 1 : 0) - (v.keys.has('s') || v.keys.has('arrowdown') ? 1 : 0);
+    const r = (v.keys.has('d') ? 1 : 0) - (v.keys.has('a') ? 1 : 0);
+    const turn = (v.keys.has('arrowleft') ? 1 : 0) - (v.keys.has('arrowright') ? 1 : 0);
+    v.yaw += turn * dt * 1.4;
+    const sp = 2.6 * dt; v.x += (-Math.sin(v.yaw) * f + Math.cos(v.yaw) * r) * sp; v.z += (-Math.cos(v.yaw) * f - Math.sin(v.yaw) * r) * sp;
+    if (f || r) v.path = [];
+  }
+}
+
+/* ============================================================
+   Editor handles: a move disc and a turn ring with a knob
+   ============================================================ */
+const handles = new THREE.Group(); scene.add(handles);
+const hMat = (c, o) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, depthTest: false, depthWrite: false });
+const moveDisc = new THREE.Mesh(new THREE.CircleGeometry(0.55, 48), hMat(0xf2b84b, 0.28)); moveDisc.rotation.x = -Math.PI / 2;
+const moveEdge = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.62, 48), hMat(0xf2b84b, 0.95)); moveEdge.rotation.x = -Math.PI / 2;
+const arrowsG = new THREE.Group();
+for (let k = 0; k < 4; k++) { const tri = new THREE.Mesh(new THREE.CircleGeometry(0.14, 3), hMat(0xf2b84b, 0.95)); tri.rotation.x = -Math.PI / 2; const a = k * Math.PI / 2; tri.position.set(Math.sin(a) * 0.82, 0, Math.cos(a) * 0.82); tri.rotation.z = a + Math.PI / 2 + Math.PI / 6; arrowsG.add(tri); }
+const turnRing = new THREE.Mesh(new THREE.RingGeometry(1.12, 1.2, 96), hMat(0xffffff, 0.75)); turnRing.rotation.x = -Math.PI / 2;
+const knob = new THREE.Mesh(new THREE.SphereGeometry(0.17, 20, 12), hMat(0xf2b84b, 1));
+const facing = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 1.1), hMat(0xffffff, 0.8)); facing.rotation.x = -Math.PI / 2;
+const readRing = new THREE.Mesh(new THREE.RingGeometry(8.94, 9.06, 160), hMat(0xf2b84b, 0.35));
+readRing.rotation.x = -Math.PI / 2;
+handles.add(moveDisc, moveEdge, arrowsG, turnRing, knob, facing, readRing);
+[moveDisc, moveEdge, arrowsG, turnRing, knob, facing, readRing].forEach((m) => { m.renderOrder = 30; m.position.y = m.position.y + 0.03; });
+moveDisc.userData.handle = 'move'; moveEdge.userData.handle = 'move'; knob.userData.handle = 'turn'; turnRing.userData.handle = 'turn';
+// creator reticle (phone): a gold ring at his feet
+const reticle = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.7, 64), hMat(0xf2b84b, 0.9)); reticle.rotation.x = -Math.PI / 2; reticle.renderOrder = 30; scene.add(reticle);
+function updateHandles() {
+  const ed = state.mode === 'editor'; handles.visible = ed; reticle.visible = state.mode === 'creator';
+  const a = apps[state.selected]; const p = a.worldPos; const yaw = a.ap.pose.yawDeg * DEG;
+  if (ed) {
+    handles.position.copy(p);
+    const s = clamp(camera.position.distanceTo(p) / 16, 0.7, 3); [moveDisc, moveEdge, arrowsG, turnRing].forEach((m) => m.scale.setScalar(s));
+    knob.scale.setScalar(s); knob.position.set(Math.sin(yaw) * 1.16 * s, 0.03, Math.cos(yaw) * 1.16 * s);
+    facing.scale.setScalar(s); facing.position.set(Math.sin(yaw) * 0.6 * s, 0.03, Math.cos(yaw) * 0.6 * s); facing.rotation.z = yaw;
+    readRing.visible = a.view() !== 'popup';
+    const hot = drag.hover; moveEdge.material.opacity = hot === 'move' ? 1 : 0.85; knob.scale.multiplyScalar(hot === 'turn' ? 1.25 : 1);
+  }
+  if (state.mode === 'creator') { reticle.position.set(p.x, 0.03, p.z); reticle.scale.setScalar(a.ap.heightM / 1.85); }
+}
+
+/* ============================================================
+   Pointer input
+   ============================================================ */
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const drag = { id: null, x: 0, y: 0, moved: 0, kind: null, hover: null, offset: new THREE.Vector3(), pointers: new Map(), pinch: 0 };
+function setNdc(e) { const r = renderer.domElement.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); raycaster.setFromCamera(ndc, camera); }
+function groundHit() { const p = new THREE.Vector3(); return raycaster.ray.intersectPlane(groundPlane, p) ? p : null; }
+function pickAppearance() {
+  const objs = []; for (const a of apps) { if (a.front.visible) objs.push(a.front); if (a.bubble.visible) objs.push(a.bubble); if (a.pip.visible) objs.push(a.pip); if (a.pop.visible) a.pop.traverse((o) => { if (o.userData.pick) objs.push(o); }); }
+  const hit = raycaster.intersectObjects(objs, false)[0]; return hit ? hit.object.userData.pick : null;
+}
+function pickHandle() { const hit = raycaster.intersectObjects([knob, turnRing, moveDisc, moveEdge], false)[0]; return hit ? hit.object.userData.handle : null; }
+const el = renderer.domElement;
+el.addEventListener('contextmenu', (e) => e.preventDefault());
+el.addEventListener('pointerdown', (e) => {
+  userGestured = true; el.setPointerCapture(e.pointerId);
+  drag.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (drag.pointers.size === 2) { const [a, b] = [...drag.pointers.values()]; drag.pinch = Math.hypot(a.x - b.x, a.y - b.y); drag.kind = 'pinch'; return; }
+  drag.id = e.pointerId; drag.x = e.clientX; drag.y = e.clientY; drag.moved = 0; drag.kind = 'look';
+  if (state.mode === 'editor') {
+    setNdc(e); const h = pickHandle();
+    if (h) { drag.kind = h; const g = groundHit(); if (g) drag.offset.copy(apps[state.selected].worldPos).sub(g); }
+    else drag.kind = (e.button === 2 || e.shiftKey) ? 'pan' : 'orbit';
+  }
+});
+el.addEventListener('pointermove', (e) => {
+  if (drag.pointers.has(e.pointerId)) drag.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (state.mode === 'editor' && drag.id === null) { setNdc(e); drag.hover = pickHandle(); el.style.cursor = drag.hover ? 'grab' : 'default'; }
+  if (drag.kind === 'pinch' && drag.pointers.size === 2) {
+    const [a, b] = [...drag.pointers.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (state.mode === 'editor' && drag.pinch > 0) editorCam.radius = clamp(editorCam.radius * drag.pinch / d, 4, 90);
+    drag.pinch = d; return;
+  }
+  if (e.pointerId !== drag.id) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY; drag.moved += Math.abs(dx) + Math.abs(dy);
+  if (state.mode === 'visitor' || state.mode === 'creator') {
+    if (drag.moved < 6) return;
+    const c = state.mode === 'visitor' ? visitor : creator; c.yaw += dx * 0.005; c.pitch = clamp(c.pitch + dy * 0.004, -1.2, 1.0);
+    if (state.mode === 'visitor') visitor.path = [];
+  } else {
+    const a = apps[state.selected];
+    if (drag.kind === 'orbit') { editorCam.theta -= dx * 0.008; editorCam.phi = clamp(editorCam.phi - dy * 0.006, 0.2, 1.4); }
+    else if (drag.kind === 'pan') { const r = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0); const f = new THREE.Vector3(-Math.sin(editorCam.theta), 0, -Math.cos(editorCam.theta)); const k = editorCam.radius * 0.0016; editorCam.target.addScaledVector(r, -dx * k).addScaledVector(f, dy * k); }
+    else if (drag.kind === 'move') { setNdc(e); const g = groundHit(); if (g) { g.add(drag.offset); setPos(a.ap, g.x - a.st.anchor.x, g.z - a.st.anchor.z, a.st); renderInspector(true); } }
+    else if (drag.kind === 'turn') { setNdc(e); const g = groundHit(); if (g) { const p = a.worldPos; let deg = Math.atan2(g.x - p.x, g.z - p.z) / DEG; if (e.shiftKey) deg = Math.round(deg / 15) * 15; setYaw(a.ap, deg); renderInspector(true); } }
+  }
+});
+function endPointer(e) {
+  drag.pointers.delete(e.pointerId);
+  if (drag.kind === 'pinch') { if (drag.pointers.size === 0) drag.kind = null; return; }
+  if (e.pointerId !== drag.id) return;
+  const tap = drag.moved < 6; drag.id = null; const kind = drag.kind; drag.kind = null;
+  if (!tap || e.type === 'pointercancel') return;
+  setNdc(e);
+  if (state.mode === 'visitor') {
+    const a = pickAppearance();
+    if (a) { onTapCharacter(a); return; }
+    const g = groundHit(); if (g && g.distanceTo(new THREE.Vector3(visitor.x, 0, visitor.z)) < 60) visitor.path = [{ x: g.x, z: g.z }];
+  } else if (state.mode === 'creator') {
+    if (creatorTab === 'move') { const g = groundHit(); const a = apps[state.selected]; if (g) { setPos(a.ap, g.x - a.st.anchor.x, g.z - a.st.anchor.z, a.st); renderCreator(); } return; }
+    const a = pickAppearance(); if (a) onTapCharacter(a);
+  } else if (kind === 'orbit') {
+    const a = pickAppearance(); if (a && a.index !== state.selected) selectAppearance(a.index);
+  }
+}
+el.addEventListener('pointerup', endPointer); el.addEventListener('pointercancel', endPointer);
+el.addEventListener('wheel', (e) => { if (state.mode !== 'editor') return; e.preventDefault(); editorCam.radius = clamp(editorCam.radius * Math.exp(e.deltaY * 0.001), 4, 90); }, { passive: false });
+window.addEventListener('keydown', (e) => { if (e.target.closest('input,textarea,select')) return; visitor.keys.add(e.key.toLowerCase()); });
+window.addEventListener('keyup', (e) => visitor.keys.delete(e.key.toLowerCase()));
+window.addEventListener('blur', () => visitor.keys.clear());
+function onTapCharacter(a) {
+  const v = a.view();
+  if (v === 'bubble') { a.bubbleShut = !a.bubbleShut; return; } // the plain view only opens and closes
+  if (a.speaking) { a.stop(); return; }
+  a.speak(0);
+}
+
+/* ============================================================
+   UI: picker, HUD, portrait, creator sheet, editor panels
+   ============================================================ */
+const ICON = {
+  walk: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
+  view: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="3"/><path d="M8 16l-2 4 5-4"/></svg>',
+  line: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h11M4 17h8"/></svg>',
+  size: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4"/></svg>',
+  turn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-3-6.2"/><path d="M20 4v5h-5"/></svg>',
+  move: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/></svg>',
+};
+function renderPicker() {
+  $('#picker').innerHTML = VIEWS.map((v) => `<button data-view="${v.name}" aria-pressed="${state.view === v.name}">${esc(v.label)}</button>`).join('');
+}
+$('#picker').addEventListener('click', (e) => { const b = e.target.closest('button[data-view]'); if (b) applyView(b.dataset.view); });
+
+let hintTimer = 0;
+function renderWalkButtons() {
+  const i = stationOf(visitor.x, visitor.z); const btns = [];
+  if (i === -1 && visitor.x < 30) btns.push(['in', 'Walk in', ICON.walk, true]);
+  else if (i === 0) { if (state.view === 'two-stations') btns.push(['on', 'Walk on', ICON.walk, true]); else btns.push(['in', 'Walk to him', ICON.walk, false]); btns.push(['start', 'Start', ICON.back, false]); }
+  else if (i === -1) btns.push(['on', 'Walk on', ICON.walk, true], ['start', 'Start', ICON.back, false]);
+  else btns.push(['start', 'Back to start', ICON.back, false]);
+  const html = btns.map(([k, l, ic, gold]) => `<button class="pill${gold ? ' gold' : ''}" data-walk="${k}">${ic}${esc(l)}</button>`).join('');
+  if ($('#walkBtns').innerHTML !== html) $('#walkBtns').innerHTML = html;
+}
+$('#walkBtns').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-walk]'); if (!b) return; userGestured = true;
+  const k = b.dataset.walk;
+  if (k === 'in') { const p = viewpointFor(0); visitor.path = [{ x: p.x, z: p.z }]; }
+  else if (k === 'on') { const p = viewpointFor(1); visitor.path = [{ x: 4, z: 1.5 }, { x: 22, z: 0.5 }, { x: p.x, z: p.z }]; }
+  else { visitor.path = []; visitor.x = 0; visitor.z = 26.5; visitor.yaw = 0; visitor.pitch = -0.04; }
+});
+function updateHud() {
+  if (state.mode !== 'visitor') return;
+  renderWalkButtons();
+  // the app's own display outside the circles: the nearest station, its direction and distance
+  const inside = stationOf(visitor.x, visitor.z);
+  const chip = $('#appChip');
+  if (inside === -1) {
+    let best = null; for (const s of model.stations) { const d = Math.hypot(s.anchor.x - visitor.x, s.anchor.z - visitor.z) - s.radiusM; if (!best || d < best.d) best = { s, d }; }
+    chip.hidden = false;
+    const s = best.s; const bearing = Math.atan2(-(s.anchor.x - visitor.x), -(s.anchor.z - visitor.z));
+    chip.querySelector('.arrow svg').style.transform = `rotate(${(-wrapAngle(bearing - visitor.yaw)) / DEG}deg)`;
+    chip.querySelector('.name').textContent = 'Station ' + (model.stations.indexOf(s) + 1) + ': ' + s.title;
+    chip.querySelector('.dist').textContent = Math.max(0, Math.round(best.d)) + ' m';
+  } else chip.hidden = true;
+  // hint
+  const hint = $('#hint'); const v = state.view;
+  const msg = inside === -1 ? 'Drag to look. Tap the ground to walk, or use Walk in.'
+    : v === 'bubble' ? 'Tap Wendel to open or close his bubble.'
+    : v === 'two-stations' ? 'He is at both stations. Walk on to meet him again.'
+    : v === 'popup' ? 'Walk close: the stage unfolds. Tap it to hear him.'
+    : 'Tap Wendel to hear him.';
+  if (hint.textContent !== msg) { hint.textContent = msg; hint.style.opacity = 1; hintTimer = 6; }
+  hintTimer -= 1 / 60; if (hintTimer < 0 || $('#portrait').classList.contains('on')) hint.style.opacity = 0.0;
+  updatePortrait(inside);
+}
+const pCanvas = $('#portrait canvas'); const pctx = pCanvas.getContext('2d');
+let portraitKey = '';
+function updatePortrait(inside) {
+  const P = $('#portrait');
+  const a = inside >= 0 ? apps[inside] : null;
+  const on = !!a && state.view === 'portrait' && a.worldPos.distanceTo(new THREE.Vector3(visitor.x, 0, visitor.z)) < 14;
+  P.classList.toggle('on', on);
+  if (!a) return;
+  P.classList.toggle('right', a.ap.bubbleSide === 'right');
+  const tf = a.talkFrame(); const frame = tf >= 0 ? tf : 0;
+  const active = a.activeWord(); const stale = isStale(a.ap); const reading = !!a.speaking && !stale;
+  const foot = a.notice > 0 || (stale && a.speaking === null && a.notice > 0) ? 'The narration no longer matches this line.' : a.speaking ? (soundOn ? 'Voice: ' + model.character.voiceCredit : 'Sound off: reading along') : (a.spoken ? 'Tap the portrait to hear him again' : 'Tap the portrait to hear him');
+  const key = [a.index, frame, active, reading, foot, a.ap.line, model.character.name].join('|');
+  if (key !== portraitKey) {
+    portraitKey = key;
+    pctx.clearRect(0, 0, 152, 152);
+    const g = pctx.createRadialGradient(76, 60, 10, 76, 76, 90); g.addColorStop(0, '#3b4a66'); g.addColorStop(1, '#1b2232'); pctx.fillStyle = g; pctx.fillRect(0, 0, 152, 152);
+    pctx.drawImage(sheets.frames[frame], 146, 100, 220, 220, 0, 6, 152, 152);
+    P.querySelector('.pname').textContent = model.character.name;
+    P.querySelector('.pline').innerHTML = tokenize(a.ap.line).map((t, i) => `<span class="${reading ? (i < active ? '' : i === active ? 'now' : 'up') : ''}">${esc(t.text)}</span>`).join(' ');
+    P.querySelector('.pfoot').textContent = foot;
+  }
+  // tick toward him when he is off screen
+  const p = headOf(a.index).project(camera); const off = Math.abs(p.x) > 1 || Math.abs(p.y) > 1 || p.z > 1;
+  const tick = P.querySelector('.tick'); tick.style.opacity = off ? 1 : 0;
+  if (off) { let vx = p.x, vy = p.y; if (p.z > 1) { vx = -vx; vy = -vy; } const ang = Math.atan2(vx, vy); tick.style.transform = `rotate(${ang / DEG}deg)`; }
+}
+$('#pRing').addEventListener('click', () => { userGestured = true; const i = stationOf(visitor.x, visitor.z); if (i >= 0) onTapCharacter(apps[i]); });
+
+/* creator */
+let creatorTab = 'view';
+function renderCreator() {
+  const a = apps[state.selected], ap = a.ap;
+  $('#cTop').innerHTML = `<span>Station ${state.selected + 1}</span><b>${esc(model.character.name)}</b>`;
+  $('#cBar').innerHTML = [['view', 'View'], ['line', 'Line'], ['size', 'Size'], ['turn', 'Turn'], ['move', 'Move']]
+    .map(([k, l]) => `<button data-tab="${k}" aria-pressed="${creatorTab === k}">${ICON[k]}${l}</button>`).join('');
+  const stale = isStale(ap);
+  const badge = stale ? '<span class="badge stale">timing out of date</span>' : `<span class="badge ok">timed, ${ap.timing.segments.length} words</span>`;
+  let html = '';
+  if (creatorTab === 'view') html = `<h3>How he appears</h3><div class="chips">${VIEWS.map((v) => `<button class="chip" data-cview="${v.name}" aria-pressed="${a.view() === v.name}">${esc(v.label)}</button>`).join('')}</div>
+    <div class="row"><label>Bubble side</label><div class="segsmall">${VALID_SIDES.map((s) => `<button data-side="${s}" aria-pressed="${ap.bubbleSide === s}">${s}</button>`).join('')}</div></div>`;
+  else if (creatorTab === 'line') html = `<h3>His line here</h3><textarea id="cLine" maxlength="${LINE_MAX}" rows="3">${esc(ap.line)}</textarea>
+    <div class="status"><span id="cCount">${ap.line.length}/${LINE_MAX}</span>${badge}${stale ? '<button class="mini gold" id="cRetime">Re-time narration</button>' : ''}</div>`;
+  else if (creatorTab === 'size') html = `<h3>Height</h3><div class="row"><input type="range" id="cH" min="0.5" max="3.2" step="0.05" value="${ap.heightM}"><span class="val">${ap.heightM.toFixed(2)} m</span></div>
+    <div class="chips" style="margin-top:10px">${[[1.2, 'Child'], [1.85, 'Adult'], [2.6, 'Giant']].map(([h, l]) => `<button class="chip" data-hp="${h}" aria-pressed="${Math.abs(ap.heightM - h) < 0.01}">${l} ${h} m</button>`).join('')}</div>`;
+  else if (creatorTab === 'turn') html = `<h3>Facing</h3><div class="row"><input type="range" id="cY" min="-180" max="180" step="1" value="${ap.pose.yawDeg}"><span class="val">${ap.pose.yawDeg} deg</span></div>
+    <div class="status">He turns up to 60 degrees toward a visitor from here.<button class="mini gold" id="cFace">Face the phone</button></div>`;
+  else html = `<h3>Where he stands</h3><div class="status" style="margin-top:0">Tap the ground where Wendel should stand. He stays inside the station circle.</div><div class="row"><button class="mini gold" id="cHere">Two steps in front of me</button></div>`;
+  $('#cSheet').innerHTML = html;
+  const hint = $('#cHint'); hint.hidden = creatorTab !== 'move'; hint.textContent = 'Tap the ground to place him';
+}
+$('#cBar').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (b) { creatorTab = b.dataset.tab; renderCreator(); } });
+$('#cSheet').addEventListener('click', (e) => {
+  const a = apps[state.selected], ap = a.ap; const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.cview) { a.st.view = t.dataset.cview; if (state.view !== t.dataset.cview) { state.view = t.dataset.cview; renderPicker(); syncHash(); } }
+  else if (t.dataset.side) setSide(ap, t.dataset.side);
+  else if (t.dataset.hp) setHeight(ap, t.dataset.hp);
+  else if (t.id === 'cRetime') ap.timing = makeTiming(ap.line);
+  else if (t.id === 'cFace') { const p = a.worldPos; setYaw(ap, Math.atan2(camera.position.x - p.x, camera.position.z - p.z) / DEG); }
+  else if (t.id === 'cHere') { const f = new THREE.Vector3(-Math.sin(creator.yaw), 0, -Math.cos(creator.yaw)); setPos(ap, creator.x + f.x * 2 - a.st.anchor.x, creator.z + f.z * 2 - a.st.anchor.z, a.st); }
+  renderCreator();
+});
+$('#cSheet').addEventListener('input', (e) => {
+  const a = apps[state.selected], ap = a.ap;
+  if (e.target.id === 'cLine') { setLine(ap, e.target.value); $('#cCount').textContent = `${ap.line.length}/${LINE_MAX}`; a.stop(); const st = $('#cSheet .status'); if (st && isStale(ap) && !$('#cRetime')) renderCreatorKeepFocus(); }
+  else if (e.target.id === 'cH') { setHeight(ap, e.target.value); e.target.nextElementSibling.textContent = ap.heightM.toFixed(2) + ' m'; }
+  else if (e.target.id === 'cY') { setYaw(ap, e.target.value); e.target.nextElementSibling.textContent = ap.pose.yawDeg + ' deg'; }
+});
+function renderCreatorKeepFocus() { const ta = $('#cLine'); const pos = ta ? ta.selectionStart : 0; renderCreator(); const nt = $('#cLine'); if (nt) { nt.focus(); nt.setSelectionRange(pos, pos); } }
+
+/* editor */
+function renderList() {
+  const item = (i) => `<button class="eitem" data-sel="${i}" aria-current="${state.selected === i}"><span class="dot"></span>${esc(model.character.name)}<small>${esc(VIEWS.find((v) => v.name === apps[i].view()).label)}</small></button>`;
+  $('#eList').innerHTML = `<div class="eh">Tour</div><button class="eitem dim"><span class="dot"></span>Character: ${esc(model.character.name)}<small>shared</small></button>
+    <div class="eh">Station 1: ${esc(model.stations[0].title)}</div>${item(0)}
+    <div class="eh">Station 2: ${esc(model.stations[1].title)}</div>${item(1)}<button class="eitem dim"><span class="dot grey"></span>Stand-in item<small>other</small></button>`;
+}
+$('#eList').addEventListener('click', (e) => { const b = e.target.closest('[data-sel]'); if (b) selectAppearance(Number(b.dataset.sel)); });
+function selectAppearance(i) { state.selected = clamp(i | 0, 0, apps.length - 1); editorCam.target.copy(apps[state.selected].worldPos).setY(0.9); editorCam.radius = window.innerWidth < 700 ? 10 : 15; renderList(); renderInspector(); if (state.mode === 'creator') renderCreator(); }
+let jsonOpen = false;
+function renderInspector(numbersOnly = false) {
+  const a = apps[state.selected], ap = a.ap, c = model.character;
+  if (numbersOnly) { const set = (id, v) => { const n = document.getElementById(id); if (n && document.activeElement !== n) n.value = v; }; set('iX', ap.pose.position[0]); set('iZ', ap.pose.position[2]); set('iYaw', ap.pose.yawDeg); if (jsonOpen) $('#iJson').textContent = JSON.stringify(exportModel(), null, 2); return; }
+  const stale = isStale(ap);
+  const dur = (timingEnd(ap.timing) / 1000).toFixed(1);
+  $('#eInsp').innerHTML = `
+  <div class="segsmall" id="eStations">${apps.map((x, i) => `<button data-sel="${i}" aria-pressed="${state.selected === i}">Station ${i + 1}</button>`).join('')}</div>
+  <div class="sec"><h4>Appearance <small>station ${state.selected + 1}: ${esc(a.st.title)}</small></h4>
+    <div class="f"><label>View</label><select id="iView">${VIEWS.map((v) => `<option value="${v.name}" ${a.view() === v.name ? 'selected' : ''}>${esc(v.label)}${v.required ? '' : ' (extra)'}</option>`).join('')}</select></div>
+    <div class="f"><label>Line <span id="iCount">${ap.line.length}/${LINE_MAX}</span></label><textarea id="iLine" maxlength="${LINE_MAX}" rows="3">${esc(ap.line)}</textarea></div>
+    <div class="f"><label>Height</label><div class="row" style="margin:0"><input type="range" id="iH" min="0.5" max="3.2" step="0.05" value="${ap.heightM}"><span class="val" id="iHv">${ap.heightM.toFixed(2)} m</span></div></div>
+    <div class="f"><label>Bubble side</label><div class="segsmall">${VALID_SIDES.map((s) => `<button data-iside="${s}" aria-pressed="${ap.bubbleSide === s}">${s}</button>`).join('')}</div></div>
+    <div class="f"><label>Pose (metres from the station anchor, yaw in degrees)</label><div class="grid3"><input type="number" id="iX" step="0.1" value="${ap.pose.position[0]}" aria-label="x"><input type="number" id="iZ" step="0.1" value="${ap.pose.position[2]}" aria-label="z"><input type="number" id="iYaw" step="5" value="${ap.pose.yawDeg}" aria-label="yaw"></div></div>
+    <div class="f"><label>Narration</label><div class="code">${esc(ap.narration)} (${dur} s, tone stand-in)</div>
+      <div class="status">${stale ? '<span class="badge stale">timing out of date</span><button class="mini gold" id="iRetime">Re-time</button>' : `<span class="badge ok">word timing, ${ap.timing.segments.length} words</span>`}<button class="mini" id="iPlay">${a.speaking ? 'Stop' : 'Play'}</button></div></div>
+  </div>
+  <div class="sec"><h4>Character <small>tour level, shared by ${apps.length} stations</small></h4>
+    <div class="f"><label>Name</label><input type="text" id="iName" maxlength="40" value="${esc(c.name)}"></div>
+    <div class="f"><label>Image and frames <span class="code">${esc(c.id)}</span></label><div class="thumbs" id="iThumbs">${c.frames.names.map((n) => `<figure><canvas width="88" height="176"></canvas>${esc(n)}</figure>`).join('')}</div></div>
+    <div class="f"><label>Voice credit</label><input type="text" id="iCredit" maxlength="80" value="${esc(c.voiceCredit)}"></div>
+  </div>
+  <div class="sec"><button class="mini" id="iJsonBtn">${jsonOpen ? 'Hide' : 'Show'} tour JSON</button><pre class="json" id="iJson" ${jsonOpen ? '' : 'hidden'}>${esc(JSON.stringify(exportModel(), null, 2))}</pre></div>`;
+  $('#iThumbs').querySelectorAll('canvas').forEach((cv, i) => { const x = cv.getContext('2d'); x.drawImage(sheets.frames[i], 0, 0, FW, FH, 0, 0, 88, 176); });
+}
+$('#eInsp').addEventListener('input', (e) => {
+  const a = apps[state.selected], ap = a.ap, id = e.target.id;
+  if (id === 'iLine') { const wasStale = isStale(ap); setLine(ap, e.target.value); a.stop(); $('#iCount').textContent = `${ap.line.length}/${LINE_MAX}`; if (wasStale !== isStale(ap)) { const pos = e.target.selectionStart; renderInspector(); const t = $('#iLine'); t.focus(); t.setSelectionRange(pos, pos); } }
+  else if (id === 'iH') { setHeight(ap, e.target.value); $('#iHv').textContent = ap.heightM.toFixed(2) + ' m'; }
+  else if (id === 'iX' || id === 'iZ') setPos(ap, $('#iX').value, $('#iZ').value, a.st);
+  else if (id === 'iYaw') setYaw(ap, e.target.value);
+  else if (id === 'iName') { model.character.name = String(e.target.value).slice(0, 40) || 'Unnamed'; apps.forEach((x) => x.refreshName()); renderList(); }
+  else if (id === 'iCredit') model.character.voiceCredit = String(e.target.value).slice(0, 80);
+  if (jsonOpen) $('#iJson').textContent = JSON.stringify(exportModel(), null, 2);
+});
+$('#eInsp').addEventListener('change', (e) => { if (e.target.id === 'iView' && VIEW_NAMES.includes(e.target.value)) { apps[state.selected].st.view = e.target.value; renderList(); renderFields(); } });
+$('#eInsp').addEventListener('click', (e) => {
+  const t = e.target.closest('button'); if (!t) return; const a = apps[state.selected], ap = a.ap; userGestured = true;
+  if (t.dataset.sel) { selectAppearance(Number(t.dataset.sel)); return; }
+  if (t.dataset.iside) setSide(ap, t.dataset.iside);
+  else if (t.id === 'iRetime') ap.timing = makeTiming(ap.line);
+  else if (t.id === 'iPlay') { if (a.speaking) a.stop(); else a.speak(0); }
+  else if (t.id === 'iJsonBtn') jsonOpen = !jsonOpen;
+  else return;
+  renderInspector();
+});
+function renderTools() { $('#eTools').innerHTML = `<span class="tip">Drag the gold disc to move him, the knob to turn him (Shift snaps 15 degrees). The gold circle is where his bubble opens (9 m).</span>`; }
+
+/* fields panel */
+function renderFields() {
+  const v = state.mode === 'visitor' ? state.view : apps[state.selected].view();
+  const uses = USES[v] || {};
+  const used = Object.keys(uses); const unused = FIELDS.filter((f) => !used.includes(f));
+  $('#fields').innerHTML = `<h3>${esc(VIEWS.find((x) => x.name === v).label)}: fields used</h3><ul>${used.map((f) => `<li><code>${f}</code><span>${esc(uses[f])}</span></li>`).join('')}</ul>${unused.length ? `<div class="unused">Not used: ${unused.map((f) => `<code>${f}</code>`).join(', ')}</div>` : ''}`;
+}
+
+/* ============================================================
+   Modes, views, hash, layout
+   ============================================================ */
+function applyView(name) {
+  if (!VIEW_NAMES.includes(name)) return false;
+  state.view = name; for (const a of apps) { a.st.view = name; a.stop(); a.spoken = false; a.bubbleShut = false; a.openFor = 0; }
+  renderPicker(); renderFields(); if (state.mode === 'creator') renderCreator(); if (state.mode === 'editor') { renderList(); renderInspector(); }
+  syncHash(); return true;
+}
+function applyMode(name) {
+  if (!['visitor', 'creator', 'editor'].includes(name)) return false;
+  state.mode = name; document.body.dataset.mode = name;
+  document.querySelectorAll('#modeSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === name)));
+  $('#btnPhone').disabled = name === 'editor';
+  for (const a of apps) a.stop();
+  if (name === 'creator') {
+    state.selected = 0; creator.x = model.stations[0].anchor.x; creator.z = model.stations[0].anchor.z + 0.5;
+    const look = lookYawPitch(new THREE.Vector3(creator.x, EYE, creator.z), headOf(0)); creator.yaw = look.yaw; creator.pitch = look.pitch - 0.12; renderCreator();
+  }
+  if (name === 'editor') { selectAppearance(state.selected); renderTools(); }
+  renderFields(); layout(); syncHash(); return true;
+}
+function syncHash() { const h = `#mode=${state.mode}&view=${state.view}`; if (location.hash !== h) history.replaceState(null, '', h); }
+function readHash() { const p = new URLSearchParams(location.hash.slice(1)); return { mode: p.get('mode'), view: p.get('view') }; }
+window.addEventListener('hashchange', () => { const h = readHash(); if (h.view && h.view !== state.view) applyView(h.view); if (h.mode && h.mode !== state.mode) applyMode(h.mode); });
+
+function layout() {
+  const vp = $('#viewport'), stage = $('#stage');
+  const framed = state.framed && state.mode !== 'editor';
+  stage.classList.toggle('framed', framed);
+  if (framed) { let h = vp.clientHeight - 28, w = h * 9 / 19.5; if (w > vp.clientWidth - 28) { w = vp.clientWidth - 28; h = w * 19.5 / 9; } stage.style.width = w + 'px'; stage.style.height = h + 'px'; }
+  else { stage.style.width = '100%'; stage.style.height = '100%'; }
+  resize();
+}
+function resize() {
+  const w = Math.max(1, wrap.clientWidth), h = Math.max(1, wrap.clientHeight);
+  renderer.setSize(w, h, false); camera.aspect = w / h;
+  if (state.mode === 'editor') camera.fov = 45;
+  else { const short = 40 * DEG; camera.fov = w < h ? 2 * Math.atan(Math.tan(short / 2) / camera.aspect) / DEG : 40; } // the short side sees 40 degrees, like a phone camera
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(wrap);
+window.addEventListener('resize', layout);
+$('#modeSeg').addEventListener('click', (e) => { const b = e.target.closest('button[data-mode]'); if (b) applyMode(b.dataset.mode); });
+$('#btnPhone').addEventListener('click', () => { state.framed = !state.framed; $('#btnPhone').setAttribute('aria-pressed', String(state.framed)); layout(); });
+$('#btnFields').addEventListener('click', () => { state.fieldsOpen = !state.fieldsOpen; $('#btnFields').setAttribute('aria-pressed', String(state.fieldsOpen)); $('#fields').hidden = !state.fieldsOpen; renderFields(); });
+$('#btnSound').addEventListener('click', () => {
+  userGestured = true; soundOn = !soundOn; $('#btnSound').setAttribute('aria-pressed', String(soundOn));
+  $('#btnSound .w').style.display = soundOn ? '' : 'none';
+  if (master && actx) master.gain.setTargetAtTime(soundOn ? 0.85 : 0, actx.currentTime, 0.05);
+  for (const a of apps) a.bubbleKey = '';
+});
+$('#btnNotes').addEventListener('click', () => { const n = $('#notes'); n.hidden = !n.hidden; $('#btnNotes').setAttribute('aria-pressed', String(!n.hidden)); });
+$('#notesClose').addEventListener('click', () => { $('#notes').hidden = true; $('#btnNotes').setAttribute('aria-pressed', 'false'); });
+
+/* ============================================================
+   Frame loop and the frame-time readout (last 2 s)
+   ============================================================ */
+const samples = []; let lastT = performance.now(), readoutT = 0, frameNo = 0;
+const frameWaiters = [];
+renderer.setAnimationLoop((now) => {
+  const w0 = performance.now();
+  const raw = now - lastT; const dt = clamp(raw / 1000, 0, 0.1); lastT = now; clockMs += dt * 1000;
+  updateWalk(dt); applyCamera();
+  for (const a of apps) a.update(dt, camera);
+  updateHandles(); updateHud();
+  renderer.render(scene, camera);
+  if (state.snapFrames > 0) state.snapFrames--;
+  frameNo++;
+  const work = performance.now() - w0;
+  samples.push({ t: now, dt: raw, work }); while (samples.length && samples[0].t < now - 2000) samples.shift();
+  if (now - readoutT > 250) {
+    readoutT = now; let sum = 0, max = 0, ws = 0, wm = 0; for (const s of samples) { sum += s.dt; max = Math.max(max, s.dt); ws += s.work; wm = Math.max(wm, s.work); }
+    const n = Math.max(1, samples.length);
+    $('#readout').textContent = `frame ${(sum / n).toFixed(1)} avg / ${max.toFixed(1)} max ms  cpu ${(ws / n).toFixed(1)} / ${wm.toFixed(1)}  (2 s)`;
+  }
+  for (let i = frameWaiters.length - 1; i >= 0; i--) if (frameNo >= frameWaiters[i].at) { frameWaiters[i].resolve(); frameWaiters.splice(i, 1); }
+});
+const frames = (n = 2) => new Promise((resolve) => frameWaiters.push({ at: frameNo + n, resolve }));
+
+/* ============================================================
+   The script hook
+   ============================================================ */
+window.__stationBlock = {
+  family: 'station-blocks-7-character',
+  views: VIEW_NAMES.slice(),
+  modes: ['visitor', 'creator', 'editor'],
+  async setMode(name) { if (!applyMode(name)) throw new Error('unknown mode: ' + name); state.snapFrames = 3; await frames(3); },
+  async setView(name) { if (!applyView(name)) throw new Error('unknown view: ' + name); state.snapFrames = 3; await frames(3); },
+  async walkTo(x, z) {
+    const nx = Number(x), nz = Number(z); if (!Number.isFinite(nx) || !Number.isFinite(nz)) throw new Error('walkTo needs numbers');
+    visitor.path = []; visitor.x = nx; visitor.z = nz; state.snapFrames = 3; await frames(3);
+  },
+  async lookAt(x, y, z) {
+    const t = new THREE.Vector3(Number(x), Number(y), Number(z)); if (![t.x, t.y, t.z].every(Number.isFinite)) throw new Error('lookAt needs numbers');
+    const c = state.mode === 'creator' ? creator : visitor; const l = lookYawPitch(new THREE.Vector3(c.x, EYE, c.z), t); c.yaw = l.yaw; c.pitch = l.pitch; state.snapFrames = 3; await frames(3);
+  },
+  async describe() {
+    return { family: this.family, fields: FIELDS.slice(), views: VIEWS.map((v) => ({ name: v.name, required: v.required, usesFields: Object.keys(USES[v.name]) })) };
+  },
+  async exportModel() { return exportModel(); },
+  /* extras for this page's own screenshots (not part of the shared hook) */
+  async speak(atMs = 0) { const i = state.mode === 'visitor' ? stationOf(visitor.x, visitor.z) : state.selected; if (i < 0) return false; apps[i].speak(Number(atMs) || 0); await frames(3); return true; },
+  async setFramed(on) { state.framed = !!on; $('#btnPhone').setAttribute('aria-pressed', String(state.framed)); layout(); await frames(2); },
+  async readout() { return $('#readout').textContent; },
+  async mediaSizes() {
+    const size = (c, type, q) => new Promise((r) => c.toBlob((b) => r(b ? b.size : -1), type, q));
+    const out = {};
+    for (const [k, c] of [['image (1 frame)', sheets.frames[0]], ['frames sheet (front, 4 frames)', sheets.front], ['back sheet (generated at load)', sheets.back], ['pop-up backdrop', backdropTex.image]]) out[k] = { w: c.width, h: c.height, png: await size(c, 'image/png'), webp: await size(c, 'image/webp', 0.85) };
+    return out;
+  },
+};
+
+/* ============================================================
+   Start
+   ============================================================ */
+renderPicker();
+{
+  const h = readHash();
+  if (h.view && VIEW_NAMES.includes(h.view)) applyView(h.view); else applyView('bubble');
+  applyMode(h.mode && ['visitor', 'creator', 'editor'].includes(h.mode) ? h.mode : 'visitor');
+}
+fetchNotes();
+function fetchNotes() { $('#notesBody').innerHTML = document.getElementById('notesTpl').innerHTML; }
+</script>
+<template id="notesTpl">
+<details open><summary>1. The model as built, and what I would change</summary><p>As built (exactly the assignment's fields; <code>exportModel()</code> returns this):</p><ul><li>tour level <code>character</code>: <code>id</code>, <code>name</code>, <code>image</code> (one alpha cut-out), <code>frames</code> (optional sprite sheet; I gave it the shape <code>{ image, frameW, frameH, names: ["idle", "talk-a", "talk-b", "beckon"] }</code>), <code>voiceCredit</code>.</li><li>per station <code>appearance</code>: <code>characterId</code>, <code>pose</code> (<code>position</code> in metres from the station anchor, <code>yawDeg</code>, 0 = facing south), <code>heightM</code>, <code>line</code>, <code>narration</code> (asset ref), <code>timing</code> (as family 1: <code>granularity</code>, <code>segments [{ startMs, endMs, from, to }]</code>, <code>textHash</code>), <code>bubbleSide</code> (<code>left</code>, <code>right</code>, or <code>auto</code>).</li><li><code>view</code> sits on the block wrapper, not in the model: it is the creator's choice of drawing, not data about the character.</li></ul><p>Changes I would make:</p><ul><li><b>Add <code>character.heightM</code></b> (his natural height), making <code>appearance.heightM</code> an optional override. Nine stations out of ten use the same height, and a creator in a hurry should not retype it; a height that drifts between stations reads as a different character.</li><li><b>Give <code>frames</code> named roles</b>, not just names: <code>roles: { idle: 0, talk: [1, 2], point: 3 }</code>. A view is code written once; it needs to know which frame is "talking" and which is "pointing" for ANY character, and free-text names do not guarantee that.</li><li><b>Add <code>appearance.lang</code></b> (or <code>character.lang</code>): line breaking, quotes and a future voice depend on it; it costs one field.</li><li><b>Make <code>bubbleSide</code> a preference with <code>auto</code> as the default.</b> The page flips it when the bubble would leave the screen and slides it back on screen as a last resort; a fixed side is wrong half the time once the visitor walks around him.</li><li><b>Cap <code>line</code> at about 120 characters</b> (two short sentences). Anything longer is family 1's narrated text, opened from the bubble.</li><li>Keep <code>characterId</code> even with one character: a second character (a market woman, a child) is the obvious next request.</li><li>I would NOT add a back image: the back of the cut-out is generated from the alpha at load (white edge, grey board).</li></ul></details>
+<details><summary>2. Per view: what it is, fields, why a visitor likes it, where it is weakest</summary><p><b>bubble</b> (required). The cut-out stands on the square with a die-cut white edge and a soft contact shadow. He turns up to 60 degrees from his rest facing toward the visitor and breathes very slightly. Farther than 9 m he shows only a small name tag with three dots; within 9 m the bubble opens (dark backplate, light text, his name in gold). The bubble has a reading floor: it is never smaller on screen than body text read at 2.4 m, so at 9 m it is a 3.7 m object in the world but the same size on screen. Tap opens or closes it.</p><ul><li>Fields: <code>name</code>, <code>image</code> (first frame), <code>characterId</code>, <code>pose</code>, <code>heightM</code>, <code>line</code>, <code>bubbleSide</code>.</li><li>Why: the character is in the place, not in a panel; it reads instantly.</li><li>Weakest: 1 m of height or placement error shows as floating or sunken feet (the shadow hides some, not all). Side-on beyond 60 degrees the cut-out goes thin; from behind he is grey board. In a crowded square the bubble covers other people. Sunlight: the dark plate holds up.</li></ul><p><b>speak</b> (required). The bubble view plus tap to speak: the tone pattern plays, the spoken word turns gold and underlined, words already said stay white, words to come are dimmed, and the mouth alternates between two frames while a word sounds. A quiet line under the text credits the voice. With sound off the read-along is identical, silent, and says "Sound off: reading along". If the line was edited after the timing was made (hash differs), tapping plays nothing and the bubble says, quietly in amber, that the narration is out of date.</p><ul><li>Fields: all of bubble plus <code>frames</code>, <code>narration</code>, <code>timing</code>, <code>voiceCredit</code>.</li><li>Why: the character "talks"; read-along makes it work in a loud square or with sound banned.</li><li>Weakest: the tap target is small beyond 5 m (the bubble is also a tap target, which helps). The bubble texture is re-uploaded on every word change (about 16 uploads per line).</li></ul><p><b>two-stations</b> (required). The same character, one image asset, at both stations with a different line. At station 1, once he has said his line (or after 6 s of the bubble being open) he switches to the beckon frame, mirrored so the open hand points toward the next station on screen, and slow gold chevrons on the ground lead out of the circle toward it. "Walk on" walks the visitor east; between the circles nothing of him is shown, only the app's own chip (station, direction, distance). At station 2 he greets again with the second line.</p><ul><li>Fields: every field; both appearances share <code>characterId</code> and therefore the image, frames, name and credit.</li><li>Why: a familiar face that hands you on is the cheapest way to make a tour feel like one walk.</li><li>Weakest: "next station" comes from the tour's station order, not from a field. Mirroring the beckon frame moves the shield to the other arm (visible if you watch for it). The chevrons are only 5 m long, so a few degrees of heading error matters little.</li></ul><p><b>portrait</b> (the suggested idea). He stands in the world without a bubble (a name tag only, and a gold ring pulses at his feet while he talks). A round portrait (the head cropped from the same frames, so its mouth moves) and a caption card with the read-along sit in a bottom corner; <code>bubbleSide</code> picks the corner. When he is off screen a gold tick on the ring points toward him. In landscape the card moves to the top.</p><ul><li>Fields: <code>name</code>, <code>image</code>, <code>frames</code>, <code>voiceCredit</code>, <code>characterId</code>, <code>pose</code>, <code>heightM</code>, <code>line</code>, <code>narration</code>, <code>timing</code>, <code>bubbleSide</code> (reused as the corner).</li><li>Why: the most robust view: screen text is unaffected by sunlight angle, distance or 1 m of error, and the tick finds him.</li><li>Weakest: it loses the magic of him speaking in the place; the card covers the lower third of the screen; in AR it needs the DOM overlay feature (or a screen-space quad).</li></ul><p><b>popup</b> (my own idea, nobody listed it). A paper-theatre stage lies flat on the ground; when the visitor comes within 12 m it unfolds like a pop-up book: first the arched backdrop (the old keep drawn in ink on cream paper), then the knight on his cardboard tab, then a scroll unrolls above with his line in ink. Tap the stage and the line reads along in red ink. His name is printed on the stage's front edge. The stage keeps its fixed facing (<code>pose.yawDeg</code>); it never turns.</p><ul><li>Fields: <code>name</code>, <code>image</code>, <code>frames</code>, <code>voiceCredit</code>, <code>characterId</code>, <code>pose</code> (with the fixed facing), <code>heightM</code> (scales the whole stage), <code>line</code>, <code>narration</code>, <code>timing</code>. Not <code>bubbleSide</code>.</li><li>Why: it is a storybook object, so it does not pretend to fit the real ruins; 1 m of error does not matter, and the unfolding is a calm, single reveal.</li><li>Weakest: no reading floor (scroll letters are 0.13 m, readable to about 5 m). From the side it is flat, from behind it is board. It is 2.5 m wide, too big for a museum unless <code>heightM</code> is cut. The backdrop drawing is view code: a creator who wants their own backdrop needs a new field.</li></ul></details>
+<details><summary>3. Costs</summary><p>Frame time, measured with the readout, headless: page CPU work per frame is a mean of about 1 to 11 ms in every view and mode (the worst single frames, 50 to 420 ms, are the first-frame shader compiles and texture uploads just after a view switch, plus the bubble re-upload per word in speak at 1440 x 900). The frame interval itself read 33 to 3 000 ms because the machine was loaded by other browser runs; the full table is in the page's notes panel (measured headless with the readout, SwiftShader software rendering on a shared, loaded machine, so it says little about a phone). Work per frame is small in every view: two textured quads per appearance, a bubble quad, a few ground quads; the scene stand-ins dominate draw calls.</p><p><b>Measured headless</b> (SwiftShader software rendering, a machine shared with other browser runs; 2 s window, mean / max ms). The frame interval is set by the load and the screenshots, not by the page; the CPU column (update plus render submission) is the page's own work.</p><table style="border-collapse:collapse;font-size:12px"><tr><th align=left>viewport</th><th align=left>mode / view</th><th align=left>interval</th><th align=left>cpu</th></tr><tr><td>390x844</td><td>visitor bubble</td><td>2966.5 / 2966.5</td><td>6.1 / 6.1</td></tr><tr><td>390x844</td><td>visitor speak</td><td>53.9 / 450.0</td><td>1.2 / 8.0</td></tr><tr><td>390x844</td><td>visitor two-stations</td><td>33.1 / 249.9</td><td>5.8 / 52.0</td></tr><tr><td>390x844</td><td>visitor portrait</td><td>33.1 / 116.7</td><td>2.7 / 50.4</td></tr><tr><td>390x844</td><td>visitor popup</td><td>50.8 / 216.7</td><td>10.8 / 190.3</td></tr><tr><td>390x844</td><td>creator</td><td>42.9 / 250.0</td><td>6.8 / 76.9</td></tr><tr><td>390x844</td><td>editor</td><td>43.1 / 266.7</td><td>1.2 / 9.0</td></tr><tr><td>844x390</td><td>visitor bubble</td><td>54.5 / 383.4</td><td>5.0 / 110.1</td></tr><tr><td>844x390</td><td>visitor speak</td><td>123.5 / 483.3</td><td>3.4 / 20.4</td></tr><tr><td>844x390</td><td>visitor two-stations</td><td>54.3 / 400.0</td><td>5.5 / 57.8</td></tr><tr><td>844x390</td><td>visitor portrait</td><td>72.0 / 300.0</td><td>4.5 / 104.6</td></tr><tr><td>844x390</td><td>visitor popup</td><td>113.9 / 850.0</td><td>8.7 / 105.3</td></tr><tr><td>844x390</td><td>creator</td><td>84.0 / 466.6</td><td>0.4 / 0.5</td></tr><tr><td>844x390</td><td>editor</td><td>90.7 / 500.0</td><td>1.1 / 7.5</td></tr><tr><td>1440x900</td><td>visitor bubble</td><td>134.4 / 850.0</td><td>1.5 / 10.2</td></tr><tr><td>1440x900</td><td>visitor speak</td><td>183.3 / 833.3</td><td>39.1 / 418.1</td></tr><tr><td>1440x900</td><td>visitor two-stations</td><td>73.2 / 183.3</td><td>1.5 / 19.5</td></tr><tr><td>1440x900</td><td>visitor portrait</td><td>148.8 / 333.3</td><td>5.8 / 69.7</td></tr><tr><td>1440x900</td><td>visitor popup</td><td>203.3 / 350.0</td><td>1.3 / 2.4</td></tr><tr><td>1440x900</td><td>creator</td><td>138.9 / 350.0</td><td>1.7 / 19.0</td></tr><tr><td>1440x900</td><td>editor</td><td>257.4 / 983.4</td><td>1.0 / 1.9</td></tr></table><p>Media, measured from the generated canvases (<code>mediaSizes()</code>):</p><ul><li>one frame as the <code>image</code> asset: 512 x 1024, PNG 320 KB, WebP 51 KB.</li><li>the 4-frame sheet: 2048 x 1024, PNG 737 KB, WebP 173 KB. GPU: about 11 MB with mipmaps.</li><li>the back side: generated at load from the alpha, 0 bytes in the zip, but another 11 MB of GPU memory; a shader that tints the front's alpha would remove it.</li><li>narration: the tone stand-ins are 8.1 s and 6.5 s; as speech in Opus at 24 kbps that is about 25 KB and 20 KB per station. Timing JSON is under 1 KB.</li><li>pop-up backdrop 1024 x 1080: WebP 29 KB if shipped, about 4.4 MB on the GPU; in the page it is drawn by code.</li><li>So a station with this block costs about 200 KB the first time (the character), then about 25 KB per further station. That is the strongest argument for the tour-level character.</li></ul><p>Creator minutes:</p><ul><li>once per tour: the character (an illustration with alpha and three or four frames) is the real cost, hours, not minutes.</li><li>per station: a line (1 min), placing and turning (1 min), size if it differs (0 min with <code>character.heightM</code>).</li><li>narration: recording 2 min, timing by forced alignment or by hand 2 to 10 min; or none, and the views fall back to plain reading.</li></ul></details>
+<details><summary>4. Creator controls per view</summary><p>On the phone (creator mode), five large buttons, the same for every view:</p><ul><li><b>View</b>: chips for the five views, and the bubble side (left, auto, right).</li><li><b>Line</b>: the text with a counter (120 max) and the timing status; editing the line marks the timing out of date, and "Re-time narration" rebuilds the stand-in timing.</li><li><b>Size</b>: a slider (0.5 to 3.2 m) with Child, Adult, Giant presets.</li><li><b>Turn</b>: a slider and "Face the phone"; the sheet says he turns up to 60 degrees toward a visitor (in the pop-up view the stage does not turn at all).</li><li><b>Move</b>: tap the ground where he should stand, or "Two steps in front of me"; he is kept inside the station circle.</li><li>A gold ring at his feet marks the block being edited.</li></ul><p>In the desktop editor:</p><ul><li>left: the tour's character (shared) and each station's blocks.</li><li>right: the appearance (view, line, height, bubble side, x, z, yaw, narration with timing status, Play, Re-time) and the shared character (name, the four frames, voice credit, id). Editing the name changes both stations at once, which is the point of the model. "Show tour JSON" shows the stored record live.</li><li>in the 3D view: a gold disc to drag him, a white ring with a gold knob to turn him (Shift snaps 15 degrees), and a faint gold circle at 9 m where his bubble opens. The bubble is shown at its real world size here (no reading floor), which is honest about how small it is without the floor.</li></ul></details>
+<details><summary>5. Blunt self-check</summary><ul><li><b>Breaks or stretches the prompt:</b> the reading floor means the bubble is screen-sized text drawn in the world: it grows in the world with distance and is drawn over everything (no depth test). I think that is right for AR, but it is not "world-sized text". The portrait view is DOM, so in AR it depends on the DOM overlay feature. The beckon depends on the tour order, not a field. The pop-up backdrop is code, not creator data. I added page-only hook extras (<code>speak</code>, <code>setFramed</code>, <code>readout</code>, <code>mediaSizes</code>) for my own screenshots; the shared hook is complete without them.</li><li><b>Headless numbers:</b> frame times are software rendering on a loaded machine; they do not predict a phone.</li><li><b>Drop first:</b> <code>bubble</code> as a separate view. <code>speak</code> without narration IS the bubble view; one view that degrades is better than two to choose between.</li><li><b>Weakest required view:</b> <code>two-stations</code> is less a view than a property of the model (a shared character); its only drawing of its own is the beckon and the chevrons.</li><li><b>Proudest:</b> <code>speak</code>, because of the details that make it hold up outside: the reading floor, the side flip and slide-back that keep the bubble on screen, the read-along that is the same with sound off, and the honest stale state. The pop-up is the most charming, and the one I would show a creator first.</li></ul></details>
+</template>
+</body>
+</html>

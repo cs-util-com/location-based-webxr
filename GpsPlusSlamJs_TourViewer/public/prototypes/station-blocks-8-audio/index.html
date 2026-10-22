@@ -1,0 +1,1307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Audio blocks - station block prototype</title>
+<script type="importmap">
+  { "imports": {
+      "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+  } }
+</script>
+<style>
+:root{
+  --plate:rgba(15,17,23,.86); --plate2:rgba(20,22,29,.94); --ink:#f4f0e8; --muted:#aea89b; --faint:#77726a;
+  --amber:#f3b35a; --teal:#5ccfbe; --line:rgba(255,255,255,.10); --hot:#f4f0e8;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --serif:ui-serif,"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Noto Serif",serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"Roboto Mono",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#191b20;color:var(--ink);font-family:var(--sans);overflow:hidden;-webkit-font-smoothing:antialiased}
+button{font-family:inherit}
+#app{position:fixed;inset:0;display:grid;grid-template-columns:0 minmax(0,1fr) 0;grid-template-rows:minmax(0,1fr)}
+#app.editor{grid-template-columns:232px minmax(0,1fr) 336px}
+#left,#right{display:none;background:#14161b;overflow:auto;min-height:0}
+#app.editor #left,#app.editor #right{display:block}
+#left{grid-column:1;border-right:1px solid var(--line)}
+#right{grid-column:3;border-left:1px solid var(--line)}
+#mid{grid-column:2;position:relative;display:flex;align-items:center;justify-content:center;min-width:0;min-height:0}
+#stage{position:relative;overflow:hidden;width:100%;height:100%;background:#dfe5ea;touch-action:none}
+#app.phone #stage{width:auto;height:calc(100% - 28px);aspect-ratio:9/19.5;border-radius:34px;box-shadow:0 0 0 9px #0b0c0f,0 0 0 10px #2b2e35,0 30px 60px rgba(0,0,0,.5)}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block}
+.hud{position:absolute;z-index:4}
+/* top bar */
+#top{left:0;right:0;top:0;padding:calc(env(safe-area-inset-top) + 10px) 10px 0;display:flex;gap:6px;align-items:center;pointer-events:none}
+#top>*{pointer-events:auto}
+.seg{display:flex;background:var(--plate);border-radius:999px;padding:3px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.seg button{all:unset;cursor:pointer;font:600 12px/1 var(--sans);padding:7px 10px;border-radius:999px;color:var(--muted);white-space:nowrap}
+.seg button.on{background:var(--hot);color:#14161b}
+.sp{flex:1}
+.ib{all:unset;cursor:pointer;width:32px;height:32px;border-radius:50%;background:var(--plate);display:grid;place-items:center;color:var(--ink);flex:none;backdrop-filter:blur(8px)}
+.ib.on{background:var(--hot);color:#14161b}
+.ib svg{width:17px;height:17px}
+#views{left:0;right:0;top:calc(env(safe-area-inset-top) + 50px);display:flex;justify-content:center;gap:6px;padding:0 10px;pointer-events:none}
+#views>*{pointer-events:auto}
+#views .seg button{padding:6px 10px;font-size:11.5px}
+#views .seg button i{font-style:normal;color:var(--amber);margin-left:3px;font-size:10px}
+#views .seg button.on i{color:#9a6a1c}
+#ft{right:8px;bottom:calc(env(safe-area-inset-bottom) + 5px);font:500 9.5px/1.2 var(--mono);color:#e9e6df;background:rgba(15,17,23,.6);padding:3px 7px;border-radius:6px;pointer-events:none;white-space:nowrap}
+/* nearest station */
+#nearest{left:50%;top:calc(env(safe-area-inset-top) + 92px);transform:translateX(-50%);background:var(--plate);border-radius:999px;padding:7px 14px 7px 8px;display:none;align-items:center;gap:9px;font:500 13px/1.2 var(--sans);white-space:nowrap}
+#nearest .arr{width:26px;height:26px;border-radius:50%;background:#2a2d35;display:grid;place-items:center}
+#nearest b{font-weight:650}
+#nearest small{display:block;color:var(--muted);font-size:11px}
+/* card + strip */
+.panel{background:var(--plate);border-radius:20px;box-shadow:0 12px 34px rgba(0,0,0,.28);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+#card{left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 28px);max-width:460px;margin:0 auto;padding:14px 16px 12px;display:none}
+.krow{display:flex;align-items:center;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.dot.n{background:var(--amber);box-shadow:0 0 0 3px rgba(243,179,90,.18)}
+.dot.s{background:var(--teal);box-shadow:0 0 0 3px rgba(92,207,190,.18)}
+.kicker{font:700 10.5px/1 var(--sans);letter-spacing:.13em;text-transform:uppercase;color:var(--amber)}
+.state{margin-left:auto;font:500 11.5px/1 var(--sans);color:var(--muted);white-space:nowrap}
+.state.live{color:var(--ink)}
+.ctitle{font:600 21px/1.2 var(--serif);margin:7px 0 10px;letter-spacing:.005em}
+.scrub{display:flex;align-items:center;gap:10px}
+.round{all:unset;cursor:pointer;width:42px;height:42px;border-radius:50%;background:var(--hot);color:#14161b;display:grid;place-items:center;flex:none}
+.round svg{width:18px;height:18px}
+.scrub canvas{flex:1;height:30px;min-width:0}
+.time{font:500 11.5px/1 var(--mono);color:var(--muted);white-space:nowrap}
+.read{font:400 17px/1.45 var(--serif);margin:11px 0 2px;min-height:2.9em}
+.read .cur{color:var(--ink)}
+.read .nx{color:var(--faint)}
+.amb{display:flex;align-items:center;gap:8px;font:500 12.5px/1.2 var(--sans);color:var(--ink);padding-top:10px;margin-top:10px;border-top:1px solid var(--line)}
+.amb .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.amb .k{color:var(--teal);font:700 9.5px/1 var(--sans);letter-spacing:.12em;text-transform:uppercase}
+.meter{width:54px;height:5px;border-radius:3px;background:rgba(255,255,255,.12);overflow:hidden;flex:none;margin-left:auto}
+.meter i{display:block;height:100%;background:var(--teal);border-radius:3px;width:0}
+.tag{font:600 10.5px/1 var(--sans);color:#1b1d22;background:var(--amber);border-radius:999px;padding:4px 7px;white-space:nowrap;display:none;align-items:center;gap:3px}
+.tag.show{display:inline-flex}
+#strip{left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 28px);max-width:520px;margin:0 auto;padding:12px 16px;display:none}
+#strip .cap{font:400 18px/1.42 var(--serif);text-align:center;color:var(--ink)}
+#strip .cap .who{display:block;font:700 9.5px/1 var(--sans);letter-spacing:.13em;text-transform:uppercase;color:var(--amber);margin-bottom:6px}
+#strip .amb:first-child{border-top:0;margin-top:0;padding-top:0}
+#strip .cap:empty{display:none}
+#strip .cap:empty + .amb{border-top:0;margin-top:0;padding-top:0}
+/* edge pointers */
+.edge{position:absolute;z-index:3;transform:translate(-50%,-50%);display:none;align-items:center;gap:7px;background:var(--plate);border-radius:999px;padding:5px 11px 5px 5px;font:600 12px/1.15 var(--sans);white-space:nowrap;pointer-events:none}
+.edge .ar{width:24px;height:24px;border-radius:50%;display:grid;place-items:center}
+.edge small{display:block;font-weight:500;color:var(--muted);font-size:10.5px}
+#hz{left:10px;right:10px;top:calc(env(safe-area-inset-top) + 88px);height:84px;display:none;pointer-events:none}
+#hz canvas{width:100%;height:100%;display:block}
+/* creator */
+#reticle{left:50%;top:40%;width:44px;height:44px;margin:-22px 0 0 -22px;display:none;pointer-events:none}
+#creator{left:0;right:0;bottom:0;max-width:580px;margin:0 auto;display:none;flex-direction:column;gap:8px;padding:0 10px calc(env(safe-area-inset-bottom) + 26px)}
+.sheet{background:var(--plate2);border-radius:22px;padding:12px 14px;display:grid;grid-template-columns:minmax(0,1fr);gap:10px;box-shadow:0 12px 34px rgba(0,0,0,.3)}
+.sheet .row{display:flex;align-items:center;gap:10px;font:500 12.5px/1.2 var(--sans)}
+.sheet .row>label{color:var(--muted);width:88px;flex:none;font-size:11.5px}
+.sheet input[type=range]{flex:1;accent-color:var(--amber);min-width:0}
+.sheet .val{font:500 11.5px var(--mono);color:var(--ink);width:44px;text-align:right}
+.sheet .seg{background:rgba(255,255,255,.07);overflow-x:auto;scrollbar-width:none;min-width:0;flex:0 1 auto}
+.sheet .seg button{font-size:11.5px;padding:6px 9px}
+.txt{all:unset;flex:1;min-width:0;background:rgba(255,255,255,.07);border-radius:10px;padding:8px 10px;font:500 13px var(--sans);color:var(--ink)}
+.ok{color:var(--teal);font-size:12px}
+.big3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.big{all:unset;cursor:pointer;height:60px;border-radius:18px;background:var(--plate);display:flex;flex-direction:column;align-items:center;justify-content:center;font:600 12.5px var(--sans);gap:5px;color:var(--ink);backdrop-filter:blur(8px)}
+.big svg{width:20px;height:20px}
+.big.primary{background:var(--hot);color:#121318}
+.blocks{display:flex;gap:6px;min-width:0}
+.sheet>*{min-width:0}
+.bchip{all:unset;cursor:pointer;flex:1;display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.06);font:600 12.5px/1.15 var(--sans);min-width:0}
+.bchip small{display:block;font-weight:500;color:var(--muted);font-size:10.5px}
+.bchip.on{background:rgba(255,255,255,.16);box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)}
+.bchip span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* editor */
+.ph{padding:14px 14px 8px;font:700 10.5px/1 var(--sans);letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
+.item{display:flex;gap:10px;align-items:center;padding:9px 14px;cursor:pointer;font:500 13px/1.25 var(--sans);border-left:3px solid transparent}
+.item small{display:block;color:var(--muted);font-size:11px}
+.item.on{background:rgba(255,255,255,.06);border-left-color:var(--hot)}
+.item.off{opacity:.45;cursor:default}
+.ins{padding:4px 14px 20px;display:grid;gap:12px}
+.f{display:grid;gap:5px}
+.f>label{font:600 10.5px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}
+.f>label em{font-style:normal;letter-spacing:0;text-transform:none;font-weight:500;color:var(--faint)}
+.f input[type=text],.f input[type=number],.f select,.f textarea{all:unset;box-sizing:border-box;width:100%;background:#1f2229;border:1px solid #2c3039;border-radius:8px;padding:7px 9px;font:500 12.5px/1.35 var(--sans);color:var(--ink)}
+.f textarea{min-height:110px;white-space:pre-wrap;font-family:var(--serif);font-size:13px}
+.f select{background-image:linear-gradient(45deg,transparent 50%,#888 50%),linear-gradient(135deg,#888 50%,transparent 50%);background-position:calc(100% - 14px) 50%,calc(100% - 9px) 50%;background-size:5px 5px;background-repeat:no-repeat}
+.f input[type=range]{width:100%;accent-color:var(--amber)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.f .seg{background:#1f2229;border-radius:9px}
+.f .seg button{border-radius:7px;flex:1;text-align:center}
+.asset{display:grid;gap:6px;background:#1f2229;border:1px solid #2c3039;border-radius:10px;padding:8px}
+.asset .meta{display:flex;justify-content:space-between;font:500 11px var(--mono);color:var(--muted)}
+.asset canvas,.curve{width:100%;height:44px;display:block}
+.curve{height:78px;background:#1f2229;border:1px solid #2c3039;border-radius:10px}
+.warn{font:500 11.5px var(--sans);color:var(--amber)}
+.chk{display:flex;gap:8px;align-items:center;font:500 12.5px var(--sans)}
+.chk input{accent-color:var(--teal);width:16px;height:16px;flex:none}
+.f>label.chk{text-transform:none;letter-spacing:0;font:500 12.5px/1.35 var(--sans);color:var(--ink);justify-content:flex-start}
+#edHint{left:12px;bottom:12px;background:var(--plate);border-radius:12px;padding:8px 11px;font:500 11.5px/1.35 var(--sans);color:var(--muted);display:none;max-width:320px}
+#edHint b{color:var(--ink)}
+/* overlays */
+.over{position:absolute;inset:0;z-index:20;display:none;background:rgba(10,11,14,.55);backdrop-filter:blur(3px);padding:calc(env(safe-area-inset-top) + 54px) 12px 12px}
+.over.show{display:block}
+.over .box{background:#15171c;border:1px solid var(--line);border-radius:18px;max-width:640px;margin:0 auto;max-height:100%;overflow:auto;padding:16px 18px}
+.over h2{font:650 15px/1.2 var(--sans);margin:0 0 4px}
+.over p.sub{margin:0 0 12px;color:var(--muted);font:500 12px/1.4 var(--sans)}
+.fl{display:grid;grid-template-columns:132px 1fr;gap:6px 12px;font:500 12.5px/1.4 var(--sans)}
+.fl code{font:500 11.5px/1.4 var(--mono);color:var(--amber)}
+.fl span{color:#d9d4ca}
+.md{font:400 13.5px/1.55 var(--sans);color:#ddd8ce}
+.md h1{font:650 18px/1.25 var(--sans);margin:4px 0 10px;color:var(--ink)}
+.md h2{font:650 15px/1.3 var(--sans);margin:18px 0 6px;color:var(--ink)}
+.md h3{font:650 13.5px/1.3 var(--sans);margin:14px 0 4px;color:var(--amber)}
+.md ul{margin:4px 0 8px;padding-left:18px}
+.md li{margin:2px 0}
+.md code{font:500 12px var(--mono);color:var(--amber)}
+.md p{margin:6px 0}
+.xb{all:unset;cursor:pointer;float:right;font:600 12px var(--sans);color:var(--muted);padding:4px 8px;border-radius:8px;background:rgba(255,255,255,.06)}
+@media (max-height:520px){
+  #views{top:10px;left:auto;right:150px;justify-content:flex-end}
+  #nearest,#hz{top:52px}
+  #card,#strip{left:12px;right:auto;width:340px;margin:0;bottom:12px}
+  .read .nx{display:none}
+  .sheet .row>label{width:74px}
+  #card{padding:10px 14px 9px}
+  .ctitle{font-size:18px;margin:5px 0 7px}
+  .read{font-size:15.5px;margin-top:7px;min-height:0}
+  #strip .cap{font-size:16px}
+  #creator{left:auto;right:0;top:0;width:360px;padding:52px 10px 10px;justify-content:flex-end}
+  .sheet{gap:7px;padding:10px 12px}
+  .big{height:48px}
+}
+@media (max-width:860px){
+  #app.editor{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,44vh) minmax(0,1fr)}
+  #app.editor #left{grid-column:1;grid-row:1;border:0;border-bottom:1px solid var(--line)}
+  #app.editor #mid{grid-column:1;grid-row:2}
+  #app.editor #right{grid-column:1;grid-row:3;border:0}
+  #app.editor #left .ph{display:none}
+  #app.editor #left .list{display:flex;overflow-x:auto}
+  #app.editor #left .item{border-left:0;border-bottom:3px solid transparent;flex:none;padding:8px 12px}
+  #app.editor #left .item.on{border-bottom-color:var(--hot)}
+  #app.editor #edHint{display:none!important}
+}
+@media (max-width:860px) and (max-height:520px){
+  #app.editor{grid-template-columns:minmax(0,1fr) 300px;grid-template-rows:auto minmax(0,1fr)}
+  #app.editor #left{grid-column:1/3;grid-row:1}
+  #app.editor #mid{grid-column:1;grid-row:2}
+  #app.editor #right{grid-column:2;grid-row:2;border-left:1px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="left"></aside>
+  <div id="mid">
+    <div id="stage">
+      <canvas id="gl"></canvas>
+      <div id="top" class="hud">
+        <div class="seg" id="modes"></div>
+        <div class="sp"></div>
+        <button class="ib" id="bSound" title="Sound on or off" aria-label="Sound"></button>
+        <button class="ib" id="bFields" title="Which fields this view uses" aria-label="Fields">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h10M4 18h7"/></svg></button>
+        <button class="ib" id="bPhone" title="Phone frame" aria-label="Phone frame">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2" stroke-linecap="round"/></svg></button>
+        <button class="ib" id="bNotes" title="Designer notes" aria-label="Notes">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg></button>
+      </div>
+      <div id="views" class="hud"><div class="seg" id="viewSeg"></div>
+        <button class="ib" id="bWalk" title="Walk forward" aria-label="Walk">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4.5" r="1.8"/><path d="M10 21l2.2-6.5L15 17v4M8.5 11.5l2.5-3.5h3l2 3.5 2.5 1M11 8l-1 6"/></svg></button>
+      </div>
+      <div id="ft" class="hud">-</div>
+      <div id="nearest" class="hud"><span class="arr"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f4f0e8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5M6 11l6-6 6 6"/></svg></span><span><b>Old market square</b><small>-</small></span></div>
+      <div id="hz" class="hud"><canvas></canvas></div>
+      <div id="edges"></div>
+      <div id="card" class="hud panel">
+        <div id="cNarr">
+          <div class="krow"><span class="dot n"></span><span class="kicker">Narration</span><span class="state" id="cState">-</span></div>
+          <div class="ctitle" id="cTitle">-</div>
+          <div class="scrub"><button class="round" id="cPlay" aria-label="Play or pause"></button><canvas id="cWave"></canvas><span class="time" id="cTime">0:00</span></div>
+          <p class="read" id="cRead"></p>
+        </div>
+        <div class="amb" id="cAmb"></div>
+      </div>
+      <div id="strip" class="hud panel"><div class="cap" id="sCap"></div><div class="amb" id="sAmb"></div></div>
+      <svg id="reticle" class="hud" viewBox="0 0 44 44" fill="none"><circle cx="22" cy="22" r="13" stroke="#fff" stroke-width="2" opacity=".9"/><circle cx="22" cy="22" r="2.5" fill="#fff"/><path d="M22 2v6M22 36v6M2 22h6M36 22h6" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+      <div id="creator" class="hud">
+        <div class="sheet" id="csheet"></div>
+        <div class="big3">
+          <button class="big primary" id="cbPlace"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></svg>Place here</button>
+          <button class="big" id="cbPrev"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Preview</button>
+          <button class="big" id="cbDone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Done</button>
+        </div>
+      </div>
+      <div id="edHint" class="hud"><b>Drag</b> the white disc to move a sound, the <b>small knob</b> to set where it is at full volume and the <b>large knob</b> to set how far it carries. Drag empty ground to orbit, wheel to zoom.</div>
+      <div id="fieldsOver" class="over"><div class="box"><button class="xb" data-close>Close</button><h2 id="flTitle">Fields</h2><p class="sub" id="flSub"></p><div class="fl" id="flList"></div></div></div>
+      <div id="notesOver" class="over"><div class="box"><button class="xb" data-close>Close</button><div class="md" id="notesBody"></div></div></div>
+    </div>
+  </div>
+  <aside id="right"></aside>
+</div>
+
+<script type="text/markdown" id="notesMd">
+# Audio alone - designer notes
+
+Family `station-blocks-8-audio`. One model, five views: three required (Spot, Zone, Beacon) and two of my own (Drift, Horizon). Every view draws the same data: the station's two audio blocks, both records of the one audio model.
+
+## 1. The model as built
+
+- The example is a PAIR of records, because the assignment needs one of each `mode` and ducking needs both at once: "The fire of 1890" (narration, 36 s tone pattern, play `resume`, source in front of the guild house door, full volume within 4 m, heard to 16 m, linear rolloff) and "Market day, 1880s" (soundscape, 16 s seamless loop, play `loop`, source over the west half where the market hall stood, 5 m / 15 m, inverse rolloff, `duck` true, volume 0.7). Every view draws both; the view picker switches both at once (the exported file stores `view` per block).
+- Fields exactly as given: `audio`, `mode`, `play`, `fadeInMs`, `fadeOutMs`, `volume`, `source` (`position`, `minM`, `maxM`, `rolloff`), `duck`, `transcript`, `caption`.
+- Semantics I had to decide, because the field names do not say them:
+  - A block starts when the visitor is inside the station circle AND inside `maxM` (or anywhere in the circle without a `source`). Tapping play on the card starts it from anywhere in the circle at full level.
+  - `play`: `once` plays to the end once, and leaving midway restarts it next time; `resume` continues where the visitor left; `loop` repeats while audible.
+  - Loudness is 1 inside `minM`, 0 at `maxM`, and between them follows `rolloff` ("linear", "inverse", "exponential"), normalised so it reaches exactly 0 at `maxM`. The Web Audio panner is used for direction only (rolloff factor 0); the gain is computed once in the page and drives both the sound and every visual, so what a muted visitor sees is what a hearing one hears.
+  - `duck` on a soundscape lowers it to 30 % in proportion to how audible a narration is (fully lowered once the narration is at 40 % or more), with a 0.35 s glide.
+- Fields I would ADD:
+  - `timing` (optional, the same shape as the narrated-text family): without it the read-along is estimated from text length. On my tone pattern the estimate drifts by up to about a second inside a sentence, so the page highlights sentences only, never words. With real speech it drifts more. One shared timing shape across families is cheap.
+  - `title` or a clear rule that `caption` is for both modes: the model says `caption` is for a soundscape, but a narration needs a short name for its post, card and edge pointer just as much. I used `caption` for both.
+  - `transcript` for a soundscape as an optional sound description ("crowd murmur, a horse passing, a bell"): the muted visitor sees only the caption today.
+- Fields I would DROP or fold: `fadeInMs` and `fadeOutMs` could be one `fadeMs` for creators (nobody tunes them separately); keep two in the file if you like, but show one control. `source.rolloff` is barely audible as a difference between "inverse" and "exponential" outdoors; two values ("even", "close up") would do.
+- Not in the model and deliberately not added: a turn. These sources are omnidirectional, so the editor has move and radius handles but no turn handle. A directional cone (`coneDeg`, a yaw) would be the only reason to add one.
+
+## 2. Per view
+
+### Spot (required) - a listening post and a player card
+- What: a slim post with a speaker badge and a label (caption, state, time) over a bright circle on the ground where the sound is at full volume, a dashed earshot ring at `maxM`, and a player card on the screen: caption, play/pause, a waveform scrub bar, the current sentence in ink and the next in grey, and a one-line ambience row with its level and a "lowered" tag while ducked.
+- Fields: all of them; `source.rolloff` is heard, not drawn.
+- Why a visitor likes it: it is the familiar audio-guide stop. It says where to stand, and the card works fully with sound off (it reads along).
+- Weakest: the card takes a third of a portrait screen; in a crowded square a post on a spot people stand on is crowded too. 1 m of error is harmless: the circle is 8 m wide.
+
+### Zone (required) - a soundscape you walk into
+- What: the ground glows where the sound is heard, and the gradient IS the loudness curve (computed from `minM`, `maxM`, `rolloff` in the shader), with slow ripples driven by the sound's envelope and a floating caption on a stem over the centre. It dims while ducked and says so.
+- Why: it makes an invisible thing visible without a single control; the visitor sees where the market was loudest.
+- Weakest: at eye height a ground gradient is seen at a grazing angle and is faint; against a real camera image (cobbles, shadows) it will be fainter still. In sunlight only the rings and the label survive. Fine with 1 m of error.
+
+### Beacon (required) - a directional source to walk toward
+- What: a lit point 2.6 m above the source on a thin beam, sending out wavefronts (rate from the envelope, reach from `maxM`), a base ring at `minM`, a label with distance; off screen, a pointer at the screen edge with caption and "9 m, louder this way" or "heard in 4 m".
+- Why: it answers "where is that sound coming from?" with sound off, and the edge pointer gets the visitor to turn.
+- Weakest: the lit point is small at 15 m on a bright sky; an exact-looking point placed 1 m wrong in front of a doorway looks wrong, so it floats above head height on purpose.
+
+### Drift (my own) - the words rise from the spot
+- What: as the narration plays, its words are set into a line in the air above the post, a new line lifting the older ones, which fade; the soundscape breathes out slow teal motes over the market area. The caption strip at the bottom still carries the whole sentence.
+- Inspired by: subtitles and "words in the air" title sequences; nothing specific.
+- Why: it is the most "the place is talking" of the five, and it gives a muted visitor the text where the sound comes from.
+- Weakest: it is only as good as the timing, and without a `timing` field it is estimated; long words at 15 m are small; a crowd walking through the words breaks the effect. Sunlight: pills are dark, so it holds up.
+
+### Horizon (my own) - a hearing compass
+- What: a compass bar across the top of the screen, cardinal letters and ticks, with every sound as a soft glow at its bearing, wide when near (the angular size of `minM`), bright when loud, an outline with "heard in N m" when out of earshot, and a "lowered" tag while ducked. Nothing in the world has to line up; the ground shows only faint earshot rings.
+- Inspired by: compass bars in games.
+- Why: it is immune to placement error and works in any light, and it shows several sounds at once.
+- Weakest: it is the least magical; it is a HUD, not AR. It needs the phone's heading to be right.
+
+## 3. Cost per view
+
+Frame times are from the page's own readout, headless Chromium with SOFTWARE rendering (SwiftShader) on a desktop CPU, at 390 x 844; "frame" is the rAF interval, which in software rendering is dominated by the rasteriser, so read the "work" column (the page's own JavaScript per frame, render call included) as the comparable number.
+
+- Readout per view, visitor mode, as "frame mean / max ms; work mean / max ms" at 390x844, 844x390 and 1440x900 (final run; the machine was also running other work, so the maxima are load noise, not the page):
+  - visitor-spot: 177/2183; 1.0/3 | 147/283; 1.2/6 | 178/400; 0.8/1
+  - visitor-zone: 79/417; 14.3/414 | 77/400; 12.6/154 | 169/367; 0.6/1
+  - visitor-beacon: 70/433; 0.6/1 | 128/417; 16.7/273 | 141/250; 2.2/14
+  - visitor-drift: 61/217; 4.9/128 | 68/483; 0.9/2 | 158/400; 8.6/99
+  - visitor-horizon: 78/417; 28.6/349 | 48/250; 14.7/210 | 183/350; 0.8/1
+  - creator-spot: 149/567; 2.9/34 | 131/317; 0.7/1 | 525/667; 115.7/461
+  - editor-spot: 80/250; 0.9/1 | 35/550; 8.9/242 | 156/283; 0.8/1
+- Reading them: the frame interval (35 to 525 ms) is SwiftShader rasterising on the CPU and says nothing about a phone. The work column (the page's own code per frame, including the render call) is under about 1-3 ms in most runs for every view; the spikes into hundreds of ms coincide with page load, texture uploads (Drift creates one per new word) and the competing load, and appear in different views on different runs. No view is measurably heavier than another in this setup. On a phone the GPU cost is a handful of transparent quads and one ground shader per block: Zone's full-screen-ish ground disc is the largest fill-rate cost, Drift the largest number of draw calls (up to 34 word sprites).
+
+- Media per station: narration 36 s mono, about 140 KB as Opus at 32 kbps; soundscape 16 s loop, about 94 KB at 48 kbps. Nothing else: every view draws from the data. Raw PCM in the page is 1.7 MB and 0.75 MB.
+- Creator's minutes: Spot and Horizon about 2 (place, set "heard within"); Zone about 3 (the size matters more); Beacon about 2; Drift about 5 if a `timing` file exists, otherwise the same as Spot but the creator must accept estimated timing.
+- Code: each view is a few hundred lines once in the app. Zone uses one small ground shader shared with Spot and the editor; nothing is per block.
+
+## 4. The creator's controls
+
+- Phone (creator mode): pick the block, pick the view, "Heard within" (`maxM`), volume, "When I return" (once / resume / loop), and for a soundscape "Lower while a narration plays" (`duck`); the transcript shows only as a check mark (it is typed on the desktop). Three large buttons: Place here (moves the source to the reticle), Preview (plays it from the start at full level), Done.
+- Desktop editor: the station's blocks on the left; the inspector has every field: caption, view, the audio asset with waveform, duration and size, mode, play, volume, fade in and out, source on or off, x and z, `minM`, `maxM`, rolloff with a live loudness curve, duck, transcript (warned when a narration lacks it). In the 3D view: a white disc to drag the source, a small knob for "full volume" and a large knob for "heard to", with their values floating above them. Same controls for every view; no view adds a field.
+
+## 5. Blunt self-check
+
+- Rule bent: "one example record". The family needs two records (a narration and a soundscape) to show ducking; both are drawn in every view, the same in each.
+- Rule bent: the visitor's read-along is estimated from text length because the fixed model has no timing field; I say so in the fields panel and propose the field above.
+- Context: Drift spawns a canvas texture per new word (cached by word); on a phone that is a small upload per word, fine, but it is the one view whose cost grows with text.
+- The editor's "turn" handle is missing by design (the model has no orientation).
+- Headless sound is never heard in the checks; sound is generated and routed, but only tested by hand in a real browser (press the speaker button).
+- Drop first: Zone as a separate view. It is beautiful from above and faint from eye height, and Spot already draws the full-volume circle; Zone is worth keeping only as the default for soundscapes, which is what it is for.
+- Proudest of: Horizon, because it is the honest answer to the brief's own warnings: it needs no exact fit, survives sunlight and sound-off, shows ducking and distance for every sound at once, and costs nothing per block. Drift is the one that would make people smile.
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ------------------------------------------------------------------ data */
+const STATION = { id: 'old-market-square', name: 'Old market square', radiusM: 25 };
+const NEXT_STATION = { name: 'Bridge gate', pos: [60, 0, 0], radiusM: 25 };
+const TRANSCRIPT =
+  'Look to your left, across the west half of the square. ' +
+  'For almost two hundred years a timber market hall stood there, open on the ground floor and full of stalls. ' +
+  'Cloth, salt, cheese and iron nails were sold under its beams, and the town council met in the long room above. ' +
+  "On a dry night in August 1890, a lantern fell in a cooper's store at the back. " +
+  'By morning the hall was gone, and the square was a field of black timber. ' +
+  'The guild house in front of you was saved because the wind turned north before dawn. ' +
+  'The hall was never rebuilt; the market simply moved into the open, where it still is on Saturdays.';
+
+/** The two blocks of the station: both are records of the ONE audio model. */
+const RECORDS = [
+  { id: 'fire-1890', view: 'spot',
+    audio: 'media/fire-1890.opus', mode: 'narration', play: 'resume',
+    fadeInMs: 800, fadeOutMs: 1500, volume: 1.0,
+    source: { position: [2, 0, -12], minM: 4, maxM: 16, rolloff: 'linear' },
+    duck: false, transcript: TRANSCRIPT, caption: 'The fire of 1890' },
+  { id: 'market-day', view: 'spot',
+    audio: 'media/market-day.opus', mode: 'soundscape', play: 'loop',
+    fadeInMs: 3000, fadeOutMs: 4000, volume: 0.7,
+    source: { position: [-10, 0, 0], minM: 5, maxM: 15, rolloff: 'inverse' },
+    duck: true, transcript: null, caption: 'Market day, 1880s' },
+];
+const FIELDS = ['audio','mode','play','fadeInMs','fadeOutMs','volume','source.position','source.minM','source.maxM','source.rolloff','duck','transcript','caption'];
+const COL = { narration: new THREE.Color('#f3b35a'), soundscape: new THREE.Color('#5ccfbe') };
+const GROUND_COL = { narration: new THREE.Color('#e48a12'), soundscape: new THREE.Color('#12a593') };
+const css = { narration: '#f3b35a', soundscape: '#5ccfbe' };
+const SANS = getComputedStyle(document.documentElement).getPropertyValue('--sans');
+const SERIF = getComputedStyle(document.documentElement).getPropertyValue('--serif');
+
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const clamp01 = (v) => clamp(v, 0, 1);
+const num = (v, d) => (Number.isFinite(+v) ? +v : d);
+const fmt = (s) => { s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+
+/** Validate a record at the boundary: the page never trusts a field it is handed. */
+function sanitize(r) {
+  r.mode = r.mode === 'soundscape' ? 'soundscape' : 'narration';
+  r.play = ['once', 'loop', 'resume'].includes(r.play) ? r.play : 'once';
+  r.fadeInMs = clamp(num(r.fadeInMs, 800), 0, 20000);
+  r.fadeOutMs = clamp(num(r.fadeOutMs, 1500), 0, 20000);
+  r.volume = clamp01(num(r.volume, 1));
+  r.duck = !!r.duck;
+  r.caption = String(r.caption ?? '').slice(0, 64);
+  r.transcript = r.transcript == null || r.transcript === '' ? null : String(r.transcript);
+  if (r.source) {
+    const s = r.source;
+    const p = Array.isArray(s.position) ? s.position : [0, 0, 0];
+    s.position = [num(p[0], 0), num(p[1], 0), num(p[2], 0)];
+    s.minM = clamp(num(s.minM, 3), 0.5, 200);
+    s.maxM = clamp(num(s.maxM, 15), s.minM + 0.5, 400);
+    s.rolloff = ['linear', 'inverse', 'exponential'].includes(s.rolloff) ? s.rolloff : 'linear';
+  }
+  return r;
+}
+RECORDS.forEach(sanitize);
+
+/** Loudness between minM (1) and maxM (0); the zone's ground gradient draws this same curve. */
+function falloff(d, s) {
+  if (!s) return 1;
+  const mn = s.minM, mx = s.maxM;
+  if (d <= mn) return 1;
+  if (d >= mx) return 0;
+  if (s.rolloff === 'inverse') { const a = mn / d, b = mn / mx; return (a - b) / (1 - b); }
+  if (s.rolloff === 'exponential') { const a = (mn / d) ** 2, b = (mn / mx) ** 2; return (a - b) / (1 - b); }
+  return 1 - (d - mn) / (mx - mn);
+}
+
+/* ------------------------------------------------------------ synthesis */
+const SR = 24000;
+function rng(seed) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const VOWELS = [[1, .55, .25, .1, .05], [1, .3, .5, .2, .08], [1, .7, .15, .25, .1], [1, .2, .1, .35, .15], [1, .45, .35, .05, .12]];
+function syllable(buf, t0, dur, f0, f1, amp, v) {
+  const i0 = Math.floor(t0 * SR), n = Math.floor(dur * SR), a = 0.012 * SR, r = 0.045 * SR;
+  let ph = 0;
+  for (let i = 0; i < n && i0 + i < buf.length; i++) {
+    const u = i / n; ph += 2 * Math.PI * (f0 + (f1 - f0) * u) / SR;
+    const env = Math.min(1, i / a) * Math.min(1, (n - i) / r) * (0.85 + 0.15 * Math.sin(Math.PI * u));
+    let s = 0; for (let h = 0; h < 5; h++) s += v[h] * Math.sin(ph * (h + 1));
+    buf[i0 + i] += amp * env * s * 0.3;
+  }
+}
+function lowpass(b, k) { let y = 0; for (let i = 0; i < b.length; i++) { y += (b[i] - y) * k; b[i] = y; } }
+function normalize(b, peak) { let m = 0; for (let i = 0; i < b.length; i++) m = Math.max(m, Math.abs(b[i])); if (m > 0) for (let i = 0; i < b.length; i++) b[i] *= peak / m; }
+function splitSentences(text) {
+  const out = []; const re = /[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$/g; let m;
+  while ((m = re.exec(text))) { const s = m[0].trim(); if (s) out.push(s); }
+  return out;
+}
+/** A narration-like tone pattern: one soft voiced tone per syllable, pauses at commas and full stops. Never speech. */
+function synthNarration(text, seed = 7) {
+  const R = rng(seed); const ev = []; let t = 0.6;
+  for (const s of splitSentences(text)) {
+    const words = s.split(/\s+/).filter(Boolean); const base = 148 + R() * 18; const q = s.endsWith('?');
+    words.forEach((w, wi) => {
+      const letters = w.replace(/[^\p{L}\p{N}]/gu, '').length || 1;
+      const syl = Math.max(1, Math.round(letters / 3));
+      for (let k = 0; k < syl; k++) {
+        const prog = (wi + k / syl) / words.length;
+        const decl = 1.12 - 0.24 * prog + (q && wi === words.length - 1 ? 0.3 * k / syl : 0);
+        const f = base * decl * (1 + (k === 0 ? 0.05 : 0) + (R() - 0.5) * 0.06);
+        const dur = 0.085 + R() * 0.06 + (k === syl - 1 && wi === words.length - 1 ? 0.08 : 0);
+        ev.push([t, dur, f, f * (0.95 + R() * 0.07), (k === 0 ? 1 : 0.8) * (0.75 + R() * 0.25), VOWELS[Math.floor(R() * 5)]]);
+        t += dur + 0.018;
+      }
+      t += 0.06; if (/[,;:]$/.test(w)) t += 0.22;
+    });
+    t += 0.5;
+  }
+  t += 0.3;
+  const buf = new Float32Array(Math.ceil(t * SR));
+  for (const e of ev) syllable(buf, ...e);
+  lowpass(buf, 0.42); normalize(buf, 0.62);
+  return buf;
+}
+function clop(buf, t, amp, f, R) {
+  const i0 = Math.floor(t * SR), n = Math.floor(0.09 * SR), r = 0.992, w = 2 * Math.PI * f / SR, a1 = 2 * r * Math.cos(w), a2 = -r * r;
+  let y1 = 0, y2 = 0; const g = (1 - r) * 3;
+  for (let i = 0; i < n && i0 + i < buf.length; i++) { const x = i < 0.005 * SR ? (R() * 2 - 1) : 0; const y = x * g + a1 * y1 + a2 * y2; y2 = y1; y1 = y; buf[i0 + i] += y * amp; }
+}
+function bell(buf, t, amp, f) {
+  const P = [[1, 1, 2.8], [2.0, 0.55, 2.0], [2.4, 0.4, 1.5], [3.0, 0.3, 1.1], [4.2, 0.22, 0.7], [0.5, 0.35, 3.6]];
+  const i0 = Math.floor(t * SR), n = Math.floor(4.5 * SR);
+  for (let i = 0; i < n && i0 + i < buf.length; i++) { const tt = i / SR; let s = 0; for (const [m, a, d] of P) s += a * Math.exp(-tt / d) * Math.sin(2 * Math.PI * f * m * tt); buf[i0 + i] += amp * s * Math.min(1, i / (0.003 * SR)); }
+}
+/** A 16 s market loop: murmur, distant chatter, a passing horse, a call, a bell; crossfaded so it loops without a seam. */
+function synthMarket(seed = 11) {
+  const R = rng(seed), L = 16, X = 0.6, N = Math.ceil((L + X) * SR), g = new Float32Array(N);
+  let b1 = 0, b2 = 0;
+  for (let i = 0; i < N; i++) { const w = R() * 2 - 1; b1 += (w - b1) * 0.1; b2 += (b1 - b2) * 0.02; const t = i / SR;
+    const am = 0.55 + 0.25 * Math.sin(2 * Math.PI * 0.31 * t) + 0.2 * Math.sin(2 * Math.PI * 0.13 * t + 1.3); g[i] += (b1 - b2) * am * 1.6; }
+  for (let c = 0; c < 52; c++) { let t = R() * (L + X - 1.4); const f = 110 + R() * 170, amp = 0.025 + R() * 0.05, n = 2 + Math.floor(R() * 6);
+    for (let k = 0; k < n; k++) { const d = 0.07 + R() * 0.08; syllable(g, t, d, f * (1 + (R() - 0.5) * 0.15), f * (0.95 + R() * 0.08), amp, VOWELS[Math.floor(R() * 5)]); t += d + 0.02 + R() * 0.06; } }
+  for (let t = 3, k = 0; t < 8.6; t += 0.24 + (k % 2 ? 0.07 : 0), k++) clop(g, t, 0.55 * Math.sin(Math.PI * (t - 3) / 5.6), 620 + R() * 260, R);
+  const call = (t0, f, amp) => { const parts = [[0, .35, f, f * 1.25], [.36, .5, f * 1.25, f * .92]]; for (const [o, d, a, b] of parts) syllable(g, t0 + o, d, a, b, amp, VOWELS[1]); };
+  call(6.2, 240, 0.12); call(13.6, 290, 0.09);
+  bell(g, 10.8, 0.12, 392);
+  const n = L * SR, x = X * SR, out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = g[i];
+  for (let i = 0; i < x; i++) { const w = i / x; out[i] = g[i] * w + g[n + i] * (1 - w); }
+  normalize(out, 0.55);
+  return out;
+}
+function analyse(samples) {
+  const hop = SR / 50, env = new Float32Array(Math.ceil(samples.length / hop)); let mx = 0;
+  for (let k = 0; k < env.length; k++) { let s = 0; const a = k * hop, b = Math.min(samples.length, a + hop); for (let i = a; i < b; i++) s += samples[i] * samples[i]; env[k] = Math.sqrt(s / Math.max(1, b - a)); mx = Math.max(mx, env[k]); }
+  for (let k = 0; k < env.length; k++) env[k] = mx ? env[k] / mx : 0;
+  const bins = 140, peaks = new Float32Array(bins), per = samples.length / bins; let pm = 0;
+  for (let k = 0; k < bins; k++) { let m = 0; for (let i = Math.floor(k * per); i < Math.floor((k + 1) * per); i++) m = Math.max(m, Math.abs(samples[i])); peaks[k] = m; pm = Math.max(pm, m); }
+  for (let k = 0; k < bins; k++) peaks[k] = pm ? peaks[k] / pm : 0;
+  return { env, peaks };
+}
+function makeMedia(samples, kbps) {
+  const a = analyse(samples); let ab = null;
+  return { samples, duration: samples.length / SR, env: a.env, peaks: a.peaks,
+    pcmBytes: samples.length * 2, opusBytes: Math.round(samples.length / SR * kbps * 1000 / 8),
+    buffer(ctx) { if (!ab) { ab = ctx.createBuffer(1, samples.length, SR); ab.copyToChannel(samples, 0); } return ab; } };
+}
+const MEDIA = { 'media/fire-1890.opus': makeMedia(synthNarration(TRANSCRIPT), 32), 'media/market-day.opus': makeMedia(synthMarket(), 48) };
+
+/** Read-along position estimated from text length alone: the model carries no timing track (see the notes). */
+function buildTrack(text, dur) {
+  if (!text) return null;
+  const lead = 0.6, tail = 0.8, PAUSE = 10, items = []; let total = 0;
+  for (const s of splitSentences(text)) { items.push(s); total += s.length + PAUSE; }
+  const speak = Math.max(0.1, dur - lead - tail), sentences = [], words = []; let acc = 0;
+  for (const s of items) {
+    const start = lead + speak * acc / total; let w = acc;
+    for (const m of s.matchAll(/\S+/g)) { words.push({ text: m[0], start: lead + speak * w / total, si: sentences.length }); w += m[0].length + 1; }
+    acc += s.length + PAUSE;
+    sentences.push({ text: s, start, end: lead + speak * (acc - PAUSE) / total });
+  }
+  return { sentences, words };
+}
+function trackAt(tr, t) {
+  if (!tr) return { si: -1, wi: -1 };
+  let si = -1, wi = -1;
+  for (let i = 0; i < tr.sentences.length; i++) if (tr.sentences[i].start <= t) si = i;
+  for (let i = 0; i < tr.words.length; i++) if (tr.words[i].start <= t) wi = i;
+  if (si >= 0 && t > tr.sentences[si].end + 0.9 && si === tr.sentences.length - 1) si = -1;
+  return { si, wi };
+}
+
+/* --------------------------------------------------------------- audio */
+const audio = { ctx: null, master: null, on: false };
+async function setSound(on) {
+  try {
+    if (on) {
+      if (!audio.ctx) { audio.ctx = new AudioContext(); audio.master = audio.ctx.createGain(); audio.master.gain.value = 0; audio.master.connect(audio.ctx.destination); }
+      await audio.ctx.resume();
+      audio.on = true;
+      audio.master.gain.setTargetAtTime(1, audio.ctx.currentTime, 0.05);
+      for (const rt of RT) { ensureNodes(rt); if (rt.state === 'playing') startSource(rt); }
+    } else {
+      audio.on = false;
+      for (const rt of RT) stopSource(rt);
+      if (audio.ctx) { audio.master.gain.value = 0; await audio.ctx.suspend(); }
+    }
+  } catch (e) { console.warn('sound unavailable', e); audio.on = false; }
+  renderSoundBtn();
+}
+function ensureNodes(rt) {
+  if (rt.node || !audio.ctx) return;
+  const c = audio.ctx, gain = c.createGain(); gain.gain.value = 0;
+  const panner = c.createPanner(); panner.panningModel = 'HRTF'; panner.distanceModel = 'linear'; panner.rolloffFactor = 0; panner.refDistance = 1; panner.maxDistance = 10000;
+  gain.connect(panner); panner.connect(audio.master);
+  rt.node = { gain, panner };
+}
+function startSource(rt) {
+  if (!audio.on || !audio.ctx) return;
+  ensureNodes(rt); stopSource(rt);
+  const src = audio.ctx.createBufferSource(); src.buffer = rt.media.buffer(audio.ctx);
+  src.loop = rt.rec.play === 'loop'; src.connect(rt.node.gain); src.start(0, rt.pos % rt.media.duration); rt.src = src;
+}
+function stopSource(rt) { if (rt.src) { try { rt.src.stop(); } catch { /* already stopped */ } rt.src.disconnect(); rt.src = null; } }
+function setParam(p, v) { if (p) p.setTargetAtTime(v, audio.ctx.currentTime, 0.04); }
+
+/* ------------------------------------------------------------- runtime */
+class Runtime {
+  constructor(rec) { this.rec = rec; this.media = MEDIA[rec.audio]; this.state = 'idle'; this.pos = 0; this.fade = 0; this.duckLevel = 1;
+    this.dist = 0; this.distGain = 0; this.level = 0; this.eff = 0; this.userPaused = false; this.forced = false; this.node = null; this.src = null; this.retrack(); }
+  retrack() { this.trackText = this.rec.transcript; this.track = buildTrack(this.rec.transcript, this.media.duration); }
+  get dur() { return this.media.duration; }
+  get env() { const e = this.media.env; return this.state === 'playing' ? (e[Math.min(e.length - 1, Math.floor(this.pos * 50))] || 0) : 0; }
+  get ducked() { return this.rec.duck && this.duckLevel < 0.85; }
+  srcPos() { return this.rec.source ? this.rec.source.position : [0, 0, 0]; }
+  minM() { return this.rec.source ? this.rec.source.minM : STATION.radiusM * 0.35; }
+  maxM() { return this.rec.source ? this.rec.source.maxM : STATION.radiusM; }
+  toggle() {
+    if (this.state === 'playing' && !this.userPaused) { this.userPaused = true; return; }
+    if (this.state === 'ended') { this.state = 'idle'; this.pos = 0; }
+    this.userPaused = false; if (this.distGain <= 0) this.forced = true;
+  }
+}
+const RT = RECORDS.map((r) => new Runtime(r));
+function stepRuntime(rt, dt, L, inside, narrLevel) {
+  const rec = rt.rec;
+  if (rt.trackText !== rec.transcript) rt.retrack();
+  const p = rt.srcPos();
+  rt.dist = rec.source ? Math.hypot(L.x - p[0], L.z - p[2]) : 0;
+  rt.distGain = rec.source ? falloff(rt.dist, rec.source) : 1;
+  if (!inside) rt.forced = false;
+  if (rt.forced) rt.distGain = 1;
+  const audible = inside && rt.distGain > 0;
+  const want = audible && !rt.userPaused && rt.state !== 'ended';
+  if (want && rt.state !== 'playing') {
+    if (rt.state === 'away' && rec.play !== 'resume') rt.pos = 0;
+    rt.state = 'playing'; startSource(rt);
+  }
+  const target = want ? 1 : 0;
+  const ms = target > rt.fade ? rec.fadeInMs : (rt.userPaused ? 220 : rec.fadeOutMs);
+  const step = dt * 1000 / Math.max(1, ms);
+  rt.fade = target > rt.fade ? Math.min(1, rt.fade + step) : Math.max(0, rt.fade - step);
+  if (rt.state === 'playing') {
+    rt.pos += dt;
+    if (rt.pos >= rt.dur) {
+      if (rec.play === 'loop') rt.pos -= rt.dur;
+      else { rt.state = 'ended'; rt.pos = rt.dur; rt.fade = 0; stopSource(rt); }
+    }
+    if (rt.state === 'playing' && rt.fade <= 0 && !want) { rt.state = rt.userPaused ? 'paused' : 'away'; stopSource(rt); }
+  }
+  const duckTarget = rec.duck ? 1 - 0.7 * clamp01(narrLevel * 2.5) : 1;
+  rt.duckLevel += (duckTarget - rt.duckLevel) * (1 - Math.exp(-dt / 0.35));
+  rt.level = rec.volume * rt.fade * rt.duckLevel;
+  rt.eff = rt.level * rt.distGain;
+  if (audio.on && rt.node) {
+    setParam(rt.node.gain.gain, rt.eff);
+    const pn = rt.node.panner; if (pn.positionX) { pn.positionX.value = p[0]; pn.positionY.value = 1.4; pn.positionZ.value = p[2]; } else pn.setPosition(p[0], 1.4, p[2]);
+  }
+}
+function narrationLevel(except) { let m = 0; for (const rt of RT) if (rt !== except && rt.rec.mode === 'narration' && rt.state === 'playing') m = Math.max(m, rt.distGain * rt.fade); return m; }
+
+/* --------------------------------------------------------------- scene */
+const canvas = document.getElementById('gl');
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#e3e8ec');
+scene.fog = new THREE.Fog('#e3e8ec', 70, 220);
+const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 500);
+camera.rotation.order = 'YXZ';
+scene.add(new THREE.HemisphereLight('#ffffff', '#8f918f', 2.4));
+const sun = new THREE.DirectionalLight('#ffffff', 1.0); sun.position.set(-20, 40, 25); scene.add(sun);
+
+function tex(c) { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; }
+function cnv(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+const grey = (hex) => new THREE.MeshLambertMaterial({ color: hex });
+function box(w, h, d, mat, x, y, z, parent = scene) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); parent.add(m); return m; }
+function flat(geo, mat, y, parent = scene) { const m = new THREE.Mesh(geo, mat); m.rotation.x = -Math.PI / 2; m.position.y = y; parent.add(m); return m; }
+{
+  flat(new THREE.PlaneGeometry(600, 600), grey('#c3c5c2'), 0);
+  const pv = cnv(512, 512), g = pv.getContext('2d'); g.fillStyle = '#c9cbc8'; g.fillRect(0, 0, 512, 512);
+  g.strokeStyle = 'rgba(90,92,92,.16)'; g.lineWidth = 2;
+  for (let i = 0; i <= 8; i++) { g.beginPath(); g.moveTo(0, i * 64); g.lineTo(512, i * 64); g.stroke(); }
+  for (let r = 0; r < 8; r++) for (let i = 0; i <= 8; i++) { const x = i * 64 + (r % 2) * 32; g.beginPath(); g.moveTo(x, r * 64); g.lineTo(x, r * 64 + 64); g.stroke(); }
+  const pt = tex(pv); pt.wrapS = pt.wrapT = THREE.RepeatWrapping; pt.repeat.set(10, 10);
+  flat(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambertMaterial({ map: pt }), 0.004);
+  const pathM = grey('#b9bbb8');
+  const ps = flat(new THREE.PlaneGeometry(3, 40), pathM, 0.003); ps.position.z = 40;
+  const pe = flat(new THREE.PlaneGeometry(60, 3), pathM, 0.003); pe.position.x = 50;
+  const wallM = grey('#b4b6b5'), darkM = grey('#6f7376'), frameM = grey('#9fa2a2');
+  box(40, 6, 4, wallM, 0, 3, -22); box(40.4, 0.3, 4.4, frameM, 0, 6.1, -22);
+  box(1.7, 2.7, 0.12, darkM, 0, 1.35, -19.97); box(2.1, 0.18, 0.2, frameM, 0, 2.8, -19.95);
+  for (const x of [-8, 8]) { box(1.6, 1.7, 0.12, darkM, x, 3.6, -19.97); box(1.9, 0.14, 0.24, frameM, x, 2.7, -19.93); }
+  const ruinM = grey('#a9aba6'), R = rng(3);
+  for (let x = -19; x < -11; x += 0.5) { if (x > -15.6 && x < -14.4) continue; const h = 0.6 + R() * 0.5; box(0.52, h, 0.6, ruinM, x + 0.25, h / 2, -16); }
+  const benchM = grey('#8d8f8d');
+  box(1.8, 0.07, 0.45, benchM, 9, 0.45, 7); box(1.8, 0.4, 0.06, benchM, 9, 0.75, 7.22);
+  for (const dx of [-0.8, 0.8]) box(0.07, 0.45, 0.4, benchM, 9 + dx, 0.22, 7);
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 2.8, 10), grey('#8a8783')); trunk.position.set(12, 1.4, 9); scene.add(trunk);
+  const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(1.9, 1), new THREE.MeshLambertMaterial({ color: '#a7aea5', flatShading: true })); crown.position.set(12, 3.9, 9); scene.add(crown);
+  const ringM = new THREE.MeshBasicMaterial({ color: '#5f656b', transparent: true, opacity: 0.4, depthWrite: false });
+  flat(new THREE.RingGeometry(24.93, 25.07, 160), ringM, 0.012);
+  const r2 = flat(new THREE.RingGeometry(24.93, 25.07, 160), ringM, 0.012); r2.position.x = 60;
+  flat(new THREE.RingGeometry(0.18, 0.26, 32), ringM, 0.012);
+  box(0.45, 1.3, 0.45, grey('#9a9c9a'), 60, 0.65, -2); box(0.9, 0.5, 0.06, grey('#7d7f7f'), 60, 1.45, -1.75);
+}
+
+/* ------------------------------------------------------ shared drawing */
+function rr(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function speakerIcon(g, cx, cy, s, ink, col, waves = 2) {
+  g.fillStyle = ink; g.beginPath(); g.moveTo(cx - s * .9, cy - s * .32); g.lineTo(cx - s * .45, cy - s * .32); g.lineTo(cx, cy - s * .78); g.lineTo(cx, cy + s * .78); g.lineTo(cx - s * .45, cy + s * .32); g.lineTo(cx - s * .9, cy + s * .32); g.closePath(); g.fill();
+  g.strokeStyle = col; g.lineCap = 'round'; g.lineWidth = s * .16;
+  for (let i = 1; i <= waves; i++) { g.beginPath(); g.arc(cx + s * .1, cy, s * (0.32 + i * 0.36), -0.85, 0.85); g.stroke(); }
+}
+/** Text label on a dark backplate; metres per pixel follow the title cap height so every label reads at the same size. */
+class WorldLabel {
+  constructor(color, capM = 0.17) { this.color = color; this.capM = capM; this.c = cnv(16, 16); this.t = tex(this.c);
+    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: this.t, transparent: true, depthWrite: false })); this.mesh.renderOrder = 10; this.key = ''; this.grow = 1; }
+  set(kicker, title, sub) {
+    const key = kicker + '|' + title + '|' + sub; if (key === this.key) return; this.key = key;
+    const c = this.c, g = c.getContext('2d'), padX = 46, padY = 34;
+    const fk = `700 33px ${SANS}`, ft = `600 76px ${SERIF}`, fs = `500 40px ${SANS}`;
+    g.font = fk; g.letterSpacing = '5px'; const wk = kicker ? g.measureText(kicker.toUpperCase()).width + 34 : 0;
+    g.letterSpacing = '0px'; g.font = ft; const wt = g.measureText(title).width; g.font = fs; const ws = sub ? g.measureText(sub).width : 0;
+    const W = Math.ceil(Math.max(wk, wt, ws) + padX * 2), H = Math.ceil(padY * 2 + (kicker ? 50 : 0) + 84 + (sub ? 56 : 0));
+    if (c.width !== W || c.height !== H) { c.width = W; c.height = H; this.t.dispose(); this.t = tex(c); this.mesh.material.map = this.t; }
+    g.clearRect(0, 0, W, H); rr(g, 2, 2, W - 4, H - 4, 34); g.fillStyle = 'rgba(14,16,22,.88)'; g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.10)'; g.lineWidth = 2; g.stroke();
+    let y = padY;
+    if (kicker) { g.fillStyle = this.color; g.beginPath(); g.arc(padX + 9, y + 18, 9, 0, 7); g.fill(); g.font = fk; g.letterSpacing = '5px'; g.textBaseline = 'middle'; g.fillText(kicker.toUpperCase(), padX + 34, y + 19); g.letterSpacing = '0px'; y += 50; }
+    g.font = ft; g.fillStyle = '#f4f0e8'; g.textBaseline = 'alphabetic'; g.fillText(title, padX, y + 64); y += 84;
+    if (sub) { g.font = fs; g.fillStyle = '#b9b3a6'; g.fillText(sub, padX, y + 42); }
+    this.t.needsUpdate = true; this.W = W; this.H = H; this.applyScale();
+  }
+  applyScale() { const k = this.capM / 54 * this.grow; this.mesh.scale.set(this.W * k, this.H * k, 1); }
+  /** Grow with distance so a label keeps a readable angular size (capped). */
+  fit(dist) { const g = clamp(dist / 8, 0.85, S.mode === 'editor' ? 4.5 : 1.9); if (Math.abs(g - this.grow) > 0.02) { this.grow = g; this.applyScale(); } }
+  opacity(a) { this.mesh.material.opacity = a; this.mesh.visible = a > 0.01; }
+}
+function faceY(obj, cam) { if (S.mode === 'editor') { obj.quaternion.copy(cam.quaternion); return; } obj.rotation.set(0, 0, 0); obj.rotation.y = Math.atan2(cam.position.x - obj.getWorldPosition(_v).x, cam.position.z - _v.z); }
+const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
+function glowTex(hex) { const c = cnv(128, 128), g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.18, 'rgba(255,255,255,.95)'); gr.addColorStop(0.32, hex); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return tex(c); }
+function ringTex() { const c = cnv(256, 256), g = c.getContext('2d'); g.strokeStyle = 'rgba(16,18,24,.45)'; g.lineWidth = 13; g.beginPath(); g.arc(128, 128, 112, 0, 7); g.stroke(); g.strokeStyle = '#fff'; g.lineWidth = 6; g.beginPath(); g.arc(128, 128, 112, 0, 7); g.stroke(); return tex(c); }
+function orbTex(hex) { const c = cnv(256, 256), g = c.getContext('2d'), gr = g.createRadialGradient(128, 128, 30, 128, 128, 128); gr.addColorStop(0, hexA(hex, .55)); gr.addColorStop(1, hexA(hex, 0)); g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
+  g.fillStyle = 'rgba(16,18,24,.55)'; g.beginPath(); g.arc(128, 128, 52, 0, 7); g.fill(); g.fillStyle = hex; g.beginPath(); g.arc(128, 128, 46, 0, 7); g.fill();
+  const hi = g.createRadialGradient(118, 116, 2, 122, 120, 30); hi.addColorStop(0, 'rgba(255,255,255,.95)'); hi.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = hi; g.beginPath(); g.arc(128, 128, 46, 0, 7); g.fill(); return tex(c); }
+function badgeTex(hex) { const c = cnv(256, 256), g = c.getContext('2d'); g.fillStyle = 'rgba(14,16,22,.92)'; g.beginPath(); g.arc(128, 128, 120, 0, 7); g.fill(); g.strokeStyle = hex; g.lineWidth = 9; g.beginPath(); g.arc(128, 128, 112, 0, 7); g.stroke(); speakerIcon(g, 116, 128, 62, '#f4f0e8', hex); return tex(c); }
+function beamTex(hex) { const c = cnv(16, 256), g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, hex); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 16, 256); return tex(c); }
+const RING_T = ringTex();
+
+/** One ground shader for three looks: 0 = listening spot, 1 = zone (the loudness curve as a gradient), 2 = editing rings. */
+function groundMat(color) {
+  return new THREE.ShaderMaterial({ transparent: true, depthWrite: false,
+    uniforms: { uColor: { value: color }, uCenter: { value: new THREE.Vector2() }, uMin: { value: 3 }, uMax: { value: 12 }, uLevel: { value: 1 }, uEnv: { value: 0 }, uTime: { value: 0 }, uStyle: { value: 0 }, uRoll: { value: 0 }, uAlpha: { value: 1 } },
+    vertexShader: `varying vec2 vP; uniform vec2 uCenter; void main(){ vec4 wp = modelMatrix*vec4(position,1.); vP = wp.xz-uCenter; gl_Position = projectionMatrix*viewMatrix*wp; }`,
+    fragmentShader: `varying vec2 vP; uniform vec3 uColor; uniform float uMin,uMax,uLevel,uEnv,uTime,uStyle,uRoll,uAlpha;
+      float fall(float d){ if(d<=uMin) return 1.; if(d>=uMax) return 0.;
+        if(uRoll<.5) return 1.-(d-uMin)/(uMax-uMin);
+        if(uRoll<1.5){ float a=uMin/d, b=uMin/uMax; return (a-b)/(1.-b);}
+        float a=pow(uMin/d,2.), b=pow(uMin/uMax,2.); return (a-b)/(1.-b); }
+      float line(float r, float at, float w){ float px=fwidth(r); return 1.-smoothstep(w*.18+px*.6, w*.18+px*2., abs(r-at)); }
+      void main(){
+        float r=length(vP); float ang=atan(vP.y,vP.x); float a=0.;
+        float dash=step(.45, fract(ang*uMax/1.1));
+        if(uStyle<.5){
+          float fill=(1.-smoothstep(0.,uMin,r))*.30;
+          float ph=fract(uTime*.45);
+          float pulse=line(r, ph*uMin, .14)*(1.-ph)*(.25+uEnv);
+          a=fill*(.45+.55*uLevel)+line(r,uMin,.06)*.95+pulse*.6+line(r,uMax,.05)*dash*.55;
+        } else if(uStyle<1.5){
+          float g=fall(r);
+          float rip=pow(.5+.5*sin(r*2.1-uTime*1.7),8.)*g*(.2+.8*uEnv);
+          a=(g*.26+rip*.6)*(.3+.7*uLevel)+line(r,uMin,.06)*.8+line(r,uMax,.06)*dash*.7;
+          a*= (r<uMax+.2)?1.:0.;
+        } else {
+          a=line(r,uMin,.09)*.95+line(r,uMax,.11)*dash*.95+(1.-smoothstep(0.,uMax,r))*.08;
+        }
+        vec3 col = uColor; if(uStyle>.5 && uStyle<1.5){ float rip2=pow(.5+.5*sin(length(vP)*2.1-uTime*1.7),8.)*fall(length(vP)); col = mix(uColor, vec3(1.), .45*rip2); }
+        gl_FragColor=vec4(col, clamp(a,0.,1.)*uAlpha);
+      }` });
+}
+const ROLL = { linear: 0, inverse: 1, exponential: 2 };
+function groundDisc(rt, style, order = 2) {
+  const m = new THREE.Mesh(new THREE.CircleGeometry(1, 128), groundMat(GROUND_COL[rt.rec.mode].clone()));
+  m.rotation.x = -Math.PI / 2; m.renderOrder = order; m.userData.style = style; m.material.uniforms.uStyle.value = style; return m;
+}
+function syncDisc(m, rt, f, level, alpha) {
+  const p = rt.srcPos(), u = m.material.uniforms;
+  m.position.set(p[0], 0.02 + m.renderOrder * 0.002, p[2]); m.scale.setScalar(rt.maxM() + 0.6);
+  u.uCenter.value.set(p[0], p[2]); u.uMin.value = rt.minM(); u.uMax.value = rt.maxM(); u.uRoll.value = rt.rec.source ? ROLL[rt.rec.source.rolloff] : 0;
+  u.uLevel.value = level; u.uEnv.value = rt.env; u.uTime.value = f.t; u.uAlpha.value = alpha; u.uColor.value.copy(GROUND_COL[rt.rec.mode]);
+}
+const kickerOf = (rt) => rt.rec.mode === 'narration' ? 'Narration' : 'Ambience';
+function statusOf(rt, short = false) {
+  const r = rt.rec;
+  if (r.mode === 'soundscape') { if (rt.state !== 'playing') return 'Heard within ' + Math.round(rt.maxM()) + ' m'; return rt.ducked ? 'Lowered for the narration' : (short ? 'Playing' : 'Playing around you'); }
+  if (rt.state === 'playing') return (rt.userPaused ? 'Pausing' : 'Listening') + ' · ' + fmt(rt.pos) + ' / ' + fmt(rt.dur);
+  if (rt.state === 'paused') return 'Paused · ' + fmt(rt.pos);
+  if (rt.state === 'ended') return 'Heard · replay on the card';
+  return 'Heard within ' + Math.round(rt.maxM()) + ' m';
+}
+
+/* ---------------------------------------------------------------- views */
+const VIEWS = [];
+function defView(v) { VIEWS.push(v); v.group = new THREE.Group(); v.group.visible = false; scene.add(v.group); v.parts = RT.map((rt) => v.make(rt, v.group)); }
+const COMMON_USES = {
+  play: 'once / loop / resume decides what happens when the visitor leaves and comes back',
+  fadeInMs: 'fade on entering earshot', fadeOutMs: 'fade on leaving earshot or pausing',
+  duck: 'a soundscape with duck = true dims and says "lowered" while a narration is audible',
+  mode: 'narration gets reading text, a soundscape gets its caption and a level',
+};
+
+defView({ name: 'spot', required: true, hud: 'card', label: 'Spot',
+  blurb: 'A listening spot: a post with a speaker badge, a bright circle on the ground where it is at full volume, and a player card on the screen.',
+  uses: { audio: 'played; its waveform is the card\'s scrub bar', caption: 'title on the post and the card', transcript: 'the card reads along, sentence by sentence (position estimated from text length)', 'source.position': 'where the post stands', 'source.minM': 'the bright "stand here" circle', 'source.maxM': 'the dashed earshot ring; playback starts when you cross it', 'source.rolloff': 'loudness between the rings (heard, not drawn)', volume: 'playback level and the card\'s level meter', ...COMMON_USES },
+  make(rt, G) {
+    const disc = groundDisc(rt, 0); G.add(disc);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.32, 12), new THREE.MeshBasicMaterial({ color: '#23262c', transparent: true })); G.add(post);
+    const bb = new THREE.Group(); G.add(bb);
+    const badge = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), new THREE.MeshBasicMaterial({ map: badgeTex(css[rt.rec.mode]), transparent: true, depthWrite: false })); badge.renderOrder = 11; bb.add(badge);
+    const label = new WorldLabel(css[rt.rec.mode]); bb.add(label.mesh);
+    return { disc, post, bb, badge, label };
+  },
+  update(f, rt, P) {
+    const p = rt.srcPos();
+    syncDisc(P.disc, rt, f, rt.level, f.vis);
+    P.post.position.set(p[0], 0.66, p[2]); P.post.material.opacity = f.vis;
+    P.bb.position.set(p[0], 0, p[2]); faceY(P.bb, f.cam);
+    P.label.set(kickerOf(rt), rt.rec.caption, statusOf(rt)); P.label.fit(f.camDist(p)); P.label.opacity(f.vis);
+    P.label.mesh.position.y = 1.32 + P.label.mesh.scale.y / 2 + 0.04;
+    P.badge.position.y = P.label.mesh.position.y + P.label.mesh.scale.y / 2 + 0.36;
+    P.badge.scale.setScalar((1 + 0.1 * rt.env) * P.label.grow); P.badge.material.opacity = f.vis;
+  } });
+
+defView({ name: 'zone', required: true, hud: 'strip', label: 'Zone',
+  blurb: 'A soundscape zone: the ground glows where the sound is heard, brightest where it is loudest, with ripples that move with the sound.',
+  uses: { audio: 'its loudness envelope drives the ripples', caption: 'floating label over the centre', transcript: 'caption strip at the bottom (narration)', 'source.position': 'zone centre', 'source.minM': 'inner ring: full volume inside', 'source.maxM': 'dashed edge of the zone', 'source.rolloff': 'the ground gradient IS the loudness curve', volume: 'zone brightness and the strip\'s level meter', ...COMMON_USES },
+  make(rt, G) { const disc = groundDisc(rt, 1); G.add(disc); const label = new WorldLabel(css[rt.rec.mode]); G.add(label.mesh); const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1, 8), new THREE.MeshBasicMaterial({ color: GROUND_COL[rt.rec.mode], transparent: true })); G.add(stem); return { disc, label, stem }; },
+  update(f, rt, P) {
+    const p = rt.srcPos();
+    syncDisc(P.disc, rt, f, rt.level / Math.max(0.05, rt.rec.volume) * (0.4 + 0.6 * rt.rec.volume), f.vis);
+    P.label.set(rt.rec.mode === 'narration' ? 'Narration zone' : 'Ambience zone', rt.rec.caption, rt.ducked ? 'Lowered for the narration' : (rt.state === 'playing' ? 'Louder toward the centre' : 'Step inside to listen'));
+    P.label.fit(f.camDist(p)); P.label.opacity(f.vis);
+    const ly = 2.3 + Math.sin(f.t * 0.8 + p[0]) * 0.05; P.label.mesh.position.set(p[0], ly + P.label.mesh.scale.y / 2, p[2]); faceY(P.label.mesh, f.cam);
+    P.stem.position.set(p[0], ly / 2, p[2]); P.stem.scale.y = ly; P.stem.material.opacity = f.vis * 0.8;
+  } });
+
+defView({ name: 'beacon', required: true, hud: 'strip', edges: true, label: 'Beacon',
+  blurb: 'A directional source: a glowing point above the spot sends out wavefronts; off screen, a pointer at the edge says where and how far.',
+  uses: { audio: 'its envelope sets how often wavefronts leave the source', caption: 'label under the light and on the edge pointer', transcript: 'caption strip at the bottom (narration)', 'source.position': 'the light, its beam and the edge pointer\'s direction', 'source.minM': 'base ring on the ground', 'source.maxM': 'how far the wavefronts travel; the pointer says "heard in 4 m" outside it', 'source.rolloff': 'brightness of the light at your distance', volume: 'strength of the wavefronts', ...COMMON_USES },
+  make(rt, G) {
+    const orb = new THREE.Sprite(new THREE.SpriteMaterial({ map: orbTex(css[rt.rec.mode]), transparent: true, depthWrite: false })); orb.renderOrder = 12; G.add(orb);
+    const beam = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 1), new THREE.MeshBasicMaterial({ map: beamTex(css[rt.rec.mode]), transparent: true, depthWrite: false })); beam.renderOrder = 9; G.add(beam);
+    const base = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 96), new THREE.MeshBasicMaterial({ color: GROUND_COL[rt.rec.mode], transparent: true, depthWrite: false })); base.rotation.x = -Math.PI / 2; G.add(base);
+    const rings = []; for (let i = 0; i < 7; i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: RING_T, color: GROUND_COL[rt.rec.mode], transparent: true, depthWrite: false })); s.visible = false; s.renderOrder = 11; s.userData.age = 99; G.add(s); rings.push(s); }
+    const label = new WorldLabel(css[rt.rec.mode]); G.add(label.mesh);
+    return { orb, beam, base, rings, label, timer: 0 };
+  },
+  update(f, rt, P) {
+    const p = rt.srcPos(), H = 2.6, d = f.camDist([p[0], H, p[2]]);
+    const near = Math.max(rt.distGain, 0.15);
+    P.orb.position.set(p[0], H, p[2]); P.orb.scale.setScalar((0.95 + 0.4 * rt.env * rt.level) * clamp(d / 10, 1, 2.2)); P.orb.material.opacity = f.vis * (0.6 + 0.4 * near);
+    P.beam.position.set(p[0], H / 2, p[2]); P.beam.scale.y = H; faceY(P.beam, f.cam); P.beam.material.opacity = f.vis * 0.9;
+    P.base.position.set(p[0], 0.03, p[2]); P.base.scale.setScalar(rt.minM()); P.base.material.opacity = f.vis * 0.7;
+    const playing = rt.state === 'playing' && rt.level > 0.02;
+    P.timer -= f.dt;
+    if (playing && P.timer <= 0) { const r = P.rings.find((s) => s.userData.age > 3); if (r) { r.userData.age = 0; r.userData.str = rt.level; } P.timer = 1 / (0.45 + 1.4 * rt.env); }
+    const reach = Math.min(rt.maxM(), 9);
+    for (const s of P.rings) { const a = s.userData.age += f.dt; const u = a / 3; s.visible = u < 1 && f.vis > 0.01;
+      if (s.visible) { s.position.copy(P.orb.position); s.scale.setScalar(0.5 + u * reach); s.material.opacity = f.vis * (1 - u) ** 1.3 * (0.35 + 0.65 * s.userData.str); } }
+    const sub = (rt.state === 'playing' ? (rt.ducked ? 'Lowered · ' : '') : (rt.distGain > 0 ? '' : 'Heard in ' + Math.max(1, Math.round(rt.dist - rt.maxM())) + ' m · ')) + Math.round(rt.dist) + ' m away';
+    P.label.set(kickerOf(rt), rt.rec.caption, sub); P.label.fit(d); P.label.opacity(f.vis);
+    P.label.mesh.position.set(p[0], H - 0.55 - P.label.mesh.scale.y / 2, p[2]); faceY(P.label.mesh, f.cam);
+  } });
+
+defView({ name: 'drift', required: false, hud: 'strip', label: 'Drift',
+  blurb: 'My own: the words of the narration rise from its spot as they are spoken, like breath on a cold day; the soundscape breathes out slow motes.',
+  uses: { transcript: 'each word rises from the source when the estimated timing reaches it', audio: 'its envelope makes the motes shimmer', caption: 'label over the source', 'source.position': 'where words and motes rise', 'source.minM': 'how wide the motes spread', 'source.maxM': 'where playback, and so the words, begin', 'source.rolloff': 'heard only', volume: 'how many motes and how bright', ...COMMON_USES },
+  make(rt, G) {
+    const label = new WorldLabel(css[rt.rec.mode]); G.add(label.mesh);
+    const P = { label, words: [], lastWi: -1, line: null };
+    if (rt.rec.mode === 'soundscape') {
+      const N = 160, pos = new Float32Array(N * 3), R = rng(5); const seeds = [];
+      for (let i = 0; i < N; i++) { const a = R() * 6.283, r = Math.sqrt(R()); seeds.push([Math.cos(a) * r, Math.sin(a) * r, R() * 4, 0.15 + R() * 0.25]); }
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const pts = new THREE.Points(geo, new THREE.PointsMaterial({ map: glowTex(css[rt.rec.mode]), size: 0.22, transparent: true, depthWrite: false, color: '#ffffff' })); pts.renderOrder = 12; pts.frustumCulled = false; G.add(pts);
+      P.pts = pts; P.seeds = seeds;
+    }
+    return P;
+  },
+  update(f, rt, P) {
+    const p = rt.srcPos(); const isN = rt.rec.mode === 'narration';
+    P.label.set(kickerOf(rt), rt.rec.caption, isN ? (rt.state === 'playing' ? 'Listen: the words rise as they are told' : statusOf(rt)) : (rt.ducked ? 'Lowered for the narration' : statusOf(rt, true)));
+    P.label.fit(f.camDist(p)); P.label.opacity(f.vis);
+    P.label.mesh.position.set(p[0], (isN ? 0.9 : 3.2) + P.label.mesh.scale.y / 2, p[2]); faceY(P.label.mesh, f.cam); P.baseY = (isN ? 0.9 : 3.2) + P.label.mesh.scale.y + 0.32;
+    // motes (soundscape strong, narration faint)
+    if (P.pts) {
+    const arr = P.pts.geometry.attributes.position.array, spread = rt.minM() * (isN ? 0.35 : 1.25);
+    const dens = isN ? 0.25 : 1;
+    for (let i = 0; i < P.seeds.length; i++) { const s = P.seeds[i]; s[2] = (s[2] + f.dt * s[3] * (0.5 + rt.level)) % 4; arr[i * 3] = p[0] + s[0] * spread + Math.sin(f.t * 0.4 + i) * 0.2; arr[i * 3 + 1] = 0.2 + s[2]; arr[i * 3 + 2] = p[2] + s[1] * spread; }
+    P.pts.geometry.attributes.position.needsUpdate = true;
+    P.pts.material.opacity = f.vis * dens * clamp01(rt.level * 1.4) * (0.55 + 0.45 * rt.env);
+    }
+    // words
+    if (isN && rt.track) {
+      const { wi } = trackAt(rt.track, rt.pos);
+      if (rt.state === 'playing' && wi !== P.lastWi && wi >= 0 && f.vis > 0.5) {
+        for (let k = Math.max(P.lastWi + 1, wi - 2); k <= wi; k++) spawnWord(P, f.group, rt.track.words[k], p, f);
+      }
+      P.lastWi = rt.state === 'playing' ? wi : -1;
+    }
+    for (let i = P.words.length - 1; i >= 0; i--) { const w = P.words[i]; w.age += f.dt;
+      const u = w.age / w.life; if (u >= 1) { f.group.remove(w.s); w.s.material.dispose(); P.words.splice(i, 1); continue; }
+      w.ty += f.dt * 0.035; w.y += (w.ty - w.y) * (1 - Math.exp(-f.dt / 0.45)); w.s.position.set(w.x, w.y, w.z);
+      const a = Math.min(1, w.age / 0.3) * (u > 0.7 ? (1 - u) / 0.3 : 1); w.s.material.opacity = a * f.vis; }
+  } });
+const WORD_TEX = new Map();
+function wordTex(text) {
+  if (WORD_TEX.has(text)) return WORD_TEX.get(text);
+  const g0 = cnv(8, 8).getContext('2d'); const font = `500 66px ${SERIF}`; g0.font = font; const w = Math.ceil(g0.measureText(text).width + 50);
+  const c = cnv(w, 104), g = c.getContext('2d'); rr(g, 2, 2, w - 4, 100, 40); g.fillStyle = 'rgba(14,16,22,.80)'; g.fill(); g.font = font; g.fillStyle = '#f7e6c8'; g.textBaseline = 'middle'; g.fillText(text, 25, 54);
+  const t = tex(c); const v = { t, aspect: w / 104 }; WORD_TEX.set(text, v); return v;
+}
+/** Words are set into a line that faces the visitor; a new sentence or a full line lifts the older lines, which then fade. */
+function spawnWord(P, G, word, p, f) {
+  const wt = wordTex(word.text); let L = P.line;
+  const g = L && L.si === word.si ? L.g : clamp(f.camDist([p[0], 2.2, p[2]]) / 7, 0.8, 1.7);
+  const h = 0.3 * g, w = h * wt.aspect, gap = 0.07 * g, maxW = 3.0 * g;
+  if (!L || L.si !== word.si || L.width + w > maxW) {
+    for (const o of P.words) o.ty += h * 1.3;
+    const r = new THREE.Vector3(f.cam.position.z - p[2], 0, p[0] - f.cam.position.x).normalize();
+    L = P.line = { si: word.si, width: 0, r, g };
+  }
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: wt.t, transparent: true, depthWrite: false, opacity: 0 })); s.renderOrder = 13; s.scale.set(w, h, 1);
+  const off = -maxW / 2 + L.width + w / 2; L.width += w + gap;
+  const x = p[0] + L.r.x * off, z = p[2] + L.r.z * off, y0 = P.baseY || 1.95; s.position.set(x, y0, z);
+  G.add(s); P.words.push({ s, age: 0, life: 10, x, z, y: y0, ty: y0 });
+  if (P.words.length > 34) { const o = P.words.shift(); G.remove(o.s); o.s.material.dispose(); }
+}
+
+defView({ name: 'horizon', required: false, hud: 'strip', horizon: true, label: 'Horizon',
+  blurb: 'My own: a hearing horizon across the top of the screen, like a compass bar. Every sound sits at its bearing; wide when near, bright when loud. Nothing in the world needs to line up.',
+  uses: { 'source.position': 'its bearing on the strip and the distance under it', 'source.minM': 'how wide the glow is (its angular size from where you stand)', 'source.maxM': 'outside it the glow is an outline with "heard in N m"', 'source.rolloff': 'how bright the glow is at your distance', caption: 'the name under each glow', transcript: 'caption strip at the bottom (narration)', audio: 'its envelope makes the glow breathe', volume: 'brightness ceiling', ...COMMON_USES },
+  make(rt, G) { const disc = groundDisc(rt, 2, 1); disc.material.uniforms.uAlpha.value = 0.4; G.add(disc); return { disc }; },
+  update(f, rt, P) { syncDisc(P.disc, rt, f, 1, f.vis * 0.35); } });
+
+/* editing overlays (creator + editor) */
+const editG = new THREE.Group(); scene.add(editG);
+const EDIT = RT.map((rt) => { const d = groundDisc(rt, 2, 3); editG.add(d); return d; });
+function moveTex() { const c = cnv(256, 256), g = c.getContext('2d'); g.fillStyle = 'rgba(255,255,255,.95)'; g.beginPath(); g.arc(128, 128, 120, 0, 7); g.fill(); g.fillStyle = '#20232a';
+  for (let k = 0; k < 4; k++) { g.save(); g.translate(128, 128); g.rotate(k * Math.PI / 2); g.beginPath(); g.moveTo(0, -96); g.lineTo(-24, -62); g.lineTo(24, -62); g.closePath(); g.fill(); g.fillRect(-6, -66, 12, 40); g.restore(); }
+  g.beginPath(); g.arc(128, 128, 22, 0, 7); g.fill(); return tex(c); }
+const handles = { move: new THREE.Mesh(new THREE.CircleGeometry(1.0, 48), new THREE.MeshBasicMaterial({ map: moveTex(), transparent: true, depthWrite: false })),
+  min: new THREE.Mesh(new THREE.SphereGeometry(0.36, 24, 16), new THREE.MeshLambertMaterial({ color: '#ffffff' })),
+  max: new THREE.Mesh(new THREE.SphereGeometry(0.55, 24, 16), new THREE.MeshLambertMaterial({ color: '#ffffff' })) };
+handles.move.rotation.x = -Math.PI / 2; handles.move.renderOrder = 20;
+const hG = new THREE.Group(); hG.add(handles.move, handles.min, handles.max); scene.add(hG);
+const minLbl = new WorldLabel('#fff', 0.42), maxLbl = new WorldLabel('#fff', 0.42); hG.add(minLbl.mesh, maxLbl.mesh);
+const ghost = groundDisc(RT[0], 2, 4); ghost.visible = false; scene.add(ghost);
+
+/* ----------------------------------------------------------------- state */
+const S = { mode: 'visitor', view: 'spot', sel: 0, phone: false, walking: false, vis: 0,
+  V: { x: 0, z: 27, yaw: 0, pitch: 0.04 }, C: { x: 0, z: 1.5, yaw: 0, pitch: 0.3 }, E: { tx: -3, tz: -3, dist: 56, az: 0.42, el: 0.92 }, keys: new Set(), drawn: 0, t: 0 };
+{ const p = RECORDS[0].source.position; S.C.yaw = Math.atan2(-(p[0] - S.C.x), -(p[2] - S.C.z)); }
+const KNOB_DIR = new THREE.Vector2(Math.cos(1.15), Math.sin(1.15));
+
+/* ----------------------------------------------------------------- UI */
+const $ = (id) => document.getElementById(id);
+const appEl = $('app');
+const ICON = {
+  on: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5v14l-4.5-4.5H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>',
+  off: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5v14l-4.5-4.5H4z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>',
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6.5" y="5" width="4" height="14" rx="1"/><rect x="13.5" y="5" width="4" height="14" rx="1"/></svg>',
+  replay: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.5-5.8M4 4v4.5h4.5"/></svg>',
+  down: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15M6 13l6 6 6-6"/></svg>',
+};
+function renderSoundBtn() { $('bSound').innerHTML = audio.on ? ICON.on : ICON.off; $('bSound').classList.toggle('on', audio.on); $('bSound').title = audio.on ? 'Sound on (tap to mute)' : 'Sound off: everything still plays, shown silently'; }
+renderSoundBtn();
+$('modes').innerHTML = ['visitor', 'creator', 'editor'].map((m) => `<button data-mode="${m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('');
+$('viewSeg').innerHTML = VIEWS.map((v) => `<button data-view="${v.name}">${v.label}${v.required ? '' : '<i>+</i>'}</button>`).join('');
+$('modes').onclick = (e) => { const b = e.target.closest('button'); if (b) api.setMode(b.dataset.mode); };
+$('viewSeg').onclick = (e) => { const b = e.target.closest('button'); if (b) api.setView(b.dataset.view); };
+$('bSound').onclick = () => setSound(!audio.on);
+$('bPhone').onclick = () => { S.phone = !S.phone; appEl.classList.toggle('phone', S.phone); $('bPhone').classList.toggle('on', S.phone); };
+$('bWalk').onclick = () => { S.walking = !S.walking; $('bWalk').classList.toggle('on', S.walking); };
+$('bFields').onclick = () => { renderFields(); $('fieldsOver').classList.add('show'); };
+$('bNotes').onclick = () => { $('notesOver').classList.add('show'); };
+for (const o of document.querySelectorAll('.over')) o.onclick = (e) => { if (e.target === o || e.target.closest('[data-close]')) o.classList.remove('show'); };
+$('cPlay').onclick = () => { const rt = RT.find((r) => r.rec.mode === 'narration'); if (rt) rt.toggle(); };
+function renderFields() {
+  const v = VIEWS.find((x) => x.name === S.view);
+  $('flTitle').textContent = 'Fields used by the ' + v.label + ' view' + (v.required ? '' : ' (my own view)');
+  $('flSub').textContent = v.blurb;
+  $('flList').innerHTML = FIELDS.map((k) => `<code>${k}</code><span>${v.uses[k] ? esc(v.uses[k]) : '<span style="color:#77726a">not used</span>'}</span>`).join('');
+}
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function mdToHtml(md) {
+  const inl = (s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  const out = []; let list = 0; const close = (n) => { while (list > n) { out.push('</ul>'); list--; } };
+  for (const raw of md.split('\n')) {
+    const m = raw.match(/^(\s*)- (.*)$/);
+    if (m) { const lvl = Math.floor(m[1].length / 2) + 1; while (list < lvl) { out.push('<ul>'); list++; } close(lvl); out.push('<li>' + inl(m[2]) + '</li>'); continue; }
+    close(0);
+    const h = raw.match(/^(#{1,3}) (.*)$/); if (h) { out.push(`<h${h[1].length}>${inl(h[2])}</h${h[1].length}>`); continue; }
+    if (raw.trim()) out.push('<p>' + inl(raw) + '</p>');
+  }
+  close(0); return out.join('');
+}
+$('notesBody').innerHTML = mdToHtml($('notesMd').textContent.trim() || '# Notes\n(not yet written)');
+
+function ambHtml(rt) {
+  return `<span class="dot s"></span><span class="nm" title="Ambience">${esc(rt.rec.caption)}</span><span class="tag${rt.ducked ? ' show' : ''}">${ICON.down}lowered</span><span class="meter"><i style="width:${Math.round(rt.eff * 100)}%"></i></span>`;
+}
+const domCache = new Map();
+function setHtml(el, html) { if (domCache.get(el) !== html) { domCache.set(el, html); el.innerHTML = html; } }
+function setText(el, t) { if (el.textContent !== t) el.textContent = t; }
+function narrState(rt) {
+  if (rt.state === 'playing') return rt.userPaused ? 'Pausing' : (audio.on ? 'Playing' : 'Sound off · reading along');
+  if (rt.state === 'paused') return 'Paused';
+  if (rt.state === 'ended') return 'Heard · tap to replay';
+  if (rt.state === 'away') return rt.rec.play === 'resume' ? 'Resumes when you return' : 'Restarts when you return';
+  return rt.distGain > 0 ? 'Starting' : 'Walk closer · ' + Math.max(1, Math.round(rt.dist - rt.maxM())) + ' m';
+}
+function sentenceHtml(rt) {
+  const { si } = trackAt(rt.track, rt.pos);
+  if (!rt.track) return '<span class="nx">(no transcript)</span>';
+  if (rt.state === 'idle' || si < 0) return `<span class="nx">${esc(rt.track.sentences[0].text)}</span>`;
+  const cur = rt.track.sentences[si], nx = rt.track.sentences[si + 1];
+  return `<span class="cur">${esc(cur.text)}</span>${nx ? ' <span class="nx">' + esc(nx.text) + '</span>' : ''}`;
+}
+const waveC = $('cWave');
+function drawWave(rt) {
+  const r = waveC.getBoundingClientRect(), dpr = Math.min(devicePixelRatio, 2), W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
+  if (!W || !H) return; if (waveC.width !== W || waveC.height !== H) { waveC.width = W; waveC.height = H; }
+  const g = waveC.getContext('2d'); g.clearRect(0, 0, W, H);
+  const pk = rt.media.peaks, n = pk.length, bw = W / n, prog = rt.pos / rt.dur;
+  for (let i = 0; i < n; i++) { const h = Math.max(2 * dpr, pk[i] * H * 0.92); g.fillStyle = i / n < prog ? css.narration : 'rgba(255,255,255,.22)'; g.fillRect(i * bw + bw * 0.18, (H - h) / 2, Math.max(1, bw * 0.64), h); }
+  g.fillStyle = '#f4f0e8'; g.fillRect(Math.round(prog * W) - dpr, 0, 2 * dpr, H);
+}
+function updateHud(f) {
+  const v = VIEWS.find((x) => x.name === S.view), vis = S.mode === 'visitor' && S.vis > 0.5;
+  const nRT = RT.find((r) => r.rec.mode === 'narration'), sRT = RT.filter((r) => r.rec.mode === 'soundscape');
+  $('card').style.display = vis && v.hud === 'card' ? 'block' : 'none';
+  $('strip').style.display = vis && v.hud === 'strip' && (nRT && nRT.state === 'playing' || sRT.some((r) => r.eff > 0.005)) ? 'block' : 'none';
+  if (vis && v.hud === 'card') {
+    if (nRT) {
+      setText($('cTitle'), nRT.rec.caption); const st = narrState(nRT); setText($('cState'), st); $('cState').classList.toggle('live', nRT.state === 'playing');
+      setText($('cTime'), fmt(nRT.pos) + ' / ' + fmt(nRT.dur));
+      setHtml($('cPlay'), nRT.state === 'playing' && !nRT.userPaused ? ICON.pause : nRT.state === 'ended' ? ICON.replay : ICON.play);
+      setHtml($('cRead'), sentenceHtml(nRT)); drawWave(nRT);
+    }
+    const s = sRT[0]; $('cAmb').style.display = s ? 'flex' : 'none'; if (s) setHtml($('cAmb'), ambHtml(s));
+  }
+  if (vis && v.hud === 'strip') {
+    let cap = '';
+    if (nRT && nRT.state === 'playing' && nRT.track) { const { si } = trackAt(nRT.track, nRT.pos); if (si >= 0) cap = `<span class="who">${esc(nRT.rec.caption)}${audio.on ? '' : ' · sound off'}</span>${esc(nRT.track.sentences[si].text)}`; }
+    setHtml($('sCap'), cap);
+    const s = sRT.find((r) => r.eff > 0.005); $('sAmb').style.display = s ? 'flex' : 'none'; if (s) setHtml($('sAmb'), ambHtml(s));
+  }
+  // nearest station chip (the app's own display outside a circle)
+  const out = S.mode === 'visitor' && S.vis < 0.5; $('nearest').style.display = out ? 'flex' : 'none';
+  if (out) { const dx = -S.V.x, dz = -S.V.z, d = Math.hypot(dx, dz); const rel = bearingRel(dx, dz);
+    $('nearest').querySelector('.arr').style.transform = `rotate(${rel}rad)`; setText($('nearest').querySelector('small'), Math.round(d - STATION.radiusM) + ' m to the station circle'); }
+  updateEdges(f, vis && v.edges);
+  $('hz').style.display = vis && v.horizon ? 'block' : 'none'; if (vis && v.horizon) drawHorizon();
+}
+function bearingRel(dx, dz) { const yaw = camera.rotation.y; const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw); return Math.atan2(dx * rx + dz * rz, dx * fx + dz * fz); }
+const edgeEls = RT.map((rt) => { const e = document.createElement('div'); e.className = 'edge'; e.innerHTML = `<span class="ar" style="background:${css[rt.rec.mode]}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#14161b" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span><span><b></b><small></small></span>`; $('edges').appendChild(e); return e; });
+function updateEdges(f, on) {
+  const W = stage.clientWidth, H = stage.clientHeight;
+  RT.forEach((rt, i) => {
+    const el = edgeEls[i]; const p = rt.srcPos();
+    if (!on) { el.style.display = 'none'; return; }
+    _v.set(p[0], 2.6, p[2]).project(camera); const behind = _v.z > 1;
+    let x = _v.x, y = _v.y; if (behind) { x = -x; y = -y; }
+    const inside = !behind && Math.abs(x) < 0.92 && Math.abs(y) < 0.9;
+    if (inside) { el.style.display = 'none'; return; }
+    if (behind && Math.abs(x) < 0.05) x = 0.05 * Math.sign(x || 1);
+    const ix = 0.70, iy = 0.62; const k = Math.min(ix / Math.max(1e-4, Math.abs(x)), iy / Math.max(1e-4, Math.abs(y)));
+    const ex = x * k, ey = y * k; el.style.display = 'flex';
+    const ew = el.offsetWidth / 2 + 8, eh = el.offsetHeight / 2 + 8;
+    el.style.left = clamp((ex + 1) / 2 * W, ew, W - ew) + 'px'; el.style.top = clamp((1 - ey) / 2 * H, eh + 90, H - eh - 150) + 'px';
+    el.querySelector('.ar').style.transform = `rotate(${Math.atan2(-y, x)}rad)`;
+    setText(el.querySelector('b'), rt.rec.caption);
+    setText(el.querySelector('small'), Math.round(rt.dist) + ' m · ' + (rt.state === 'playing' ? (rt.ducked ? 'lowered' : 'louder this way') : (rt.distGain > 0 ? 'here' : 'heard in ' + Math.max(1, Math.round(rt.dist - rt.maxM())) + ' m')));
+  });
+}
+const hzC = $('hz').querySelector('canvas');
+function drawHorizon() {
+  const r = hzC.getBoundingClientRect(), dpr = Math.min(devicePixelRatio, 2), W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
+  if (!W) return; if (hzC.width !== W || hzC.height !== H) { hzC.width = W; hzC.height = H; }
+  const g = hzC.getContext('2d'); g.clearRect(0, 0, W, H);
+  const span = Math.PI * 0.62, mid = W / 2, pxPerRad = (W / 2 - 18 * dpr) / span, barH = 34 * dpr, by = 4 * dpr;
+  rr(g, 0, by, W, barH, barH / 2); g.fillStyle = 'rgba(15,17,23,.84)'; g.fill();
+  const heading = -camera.rotation.y;
+  g.save(); rr(g, 0, by, W, barH, barH / 2); g.clip();
+  for (let deg = -180; deg < 180; deg += 15) { const rel = wrap(deg * Math.PI / 180 - heading); if (Math.abs(rel) > span + 0.1) continue; const x = mid + rel * pxPerRad;
+    const card = { 0: 'N', 90: 'E', '-90': 'W', '-180': 'S' }[deg];
+    if (card) { g.fillStyle = '#e9e4da'; g.font = `700 ${11 * dpr}px ${SANS}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(card, x, by + barH / 2); }
+    else { g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(x - dpr / 2, by + barH / 2 - 4 * dpr, dpr, 8 * dpr); } }
+  for (const rt of RT) {
+    const p = rt.srcPos(), dx = p[0] - camera.position.x, dz = p[2] - camera.position.z; let rel = bearingRel(dx, dz); const clampEd = Math.abs(rel) > span; rel = clamp(rel, -span, span);
+    const x = mid + rel * pxPerRad; const ang = Math.max(0.06, Math.atan2(rt.minM(), Math.max(0.5, rt.dist))); const w = clamp(ang * pxPerRad, 8 * dpr, W * 0.4);
+    const col = css[rt.rec.mode], a = rt.state === 'playing' ? 0.25 + 0.75 * clamp01(rt.eff * 1.8) * (0.8 + 0.2 * rt.env) : 0;
+    if (rt.distGain > 0) { const gr = g.createRadialGradient(x, by + barH / 2, 0, x, by + barH / 2, w); gr.addColorStop(0, hexA(col, a)); gr.addColorStop(1, hexA(col, 0)); g.fillStyle = gr; g.fillRect(x - w, by, w * 2, barH); }
+    else { g.strokeStyle = hexA(col, 0.85); g.lineWidth = 1.6 * dpr; g.beginPath(); g.ellipse(x, by + barH / 2, Math.min(w, 22 * dpr), 9 * dpr, 0, 0, 7); g.stroke(); }
+    if (clampEd) { g.fillStyle = col; g.beginPath(); const s = rel > 0 ? 1 : -1; g.moveTo(x + s * 10 * dpr, by + barH / 2); g.lineTo(x, by + barH / 2 - 6 * dpr); g.lineTo(x, by + barH / 2 + 6 * dpr); g.fill(); }
+    // label under the bar
+    const txt = rt.rec.caption, sub = Math.round(rt.dist) + ' m' + (rt.distGain > 0 ? (rt.ducked ? ' · lowered' : '') : ' · heard in ' + Math.max(1, Math.round(rt.dist - rt.maxM())) + ' m');
+    g.font = `600 ${11.5 * dpr}px ${SANS}`; const tw = Math.max(g.measureText(txt).width, (g.font = `500 ${10 * dpr}px ${SANS}`, g.measureText(sub).width)) + 16 * dpr;
+    const lx = clamp(x, tw / 2 + 2, W - tw / 2 - 2), ly = by + barH + 5 * dpr;
+    g.restore(); rr(g, lx - tw / 2, ly, tw, 34 * dpr, 9 * dpr); g.fillStyle = 'rgba(15,17,23,.80)'; g.fill();
+    g.fillStyle = col; g.fillRect(lx - 1, by + barH, 2, 5 * dpr);
+    g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.fillStyle = '#f4f0e8'; g.font = `600 ${11.5 * dpr}px ${SANS}`; g.fillText(txt, lx, ly + 14 * dpr); g.fillStyle = '#b4aea0'; g.font = `500 ${10 * dpr}px ${SANS}`; g.fillText(sub, lx, ly + 28 * dpr);
+    g.save(); rr(g, 0, by, W, barH, barH / 2); g.clip();
+  }
+  g.restore();
+  g.fillStyle = '#f4f0e8'; g.beginPath(); g.moveTo(mid - 5 * dpr, by + barH); g.lineTo(mid + 5 * dpr, by + barH); g.lineTo(mid, by + barH - 6 * dpr); g.fill();
+}
+const wrap = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
+
+/* ---------------------------------------------------------- creator sheet */
+function seg(name, opts, cur) { return `<div class="seg" data-seg="${name}">${opts.map(([v, l]) => `<button data-v="${v}" class="${v === cur ? 'on' : ''}">${l}</button>`).join('')}</div>`; }
+function renderCreator() {
+  const rt = RT[S.sel], r = rt.rec, s = r.source;
+  $('csheet').innerHTML = `
+    <div class="blocks">${RT.map((x, i) => `<button class="bchip ${i === S.sel ? 'on' : ''}" data-sel="${i}"><span class="dot ${x.rec.mode === 'narration' ? 'n' : 's'}"></span><span>${esc(x.rec.caption)}<small>${x.rec.mode} · ${fmt(x.dur)}</small></span></button>`).join('')}</div>
+    <div class="row"><label>View</label>${seg('view', VIEWS.map((v) => [v.name, v.label]), S.view)}</div>
+    <div class="row"><label>Heard within</label><input type="range" min="2" max="30" step="0.5" data-f="maxM" value="${s ? s.maxM : 25}"><span class="val" data-o="maxM">${s ? s.maxM : 25} m</span></div>
+    <div class="row"><label>Volume</label><input type="range" min="0" max="1" step="0.05" data-f="volume" value="${r.volume}"><span class="val" data-o="volume">${Math.round(r.volume * 100)} %</span></div>
+    <div class="row"><label>When I return</label>${seg('play', [['once', 'Once'], ['resume', 'Resume'], ['loop', 'Loop']], r.play)}</div>
+    <div class="row"><label>${r.mode === 'narration' ? 'Transcript' : 'Lower for talk'}</label>${r.mode === 'narration'
+      ? (r.transcript ? `<span class="ok">✓ ${splitSentences(r.transcript).length} sentences, ${r.transcript.split(/\s+/).length} words</span>` : '<span class="warn">Required: add a transcript in the editor</span>')
+      : `<label class="chk"><input type="checkbox" data-f="duck" ${r.duck ? 'checked' : ''}> Lower while a narration plays</label>`}</div>`;
+}
+$('csheet').addEventListener('click', (e) => {
+  const sel = e.target.closest('[data-sel]'); if (sel) { S.sel = +sel.dataset.sel; renderCreator(); renderEditor(); return; }
+  const b = e.target.closest('.seg button'); if (!b) return; const which = b.parentElement.dataset.seg;
+  if (which === 'view') api.setView(b.dataset.v); else applyField(RT[S.sel], which, b.dataset.v);
+});
+$('csheet').addEventListener('input', (e) => onFieldInput(e.target, RT[S.sel]));
+function onFieldInput(el, rt) { const f = el.dataset.f; if (!f) return; applyField(rt, f, el.type === 'checkbox' ? el.checked : el.value, true); }
+function applyField(rt, f, v, fromInput = false) {
+  const r = rt.rec;
+  if (['minM', 'maxM', 'rolloff', 'x', 'z'].includes(f)) {
+    if (!r.source) r.source = { position: [0, 0, 0], minM: 3, maxM: 15, rolloff: 'linear' };
+    if (f === 'x') r.source.position[0] = num(v, 0); else if (f === 'z') r.source.position[2] = num(v, 0);
+    else if (f === 'rolloff') r.source.rolloff = v; else { r.source[f] = num(v, r.source[f]); if (f === 'minM' && r.source.maxM < r.source.minM + 0.5) r.source.maxM = r.source.minM + 0.5; if (f === 'maxM' && r.source.minM > r.source.maxM - 0.5) r.source.minM = Math.max(0.5, r.source.maxM - 0.5); }
+  } else if (f === 'sourceOn') { r.source = v ? { position: [0, 0, -6], minM: 3, maxM: 15, rolloff: 'linear' } : null; }
+  else if (f === 'volume' || f === 'fadeInMs' || f === 'fadeOutMs') r[f] = num(v, r[f]);
+  else if (f === 'duck') r.duck = !!v; else r[f] = v;
+  sanitize(r);
+  if (f === 'mode' && rt.rec.mode === 'narration') r.duck = false;
+  if (!fromInput || f === 'sourceOn' || f === 'mode') { renderCreator(); renderEditor(); } else syncOutputs();
+}
+function syncOutputs() {
+  const r = RT[S.sel].rec, s = r.source;
+  for (const el of document.querySelectorAll('[data-o]')) { const k = el.dataset.o; el.textContent = k === 'volume' ? Math.round(r.volume * 100) + ' %' : (s ? s[k] : '-') + ' m'; }
+  for (const el of document.querySelectorAll('input[data-f]')) { if (document.activeElement === el) continue; const k = el.dataset.f; if (['minM', 'maxM'].includes(k) && s) el.value = s[k]; if (k === 'x' && s) el.value = s.position[0].toFixed(1); if (k === 'z' && s) el.value = s.position[2].toFixed(1); }
+  const tw = $('trWarn'); if (tw) tw.style.display = r.mode === 'narration' && !r.transcript ? 'block' : 'none';
+  drawCurve();
+}
+$('cbPlace').onclick = () => { const hit = centreHit(); if (!hit) return; const r = RT[S.sel].rec; if (!r.source) applyField(RT[S.sel], 'sourceOn', true); r.source.position = [+hit.x.toFixed(2), 0, +hit.z.toFixed(2)]; flash($('cbPlace'), 'Placed'); };
+$('cbPrev').onclick = () => { const rt = RT[S.sel]; if (rt.state === 'playing' && rt.forced) { rt.userPaused = true; flash($('cbPrev'), 'Stopped'); } else { rt.state = 'idle'; rt.pos = 0; rt.userPaused = false; rt.forced = true; flash($('cbPrev'), 'Playing'); } };
+$('cbDone').onclick = () => { flash($('cbDone'), 'Saved'); };
+function flash(btn, txt) { const t = btn.lastChild; const o = t.textContent; t.textContent = txt; setTimeout(() => { t.textContent = o; }, 1100); }
+const ray = new THREE.Raycaster(), ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+function centreHit() { ray.setFromCamera(new THREE.Vector2(0, 0.2), camera); const h = new THREE.Vector3(); if (!ray.ray.intersectPlane(ground, h)) return null; return h.distanceTo(camera.position) < 45 ? h : null; }
+
+/* ------------------------------------------------------------ editor panel */
+function renderEditor() {
+  $('left').innerHTML = `<div class="ph">Station · ${esc(STATION.name)}</div><div class="list">${RT.map((x, i) => `<div class="item ${i === S.sel ? 'on' : ''}" data-sel="${i}"><span class="dot ${x.rec.mode === 'narration' ? 'n' : 's'}"></span><span>${esc(x.rec.caption)}<small>Audio · ${x.rec.mode} · ${VIEWS.find((v) => v.name === S.view).label}</small></span></div>`).join('')}
+    <div class="item off"><span class="dot" style="background:#777"></span><span>${esc(NEXT_STATION.name)}<small>next station · 60 m east</small></span></div></div>`;
+  const rt = RT[S.sel], r = rt.rec, s = r.source, m = rt.media;
+  $('right').innerHTML = `<div class="ph">Audio block</div><div class="ins">
+    <div class="f"><label>Caption <em>${r.caption.length}/64</em></label><input type="text" data-f="caption" maxlength="64" value="${esc(r.caption)}"></div>
+    <div class="f"><label>View</label>${seg('view', VIEWS.map((v) => [v.name, v.label]), S.view)}</div>
+    <div class="f"><label>Audio <em>${esc(r.audio)}</em></label><div class="asset"><canvas id="edWave"></canvas><div class="meta"><span>${fmt(m.duration)} · mono</span><span>~${Math.round(m.opusBytes / 1024)} KB as Opus</span></div></div></div>
+    <div class="two"><div class="f"><label>Mode</label><select data-f="mode"><option value="narration" ${r.mode === 'narration' ? 'selected' : ''}>narration</option><option value="soundscape" ${r.mode === 'soundscape' ? 'selected' : ''}>soundscape</option></select></div>
+      <div class="f"><label>Play</label><select data-f="play">${['once', 'resume', 'loop'].map((p) => `<option ${p === r.play ? 'selected' : ''}>${p}</option>`).join('')}</select></div></div>
+    <div class="f"><label>Volume <em>${Math.round(r.volume * 100)} %</em></label><input type="range" min="0" max="1" step="0.05" data-f="volume" value="${r.volume}"></div>
+    <div class="two"><div class="f"><label>Fade in <em>ms</em></label><input type="number" min="0" max="20000" step="100" data-f="fadeInMs" value="${r.fadeInMs}"></div><div class="f"><label>Fade out <em>ms</em></label><input type="number" min="0" max="20000" step="100" data-f="fadeOutMs" value="${r.fadeOutMs}"></div></div>
+    <div class="f"><label>Source</label><label class="chk"><input type="checkbox" data-f="sourceOn" ${s ? 'checked' : ''}> Positioned (otherwise heard everywhere in the circle)</label></div>
+    ${s ? `<div class="two"><div class="f"><label>x <em>m east</em></label><input type="number" step="0.5" data-f="x" value="${s.position[0].toFixed(1)}"></div><div class="f"><label>z <em>m south</em></label><input type="number" step="0.5" data-f="z" value="${s.position[2].toFixed(1)}"></div></div>
+      <div class="two"><div class="f"><label>Full volume <em>minM</em></label><input type="number" step="0.5" min="0.5" data-f="minM" value="${s.minM}"></div><div class="f"><label>Heard to <em>maxM</em></label><input type="number" step="0.5" data-f="maxM" value="${s.maxM}"></div></div>
+      <div class="f"><label>Rolloff</label>${seg('rolloff', [['linear', 'Linear'], ['inverse', 'Inverse'], ['exponential', 'Steep']], s.rolloff)}<canvas class="curve" id="edCurve"></canvas></div>` : ''}
+    ${r.mode === 'soundscape' ? `<div class="f"><label>Duck</label><label class="chk"><input type="checkbox" data-f="duck" ${r.duck ? 'checked' : ''}> Lower to 30 % while a narration is audible</label></div>` : ''}
+    <div class="f"><label>Transcript <em>${r.mode === 'narration' ? 'required' : 'optional'}</em></label><textarea data-f="transcript">${esc(r.transcript || '')}</textarea><span class="warn" id="trWarn" style="display:${r.mode === 'narration' && !r.transcript ? 'block' : 'none'}">A narration needs its transcript: it is what a visitor with sound off reads.</span></div>
+  </div>`;
+  drawEdWave(); drawCurve();
+}
+$('left').addEventListener('click', (e) => { const it = e.target.closest('[data-sel]'); if (it) { S.sel = +it.dataset.sel; renderEditor(); renderCreator(); } });
+$('right').addEventListener('click', (e) => { const b = e.target.closest('.seg button'); if (!b) return; const w = b.parentElement.dataset.seg; if (w === 'view') api.setView(b.dataset.v); else applyField(RT[S.sel], w, b.dataset.v); });
+$('right').addEventListener('input', (e) => { const el = e.target; if (el.tagName === 'SELECT' || el.type === 'checkbox') return; onFieldInput(el, RT[S.sel]); if (el.dataset.f === 'volume') el.previousElementSibling.querySelector('em').textContent = Math.round(RT[S.sel].rec.volume * 100) + ' %'; });
+$('right').addEventListener('change', (e) => { const el = e.target; if (el.tagName === 'SELECT' || el.type === 'checkbox') applyField(RT[S.sel], el.dataset.f, el.type === 'checkbox' ? el.checked : el.value); });
+function drawEdWave() { const c = $('edWave'); if (!c) return; const rt = RT[S.sel]; const dpr = Math.min(devicePixelRatio, 2), W = c.clientWidth * dpr, H = c.clientHeight * dpr; if (!W) return; c.width = W; c.height = H; const g = c.getContext('2d'); const pk = rt.media.peaks, bw = W / pk.length;
+  for (let i = 0; i < pk.length; i++) { const h = Math.max(2, pk[i] * H * .9); g.fillStyle = css[rt.rec.mode]; g.globalAlpha = .85; g.fillRect(i * bw + bw * .18, (H - h) / 2, Math.max(1, bw * .64), h); } }
+function drawCurve() {
+  const c = $('edCurve'); if (!c) return; const rt = RT[S.sel], s = rt.rec.source; if (!s) return;
+  const dpr = Math.min(devicePixelRatio, 2), W = c.clientWidth * dpr, H = c.clientHeight * dpr; if (!W) return; c.width = W; c.height = H; const g = c.getContext('2d');
+  const maxX = s.maxM * 1.15, pad = 10 * dpr, X = (d) => pad + (W - 2 * pad) * d / maxX, Y = (v) => H - pad - (H - 2.4 * pad) * v;
+  g.beginPath(); g.moveTo(X(0), Y(0)); for (let i = 0; i <= 120; i++) { const d = maxX * i / 120; g.lineTo(X(d), Y(falloff(d, s) * rt.rec.volume)); } g.lineTo(X(maxX), Y(0)); g.closePath();
+  g.fillStyle = hexA(css[rt.rec.mode], .25); g.fill(); g.strokeStyle = css[rt.rec.mode]; g.lineWidth = 2 * dpr; g.stroke();
+  g.fillStyle = '#aea89b'; g.font = `500 ${10 * dpr}px ${SANS}`; g.textAlign = 'center';
+  for (const [d, t] of [[s.minM, 'full ' + s.minM + ' m'], [s.maxM, 'silent ' + s.maxM + ' m']]) { g.fillRect(X(d) - dpr / 2, pad, dpr, H - 2 * pad); g.fillText(t, clamp(X(d), 30 * dpr, W - 30 * dpr), pad + 2 * dpr); }
+}
+
+/* ------------------------------------------------------------ input */
+let drag = null;
+stage.addEventListener('pointerdown', (e) => {
+  if (e.target !== canvas) return; canvas.setPointerCapture(e.pointerId);
+  drag = { x: e.clientX, y: e.clientY, kind: 'look', button: e.button };
+  if (S.mode === 'editor') {
+    const hit = pickHandle(e); if (hit) { drag.kind = hit; } else { const b = pickBlock(e); if (b >= 0 && b !== S.sel) { S.sel = b; renderEditor(); renderCreator(); } drag.kind = e.button === 2 || e.shiftKey ? 'pan' : 'orbit'; }
+  }
+});
+stage.addEventListener('contextmenu', (e) => e.preventDefault());
+stage.addEventListener('pointermove', (e) => {
+  if (!drag) { if (S.mode === 'editor') canvas.style.cursor = pickHandle(e) ? 'grab' : 'default'; return; }
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.kind === 'look') { const st = S.mode === 'creator' ? S.C : S.V; st.yaw += dx * 0.0042; st.pitch = clamp(st.pitch + dy * 0.0042, -1.2, 1.0); }
+  else if (drag.kind === 'orbit') { S.E.az -= dx * 0.006; S.E.el = clamp(S.E.el + dy * 0.005, 0.25, 1.45); }
+  else if (drag.kind === 'pan') { const k = S.E.dist / 600, c = Math.cos(S.E.az), s = Math.sin(S.E.az); S.E.tx -= (dx * c + dy * s) * k; S.E.tz -= (-dx * s + dy * c) * k; }
+  else { const h = groundAt(e); if (!h) return; const r = RT[S.sel].rec, s = r.source; if (!s) return;
+    if (drag.kind === 'move') { s.position[0] = +h.x.toFixed(2); s.position[2] = +h.z.toFixed(2); }
+    else { const d = Math.hypot(h.x - s.position[0], h.z - s.position[2]); if (drag.kind === 'min') s.minM = +clamp(d, 0.5, s.maxM - 0.5).toFixed(1); else s.maxM = +clamp(d, s.minM + 0.5, 60).toFixed(1); }
+    syncOutputs(); }
+});
+const endDrag = () => { drag = null; };
+stage.addEventListener('pointerup', endDrag); stage.addEventListener('pointercancel', endDrag);
+stage.addEventListener('wheel', (e) => { if (S.mode !== 'editor') return; e.preventDefault(); S.E.dist = clamp(S.E.dist * Math.exp(e.deltaY * 0.001), 8, 140); }, { passive: false });
+addEventListener('keydown', (e) => { if (e.target.closest && e.target.closest('input,textarea,select')) return; S.keys.add(e.key.toLowerCase()); });
+addEventListener('keyup', (e) => S.keys.delete(e.key.toLowerCase()));
+function ndc(e) { const r = canvas.getBoundingClientRect(); return new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); }
+function groundAt(e) { ray.setFromCamera(ndc(e), camera); const h = new THREE.Vector3(); return ray.ray.intersectPlane(ground, h) ? h : null; }
+function pickHandle(e) { if (!hG.visible) return null; ray.setFromCamera(ndc(e), camera); const hits = ray.intersectObjects([handles.min, handles.max, handles.move], false); if (!hits.length) return null; const o = hits[0].object; return o === handles.move ? 'move' : o === handles.min ? 'min' : 'max'; }
+function pickBlock(e) { const h = groundAt(e); if (!h) return -1; let best = -1, bd = 1e9; RT.forEach((rt, i) => { const p = rt.srcPos(), d = Math.hypot(h.x - p[0], h.z - p[2]); if (d < Math.min(rt.minM() + 1, 6) && d < bd) { bd = d; best = i; } }); return best; }
+
+/* -------------------------------------------------------------- cameras */
+function applyFov() {
+  const W = stage.clientWidth, H = stage.clientHeight, a = W / H; camera.aspect = a;
+  if (S.mode === 'editor') camera.fov = 42;
+  else if (a < 1) camera.fov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(42) / 2) / a) * 180 / Math.PI; // 42 degrees across a portrait screen
+  else camera.fov = 50;
+  camera.updateProjectionMatrix();
+}
+function placeCamera(dt) {
+  if (S.mode === 'editor') {
+    const E = S.E; camera.position.set(E.tx + E.dist * Math.sin(E.az) * Math.cos(E.el), E.dist * Math.sin(E.el), E.tz + E.dist * Math.cos(E.az) * Math.cos(E.el));
+    camera.lookAt(E.tx, 0, E.tz); return;
+  }
+  const st = S.mode === 'creator' ? S.C : S.V;
+  if (S.mode === 'visitor') {
+    let f = 0, s = 0; const k = S.keys;
+    if (k.has('w') || k.has('arrowup')) f += 1; if (k.has('s') || k.has('arrowdown')) f -= 1; if (k.has('a')) s -= 1; if (k.has('d')) s += 1;
+    if (k.has('arrowleft')) st.yaw += dt * 1.4; if (k.has('arrowright')) st.yaw -= dt * 1.4;
+    if (S.walking) f = Math.max(f, 1);
+    const sp = 1.4 * dt; st.x += (-Math.sin(st.yaw) * f + Math.cos(st.yaw) * s) * sp; st.z += (-Math.cos(st.yaw) * f - Math.sin(st.yaw) * s) * sp;
+  }
+  camera.position.set(st.x, 1.6, st.z); camera.rotation.set(-st.pitch, st.yaw, 0);
+}
+function updateListener() {
+  if (!audio.on || !audio.ctx) return; const l = audio.ctx.listener, p = camera.position; camera.getWorldDirection(_v);
+  if (l.positionX) { l.positionX.value = p.x; l.positionY.value = p.y; l.positionZ.value = p.z; l.forwardX.value = _v.x; l.forwardY.value = _v.y; l.forwardZ.value = _v.z; l.upX.value = 0; l.upY.value = 1; l.upZ.value = 0; }
+  else { l.setPosition(p.x, p.y, p.z); l.setOrientation(_v.x, _v.y, _v.z, 0, 1, 0); }
+}
+
+/* ---------------------------------------------------------------- loop */
+const FT = []; let last = performance.now(), ftNext = 0;
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); const interval = now - last; last = now; const w0 = performance.now();
+  S.t += dt;
+  placeCamera(dt);
+  const lp = S.mode === 'visitor' ? S.V : S.mode === 'creator' ? S.C : S.V;
+  const inside = S.mode === 'creator' || Math.hypot(lp.x, lp.z) <= STATION.radiusM;
+  const nl = narrationLevel(null);
+  for (const rt of RT) stepRuntime(rt, dt, lp, inside, rt.rec.mode === 'narration' ? narrationLevel(rt) : nl);
+  updateListener();
+  const visTarget = S.mode === 'visitor' ? (inside ? 1 : 0) : 1;
+  S.vis += (visTarget - S.vis) * (1 - Math.exp(-dt / 0.35)); if (Math.abs(visTarget - S.vis) < 0.004 || S.mode !== 'visitor') S.vis = visTarget;
+  const camDist = (p) => Math.hypot(camera.position.x - p[0], camera.position.y - (p[1] || 1.6), camera.position.z - p[2]);
+  for (const v of VIEWS) {
+    const on = v.name === S.view; v.group.visible = on && S.vis > 0.005; if (!v.group.visible) continue;
+    v.parts.forEach((P, i) => { const sel = S.mode === 'visitor' || S.mode === 'editor' || i === S.sel; v.update({ dt, t: S.t, cam: camera, vis: S.vis * (sel ? 1 : 0.35), camDist, group: v.group }, RT[i], P); });
+  }
+  // editing overlays
+  editG.visible = S.mode !== 'visitor';
+  EDIT.forEach((d, i) => { const show = S.mode === 'editor' || i === S.sel; d.visible = show && editG.visible; if (d.visible) syncDisc(d, RT[i], { t: S.t }, 1, i === S.sel ? 1 : 0.45); d.material.uniforms.uColor.value.set(i === S.sel ? '#ffffff' : '#30343b'); if (S.mode === 'creator') d.material.uniforms.uColor.value.copy(GROUND_COL[RT[i].rec.mode]); });
+  const showH = S.mode === 'editor' && RT[S.sel].rec.source; hG.visible = !!showH;
+  if (showH) { const s = RT[S.sel].rec.source, p = s.position; handles.move.position.set(p[0], 0.07, p[2]); handles.move.scale.setScalar(clamp(S.E.dist / 45, 0.6, 2));
+    handles.min.position.set(p[0] + KNOB_DIR.x * s.minM, 0.36, p[2] + KNOB_DIR.y * s.minM); handles.max.position.set(p[0] + KNOB_DIR.x * s.maxM, 0.55, p[2] + KNOB_DIR.y * s.maxM);
+    handles.min.material.color.copy(COL[RT[S.sel].rec.mode]);
+    minLbl.set('', 'full ' + s.minM + ' m', ''); maxLbl.set('', 'heard ' + s.maxM + ' m', '');
+    minLbl.mesh.position.copy(handles.min.position).add(_v.set(0, 1.0, 0)); maxLbl.mesh.position.copy(handles.max.position).add(_v.set(0, 1.2, 0));
+    minLbl.mesh.quaternion.copy(camera.quaternion); maxLbl.mesh.quaternion.copy(camera.quaternion); }
+  // creator reticle ghost
+  ghost.visible = false;
+  if (S.mode === 'creator') { const h = centreHit(); if (h) { ghost.visible = true; const rt = RT[S.sel]; ghost.position.set(h.x, 0.05, h.z); ghost.scale.setScalar(rt.minM() + 0.4); const u = ghost.material.uniforms; u.uCenter.value.set(h.x, h.z); u.uMin.value = rt.minM(); u.uMax.value = rt.minM() + 0.01; u.uColor.value.set('#ffffff'); u.uAlpha.value = 0.75; } }
+  updateHud();
+  renderer.render(scene, camera);
+  const work = performance.now() - w0;
+  FT.push([now, interval, work]); while (FT.length && FT[0][0] < now - 2000) FT.shift();
+  if (now > ftNext) { ftNext = now + 250; let s = 0, m = 0, ws = 0, wm = 0; for (const [, i, w] of FT) { s += i; m = Math.max(m, i); ws += w; wm = Math.max(wm, w); } const n = FT.length || 1;
+    S.ft = { mean: s / n, max: m, workMean: ws / n, workMax: wm }; $('ft').textContent = `frame ${S.ft.mean.toFixed(1)} · max ${S.ft.max.toFixed(1)} ms · work ${S.ft.workMean.toFixed(1)}/${S.ft.workMax.toFixed(1)}`; }
+  S.drawn++;
+  requestAnimationFrame(frame);
+}
+new ResizeObserver(() => { renderer.setSize(stage.clientWidth, stage.clientHeight, false); applyFov(); drawEdWave(); drawCurve(); }).observe(stage);
+
+/* ---------------------------------------------------------------- modes */
+function applyMode() {
+  appEl.classList.toggle('editor', S.mode === 'editor');
+  for (const b of $('modes').children) b.classList.toggle('on', b.dataset.mode === S.mode);
+  for (const b of $('viewSeg').children) b.classList.toggle('on', b.dataset.view === S.view);
+  $('views').style.display = S.mode === 'visitor' ? 'flex' : 'none';
+  $('creator').style.display = S.mode === 'creator' ? 'flex' : 'none';
+  $('reticle').style.display = S.mode === 'creator' ? 'block' : 'none';
+  $('edHint').style.display = S.mode === 'editor' ? 'block' : 'none';
+  if (S.mode === 'creator') renderCreator(); if (S.mode === 'editor') renderEditor();
+  for (const rt of RT) if (rt.forced && S.mode !== 'creator') rt.forced = false;
+  if (S.mode !== 'visitor') S.walking = false; $('bWalk').classList.toggle('on', S.walking);
+  RECORDS.forEach((r) => { r.view = S.view; });
+  history.replaceState(null, '', `#mode=${S.mode}&view=${S.view}`);
+  renderer.setSize(stage.clientWidth, stage.clientHeight, false); applyFov();
+  if ($('fieldsOver').classList.contains('show')) renderFields();
+}
+function parseHash() { const h = new URLSearchParams(location.hash.slice(1)); const m = h.get('mode'), v = h.get('view'); if (['visitor', 'creator', 'editor'].includes(m)) S.mode = m; if (VIEWS.some((x) => x.name === v)) S.view = v; }
+addEventListener('hashchange', () => { parseHash(); applyMode(); });
+const nextDraw = (n = 2) => new Promise((res) => { const target = S.drawn + n; const tick = () => (S.drawn >= target ? res() : requestAnimationFrame(tick)); requestAnimationFrame(tick); });
+
+/* ----------------------------------------------------------------- hook */
+const api = {
+  family: 'station-blocks-8-audio',
+  views: VIEWS.map((v) => v.name),
+  modes: ['visitor', 'creator', 'editor'],
+  async setMode(name) { if (!this.modes.includes(name)) throw new Error('unknown mode ' + name); S.mode = name; applyMode(); await nextDraw(); },
+  async setView(name) { if (!this.views.includes(name)) throw new Error('unknown view ' + name); S.view = name; applyMode(); await nextDraw(); },
+  async walkTo(x, z) { if (!Number.isFinite(x) || !Number.isFinite(z)) throw new Error('walkTo needs numbers'); S.V.x = x; S.V.z = z; await nextDraw(); },
+  async lookAt(x, y, z) {
+    if (![x, y, z].every(Number.isFinite)) throw new Error('lookAt needs numbers');
+    if (S.mode === 'editor') { S.E.tx = x; S.E.tz = z; await nextDraw(); return; }
+    const st = S.mode === 'creator' ? S.C : S.V; const dx = x - st.x, dz = z - st.z, dy = y - 1.6;
+    st.yaw = Math.atan2(-dx, -dz); st.pitch = -Math.atan2(dy, Math.hypot(dx, dz)); await nextDraw();
+  },
+  async describe() { return { family: this.family, fields: FIELDS.slice(), views: VIEWS.map((v) => ({ name: v.name, required: v.required, usesFields: FIELDS.filter((k) => v.uses[k]) })) }; },
+  async exportModel() {
+    return JSON.parse(JSON.stringify({ station: STATION.id, blocks: RECORDS.map((r) => ({ id: r.id, model: 'audio', view: r.view, audio: r.audio, mode: r.mode, play: r.play, fadeInMs: r.fadeInMs, fadeOutMs: r.fadeOutMs, volume: r.volume, source: r.source, duck: r.duck, transcript: r.transcript, caption: r.caption })) }));
+  },
+  _handles() { const W = canvas.clientWidth, H = canvas.clientHeight, r = canvas.getBoundingClientRect(); const f = (o) => { _v.copy(o.getWorldPosition(new THREE.Vector3())).project(camera); return [r.left + (_v.x + 1) / 2 * W, r.top + (1 - _v.y) / 2 * H]; }; return { move: f(handles.move), min: f(handles.min), max: f(handles.max) }; },
+  _debug() { return { ft: S.ft, vis: S.vis, rts: RT.map((r) => ({ id: r.rec.id, state: r.state, pos: +r.pos.toFixed(2), dist: +r.dist.toFixed(1), eff: +r.eff.toFixed(3), duck: +r.duckLevel.toFixed(2) })), media: Object.fromEntries(Object.entries(MEDIA).map(([k, m]) => [k, { s: +m.duration.toFixed(1), pcmKB: Math.round(m.pcmBytes / 1024), opusKB: Math.round(m.opusBytes / 1024) }])) }; },
+};
+window.__stationBlock = api;
+parseHash(); applyMode();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

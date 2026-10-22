@@ -1,0 +1,1678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Keep in Primitives</title>
+<link rel="icon" href="data:,">
+<script type="importmap">
+  { "imports": {
+      "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+  } }
+</script>
+<style>
+  :root {
+    --bg: #0e0f12;
+    --chrome: #16181d;
+    --line: #2a2e36;
+    --plate: rgba(14, 15, 18, 0.80);
+    --plate-strong: rgba(12, 13, 16, 0.92);
+    --text: #f4f1ea;
+    --muted: #b9b3a7;
+    --accent: #f2b84b;
+    --accent-ink: #1b1408;
+    --radius: 14px;
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text); font: 14px/1.4 var(--font);
+    display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+
+  /* page chrome (not part of the app) */
+  #bar {
+    flex: none; display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+    background: var(--chrome); border-bottom: 1px solid var(--line);
+    overflow-x: auto; scrollbar-width: none; white-space: nowrap;
+  }
+  #bar::-webkit-scrollbar { display: none; }
+  .seg { display: inline-flex; background: #0c0d10; border: 1px solid var(--line); border-radius: 999px; padding: 2px; }
+  .seg button, .tog {
+    border: 0; background: transparent; padding: 5px 10px; border-radius: 999px; font-size: 12px;
+    color: var(--muted); letter-spacing: 0.01em;
+  }
+  .seg button[aria-pressed="true"] { background: var(--text); color: #111; font-weight: 600; }
+  .tog { border: 1px solid var(--line); }
+  .tog[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  #bar .brand { font-size: 12px; color: var(--muted); margin-right: 4px; }
+
+  #layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr; }
+  #layout[data-mode="editor"] { grid-template-columns: 236px minmax(0, 1fr) 330px; }
+  #left, #right { display: none; background: var(--chrome); overflow: auto; }
+  #layout[data-mode="editor"] #left { display: block; border-right: 1px solid var(--line); }
+  #layout[data-mode="editor"] #right { display: block; border-left: 1px solid var(--line); }
+
+  #stageWrap { position: relative; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; background: #08090b; }
+  #stage { position: relative; width: 100%; height: 100%; overflow: hidden; touch-action: none; user-select: none; }
+  #stageWrap.framed #stage {
+    width: auto; height: calc(100% - 28px); max-width: calc(100% - 28px); aspect-ratio: 9 / 19.5;
+    border-radius: 34px; box-shadow: 0 0 0 9px #1d1f24, 0 0 0 10px #3a3e47, 0 24px 60px rgba(0,0,0,0.6);
+  }
+  #c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  /* AR overlays */
+  .ov { position: absolute; pointer-events: none; }
+  .ov > * { pointer-events: auto; }
+  #picker {
+    top: max(10px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+    display: flex; gap: 2px; padding: 3px; background: var(--plate); border-radius: 999px;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); max-width: calc(100% - 20px);
+    overflow-x: auto; scrollbar-width: none;
+  }
+  #picker::-webkit-scrollbar { display: none; }
+  #picker button {
+    border: 0; background: transparent; color: var(--muted); font-size: 12.5px; padding: 6px 10px;
+    border-radius: 999px; white-space: nowrap;
+  }
+  #picker button[aria-pressed="true"] { background: var(--text); color: #121212; font-weight: 600; }
+  #layout[data-mode="editor"] #picker { display: none; }
+
+  #chip { left: 0; top: 0; transform: translate(-50%, -100%); transition: opacity 0.5s; will-change: transform; }
+  #chip .plate {
+    background: var(--plate); color: var(--text); padding: 8px 14px 9px; border-radius: 12px;
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); text-align: center; min-width: 120px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+  }
+  #chip .t { font-size: 16px; font-weight: 650; letter-spacing: 0.005em; }
+  #chip .e { font-size: 12.5px; color: var(--muted); margin-top: 1px; font-variant-numeric: tabular-nums; }
+  #chip .stem { width: 1.5px; height: 18px; margin: 0 auto; background: rgba(255,255,255,0.75); }
+  #chip .dot { width: 7px; height: 7px; margin: 0 auto; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,0.45); }
+
+  #hint {
+    left: 50%; bottom: 92px; transform: translateX(-50%);
+    background: var(--plate); padding: 8px 14px; border-radius: 999px; display: flex; align-items: center; gap: 8px;
+    font-size: 14px; white-space: nowrap; transition: opacity 0.4s;
+  }
+  #hint .arrow { width: 18px; height: 18px; display: inline-block; transition: transform 0.2s; }
+  #walk {
+    left: 50%; bottom: 34px; transform: translateX(-50%);
+    border: 0; background: var(--text); color: #111; font-weight: 650; padding: 11px 22px; border-radius: 999px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35); font-size: 15px;
+  }
+  #replay {
+    right: 12px; bottom: 34px; border: 0; background: var(--plate); color: var(--text); padding: 9px 14px;
+    border-radius: 999px; font-size: 13px;
+  }
+  #fps {
+    left: 8px; bottom: 6px; font: 10.5px/1.25 var(--mono); color: rgba(255,255,255,0.85);
+    background: rgba(0,0,0,0.42); padding: 3px 6px; border-radius: 6px; pointer-events: none;
+  }
+  #fieldsPanel {
+    right: 10px; top: 56px; width: min(320px, calc(100% - 20px)); max-height: calc(100% - 140px); overflow: auto;
+    background: var(--plate-strong); border-radius: var(--radius); padding: 12px 14px; font-size: 13px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  }
+  #fieldsPanel h3 { margin: 0 0 6px; font-size: 13px; color: var(--accent); font-weight: 650; letter-spacing: 0.03em; text-transform: uppercase; }
+  #fieldsPanel dl { margin: 0; }
+  #fieldsPanel dt { font-family: var(--mono); font-size: 12px; color: var(--text); margin-top: 7px; }
+  #fieldsPanel dd { margin: 1px 0 0; color: var(--muted); }
+  #fieldsPanel .unused dt { color: #77736b; text-decoration: line-through; }
+  [data-mode="editor"] #fieldsPanel { top: 10px; }
+
+  #toast {
+    left: 50%; top: 58px; transform: translateX(-50%); background: var(--text); color: #111; font-weight: 600;
+    padding: 8px 16px; border-radius: 999px; opacity: 0; transition: opacity 0.3s; pointer-events: none;
+  }
+  #toast.on { opacity: 1; }
+
+  /* creator (phone in AR) */
+  #creator { left: 0; right: 0; bottom: 0; display: none; padding: 0 10px max(12px, env(safe-area-inset-bottom)); }
+  [data-mode="creator"] #creator { display: block; }
+  #ctop {
+    top: 52px; left: 50%; transform: translateX(-50%); display: none; background: var(--plate); padding: 6px 12px;
+    border-radius: 999px; font-size: 12.5px; color: var(--muted); white-space: nowrap;
+  }
+  [data-mode="creator"] #ctop { display: block; }
+  #ctop b { color: var(--text); font-weight: 600; }
+  .sheet {
+    background: var(--plate-strong); border-radius: 18px; padding: 12px; margin-bottom: 10px;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: none;
+  }
+  .sheet.on { display: block; }
+  .sheet .row { display: flex; align-items: center; gap: 8px; }
+  .sheet .row + .row { margin-top: 10px; }
+  .sheet label.k { font-size: 12px; color: var(--muted); min-width: 44px; }
+  .sheet input[type="range"] { flex: 1; accent-color: var(--accent); }
+  .sheet .val { font: 13px var(--mono); min-width: 54px; text-align: right; }
+  .sheet input[type="text"] {
+    flex: 1; background: #0b0c0f; border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; min-width: 0;
+  }
+  .pill { border: 1px solid var(--line); background: #0b0c0f; padding: 8px 12px; border-radius: 999px; font-size: 13px; white-space: nowrap; }
+  .pill[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  .palette { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  .palette button {
+    flex: 1 0 52px; border: 1px solid var(--line); background: #0b0c0f; border-radius: 12px; padding: 6px 2px 5px;
+    display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--muted);
+  }
+  .palette svg { width: 28px; height: 28px; }
+  .swatch { width: 22px; height: 22px; border-radius: 50%; display: inline-block; vertical-align: middle; margin-right: 4px; border: 1px solid rgba(255,255,255,0.3); }
+  #cbtns { display: flex; gap: 8px; }
+  #cbtns button {
+    flex: 1; min-height: 58px; border: 0; border-radius: 16px; background: var(--plate-strong); color: var(--text);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 12.5px; font-weight: 600;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  #cbtns button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+  #cbtns svg { width: 22px; height: 22px; }
+  #cbtns button.done { background: var(--text); color: #111; }
+
+  /* desktop editor */
+  .pane { padding: 12px 14px; }
+  .pane h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 4px 0 8px; font-weight: 650; }
+  .pane h2 + * { margin-top: 0; }
+  .blk { padding: 8px 10px; border-radius: 10px; color: var(--muted); }
+  .blk.cur { background: #20232a; color: var(--text); }
+  .blk small { display: block; color: #8b867d; font-size: 11.5px; }
+  .parts { list-style: none; margin: 6px 0 0; padding: 0 0 0 8px; }
+  .parts li {
+    display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--muted);
+  }
+  .parts li:hover { background: #1c1f25; }
+  .parts li.sel { background: rgba(242,184,75,0.16); color: var(--text); }
+  .parts li svg { width: 18px; height: 18px; flex: none; }
+  .parts li .m { margin-left: auto; width: 10px; height: 10px; border-radius: 3px; }
+  .insp { display: grid; grid-template-columns: 78px 1fr; gap: 6px 8px; align-items: center; font-size: 13px; }
+  .insp label { color: var(--muted); font-size: 12px; }
+  .insp input, .insp select, .insp textarea {
+    width: 100%; min-width: 0; background: #0b0c0f; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px;
+  }
+  .insp textarea { font: 12px var(--mono); resize: vertical; min-height: 56px; }
+  .insp .full { grid-column: 1 / -1; }
+  .quad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .quad input { padding: 6px 4px; font: 11.5px var(--mono); appearance: textfield; -moz-appearance: textfield; }
+  .quad input::-webkit-inner-spin-button, .quad input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  .insp input[type="color"] { height: 32px; padding: 2px; cursor: pointer; }
+  .quad span { font-size: 10.5px; color: #8b867d; text-align: center; }
+  .views { display: flex; flex-wrap: wrap; gap: 4px; }
+  .views button { border: 1px solid var(--line); background: #0b0c0f; border-radius: 8px; padding: 5px 8px; font-size: 12px; color: var(--muted); }
+  .views button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  .btnrow { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btn { border: 1px solid var(--line); background: #1d2026; border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+  .sep { height: 1px; background: var(--line); margin: 14px 0; }
+  #etools {
+    left: 10px; top: 10px; display: none; gap: 4px; background: var(--plate); padding: 4px; border-radius: 10px;
+  }
+  [data-mode="editor"] #etools { display: flex; }
+  #etools button { border: 0; background: transparent; color: var(--muted); padding: 6px 10px; border-radius: 7px; font-size: 12.5px; }
+  #etools button[aria-pressed="true"] { background: var(--text); color: #111; font-weight: 600; }
+  [data-mode="creator"] #fps { bottom: auto; top: 92px; }
+  @media (max-width: 860px) { #ehelp { display: none !important; } }
+  @media (max-width: 520px) { #bar .brand { display: none; } }
+  #cPartRow { overflow-x: auto; scrollbar-width: none; }
+  #cPartRow > * { flex: none; }
+  #ehelp { right: 10px; bottom: 8px; display: none; font-size: 11.5px; color: rgba(255,255,255,0.75); background: rgba(0,0,0,0.4); padding: 4px 8px; border-radius: 6px; }
+  [data-mode="editor"] #ehelp { display: block; }
+  [data-mode="editor"] #walk, [data-mode="editor"] #hint, [data-mode="creator"] #walk, [data-mode="creator"] #hint { display: none; }
+  [data-mode="creator"] #replay { bottom: 150px; }
+  [data-mode="editor"] #replay { bottom: 34px; }
+
+  @media (max-width: 860px) and (min-height: 501px) {
+    body { overflow: auto; }
+    #layout[data-mode="editor"] { grid-template-columns: 1fr; grid-template-rows: 52vh auto auto; overflow: auto; }
+    #layout[data-mode="editor"] #stageWrap { order: 1; }
+    #layout[data-mode="editor"] #right { order: 2; border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+    #layout[data-mode="editor"] #left { order: 3; border-right: 0; border-top: 1px solid var(--line); overflow: visible; }
+  }
+  @media (max-height: 500px) and (min-width: 600px) {
+    #layout[data-mode="editor"] { grid-template-columns: minmax(0, 1fr) 300px; }
+    #layout[data-mode="editor"] #left { display: none; }
+    #ehelp { display: none !important; }
+    /* phone held sideways: the creator's controls become a column on the right, the AR view stays open */
+    #creator { left: auto; right: 0; top: 0; width: min(340px, 46%); padding: 8px 8px 8px 0; display: none; flex-direction: column; justify-content: flex-end; }
+    [data-mode="creator"] #creator { display: flex; }
+    [data-mode="creator"] #ctop { left: 10px; transform: none; top: 52px; }
+    [data-mode="creator"] #picker { left: 10px; transform: none; max-width: calc(54% - 20px); }
+    [data-mode="creator"] #replay { right: auto; left: 10px; bottom: 30px; }
+    #cbtns { gap: 5px; }
+    #cbtns button { min-height: 44px; font-size: 11px; border-radius: 12px; gap: 1px; }
+    #cbtns svg { width: 17px; height: 17px; }
+    .sheet { padding: 8px; margin-bottom: 6px; border-radius: 14px; overflow-y: auto; }
+    .palette button { flex-basis: 40px; padding: 4px 1px 3px; font-size: 10px; }
+    .palette svg { width: 22px; height: 22px; }
+    .sheet .row + .row { margin-top: 6px; }
+    #hint { bottom: 70px; }
+    #walk { bottom: 14px; padding: 9px 18px; }
+    [data-mode="creator"] #replay { bottom: 120px; }
+    #replay { bottom: 14px; }
+  }
+
+  /* notes */
+  #notes {
+    position: fixed; inset: 44px 0 0 0; background: rgba(10,11,13,0.97); overflow: auto; z-index: 20; display: none;
+  }
+  #notes.on { display: block; }
+  #notes .in { max-width: 760px; margin: 0 auto; padding: 18px 18px 60px; line-height: 1.55; }
+  #notes h1 { font-size: 20px; margin: 4px 0 12px; }
+  #notes details { border-top: 1px solid var(--line); padding: 10px 0; }
+  #notes summary { cursor: pointer; font-weight: 650; }
+  #notes p, #notes li { color: #d9d4ca; }
+  #notes code { font: 12.5px var(--mono); color: var(--accent); }
+</style>
+</head>
+<body>
+<header id="bar">
+  <span class="brand">Primitives</span>
+  <span class="seg" id="modes">
+    <button data-mode="visitor">Visitor</button>
+    <button data-mode="creator">Creator</button>
+    <button data-mode="editor">Editor</button>
+  </span>
+  <button class="tog" id="tFrame" aria-pressed="false" title="Phone frame (9:19.5)">Phone</button>
+  <button class="tog" id="tFields" aria-pressed="false" title="Fields this view uses">Fields</button>
+  <button class="tog" id="tOffset" aria-pressed="false" title="Show a typical placement error: 0.7 m and 3 degrees">Error 0.7 m</button>
+  <button class="tog" id="tNotes" aria-pressed="false">Notes</button>
+</header>
+
+<main id="layout" data-mode="visitor">
+  <aside id="left"><div class="pane" id="leftPane"></div></aside>
+  <div id="stageWrap">
+    <div id="stage">
+      <canvas id="c"></canvas>
+      <div class="ov" id="chip" style="opacity:0"><div class="plate"><div class="t" id="chipT"></div><div class="e" id="chipE"></div></div><div class="stem"></div><div class="dot"></div></div>
+      <div class="ov" id="picker"></div>
+      <div class="ov" id="ctop"><b id="ctopLabel"></b> · <span id="ctopHint">drag it to move it</span></div>
+      <div class="ov" id="hint"><svg class="arrow" id="hintArrow" viewBox="0 0 20 20"><path d="M10 2 L16 14 L10 11 L4 14 Z" fill="#f4f1ea"/></svg><span id="hintText"></span></div>
+      <button class="ov" id="walk">Walk in</button>
+      <button class="ov" id="replay" style="display:none">Rise again</button>
+      <div class="ov" id="etools">
+        <button data-tool="translate" aria-pressed="true">Move</button>
+        <button data-tool="rotate">Turn</button>
+        <button data-tool="block">Whole block</button>
+      </div>
+      <div class="ov" id="ehelp">Drag the handles · parts snap to the ground and onto each other</div>
+      <div class="ov" id="fieldsPanel" hidden></div>
+      <div class="ov" id="toast"></div>
+      <div class="ov" id="creator">
+        <div class="sheet" id="sView"><div class="row" style="flex-wrap:wrap" id="sViewRow"></div></div>
+        <div class="sheet" id="sTurn">
+          <div class="row"><label class="k">Turn</label><input type="range" id="turnR" min="-180" max="180" step="1"><span class="val" id="turnV"></span></div>
+          <div class="row"><button class="pill" id="turnM">−5°</button><button class="pill" id="turnP">+5°</button><span style="flex:1"></span><button class="pill" id="turn0">Reset</button></div>
+        </div>
+        <div class="sheet" id="sSize">
+          <div class="row"><label class="k">Size</label><input type="range" id="sizeR" min="0.5" max="1.5" step="0.01"><span class="val" id="sizeV"></span></div>
+          <div class="row"><span style="font-size:12px;color:var(--muted);flex:1">A reconstruction is true size at 1.00. Change it only to fit the remains.</span><button class="pill" id="size1">1.00</button></div>
+        </div>
+        <div class="sheet" id="sParts">
+          <div class="palette" id="cPalette"></div>
+          <div class="row" id="cPartRow"></div>
+          <div class="row" id="cMatRow"></div>
+        </div>
+        <div class="sheet" id="sText">
+          <div class="row"><label class="k">Label</label><input type="text" id="cLabel" maxlength="64"></div>
+          <div class="row"><label class="k">Era</label><input type="text" id="cEra" maxlength="48"></div>
+        </div>
+        <div id="cbtns">
+          <button data-sheet="sView"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>View</button>
+          <button data-sheet="sParts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h7v-7H4zM13 20h7v-9h-7zM6.5 13V8l4-4 4 4"/></svg>Parts</button>
+          <button data-sheet="sTurn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 12a8 8 0 1 1-3-6.2"/><path d="M20 3v5h-5"/></svg>Turn</button>
+          <button data-sheet="sSize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 14v6h6M20 10V4h-6M4 20l7-7M20 4l-7 7"/></svg>Size</button>
+          <button data-sheet="sText"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg>Text</button>
+          <button class="done" id="cDone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12l5 5 9-10"/></svg>Done</button>
+        </div>
+      </div>
+      <div class="ov" id="fps"></div>
+    </div>
+  </div>
+  <aside id="right"><div class="pane" id="rightPane"></div></aside>
+</main>
+
+<section id="notes" aria-label="Notes"><div class="in" id="notesIn"><!--NOTES-->
+<h1>station-blocks-6-primitives - notes</h1>
+<p>3D primitives rebuilding what is gone: the castle keep over the ruined wall in the north-west corner of the market square.</p>
+<p>Page: <code>index.html</code> (one file, three.js r185 from unpkg via the prompt's import map, nothing else loaded). Screenshots: <code>shots/</code>. Check script: <code>tools/shoot.mjs</code> (drives the page only through <code>window.__stationBlock</code>).</p>
+<details open><summary>1. The model as built, and what I would change</summary>
+<p>One record, the same in every view:</p>
+<ul><li>
+<code>label</code>: "The castle keep"
+</li><li>
+<code>era</code>: "c. 1340 - 1560"
+</li><li>
+<code>parts</code>: ten entries of <code>{ shape, dims, pose, material }</code>
+<ul><li>
+<code>box {w, h, d}</code>, <code>cylinder {r, h}</code>, <code>cone {r, h}</code>, <code>roof {kind: "hip" | "gable", w, d, h}</code>, <code>wall {points: [[x, z], ...], h, t}</code> (an open polyline, mitred corners), <code>arch {w, h, t, openingW, springH}</code> (a wall piece with a round-headed opening)
+</li><li>
+<code>pose {x, y, z, yaw}</code>, block-local metres and degrees; <code>y</code> is the part's bottom
+</li><li>
+<code>material</code>: <code>"stone" | "timber" | "plaster" | "#rrggbb"</code>
+</li><li>
+the example: the four walls as one polyline open at the gate, the arch in the gap, a stone panel over it, three slit windows (dark colour boxes), a timber gallery, a hip roof, a plaster stair turret with a slate cone
+</li></ul>
+</li><li>
+The block's own pose (place, turn, size) is the envelope every block has, not a field of this model. <code>exportModel()</code> returns <code>{ model, view, pose, label, era, parts }</code>, 1.3 KB of JSON and no media file.
+</li></ul>
+<p>Fields I would add or drop:</p>
+<ul><li>
+<b>Add <code>certainty</code> per part</b> (<code>"known" | "likely" | "guess"</code>). The one I would fight for. A reconstruction is only honest if the guessed roof can look different from the surviving footprint; every view here could use it (ghost fainter, outline dashed, footprint unfilled, solid desaturated).
+</li><li>
+<b>Add <code>name</code> per part</b> (optional, short). The editor's list reads "box" six times; a creator needs "south wall", "gate", "gallery".
+</li><li>
+<b>Add <code>remainsHeightM</code> on the block.</b> The solid view fades its base and the rise view starts above the remains; here both use a fixed 1.2 m, which is right for this ruin only.
+</li><li>
+<b>Keep <code>roof</code> as one shape with <code>kind</code></b>; the pitch follows from <code>h</code>.
+</li><li>
+<b>Drop nothing.</b> <code>cone</code> could be a cylinder with a top radius of 0, but a creator looks for "cone".
+</li><li>
+<b>Not added on purpose:</b> openings cut into walls (booleans), per-face materials, image textures. Each makes the creator's job and the app's code much bigger. The cost is that a door in a wall must be built as "wall, arch, wall", which the creator does by hand.
+</li></ul>
+</details>
+<details><summary>2. The views</summary>
+<ul><li>
+<b>Solid</b> (required). The keep in stone, timber, plaster and slate, standing on the real stumps. Its lowest 1.3 m fades out, so the real remains carry the base and a placement error shows as a soft overlap instead of a wall hanging in the air or sunk into the paving. A soft contact shadow grounds it.
+<ul><li>
+Fields: all six (<code>parts[].shape/dims/pose/material</code>, <code>label</code>, <code>era</code>).
+</li><li>
+Why a visitor likes it: the building, at full height, where it stood. The most "wow" of the six.
+</li><li>
+Weakest: 1 m of error is still visible at the gate, where the real gap and the virtual arch disagree. It hides the real ruin and, in a crowded square, the people behind it (no occlusion: a 17 m wall draws over a person standing in front of it). Generated textures read as "model" more than "stone" in hard sun.
+</li></ul>
+</li><li>
+<b>Ghost</b> (required). Smoked glass: a dark translucent body (measured: a near face renders at about 142 of 255 against a sky of about 215), light rims where surfaces turn away, faint stone courses and timber boards, front surface only (a depth pre-pass hides the back walls), and a slow band of light rising through it.
+<ul><li>
+Fields: shape, dims, pose; material only as a faint pattern (a colour is ignored); label, era.
+</li><li>
+Why: the visitor sees both the real ruin through it and the size of what is gone. It forgives error best after the outline.
+</li><li>
+Weakest: in sun against a bright sky the rims wash out; the dark body is what keeps it visible. It reads as a screen effect more than a building.
+</li></ul>
+</li><li>
+<b>Outline</b> (required). Feature edges only: a warm white core over a dark halo, hidden edges dashed and faint. Cylinders and cones get their rims plus two silhouette lines recomputed each frame, instead of sixteen facet lines.
+<ul><li>
+Fields: shape, dims, pose; label, era. Material is not used.
+</li><li>
+Why: the lightest and calmest; the camera image stays almost untouched, and a 1 m offset looks like a drawing slightly off, not like a broken model.
+</li><li>
+Weakest: from inside the footprint it is a cage of lines. The halo is what makes it legible outdoors; without it the lines vanish on a pale facade.
+</li></ul>
+</li><li>
+<b>Rise</b> (suggested, built). On entering the circle the keep grows out of the remains in 7.5 s, a warm seam marking the growing edge and the finished outline faint ahead of it; the label arrives at the end. "Rise again" replays it.
+<ul><li>
+Fields: all; <code>pose.y</code> and the heights decide what appears first.
+</li><li>
+Why: it explains without words that the ruin is the bottom of this.
+</li><li>
+Weakest: it plays once per entry, and a visitor who walks in looking at the map misses it. On the tenth station the seam is a gimmick.
+</li></ul>
+</li><li>
+<b>Footprint</b> (suggested, built). The plan inlaid on the paving: walls and turret as hatched dark bands with a light edge, raised parts (gallery, roof, caps) as dashed outlines, the gate threshold dashed, dashed height marks up each wall corner, and a low fading curtain of light along the walls so the plan reads at a grazing angle.
+<ul><li>
+Fields: shape, dims, pose, label, era; <code>pose.y</code> decides filled (on the ground) or dashed (raised). Material is not used: stone, timber and plaster draw the same plan.
+</li><li>
+Why: it never hides anything, survives any error, and in the editor's bird's-eye view it is a plan drawing.
+</li><li>
+Weakest: from eye height at 20 m a plan on the ground is a sliver whatever its design; the curtain and the height marks are what make it findable, and the visitor has to walk up to it to read it (its screenshot stands about 10 m from the nearest wall, the others about 24 m from the keep's centre). On busy cobbles it competes with the real joints.
+</li></ul>
+</li><li>
+<b>Engraving</b> (my own, unlisted). The keep drawn as a page from an old town chronicle: cream paper faces, sepia hatching by the light (one diagonal in half-shade, cross-hatching in shade, horizontal strokes in deep shadow), stone courses and staggered joints, timber boards, ink edges and silhouettes.
+<ul><li>
+Fields: all; material picks the pattern and a colour's darkness sets the hatch density (the slate roof comes out cross-hatched).
+</li><li>
+Why: it matches the story (a building known only from drawings), it is calm, and it stays legible in sun because it is dark ink on light paper.
+</li><li>
+Weakest: at 25 m the hatching approaches the pixel size and fades to a flat tone by design, so far away it is a cream model with ink edges. It is a style choice, and next to a photo block it may look twee.
+</li><li>
+Inspiration: the general look of woodcut and copper-plate town views; the technique (world-space line masks with screen-space antialiasing, tone by light) is generic.
+</li></ul>
+</li></ul>
+</details>
+<details><summary>3. What each view costs</summary>
+<p>Frame times below are from this page's readout in headless Chromium with SwiftShader, i.e. SOFTWARE rendering on the CPU at 1440x900. They are not phone numbers and say only how the views compare to each other. "cpu" is the JavaScript time of one frame (update plus issuing the draw calls), which is the part that does transfer to a phone roughly.</p>
+<ul><li>
+Solid: frame 198 ms mean / 354 ms max, cpu 1.1 / 2.9 ms
+</li><li>
+Ghost: frame 211 ms mean / 546 ms max, cpu 1.0 / 2.4 ms
+</li><li>
+Outline: frame 156 ms mean / 331 ms max, cpu 0.9 / 1.3 ms
+</li><li>
+Rise: frame 258 ms mean / 594 ms max, cpu 1.3 / 2.9 ms
+</li><li>
+Footprint: frame 291 ms mean / 721 ms max, cpu 0.9 / 1.3 ms
+</li><li>
+Engraving: frame 161 ms mean / 475 ms max, cpu 7.9 / 84.7 ms
+</li><li>
+Creator: frame 302 ms mean / 492 ms max, cpu 1.3 / 2.5 ms
+</li><li>
+Editor: frame 146 ms mean / 288 ms max, cpu 1.0 / 1.5 ms
+</li></ul>
+<p>The machine was shared with other browser runs during the run, so the frame column is noise on top of software rendering; the cpu column is the one to compare. Every view's cpu mean is around 1 ms; the single maxima above about 3 ms are one-off shader compiles and texture uploads on the first frames after a switch.</p>
+<ul><li>
+Media size: none for any view. The record is about 1.3 KB of JSON. The three material textures are generated by the app at start (three 512x512 canvases, about 4 MB of GPU memory with mipmaps, shared by every block of this model in the tour).
+</li><li>
+Draw calls (the phone cost that matters): Solid 10 meshes + 1 shadow; Ghost 10 depth pre-pass + 10 glass + 2 line sets; Outline 10 pre-pass + 5 line sets; Rise 10 pre-pass + 10 solid + 2 line sets; Footprint about 8 fills + 1 curtain + 3 line sets; Engraving 10 + 3 line sets. Triangles are under 3 000 for the whole keep. None of this is near a phone's 50 ms budget; the risk is overdraw of a 17 m translucent wall filling the screen (Ghost), which a phone handles but a cheap one may not at full resolution.
+</li><li>
+Creator's minutes: I wrote the ten parts of this keep as data in about 15 minutes with the sizes decided; I did not time an editor session, and my estimate for a creator in the editor is 20-40 minutes for ten parts (unmeasured). Without a survey of the remains most of that time goes into measuring, not into the tool. The phone is for checking and nudging, not for assembling ten parts. Choosing a view costs nothing once the parts exist: every view is drawn from the same parts with no extra input.
+</li></ul>
+</details>
+<details><summary>4. The creator's controls</summary>
+<ul><li>
+<b>Phone (creator mode, at the anchor in AR).</b> Six large buttons along the bottom:
+<ul><li>
+View: the six views as chips.
+</li><li>
+Parts: a shape palette (tap to add one in front of the gate); tap a part to pick it, drag it, and on release it snaps to a 0.1 m grid, to the sides of its neighbours (within 0.35 m) and falls onto the first part below its centre (or the ground). Material swatches, turn 15 degrees, delete.
+</li><li>
+Turn: the whole block, a slider and 5 degree steps.
+</li><li>
+Size: 0.5 to 1.5, with 1.00 marked as the true size (a reconstruction should stay at 1.00).
+</li><li>
+Text: label and era.
+</li><li>
+Done: closes the sheets and confirms with a toast.
+</li><li>
+Without the Parts sheet, dragging the keep moves the whole block on the ground.
+</li></ul>
+</li><li>
+<b>Desktop (editor mode).</b> The station's blocks on the left with this block's parts as a list and a shape palette. The inspector on the right: label, era, view, the block's place (x, z, turn, size); for the picked part its shape, its dims as numbers (a wall's points as "x, z" lines), pose, material (stone, timber, plaster, a colour picker), Snap down, Duplicate, Delete, and the size of the stored JSON. In the view: Move handles (x and z, 0.1 m steps; on release the same snapping as on the phone), Turn (yaw only, 15 degree steps) and Whole block. The footprint plan is always drawn on the ground in the editor, so the plan reads from above whichever view is picked.
+</li><li>
+<b>Per view:</b> nothing to set. A view is chosen, not tuned. The fade height should become the block field <code>remainsHeightM</code>.
+</li></ul>
+</details>
+<details><summary>5. Blunt self-check</summary>
+<ul><li>
+<b>Rules and context points the page breaks or bends:</b>
+<ul><li>
+The footprint screenshots stand about 10 m from the nearest wall, the other views about 24 m from the keep's centre; from 24 m the footprint is a sliver. That is a finding about the view, not a fair comparison.
+</li><li>
+The label is a screen-space chip anchored to a world point, not world-scaled text; it stays readable at any distance but does not shrink with distance.
+</li><li>
+There is no occlusion of real people or objects (the page has no depth from the scene); Solid and Engraving draw over anyone standing in front of the keep. In the app that needs depth sensing or a rule to fade near people.
+</li><li>
+Solid's faded base is a transparent pass; where two faded faces overlap, their order can flip (visible only in the bottom 1.3 m, and only through the gate).
+</li><li>
+Snapping is simple: side snapping uses bounding boxes (a turned part snaps by its box, not its faces), and support is one ray from the part's centre, so a part overhanging an edge falls to the ground if its centre is past it.
+</li><li>
+A wall polyline cannot be closed (first point equal to last); this keep's ring is open at the gate, which works here only because the gate is where the opening is.
+</li></ul>
+</li><li>
+<b>Drop first:</b> Rise, as a view. It is an entrance, not a look: it belongs as a block option (<code>entrance: "rise" | "fade"</code>) that plays before Solid, Ghost or Engraving. Kept as a view, it doubles the Solid view's code path for a 7 s effect.
+</li><li>
+<b>Proudest of:</b> Engraving. It is the only view that does not look like a game asset, it is the most legible in sunlight (dark ink on light paper), it uses the <code>material</code> field more than any other view, and it suits a building known from drawings. Close second: the faded base of the Solid view, a one-line shader change that makes 1 m of placement error look intended.
+</li></ul>
+</details>
+<!--/NOTES--></div></section>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+
+const $ = (s) => document.querySelector(s);
+const DEG = Math.PI / 180;
+const FAMILY = 'station-blocks-6-primitives';
+const SHAPES = ['box', 'cylinder', 'cone', 'roof', 'wall', 'arch'];
+const MATERIALS = ['stone', 'timber', 'plaster'];
+const HEX = /^#[0-9a-f]{6}$/i;
+const STATION_R = 25;
+const EYE = 1.6;
+const REMAINS_H = 1.2; // fixed here; proposed as a block field in the notes
+
+// ---------------------------------------------------------------- the record
+const DEFAULT_DIMS = {
+  box: { w: 2, h: 2, d: 2 },
+  cylinder: { r: 1, h: 3 },
+  cone: { r: 1.2, h: 2 },
+  roof: { kind: 'gable', w: 4, d: 3, h: 1.6 },
+  wall: { points: [[-2, 0], [2, 0]], h: 2.5, t: 0.8 },
+  arch: { w: 2.4, h: 3, t: 0.8, openingW: 1.4, springH: 1.6 },
+};
+const SLATE = '#4b515c', SLIT = '#2a2522';
+const RECORD = {
+  label: 'The castle keep',
+  era: 'c. 1340 - 1560',
+  parts: [
+    { shape: 'wall', dims: { points: [[-1.2, 4], [-4, 4], [-4, -4], [4, -4], [4, 4], [1.2, 4]], h: 11, t: 1.2 }, pose: { x: 0, y: 0, z: 0, yaw: 0 }, material: 'stone' },
+    { shape: 'arch', dims: { w: 2.4, h: 4, t: 1.2, openingW: 1.4, springH: 2.3 }, pose: { x: 0, y: 0, z: 4, yaw: 0 }, material: 'stone' },
+    { shape: 'box', dims: { w: 2.4, h: 7, d: 1.2 }, pose: { x: 0, y: 4, z: 4, yaw: 0 }, material: 'stone' },
+    { shape: 'box', dims: { w: 0.32, h: 1.5, d: 0.08 }, pose: { x: -2.4, y: 6.0, z: 4.62, yaw: 0 }, material: SLIT },
+    { shape: 'box', dims: { w: 0.32, h: 1.5, d: 0.08 }, pose: { x: 2.4, y: 7.6, z: 4.62, yaw: 0 }, material: SLIT },
+    { shape: 'box', dims: { w: 0.08, h: 1.5, d: 0.32 }, pose: { x: -4.62, y: 7.6, z: 0.6, yaw: 0 }, material: SLIT },
+    { shape: 'box', dims: { w: 9.6, h: 1.8, d: 9.6 }, pose: { x: 0, y: 11, z: 0, yaw: 0 }, material: 'timber' },
+    { shape: 'roof', dims: { kind: 'hip', w: 10.4, d: 10.4, h: 4.8 }, pose: { x: 0, y: 12.8, z: 0, yaw: 0 }, material: SLATE },
+    { shape: 'cylinder', dims: { r: 1.5, h: 15 }, pose: { x: 4.3, y: 0, z: -4.3, yaw: 0 }, material: 'plaster' },
+    { shape: 'cone', dims: { r: 1.85, h: 3.4 }, pose: { x: 4.3, y: 15, z: -4.3, yaw: 0 }, material: SLATE },
+  ],
+};
+const BLOCK = { x: -14.5, z: -14, yaw: 0, scale: 1 }; // block envelope, relative to the station anchor
+const ERR = { dx: 0.55, dz: 0.45, yaw: 3 };          // the "Error 0.7 m" toggle
+
+const num = (v, d, lo, hi) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+function sanitizePart(p) {
+  const shape = SHAPES.includes(p?.shape) ? p.shape : 'box';
+  const def = DEFAULT_DIMS[shape];
+  const d = (p && typeof p.dims === 'object' && p.dims) || {};
+  let dims;
+  switch (shape) {
+    case 'box': dims = { w: num(d.w, def.w, 0.02, 500), h: num(d.h, def.h, 0.02, 500), d: num(d.d, def.d, 0.02, 500) }; break;
+    case 'cylinder': case 'cone': dims = { r: num(d.r, def.r, 0.01, 250), h: num(d.h, def.h, 0.02, 500) }; break;
+    case 'roof': dims = { kind: d.kind === 'hip' ? 'hip' : 'gable', w: num(d.w, def.w, 0.1, 500), d: num(d.d, def.d, 0.1, 500), h: num(d.h, def.h, 0.05, 200) }; break;
+    case 'wall': {
+      const pts = Array.isArray(d.points) ? d.points.filter((q) => Array.isArray(q) && q.length >= 2 && Number.isFinite(+q[0]) && Number.isFinite(+q[1])).map((q) => [num(q[0], 0, -500, 500), num(q[1], 0, -500, 500)]) : [];
+      const dedup = pts.filter((q, i) => i === 0 || Math.hypot(q[0] - pts[i - 1][0], q[1] - pts[i - 1][1]) > 1e-3);
+      dims = { points: dedup.length >= 2 ? dedup : def.points.map((q) => [...q]), h: num(d.h, def.h, 0.05, 500), t: num(d.t, def.t, 0.05, 20) };
+      break;
+    }
+    case 'arch': {
+      const w = num(d.w, def.w, 0.3, 100), h = num(d.h, def.h, 0.3, 100), t = num(d.t, def.t, 0.05, 20);
+      const ow = num(d.openingW, def.openingW, 0.1, w - 0.1);
+      const sh = num(d.springH, def.springH, 0, Math.max(0, h - ow / 2 - 0.1));
+      dims = { w, h, t, openingW: ow, springH: sh };
+      break;
+    }
+  }
+  const ps = (p && typeof p.pose === 'object' && p.pose) || {};
+  const pose = { x: num(ps.x, 0, -500, 500), y: num(ps.y, 0, -50, 500), z: num(ps.z, 0, -500, 500), yaw: num(ps.yaw, 0, -360, 360) };
+  const material = MATERIALS.includes(p?.material) || HEX.test(String(p?.material ?? '')) ? p.material : 'stone';
+  return { shape, dims, pose, material };
+}
+RECORD.parts = RECORD.parts.map(sanitizePart);
+
+// ---------------------------------------------------------------- views
+const VIEWS = [
+  { name: 'solid', title: 'Solid', required: true,
+    uses: ['parts[].shape', 'parts[].dims', 'parts[].pose', 'parts[].material', 'label', 'era'],
+    how: { 'parts[].shape': 'one solid per part', 'parts[].dims': 'true size in metres', 'parts[].pose': 'placed against the remains', 'parts[].material': 'stone, timber and plaster as generated textures, a colour as a flat paint', label: 'the chip above the gate', era: 'the chip, second line' } },
+  { name: 'ghost', title: 'Ghost', required: true,
+    uses: ['parts[].shape', 'parts[].dims', 'parts[].pose', 'parts[].material', 'label', 'era'],
+    how: { 'parts[].shape': 'smoked-glass volumes, front surface only', 'parts[].dims': 'true size', 'parts[].pose': 'placed', 'parts[].material': 'only as a faint pattern: stone courses, timber boards; colour ignored', label: 'chip', era: 'chip' } },
+  { name: 'outline', title: 'Outline', required: true,
+    uses: ['parts[].shape', 'parts[].dims', 'parts[].pose', 'label', 'era'],
+    how: { 'parts[].shape': 'its feature edges, drawn with a dark halo', 'parts[].dims': 'true size', 'parts[].pose': 'placed; hidden edges dashed and faint', label: 'chip', era: 'chip' } },
+  { name: 'rise', title: 'Rise', required: false,
+    uses: ['parts[].shape', 'parts[].dims', 'parts[].pose', 'parts[].material', 'label', 'era'],
+    how: { 'parts[].shape': 'solids revealed from the remains upward', 'parts[].dims': 'true size; the total height sets the duration', 'parts[].pose': 'pose.y orders what appears first', 'parts[].material': 'as in Solid', label: 'chip, after the roof is reached', era: 'chip' } },
+  { name: 'footprint', title: 'Footprint', required: false,
+    uses: ['parts[].shape', 'parts[].dims', 'parts[].pose', 'label', 'era'],
+    how: { 'parts[].shape': 'its plan: walls and turret filled, raised parts as dashed outlines, height marks at the wall corners', 'parts[].dims': 'plan size; the height of a wall sets its corner marks', 'parts[].pose': 'pose.y decides filled (on the ground) or dashed (raised)', label: 'chip, low over the gate', era: 'chip' } },
+  { name: 'engraving', title: 'Engraving', required: false, own: true,
+    uses: ['parts[].shape', 'parts[].dims', 'parts[].pose', 'parts[].material', 'label', 'era'],
+    how: { 'parts[].shape': 'an ink drawing on paper, hatched by the light', 'parts[].dims': 'true size', 'parts[].pose': 'placed', 'parts[].material': 'stone courses, timber boards, plaster blank; a colour sets the hatch density', label: 'chip', era: 'chip' } },
+];
+const VIEW_NAMES = VIEWS.map((v) => v.name);
+const ALL_FIELDS = ['parts[].shape', 'parts[].dims', 'parts[].pose', 'parts[].material', 'label', 'era'];
+
+// ---------------------------------------------------------------- renderer + scene
+const canvas = $('#c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 900);
+scene.fog = new THREE.Fog(0xe3e7ea, 90, 420);
+
+function canvasTex(w, h, draw, srgb = true) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  return t;
+}
+// a deterministic random, so every load draws the same textures
+function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+
+scene.background = canvasTex(4, 256, (g, w, h) => {
+  const gr = g.createLinearGradient(0, 0, 0, h);
+  gr.addColorStop(0, '#c9d6e0'); gr.addColorStop(0.55, '#e6ebee'); gr.addColorStop(1, '#eceae5');
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+});
+scene.background.wrapS = scene.background.wrapT = THREE.ClampToEdgeWrapping;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0xb8b2a8, 1.9));
+const sun = new THREE.DirectionalLight(0xfff4e2, 1.9);
+sun.position.set(-30, 45, 32);
+scene.add(sun);
+const LIGHT_DIR = sun.position.clone().normalize();
+
+// ---- the place (stand-ins for the camera image)
+const grey = (c) => new THREE.MeshLambertMaterial({ color: c });
+const place = new THREE.Group(); scene.add(place);
+{
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), grey(0xd5d2cb)); g.rotation.x = -Math.PI / 2; g.position.y = -0.01; place.add(g);
+  const pav = canvasTex(256, 256, (c, w, h) => {
+    c.fillStyle = '#d9d6cf'; c.fillRect(0, 0, w, h);
+    const r = rng(7);
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) { const v = 212 + r() * 14; c.fillStyle = `rgb(${v},${v - 3},${v - 9})`; c.fillRect(x * 32 + 1, y * 32 + 1, 30, 30); }
+  });
+  pav.repeat.set(40 / 4, 40 / 4);
+  const sq = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambertMaterial({ map: pav })); sq.rotation.x = -Math.PI / 2; place.add(sq);
+  const pathM = grey(0xc9c5bd);
+  const p1 = new THREE.Mesh(new THREE.PlaneGeometry(3, 60), pathM); p1.rotation.x = -Math.PI / 2; p1.position.set(0, 0.004, 50); place.add(p1);
+  const p2 = new THREE.Mesh(new THREE.PlaneGeometry(70, 3), pathM); p2.rotation.x = -Math.PI / 2; p2.position.set(55, 0.004, 0); place.add(p2);
+  // guild house front along the north side
+  const house = new THREE.Mesh(new THREE.BoxGeometry(40, 6, 8), grey(0xc6c3bd)); house.position.set(0, 3, -24); place.add(house);
+  const cornice = new THREE.Mesh(new THREE.BoxGeometry(40.4, 0.35, 8.4), grey(0xb9b6b0)); cornice.position.set(0, 6.1, -24); place.add(cornice);
+  const dark = grey(0x8d8a86);
+  const door = new THREE.Mesh(new THREE.BoxGeometry(1.7, 2.7, 0.12), dark); door.position.set(4, 1.35, -19.98); place.add(door);
+  for (const x of [-3, 11]) { const w = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.9, 0.12), dark); w.position.set(x, 3.4, -19.98); place.add(w); }
+  // the real remains: about 1 m high, about 8 m long, a gap where the gate was
+  const ruinM = grey(0xaba69e); const r = rng(3);
+  for (const [a, b] of [[-4.6, -0.72], [0.72, 4.6]]) {
+    for (let x = a; x < b - 0.01; x += 0.46) {
+      const w = Math.min(0.46, b - x), hh = 0.6 + r() * 0.5;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w + 0.01, hh, 1.15 + r() * 0.08), ruinM);
+      m.position.set(BLOCK.x + x + w / 2, hh / 2, BLOCK.z + 4); place.add(m);
+    }
+  }
+  // bench and tree
+  const bench = new THREE.Group();
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 0.45), grey(0x9e9a94)); seat.position.y = 0.45; bench.add(seat);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.4, 0.06), grey(0x9e9a94)); back.position.set(0, 0.75, -0.2); bench.add(back);
+  for (const x of [-0.8, 0.8]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 0.4), grey(0x8a8680)); l.position.set(x, 0.22, 0); bench.add(l); }
+  bench.position.set(7, 0, 4); bench.rotation.y = -0.3; place.add(bench);
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.26, 3.2, 10), grey(0x928d86)); trunk.position.set(12, 1.6, -7); place.add(trunk);
+  const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.4, 1), new THREE.MeshLambertMaterial({ color: 0xa7ada2, flatShading: true })); crown.position.set(12, 4.6, -7); place.add(crown);
+  // station circle and anchor
+  const ringM = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(STATION_R - 0.07, STATION_R + 0.07, 160), ringM); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.02; place.add(ring);
+  const anchor = new THREE.Mesh(new THREE.RingGeometry(0.18, 0.26, 32), ringM); anchor.rotation.x = -Math.PI / 2; anchor.position.y = 0.02; place.add(anchor);
+  // the second, plain station 60 m east with one stand-in item
+  const ring2 = new THREE.Mesh(new THREE.RingGeometry(STATION_R - 0.07, STATION_R + 0.07, 160), ringM); ring2.rotation.x = -Math.PI / 2; ring2.position.set(60, 0.02, 0); place.add(ring2);
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.3, 0.1), grey(0x8f949b)); post.position.set(60, 0.65, 0); place.add(post);
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.6, 0.05), grey(0x9aa3ad)); panel.position.set(60, 1.45, 0); panel.rotation.y = -Math.PI / 2; place.add(panel);
+}
+
+// ---------------------------------------------------------------- shared uniforms
+const U = {
+  presence: { value: 0 },
+  reveal: { value: 1e4 },
+  baseY: { value: 0 },
+  fadeLo: { value: 0.1 },
+  fadeHi: { value: REMAINS_H + 0.2 },
+  time: { value: 0 },
+  glow: { value: new THREE.Color(1.0, 0.82, 0.5) },
+};
+
+// ---------------------------------------------------------------- textures for the solid view
+const stoneTex = canvasTex(512, 512, (c, w, h) => {
+  const r = rng(11);
+  c.fillStyle = '#bdb19b'; c.fillRect(0, 0, w, h);
+  const rows = 6, rh = h / rows;
+  for (let y = 0; y < rows; y++) {
+    let x = -r() * 160;
+    while (x < w) {
+      const bw = 95 + r() * 110;
+      const v = r();
+      const R = 168 + v * 30 - 8 * r(), G = 155 + v * 28 - 6 * r(), B = 133 + v * 22;
+      c.fillStyle = `rgb(${R | 0},${G | 0},${B | 0})`;
+      for (const off of [0, w]) c.fillRect(x + 2 - off, y * rh + 2, bw - 4, rh - 4);
+      x += bw;
+    }
+  }
+  for (let i = 0; i < 9000; i++) { const a = r() * 0.12; c.fillStyle = r() > 0.5 ? `rgba(255,250,240,${a})` : `rgba(60,50,40,${a})`; c.fillRect(r() * w, r() * h, 1 + r() * 2, 1 + r() * 2); }
+});
+const timberTex = canvasTex(512, 512, (c, w, h) => {
+  const r = rng(5);
+  const n = 8, bw = w / n;
+  for (let i = 0; i < n; i++) {
+    const v = r();
+    c.fillStyle = `rgb(${(96 + v * 26) | 0},${(68 + v * 18) | 0},${(46 + v * 12) | 0})`; c.fillRect(i * bw, 0, bw, h);
+    for (let k = 0; k < 14; k++) { c.strokeStyle = `rgba(40,25,15,${0.12 + r() * 0.15})`; c.lineWidth = 1; c.beginPath(); const x0 = i * bw + r() * bw; c.moveTo(x0, 0); c.bezierCurveTo(x0 + (r() - 0.5) * 10, h * 0.3, x0 + (r() - 0.5) * 10, h * 0.7, x0, h); c.stroke(); }
+    c.fillStyle = 'rgba(25,15,8,0.55)'; c.fillRect(i * bw, 0, 2, h);
+  }
+  c.fillStyle = 'rgba(30,18,10,0.45)'; c.fillRect(0, h * 0.48, w, 6);
+});
+const plasterTex = canvasTex(512, 512, (c, w, h) => {
+  const r = rng(9);
+  c.fillStyle = '#e8dfcf'; c.fillRect(0, 0, w, h);
+  for (let i = 0; i < 260; i++) { const x = r() * w, y = r() * h, rad = 10 + r() * 50; const g = c.createRadialGradient(x, y, 0, x, y, rad); const a = 0.035 + r() * 0.05; g.addColorStop(0, r() > 0.5 ? `rgba(160,140,110,${a})` : `rgba(255,255,250,${a})`); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(x - rad, y - rad, rad * 2, rad * 2); }
+});
+const TILE = { stone: 2.5, timber: 2.4, plaster: 3.0 };
+
+function patchFade(mat) {
+  mat.transparent = true;
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, { uPresence: U.presence, uReveal: U.reveal, uBaseY: U.baseY, uFadeLo: U.fadeLo, uFadeHi: U.fadeHi, uGlow: U.glow });
+    sh.vertexShader = 'varying vec3 vWPos;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = 'varying vec3 vWPos;\nuniform float uPresence, uReveal, uBaseY, uFadeLo, uFadeHi;\nuniform vec3 uGlow;\n' + sh.fragmentShader.replace('#include <dithering_fragment>', `
+      float hh = vWPos.y - uBaseY;
+      if (hh > uReveal) discard;
+      float seam = 1.0 - smoothstep(0.0, 0.35, uReveal - hh);
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, uGlow, seam * 0.9);
+      gl_FragColor.a *= smoothstep(uFadeLo, uFadeHi, hh) * uPresence;
+      #include <dithering_fragment>`);
+  };
+  mat.customProgramCacheKey = () => 'fade1';
+  return mat;
+}
+const solidMats = {
+  stone: patchFade(new THREE.MeshStandardMaterial({ map: stoneTex, roughness: 0.92, metalness: 0 })),
+  timber: patchFade(new THREE.MeshStandardMaterial({ map: timberTex, roughness: 0.85, metalness: 0 })),
+  plaster: patchFade(new THREE.MeshStandardMaterial({ map: plasterTex, roughness: 0.95, metalness: 0 })),
+};
+const colourMats = new Map();
+function solidMat(m) {
+  if (solidMats[m]) return solidMats[m];
+  if (!colourMats.has(m)) colourMats.set(m, patchFade(new THREE.MeshStandardMaterial({ color: new THREE.Color(m), roughness: 0.8, metalness: 0 })));
+  return colourMats.get(m);
+}
+const patternOf = (m) => (m === 'stone' ? 1 : m === 'timber' ? 2 : 0);
+const toneOf = (m) => { if (!HEX.test(m)) return m === 'timber' ? 0.35 : m === 'stone' ? 0.1 : 0; const c = new THREE.Color(m); return 1 - (0.3 * c.r + 0.59 * c.g + 0.11 * c.b); };
+
+// ---------------------------------------------------------------- shader views
+const GLSL_COMMON = `
+  varying vec3 vN; varying vec3 vW;
+  float lineMask(float s, float width) {
+    float w = fwidth(s);
+    float d = abs(fract(s + 0.5) - 0.5);
+    float m = 1.0 - smoothstep(width - w, width + w, d);
+    return mix(m, width * 2.0, smoothstep(0.22, 0.45, w));
+  }`;
+const VS = `
+  varying vec3 vN; varying vec3 vW;
+  void main() {
+    vec4 w = modelMatrix * vec4(position, 1.0);
+    vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal);
+    gl_Position = projectionMatrix * viewMatrix * w;
+  }`;
+const ghostMats = new Map();
+function ghostMat(m) {
+  const key = patternOf(m);
+  if (ghostMats.has(key)) return ghostMats.get(key);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uPattern: { value: key }, uPresence: U.presence, uBaseY: U.baseY, uTime: U.time, uLight: { value: LIGHT_DIR.clone() }, uTint: { value: new THREE.Color(1.0, 0.95, 0.86) } },
+    vertexShader: VS,
+    fragmentShader: GLSL_COMMON + `
+      uniform float uPattern, uPresence, uBaseY, uTime; uniform vec3 uTint, uLight;
+      void main() {
+        vec3 n = normalize(vN); vec3 v = normalize(cameraPosition - vW);
+        float f = pow(1.0 - abs(dot(n, v)), 3.5);
+        float h = vW.y - uBaseY;
+        vec3 th = cross(vec3(0.0, 1.0, 0.0), n); float lt = length(th); th = lt > 0.1 ? th / lt : vec3(1.0, 0.0, 0.0);
+        float u = dot(vW, th);
+        float pat = 0.0;
+        if (lt > 0.1 && uPattern > 0.5 && uPattern < 1.5) pat = lineMask(h / 0.64, 0.035);
+        if (uPattern > 1.5) pat = lineMask(u / 0.45, 0.04);
+        float band = pow(max(0.0, 1.0 - abs(fract(h / 18.0 - uTime * 0.045) - 0.5) * 2.0), 10.0);
+        vec3 deep = vec3(0.03, 0.034, 0.045);
+        vec3 body = deep + uTint * 0.07 * max(0.0, dot(n, normalize(uLight)));
+        vec3 col = mix(body, uTint, clamp(f * 1.1 + pat * 0.25 + band * 0.12, 0.0, 1.0));
+        float a = 0.56 + 0.38 * f + 0.1 * pat + 0.05 * band;
+        a *= smoothstep(0.0, 1.1, h) * uPresence;
+        gl_FragColor = vec4(col, clamp(a, 0.0, 0.92));
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, depthWrite: false, depthFunc: THREE.LessEqualDepth, side: THREE.FrontSide,
+  });
+  ghostMats.set(key, mat);
+  return mat;
+}
+const inkMats = new Map();
+function inkMat(m) {
+  const key = patternOf(m) + '|' + toneOf(m).toFixed(2);
+  if (inkMats.has(key)) return inkMats.get(key);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uPattern: { value: patternOf(m) }, uTone: { value: toneOf(m) }, uPresence: U.presence, uBaseY: U.baseY, uFadeLo: U.fadeLo, uFadeHi: U.fadeHi,
+      uLight: { value: LIGHT_DIR.clone() }, uPaper: { value: new THREE.Color('#f1e6cc') }, uInk: { value: new THREE.Color('#2f2116') } },
+    vertexShader: VS,
+    fragmentShader: GLSL_COMMON + `
+      uniform float uPattern, uTone, uPresence, uBaseY, uFadeLo, uFadeHi; uniform vec3 uLight, uPaper, uInk;
+      void main() {
+        vec3 n = normalize(vN);
+        float light = clamp(0.55 + 0.6 * dot(n, normalize(uLight)), 0.0, 1.0);
+        float dark = clamp(1.0 - light + uTone * 0.55, 0.0, 1.0);
+        float h = vW.y - uBaseY;
+        vec3 th = cross(vec3(0.0, 1.0, 0.0), n); float lt = length(th); th = lt > 0.1 ? th / lt : vec3(1.0, 0.0, 0.0);
+        float u = dot(vW, th);
+        float a1 = lt > 0.1 ? h : vW.z;
+        float ink = 0.0;
+        ink = max(ink, lineMask((u + a1) / 0.36, 0.05 + 0.16 * smoothstep(0.3, 1.0, dark)) * smoothstep(0.26, 0.36, dark));
+        ink = max(ink, lineMask((u - a1) / 0.36, 0.04 + 0.12 * smoothstep(0.55, 1.0, dark)) * smoothstep(0.52, 0.62, dark));
+        ink = max(ink, lineMask(a1 / 0.5, 0.04 + 0.1 * smoothstep(0.78, 1.0, dark)) * smoothstep(0.76, 0.86, dark));
+        if (uPattern > 0.5 && uPattern < 1.5 && lt > 0.1) {
+          float course = floor(h / 0.64);
+          ink = max(ink, 0.75 * lineMask(h / 0.64, 0.035));
+          ink = max(ink, 0.6 * lineMask(u / 1.1 + 0.5 * mod(course, 2.0), 0.03));
+        }
+        if (uPattern > 1.5) ink = max(ink, 0.7 * lineMask(u / 0.3, 0.05));
+        vec3 col = mix(uPaper, uInk, ink * 0.92);
+        float a = smoothstep(uFadeLo, uFadeHi, h) * uPresence;
+        gl_FragColor = vec4(col, a);
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, depthWrite: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+  });
+  inkMats.set(key, mat);
+  return mat;
+}
+const prepassMat = new THREE.MeshBasicMaterial({ colorWrite: false, polygonOffset: true, polygonOffsetFactor: 1.5, polygonOffsetUnits: 2 });
+const pickMat = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });
+
+// line materials (screen-space widths); `base` is the opacity before presence
+const lineMats = [];
+function lineMat(opts, base = opts.opacity ?? 1) {
+  const m = new LineMaterial({ transparent: true, depthWrite: false, worldUnits: false, ...opts, opacity: base });
+  m.userData.base = base; lineMats.push(m); return m;
+}
+const LM = {
+  halo: lineMat({ color: 0x15110d, linewidth: 6.5, depthFunc: THREE.LessEqualDepth }, 0.5),
+  core: lineMat({ color: 0xfff0d2, linewidth: 2.4, depthFunc: THREE.LessEqualDepth }, 1),
+  hidden: lineMat({ color: 0xfff0d2, linewidth: 1.4, dashed: true, dashSize: 0.32, gapSize: 0.28, depthFunc: THREE.GreaterDepth }, 0.32),
+  ghostEdge: lineMat({ color: 0xfff3df, linewidth: 1.3, depthFunc: THREE.LessEqualDepth }, 0.55),
+  ink: lineMat({ color: 0x2a1c11, linewidth: 2.0, depthFunc: THREE.LessEqualDepth }, 0.95),
+  target: lineMat({ color: 0xfff0d2, linewidth: 1.3, depthFunc: THREE.LessEqualDepth }, 0.3),
+  planCore: lineMat({ color: 0xfff0d2, linewidth: 2.6, depthFunc: THREE.LessEqualDepth }, 1),
+  planHalo: lineMat({ color: 0x15110d, linewidth: 6, depthFunc: THREE.LessEqualDepth }, 0.45),
+  planDash: lineMat({ color: 0xfff0d2, linewidth: 1.6, dashed: true, dashSize: 0.45, gapSize: 0.35, depthFunc: THREE.LessEqualDepth }, 0.75),
+};
+const SEL_MAT = new LineMaterial({ color: 0xf2b84b, linewidth: 3.2, transparent: true, depthTest: false, depthWrite: false });
+
+// ---------------------------------------------------------------- geometry per part
+function wallOutline(points, t) {
+  const n = points.length, ht = t / 2, segN = [];
+  for (let i = 0; i < n - 1; i++) {
+    const dx = points[i + 1][0] - points[i][0], dz = points[i + 1][1] - points[i][1], l = Math.hypot(dx, dz) || 1;
+    segN.push([-dz / l, dx / l]);
+  }
+  const L = [], R = [];
+  for (let i = 0; i < n; i++) {
+    let m;
+    if (i === 0) m = segN[0]; else if (i === n - 1) m = segN[n - 2];
+    else {
+      const a = segN[i - 1], b = segN[i]; let mx = a[0] + b[0], mz = a[1] + b[1]; const ml = Math.hypot(mx, mz);
+      if (ml < 1e-6) m = a; else { mx /= ml; mz /= ml; const k = 1 / Math.max(mx * a[0] + mz * a[1], 0.3); m = [mx * k, mz * k]; }
+    }
+    L.push([points[i][0] + m[0] * ht, points[i][1] + m[1] * ht]);
+    R.push([points[i][0] - m[0] * ht, points[i][1] - m[1] * ht]);
+  }
+  return L.concat(R.reverse());
+}
+function prismFromPlan(poly, h) {
+  const shape = new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, -z)));
+  const g = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false, curveSegments: 1 });
+  g.rotateX(-Math.PI / 2);
+  return g;
+}
+function convexFix(positions, centre) {
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3(), m = new THREE.Vector3();
+  const out = [];
+  for (let i = 0; i < positions.length; i += 3) {
+    a.copy(positions[i]); b.copy(positions[i + 1]); c.copy(positions[i + 2]);
+    n.subVectors(b, a).cross(m.subVectors(c, a));
+    if (n.length() < 1e-8) continue;
+    const ctr = a.clone().add(b).add(c).multiplyScalar(1 / 3).sub(centre);
+    if (n.dot(ctr) < 0) out.push(a.clone(), c.clone(), b.clone()); else out.push(a.clone(), b.clone(), c.clone());
+  }
+  const g = new THREE.BufferGeometry().setFromPoints(out);
+  g.computeVertexNormals();
+  return g;
+}
+function roofGeometry({ kind, w, d, h }) {
+  const along = w >= d; const W = along ? w : d, D = along ? d : w;
+  const r = kind === 'hip' ? (W - D) / 2 : W / 2;
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
+  const A = V(-W / 2, 0, -D / 2), B = V(W / 2, 0, -D / 2), C = V(W / 2, 0, D / 2), Dd = V(-W / 2, 0, D / 2);
+  const R1 = V(-r, h, 0), R2 = V(r, h, 0);
+  const tris = [Dd, C, R2, Dd, R2, R1, B, A, R1, B, R1, R2, A, Dd, R1, C, B, R2, A, B, C, A, C, Dd];
+  const g = convexFix(tris, V(0, h / 3, 0));
+  if (!along) g.rotateY(Math.PI / 2);
+  return g;
+}
+function archGeometry({ w, h, t, openingW, springH }) {
+  const s = new THREE.Shape(); const r = openingW / 2;
+  s.moveTo(-w / 2, 0); s.lineTo(-r, 0); s.lineTo(-r, springH);
+  for (let k = 1; k <= 18; k++) { const a = Math.PI - (Math.PI * k) / 18; s.lineTo(Math.cos(a) * r, springH + Math.sin(a) * r); }
+  s.lineTo(r, 0); s.lineTo(w / 2, 0); s.lineTo(w / 2, h); s.lineTo(-w / 2, h); s.lineTo(-w / 2, 0);
+  const g = new THREE.ExtrudeGeometry(s, { depth: t, bevelEnabled: false, curveSegments: 1 });
+  g.translate(0, 0, -t / 2);
+  return g;
+}
+function partGeometry(p) {
+  const d = p.dims; let g;
+  switch (p.shape) {
+    case 'box': g = new THREE.BoxGeometry(d.w, d.h, d.d); g.translate(0, d.h / 2, 0); break;
+    case 'cylinder': g = new THREE.CylinderGeometry(d.r, d.r, d.h, 16); g.translate(0, d.h / 2, 0); break;
+    case 'cone': g = new THREE.ConeGeometry(d.r, d.h, 16); g.translate(0, d.h / 2, 0); break;
+    case 'roof': g = roofGeometry(d); break;
+    case 'wall': g = prismFromPlan(wallOutline(d.points, d.t), d.h); break;
+    case 'arch': g = archGeometry(d); break;
+  }
+  if (g.index) g = g.toNonIndexed();
+  const m = new THREE.Matrix4().makeRotationY(p.pose.yaw * DEG).setPosition(p.pose.x, p.pose.y, p.pose.z);
+  g.applyMatrix4(m);
+  return g;
+}
+// UVs in metres by box projection, so textures keep their real scale on every part
+function metreUVs(g, tile) {
+  const pos = g.attributes.position, uv = new Float32Array(pos.count * 2);
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i += 3) {
+    a.fromBufferAttribute(pos, i); b.fromBufferAttribute(pos, i + 1); c.fromBufferAttribute(pos, i + 2);
+    n.subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+    const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+    for (let k = 0; k < 3; k++) {
+      const v = [a, b, c][k];
+      let u0, v0;
+      if (ay >= ax && ay >= az) { u0 = v.x; v0 = v.z; } else if (ax >= az) { u0 = v.z; v0 = v.y; } else { u0 = v.x; v0 = v.y; }
+      uv[(i + k) * 2] = u0 / tile; uv[(i + k) * 2 + 1] = v0 / tile;
+    }
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+}
+function linesFrom(arrays, mat, dashed) {
+  let total = 0; for (const a of arrays) total += a.length;
+  const all = new Float32Array(Math.max(total, 6)); let o = 0; for (const a of arrays) { all.set(a, o); o += a.length; }
+  const lg = new LineSegmentsGeometry(); lg.setPositions(all);
+  const l = new LineSegments2(lg, mat);
+  if (dashed) l.computeLineDistances();
+  return l;
+}
+
+// footprint of one part in block-local plan coordinates
+function circlePoly(cx, cz, r, n = 40) { const out = []; for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; out.push([cx + Math.cos(a) * r, cz + Math.sin(a) * r]); } return out; }
+function rectPoly(cx, cz, w, d, yaw) {
+  const c = Math.cos(yaw * DEG), s = Math.sin(yaw * DEG);
+  return [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]].map(([x, z]) => [cx + x * c + z * s, cz - x * s + z * c]);
+}
+function footprintOf(p) {
+  const { x, z, yaw } = p.pose, d = p.dims, onGround = p.pose.y < 0.3;
+  const xf = (poly) => { const c = Math.cos(yaw * DEG), s = Math.sin(yaw * DEG); return poly.map(([px, pz]) => [x + px * c + pz * s, z - px * s + pz * c]); };
+  switch (p.shape) {
+    case 'wall': return { polys: [xf(wallOutline(d.points, d.t))], filled: onGround };
+    case 'arch': { const jw = (d.w - d.openingW) / 2; return { polys: [xf(rectPoly(-(d.openingW / 2 + jw / 2), 0, jw, d.t, 0)), xf(rectPoly(d.openingW / 2 + jw / 2, 0, jw, d.t, 0))], filled: onGround, threshold: xf([[-d.openingW / 2, 0], [d.openingW / 2, 0]]) }; }
+    case 'box': if (!onGround && d.w * d.d < 0.3) return null; return { polys: [rectPoly(x, z, d.w, d.d, yaw)], filled: onGround };
+    case 'cylinder': case 'cone': return { polys: [circlePoly(x, z, d.r)], filled: onGround && p.shape === 'cylinder' };
+    case 'roof': return { polys: [rectPoly(x, z, d.w, d.d, yaw)], filled: false };
+  }
+  return null;
+}
+const planFillTex = canvasTex(128, 128, (c, w, h) => {
+  c.fillStyle = 'rgba(24,21,18,0.86)'; c.fillRect(0, 0, w, h);
+  c.strokeStyle = 'rgba(255,238,210,0.22)'; c.lineWidth = 3;
+  for (let i = -h; i < w + h; i += 32) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i + h, h); c.stroke(); }
+});
+const planFillMat = new THREE.MeshBasicMaterial({ map: planFillTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+planFillMat.userData.base = 1;
+const curtainMat = new THREE.ShaderMaterial({
+  uniforms: { uPresence: U.presence },
+  vertexShader: 'varying float vY; void main(){ vY = uv.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: 'uniform float uPresence; varying float vY; void main(){ float a = 0.58 * pow(1.0 - vY, 1.5) * uPresence; gl_FragColor = vec4(1.0, 0.93, 0.8, a); }',
+  transparent: true, depthWrite: false, side: THREE.DoubleSide,
+});
+const aoTex = canvasTex(128, 128, (c, w, h) => { const g = c.createRadialGradient(64, 64, 10, 64, 64, 64); g.addColorStop(0, 'rgba(40,34,28,0.55)'); g.addColorStop(0.6, 'rgba(40,34,28,0.25)'); g.addColorStop(1, 'rgba(40,34,28,0)'); c.fillStyle = g; c.fillRect(0, 0, w, h); });
+const aoMat = new THREE.MeshBasicMaterial({ map: aoTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
+aoMat.userData.base = 1;
+
+// ---------------------------------------------------------------- the block
+const blockRoot = new THREE.Group(); scene.add(blockRoot);   // the block envelope pose
+const errNode = new THREE.Group(); blockRoot.add(errNode);   // the optional placement error
+const content = new THREE.Group(); errNode.add(content);
+const G = {};       // per-view groups
+let partEdges = []; // edge positions per part, block-local
+let silParts = [], silGeo = null; // cylinders and cones get two silhouette lines, updated each frame
+let pickMeshes = [];
+let selLines = null;
+let selected = -1;
+
+function disposeTree(o) { o.traverse((n) => { if (n.geometry) n.geometry.dispose(); }); }
+function rebuild() {
+  for (const k of Object.keys(G)) { disposeTree(G[k]); content.remove(G[k]); }
+  for (const name of ['solid', 'prepass', 'ghost', 'ink', 'lines', 'ghostLines', 'targetLines', 'inkLines', 'plan', 'ao', 'pick']) { G[name] = new THREE.Group(); G[name].name = name; content.add(G[name]); }
+  partEdges = []; pickMeshes = []; silParts = [];
+  let topY = 0;
+  RECORD.parts.forEach((p, i) => {
+    const g = partGeometry(p);
+    const tile = TILE[p.material] ?? 2;
+    metreUVs(g, tile);
+    g.computeBoundingBox(); topY = Math.max(topY, g.boundingBox.max.y);
+    const solid = new THREE.Mesh(g, solidMat(p.material)); G.solid.add(solid);
+    const pre = new THREE.Mesh(g, prepassMat); pre.renderOrder = 10; G.prepass.add(pre);
+    const gh = new THREE.Mesh(g, ghostMat(p.material)); gh.renderOrder = 20; G.ghost.add(gh);
+    const ink = new THREE.Mesh(g, inkMat(p.material)); G.ink.add(ink);
+    const pick = new THREE.Mesh(g, pickMat); pick.userData.part = i; G.pick.add(pick); pickMeshes.push(pick);
+    const curved = p.shape === 'cylinder' || p.shape === 'cone';
+    partEdges.push(new THREE.EdgesGeometry(g, curved ? 30 : 15).attributes.position.array);
+    if (curved) silParts.push({ x: p.pose.x, z: p.pose.z, y: p.pose.y, r: p.dims.r, h: p.dims.h, cone: p.shape === 'cone' });
+  });
+  silGeo = new LineSegmentsGeometry(); silGeo.setPositions(new Float32Array(Math.max(1, silParts.length * 2) * 6));
+  const sil = (mat, order) => { const l = new LineSegments2(silGeo, mat); l.frustumCulled = false; l.renderOrder = order; return l; };
+  G.lines.add(linesFrom(partEdges, LM.halo), linesFrom(partEdges, LM.core), linesFrom(partEdges, LM.hidden, true));
+  G.lines.children.forEach((l, k) => { l.renderOrder = 30 + k; });
+  G.ghostLines.add(linesFrom(partEdges, LM.ghostEdge)); G.ghostLines.children[0].renderOrder = 30;
+  G.targetLines.add(linesFrom(partEdges, LM.target)); G.targetLines.children[0].renderOrder = 30;
+  G.inkLines.add(linesFrom(partEdges, LM.ink)); G.inkLines.children[0].renderOrder = 30;
+  G.lines.add(sil(LM.halo, 30), sil(LM.core, 31)); G.ghostLines.add(sil(LM.ghostEdge, 30)); G.targetLines.add(sil(LM.target, 30)); G.inkLines.add(sil(LM.ink, 30));
+  // footprint plan on the ground
+  const filledEdges = [], dashEdges = [];
+  const curtainPos = [], curtainUv = [];
+  const CURTAIN_H = 2.4;
+  RECORD.parts.forEach((p) => {
+    const f = footprintOf(p); if (!f) return;
+    for (const poly of f.polys) {
+      const seg = [];
+      for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length]; seg.push(a[0], 0.04, a[1], b[0], 0.04, b[1]); }
+      (f.filled ? filledEdges : dashEdges).push(new Float32Array(seg));
+      if (f.filled) {
+        const sg = new THREE.ShapeGeometry(new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, -z))));
+        sg.rotateX(-Math.PI / 2); sg.translate(0, 0.03, 0);
+        const uv = sg.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 0.9, uv.getY(i) / 0.9);
+        G.plan.add(new THREE.Mesh(sg, planFillMat));
+        for (let i = 0; i < poly.length; i++) {
+          const a = poly[i], b = poly[(i + 1) % poly.length];
+          curtainPos.push(a[0], 0, a[1], b[0], 0, b[1], b[0], CURTAIN_H, b[1], a[0], 0, a[1], b[0], CURTAIN_H, b[1], a[0], CURTAIN_H, a[1]);
+          curtainUv.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+        }
+      }
+    }
+    // height marks: a faint dashed line up each wall corner, so the plan reads from far away
+    if (p.shape === 'wall' && f.filled) for (const [px, pz] of p.dims.points) { const c = Math.cos(p.pose.yaw * DEG), sn = Math.sin(p.pose.yaw * DEG); const wx = p.pose.x + px * c + pz * sn, wz = p.pose.z - px * sn + pz * c; dashEdges.push(new Float32Array([wx, p.pose.y + 0.04, wz, wx, p.pose.y + p.dims.h, wz])); }
+    if (f.threshold) { const [a, b] = f.threshold; dashEdges.push(new Float32Array([a[0], 0.04, a[1], b[0], 0.04, b[1]])); }
+  });
+  const cg = new THREE.BufferGeometry();
+  cg.setAttribute('position', new THREE.Float32BufferAttribute(curtainPos, 3)); cg.setAttribute('uv', new THREE.Float32BufferAttribute(curtainUv, 2));
+  const curtain = new THREE.Mesh(cg, curtainMat); curtain.renderOrder = 5; G.plan.add(curtain);
+  const ph = linesFrom(filledEdges, LM.planHalo), pc = linesFrom(filledEdges, LM.planCore), pd = linesFrom(dashEdges, LM.planDash, true);
+  ph.renderOrder = 6; pc.renderOrder = 7; pd.renderOrder = 7; G.plan.add(ph, pc, pd);
+  // soft contact shadow, for the views that have a body
+  const ao = new THREE.Mesh(new THREE.PlaneGeometry(17, 17), aoMat); ao.rotation.x = -Math.PI / 2; ao.position.y = 0.02; G.ao.add(ao);
+  U.topY = topY;
+  refreshSelection();
+  applyViewVisibility();
+}
+
+function refreshSelection() {
+  if (selLines) { content.remove(selLines); selLines.geometry.dispose(); selLines = null; }
+  if (selected >= 0 && selected < partEdges.length && mode !== 'visitor') {
+    selLines = linesFrom([partEdges[selected]], SEL_MAT); selLines.renderOrder = 999; content.add(selLines);
+  }
+}
+function applyBlockPose() {
+  blockRoot.position.set(BLOCK.x, 0, BLOCK.z);
+  blockRoot.rotation.y = BLOCK.yaw * DEG;
+  blockRoot.scale.setScalar(BLOCK.scale);
+  const on = $('#tOffset').getAttribute('aria-pressed') === 'true';
+  errNode.position.set(on ? ERR.dx : 0, 0, on ? ERR.dz : 0);
+  errNode.rotation.y = on ? ERR.yaw * DEG : 0;
+}
+
+// ---------------------------------------------------------------- state
+let mode = 'visitor';
+let view = 'solid';
+const visitor = { x: 0, z: 27, yaw: 0, pitch: 6 * DEG, auto: null };
+const creatorCam = { yaw: Math.atan2(14.5, 14) , pitch: 12 * DEG };
+let inside = false;
+let presenceTarget = 0;
+let riseStart = -1;
+const RISE_SECONDS = 7.5;
+
+function applyViewVisibility() {
+  const v = view;
+  const show = (name, on) => { if (G[name]) G[name].visible = on; };
+  show('solid', v === 'solid' || v === 'rise');
+  show('prepass', v === 'ghost' || v === 'outline' || v === 'rise');
+  show('ghost', v === 'ghost');
+  show('ghostLines', v === 'ghost');
+  show('lines', v === 'outline');
+  show('targetLines', v === 'rise');
+  show('ink', v === 'engraving');
+  show('inkLines', v === 'engraving');
+  show('plan', v === 'footprint' || mode === 'editor');
+  show('ao', v === 'solid' || v === 'rise' || v === 'engraving');
+  show('pick', true);
+  U.reveal.value = v === 'rise' ? U.reveal.value : 1e4;
+  $('#replay').style.display = v === 'rise' ? '' : 'none';
+}
+function startRise() { riseStart = performance.now(); U.reveal.value = REMAINS_H * 0.7; }
+
+// ---------------------------------------------------------------- UI: picker, fields
+function renderPicker() {
+  const make = (host, cls) => {
+    host.innerHTML = '';
+    for (const v of VIEWS) {
+      const b = document.createElement('button'); if (cls) b.className = cls;
+      b.textContent = v.title; b.dataset.view = v.name; b.setAttribute('aria-pressed', String(v.name === view));
+      b.addEventListener('click', () => setView(v.name));
+      host.appendChild(b);
+    }
+  };
+  make($('#picker'));
+  make($('#sViewRow'), 'pill');
+}
+function renderFields() {
+  const v = VIEWS.find((x) => x.name === view);
+  const rows = ALL_FIELDS.map((f) => {
+    const used = v.uses.includes(f);
+    return `<div class="${used ? '' : 'unused'}"><dt>${f}</dt><dd>${used ? v.how[f] : 'not used by this view'}</dd></div>`;
+  }).join('');
+  $('#fieldsPanel').innerHTML = `<h3>${v.title} view${v.required ? '' : v.own ? ' · my own' : ' · suggested'}</h3><dl>${rows}</dl>`;
+}
+function syncButtons() {
+  document.querySelectorAll('#modes button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+  document.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
+  $('#layout').dataset.mode = mode;
+  $('#stageWrap').classList.toggle('framed', $('#tFrame').getAttribute('aria-pressed') === 'true' && mode !== 'editor');
+  $('#chipT').textContent = RECORD.label; $('#chipE').textContent = RECORD.era; $('#ctopLabel').textContent = RECORD.label;
+  renderFields();
+}
+function writeHash() { history.replaceState(null, '', `#mode=${mode}&view=${view}`); }
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('on'), 1600); }
+
+const SHAPE_ICON = {
+  box: '<path d="M5 10l7-4 7 4v8l-7 4-7-4z M5 10l7 4 7-4 M12 14v8"/>',
+  cylinder: '<ellipse cx="12" cy="6.5" rx="6" ry="2.5"/><path d="M6 6.5v11c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5v-11"/>',
+  cone: '<path d="M12 3l6.5 15M12 3L5.5 18"/><ellipse cx="12" cy="18" rx="6.5" ry="2.5"/>',
+  roof: '<path d="M3 15l5-8h8l5 8z M8 7l-2 8 M16 7l2 8"/>',
+  wall: '<path d="M3 9h18v8H3z M3 13h18 M8 9v4 M15 9v4 M11 13v4 M18 13v4 M6 13v4"/>',
+  arch: '<path d="M4 20V5h16v15h-4v-6a4 4 0 0 0-8 0v6z"/>',
+};
+const icon = (s) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">${SHAPE_ICON[s]}</svg>`;
+const matSwatch = (m) => (m === 'stone' ? '#b3a38a' : m === 'timber' ? '#6e4b30' : m === 'plaster' ? '#e8dfcf' : m);
+function partTitle(p, i) { return `${i + 1} · ${p.shape}${p.shape === 'roof' ? ' (' + p.dims.kind + ')' : ''}`; }
+
+// ---------------------------------------------------------------- creator UI
+function renderCreator() {
+  $('#cPalette').innerHTML = SHAPES.map((s) => `<button data-add="${s}">${icon(s)}${s}</button>`).join('');
+  $('#cPalette').querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', () => addPart(b.dataset.add)));
+  const row = $('#cPartRow');
+  $('#cMatRow').style.display = selected < 0 ? 'none' : '';
+  if (selected < 0) { row.innerHTML = '<span style="font-size:12.5px;color:var(--muted)">Tap a shape to add it in front of you, or tap a part to pick it. Drag it: it snaps onto the ground and onto other parts.</span>'; return; }
+  const p = RECORD.parts[selected];
+  const mats = [...MATERIALS, HEX.test(p.material) ? p.material : SLATE];
+  row.innerHTML = `<span style="font-size:12.5px;white-space:nowrap">${partTitle(p, selected)}</span><span style="flex:1"></span><button class="pill" id="cTurnPart">↻ 15°</button><button class="pill" id="cDel">Delete</button>`;
+  $('#cMatRow').innerHTML = '<label class="k">Material</label>' +
+    mats.map((m) => `<button class="pill" data-mat="${m}" aria-pressed="${p.material === m}" title="${m}"><span class="swatch" style="background:${matSwatch(m)}"></span></button>`).join('') +
+    '';
+  $('#cMatRow').querySelectorAll('[data-mat]').forEach((b) => b.addEventListener('click', () => { RECORD.parts[selected].material = b.dataset.mat; rebuild(); renderCreator(); renderEditor(); }));
+  $('#cTurnPart').addEventListener('click', () => { const q = RECORD.parts[selected]; q.pose.yaw = ((q.pose.yaw + 15 + 180) % 360) - 180; rebuild(); renderEditor(); });
+  $('#cDel').addEventListener('click', () => deletePart(selected));
+}
+function syncCreatorSheets() {
+  $('#turnR').value = BLOCK.yaw; $('#turnV').textContent = `${Math.round(BLOCK.yaw)}°`;
+  $('#sizeR').value = BLOCK.scale; $('#sizeV').textContent = BLOCK.scale.toFixed(2);
+  $('#cLabel').value = RECORD.label; $('#cEra').value = RECORD.era;
+}
+document.querySelectorAll('#cbtns [data-sheet]').forEach((b) => b.addEventListener('click', () => {
+  const id = b.dataset.sheet; const on = !$('#' + id).classList.contains('on');
+  document.querySelectorAll('#creator .sheet').forEach((s) => s.classList.remove('on'));
+  document.querySelectorAll('#cbtns [data-sheet]').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+  if (on) { $('#' + id).classList.add('on'); b.setAttribute('aria-pressed', 'true'); }
+  if (id !== 'sParts' || !on) { selected = -1; refreshSelection(); }
+  $('#ctopHint').textContent = $('#sParts').classList.contains('on') ? 'tap a part, drag it' : 'drag it to move it';
+  renderCreator(); syncCreatorSheets();
+}));
+const setYaw = (v) => { BLOCK.yaw = num(v, 0, -180, 180); applyBlockPose(); syncCreatorSheets(); renderEditor(); };
+$('#turnR').addEventListener('input', (e) => setYaw(e.target.value));
+$('#turnM').addEventListener('click', () => setYaw(BLOCK.yaw - 5));
+$('#turnP').addEventListener('click', () => setYaw(BLOCK.yaw + 5));
+$('#turn0').addEventListener('click', () => setYaw(0));
+const setScale = (v) => { BLOCK.scale = num(v, 1, 0.5, 1.5); applyBlockPose(); syncCreatorSheets(); renderEditor(); };
+$('#sizeR').addEventListener('input', (e) => setScale(e.target.value));
+$('#size1').addEventListener('click', () => setScale(1));
+$('#cLabel').addEventListener('input', (e) => { RECORD.label = String(e.target.value).slice(0, 64); syncButtons(); renderEditor(); });
+$('#cEra').addEventListener('input', (e) => { RECORD.era = String(e.target.value).slice(0, 48); syncButtons(); renderEditor(); });
+$('#cDone').addEventListener('click', () => {
+  document.querySelectorAll('#creator .sheet').forEach((s) => s.classList.remove('on'));
+  document.querySelectorAll('#cbtns [data-sheet]').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+  selected = -1; refreshSelection();
+  toast(`Saved · ${RECORD.parts.length} parts, ${VIEWS.find((v) => v.name === view).title} view`);
+});
+
+// ---------------------------------------------------------------- snapping (block-local)
+function partBox(i) { const g = pickMeshes[i]?.geometry; if (!g) return null; g.computeBoundingBox(); return g.boundingBox; }
+const downRay = new THREE.Raycaster();
+// the height this part would rest at: the first surface of another part straight below its centre,
+// ignoring parts that sit on top of it; the ground otherwise
+function supportAt(i, cx, cz) {
+  const own = partBox(i); const myTop = own ? own.max.y : RECORD.parts[i].pose.y;
+  content.updateWorldMatrix(true, true);
+  const o = content.localToWorld(new THREE.Vector3(cx, 2000, cz));
+  downRay.set(o, new THREE.Vector3(0, -1, 0)); downRay.far = 5000;
+  const targets = pickMeshes.filter((m, j) => j !== i && RECORD.parts[j].pose.y < myTop - 0.01);
+  const hit = downRay.intersectObjects(targets, false)[0];
+  return hit ? Math.max(0, +content.worldToLocal(hit.point.clone()).y.toFixed(2)) : 0;
+}
+function snapPart(i) {
+  const p = RECORD.parts[i];
+  const own = partBox(i); if (!own) return;
+  const ox = p.pose.x, oz = p.pose.z;
+  let nx = Math.round(ox * 10) / 10, nz = Math.round(oz * 10) / 10;
+  const minX = own.min.x + nx - ox, maxX = own.max.x + nx - ox, minZ = own.min.z + nz - oz, maxZ = own.max.z + nz - oz;
+  // side snap: align this part's sides with a neighbour's sides when within 0.35 m
+  let bestX = 0.35, bestZ = 0.35, sx = 0, sz = 0;
+  RECORD.parts.forEach((q, j) => {
+    if (j === i) return; const b = partBox(j); if (!b) return;
+    for (const mine of [minX, maxX]) for (const theirs of [b.min.x, b.max.x]) { const d = Math.abs(mine - theirs); if (d < bestX) { bestX = d; sx = theirs - mine; } }
+    for (const mine of [minZ, maxZ]) for (const theirs of [b.min.z, b.max.z]) { const d = Math.abs(mine - theirs); if (d < bestZ) { bestZ = d; sz = theirs - mine; } }
+  });
+  nx += sx; nz += sz;
+  const cx = (own.min.x + own.max.x) / 2 + nx - ox, cz = (own.min.z + own.max.z) / 2 + nz - oz;
+  p.pose.x = +nx.toFixed(2); p.pose.z = +nz.toFixed(2);
+  p.pose.y = supportAt(i, cx, cz);
+}
+function dropOnto(i, lx, lz) {
+  const p = RECORD.parts[i];
+  p.pose.x = lx; p.pose.z = lz;
+  rebuild();
+  const own = partBox(i);
+  p.pose.y = supportAt(i, (own.min.x + own.max.x) / 2, (own.min.z + own.max.z) / 2);
+}
+function addPart(shape) {
+  const p = sanitizePart({ shape, dims: structuredClone(DEFAULT_DIMS[shape]), pose: { x: 0, y: 0, z: 0, yaw: 0 }, material: shape === 'roof' || shape === 'cone' ? SLATE : 'stone' });
+  RECORD.parts.push(p); selected = RECORD.parts.length - 1;
+  // in front of the tower, on the gate side, so it is seen arriving
+  dropOnto(selected, 0, 7.5);
+  rebuild(); renderCreator(); renderEditor(); toast(`Added a ${shape}`);
+}
+function deletePart(i) {
+  if (i < 0 || i >= RECORD.parts.length) return;
+  RECORD.parts.splice(i, 1); selected = -1; rebuild(); renderCreator(); renderEditor(); toast('Part deleted');
+}
+
+// ---------------------------------------------------------------- desktop editor
+const orbit = new OrbitControls(camera, canvas);
+orbit.enabled = false; orbit.enableDamping = true; orbit.target.set(BLOCK.x, 4, BLOCK.z); orbit.maxPolarAngle = 85 * DEG;
+const tc = new TransformControls(camera, canvas);
+tc.setSpace('local'); tc.setTranslationSnap(0.1); tc.setRotationSnap(15 * DEG); tc.showY = false;
+const tcHelper = tc.getHelper(); tcHelper.visible = false; scene.add(tcHelper);
+const proxy = new THREE.Object3D(); errNode.add(proxy);
+let tool = 'translate';
+tc.addEventListener('dragging-changed', (e) => { orbit.enabled = !e.value && mode === 'editor'; if (!e.value) { if (tool !== 'block' && selected >= 0) { snapPart(selected); rebuild(); attachTC(); } renderEditor(); } });
+tc.addEventListener('objectChange', () => {
+  if (tool === 'block') { BLOCK.x = +blockRoot.position.x.toFixed(2); BLOCK.z = +blockRoot.position.z.toFixed(2); BLOCK.yaw = +(blockRoot.rotation.y / DEG).toFixed(1); applyBlockPose(); renderEditorPoseOnly(); return; }
+  if (selected < 0) return;
+  const p = RECORD.parts[selected];
+  p.pose.x = +proxy.position.x.toFixed(2); p.pose.z = +proxy.position.z.toFixed(2); p.pose.yaw = +(proxy.rotation.y / DEG).toFixed(1);
+  rebuild(); renderEditorPoseOnly();
+});
+function attachTC() {
+  if (mode !== 'editor') { tc.detach(); tcHelper.visible = false; return; }
+  if (tool === 'block') { tc.attach(blockRoot); tc.setMode('translate'); tc.showY = false; tc.showX = tc.showZ = true; tcHelper.visible = true; return; }
+  if (selected < 0) { tc.detach(); tcHelper.visible = false; return; }
+  const p = RECORD.parts[selected];
+  proxy.position.set(p.pose.x, p.pose.y, p.pose.z); proxy.rotation.set(0, p.pose.yaw * DEG, 0);
+  tc.attach(proxy); tc.setMode(tool);
+  if (tool === 'rotate') { tc.showX = false; tc.showZ = false; tc.showY = true; } else { tc.showX = true; tc.showZ = true; tc.showY = false; }
+  tcHelper.visible = true;
+}
+document.querySelectorAll('#etools [data-tool]').forEach((b) => b.addEventListener('click', () => {
+  tool = b.dataset.tool; document.querySelectorAll('#etools [data-tool]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  if (tool === 'block') { selected = -1; refreshSelection(); }
+  attachTC(); renderEditor();
+}));
+
+function dimsFields(p) {
+  const d = p.dims;
+  const n = (k, label, step = 0.1) => `<label>${label}</label><input type="number" step="${step}" data-dim="${k}" value="${d[k]}">`;
+  switch (p.shape) {
+    case 'box': return n('w', 'width m') + n('h', 'height m') + n('d', 'depth m');
+    case 'cylinder': case 'cone': return n('r', 'radius m') + n('h', 'height m');
+    case 'roof': return `<label>kind</label><select data-dim="kind"><option ${d.kind === 'hip' ? 'selected' : ''}>hip</option><option ${d.kind === 'gable' ? 'selected' : ''}>gable</option></select>` + n('w', 'width m') + n('d', 'depth m') + n('h', 'rise m');
+    case 'wall': return `<label>points x,z</label><textarea data-dim="points">${d.points.map((q) => q.join(', ')).join('\n')}</textarea>` + n('h', 'height m') + n('t', 'thickness m');
+    case 'arch': return n('w', 'width m') + n('h', 'height m') + n('t', 'thickness m') + n('openingW', 'opening m') + n('springH', 'spring m');
+  }
+  return '';
+}
+function renderEditor() {
+  const L = $('#leftPane');
+  L.innerHTML = `<h2>Station · Market square</h2>
+    <div class="blk"><b>Welcome</b><small>short text · pin</small></div>
+    <div class="blk cur"><b>${escapeHtml(RECORD.label)}</b><small>primitives · ${VIEWS.find((v) => v.name === view).title.toLowerCase()} · ${RECORD.parts.length} parts</small>
+      <ul class="parts">${RECORD.parts.map((p, i) => `<li data-sel="${i}" class="${i === selected ? 'sel' : ''}">${icon(p.shape)}<span>${partTitle(p, i)}</span><span class="m" style="background:${matSwatch(p.material)}"></span></li>`).join('')}</ul></div>
+    <div class="blk"><b>Bell hook</b><small>picture · framed</small></div>
+    <div class="sep"></div><h2>Add a shape</h2><div class="palette" style="flex-wrap:wrap">${SHAPES.map((s) => `<button data-eadd="${s}" style="flex:0 0 31%">${icon(s)}${s}</button>`).join('')}</div>`;
+  L.querySelectorAll('[data-sel]').forEach((li) => li.addEventListener('click', () => selectPart(+li.dataset.sel)));
+  L.querySelectorAll('[data-eadd]').forEach((b) => b.addEventListener('click', () => { addPart(b.dataset.eadd); attachTC(); }));
+
+  const R = $('#rightPane');
+  const p = selected >= 0 ? RECORD.parts[selected] : null;
+  R.innerHTML = `<h2>Block · primitives</h2>
+    <div class="insp">
+      <label>label</label><input type="text" id="eLabel" maxlength="64" value="${escapeHtml(RECORD.label)}">
+      <label>era</label><input type="text" id="eEra" maxlength="48" value="${escapeHtml(RECORD.era)}">
+      <label>view</label><div class="views">${VIEWS.map((v) => `<button data-view="${v.name}" aria-pressed="${v.name === view}">${v.title}</button>`).join('')}</div>
+      <label>place</label><div class="quad" id="eBlockPose">
+        <input type="number" step="0.1" data-bp="x" value="${BLOCK.x}"><input type="number" step="0.1" data-bp="z" value="${BLOCK.z}"><input type="number" step="1" data-bp="yaw" value="${BLOCK.yaw}"><input type="number" step="0.01" data-bp="scale" value="${BLOCK.scale}">
+        <span>x</span><span>z</span><span>turn°</span><span>size</span></div>
+    </div>
+    <div class="sep"></div>
+    ${p ? `<h2>Part ${selected + 1} of ${RECORD.parts.length}</h2>
+    <div class="insp">
+      <label>shape</label><select id="eShape">${SHAPES.map((s) => `<option ${s === p.shape ? 'selected' : ''}>${s}</option>`).join('')}</select>
+      ${dimsFields(p)}
+      <label>pose</label><div class="quad" id="ePose">
+        <input type="number" step="0.1" data-pose="x" value="${p.pose.x}"><input type="number" step="0.1" data-pose="y" value="${p.pose.y}"><input type="number" step="0.1" data-pose="z" value="${p.pose.z}"><input type="number" step="15" data-pose="yaw" value="${p.pose.yaw}">
+        <span>x</span><span>y</span><span>z</span><span>turn°</span></div>
+      <label>material</label><div class="btnrow">${[...MATERIALS, 'colour'].map((m) => { const cur = m === 'colour' ? HEX.test(p.material) : p.material === m; return `<button class="pill" data-emat="${m}" aria-pressed="${cur}" style="padding:5px 9px;font-size:12px"><span class="swatch" style="width:14px;height:14px;background:${m === 'colour' ? (HEX.test(p.material) ? p.material : SLATE) : matSwatch(m)}"></span>${m}</button>`; }).join('')}</div>
+      ${HEX.test(p.material) ? `<label>colour</label><input type="color" id="eColour" value="${p.material}">` : ''}
+      <div class="full btnrow" style="margin-top:6px"><button class="btn" id="eSnap">Snap down</button><button class="btn" id="eDup">Duplicate</button><button class="btn" id="eDel">Delete</button></div>
+    </div>` : `<p style="color:var(--muted);font-size:13px">Pick a part in the list or in the view. Move and Turn handles act on the picked part; Whole block moves the block on the square.</p>`}
+    <div class="sep"></div>
+    <h2>Stored as</h2><p style="color:var(--muted);font-size:12px;margin:0">${RECORD.parts.length} parts · ${new Blob([JSON.stringify(exportRecord())]).size} bytes of JSON · no media files</p>`;
+  R.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+  $('#eLabel').addEventListener('input', (e) => { RECORD.label = String(e.target.value).slice(0, 64); syncButtons(); renderLeftTitle(); });
+  $('#eEra').addEventListener('input', (e) => { RECORD.era = String(e.target.value).slice(0, 48); syncButtons(); });
+  R.querySelectorAll('[data-bp]').forEach((inp) => inp.addEventListener('change', () => {
+    const k = inp.dataset.bp; const lim = k === 'scale' ? [0.5, 1.5] : k === 'yaw' ? [-180, 180] : [-200, 200];
+    BLOCK[k] = num(inp.value, BLOCK[k], lim[0], lim[1]); applyBlockPose(); renderEditor();
+  }));
+  if (!p) return;
+  $('#eShape').addEventListener('change', (e) => { RECORD.parts[selected] = sanitizePart({ ...p, shape: e.target.value, dims: structuredClone(DEFAULT_DIMS[e.target.value]) }); rebuild(); attachTC(); renderEditor(); });
+  R.querySelectorAll('[data-dim]').forEach((inp) => inp.addEventListener('change', () => {
+    const k = inp.dataset.dim; const dims = structuredClone(p.dims);
+    if (k === 'points') dims.points = String(inp.value).split('\n').map((l) => l.split(',').map(Number));
+    else if (k === 'kind') dims.kind = inp.value; else dims[k] = Number(inp.value);
+    RECORD.parts[selected] = sanitizePart({ ...p, dims }); rebuild(); renderEditor();
+  }));
+  R.querySelectorAll('[data-pose]').forEach((inp) => inp.addEventListener('change', () => {
+    const pose = { ...p.pose, [inp.dataset.pose]: Number(inp.value) };
+    RECORD.parts[selected] = sanitizePart({ ...p, pose }); rebuild(); attachTC(); renderEditor();
+  }));
+  R.querySelectorAll('[data-emat]').forEach((b) => b.addEventListener('click', () => { const m = b.dataset.emat; RECORD.parts[selected].material = m === 'colour' ? (HEX.test(p.material) ? p.material : SLATE) : m; rebuild(); renderEditor(); }));
+  $('#eColour')?.addEventListener('input', (e) => { if (HEX.test(e.target.value)) { RECORD.parts[selected].material = e.target.value; rebuild(); } });
+  $('#eColour')?.addEventListener('change', () => renderEditor());
+  $('#eSnap').addEventListener('click', () => { const q = RECORD.parts[selected]; dropOnto(selected, q.pose.x, q.pose.z); rebuild(); attachTC(); renderEditor(); });
+  $('#eDup').addEventListener('click', () => { const q = structuredClone(p); RECORD.parts.push(q); selected = RECORD.parts.length - 1; dropOnto(selected, q.pose.x + 1, q.pose.z + 1); rebuild(); attachTC(); renderEditor(); });
+  $('#eDel').addEventListener('click', () => { deletePart(selected); attachTC(); });
+}
+function renderLeftTitle() { const b = $('#leftPane .blk.cur b'); if (b) b.textContent = RECORD.label; }
+function renderEditorPoseOnly() {
+  if (mode !== 'editor') return;
+  const p = selected >= 0 ? RECORD.parts[selected] : null;
+  document.querySelectorAll('#ePose [data-pose]').forEach((inp) => { if (p) inp.value = p.pose[inp.dataset.pose]; });
+  document.querySelectorAll('#eBlockPose [data-bp]').forEach((inp) => { inp.value = BLOCK[inp.dataset.bp]; });
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
+function selectPart(i) {
+  selected = i >= 0 && i < RECORD.parts.length ? i : -1;
+  if (tool === 'block' && selected >= 0) { tool = 'translate'; document.querySelectorAll('#etools [data-tool]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.tool === 'translate'))); }
+  refreshSelection(); attachTC(); renderEditor(); renderCreator();
+}
+
+// ---------------------------------------------------------------- pointer input
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+function toNdc(e) { const r = canvas.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); }
+function pickPart(e) { toNdc(e); ray.setFromCamera(ndc, camera); const hit = ray.intersectObjects(pickMeshes, false)[0]; return hit ? hit.object.userData.part : -1; }
+function groundAt(e) { toNdc(e); ray.setFromCamera(ndc, camera); const p = new THREE.Vector3(); return ray.ray.intersectPlane(groundPlane, p) ? p : null; }
+let drag = null;
+canvas.addEventListener('pointerdown', (e) => {
+  if (mode === 'editor') {
+    if (tc.dragging || tc.axis) return;
+    const i = pickPart(e); if (i >= 0) { selectPart(i); }
+    return;
+  }
+  canvas.setPointerCapture(e.pointerId);
+  const start = { x: e.clientX, y: e.clientY };
+  if (mode === 'creator') {
+    const partsOpen = $('#sParts').classList.contains('on');
+    const i = pickPart(e);
+    if (partsOpen && i >= 0) { selectPart(i); const g = groundAt(e); drag = { kind: 'part', start, last: g, i }; return; }
+    if (!partsOpen && i >= 0) { const g = groundAt(e); drag = { kind: 'block', start, last: g }; return; }
+  }
+  drag = { kind: 'look', start, x: e.clientX, y: e.clientY };
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  if (drag.kind === 'look') {
+    const s = mode === 'creator' ? creatorCam : visitor;
+    const k = 0.0045;
+    s.yaw += (e.clientX - drag.x) * k; s.pitch = Math.max(-60 * DEG, Math.min(70 * DEG, s.pitch + (e.clientY - drag.y) * k));
+    drag.x = e.clientX; drag.y = e.clientY; if (mode === 'visitor') visitor.auto = null;
+    return;
+  }
+  const g = groundAt(e); if (!g || !drag.last) { drag.last = g; return; }
+  const d = g.clone().sub(drag.last);
+  if (drag.kind === 'block') { BLOCK.x += d.x; BLOCK.z += d.z; applyBlockPose(); }
+  else if (drag.kind === 'part') {
+    const inv = new THREE.Matrix4().copy(errNode.matrixWorld).invert();
+    const a = drag.last.clone().applyMatrix4(inv), b = g.clone().applyMatrix4(inv);
+    const p = RECORD.parts[drag.i]; p.pose.x += b.x - a.x; p.pose.z += b.z - a.z; rebuild();
+  }
+  drag.last = g;
+});
+const endDrag = () => {
+  if (drag?.kind === 'part') { snapPart(drag.i); rebuild(); renderEditor(); toast('Snapped'); }
+  if (drag?.kind === 'block') { BLOCK.x = +BLOCK.x.toFixed(2); BLOCK.z = +BLOCK.z.toFixed(2); renderEditor(); }
+  drag = null;
+};
+canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
+const keys = new Set();
+addEventListener('keydown', (e) => { if (e.target.closest('input,textarea,select')) return; keys.add(e.key.toLowerCase()); });
+addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+$('#walk').addEventListener('click', () => { visitor.auto = { x: -1.5, z: 6.5, look: true }; });
+$('#replay').addEventListener('click', () => startRise());
+
+// ---------------------------------------------------------------- toggles + modes
+function toggle(btn, fn) { btn.addEventListener('click', () => { const on = btn.getAttribute('aria-pressed') !== 'true'; btn.setAttribute('aria-pressed', String(on)); fn(on); }); }
+toggle($('#tFrame'), () => syncButtons());
+toggle($('#tFields'), (on) => { $('#fieldsPanel').hidden = !on; });
+toggle($('#tOffset'), () => { applyBlockPose(); attachTC(); });
+toggle($('#tNotes'), (on) => $('#notes').classList.toggle('on', on));
+document.querySelectorAll('#modes button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+
+function enterMode(m) {
+  mode = m;
+  orbit.enabled = m === 'editor';
+  if (m === 'editor') {
+    camera.position.set(BLOCK.x + 26, 24, BLOCK.z + 30); orbit.target.set(BLOCK.x + 1, 3, BLOCK.z + 1); orbit.update();
+    if (selected < 0) selected = 1;
+  }
+  if (m === 'creator') { selected = -1; creatorCam.yaw = Math.atan2(-(BLOCK.x - 0), -(BLOCK.z - 0)); creatorCam.pitch = 18 * DEG; }
+  if (m === 'visitor') { selected = -1; }
+  document.querySelectorAll('#creator .sheet').forEach((s) => s.classList.remove('on'));
+  document.querySelectorAll('#cbtns [data-sheet]').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+  if (m === 'creator') { $('#ctopHint').textContent = 'tap a part, drag it'; $('#sParts').classList.add('on'); $('#cbtns [data-sheet="sParts"]').setAttribute('aria-pressed', 'true'); selected = 7; }
+  refreshSelection(); attachTC(); applyViewVisibility(); syncButtons(); renderEditor(); renderCreator(); syncCreatorSheets(); writeHash();
+  presenceTarget = m === 'visitor' ? (inside ? 1 : 0) : 1;
+  if (m !== 'visitor') U.presence.value = 1;
+}
+function nextFrames(n = 2) { return new Promise((res) => { const step = () => (n-- <= 0 ? res() : requestAnimationFrame(step)); requestAnimationFrame(step); }); }
+async function setMode(name) { if (!['visitor', 'creator', 'editor'].includes(name)) throw new Error('unknown mode ' + name); enterMode(name); await nextFrames(3); }
+async function setView(name) {
+  if (!VIEW_NAMES.includes(name)) throw new Error('unknown view ' + name);
+  view = name; applyViewVisibility(); syncButtons(); renderEditor(); writeHash();
+  if (name === 'rise') startRise();
+  await nextFrames(3);
+}
+function readHash() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  const m = h.get('mode'), v = h.get('view');
+  if (v && VIEW_NAMES.includes(v)) view = v;
+  enterMode(['visitor', 'creator', 'editor'].includes(m) ? m : mode);
+  if (view === 'rise') startRise();
+}
+addEventListener('hashchange', readHash);
+
+// ---------------------------------------------------------------- frame loop
+const stage = $('#stage');
+function resize() {
+  const w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  updateFov();
+}
+function updateFov() {
+  // the phone camera: about 40 degrees across the short side of the screen
+  if (mode === 'editor') camera.fov = 45;
+  else { const a = camera.aspect; camera.fov = a < 1 ? 2 * Math.atan(Math.tan(20 * DEG) / a) / DEG : 40; }
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+const frameLog = []; const workLog = [];
+let last = performance.now(), lastStats = 0;
+const tmpV = new THREE.Vector3();
+function updateVisitor(dt) {
+  const sp = 1.4 * dt;
+  const fx = -Math.sin(visitor.yaw), fz = -Math.cos(visitor.yaw);
+  let mx = 0, mz = 0;
+  if (keys.has('w') || keys.has('arrowup')) { mx += fx; mz += fz; }
+  if (keys.has('s') || keys.has('arrowdown')) { mx -= fx; mz -= fz; }
+  if (keys.has('a')) { mx += fz; mz -= fx; }
+  if (keys.has('d')) { mx -= fz; mz += fx; }
+  if (keys.has('arrowleft')) visitor.yaw += 1.5 * dt;
+  if (keys.has('arrowright')) visitor.yaw -= 1.5 * dt;
+  if (mx || mz) { const l = Math.hypot(mx, mz); visitor.x += (mx / l) * sp; visitor.z += (mz / l) * sp; visitor.auto = null; }
+  if (visitor.auto) {
+    const a = visitor.auto, dx = a.x - visitor.x, dz = a.z - visitor.z, d = Math.hypot(dx, dz);
+    if (d < 0.05) visitor.auto = null; else { const s = Math.min(d, sp * 1.1); visitor.x += (dx / d) * s; visitor.z += (dz / d) * s; }
+    if (a.look && inside) { const ty = Math.atan2(-(BLOCK.x - visitor.x), -(BLOCK.z - visitor.z)); visitor.yaw += angleDiff(ty, visitor.yaw) * Math.min(1, dt * 1.2); visitor.pitch += (16 * DEG - visitor.pitch) * Math.min(1, dt * 1.2); }
+  }
+  camera.position.set(visitor.x, EYE, visitor.z);
+  camera.rotation.set(0, 0, 0, 'YXZ'); camera.rotation.order = 'YXZ'; camera.rotation.y = visitor.yaw; camera.rotation.x = visitor.pitch;
+  const now = Math.hypot(visitor.x, visitor.z) <= STATION_R;
+  if (now !== inside) { inside = now; presenceTarget = inside ? 1 : 0; if (inside && view === 'rise') startRise(); }
+}
+const camLocal = new THREE.Vector3();
+function updateSilhouettes() {
+  if (!silGeo || !silParts.length) return;
+  content.updateWorldMatrix(true, false);
+  camLocal.copy(camera.position); content.worldToLocal(camLocal);
+  const buf = silGeo.attributes.instanceStart.data; const a = buf.array; let o = 0;
+  for (const s of silParts) {
+    const dx = camLocal.x - s.x, dz = camLocal.z - s.z, L = Math.hypot(dx, dz);
+    for (const sign of [-1, 1]) {
+      if (L <= s.r * 1.001) { a.fill(0, o, o + 6); o += 6; continue; }
+      const ang = Math.atan2(dz, dx) + sign * Math.acos(s.r / L);
+      const px = s.x + Math.cos(ang) * s.r, pz = s.z + Math.sin(ang) * s.r;
+      a[o] = px; a[o + 1] = s.y; a[o + 2] = pz;
+      if (s.cone) { a[o + 3] = s.x; a[o + 4] = s.y + s.h; a[o + 5] = s.z; } else { a[o + 3] = px; a[o + 4] = s.y + s.h; a[o + 5] = pz; }
+      o += 6;
+    }
+  }
+  buf.needsUpdate = true;
+}
+const angleDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+function updateOverlays() {
+  // label chip, anchored above the gate (or on the ground for the footprint)
+  const chip = $('#chip');
+  const anchorLocal = view === 'footprint' ? new THREE.Vector3(0, 1.75, 5.0) : view === 'rise' ? new THREE.Vector3(0, 4.3, 4.7) : new THREE.Vector3(0, 4.3, 4.7);
+  content.updateWorldMatrix(true, false);
+  tmpV.copy(anchorLocal).applyMatrix4(content.matrixWorld);
+  const camDist = tmpV.distanceTo(camera.position);
+  tmpV.project(camera);
+  let op = U.presence.value;
+  if (view === 'rise' && U.reveal.value < (U.topY ?? 18) - 0.5) op = 0;
+  if (tmpV.z > 1 || Math.abs(tmpV.x) > 1.2 || Math.abs(tmpV.y) > 1.2) op = 0;
+  if (mode === 'editor') op = 0;
+  const w = stage.clientWidth, h = stage.clientHeight;
+  chip.style.transform = `translate(${((tmpV.x + 1) / 2) * w}px, ${((1 - tmpV.y) / 2) * h}px) translate(-50%, -100%)`;
+  chip.style.opacity = op.toFixed(2);
+  chip.dataset.dist = camDist.toFixed(1);
+  // outside the circle: the app's own direction-and-distance hint
+  const hint = $('#hint');
+  if (mode === 'visitor' && !inside) {
+    const d = Math.hypot(visitor.x, visitor.z) - STATION_R;
+    const bearing = Math.atan2(visitor.x, visitor.z);
+    const rel = angleDiff(bearing, visitor.yaw);
+    $('#hintArrow').style.transform = `rotate(${(-rel / DEG).toFixed(0)}deg)`;
+    $('#hintText').textContent = `Market square · ${Math.max(1, Math.round(d))} m`;
+    hint.style.opacity = '1'; $('#walk').style.display = '';
+  } else { hint.style.opacity = '0'; $('#walk').style.display = mode === 'visitor' && !inside ? '' : 'none'; }
+}
+function frame() {
+  requestAnimationFrame(frame);
+  const t0 = performance.now();
+  const dt = Math.min(0.1, (t0 - last) / 1000);
+  frameLog.push([t0, t0 - last]); last = t0;
+  U.time.value = t0 / 1000;
+  if (mode === 'visitor') updateVisitor(dt);
+  else if (mode === 'creator') {
+    camera.position.set(0, EYE, 0); camera.rotation.order = 'YXZ'; camera.rotation.set(creatorCam.pitch, creatorCam.yaw, 0, 'YXZ');
+  } else orbit.update();
+  // presence (block appears on entering the circle)
+  const pt = mode === 'visitor' ? presenceTarget : 1;
+  U.presence.value += (pt - U.presence.value) * Math.min(1, dt * 3.2);
+  if (Math.abs(pt - U.presence.value) < 0.005) U.presence.value = pt;
+  for (const m of lineMats) m.opacity = m.userData.base * U.presence.value;
+  planFillMat.opacity = U.presence.value; aoMat.opacity = U.presence.value;
+  content.visible = U.presence.value > 0.001;
+  if (view === 'rise' && riseStart >= 0) {
+    const k = Math.min(1, (t0 - riseStart) / 1000 / RISE_SECONDS);
+    const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+    const top = (U.topY ?? 18) * BLOCK.scale + 0.5;
+    U.reveal.value = REMAINS_H * 0.7 + (top - REMAINS_H * 0.7) * e;
+    if (k >= 1) { riseStart = -1; U.reveal.value = 1e4; }
+    if (mode === 'visitor' && U.presence.value < 0.01) riseStart = t0;
+  }
+  U.baseY.value = 0;
+  updateSilhouettes();
+  updateOverlays();
+  renderer.render(scene, camera);
+  const t1 = performance.now();
+  workLog.push([t1, t1 - t0]);
+  while (frameLog.length && frameLog[0][0] < t1 - 2000) frameLog.shift();
+  while (workLog.length && workLog[0][0] < t1 - 2000) workLog.shift();
+  if (t1 - lastStats > 250) {
+    lastStats = t1;
+    const f = frameLog.map((x) => x[1]), w = workLog.map((x) => x[1]);
+    const mean = (a) => a.reduce((s, x) => s + x, 0) / Math.max(1, a.length);
+    $('#fps').textContent = `frame ${mean(f).toFixed(1)} / ${Math.max(0, ...f).toFixed(1)} ms · cpu ${mean(w).toFixed(1)} / ${Math.max(0, ...w).toFixed(1)} ms · 2 s`;
+    window.__frameStats = { meanMs: mean(f), maxMs: Math.max(0, ...f), cpuMeanMs: mean(w), cpuMaxMs: Math.max(0, ...w), samples: f.length };
+  }
+}
+
+// ---------------------------------------------------------------- export + hook
+function exportRecord() {
+  return {
+    model: 'primitives', view,
+    pose: { x: BLOCK.x, y: 0, z: BLOCK.z, yaw: BLOCK.yaw, scale: BLOCK.scale },
+    label: RECORD.label, era: RECORD.era,
+    parts: RECORD.parts.map((p) => ({ shape: p.shape, dims: structuredClone(p.dims), pose: { ...p.pose }, material: p.material })),
+  };
+}
+window.__stationBlock = {
+  family: FAMILY,
+  views: VIEW_NAMES.slice(),
+  modes: ['visitor', 'creator', 'editor'],
+  setMode, setView,
+  async walkTo(x, z) {
+    if (mode !== 'visitor') enterMode('visitor');
+    visitor.x = num(x, visitor.x, -400, 400); visitor.z = num(z, visitor.z, -400, 400); visitor.auto = null;
+    await nextFrames(2);
+    // resolve once the block has finished appearing or disappearing
+    const t0 = performance.now();
+    while (U.presence.value !== presenceTarget && performance.now() - t0 < 4000) await nextFrames(1);
+    await nextFrames(1);
+  },
+  async lookAt(x, y, z) {
+    if (mode !== 'visitor') enterMode('visitor');
+    const dx = x - visitor.x, dy = y - EYE, dz = z - visitor.z;
+    visitor.yaw = Math.atan2(-dx, -dz); visitor.pitch = Math.atan2(dy, Math.hypot(dx, dz)); visitor.auto = null;
+    await nextFrames(2);
+  },
+  async describe() {
+    return {
+      family: FAMILY,
+      fields: [
+        { name: 'parts', type: 'array', of: { shape: SHAPES.join(' | '), dims: 'per shape, metres', pose: '{x,y,z,yaw} block-local, y = bottom', material: 'stone | timber | plaster | #rrggbb' } },
+        { name: 'label', type: 'string' },
+        { name: 'era', type: 'string' },
+      ],
+      views: VIEWS.map((v) => ({ name: v.name, required: v.required, usesFields: v.uses.slice() })),
+    };
+  },
+  async exportModel() { return JSON.parse(JSON.stringify(exportRecord())); },
+};
+
+// ---------------------------------------------------------------- start
+renderPicker();
+rebuild();
+applyBlockPose();
+readHash();
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

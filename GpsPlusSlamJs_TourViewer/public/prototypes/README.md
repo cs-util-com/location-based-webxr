@@ -46,6 +46,13 @@ wired into its logic: every interaction is faked.
   an any-order tour, and its own answer to what the skip names when
   nothing vouches for the position. They load three.js from unpkg by an
   import map; `window.__visitorWalk` drives them in checks.
+- `station-blocks-1-narrated-text/` ... `station-blocks-8-audio/` - station
+  content blocks, one kind of content per page (narrated text, short text,
+  pictures, video, 3D models, 3D primitives, a recurring character, audio
+  alone), each shown in several views of the same data on the same plain
+  square, in a visitor, a creator and an editor mode; made 2026-10-22. They
+  load three.js from unpkg by an import map; `window.__stationBlock` drives
+  them in checks.
 
 **Kept, the chosen and the unchosen** (owner, 2026-10-11 evening): another
 developer may prefer a variant the owner did not choose and ask their own

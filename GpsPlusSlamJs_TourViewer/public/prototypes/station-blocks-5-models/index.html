@@ -1,0 +1,1335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Market bell - 3D model block</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  --page: #0e0f12;
+  --hud: rgba(15, 17, 21, 0.82);
+  --hud-solid: #15171c;
+  --fg: #f4f1ea;
+  --dim: rgba(244, 241, 234, 0.64);
+  --faint: rgba(244, 241, 234, 0.14);
+  --brass: #e3b26a;
+  --brass-deep: #b8853f;
+  --ok: #9ed8b8;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --serif: Georgia, "Times New Roman", serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--page); color: var(--fg); font: 14px/1.4 var(--font); overflow: hidden; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+
+#chrome {
+  position: fixed; inset: 0 0 auto 0; height: 44px; display: flex; align-items: center; gap: 6px;
+  padding: 0 8px; background: var(--page); border-bottom: 1px solid #1d2026; z-index: 30;
+}
+.seg { display: inline-flex; background: #1a1d23; border-radius: 999px; padding: 3px; gap: 2px; }
+.seg button { border: 0; background: transparent; padding: 5px 11px; border-radius: 999px; font-size: 12.5px; color: var(--dim); }
+.seg button.on { background: var(--fg); color: #111; font-weight: 600; }
+.chip { border: 1px solid #2a2e36; background: #16191e; padding: 5px 10px; border-radius: 999px; font-size: 12.5px; color: var(--dim); }
+.chip.on { border-color: var(--brass); color: var(--brass); }
+.chip:disabled { opacity: .35; cursor: default; }
+#chrome .spacer { flex: 1; }
+@media (max-width: 480px) { #chrome { gap: 4px; padding: 0 5px; } .seg button { padding: 5px 8px; } .chip { padding: 5px 8px; } }
+
+#main { position: fixed; inset: 44px 0 0 0; display: grid; grid-template-columns: 1fr; }
+#stageWrap { position: relative; display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: hidden; background: #0b0c0f; }
+#stage { position: relative; width: 100%; height: 100%; overflow: hidden; background: #dfe5e8; container-type: size; }
+#stageWrap.phone #stage { width: auto; height: calc(100% - 28px); aspect-ratio: 9 / 19.5; max-width: calc(100% - 28px); border-radius: 34px;
+  box-shadow: 0 0 0 9px #1c1e23, 0 0 0 10px #353841, 0 26px 70px rgba(0,0,0,.55); }
+#stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
+#leaders { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+#markers { position: absolute; inset: 0; pointer-events: none; }
+.hud { position: absolute; z-index: 5; }
+.plate { background: var(--hud); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.07); }
+
+/* view picker */
+#picker { top: 10px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; border-radius: 999px; padding: 3px; gap: 2px; font-size: 13px; }
+#picker button { border: 0; background: transparent; padding: 5px 9px; border-radius: 999px; color: var(--fg); }
+#picker .name { min-width: 92px; font-weight: 600; letter-spacing: .01em; }
+#picker .name small { color: var(--dim); font-weight: 400; margin-left: 4px; }
+#pickerList { top: 46px; left: 50%; transform: translateX(-50%); border-radius: 14px; padding: 6px; min-width: 220px; display: none; }
+#pickerList.open { display: block; }
+#pickerList button { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 12px; border: 0; background: transparent; padding: 8px 10px; border-radius: 9px; text-align: left; }
+#pickerList button.on { background: rgba(227,178,106,.16); color: var(--brass); }
+#pickerList .tag { font-size: 11px; color: var(--dim); }
+
+#stationChip { top: 52px; left: 50%; transform: translateX(-50%); border-radius: 999px; padding: 6px 13px 6px 9px; display: none; align-items: center; gap: 8px; font-size: 13px; white-space: nowrap; }
+#stationChip .arrow { width: 18px; height: 18px; display: inline-block; transition: transform .2s; }
+#stationChip b { font-weight: 600; }
+
+#walkBar { left: 12px; bottom: 12px; display: flex; gap: 8px; align-items: center; }
+#walkBar button { border-radius: 999px; padding: 9px 15px; border: 0; font-weight: 600; font-size: 13.5px; }
+@container (max-width: 600px) { #walkBar .hint { display: none; } }
+#walkBar .hint { font-size: 11.5px; color: rgba(20,22,26,.62); text-shadow: 0 1px 0 rgba(255,255,255,.4); }
+#frameStat { right: 8px; top: 10px; border-radius: 8px; padding: 4px 7px; font: 10.5px/1.3 ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--dim); pointer-events: none; white-space: pre; text-align: right; }
+
+/* hotspot markers */
+.hs { position: absolute; left: 0; top: 0; pointer-events: auto; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 7px; will-change: transform, opacity; border: 0; background: none; padding: 0; }
+.hs .disc { width: 28px; height: 28px; border-radius: 50%; background: rgba(15,17,21,.86); color: #fff; display: grid; place-items: center; font: 600 13px/1 var(--font);
+  box-shadow: 0 0 0 1.5px var(--brass), 0 3px 10px rgba(0,0,0,.35); transition: background .2s, color .2s, transform .2s; }
+.hs.sel .disc { background: var(--brass); color: #16120b; transform: scale(1.12); }
+.hs .lab { position: absolute; left: 34px; top: 50%; transform: translateY(-50%); white-space: nowrap; background: rgba(15,17,21,.86); color: var(--fg);
+  padding: 4px 9px; border-radius: 7px; font-size: 13px; opacity: 0; transition: opacity .25s; pointer-events: none; }
+.hs.showlab .lab { opacity: 1; }
+.hs.small .disc { width: 20px; height: 20px; font-size: 11px; }
+
+#card { left: 50%; bottom: 12px; transform: translate(-50%, 16px); width: min(420px, calc(100% - 24px)); border-radius: 18px; padding: 15px 16px 13px; opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; }
+#card.open { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+#card .num { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--brass); }
+#card h3 { margin: 3px 0 7px; font: 600 19px/1.25 var(--serif); }
+#card p { margin: 0; font-size: 15px; line-height: 1.5; color: rgba(244,241,234,.9); max-height: 34vh; overflow: auto; }
+#card .row { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+#card .row button { border: 1px solid rgba(255,255,255,.14); background: transparent; border-radius: 999px; padding: 6px 13px; font-size: 13px; }
+#card .x { position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; border-radius: 50%; border: 0; background: rgba(255,255,255,.08); }
+#edgeHint { width: 34px; height: 34px; border-radius: 50%; display: none; place-items: center; transform: translate(-50%,-50%); background: var(--brass); color: #16120b; font-weight: 700; }
+
+/* creator */
+#cTop { top: 10px; left: 10px; border-radius: 999px; padding: 6px 14px; font-size: 12.5px; white-space: nowrap; }
+#cTop b { color: var(--brass); font-weight: 600; }
+#cBar { left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; gap: 8px; width: min(560px, calc(100% - 20px)); }
+#cBar button { flex: 1; border: 0; border-radius: 18px; padding: 10px 2px 8px; background: var(--hud); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; min-height: 64px; }
+#cBar button svg { width: 24px; height: 24px; }
+#cBar button.on { background: var(--brass); color: #16120b; }
+#cSheet { left: 50%; bottom: 88px; transform: translateX(-50%); width: min(560px, calc(100% - 20px)); border-radius: 18px; padding: 14px 15px; display: none; max-height: 52%; overflow: auto; }
+#cSheet.open { display: block; }
+#cSheet h4 { margin: 0 0 8px; font-size: 14px; }
+#cSheet .muted, .muted { color: var(--dim); font-size: 12.5px; }
+.rowf { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.big { border: 0; border-radius: 12px; padding: 9px 13px; background: rgba(255,255,255,.1); font-weight: 600; }
+.big.on { background: var(--brass); color: #16120b; }
+input[type=range] { width: 100%; accent-color: var(--brass); }
+.vchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.vchips button { border: 1px solid rgba(255,255,255,.16); background: transparent; border-radius: 999px; padding: 7px 12px; font-size: 13px; }
+.vchips button.on { background: var(--fg); color: #111; border-color: var(--fg); font-weight: 600; }
+.field { display: block; margin: 8px 0; }
+.field span { display: flex; justify-content: space-between; font-size: 12px; color: var(--dim); margin-bottom: 3px; }
+.field input, .field textarea, .field select { width: 100%; background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.13); border-radius: 9px; padding: 7px 9px; }
+.field textarea { min-height: 76px; resize: vertical; line-height: 1.45; }
+.notelist { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.notelist button { display: flex; gap: 9px; align-items: center; border: 0; background: rgba(255,255,255,.05); border-radius: 10px; padding: 7px 9px; text-align: left; }
+.notelist button.on { background: rgba(227,178,106,.18); }
+.badge { width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11.5px; font-weight: 700; background: var(--brass); color: #16120b; flex: none; }
+
+/* editor */
+#left, #insp { display: none; background: #121418; overflow: auto; min-height: 0; }
+#main.editor { grid-template-columns: 236px minmax(0,1fr) 352px; }
+#main.editor #left, #main.editor #insp { display: block; }
+#left { border-right: 1px solid #1f2228; padding: 14px 12px; }
+#insp { border-left: 1px solid #1f2228; padding: 14px 16px 40px; }
+.ph { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--dim); margin: 16px 0 8px; }
+.ph:first-child { margin-top: 0; }
+.blk { display: flex; gap: 10px; align-items: center; padding: 9px 10px; border-radius: 10px; background: rgba(255,255,255,.04); margin-bottom: 6px; font-size: 13px; }
+.blk.on { background: rgba(227,178,106,.14); box-shadow: inset 0 0 0 1px rgba(227,178,106,.45); }
+.blk .ico { width: 28px; height: 28px; border-radius: 7px; background: #262a31; display: grid; place-items: center; flex: none; }
+.blk small { display: block; color: var(--dim); font-size: 11.5px; }
+.blk.ghosted { opacity: .45; }
+#insp h2 { margin: 0 0 2px; font: 600 18px/1.25 var(--serif); }
+.sec { border-top: 1px solid #22262d; padding-top: 12px; margin-top: 14px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.grid4 .field, .grid2 .field { margin: 2px 0; }
+.anno { border: 1px solid #262a31; border-radius: 12px; padding: 9px 10px; margin: 8px 0; }
+.anno.on { border-color: rgba(227,178,106,.7); }
+.anno .top { display: flex; align-items: center; gap: 8px; }
+.anno .top input { flex: 1; background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.13); border-radius: 9px; padding: 6px 9px; font-weight: 600; }
+.anno .tools { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
+.anno .tools button { border: 1px solid #2c3038; background: transparent; border-radius: 8px; padding: 4px 9px; font-size: 12px; }
+.anno .tools .pos { margin-left: auto; font: 11px ui-monospace, Consolas, monospace; color: var(--dim); }
+.mini { border: 1px solid #2c3038; background: #181b20; border-radius: 8px; padding: 5px 10px; font-size: 12.5px; }
+.mini.on { border-color: var(--brass); color: var(--brass); }
+#main.editor #frameStat { top: auto; bottom: 10px; }
+#eTools { top: 10px; left: 10px; display: flex; gap: 6px; flex-wrap: wrap; border-radius: 12px; padding: 5px; }
+#eTools button { border: 0; background: transparent; border-radius: 8px; padding: 6px 10px; font-size: 12.5px; color: var(--fg); }
+#eTools button.on { background: var(--fg); color: #111; font-weight: 600; }
+#eTools label { display: flex; align-items: center; gap: 5px; padding: 0 8px; font-size: 12.5px; }
+#ePick { top: 58px; left: 50%; transform: translateX(-50%); border-radius: 999px; padding: 7px 14px; font-size: 13px; display: none; background: var(--brass); color: #16120b; font-weight: 600; }
+@media (max-width: 900px) {
+  #main.editor { grid-template-columns: minmax(0,1fr) 300px; }
+  #main.editor #left { display: none; }
+}
+@media (max-width: 600px) {
+  #main.editor { grid-template-columns: 1fr; grid-template-rows: 46% 54%; }
+  #main.editor #insp { border-left: 0; border-top: 1px solid #1f2228; }
+}
+
+/* panels */
+.panel { position: fixed; z-index: 40; background: var(--hud-solid); border: 1px solid #2a2e36; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.5); display: none; }
+.panel.open { display: block; }
+#fieldsPanel { top: 52px; right: 10px; width: min(360px, calc(100% - 20px)); padding: 14px 15px; }
+#fieldsPanel h4 { margin: 0 0 4px; font-size: 14px; }
+#fieldsPanel ul { list-style: none; margin: 10px 0 0; padding: 0; }
+#fieldsPanel li { padding: 7px 0; border-top: 1px solid #23262d; font-size: 13px; display: grid; grid-template-columns: 92px 1fr; gap: 8px; }
+#fieldsPanel li code { color: var(--brass); font-size: 12.5px; }
+#fieldsPanel li.unused { opacity: .42; }
+#notesPanel { top: 52px; right: 10px; bottom: 10px; width: min(560px, calc(100% - 20px)); padding: 0; overflow: auto; }
+#notesPanel .in { padding: 18px 20px 30px; }
+#notesPanel h2 { font: 600 20px/1.25 var(--serif); margin: 0 0 6px; }
+#notesPanel h3 { font-size: 14.5px; margin: 20px 0 6px; color: var(--brass); }
+#notesPanel p, #notesPanel li { font-size: 13.5px; line-height: 1.55; color: rgba(244,241,234,.88); }
+#notesPanel ul { padding-left: 18px; }
+#notesPanel details { border-top: 1px solid #262a31; padding: 8px 0; }
+#notesPanel summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.close { position: absolute; top: 10px; right: 10px; border: 0; background: rgba(255,255,255,.08); width: 30px; height: 30px; border-radius: 50%; }
+#loading { position: absolute; inset: 0; display: grid; place-items: center; color: #444; font-size: 13px; z-index: 3; }
+</style>
+<script type="importmap">
+  { "imports": {
+      "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+  } }
+</script>
+</head>
+<body>
+<div id="chrome">
+  <div class="seg" id="modeSeg">
+    <button data-mode="visitor">Visitor</button>
+    <button data-mode="creator">Creator</button>
+    <button data-mode="editor">Editor</button>
+  </div>
+  <div class="spacer"></div>
+  <button class="chip" id="phoneBtn" title="Render into a 9:19.5 phone viewport">Phone</button>
+  <button class="chip" id="fieldsBtn" title="Which fields this view uses">Fields</button>
+  <button class="chip" id="notesBtn" title="Design notes">Notes</button>
+</div>
+
+<div id="main">
+  <aside id="left"></aside>
+  <div id="stageWrap">
+    <div id="stage">
+      <div id="loading">Preparing the model...</div>
+      <svg id="leaders"></svg>
+      <div id="markers"></div>
+      <!-- visitor -->
+      <div class="hud plate" id="picker">
+        <button id="pPrev" aria-label="Previous view">&#8249;</button>
+        <button class="name" id="pName">Full scale</button>
+        <button id="pNext" aria-label="Next view">&#8250;</button>
+      </div>
+      <div class="hud plate" id="pickerList"></div>
+      <div class="hud plate" id="stationChip"><svg class="arrow" viewBox="0 0 20 20"><path d="M10 2 L16 15 L10 12 L4 15 Z" fill="#e3b26a"/></svg><span id="stationText"></span></div>
+      <div class="hud" id="walkBar"><button id="walkBtn" class="plate">Walk in</button><span class="hint" id="walkHint">drag to look - WASD to walk</span></div>
+      <div class="hud plate" id="card" role="dialog" aria-live="polite">
+        <button class="x" id="cardX" aria-label="Close">&#215;</button>
+        <div class="num" id="cardNum"></div>
+        <h3 id="cardTitle"></h3>
+        <p id="cardText"></p>
+        <div class="row"><button id="cardPrev">&#8249; Previous</button><button id="cardNext">Next &#8250;</button></div>
+      </div>
+      <div class="hud" id="edgeHint">&#8250;</div>
+      <!-- creator -->
+      <div class="hud plate" id="cTop"></div>
+      <div class="hud plate" id="cSheet"></div>
+      <div class="hud" id="cBar"></div>
+      <!-- editor -->
+      <div class="hud plate" id="eTools"></div>
+      <div class="hud" id="ePick">Click the model to place the note</div>
+      <div class="hud plate" id="frameStat">-</div>
+    </div>
+  </div>
+  <aside id="insp"></aside>
+</div>
+
+<div class="panel" id="fieldsPanel"><button class="close" data-close="fieldsPanel">&#215;</button><div id="fieldsBody"></div></div>
+<div class="panel" id="notesPanel"><button class="close" data-close="notesPanel">&#215;</button><div class="in" id="notesBody"></div></div>
+
+<template id="notesTpl">
+  <h2>Design notes - 3D models presented</h2>
+  <p class="muted">Family station-blocks-5-models. One record (the guild's market bell in its oak frame), five views. Frame times are from this machine; see point 3.</p>
+  <details open><summary>1. The model as built, and field changes</summary>
+    <ul>
+      <li><b>model</b> - a glb asset. The page builds the bell with three.js geometry, exports it with GLTFExporter to a real binary glb (<span data-k="glbKB"></span> KB with its three generated textures), loads that glb back with GLTFLoader, and every view draws the loaded copy. So the size, the node names and the animation are what a creator's file would really contain.</li>
+      <li><b>sizeM</b> - largest side of the drawn model, 0.05 to 500 m. The glb's own largest side is <span data-k="nativeM"></span> m; the view scales by sizeM / native.</li>
+      <li><b>pose</b> - position relative to the station anchor plus yaw. Stored as { position: [x, y, z], yawDeg }.</li>
+      <li><b>animation</b> - { name, autoplay }: a clip name from the glb, or null.</li>
+      <li><b>annotations</b> - [{ position, normal, title, text }] in the glb's own coordinates (they scale with sizeM). Title is clamped to 64 and text to 1024 characters on load.</li>
+    </ul>
+    <p><b>Add <code>title</code> and <code>credit</code></b> to the block. Every view wanted a name (the pedestal's plate, the list in the editor, the station chip) and the model has none; and a downloaded glb almost always comes with a licence that requires attribution, which today has nowhere to go.</p>
+    <p><b>Add an optional <code>node</code> to each annotation</b> (the glb node it is pinned to). Annotations are in model space, so the moment the bell swings they float off the bronze. The page works around it honestly: any view that shows notes holds the animation at its rest pose. With <code>node</code>, notes could ride on the moving part.</p>
+    <p><b>Replace yaw by a full quaternion later</b>, for models leaning on a wall or lying on their side. Yaw alone was enough for everything on this square.</p>
+    <p><b>Do not add</b> a material override, a colour or a sound field: a sound belongs to an audio block, and a colour override is what the ghost and cutaway views already decide in code.</p>
+  </details>
+  <details><summary>2. Per view - what, which fields, why, weakest where</summary>
+    <ul>
+      <li><b>Pedestal (turntable)</b> - a dark stone pedestal with a brass ring; the model turns once in 36 s, shown at 0.3 to 0.85 m and never wider than the 0.41 m turntable radius, with a scale plate (1 : n) from sizeM; tap the model to stop the turn. Uses model, sizeM, pose, animation. A visitor likes it because it reads like a museum object they can walk round, and it never pretends to fit the real scene, so 1 m of error is harmless. Weakest: the scale plate is small text (read within 2 m); a crowd standing round it hides it; the miniature undersells a large thing.</li>
+      <li><b>Full scale (in place)</b> - the bell in its frame at 1 : 1 where it stood, swinging slowly, with a soft contact shadow. Uses model, sizeM, pose, animation. The strongest "it was here" moment. Weakest: placement error shows at the feet (a 1 m slide on a paved square is visible), and a big opaque object can stand in a visitor's path or inside a real bench.</li>
+      <li><b>Ghost</b> - the same shape as dark glass with a bright edge, a slow light sweep, and feet that fade out over the lowest 0.7 m so the ground contact never has to be exact. Uses model (shape only), sizeM, pose, animation. Forgiving of error and of a crowd (people show through it). Weakest: in bright sun a translucent object loses contrast on a pale background; detail like the inscription is lost.</li>
+      <li><b>Hotspots (suggested idea)</b> - numbered discs on short leader lines at each annotation; a disc fades when its surface faces away and dims when the model hides it (a ray test); the title shows beside the disc nearest the screen centre; tapping opens a card with the text and previous/next. Uses every field. Weakest: needs the animation held still (see point 1), and five discs in a crowded view are busy.</li>
+      <li><b>Cutaway (my own idea)</b> - the model cut by a vertical plane that always turns to face the visitor, so the near half is gone and the inside is visible: the clapper swinging in the bell, the wall thickness of the bronze, the heart of the oak. Section faces are drawn flat and warm (back faces with a plain colour), and four brass corner marks frame the cut. Uses model, sizeM, pose, animation. Generic for any closed glb. Weakest: models with open or single-sided meshes show nonsense sections; it is a technical look, not a romantic one.</li>
+    </ul>
+  </details>
+  <details><summary>3. Per view - cost</summary>
+    <div data-k="costs"></div>
+    <p>Media: the glb is <span data-k="glbKB"></span> KB for <span data-k="tris"></span> triangles including three generated textures (patina 512 x 256, its metal/roughness map, the inscription band 2048 x 128, oak 256 x 512). The views add no media: every view is code over the same file. Creator minutes: choosing a view is seconds; placing and sizing about a minute on the phone; each annotation is a tap on the model plus typing, two to five minutes each with real text.</p>
+  </details>
+  <details><summary>4. The creator's controls per view</summary>
+    <ul>
+      <li><b>Phone (creator mode)</b>: five large buttons - Place (tap the ground), Size (log slider 0.05 to 500 m, a Real size button), Turn (slider, 15 degree steps, Face me), View (the five views plus the animation switch), Notes (tap the model to drop a note at the hit point and its surface normal, then type a title and text). The same five buttons serve every view; only Notes matters for Hotspots.</li>
+      <li><b>Desktop editor</b>: move and turn handles on the block, numeric pose, the size with its scale factor, the clip list from the glb with autoplay, and the annotation list (title and text with live character counts, Pick on model, Delete, Add). "Notes in 3D" draws the markers in every view and holds the animation while on.</li>
+    </ul>
+  </details>
+  <details><summary>5. Blunt self-check</summary>
+    <ul>
+      <li><b>Breaks:</b> the page uses three.js addons (OrbitControls, TransformControls, RoomEnvironment, GLTFExporter, GLTFLoader), so it fetches more than the two core three.js files, all from the same unpkg three@0.185.1 path the import map names. The bronze needs a reflection map: RoomEnvironment is generated in the page, but in the app it would be a fixed studio map that ignores the real light. The hotspots' occlusion is a CPU ray test, fine for five notes, not for fifty.</li>
+      <li><b>Drop first:</b> the pedestal for big models. A turning miniature of a 2.6 m bell is pleasant but adds the least over full scale, and for models above about 3 m the scale plate becomes the only honest thing on it. It stays right for small objects (a coin, a seal, a jug).</li>
+      <li><b>Proudest of:</b> the ghost's fading feet. It is one line of shader, it makes the 0.5 to 1 m placement error invisible at the ground, and it keeps the model readable as "was here, is gone" without a single extra field.</li>
+    </ul>
+  </details>
+</template>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const FAMILY = 'station-blocks-5-models';
+const DEG = Math.PI / 180;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const $ = (s) => document.querySelector(s);
+const EYE = 1.6;
+const RADIUS = 25;
+const STATIONS = [ { name: 'Market square', x: 0, z: 0, r: RADIUS }, { name: 'East lane', x: 60, z: 0, r: RADIUS } ];
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+// ---------------------------------------------------------------- the record
+const FIELDS = ['model', 'sizeM', 'pose', 'animation', 'annotations'];
+const LIMITS = { title: 64, text: 1024, sizeMin: 0.05, sizeMax: 500 };
+const record = {
+  block: 'model',
+  view: 'full-scale',
+  model: { asset: 'media/market-bell.glb' },
+  sizeM: 2.7,
+  pose: { position: [-3.5, 0, -4.5], yawDeg: 34 },
+  animation: { name: 'swing', autoplay: true },
+  annotations: [
+    { position: [0, 2.25, 0.71], normal: [0, 0, 1], title: 'Headstock and crown',
+      text: 'The bell never hung from a hook. Six bronze loops cast on its crown were bolted through a block of oak, the headstock, and the whole assembly turned on two iron pins. When the ringer pulled, the oak swung and the bell swung with it. The loops are also why the bell could be lifted out in a single day each spring, to have its pins greased.' },
+    { position: [0, 1.94, 0.3], normal: [0, 0.12, 1], title: 'The inscription band',
+      text: 'One line of raised letters ran around the shoulder: the year 1571, the words for "I call the market", and a small guild mark pressed into the mould on purpose. The bell announced who had paid for it before it ever rang. The letters here are redrawn from a pencil sketch a schoolteacher made in 1868.' },
+    { position: [0.3, 1.27, 0.43], normal: [0.57, -0.12, 0.81], title: 'The sound bow',
+      text: 'The thick ring just above the lip is where the clapper struck. Its thickness, more than the size of the bell, set the note. This bell sounded a little flat, and the council minutes complain about it twice. It rang to open the market at seven and to close it at noon on Saturdays.' },
+    { position: [0, 1.15, 0], normal: [0, -0.35, 0.94], title: 'The clapper',
+      text: 'A forged iron clapper, almost as long as the bell is tall, hung inside on a leather strap. Leather wore through quickly, and a broken strap is the most common entry in the market hall\'s repair book. From where you stand the rim hides it: it can only be seen from below.' },
+    { position: [-0.62, 1.05, 0.88], normal: [-0.3, 0, 1], title: 'The oak frame',
+      text: 'The bell stood in its own timber frame beside the market hall, pegged together without a single nail so that it could be taken apart and moved. It did not outlive the fire of 1890: the frame burned, the bell fell into the embers, and the cracked bronze was sold by weight the following spring.' },
+  ],
+};
+
+/** Validate a record at the boundary: clamp sizes and text, repair vectors, drop what cannot be used. */
+function sanitizeRecord(r) {
+  const vec = (v, fb) => (Array.isArray(v) && v.length === 3 && v.every(Number.isFinite)) ? v.map(Number) : fb.slice();
+  r.sizeM = clamp(Number.isFinite(r.sizeM) ? r.sizeM : 1, LIMITS.sizeMin, LIMITS.sizeMax);
+  r.pose = r.pose || {};
+  r.pose.position = vec(r.pose.position, [0, 0, 0]);
+  let y = Number.isFinite(r.pose.yawDeg) ? r.pose.yawDeg : 0;
+  y = ((y + 180) % 360 + 360) % 360 - 180;
+  r.pose.yawDeg = Math.round(y * 10) / 10;
+  if (r.animation && (typeof r.animation.name !== 'string' || !r.animation.name)) r.animation = null;
+  r.annotations = (Array.isArray(r.annotations) ? r.annotations : []).map((a) => {
+    const n = new THREE.Vector3(...vec(a && a.normal, [0, 1, 0]));
+    if (n.lengthSq() < 1e-8) n.set(0, 1, 0);
+    n.normalize();
+    return { position: vec(a && a.position, [0, 0, 0]), normal: n.toArray().map((x) => Math.round(x * 1000) / 1000),
+      title: String((a && a.title) || '').slice(0, LIMITS.title), text: String((a && a.text) || '').slice(0, LIMITS.text) };
+  });
+  return r;
+}
+sanitizeRecord(record);
+
+const VIEW_DEFS = [
+  { name: 'pedestal', label: 'Pedestal', required: true,
+    uses: { model: 'drawn as a miniature, fitted to 0.3 to 0.85 m and to the turntable, turning', sizeM: 'sets the scale plate (1 : n)', pose: 'where the pedestal stands; yaw is its front', animation: 'plays on the turntable' } },
+  { name: 'full-scale', label: 'Full scale', required: true,
+    uses: { model: 'drawn at 1 : 1 with its own materials', sizeM: 'the true size of the largest side', pose: 'position and turn on the square', animation: 'autoplays when set' } },
+  { name: 'ghost', label: 'Ghost', required: true,
+    uses: { model: 'shape only; its materials become dark glass with a bright edge', sizeM: 'the true size', pose: 'position and turn; the feet fade so ground contact can be inexact', animation: 'autoplays when set' } },
+  { name: 'hotspots', label: 'Hotspots', required: false,
+    uses: { model: 'drawn at 1 : 1', sizeM: 'the true size', pose: 'position and turn', animation: 'held at its rest pose so the notes stay on the surface', annotations: 'position = marker, normal = fade when facing away and leader direction, title = label, text = card' } },
+  { name: 'cutaway', label: 'Cutaway', required: false,
+    uses: { model: 'drawn at 1 : 1, cut by a vertical plane that turns to face the visitor', sizeM: 'the true size', pose: 'position and turn', animation: 'autoplays inside the cut' } },
+];
+const VIEW_NAMES = VIEW_DEFS.map((v) => v.name);
+const viewDef = (n) => VIEW_DEFS.find((v) => v.name === n);
+
+// ---------------------------------------------------------------- renderer + scene
+const stage = $('#stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.localClippingEnabled = true;
+stage.prepend(renderer.domElement);
+const canvas = renderer.domElement;
+canvas.tabIndex = 0;
+
+const scene = new THREE.Scene();
+const SKY = new THREE.Color('#dfe5e8');
+scene.background = SKY;
+scene.fog = new THREE.Fog(SKY, 70, 240);
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envTex = pmrem.fromScene(new RoomEnvironment(), 0.035).texture;
+scene.environment = envTex;
+scene.environmentIntensity = 0.7;
+scene.add(new THREE.HemisphereLight('#eef1f4', '#8d8b85', 0.95));
+const sun = new THREE.DirectionalLight('#fff4e6', 0.95);
+sun.position.set(30, 50, 20);
+scene.add(sun);
+
+const visitorCam = new THREE.PerspectiveCamera(60, 1, 0.05, 400);
+visitorCam.rotation.order = 'YXZ';
+const editorCam = new THREE.PerspectiveCamera(38, 1, 0.1, 600);
+
+function canvasTex(w, h, draw, srgb = true) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+// ---- the place: plain grey stand-ins, flat light (the camera image in the app)
+const flat = (c) => new THREE.MeshLambertMaterial({ color: c });
+function buildPlace() {
+  const g = new THREE.Group();
+  const far = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), flat('#c7c8c2'));
+  far.rotation.x = -Math.PI / 2; far.position.y = -0.01; g.add(far);
+  const pave = canvasTex(512, 512, (x, w, h) => {
+    const rnd = mulberry32(11);
+    x.fillStyle = '#b4b0a8'; x.fillRect(0, 0, w, h);
+    const rows = 8, rh = h / rows;
+    for (let r = 0; r < rows; r++) {
+      let px = -rnd() * 60;
+      while (px < w) {
+        const sw = 46 + rnd() * 44; const l = 198 + (rnd() * 16 | 0);
+        x.fillStyle = `rgb(${l},${l - 3},${l - 8})`;
+        for (const off of [-w, 0, w]) x.fillRect(px + off + 2, r * rh + 2, sw - 4, rh - 4);
+        px += sw;
+      }
+    }
+  });
+  pave.wrapS = pave.wrapT = THREE.RepeatWrapping; pave.repeat.set(10, 10);
+  const sq = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambertMaterial({ map: pave }));
+  sq.rotation.x = -Math.PI / 2; g.add(sq);
+  const pathMat = flat('#bdbbb4');
+  const south = new THREE.Mesh(new THREE.PlaneGeometry(3, 60), pathMat); south.rotation.x = -Math.PI / 2; south.position.set(0, 0.005, 50); g.add(south);
+  const east = new THREE.Mesh(new THREE.PlaneGeometry(80, 3), pathMat); east.rotation.x = -Math.PI / 2; east.position.set(60, 0.005, 0); g.add(east);
+  // guild house front
+  const wall = flat('#c3bfb7');
+  const house = new THREE.Mesh(new THREE.BoxGeometry(34, 6, 7), wall); house.position.set(0, 3, -23.5); g.add(house);
+  const cornice = new THREE.Mesh(new THREE.BoxGeometry(34.6, 0.35, 7.6), flat('#b2aea6')); cornice.position.set(0, 6.1, -23.5); g.add(cornice);
+  const dark = flat('#77736d');
+  const door = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.6, 0.12), dark); door.position.set(0, 1.3, -19.97); g.add(door);
+  for (const wx of [-7, 7]) { const win = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.9, 0.12), dark); win.position.set(wx, 3.6, -19.97); g.add(win); }
+  // ruined wall, north-west, with a gap
+  const stone = flat('#aaa79f');
+  const rnd = mulberry32(5);
+  const segs = [[-18.5, -15.2], [-13.6, -10.5]];
+  for (const [a, b] of segs) {
+    for (let x0 = a; x0 < b - 0.01; x0 += 0.5) {
+      const hgt = 0.7 + rnd() * 0.45;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.52, hgt, 0.7), stone); m.position.set(x0 + 0.25, hgt / 2, -15); g.add(m);
+    }
+  }
+  // bench, tree
+  const bench = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 0.45), flat('#8f8a82')); bench.position.set(8, 0.45, 7); g.add(bench);
+  for (const bx of [-0.75, 0.75]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 0.4), flat('#7d7973')); l.position.set(8 + bx, 0.225, 7); g.add(l); }
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 3, 10), flat('#8a8378')); trunk.position.set(13, 1.5, -8); g.add(trunk);
+  const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.3, 1), flat('#a7ae9e')); crown.position.set(13, 4.3, -8); g.add(crown);
+  // station circles, faint
+  for (const st of STATIONS) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(st.r - 0.12, st.r, 160), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.45, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(st.x, 0.02, st.z); g.add(ring);
+    const dot = new THREE.Mesh(new THREE.RingGeometry(0.18, 0.26, 32), ring.material); dot.rotation.x = -Math.PI / 2; dot.position.set(st.x, 0.02, st.z); g.add(dot);
+  }
+  return g;
+}
+scene.add(buildPlace());
+// the second, plain station: one stand-in item
+const stationB = new THREE.Group();
+{ const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.2, 8), flat('#8c8a85')); post.position.y = 0.6; stationB.add(post);
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.45, 0.08), flat('#9b9892')); box.position.y = 1.35; stationB.add(box);
+  stationB.position.set(60, 0, 3); scene.add(stationB); }
+
+// ---------------------------------------------------------------- the glb: built, exported, loaded back
+const BELL = [ // outer profile of a bell, [radius, height], mouth at y = 0
+  [0.000, 0.880], [0.200, 0.880], [0.245, 0.862], [0.272, 0.830], [0.285, 0.770], [0.292, 0.700], [0.305, 0.590], [0.330, 0.470],
+  [0.372, 0.330], [0.425, 0.205], [0.478, 0.105], [0.510, 0.050], [0.522, 0.022], [0.512, 0.000]];
+const BELL_IN = [[0.470, 0.012], [0.452, 0.050], [0.420, 0.120], [0.370, 0.240], [0.322, 0.380], [0.290, 0.520], [0.268, 0.660], [0.252, 0.770], [0.218, 0.825], [0.000, 0.830]];
+function rOuter(y) { for (let i = 0; i < BELL.length - 1; i++) { const [r0, y0] = BELL[i], [r1, y1] = BELL[i + 1]; if ((y <= y0 && y >= y1)) return r0 + (r1 - r0) * ((y - y0) / ((y1 - y0) || 1)); } return 0.3; }
+
+function signedVolume(geo) {
+  const p = geo.attributes.position, idx = geo.index; let v = 0; const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const n = idx ? idx.count : p.count;
+  for (let i = 0; i < n; i += 3) {
+    const i0 = idx ? idx.getX(i) : i, i1 = idx ? idx.getX(i + 1) : i + 1, i2 = idx ? idx.getX(i + 2) : i + 2;
+    a.fromBufferAttribute(p, i0); b.fromBufferAttribute(p, i1); c.fromBufferAttribute(p, i2);
+    v += a.dot(b.cross(c));
+  }
+  return v / 6;
+}
+/** A closed lathe whose faces point outward (checked by its signed volume, reversed if needed). */
+function closedLathe(points, segs) {
+  let geo = new THREE.LatheGeometry(points, segs); let reversed = false;
+  if (signedVolume(geo) < 0) { geo.dispose(); geo = new THREE.LatheGeometry(points.slice().reverse(), segs); reversed = true; }
+  return { geo, reversed };
+}
+
+function buildBellSource() {
+  const shellPts = [...BELL_IN.slice().reverse(), ...BELL.slice().reverse()].map(([r, y]) => new THREE.Vector2(r, y));
+  const lathe = closedLathe(shellPts, 72);
+  // v runs along the profile; the outer surface is the last 14 of 24 points, crown at v = 1 (or at v = 0 if reversed)
+  const OUT = 13 / (shellPts.length - 1);
+  const orient = (x, h) => { if (lathe.reversed) { x.translate(0, h); x.scale(1, -1); } };
+  // textures (generated)
+  const rnd = mulberry32(23);
+  const streaks = [];
+  for (let i = 0; i < 70; i++) streaks.push({ x: rnd() * 512, len: 30 + rnd() * 100, w: 2 + rnd() * 9, a: 0.25 + rnd() * 0.5 });
+  const splat = [];
+  for (let i = 0; i < 900; i++) splat.push([rnd(), rnd(), 2 + rnd() * 6, rnd() > 0.5, rnd()]);
+  const patina = canvasTex(512, 256, (x, w, h) => {
+    orient(x, h); const ho = h * OUT;
+    x.fillStyle = '#4a3420'; x.fillRect(0, ho, w, h - ho); // inside
+    const gr = x.createLinearGradient(0, 0, 0, ho); gr.addColorStop(0, '#6a4e2e'); gr.addColorStop(0.7, '#86613a'); gr.addColorStop(1, '#9a7043');
+    x.fillStyle = gr; x.fillRect(0, 0, w, ho);
+    for (const [a, b, sz, dk, al] of splat) { x.fillStyle = `rgba(${dk ? '40,28,14' : '200,160,100'},${al * 0.1})`; x.fillRect(a * w, b * ho, sz, sz); }
+    for (const s of streaks) {
+      const g = x.createLinearGradient(0, 0, 0, s.len * 1.3); g.addColorStop(0, `rgba(88,146,124,${Math.min(1, s.a + 0.15)})`); g.addColorStop(1, 'rgba(88,146,124,0)');
+      x.fillStyle = g; x.fillRect(s.x, 0, s.w, s.len * 1.3);
+    }
+    x.fillStyle = 'rgba(88,146,124,.6)'; x.fillRect(0, 0, w, 14);
+    x.fillStyle = 'rgba(40,26,12,.35)'; x.fillRect(0, ho - 8, w, 8);
+  });
+  const mr = canvasTex(512, 256, (x, w, h) => {
+    orient(x, h); const ho = h * OUT;
+    x.fillStyle = 'rgb(0,118,225)'; x.fillRect(0, 0, w, h); // G roughness, B metalness
+    x.fillStyle = 'rgb(0,170,140)'; x.fillRect(0, ho, w, h - ho);
+    for (const s of streaks) {
+      const g = x.createLinearGradient(0, 0, 0, s.len * 1.3); g.addColorStop(0, `rgba(0,220,30,${Math.min(1, s.a + 0.3)})`); g.addColorStop(1, 'rgba(0,220,30,0)');
+      x.fillStyle = g; x.fillRect(s.x, 0, s.w, s.len * 1.3);
+    }
+    x.fillStyle = 'rgba(0,220,30,.7)'; x.fillRect(0, 0, w, 14);
+  }, false);
+  const band = canvasTex(2048, 128, (x, w, h) => {
+    x.clearRect(0, 0, w, h);
+    x.font = 'bold 76px Georgia, "Times New Roman", serif'; x.textBaseline = 'middle';
+    const words = ['ANNO DOMINI MDLXXI', 'MERCATUM VOCO', 'PONDUS ET PAX'];
+    let px = 30; let k = 0;
+    while (px < w - 60) {
+      const t = words[k++ % words.length];
+      x.lineWidth = 6; x.strokeStyle = 'rgba(40,24,10,.9)'; x.strokeText(t, px, h / 2 + 4);
+      x.fillStyle = '#c99a5a'; x.fillText(t, px, h / 2 + 4);
+      px += x.measureText(t).width + 40;
+      x.beginPath(); x.arc(px - 20, h / 2 + 2, 7, 0, Math.PI * 2); x.fill(); px += 20;
+    }
+    x.fillStyle = '#c99a5a'; x.fillRect(0, 6, w, 7); x.fillRect(0, h - 13, w, 7);
+  });
+  const oakTex = canvasTex(256, 512, (x, w, h) => {
+    const r2 = mulberry32(3);
+    x.fillStyle = '#6f4d2f'; x.fillRect(0, 0, w, h);
+    for (let i = 0; i < 160; i++) {
+      x.strokeStyle = `rgba(${r2() > 0.5 ? '40,24,12' : '150,110,70'},${0.12 + r2() * 0.25})`; x.lineWidth = 0.6 + r2() * 2.2;
+      const x0 = r2() * w; x.beginPath(); x.moveTo(x0, 0);
+      for (let y = 0; y <= h; y += 32) x.lineTo(x0 + Math.sin(y * 0.02 + i) * (2 + r2() * 4), y);
+      x.stroke();
+    }
+  });
+
+  const oak = new THREE.MeshStandardMaterial({ name: 'oak', map: oakTex, roughness: 0.86, metalness: 0 });
+  const iron = new THREE.MeshStandardMaterial({ name: 'iron', color: '#2e2c2a', roughness: 0.5, metalness: 0.75 });
+  const bronze = new THREE.MeshStandardMaterial({ name: 'bronze', map: patina, metalnessMap: mr, roughnessMap: mr, metalness: 1, roughness: 1 });
+  const letters = new THREE.MeshStandardMaterial({ name: 'letters', map: band, alphaTest: 0.5, metalness: 0.9, roughness: 0.3 });
+
+  const root = new THREE.Group(); root.name = 'MarketBell';
+  const frame = new THREE.Group(); frame.name = 'frame'; root.add(frame);
+  const box = (w, h, d, mat, x, y, z, parent, rz = 0, name) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.rotation.z = rz; if (name) m.name = name; parent.add(m); return m; };
+  const TOP = 2.12;
+  for (const z of [-0.8, 0.8]) {
+    for (const s of [-1, 1]) {
+      const xb = 1.15 * s, xt = 0.1 * s; const L = Math.hypot(xt - xb, TOP);
+      box(0.15, L, 0.15, oak, (xb + xt) / 2, TOP / 2 + 0.06, z, frame, Math.atan2(-(xt - xb), TOP));
+    }
+    box(0.5, 0.14, 0.2, oak, 0, 2.17, z, frame);
+    box(0.24, 0.035, 0.22, iron, 0, 2.252, z, frame);
+    box(1.45, 0.12, 0.12, oak, 0, 0.95, z, frame);
+    box(2.7, 0.16, 0.18, oak, 0, 0.08, z, frame);
+  }
+  for (const x of [-1.22, 1.22]) box(0.14, 0.14, 1.78, oak, x, 0.07, 0, frame);
+  for (const s of [-1, 1]) box(0.1, 0.1, 1.5, oak, 0.62 * s, 1.0, 0, frame);
+
+  const pivot = new THREE.Group(); pivot.name = 'bellPivot'; pivot.position.set(0, 2.25, 0); root.add(pivot);
+  box(0.26, 0.22, 1.4, oak, 0, 0, 0, pivot);
+  for (const z of [-0.18, 0.18]) box(0.28, 0.24, 0.04, iron, 0, 0, z, pivot);
+  for (const z of [-0.79, 0.79]) { const gd = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.2, 14), iron); gd.rotation.x = Math.PI / 2; gd.position.set(0, -0.01, z); pivot.add(gd); }
+  const bell = new THREE.Group(); bell.name = 'bell'; bell.position.y = -1.05; pivot.add(bell);
+  const shell = new THREE.Mesh(lathe.geo, bronze);
+  shell.name = 'bellShell'; bell.add(shell);
+  const bandGeo = new THREE.LatheGeometry([new THREE.Vector2(rOuter(0.705) + 0.007, 0.705), new THREE.Vector2(rOuter(0.79) + 0.007, 0.79)], 96);
+  const bandMesh = new THREE.Mesh(bandGeo, letters); bandMesh.name = 'inscription'; bell.add(bandMesh);
+  for (const y of [0.835, 0.69, 0.13, 0.085]) {
+    const t = new THREE.Mesh(new THREE.TorusGeometry(rOuter(y) + 0.004, 0.009, 8, 72), bronze); t.rotation.x = Math.PI / 2; t.position.y = y; bell.add(t);
+  }
+  for (let k = 0; k < 7; k++) {
+    const t = new THREE.Mesh(new THREE.TorusGeometry(0.038, 0.013, 8, 18), bronze);
+    const a = k * Math.PI / 3; const rr = k === 6 ? 0 : 0.09;
+    t.position.set(Math.sin(a) * rr, 0.9, Math.cos(a) * rr); t.rotation.y = a + Math.PI / 2; bell.add(t);
+  }
+  const clapPivot = new THREE.Group(); clapPivot.name = 'clapperPivot'; clapPivot.position.y = -0.22; pivot.add(clapPivot);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.7, 10), iron); shaft.position.y = -0.36; clapPivot.add(shaft);
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.066, 20, 14), iron); ball.position.y = -0.72; clapPivot.add(ball);
+  const flight = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.02, 0.16, 10), iron); flight.position.y = -0.86; clapPivot.add(flight);
+  box(0.06, 0.08, 0.06, new THREE.MeshStandardMaterial({ name: 'leather', color: '#3a2618', roughness: 0.8 }), 0, -0.01, 0, clapPivot);
+
+  // clip "swing": the bell swings in its frame, the clapper lags behind
+  const T = 2.8, N = 40, A = 0.36; const times = [], vb = [], vc = []; const q = new THREE.Quaternion(), ax = new THREE.Vector3(0, 0, 1);
+  for (let i = 0; i <= N; i++) {
+    const t = (i / N) * T; times.push(t);
+    q.setFromAxisAngle(ax, A * Math.sin(2 * Math.PI * t / T)); vb.push(q.x, q.y, q.z, q.w);
+    q.setFromAxisAngle(ax, -0.8 * A * Math.sin(2 * Math.PI * (t - 0.2) / T)); vc.push(q.x, q.y, q.z, q.w);
+  }
+  const clip = new THREE.AnimationClip('swing', T, [
+    new THREE.QuaternionKeyframeTrack('bellPivot.quaternion', times, vb),
+    new THREE.QuaternionKeyframeTrack('clapperPivot.quaternion', times, vc)]);
+  return { root, clip };
+}
+
+const glb = { scene: null, clips: [], bytes: 0, native: 1, tris: 0, meshes: 0 };
+async function prepareGlb() {
+  const { root, clip } = buildBellSource();
+  root.updateMatrixWorld(true);
+  const exporter = new GLTFExporter();
+  const buf = await exporter.parseAsync(root, { binary: true, animations: [clip] });
+  glb.bytes = buf.byteLength;
+  let loaded = null;
+  try { loaded = await new GLTFLoader().parseAsync(buf, ''); } catch (e) { console.warn('glb round trip failed, using the source scene', e); }
+  glb.scene = loaded ? loaded.scene : root;
+  glb.clips = loaded ? loaded.animations : [clip];
+  glb.scene.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(glb.scene); const sz = bb.getSize(new THREE.Vector3());
+  glb.native = Math.max(sz.x, sz.y, sz.z);
+  glb.halfDiag = Math.max(Math.hypot(bb.min.x, bb.min.z), Math.hypot(bb.max.x, bb.min.z), Math.hypot(bb.min.x, bb.max.z), Math.hypot(bb.max.x, bb.max.z)) || glb.native / 2;
+  glb.scene.traverse((o) => { if (o.isMesh) { glb.meshes++; const g = o.geometry; glb.tris += (g.index ? g.index.count : g.attributes.position.count) / 3; } });
+  record.model.bytes = glb.bytes;
+}
+const clipByName = (n) => glb.clips.find((c) => c.name === n) || null;
+
+// ---------------------------------------------------------------- views
+const blockRoot = new THREE.Group(); blockRoot.name = 'block'; scene.add(blockRoot);
+const blobTex = canvasTex(128, 128, (x, w, h) => { const g = x.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2); g.addColorStop(0, 'rgba(0,0,0,.55)'); g.addColorStop(0.55, 'rgba(0,0,0,.28)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, w, h); });
+function blob(w, d, op = 1) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, opacity: op }));
+  m.rotation.x = -Math.PI / 2; m.scale.set(w, d, 1); m.position.y = 0.012; m.renderOrder = -1; return m;
+}
+function cloneModel() {
+  const c = glb.scene.clone(true);
+  c.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
+  return c;
+}
+const modelScale = () => record.sizeM / glb.native;
+// shown size on the pedestal: 0.3 to 0.85 m, and never wider than the 0.41 m turntable radius
+const pedestalScale = () => Math.min(clamp(record.sizeM, 0.3, 0.85) / glb.native, 0.41 / glb.halfDiag);
+const pedestalSize = () => pedestalScale() * glb.native;
+let view = null;
+const clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
+
+function plateText() { const r = record.sizeM / pedestalSize(); return r >= 1 ? `1 : ${r < 10 ? r.toFixed(1) : Math.round(r)}` : `${(1 / r).toFixed(1)} : 1`; }
+function drawPlate(tex) {
+  const c = tex.image, x = c.getContext('2d');
+  x.clearRect(0, 0, c.width, c.height);
+  x.fillStyle = '#1b1c20'; x.fillRect(0, 0, c.width, c.height);
+  x.strokeStyle = '#c9a063'; x.lineWidth = 6; x.strokeRect(10, 10, c.width - 20, c.height - 20);
+  x.fillStyle = '#e6c58c'; x.font = '600 74px Georgia, "Times New Roman", serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillText(plateText(), c.width / 2, c.height / 2 + 4);
+  tex.needsUpdate = true;
+}
+
+const ghostVS = `varying vec3 vN; varying vec3 vV; varying float vY;
+void main(){ vY = (modelMatrix * vec4(position,1.0)).y; vec4 mv = modelViewMatrix * vec4(position,1.0); vV = -mv.xyz; vN = normalize(normalMatrix * normal); gl_Position = projectionMatrix * mv; }`;
+const ghostFS = `uniform float uTime; uniform float uAppear; uniform float uGround; uniform vec3 uRim; uniform vec3 uCore;
+varying vec3 vN; varying vec3 vV; varying float vY;
+void main(){
+  vec3 n = normalize(vN); vec3 v = normalize(vV);
+  float f = 1.0 - abs(dot(n, v));
+  float rim = pow(f, 1.6);
+  float h = vY - uGround;
+  float sweep = smoothstep(0.75, 1.0, 0.5 + 0.5 * sin(h * 2.2 - uTime * 1.3));
+  float foot = smoothstep(0.0, 0.7, h);
+  vec3 col = mix(uCore, uRim, clamp(rim * 1.2 + sweep * 0.35, 0.0, 1.0));
+  float a = (0.4 + 0.58 * rim + 0.2 * sweep) * foot * uAppear;
+  gl_FragColor = vec4(col, a);
+  #include <colorspace_fragment>
+}`;
+
+function makeView(name) {
+  const v = { name, group: new THREE.Group(), modelRoot: null, mixer: null, action: null, playing: false, mats: [], ghost: null, update: null, turnPaused: false };
+  const m = cloneModel(); v.modelRoot = m;
+  const s = modelScale();
+  if (name === 'pedestal') {
+    const stoneM = new THREE.MeshStandardMaterial({ color: '#2c2e33', roughness: 0.62 });
+    const brass = new THREE.MeshStandardMaterial({ color: '#c79c5e', metalness: 1, roughness: 0.32 });
+    const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.46, 1.0, 56), stoneM); ped.position.y = 0.53; v.group.add(ped);
+    const plinth = new THREE.Mesh(new THREE.CylinderGeometry(0.54, 0.56, 0.06, 56), stoneM); plinth.position.y = 0.03; v.group.add(plinth);
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.43, 0.43, 0.03, 64), new THREE.MeshStandardMaterial({ color: '#3d4047', roughness: 0.3 })); top.position.y = 1.045; v.group.add(top);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.43, 0.007, 8, 96), brass); ring.rotation.x = Math.PI / 2; ring.position.y = 1.06; v.group.add(ring);
+    const plateTex = canvasTex(320, 120, () => {}); drawPlate(plateTex); v.plateTex = plateTex; v.plateFor = record.sizeM;
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.09), new THREE.MeshBasicMaterial({ map: plateTex, transparent: true }));
+    plate.position.set(0, 0.86, 0.414); plate.rotation.x = -0.06; v.group.add(plate);
+    const turn = new THREE.Group(); turn.position.y = 1.06; v.group.add(turn); v.turn = turn; turn.add(m);
+    v.group.add(blob(1.5, 1.5, 0.9));
+    v.scaleFn = pedestalScale;
+    v.update = (dt) => {
+      if (!v.turnPaused) turn.rotation.y += dt * (Math.PI * 2 / 36);
+      if (v.plateFor !== record.sizeM) { drawPlate(v.plateTex); v.plateFor = record.sizeM; }
+    };
+  } else {
+    v.group.add(m);
+    v.scaleFn = modelScale;
+    const sh = blob(1, 1, name === 'ghost' ? 0.35 : 0.85); v.group.add(sh); v.shadow = sh;
+  }
+  if (name === 'ghost') {
+    const gm = new THREE.ShaderMaterial({ vertexShader: ghostVS, fragmentShader: ghostFS, transparent: true, depthWrite: false,
+      uniforms: { uTime: { value: 0 }, uAppear: { value: 1 }, uGround: { value: 0 }, uRim: { value: new THREE.Color('#d8efff') }, uCore: { value: new THREE.Color('#1f4366') } } });
+    // depth pre-pass, pushed back a hair so the glass pass on the same surface always wins
+    const depthOnly = new THREE.MeshBasicMaterial({ colorWrite: false, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 2 });
+    const meshes = []; m.traverse((o) => { if (o.isMesh) meshes.push(o); });
+    for (const o of meshes) {
+      if (o.name === 'inscription') { o.visible = false; continue; }
+      o.material = gm; o.renderOrder = 2;
+      const d = new THREE.Mesh(o.geometry, depthOnly); d.renderOrder = 1; d.userData.helper = true; o.add(d);
+    }
+    v.ghost = gm;
+  }
+  if (name === 'cutaway') {
+    const meshes = []; m.traverse((o) => { if (o.isMesh) meshes.push(o); });
+    const sectionColor = { bronze: '#f2a54e', oak: '#d8a46b', iron: '#a7a39c', leather: '#9b6a48' };
+    for (const o of meshes) {
+      o.material.clippingPlanes = [clipPlane]; o.material.side = THREE.FrontSide; o.material.clipShadows = false;
+      if (o.name === 'inscription') continue;
+      const back = new THREE.Mesh(o.geometry, new THREE.MeshBasicMaterial({ color: sectionColor[o.material.name] || '#e0a060', side: THREE.BackSide, clippingPlanes: [clipPlane] }));
+      back.userData.helper = true; o.add(back);
+    }
+    const fr = new THREE.Group();
+    const pts = []; const k = 0.16;
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { pts.push(new THREE.Vector3(sx, sy, 0), new THREE.Vector3(sx - sx * k, sy, 0), new THREE.Vector3(sx, sy, 0), new THREE.Vector3(sx, sy - sy * k * 1.2, 0)); }
+    fr.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: '#f2a54e', transparent: true, opacity: 0.9 })));
+    fr.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshBasicMaterial({ color: '#f2a54e', transparent: true, opacity: 0.012, depthWrite: false, side: THREE.DoubleSide })));
+    v.frame = fr; scene.add(fr);
+    v.cutDir = null;
+  }
+  // animation
+  if (glb.clips.length) { v.mixer = new THREE.AnimationMixer(m); }
+  // collect materials for the appear fade
+  const set = new Set();
+  v.group.traverse((o) => { if (o.material && !o.userData.helper) set.add(o.material); if (o.userData.helper && o.material.color && o.material.colorWrite !== false) set.add(o.material); });
+  if (v.frame) v.frame.traverse((o) => { if (o.material) set.add(o.material); });
+  for (const mat of set) { if (mat.isShaderMaterial) continue; mat.userData.baseOpacity = mat.opacity; mat.userData.baseTransparent = mat.transparent; v.mats.push(mat); }
+  v.pickTargets = []; m.traverse((o) => { if (o.isMesh && !o.userData.helper && o.visible) v.pickTargets.push(o); });
+  return v;
+}
+function disposeView(v) {
+  if (!v) return;
+  blockRoot.remove(v.group);
+  if (v.frame) scene.remove(v.frame);
+  if (v.mixer) v.mixer.stopAllAction();
+  v.group.traverse((o) => { if (o.isMesh && o.material && o.material.dispose && !o.userData.helper) o.material.dispose(); });
+}
+
+function setViewInternal(name) {
+  if (!viewDef(name)) throw new Error(`unknown view "${name}"`);
+  record.view = name;
+  disposeView(view);
+  view = makeView(name);
+  blockRoot.add(view.group);
+  selectedAnno = -1; closeCard();
+  rebuildMarkers();
+  syncUI();
+}
+
+// ---------------------------------------------------------------- app state
+let mode = 'visitor';
+const visitor = { x: 0, z: 27, yaw: 0, pitch: -0.04, walking: null };
+const creatorCam = { yaw: 0, pitch: -0.12 };
+let appear = 0;
+let selectedAnno = -1;
+let phoneFrame = false;
+let creatorSheet = null;
+let pickMode = null; // null | { index } | { add: true }
+const editorState = { showNotes: true, tool: 'translate' };
+
+function holdAtRest() {
+  if (!view) return false;
+  if (view.name === 'hotspots') return true;
+  if (mode === 'editor' && editorState.showNotes) return true;
+  if (mode === 'creator' && creatorSheet === 'notes') return true;
+  return !!pickMode;
+}
+const markersShown = () => view && (view.name === 'hotspots' || (mode === 'editor' && editorState.showNotes) || (mode === 'creator' && creatorSheet === 'notes'));
+
+// ---------------------------------------------------------------- markers (hotspots)
+const markerLayer = $('#markers'); const leaders = $('#leaders');
+let markerEls = [];
+function rebuildMarkers() {
+  markerLayer.innerHTML = ''; leaders.innerHTML = ''; markerEls = [];
+  const NS = 'http://www.w3.org/2000/svg';
+  record.annotations.forEach((a, i) => {
+    const b = document.createElement('button'); b.className = 'hs'; b.type = 'button';
+    b.innerHTML = `<span class="disc">${i + 1}</span><span class="lab"></span>`;
+    b.querySelector('.lab').textContent = a.title || `Note ${i + 1}`;
+    b.setAttribute('aria-label', `Note ${i + 1}: ${a.title}`);
+    b.addEventListener('click', (e) => { e.stopPropagation(); onMarker(i); });
+    markerLayer.appendChild(b);
+    const g = document.createElementNS(NS, 'g');
+    const l1 = document.createElementNS(NS, 'line'); l1.setAttribute('stroke', 'rgba(15,17,21,.55)'); l1.setAttribute('stroke-width', '3.5'); l1.setAttribute('stroke-linecap', 'round');
+    const l2 = document.createElementNS(NS, 'line'); l2.setAttribute('stroke', '#f4f1ea'); l2.setAttribute('stroke-width', '1.4'); l2.setAttribute('stroke-linecap', 'round');
+    const dot = document.createElementNS(NS, 'circle'); dot.setAttribute('r', '3.2'); dot.setAttribute('fill', '#f4f1ea'); dot.setAttribute('stroke', 'rgba(15,17,21,.6)'); dot.setAttribute('stroke-width', '1.5');
+    g.append(l1, l2, dot); leaders.appendChild(g);
+    markerEls.push({ b, g, l1, l2, dot, op: 0 });
+  });
+}
+function onMarker(i) {
+  if (mode === 'editor') { selectedAnno = i; renderInspector(); const el = document.querySelector(`.anno[data-i="${i}"]`); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); return; }
+  if (mode === 'creator') { selectedAnno = i; renderSheet(); return; }
+  openCard(i);
+}
+function openCard(i) {
+  const a = record.annotations[i]; if (!a) return;
+  selectedAnno = i;
+  $('#cardNum').textContent = `Note ${i + 1} of ${record.annotations.length}`;
+  $('#cardTitle').textContent = a.title; $('#cardText').textContent = a.text;
+  $('#card').classList.add('open');
+}
+function closeCard() { selectedAnno = mode === 'visitor' ? -1 : selectedAnno; $('#card').classList.remove('open'); }
+$('#cardX').onclick = () => { selectedAnno = -1; closeCard(); };
+$('#cardPrev').onclick = () => { const n = record.annotations.length; openCard((selectedAnno - 1 + n) % n); };
+$('#cardNext').onclick = () => { const n = record.annotations.length; openCard((selectedAnno + 1) % n); };
+
+const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _n = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _wq = new THREE.Quaternion();
+const occRay = new THREE.Raycaster();
+function updateMarkers(cam, w, h) {
+  const show = markersShown();
+  leaders.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  if (!show || !view) { for (const m of markerEls) { m.b.style.display = 'none'; m.g.style.display = 'none'; } $('#edgeHint').style.display = 'none'; return; }
+  const root = view.modelRoot; root.updateWorldMatrix(true, false);
+  root.getWorldQuaternion(_wq);
+  const scaleW = root.getWorldScale(_d).x;
+  cam.getWorldPosition(_c);
+  const offset = clamp(0.13 * glb.native * scaleW, 0.04, 4);
+  let best = -1, bestD = Infinity;
+  const proj = [];
+  record.annotations.forEach((a, i) => {
+    const m = markerEls[i]; if (!m) return;
+    _p.fromArray(a.position); root.localToWorld(_p);
+    _n.fromArray(a.normal).applyQuaternion(_wq).normalize();
+    _q.copy(_p).addScaledVector(_n, offset);
+    const toCam = _d.copy(_c).sub(_p); const dist = toCam.length(); toCam.normalize();
+    const facing = _n.dot(toCam);
+    let vis = smooth(-0.2, 0.3, facing);
+    occRay.set(_c, _d.copy(_p).sub(_c).normalize()); occRay.far = dist;
+    const hit = occRay.intersectObjects(view.pickTargets, false)[0];
+    const occluded = hit && hit.distance < dist - 0.02 * glb.native * scaleW;
+    if (occluded) vis *= 0.45;
+    vis = Math.max(vis, 0.22);
+    const sp = _p.clone().project(cam), sq = _q.clone().project(cam);
+    const behind = sq.z > 1 || sp.z > 1;
+    const px = (sp.x + 1) / 2 * w, py = (1 - sp.y) / 2 * h, qx = (sq.x + 1) / 2 * w, qy = (1 - sq.y) / 2 * h;
+    const on = !behind && qx > -20 && qx < w + 20 && qy > -20 && qy < h + 20;
+    proj.push({ i, px, py, qx, qy, on, vis, facing, occluded, dist });
+    if (on && !occluded && facing > 0.25) { const dc = Math.hypot(qx - w / 2, qy - h * 0.45); if (dc < bestD) { bestD = dc; best = i; } }
+  });
+  // keep discs from sitting on each other: a few rounds of screen-space repulsion (leaders keep the true point)
+  const MIN = view.name === 'pedestal' ? 28 : 46;
+  for (let it = 0; it < 6; it++) for (let a = 0; a < proj.length; a++) for (let b = a + 1; b < proj.length; b++) {
+    const A = proj[a], B = proj[b]; if (!A.on || !B.on) continue;
+    let dx = B.qx - A.qx, dy = B.qy - A.qy; let d = Math.hypot(dx, dy);
+    if (d >= MIN) continue; if (d < 0.01) { dx = 1; dy = 0; d = 1; }
+    const push = (MIN - d) / 2; A.qx -= dx / d * push; A.qy -= dy / d * push; B.qx += dx / d * push; B.qy += dy / d * push;
+  }
+  let hint = null;
+  for (const p of proj) {
+    const m = markerEls[p.i];
+    m.op += (p.vis - m.op) * 0.25;
+    if (!p.on) { m.b.style.display = 'none'; m.g.style.display = 'none'; if (p.i === selectedAnno && mode === 'visitor') hint = p; continue; }
+    m.b.style.display = ''; m.g.style.display = '';
+    m.b.style.transform = `translate(${p.qx}px, ${p.qy}px) translate(-50%, -50%)`;
+    m.b.style.left = '0px'; m.b.style.top = '0px';
+    m.b.style.opacity = m.op.toFixed(3); m.g.style.opacity = (m.op * 0.95).toFixed(3);
+    m.b.style.pointerEvents = m.op > 0.15 ? 'auto' : 'none';
+    m.b.classList.toggle('sel', p.i === selectedAnno);
+    m.b.classList.toggle('small', view.name === 'pedestal');
+    const showLab = (p.i === selectedAnno) || (selectedAnno < 0 && p.i === best && p.dist < 16);
+    m.b.classList.toggle('showlab', showLab && mode !== 'editor' || (mode === 'editor' && p.i === selectedAnno));
+    for (const l of [m.l1, m.l2]) { l.setAttribute('x1', p.px); l.setAttribute('y1', p.py); l.setAttribute('x2', p.qx); l.setAttribute('y2', p.qy); }
+    m.dot.setAttribute('cx', p.px); m.dot.setAttribute('cy', p.py);
+  }
+  const eh = $('#edgeHint');
+  if (hint) {
+    // the selected note is off screen: a brass arrow at the edge, pointing toward it
+    const sp = _p.fromArray(record.annotations[hint.i].position); root.localToWorld(sp);
+    const v = sp.clone().project(cam); let dx = v.x, dy = v.y; if (v.z > 1) { dx = -dx; dy = -dy; }
+    const ang = Math.atan2(-dy, dx); const r = Math.min(w, h) * 0.42;
+    eh.style.display = 'grid'; eh.style.left = `${w / 2 + Math.cos(ang) * Math.min(r * 1.1, w / 2 - 28)}px`; eh.style.top = `${h / 2 + Math.sin(ang) * Math.min(r * 1.6, h / 2 - 90)}px`;
+    eh.style.transform = `translate(-50%,-50%) rotate(${ang}rad)`;
+  } else eh.style.display = 'none';
+}
+
+// ---------------------------------------------------------------- controls
+const orbit = new OrbitControls(editorCam, canvas);
+orbit.enableDamping = true; orbit.dampingFactor = 0.12; orbit.maxPolarAngle = Math.PI * 0.47; orbit.enabled = false;
+const tc = new TransformControls(editorCam, canvas);
+tc.setSize(0.85);
+const tcHelper = tc.getHelper(); scene.add(tcHelper);
+tc.addEventListener('dragging-changed', (e) => { orbit.enabled = !e.value && mode === 'editor'; if (!e.value) renderInspector(); });
+tc.addEventListener('objectChange', () => {
+  record.pose.position = blockRoot.position.toArray().map((x) => Math.round(x * 100) / 100);
+  record.pose.yawDeg = Math.round(blockRoot.rotation.y / DEG * 10) / 10;
+  sanitizeRecord(record);
+  updatePoseInputs();
+});
+function setTool(t) {
+  editorState.tool = t; tc.setMode(t);
+  tc.showX = t === 'translate'; tc.showZ = t === 'translate'; tc.showY = true;
+  renderToolbar();
+}
+
+let down = null;
+canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId }; if (mode !== 'editor') canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', (e) => {
+  if (!down || down.id !== e.pointerId) return;
+  const dx = e.clientX - down.x, dy = e.clientY - down.y;
+  if (!down.moved && Math.hypot(dx, dy) > 6) down.moved = true;
+  if (mode === 'editor' || !down.moved) return;
+  const st = mode === 'visitor' ? visitor : creatorCam;
+  st.yaw += (e.movementX || 0) * 0.0055; st.pitch = clamp(st.pitch + (e.movementY || 0) * 0.0045, -1.2, 1.2);
+  if (mode === 'visitor') visitor.walking = null;
+});
+canvas.addEventListener('pointerup', (e) => { const d = down; down = null; if (d && !d.moved) onTap(e); });
+canvas.addEventListener('pointercancel', () => { down = null; });
+
+const ray = new THREE.Raycaster();
+function rayFrom(e) {
+  const r = canvas.getBoundingClientRect();
+  const v = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(v, activeCam()); return ray;
+}
+function hitModel(e) { if (!view) return null; return rayFrom(e).intersectObjects(view.pickTargets, false)[0] || null; }
+function annotationFromHit(hit) {
+  const root = view.modelRoot;
+  const local = root.worldToLocal(hit.point.clone());
+  const nW = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+  const nL = nW.applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion()).invert()).normalize();
+  return { position: local.toArray().map((x) => Math.round(x * 1000) / 1000), normal: nL.toArray().map((x) => Math.round(x * 1000) / 1000) };
+}
+function onTap(e) {
+  if (!view) return;
+  if (pickMode) {
+    const hit = hitModel(e); if (!hit) return;
+    const a = annotationFromHit(hit);
+    if (pickMode.add) { record.annotations.push({ ...a, title: `Note ${record.annotations.length + 1}`, text: '' }); selectedAnno = record.annotations.length - 1; }
+    else if (record.annotations[pickMode.index]) Object.assign(record.annotations[pickMode.index], a);
+    sanitizeRecord(record); pickMode = null; rebuildMarkers(); syncUI(); return;
+  }
+  if (mode === 'creator' && creatorSheet === 'place') {
+    const p = new THREE.Vector3();
+    if (rayFrom(e).ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p)) {
+      record.pose.position = [Math.round(p.x * 100) / 100, record.pose.position[1], Math.round(p.z * 100) / 100]; sanitizeRecord(record); renderSheet();
+    }
+    return;
+  }
+  if (mode === 'visitor' && view.name === 'pedestal' && hitModel(e)) { view.turnPaused = !view.turnPaused; return; }
+  if (mode === 'editor') { const hit = hitModel(e); if (hit) tc.attach(blockRoot); }
+}
+
+const keys = new Set();
+window.addEventListener('keydown', (e) => { if (e.target.closest && e.target.closest('input,textarea,select')) return; keys.add(e.key.toLowerCase()); });
+window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+
+function startWalk() {
+  const [bx, , bz] = record.pose.position; const yaw = record.pose.yawDeg * DEG;
+  const tx = bx + Math.sin(yaw) * 6.2, tz = bz + Math.cos(yaw) * 6.2;
+  visitor.walking = { tx, tz };
+}
+$('#walkBtn').onclick = () => { if (visitor.walking) visitor.walking = null; else startWalk(); syncWalkBtn(); };
+function syncWalkBtn() { $('#walkBtn').textContent = visitor.walking ? 'Stop' : 'Walk in'; }
+
+function activeCam() { return mode === 'editor' ? editorCam : visitorCam; }
+
+// ---------------------------------------------------------------- UI: picker, creator, editor
+function renderPicker() {
+  const d = viewDef(record.view);
+  $('#pName').innerHTML = `${d.label}`;
+  const list = $('#pickerList'); list.innerHTML = '';
+  for (const v of VIEW_DEFS) {
+    const b = document.createElement('button'); if (v.name === record.view) b.className = 'on';
+    b.innerHTML = `<span>${v.label}</span><span class="tag">${v.required ? 'required' : v.name === 'cutaway' ? 'own idea' : 'suggested'}</span>`;
+    b.onclick = () => { list.classList.remove('open'); setViewInternal(v.name); writeHash(); };
+    list.appendChild(b);
+  }
+}
+$('#pName').onclick = () => $('#pickerList').classList.toggle('open');
+const stepView = (d) => { const i = VIEW_NAMES.indexOf(record.view); setViewInternal(VIEW_NAMES[(i + d + VIEW_NAMES.length) % VIEW_NAMES.length]); writeHash(); };
+$('#pPrev').onclick = () => stepView(-1); $('#pNext').onclick = () => stepView(1);
+
+const ICON = {
+  place: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="17" rx="8" ry="3"/><path d="M12 3v11M8.5 10.5 12 14l3.5-3.5"/></svg>',
+  size: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20 20 4M14 4h6v6M10 20H4v-6"/></svg>',
+  turn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></svg>',
+  view: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>',
+  notes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="9" r="5"/><path d="M12.5 12.5 20 20M9 7v4M7 9h4"/></svg>',
+  done: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.5 10 17 19 7"/></svg>',
+};
+function renderCreatorBar() {
+  const bar = $('#cBar'); bar.innerHTML = '';
+  for (const [k, label] of [['place', 'Place'], ['size', 'Size'], ['turn', 'Turn'], ['view', 'View'], ['notes', 'Notes']]) {
+    const b = document.createElement('button'); b.innerHTML = `${ICON[k]}<span>${label}</span>`; if (creatorSheet === k) b.className = 'on';
+    b.onclick = () => { creatorSheet = creatorSheet === k ? null : k; pickMode = null; rebuildMarkers(); renderCreatorBar(); renderSheet(); };
+    bar.appendChild(b);
+  }
+  $('#cTop').innerHTML = `<b>3D model</b> - ${viewDef(record.view).label}`;
+}
+const sizeToSlider = (s) => Math.round(Math.log10(s / 0.05) / 4 * 1000);
+const sliderToSize = (t) => Math.round(0.05 * Math.pow(10, t / 1000 * 4) * 100) / 100;
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function renderSheet() {
+  const sh = $('#cSheet');
+  sh.classList.toggle('open', !!creatorSheet);
+  if (!creatorSheet) { sh.innerHTML = ''; return; }
+  const [x, , z] = record.pose.position;
+  if (creatorSheet === 'place') {
+    sh.innerHTML = `<h4>Place</h4><div class="muted">Tap the ground where the model should stand.</div><div class="rowf"><span>${x.toFixed(1)} m east, ${(-z).toFixed(1)} m north of the anchor</span></div>`;
+  } else if (creatorSheet === 'size') {
+    sh.innerHTML = `<h4>Size <span class="muted" id="cSizeV">${record.sizeM.toFixed(2)} m, largest side</span></h4>
+      <input type="range" min="0" max="1000" value="${sizeToSlider(record.sizeM)}" id="cSize">
+      <div class="rowf"><button class="big" id="cReal">Real size (${glb.native.toFixed(2)} m)</button><button class="big" id="cHalf">Half</button><button class="big" id="cDouble">Double</button></div>`;
+    const apply = (s) => { record.sizeM = s; sanitizeRecord(record); $('#cSizeV').textContent = `${record.sizeM.toFixed(2)} m, largest side`; $('#cSize').value = sizeToSlider(record.sizeM); };
+    $('#cSize').oninput = (e) => apply(sliderToSize(+e.target.value));
+    $('#cReal').onclick = () => apply(Math.round(glb.native * 100) / 100); $('#cHalf').onclick = () => apply(record.sizeM / 2); $('#cDouble').onclick = () => apply(record.sizeM * 2);
+  } else if (creatorSheet === 'turn') {
+    sh.innerHTML = `<h4>Turn <span class="muted" id="cYawV">${record.pose.yawDeg.toFixed(0)} deg</span></h4>
+      <input type="range" min="-180" max="180" value="${record.pose.yawDeg}" id="cYaw">
+      <div class="rowf"><button class="big" id="cL">-15 deg</button><button class="big" id="cR">+15 deg</button><button class="big" id="cFace">Face me</button></div>`;
+    const apply = (d) => { record.pose.yawDeg = d; sanitizeRecord(record); $('#cYawV').textContent = `${record.pose.yawDeg.toFixed(0)} deg`; $('#cYaw').value = record.pose.yawDeg; };
+    $('#cYaw').oninput = (e) => apply(+e.target.value);
+    $('#cL').onclick = () => apply(record.pose.yawDeg - 15); $('#cR').onclick = () => apply(record.pose.yawDeg + 15);
+    $('#cFace').onclick = () => apply(Math.atan2(visitorCam.position.x - x, visitorCam.position.z - z) / DEG);
+  } else if (creatorSheet === 'view') {
+    sh.innerHTML = `<h4>View</h4><div class="vchips">${VIEW_DEFS.map((v) => `<button data-v="${v.name}" class="${v.name === record.view ? 'on' : ''}">${v.label}</button>`).join('')}</div>
+      <div class="rowf" style="margin-top:10px"><label class="rowf"><input type="checkbox" id="cAnim" ${record.animation ? 'checked' : ''}> Play the animation "${glb.clips[0] ? esc(glb.clips[0].name) : '-'}"</label></div>`;
+    sh.querySelectorAll('[data-v]').forEach((b) => { b.onclick = () => { setViewInternal(b.dataset.v); writeHash(); renderSheet(); }; });
+    $('#cAnim').onchange = (e) => { record.animation = e.target.checked && glb.clips[0] ? { name: glb.clips[0].name, autoplay: true } : null; };
+  } else if (creatorSheet === 'notes') {
+    const a = record.annotations[selectedAnno];
+    sh.innerHTML = `<h4>Notes <span class="muted">${record.annotations.length}</span></h4>
+      <div class="notelist">${record.annotations.map((n, i) => `<button data-i="${i}" class="${i === selectedAnno ? 'on' : ''}"><span class="badge">${i + 1}</span>${esc(n.title) || '<span class="muted">untitled</span>'}</button>`).join('')}</div>
+      <div class="rowf"><button class="big ${pickMode && pickMode.add ? 'on' : ''}" id="cAdd">${pickMode && pickMode.add ? 'Tap the model...' : '+ Add: tap the model'}</button></div>
+      ${a ? `<label class="field"><span>Title <i id="cTc">${a.title.length}/${LIMITS.title}</i></span><input id="cTitle" maxlength="${LIMITS.title}" value="${esc(a.title)}"></label>
+      <label class="field"><span>Text <i id="cXc">${a.text.length}/${LIMITS.text}</i></span><textarea id="cText" maxlength="${LIMITS.text}">${esc(a.text)}</textarea></label>` : ''}`;
+    sh.querySelectorAll('[data-i]').forEach((b) => { b.onclick = () => { selectedAnno = +b.dataset.i; renderSheet(); }; });
+    $('#cAdd').onclick = () => { pickMode = pickMode && pickMode.add ? null : { add: true }; renderSheet(); };
+    if (a) {
+      $('#cTitle').oninput = (e) => { a.title = e.target.value.slice(0, LIMITS.title); $('#cTc').textContent = `${a.title.length}/${LIMITS.title}`; markerEls[selectedAnno] && (markerEls[selectedAnno].b.querySelector('.lab').textContent = a.title); };
+      $('#cText').oninput = (e) => { a.text = e.target.value.slice(0, LIMITS.text); $('#cXc').textContent = `${a.text.length}/${LIMITS.text}`; };
+    }
+  }
+}
+
+function renderLeft() {
+  $('#left').innerHTML = `<div class="ph">Station</div>
+    <div class="blk"><div class="ico">&#9673;</div><div>Market square<small>radius ${RADIUS} m - 1 block</small></div></div>
+    <div class="ph">Blocks</div>
+    <div class="blk on"><div class="ico">${ICON.view.replace('stroke-width="1.8"', 'stroke-width="1.6" width="16" height="16"')}</div><div>3D model<small>market-bell.glb - ${viewDef(record.view).label}</small></div></div>
+    <div class="blk ghosted"><div class="ico">+</div><div>Add block<small>other families</small></div></div>
+    <div class="ph">Asset</div>
+    <div class="muted">${(glb.bytes / 1024).toFixed(0)} KB glb<br>${Math.round(glb.tris).toLocaleString('en')} triangles in ${glb.meshes} meshes<br>clips: ${glb.clips.map((c) => esc(c.name)).join(', ') || 'none'}</div>`;
+}
+function renderToolbar() {
+  const t = $('#eTools');
+  t.innerHTML = `<button data-t="translate" class="${editorState.tool === 'translate' ? 'on' : ''}">Move</button><button data-t="rotate" class="${editorState.tool === 'rotate' ? 'on' : ''}">Turn</button>
+    <button id="eFrameB">Frame block</button><button id="eFrameS">Frame station</button>
+    <label><input type="checkbox" id="eNotes" ${editorState.showNotes ? 'checked' : ''}> Notes in 3D</label>`;
+  t.querySelectorAll('[data-t]').forEach((b) => { b.onclick = () => setTool(b.dataset.t); });
+  $('#eFrameB').onclick = frameBlock; $('#eFrameS').onclick = frameStation;
+  $('#eNotes').onchange = (e) => { editorState.showNotes = e.target.checked; };
+}
+function renderInspector() {
+  const r = record; const [x, y, z] = r.pose.position;
+  const clipOpts = ['<option value="">none</option>', ...glb.clips.map((c) => `<option value="${esc(c.name)}" ${r.animation && r.animation.name === c.name ? 'selected' : ''}>${esc(c.name)} (${c.duration.toFixed(1)} s)</option>`)].join('');
+  $('#insp').innerHTML = `
+    <div class="ph">Block</div><h2>3D model</h2><div class="muted">${esc(r.model.asset)} - ${(glb.bytes / 1024).toFixed(0)} KB - ${Math.round(glb.tris).toLocaleString('en')} triangles</div>
+    <div class="sec"><div class="ph">View</div><div class="vchips">${VIEW_DEFS.map((v) => `<button data-v="${v.name}" class="${v.name === r.view ? 'on' : ''}">${v.label}</button>`).join('')}</div></div>
+    <div class="sec"><div class="ph">Size</div>
+      <div class="grid2"><label class="field"><span>sizeM (largest side, m)</span><input id="iSize" type="number" step="0.05" min="${LIMITS.sizeMin}" max="${LIMITS.sizeMax}" value="${r.sizeM}"></label>
+      <label class="field"><span>scale of the glb</span><input disabled value="x ${(r.sizeM / glb.native).toFixed(3)}"></label></div>
+      <input type="range" min="0" max="1000" id="iSizeR" value="${sizeToSlider(r.sizeM)}">
+      <div class="rowf"><button class="mini" id="iReal">Real size ${glb.native.toFixed(2)} m</button></div></div>
+    <div class="sec"><div class="ph">Pose (from the anchor)</div>
+      <div class="grid4"><label class="field"><span>x</span><input id="iX" type="number" step="0.1" value="${x}"></label><label class="field"><span>y</span><input id="iY" type="number" step="0.1" value="${y}"></label>
+      <label class="field"><span>z</span><input id="iZ" type="number" step="0.1" value="${z}"></label><label class="field"><span>yaw</span><input id="iYaw" type="number" step="5" value="${r.pose.yawDeg}"></label></div>
+      <div class="rowf"><button class="mini ${editorState.tool === 'translate' ? 'on' : ''}" data-t="translate">Move handle</button><button class="mini ${editorState.tool === 'rotate' ? 'on' : ''}" data-t="rotate">Turn handle</button></div></div>
+    <div class="sec"><div class="ph">Animation</div>
+      <div class="grid2"><label class="field"><span>clip in the glb</span><select id="iClip">${clipOpts}</select></label>
+      <label class="field"><span>autoplay</span><select id="iAuto" ${r.animation ? '' : 'disabled'}><option value="1" ${r.animation && r.animation.autoplay ? 'selected' : ''}>yes</option><option value="0" ${r.animation && !r.animation.autoplay ? 'selected' : ''}>no</option></select></label></div></div>
+    <div class="sec"><div class="ph">Annotations (${r.annotations.length})</div>
+      ${r.annotations.map((a, i) => `<div class="anno ${i === selectedAnno ? 'on' : ''}" data-i="${i}">
+        <div class="top"><span class="badge">${i + 1}</span><input data-f="title" maxlength="${LIMITS.title}" value="${esc(a.title)}" aria-label="title"></div>
+        <label class="field"><span>text <i data-c="text">${a.text.length}/${LIMITS.text}</i></span><textarea data-f="text" maxlength="${LIMITS.text}" rows="3">${esc(a.text)}</textarea></label>
+        <div class="tools"><button data-a="pick">${pickMode && pickMode.index === i ? 'Click the model...' : 'Pick on model'}</button><button data-a="del">Delete</button><span class="pos">${a.position.map((v) => v.toFixed(2)).join(', ')}</span></div></div>`).join('')}
+      <div class="rowf"><button class="mini ${pickMode && pickMode.add ? 'on' : ''}" id="iAdd">+ Add note (click the model)</button></div></div>`;
+  const insp = $('#insp');
+  insp.querySelectorAll('[data-v]').forEach((b) => { b.onclick = () => { setViewInternal(b.dataset.v); writeHash(); }; });
+  insp.querySelectorAll('[data-t]').forEach((b) => { b.onclick = () => { setTool(b.dataset.t); renderInspector(); }; });
+  const setSize = (s) => { record.sizeM = s; sanitizeRecord(record); };
+  $('#iSize').onchange = (e) => { setSize(+e.target.value); renderInspector(); };
+  $('#iSizeR').oninput = (e) => { setSize(sliderToSize(+e.target.value)); $('#iSize').value = record.sizeM; };
+  $('#iSizeR').onchange = () => renderInspector();
+  $('#iReal').onclick = () => { setSize(Math.round(glb.native * 100) / 100); renderInspector(); };
+  for (const [id, k] of [['iX', 0], ['iY', 1], ['iZ', 2]]) $('#' + id).onchange = (e) => { record.pose.position[k] = +e.target.value; sanitizeRecord(record); };
+  $('#iYaw').onchange = (e) => { record.pose.yawDeg = +e.target.value; sanitizeRecord(record); updatePoseInputs(); };
+  $('#iClip').onchange = (e) => { record.animation = e.target.value ? { name: e.target.value, autoplay: record.animation ? record.animation.autoplay : true } : null; renderInspector(); };
+  $('#iAuto').onchange = (e) => { if (record.animation) record.animation.autoplay = e.target.value === '1'; };
+  insp.querySelectorAll('.anno').forEach((el) => {
+    const i = +el.dataset.i; const a = record.annotations[i];
+    el.addEventListener('focusin', () => { if (selectedAnno !== i) { selectedAnno = i; insp.querySelectorAll('.anno').forEach((x) => x.classList.toggle('on', +x.dataset.i === i)); } });
+    el.querySelector('[data-f="title"]').oninput = (e) => { a.title = e.target.value.slice(0, LIMITS.title); markerEls[i] && (markerEls[i].b.querySelector('.lab').textContent = a.title); };
+    el.querySelector('[data-f="text"]').oninput = (e) => { a.text = e.target.value.slice(0, LIMITS.text); el.querySelector('[data-c="text"]').textContent = `${a.text.length}/${LIMITS.text}`; };
+    el.querySelector('[data-a="pick"]').onclick = () => { pickMode = pickMode && pickMode.index === i ? null : { index: i }; selectedAnno = i; renderInspector(); };
+    el.querySelector('[data-a="del"]').onclick = () => { record.annotations.splice(i, 1); selectedAnno = -1; rebuildMarkers(); renderInspector(); };
+  });
+  $('#iAdd').onclick = () => { pickMode = pickMode && pickMode.add ? null : { add: true }; renderInspector(); };
+}
+function updatePoseInputs() {
+  const [x, y, z] = record.pose.position; const set = (id, v) => { const el = document.getElementById(id); if (el && document.activeElement !== el) el.value = v; };
+  set('iX', x); set('iY', y); set('iZ', z); set('iYaw', record.pose.yawDeg);
+}
+function frameBlock() { const [x, y, z] = record.pose.position; const s = Math.max(record.sizeM, 1.2); orbit.target.set(x, y + s * 0.4, z); editorCam.position.set(x + s * 1.7, y + s * 2.0, z + s * 2.5); orbit.update(); }
+function frameStation() { orbit.target.set(0, 0, -2); editorCam.position.set(20, 30, 38); orbit.update(); }
+
+function renderFields() {
+  const d = viewDef(record.view);
+  $('#fieldsBody').innerHTML = `<h4>Fields used by "${d.label}"</h4><div class="muted">${d.required ? 'Required view' : d.name === 'cutaway' ? 'Unlisted view, own idea' : 'Unlisted view, suggested in the brief'} - model family "${FAMILY}"</div>
+    <ul>${FIELDS.map((f) => `<li class="${d.uses[f] ? '' : 'unused'}"><code>${f}</code><span>${d.uses[f] ? esc(d.uses[f]) : 'not used by this view'}</span></li>`).join('')}</ul>`;
+}
+
+function syncUI() {
+  const m = $('#main'); m.classList.toggle('editor', mode === 'editor');
+  document.querySelectorAll('#modeSeg button').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
+  const vis = mode === 'visitor', cre = mode === 'creator', ed = mode === 'editor';
+  for (const id of ['picker', 'walkBar']) $('#' + id).style.display = vis ? '' : 'none';
+  if (!vis) { $('#pickerList').classList.remove('open'); $('#stationChip').style.display = 'none'; $('#card').classList.remove('open'); }
+  for (const id of ['cTop', 'cBar']) $('#' + id).style.display = cre ? '' : 'none';
+  $('#cSheet').style.display = cre ? '' : 'none';
+  $('#eTools').style.display = ed ? '' : 'none';
+  $('#stageWrap').classList.toggle('phone', phoneFrame && !ed);
+  $('#phoneBtn').classList.toggle('on', phoneFrame && !ed); $('#phoneBtn').disabled = ed;
+  orbit.enabled = ed; tc.enabled = ed; tcHelper.visible = ed;
+  if (ed) tc.attach(blockRoot); else tc.detach();
+  renderPicker(); renderFields();
+  if (cre) { renderCreatorBar(); renderSheet(); }
+  if (ed) { renderLeft(); renderToolbar(); renderInspector(); }
+  $('#ePick').style.display = ed && pickMode ? 'block' : 'none';
+}
+
+function setModeInternal(name) {
+  if (!['visitor', 'creator', 'editor'].includes(name)) throw new Error(`unknown mode "${name}"`);
+  mode = name; pickMode = null; selectedAnno = -1; creatorSheet = null;
+  $('#card').classList.remove('open');
+  if (name === 'creator') {
+    const [x, , z] = record.pose.position; visitorCam.position.set(0, EYE, 0);
+    creatorCam.yaw = Math.atan2(-(x - 0), -(z - 0)); creatorCam.pitch = -0.1;
+  }
+  if (name === 'editor') { setTool(editorState.tool); frameBlock(); }
+  syncUI(); resize();
+}
+
+document.querySelectorAll('#modeSeg button').forEach((b) => { b.onclick = () => { setModeInternal(b.dataset.mode); writeHash(); }; });
+$('#phoneBtn').onclick = () => { phoneFrame = !phoneFrame; syncUI(); requestAnimationFrame(resize); };
+$('#fieldsBtn').onclick = () => { $('#fieldsPanel').classList.toggle('open'); $('#notesPanel').classList.remove('open'); $('#fieldsBtn').classList.toggle('on', $('#fieldsPanel').classList.contains('open')); $('#notesBtn').classList.remove('on'); };
+$('#notesBtn').onclick = () => { fillNotes(); $('#notesPanel').classList.toggle('open'); $('#fieldsPanel').classList.remove('open'); $('#notesBtn').classList.toggle('on', $('#notesPanel').classList.contains('open')); $('#fieldsBtn').classList.remove('on'); };
+document.querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => { $('#' + b.dataset.close).classList.remove('open'); $('#fieldsBtn').classList.remove('on'); $('#notesBtn').classList.remove('on'); }; });
+
+const measured = {};
+function fillNotes() {
+  const body = $('#notesBody'); if (!body.dataset.filled) { body.appendChild($('#notesTpl').content.cloneNode(true)); body.dataset.filled = '1'; }
+  body.querySelectorAll('[data-k="glbKB"]').forEach((e) => { e.textContent = (glb.bytes / 1024).toFixed(0); });
+  body.querySelectorAll('[data-k="nativeM"]').forEach((e) => { e.textContent = glb.native.toFixed(2); });
+  body.querySelectorAll('[data-k="tris"]').forEach((e) => { e.textContent = Math.round(glb.tris).toLocaleString('en'); });
+  const c = body.querySelector('[data-k="costs"]');
+  const rows = VIEW_DEFS.map((v) => { const m = measured[v.name]; return `<li><b>${v.label}</b>: ${m ? `mean ${m.mean.toFixed(1)} ms, max ${m.max.toFixed(1)} ms over 2 s on this machine (last time the view was on screen in this tab)` : 'not yet measured in this tab: open the view for 2 s'}.</li>`; }).join('');
+  c.innerHTML = `<ul>${rows}</ul><p class="muted">Measured in this browser, on this machine; in a headless test run that is software rendering and far slower than a phone GPU. Extra per-view cost: Pedestal adds 5 small meshes; Ghost draws every mesh twice (a depth pass, then the glass); Cutaway draws every mesh twice (front and section faces) with a clipping plane; Hotspots adds one CPU ray test per note per frame plus DOM updates.</p>`;
+}
+
+// ---------------------------------------------------------------- hash
+function writeHash() { const h = `#mode=${mode}&view=${record.view}`; if (location.hash !== h) history.replaceState(null, '', h); }
+function readHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  const m = p.get('mode'), v = p.get('view');
+  if (v && viewDef(v) && (!view || v !== view.name)) setViewInternal(v);
+  if (m && ['visitor', 'creator', 'editor'].includes(m) && m !== mode) setModeInternal(m);
+}
+window.addEventListener('hashchange', readHash);
+
+// ---------------------------------------------------------------- resize
+function resize() {
+  const w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
+  renderer.setSize(w, h, false);
+  visitorCam.aspect = w / h;
+  // the short side of the screen spans about 45 degrees, like a phone camera
+  visitorCam.fov = w < h ? 2 * Math.atan(Math.tan(22.5 * DEG) * h / w) / DEG : 45;
+  visitorCam.updateProjectionMatrix();
+  editorCam.aspect = w / h; editorCam.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+// ---------------------------------------------------------------- frame loop
+const frames = [];
+let last = performance.now(), statT = 0;
+const clock = { t: 0 };
+const _tmp = new THREE.Vector3();
+function nearestStation(x, z) { let best = null; for (const s of STATIONS) { const d = Math.hypot(s.x - x, s.z - z); if (!best || d < best.d) best = { s, d }; } return best; }
+
+function loop(now) {
+  const dtMs = now - last; last = now;
+  const dt = Math.min(0.1, dtMs / 1000); clock.t += dt;
+  frames.push([now, dtMs]); while (frames.length && now - frames[0][0] > 2000) frames.shift();
+  if (now - statT > 250 && frames.length > 2) {
+    statT = now; let s = 0, mx = 0; for (const [, d] of frames) { s += d; if (d > mx) mx = d; }
+    const mean = s / frames.length;
+    $('#frameStat').textContent = `${mean.toFixed(1)} ms mean\n${mx.toFixed(1)} ms max`;
+    if (view && mode === 'visitor') measured[view.name] = { mean, max: mx };
+  }
+  if (!view) { renderer.render(scene, activeCam()); return; }
+
+  // visitor movement
+  if (mode === 'visitor') {
+    const sp = keys.has('shift') ? 3.2 : 1.4;
+    let fx = 0, fz = 0;
+    if (keys.has('w') || keys.has('arrowup')) fz -= 1; if (keys.has('s') || keys.has('arrowdown')) fz += 1;
+    if (keys.has('a') || keys.has('arrowleft')) fx -= 1; if (keys.has('d') || keys.has('arrowright')) fx += 1;
+    if (fx || fz) {
+      visitor.walking = null; const c = Math.cos(visitor.yaw), s = Math.sin(visitor.yaw);
+      visitor.x += (fx * c + fz * s) * sp * dt; visitor.z += (-fx * s + fz * c) * sp * dt;
+    }
+    if (visitor.walking) {
+      const w = visitor.walking; const dx = w.tx - visitor.x, dz = w.tz - visitor.z; const d = Math.hypot(dx, dz);
+      if (d < 0.05) { visitor.walking = null; syncWalkBtn(); }
+      else { const st = Math.min(d, 2.4 * dt); visitor.x += dx / d * st; visitor.z += dz / d * st; }
+      const [bx, , bz] = record.pose.position; const want = Math.atan2(-(bx - visitor.x), -(bz - visitor.z));
+      let dy = want - visitor.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); visitor.yaw += dy * Math.min(1, dt * 2.5);
+      visitor.pitch += (-0.06 - visitor.pitch) * Math.min(1, dt * 2);
+    }
+    visitorCam.position.set(visitor.x, EYE, visitor.z); visitorCam.rotation.set(visitor.pitch, visitor.yaw, 0);
+    const inA = Math.hypot(visitor.x - STATIONS[0].x, visitor.z - STATIONS[0].z) < STATIONS[0].r;
+    appear = clamp(appear + (inA ? dt : -dt) / 0.9, 0, 1);
+    const nb = nearestStation(visitor.x, visitor.z);
+    const chip = $('#stationChip');
+    if (nb.d > nb.s.r) {
+      chip.style.display = 'flex';
+      const bearing = Math.atan2(nb.s.x - visitor.x, -(nb.s.z - visitor.z)); // 0 = north, clockwise
+      const rel = bearing + visitor.yaw; // yaw is counter-clockwise
+      chip.querySelector('.arrow').style.transform = `rotate(${rel}rad)`;
+      $('#stationText').innerHTML = `<b>${esc(nb.s.name)}</b> - ${Math.round(nb.d)} m`;
+    } else chip.style.display = 'none';
+    stationB.visible = Math.hypot(visitor.x - 60, visitor.z) < RADIUS;
+  } else if (mode === 'creator') {
+    appear = 1; stationB.visible = true;
+    visitorCam.position.set(0, EYE, 0); visitorCam.rotation.set(creatorCam.pitch, creatorCam.yaw, 0);
+  } else {
+    appear = 1; stationB.visible = true; orbit.update();
+  }
+
+  // block pose from the record (except while a handle is dragged)
+  if (!tc.dragging) {
+    blockRoot.position.fromArray(record.pose.position);
+    blockRoot.rotation.set(0, record.pose.yawDeg * DEG, 0);
+  }
+  view.modelRoot.scale.setScalar(view.scaleFn());
+  if (view.shadow) { const s = modelScale(); view.shadow.scale.set(3.3 * s, 2.5 * s, 1); }
+
+  // animation
+  const clip = record.animation ? clipByName(record.animation.name) : null;
+  const wantPlay = !!(clip && record.animation.autoplay && !holdAtRest() && view.mixer);
+  if (wantPlay && (!view.playing || view.action.getClip() !== clip)) { if (view.action) view.action.stop(); view.action = view.mixer.clipAction(clip); view.action.reset().play(); view.playing = true; }
+  if (!wantPlay && view.playing) { view.action.stop(); view.playing = false; view.mixer.update(0); }
+  if (view.playing) view.mixer.update(dt);
+  if (view.update) view.update(dt, clock.t);
+
+  // appear fade (content shows only inside the station circle)
+  view.group.visible = appear > 0.001;
+  for (const m of view.mats) { m.opacity = m.userData.baseOpacity * appear; m.transparent = m.userData.baseTransparent || appear < 0.999; }
+  if (view.ghost) { view.ghost.uniforms.uTime.value = clock.t; view.ghost.uniforms.uAppear.value = appear; view.ghost.uniforms.uGround.value = blockRoot.position.y; }
+  blockRoot.updateMatrixWorld(true);
+
+  // cutaway plane turns to face the camera (smoothed)
+  if (view.frame) {
+    const cam = activeCam(); const s = modelScale();
+    const center = blockRoot.localToWorld(_tmp.set(0, glb.native * 0.45 * s, 0)).clone();
+    const dir = new THREE.Vector3(center.x - cam.position.x, 0, center.z - cam.position.z);
+    if (dir.lengthSq() < 1e-6) dir.set(0, 0, -1); dir.normalize();
+    if (!view.cutDir) view.cutDir = dir.clone(); else view.cutDir.lerp(dir, Math.min(1, dt * 3)).normalize();
+    clipPlane.setFromNormalAndCoplanarPoint(view.cutDir, center.clone().addScaledVector(view.cutDir, -0.02 * s));
+    view.frame.position.copy(center); view.frame.lookAt(center.clone().add(view.cutDir));
+    view.frame.scale.set(glb.native * 0.62 * s, glb.native * 0.5 * s, 1);
+    view.frame.visible = appear > 0.001;
+  }
+
+  const cam = activeCam();
+  renderer.render(scene, cam);
+  updateMarkers(cam, stage.clientWidth, stage.clientHeight);
+  $('#ePick').style.display = mode === 'editor' && pickMode ? 'block' : 'none';
+}
+
+// ---------------------------------------------------------------- hook
+const nextFrames = (n = 3) => new Promise((res) => { let k = 0; const f = () => { if (++k >= n) res(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
+let readyResolve; const ready = new Promise((r) => { readyResolve = r; });
+window.__stationBlock = {
+  family: FAMILY,
+  views: VIEW_NAMES.slice(),
+  modes: ['visitor', 'creator', 'editor'],
+  async setMode(name) { await ready; setModeInternal(name); writeHash(); await nextFrames(); },
+  async setView(name) { await ready; setViewInternal(name); writeHash(); await nextFrames(); },
+  async walkTo(x, z) {
+    await ready; if (!Number.isFinite(x) || !Number.isFinite(z)) throw new Error('walkTo needs two finite numbers');
+    if (mode !== 'visitor') setModeInternal('visitor');
+    visitor.walking = null; visitor.x = x; visitor.z = z; syncWalkBtn(); await nextFrames();
+  },
+  async lookAt(x, y, z) {
+    await ready; if (![x, y, z].every(Number.isFinite)) throw new Error('lookAt needs three finite numbers');
+    const st = mode === 'creator' ? creatorCam : visitor; const px = mode === 'creator' ? 0 : visitor.x, pz = mode === 'creator' ? 0 : visitor.z;
+    const dx = x - px, dz = z - pz, dy = y - EYE;
+    st.yaw = Math.atan2(-dx, -dz); st.pitch = Math.atan2(dy, Math.hypot(dx, dz)); visitor.walking = null; await nextFrames();
+  },
+  async describe() {
+    await ready;
+    return { family: FAMILY, fields: FIELDS.slice(), views: VIEW_DEFS.map((v) => ({ name: v.name, required: v.required, usesFields: FIELDS.filter((f) => v.uses[f]) })) };
+  },
+  async exportModel() { await ready; return JSON.parse(JSON.stringify(record)); },
+  // test-only extras (not part of the shared hook contract)
+  async _frameStat() { return $('#frameStat').textContent; },
+  async _openNote(i) { await ready; openCard(i); await nextFrames(); },
+  async _setPhoneFrame(on) { await ready; phoneFrame = !!on; syncUI(); await nextFrames(); resize(); await nextFrames(); },
+  async _panel(name) { await ready; if (name === 'notes') fillNotes(); for (const id of ['fieldsPanel', 'notesPanel']) $('#' + id).classList.toggle('open', id === name + 'Panel'); await nextFrames(); },
+};
+
+// ---------------------------------------------------------------- start
+renderer.setAnimationLoop(loop);
+resize();
+prepareGlb().then(() => {
+  $('#loading').remove();
+  const p = new URLSearchParams(location.hash.slice(1));
+  setViewInternal(viewDef(p.get('view')) ? p.get('view') : record.view);
+  setModeInternal(['visitor', 'creator', 'editor'].includes(p.get('mode')) ? p.get('mode') : 'visitor');
+  visitor.yaw = 0; writeHash();
+  readyResolve();
+}).catch((e) => { $('#loading').textContent = 'The model could not be prepared.'; console.error(e); });
+</script>
+</body>
+</html>
