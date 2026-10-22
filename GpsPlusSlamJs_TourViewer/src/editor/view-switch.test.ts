@@ -20,6 +20,7 @@ import {
 } from "./editor-view.js";
 import {
   VIEW_SWITCH_LABELS,
+  VIEW_SWITCH_SHORT_LABELS,
   createViewSwitch,
   view3dFailureText,
   type View3dHandle,
@@ -224,6 +225,23 @@ describe("createViewSwitch", () => {
       back(s);
       expect(s.shown).toEqual([true, false]);
       expect(s.modes).toEqual(["3d", "2d"]);
+    }
+  });
+
+  // Why: on a phone-wide window the top bar must keep every control inside
+  // it, so the button carries a short word for each state (the stylesheet
+  // shows it below 720 px) next to its full label, which stays its text.
+  it("carries a short word for each state next to its label", async () => {
+    const { b, o } = setup();
+    expect(b.dataset["short"]).toBe(VIEW_SWITCH_SHORT_LABELS.idle);
+    b.click();
+    expect(b.dataset["short"]).toBe(VIEW_SWITCH_SHORT_LABELS.loading);
+    o.calls[0]!.resolve(view());
+    await settle();
+    expect(b.dataset["short"]).toBe(VIEW_SWITCH_SHORT_LABELS.shown);
+    expect(b.textContent).toBe(VIEW_SWITCH_LABELS.shown);
+    for (const word of Object.values(VIEW_SWITCH_SHORT_LABELS)) {
+      expect(word.length).toBeLessThanOrEqual(3);
     }
   });
 

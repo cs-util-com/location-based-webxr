@@ -33,6 +33,14 @@ export const VIEW_SWITCH_LABELS = Object.freeze({
   shown: "Map view",
 });
 
+/** A word for each state on a phone-wide window (`data-short`, which
+ *  the stylesheet shows below 720 px in place of the label). */
+export const VIEW_SWITCH_SHORT_LABELS = Object.freeze({
+  idle: "3D",
+  loading: "…",
+  shown: "Map",
+});
+
 const FAILURE_TEXT: Readonly<Record<View3dFailure, string>> = {
   chunk:
     "The 3D view could not be loaded. Check the connection, then try the 3D view again. The map shows the tour.",
@@ -119,12 +127,10 @@ export function createViewSwitch(deps: {
     const state =
       viewMode === "3d" ? "3d" : view3dLoad === "loading" ? "loading" : "2d";
     button.dataset["state"] = state;
-    button.textContent =
-      state === "3d"
-        ? VIEW_SWITCH_LABELS.shown
-        : state === "loading"
-          ? VIEW_SWITCH_LABELS.loading
-          : VIEW_SWITCH_LABELS.idle;
+    const key =
+      state === "3d" ? "shown" : state === "loading" ? "loading" : "idle";
+    button.textContent = VIEW_SWITCH_LABELS[key];
+    button.dataset["short"] = VIEW_SWITCH_SHORT_LABELS[key];
     button.disabled = !enabled || state === "loading";
   };
 

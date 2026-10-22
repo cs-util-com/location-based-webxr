@@ -127,6 +127,21 @@ button:disabled {
   cursor: progress;
 }
 
+/* A phone-wide window: the switch says its short word (`data-short`),
+ * so the top bar keeps every control inside it; its full label stays its
+ * text, and so its name for a screen reader. */
+@media (width <= 720px) {
+  #view-switch {
+    font-size: 0;
+    padding: 0 10px;
+  }
+
+  #view-switch::after {
+    content: attr(data-short) / "";
+    font-size: 14px;
+  }
+}
+
 /* A muted, paper-toned base map, so the tour's own markers carry the colour. */
 .leaflet-tile-pane {
   filter: saturate(0.35) sepia(0.12) brightness(1.03) contrast(0.95);

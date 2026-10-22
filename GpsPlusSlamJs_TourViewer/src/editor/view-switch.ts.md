@@ -10,6 +10,11 @@ edits and the selection are the store's, so switching keeps them all.
 
 - `VIEW_SWITCH_LABELS` - the button's words: `idle` "3D view",
   `loading` "Loading 3D view…", `shown` "Map view".
+- `VIEW_SWITCH_SHORT_LABELS` - a word per state for a phone-wide window
+  (`idle` "3D", `loading` "…", `shown` "Map"), written to the button's
+  `data-short`; `editor.css` shows it below 720 px in place of the label,
+  so the top bar keeps every control inside the window. The full label
+  stays the button's text, and its name for a screen reader.
 - `view3dFailureText(reason)` - what the page says for a `View3dFailure`
   (`chunk`, `webgl`, `context-lost`, `empty`), in plain words, each ending
   with the map showing the tour.
@@ -71,5 +76,7 @@ again; each failure (a chunk, no WebGL, nothing placed, an unknown
 reason) landing on the map with its text said; a lost context falling
 back once and opening again; a late view dropped and disposed; a shown
 view closed with the tour; `onShown` called with the store already in
-its mode on every way back; no second open while loading; the switch off
-without a tour. The page's use: `playwright-tests/editor3d.spec.js`.
+its mode on every way back; the short word for each state; no second
+open while loading; the switch off without a tour. The page's use:
+`playwright-tests/editor3d.spec.js`; the top bar at 390 px:
+`playwright-tests/editor.spec.js` (every control inside the window).
