@@ -117,7 +117,7 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
       };
       const geoid = egm96Geoid();
       for (const station of manifest.stations) {
-        const geo = station.geo!;
+        const geo = station.geo;
         const drawn = drawnHeightM(
           geo.alt,
           { lat: geo.lat, lng: geo.lon },
