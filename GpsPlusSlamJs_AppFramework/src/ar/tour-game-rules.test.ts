@@ -468,7 +468,7 @@ describe('quizInputDisplay', () => {
   const at = (coins: number): TourGameRunState =>
     withState([], { coins, karma: 0 });
 
-  it('offers the input when either outcome could be paid', () => {
+  it('offers the input only when both outcomes could be paid', () => {
     const outcomes = {
       correct: [{ add: 'coins', by: 1 }],
       wrong: [{ add: 'coins', by: -2 }],

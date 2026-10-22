@@ -66,8 +66,9 @@ are `tour-game-check.ts`.
 outcomes.correct }` or `.wrong`).
 - `quizInputDisplay(game, state, outcomes)` - a TYPED quiz's single input,
   judged on both outcomes together (the outcome is known only after
-  submitting): `available` only when either outcome could be paid; else
-  `hidden` when either outcome would be hidden, else `greyed` with both
+  submitting): `available` only when both outcomes could be paid
+  (whichever the answer turns out to be); else `hidden` when either
+  outcome would be hidden, else `greyed` with both
   outcomes' needs merged (per counter the larger shortfall, so meeting
   the needs makes both payable).
 - `chooseOption(game, state, option)` - all or nothing: `{ ok: true, state }`
@@ -159,7 +160,8 @@ optionDisplay(game, { round: 1, labels: [], counters: { coins: 1 } }, buy);
   round label greyed. A typed quiz's input is offered exactly when both
   outcomes are accepted, and its greyed needs are enough together and each
   necessary for both (a defect that never greys the input was caught, 5 of
-  5 seeds).
+  5 seeds); the input is hidden exactly when either outcome would be (a
+  defect hiding it only when both are was caught, 3 of 3 runs).
 - `tour-game-scenarios.test.ts` - four tours walked end to end: a path
   choice, a key behind a quiz, a merchant with a coin floor, a collectible
   set over two rounds with gated scene steps.

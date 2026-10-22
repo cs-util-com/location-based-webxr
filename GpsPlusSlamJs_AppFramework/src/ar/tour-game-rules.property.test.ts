@@ -366,19 +366,29 @@ describe('tour game rules - properties', () => {
   });
 
   // Hiding is reserved for the creator's secrets and the creator's
-  // mistakes; anything else blocked must be greyed with its price.
+  // mistakes; anything else blocked must be greyed with its price. A
+  // typed quiz's input is hidden exactly when one of its two outcomes
+  // would be, so it inherits the same rule.
   it('hides an option only for a secret or a name or number the game cannot read', () => {
     let hidden = 0;
+    let hiddenInputs = 0;
     fc.assert(
       fc.property(
         game,
         fc.array(action, { maxLength: 10 }),
         fc.array(condition, { maxLength: 3 }),
         effects,
-        (g, before, requires, fx) => {
+        effects,
+        (g, before, requires, fx, other) => {
           const s = reached(g, before);
           const target = { requires, effects: fx };
           const shown = optionDisplay(g, s, target);
+          const outcomeHidden = [fx, other].some(
+            (e) => optionDisplay(g, s, { effects: e }).shown === 'hidden'
+          );
+          const input = quizInputDisplay(g, s, { correct: fx, wrong: other });
+          expect(input.shown === 'hidden').toBe(outcomeHidden);
+          if (outcomeHidden) hiddenInputs += 1;
           const secrets = new Set(
             [...g.labels, ...g.counters]
               .filter((d) => d.secret === true)
@@ -415,5 +425,6 @@ describe('tour game rules - properties', () => {
       { numRuns: 400 }
     );
     expect(hidden).toBeGreaterThan(0);
+    expect(hiddenInputs).toBeGreaterThan(0);
   });
 });

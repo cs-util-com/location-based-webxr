@@ -49,12 +49,27 @@ Findings (`kind`, with where -
   counter by different nets, the lower one negative. Then at some value of
   that counter the dearer outcome's answers are greyed beside the
   cheaper's, which shows the visitor which answer is right. The remedy
-  the view should suggest: equal costs on both outcomes. It does not fire
-  for a typed quiz (one input for both), for a secret counter (the answers
-  are hidden, not greyed - though hiding the dearer outcome's answers
-  singles out the right ones as well, so that case is a known gap), or
-  when one outcome can never be paid (that is
+  the view should suggest: equal costs (with a free way out), or no cost.
+  Equal costs alone are not enough: with no free answer the quiz may trap
+  the visitor, and the give-away warning turns into `choice-may-softlock`.
+  It does not fire for a typed quiz (one input for both), for a secret
+  counter (the answers are hidden, not greyed - though hiding the dearer
+  outcome's answers singles out the right ones as well, so that case is a
+  known gap), or when one outcome can never be paid (that is
   `option-never-available`, the "always" case).
+  - **Known over-warning:** the check knows only an UPPER bound per
+    counter, never how LOW it can fall. A round counter that starts at 10,
+    with a wrong answer costing 1 and nothing else spending it, can never
+    grey that answer, yet the warning fires - and it does so whenever the
+    start covers what the visitor could have spent by then. The creator
+    then sees a warning that no visitor would ever meet, and can silence
+    it only by changing costs they had no reason to change. A lower bound
+    per counter (its start plus every negative add of reachable content
+    counted once, unbounded downwards when that add can repeat or the
+    counter is collectible) would remove it: the warning would then need a
+    value of the range given under Invariants that lies at or above that
+    lower bound. Not
+    built.
 
 **No reachability verdict on a misread tour:** while any `duplicate-name`,
 `start-below-floor` or counter `bad-number` (`start` or `floor`) finding
@@ -137,7 +152,8 @@ checkTourGame({
   limitation, typed quizzes against choice quizzes (one unpayable outcome
   closes a typed input; any cost may trap it), and the give-away warning
   with its near misses (equal costs, upward costs, typed, secret counter,
-  an outcome never payable).
+  an outcome never payable, one outcome free beside a gain - the last
+  pins `min(a, b) < 0` against `<= 0`).
 - `tour-game-check.property.test.ts` - on random small tours (any `goto`,
   backwards, to itself or to no step) an exhaustive search plays every
   walk of up to three rounds with the rules themselves, dropping walk
@@ -164,5 +180,6 @@ checkTourGame({
   2-4 (1000 runs; cap 40 with 4 rounds takes 17 s); mutants caught 5 of 5
   seeds each: no give-away warning (property and unit), a typed quiz
   treated as a choice quiz (property and unit), the warning firing on a
-  secret counter (unit only - over-warning breaks no promise).
+  secret counter (unit only - over-warning breaks no promise), `< 0` as
+  `<= 0` (unit only, the near misses above).
 - `tour-game-scenarios.test.ts` - the four scenario tours are clean.

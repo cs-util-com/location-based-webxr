@@ -885,7 +885,11 @@ describe('checkTourGame - softlocks', () => {
         },
       ],
     });
-    expect(checkTourGame(quiz(1, 2))).toEqual([]);
+    // The wrong answer costs a coin but the right one pays: no trap (that
+    // quiz may give its answer away, a separate warning).
+    expect(checkTourGame(quiz(1, -1)).map((f) => f.kind)).not.toContain(
+      'choice-may-softlock'
+    );
     expect(checkTourGame(quiz(-1, -1))).toEqual([
       { kind: 'choice-may-softlock', at: { station: 'a', step: 'q' } },
     ]);
@@ -985,6 +989,9 @@ describe('checkTourGame - typed quizzes and quizzes that give their answer away'
     const softlock = ['choice-may-softlock'];
     expect(kinds(withQuiz({ correct: -2, wrong: -2 }))).toEqual(softlock);
     expect(kinds(withQuiz({ correct: 2, wrong: 1 }))).toEqual([]);
+    // One outcome free and the other a gain: nothing can be greyed.
+    expect(kinds(withQuiz({ correct: 1 }))).toEqual([]);
+    expect(kinds(withQuiz({ wrong: 2 }))).toEqual([]);
     expect(kinds(withQuiz({ wrong: -2 }, { typed: true }))).toEqual(softlock);
   });
 

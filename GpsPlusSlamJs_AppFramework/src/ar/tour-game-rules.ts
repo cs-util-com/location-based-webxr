@@ -20,8 +20,9 @@
  *   label and counter blocking it is visible, and HIDDEN when any of them
  *   is `secret` (or the game cannot read what blocks it).
  * - A TYPED quiz (text, code, number) has one input for both outcomes: it
- *   is judged on both together, available only when either could be paid,
- *   else greyed or hidden as a whole (`quizInputDisplay`).
+ *   is judged on both together, available only when both outcomes could
+ *   be paid (whichever the answer turns out to be), else greyed or hidden
+ *   as a whole (`quizInputDisplay`).
  * - A scene continues after a step at `stepAfter`: an option's `goto` (the
  *   first step with that id), else the next step; a `goto` naming no step
  *   ends the scene.
@@ -459,9 +460,10 @@ export function optionDisplay(
 /**
  * How a typed quiz's input (text, code, number) shows now. The outcome is
  * known only once the visitor submits, so the input is judged on both
- * outcomes together: available when either could be paid; otherwise
- * hidden when either outcome is hidden, else greyed with both outcomes'
- * needs merged (per counter the larger shortfall).
+ * outcomes together: available only when both outcomes could be paid
+ * (whichever the answer turns out to be); otherwise hidden when either
+ * outcome is hidden, else greyed with both outcomes' needs merged (per
+ * counter the larger shortfall).
  */
 export function quizInputDisplay(
   game: TourGame,

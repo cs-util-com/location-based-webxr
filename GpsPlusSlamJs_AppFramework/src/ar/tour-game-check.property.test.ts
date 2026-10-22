@@ -280,7 +280,7 @@ function sceneMoves(
     const results = [true, false].map((correct) =>
       answerQuiz(game, w.run, step.outcomes, correct)
     );
-    // A typed input is one box: usable only when either outcome can be
+    // A typed input is one box: usable only when both outcomes can be
     // paid. A choice quiz offers each outcome's answers on their own.
     const open = step.typed === true ? results.every((r) => r.ok) : true;
     results.forEach((result, k) => {
