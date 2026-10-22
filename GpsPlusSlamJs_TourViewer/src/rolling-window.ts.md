@@ -2,11 +2,8 @@
 
 ## Purpose
 
-The mean and the worst of the samples of the last few seconds (visitor
-walk W4 build plan
-`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md`,
-M3): the `?debug=1` readout's ms per radar draw and frame time, which the
-field check reads against the 50 ms frame budget (DEC-PERF).
+The mean and the worst of the samples of the last few seconds: the `?debug=1` readout's ms per radar draw and frame time, which the
+field check reads against the 50 ms frame budget.
 
 A time window, unlike the framework's `utils/frame-times` (the last N
 frames as percentiles, which the mesh cursor's readout uses): "the last

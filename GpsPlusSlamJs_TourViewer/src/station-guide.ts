@@ -68,7 +68,7 @@
  *   asks for a few steps (`visitor-status.ts`); the figure keeps waiting.
  * - **Progress lives as long as the tour stays open** (several AR entries;
  *   saving it across page lives is K3). A different tour starts a new run.
- * - **What the radar and the precision chip read** (W4 build plan M3):
+ * - **What the radar and the precision chip read**:
  *   the precision kind (`pending | code | gps | weak | none`, the line's
  *   own rules, published to the store only on a change), the camera's
  *   heading once the latch above holds (its forward through the alignment;
@@ -78,8 +78,7 @@
  *   ceiling speaks for the position and tracking is not lost, so a frozen
  *   radar (`'none'`, tracking lost) never draws from a position nobody
  *   vouches for, nor from a too-weak fix. Cleared at the session's end.
- * - **The walk lives in the page's store** (visitor walk W4 build plan
- *   2026-10-21-1105, M1): the run's statuses, the last skip, the note and
+ * - **The walk lives in the page's store**: the run's statuses, the last skip, the note and
  *   the skip's arm are `visitorWalk` (`visitor-walk-slice.ts`), whose
  *   reducer applies the run's rules. One call of the guide (a tick, a tap,
  *   a story's end) reads the store's walk with its own pending changes
@@ -88,15 +87,15 @@
  *   re-enters the guide (`ar-entry.ts` ticks it on every dispatch) sees one
  *   consistent walk. A walk another writer resets is no run: the guide
  *   starts none again for the same tour.
- * - **The walk's rules** (W4 build plan M4, §1.9): the station the walk is
- *   about is the store's one selector (`walkFocus`, R-1); while the guide
+ * - **The walk's rules**: the station the walk is
+ *   about is the store's one selector (`walkFocus`, the focus rule); while the guide
  *   shows no distance an any-order tour with several stations to find
- *   guesses none (R-2: `noGuess`, entered at once, left after the hold of
+ *   guesses none (the no-guess rule: `noGuess`, entered at once, left after the hold of
  *   `walk-no-guess.ts`), and nothing on the screen then shows a station's
- *   distance (R-0: no HUD targets); "Can't get there?" opens the list with
+ *   distance (the no-distance rule: no HUD targets); "Can't get there?" opens the list with
  *   the focus's row armed, or to choose without one; a skipped station
- *   comes back at any time (R-3); the visitor may choose a target (R-4);
- *   "End this story?" is the story card's whenever a story plays (R-5).
+ *   comes back at any time; the visitor may choose a target;
+ *   "End this story?" is the story card's whenever a story plays.
  *   Each control carries the action its label shows (`data-action`,
  *   `data-station`), and a tap does that, for that station (R14).
  */
@@ -194,7 +193,7 @@ type GuideControl = Pick<HTMLElement, "textContent" | "hidden" | "dataset">;
 export interface StationGuideDom {
   readonly line: Pick<HTMLElement, "textContent" | "hidden">;
   readonly skip: GuideControl;
-  /** The story card's end control (W4 build plan M2, §1.5; M4, R-5): when
+  /** The story card's end control: when
    *  given, "End this story?" and its confirm are written here whenever a
    *  story's station is found; absent, the skip button carries them while
    *  no station is in focus. */
@@ -203,7 +202,7 @@ export interface StationGuideDom {
 
 /** What a tap on the skip button (or the story card's end control) does;
  *  its label says which. "Can't get there?" names no station while none
- *  is guessed (R-2: it opens the list to choose). */
+ *  is guessed (the no-guess rule: it opens the list to choose). */
 export type SkipAction =
   | { readonly kind: "ask-skip"; readonly id: string | null }
   | {
@@ -211,7 +210,7 @@ export type SkipAction =
       readonly id: string;
     };
 
-/** What a tap on a row of the list does (W4 build plan M4, §1.6): its
+/** What a tap on a row of the list does: its
  *  Skip, the Skip's confirm or Cancel, "Bring back" (and the undo), or
  *  "Guide me here" on its title. */
 export type WalkRowTap = "skip" | "confirm" | "cancel" | "bring" | "choose";
@@ -239,22 +238,22 @@ export function skipActionOf(
 
 /**
  * The position the line speaks of (`lineText`), for the sheet's peek and
- * rows (W4 build plan M2): no position yet (`pending`), GPS too weak to
+ * rows: no position yet (`pending`), GPS too weak to
  * guide by (`weak`, with its accuracy), nothing vouching for it (`none`),
  * or a distance.
  */
 type GuidePositionKind = "pending" | "weak" | "none" | "distance";
 
-/** What the sheet reads of the guide (W4 build plan M2): the station the
+/** What the sheet reads of the guide: the station the
  *  line is about, the position's kind, every station's distance and the
  *  quick action shown. */
 export interface GuideView {
-  /** The station the walk is about (`walkFocus`, R-1): the order's, the
+  /** The station the walk is about (`walkFocus`, the focus rule): the order's, the
    *  chosen one, else the nearest; null when none is (a story plays, the
-   *  tour is complete, or R-2 guesses none). */
+   *  tour is complete, or the no-guess rule guesses none). */
   readonly focusId: string | null;
   readonly position: GuidePositionKind;
-  /** The position's precision (W4 build plan M3, §1.3): the chip's and
+  /** The position's precision: the chip's and
    *  the radar's kind, published to the store on a change. */
   readonly precision: WalkPrecisionKind;
   /** The fixes' accuracy behind `gps` and `weak`, m; null otherwise. */
@@ -272,26 +271,26 @@ export interface GuideView {
   readonly snapshot: WalkRadarGeometry | null;
   /** What the peek's quick action shows now (the skip button). */
   readonly quick: SkipAction | null;
-  /** What the story card's end control shows now (R-5); null without a
+  /** What the story card's end control shows now; null without a
    *  found station. */
   readonly end: SkipAction | null;
-  /** The visitor's chosen target (R-4), while it is waiting and offered. */
+  /** The visitor's chosen target, while it is waiting and offered. */
   readonly chosenId: string | null;
-  /** Whether a target may be chosen now (R-4): any order, two or more
+  /** Whether a target may be chosen now: any order, two or more
    *  stations to find. */
   readonly canChoose: boolean;
   /** The row whose Skip asked for its confirm. */
   readonly rowArmedId: string | null;
-  /** R-2 holds: no station is guessed (the list's hint). */
+  /** The no-guess rule holds: no station is guessed (the list's hint). */
   readonly noGuess: boolean;
-  /** R-2 holds and "Can't get there?" opened the list: the hint asks which
+  /** The no-guess rule holds and "Can't get there?" opened the list: the hint asks which
    *  station, and a row's Skip acts on one tap. */
   readonly chooser: boolean;
   /** The last skip while it can be undone: its station and the time left,
    *  ms (the row's bar). */
   readonly undo: { readonly id: string; readonly leftMs: number } | null;
   /** What just happened ("Skipped The well."), while its moment lasts
-   *  (`selectNote`); null otherwise. W4 says it in a toast. */
+   *  (`selectNote`); null otherwise. The prototype says it in a toast. */
   readonly note: string | null;
   /** Tracking is lost (the store's `trackingLost`): no skip is
    *  offered - the quick action shows only an undo, the rows no Skip and
@@ -362,7 +361,7 @@ export interface StationGuideDeps {
   onApproach?(station: TourStation, distanceM: number, activateM: number): void;
   /** A station is done (its story ended, or it was skipped). */
   onDone?(stationId: string): void;
-  /** A station told done (`onDone`) was brought back (R-3): the prefetch
+  /** A station told done (`onDone`) was brought back: the prefetch
    *  keeps it again. */
   onUndone?(stationId: string): void;
   /** The station whose story plays now (the story panel's), for the end
@@ -409,11 +408,11 @@ export interface StationGuide {
    *  default the skip button): does the action it carries, for the
    *  station it names (R14). */
   skipTapped(control?: { readonly dataset: DOMStringMap }): void;
-  /** A tap on a row of the list (W4 build plan M4, §1.6). */
+  /** A tap on a row of the list. */
   rowTapped(stationId: string, tap: WalkRowTap): void;
   /** "Keep listening": the ask to end the story is taken back. */
   cancelAsk(): void;
-  /** What the sheet reads (W4 build plan M2); null while the guide does
+  /** What the sheet reads; null while the guide does
    *  not run (no run, or the scan gate shut). */
   view(): GuideView | null;
   /** The AR session ended: the HUD goes; the progress stays. */
@@ -528,7 +527,7 @@ export function nearestOf<T>(
 
 /**
  * The line once the tour is complete (the sheet's completion card names it
- * too, W4 build plan M2). A branch tour ends with its path; the other
+ * too). A branch tour ends with its path; the other
  * branches' stations were never offered, so "every station" would be false
  * (R16).
  */
@@ -579,7 +578,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  again on the next session's first tick (the guide's own bookkeeping
    *  of a rule only it applies). */
   let replayFound = false;
-  /** When the distance came back while no station is guessed (R-2's
+  /** When the distance came back while no station is guessed (the no-guess rule's
    *  hold, `walk-no-guess.ts`): the guide's own bookkeeping; the store
    *  holds `noGuess`. */
   let noGuessBackAtMs: number | null = NO_GUESS_START.backAtMs;
@@ -611,7 +610,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   let presentByCode = false;
   /** The camera's last bearing this AR entry (`Measurement.headingDeg`). */
   let lastHeadingDeg: number | null = null;
-  /** The last judged geometry, for a frozen radar (W4 build plan M3): a
+  /** The last judged geometry, for a frozen radar: a
    *  derived cache, rebuilt from the measurement, never the store's. */
   let snapshot: WalkRadarGeometry | null = null;
 
@@ -850,7 +849,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     }
   }
 
-  /** The precision kind in the store (W4 build plan M3); only a change is
+  /** The precision kind in the store; only a change is
    *  dispatched. */
   function publishPrecision(kind: WalkPrecisionKind): void {
     const store = deps.guideStore;
@@ -1004,7 +1003,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     }
   }
 
-  /** The station the walk is about (`walkFocus`, R-1) over this tick's
+  /** The station the walk is about (`walkFocus`, the focus rule) over this tick's
    *  distances. */
   function focusStation(): string | null {
     if (liveRun() === null) return null;
@@ -1017,13 +1016,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   /** Whether the guide shows a distance now (a code's, or GPS within the
-   *  ceiling, with a station measured): R-0 and R-2 key on it. */
+   *  ceiling, with a station measured): the no-distance rule and the no-guess rule key on it. */
   function distanceShown(m: Measurement | null): boolean {
     const kind = precisionKind(m);
     return kind === "code" || kind === "gps";
   }
 
-  /** R-2: enter at once without a distance, leave after the hold, or at
+  /** The no-guess rule: enter at once without a distance, leave after the hold, or at
    *  once when the distance is a code's (`walk-no-guess.ts`); the store
    *  hears only a change. */
   function updateNoGuess(m: Measurement): void {
@@ -1044,7 +1043,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  farthest), the focus among them however far, in the offer's
    *  order. A present station that is offered is found already, so these
    *  are the stations whose content is hidden.
-   *  None while the guide shows no distance (R-0: each marker carries a
+   *  None while the guide shows no distance (the no-distance rule: each marker carries a
    *  distance label) - `'none'`, too weak, pending. */
   function hudTargets(): WayfindingTarget[] {
     const run = liveRun();
@@ -1099,7 +1098,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       if (unfoundOffered(run).length === 0) {
         return `${lead}Station found - its story is playing.`;
       }
-      // R-2: no station named, the position's state alone.
+      // The no-guess rule: no station named, the position's state alone.
       return `${lead}${which ?? "Stations to find"} - ${noGuessTail()}`;
     }
     const station = stationById(focus)!;
@@ -1120,14 +1119,14 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         return `${lead}${waiting} - GPS too weak to guide you (±${distanceText(last!.precision.accuracyM!)}); step into the open.`;
       case "none":
         // A focus without a distance (a chosen target, or the one station
-        // left to find; R-2 covers the rest): named, as the peek names it.
+        // left to find; the no-guess rule covers the rest): named, as the peek names it.
         return `${lead}${waiting} - ${NO_PRECISION_HINT}`;
       case "distance":
         return `${lead}${waiting}, ${distanceText(d!)}`;
     }
   }
 
-  /** The line's tail while R-2 guesses no station: what the position is
+  /** The line's tail while the no-guess rule guesses no station: what the position is
    *  doing, by its kind. */
   function noGuessTail(): string {
     switch (precisionKind(last)) {
@@ -1138,7 +1137,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       case "none":
         return NO_PRECISION_HINT;
       default:
-        // The distance is back, inside R-2's hold.
+        // The distance is back, inside the no-guess hold.
         return "waiting for a steady position…";
     }
   }
@@ -1238,8 +1237,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
 
   function render(): void {
     // A tap or a story's end while the scan gate is shut (a later AR
-    // entry waiting behind its own scan) writes nothing (W4 build plan
-    // §10, the stale line): the next frame would only hide it again.
+    // entry waiting behind its own scan) writes nothing (the stale line): the next frame would only hide it again.
     if (!running()) {
       hideAll();
       return;
@@ -1296,7 +1294,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
 
   /** What the peek's quick action offers now: the last skip's undo; for
    *  the focus "Can't get there?", or its skip once its row is armed or
-   *  its clock suggests it; with no station guessed (R-2) "Can't get
+   *  its clock suggests it; with no station guessed "Can't get
    *  there?" naming none. Pure: the render starts the clock. */
   function quickAction(): SkipAction | null {
     const run = liveRun();
@@ -1314,7 +1312,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     return { kind: ripe ? "skip" : "ask-skip", id: focus };
   }
 
-  /** The story card's end (R-5): "End this story?", its confirm once
+  /** The story card's end: "End this story?", its confirm once
    *  asked; null without a found station. */
   function endAction(): SkipAction | null {
     const story = storyTarget();
@@ -1436,7 +1434,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         }
       }
     }
-    // A figure holds its turn while no station is guessed (R-2): the
+    // A figure holds its turn while no station is guessed: the
     // position nobody vouches for is no one to face.
     if (m.headingNue !== null && !walkNoGuess(walk())) {
       deps.onVisitor?.(m.headingNue);
@@ -1461,11 +1459,11 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   }
 
   /** A skip, from any of its paths: an offered station not yet done. A
-   *  skip not settled yet settles first (R-3: a second skip inside the
+   *  skip not settled yet settles first (the bring-back rule: a second skip inside the
    *  first's window must not drop the first's "done"). */
   function skipStation(run: StationRun, id: string): void {
     // Only a station still to find: a found one's story is ended on its
-    // card (R-5), and a skip would let a bring back undo its find.
+    // card, and a skip would let a bring back undo its find.
     if (run.status(id)?.state !== "waiting") return;
     if (!run.offered().includes(id)) return;
     settleUndo();
@@ -1474,7 +1472,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     handle(run.skip(id, deps.now()));
   }
 
-  /** Bring a skipped station back, at any time (R-3, W-D2): inside the
+  /** Bring a skipped station back, at any time: inside the
    *  undo's window the skip is simply taken back; after it settled, the
    *  prefetch hears it (`onUndone`). */
   function bringBack(run: StationRun, id: string): void {
@@ -1485,7 +1483,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (!undoing) deps.onUndone?.(id);
   }
 
-  /** "Can't get there?" (R-2's taps): the list opens with the focus's row
+  /** "Can't get there?": the list opens with the focus's row
    *  armed, or, with no station guessed, to choose which. */
   function openToSkip(): void {
     const focus = focusStation();
@@ -1661,7 +1659,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       trackedHeading = false;
       headingReady = false;
       lastHeadingDeg = null;
-      // The next AR entry's first tick without a distance enters R-2 anew.
+      // The next AR entry's first tick without a distance enters the no-guess rule anew.
       noGuessBackAtMs = null;
       // The next AR entry starts with no judged geometry of its own.
       snapshot = null;

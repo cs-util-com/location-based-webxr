@@ -9,7 +9,7 @@ import {
 } from "./walk-no-guess";
 
 /**
- * Why these tests matter (visitor walk W4 build plan M4, §1.9 R-2): with
+ * Why these tests matter: with
  * no distance shown an any-order tour guesses no station. The guess goes
  * at once and comes back only once the distance has been back for a hold
  * without a break, so a fix flickering around the ceiling, or a code
@@ -66,7 +66,7 @@ describe("noGuessStep", () => {
     expect(noGuessStep(NO_GUESS_START, false, Number.NaN)).toBe(NO_GUESS_START);
   });
 
-  // The plan's bound: over T s of ticks a flapping input dispatches at
+  // The bound: over T s of ticks a flapping input dispatches at
   // most 2 x floor(T / hold) + 1 transitions, whatever the tick rate - a
   // leave needs a hold of distance of its own, and each enter but the
   // first follows a leave.

@@ -18,7 +18,7 @@ import { createWalkDirections } from "./walk-direction";
  * it on the aligned frame only by these two signals, read from the page's
  * session object and the real tracking-quality slice. A wrong wire (the
  * wrong slice, a stale field) would leave the guide on the raw fix for
- * ever, or trust a GPS-only alignment like a code's (r881 review L3).
+ * ever, or trust a GPS-only alignment like a code's.
  */
 
 function report(state: TrackingQualityReport["state"]): TrackingQualityReport {
@@ -89,7 +89,7 @@ describe("stationAlignmentSignals", () => {
   });
 });
 
-describe("createCallGuard (W4 build plan M2 review)", () => {
+describe("createCallGuard", () => {
   // Why: a story's change (its `onChange`) can fire from inside a guide
   // call - a find starts the story - and a sheet drawn then reads the
   // guide's half-made view beside a store its batch has not reached yet.
@@ -130,7 +130,7 @@ describe("createCallGuard (W4 build plan M2 review)", () => {
   });
 });
 
-describe("walkDirectionsOf (W4 build plan M3, §1.5)", () => {
+describe("walkDirectionsOf", () => {
   // Why: the peek and the rows say which way each station is only with a
   // heading and a position to point from (a code's or GPS); the angle is
   // the station's bearing from the camera's, positive to the right; and
@@ -187,7 +187,7 @@ describe("walkDirectionsOf (W4 build plan M3, §1.5)", () => {
   });
 });
 
-describe("walkDebugLines (the ?debug=1 readout, W4 build plan M3)", () => {
+describe("walkDebugLines (the ?debug=1 readout)", () => {
   // Why this test matters: the radar and its frame line are the visitor
   // walk's; a creator with ?debug=1 has no radar, and two lines reading
   // "-" for ever would be dead weight in the readout the creator works by.

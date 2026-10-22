@@ -1,6 +1,5 @@
 /**
- * The visitor's radar on the page (visitor walk W4 build plan
- * 2026-10-21-1105, M3, §1.2, §1.3): draws `walk-radar-model.ts`'s model on
+ * The visitor's radar on the page: draws `walk-radar-model.ts`'s model on
  * a canvas inside `#ar-root` (a round button that toggles the list),
  * writes the precision chip under it, and keeps what only a view keeps -
  * the range shown last (the adaptive range's hysteresis), the burst ring
@@ -36,16 +35,16 @@ import {
 } from "./walk-radar-model.js";
 
 /**
- * The most redraws a second (plan §5: W4 drew every frame; 15 shipped).
+ * The most redraws a second (the prototype drew every frame; 15 shipped).
  * The phone's frame time with the radar on decides whether more is
- * affordable (DEC-PERF: no frame over 50 ms; the `?debug=1` readout).
+ * affordable (the 50 ms frame budget: no frame over 50 ms; the `?debug=1` readout).
  */
 export const WALK_RADAR_HZ = 15;
 
-/** The burst ring at a station just found (W4: 1.6 s). */
+/** The burst ring at a station just found (the prototype: 1.6 s). */
 export const WALK_BURST_MS = 1600;
 
-/** W4's colours: the same values as `index.html`'s `--walk-*` tokens
+/** The prototype's colours: the same values as `index.html`'s `--walk-*` tokens
  *  (`walk-radar.test.ts` holds the two together). A canvas needs them as
  *  strings and as RGB for its gradients. */
 export const WALK_RADAR_COLOURS = {
@@ -68,7 +67,7 @@ const GPS_RGB = rgbOf(WALK_RADAR_COLOURS.gps);
 const WEAK_RGB = rgbOf(WALK_RADAR_COLOURS.weak);
 const ACCENT_RGB = rgbOf(WALK_RADAR_COLOURS.accent);
 const FOUND_RGB = rgbOf(WALK_RADAR_COLOURS.found);
-/** The frozen radar's greys (W4). */
+/** The frozen radar's greys. */
 const FROZEN_FOUND = "#b9c1c9";
 const FROZEN_OTHER = "#8b949d";
 
@@ -118,7 +117,7 @@ export interface WalkRadarDrawOptions {
   burstOf(id: string): number | undefined;
 }
 
-/** Draw the model (W4's `drawRadar`, from the model's numbers). */
+/** Draw the model (the prototype's `drawRadar`, from the model's numbers). */
 export function drawWalkRadar(
   g: RadarCanvas,
   m: WalkRadarModel,
@@ -147,7 +146,7 @@ export function drawWalkRadar(
     circle(c, c, ring.r);
     g.stroke();
   }
-  // The outer ring's label, placed as W4 places "100 m".
+  // The outer ring's label, placed as the prototype places "100 m".
   const labelled = m.rings.find((r) => r.label !== null);
   if (labelled?.label != null) {
     g.fillStyle = "rgba(255,255,255,.5)";
@@ -259,7 +258,7 @@ export function drawWalkRadar(
     g.fillStyle = "#fff";
     g.fill();
   } else {
-    // A GPS position wobbles a little - more when too weak (W4).
+    // A GPS position wobbles a little - more when too weak.
     const weak = m.visitor.tone === "weak";
     const j = o.reduceMotion ? 0 : weak ? 2.2 : 0.9;
     circle(c + Math.sin(o.nowMs / 530) * j, c + Math.cos(o.nowMs / 710) * j, 4);
@@ -429,7 +428,7 @@ export function createRadarBursts(): {
 }
 
 /**
- * The readout's frame-time source (W4 build plan M3, DEC-PERF): each frame
+ * The readout's frame-time source: each frame
  * loop tick's `dt` (seconds) goes into `window` as ms at `now()`. A dt
  * that is no positive finite number (the loop's first frame) is no frame
  * time. Returns the loop's unregister.
@@ -445,7 +444,7 @@ export function sampleFrameTimes(
 }
 
 /**
- * The `?debug=1` readout's two lines (W4 build plan M3, DEC-PERF): the ms
+ * The `?debug=1` readout's two lines: the ms
  * each radar draw took (two decimals: a draw is well under a millisecond
  * on a desktop) and the frame time, each as a mean and the worst over the
  * last 2 s; "-" before anything was measured.

@@ -1,7 +1,5 @@
 /**
- * Why these tests matter (visitor walk W4 build plan
- * GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md,
- * M3, §1.2, §1.3, §5): the radar redraws at most 15 times a second and
+ * Why these tests matter: the radar redraws at most 15 times a second and
  * always draws the latest state (a trailing draw); a station just found
  * bursts once, and an old find never replays on the next AR entry; the
  * radar labels no station with a distance (the list does); reduced motion
@@ -527,7 +525,7 @@ describe("wireWalkRadar", () => {
     expect(after(1, 0.8, true)).toBe(fresh(0.8));
   });
 
-  // Why this test matters (side by side with W4, a tour in order): there
+  // Why this test matters (side by side with the prototype, a tour in order): there
   // only the next station is offered and the rest wait as "later" dots,
   // yet they are still to find; a range from the next one alone shrank
   // the radar to 30 m and pushed every later dot onto its rim.
@@ -636,7 +634,7 @@ describe("the canvas colours are the page's tokens", () => {
 });
 
 describe("walkRadarDebugLines (the ?debug=1 readout)", () => {
-  // Why: the phone test judges the radar by these two lines (DEC-PERF: no
+  // Why: the phone test judges the radar by these two lines (the 50 ms frame budget: no
   // frame over 50 ms): the ms each draw took and the frame time, each as a
   // rolling mean and worst over 2 s; nothing measured yet reads "-".
   it("says the draw and the frame time, mean and worst", () => {
@@ -657,7 +655,7 @@ describe("walkRadarDebugLines (the ?debug=1 readout)", () => {
 });
 
 describe("sampleFrameTimes (the readout's frame line)", () => {
-  // Why this test matters (DEC-PERF): the field check reads the frame time
+  // Why this test matters: the field check reads the frame time
   // from this sampler; the frame loop hands seconds and a zero dt on its
   // first frame, so a sampler that kept seconds or the zero would report a
   // frame budget nobody could read against 50 ms.

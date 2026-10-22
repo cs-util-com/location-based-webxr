@@ -113,7 +113,7 @@ camera, so `installTourViewerArFakes(page)` installs
 
 - The fake `initAR` inserts a window-sized canvas as the overlay root's
   first child, as the framework does - without it no spec could see a panel
-  pushed below the screen by it (the owner's r750 field test).
+  pushed below the screen by it (as was seen on a phone).
   `installTourViewerArFakes(page, { printSizeM })` makes the print-size
   estimate report that size, one new independent window per call (the
   fakes' single camera pose carries no parallax), so the creator's size
@@ -158,7 +158,7 @@ These moved here from `object-editing.spec.js` so that
   the gate reports that the CODE passed it (`data-gate="passed-code"`).
   Every spec that locks the fixture code uses it (the walk specs,
   `stations.spec.js` and `ar-mode.spec.js`).
-- The AR start's switches (W4 build plan M2): `holdInitAR = true` holds the
+- The AR start's switches: `holdInitAR = true` holds the
   next initAR until `releaseInitAR()` (the coach's "Starting AR…" stays
   up); `failNextInitAR = true` rejects the next initAR once (the start
   fails, the button offers "Try again").

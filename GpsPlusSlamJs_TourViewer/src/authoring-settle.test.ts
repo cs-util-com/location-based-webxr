@@ -2636,7 +2636,7 @@ describe(
       const { store, files } = memoryDraftStore();
       const a = await withHostedTour([hostedPin("h1", "Gate")], store);
       // On the page: in AR the strip's persistent Undo takes the note's
-      // place (W4 build plan MU), so the note's Undo is the page's.
+      // place, so the note's Undo is the page's.
       a.endVisit();
       const list = a.dom.objectList;
       list.listHandlers!.remove("h1");
@@ -2697,7 +2697,7 @@ describe(
         hostedPin("h2", "Mill"),
       ]);
       // On the page: in AR the strip's persistent Undo takes the note's
-      // place (W4 build plan MU), so the note's Undo is the page's.
+      // place, so the note's Undo is the page's.
       a.endVisit();
       const list = a.dom.objectList;
       list.listHandlers!.remove("h1");
@@ -2716,7 +2716,7 @@ describe(
       expect(list.lastModel?.undo).toBe(false);
     });
 
-    // Why these tests matter (W4 build plan MU): in AR the strip's
+    // Why these tests matter: in AR the strip's
     // Undo is the one Undo - persistent, where the note's went after its
     // hold - and it takes back exactly the delete it names, through the
     // same path as the note's (`undoDelete`: the list, the scene, the
@@ -2932,7 +2932,7 @@ describe(
     it(`withdraws Undo after ${String(OUTCOME_HOLD_MS)} ms, and an expired Undo restores nothing`, async () => {
       const a = await withHostedTour([hostedPin("h1", "Gate")]);
       // On the page: in AR the strip's persistent Undo takes the note's
-      // place (W4 build plan MU), so the note's Undo is the page's.
+      // place, so the note's Undo is the page's.
       a.endVisit();
       const list = a.dom.objectList;
       list.listHandlers!.remove("h1");
@@ -3571,7 +3571,7 @@ describe(
       expect(a.codes.savedText(stored.id)).toBe(stored.json);
     });
 
-    // Why these tests matter (W4 build plan MU): the one-step undo
+    // Why these tests matter: the one-step undo
     // of a settle (Q-D) had no button. The settle lands at the visit's
     // end, so the strip offers it in the next visit, named by what it
     // takes back, and ONE tap takes back the code's improvement, the

@@ -328,7 +328,7 @@ describe("visitorPosition", () => {
   });
 });
 
-describe("visitorPosition - the camera's forward (W4 build plan M3)", () => {
+describe("visitorPosition - the camera's forward", () => {
   // Why this test matters: the radar is heading-up, and its heading is the
   // camera's forward in GPS-world NUE - the AR pose's orientation through
   // the alignment, the same frame the stations' bearings are taken in. A

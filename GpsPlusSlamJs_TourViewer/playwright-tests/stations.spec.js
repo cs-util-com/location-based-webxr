@@ -102,8 +102,8 @@ test("a station tour: the visitor at the code finds the first station, its knigh
     )
     .toEqual({ elements: 1, plays: 2 }); // the unlock, then the voice
 
-  // While the story plays, the story card can end it (K4 review R9; the
-  // control moved from the skip button to the card, W4 build plan M2).
+  // While the story plays, the story card can end it (the control moved
+  // from the skip button to the card).
   await expect(page.getByTestId("story-end")).toHaveText("End this story?");
 
   // A scene choice.
@@ -155,8 +155,7 @@ test("a station tour: the visitor at the code finds the first station, its knigh
   await page.getByTestId("scene-continue").click();
 
   // The tower is far: skipped on demand, in two taps (§8 D5): "Can't get
-  // there?" opens the list on its row, whose confirm skips it (W4 build
-  // plan M4).
+  // there?" opens the list on its row, whose confirm skips it.
   await expect(line).toHaveText(/^Next: The tower, \d+ m$/);
   const skip = page.getByTestId("station-skip");
   await expect(skip).toHaveText("Can't get there?");

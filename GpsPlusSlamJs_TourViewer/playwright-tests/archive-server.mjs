@@ -39,8 +39,8 @@
  * - `/ranges-ok/stations-tour-no-code.zip` - the same tour without its
  *   printed code: only a walk gives the guide its heading.
  * - `/ranges-ok/walk-tour.zip` (any order) and
- *   `/ranges-ok/walk-tour-fixed.zip` (fixed order) - the visitor walk W4
- *   prototype's "Old town walk" (visitor walk W4 build plan M2): four
+ *   `/ranges-ok/walk-tour-fixed.zip` (fixed order) - the visitor walk
+ *   prototype's "Old town walk": four
  *   stations at the prototype's spots, each a story of auto-advancing
  *   lines, for the sheet's and the layout's specs.
  *
@@ -210,8 +210,7 @@ const DEG_PER_M_LON = 1.32966e-5;
  * hold one pin, so the e2e suite can see which station's content stands in
  * the scene (only the present one's).
  * `withCode: false`: the same tour without its printed code (no level),
- * so nothing but walking gives the guide a heading (visitor walk W4 build
- * plan M2 review).
+ * so nothing but walking gives the guide a heading.
  */
 async function buildStationsZip({ withCode = true } = {}) {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
@@ -356,8 +355,8 @@ async function buildStationsZip({ withCode = true } = {}) {
 }
 
 /**
- * The prototype's "Old town walk" (visitor walk W4 build plan M2;
- * `public/prototypes/visitor-walk-4-radar-and-list/`): its four stations
+ * The "Old town walk" of the radar-and-list prototype
+ * (`public/prototypes/visitor-walk-4-radar-and-list/`): its four stations
  * at its spots (the prototype's x east, z south, here north and east),
  * found within the prototype's radius, offered within 60 m, each a story
  * of the prototype's lines that advance by themselves after 6 s (the

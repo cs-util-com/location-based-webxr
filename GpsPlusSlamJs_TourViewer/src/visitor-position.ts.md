@@ -73,7 +73,7 @@ const p = visitorPosition({
   device fix's time (never a vote's), null for a missing or non-finite
   timestamp.
 
-## The camera's forward (visitor walk W4 build plan M3)
+## The camera's forward
 
 - `ArPoseLike.orientation?` - the raw WebXR quaternion `[x, y, z, w]`.
 - `VisitorPosition.forwardNue?` - the camera's forward (raw WebXR -Z)

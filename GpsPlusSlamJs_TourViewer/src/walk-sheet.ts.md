@@ -2,9 +2,7 @@
 
 ## Purpose
 
-The visitor's sheet on the page (visitor walk W4 build plan
-`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md`,
-M2, §1.5, §1.6, §1.8): writes `walk-sheet-model.ts`'s model into the
+The visitor's sheet on the page: writes `walk-sheet-model.ts`'s model into the
 sheet's elements inside `#ar-root` (`#walk-sheet`) and the away block on
 the start page (`#walk-away`), and turns taps and drags on the grab and
 the peek into the store's `sheetSet`. A thin writer, wired by
@@ -12,8 +10,8 @@ the peek into the store's `sheetSet`. A thin writer, wired by
 
 ## Public API
 
-- `WALK_SHEET_DRAG_PX = 24` - W4's drag threshold; the range 16-40 px is
-  a phone test (plan §5).
+- `WALK_SHEET_DRAG_PX = 24` - the prototype's drag threshold; the range 16-40 px is
+  a phone test.
 - `sheetAfterDrag(dy, thresholdPx?)` - up past the threshold `"list"`,
   down `"peek"`, a shorter (or non-finite) drag `null` (a tap).
 - `quickKind(quick)` - the quick action's look: `ask` (Can't get there?),
@@ -54,7 +52,7 @@ the peek into the store's `sheetSet`. A thin writer, wired by
     the page; a tab to another control or a window blur moves nothing.
 - **The grab's target is 44 px** around its 5 px pill: `.walk-grab::before`
   reaches 11 px above the sheet's edge and 11 px into the segments, so
-  the layout is W4's unchanged. The grab carries `aria-controls="walk-list"`
+  the layout is the prototype's unchanged. The grab carries `aria-controls="walk-list"`
   beside `aria-expanded`.
 - The guide writes the labels of `#station-skip` and `#walk-story-end`;
   this module writes only their looks.
@@ -81,7 +79,7 @@ view.render(model, { sheet: "peek", quick, position: "distance", story: null });
   drag, the story card, the completion, the away block) and
   `playwright-tests/visitor-walk-layout.spec.js` (positions and gaps).
 
-## The direction arrows (visitor walk W4 build plan M3)
+## The direction arrows
 
 - `WalkSheetDom.distanceText` and `distanceArrow` - the peek's distance
   is an arrow (`#walk-distance-arrow`) and a text (`#walk-distance-text`)
@@ -99,11 +97,11 @@ view.render(model, { sheet: "peek", quick, position: "distance", story: null });
 - Tests: `setArrow` in `walk-sheet.test.ts`; the page in
   `playwright-tests/visitor-walk.spec.js`.
 
-## The rows' controls and the hint (visitor walk W4 build plan M4)
+## The rows' controls and the hint
 
 - `wireWalkSheet` takes `rowTapped(stationId, tap)` (the guide's
   `rowTapped`), and `render` takes `end` (the story card's end control's
-  action, R-5; its `data-kind` end|ask follows it, no longer the quick).
+  action, the end-a-story rule; its `data-kind` end|ask follows it, no longer the quick).
 - A row is `li.walk-row[data-state][data-id][data-chosen]` with its glyph,
   a title button `.walk-row-main` (`data-tap="choose"`, "Guide me here":
   `aria-pressed` where a target can be chosen, `disabled` otherwise), its
@@ -126,13 +124,13 @@ view.render(model, { sheet: "peek", quick, position: "distance", story: null });
   so the focus goes to what took its place (`focusAfterTap`, exported,
   pure): Skip to its confirm, the confirm to the undo, Cancel and a bring
   back to Skip, "Guide me here" to itself; else the list's close button.
-- **The quick action hides while the list is open** (W4; CSS on
+- **The quick action hides while the list is open** (the prototype; CSS on
   `data-sheet="list"`): the rows carry Skip, its confirm and the undo. A
   focus it held when it opened the list goes to the armed row's confirm,
   else (the chooser, no row armed) to the first row's Skip, else to the
   close button.
 - `WalkSheetDom.hint` (`#walk-hint`) - the list's hint while no station is
-  guessed (R-2), between the progress line and the rows; hidden otherwise.
+  guessed, between the progress line and the rows; hidden otherwise.
   While it shows, every row's Skip carries `aria-describedby="walk-hint"`,
   so a screen reader hears the chooser's question with the control that
   answers it.

@@ -32,12 +32,10 @@ The gate and the well each hold one pin, so the suite sees which station's
 content stands in the scene (only the present one's).
 `/ranges-ok/stations-tour-no-code.zip` is the same stations tour without
 its printed code (no level): only a walk gives the guide its heading
-(`visitor-walk.spec.js`, the finding-direction path, W4 build plan M2
-review).
+(`visitor-walk.spec.js`, the finding-direction path).
 
 `/ranges-ok/walk-tour.zip` (any order) and `/ranges-ok/walk-tour-fixed.zip`
-(fixed order) are the visitor walk W4 prototype's "Old town walk" (visitor
-walk W4 build plan M2, `visitor-walk.spec.js` and
+(fixed order) are the visitor walk prototype's "Old town walk" (`visitor-walk.spec.js` and
 `visitor-walk-layout.spec.js`): four stations at the prototype's spots (the
 gate 28 m north, the well 82 N 34 E, the tower 170 N 48 W, the garden
 240 N 46 E), found within the prototype's radius, offered within 60 m,

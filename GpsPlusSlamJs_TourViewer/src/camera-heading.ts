@@ -1,6 +1,5 @@
 /**
- * The camera's heading for the visitor's walk (visitor walk W4 build plan
- * 2026-10-21-1105, M3 and its review's finding 1): the bearing of the
+ * The camera's heading for the visitor's walk: the bearing of the
  * camera's forward, held while the forward has too little of a horizontal
  * part to have a bearing worth showing. A phone held nearly flat over the
  * ground swings that bearing by tens of degrees per degree of hand tremor

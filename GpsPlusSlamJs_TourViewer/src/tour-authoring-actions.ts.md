@@ -81,7 +81,7 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
     `tourAuthoring/objectDeleteUndone`: the same payload as the
     `objectDeleted` it undoes (the restored object, `hosted`, the visit,
     the time, the surface), so a replay pairs the two by the object's id.
-  - `settleUndone(payload)` (W4 build plan MU) -
+  - `settleUndone(payload)` -
     `tourAuthoring/settleUndone`: a settle's step taken back from the AR
     strip's Undo (`creator-undo.ts`): `arVisitIndex` (the visit of the
     tap), `settledVisitIndex` (the visit whose settle took the step - its

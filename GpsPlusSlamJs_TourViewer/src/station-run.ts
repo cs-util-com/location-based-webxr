@@ -23,8 +23,7 @@
  * - No deadlock (§8 D5): every order preset offers something until the run
  *   is complete, and the skip is always there for an offered station.
  *
- * The rules are pure transitions over plain data (`WalkProgress`, visitor
- * walk W4 build plan 2026-10-21-1105, M1): `applyWalkStep` and the
+ * The rules are pure transitions over plain data (`WalkProgress`): `applyWalkStep` and the
  * queries below. The page's store applies them in its `visitorWalk`
  * reducer (`visitor-walk-slice.ts`), one rule in the store;
  * `createStationRun` is a thin adapter holding one `WalkProgress` in its
@@ -140,8 +139,8 @@ export interface StationRun {
    *  review R14: under `any` order every clock started at the tour's
    *  start, so after two minutes every focus was a one-tap skip). */
   focus(id: string, nowMs: number, distanceM: number | null): void;
-  /** Bring a skipped station back, at any time (R14; W4 build plan M4,
-   *  W-D2): it waits again, unskipped, with a fresh clock, and the order
+  /** Bring a skipped station back, at any time (R14):
+   *  it waits again, unskipped, with a fresh clock, and the order
    *  offers it as before the skip; under branch order the path returns to
    *  the station it was on once this one is done (`branchReturns`). A
    *  station that was not skipped: nothing. */
@@ -177,7 +176,7 @@ export interface WalkProgress {
   readonly stations: readonly WalkStation[];
   readonly branchCurrent: string | null;
   /**
-   * `branch` order's return points (visitor walk W4 build plan M4, R-3): a
+   * `branch` order's return points: a
    * station brought back takes the path to it, and the station the path
    * was on (null: the path had ended) waits here; once the brought-back
    * station is done the path returns to it. A stack, so two stations
@@ -464,7 +463,7 @@ export function applyWalkStep(p: WalkProgress, step: WalkStep): WalkTransition {
         focusDistanceM: null,
       });
       // Under branch order the path goes to it, and returns to the station
-      // it was on once it is done (R-3; null: the path had ended).
+      // it was on once it is done (the bring-back rule; null: the path had ended).
       if (next.order === "branch") {
         const was = p.branchCurrent;
         next = {

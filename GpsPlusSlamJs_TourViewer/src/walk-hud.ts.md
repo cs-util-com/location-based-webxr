@@ -73,8 +73,7 @@ itself the change the visitor is meant to see - and a focus changes when
 the nearest station changes, mostly while walking. A per-target colour
 would keep the smoothing and remove the jump, at the price of a framework
 change every dependent app's gate pays for. What would reverse it: a
-field tester seeing the jump as a pop on the phone (the field checklist's "the
-pop seen or not"), most likely at a fast turn (60 degrees a second, 66 px).
+field tester seeing the jump as a pop on the phone, most likely at a fast turn (60 degrees a second, 66 px).
 
 ## Examples
 

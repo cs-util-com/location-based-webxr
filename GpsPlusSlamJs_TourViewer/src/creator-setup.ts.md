@@ -97,7 +97,7 @@ were here. What stays is the Finish's side:
     - `newStationButton` (optional; owner decision D8 of `GpsPlusSlamJs_Docs/docs/2026-10-18-2210-editor3d-prototypes-round-2-plan.md`) -
       "New station here", `#setup-new-station` after "Take a photo";
       handled by `creator-placement.ts`; absent (node tests), no chip.
-    - `undoButton`, `undoLabel` (optional; W4 build plan MU) - the
+    - `undoButton`, `undoLabel` (optional) - the
       strip's persistent Undo, `#setup-undo` first in `#setup-controls`,
       and its label; wired by `creator-undo.ts` (offers from the object
       editing's delete and the settle's automatic code change; rendered

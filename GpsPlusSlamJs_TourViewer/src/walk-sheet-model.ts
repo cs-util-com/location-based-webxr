@@ -1,6 +1,5 @@
 /**
- * The visitor's sheet in AR, as data (visitor walk W4 build plan
- * 2026-10-21-1105, M2, §1.5, §1.6, §1.8): the peek (today's station line
+ * The visitor's sheet in AR, as data: the peek (today's station line
  * split into eyebrow, title, distance and tail), the segments, the story
  * card's place, the list (header, progress line, completion card, a row
  * per station) and the away block on the start page. Pure: it reads the
@@ -8,14 +7,14 @@
  * `GuideView`: the station in focus, the position's kind, the distances)
  * and the sheet's state; `walk-sheet.ts` writes it to the page.
  *
- * Every text is today's (kept) or W4's, as the plan names them; nothing
- * here decides what the walk offers. M3 adds the direction words
+ * Every text is today's (kept) or the prototype's; nothing here decides
+ * what the walk offers. The direction words
  * (`walk-direction.ts`) and their arrows wherever a distance is shown and
  * a heading exists; the caller keeps each station's word with its
- * hysteresis and hands it in (`directions`). M4 adds the rows' actions
+ * hysteresis and hands it in (`directions`). The rows carry their actions
  * (Skip, its confirm, Bring back, the undo with its bar), the chosen
  * target ("Guide me here", " - your choice"), the list's hint and the
- * peek with no station guessed (R-2), as the guide's view states them.
+ * peek with no station guessed, as the guide's view states them.
  *
  * @see walk-sheet-model.ts.md
  */
@@ -43,7 +42,7 @@ import {
 
 /**
  * Above this many stations the segments give way to one continuous bar
- * with the counts (W4 build plan §5): each segment stays at least 3 px
+ * with the counts: each segment stays at least 3 px
  * wide with 4 px gaps inside the narrowest sheet, a 360 px phone with
  * 16 px side padding (328 px: 47 x 3 + 46 x 4 = 325). The landscape card
  * (370 px less 32) holds 48. Reversed by a measurement on a narrower
@@ -51,7 +50,7 @@ import {
  */
 export const WALK_SEGMENT_LIMIT = 47;
 
-/** A station's look in the segments, the rows and (M3) the radar. */
+/** A station's look in the segments, the rows and the radar. */
 export type WalkRowState =
   "next" | "left" | "found" | "here" | "skipped" | "later";
 
@@ -65,7 +64,7 @@ export interface WalkSheetInput {
   /** The story playing, or null. */
   readonly story: { readonly stationId: string } | null;
   readonly sheet: WalkSheet;
-  /** Each station's direction now (M3): the word with its hysteresis
+  /** Each station's direction now: the word with its hysteresis
    *  (`createWalkDirections`) and its angle from straight ahead, degrees,
    *  positive to the right; absent or missing a station: no heading. */
   readonly directions?: ReadonlyMap<string, WalkSheetDirection>;
@@ -110,7 +109,7 @@ export interface WalkRow {
   readonly sub: string;
   /** The sub line's arrow, as the peek's; null without one. */
   readonly arrowDeg: number | null;
-  /** The row's action button (W4 M4, §1.6): "Skip" for a station to
+  /** The row's action button: "Skip" for a station to
    *  find, "Bring back" for a skipped one, "Undo: bring back <title>"
    *  for the last skip in its window; null with none, and while the
    *  row's confirm shows instead. */
@@ -124,9 +123,9 @@ export interface WalkRow {
   readonly confirm: string | null;
   /** The undo's time left, ms, for its bar; null without an undo. */
   readonly undoLeftMs: number | null;
-  /** The visitor's chosen target (R-4): the orange bar on its edge. */
+  /** The visitor's chosen target: the orange bar on its edge. */
   readonly chosen: boolean;
-  /** "Guide me here" is offered on its title (R-4). */
+  /** "Guide me here" is offered on its title. */
   readonly choosable: boolean;
   /** The title button's accessible name (ends "Guide me here" when
    *  choosable). */
@@ -148,7 +147,7 @@ export interface WalkSheetModel {
       readonly title: string;
       readonly text: string;
     } | null;
-    /** The hint above the rows while no station is guessed (R-2, §1.6);
+    /** The hint above the rows while no station is guessed;
      *  null otherwise. */
     readonly hint: string | null;
     readonly rows: readonly WalkRow[];
@@ -156,7 +155,7 @@ export interface WalkSheetModel {
 }
 
 const WAITING = "Waiting for your position…";
-/** R-2's hold: the distance is back, no station named yet. */
+/** The no-guess hold: the distance is back, no station named yet. */
 const SETTLING = "Waiting for a steady position…";
 const NO_PRECISION_TAIL =
   "Scan one of the tour's codes so the guide knows where you are.";
@@ -166,7 +165,7 @@ function distanceText(m: number): string {
   return formatDistance(m, { metreDecimals: 0 });
 }
 
-/** Whether the visitor has progress to keep (§1.8): a station found, done
+/** Whether the visitor has progress to keep: a station found, done
  *  or skipped. */
 export function walkHasProgress(progress: WalkProgress | null): boolean {
   return (
@@ -241,7 +240,7 @@ function arrowOf(direction: WalkSheetDirection | undefined): number | null {
     : Math.round(direction.angleDeg);
 }
 
-/** The row's action, its confirm and its undo bar (W4 M4, §1.6). */
+/** The row's action, its confirm and its undo bar. */
 function rowActions(
   state: WalkRowState,
   view: GuideView,
@@ -317,7 +316,7 @@ function rowSubOf(
       return plain("Later");
     case "next":
     case "left": {
-      // No "~N m" anywhere (§1.9 R-0): too weak shows no distance either.
+      // No "~N m" anywhere: too weak shows no distance either.
       if (view.position === "none" || view.position === "weak") {
         return plain("Distance unknown");
       }
@@ -361,7 +360,7 @@ function peekOf(
     (id) => walkStatus(progress, id)?.state !== "found",
   );
   if (focus === undefined && toFind.length > 0) {
-    // R-2: no station guessed - the position's state alone (W4 under
+    // The no-guess rule: no station guessed - the position's state alone (the prototype under
     // `'none'`; the chip's words for the other no-distance states).
     return {
       kind: "none",
@@ -457,7 +456,7 @@ function completionOf(
   progress: WalkProgress,
 ): { title: string; text: string } {
   const { found, skipped, total } = counts(progress);
-  // A skipped station comes back at any time (W-D2, M4); under branch
+  // A skipped station comes back at any time; under branch
   // order the path decides how many there are, so no count.
   const again = "A skipped station can still be brought back.";
   return {
@@ -477,7 +476,7 @@ const CHIPS: Record<TourOrder, string> = {
   branch: "Your path",
 };
 
-/** The list's hint while no station is guessed (R-2, §1.6): what the
+/** The list's hint while no station is guessed: what the
  *  position is doing, and, opened by "Can't get there?", which station. */
 function hintOf(view: GuideView): string | null {
   if (!view.noGuess) return null;
@@ -571,7 +570,7 @@ export interface AwayModel {
   }[];
 }
 
-/** The away block on the start page (§1.8): read-only, no focus. */
+/** The away block on the start page: read-only, no focus. */
 export function awayModel(input: {
   readonly stations: readonly TourStation[];
   readonly order: TourOrder;
@@ -583,8 +582,8 @@ export function awayModel(input: {
     rowState(input.progress, station.id, null, offered),
   );
   return {
-    // By decision (§1.8): W4's "stays on this phone" is false today -
-    // progress lives with the open tour and goes with a reload (K3).
+    // The prototype's "stays on this phone" is false today: progress
+    // lives with the open tour and goes with a reload.
     text: "You left AR. Your progress is kept while this page is open.",
     segments: segmentsOf(states),
     rows: shown.map(({ station, number }, i) => {

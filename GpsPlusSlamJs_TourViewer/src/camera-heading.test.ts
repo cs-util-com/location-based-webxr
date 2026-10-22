@@ -1,5 +1,5 @@
 /**
- * Why these tests matter (visitor walk W4 build plan M3 review, finding 1):
+ * Why these tests matter:
  * the radar is heading-up and the direction words follow the camera's
  * bearing. A phone held nearly flat over the ground has almost no
  * horizontal forward, so a degree of hand tremor swings that bearing by

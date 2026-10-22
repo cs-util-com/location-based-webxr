@@ -172,7 +172,7 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   decided by the settle: the measure button, the explicit replace and its
   confirm are gone, UI round 1, U3, and the move question since code book
   plan M6), first the strip's persistent Undo `setup-undo` (its label
-  `setup-undo-label`, W4 build plan MU, `creator-undo.ts`), then the
+  `setup-undo-label`, `creator-undo.ts`), then the
   placement controls `setup-pin` / `pin-label` / `pin-save` /
   `pin-cancel` / `setup-photo`; then `setup-finish`, and LAST, outside
   the controls because it works on the page too, the object list
@@ -267,7 +267,7 @@ The framework's AR canvas (window-sized, `#ar-root`'s first child after
 absolute, the RecorderApp's rule, left it at `#ar-root`'s offset and the
 page 17 px wider than a phone's window, pinned by
 `visitor-walk-layout.spec.js`): in the flow it pushed the whole panel a screen
-height down, below the overlay's edge (owner's r750 field test;
+height down, below the overlay's edge (seen on a phone;
 `playwright-tests/ar-layout.spec.js` pins every panel control on screen at
 360x640, 360x800 and 390x844). `#size-offer` is the panel's FIRST child,
 above `#setup-status`.
@@ -280,9 +280,8 @@ playing) are inside `#ar-root`: the visitor stays in AR the whole tour
 them. `#relocate-note` ("Test mode: this tour was moved to where you
 are.") shows only when the test switch `?relocate=here` moved the tour
 (`tour-relocation.ts`).
-The visitor's walk in AR (visitor walk W4 build plan
-`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md`,
-M2; the prototype `public/prototypes/visitor-walk-4-radar-and-list/`),
+The visitor's walk in AR (the prototype
+`public/prototypes/visitor-walk-4-radar-and-list/`),
 all inside `#ar-root`: `#station-line` is visually hidden since M2 (the
 hidden copy the tests and a screen reader read; the sheet shows it in two
 lines); `#walk-coach` (`walk-coach`, its `data-look` spinner, sway or
@@ -306,22 +305,22 @@ M4), `walk-rows` whose rows carry `walk-row`, `data-state`, `data-id`,
 `data-chosen`, the title button `walk-row-main` with a `walk-row-sub`, the
 action `walk-row-act` (`data-k` skip, bring or undo), the confirm
 `walk-row-confirm` with `walk-row-cancel` and the undo's bar
-`walk-undobar` (M4), and `walk-list-foot` with `walk-exit`). While the list
-is open the quick action `#station-skip` is not shown (W4: the rows
+`walk-undobar`, and `walk-list-foot` with `walk-exit`). While the list
+is open the quick action `#station-skip` is not shown (the prototype: the rows
 carry its actions). In AR a visitor's
-`#enter-ar` is W4's round Exit button at the top left and `#ar-status`
+`#enter-ar` is the prototype's round Exit button at the top left and `#ar-status`
 is visually hidden (kept for `data-state` and `?debug=1`). The scan
 card's found look is `#scan-card[data-look="found"]` (a check in its
 animation's place). On the start page, `#walk-away` (`walk-away`,
 `walk-away-text`, `walk-away-segments`, `walk-away-rows` with
 `walk-away-row` items) shows the progress after leaving AR, its
-segments in W4's paper colours (`--walk-away-found` #0f766e,
+segments in the prototype's paper colours (`--walk-away-found` #0f766e,
 `--walk-away-left` #ddd6c7, also its rows' border, on rows of
 `--walk-away-row` #fff). The walk's
 colours are `--walk-*` tokens on `html`; design.css's `.radar`,
 `.toast` and `.hint` classes are not used (plan §1.2). The walk's
 surfaces set `font-variant-numeric: lining-nums`, since the app font's
-old-style numerals shrink a row's number and a distance next to W4's;
+old-style numerals shrink a row's number and a distance next to the prototype's;
 `.walk-distance` sets `lining-nums tabular-nums` together, since its own
 value replaces the inherited one.
 `#ar-debug` (a `<pre>` in `#ar-root`, hidden unless `?debug=1`) holds the
@@ -391,7 +390,7 @@ for a creator and a visitor; the no-console-errors smoke boots
 exactly this page. `src/printed-size-default.test.ts` reads this file for
 the size default.
 
-## The radar and the precision chip (visitor walk W4 build plan M3)
+## The radar and the precision chip
 
 - `#walk-radar-wrap` (hidden until the walk shows; `data-mode` live or
   frozen) holds `#walk-radar` (a button, "Stations around you - open the

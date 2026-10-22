@@ -1,14 +1,13 @@
 /**
- * The visitor's sheet on the page (visitor walk W4 build plan 2026-10-21-1105,
- * M2, §1.5, §1.6, §1.8): writes `walk-sheet-model.ts`'s model into the
+ * The visitor's sheet on the page: writes `walk-sheet-model.ts`'s model into the
  * sheet's elements inside `#ar-root` and the away block on the start page,
  * and turns the grab's and the peek's taps and drags into the store's
  * `sheetSet`. A thin writer: every text and state comes from the model;
  * it writes a node only when what it shows changed (the sheet is redrawn
- * on every guide call, a camera frame among them). M3's direction arrows
+ * on every guide call, a camera frame among them). The direction arrows
  * turn in place: an arrow's angle changes with every camera frame, so it
  * is kept out of the rows' redraw key and written only when it changed.
- * M4 gives each row its controls (W4 §1.6): "Guide me here" on its title,
+ * Each row has its controls: "Guide me here" on its title,
  * its action (Skip, Bring back, the undo with its bar) and the Skip's
  * confirm; a tap goes to the guide as `rowTapped`, and a redraw hands
  * the focus to the control that took the tapped one's place.
@@ -27,8 +26,8 @@ import type {
 } from "./walk-sheet-model.js";
 
 /**
- * How far a drag on the grab or the peek opens or closes the list (W4:
- * 24 px). Shipped 24 px; the range 16-40 px is a phone test (plan §5):
+ * How far a drag on the grab or the peek opens or closes the list (the
+ * prototype: 24 px). Shipped 24 px; the range 16-40 px is a phone test:
  * shorter and a tap that slips opens it, longer and the gesture feels
  * stuck.
  */
@@ -44,7 +43,7 @@ export function sheetAfterDrag(
   return dy < 0 ? "list" : "peek";
 }
 
-/** The quick action's look (W4): an ask, a suggestion or an undo. */
+/** The quick action's look: an ask, a suggestion or an undo. */
 export function quickKind(
   quick: SkipAction | null,
 ): "ask" | "suggested" | "undo" | null {
@@ -64,7 +63,7 @@ export function quickKind(
  * Hide `el` (or show it); when it hides while it holds the focus (itself
  * or a child), the focus moves to `fallback`, what takes its place: a
  * focused element that hides drops the focus to the page's body, and a
- * keyboard or switch user starts over from the top (W4 M2 review).
+ * keyboard or switch user starts over from the top.
  */
 export function hideKeepingFocus(
   el: { hidden: HTMLElement["hidden"]; contains(other: never): boolean },
@@ -188,7 +187,7 @@ export interface WalkSheetDom {
   readonly doneTitle: El;
   readonly doneText: El;
   readonly progress: El;
-  /** The list's hint while no station is guessed (R-2). */
+  /** The list's hint while no station is guessed. */
   readonly hint: El;
   readonly rows: El;
   readonly foot: El;
@@ -208,7 +207,7 @@ export interface WalkSheetView {
     extra: {
       readonly sheet: WalkSheet;
       readonly quick: SkipAction | null;
-      /** The story card's end control's action (R-5). */
+      /** The story card's end control's action. */
       readonly end: SkipAction | null;
       readonly position: string;
       readonly story: {
@@ -231,7 +230,7 @@ function setHidden(el: El, hidden: boolean): void {
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-/** W4's direction arrow, pointing up (straight ahead) until turned. */
+/** The prototype's direction arrow, pointing up (straight ahead) until turned. */
 function createArrow(doc: Document): SVGElement {
   const svg = doc.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 16 16");
@@ -315,7 +314,7 @@ export function wireWalkSheet(deps: {
   let dragged = false;
   for (const el of [dom.grab, dom.peek]) {
     el.addEventListener("pointerdown", (event) => {
-      // The quick action is a button of its own (W4).
+      // The quick action is a button of its own.
       if (
         event.target instanceof Element &&
         event.target.closest("button") !== null &&
@@ -475,7 +474,7 @@ export function wireWalkSheet(deps: {
         glyph.className = "walk-glyph";
         glyph.setAttribute("aria-hidden", "true");
         glyph.textContent = String(row.number);
-        // The title is "Guide me here" where a target can be chosen (R-4).
+        // The title is "Guide me here" where a target can be chosen.
         const main = button("walk-row-main", "choose", "");
         main.dataset["testid"] = "walk-row-main";
         if (row.choosable)
@@ -633,7 +632,7 @@ export function wireWalkSheet(deps: {
           ...model.list.progress.rest.map((part) => ` - ${part}`),
         );
       }
-      // The quick action hides while the list is open (W4; the CSS): a
+      // The quick action hides while the list is open (the prototype; the CSS): a
       // focus it held when it opened the list goes to the armed row's
       // confirm; in the chooser (the hint asks which station) to the
       // first row's Skip, the question's first answer; else to the list's

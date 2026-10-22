@@ -19,14 +19,13 @@ import type { WalkFocusCue } from "./walk-focus-cues";
 import { WALK_NO_GUESS_HOLD_MS } from "./walk-no-guess";
 
 /**
- * Why these tests matter (visitor walk W4 build plan 2026-10-21-1105, M4,
- * §1.9 R-0 to R-5): the walk's rules as the guide applies them. With no
- * distance shown nothing may show one (R-0) and an any-order tour may not
- * guess a station (R-2): the old guide named "nearest: <title>" by a
+ * Why these tests matter: the walk's rules as the guide applies them. With no
+ * distance shown nothing may show one and an any-order tour may not
+ * guess a station: the old guide named "nearest: <title>" by a
  * position nobody vouched for, laid a trail to it and put distance labels
  * on the HUD under too-weak GPS. "Can't get there?" opens the list; a
- * skipped station comes back at any time (R-3); the visitor may choose a
- * target (R-4); a story can always be ended (R-5).
+ * skipped station comes back at any time; the visitor may choose a
+ * target; a story can always be ended.
  */
 
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -335,7 +334,7 @@ describe("'Can't get there?' opens the list, armed or to choose", () => {
   });
 
   // Why: a row's Skip is for a station still to find; a found station's
-  // story is ended on its card (R-5). Skipped, a found station could be
+  // story is ended on its card. Skipped, a found station could be
   // brought back as unfound - its find undone - so a tap that names one,
   // in chooser mode or not, changes nothing.
   it("a found station is never skipped or armed from a row", () => {
@@ -498,7 +497,7 @@ describe("while tracking is lost", () => {
 });
 
 describe("a skipped station comes back at any time", () => {
-  // Why (§1.9 R-3): the old guide overwrote the last
+  // Why: the old guide overwrote the last
   // skip on a second one inside its 6 s window without settling it, so
   // the first never reached the prefetch as done.
   it("a second skip inside the first's window settles the first", () => {
@@ -569,7 +568,7 @@ describe("choosing a target", () => {
     expect(h.dom.line.textContent).toBe(
       "3 stations to find - your choice: TOWER, 80 m",
     );
-    // The trail follows the choice (R-1: the breadcrumbs read the focus).
+    // The trail follows the choice (the focus rule: the breadcrumbs read the focus).
     expect(h.crumbs.at(-1)).toBe("tower");
     h.at(0, 0, 40);
     expect(h.view().focusId).toBe("tower");

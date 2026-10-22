@@ -208,7 +208,7 @@ test("the moved spot survives a reload: the draft restores it and the Finish wri
 test("the next visit's strip offers the automatic move in its Undo, and one tap takes it back", async ({
   page,
 }) => {
-  // Q-D and the persistent Undo (W4 build plan MU): the settle's automatic
+  // Q-D and the persistent Undo: the settle's automatic
   // code change is one undo step, and the strip's persistent Undo is its
   // button. The settle lands at the visit's end, so the next visit offers
   // it, named by what it takes back; the tap says what was undone.

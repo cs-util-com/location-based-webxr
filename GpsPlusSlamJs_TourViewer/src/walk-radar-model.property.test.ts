@@ -12,9 +12,7 @@ import type { WalkChipKind } from "./visitor-guide-slice";
 import type { WalkRowState } from "./walk-sheet-model";
 
 /**
- * Why these properties matter (visitor walk W4 build plan
- * GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md,
- * M3, Tests): the radar is the visitor's map; a blip off its bearing, a
+ * Why these properties matter: the radar is the visitor's map; a blip off its bearing, a
  * nearer station drawn farther out, a blip outside the rim, two oranges,
  * an orange where the guide cannot tell which station is nearest, or a
  * blur narrower for a worse fix would each mislead. The properties state
@@ -156,8 +154,8 @@ describe("walkRadarModel - properties", () => {
     );
   });
 
-  // Changed in M4: which station is the focus is the guide's (§1.9 R-1,
-  // R-2) - in R-2's condition it names none, so no row is "next" (the
+  // Which station is the focus is the guide's - in the no-guess
+  // condition it names none, so no row is "next" (the
   // guide's and the sheet's properties hold that); the radar draws
   // exactly the row the guide names, and none while frozen.
   it("at most one orange blip, only on the guide's focus, none frozen", () => {

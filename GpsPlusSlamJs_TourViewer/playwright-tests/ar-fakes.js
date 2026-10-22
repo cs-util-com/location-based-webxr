@@ -192,7 +192,7 @@ export async function installTourViewerArFakes(page, options = {}) {
          *  (K4), and how many audio elements the page made. */
         audioPlays: /** @type {string[]} */ ([]),
         audioElements: 0,
-        /** The AR start (visitor walk W4 build plan M2): hold the next
+        /** The AR start: hold the next
          *  initAR until `releaseInitAR()` (the coach's "Starting AR…"
          *  stays up), or fail it once (`failNextInitAR`). */
         holdInitAR: false,
@@ -782,8 +782,8 @@ export async function standAt(page, north, east, second, accuracy = 4) {
 }
 
 /**
- * The AR session's own tracking, as the framework's tracking slice hears it
- * (visitor walk W4 build plan M3): `true` delivers one pose (the phase
+ * The AR session's own tracking, as the framework's tracking slice hears it:
+ * `true` delivers one pose (the phase
  * becomes `tracking`), `false` reports it lost. The fakes deliver no poses
  * otherwise, so the tracking-quality report reads `ar-lost` ("not
  * tracking") after every recompute - a device fix, a code's vote - until a
@@ -817,7 +817,7 @@ export async function reportArTracking(page, tracking = true) {
  * Turn the camera to look along `bearingDeg` (degrees from north) in
  * GPS-world terms, through the store's CURRENT alignment: a yaw about raw
  * +Y. The pose keeps its position; later fixes keep the orientation. A
- * camera frame re-judges the stations (visitor walk W4 build plan M3).
+ * camera frame re-judges the stations.
  *
  * @param {import("@playwright/test").Page} page
  * @param {number} bearingDeg
@@ -982,8 +982,7 @@ export async function lockFixtureCode(page) {
 }
 
 /**
- * Wait for the guide to name a station again (visitor walk W4 build plan
- * M4, §1.9 R-2): an any-order tour names none while no distance is shown
+ * Wait for the guide to name a station again: an any-order tour names none while no distance is shown
  * (pending at the start of AR among them), and again only once the
  * distance has been back for the hold - 3 s of the page's own clock. The
  * guide re-judges on events, so camera frames are sent until the peek
@@ -1007,7 +1006,7 @@ export async function waitForTheGuess(page) {
 }
 
 /**
- * Tap a row's control in the walk's list (visitor walk W4 build plan M4):
+ * Tap a row's control in the walk's list:
  * `act` (Skip, Bring back, the undo), `main` ("Guide me here"), `confirm`
  * or `cancel`.
  *

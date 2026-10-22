@@ -371,8 +371,8 @@
       /* The framework's AR canvas (window-sized, inserted as #ar-root's
          first child by initAR) must be out of the flow: in it, it pushed
          the whole panel a screen height down, below the edge of the DOM
-         overlay - every control unreachable (owner's r750 field test;
-         the RecorderApp's #app > canvas rule, app.css). The XR layer
+         overlay - every control unreachable (seen on a phone; the
+         RecorderApp's #app > canvas rule, app.css). The XR layer
          draws the camera; this canvas only needs to exist. Fixed, not
          absolute: a window-sized box laid out at #ar-root's offset made
          the page wider than the window (17 px on a phone), and a page
@@ -1589,7 +1589,7 @@
       #scan-card #scan-escape[hidden] {
         display: none;
       }
-      /* The found look (visitor walk W4 build plan M2, §1.4): the code
+      /* The found look: the code
          passed the gate, the tour is being placed - a green check, no
          phone, no escape. */
       .scan-card-ok {
@@ -1640,12 +1640,12 @@
         }
       }
 
-      /* ===== The visitor's walk in AR (visitor walk W4 build plan M2) =====
-         W4's look (public/prototypes/visitor-walk-4-radar-and-list/):
+      /* ===== The visitor's walk in AR =====
+         The prototype's look (public/prototypes/visitor-walk-4-radar-and-list/):
          the coach, the toast's place, the sheet with its peek, the story
          card and the list, and Exit AR as a round button. In AR only; the
          design system zeroes paragraph and list margins (the L5 lesson),
-         so every gap of W4 is restated here and pinned by
+         so every gap of the prototype is restated here and pinned by
          playwright-tests/visitor-walk-layout.spec.js. The walk's own
          colours are app-local tokens (plan §6 Q2); design.css's .radar,
          .toast and .hint classes are not used (plan §1.2). */
@@ -1667,7 +1667,7 @@
         --walk-gps: #93c5fd;
         --walk-weak: #fbbf24;
         --walk-radar: 132px;
-        /* The away block's segments on the start page (W4's paper). */
+        /* The away block's segments on the start page (the prototype's paper). */
         --walk-away-found: #0f766e;
         --walk-away-left: #ddd6c7;
         --walk-away-row: #fff;
@@ -1677,7 +1677,7 @@
       #walk-toast-root {
         display: none;
       }
-      /* W4's figures stand on the line: the design system's font sets
+      /* The prototype's figures stand on the line: the design system's font sets
          old-style numerals, which shrink a row's number and a distance. */
       .walk-sheet,
       .walk-coach,
@@ -1718,7 +1718,7 @@
         white-space: nowrap;
       }
 
-      /* Exit AR (W4): a 44 px round button with a cross, top left; its
+      /* Exit AR: a 44 px round button with a cross, top left; its
          words stay its text (the e2e and the accessible name). */
       body[data-mode="visitor"][data-ar-active="true"] #ar-root #enter-ar {
         position: fixed;
@@ -1763,7 +1763,7 @@
         transform: translate(-50%, -50%) rotate(-45deg);
       }
 
-      /* The coach (W4 §1.4): centred, its centre at 44 % of the height. */
+      /* The coach: centred, its centre at 44 % of the height. */
       body[data-mode="visitor"][data-ar-active="true"]
         .walk-coach:not([hidden]) {
         position: fixed;
@@ -1830,7 +1830,7 @@
         }
       }
 
-      /* The radar and the precision chip (W4 build plan M3, §1.2, §1.3):
+      /* The radar and the precision chip:
          the top right, the chip under the radar, right-aligned with it.
          The radar is a canvas (walk-radar.ts); frozen (no position,
          tracking lost) it goes grey. */
@@ -1988,7 +1988,7 @@
         display: none;
       }
 
-      /* The toast (W4's place, the framework's toast in the design
+      /* The toast (the prototype's place, the framework's toast in the design
          system's toast look, restated here: design.css's .toast class is
          not used, plan §1.2). Below the radar's top at the left; its right
          edge clear of the radar (M3). */
@@ -2014,7 +2014,7 @@
         animation: enter-rise var(--t-enter) var(--ease-out);
       }
 
-      /* The sheet (W4 §1.5): docked to the bottom edge, the design
+      /* The sheet: docked to the bottom edge, the design
          system's .sheet atom as its base. */
       body[data-mode="visitor"][data-ar-active="true"]
         .walk-sheet:not([hidden]) {
@@ -2064,9 +2064,9 @@
         touch-action: none;
         user-select: none;
       }
-      /* A 44 px target around the 5 px pill (W4 M2 review): 11 px above
+      /* A 44 px target around the 5 px pill: 11 px above
          the sheet's edge and 11 px into the segments, clear of the peek's
-         row and its quick action. The layout stays W4's. */
+         row and its quick action. The layout stays the prototype's. */
       .walk-grab::before {
         position: absolute;
         inset: -11px 0;
@@ -2207,7 +2207,7 @@
         line-height: 1.2;
         text-align: center;
       }
-      /* A suggestion or an undo wraps to its own line, full width (W4). */
+      /* A suggestion or an undo wraps to its own line, full width. */
       .walk-sheet .walk-quick[data-kind="suggested"],
       .walk-sheet .walk-quick[data-kind="undo"] {
         flex-basis: 100%;
@@ -2224,7 +2224,7 @@
         background: rgb(45 212 191 / 14%);
       }
 
-      /* The story card (W4): in the peek's place, today's story panel
+      /* The story card: in the peek's place, today's story panel
          inside it. */
       .walk-story {
         flex: none;
@@ -2308,7 +2308,7 @@
         flex-wrap: wrap;
         gap: 8px;
       }
-      /* Without dots (a story with a choice) the buttons keep W4's gap
+      /* Without dots (a story with a choice) the buttons keep the prototype's gap
          below the words. */
       .walk-dots:empty + .walk-story-acts {
         margin-top: 10px;
@@ -2329,8 +2329,8 @@
         background: var(--walk-found);
         color: var(--walk-found-ink);
       }
-      /* The end's confirm (W4's warn look) beside "Keep listening", and a
-         row's Skip confirm beside its Cancel (M4). */
+      /* The end's confirm (the prototype's warn look) beside "Keep listening", and a
+         row's Skip confirm beside its Cancel. */
       .walk-sheet .walk-btn-warn,
       .walk-sheet #walk-story-end[data-kind="end"] {
         flex: 1;
@@ -2338,8 +2338,8 @@
         background: rgb(248 113 113 / 16%);
         color: #fecaca;
       }
-      /* Under the end's question the card offers only its two answers
-         (W4): the next step waits for "Keep listening". */
+      /* Under the end's question the card offers only its two answers:
+         the next step waits for "Keep listening". */
       .walk-story-acts:has(> #walk-story-end[data-kind="end"])
         > #scene-continue {
         display: none;
@@ -2348,7 +2348,7 @@
         margin-top: 10px;
       }
 
-      /* The list (W4 §1.6): the sheet grows up to 66 % of the height. */
+      /* The list: the sheet grows up to 66 % of the height. */
       .walk-list {
         display: flex;
         flex: 1 1 auto;
@@ -2409,8 +2409,8 @@
       .walk-progress b {
         color: var(--walk-ink);
       }
-      /* While no station is guessed (R-2, M4): why, and which one to skip
-         once asked (W4). */
+      /* While no station is guessed: why, and which one to skip
+         once asked. */
       .walk-hint {
         margin: 0 16px 10px;
         padding: 10px 12px;
@@ -2463,7 +2463,7 @@
       .walk-row[data-state="next"] {
         background: rgb(251 146 60 / 10%);
       }
-      /* The visitor's chosen target (R-4). */
+      /* The visitor's chosen target. */
       .walk-row[data-chosen="true"] {
         box-shadow: inset 3px 0 0 var(--walk-accent);
       }
@@ -2503,7 +2503,7 @@
         font-size: 11px;
       }
       /* The title is a button: "Guide me here" where a target can be
-         chosen (R-4, M4), inert otherwise. */
+         chosen, inert otherwise. */
       .walk-row-main {
         display: block;
         min-width: 0;
@@ -2544,7 +2544,7 @@
         width: 13px;
         height: 13px;
       }
-      /* A row's action (M4, W4): Skip, Bring back, the undo. */
+      /* A row's action: Skip, Bring back, the undo. */
       .walk-row-act {
         min-width: 44px;
         min-height: 44px;
@@ -2615,7 +2615,7 @@
         flex: 1;
       }
 
-      /* The list open: the quick action goes (W4: the rows carry Skip,
+      /* The list open: the quick action goes (the prototype: the rows carry Skip,
          its confirm and the undo, M4), and the peek's row once the tour is
          complete (the card says it); the story card gives the peek back. */
       .walk-sheet[data-sheet="list"] #station-skip,
@@ -2623,7 +2623,7 @@
         display: none;
       }
 
-      /* A phone held sideways (W4): the sheet a card at the bottom left,
+      /* A phone held sideways: the sheet a card at the bottom left,
          the coach right of centre, the toast left of the radar. */
       @media (orientation: landscape) and (height <= 520px) {
         body[data-mode="visitor"][data-ar-active="true"] #ar-root #enter-ar {
@@ -2708,7 +2708,7 @@
         }
       }
 
-      /* The away block on the start page (W4 §1.8), in the page's paper
+      /* The away block on the start page, in the page's paper
          look: the tour's name is the page's heading; the photo, the
          subline and the description step aside while it shows. */
       #visitor-screen:has(#walk-away:not([hidden])) #visitor-cover,
@@ -2765,7 +2765,7 @@
         gap: 10px;
         min-height: 44px;
         padding: 10px 12px;
-        /* W4's white cards on its paper line (not the page's map card). */
+        /* The prototype's white cards on its paper line (not the page's map card). */
         border: 1px solid var(--walk-away-left);
         border-radius: 12px;
         background: var(--walk-away-row);
@@ -2952,7 +2952,7 @@
           gap: 8px;
         }
       }
-      /* The persistent Undo (W4 build plan MU): a quieter chip on its
+      /* The persistent Undo: a quieter chip on its
          own line above "New station here", in H1's dark card look. Its
          label says what it takes back, so it gets the line's width and a
          long pin text ends in an ellipsis rather than a second line (the
@@ -3177,7 +3177,7 @@
           data-testid="visitor-description"
           hidden
         ></p>
-        <!-- The away block (visitor walk W4 build plan M2, §1.8): after the
+        <!-- The away block: after the
              visitor left AR with progress, read-only; the start button
              reads "Back to the tour" meanwhile (ar-mode.ts). Written by
              walk-sheet.ts. -->
@@ -4782,7 +4782,7 @@
                         stroke-linejoin="round"
                       />
                     </g>
-                    <!-- The found look (W4): the check once the code passed
+                    <!-- The found look: the check once the code passed
                      the gate, the phone gone. -->
                     <g class="scan-card-ok">
                       <circle cx="80" cy="60" r="30" fill="#22c55e" />
@@ -4811,8 +4811,7 @@
                   Continue with GPS only (less accurate)
                 </button>
               </div>
-              <!-- The visitor's walk in AR (visitor walk W4 build plan M2;
-               tour kit plan K4 before it): the coach, the toast's root and
+              <!-- The visitor's walk in AR: the coach, the toast's root and
                the sheet - the peek, the story card holding the story panel,
                the list - inside #ar-root because the visitor stays in AR the
                whole tour (K-D9). walk-sheet.ts writes the sheet,
@@ -4837,7 +4836,7 @@
               >
                 Test mode: this tour was moved to where you are.
               </p>
-              <!-- The coach (W4 §1.4): the centred card for the coaching
+              <!-- The coach: the centred card for the coaching
                states; data-look picks the spinner or the swaying phone.
                Not a live region: #ar-status-live announces the sentence. -->
               <div
@@ -4866,7 +4865,7 @@
                 </svg>
                 <span id="walk-coach-text" data-testid="walk-coach-text"></span>
               </div>
-              <!-- The radar and the precision chip (W4 build plan M3): a tap
+              <!-- The radar and the precision chip: a tap
                on the radar opens or closes the list. -->
               <div
                 id="walk-radar-wrap"
@@ -5023,7 +5022,7 @@
                         hidden
                       ></p>
                     </div>
-                    <!-- The quick action (W4 look, today's labels and taps). -->
+                    <!-- The quick action (the prototype's look, today's labels and taps). -->
                     <button
                       type="button"
                       id="station-skip"
@@ -5036,7 +5035,7 @@
                   </div>
                 </div>
                 <!-- The story card takes the peek's place while a story
-                 plays (W4); it hosts today's story panel. -->
+                 plays; it hosts today's story panel. -->
                 <div
                   id="walk-story"
                   class="walk-story"
@@ -5246,7 +5245,7 @@
                   hidden
                 ></p>
                 <div id="setup-controls" data-testid="setup-controls" hidden>
-                  <!-- The persistent Undo (W4 build plan MU): takes back
+                  <!-- The persistent Undo: takes back
                    the tour's last step when it is a delete or a settle's
                    automatic code change, and says which (creator-undo.ts).
                    FIRST, on its own line above "New station here": its

@@ -48,7 +48,7 @@ player.next(); // null once the scene ended
   tap sequence over a choice-free scene shows exactly its playable steps in
   order.
 
-## The step count (visitor walk W4 build plan M2)
+## The step count
 
 - `playableStepCount(steps): number | null` - the number of steps a
   story plays, for the story card's dots; null when a playable step is a

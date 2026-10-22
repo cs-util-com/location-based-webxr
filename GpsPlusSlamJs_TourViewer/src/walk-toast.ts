@@ -1,6 +1,5 @@
 /**
- * The visitor's toast in AR (visitor walk W4 build plan 2026-10-21-1105,
- * M2, §1.4): the framework's one toast (`toast-core`, its linger and its
+ * The visitor's toast in AR: the framework's one toast (`toast-core`, its linger and its
  * live-region contract) for the walk's news - a GPS placement's reason, a
  * moved code, what could not load, "Skipped <title>." / "Brought back
  * <title>.", "Welcome back - your progress is kept.". A news item that

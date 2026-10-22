@@ -1,7 +1,5 @@
 /**
- * The station guide on the page's store (visitor walk W4 build plan
- * GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md,
- * M1, §2.2 and §4 "Store churn" / "Re-entry through the store"): the walk
+ * The station guide on the page's store: the walk
  * lives in `visitorWalk`, the guide dispatches only events, never a frame,
  * and one call's changes arrive as one batch at the call's very end - after
  * its reads and its own other dispatches - so the page's subscriber, which
@@ -194,7 +192,7 @@ function countSteady(
 const walkActions = (types: readonly string[]) =>
   types.filter((t) => t.startsWith("visitorWalk/"));
 
-describe("the station guide on the page's store (W4 M1)", () => {
+describe("the station guide on the page's store", () => {
   // Why: the guide ticks on every camera frame; a dispatch per frame would
   // wake every subscriber, the guide's own tick included (plan §4).
   it("dispatches nothing to the walk while nothing happens, over any number of frames", () => {
@@ -258,7 +256,7 @@ describe("the station guide on the page's store (W4 M1)", () => {
     expect(page.dom.line.textContent).toBe(page.atBatch[0]!.line);
   });
 
-  // Why (W4 M1 review): the guide's walk is the store's as it is now with
+  // Why: the guide's walk is the store's as it is now with
   // the call's pending changes over it - so a change another writer makes
   // mid-call is in it at once, and what one call shows is what the store
   // holds after it, never a copy taken before that change.
@@ -287,7 +285,7 @@ describe("the station guide on the page's store (W4 M1)", () => {
     );
   });
 
-  // Why (W4 M1 review): a walk reset behind the guide's back is no run. A
+  // Why: a walk reset behind the guide's back is no run. A
   // walk started again for the same tour would drop every station the
   // visitor found or skipped, silently; nothing resets it today.
   it("starts no walk again when another writer resets it between calls: no run, nothing shown", () => {
@@ -307,7 +305,7 @@ describe("the station guide on the page's store (W4 M1)", () => {
     expect(page.dom.skip.textContent).toBe("");
   });
 
-  // Why (W4 M1 review): with no walk there is nothing offered, and an empty
+  // Why: with no walk there is nothing offered, and an empty
   // offer reads as "Tour complete". A walk another writer resets mid-call
   // must read as no run, never as a tour the visitor finished.
   it("writes no false 'Tour complete' when another writer resets the walk mid-call", () => {

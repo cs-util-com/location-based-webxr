@@ -13,9 +13,7 @@ import {
 } from "./walk-radar-model";
 
 /**
- * Why these tests matter (visitor walk W4 build plan
- * GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md,
- * M3, §1.2, §1.3): the radar shows the visitor's precision instead of
+ * Why these tests matter: the radar shows the visitor's precision instead of
  * telling it ("shown, not told"), so each precision has its own look, and
  * a wrong look is a wrong claim - an orange focus the guide cannot vouch
  * for, a blur narrower than the accuracy, a frozen radar that still moves
@@ -94,10 +92,10 @@ describe("walkRadarFovDeg - the cone's width", () => {
     expect(walkRadarFovDeg(1, 2)).toBeCloseTo(90, 9);
   });
 
-  // Why this test matters (side by side with W4): W4's 64° / 44° are its
+  // Why this test matters (side by side with the prototype): the prototype's 64° / 44° are its
   // camera's VERTICAL field of view (three.js `fov`), so its cone is the
   // horizontal one at the screen's aspect - about 32° on a portrait phone,
-  // 82° sideways. Read as horizontal, the cone drew twice W4's width.
+  // 82° sideways. Read as horizontal, the cone drew twice the prototype's width.
   it("falls back to the prototype's camera before the first XR frame: 64° (44° when not taller than wide) vertical, at the screen's aspect", () => {
     const h = (vDeg: number, aspect: number): number =>
       (2 * Math.atan(Math.tan((vDeg * Math.PI) / 360) * aspect) * 180) /
@@ -278,10 +276,10 @@ describe("walkRadarModel - the visitor's mark by precision", () => {
     }
   });
 
-  // Changed in M4 (§1.9 R-2, R-4): the guide decides the focus, so the
+  // The guide decides the focus, so the
   // radar draws the row it names. Under too-weak GPS an any-order tour
   // names none (every row "left") - unless the visitor chose a target,
-  // which stays the focus whatever the precision; before M4 the radar
+  // which stays the focus whatever the precision; the radar once
   // hid that orange itself, and with it the visitor's own choice.
   it("too weak: an amber blur, the stations at half opacity, orange only for the focus the guide names", () => {
     const rows = (well: "next" | "left") => [

@@ -1,6 +1,5 @@
 /**
- * The mean and the worst of the samples of the last few seconds (visitor
- * walk W4 build plan 2026-10-21-1105, M3): the `?debug=1` readout's ms per
+ * The mean and the worst of the samples of the last few seconds: the `?debug=1` readout's ms per
  * radar draw and frame time, which the field check reads against the
  * 50 ms frame budget.
  *

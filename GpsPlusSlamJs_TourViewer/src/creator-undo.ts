@@ -1,9 +1,8 @@
 /**
- * The persistent Undo of the creator's AR action strip (W4 build plan
- * MU): one chip that takes back the tour document's last step when that
+ * The persistent Undo of the creator's AR action strip: one chip that takes back the tour document's last step when that
  * step is one the page offered - a delete, or a settle that changed a
  * stored code automatically together with the stations and objects it
- * moved (plan M3b, Q-D: one step).
+ * moved (one step).
  *
  * The callers OFFER a step right after taking it (`object-editing.ts` at
  * a delete, `creator-settle.ts` at a settle's commit); the offer stands
@@ -61,7 +60,7 @@ export type SettleCodeChange = "improvement" | "move" | null;
  * What the strip's Undo names a settle's step by, from the codes whose
  * saved text the step changed (each with how): one automatic change by
  * its kind, several by their count (a re-minted code is not counted). Null - no offer - when no automatic change is
- * among them: Q-D's undo is the one of an automatic code change, and a
+ * among them: the undo is the one of an automatic code change, and a
  * settle that only refined this visit's own measurement has nothing a
  * creator would recognise as a thing to take back.
  */
@@ -134,7 +133,7 @@ function settleUndoneSentence(target: string, codes: number): string {
 const SAVED_AT_NEXT_FINISH = "The next Finish saves this in the zip.";
 
 /**
- * The strip's tap on a settle's step (Q-D, MU): the document's undo,
+ * The strip's tap on a settle's step: the document's undo,
  * which takes back the codes' texts with the stations and objects the
  * settle moved in ONE step (the hand letting go of the codes it took back
  * is `creator-codes.ts`'s listener). Logged (`tourAuthoring/settleUndone`),

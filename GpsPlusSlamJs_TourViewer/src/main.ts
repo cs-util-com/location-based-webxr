@@ -849,7 +849,7 @@ hooks.startScanGate = viewer.startScanGate;
 hooks.resetScanGate = viewer.resetScanGate;
 hooks.reconsiderScanGate = viewer.reconsiderScanGate;
 
-// The visitor's toast in AR (visitor walk W4 build plan M2, §1.4): the
+// The visitor's toast in AR: the
 // framework's one toast, its news said once per AR entry.
 const walkToast = createWalkToast(
   createToast(element("walk-toast-root"), {
@@ -860,7 +860,7 @@ const walkToast = createWalkToast(
 );
 
 // The visitor's stations and their stories (tour kit plan K4), and the
-// walk's sheet (W4 build plan M2).
+// walk's sheet.
 const stations = wireVisitorStations({
   ctx,
   mode,
@@ -870,7 +870,7 @@ const stations = wireVisitorStations({
     guide: {
       line: element("station-line"),
       skip: element("station-skip"),
-      // The end of a story is the story card's control (W4).
+      // The end of a story is the story card's control.
       end: element("walk-story-end"),
     },
     scene: {
@@ -936,7 +936,7 @@ const stations = wireVisitorStations({
     onShownChange: () => {
       hooks.renderArStatus();
     },
-    // The radar and the precision chip (W4 build plan M3).
+    // The radar and the precision chip.
     radar: {
       wrap: element("walk-radar-wrap"),
       button: element("walk-radar"),

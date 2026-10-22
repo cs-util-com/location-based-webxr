@@ -90,12 +90,11 @@ export interface SceneViewDeps {
   /** A story played to its end: the station is done. */
   onStoryEnd(stationId: string): void;
   /** The story started, moved to another step, ended or stopped, or the
-   *  queue changed: what the sheet draws of it (`progress`) may differ
-   *  (W4 build plan M2). */
+   *  queue changed: what the sheet draws of it (`progress`) may differ. */
   onChange?(): void;
 }
 
-/** Where a choice-free story is (the story card's dots, W4 build plan M2). */
+/** Where a choice-free story is (the story card's dots). */
 export interface StoryProgress {
   /** The step showing, from 0. */
   readonly index: number;
@@ -124,8 +123,8 @@ export interface SceneView {
   /** Where the story playing is; null with none, or for a scene with a
    *  choice (no fixed number of steps). */
   progress(): StoryProgress | null;
-  /** Hold the step while the visitor is asked whether to end the story
-   *  (W4 build plan M4, R-5): an auto step's timer stops (its `autoMs`
+  /** Hold the step while the visitor is asked whether to end the story:
+   *  an auto step's timer stops (its `autoMs`
    *  reads null); released, it starts again from its full length. A new
    *  story starts unheld. */
   holdStep(held: boolean): void;

@@ -11,10 +11,8 @@ import {
 } from "./walk-direction";
 
 /**
- * Why these tests matter (visitor walk W4 build plan
- * GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md,
- * M3, §1.5, §1.6, §5): the peek's tail, the rows and (M5) the edge pill
- * say which way a station is with ONE rule. W4 had two ("behind" past 140°
+ * Why these tests matter: the peek's tail, the rows and the edge pill
+ * say which way a station is with ONE rule. The prototype had two ("behind" past 140°
  * in its words, past 137.5° in its pill); the build has one, and these pin
  * its thresholds, its sides and the hysteresis that keeps a word from
  * flickering while the visitor turns slowly across a threshold.

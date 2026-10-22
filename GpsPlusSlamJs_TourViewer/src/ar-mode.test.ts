@@ -383,7 +383,7 @@ describe("arButtonView", () => {
     );
   });
 
-  it("a visitor who left AR with progress goes 'Back to the tour' (W4 build plan M2, §1.8)", () => {
+  it("a visitor who left AR with progress goes 'Back to the tour'", () => {
     // Why: after leaving AR the start page shows the walk's progress, and
     // the start goes back into the same walk; the same #enter-ar tap, so
     // the session keeps its user activation. Without progress, or while

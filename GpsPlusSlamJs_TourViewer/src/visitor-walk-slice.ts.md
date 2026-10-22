@@ -2,16 +2,12 @@
 
 ## Purpose
 
-The visitor's walk through the open tour, in the page's store (visitor walk
-W4 build plan
-`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md`, M1,
-§2.2; root `CLAUDE.md`, the Redux rule; the shared-state audit
-`GpsPlusSlamJs_Docs/docs/2026-10-18-1126-tour-viewer-shared-state-foundation-audit.md`):
+The visitor's walk through the open tour, in the page's store (the root `CLAUDE.md`'s Redux rule):
 the run's progress, the last skip while it can be undone, the note of what
 just happened, and the quick action's arm. Its reducer applies the run's
 pure transitions (`station-run.ts` `applyWalkStep`), so the rule lives
-once and every view reads one answer. M2 adds the sheet; M4 the walk's
-rules (§1.9): the row arm, the chooser, R-2's `noGuess` and the chosen
+once and every view reads one answer. It also holds the sheet and the
+walk's rules: the row arm, the chooser, the no-guess rule's `noGuess` and the chosen
 target, with the focus rule `walkFocus` every view reads.
 
 ## Public API
@@ -23,28 +19,27 @@ target, with the focus rule `walkFocus` every view reads.
   - `progress: WalkProgress | null` - `station-run.ts`'s plain data (the
     order, every station's state, skip flag and skip clock, the branch
     path); null without a tour;
-  - `lastSkip: { id, atMs, settled } | null` - the last skip (K4 review
-    R14); `settled` once its undo's moment passed or the tour moved on;
+  - `lastSkip: { id, atMs, settled } | null` - the last skip; `settled` once its undo's moment passed or the tour moved on;
   - `note: { kind: "skipped" | "brought-back", id, atMs } | null` - the
     station line's lead ("Skipped X.", "Brought back X.");
   - `quickArmedId: string | null` - "Can't get there?" asked for this
     station; the next tap confirms;
-  - `sheet: "peek" | "list"` (`WalkSheet`, M2) - the sheet's peek, or the
+  - `sheet: "peek" | "list"` (`WalkSheet`) - the sheet's peek, or the
     list pulled up;
-  - `completionSeen: boolean` (M2) - the walk is complete and its
+  - `completionSeen: boolean` - the walk is complete and its
     completion opened the list already;
-  - `welcomePending: boolean` (M2 review) - the visitor left AR with
+  - `welcomePending: boolean` - the visitor left AR with
     progress, and the next entry's first sheet says "Welcome back", once
     (`welcomeSet(boolean)` arms or clears it; `selectWelcomePending`).
     A new walk, a cleared one and another tour reset it;
-  - `rowArmedId: string | null` (M4) - a row of the list asked for its
+  - `rowArmedId: string | null` - a row of the list asked for its
     skip (its confirm shows); separate from `quickArmedId`, which is the
     story card's end ask: a focus change never clears it;
-  - `chooser: boolean` (M4) - "Can't get there?" opened the list with no
+  - `chooser: boolean` - "Can't get there?" opened the list with no
     station guessed: a row's Skip acts on one tap;
-  - `noGuess: boolean` (M4, R-2) - no station is guessed (the guide's
+  - `noGuess: boolean` - no station is guessed (the guide's
     clock, `walk-no-guess.ts`, decides; `noGuessSet`);
-  - `chosenId: string | null` (M4, R-4) - the visitor's chosen target.
+  - `chosenId: string | null` - the visitor's chosen target.
 - Actions (all `visitorWalk/*`):
   - `walkStarted({ order, route })` - a new walk (`route` from
     `walkRoute(stations)`): everything else starts anew;
@@ -55,13 +50,13 @@ target, with the focus rule `walkFocus` every view reads.
   - `skipUndone({ id, atMs })` - the last skip is gone, the bring back noted;
   - `noteCleared()`;
   - `quickArmed(id | null)`;
-  - `sheetSet("peek" | "list")` (M2) - the visitor opened or closed the
+  - `sheetSet("peek" | "list")` - the visitor opened or closed the
     list; closing it clears the row arm and the chooser;
-  - `listOpened({ armedId, chooser })` (M4) - "Can't get there?": the
+  - `listOpened({ armedId, chooser })` - "Can't get there?": the
     list open with the focus's row armed, or in chooser mode;
-  - `rowArmed(id | null)` (M4) - only a waiting offered station;
-  - `noGuessSet(boolean)` (M4) - false also ends chooser mode;
-  - `targetChosen(id | null)` (M4) - only a waiting offered station of
+  - `rowArmed(id | null)` - only a waiting offered station;
+  - `noGuessSet(boolean)` - false also ends chooser mode;
+  - `targetChosen(id | null)` - only a waiting offered station of
     an any-order tour with two or more to find; tapped again (the same
     id) the guide sends null;
   - `walkBatched(actions)` - one guide call's changes, applied in order as
@@ -75,19 +70,19 @@ target, with the focus rule `walkFocus` every view reads.
 - `selectUndoableSkip(state, nowMs)` - `{ id, atMs }` of the last skip
   while it can be undone at `nowMs` (not settled, inside its window),
   else null.
-- `selectWalkProgress(state)`, `selectWalkSheet(state)` (M2) - the walk
+- `selectWalkProgress(state)`, `selectWalkSheet(state)` - the walk
   and the sheet, for `visitor-stations.ts`.
-- `walkFocus(walk, distances)` (M4, R-1) - the station the walk points
+- `walkFocus(walk, distances)` - the station the walk points
   at, among the unfound offered ones (null with none): the first under
   fixed or branch order, or when only one is left; under any order the
   chosen target, else null while `noGuess` holds, else the nearest by
   `distances` (ties and missing distances by list order).
-- `walkNoGuess(walk)` (M4, R-2) - `noGuess`, any order, two or more
+- `walkNoGuess(walk)` - `noGuess`, any order, two or more
   unfound offered, no chosen target.
-- `walkChoiceOffered(walk)` (M4, R-4) - a target may be chosen now.
+- `walkChoiceOffered(walk)` - a target may be chosen now.
 - `selectNote(state, nowMs)` - the note while its window lasts at
   `nowMs`, else null. Both take the page's state (`{ visitorWalk }`), so
-  the guide's button and line and any other view (the sheet of M2) read
+  the guide's button and line and any other view (the sheet) read
   the same windows.
 
 ## Invariants & assumptions
@@ -111,18 +106,18 @@ target, with the focus rule `walkFocus` every view reads.
   cannot reorder a recording (lessons-learned: never dispatch a persisted
   action from `store.subscribe`). A recording therefore replays no walk,
   as it replays no `visitorGuide`.
-- **The sheet's two rules live in the reducer** (M2, plan §1.5, §1.6):
+- **The sheet's two rules live in the reducer**:
   the step that completes the walk opens the list, once per completion
   (`completionSeen`; a skip undone makes the walk incomplete again, and
   completing it again opens the list again); a station found closes the
   list, so its story card takes the peek's place (and clears the row arm
   and the chooser with it).
-- **The offer rules (M4, R-4):** after every step a row arm and a chosen
+- **The offer rules:** after every step a row arm and a chosen
   target that no longer name a waiting offered station go - also on the
   step that completes the walk (a property over random walks found the
   completion's own rule returning before them: a skipped chosen target
   stayed chosen, and a bring back made it the target again).
-- **A bring back (M4, R-3):** `skipUndone` clears `lastSkip` only when
+- **A bring back:** `skipUndone` clears `lastSkip` only when
   it names the same station: an older skipped station brought back
   leaves the last skip's undo in place.
 - Plain, serializable data only; no three.js handles, no DOM, no timers.
@@ -155,17 +150,17 @@ walkOffered(store.getState().visitorWalk.progress!); // the rest
   persisted control action); the windows of `selectUndoableSkip` and
   `selectNote` (inside, at their end, settled, undone; a property over any
   time for the note) and `SKIP_UNDO_MS` as the toast linger, the one value
-  the guide names too; the sheet (M2): `sheetSet`, the completion opening
+  the guide names too; the sheet: `sheetSet`, the completion opening
   the list once, a find closing it, and a property over random steps that
   `completionSeen` follows completeness and a completion just reached
-  opens the list; the rules of M4: `walkFocus` per order, precision and
+  opens the list; the walk's rules: `walkFocus` per order, precision and
   choice, `walkNoGuess`, `targetChosen`'s guards and clearing (on a
   find, a skip, the completing skip, another tour), `listOpened` and the
   list's closing, a bring back of a skip that was not the last.
 - `station-guide.rules.property.test.ts` - the slice's invariants over
   random walks through the guide (at most one chosen target, only a
-  waiting offered one; no focus while R-2 holds).
+  waiting offered one; no focus while the no-guess rule holds).
 - `station-guide.walk-store.test.ts` - the guide on this slice: events
-  only, one batch per call (M1's guide-level differential against the
-  frozen guide was deleted in M2, which changes the guide's writes by
+  only, one batch per call (a differential against a frozen copy of the
+  old guide was deleted once the sheet changed the guide's writes by
   design).

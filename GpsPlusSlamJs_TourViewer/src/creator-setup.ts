@@ -178,8 +178,8 @@ export interface CreatorSetupDom {
    *  `creator-placement.ts`). Absent in the node tests that do not need
    *  it. */
   newStationButton?: NonNullable<CreatorPlacementDom["newStationButton"]>;
-  /** The strip's persistent Undo and its label (W4 build plan MU,
-   *  `creator-undo.ts`). Absent in the node tests that do not need it. */
+  /** The strip's persistent Undo and its label
+   *  (`creator-undo.ts`). Absent in the node tests that do not need it. */
   undoButton?: HTMLButtonElement;
   undoLabel?: Pick<HTMLElement, "textContent">;
   /** The "unsaved work is still on this device" offer (F13). */
@@ -430,7 +430,7 @@ export function wireCreatorSetup(deps: {
     },
   });
 
-  /** The strip's persistent Undo (W4 build plan MU): a delete or a
+  /** The strip's persistent Undo: a delete or a
    *  settle's automatic code change, while it is the document's last step. */
   const undo = wireCreatorUndo({
     tour: ctx.tourDocument,

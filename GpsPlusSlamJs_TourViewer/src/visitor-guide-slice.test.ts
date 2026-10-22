@@ -66,7 +66,7 @@ describe("visitorGuide slice", () => {
     expect(selectHeadingPending(store.getState())).toBe(false);
   });
 
-  // Why (W4 build plan M3, §1.3): the precision chip and the radar read
+  // Why: the precision chip and the radar read
   // one kind from the store, each source with its one publisher - the
   // guide's judged precision, and the tracking loss from the readiness
   // phase - and the chip says the loss over any precision.

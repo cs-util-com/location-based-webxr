@@ -1,8 +1,5 @@
 /**
- * What the station guide hands the radar and the precision chip (visitor
- * walk W4 build plan
- * GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md,
- * M3, §1.2, §1.3, §2.2): the precision kind, published to the store only
+ * What the station guide hands the radar and the precision chip: the precision kind, published to the store only
  * on a change (the store gets events, never frames); the camera's heading
  * once this AR entry earned one (the latch the HUD's arrows use); every
  * station's bearing; and the last judged snapshot of that geometry, which
@@ -166,7 +163,7 @@ function harness() {
   };
 }
 
-describe("the guide's precision kind (W4 build plan M3, §1.3)", () => {
+describe("the guide's precision kind", () => {
   // Why: the chip and the radar read one kind from the store; it must be
   // the guide's own judgement (the line's rules), and reach the store only
   // when it changes - a dispatch per frame is what the store rule forbids.
@@ -216,7 +213,7 @@ describe("the guide's precision kind (W4 build plan M3, §1.3)", () => {
   });
 });
 
-describe("the guide's heading and bearings (W4 build plan M3, §1.2)", () => {
+describe("the guide's heading and bearings", () => {
   // Why: the radar is heading-up; its heading is the camera's forward
   // through the alignment, and only once this AR entry earned a heading
   // (the latch the HUD's arrows use) - before that a GPS-only alignment
@@ -277,7 +274,7 @@ describe("the guide's heading and bearings (W4 build plan M3, §1.2)", () => {
   });
 });
 
-describe("the frozen radar's snapshot (W4 build plan M3, §1.2)", () => {
+describe("the frozen radar's snapshot", () => {
   // Why: under 'none' and a tracking loss the radar draws the LAST judged
   // geometry, grey; a snapshot that kept following the live position
   // would draw the stations where an untrusted position puts them.

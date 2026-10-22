@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createRollingWindow } from "./rolling-window";
 
 /**
- * Why this property matters (visitor walk W4 build plan M3): the readout's
+ * Why this property matters: the readout's
  * mean and worst must be exactly those of the samples inside the window,
  * whatever the rate and the gaps; a naive filter over every sample is the
  * oracle.

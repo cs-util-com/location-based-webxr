@@ -310,7 +310,7 @@ describe("createStationPrefetch", () => {
     expect(h.reads.at(-1)).toBe("content/knight.png");
   });
 
-  // Why this test matters (visitor walk W4 build plan M4, R-3): a skipped
+  // Why this test matters: a skipped
   // station can be brought back at any time, after its skip settled and
   // told the prefetch it was done. Without `undone` it stayed "done" for
   // good: the first to be released although the visitor now walks to it.

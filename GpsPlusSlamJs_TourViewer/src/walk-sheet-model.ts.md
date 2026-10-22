@@ -2,16 +2,14 @@
 
 ## Purpose
 
-What the visitor's sheet in AR and the away block on the start page show
-(visitor walk W4 build plan
-`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md`,
-M2, §1.5, §1.6, §1.8), as pure data: the peek (the next station, its
+What the visitor's sheet in AR and the away block on the start page show,
+as pure data: the peek (the next station, its
 distance or why there is none), the progress segments, the story card's
 title, the list (title, order chip, progress line, completion card, rows)
 and the away model. Built from the store's walk (`visitorWalk` progress),
 the station guide's `view()` and the tour; the DOM writer is
 `walk-sheet.ts`. Today's texts are kept: the peek says what the hidden
-`#station-line` says, in W4's two lines.
+`#station-line` says, in the prototype's two lines.
 
 ## Public API
 
@@ -23,14 +21,14 @@ the station guide's `view()` and the tour; the DOM writer is
   - `peek: { kind, eyebrow, title, distance, tail }`:
     - `walk`: eyebrow "Next - station N of M" (fixed and branch), "N
       stations to find - nearest" (several offered and a distance shown;
-      "- your choice" for the visitor's chosen target, R-4, in any
+      "- your choice" for the visitor's chosen target, the chosen-target rule, in any
       state) or "Next" (one offered, or no distance to rank by: the one
       left to find); the
       distance ("N m") only while the position vouches for one; the tail
       "Waiting for your position…", "GPS too weak to guide you (±N m);
       step into the open." or "Scan one of the tour's codes so the guide
       knows where you are." otherwise;
-    - `none` (M4, R-2): no station guessed while stations are still to
+    - `none`: no station guessed while stations are still to
       find: eyebrow "Position unknown" (`'none'`) or the chip's words
       ("GPS - about N m, too weak", "Finding your position…", "GPS -
       about N m" during the hold), title "N stations to find", tail by
@@ -51,7 +49,7 @@ the station guide's `view()` and the tour; the DOM writer is
     then "K skipped", "L to find" (branch: "N found"); `completion`
     (`completionLine` plus "M of N found. A skipped station can still be
     brought back." - under branch order that sentence alone - or "Thank
-    you for walking with us.") once complete; `hint` (M4) while no
+    you for walking with us.") once complete; `hint` while no
     station is guessed: why, by the position, and "Which one can't you
     reach?" once "Can't get there?" opened the chooser (not while
     tracking is lost: no row offers a Skip then); rows `{ id,
@@ -62,7 +60,7 @@ chosen, choosable, mainLabel }` with
     later (not offered yet) and the subs Found, "You are here - its story
     is playing", Skipped, Later, "Distance unknown" (no position, or GPS
     too weak), "Waiting…", "N m" (" - your choice" on the chosen target).
-    M4's row fields: `action` - `skip` ("Skip", for a station to find),
+    The row's fields: `action` - `skip` ("Skip", for a station to find),
     `bring` ("Bring back", a skipped one) or `undo` ("Undo: bring back
     <title>", the last skip inside its window, with `undoLeftMs` for its
     bar), each with its `ariaLabel` naming the station; null otherwise and
@@ -94,8 +92,8 @@ chosen, choosable, mainLabel }` with
   found, done or skipped (a station the path may never reach is not
   promised).
 - The completion card says "A skipped station can still be brought
-  back." (W4) since M4, whose rows carry the bring back at any time.
-- In R-2's condition no text names a station as next or nearest: the
+  back.": the rows can bring a skipped station back at any time.
+- In the no-guess condition no text names a station as next or nearest: the
   peek is `none`, every unfound row `left` (the guide's focus is null).
 - Defensive: a station the progress lacks reads as "later" (never
   offered); a station without a measured distance reads "Waiting…".
@@ -122,7 +120,7 @@ model.peek; // { kind: "walk", eyebrow: "3 stations to find - nearest", ... }
 - `walk-sheet-model.test.ts` - every peek kind and tail, the eyebrow per
   order, segments and the bar above the limit, rows and their subs, the
   chip, the progress line, the completion card, the story card, branch
-  listing, the away model; M4: the peek with no station guessed per
+  listing, the away model; the peek with no station guessed per
   no-distance state and the hold, the hint per position and chooser, the
   rows' actions (Skip, confirm, undo with its time, Bring back) and,
   under tracking lost, no Skip and no confirm with the undo and Bring
@@ -134,7 +132,7 @@ model.peek; // { kind: "walk", eyebrow: "3 stations to find - nearest", ... }
   line, the named station is offered and waiting, the distance matches,
   "next" rows are offered, segments equal the rows' states.
 
-## The direction words and arrows (visitor walk W4 build plan M3)
+## The direction words and arrows
 
 - `WalkSheetInput.directions?: ReadonlyMap<string, WalkSheetDirection>`
   - each station's word (`walk-direction.ts`, with its hysteresis, kept
@@ -147,6 +145,6 @@ model.peek; // { kind: "walk", eyebrow: "3 stations to find - nearest", ... }
 - A row still to find: "N m - ahead / to your left / to your right /
   behind you" with `arrowDeg`; without a direction "N m" and no arrow;
   found, here, skipped and later rows never have one; no direction where
-  no distance is shown (R-0).
+  no distance is shown.
 - Tests: the "direction words and arrows" describe in
   `walk-sheet-model.test.ts`.

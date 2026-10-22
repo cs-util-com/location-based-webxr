@@ -1,13 +1,13 @@
 /**
- * The visitor's stations, composed (tour kit plan K4): the station guide
+ * The visitor's stations, composed: the station guide
  * (`station-guide.ts`), the story panel (`scene-view.ts`), the AR stage
  * (`scene-stage.ts`) and the one sound channel (`scene-audio.ts`), wired to
  * the page's session object, store and seams. Glue: the behaviour lives in
  * those modules and is tested there; the e2e suite drives this composition
  * (`playwright-tests/stations.spec.js`). The walk's sheet, its away block
- * and its toasts (visitor walk W4 build plan M2) are drawn from here too,
+ * and its toasts are drawn from here too,
  * from the guide's `view()` and the store's walk (`walk-sheet-model.ts`).
- * M3 adds the radar and the precision chip (`walk-radar.ts`), the direction
+ * So are the radar and the precision chip (`walk-radar.ts`), the direction
  * words' memory (`walk-direction.ts`) and the `?debug=1` lines for both
  * the radar's draw time and the frame time.
  */
@@ -91,7 +91,7 @@ import {
   type WalkRadarView,
 } from "./walk-radar.js";
 
-/** Said once when a visitor comes back into AR with progress (W4). */
+/** Said once when a visitor comes back into AR with progress. */
 const WELCOME_BACK = "Welcome back - your progress is kept.";
 
 /** Whether `progress` is the walk of the tour with these stations: a
@@ -108,7 +108,7 @@ function walkOfTour(
 
 /**
  * Whether the visitor's stations may be offered now: a visitor's running
- * session whose scan gate allows placement. (Until r863 the stations also
+ * session whose scan gate allows placement. (The stations once also
  * waited for the compass wait; a code's rotation now stands from its first
  * lock, `viewer-vote-sink.ts` `VIEWER_SOFT_TRIM`.) Offered, they are found
  * on the alignment's position while it is ready (`tour-flow.ts`
@@ -171,19 +171,17 @@ export interface VisitorStations {
   /** The AR session ended or the tour closed: the story stops and the HUD
    *  goes; the progress stays with the open tour (a new tour starts anew). */
   stop: () => void;
-  /** The visitor has progress on the open tour (W4 build plan M2, §1.8):
+  /** The visitor has progress on the open tour:
    *  the start page shows it, and the start reads "Back to the tour". */
   progressKept: () => boolean;
-  /** The walk's sheet shows now: the guide runs (W4 build plan M2). */
+  /** The walk's sheet shows now: the guide runs. */
   walkShown: () => boolean;
-  /** The `?debug=1` lines: the radar's draw time and the frame time (W4
-   *  build plan M3); empty without a radar. */
+  /** The `?debug=1` lines: the radar's draw time and the frame time; empty without a radar. */
   debugLines: () => string[];
 }
 
 /**
- * Each station's direction from the guide's view (W4 build plan M3,
- * §1.5): the angle from straight ahead and the word with its hysteresis.
+ * Each station's direction from the guide's view: the angle from straight ahead and the word with its hysteresis.
  * None without a heading, and none while the chip says the position is
  * not one to point from (too weak, none, lost, pending): the words stand
  * where a distance does, and a frozen radar points nowhere new.
@@ -230,10 +228,10 @@ export function wireVisitorStations(deps: {
   };
   now: () => number;
   schedule: (fn: () => void, ms: number) => () => void;
-  /** The test switch `?relocate=here` (owner decision S-D9): move the
+  /** The test switch `?relocate=here`: move the
    *  tour's geo stations to the phone's first GPS fix. Off by default. */
   relocate?: { onRelocated: () => void };
-  /** The walk's sheet and its toast (W4 build plan M2); absent: no sheet
+  /** The walk's sheet and its toast; absent: no sheet
    *  (the line and the skip button alone, as before). */
   walk?: {
     dom: WalkSheetDom;
@@ -243,7 +241,7 @@ export function wireVisitorStations(deps: {
     /** The sheet came or went: the AR status re-routes its sentence
      *  (a placement wait gives way to a shown walk). */
     onShownChange?: () => void;
-    /** The radar and the precision chip (W4 build plan M3); absent: none.
+    /** The radar and the precision chip; absent: none.
      *  Its canvas is an element: its size is observed. */
     radar?: WalkRadarDom & { readonly canvas: Element };
     /** The focus's edge pill; absent: none. */
@@ -256,7 +254,7 @@ export function wireVisitorStations(deps: {
     deps.relocate?.onRelocated,
   );
   /** The phone's first DEVICE fix, for the test relocation (never a
-   *  code's vote: QR-first M1 review #3). */
+   *  code's vote). */
   function firstFix(): { lat: number; lon: number; alt: number } | null {
     return firstDeviceFix(selectGpsPositions(arStore.getState()));
   }
@@ -270,8 +268,8 @@ export function wireVisitorStations(deps: {
     createElement: () => seams.createAudioElement(),
     objectUrls,
   });
-  // The open tour's assets by id, built once per manifest (K4 review R13:
-  // it was rebuilt on every read).
+  // The open tour's assets by id, built once per manifest (they were
+  // once rebuilt on every read).
   let indexed: { manifest: unknown; byId: Map<string, TourAsset> } | null =
     null;
   const assetsById = (): ReadonlyMap<string, TourAsset> => {
@@ -287,7 +285,7 @@ export function wireVisitorStations(deps: {
   // Media are read ahead as the visitor approaches (`station-prefetch.ts`),
   // and the story's own reads go through the same cache. The cache lives
   // with the open tour's manifest: kept across AR sessions, dropped when
-  // the tour closes or another opens (K4 review R15).
+  // the tour closes or another opens.
   const prefetch = createStationPrefetch({
     assets: assetsById,
     tour: () => ctx.tourDocument.manifest(),
@@ -305,13 +303,12 @@ export function wireVisitorStations(deps: {
   // The focus's beacon and ring, in the scene beside the breadcrumbs.
   const focusCues = createWalkFocusCues({ getScene: () => seams.getScene() });
   // The guide is created below; the stage reads its poses late. The
-  // figure's pose waits for a heading (`figurePoseOf`, r881 re-review
-  // M-B): the stage parks the figure and the story says so.
+  // figure's pose waits for a heading (`figurePoseOf`): the stage parks the figure and the story says so.
   let poseOf: (id: string) => ReturnType<typeof guide.poseOf> = () => null;
   const stage = createSceneStage({
     getScene: () => seams.getScene(),
     poseOf: (id) => poseOf(id),
-    // The figure measured from its own header (K4 review R2), and the
+    // The figure measured from its own header, and the
     // decoder holds the same cap again.
     decodeTexture: (blob) =>
       decodes.run("figure", () =>
@@ -396,10 +393,9 @@ export function wireVisitorStations(deps: {
         focusId,
       }),
     now: deps.now,
-    // The present station (visitor plan 2026-10-18-2349 M1): judged here,
-    // drawn per station from M2 on.
+    // The present station: judged here, drawn per station.
     guideStore: arStore,
-    // The visitor's walk (W4 build plan M1): in the page's store too.
+    // The visitor's walk: in the page's store too.
     walkStore: arStore,
     onFound: (station) => {
       view.offer(station);
@@ -410,12 +406,11 @@ export function wireVisitorStations(deps: {
     onDone: (stationId) => {
       prefetch.done(stationId);
     },
-    // A station brought back after its skip settled is read ahead again
-    // (W4 build plan M4, R-3).
+    // A station brought back after its skip settled is read ahead again.
     onUndone: (stationId) => {
       prefetch.undone(stationId);
     },
-    // The story the visitor may end is the one playing (R-5).
+    // The story the visitor may end is the one playing.
     storyPlaying: () => view.playing(),
     onUpcoming: (station) => {
       prefetch.ahead(station);
@@ -447,7 +442,7 @@ export function wireVisitorStations(deps: {
    *  resource like the sheet's DOM, reset with the session. */
   const directionMemory = createWalkDirections();
   const win = dom.doc.defaultView;
-  /** The frame time over the last 2 s, for `?debug=1` (DEC-PERF). */
+  /** The frame time over the last 2 s, for `?debug=1`. */
   const frames = createRollingWindow();
   const radarDom = walk?.radar;
   const radarView: WalkRadarView | null =
@@ -557,7 +552,7 @@ export function wireVisitorStations(deps: {
       return;
     }
     const chip = selectWalkChipKind(state);
-    // The story waits while the visitor is asked whether to end it (R-5).
+    // The story waits while the visitor is asked whether to end it.
     view.holdStep(guideView.end?.kind === "end");
     const playing = view.playing();
     const sheet = selectWalkSheet(state);
@@ -596,7 +591,7 @@ export function wireVisitorStations(deps: {
     renderPill(guideView, tour, directions, sheet === "list", playing !== null);
     sheetView.renderAway(null);
     markShown(true);
-    // What a skip did is said once (W4: a toast, not the line), and the
+    // What a skip did is said once (the prototype: a toast, not the line), and the
     // welcome back with it: one render's words are one toast.
     const words: string[] = [];
     if (guideView.note !== saidNote) {
@@ -646,7 +641,7 @@ export function wireVisitorStations(deps: {
     });
   }
 
-  /** Outside AR: the walk's progress on the start page (W4, §1.8). */
+  /** Outside AR: the walk's progress on the start page. */
   function renderAway(): void {
     if (sheetView === null) return;
     const kept = keptWalk();
@@ -694,7 +689,7 @@ export function wireVisitorStations(deps: {
       renderSheet();
     },
     loadContent: (path) => prefetch.load(path),
-    // A lock only improved the position (D16): the guide re-judges now.
+    // A lock only improved the position: the guide re-judges now.
     codeLocked: () => {
       calls.during(() => {
         guide.codeLocked();
@@ -710,11 +705,11 @@ export function wireVisitorStations(deps: {
         guide.endSession();
       });
       // A tour close has already dropped the manifest: the cache goes now;
-      // a session end keeps it for the next session (R15).
+      // a session end keeps it for the next session.
       prefetch.sync();
       // The sheet goes with the session; the progress shows on the start
-      // page, and the next entry welcomes the visitor back (W4, §1.8) at
-      // the peek, as W4 does, even when the list was open on leaving.
+      // page, and the next entry welcomes the visitor back at
+      // the peek, as the prototype does, even when the list was open on leaving.
       saidNote = null;
       directionMemory.reset();
       radarView?.reset();
@@ -736,7 +731,7 @@ export function wireVisitorStations(deps: {
 }
 
 /**
- * The walk's `?debug=1` lines (W4 build plan M3, DEC-PERF): the radar's
+ * The walk's `?debug=1` lines: the radar's
  * draw time and the frame time, for a visitor's radar only - a creator
  * has no radar, and two lines reading "-" would only crowd the readout.
  */
@@ -751,7 +746,7 @@ export function walkDebugLines(
 }
 
 /**
- * A render that waits for the calls in progress (W4 build plan M2 review):
+ * A render that waits for the calls in progress:
  * `request` inside `during` defers it to the end of the outermost call,
  * once; outside any call it renders at once. A story's `onChange` fires
  * from inside a guide call (a find starts the story), where the guide's

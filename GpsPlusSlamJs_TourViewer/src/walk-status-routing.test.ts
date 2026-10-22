@@ -11,9 +11,7 @@ import {
 import { walkStatusRouting, type StatusRoute } from "./walk-status-routing";
 
 /**
- * Why these tests matter (visitor walk W4 build plan
- * GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md,
- * M2, §1.4): W4 has no status line over the camera, so the visitor's one
+ * Why these tests matter: the prototype has no status line over the camera, so the visitor's one
  * sentence (`visitor-status.ts`, kept) is routed to the coach, the scan
  * card, a toast or the peek's tail - or, where the sheet and the radar
  * already say it, nowhere. A state routed nowhere by mistake is a visitor
@@ -86,7 +84,7 @@ const ROUTES: Record<
       },
     },
   },
-  // The scan card carries the code situations before placement (S1, kept).
+  // The scan card carries the code situations before placement (kept).
   scan: {
     text: "Point your phone at the tour's code (on the poster).",
     scanShown: true,
@@ -281,7 +279,7 @@ describe("walkStatusRouting", () => {
 
   // Why: a tour whose stations hold only stories places no content, so
   // the sentence stays at "placing" / "Code found - placing the tour…"
-  // while the guide already walks the visitor (found in the M2
-  // side-by-side: the found card stood over the walk for good). Once the
+  // while the guide already walks the visitor (found side by side with
+  // the prototype: the found card stood over the walk for good). Once the
   // sheet shows, the walk is what happens; the wait gives way to it.
 });

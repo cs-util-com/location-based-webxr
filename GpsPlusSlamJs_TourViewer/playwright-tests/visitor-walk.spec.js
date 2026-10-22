@@ -13,12 +13,12 @@ import {
 } from "./ar-fakes.js";
 
 /**
- * The visitor's walk in AR (visitor walk W4 build plan M2): the sheet with
+ * The visitor's walk in AR: the sheet with
  * its peek, the story card in the peek's place and the list, the coach, the
  * toast, and the progress kept on the start page after leaving AR. Today's
  * rules are kept (skip, undo, the texts), so this drives the page the way
  * `stations.spec.js` does and reads the new surfaces. The fixture
- * (`archive-server.mjs`, `/ranges-ok/walk-tour.zip`) is the W4 prototype's
+ * (`archive-server.mjs`, `/ranges-ok/walk-tour.zip`) is the the prototype prototype's
  * "Old town walk": the gate 28 m north, the well (82 N, 34 E), the tower
  * (170 N, 48 W), the garden (240 N, 46 E), any order, stories of lines
  * that advance by themselves (the fakes' timers).
@@ -169,10 +169,10 @@ async function visit(page, station, second) {
 test("the peek names the nearest station; the list opens by the grab and by a drag, and closes", async ({
   page,
 }) => {
-  // Why this test matters (W4 build plan M2, §1.5): the sheet replaces the
+  // Why this test matters: the sheet replaces the
   // line over the camera, so the visitor must read the next station and
   // its distance in the peek, and reach every station in the list by the
-  // two gestures W4 offers. The hidden line keeps saying the same.
+  // two gestures the prototype offers. The hidden line keeps saying the same.
   await openTheWalk(page);
   await enterAtTheCode(page);
   const sheet = page.getByTestId("walk-sheet");
@@ -188,7 +188,7 @@ test("the peek names the nearest station; the list opens by the grab and by a dr
   await expect(page.getByTestId("walk-segments").locator("i")).toHaveCount(4);
   await expect(page.getByTestId("walk-list")).toBeHidden();
   // This tour's stations hold only stories, so no content stands; the
-  // running walk still makes it a placed tour (W4 M2 review), so neither
+  // running walk still makes it a placed tour, so neither
   // the found card nor a placement wait stands over the walk, and the
   // screen reader's copy says the same.
   await expect(page.locator("#scan-card")).toBeHidden();
@@ -216,8 +216,7 @@ test("the peek names the nearest station; the list opens by the grab and by a dr
   const rows = page.getByTestId("walk-row");
   await expect(rows).toHaveCount(4);
   await expect(rows.first()).toHaveAttribute("data-state", "next");
-  // With the code's heading the row says which way too (W4 build plan
-  // M3): the camera looks north, the gate stands north.
+  // With the code's heading the row says which way too: the camera looks north, the gate stands north.
   await expect(rows.first().getByTestId("walk-row-sub")).toHaveText(
     /^2\d m - ahead$/,
   );
@@ -260,12 +259,12 @@ test("the peek names the nearest station; the list opens by the grab and by a dr
 test("a found station's story takes the peek's place with its dots, and its end is the card's", async ({
   page,
 }) => {
-  // Why this test matters (§1.5): while a story plays the card stands
+  // Why this test matters: while a story plays the card stands
   // where the peek was, its dots follow the lines, and "End this story"
   // (two taps, with "Keep listening" beside the confirm) moved from the
   // skip button to the card. Opening the list hides the card; a find
   // closes the list again. While the end is asked the story waits: its
-  // step's timer stops, and "Keep listening" starts it again (R-5, M4).
+  // step's timer stops, and "Keep listening" starts it again.
   await openTheWalk(page, FIXED_WALK_ARCHIVE);
   await enterAtTheCode(page);
   await page.getByTestId("walk-grab").click();
@@ -305,7 +304,7 @@ test("a found station's story takes the peek's place with its dots, and its end 
   await end.click();
   await expect(end).toHaveText("End the story of The gate now");
   await expect(page.getByTestId("keep-listening")).toBeVisible();
-  // Under the question the card offers only its two answers (W4): the
+  // Under the question the card offers only its two answers: the
   // next step waits for Keep listening.
   await expect(page.getByTestId("scene-continue")).toBeHidden();
   // Held: no timer runs under the question, the dot shows no timed fill.
@@ -320,7 +319,7 @@ test("a found station's story takes the peek's place with its dots, and its end 
   await expect(dots.nth(1)).toHaveAttribute("data-timed", "true");
   await expect(page.getByTestId("keep-listening")).toBeHidden();
   await expect(story).toBeVisible();
-  // The focus is not dropped with the hidden button (W4 M2 review): it
+  // The focus is not dropped with the hidden button: it
   // moves to the end control beside it.
   await expect(end).toBeFocused();
   // Two taps end it: the peek is back, naming the next station, and the
@@ -339,7 +338,7 @@ test("a found station's story takes the peek's place with its dots, and its end 
 test("a running walk speaks as a placed tour: placed, placed by GPS with its request for steps, and finding the direction", async ({
   page,
 }) => {
-  // Why this test matters (W4 build plan M2 review): a first fix for a
+  // Why this test matters: a first fix for a
   // tour of stories hid the placement wait under the sheet, and with it
   // the request for steps and the GPS placement's reason; the hidden
   // sentence and the live region stayed in the wait. These tours' stations
@@ -388,7 +387,7 @@ test("a running walk speaks as a placed tour: placed, placed by GPS with its req
 test("a tour of stories placed by GPS still asks for steps while no heading is earned", async ({
   page,
 }) => {
-  // Why this test matters (W4 M2 review): the case the first fix broke -
+  // Why this test matters: the case the first fix broke -
   // no content stands, so only the running walk makes the tour placed,
   // and without it the request for steps never reached the visitor.
   await openTheWalk(page);
@@ -405,9 +404,9 @@ test("a tour of stories placed by GPS still asks for steps while no heading is e
 test("'Can't get there?' opens the list on its row; the confirm skips, the row's undo brings it back; each is said in a toast", async ({
   page,
 }) => {
-  // Why this test matters (W4 build plan M4, §1.6, R-2's taps): the quick
-  // action opens the list with the focus's row asking for its confirm
-  // (W4), the rows carry Skip, its confirm, the undo with its bar and
+  // Why this test matters: the quick
+  // action opens the list with the focus's row asking for its confirm,
+  // the rows carry Skip, its confirm, the undo with its bar and
   // Bring back, and what happened is said in the toast (the async-UI
   // rule's final state). The focus follows each tap's control to what
   // takes its place.
@@ -523,7 +522,7 @@ test("while tracking is lost no skip is offered, and it comes back with the trac
 test("a chosen target leads the peek, the line and its row until it is tapped again", async ({
   page,
 }) => {
-  // Why this test matters (W4 build plan M4, R-4): "Guide me here" on a
+  // Why this test matters: "Guide me here" on a
   // row makes that station the walk's target - the peek, the hidden line
   // and the row say so - whatever is nearest; tapped again, the nearest
   // leads again.
@@ -564,7 +563,7 @@ test("a chosen target leads the peek, the line and its row until it is tapped ag
 test("with no position the walk names no station: the chooser asks which one, and one tap on a row skips it", async ({
   page,
 }) => {
-  // Why this test matters (W4 build plan M4, W-D3 and R-2): a visitor
+  // Why this test matters: a visitor
   // without location whose code lost its trust (an odometry frame change)
   // has no position anyone vouches for; no text may name a station as
   // next or nearest - not the peek, not the hidden line, not the quick
@@ -629,7 +628,7 @@ test("with no position the walk names no station: the chooser asks which one, an
     "aria-describedby",
     "walk-hint",
   );
-  // No row is the next one, and none shows a distance (R-0).
+  // No row is the next one, and none shows a distance.
   const rows = page.getByTestId("walk-row");
   await expect(
     page.locator('[data-testid="walk-row"][data-state="next"]'),
@@ -656,7 +655,7 @@ test("with no position the walk names no station: the chooser asks which one, an
 test("a skipped station is brought back after the tour is complete, and the tour completes again", async ({
   page,
 }) => {
-  // Why this test matters (W4 build plan M4, W-D2 and R-3): a skip is
+  // Why this test matters: a skip is
   // never final - "Bring back" stays on a skipped row at any time, even
   // once the tour is complete, and the complete tour becomes incomplete
   // everywhere (the card, the segments, the peek), then complete again.
@@ -706,7 +705,7 @@ test("a skipped station is brought back after the tour is complete, and the tour
 test("the completion opens the list once, with its card and the way out", async ({
   page,
 }) => {
-  // Why this test matters (§1.6): the end of the walk is shown, not only
+  // Why this test matters: the end of the walk is shown, not only
   // said - the list opens on its own with the completion card - and only
   // once: a visitor who closed it is not pulled back into it.
   await openTheWalk(page);
@@ -746,7 +745,7 @@ test("the completion opens the list once, with its card and the way out", async 
 test("leaving AR shows the progress on the start page; coming back is welcomed", async ({
   page,
 }) => {
-  // Why this test matters (§1.8): a visitor who leaves AR mid-walk sees
+  // Why this test matters: a visitor who leaves AR mid-walk sees
   // what was found on the start page and goes "Back to the tour" with the
   // same tap; inside, the toast says the progress was kept.
   await openTheWalk(page);
@@ -755,7 +754,7 @@ test("leaving AR shows the progress on the start page; coming back is welcomed",
   await enterAtTheCode(page);
   await visit(page, STATIONS[0], 1);
   // Leaving with the list open: the next entry starts at the peek, as
-  // W4's does (the side-by-side check, W4 M2 review).
+  // The prototype's does (the side-by-side check).
   await page.getByTestId("walk-grab").click();
   await expect(page.getByTestId("walk-sheet")).toHaveAttribute(
     "data-sheet",
@@ -848,11 +847,11 @@ for (const start of STARTS) {
   test(`'${start.name}' says 'Starting AR…' in the coach, and a failed start can be tried again`, async ({
     page,
   }) => {
-    // Why this test matters (§1.4, the async-UI rule): the AR start takes
+    // Why this test matters (the async-UI rule): the AR start takes
     // a moment with nothing else on screen, so the coach says so with its
     // spinner; a start that fails goes back to the page with "Try again",
     // and the second try starts - from a fresh tour and from "Back to the
-    // tour" alike (W4 M2 review).
+    // tour" alike.
     await start.ready(page);
     await page.evaluate(() => {
       const t = /** @type {any} */ (window).__tourViewerTest;

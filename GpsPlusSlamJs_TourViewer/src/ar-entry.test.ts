@@ -471,7 +471,7 @@ describe("wireArEntry QR readout and visitor hint", () => {
     );
   });
 
-  // Why (W4 build plan M3, DEC-PERF): the radar is judged on the phone by
+  // Why: the radar is judged on the phone by
   // its draw time and the frame time; the ?debug=1 block carries the
   // walk's two lines after the QR and GPS lines.
   it("ends the block with the walk's radar and frame lines", () => {
@@ -1312,7 +1312,7 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
     expect(h.dom.arStatus.dataset["state"]).toBe("placed");
   });
 
-  // Why (W4 build plan M3, §1.3): the chip's "Paused - tracking lost"
+  // Why: the chip's "Paused - tracking lost"
   // and the radar's frozen grey read the store's trackingLost, published
   // here from the readiness phase the visitor's sentence already uses - on
   // a change only (this runs per camera frame), never for a creator.
@@ -1348,8 +1348,8 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
   });
 });
 
-describe("the walk's surfaces in AR (visitor walk W4 build plan M2, §1.4)", () => {
-  // Why: W4 has no status line over the camera. Each state of the
+describe("the walk's surfaces in AR", () => {
+  // Why: the prototype has no status line over the camera. Each state of the
   // visitor's sentence goes to one surface - the coach, the scan card,
   // a toast said once, the peek's code line - and the sentence itself stays
   // on #ar-status (data-state, the tests) and its live copy. A wrong route

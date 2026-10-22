@@ -235,7 +235,7 @@ the session end; an unrecorded one asks for none. The pure pieces: `ar-mode.test
   book plan M6 v5.1), next to `gpsSamplesAtSessionStart`
   (`ar-entry.test.ts`, "snapshots the odometry frame's epoch").
 
-## The walk's surfaces (visitor walk W4 build plan M2, §1.4)
+## The walk's surfaces
 
 - `renderArStatus` splits the visitor's sentence
   (`visitorStatusParts`, `statusSentence`) and, for a visitor, renders
@@ -265,7 +265,7 @@ the session end; an unrecorded one asks for none. The pure pieces: `ar-mode.test
   placed tour (live region and toast), one render's news as one toast; a placement wait giving way
   to the shown walk).
 
-## The radar's events and lines (visitor walk W4 build plan M3)
+## The radar's events and lines
 
 - `renderArStatus` publishes the visitor's tracking loss
   (`trackingLostSet`): lost while a visitor's session runs with the

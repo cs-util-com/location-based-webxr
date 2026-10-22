@@ -1,7 +1,5 @@
 /**
- * The station guide's view for the sheet (visitor walk W4 build plan
- * GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md,
- * M2, §1.5): the sheet's peek splits today's station line into eyebrow,
+ * The station guide's view for the sheet: the sheet's peek splits today's station line into eyebrow,
  * title, distance and tail, so it reads what the line was written from - the
  * station in focus and the position's kind - from the guide itself rather
  * than parsing the line. The story card carries the end control (the guide
@@ -131,7 +129,7 @@ describe("the guide's view", () => {
     expect(h.guide.view()).toBeNull();
   });
 
-  // Changed in M4 (§1.9 R-2): an any-order tour guesses no station while
+  // An any-order tour guesses no station while
   // no distance is shown, and again only once the distance held for the
   // hold; before, "gate" was named while pending, first in list order.
   it("names the line's station and the position's kind: distance, pending, weak, none", () => {
@@ -190,7 +188,7 @@ describe("the guide's view", () => {
     expect(h.guide.view()?.quick).toEqual({ kind: "undo", id: "gate" });
   });
 
-  // Why: W4 says what a skip did in a toast, not in the line. The view
+  // Why: the prototype says what a skip did in a toast, not in the line. The view
   // carries the note while its moment lasts, so the page can say it once.
   it("carries the note of what just happened, while its moment lasts", () => {
     const h = harness("fixed");
@@ -208,7 +206,7 @@ describe("the end control on the story card", () => {
   // Why this test matters: from M2 the end control lives on the story card,
   // and only there; the card's button asks, a second tap ends, and "Keep
   // listening" takes the ask back - while the peek's quick action stays
-  // hidden with nothing unfound offered. From M4 (R-5) it is there
+  // hidden with nothing unfound offered. It is there
   // whenever a story's station is found, and a tap on it carries its own
   // action (`data-action`).
   it("writes the ask to the card, not to the skip button, and a second tap ends", () => {

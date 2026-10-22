@@ -23,8 +23,7 @@ far the visitor is from each offered station. Plan:
     distance (K4 review R5; the guide's `onUpcoming`);
   - `done(stationId)` - the media only done stations need may be
     released;
-  - `undone(stationId)` - a done station was brought back (visitor walk
-    W4 build plan M4, R-3): it counts as not done again, so its media are
+  - `undone(stationId)` - a done station was brought back: it counts as not done again, so its media are
     not releasable for it, and a path released meanwhile is read again on
     its next approach (it is no longer held, so `approach` asks anew);
   - `load(path)` - the story's read: the cache, a read in flight, or a

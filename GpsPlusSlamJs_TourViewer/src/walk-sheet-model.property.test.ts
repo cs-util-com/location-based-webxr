@@ -16,9 +16,7 @@ import { walkStepped } from "./visitor-walk-slice";
 import { walkSheetModel } from "./walk-sheet-model";
 
 /**
- * Why these properties matter (visitor walk W4 build plan
- * GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md,
- * M2, Tests): the peek is a split of the hidden station line, which the
+ * Why these properties matter: the peek is a split of the hidden station line, which the
  * screen reader and the e2e still read - the two must name the same
  * station and say the same about the position, for every walk and every
  * measurement, or the visitor sees one thing and hears another. The
@@ -94,7 +92,7 @@ function linePattern(peek: { kind: string; title: string }): RegExp {
     case "story":
       return /Station found - its story is playing\.$/;
     case "none":
-      // No station guessed (R-2): the line names the count and the
+      // No station guessed: the line names the count and the
       // position's state, as the peek's title does.
       return new RegExp(`^${peek.title} - `);
     default:

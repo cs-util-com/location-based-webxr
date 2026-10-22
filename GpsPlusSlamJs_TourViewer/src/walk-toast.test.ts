@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createWalkToast } from "./walk-toast";
 
 /**
- * Why these tests matter (visitor walk W4 build plan M2, §1.4): the
+ * Why these tests matter: the
  * visitor's status is re-rendered on every camera frame, so news routed to
  * the toast ("Tour placed by GPS (less exact)") would restart the toast -
  * and be announced again - sixty times a second. Said once per AR entry it
@@ -66,7 +66,7 @@ describe("createWalkToast", () => {
     expect(f.shown).toEqual(["Skipped The well.", "Skipped The well."]);
   });
 
-  // Why (W4 M2 review): the framework's toast shows one message; a second
+  // Why: the framework's toast shows one message; a second
   // show in the same render replaced the first before anyone read it,
   // and the lost news counted as said, so it never came back. One
   // render's words are one toast.
@@ -132,7 +132,7 @@ describe("createWalkToast - two call sites in one frame", () => {
 });
 
 describe("createWalkToast - the words no other region announces", () => {
-  // Why (W4 M2 review): the toast's root is aria-hidden, since the status
+  // Why: the toast's root is aria-hidden, since the status
   // and the station line announce its words already - all but the welcome
   // back, which only the toast says. Without its own region a screen
   // reader would never hear it; reset() empties the region, so a later

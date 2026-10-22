@@ -2,10 +2,8 @@
 
 ## Purpose
 
-Which way a station is, in words (visitor walk W4 build plan
-`GpsPlusSlamJs_Docs/docs/2026-10-21-1105-visitor-walk-w4-build-plan.md`,
-M3, §1.5, §1.6, §5): the one direction rule for the peek's tail, the
-list's rows and (M5) the edge pill. W4 had two rules ("behind" past 140°
+Which way a station is, in words: the one direction rule for the peek's tail, the
+list's rows and the edge pill. The prototype had two rules ("behind" past 140°
 in its words, past 137.5° in its pill); the build has this one.
 
 ## Public API
@@ -24,9 +22,9 @@ in its words, past 137.5° in its pill); the build has this one.
     thresholds that do not make three zones
     (`0 < ahead < behind < 180`, `0 <= h < ahead`, `h < 180 - behind`).
 - `walkDirectionPhrase(word)` - the row's words: "ahead", "to your left",
-  "to your right", "behind you" (W4).
+  "to your right", "behind you".
 - `walkDirectionTail(word)` - the peek's tail: "Ahead.", "To your left.",
-  "To your right.", "Behind you." (W4).
+  "To your right.", "Behind you.".
 - `createWalkDirections(options?) => WalkDirections` - one word per
   station with its own memory for the band: `of(id, angleDeg | null)`
   (null forgets the station: no heading), `reset()`.
@@ -65,4 +63,4 @@ dirs.of("well", bearingDeltaDeg(stationBearing, cameraBearing));
   wide as the jitter gives the ideal four changes a turn at every
   threshold pair; with no band 10-62 changes. The shipped 5° holds up to
   3° of jitter; what would reverse it is a phone whose heading jitters by
-  more than 5° (the field check, plan §3.2).
+  more than 5° (the field check).
