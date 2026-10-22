@@ -26,6 +26,12 @@ camera captures are debug data, never in a station (an earlier file's
   (below), the one the tour document's station rule starts.
 - `routedTo(station)`: the stations `station` routes to (its `next` and
   its quizzes' routes): what keeps an emptied station from being dropped.
+- `withoutRoutesTo(station, gone)`: `station` without a route to any
+  station of `gone` (deleted stations): its `next` goes, each quiz route
+  loses those targets, a `byOption` left empty goes, and a route left
+  with no target goes whole. The same object when it names none of them,
+  so a caller can tell an untouched frame by identity. The format refuses
+  a dangling route, so a station's delete and a restore prune with it.
 - `withTourContent(manifest, { objects }) -> TourManifest`: the manifest
   with `objects` as its pins and photos, each in the station it names (or,
   naming none, the one the manifest holds it in), the stations kept as
@@ -156,3 +162,8 @@ const written = withTourContent(opened, {
   `tour-document.test.ts` and `tour-document.property.test.ts` (the open
   dropping a file's captures, and no write carrying them),
   `authoring-draft.test.ts` and `creator-finish.test.ts`.
+- `withoutRoutesTo` through `tour-document-stations.test.ts` (a delete
+  pruning a `next` and quiz targets, a route left with no target going
+  whole, and the property that any order of station deletes leaves no
+  route to a missing station) and `tour-document-stations-draft.test.ts`
+  (a restore pruning a route to a station gone).

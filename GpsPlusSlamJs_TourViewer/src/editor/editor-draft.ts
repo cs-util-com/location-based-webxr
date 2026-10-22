@@ -93,7 +93,11 @@ import {
 } from "../draft-persistence.js";
 import { createKeyedChain } from "../keyed-chain.js";
 import type { EditorLock } from "./save-target.js";
-import type { StationFrame, StationPose } from "../tour-document.js";
+import {
+  framesOf,
+  type StationFrame,
+  type StationPose,
+} from "../tour-document.js";
 import {
   changedStations,
   parseSettingsRecord,
@@ -117,6 +121,12 @@ export interface EditorTourSettings {
    *  starts one): the draft's objects name them, so a restore puts them
    *  back first. Not a change of their own. */
   readonly createdStations?: readonly StationFrame[];
+  /** Every station whole, in the tour's order, once a station was edited
+   *  beyond its pose here (renamed, added, deleted, reordered, copied):
+   *  each comes back as recorded. Absent: no opinion about them. */
+  readonly frames?: readonly StationFrame[];
+  /** The stations of the file the record deleted. */
+  readonly deletedStations?: readonly string[];
 }
 
 /** One of the details' fields (`tour-details-form.ts`), in the order the
@@ -141,8 +151,77 @@ function changedDetails(
   return DETAIL_FIELDS.filter((f) => wanted[f] !== against?.[f]);
 }
 
-/** Whether `wanted` changes a setting, a detail or a station's pose that
- *  `against` holds: what the offer names. */
+/** What a record's whole frames change against `against`'s: the stations
+ *  edited beyond their pose (a pose is `stations`' to name), the stations
+ *  it adds that carry the creator's own work (a station a placement
+ *  started is no change of its own: `addsStations`), the stations of
+ *  `against` it deletes, and whether it orders the shared ones anew. None
+ *  for a record without frames. */
+interface FrameChanges {
+  readonly edited: readonly string[];
+  readonly added: readonly string[];
+  readonly deleted: readonly string[];
+  readonly reordered: boolean;
+}
+
+const NO_FRAME_CHANGES: FrameChanges = {
+  edited: [],
+  added: [],
+  deleted: [],
+  reordered: false,
+};
+
+/** A frame without its pose, for "edited beyond its pose". */
+function poseless(frame: StationFrame): string {
+  return JSON.stringify({ ...frame, geo: null });
+}
+
+function changedFrames(
+  wanted: EditorTourSettings,
+  against: EditorTourSettings,
+): FrameChanges {
+  if (wanted.frames === undefined) return NO_FRAME_CHANGES;
+  const theirs = new Map((against.frames ?? []).map((f) => [f.id, f]));
+  const mine = new Set(wanted.frames.map((f) => f.id));
+  const edited = wanted.frames
+    .filter((f) => {
+      const other = theirs.get(f.id);
+      return other !== undefined && poseless(other) !== poseless(f);
+    })
+    .map((f) => f.id);
+  const added = wanted.frames
+    .filter(
+      (f) =>
+        !theirs.has(f.id) &&
+        (f.title !== undefined ||
+          f.steps.length > 0 ||
+          f.description !== undefined ||
+          f.image !== undefined),
+    )
+    .map((f) => f.id);
+  const deleted = (wanted.deletedStations ?? []).filter((id) => theirs.has(id));
+  const shared = wanted.frames.map((f) => f.id).filter((id) => theirs.has(id));
+  const sharedTheirs = [...theirs.keys()].filter((id) => mine.has(id));
+  return {
+    edited,
+    added,
+    deleted,
+    reordered: shared.some((id, i) => id !== sharedTheirs[i]),
+  };
+}
+
+/** How many changes a record's frames count as. */
+function frameChangeCount(changes: FrameChanges): number {
+  return (
+    changes.edited.length +
+    changes.added.length +
+    changes.deleted.length +
+    (changes.reordered ? 1 : 0)
+  );
+}
+
+/** Whether `wanted` changes a setting, a detail, a station's pose or a
+ *  station beyond its pose that `against` holds: what the offer names. */
 function changesSettings(
   wanted: EditorTourSettings,
   against: EditorTourSettings,
@@ -150,7 +229,8 @@ function changesSettings(
   return (
     wanted.needsNoGps !== against.needsNoGps ||
     changedDetails(wanted.details, against.details).length > 0 ||
-    changedStations(wanted.stations, against.stations).length > 0
+    changedStations(wanted.stations, against.stations).length > 0 ||
+    frameChangeCount(changedFrames(wanted, against)) > 0
   );
 }
 
@@ -185,6 +265,10 @@ function sameRecord(
   if (JSON.stringify(a.createdStations) !== JSON.stringify(b.createdStations)) {
     return false;
   }
+  if (JSON.stringify(a.frames) !== JSON.stringify(b.frames)) return false;
+  if (JSON.stringify(a.deletedStations) !== JSON.stringify(b.deletedStations)) {
+    return false;
+  }
   return changedDetails(a.details, b.details).length === 0;
 }
 
@@ -197,6 +281,7 @@ const NO_GPS_WHAT = `this tour's "needs no GPS" setting`;
 const DETAILS_WHAT = "this tour's details";
 const BOTH_WHAT = "this tour's settings";
 const STATIONS_WHAT = "this tour's station positions";
+const FRAMES_WHAT = "this tour's stations";
 
 /** What an offered record changes against the opened file: whether the
  *  setting, and which details. */
@@ -207,12 +292,14 @@ function settingsChanges(
   readonly noGps: boolean;
   readonly details: DetailField[];
   readonly stations: string[];
+  readonly frames: FrameChanges;
 } {
   const file = settingsOf(manifest);
   return {
     noGps: settings.needsNoGps !== file.needsNoGps,
     details: changedDetails(settings.details, file.details),
     stations: changedStations(settings.stations, file.stations),
+    frames: changedFrames(settings, file),
   };
 }
 
@@ -236,7 +323,11 @@ function offerText(
   });
   if (settings === undefined || changes === null) return counted;
   const noGps = `${NO_GPS_LABEL} turned ${settings.needsNoGps ? "on" : "off"}`;
-  if (changes.details.length === 0 && changes.stations.length === 0) {
+  if (
+    changes.details.length === 0 &&
+    changes.stations.length === 0 &&
+    frameChangeCount(changes.frames) === 0
+  ) {
     return notes + deleted === 0
       ? `${counted} It is ${noGps}.`
       : `${counted} One of the changes is ${noGps}.`;
@@ -265,8 +356,16 @@ function namedChanges(
  *  and each station one. */
 function settingsChangeCount(changes: SettingsChanges): number {
   return (
-    (changes.noGps ? 1 : 0) + changes.details.length + changes.stations.length
+    (changes.noGps ? 1 : 0) +
+    changes.details.length +
+    changes.stations.length +
+    frameChangeCount(changes.frames)
   );
+}
+
+/** "a station" or "3 stations". */
+function stationsWord(count: number): string {
+  return count === 1 ? "a station" : `${String(count)} stations`;
 }
 
 /** The offer's named parts of a settings record, in the page's order. */
@@ -281,6 +380,15 @@ function settingsParts(changes: SettingsChanges, noGps: string): string[] {
   if (changes.stations.length > 1) {
     parts.push(`the positions of ${String(changes.stations.length)} stations`);
   }
+  const { edited, added, deleted, reordered } = changes.frames;
+  if (edited.length > 0) {
+    parts.push(
+      `the details of ${edited.length === 1 ? "a station" : `${String(edited.length)} stations`}`,
+    );
+  }
+  if (added.length > 0) parts.push(`${stationsWord(added.length)} added`);
+  if (deleted.length > 0) parts.push(`${stationsWord(deleted.length)} deleted`);
+  if (reordered) parts.push("the order of the stations");
   return parts;
 }
 
@@ -291,13 +399,15 @@ function settingsWhatOf(
   manifest: TourManifest,
 ): string | undefined {
   const changes = settingsChanges(settings, manifest);
+  const frames = frameChangeCount(changes.frames) > 0;
   const kinds = [
     changes.noGps,
     changes.details.length > 0,
-    changes.stations.length > 0,
+    changes.stations.length > 0 || frames,
   ].filter(Boolean).length;
   if (kinds > 1) return BOTH_WHAT;
   if (changes.details.length > 0) return DETAILS_WHAT;
+  if (frames) return FRAMES_WHAT;
   if (changes.stations.length > 0) return STATIONS_WHAT;
   return changes.noGps ? NO_GPS_WHAT : undefined;
 }
@@ -335,7 +445,9 @@ export function restoredLine(
         ? "the details"
         : what === STATIONS_WHAT
           ? "the station positions"
-          : "the settings";
+          : what === FRAMES_WHAT
+            ? "the stations"
+            : "the settings";
   return `Nothing was restored: the notes and ${part} those changes were for are changed here already.`;
 }
 
@@ -371,6 +483,7 @@ function settingsOf(manifest: TourManifest): EditorTourSettings {
     needsNoGps: manifest.needsNoGps === true,
     details: detailsOf(manifest),
     stations: manifest.stations.map(({ id, geo }) => ({ id, geo })),
+    frames: framesOf(manifest),
   };
 }
 
@@ -412,6 +525,12 @@ export interface EditorDraftOffer {
   /** The tour's settings, when the opened file does not carry the draft's
    *  (QR-first M1b-2). */
   readonly settings?: EditorTourSettings;
+  /** The ids among `objects` the opened file lacks: copies made here,
+   *  which a restore puts back though the tour does not carry them. */
+  readonly made?: readonly string[];
+  /** The pictures of the offered photos the opened file lacks (a copy
+   *  made here), by id: a restore holds them for the save. */
+  readonly pictures?: ReadonlyMap<string, Blob>;
   /** How the offer's settings part is named in plain words ("this tour's
    *  details"), present with `settings` unless they name nothing - a
    *  record holding only stations the page created (`restoredLine`). */
@@ -521,7 +640,11 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     readonly objects: readonly TourObject[];
     readonly deleted: readonly string[];
     readonly settings?: EditorTourSettings;
+    readonly pictures?: ReadonlyMap<string, Blob>;
   } | null = null;
+  /** The pictures of the pending objects the opened file lacks (a copied
+   *  photo), as last written: a key move carries them with the record. */
+  const pendingPictures = new Map<string, Blob>();
   /** The settings record this page keeps (THE SETTINGS), or null. */
   let settingsPending: EditorTourSettings | null = null;
   /** The settings as last set here since the open, or null: live work,
@@ -760,6 +883,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     id: string,
     change: TourObject | null,
     base: DraftBase | undefined,
+    picture?: Blob,
   ): Promise<boolean> {
     s.ids.add(id);
     return inSpace(
@@ -773,7 +897,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         const wrote =
           change === null
             ? await writeDraftDeletion(store, id)
-            : await writeDraftLiveRecord(store, change, undefined, undefined);
+            : await writeDraftLiveRecord(store, change, picture, undefined);
         // After the record: a record without its base is never superseded.
         if (base !== undefined) await writeDraftBase(store, id, base);
         return wrote;
@@ -821,6 +945,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     opened = null;
     offer = null;
     pending.clear();
+    pendingPictures.clear();
     touched.clear();
     bases.clear();
     settingsPending = null;
@@ -858,7 +983,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     space = next;
     const carried = [writeMeta(next)];
     for (const [id, change] of pending) {
-      carried.push(carry(next, id, change, bases.get(id)));
+      carried.push(
+        carry(next, id, change, bases.get(id), pendingPictures.get(id)),
+      );
     }
     if (settingsPending !== null) {
       carried.push(writeSettingsIn(next, settingsPending));
@@ -867,7 +994,15 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     if (offer !== null) {
       for (const object of offer.objects) {
         if (!touched.has(object.id)) {
-          carried.push(carry(next, object.id, object, bases.get(object.id)));
+          carried.push(
+            carry(
+              next,
+              object.id,
+              object,
+              bases.get(object.id),
+              offer.pictures?.get(object.id),
+            ),
+          );
         }
       }
       for (const id of offer.deleted) {
@@ -925,7 +1060,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       // file does not carry it; spent or unreadable, it goes.
       const settingsText = await store.getText(SETTINGS_KEY);
       if (mine !== generation) return none;
-      const readSettings = parseSettingsRecord(settingsText);
+      const readSettings = parseSettingsRecord(settingsText, manifest);
       const storedSettings =
         readSettings === undefined
           ? undefined
@@ -1000,10 +1135,33 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       );
       const hosted = hostedObjects(manifest);
       const notHosted = draftObjectsNotYetHosted(stored.draft, manifest);
-      // The editor places nothing new: a record of an id the file no
-      // longer carries is a note deleted elsewhere, given way to like a
-      // replaced one.
-      const waiting = notHosted.filter((o) => hosted.key(o.id) !== undefined);
+      // A record of an id the file does not carry is a copy made here (no
+      // file this browser opened showed it: no `seen` base) in a station
+      // the file or the record knows, offered with its picture; any other
+      // is a note deleted elsewhere, given way to like a replaced one.
+      const knownStations = new Set([
+        ...manifest.stations.map((st) => st.id),
+        ...(storedSettings?.frames ?? []).map((f) => f.id),
+        ...(storedSettings?.createdStations ?? []).map((f) => f.id),
+      ]);
+      const made = notHosted.filter(
+        (o) =>
+          hosted.key(o.id) === undefined &&
+          (stored.draft.bases?.get(o.id)?.seen.length ?? 0) === 0 &&
+          o.station !== undefined &&
+          knownStations.has(o.station) &&
+          (o.kind !== "photo" || stored.photos.has(o.id)),
+      );
+      const pictures = new Map(
+        made.flatMap((o) => {
+          const blob = stored.photos.get(o.id);
+          return blob === undefined ? [] : [[o.id, blob] as const];
+        }),
+      );
+      const waiting = [
+        ...notHosted.filter((o) => hosted.key(o.id) !== undefined),
+        ...made,
+      ];
       const replaced =
         draftObjectsSuperseded(stored.draft, manifest).length +
         (notHosted.length - waiting.length);
@@ -1024,7 +1182,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           : {
               objects: waiting,
               deleted,
+              ...(made.length === 0 ? {} : { made: made.map((o) => o.id) }),
               ...(settings === undefined ? {} : { settings }),
+              ...(pictures.size === 0 ? {} : { pictures }),
             };
       return {
         offer:
@@ -1201,6 +1361,8 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     saveObject(object, blob) {
       const id = object.id;
       pending.set(id, object);
+      if (blob === undefined) pendingPictures.delete(id);
+      else pendingPictures.set(id, blob);
       touched.add(id);
       const seen = seenKey(id);
       if (seen !== undefined) {

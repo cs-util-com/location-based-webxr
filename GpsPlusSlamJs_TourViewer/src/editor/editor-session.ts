@@ -14,8 +14,16 @@ import type {
   TourManifest,
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
-import { tourCoverEntry } from "gps-plus-slam-app-framework/ar/tour-details";
+import {
+  TOUR_ITEM_MAX_OFFSET_M,
+  TOUR_MODEL_MAX_SIZE_M,
+  TOUR_MODEL_MIN_SIZE_M,
+} from "gps-plus-slam-app-framework/ar/tour-items";
+import {
+  TOUR_DESCRIPTION_MAX_CHARS,
+  TOUR_TITLE_MAX_CHARS,
+  tourCoverEntry,
+} from "gps-plus-slam-app-framework/ar/tour-details";
 import {
   buildDebugBundle,
   type DebugBundleBuilt,
@@ -45,11 +53,20 @@ import {
   picturesNeeded,
   pinTextChange,
   selectTourDocument,
+  stationDeleteRefusal,
+  stationEditChange,
+  stationEditsBetween,
   tourDocumentActions,
   tourDocumentReducer,
   unsavedEntries,
+  type StationEdit,
   type TourDocumentState,
 } from "../tour-document.js";
+import { newObjectId } from "../content-placement.js";
+import {
+  STATION_RADIUS_MAX_M,
+  STATION_RADIUS_MIN_M,
+} from "../station-geometry.js";
 import { followDocument } from "../tour-document-draft.js";
 import { newTourId } from "../tour-file-key.js";
 import {
@@ -169,6 +186,55 @@ interface EditorRestore {
   readonly deleted: readonly string[];
   /** The tour-level settings, when the draft holds a change of them. */
   readonly settings?: EditorTourSettings;
+  /** The ids among `objects` the tour does not carry that are copies made
+   *  here: put back (an object of any other id the tour lacks is skipped). */
+  readonly made?: readonly string[];
+  /** The pictures of offered photos the opened file lacks (copies made
+   *  here): a photo among them without its picture is not put back. */
+  readonly pictures?: ReadonlyMap<string, Blob>;
+}
+
+/** Said for a station's edit the format refuses, by the field. */
+const STATION_REFUSALS: Readonly<
+  Record<"title" | "radius" | "description" | "image", string>
+> = {
+  title: `A station's name can be at most ${String(TOUR_TITLE_MAX_CHARS)} characters long.`,
+  radius: `A station's radius must be from ${String(STATION_RADIUS_MIN_M)} m to ${String(STATION_RADIUS_MAX_M)} m.`,
+  description: `A station's description can be at most ${String(TOUR_DESCRIPTION_MAX_CHARS)} characters long.`,
+  image:
+    "A station's picture must be a photo of that station or an image of this tour.",
+};
+
+/** Said for a delete of the tour's last station. */
+const LAST_STATION =
+  "A tour needs at least one station, so its last station cannot be deleted.";
+
+/** Said for a station placed where no map has a spot. */
+const NOT_ON_MAP = "That spot is not on the map.";
+
+/** Said for a new order that does not name every station once. */
+const NOT_AN_ORDER = "The new order must name every station of the tour once.";
+
+/** Said for a size given to anything but a model. */
+const NOT_A_MODEL = "Only a 3D model has a size.";
+
+/** Said for a model size out of bounds. */
+const MODEL_SIZE = `A model's size must be from ${String(TOUR_MODEL_MIN_SIZE_M)} m to ${String(TOUR_MODEL_MAX_SIZE_M)} m.`;
+
+/** Said when a photo's picture cannot be read for its copy. */
+const PICTURE_UNREAD =
+  "This photo's picture could not be read, so it cannot be copied.";
+
+/** Said for heights that cannot be set: no number, or beyond what the
+ *  item's station can carry. */
+const HEIGHT_REFUSED = `That height cannot be set: an item must stay within ${String(TOUR_ITEM_MAX_OFFSET_M / 1000)} km of its station.`;
+
+/** Said when an edit could not be applied (the tour changed under it). */
+const NOT_APPLIED = "That change could not be made to the tour as it is now.";
+
+/** A station as the undo's words name it. */
+function stationName(frame: { readonly title?: string }): string {
+  return frame.title === undefined ? "a station" : `"${frame.title}"`;
 }
 
 /** Where the session backs its edits up: the objects' writes the phone
@@ -244,6 +310,54 @@ export interface EditorSession {
   moveStation(
     stationId: string,
     geo: QrGeoPose,
+  ): { kind: "moved" } | EditorRefusal;
+  /** Set a station's name, found radius (its preload radius twice it),
+   *  description or card picture (`StationEdit`): one step; refused in
+   *  words, changing nothing, for what the format would refuse. */
+  editStation(
+    stationId: string,
+    edit: StationEdit,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** Add an empty station at a point, named by its place in the tour. */
+  addStation(at: {
+    readonly lat: number;
+    readonly lon: number;
+    readonly alt: number;
+  }): { kind: "added"; stationId: string } | EditorRefusal;
+  /** Delete a station with its items, and every route to it: one step.
+   *  Refused for the tour's last station. */
+  deleteStation(stationId: string): { kind: "deleted" } | EditorRefusal;
+  /** Put the stations in `order` (every station once): one step. */
+  reorderStations(
+    order: readonly string[],
+  ): { kind: "reordered" | "unchanged" } | EditorRefusal;
+  /** Copy a station beside itself with its items (a photo's picture read
+   *  first, and held under the copy's id): one step. */
+  duplicateStation(
+    stationId: string,
+  ): Promise<{ kind: "duplicated"; stationId: string } | EditorRefusal>;
+  /** Copy an item 1.5 m beside itself in its station: one step. */
+  duplicateObject(
+    id: string,
+  ): Promise<{ kind: "duplicated"; id: string } | EditorRefusal>;
+  /** Set items' altitudes (the ground the page measured under them): ONE
+   *  step for all; refused whole for an unknown id or a height that cannot
+   *  be set. */
+  groundItems(
+    items: readonly { readonly id: string; readonly alt: number }[],
+  ): { kind: "grounded" | "unchanged" } | EditorRefusal;
+  /** Set a model's size (its largest side, 0.05 m to 500 m): one step. */
+  resizeModel(
+    id: string,
+    sizeM: number,
+  ): { kind: "resized" | "unchanged" } | EditorRefusal;
+  /** Put an item at a whole pose (position, height and turn): beyond its
+   *  station's radius the station rule seats it anew; `newStation` starts
+   *  a station of its own where it stands. One step. */
+  pose(
+    id: string,
+    geo: QrGeoPose,
+    options?: { readonly newStation?: boolean },
   ): { kind: "moved" } | EditorRefusal;
   /** Take back the newest edit (W2): the tour goes back to how it stood
    *  before it - an edit like any other, pending until saved and written
@@ -440,23 +554,30 @@ export function createEditorSession(input: {
     return coverImageIds(state);
   }
 
+  /** A photo's picture: the one this session holds, else read from the
+   *  page's copy of the file, failing that from this session's own last
+   *  bytes - the page's copy may not read right after an in-place write.
+   *  Rejects when every way fails. */
+  function readPicture(object: TourObject & { kind: "photo" }): Promise<Blob> {
+    const held = pictures.get(object.id);
+    if (held !== undefined) return Promise.resolve(held);
+    const newest = saves.newest()?.blob;
+    return loadPhoto(object.image).catch((err: unknown) =>
+      newest === undefined
+        ? Promise.reject(err instanceof Error ? err : new Error(String(err)))
+        : readZipBlobEntry(newest, `${session.manifestWrap}${object.image}`),
+    );
+  }
+
   /** Keep a deleted photo's picture for an undo after a save. */
   function keepPicture(found: AuthoringObject): void {
     const object = found.object;
     if (object.kind !== "photo") return;
     const id = object.id;
     if (pictures.has(id)) return;
-    // Read now, while the copy that carries it is at hand; failing that,
-    // from this session's own last bytes - the page's copy may not read
-    // right after an in-place write (M4a review #5). A read that fails
-    // both ways leaves an undo after a save refused, in words.
-    const newest = saves.newest()?.blob;
-    const read = loadPhoto(object.image)
-      .catch((err: unknown) =>
-        newest === undefined
-          ? Promise.reject(err instanceof Error ? err : new Error(String(err)))
-          : readZipBlobEntry(newest, `${session.manifestWrap}${object.image}`),
-      )
+    // Read now, while the copy that carries it is at hand. A read that
+    // fails every way leaves an undo after a save refused, in words.
+    const read = readPicture(object)
       .then(
         (blob) => {
           pictures.set(id, blob);
@@ -511,6 +632,37 @@ export function createEditorSession(input: {
     return DETAIL_FIELDS.some((f) => checked.details[f] !== was[f])
       ? checked.details
       : null;
+  }
+
+  /** `edit` dispatched, and whether the document took it (a reducer that
+   *  refuses returns the state it had). */
+  function took(edit: () => void): boolean {
+    const was = doc().revision;
+    edit();
+    return doc().revision !== was;
+  }
+
+  const notApplied: EditorRefusal = { kind: "refused", reason: NOT_APPLIED };
+  const noSuchStation: EditorRefusal = {
+    kind: "refused",
+    reason: NO_SUCH_STATION,
+  };
+
+  /** The pictures of `objects`' photos, by id; null when one cannot be
+   *  read (a copy without its picture would save a broken tour). */
+  async function picturesOf(
+    objects: readonly TourObject[],
+  ): Promise<Map<string, Blob> | null> {
+    const read = new Map<string, Blob>();
+    for (const object of objects) {
+      if (object.kind !== "photo") continue;
+      try {
+        read.set(object.id, await readPicture(object));
+      } catch {
+        return null;
+      }
+    }
+    return read;
   }
 
   return {
@@ -638,6 +790,210 @@ export function createEditorSession(input: {
       );
       return { kind: "moved" };
     },
+    editStation(stationId, edit) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const change = stationEditChange(state, stationId, edit);
+      if (change.kind === "missing") return noSuchStation;
+      if (change.kind === "refused") {
+        return { kind: "refused", reason: STATION_REFUSALS[change.reason] };
+      }
+      if (change.kind === "unchanged") return change;
+      const frame = state.stations.find((s) => s.id === stationId);
+      store.dispatch(
+        tourDocumentActions.stationEdited({
+          stationId,
+          edit,
+          what: `the change of ${stationName(frame ?? {})}`,
+        }),
+      );
+      return { kind: "edited" };
+    },
+    addStation(at) {
+      if (mine() === null) return notInTour;
+      const stationId = newObjectId();
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.stationAdded({
+            at,
+            stationId,
+            what: "the new station",
+          }),
+        ),
+      )
+        ? { kind: "added", stationId }
+        : { kind: "refused", reason: NOT_ON_MAP };
+    },
+    deleteStation(stationId) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const refusal = stationDeleteRefusal(state, stationId);
+      if (refusal === "missing") return noSuchStation;
+      if (refusal === "last") return { kind: "refused", reason: LAST_STATION };
+      for (const found of documentObjects(state)) {
+        if (found.object.station === stationId) keepPicture(found);
+      }
+      const frame = manifestNow(state)?.stations.find(
+        (s) => s.id === stationId,
+      );
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.stationDeleted({
+            stationId,
+            what: `the delete of ${stationName(frame ?? {})}`,
+          }),
+        ),
+      )
+        ? { kind: "deleted" }
+        : notApplied;
+    },
+    reorderStations(order) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const ids = (manifestNow(state)?.stations ?? []).map((s) => s.id);
+      if (
+        order.length === ids.length &&
+        order.every((id, i) => id === ids[i])
+      ) {
+        return { kind: "unchanged" };
+      }
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.stationsReordered({
+            order,
+            what: "the order of the stations",
+          }),
+        ),
+      )
+        ? { kind: "reordered" }
+        : { kind: "refused", reason: NOT_AN_ORDER };
+    },
+    async duplicateStation(stationId) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const frame = state.stations.find((s) => s.id === stationId);
+      if (frame === undefined) return noSuchStation;
+      const items = documentObjects(state)
+        .map((o) => o.object)
+        .filter((o) => o.station === stationId);
+      const read = await picturesOf(items);
+      if (read === null) return { kind: "refused", reason: PICTURE_UNREAD };
+      const newItemIds = Object.fromEntries(
+        items.map((o) => [o.id, newObjectId()]),
+      );
+      const newStationId = newObjectId();
+      // The pictures under the copies' ids before the copies exist: the
+      // draft's write of each copy carries its picture.
+      for (const [id, blob] of read) {
+        const copyId = newItemIds[id];
+        if (copyId !== undefined) pictures.set(copyId, blob);
+      }
+      if (
+        took(() =>
+          store.dispatch(
+            tourDocumentActions.stationDuplicated({
+              stationId,
+              newStationId,
+              newItemIds,
+              what: `the copy of ${stationName(frame)}`,
+            }),
+          ),
+        )
+      ) {
+        return { kind: "duplicated", stationId: newStationId };
+      }
+      for (const copyId of Object.values(newItemIds)) pictures.delete(copyId);
+      return mine() === null ? notInTour : notApplied;
+    },
+    async duplicateObject(id) {
+      const found = find(id);
+      if (found === undefined) return notInTour;
+      const read = await picturesOf([found.object]);
+      if (read === null) return { kind: "refused", reason: PICTURE_UNREAD };
+      const newId = newObjectId();
+      const blob = read.get(id);
+      if (blob !== undefined) pictures.set(newId, blob);
+      if (
+        took(() =>
+          store.dispatch(
+            tourDocumentActions.objectDuplicated({
+              id,
+              newId,
+              what: `the copy of ${objectName(found.object)}`,
+            }),
+          ),
+        )
+      ) {
+        return { kind: "duplicated", id: newId };
+      }
+      pictures.delete(newId);
+      return find(id) === undefined
+        ? notInTour
+        : { kind: "refused", reason: TOO_FAR_FROM_STATION };
+    },
+    groundItems(items) {
+      const state = mine();
+      if (state === null) return notInTour;
+      if (items.some(({ id }) => find(id) === undefined)) return notInTour;
+      if (items.every(({ id, alt }) => find(id)?.object.geo.alt === alt)) {
+        return { kind: "unchanged" };
+      }
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.itemsGrounded({
+            items,
+            what:
+              items.length === 1
+                ? "the height of an item"
+                : `the heights of ${String(items.length)} items`,
+          }),
+        ),
+      )
+        ? { kind: "grounded" }
+        : { kind: "refused", reason: HEIGHT_REFUSED };
+    },
+    resizeModel(id, sizeM) {
+      const found = find(id);
+      if (found === undefined) return notInTour;
+      const object = found.object;
+      if (object.kind !== "model") {
+        return { kind: "refused", reason: NOT_A_MODEL };
+      }
+      if (!(sizeM >= TOUR_MODEL_MIN_SIZE_M && sizeM <= TOUR_MODEL_MAX_SIZE_M)) {
+        return { kind: "refused", reason: MODEL_SIZE };
+      }
+      if (object.sizeM === sizeM) return { kind: "unchanged" };
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.modelResized({
+            id,
+            sizeM,
+            what: `the size of ${objectName(object)}`,
+          }),
+        ),
+      )
+        ? { kind: "resized" }
+        : notApplied;
+    },
+    pose(id, geo, options = {}) {
+      const found = find(id);
+      if (found === undefined) return notInTour;
+      if (
+        ![geo.lat, geo.lon, geo.alt].every(Number.isFinite) ||
+        Math.abs(geo.lat) > 90 ||
+        Math.abs(geo.lon) > 180
+      ) {
+        return { kind: "refused", reason: NOT_ON_MAP };
+      }
+      store.dispatch(
+        tourDocumentActions.moved({
+          object: { ...found.object, geo },
+          ...(options.newStation === true ? { newStation: true } : {}),
+          what: `the move of ${objectName(found.object)}`,
+        }),
+      );
+      return { kind: "moved" };
+    },
     remove(id) {
       const found = find(id);
       if (found === undefined) return notInTour;
@@ -688,10 +1044,40 @@ export function createEditorSession(input: {
       });
       // An object its station cannot carry (a draft written before far
       // moves re-ran the station rule) is seated by the rule as the
-      // restore puts it back (`restored`), never skipped.
-      const objects = work.objects.filter(
-        (object) => !live.has(object.id) && find(object.id) !== undefined,
+      // restore puts it back (`restored`), never skipped. One the tour
+      // does not carry is skipped unless the offer names it a copy made
+      // here: that is put back with its picture (a photo without one is
+      // not), unless deleted here since.
+      const offeredPicture = (object: TourObject): Blob | undefined =>
+        work.pictures?.get(object.id) ?? pictures.get(object.id);
+      const madeIds = new Set(work.made ?? []);
+      const made = work.objects.filter(
+        (object) =>
+          madeIds.has(object.id) &&
+          !live.has(object.id) &&
+          find(object.id) === undefined &&
+          (object.kind !== "photo" || offeredPicture(object) !== undefined),
       );
+      const objects = [
+        ...work.objects.filter(
+          (object) => !live.has(object.id) && find(object.id) !== undefined,
+        ),
+        ...made,
+      ];
+      // The stations whole (renamed, added, deleted, reordered or copied
+      // there) - unless a station was changed here meanwhile: live work
+      // wins.
+      const framesWork =
+        settings === undefined || state.touched.stations
+          ? {}
+          : {
+              ...(settings.frames === undefined
+                ? {}
+                : { frames: settings.frames }),
+              ...(settings.deletedStations === undefined
+                ? {}
+                : { deletedStations: settings.deletedStations }),
+            };
       const deleted = work.deleted.filter(
         (id) => !live.has(id) && find(id) !== undefined,
       );
@@ -715,6 +1101,7 @@ export function createEditorSession(input: {
           deleted,
           ...(stations.length === 0 ? {} : { stations }),
           ...createdStations,
+          ...framesWork,
           what: "",
         }),
       );
@@ -730,9 +1117,16 @@ export function createEditorSession(input: {
       const changed =
         objects.length +
         stations.length +
+        stationEditsBetween(state, withObjects) +
         (needsNoGps === undefined ? 0 : 1) +
         detailFields;
       if (changed + deleted.length > 0) {
+        // The copies' pictures first: the draft's write of each restored
+        // copy carries its picture, and a save needs it.
+        for (const object of made) {
+          const blob = offeredPicture(object);
+          if (blob !== undefined) pictures.set(object.id, blob);
+        }
         store.dispatch(
           tourDocumentActions.restored({
             objects,
@@ -741,6 +1135,7 @@ export function createEditorSession(input: {
             ...(details === null ? {} : { details }),
             ...(stations.length === 0 ? {} : { stations }),
             ...createdStations,
+            ...framesWork,
             what: "the restored changes",
           }),
         );

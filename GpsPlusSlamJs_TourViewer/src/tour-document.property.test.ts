@@ -34,6 +34,7 @@ import {
   type TourDocumentState,
   type TourDocumentView,
 } from "./tour-document.js";
+import { parseSettingsRecord, settingsRecord } from "./tour-document-draft.js";
 
 function pin(id: string, lat: number): TourObject {
   return {
@@ -109,6 +110,15 @@ type Op =
   | { kind: "station"; id: string; dLat: number }
   | { kind: "setting"; on: boolean }
   | { kind: "details"; title: string }
+  | { kind: "rename"; id: string; title: string }
+  | { kind: "radius"; id: string; radius: number }
+  | { kind: "addStation"; stationId: string; dLat: number }
+  | { kind: "deleteStation"; id: string }
+  | { kind: "reorder" }
+  | { kind: "copyStation"; id: string; copy: string }
+  | { kind: "copyItem"; id: string; copy: string }
+  | { kind: "ground"; id: string; alt: number }
+  | { kind: "ownStation"; id: string; stationId: string }
   | { kind: "undo" }
   | { kind: "redo" }
   | { kind: "save" };
@@ -132,6 +142,46 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
   fc.record({
     kind: fc.constant("details" as const),
     title: fc.constantFrom("", "Old town", "New"),
+  }),
+  // The 3D editor's station edits. Copies are of the pins' stations only:
+  // a copied photo needs its picture, which the rebuild property does not
+  // hold (the session's tests do).
+  fc.record({
+    kind: fc.constant("rename" as const),
+    id,
+    title: fc.constantFrom("", "Gate", "Well"),
+  }),
+  fc.record({
+    kind: fc.constant("radius" as const),
+    id,
+    radius: fc.constantFrom(2, 25, 300),
+  }),
+  fc.record({
+    kind: fc.constant("addStation" as const),
+    stationId: fc.constantFrom("s1", "s2"),
+    dLat: shift,
+  }),
+  fc.record({ kind: fc.constant("deleteStation" as const), id }),
+  fc.constant({ kind: "reorder" as const }),
+  fc.record({
+    kind: fc.constant("copyStation" as const),
+    id: fc.constantFrom("a", "b"),
+    copy: fc.constantFrom("c1", "c2"),
+  }),
+  fc.record({
+    kind: fc.constant("copyItem" as const),
+    id: fc.constantFrom("a", "b"),
+    copy: fc.constantFrom("d1", "d2"),
+  }),
+  fc.record({
+    kind: fc.constant("ground" as const),
+    id,
+    alt: fc.constantFrom(398, 400.5),
+  }),
+  fc.record({
+    kind: fc.constant("ownStation" as const),
+    id,
+    stationId: fc.constantFrom("o1", "o2"),
   }),
   fc.constant({ kind: "undo" as const }),
   fc.constant({ kind: "redo" as const }),
@@ -201,6 +251,90 @@ function apply(state: TourDocumentState, op: Op): TourDocumentState {
           what: "details",
         }),
       );
+    case "rename":
+      return reduce(
+        state,
+        act.stationEdited({
+          stationId: stationIdOf(op.id),
+          edit: { title: op.title },
+          what: "rename",
+        }),
+      );
+    case "radius":
+      return reduce(
+        state,
+        act.stationEdited({
+          stationId: stationIdOf(op.id),
+          edit: { foundRadiusM: op.radius },
+          what: "radius",
+        }),
+      );
+    case "addStation":
+      return reduce(
+        state,
+        act.stationAdded({
+          at: { lat: 48.525 + op.dLat, lon: 9.05, alt: 400 },
+          stationId: op.stationId,
+          what: "add",
+        }),
+      );
+    case "deleteStation":
+      return reduce(
+        state,
+        act.stationDeleted({ stationId: stationIdOf(op.id), what: "delete" }),
+      );
+    case "reorder": {
+      const order = (manifestNow(state)?.stations ?? [])
+        .map((s) => s.id)
+        .reverse();
+      return reduce(state, act.stationsReordered({ order, what: "reorder" }));
+    }
+    case "copyStation": {
+      const stationId = stationIdOf(op.id);
+      const items = documentObjects(state).filter(
+        (o) => o.object.station === stationId,
+      );
+      return reduce(
+        state,
+        act.stationDuplicated({
+          stationId,
+          newStationId: op.copy,
+          newItemIds: Object.fromEntries(
+            items.map((o) => [o.object.id, `${o.object.id}${op.copy}`]),
+          ),
+          createdAtIso: "2026-10-22T00:00:00.000Z",
+          what: "copy",
+        }),
+      );
+    }
+    case "copyItem":
+      return reduce(
+        state,
+        act.objectDuplicated({
+          id: op.id,
+          newId: op.copy,
+          createdAtIso: "2026-10-22T00:00:00.000Z",
+          what: "copy",
+        }),
+      );
+    case "ground":
+      return reduce(
+        state,
+        act.itemsGrounded({ items: [{ id: op.id, alt: op.alt }], what: "g" }),
+      );
+    case "ownStation": {
+      const object = current(op.id);
+      if (object === undefined) return state;
+      return reduce(
+        state,
+        act.moved({
+          object,
+          newStation: true,
+          newStationId: op.stationId,
+          what: "own station",
+        }),
+      );
+    }
     case "undo":
       return reduce(state, act.undone());
     case "redo":
@@ -289,6 +423,48 @@ describe("tour document (properties)", () => {
         expect(
           difference(comparable(viewOf(back)), comparable(viewOf(state))),
         ).toBeNull();
+        expectAlike(manifestToWrite(back)!, manifestToWrite(state)!);
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  it("any sequence of edits, recorded in the draft and restored after a reload, gives back the same document", () => {
+    // Why: the draft is the only copy of unsaved work across a reload. Its
+    // records (the objects', the deletions, the settings record with the
+    // stations whole) must bring back exactly the document they were
+    // written from, whatever mix of object and station edits made it.
+    const noSave = opArb.filter((op) => op.kind !== "save");
+    fc.assert(
+      fc.property(fc.array(noSave, { maxLength: 20 }), (ops) => {
+        const state = ops.reduce(apply, opened);
+        const record = parseSettingsRecord(
+          JSON.stringify(settingsRecord(state)),
+          OPENED,
+        );
+        expect(record).toBeDefined();
+        const back = reduce(
+          opened,
+          act.restored({
+            objects: state.placed.map((p) => p.object),
+            deleted: [...state.deleted],
+            needsNoGps: record?.needsNoGps ?? false,
+            ...(record?.details === undefined
+              ? {}
+              : { details: record.details }),
+            ...(record?.stations === undefined
+              ? {}
+              : { stations: record.stations }),
+            ...(record?.createdStations === undefined
+              ? {}
+              : { createdStations: record.createdStations }),
+            ...(record?.frames === undefined ? {} : { frames: record.frames }),
+            ...(record?.deletedStations === undefined
+              ? {}
+              : { deletedStations: record.deletedStations }),
+            what: "restore",
+          }),
+        );
         expectAlike(manifestToWrite(back)!, manifestToWrite(state)!);
       }),
       { numRuns: 300 },

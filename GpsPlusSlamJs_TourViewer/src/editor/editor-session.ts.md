@@ -134,6 +134,37 @@ imperative resources only - that handle and the pictures' side table
     its new spot (its local pose kept), as the phone's settle leaves its
     lists. Refused for a station the tour does not carry. No gesture yet
     either (the parity contract drives it).
+  - The 3D editor's station and item edits (desktop only; the phone edits
+    stations by placing in AR). Each is ONE step through the document's
+    actions (`../tour-document.ts.md`), backed up through the draft like
+    any edit, and refused in plain words, changing nothing, for what the
+    document's guards refuse (the station field the format refuses,
+    `stationEditChange`; `NOT_IN_TOUR` for an id the tour no longer
+    carries; `NOT_APPLIED` when the tour changed under the call):
+    - `editStation(stationId, edit)` - title, found radius (2 m to 300 m),
+      description, card image (`StationEdit`): `edited` or `unchanged`.
+    - `addStation({ lat, lon, alt })` - an empty automatic station there,
+      `Station N` by its place: `added` with its new id; `NOT_ON_MAP` for
+      a point nobody can draw.
+    - `deleteStation(stationId)` - the station with its items and every
+      route to it; the tour's last station is refused (`LAST_STATION`).
+      Its photos' pictures are kept for the undo, as `remove` keeps one.
+    - `reorderStations(order)` - every station once (`NOT_AN_ORDER`
+      otherwise): `reordered` or `unchanged`.
+    - `duplicateStation(stationId)` / `duplicateObject(id)` (async) - a
+      copy beside the original (a station twice its found radius plus 5 m
+      east, an item 1.5 m east); a photo's picture is read first (the
+      page's copy, `loadPhoto`, then the newest zip; `PICTURE_UNREAD` when
+      none reads) and held under the copy's id, so the save writes the
+      copy's own `content/<id>.<ext>` and the draft keeps it.
+    - `groundItems([{ id, alt }])` - "Put on the ground": the altitudes the
+      page measured, ONE step for all; refused whole for an unknown id or
+      a height beyond an item's reach of its station (`HEIGHT_REFUSED`).
+    - `resizeModel(id, sizeM)` - a placed model's size, 0.05 m to 500 m
+      (`MODEL_SIZE`; `NOT_A_MODEL` for anything else).
+    - `pose(id, geo, { newStation? })` - an item at a whole pose (position,
+      height, turn): beyond its station's radius the rule seats it anew;
+      `newStation` ("Move to a new station") starts one where it stands.
   - `undo()` / `redo()` (W2 of the tour editor plan 2026-10-17-1816) - one
     step of the edit stack: `{ kind: "undone" | "redone", what }` (`what`
     names the step: `the text of "<label>"`, `the move of …`, `the delete
@@ -173,7 +204,12 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     station was moved here (each station whose pose differs counted; applied
     before the objects, so an item restores under the frame it was placed
     under, and its reach is checked there - review #1 of the tour document
-    milestone); what was applied
+    milestone); the stations whole (the record's `frames` and
+    `deletedStations`: a station renamed, added, deleted, reordered or
+    copied there) unless a station was changed here (each station change
+    counted, `stationEditsBetween`); a copy made there (the offer's
+    `made`, an id the tour does not carry) put back with its picture
+    (`pictures`; a photo copy without one is skipped); what was applied
     is written to the draft again. Returns the counts.
   - `save({ keepScan, inPlace? })` - the document's save thunk
     (`../tour-document-save.ts` `save`, through `dispatchThunk`):
@@ -247,8 +283,9 @@ changes`; a label is cut at 40 characters, a label-less note is "a
   to it is measured against the file as saved NOW - so an undo after the
   save that wrote its step is a change of its own, pending until the next
   save writes it. Written to the draft too - but a note an undo brings
-  back after a save wrote its delete is not offered by a later open (the
-  draft places nothing new), so such an undo lasts this tab; the page
+  back after a save wrote its delete is offered by a later open only when
+  its record carries no `seen` base (`editor-draft.ts.md`), so such an undo
+  may last only this tab; the page
   therefore holds autosave while a delete's Undo toast is offered (M4a
   review #2, correcting W2's "backed up by the draft").
 - Undo and redo are refused while a save runs: the save's end moves the
@@ -317,6 +354,13 @@ placed model coming back across a save with its model file (the history
 keeps the asset); a restore as one step; an undo after a save that dropped the emptied station putting the
 note back into that station (the M5a milestone review M2,
 `tour-content.ts`).
+`editor-session-stations.test.ts` on real zips: each station edit one
+undo step, and each refusal in words changing nothing; the last station
+refused, another deleted as one step; a copied photo station saving the
+copy's picture under its own content file; an item moved into a station
+of its own and items put on the ground as one step; renamed, added,
+copied, deleted and reordered stations coming back from the real draft
+after a reload as the save had them.
 The tour document (D29-D31): a later open on the same store disowning the
 session (its edits refused, a save begun before landing nowhere, one asked
 for after refused, its reads its own tour), and a replaced session reading

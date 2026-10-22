@@ -25,11 +25,13 @@ import { automaticStationFrame } from "./tour-content.js";
 import { DETAIL_FIELDS, type TourDetailFields } from "./tour-details-form.js";
 import {
   createdStationFrames,
+  documentFrames,
   framesOf,
   levelsNotHosted,
   type LevelText,
   type StationFrame,
   type StationPose,
+  stationsGoneSinceOpen,
   type TourDocumentState,
 } from "./tour-document.js";
 import { sameJson } from "./same-json.js";
@@ -49,6 +51,14 @@ export interface TourSettingsRecord {
    *  (`createdStationFrames`): the objects' records name them, so a reload
    *  puts them back before the objects (`restored`). Absent when none. */
   readonly createdStations?: readonly StationFrame[];
+  /** Every station whole, in the tour's order, once a station was edited
+   *  beyond its pose here (a title, a radius, a description, a card image;
+   *  added, deleted, reordered or copied: `framesRecorded`). Absent: no
+   *  opinion about them. */
+  readonly frames?: readonly StationFrame[];
+  /** The stations of the opened or written tour the document no longer
+   *  carries, recorded with `frames`; absent when none. */
+  readonly deletedStations?: readonly string[];
 }
 
 /** The settings record's file in a draft namespace, on both pages. Not a
@@ -100,17 +110,25 @@ function parseStations(value: unknown): StationPose[] | undefined | null {
   return poses;
 }
 
-/** A stored record's created stations, each read on its own as the format
- *  reads a station (`parseTourManifest`, without items): undefined when
- *  absent; of two under one id the first is kept. A frame that does not
- *  read is lost (the objects naming it are seated by the station rule as
- *  they come back), and so is every frame whose route names a lost one:
- *  the siblings a frame's routes are read against are only the frames
- *  that read, so the frames are read again against those until no more
- *  drop. No kept frame routes to a created station the record lost. */
-function parseCreatedStations(value: unknown): StationFrame[] | undefined {
+/** A stored record's frames (its created stations, or every station),
+ * each read on its own as the format reads a station
+ * (`parseTourManifest`, without items): undefined when absent; of two
+ * under one id the first is kept. A frame that does not read is lost (the
+ * objects naming it are seated by the station rule as they come back), and
+ * so is every frame whose route names a lost one: the siblings a frame's
+ * routes are read against are only the frames that read - and the
+ * stations of `against`, the tour the record is read for - so the frames
+ * are read again against those until no more drop. No kept frame routes to
+ * a station the record lost. A step naming an asset reads only against
+ * `against`'s assets; without `against`, a frame with such a step is
+ * lost. */
+function parseFrames(
+  value: unknown,
+  against: TourManifest | undefined,
+): StationFrame[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const entries = value as unknown[];
+  const known = (against?.stations ?? []).map((s) => s.id);
   let ids = new Set(
     entries
       .map((entry) => idOf(entry))
@@ -121,8 +139,9 @@ function parseCreatedStations(value: unknown): StationFrame[] | undefined {
   // entry, at the first pass that drops none.
   for (;;) {
     const frames: StationFrame[] = [];
+    const siblings = new Set([...ids, ...known]);
     for (const entry of entries) {
-      const frame = parseCreatedStation(entry, ids);
+      const frame = parseFrame(entry, siblings, against?.assets ?? []);
       if (frame !== undefined && !frames.some((f) => f.id === frame.id)) {
         frames.push(frame);
       }
@@ -143,12 +162,16 @@ function idOf(entry: unknown): string | undefined {
  *  read (a route from the frame to a sibling). */
 const SIBLING_STAND_IN_AT = { lat: 0, lon: 0, alt: 0 };
 
-/** One created frame, read with a stand-in for each sibling id so that a
- *  route between created stations still resolves; undefined when it does
- *  not read. */
-function parseCreatedStation(
+/** One frame, read with a stand-in for each sibling id so that a route
+ *  between stations still resolves, and with `assets` for its steps;
+ *  undefined when it does not read. Its card image is read apart: the
+ *  probe holds no items, so a photo of the station would read as gone -
+ *  a well-formed id is kept, and the document shows and writes it only
+ *  while it names a picture (its effective image). */
+function parseFrame(
   entry: unknown,
   siblingIds: ReadonlySet<string>,
+  assets: TourManifest["assets"],
 ): StationFrame | undefined {
   const id = idOf(entry);
   if (id === undefined) return undefined;
@@ -161,12 +184,37 @@ function parseCreatedStation(
   try {
     const probe = parseTourManifest({
       ...createEmptyTourManifest(),
+      assets,
       stations: [{ ...(entry as object), items: [] }, ...standIns],
     });
-    return framesOf(probe).find((frame) => frame.id === id);
+    const frame = framesOf(probe).find((f) => f.id === id);
+    const image = (entry as { image?: unknown }).image;
+    if (
+      frame === undefined ||
+      frame.image !== undefined ||
+      typeof image !== "string" ||
+      !TOUR_ID_PATTERN.test(image)
+    ) {
+      return frame;
+    }
+    return { ...frame, image };
   } catch {
     return undefined;
   }
+}
+
+/** A stored record's deleted stations: the well-formed ids, once each;
+ *  undefined when absent or not a list. */
+function parseIds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return [
+    ...new Set(
+      (value as unknown[]).filter(
+        (id): id is string =>
+          typeof id === "string" && TOUR_ID_PATTERN.test(id),
+      ),
+    ),
+  ];
 }
 
 /** A stored record's details: undefined when absent, null when they do
@@ -187,9 +235,13 @@ function parseDetails(value: unknown): TourDetailFields | undefined | null {
 
 /** A stored settings record (`SETTINGS_KEY`'s text); undefined for
  *  anything that does not read (a record that does not read costs
- *  itself, never the objects beside it). */
+ *  itself, never the objects beside it). `against`: the tour it is read
+ *  for (the one opened), whose stations a recorded frame may route to and
+ *  whose assets its steps may name (`parseFrames`). A frame list or a
+ *  deleted list that does not read costs only itself. */
 export function parseSettingsRecord(
   text: string | undefined,
+  against?: TourManifest,
 ): TourSettingsRecord | undefined {
   if (text === undefined) return undefined;
   try {
@@ -201,7 +253,9 @@ export function parseSettingsRecord(
     const stations = parseStations(record["stations"]);
     if (typeof needsNoGps !== "boolean" || details === null) return undefined;
     if (stations === null) return undefined;
-    const created = parseCreatedStations(record["createdStations"]);
+    const created = parseFrames(record["createdStations"], against);
+    const frames = parseFrames(record["frames"], against);
+    const deletedStations = parseIds(record["deletedStations"]);
     return {
       needsNoGps,
       ...(details === undefined ? {} : { details }),
@@ -209,6 +263,10 @@ export function parseSettingsRecord(
       ...(created === undefined || created.length === 0
         ? {}
         : { createdStations: created }),
+      ...(frames === undefined ? {} : { frames }),
+      ...(deletedStations === undefined || deletedStations.length === 0
+        ? {}
+        : { deletedStations }),
     };
   } catch {
     return undefined;
@@ -242,6 +300,7 @@ export interface TourDocumentDraft extends DraftObjectWrites {
 /** The settings record as the document holds it now. */
 export function settingsRecord(state: TourDocumentState): TourSettingsRecord {
   const created = createdStationFrames(state);
+  const gone = state.framesRecorded ? stationsGoneSinceOpen(state) : [];
   return {
     needsNoGps: state.needsNoGps,
     ...(state.detailsRecorded ? { details: state.details } : {}),
@@ -249,6 +308,8 @@ export function settingsRecord(state: TourDocumentState): TourSettingsRecord {
       ? { stations: state.stations.map(({ id, geo }) => ({ id, geo })) }
       : {}),
     ...(created.length === 0 ? {} : { createdStations: created }),
+    ...(state.framesRecorded ? { frames: documentFrames(state) } : {}),
+    ...(gone.length === 0 ? {} : { deletedStations: gone }),
   };
 }
 

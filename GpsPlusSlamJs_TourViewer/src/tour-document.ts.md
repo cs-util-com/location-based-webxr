@@ -40,9 +40,21 @@ reducers' building blocks, so a page cannot apply them differently.
   review #1 of the tour document milestone - without them a reload after a
   station move restored its items under the file's frame, so they landed
   elsewhere).
+- `framesRecorded` - the draft's settings record carries the stations
+  WHOLE (`frames`: every frame in its order) and the written stations gone
+  since the open (`deletedStations`): set by a station's edit, add,
+  delete, reorder or copy, by a step whose frames differ beyond a pose,
+  and by a restore that brought frames back.
+- `deletedStations: string[]` - written stations a station's delete
+  removed. A written station no frame names otherwise follows the frames
+  when it is bare (`withFrames`, below), so without this list a deleted
+  bare station would come back as one its items left. Kept in each view
+  (absent when empty), so an undo of the delete brings the station back;
+  a landed save drops the ids the write left out.
 - `past` / `future: TourHistoryStep[]` - the history: each step a
   `TourDocumentView` (`stations`, the world `objects`, `needsNoGps`,
-  `details`) and the edit in words. At most `TOUR_HISTORY_LIMIT` (200).
+  `details`, `deletedStations` when any) and the edit in words. At most
+  `TOUR_HISTORY_LIMIT` (200).
 - `revision` - counts every edit, undo and redo.
 - `position` - where the document stands in its history: 0 at the open,
   one more for an edit or a redo, one less for an undo. Absolute (the
@@ -189,6 +201,19 @@ createdStations?, rerun?, what, newStationIds? })` - a draft's work,
   object, minted by `prepare`). `rerun` (work carried into a tour just
   opened) seats every object afresh by the rule: the stations they named
   were another document's. The stations left emptied go as for a move.
+  Then the stations WHOLE (`frames`, `deletedStations`, a draft that
+  recorded a station's edit): each recorded frame replaces the
+  document's frame of its id or is added (one whose story steps name an
+  asset the written tour lacks is skipped); each deleted station no
+  restored object names goes (a written one joins `deletedStations`);
+  every route to a station the tour no longer carries is pruned; and the
+  stations follow the recorded order, those it does not name after them.
+  A record without these fields (written before stations were kept
+  whole) restores as before. Every frame a restore brings - recorded or
+  created - is checked against the tour it is restored into: one whose
+  story names an asset the tour lacks is left out (its objects are seated
+  by the rule), and a route to a station the tour does not carry is
+  pruned, since the format refuses both and every later save would fail.
 - `saveStarted({ generation })`, `saved({ generation, written,
 appliedDeletions, stationsAtStart, inPlaceAt? })`, `saveEnded({ generation, error? })`
   - a rebuild queued, landed (the written file replaced; `pendingAfterRebuild` keeps what the
@@ -204,6 +229,49 @@ appliedDeletions, stationsAtStart, inPlaceAt? })`, `saveEnded({ generation, erro
   not - so a refusal never loops), `saveReleased({ error? })`, `saveQueued({ queued })`,
   `saveBuilt()`, `saveDelivered({ inPlace, name })`, `saveLimited({
 largeTour?, cannotSave? })`.
+- The 3D editor's station edits, each ONE step (refused, changing nothing,
+  before an open, for an unknown station or item, or for a value the
+  format refuses - the page asks the exported guard first and says why):
+  - `stationEdited({ stationId, edit, what })` - a station's title, found
+    radius (`isStationRadius`, 2 m to 300 m inclusive; the preload radius
+    follows at twice it, `preloadRadiusM`), description or card image
+    (`StationEdit`; `image: null` clears it), by `stationEditChange`'s
+    rules: a title of at most 80 characters (`checkTourTitle`, blank
+    clears it), a description of at most 2000 (`checkTourDescription`),
+    an image that is a photo of that station or an image asset.
+  - `stationAdded({ at, stationId?, what })` - an automatic station
+    (`automaticStationFrame`) at a point on the globe, titled
+    `Station N` after the stations it follows; `prepare` mints the id, a
+    taken or malformed one changes nothing.
+  - `stationDeleted({ stationId, what })` - the station with its items
+    (each deleted as `deleted` does) and every route to it pruned
+    (`withoutRoutesTo`: a `next`, each quiz target, a route left with no
+    target); a written station joins `deletedStations`. The tour's last
+    station is refused (`stationDeleteRefusal`: `missing` or `last`).
+  - `stationsReordered({ order, what })` - a permutation of the stations
+    `manifestNow` carries; anything else (or the same order) changes
+    nothing.
+  - `stationDuplicated({ stationId, newStationId, newItemIds, createdAtIso,
+geo?, what })` - a copy inserted after the original, titled
+    `<title> copy`, without its card image (it named the original's
+    photo), at `duplicateStationGeo` (twice the found radius plus 5 m
+    east, so the two preload rings never overlap) or `geo`; each item is
+    copied under its new id at the same local pose (`rigidlyMoved`), a
+    photo naming `content/<new id>.<ext>`. `prepare` mints the station id
+    and the time; the page mints the items' ids (it copies their pictures
+    first).
+  - `objectDuplicated({ id, newId?, createdAtIso?, what })` - an item's
+    copy 1.5 m east (`duplicateItemGeo`), same height and facing, in the
+    same station when it fits there (`objectFits`), else seated by the
+    rule.
+  - `itemsGrounded({ items: [{ id, alt }], what })` - several items' new
+    altitudes ("put on the ground", the page measures the ground) as one
+    step; an unknown id refuses the whole step.
+  - `modelResized({ id, sizeM, what })` - a placed model's size, within
+    `TOUR_MODEL_MIN_SIZE_M`..`TOUR_MODEL_MAX_SIZE_M` (0.05 m to 500 m).
+  - `moved` with `newStation: true` - "Move to a new station": the item
+    starts a station of its own where it stands, even within its own
+    station's radius.
 - `newStationArmed({ armed })` - "New station here" armed or disarmed
   (D8); no edit.
 - `closed()` - the tour is gone without another opening: back to the
@@ -255,8 +323,32 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
 - `documentObjects(state)` - the objects now (`authoringObjects` over the
   written tour with the frames), each with its entry.
 - `manifestNow(state)` - the manifest the next write starts from: the
-  written tour with the frames (`withFrames`), the setting
-  (`withNeedsNoGps`) and the details (`effectiveDetails`).
+  written tour with the frames (`withFrames`), each station's card image
+  as shown and written (one whose picture is gone - a deleted or moved
+  photo - is none, and comes back with an undo, as the cover does), the
+  setting (`withNeedsNoGps`) and the details (`effectiveDetails`).
+  `withFrames`' rule for a written station no frame names: it follows
+  unless `deletedStations` names it - a bare one always (its items keep
+  their home, and a write prunes it once they are gone), one that keeps
+  itself (`keepsItself`) only while an object of the document still
+  stands in it, so a station added, saved and undone is gone rather than
+  kept by its own title. A frame the file lacks is kept while an edit
+  names it or it keeps itself (a station added or copied here).
+- `stationImageIds(state, stationId)` - the images a station's card may
+  show: a photo of that station as the document holds it, or an image
+  asset.
+- `stationEditChange(state, id, edit)` - `edited` with the frame to
+  dispatch, `unchanged`, `refused` with the field the format refuses
+  (`title`, `radius`, `description`, `image`), or `missing`.
+- `stationDeleteRefusal(state, id)` - `missing`, `last` (a tour keeps at
+  least one station) or null.
+- `documentFrames(state)` and `stationsGoneSinceOpen(state)` - what the
+  draft's settings record keeps when `framesRecorded`: every frame the
+  next write carries, in its order, and the stations of the opened or
+  written tour it no longer carries.
+- `stationEditsBetween(before, after)` - the station changes beyond poses
+  from one state to another, counted as `changeCount` counts them: what a
+  restore says it brought back.
 - `manifestToWrite(state)` - what a write would carry:
   `finishedManifest` (the Finish's own rule) over `manifestNow`, `placed`,
   `deleted` and `historyAssetIds`.
@@ -273,10 +365,14 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
 - `createdStationFrames(state)` - the frames of the stations this page
   created (those the tour as opened lacks): what the draft's settings
   record keeps whole (`tour-document-draft.ts`).
-- `changeCount(state)` - each pending entry, deletion, moved frame, the
-  setting and each detail field differing from the written file. A frame
-  is compared by its data, never by the order its keys were built in
-  (`same-json.ts`), so a station moved back is no change.
+- `changeCount(state)` - each pending entry, deletion, changed frame
+  (moved, renamed, a radius, a description, an image), station added that
+  no object's placement accounts for, EMPTY station deleted (one holding
+  items is counted by their deletes), one for a new order of the
+  document's own frames, the setting and each detail field differing from
+  the written file. A frame is compared by its data, never by the order
+  its keys were built in (`same-json.ts`), so a station moved back is no
+  change.
 - `effectiveDetails(state)` - the cover only while its image is in the tour.
 - `coverImageIds(state)` - the images the tour may show as its cover (its
   photos as they stand, its image assets).
@@ -302,7 +398,8 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
 - `framesOf(manifest)`.
 - Module-internal (not exported: nothing outside the slice needs them, and
   the root dead-code check holds exports to their importers):
-  `contentAt(written, view)`, `withFrames(written, frames, placed)`,
+  `contentAt(written, view)`, `withFrames(written, frames, placed, deleted,
+deletedStations)`,
   `withNeedsNoGps(manifest, on)`, and the payload and history types
   (`TourHistoryStep`, `TourRestore`, `TourSaved`).
 - `nextStep(state, which)` - the step an undo or a redo would go to (the
@@ -511,6 +608,39 @@ store.dispatch(tourDocumentActions.undone());
   as the desktop's undo of its move does (a row, seen red with the
   phone's undo skipped). Both pages' saves keep a tour's `qr/*.json`
   byte for byte (seen red with either page writing the level again).
+- `tour-document-stations.test.ts` - the station edits, each red before
+  its reducer existed: a title (trimmed, blank removes it, 80 characters
+  taken and 81 refused), the found radius at 2 m and 300 m and just
+  outside, a description (over 2000 refused), a card image of that
+  station's photo or an asset (any other refused, null removes it), an
+  unknown station, the shown photo's delete dropping the card image from
+  the write and its undo bringing it back; an add (numbered title, kept
+  though empty; a taken id and an undrawable point refused); a delete
+  with its items and every route to it pruned as one step, an empty
+  station's delete counting as one change (seen red with the
+  `deletedStations` exclusion off), the last station refused; a reorder
+  (anything but a permutation refused); a copy of a station (new ids,
+  items rigidly, a photo under its own file; a story's steps and routes)
+  and of an item (1.5 m east, label marked); items grounded as ONE step;
+  a model's size at 0.05 m and 500 m and just outside; an item into a
+  station of its own; a station the rule started counted once; and as a
+  property: any order of station deletes leaves no route to a missing
+  station, and a tour the format reads.
+- `tour-document-stations-draft.test.ts` - the settings record carries
+  the stations whole and a restore brings each edit back: a rename, an
+  add, a delete (its route pruned), a reorder and a copy; a copied
+  station's card image kept through the record (seen red with the
+  record's image re-attach off); a frame whose step names an asset parses
+  only against the tour; a deleted station an object still names stays
+  (seen red with the route pruning off); a created station checked
+  against the tour it is restored into (a missing asset leaves it out, a
+  missing route target is pruned; each seen red); a record of the earlier
+  format restores the poses as before.
+- `tour-document.property.test.ts` also mixes the station edits (rename,
+  radius, add, delete, reorder, copy of a station and of an item, ground,
+  an item into a station of its own) into its sequences, and checks that
+  any sequence written to the draft's records and restored over the
+  opened tour gives back the same `manifestToWrite`.
 - `tour-document.test.ts` also carries a placed 3D model (format minor 1)
   through a pin edit, its station's move and a save: its asset, its size in
   metres and its local pose come back exactly, and the write is at minor 1.
