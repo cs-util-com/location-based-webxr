@@ -84,6 +84,34 @@ export function view3d(page) {
 }
 
 /**
+ * The ceiling on waiting for frames (ms). It is not what a test measures:
+ * the view draws every frame, and a check counts frames, not time. A
+ * software-drawn view at a desktop size draws only 4 to 8 frames a second
+ * (measured 2026-10-23: about 7 locally, about 5 on the CI runner, about 4.5
+ * under a 6x CPU throttle), so 30 frames take 4 to 7 s, past a poll's 5 s
+ * default - which failed a check on the CI runner while the view drew on.
+ * This bounds only a view that stopped drawing: 30 frames in it is 0.5 a
+ * second.
+ */
+const FRAMES_WAIT_MS = 60_000;
+
+/**
+ * Wait until the 3D view has drawn more than `n` frames past now.
+ * @param {import("@playwright/test").Page} page
+ * @param {number} n
+ */
+export async function afterFrames(page, n) {
+  /** @param {any} stats */
+  const framesOf = (stats) => /** @type {number} */ (stats?.frames ?? 0);
+  const from = framesOf(await view3d(page));
+  await expect
+    .poll(async () => framesOf(await view3d(page)), {
+      timeout: FRAMES_WAIT_MS,
+    })
+    .toBeGreaterThan(from + n);
+}
+
+/**
  * The editor page with the sample tour open on the map.
  * @param {import("@playwright/test").Page} page
  */

@@ -42,3 +42,17 @@ add after a surprise.
   every start in `test.huds`, the last pair in `test.hudPair`, and
   `test.hud` as the pair read as one HUD. A spec that asserts on
   `test.hud.getTargets()` sees the focus's target first.
+
+## A frame-count poll needs its own ceiling
+
+- The 3D view draws every frame, but software-drawn at a desktop size it
+  manages only 4 to 8 frames a second (about 7 locally, about 5 on the CI
+  runner). A check that waited for 30 more frames under a poll's 5 s
+  default passed locally by a few hundred milliseconds and failed on the
+  CI runner on every try, the count still climbing when the poll gave up.
+  It read as "the view stops drawing"; it never did.
+- Rule: wait for frames with `afterFrames` in
+  `playwright-tests/editor3d-fixture.js`, whose ceiling is far above any
+  plausible frame rate. To reproduce a slow runner locally, slow the page
+  with the CDP `Emulation.setCPUThrottlingRate` (6x brought it to about
+  4.5 frames a second).

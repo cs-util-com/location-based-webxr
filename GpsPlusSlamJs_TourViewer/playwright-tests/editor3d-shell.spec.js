@@ -2,6 +2,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  afterFrames,
   answerHosts,
   keepRejections,
   openSample,
@@ -537,10 +538,8 @@ test("a flight ends the orbit's coast: the camera stays where it lands", async (
   await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   // The coast decays frame by frame (the orbit's damping runs per
   // update), so the check counts drawn frames, not time.
-  const { camera: landed, frames } = await view3d(page);
-  await expect
-    .poll(async () => (await view3d(page)).frames)
-    .toBeGreaterThan(frames + 30);
+  const { camera: landed } = await view3d(page);
+  await afterFrames(page, 30);
   const after = (await view3d(page)).camera;
   expect(Math.hypot(...after.map((v, i) => v - landed[i]))).toBeLessThan(1e-3);
 });

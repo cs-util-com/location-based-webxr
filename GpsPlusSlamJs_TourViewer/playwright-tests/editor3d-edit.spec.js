@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 
 import {
   SQUARE_GROUND_M,
+  afterFrames,
   answerHosts,
   openSample,
   view3d,
@@ -252,24 +253,9 @@ test("drags a selected pin over the ground with the mouse: one step, kept above 
     .toEqual(after.item.pose);
 });
 
-/** The view's frame count, for waiting on frames drawn. @param {import("@playwright/test").Page} page */
-async function framesDrawn(page) {
-  return /** @type {number} */ ((await view3d(page))?.frames ?? 0);
-}
-
 /** The camera's position. @param {import("@playwright/test").Page} page */
 async function cameraAt(page) {
   return /** @type {number[]} */ ((await view3d(page))?.camera ?? []);
-}
-
-/**
- * Wait until `n` more frames are drawn.
- * @param {import("@playwright/test").Page} page
- * @param {number} n
- */
-async function afterFrames(page, n) {
-  const from = await framesDrawn(page);
-  await expect.poll(() => framesDrawn(page)).toBeGreaterThan(from + n);
 }
 
 // Why: a camera still moving when the gizmo is grabbed (a card's or
