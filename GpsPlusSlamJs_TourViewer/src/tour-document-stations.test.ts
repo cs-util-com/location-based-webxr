@@ -878,8 +878,15 @@ describe("a written station no frame names (emptied, until a write prunes it)", 
         what: "duplicate",
       }),
     );
+    // The copy stands where the emptied original stood, and the original
+    // stays unlisted. Listed back so the copy could stand after it, it
+    // ordered the items moved out of it ahead of their new station's own
+    // at a later reorder - an order a reload from the draft cannot give
+    // back.
+    const shownBefore = (manifestNow(state)?.stations ?? []).map((s) => s.id);
     const ids = (manifestNow(copied)?.stations ?? []).map((s) => s.id);
-    expect(ids.indexOf("fcopy")).toBe(ids.indexOf(stationIdOf("f")) + 1);
+    expect(ids.indexOf("fcopy")).toBe(shownBefore.indexOf(stationIdOf("f")));
+    expect(copied.stations.some((s) => s.id === stationIdOf("f"))).toBe(false);
     readBack(copied);
   });
 });

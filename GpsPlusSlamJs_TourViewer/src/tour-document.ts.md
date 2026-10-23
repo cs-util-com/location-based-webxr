@@ -295,7 +295,14 @@ geo?, what })` - a copy inserted after the original (any station the
     copied under its new id at the same local pose (`rigidlyMoved`), a
     photo naming `content/<new id>.<ext>`. `prepare` mints the station id
     and the time; the page mints the items' ids (it copies their pictures
-    first).
+    first). An original the frames do not list back (`framesToList`: an
+    emptied automatic station, which the next write leaves out) stays
+    unlisted, and the copy takes its place in the shown order. It once
+    listed the original back so the copy could stand after it; a later
+    reorder then ordered the items moved out of it ahead of their new
+    station's own, which a reload from the draft cannot give back
+    (`tour-document-stations.test.ts`, "is edited and copied like any
+    other station", pins the new rule).
   - `objectDuplicated({ id, newId?, createdAtIso?, what })` - an item's
     copy 1.5 m east (`duplicateItemGeo`) or at `geo`, same height and
     facing, in the same station; a copy its station cannot carry

@@ -530,6 +530,21 @@ describe("tour document (properties)", () => {
     expect(reloadDrift(state)).toBeNull();
   });
 
+  it("a pin moved into a neighbour's station, its emptied station copied, then the stations reordered, comes back from the draft the same", () => {
+    // Why: the round trip's fifth shrunk counterexample (seed 1). Copying
+    // the emptied station listed it back as a frame, and the reorder then
+    // ordered the pin moved out of it ahead of its new station's own,
+    // where a reload (which does not list it) puts it after.
+    const ops: Op[] = [
+      { kind: "move", id: "b", dLat: -0.00003 },
+      { kind: "move", id: "b", dLat: -0.0002 },
+      { kind: "copyStation", id: "b", copy: "c1" },
+      { kind: "reorder" },
+    ];
+    const state = ops.reduce(apply, opened);
+    expect(reloadDrift(state)).toBeNull();
+  });
+
   it("a pin moved back into a station a delete emptied comes back from the draft in the same order", () => {
     // Why: the round trip's fourth shrunk counterexample (seed 2). The
     // delete empties the first station, which leaves the frames; the pin's

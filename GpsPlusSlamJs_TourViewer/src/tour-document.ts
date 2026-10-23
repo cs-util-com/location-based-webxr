@@ -2150,8 +2150,16 @@ function stationDuplicate(
   payload: StationDuplicatePayload,
 ): TourDocumentState {
   if (before.written === null) return before;
-  const frames = framesHolding(before, payload.stationId);
-  const frame = frames.find((s) => s.id === payload.stationId);
+  // The copy follows its original. An original the frames do not list
+  // back (`framesToList`: an emptied automatic station, which the next
+  // write leaves out) stays unlisted, and the copy takes its place:
+  // listed back it would order the items moved out of it ahead of their
+  // new station's own, which a reload from the draft does not.
+  const all = allFrames(before);
+  const frame = all.find((s) => s.id === payload.stationId);
+  const frames = before.stations.some((s) => s.id === payload.stationId)
+    ? before.stations
+    : framesToList(before);
   if (frame === undefined || !freeStationId(before, payload.newStationId)) {
     return before;
   }
@@ -2191,12 +2199,15 @@ function stationDuplicate(
       }),
     });
   }
-  const at = frames.indexOf(frame);
+  const listed = new Set(frames.map((f) => f.id));
+  const at = listed.has(frame.id)
+    ? frames.indexOf(frame) + 1
+    : all.slice(0, all.indexOf(frame)).filter((f) => listed.has(f.id)).length;
   return edited(
     before,
     {
       placed,
-      stations: [...frames.slice(0, at + 1), copy, ...frames.slice(at + 1)],
+      stations: [...frames.slice(0, at), copy, ...frames.slice(at)],
       touched: { ...before.touched, stations: true },
       framesRecorded: true,
     },
