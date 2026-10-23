@@ -118,7 +118,11 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
     withdraw a delete's Undo.
 - **Every object belongs to a station from the moment it is placed** (the
   station rule, `seatByRule`). It reads the stations of `manifestNow` (a
-  written station no frame names still counts) and seats an object naming
+  written station no frame names still counts: seated in, it is listed
+  back where it stood in the file, before the first frame the file lists
+  after it - where a reload from the draft, which records no order for a
+  move, puts it; appended after the others, the live order differed from
+  the reload's) and seats an object naming
   no station in the NEAREST station whose OWN `foundRadiusM` holds it
   (`station-assign.ts` `stationHolding`: horizontal, the radius itself
   inside, a tie to the earlier station) and whose frame can carry it

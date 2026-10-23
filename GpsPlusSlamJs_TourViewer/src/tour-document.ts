@@ -1003,6 +1003,22 @@ interface Seating {
   readonly newStation?: boolean;
 }
 
+/** `frames` with `back` (one frame) where it stood in `file`: before the
+ *  first of them the file lists after it, else after them all. */
+function atFilePlace(
+  frames: readonly StationFrame[],
+  back: readonly StationFrame[],
+  file: readonly { readonly id: string }[],
+): StationFrame[] {
+  const ids = file.map((s) => s.id);
+  const at = ids.indexOf(back[0]?.id ?? "");
+  const later = new Set(at < 0 ? [] : ids.slice(at + 1));
+  const i = frames.findIndex((f) => later.has(f.id));
+  return i < 0
+    ? [...frames, ...back]
+    : [...frames.slice(0, i), ...back, ...frames.slice(i)];
+}
+
 /**
  * The station rule (everything belongs to a station): `object`
  * (naming no station) joins the nearest station of the document whose OWN
@@ -1031,7 +1047,8 @@ function seatByRule(
     if (holder !== null) {
       // A station the file carries that the document dropped since (it
       // emptied after it was written) comes back with the object: every
-      // object names one of the document's frames.
+      // object names one of the document's frames. It comes back where it
+      // stood in the file, as a reload from the draft puts it.
       const written = base.stations.find((s) => s.id === holder);
       const known = state.stations.some((f) => f.id === holder);
       return {
@@ -1039,10 +1056,11 @@ function seatByRule(
         stations:
           known || written === undefined
             ? state.stations
-            : [
-                ...state.stations,
-                ...framesOf({ ...base, stations: [written] }),
-              ],
+            : atFilePlace(
+                state.stations,
+                framesOf({ ...base, stations: [written] }),
+                state.written?.stations ?? [],
+              ),
       };
     }
   }

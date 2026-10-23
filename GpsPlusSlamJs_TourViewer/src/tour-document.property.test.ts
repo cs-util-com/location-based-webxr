@@ -530,6 +530,21 @@ describe("tour document (properties)", () => {
     expect(reloadDrift(state)).toBeNull();
   });
 
+  it("a pin moved back into a station a delete emptied comes back from the draft in the same order", () => {
+    // Why: the round trip's fourth shrunk counterexample (seed 2). The
+    // delete empties the first station, which leaves the frames; the pin's
+    // move brings it back. A move records no order, so the reload puts
+    // the station where it stood in the file - and the live document must
+    // too, not after the others.
+    const ops: Op[] = [
+      { kind: "move", id: "b", dLat: -0.00014 },
+      { kind: "delete", id: "a" },
+      { kind: "move", id: "b", dLat: -0.00009 },
+    ];
+    const state = ops.reduce(apply, opened);
+    expect(reloadDrift(state)).toBeNull();
+  });
+
   it("any sequence followed by undoing everything gives back the tour as opened", () => {
     fc.assert(
       fc.property(fc.array(opArb, { maxLength: 25 }), (ops) => {
