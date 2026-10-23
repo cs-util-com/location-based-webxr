@@ -269,14 +269,17 @@ largeTour?, cannotSave? })`.
     (each deleted as `deleted` does) and every route to it pruned
     (`withoutRoutesTo`: a `next`, each quiz target, a route left with no
     target); a written station joins `deletedStations`. The tour's last
-    station is refused (`stationDeleteRefusal`: `missing` or `last`).
+    station is refused (`stationDeleteRefusal`: `missing` or `last`). The
+    other stations stay listed as for a reorder (`framesToList`).
   - `stationsReordered({ order, what })` - a permutation of the stations
     `manifestNow` carries; anything else (or the same order) changes
     nothing. A written station no frame lists and nothing stands in any
     more (an emptied automatic one, which the next write leaves out) stays
-    unlisted: listed back as a frame, its place in the order put the items
-    moved out of it ahead of their new station's own, where a reload from
-    the draft puts them after.
+    unlisted (`framesToList`, shared with `stationDeleted`): listed back
+    as a frame, its place in the order put the items moved out of it
+    ahead of their new station's own, where a reload from the draft puts
+    them after. A delete of another station listed it back the same way
+    until it shared the rule.
   - `stationDuplicated({ stationId, newStationId, newItemIds, createdAtIso,
 geo?, what })` - a copy inserted after the original (any station the
     next write carries, as for `stationEdited`), titled `<title> copy`

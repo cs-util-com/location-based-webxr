@@ -514,6 +514,22 @@ describe("tour document (properties)", () => {
     expect(reloadDrift(state)).toBeNull();
   });
 
+  it("a photo moved into a neighbour's station, another station deleted, then the stations reordered, comes back from the draft the same", () => {
+    // Why: the round trip's third shrunk counterexample (seed
+    // -1980833203). The moves empty the photo's own station; deleting
+    // another station listed every station back as a frame, the emptied
+    // one with them, which the reorder fix of the second did not cover.
+    const ops: Op[] = [
+      { kind: "move", id: "f", dLat: -0.00009 },
+      { kind: "move", id: "f", dLat: -0.00004 },
+      { kind: "move", id: "f", dLat: -0.00017 },
+      { kind: "deleteStation", id: "b" },
+      { kind: "reorder" },
+    ];
+    const state = ops.reduce(apply, opened);
+    expect(reloadDrift(state)).toBeNull();
+  });
+
   it("any sequence followed by undoing everything gives back the tour as opened", () => {
     fc.assert(
       fc.property(fc.array(opArb, { maxLength: 25 }), (ops) => {

@@ -1916,6 +1916,19 @@ function allFrames(state: TourDocumentState): StationFrame[] {
   ];
 }
 
+/** `allFrames` as an edit of the stations lists them back as the
+ *  document's frames: without a written station no frame lists and
+ *  nothing stands in any more (an emptied automatic one, which the next
+ *  write leaves out). Listed back as a frame it would order the items
+ *  moved out of it ahead of their new station's own, which a reload from
+ *  the draft does not - whichever edit listed it, a delete of another
+ *  station as much as a reorder. */
+function framesToList(state: TourDocumentState): StationFrame[] {
+  const own = new Set(state.stations.map((f) => f.id));
+  const named = new Set(documentObjects(state).map((o) => o.object.station));
+  return allFrames(state).filter((f) => own.has(f.id) || named.has(f.id));
+}
+
 /** The frames a station edit of `stationId` replaces or extends: the
  *  document's own when they name it, else every frame the next write
  *  carries (`allFrames`: a written station no frame names, which follows
@@ -2048,7 +2061,7 @@ function stationDelete(
     {
       placed: next.placed,
       deleted: next.deleted,
-      stations: allFrames(before)
+      stations: framesToList(before)
         .filter((f) => f.id !== stationId)
         .map((f) => withoutRoutesTo(f, gone)),
       ...(written
@@ -2078,15 +2091,7 @@ function stationsReorder(
   ) {
     return before;
   }
-  // A written station no frame lists and nothing stands in any more (an
-  // emptied automatic one, which the next write leaves out) stays unlisted:
-  // listed back as a frame it would order the items moved out of it ahead
-  // of their new station's own, which a reload from the draft does not.
-  const own = new Set(before.stations.map((f) => f.id));
-  const named = new Set(documentObjects(before).map((o) => o.object.station));
-  const frames = allFrames(before).filter(
-    (f) => own.has(f.id) || named.has(f.id),
-  );
+  const frames = framesToList(before);
   const byId = new Map(frames.map((f) => [f.id, f]));
   const listed = new Set(order);
   return edited(
