@@ -1939,25 +1939,32 @@ function allFrames(state: TourDocumentState): StationFrame[] {
  *  nothing stands in any more (an emptied automatic one, which the next
  *  write leaves out). Listed back as a frame it would order the items
  *  moved out of it ahead of their new station's own, which a reload from
- *  the draft does not - whichever edit listed it, a delete of another
- *  station as much as a reorder. */
-function framesToList(state: TourDocumentState): StationFrame[] {
+ *  the draft does not - whichever edit listed it: a reorder, a delete, a
+ *  copy or an edit of another station. `edited` is the station an edit
+ *  works on, listed whatever it holds. */
+function framesToList(
+  state: TourDocumentState,
+  edited?: string,
+): StationFrame[] {
   const own = new Set(state.stations.map((f) => f.id));
   const named = new Set(documentObjects(state).map((o) => o.object.station));
-  return allFrames(state).filter((f) => own.has(f.id) || named.has(f.id));
+  return allFrames(state).filter(
+    (f) => own.has(f.id) || named.has(f.id) || f.id === edited,
+  );
 }
 
-/** The frames a station edit of `stationId` replaces or extends: the
- *  document's own when they name it, else every frame the next write
- *  carries (`allFrames`: a written station no frame names, which follows
- *  its items until a write prunes it, is edited as it is shown). */
+/** The frames a station edit of `stationId` replaces: the document's own
+ *  when they name it, else the frames an edit lists back with it
+ *  (`framesToList`: a written station no frame names, which follows its
+ *  items until a write prunes it, is edited as it is shown; another
+ *  emptied one stays unlisted). */
 function framesHolding(
   state: TourDocumentState,
   stationId: string,
 ): readonly StationFrame[] {
   return state.stations.some((s) => s.id === stationId)
     ? state.stations
-    : allFrames(state);
+    : framesToList(state, stationId);
 }
 
 /** What a copy's title adds to the original's. */

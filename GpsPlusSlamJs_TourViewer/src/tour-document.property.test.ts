@@ -560,6 +560,22 @@ describe("tour document (properties)", () => {
     expect(reloadDrift(state)).toBeNull();
   });
 
+  it("a station emptied by its pin's move, then another emptied station renamed, comes back from the draft the same", () => {
+    // Why: the round trip's sixth shrunk counterexample (seed 2, sequences
+    // of up to 10 edits). Renaming one emptied station listed every
+    // station back as a frame, the other emptied one with it, which
+    // ordered the pin moved out of it ahead of its new station's own,
+    // where a reload (which does not list it) puts it after.
+    const ops: Op[] = [
+      { kind: "move", id: "b", dLat: -0.00012 },
+      { kind: "ownStation", id: "a", stationId: "o1" },
+      { kind: "move", id: "b", dLat: -0.00011 },
+      { kind: "rename", id: "b", title: "Gate" },
+    ];
+    const state = ops.reduce(apply, opened);
+    expect(reloadDrift(state)).toBeNull();
+  });
+
   it("any sequence followed by undoing everything gives back the tour as opened", () => {
     fc.assert(
       fc.property(fc.array(opArb, { maxLength: 25 }), (ops) => {

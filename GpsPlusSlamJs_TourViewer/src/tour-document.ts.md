@@ -264,7 +264,9 @@ largeTour?, cannotSave? })`.
     an image that is a photo of that station or an image asset. Any
     station the next write carries is edited, a written one no frame
     names (it follows its items until a write prunes it) too: it becomes
-    one of the document's frames (`framesHolding`).
+    one of the document's frames (`framesHolding`), and any other emptied
+    one stays unlisted (`framesToList`, as for a delete, a reorder and a
+    copy).
   - `stationAdded({ at, stationId?, what })` - an automatic station
     (`automaticStationFrame`) at a point on the globe, titled
     `Station N` after the stations it follows; `prepare` mints the id, a
