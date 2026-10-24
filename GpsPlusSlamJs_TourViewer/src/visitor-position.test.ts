@@ -13,11 +13,13 @@ import {
 } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
-import { ACCURACY_WINDOW_FIXES, visitorPosition } from "./visitor-position";
+import { positionPrecision } from "gps-plus-slam-app-framework/state/position-precision";
+
+import { visitorPosition } from "./visitor-position";
 
 /**
  * Why these tests matter: a station is found where this says the visitor
- * stands, and its radius widens with the accuracy this reports. The camera
+ * stands, and its precision is judged from the readings this carries. The camera
  * must come through the same alignment as the tour's content (else the HUD
  * says "arrived" where the station is not found), and a single code vote's
  * fixed accuracy must never make a phone in an urban canyon look precise.
@@ -222,7 +224,12 @@ describe("visitorPosition", () => {
     }
   });
 
-  it("reads the accuracy from the latest DEVICE fixes only, as their median", () => {
+  // Changed (shared position-precision plan, M2): the viewer's own median
+  // of the latest 10 device fixes was a copy of the framework's; the
+  // visitor now carries the store's readings and the framework's one rule
+  // judges them. This keeps the guarantee at the seam: what the visitor
+  // carries is judged by the DEVICE fixes alone.
+  it("carries the store's readings, which the shared rule judges by the latest DEVICE fixes only", () => {
     const fix = (accuracy: number | undefined, source?: string): GpsPoint =>
       ({
         latitude: 47.5,
@@ -240,24 +247,28 @@ describe("visitorPosition", () => {
       ),
       ...Array.from({ length: 20 }, () => fix(0.5, "synthetic-qr")),
     ];
-    expect(ACCURACY_WINDOW_FIXES).toBe(10);
     const p = visitorPosition({
       alignment: null,
       arPose: null,
       gpsPositions: points,
     });
-    expect(p.accuracyM).toBe(6);
-    // No usable accuracy at all: unknown, never 0.
+    expect(p.gpsPoints).toBe(points);
+    const judged = (gpsPoints: typeof p.gpsPoints) =>
+      positionPrecision({ position: "aligned", codeHold: false, gpsPoints });
+    expect(judged(p.gpsPoints).accuracyM).toBe(6);
+    // No usable accuracy at all: nothing to judge by, never 0.
     expect(
-      visitorPosition({
-        alignment: null,
-        arPose: null,
-        gpsPositions: [
-          fix(undefined, GPS_POINT_SOURCE_DEVICE),
-          fix(-1, GPS_POINT_SOURCE_DEVICE),
-        ],
-      }).accuracyM,
-    ).toBeNull();
+      judged(
+        visitorPosition({
+          alignment: null,
+          arPose: null,
+          gpsPositions: [
+            fix(undefined, GPS_POINT_SOURCE_DEVICE),
+            fix(-1, GPS_POINT_SOURCE_DEVICE),
+          ],
+        }).gpsPoints,
+      ).source,
+    ).toBe("none");
   });
 
   // Why (r881 re-review M-A): before the alignment is ready the latest fix
@@ -286,7 +297,13 @@ describe("visitorPosition", () => {
       gpsPositions: [...run, fix(40, 9_000), fix(1, 9_500, "synthetic-qr")],
       zero,
     });
-    expect(p.accuracyM).toBe(5);
+    expect(
+      positionPrecision({
+        position: "aligned",
+        codeHold: false,
+        gpsPoints: p.gpsPoints,
+      }).accuracyM,
+    ).toBe(5);
     // The latest DEVICE fix's own, never a vote's.
     expect(p.fixAccuracyM).toBe(40);
     // That fix states no usable accuracy: unknown, even with older ones.
@@ -307,6 +324,90 @@ describe("visitorPosition", () => {
         arPose: null,
         gpsPositions: [...run, fix(40, 9_000)],
       }).fixAccuracyM,
+    ).toBeNull();
+  });
+});
+
+describe("visitorPosition - the camera's forward", () => {
+  // Why this test matters: the radar is heading-up, and its heading is the
+  // camera's forward in GPS-world NUE - the AR pose's orientation through
+  // the alignment, the same frame the stations' bearings are taken in. A
+  // forward taken in the odometry frame would turn the whole radar by the
+  // alignment's yaw.
+  const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  const yawRaw = (deg: number) => {
+    const h = (deg * Math.PI) / 360;
+    return { x: 0, y: Math.sin(h), z: 0, w: Math.cos(h) };
+  };
+  const pose = (orientation?: {
+    x: number;
+    y: number;
+    z: number;
+    w: number;
+  }) => ({
+    position: { x: 0, y: 1.4, z: 0 },
+    ...(orientation === undefined ? {} : { orientation }),
+  });
+  const bearing = (f: readonly [number, number, number] | null | undefined) =>
+    f == null
+      ? null
+      : ((((Math.atan2(f[2], f[0]) * 180) / Math.PI) % 360) + 360) % 360;
+
+  it("looks north under the identity with the identity pose (forward -Z)", () => {
+    const v = visitorPosition({
+      alignment: identity,
+      arPose: pose({ x: 0, y: 0, z: 0, w: 1 }),
+      gpsPositions: [],
+    });
+    expect(v.forwardNue?.[0]).toBeCloseTo(1, 9);
+    expect(bearing(v.forwardNue)).toBeCloseTo(0, 9);
+  });
+
+  it("turns with the pose: a quarter turn left (raw +Y) looks west", () => {
+    const v = visitorPosition({
+      alignment: identity,
+      arPose: pose(yawRaw(90)),
+      gpsPositions: [],
+    });
+    expect(bearing(v.forwardNue)).toBeCloseTo(270, 9);
+  });
+
+  it("turns with the alignment: odometry north to world east", () => {
+    // makeRotationY(-90°) in NUE, column-major: north (1,0,0) -> east.
+    const quarter = [0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 5, 0, 7, 1];
+    const v = visitorPosition({
+      alignment: quarter,
+      arPose: pose({ x: 0, y: 0, z: 0, w: 1 }),
+      gpsPositions: [],
+    });
+    expect(bearing(v.forwardNue)).toBeCloseTo(90, 9);
+  });
+
+  it("has no forward without an orientation, an alignment, or for one that is no rotation", () => {
+    expect(
+      visitorPosition({ alignment: identity, arPose: pose(), gpsPositions: [] })
+        .forwardNue,
+    ).toBeNull();
+    expect(
+      visitorPosition({
+        alignment: null,
+        arPose: pose({ x: 0, y: 0, z: 0, w: 1 }),
+        gpsPositions: [],
+      }).forwardNue,
+    ).toBeNull();
+    expect(
+      visitorPosition({
+        alignment: identity,
+        arPose: pose({ x: 0, y: 0, z: 0, w: 0 }),
+        gpsPositions: [],
+      }).forwardNue,
+    ).toBeNull();
+    expect(
+      visitorPosition({
+        alignment: identity,
+        arPose: pose({ x: Number.NaN, y: 0, z: 0, w: 1 }),
+        gpsPositions: [],
+      }).forwardNue,
     ).toBeNull();
   });
 });

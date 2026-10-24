@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { Group, Raycaster, Vector3, type Mesh, type RingGeometry } from "three";
+import {
+  Group,
+  Raycaster,
+  Vector3,
+  type Mesh,
+  type MeshBasicMaterial,
+  type RingGeometry,
+} from "three";
 
 import { createStationRing, STATION_RING_NAME } from "./station-ring.js";
 
@@ -83,6 +90,31 @@ describe("createStationRing", () => {
     expect(ringIn(scene)).toBeUndefined();
     ring.show(scene, [0, 0, 0], 25);
     expect(ringIn(scene)).toBe(shown);
+  });
+
+  // Why: the visitor's focus ring (walk-focus-cues.ts) is the same band
+  // in the walk's orange, fainter, under a name of its own so a test can
+  // tell the two apart; the creator's ring keeps its look by default.
+  it("takes a colour, an opacity and a name; without them it is the creator's ring", () => {
+    const scene = new Group();
+    createStationRing({
+      colour: "#fb923c",
+      opacity: 0.55,
+      name: "walk-focus-ring",
+    }).show(scene, [0, 0, 0], 5);
+    const mesh = scene.children[0] as Mesh;
+    expect(mesh.name).toBe("walk-focus-ring");
+    const material = mesh.material as MeshBasicMaterial;
+    expect(material.color.getHexString()).toBe("fb923c");
+    expect(material.opacity).toBe(0.55);
+    const plain = new Group();
+    createStationRing().show(plain, [0, 0, 0], 5);
+    const own = plain.children[0] as Mesh;
+    expect(own.name).toBe(STATION_RING_NAME);
+    expect((own.material as MeshBasicMaterial).color.getHexString()).toBe(
+      "f2971f",
+    );
+    expect((own.material as MeshBasicMaterial).opacity).toBe(0.7);
   });
 
   it("never takes a tap", () => {

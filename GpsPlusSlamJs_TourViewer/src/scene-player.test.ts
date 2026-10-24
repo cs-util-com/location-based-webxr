@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import type { TourStep } from "gps-plus-slam-app-framework/ar/tour-stations";
 
-import { createScenePlayer, isPlayableInK4 } from "./scene-player";
+import {
+  createScenePlayer,
+  isPlayableInK4,
+  playableStepCount,
+} from "./scene-player";
 
 /**
  * Why these tests matter: the scene player is the castle knight's whole
@@ -118,6 +122,46 @@ describe("createScenePlayer", () => {
             .map((s) => s.id);
           expect(shown).toEqual(expected.slice(0, taps + 1));
           expect(taps + 1 < expected.length || p.ended()).toBe(true);
+        },
+      ),
+    );
+  });
+});
+
+describe("playableStepCount (the story card's dots)", () => {
+  // Why this test matters: the story card draws one dot per step the
+  // visitor will see. A quiz this version skips is no dot, and a scene with
+  // a choice has no fixed number of steps, so it gets no dots at all
+  // rather than dots that lie.
+  it("counts the steps a choice-free scene plays, quizzes left out", () => {
+    expect(playableStepCount([text("a"), text("b", 3), text("c")])).toBe(3);
+    expect(playableStepCount([text("a"), quiz, text("b")])).toBe(2);
+    expect(playableStepCount([])).toBe(0);
+  });
+
+  it("is null for a scene with a choice", () => {
+    expect(
+      playableStepCount([text("a"), choice("c", [["x", "a"]]), text("b")]),
+    ).toBeNull();
+  });
+
+  it("equals the number of steps the player shows, tapping through any choice-free scene", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.constantFrom("text", "auto", "quiz"), { maxLength: 8 }),
+        (kinds) => {
+          const steps = kinds.map((k, i) =>
+            k === "quiz"
+              ? { ...quiz, id: `q${String(i)}` }
+              : text(String(i), k === "auto" ? 2 : undefined),
+          );
+          const p = createScenePlayer(steps);
+          let shown = 0;
+          while (p.current() !== null) {
+            shown += 1;
+            p.next();
+          }
+          expect(playableStepCount(steps)).toBe(shown);
         },
       ),
     );

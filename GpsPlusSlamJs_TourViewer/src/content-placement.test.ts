@@ -10,7 +10,10 @@ import {
   deriveVerticalHeading,
   mintQrGeoPose,
 } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
-import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourObject,
+  TourStation,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import {
@@ -22,6 +25,7 @@ import {
   renderTourStation,
   rotationFromHeading,
 } from "./content-placement";
+import { contentSegment } from "./tour-flow";
 
 /**
  * Why these tests matter: a placed object's record is what a visitor sees
@@ -278,6 +282,51 @@ describe("renderTourObjects", () => {
     expect(disposed).toEqual(["Gate"]);
   });
 
+  // Why: a placed 3D model (format minor 1) is in the format before any
+  // renderer draws it. It must not reach the photo loader (it has no
+  // image), and it is not a failure either: "could not load" would claim
+  // a download broke, so it is left out quietly, as a lenient read leaves
+  // out what it cannot show. The renderer milestone adds an honest line.
+  it("leaves a placed 3D model out quietly: no photo loader call, no 'could not load'", async () => {
+    const { scene, children } = fakeScene();
+    const pin = mintPin({
+      id: "p",
+      label: "Gate",
+      worldNuePosition: { x: 5, y: 400, z: 0 },
+      zero: ZERO,
+      nowIso: NOW,
+    })!;
+    const model: TourObject = {
+      id: "m",
+      kind: "model",
+      asset: "statue",
+      sizeM: 3,
+      createdAtIso: NOW,
+      geo: pin.geo,
+    };
+    const asked: string[] = [];
+    const rendered = await renderTourObjects([pin, model], {
+      scene,
+      zero: ZERO,
+      makeLabel: () => ({ object: new Object3D(), dispose: () => undefined }),
+      loadPhotoTexture: (name) => {
+        asked.push(name);
+        return Promise.resolve(new Texture());
+      },
+    });
+    expect(asked).toEqual([]);
+    expect(rendered.count).toBe(1);
+    expect(rendered.skipped).toEqual([]);
+    expect(children[0]?.children).toHaveLength(1);
+    expect(
+      contentSegment({
+        kind: "placed",
+        count: rendered.count,
+        skipped: rendered.skipped.length,
+      }),
+    ).toBe("1 placed object");
+  });
+
   it("places pins and photos at the caller's pose in the caller's frame when it passes one", async () => {
     // Why this test matters (authoring plan 2026-09-28-0953, M2c): the
     // creator's previews of the running visit go under the AR world group
@@ -439,6 +488,15 @@ describe("renderTourStation", () => {
     );
     const label = frame.getObjectByName("label:Gate")!;
     expect(label.position.toArray()).toEqual(pinPose.position);
+    // Each placed object names its item (`userData.objectId`): the 3D
+    // editor picks an item by it and moves its drawing while a drag runs.
+    expect(label.userData["objectId"]).toBe("p");
+    const named: string[] = [];
+    frame.traverse((o) => {
+      const id: unknown = o.userData["objectId"];
+      if (typeof id === "string") named.push(id);
+    });
+    expect(named.sort()).toEqual(["g", "p"]);
     rendered.dispose();
     expect(scene.children).toHaveLength(0);
   });

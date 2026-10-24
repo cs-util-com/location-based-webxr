@@ -166,3 +166,30 @@ describe('selectOnboardingGuidance', () => {
     expect(selectOnboardingGuidance(state).phase).toBe('initializing');
   });
 });
+
+describe('the coaching copy', () => {
+  // Why this test matters: these hints are shown verbatim by every app that
+  // coaches through this seam (the Tour Viewer's coach card, the Anchor
+  // Starter), and the copy uses plain hyphens, never an em dash. Pinned per
+  // phase, because a hint is one table entry an edit can change alone.
+  const reports: Array<[string, TrackingQualityReport | null]> = [
+    ['initializing', null],
+    ['ar-lost', makeReport({ state: 'ar-lost' })],
+    ['move-around', makeReport({ state: 'warming-up' })],
+    ['almost-ready', makeReport({ state: 'degraded' })],
+    ['ready', makeReport({ state: 'ok' })],
+  ];
+
+  it.each(reports)('the %s hint carries no em dash', (_phase, report) => {
+    expect(computeOnboardingGuidance(report).hint).not.toContain('—');
+  });
+
+  it('says the starting and the lost hints with a spaced hyphen', () => {
+    expect(computeOnboardingGuidance(null).hint).toBe(
+      'Starting up - point your device at the ground and hold steady.'
+    );
+    expect(
+      computeOnboardingGuidance(makeReport({ state: 'ar-lost' })).hint
+    ).toBe('Tracking lost - slowly look around to let it recover.');
+  });
+});

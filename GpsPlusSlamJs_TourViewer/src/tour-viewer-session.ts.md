@@ -42,7 +42,22 @@ lives here.
 - `interface TourViewerSession` - the fields, grouped by owner:
   - the open tour (`archive-open.ts`): `session`, `currentLevels`,
     `levelsUnreadable` (the levels' read failed: the tour has no usable
-    code, r857 review #4), `openGeneration`;
+    code, r857 review #4), `openGeneration`; `currentLevelTexts` and
+    `levelsUnreadable` are VIEWS of the store since the debug-captures
+    plan M3a, and `currentLevels` since M3b (accessors over the tour
+    document's hosted levels, `hostedLevels` for the parsed ones; assigning
+    one dispatches `levelsArrived` / `levelsCleared` / `levelsUnreadable`
+    / `levelsParsed` for the current open). The parsed levels enter the
+    store and so are frozen there, as everything it holds is; nothing
+    writes into a level after its parse. **The setters are a test seam with no
+    production writer:** `archive-open.ts` dispatches those actions
+    itself, with its own open's generation (an open's answer must name the
+    open it belongs to, and a setter can only name the current one), and
+    production code only reads the getters. The setters keep the tests
+    that assign these fields, and the codes' model-based property, as they
+    were; `store`, the page's store
+    (`TourViewerPageStore`), through which `creator-codes.ts` reaches the
+    codes;
   - shared AR session state (`ar-entry.ts`): `qrController`, `qrDebugView`,
     `cameraFrameCount`; `levelByText` is grouped here but OWNED by
     `viewer-placement.ts` (its only reader/writer) and cleared on tour
@@ -50,13 +65,10 @@ lives here.
   - the creator setup (`creator-setup.ts`): `lastDetectedText`,
     `activeSizeM`, `authorErrorText`, `gpsSamplesAtSessionStart`,
     `mintGeneration` (the code in hand, its measurement and the visit's
-    sighting of it are private to `creator-codes.ts` since code book plan
-    M5d-2),
+    sighting of it are the store's `creatorCodes`, written only through
+    `creator-codes.ts`),
     `finishing`, `rebuiltZip` (with the `manifest.json` list it carries,
-    for the next Finish, K1 milestone review R7), `walkDecidedFor` (the
-    open tour whose Finish in this page settled the walk's photos - not a
-    declined bake, PR #643 review; a per-page view hint for the creator's
-    station HUD, cleared at tour teardown, PR #642 review), `tourLabel` (set by
+    for the next Finish, K1 milestone review R7), `tourLabel` (set by
     archive-open); the open
     tour's document `tourDocument` (`creator-document.ts`: the shared
     `tourDocument` slice of the store the session was made with, plus the
@@ -94,15 +106,21 @@ lives here.
     `endTourCodeVotes`), `viewerVoteSink` (the entry's vote sink,
     `viewer-vote-sink.ts`: created at every visitor entry's start, which
     clears the solver overrides; forgotten by `endQrPipeline`; turned off
-    by `endTourCodeVotes`), `placement`,
-    `viewerPlanesError`, `imagePlanes`, `imagePlanesLoading`,
-    `planesRunGeneration`, `placementUnsubscribe`, `placementAttempted`,
-    `joinDeclined`.
+    by `endTourCodeVotes`), `placement` (whether the placement still
+    waits for readiness), `placementUnsubscribe`,
+    `placementAttempted` (the wait ended, for this session and tour).
 - `createTourViewerSession(store?): TourViewerSession` - the initial
   values; `store` holds the tour document in the page's store (the
-  `tourDocument` slice the desktop editor uses too; a fresh
-  `createTourViewerStore()` when absent, for tests that need no other).
-- `createTourViewerStore(recording?)` - with the creator's troubleshooting
+  `tourDocument` slice the desktop editor uses too, and `creatorCodes`;
+  a fresh `createTourViewerStore()` when absent, for tests that need no
+  other). The session object is never spread or copied: two of its fields
+  are accessors.
+- `createTourViewerStore(recording?, pageReducers?)` - `pageReducers` are
+  one page's own slices beside the shared ones (the desktop editor's
+  `editorView`), so the phone's store never names them; a key one of the
+  store's own slices has throws, naming it (the framework refuses its own
+  keys). `TourViewerStore` is the store without page slices.
+  With the creator's troubleshooting
   recording (`authoring-recording.ts`; authoring recording plan
   2026-09-28-0953, M1a) the store writes into its backend under its
   `persistWhile` gate, which REPLACES the `isRecording` gate, and numbers
@@ -115,8 +133,12 @@ lives here.
   `NullStorageBackend` as before.
   It also mounts the visitor's guide state (`visitorGuide`,
   `visitor-guide-slice.ts`: the present station and "show all", visitor
-  plan 2026-10-18-2349 M1; not persisted) and the tour document
-  (`tourDocument`, `tour-document.ts`, D29-D31; not persisted) and returns `listenToDocument`, its own listener
+  plan 2026-10-18-2349 M1; not persisted), the visitor's walk
+  (`visitorWalk`, `visitor-walk-slice.ts`: the run's progress, the last
+  skip, the note and the skip's arm; not persisted), the tour document
+  (`tourDocument`, `tour-document.ts`, D29-D31; not persisted) and the
+  creator's code state (`creatorCodes`, `creator-codes-slice.ts`,
+  debug-captures plan M3a; not persisted) and returns `listenToDocument`, its own listener
   middleware's `startListening`, where a page runs the document's side
   effects (the draft's writes, `tour-document-draft.ts`) after the
   reducer. Its own middleware rather than an `addListener` dispatch, which
@@ -135,10 +157,11 @@ lives here.
   `presentTourCodes` (the open tour's codes arrived: the print step
   continues their numbering - polish round M0b), `presentTourLevels`
   (the open tour's levels settled, read or failed: the visitor screen's
-  line follows - r857 review #5), `presentTourInfo(manifest,
-loadImage)` (the open tour's manifest settled, or null on teardown: the
-  visitor's start page shows its name, subline and cover, read from the
-  zip by archive path - polish round M4a), `finishFromAr()` (a creator's
+  line follows), `presentTourInfo(tour)` (`{ manifest,
+loadImage }` once the open tour's manifest settled, `manifest` null for
+  a zip without `tour.json`; null on teardown: the visitor's start page
+  leads with the tour itself - its name, subline and cover, read from the
+  zip by archive path - or says that the tour is not finished yet), `finishFromAr()` (a creator's
   Done in AR: start a finish if one can start, false when none can -
   polish round M3), `beginAuthorVisit` / `endAuthorVisit` - the
   creator's AR visit start and its settle, M2c), no-ops until their owner
@@ -170,8 +193,7 @@ loadImage)` (the open tour's manifest settled, or null on teardown: the
   (`archive-open.ts`) and the AR session end (`ar-entry.ts`) are the two
   cross-cutting resets, and each resets exactly the fields the closing
   tour or session owned (see those sidecars for the lists).
-- The generation counters (`openGeneration`, `planesRunGeneration`) are
-  only ever incremented; async runs capture a value and compare.
+- The generation counter (`openGeneration`) is only ever incremented; async runs capture a value and compare.
 - `placementUnsubscribe !== null` is the "viewer session is live" signal
   the placement trigger reads; it is set after the runtime start and
   cleared on session end.

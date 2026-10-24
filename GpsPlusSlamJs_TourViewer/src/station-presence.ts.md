@@ -20,13 +20,15 @@ the store applies it (`visitor-guide-slice.ts`), the guide feeds it
     reads as 0.
 - `presentAfterWeakFix(presentId, candidates, accuracyM): string | null` -
   the present station after a fix too weak to guide by (above the accuracy
-  ceiling, `tooWeakToGuide`; PR review S1): never enters or hands over, but
+  ceiling, a `'gps'` precision that is `tooWeak`; PR review S1): never
+  enters or hands over, but
   returns null when `d_present - accuracy > foundExit` (an underpass fix that
   places the visitor well away). Holds on no candidates, the present station
   missing from them, or a nonsense distance or accuracy.
-- `takeoverMarginM(judgedAccuracyM, codeLinedUp): number` - the margin for a
-  judged position: the floor for a code's position; otherwise the reported
-  accuracy, at least `TAKEOVER_MARGIN_MIN_M` (1 m), at most the accuracy
+- `takeoverMarginM(precision): number` - the margin for a judged position
+  (`PositionPrecision` of the framework's one rule,
+  `gps-plus-slam-app-framework/state/position-precision`): the floor for a
+  code's position (`'code'`); otherwise the precision's accuracy, at least `TAKEOVER_MARGIN_MIN_M` (1 m), at most the accuracy
   ceiling (25 m), with a missing, zero, negative or NaN accuracy read as
   the ceiling (as `stationBands`' clamp reads it; PR review N1).
 - `TAKEOVER_MARGIN_MIN_M` - 1 m, the floor (see Evidence).
@@ -171,9 +173,9 @@ Measured 2026-10-19 (16-24 seeds per outdoor cell, 10 per museum cell):
 const next = nextPresentStation(
   "a",
   presenceCandidates(stations, distances, (s) =>
-    judgedStationBands(s, rawAccuracyM, codeLinedUp),
+    judgedStationBands(s, precision),
   ),
-  takeoverMarginM(judgedAccuracy(rawAccuracyM, codeLinedUp), codeLinedUp),
+  takeoverMarginM(precision),
 );
 // A fix above the ceiling only ends presence:
 const after = presentAfterWeakFix("a", candidates, 40);

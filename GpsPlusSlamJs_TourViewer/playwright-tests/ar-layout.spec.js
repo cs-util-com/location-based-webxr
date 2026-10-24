@@ -7,7 +7,7 @@ import { E2E_QR_TEXT } from "./qr-fixture.mjs";
 /**
  * Why these tests matter: in a WebXR DOM overlay `#ar-root` IS the screen,
  * and nothing in it can be scrolled into view by a creator holding a phone
- * at a poster. The owner's r750 field test found the print-size offer's
+ * at a poster. A test on a phone found the print-size offer's
  * buttons below the bottom edge: the framework's AR canvas (window-sized,
  * inserted as `#ar-root`'s first child) sat in the page flow and pushed the
  * whole panel down a screen height. No test saw it because the AR fakes
@@ -220,6 +220,55 @@ async function box(page, testId) {
 const WIDE_UI_FONT =
   ':root { --font-ui: "DejaVu Sans", Verdana, sans-serif !important; }';
 
+/**
+ * A creator's AR session on `viewport`, in the wide face, with the hosted
+ * tour open, its code measured and GPS aligned: the H1 strip as it stands
+ * when placing is possible.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {{ width: number, height: number }} viewport
+ */
+async function enterTheStrip(page, viewport) {
+  await page.setViewportSize(viewport);
+  await installTourViewerArFakes(page);
+  await page.goto("/");
+  await page.addStyleTag({ content: WIDE_UI_FONT });
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-tour-open",
+    "settled",
+    {
+      timeout: 15000,
+    },
+  );
+  if (
+    !(await page
+      .getByTestId("step-measure")
+      .evaluate((el) => /** @type {any} */ (el).open))
+  ) {
+    await page.getByTestId("station-measure").click();
+  }
+  await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
+  await page.getByTestId("enter-ar").click();
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("setup-status").textContent();
+      },
+      { timeout: 20000 },
+    )
+    .toMatch(/waiting for GPS alignment/i);
+  await seedAlignment(page);
+  await expect(page.getByTestId("setup-pin")).toBeEnabled();
+}
+
 for (const viewport of [
   { width: 412, height: 915 },
   { width: 360, height: 640 },
@@ -235,50 +284,14 @@ for (const viewport of [
     // asked whether each control is visible passed the old stacked panel;
     // this pins where each one sits (root CLAUDE.md: a chosen prototype is
     // pinned by positions, not presence).
-    await page.setViewportSize(viewport);
-    await installTourViewerArFakes(page);
-    await page.goto("/");
-    await page.addStyleTag({ content: WIDE_UI_FONT });
-    await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
-    await page.getByTestId("open-button").click();
-    await expect(page.locator("body")).toHaveAttribute(
-      "data-tour-open",
-      "settled",
-      {
-        timeout: 15000,
-      },
-    );
-    if (
-      !(await page
-        .getByTestId("step-measure")
-        .evaluate((el) => /** @type {any} */ (el).open))
-    ) {
-      await page.getByTestId("station-measure").click();
-    }
-    await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
-    await page.getByTestId("enter-ar").click();
-    await page.evaluate((text) => {
-      /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
-    }, E2E_QR_TEXT);
-    await expect
-      .poll(
-        async () => {
-          await page.evaluate(() => {
-            /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-          });
-          return page.getByTestId("setup-status").textContent();
-        },
-        { timeout: 20000 },
-      )
-      .toMatch(/waiting for GPS alignment/i);
-    await seedAlignment(page);
-    await expect(page.getByTestId("setup-pin")).toBeEnabled();
+    await enterTheStrip(page, viewport);
 
     const done = await box(page, "enter-ar");
     const card = await box(page, "setup-status");
     const pin = await box(page, "setup-pin");
     const photo = await box(page, "setup-photo");
     const newStation = await box(page, "setup-new-station");
+    const undo = await box(page, "setup-undo");
     // Done: a chip at the top right.
     await expect(page.getByTestId("enter-ar")).toHaveText("Done");
     expect(done.top).toBeLessThan(40);
@@ -306,6 +319,15 @@ for (const viewport of [
     expect(photo.right).toBeLessThanOrEqual(viewport.width);
     expect(newStation.left).toBeGreaterThanOrEqual(0);
     expect(newStation.right).toBeLessThanOrEqual(viewport.width);
+    // The persistent Undo: its own line, centred just above "New
+    // station here", there and dimmed while nothing can be taken back.
+    await expect(page.getByTestId("setup-undo")).toBeDisabled();
+    await expect(page.getByTestId("setup-undo")).toHaveText("Undo");
+    expect(undo.bottom).toBeLessThanOrEqual(newStation.top);
+    expect(newStation.top - undo.bottom).toBeLessThan(16);
+    expect(
+      Math.abs((undo.left + undo.right) / 2 - viewport.width / 2),
+    ).toBeLessThan(2);
     // The focus and reading order is the order on screen (WCAG 2.4.3):
     // top to bottom, then left to right - never CSS `order` or a reversed
     // wrap, which move the boxes but not the tab stops.
@@ -317,10 +339,85 @@ for (const viewport of [
             .filter((b) => b.getClientRects().length > 0)
             .map((b) => b.dataset.testid),
         ),
-    ).toEqual(["setup-new-station", "setup-pin", "setup-photo"]);
-    // The camera view between them is clear: nothing of the panel there.
-    expect(pin.top - card.bottom).toBeGreaterThan(viewport.height * 0.3);
+    ).toEqual(["setup-undo", "setup-new-station", "setup-pin", "setup-photo"]);
+    // The camera view between them is clear: nothing of the panel there,
+    // measured from the topmost chip (the Undo, on its own line).
+    expect(undo.top - card.bottom).toBeGreaterThan(viewport.height * 0.3);
     // The technical line is ?debug=1's only.
     await expect(page.getByTestId("ar-status")).toBeHidden();
+  });
+}
+
+/** A pin text as long as a creator is likely to type. */
+const LONG_PIN_TEXT = "The old fountain behind the market hall";
+
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 320, height: 640 },
+]) {
+  test(`the strip's Undo names a deleted pin's long text without overflowing a ${viewport.width}x${viewport.height} screen`, async ({
+    page,
+  }, testInfo) => {
+    // Why: the persistent Undo says what it takes back, so its label is as
+    // long as the pin's text. The chip row once spilled off a 320 px screen
+    // in a wide face (see WIDE_UI_FONT); a long label must end in an
+    // ellipsis on its own line, never widen the strip past the screen or
+    // push a control off it.
+    const capture = process.env.PLAYWRIGHT_CAPTURE === "1";
+    const shot = (name) =>
+      capture
+        ? page.screenshot({ path: testInfo.outputPath(name) })
+        : Promise.resolve();
+    await enterTheStrip(page, viewport);
+    await shot("undo-disabled.png");
+    await page.evaluate(() => {
+      const t = /** @type {any} */ (window).__tourViewerTest;
+      t.pickId = "fixturepin01";
+      t.tapXr();
+    });
+    const selected = page.locator(
+      '[data-testid="object-row"][data-selected="true"]',
+    );
+    await selected.getByTestId("object-edit").click();
+    await page.getByTestId("object-edit-input").fill(LONG_PIN_TEXT);
+    await page.getByTestId("object-edit-save").click();
+    await expect(page.getByTestId("object-list-note")).toHaveText(/^Saved/);
+    await page
+      .locator('[data-testid="object-row"][data-selected="true"]')
+      .getByTestId("object-delete")
+      .click();
+    const chip = page.getByTestId("setup-undo");
+    await expect(chip).toBeEnabled();
+    // The whole text is the chip's name; only the drawing is cut.
+    await expect(chip).toHaveText(`Undo: delete "${LONG_PIN_TEXT}"`);
+    await shot("undo-enabled.png");
+
+    const undo = await box(page, "setup-undo");
+    const label = await box(page, "setup-undo-label");
+    const newStation = await box(page, "setup-new-station");
+    const pin = await box(page, "setup-pin");
+    expect(undo.left).toBeGreaterThanOrEqual(0);
+    expect(undo.right).toBeLessThanOrEqual(viewport.width);
+    expect(label.right).toBeLessThanOrEqual(undo.right);
+    // One line: no taller than the chip's own minimum.
+    expect(undo.bottom - undo.top).toBeLessThan(50);
+    expect(undo.bottom).toBeLessThanOrEqual(newStation.top);
+    expect(newStation.bottom).toBeLessThanOrEqual(pin.top);
+    // Nothing the creator sees over the camera crosses a screen edge. (The
+    // page under the overlay is not measured: on the device the camera
+    // covers it, and the fake session leaves it showing.)
+    expect(
+      await page.evaluate(() =>
+        [...document.querySelectorAll("#setup-panel *")]
+          .map((el) => /** @type {HTMLElement} */ (el))
+          .filter((el) => el.getClientRects().length > 0)
+          .filter((el) => {
+            const r = el.getBoundingClientRect();
+            return r.left < -0.5 || r.right > window.innerWidth + 0.5;
+          })
+          .map((el) => el.id || el.dataset.testid || el.tagName),
+      ),
+    ).toEqual([]);
+    expect(await controlsBelowTheFold(page)).toEqual([]);
   });
 }

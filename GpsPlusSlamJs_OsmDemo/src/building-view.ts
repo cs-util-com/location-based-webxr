@@ -35,7 +35,11 @@ import {
   type GroundAppearance,
   type GroundStrategy,
 } from "./ground-mode.js";
-import { TERRAIN_EXTENT_M, type Heightfield } from "./heightfield.js";
+import {
+  TERRAIN_EXTENT_M,
+  TERRAIN_SPACING_M,
+  type Heightfield,
+} from "gps-plus-slam-osm";
 import { heightRampColours } from "./height-ramp.js";
 import {
   DEFAULT_CELL_PRESET,
@@ -103,13 +107,9 @@ export type { Pick } from "./pick.js";
  */
 export type GroundDisplacement = GroundStrategy;
 
-/**
- * Metres between terrain posts. Terrarium z13 is ~12 m per pixel at this latitude.
- *
- * Sampling finer would interpolate detail the DEM never had; sampling coarser would
- * throw away detail already fetched.
- */
-export const TERRAIN_SPACING_M = 12;
+// TERRAIN_SPACING_M lives with the field in the Osm library (globe city
+// plan 2026-10-05-0040 §14 L1); re-exported for this file's importers.
+export { TERRAIN_SPACING_M };
 
 /*
  * `CELL_EMISSIVE_INTENSITY` moved to `cell-materials.ts` with the shader patch

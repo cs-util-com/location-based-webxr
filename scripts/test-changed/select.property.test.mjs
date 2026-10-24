@@ -62,7 +62,13 @@ describe('selectPackages properties', () => {
       fc.property(
         fc.array(packagePathArb, { maxLength: 10 }),
         rootPathArb.filter(
-          (p) => !DIRS.includes(p.split('/')[0]) && !p.startsWith('docs/')
+          (p) =>
+            !DIRS.includes(p.split('/')[0]) &&
+            !p.startsWith('docs/') &&
+            // The narrowed root classes (select.mjs ROOT_NARROW).
+            !p.toLowerCase().endsWith('.md') &&
+            !p.startsWith('tests/repo-config/') &&
+            p !== 'knip.json'
         ),
         (packagePaths, rootPath) => {
           const result = selectPackages({
@@ -71,6 +77,73 @@ describe('selectPackages properties', () => {
             packageDirs: DIRS,
           });
           expect(result.mode).toBe('all');
+        }
+      )
+    );
+  });
+
+  // Why: narrowing may only ADD root checks and drop doc-only packages; it
+  // must never take away a package that a code change selected, nor select
+  // one that nothing selected.
+  const narrowedRootArb = fc.constantFrom(
+    'README.md',
+    'docs/notes.md',
+    'tests/repo-config/a.test.js',
+    'tests/repo-config/helper.js',
+    'knip.json',
+    '.github/workflows/ci.yml',
+    '.vscode/settings.json'
+  );
+  const docArb = fc
+    .tuple(
+      fc.constantFrom(...DIRS),
+      fc.constantFrom('README.md', 'CHANGELOG.md', 'src/a.ts.md', 'docs/x.md')
+    )
+    .map(([dir, rest]) => `${dir}/${rest}`);
+
+  it('narrowed root paths never change which packages run in full', () => {
+    fc.assert(
+      fc.property(
+        fc.array(packagePathArb.filter((p) => !p.endsWith('.md')), { maxLength: 10 }),
+        fc.array(narrowedRootArb, { minLength: 1, maxLength: 5 }),
+        (packagePaths, rootPaths) => {
+          const without = selectPackages({
+            trackedChanges: packagePaths,
+            untracked: [],
+            packageDirs: DIRS,
+          });
+          const withRoot = selectPackages({
+            trackedChanges: [...packagePaths, ...rootPaths],
+            untracked: [],
+            packageDirs: DIRS,
+          });
+          expect(withRoot.mode).toBe('packages');
+          if (without.mode === 'packages' && withRoot.mode === 'packages') {
+            expect(withRoot.packages).toEqual(without.packages);
+            expect(withRoot.rootFiles).toEqual([...new Set(rootPaths)].sort());
+          }
+        }
+      )
+    );
+  });
+
+  it('a doc-only file never selects its package, and is never listed beside a full gate', () => {
+    fc.assert(
+      fc.property(
+        fc.array(packagePathArb.filter((p) => !p.endsWith('.md')), { maxLength: 10 }),
+        fc.array(docArb, { minLength: 1, maxLength: 5 }),
+        (codePaths, docPaths) => {
+          const result = selectPackages({
+            trackedChanges: [...codePaths, ...docPaths],
+            untracked: [],
+            packageDirs: DIRS,
+          });
+          if (result.mode !== 'packages') throw new Error('unexpected full cascade');
+          const codeDirs = new Set(codePaths.map((p) => p.split('/')[0]));
+          expect(result.packages).toEqual([...codeDirs].sort());
+          for (const doc of result.docsOnly ?? []) {
+            expect(codeDirs.has(doc.split('/')[0])).toBe(false);
+          }
         }
       )
     );

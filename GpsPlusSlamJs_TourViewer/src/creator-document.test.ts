@@ -16,7 +16,11 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { createCreatorDocument } from "./creator-document.js";
 import { stationsAsFinished } from "./creator-stations.js";
 import { manifestToWrite, tourDocumentActions } from "./tour-document.js";
-import type { TourDocumentDraft } from "./tour-document-draft.js";
+import {
+  parseSettingsRecord,
+  type TourDocumentDraft,
+  type TourSettingsRecord,
+} from "./tour-document-draft.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import { tourOf } from "./test-support/v3-tour.js";
 
@@ -96,6 +100,27 @@ describe("the creator's document: no tour, and a tour opening", () => {
     const carried = doc.entries().find((e) => e.object.id === "q");
     expect(carried?.blob).toBeInstanceOf(Blob);
     expect(carried?.placement).toEqual(PLACEMENT);
+  });
+
+  // Why this matters: work made before a tour opens stood in stations of
+  // the empty "no tour" document. The tour that opens has its own: the
+  // rule runs again against them, so a pin made next to one of its
+  // stations joins it instead of keeping a station of its own there.
+  it("seats carried work by the rule against the opened tour's stations", () => {
+    const doc = fresh();
+    const near = doc.place(pin("p"), {}, "a pin")?.object.station;
+    const far = doc.place(pin("q", 48.53), {}, "a pin")?.object.station;
+    doc.open(tourOf([pin("a")]));
+    const stationOf = (id: string) =>
+      doc.objects().find((o) => o.object.id === id)?.object.station;
+    const hosted = stationOf("a");
+    expect(stationOf("p")).toBe(hosted);
+    expect(stationOf("q")).not.toBe(hosted);
+    const ids = doc.manifest()?.stations.map((st) => st.id) ?? [];
+    expect(ids).toEqual([hosted, stationOf("q")]);
+    // None of the stations made before the tour opened comes along.
+    expect(ids).not.toContain(near);
+    expect(ids).not.toContain(far);
   });
 
   it("keeps a tour without tour.json as no manifest until a write lands", () => {
@@ -182,13 +207,23 @@ describe("the creator's document: changes through the slice's guards", () => {
     expect(doc.place(pin("a"), {}, "a pin")).toBeNull();
   });
 
-  it("refuses a move beyond its station's reach", () => {
+  // Why: a move beyond its station's found radius re-runs the station
+  // rule, so however far it goes the object stands in a station near it -
+  // the format's 10 km bound between an item and its station cannot be
+  // crossed by a move. A move of an id the document lacks is refused.
+  it("seats a move far beyond its station in a station at the new spot, and refuses an unknown id", () => {
     const doc = fresh();
     doc.open(tourOf([pin("a")]));
     const a = doc.objects()[0]!.object;
-    // Far beyond the format's per-axis bound (TOUR_ITEM_MAX_OFFSET_M).
-    expect(doc.move({ ...a, geo: { ...a.geo, lat: 49.5 } }, "far")).toBeNull();
-    expect(doc.entries()).toEqual([]);
+    // About 110 km north: far beyond the format's bound.
+    expect(
+      doc.move({ ...a, geo: { ...a.geo, lat: 49.5 } }, "far"),
+    ).not.toBeNull();
+    const moved = doc.objects()[0]!.object;
+    expect(moved.station).not.toBe(a.station);
+    const home = doc.state().stations.find((f) => f.id === moved.station);
+    expect(home?.geo.lat).toBe(49.5);
+    expect(doc.move({ ...pin("nobody") }, "nobody")).toBeNull();
   });
 
   it("keeps an object's AR placement across an edit, replaces it on a move in AR", () => {
@@ -262,6 +297,191 @@ describe("the creator's document: changes through the slice's guards", () => {
   });
 });
 
+describe("the creator's document: the AR anchors of the stations it starts", () => {
+  // Why these tests matter: a station started in an AR visit is anchored
+  // where its first item stood at the tap, through the tap's alignment;
+  // the visit's settle then moves that item. Unless the settle can re-pose
+  // the station too, its anchor drifts off the item it was started for.
+  // The settle can only do that with the anchor's odometry pose in that
+  // visit, which never enters the tour state: it is kept beside it, like
+  // an object's AR placement.
+  const ELSEWHERE = {
+    visit: 2,
+    local: {
+      position: [40, 0, 9] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    },
+  };
+  const stationOf = (doc: ReturnType<typeof fresh>, id: string) =>
+    doc.objects().find((o) => o.object.id === id)!.object.station!;
+
+  it("anchors a station a placement starts at that item's AR placement; a later item changes nothing", () => {
+    const doc = fresh();
+    doc.open(tourOf([]));
+    doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
+    doc.place(pin("q"), { placement: ELSEWHERE }, "a pin");
+    const station = stationOf(doc, "p");
+    expect(stationOf(doc, "q")).toBe(station);
+    expect([...doc.stationPlacements()]).toEqual([
+      [station, { ...PLACEMENT, item: "p" }],
+    ]);
+  });
+
+  it("anchors nothing for an item placed without an AR placement, nor a station the tour carries", () => {
+    const doc = fresh();
+    doc.open(tourOf([pin("a")]));
+    // 1.1 km from "a": a station of its own, with no AR placement.
+    doc.place(pin("p", 48.53), {}, "a pin");
+    // Next to "a": the tour's station takes it.
+    doc.place(pin("q"), { placement: PLACEMENT }, "a pin");
+    expect(stationOf(doc, "q")).toBe(stationOf(doc, "a"));
+    expect(doc.stationPlacements().size).toBe(0);
+  });
+
+  it("anchors the station a move starts: in AR at the new placement, by a settle at the placement the item keeps", () => {
+    const doc = fresh();
+    doc.open(tourOf([]));
+    doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
+    const first = stationOf(doc, "p");
+    doc.move(pin("p", 48.53), "a move in AR", ELSEWHERE);
+    const second = stationOf(doc, "p");
+    expect(second).not.toBe(first);
+    // The station it left emptied and went, and its anchor with it.
+    expect([...doc.stationPlacements()]).toEqual([
+      [second, { ...ELSEWHERE, item: "p" }],
+    ]);
+    doc.move(pin("p", 48.54), "the settle");
+    const third = stationOf(doc, "p");
+    expect([...doc.stationPlacements()]).toEqual([
+      [third, { ...ELSEWHERE, item: "p" }],
+    ]);
+  });
+
+  it("anchors the stations the rule starts for work carried into the tour that opens", () => {
+    const doc = fresh();
+    doc.place(pin("q", 48.53), { placement: PLACEMENT }, "a pin");
+    doc.place(pin("r", 48.5301), { placement: ELSEWHERE }, "a pin");
+    doc.open(tourOf([pin("a")]));
+    const station = stationOf(doc, "q");
+    expect(stationOf(doc, "r")).toBe(station);
+    expect([...doc.stationPlacements()]).toEqual([
+      [station, { ...PLACEMENT, item: "q" }],
+    ]);
+  });
+
+  it("keeps an anchor through an undo and a redo of its station", () => {
+    const store = createTourViewerStore();
+    const doc = createCreatorDocument(store);
+    doc.open(tourOf([]));
+    doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
+    const station = stationOf(doc, "p");
+    doc.undo();
+    expect(doc.stationPlacements().size).toBe(0);
+    store.dispatch(tourDocumentActions.redone());
+    expect([...doc.stationPlacements()]).toEqual([
+      [station, { ...PLACEMENT, item: "p" }],
+    ]);
+  });
+
+  it("drops the anchors with the tour: a draft restored into it again brings none", () => {
+    const doc = fresh();
+    doc.open(tourOf([]));
+    doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
+    const station = stationOf(doc, "p");
+    const frame = doc.state().stations.find((f) => f.id === station)!;
+    const object = doc.objects()[0]!.object;
+    doc.close();
+    doc.open(tourOf([]));
+    doc.restore(
+      {
+        objects: [object],
+        deleted: [],
+        pictures: new Map(),
+        createdStations: [frame],
+      },
+      "the draft",
+    );
+    expect(stationOf(doc, "p")).toBe(station);
+    expect(doc.stationPlacements().size).toBe(0);
+  });
+
+  it("drops the anchor of a station a write carried, keeping one the write did not", () => {
+    const doc = fresh();
+    doc.open(tourOf([]));
+    doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
+    const generation = doc.saveStarted();
+    const written = manifestToWrite(doc.state())!;
+    const stationsAtStart = doc.state().stations;
+    // Placed while the write ran: its station is not in the write.
+    doc.place(pin("q", 48.53), { placement: ELSEWHERE }, "a pin");
+    doc.saved({ generation, written, appliedDeletions: [], stationsAtStart });
+    doc.saveEnded(generation);
+    expect([...doc.stationPlacements()]).toEqual([
+      [stationOf(doc, "q"), { ...ELSEWHERE, item: "q" }],
+    ]);
+  });
+});
+
+describe("the creator's document: a settle's batch (plan M3b, Q-D)", () => {
+  // Why these tests matter: a settle moves stations and objects, and each
+  // move reads the document as the moves before it left it (the station
+  // rule reads the frames as they stand). The batch must give it that
+  // view while nothing reaches the store, take everything as ONE step at
+  // its commit, and anchor a station a move started as a move outside a
+  // batch does - or the settle's own anchors drift from their items.
+  it("reads as its changes leave it, reaches the store only at its commit, as one step", () => {
+    const doc = fresh();
+    doc.open(tourOf([pin("a")]));
+    const station = doc.state().stations[0]!;
+    const geo = { ...station.geo, lat: station.geo.lat + 0.0001 };
+    const revision = doc.revision();
+    const batch = doc.settleBatch();
+    expect(batch.moveStation("nowhere", geo)).toBe(false);
+    expect(batch.move(pin("nobody"))).toBe(false);
+    expect(batch.moveStation(station.id, geo)).toBe(true);
+    expect(batch.state().stations[0]?.geo).toEqual(geo);
+    expect(batch.objects()[0]?.object.geo.lat).toBeGreaterThan(48.52);
+    expect(doc.revision(), "nothing in the store yet").toBe(revision);
+    expect(doc.objects()[0]?.object.geo.lat).toBe(48.52);
+    const past = doc.state().past.length;
+    expect(
+      batch.commit({ levels: [], hand: null }, "the settle"),
+    ).not.toBeNull();
+    expect(doc.state().past.length).toBe(past + 1);
+    expect(doc.state().stations[0]?.geo).toEqual(geo);
+    expect(doc.objects()[0]?.object).toEqual(batch.objects()[0]?.object);
+    expect(
+      batch.commit({ levels: [], hand: null }, "again"),
+      "a batch commits once",
+    ).toBeNull();
+    expect(doc.state().past.length).toBe(past + 1);
+  });
+
+  it("takes no step for a batch that moved nothing and saved no code", () => {
+    const doc = fresh();
+    doc.open(tourOf([pin("a")]));
+    const revision = doc.revision();
+    expect(
+      doc.settleBatch().commit({ levels: [], hand: null }, "the settle"),
+    ).toBeNull();
+    expect(doc.revision()).toBe(revision);
+  });
+
+  it("anchors the station a move in it starts at the placement the item keeps", () => {
+    const doc = fresh();
+    doc.open(tourOf([]));
+    doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
+    const batch = doc.settleBatch();
+    batch.move(pin("p", 48.53));
+    batch.commit({ levels: [], hand: null }, "the settle");
+    const station = doc.objects().find((o) => o.object.id === "p")!.object
+      .station!;
+    expect([...doc.stationPlacements()]).toEqual([
+      [station, { ...PLACEMENT, item: "p" }],
+    ]);
+  });
+});
+
 describe("the creator's document: the draft follows it", () => {
   it("writes each change from the listener, with the photo's picture", async () => {
     const doc = fresh();
@@ -275,6 +495,30 @@ describe("the creator's document: the draft follows it", () => {
     await expect(placed?.backedUp).resolves.toBe(true);
     await doc.remove("a", "the delete")?.backedUp;
     expect(calls).toEqual(["save q +picture", "undelete q", "delete a"]);
+  });
+
+  // Why this test matters (plan M3b): the draft's codes record follows the
+  // codes through the same listener, with the hand from the page's code
+  // state - but a tour's close empties the book, and a write then would
+  // wipe the closed tour's codes from its draft.
+  it("writes the codes record when the codes change, with the hand, and nothing at a tour's close", () => {
+    const store = createTourViewerStore();
+    const doc = createCreatorDocument(store);
+    const { draft, calls } = recordingDraft();
+    doc.follow({
+      ...draft,
+      saveCodes: (codes) => {
+        calls.push(`codes ${JSON.stringify(codes)}`);
+        return Promise.resolve(true);
+      },
+    });
+    doc.open(tourOf([]));
+    const level = { id: "c", json: "c-1" };
+    store.dispatch(tourDocumentActions.codeTaken({ level, measurement: null }));
+    store.dispatch(tourDocumentActions.codesForgotten());
+    expect(calls.filter((c) => c.startsWith("codes"))).toEqual([
+      `codes ${JSON.stringify({ level, levels: [level] })}`,
+    ]);
   });
 
   it("reports a write that did not land to the change that caused it", async () => {
@@ -564,13 +808,22 @@ describe("the creator's document: 'New station here' (D8)", () => {
   });
 
   it("writes the placement into the draft naming its own station, so a reload keeps it apart", () => {
+    // Why: the station is the document's from the placement on, so the
+    // draft keeps its whole frame (the settings record's created
+    // stations) beside the object naming it. Without the frame a reload
+    // would seat "b" by the rule - into a's station, 5 m away.
     const doc = fresh();
     const saved: TourObject[] = [];
+    let settings: TourSettingsRecord | null = null;
     const { draft } = recordingDraft();
     doc.follow({
       ...draft,
       saveObject: (object) => {
         saved.push(object);
+        return Promise.resolve(true);
+      },
+      saveSettings: (record) => {
+        settings = record;
         return Promise.resolve(true);
       },
     });
@@ -579,16 +832,36 @@ describe("the creator's document: 'New station here' (D8)", () => {
     const own = saved.find((o) => o.id === "b")?.station;
     expect(own).toBeDefined();
     expect(own).not.toBe(doc.state().stations[0]!.id);
-    // A later page restoring that record starts the same separate station.
+    // The record as a later open reads it back from disk.
+    const read = parseSettingsRecord(JSON.stringify(settings));
+    expect(read?.createdStations?.map((f) => f.id)).toEqual([own]);
+    // A later page restoring those records starts the same separate
+    // station, anchored where it stood.
     const reloaded = fresh();
     reloaded.open(tourOf([pin("a")]));
     reloaded.restore(
-      { objects: saved, deleted: [], pictures: new Map() },
+      {
+        objects: saved,
+        deleted: [],
+        pictures: new Map(),
+        createdStations: read?.createdStations ?? [],
+      },
       "the draft",
     );
     expect(
       stationsAsFinished({ state: reloaded.state() }).map((s) => s.itemIds),
     ).toEqual([["a"], ["b"]]);
+    expect(reloaded.state().stations[1]).toEqual(doc.state().stations[1]);
+    // The control: the objects alone come back by the rule, into a's.
+    const bare = fresh();
+    bare.open(tourOf([pin("a")]));
+    bare.restore(
+      { objects: saved, deleted: [], pictures: new Map() },
+      "the draft",
+    );
+    expect(
+      stationsAsFinished({ state: bare.state() }).map((s) => s.itemIds),
+    ).toEqual([["a", "b"]]);
   });
 
   it("is disarmed by a tour opening or closing", () => {

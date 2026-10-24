@@ -36,6 +36,13 @@ import path from "node:path";
  *   `gateBaseCommand`); CI, the milestone run and every recorded run keep
  *   `command`. The framework's unit stage drops `--coverage` this way
  *   (gate-speed plan 2026-10-04, G4).
+ * @property {boolean} [nestedGate] - true for a root cascade row that runs a
+ *   whole package gate (`packageGateStage`). The stage watchdog does not
+ *   watch it: its leaf stages are watched one level down, so a stall names
+ *   the leaf (stall-watch.mjs).
+ * @property {number} [stallMinutes] - this stage's own silence limit for the
+ *   stage watchdog, in minutes, for a stage that is legitimately silent for
+ *   longer than the default (none today); GATE_STALL_MIN still wins.
  * @property {boolean} [wrapperScript] - default true. false = the package.json
  *   script of the same name intentionally does NOT route through
  *   timed-stage.mjs (e.g. build:framework: dev flows and Playwright
@@ -195,6 +202,8 @@ function packageGateStage(scriptName, packageName) {
     name: scriptName,
     command: `pnpm --filter ${packageName} test`,
     counts: null,
+    // Its own leaf stages are watched one level down (stall-watch.mjs).
+    nestedGate: true,
   };
 }
 
@@ -525,10 +534,17 @@ export const PROJECTS = [
   },
   demoAppProject("GpsPlusSlamJs_AnchorStarter"),
   // The mesh cursor's worker (polish round M5) is spawned from a URL, which
-  // dpdm cannot follow: its own root keeps it inside the cycle gate.
-  demoAppProject("GpsPlusSlamJs_TourViewer", [
-    "./src/workers/occlusion-mesher.worker.ts",
-  ]),
+  // dpdm cannot follow: its own root keeps it inside the cycle gate. Its 3D
+  // editor imports gps-plus-slam-osm through `exports` -> dist (the geoid,
+  // the relief's constants), so the OSM build runs FIRST, before the first
+  // stage that reads a dist, for the reason OsmDemo's does (see there).
+  {
+    ...demoAppProject("GpsPlusSlamJs_TourViewer"),
+    stages: [
+      BUILD_OSM_STAGE,
+      ...demoAppStages(["./src/workers/occlusion-mesher.worker.ts"]),
+    ],
+  },
   {
     name: "GpsPlusSlamJs_MinimalExample",
     dir: "GpsPlusSlamJs_MinimalExample",

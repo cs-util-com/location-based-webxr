@@ -14,6 +14,12 @@ import {
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 
+import {
+  positionPrecision,
+  type PositionPrecision,
+  type PrecisionGpsPoint,
+} from "gps-plus-slam-app-framework/state/position-precision";
+
 import { judgedStationBands, stationBands } from "./station-bands";
 import { skipSuggestAfterMs } from "./station-run";
 import {
@@ -44,6 +50,22 @@ import {
  * on demand and suggested after its clock, and the progress must survive
  * leaving AR and coming back.
  */
+
+/** The store's GPS readings as the shared precision rule reads them: one
+ *  device fix stating `accuracyM` (its median), or none for null. */
+function fixesAt(accuracyM: number | null): PrecisionGpsPoint[] {
+  return accuracyM === null ? [] : [{ latLongAccuracy: accuracyM }];
+}
+
+/** A GPS position's precision at this accuracy (within the ceiling). */
+function gps(accuracyM: number): PositionPrecision {
+  return { source: "gps", accuracyM, tooWeak: false };
+}
+const CODE: PositionPrecision = {
+  source: "code",
+  accuracyM: null,
+  tooWeak: false,
+};
 
 // The core's geodesy needs an activated store (the framework's factory).
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -83,7 +105,7 @@ function harness(
   let now = 1_000;
   let visitor: VisitorPosition = {
     nue: [0, 401.5, 0],
-    accuracyM: 4,
+    gpsPoints: fixesAt(4),
     fixNue: [0, 400, 0],
     aligned: true,
     fixAtMs: now,
@@ -121,7 +143,11 @@ function harness(
       },
       hidden: true,
     },
-    skip: { textContent: "" as string, hidden: true },
+    skip: {
+      textContent: "" as string,
+      hidden: true,
+      dataset: {} as DOMStringMap,
+    },
   };
   let tour: StationTour | null = tourValue;
   const guide = wireStationGuide({
@@ -186,7 +212,7 @@ function harness(
     at: (north: number, east: number, accuracyM: number | null = 4) => {
       visitor = {
         nue: [north, 401.5, east],
-        accuracyM,
+        gpsPoints: fixesAt(accuracyM),
         fixNue: [north, 400, east],
         aligned: true,
         fixAtMs: now,
@@ -207,7 +233,7 @@ function harness(
     ) => {
       visitor = {
         nue: [north, 401.5, east],
-        accuracyM,
+        gpsPoints: fixesAt(accuracyM),
         fixNue: [fixN, 400, fixE],
         aligned: true,
         fixAtMs: now,
@@ -226,7 +252,7 @@ function harness(
     ) => {
       visitor = {
         nue: null,
-        accuracyM,
+        gpsPoints: fixesAt(accuracyM),
         fixNue: [north, 400, east],
         aligned: false,
         fixAtMs: now - ageMs,
@@ -239,7 +265,7 @@ function harness(
     trackingLost: (fixN: number, fixE: number, accuracyM = 4) => {
       visitor = {
         nue: null,
-        accuracyM,
+        gpsPoints: fixesAt(accuracyM),
         fixNue: [fixN, 400, fixE],
         aligned: true,
         fixAtMs: now,
@@ -252,7 +278,7 @@ function harness(
       lined = true;
       visitor = {
         nue: [north, 401.5, east],
-        accuracyM: null,
+        gpsPoints: fixesAt(null),
         fixNue: null,
         aligned: true,
         fixAtMs: null,
@@ -262,7 +288,7 @@ function harness(
     lost: () => {
       visitor = {
         nue: null,
-        accuracyM: 4,
+        gpsPoints: fixesAt(4),
         fixNue: null,
         aligned: false,
         fixAtMs: null,
@@ -312,7 +338,7 @@ describe("wireStationGuide", () => {
     expect(gate.position.x).toBeCloseTo(50, 1);
     expect(gate.position.y).toBe(401.5);
     expect(gate.position.z).toBeCloseTo(20, 1);
-    const bands = judgedStationBands(s, 6, false);
+    const bands = judgedStationBands(s, gps(6));
     expect([gate.distanceMin, gate.distanceMax]).toEqual([
       bands.foundM,
       bands.foundExitM,
@@ -356,7 +382,7 @@ describe("wireStationGuide", () => {
       order: "fixed",
     });
     h.at(0, 0);
-    expect(h.dom.skip).toEqual({
+    expect(h.dom.skip).toMatchObject({
       hidden: false,
       textContent: "Can't get there?",
     });
@@ -474,7 +500,7 @@ describe("wireStationGuide", () => {
     });
     h.at(0, 0);
     expect(h.found).toEqual(["gate"]);
-    expect(h.dom.skip).toEqual({
+    expect(h.dom.skip).toMatchObject({
       hidden: false,
       textContent: "End this story?",
     });
@@ -607,7 +633,7 @@ describe("wireStationGuide", () => {
     });
     h.at(0, 0);
     expect(h.approaches).toEqual([
-      ["gate", 0, judgedStationBands(s, 4, false).activateM],
+      ["gate", 0, judgedStationBands(s, gps(4)).activateM],
     ]);
     h.guide.storyEnded("gate");
     h.at(0, 0);
@@ -638,7 +664,7 @@ describe("wireStationGuide", () => {
     });
     h.at(0, 0);
     expect(h.guides.at(-1)).toBe(
-      `well@0,80/${judgedStationBands(s, 4, false).foundExitM}`,
+      `well@0,80/${judgedStationBands(s, gps(4)).foundExitM}`,
     );
     h.at(0, 79);
     expect(h.guides.at(-1)).toBeNull();
@@ -725,7 +751,7 @@ describe("arrival by the station radius alone (D16)", () => {
     expect(weak.found).toEqual(["well"]);
   });
 
-  // Why (M5c review #1): `accuracyM` is the raw fixes' median and says
+  // Why (M5c review #1): the raw fixes' median says
   // nothing about a position a code lined up. An indoor or courtyard tour
   // placed by one code with a ±40-60 m Wi-Fi fix was never found and was
   // told to step into the open, though its position was the code's.
@@ -762,11 +788,11 @@ describe("arrival by the station radius alone (D16)", () => {
   // stopped. One rule decides all of them. Swept over the raw accuracy
   // (and none at all), with a code, without one, and with no alignment.
   // Changed (r881): "aligned" used to be the condition; a code is now.
-  it("widens nothing for a visitor a code lined up however weak the raw fix; any other position keeps the raw accuracy's band", () => {
+  it("widens nothing for a visitor a code lined up however weak the raw fix; any other position keeps the raw accuracy's band, and one with no accuracy shows nothing", () => {
     // An activation radius inside the widest band, so the prefetch shows it.
     const s = station("gate", 50, 0, { activateRadiusM: 6, foundRadiusM: 5 });
     const tour: StationTour = { stations: [s], order: "fixed" };
-    const coded = judgedStationBands(s, null, true);
+    const coded = judgedStationBands(s, CODE);
     expect(coded.foundExitM).toBe(5 + 1.5);
     for (const accuracyM of [5, 25, 40, 100, null]) {
       const h = harness(tour);
@@ -779,17 +805,22 @@ describe("arrival by the station radius alone (D16)", () => {
         coded.foundM,
         coded.foundExitM,
       ]);
+    }
+    for (const accuracyM of [5, 25, 40, 100]) {
       // Aligned with no code: the raw accuracy's band, as a raw fix's.
       const own = stationBands(s, accuracyM);
       const gpsOnly = harness(tour);
       gpsOnly.at(0, 0, accuracyM);
       expect(gpsOnly.approaches.at(-1)).toEqual(["gate", 50, own.activateM]);
       expect(gpsOnly.guides.at(-1)).toBe(`gate@50,0/${own.foundExitM}`);
-      const [own0] = gpsOnly.huds[0]!.getTargets();
-      expect([own0!.distanceMin, own0!.distanceMax]).toEqual([
-        own.foundM,
-        own.foundExitM,
-      ]);
+      // Above the ceiling no HUD target at all (the no-distance rule:
+      // each marker carries a distance label the line does not show).
+      expect(
+        gpsOnly.huds[0]!.getTargets().map((t) => [
+          t.distanceMin,
+          t.distanceMax,
+        ]),
+      ).toEqual(accuracyM <= 25 ? [[own.foundM, own.foundExitM]] : []);
       // No alignment: the raw fix IS the position, and its accuracy its band.
       const raw = harness(tour);
       raw.fixOnly(0, 0, accuracyM);
@@ -797,6 +828,19 @@ describe("arrival by the station radius alone (D16)", () => {
       expect(raw.guides.at(-1)).toBe(`gate@50,0/${own.foundExitM}`);
       // The HUD needs a camera position: none from a raw fix alone.
       expect(raw.huds[0]?.getTargets() ?? []).toEqual([]);
+    }
+    // No code and no accuracy at all (`'none'`), aligned or a raw fix
+    // alone: nothing points or measures on that position - no approach, no
+    // HUD target, no trail from the visitor (shared position-precision
+    // plan, §13).
+    const gpsOnly = harness(tour);
+    gpsOnly.at(0, 0, null);
+    const raw = harness(tour);
+    raw.fixOnly(0, 0, null);
+    for (const h of [gpsOnly, raw]) {
+      expect(h.approaches).toEqual([]);
+      expect(h.crumbsFrom.at(-1)).toBeNull();
+      expect(h.huds[0]?.getTargets() ?? []).toEqual([]);
     }
   });
 
@@ -967,7 +1011,11 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
     const guides: (string | null)[] = [];
     const dom = {
       line: { textContent: "" as string, hidden: true },
-      skip: { textContent: "" as string, hidden: true },
+      skip: {
+        textContent: "" as string,
+        hidden: true,
+        dataset: {} as DOMStringMap,
+      },
     };
     const guide = wireStationGuide({
       dom,
@@ -1013,7 +1061,15 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
     });
     expect(visitor.aligned).toBe(true);
     expect(visitor.nue).not.toBeNull();
-    expect(visitor.accuracyM).toBe(500);
+    // Changed (shared position-precision plan, M2): the median is the
+    // framework's rule now, read from the points the visitor carries.
+    expect(
+      positionPrecision({
+        position: "aligned",
+        codeHold: false,
+        gpsPoints: visitor.gpsPoints,
+      }),
+    ).toEqual({ source: "gps", accuracyM: 500, tooWeak: true });
   });
 
   it("a ±500 m first fix inside a 10 m station finds nothing and says the GPS is too weak, ready or not", () => {
@@ -1107,7 +1163,7 @@ describe("a visitor without a code while tracking is not ready (real store)", ()
     const guide = wireStationGuide({
       dom: {
         line: { textContent: "", hidden: true },
-        skip: { textContent: "", hidden: true },
+        skip: { textContent: "", hidden: true, dataset: {} },
       },
       tour: () => ({ stations: [target], order: "fixed" }),
       placementAllowed: () => true,
@@ -1558,7 +1614,10 @@ describe("wireStationGuide: the present station", () => {
     expect(selectPresentStationId(store.getState())).toBe("a");
     h.at(10.9, 0);
     expect(selectPresentStationId(store.getState())).toBeNull();
+    // The precision kind is published once too, on
+    // its first change, and never again while it stays GPS.
     expect(guideActions).toEqual([
+      "visitorGuide/precisionKindSet",
       "visitorGuide/presenceJudged",
       "visitorGuide/presenceJudged",
     ]);

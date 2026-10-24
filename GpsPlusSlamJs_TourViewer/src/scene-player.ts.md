@@ -47,3 +47,12 @@ player.next(); // null once the scene ended
   option, not current), skipped quizzes and a quiz target; property: any
   tap sequence over a choice-free scene shows exactly its playable steps in
   order.
+
+## The step count
+
+- `playableStepCount(steps): number | null` - the number of steps a
+  story plays, for the story card's dots; null when a playable step is a
+  choice (no fixed number then, so no dots). Tested in
+  `scene-player.test.ts` (quizzes left out, null with a choice, and a property: the
+  count equals the steps the player shows, tapping through any
+  choice-free scene).

@@ -132,6 +132,7 @@ const entryFiles = [
   // osm-bridge/ — wires the optional gps-plus-slam-osm peer to OPFS
   'src/osm-bridge/index.ts',
   'src/osm-bridge/opfs-osm-blob-store.ts',
+  'src/osm-bridge/open-osm-store.ts',
 
   'src/geo/index.ts',
   'src/geo/h3-proximity.ts',
@@ -179,6 +180,10 @@ const entryFiles = [
   // The maturity floor and the first-mature-alignment pick (D28 revised,
   // D33), deep-imported by the Tour Viewer's authoring settle.
   'src/state/alignment-maturity.ts',
+  // One judgement of position precision for every app ("code", GPS with a
+  // number, or none) and whether it can tell two targets apart; deep-
+  // imported by apps via the `./state/*` wildcard.
+  'src/state/position-precision.ts',
 
   // storage/
   'src/storage/index.ts',

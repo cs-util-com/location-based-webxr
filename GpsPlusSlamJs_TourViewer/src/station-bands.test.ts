@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
 import {
-  ACCURACY_CEILING_M,
+  POSITION_PRECISION_CEILING_M,
+  type PositionPrecision,
+} from "gps-plus-slam-app-framework/state/position-precision";
+
+import {
   BAND_ACCURACY_FACTOR,
   HUD_ARRIVAL_BAND_M,
-  judgedAccuracy,
   judgedStationBands,
   stationBands,
-  tooWeakToGuide,
 } from "./station-bands";
 
 /**
@@ -64,11 +66,11 @@ describe("stationBands", () => {
   it("treats a missing or nonsense accuracy as the ceiling for the band, so a garbage reading never shrinks it", () => {
     for (const bad of [null, Number.NaN, -1, 0, Number.POSITIVE_INFINITY]) {
       const b = stationBands({ activateRadiusM: 10, foundRadiusM: 3 }, bad);
-      expect(b.foundExitM - b.foundM).toBe(ACCURACY_CEILING_M);
+      expect(b.foundExitM - b.foundM).toBe(POSITION_PRECISION_CEILING_M);
     }
     // Above the ceiling it is clamped: a 500 m "fix" keeps the band finite.
     const wide = stationBands({ activateRadiusM: 10, foundRadiusM: 3 }, 500);
-    expect(wide.foundExitM - wide.foundM).toBe(ACCURACY_CEILING_M);
+    expect(wide.foundExitM - wide.foundM).toBe(POSITION_PRECISION_CEILING_M);
   });
 
   // Why (PR #642 review): a position a code lined up has no accuracy the
@@ -78,35 +80,44 @@ describe("stationBands", () => {
   // fixes say. Changed (r881): this was granted to any ALIGNED position;
   // the library aligns a session from its first fix, so only a code earns
   // it now, and every other position takes the raw accuracy's band.
-  it("gives a code-lined-up position the HUD's own band, never the ceiling; any other the raw accuracy's", () => {
+  // Changed (shared position-precision plan, M2): the bands read the
+  // framework's precision; a code's is `'code'`, a GPS position's carries
+  // its accuracy, and nothing to judge by (`'none'`) keeps the widest band
+  // an unknown accuracy always had.
+  it("gives a code-held position the HUD's own band, never the ceiling; a GPS one its accuracy's; none the widest", () => {
+    const code: PositionPrecision = {
+      source: "code",
+      accuracyM: null,
+      tooWeak: false,
+    };
+    const none: PositionPrecision = {
+      source: "none",
+      accuracyM: null,
+      tooWeak: true,
+    };
     for (const radii of [
       { activateRadiusM: 30, foundRadiusM: 10 },
       { activateRadiusM: 6, foundRadiusM: 5 },
       { activateRadiusM: 0, foundRadiusM: 2 },
     ]) {
-      for (const raw of [3, 12, 40, 500, null]) {
-        const b = judgedStationBands(radii, raw, true);
-        expect(b.foundM).toBe(radii.foundRadiusM);
-        expect(b.foundExitM).toBe(radii.foundRadiusM + HUD_ARRIVAL_BAND_M);
-        expect(b.activateM).toBe(Math.max(radii.activateRadiusM, b.foundExitM));
-        expect(judgedStationBands(radii, raw, false)).toEqual(
+      const b = judgedStationBands(radii, code);
+      expect(b.foundM).toBe(radii.foundRadiusM);
+      expect(b.foundExitM).toBe(radii.foundRadiusM + HUD_ARRIVAL_BAND_M);
+      expect(b.activateM).toBe(Math.max(radii.activateRadiusM, b.foundExitM));
+      for (const raw of [3, 12, 40, 500]) {
+        const gps: PositionPrecision = {
+          source: "gps",
+          accuracyM: raw,
+          tooWeak: raw > POSITION_PRECISION_CEILING_M,
+        };
+        expect(judgedStationBands(radii, gps)).toEqual(
           stationBands(radii, raw),
         );
       }
+      expect(judgedStationBands(radii, none)).toEqual(
+        stationBands(radii, null),
+      );
     }
-  });
-
-  // Why (r881): the arrival and the "GPS too weak" line read this. A code
-  // lined up: unknown (never too weak, M5c review #1). Otherwise the raw
-  // fixes' own - so a ±500 m cold-start fix is too weak however aligned
-  // the session looks (PR #640 review).
-  it("judges by the raw accuracy unless a code lined the position up", () => {
-    for (const raw of [3, 25, 26, 500, null]) {
-      expect(judgedAccuracy(raw, true)).toBeNull();
-      expect(judgedAccuracy(raw, false)).toBe(raw);
-    }
-    expect(tooWeakToGuide(judgedAccuracy(500, false))).toBe(true);
-    expect(tooWeakToGuide(judgedAccuracy(500, true))).toBe(false);
   });
 
   it("orders the three distances for any radii and accuracy (property)", () => {

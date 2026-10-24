@@ -39,6 +39,13 @@ wired into its logic: every interaction is faked.
   `#morph=snapN` flag for how pins and photos lie flat by camera angle
   (their defaults differ: Studio 3-22 degrees, Map 8-42), and
   `#stations=1000` for a large generated tour. The earlier rounds stay.
+- `visitor-walk-1-calm-card/` ... `visitor-walk-4-radar-and-list/` - the
+  visitor's walk in AR from AR start to the tour's end, four directions
+  (calm card, guidance in the world, the guide speaks, radar and list);
+  made 2026-10-21. Each covers every state of the walk, a fixed-order and
+  an any-order tour, and its own answer to what the skip names when
+  nothing vouches for the position. They load three.js from unpkg by an
+  import map; `window.__visitorWalk` drives them in checks.
 
 **Kept, the chosen and the unchosen** (owner, 2026-10-11 evening): another
 developer may prefer a variant the owner did not choose and ask their own

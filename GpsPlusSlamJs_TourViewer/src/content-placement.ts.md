@@ -30,7 +30,12 @@ imageHeight, nowIso }): TourPhoto | null` - the camera's RAW odometry pose
   Details:
   Promise<RenderedTourObjects>` - pins as label objects, photos as capture
 planes (`placeCapturedImagePlanes`), all at the scene root; a photo whose
-texture fails is skipped and named in `skipped`; `dispose()`removes and
+texture fails is skipped and named in `skipped`; a placed 3D model
+(format minor 1) is not drawn yet - it never reaches the photo loader and
+is left out quietly, NOT named in `skipped`("could not load" would claim a
+download failed; a lenient read leaves out what it cannot show the same
+way). The renderer milestone that draws models adds an honest line for a
+model it cannot show;`dispose()`removes and
 frees everything.`root` is the one group every rendered object hangs
 under - what a tap in AR is cast against to name the object
 (`object-pick.ts`, authoring plan 2026-09-28-0953 M4).
@@ -49,6 +54,9 @@ under - what a tap in AR is cast against to name the object
   caller disposes what came back. A throw part-way (a label or plane
   constructor) frees the labels and decoded photos made so far, then goes
   on (the caller gets the rejection and nothing to dispose).
+- Every rendered pin's label and photo's plane carries its object's id in
+  `userData.objectId`, so a pointer over the 3D editor can say which item
+  it is over (`editor3d-stations.ts`, `pick`).
 
 ## Invariants & assumptions
 
@@ -111,11 +119,13 @@ and 0.1 m, measured 24 mm).
 `content-placement.test.ts` - the pin round trip (mint → NUE) as a property
 over positions; the photo's frame direction pinned by bearing against the
 framework's basis constant; refusals without zero/alignment; the id shape
-(property); rendering with a fake scene: counts, a skipped photo, disposal,
-what a throw part-way frees (the decoded photo and the label made so far), and a
+(property); rendering with a fake scene: counts, a skipped photo, a placed
+model left out quietly (the photo loader never asked, no "could not
+load" in the status segment), disposal, what a throw part-way frees (the
+decoded photo and the label made so far), and a
 caller's own pose and frame (`poseOf`) for pins and photos. For
 `renderTourStation`: the group structure (the station's group, the items
-as its children), no further decode once `alive()` is false, and the
+as its children, each tagged with its object's id), no further decode once `alive()` is false, and the
 property that the local poses
 taken from the settled geo reproduce each object's direct AR pose within
 the stated bound, swept over zero distances of 0, 100, 1000 and 5000 m.

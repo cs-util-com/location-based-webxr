@@ -26,6 +26,7 @@ import {
   type FlightPaceParams,
   type FlightPaceState,
 } from "./flight-pace.js";
+import { unitShare } from "./test-utils/arbitraries.js";
 
 const params = fc
   .record({
@@ -143,7 +144,7 @@ describe("the flight clock, over random networks and frame rates", () => {
     fc.assert(
       fc.property(
         params,
-        fc.array(fc.double({ min: 0, max: 1, noNaN: true }), { maxLength: 4 }),
+        fc.array(unitShare(fc), { maxLength: 4 }),
         (p, values) => {
           // Progress steps on multiples of 48 ms, which both frame rates hit.
           const steps = values.map((value, i) => ({
@@ -170,28 +171,45 @@ describe("the flight clock, over random networks and frame rates", () => {
     // coarser frame delays each rise of the target by at most one coarse
     // frame. The ratcheted target rises by at most (warm - cold) in all, so
     // the two clocks can differ in s by at most (warm - cold) x 48 ms.
+    //
+    // That derivation needs every rise to be READ by both clocks, so the
+    // history here does not fall (sorted by time, each value the highest so
+    // far), as the prefetch's progress does not: `cityLoadProgress` counts
+    // each job once against fixed totals. A history that rises and falls
+    // back inside one coarse frame is read by the finer clock only, and no
+    // sampled clock can act on a value it is never given; the generator
+    // drew such histories until seed 769195592 found one (pinned in
+    // flight-pace.test.ts). The ratchet that makes a fall harmless is the
+    // other properties' to check: their histories still fall.
+    const rising = fc
+      .array(
+        fc.record({
+          atMs: fc.integer({ min: 1, max: 40_000 }),
+          value: unitShare(fc),
+        }),
+        { maxLength: 5 },
+      )
+      .map((steps) => {
+        let top = 0;
+        return [...steps]
+          .sort((a, b) => a.atMs - b.atMs)
+          .map(({ atMs, value }) => ({
+            atMs,
+            value: (top = Math.max(top, value)),
+          }));
+      });
     fc.assert(
-      fc.property(
-        params,
-        fc.array(
-          fc.record({
-            atMs: fc.integer({ min: 1, max: 40_000 }),
-            value: fc.double({ min: 0, max: 1, noNaN: true }),
-          }),
-          { maxLength: 5 },
-        ),
-        (p, steps) => {
-          const fine = run(p, steps, [16]);
-          const coarse = run(p, steps, [48]);
-          const byTime = new Map(fine.map((s) => [s.elapsedMs, s.s]));
-          const bound = (1 / p.minMs - 1 / p.capMs) * 48 + 1e-9;
-          for (const state of coarse) {
-            const other = byTime.get(state.elapsedMs);
-            if (other === undefined) continue;
-            expect(Math.abs(other - state.s)).toBeLessThanOrEqual(bound);
-          }
-        },
-      ),
+      fc.property(params, rising, (p, steps) => {
+        const fine = run(p, steps, [16]);
+        const coarse = run(p, steps, [48]);
+        const byTime = new Map(fine.map((s) => [s.elapsedMs, s.s]));
+        const bound = (1 / p.minMs - 1 / p.capMs) * 48 + 1e-9;
+        for (const state of coarse) {
+          const other = byTime.get(state.elapsedMs);
+          if (other === undefined) continue;
+          expect(Math.abs(other - state.s)).toBeLessThanOrEqual(bound);
+        }
+      }),
       { numRuns: 100 },
     );
   });

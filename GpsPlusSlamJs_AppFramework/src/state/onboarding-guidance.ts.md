@@ -27,6 +27,14 @@ Companion of [tracking-quality.ts.md](./tracking-quality.ts.md) (the report prod
 - `degraded` → `almost-ready`, `percentReady = 0.6 + clamp01(confidence) * 0.3`.
 - `ok` → `ready`, `percentReady = 1`.
 
+### The hints (copy)
+
+One `HINTS` entry per phase, shown verbatim by the apps that coach through
+this seam (the Tour Viewer's coach card for `initializing`, `move-around`,
+`almost-ready` and `ar-lost`; the Anchor Starter). The copy uses a plain
+spaced hyphen, never an em dash (2026-10-21), e.g.
+`Tracking lost - slowly look around to let it recover.`
+
 ## Invariants & assumptions
 
 - `percentReady` is always in `[0, 1]` (inputs are clamped; `NaN` → 0).
@@ -54,7 +62,8 @@ const guidance = computeOnboardingGuidance(
 ## Tests
 
 - [onboarding-guidance.test.ts](./onboarding-guidance.test.ts) — per-state
-  mapping, null handling, clamping, cross-state ordering, distinct hints.
+  mapping, null handling, clamping, cross-state ordering, distinct hints,
+  no em dash in any phase's hint, the starting and the lost hints pinned.
 - [onboarding-guidance.property.test.ts](./onboarding-guidance.property.test.ts)
   — `percentReady ∈ [0,1]` for arbitrary inputs, warm-up never reaches the
   degraded band, monotonicity in coverage/confidence, `ready` always 1.

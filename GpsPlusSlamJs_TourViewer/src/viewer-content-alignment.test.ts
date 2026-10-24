@@ -581,7 +581,7 @@ describe("after a code-set zero the content shows on the first voted lock (no co
     const guide = wireStationGuide({
       dom: {
         line: { textContent: "", hidden: true },
-        skip: { textContent: "", hidden: true },
+        skip: { textContent: "", hidden: true, dataset: {} },
       },
       tour: () => ({ stations, order: "fixed" }),
       // The page's own gate (`visitor-stations.ts`).
@@ -597,7 +597,7 @@ describe("after a code-set zero the content shows on the first voted lock (no co
         const placed = selectAlignmentMatrix(state) !== null && zero !== null;
         return {
           nue: placed ? objectPoseNue(levelGeo, zero).positionNue : null,
-          accuracyM: null,
+          gpsPoints: [],
           fixNue: null,
           aligned: placed,
           fixAtMs: null,
@@ -618,30 +618,6 @@ describe("after a code-set zero the content shows on the first voted lock (no co
     expect(found).toEqual([{ id: "tower", locks: 1 }]);
   }, 60_000);
 
-  // Why (r857 milestone review #3): a join that ran WITHOUT the code set
-  // the loading latch and dropped the ring of the lock that placed the tour.
-  // The trigger's join runs with the locked code, so a declining join falls
-  // back to the ring in the same run - now from the first voted lock on.
-  it("places the ring on a 3-lock glance when the recording declines the join", async () => {
-    const s = await visitorSession(8, false, {
-      hasRecording: true,
-      loadSessionMeta: () => Promise.resolve(null),
-      loadRecordingActions: () => Promise.resolve(null),
-      entries: [{ filename: "photo.jpg", isImage: true, size: 3 }],
-      loadEntry: () => Promise.resolve(new Blob(["jpg"])),
-    });
-    s.clock.nowMs = T0 + 500;
-    expect(await firstVotedLock(s)).toBe(1);
-    await s.frame();
-    await s.frame();
-    await flush();
-    expect(s.ctx.joinDeclined).toBe(true);
-    expect(s.ctx.placement).toMatchObject({
-      kind: "placed",
-      placedKind: "ring",
-    });
-  }, 60_000);
-
   // Why (PR #624 review, now the other way round): each AR entry clears the
   // overrides at its start (`startEntryVoteSink`), so the next entry's first
   // vote must set the compass keys again - or its scan would meet the core's
@@ -657,15 +633,11 @@ describe("after a code-set zero the content shows on the first voted lock (no co
       s.ctx.stationContent?.dispose();
       s.ctx.stationContent = null;
       s.ctx.contentAttempted = false;
-      s.ctx.imagePlanes?.dispose();
-      s.ctx.imagePlanes = null;
       s.ctx.scanGate = { kind: "idle" };
       s.ctx.viewerVotedLocks = 0;
       s.ctx.viewerLockedText = null;
       s.ctx.placement = { kind: "idle" };
       s.ctx.placementAttempted = false;
-      s.ctx.joinDeclined = false;
-      s.ctx.planesRunGeneration += 1;
       s.placement.startViewerPipeline();
       s.placement.startScanGate();
     }
@@ -680,17 +652,13 @@ describe("after a code-set zero the content shows on the first voted lock (no co
       s.ctx.levelByText.clear();
       s.ctx.levelIdByText.clear();
       endTourCodeVotes(s.ctx);
-      s.ctx.imagePlanes?.dispose();
-      s.ctx.imagePlanes = null;
       s.ctx.stationContent?.dispose();
       s.ctx.stationContent = null;
       s.ctx.contentAttempted = false;
       s.placement.resetScanGate();
       s.ctx.placementAttempted = false;
-      s.ctx.joinDeclined = false;
       s.ctx.viewerVotedLocks = 0;
       s.ctx.viewerLockedText = null;
-      s.ctx.planesRunGeneration += 1;
       s.placement.startScanGate();
     }
 
