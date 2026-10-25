@@ -107,6 +107,23 @@ them.
     budget as `ctx.viewerVoteBudget`, which a tour switch resets
     (`endTourCodeVotes`, M2b review #6). False without a detector (plain
     AR, still placing the tour's content; no keep-alive).
+  - `storedCodeVotes(options: CodeVoteOptions): CodeVoteDeps` - the vote
+    half of a CREATOR's pipeline at a code the tour stores
+    (`creator-measuring.ts`): the deps the visitor's pipeline votes by
+    (`codeVoteDeps` - dispatch through the entry's sink, keep-alive,
+    budget, ignored-code memory and veto hooks, the zero check, the
+    stable-pose gate that sets the zero from the code, the level and
+    lock callbacks), so creator and visitor vote by one path. The
+    entry's pieces (`startEntryCodeVotes`: sink, keep-alive, budget,
+    moved-code checks) are started with the entry's first pipeline and
+    reused while `ctx.viewerVoteSink` is still theirs, so a creator's
+    pipeline restarted within the entry (a print size adopted) keeps the
+    soft trimming, the budget, the hold and the checks. Which frames
+    may vote is the caller's rule (`options.resolvePose`); `options.live`
+    drops a late callback of an ended pipeline. A creator entry keeps no
+    viewing log (`viewingLog` is the visitor's). The lines a vote or a
+    veto changes are re-rendered for both modes (`renderStatus`: the
+    creator's panel reads the votes - its placement opens on them).
   - `recordDeviceFix(fix): void` (M2e, D18) - where the page's device GPS
     fixes go: `main.ts` hands it to `createGpsPositionHandler` as
     `recordFix`, so the framework coordinator builds the fix (after the

@@ -24,6 +24,14 @@ carrying the two review-ordered guardrails and the deferred negative cache.
   fade", M0c). Each constant's doc comment names what would reverse it.
 - `createViewerKeepAlive()` - the code keep-alive (`qr-vote-keep-alive.ts`)
   with these constants.
+- `CodeVoteDeps` / `CodeVoteOptions` - the vote half of
+  `ViewerPipelineDeps` (dispatch, zero check, stable-pose gate,
+  keep-alive, budget, ignored-code memory and hooks, level and lock
+  callbacks, plus `noteDetection`) and what a pipeline decides for it
+  (`resolvePose`: the stable pose a frame votes from, null for none;
+  `live`: the pipeline is still the session's). The viewer placement
+  builds one for the visitor's pipeline and one for a creator's at a
+  stored code (`storedCodeVotes`), so both vote through this config.
 - `buildViewerControllerConfig(deps: ViewerPipelineDeps)` — `onLocked(level,
 hasVoted)` is forwarded from every controller lock (no detected-text
   guard, M5 review #4), with whether the locked code has cast votes in

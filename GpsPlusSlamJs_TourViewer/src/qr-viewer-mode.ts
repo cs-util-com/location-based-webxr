@@ -220,6 +220,42 @@ export interface ViewerPipelineDeps {
   now?: () => number;
 }
 
+/**
+ * The vote half of a pipeline's deps: one AR entry's vote sink, keep-alive,
+ * vote budget and moved-code checks, owned by the viewer placement
+ * (`viewer-placement.ts`). The visitor's pipeline and a creator's at a code
+ * the tour stores both take it, so a code votes by one path.
+ */
+export type CodeVoteDeps = Required<
+  Pick<
+    ViewerPipelineDeps,
+    | "dispatchVotes"
+    | "canAcceptVotes"
+    | "resolveStablePose"
+    | "keepAlive"
+    | "voteBudget"
+    | "isIgnored"
+    | "onIgnoredLock"
+    | "onVotedPose"
+    | "onVotedLock"
+    | "onLevelResolved"
+  >
+> & {
+  /** Every detection, before the pipeline's own handling of it: the code
+   *  and pose a lock reports on. */
+  noteDetection(event: QrDetectionEvent): void;
+};
+
+/** What a pipeline hands the vote half (`CodeVoteDeps`). */
+export interface CodeVoteOptions {
+  /** The stable pose a frame's votes are built from; null: this frame
+   *  casts none (still converging, or the pipeline's own rule says no). */
+  resolvePose: (text: string) => Pose | null;
+  /** Whether the pipeline these deps were made for is still the
+   *  session's: a late callback of an ended one changes nothing. */
+  live: () => boolean;
+}
+
 /** The viewer's keep-alive, with the measured schedule (M0b/M0c). */
 export function createViewerKeepAlive(): QrVoteKeepAlive {
   return createQrVoteKeepAlive({

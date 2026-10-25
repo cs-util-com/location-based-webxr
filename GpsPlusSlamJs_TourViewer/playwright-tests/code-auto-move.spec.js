@@ -111,6 +111,10 @@ async function lookAtTheCode(page) {
 async function walkUnderShiftedGps(page) {
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
   await page.getByTestId("enter-ar").click();
+  // The fixes come before the code: a visit that has GPS places by it, so
+  // the code is measured against the shifted alignment (one seen before
+  // any fix would line the visit up by its votes instead).
+  await shiftedFixes(page, 0, 3);
   await page.evaluate(
     ({ text, key }) => {
       /** @type {any} */ (window)[key].armQrDetection(text);
@@ -125,12 +129,7 @@ async function walkUnderShiftedGps(page) {
       },
       { timeout: 15000 },
     )
-    .toMatch(/waiting for GPS alignment/i);
-  await shiftedFixes(page, 0, 3);
-  await expect(page.getByTestId("setup-status")).toContainText(
-    /Code seen \d+ m from its saved position/,
-    { timeout: 10000 },
-  );
+    .toMatch(/Code seen \d+ m from its saved position/);
   // No question any more: the visit just goes on.
   for (let i = 3; i < 3 + WALK; i += 10) {
     await shiftedFixes(page, i, 10);

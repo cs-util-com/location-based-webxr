@@ -6,6 +6,7 @@ import {
   forceTrackingReady,
   installTourViewerArFakes,
   lockFixtureCode,
+  measureWithGpsFirst,
   openFixtureTour,
   seedAlignment,
   tapFinish,
@@ -624,6 +625,53 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
     /hold the phone on the printed code/i,
   );
 
+  // Outdoors the phone has a fix before the code is in view: the visit
+  // places by GPS, and a stored code seen then is measured, never voted
+  // (a stored code seen before any fix lines the visit up instead - the
+  // indoor creator's tests). The zero and the first of three fixes.
+  /** Three odom-GPS pairs, ~15 m apart, in a consistent identity-ish
+   *  mapping around the zero reference: the REAL alignment solve's input. */
+  const pairs = [
+    { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
+    { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
+    { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
+  ];
+  const recordPairs = (/** @type {number[]} */ indices) =>
+    page.evaluate(
+      ({ pairs, indices }) => {
+        const store = /** @type {any} */ (window).__tourViewerTest
+          .alignmentStore;
+        for (const i of indices) {
+          const p = pairs[i];
+          store.dispatch({
+            type: "gpsData/recordGpsEvent",
+            payload: {
+              odomPosition: p.odom,
+              odomRotation: [0, 0, 0, 1],
+              rawGpsPoint: {
+                id: `e2e-${String(i)}`,
+                latitude: p.lat,
+                longitude: p.lon,
+                altitude: 400,
+                latLongAccuracy: 5,
+                timestamp: 1756150000000 + i * 1000,
+              },
+            },
+          });
+        }
+      },
+      { pairs, indices },
+    );
+  // The identity-matrix hole (milestone review #1): creating gpsData ships
+  // an IDENTITY alignment matrix — the gate must NOT open on it.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.alignmentStore.dispatch({
+      type: "gpsData/setZeroPos",
+      payload: { lat: 47.5, lon: 8.7 },
+    });
+  });
+  await recordPairs([0]);
+
   await page.evaluate((text) => {
     /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
   }, E2E_QR_TEXT);
@@ -640,50 +688,15 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
       { timeout: 15000 },
     )
     .toMatch(/waiting for GPS alignment/i);
+  await expect(page.getByTestId("setup-status")).toHaveText(/1 of 3 fixes/i);
   // Nothing is measured before the gate opens: Finish stays off.
   await expect(page.getByTestId("setup-finish")).toBeDisabled();
   // The size input is locked while the session runs — the solves used the
   // captured value (milestone review #3).
   await expect(page.getByTestId("author-size")).toBeDisabled();
 
-  // The identity-matrix hole (milestone review #1): creating gpsData ships
-  // an IDENTITY alignment matrix — the gate must NOT open on it.
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.alignmentStore.dispatch({
-      type: "gpsData/setZeroPos",
-      payload: { lat: 47.5, lon: 8.7 },
-    });
-  });
-  await expect(page.getByTestId("setup-status")).toHaveText(/0 of 3 fixes/i);
-  await expect(page.getByTestId("setup-finish")).toBeDisabled();
-
-  // Feed the REAL alignment solve: three odom↔GPS pairs, ~15 m apart, in a
-  // consistent identity-ish mapping around the zero reference.
-  await page.evaluate(() => {
-    const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
-    const pairs = [
-      { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
-      { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
-      { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
-    ];
-    for (const [i, p] of pairs.entries()) {
-      store.dispatch({
-        type: "gpsData/recordGpsEvent",
-        payload: {
-          odomPosition: p.odom,
-          odomRotation: [0, 0, 0, 1],
-          rawGpsPoint: {
-            id: `e2e-${String(i)}`,
-            latitude: p.lat,
-            longitude: p.lon,
-            altitude: 400,
-            latLongAccuracy: 5,
-            timestamp: 1756150000000 + i * 1000,
-          },
-        },
-      });
-    }
-  });
+  // Feed the rest of the REAL alignment solve.
+  await recordPairs([1, 2]);
   // Measured on its own once the gate opens (UI round 1, U3).
   await expect(page.getByTestId("setup-status")).toContainText(
     /Code measured/i,
@@ -889,6 +902,10 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // above already ended the session.)
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("Done");
+  // One fix of this visit before the code is seen again: the visit places
+  // by GPS (with none, the stored code would line it up by its votes), and
+  // the count must read this visit's one fix, not the dead session's.
+  await recordPairs([0]);
   await expect
     .poll(
       async () => {
@@ -899,7 +916,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
       },
       { timeout: 15000 },
     )
-    .toMatch(/0 of 3 fixes/i);
+    .toMatch(/waiting for GPS alignment \(1 of 3 fixes\)/i);
   // Placement waits for THIS session's alignment too (M4 review #2): the
   // level survived the session end, the fixes did not.
   await expect(page.getByTestId("setup-pin")).toBeDisabled();
@@ -1290,7 +1307,9 @@ test("the creator's AR visit first asks for the tour's code, and stops asking on
       },
       { timeout: 15000 },
     )
-    .toMatch(/Pose stable/);
+    // No fix in this visit: the stored code lines it up by its votes, and
+    // the readout says so; with a fix it would read "Pose stable".
+    .toMatch(/Pose stable|The tour's code places you/);
   // The code's identity is a hash that lands a moment later; then the hint
   // goes, with nothing else to do.
   await expect(page.getByTestId("setup-status")).not.toHaveText(
@@ -1315,25 +1334,7 @@ test("a failed finish says so with priority and can be retried; the panel shows 
     },
   );
   await enterAr(page);
-  await page.evaluate((text) => {
-    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
-  }, E2E_QR_TEXT);
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("setup-status").textContent();
-      },
-      { timeout: 15000 },
-    )
-    .toMatch(/waiting for GPS alignment/i);
-  await seedAlignment(page);
-  await expect(page.getByTestId("setup-status")).toContainText(
-    /Code measured/i,
-    { timeout: 10000 },
-  );
+  await measureWithGpsFirst(page);
   // Something to write, so Done runs a finish (polish round M3 review
   // #4: a visit that changed nothing just leaves).
   await page.getByTestId("setup-pin").click();
@@ -2496,28 +2497,7 @@ test("the PDF button shows it is working, says when nothing was saved, and conti
  *  test needs before it can place anything. */
 async function measureTheCode(page) {
   await enterAr(page);
-  await page.evaluate((text) => {
-    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
-  }, E2E_QR_TEXT);
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("setup-status").textContent();
-      },
-      { timeout: 15000 },
-    )
-    .toMatch(/waiting for GPS alignment/i);
-  await seedAlignment(page);
-  await expect(page.getByTestId("setup-status")).toContainText(
-    /Code measured/,
-    {
-      timeout: 10000,
-    },
-  );
-  await expect(page.getByTestId("setup-pin")).toBeEnabled();
+  await measureWithGpsFirst(page);
 }
 
 test("a crash does not lose the walk: placed content survives a reload and lands in the zip", async ({

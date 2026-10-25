@@ -126,6 +126,9 @@ listed in `index.html.md`. The concerns and their modules:
   cross-module entry points to the `hooks` object (`renderArStatus`,
   `renderArEntry`, `renderAuthorReadout`,
   `tryPlaceTour`, `startAuthorPipeline`, `startViewerPipeline`,
+  `storedCodeVotes` (the viewer placement's vote half for a creator's
+  pipeline at a stored code; null until wired), `creatorCanStartOnCodes`
+  (whether a creator may start AR without location; false until wired),
   `presentTourForPrint`, and `presentLocalTour` - a FILE-opened tour, tour
   kit plan K0: the print step keeps asking for a link and a creator's
   wizard opens step 3, or stays in step 5, without remembering a link;

@@ -95,6 +95,10 @@ function harness(
     progressKept?: boolean;
     sheetShown?: () => boolean;
     debugLines?: () => string[];
+    /** What the browser's location permission reads. */
+    permission?: string;
+    /** The tour stores a code that can start a creator without location. */
+    codeCanStart?: boolean;
   } = {},
 ) {
   // The entry flags a running session on `document.body.dataset`; the
@@ -131,6 +135,8 @@ function harness(
     return true;
   };
   hooks.startAuthorPipeline = () => true;
+  hooks.creatorCanStartOnCodes = () => options.codeCanStart === true;
+  const permission = { state: options.permission ?? "granted" };
   const dom = {
     arRoot: el(),
     arStatus: el(),
@@ -178,6 +184,7 @@ function harness(
       dispose: () => undefined,
     })),
     startMeshSurface: vi.fn(() => meshSurface),
+    queryGeolocationPermission: vi.fn(() => Promise.resolve(permission.state)),
   };
   const meshSurface = {
     pick: vi.fn(() => ({ position: "the mesh point" })),
@@ -233,6 +240,7 @@ function harness(
     toasts,
     toastResets,
     enabledConfig: () => enabled,
+    permission,
     meshSurface,
     setArStatus(status: string) {
       ar.status = status;
@@ -1196,6 +1204,82 @@ describe("a visitor without location starts on codes alone (QR-first M1b-1)", ()
     await h.enter();
     expect(h.enabledConfig()?.location).toBeUndefined();
     expect(h.ctx.codesOnly).toBe(false);
+  });
+});
+
+// Why: indoors a creator may refuse location, or get none. A tour that
+// stores a code can start on it, as a visitor's does - its votes line the
+// session up. A tour that stores none cannot: the start asks for location
+// as before, and its failure says to allow it and step outside.
+describe("a creator whose location is refused starts on the tour's stored code", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("starts without location when the permission is refused and a stored code can start the visit", async () => {
+    const h = harness({
+      mode: "creator",
+      permission: "denied",
+      codeCanStart: true,
+      enableOk: true,
+    });
+    await h.enter();
+    expect(h.enabledConfig()?.location).toBe("none");
+    expect(h.ctx.codesOnly).toBe(true);
+  });
+
+  it("asks for location as before when the tour stores no code that can start it", async () => {
+    const h = harness({ mode: "creator", permission: "denied" });
+    await h.enter();
+    expect(h.enabledConfig()?.location).toBeUndefined();
+    expect(h.ctx.codesOnly).toBe(false);
+  });
+
+  it("asks for location as before when location is allowed, a stored code or not", async () => {
+    const h = harness({ mode: "creator", codeCanStart: true, enableOk: true });
+    await h.enter();
+    expect(h.enabledConfig()?.location).toBeUndefined();
+    expect(h.ctx.codesOnly).toBe(false);
+  });
+
+  it("says, after a start the refused location failed, to allow it and step outside when no code can start it", async () => {
+    const h = harness({ mode: "creator", permission: "denied" });
+    await h.enter();
+    h.setArStatus("error");
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).toMatch(
+      /step outside for a first GPS fix/,
+    );
+  });
+
+  it("says, after a prompt refused at the tap, that a stored code can start the next try", async () => {
+    // The permission still asked when tapped; refused in its prompt, the
+    // start failed - the next tap starts on the code.
+    const h = harness({
+      mode: "creator",
+      codeCanStart: true,
+      permission: "prompt",
+    });
+    h.arController.enable.mockImplementationOnce(() => {
+      h.permission.state = "denied";
+      return Promise.resolve({ ok: false });
+    });
+    await h.enter();
+    h.setArStatus("error");
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).toMatch(
+      /Try again to start on the tour's printed code/,
+    );
+  });
+
+  it("starts no visitor differently: a visitor's refused location is the location gate's", async () => {
+    const h = harness({
+      permission: "denied",
+      codeCanStart: true,
+      enableOk: true,
+    });
+    await h.enter();
+    expect(h.enabledConfig()?.location).toBeUndefined();
   });
 });
 

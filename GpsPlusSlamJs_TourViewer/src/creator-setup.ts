@@ -87,6 +87,8 @@ import {
 } from "./qr-author-mode.js";
 
 import { createPrintSizeCheck } from "./print-size-check.js";
+import type { CodeVoteDeps, CodeVoteOptions } from "./qr-viewer-mode.js";
+import { deviceGpsQuality } from "./device-gps-quality.js";
 import type { ScanOpen } from "./scan-open.js";
 import type { TourViewerSeams } from "./seams.js";
 
@@ -220,6 +222,9 @@ export interface CreatorSetup {
   /** Creates the author tracking controller for THIS AR entry; false (with
    *  the reason in the panel) keeps AR unstarted. */
   startAuthorPipeline: () => boolean;
+  /** The open tour stores a code that can line a visit up without a GPS
+   *  fix: a refused location may start on it (`ar-entry.ts`). */
+  creatorCanStartOnCodes: () => boolean;
   /** A tour closed: step 5's download and status are stale (M3 review #6). */
   resetFinishStep: () => void;
   /** A creator's AR visit runs: show the earlier visits' objects. */
@@ -280,6 +285,11 @@ export function wireCreatorSetup(deps: {
   /** The summary after Finish (authoring plan 2026-09-28-0953 M3b,
    *  `summary-panel.ts`); none in the node tests that do not need it. */
   summary?: Pick<SummaryPanel, "show" | "hide">;
+  /** The vote half of the pipeline at a code the tour stores: the
+   *  viewer placement's (`storedCodeVotes`), so a code votes for a
+   *  creator by the visitor's path. Absent or null: no code votes, and
+   *  only device fixes line the session up. */
+  codeVotes?: (options: CodeVoteOptions) => CodeVoteDeps | null;
   /** The host chosen in step 1, for step 6's replace steps (polish round
    *  M2); absent in the node tests that do not need it. */
   host?: () => TourHost | null;
@@ -486,18 +496,28 @@ export function wireCreatorSetup(deps: {
     );
   }
 
+  /**
+   * The mint gate's view of the alignment: this session's DEVICE fixes and
+   * their median accuracy. A code's votes share the GPS history; counted,
+   * they would open the mint on votes alone and stamp every code minted
+   * after them with fixes and an accuracy no GPS gave (`device-gps-quality.ts`).
+   */
   function authorAlignmentInfo(): MintAlignmentInfo {
     const state = arStore.getState();
-    const accuracy = state.gpsData?.gpsEvents?.gpsAccuracyMedian;
-    const sinceSessionStart = Math.max(
-      0,
-      selectGpsPositions(state).length - ctx.gpsSamplesAtSessionStart,
+    const device = deviceGpsQuality(
+      selectGpsPositions(state).slice(ctx.gpsSamplesAtSessionStart),
     );
     return {
       hasMatrix: selectAlignmentMatrix(state) !== null,
-      sampleCount: sinceSessionStart,
-      ...(typeof accuracy === "number" ? { gpsAccuracyM: accuracy } : {}),
+      sampleCount: device.fixes,
+      ...(device.accuracyM === null ? {} : { gpsAccuracyM: device.accuracyM }),
     };
+  }
+
+  /** A code the tour stores voted in this visit (its votes stand: a veto
+   *  or a new odometry frame sets the count back to 0). */
+  function codeVoted(): boolean {
+    return ctx.viewerVotedLocks > 0;
   }
 
   /** The entry hint (§3.2a, D5) as the line's first part, until this
@@ -672,6 +692,7 @@ export function wireCreatorSetup(deps: {
       ctx.lastDetectedText !== null &&
         (ctx.printSizeCheck?.pending(ctx.lastDetectedText) ?? false),
       view?.ready ?? "measured",
+      codeVoted(),
     );
     // Once measured, the setup hint (what to do next) joins the live
     // measuring readout - the readout's gate wording (the fix count) stays
@@ -759,6 +780,7 @@ export function wireCreatorSetup(deps: {
     draft,
     previews,
     alignmentInfo: () => authorAlignmentInfo(),
+    codeVoted,
     sizeOf: (text) => measuring.sizeOf(text),
     settledVisit: (visit) => settle.record(visit),
     lateArrival: (visit, photo) => {
@@ -785,6 +807,7 @@ export function wireCreatorSetup(deps: {
     draft,
     sessionLive,
     alignmentInfo: () => authorAlignmentInfo(),
+    ...(deps.codeVotes === undefined ? {} : { codeVotes: deps.codeVotes }),
     placeEarlierObjects: () => {
       settle.placeEarlierObjects();
     },
@@ -966,6 +989,7 @@ export function wireCreatorSetup(deps: {
     leaveNeedsConfirm: () => leaveNeedsConfirm(guardInput()),
     leaveQuestion: () => leaveQuestion(guardInput()),
     startAuthorPipeline: () => measuring.start(),
+    creatorCanStartOnCodes: () => creator && measuring.canStartOnCodes(),
     beginAuthorVisit: () => {
       if (!creator) return;
       const scene = seams.getScene();

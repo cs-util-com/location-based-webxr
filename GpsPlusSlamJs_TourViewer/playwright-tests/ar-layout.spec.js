@@ -1,7 +1,7 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
-import { installTourViewerArFakes, seedAlignment } from "./ar-fakes.js";
+import { installTourViewerArFakes, measureWithGpsFirst } from "./ar-fakes.js";
 import { E2E_QR_TEXT } from "./qr-fixture.mjs";
 
 /**
@@ -164,26 +164,7 @@ for (const viewport of PHONES) {
     await page.getByTestId("record-session").check();
     await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
     await page.getByTestId("enter-ar").click();
-    await page.evaluate((text) => {
-      /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
-    }, E2E_QR_TEXT);
-    await expect
-      .poll(
-        async () => {
-          await page.evaluate(() => {
-            /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-          });
-          return page.getByTestId("setup-status").textContent();
-        },
-        { timeout: 20000 },
-      )
-      .toMatch(/waiting for GPS alignment/i);
-    await seedAlignment(page);
-    await expect(page.getByTestId("setup-status")).toContainText(
-      /Code measured/,
-      { timeout: 10000 },
-    );
-    await expect(page.getByTestId("setup-pin")).toBeEnabled();
+    await measureWithGpsFirst(page);
 
     // Selected by a tap on it (polish round M3: the chooser is gone).
     await page.evaluate(() => {
@@ -251,22 +232,7 @@ async function enterTheStrip(page, viewport) {
   }
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
   await page.getByTestId("enter-ar").click();
-  await page.evaluate((text) => {
-    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
-  }, E2E_QR_TEXT);
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("setup-status").textContent();
-      },
-      { timeout: 20000 },
-    )
-    .toMatch(/waiting for GPS alignment/i);
-  await seedAlignment(page);
-  await expect(page.getByTestId("setup-pin")).toBeEnabled();
+  await measureWithGpsFirst(page);
 }
 
 for (const viewport of [

@@ -85,6 +85,9 @@ export function wireCreatorPlacement(deps: {
   draft: Pick<CreatorDraft, "warnNoBackup">;
   previews: Pick<CreatorPreviews, "sync">;
   alignmentInfo: () => MintAlignmentInfo;
+  /** A code the tour stores voted in this visit: its votes line the
+   *  session up where no fix has come. Absent: never. */
+  codeVoted?: () => boolean;
   /** The printed size a code text is solved at (M4c-3). */
   sizeOf: (text: string | null) => number;
   /** The settle record of a visit that already settled, if any. */
@@ -108,18 +111,22 @@ export function wireCreatorPlacement(deps: {
    *  lands or fails, through every render meanwhile (one photo in flight). */
   let capturing = false;
   /**
-   * Placement needs this session's GPS alignment (its fixes solved in - the
-   * matrix alone is the identity from the first fix, M4 review #2), a live
-   * session, and no rebuild in flight. Re-checked at every tap, not only at
-   * render. Never a code: placing is GPS and tracking only, as in a tour
-   * builder with no codes (field test 2, F5; a print size adopted mid-walk
+   * Placement needs this session's alignment, a live session, and no
+   * rebuild in flight. Re-checked at every tap, not only at render. The
+   * alignment is lined up by this session's device fixes (solved in - the
+   * matrix alone is the identity from the first fix, M4 review #2), or by
+   * the votes of a code the tour stores, seen in this visit: indoors no fix
+   * may ever come, and the code is where the tour already is. The code in
+   * hand is never asked for: a tour builder with no codes places by GPS
+   * and tracking alone (field test 2, F5; a print size adopted mid-walk
    * used to grey the buttons for the rest of the loop).
    */
   function placementAllowed(): boolean {
     const alignment = deps.alignmentInfo();
     return (
       alignment.hasMatrix &&
-      alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES &&
+      (alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES ||
+        deps.codeVoted?.() === true) &&
       arController.getState().status === "running" &&
       !ctx.finishing
     );

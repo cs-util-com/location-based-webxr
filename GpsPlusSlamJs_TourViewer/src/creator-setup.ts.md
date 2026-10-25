@@ -70,7 +70,10 @@ were here. What stays is the Finish's side:
 
 ## Public API
 
-- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom, openDraftStore?, codeTour?, summary?, host?, onCodesChanged? }): CreatorSetup`
+- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom, openDraftStore?, codeTour?, summary?, host?, onCodesChanged?, codeVotes? }): CreatorSetup`
+  - `codeVotes(options)` (optional) - the viewer placement's
+    `storedCodeVotes`, handed to the measuring module: a code the tour
+    stores votes in a visit without GPS (`creator-measuring.ts`).
   - `onCodesChanged` - the set of codes changed (`creator-codes.ts`'s
     `onIdsChanged`): `main.ts` re-presents the print step's codes (F16).
   - `host()` - the host chosen in step 1, handed to the hand-off for step
@@ -116,6 +119,8 @@ were here. What stays is the Finish's side:
   - `CreatorSetup` members: `codes` (the one owner of the codes,
     `creator-codes.ts`; the composed tests read and write the code in hand
     through it), `renderAuthorReadout`, `startAuthorPipeline`,
+    `creatorCanStartOnCodes` (a creator, and the tour stores a code that
+    can line a visit up: `ar-entry.ts` may then start without location),
     `resetFinishStep` (a tour closed: the code module's `reset` runs first,
     so nothing reset after it reads the closing tour's codes), `presentDraftForTour` (a tour
     opened AND its manifest settled - "spent" is a question about that
@@ -178,6 +183,15 @@ were here. What stays is the Finish's side:
   (it is stale), and a closed tour hides it and empties the log.
 
 ## Invariants & assumptions
+
+- **The alignment info counts device fixes only** (`authorAlignmentInfo`,
+  through `device-gps-quality.ts`, over the positions since this session
+  started): a code's votes share the GPS history, and counting them
+  would stamp a code minted indoors with sixteen 5 m "fixes" per voted
+  lock.
+  The placement gate and the readout also read `codeVoted()` - a stored
+  code voted in this visit (`ctx.viewerVotedLocks > 0`) - which opens
+  placing without fixes; the mint still needs three device fixes.
 
 - **The troubleshooting recording's log** (authoring recording plan
   2026-09-28-0953, M1a; `tour-authoring-actions.ts`): a placed pin or photo

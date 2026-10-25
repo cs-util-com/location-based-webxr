@@ -168,6 +168,10 @@ export function authorStatusLine(
   /** What became of the code once the gate is open (UI round 1, U3: it
    *  is measured on its own, so "ready" is not "measured"). */
   ready: CodeReadyState = "measured",
+  /** A code the tour stores voted in this visit: its votes line the
+   *  session up without a fix, so placing is open - minting is not, it
+   *  needs device fixes. */
+  codeVoted = false,
 ): AuthorReadout {
   if (detectedText === null || fused === null || fused.status === "unknown") {
     return {
@@ -182,6 +186,14 @@ export function authorStatusLine(
     };
   }
   if (!alignment.hasMatrix || alignment.sampleCount < MIN_ALIGNMENT_SAMPLES) {
+    if (codeVoted && alignment.hasMatrix) {
+      return {
+        text:
+          `The tour's code places you - pins and photos go where it puts them. ` +
+          `Measuring a new code needs GPS (${String(alignment.sampleCount)} of ${String(MIN_ALIGNMENT_SAMPLES)} fixes).`,
+        canMint: false,
+      };
+    }
     return {
       text:
         `Pose stable — waiting for GPS alignment ` +

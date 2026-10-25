@@ -215,6 +215,34 @@ describe("arStatusLine - the fixed prefix", () => {
     ).toBe("Creator mode — error: Location permission is required for GPS AR.");
   });
 
+  // Why: a creator whose location is refused can still start on a code the
+  // tour stores - and one whose tour stores none needs a first GPS fix,
+  // which only an allowed location outdoors gives. The bare cause says
+  // neither, so the failed start says what to do next.
+  it.each([
+    [
+      "no-code",
+      "Creator mode — error: Location permission is required for GPS AR. This tour has no measured code to start from without GPS: allow location for this page, then step outside for a first GPS fix.",
+    ],
+    [
+      "code-can-start",
+      "Creator mode — error: Location permission is required for GPS AR. Tap Try again to start on the tour's printed code instead.",
+    ],
+  ] as const)(
+    "tells a creator whose location was refused what to do next (%s)",
+    (refusal, line) => {
+      expect(
+        arStatusLine({
+          ...RUNNING_BASE,
+          mode: "creator",
+          arStatus: "error",
+          arError: "Location permission is required for GPS AR.",
+          locationRefusal: refusal,
+        }),
+      ).toBe(line);
+    },
+  );
+
   it("keeps the e2e-pinned running prefix exactly", () => {
     // ar-mode.spec.js asserts this literal text; the prefix is a contract.
     expect(arStatusLine(RUNNING_BASE)).toBe(

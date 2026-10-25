@@ -185,6 +185,19 @@ entry; C7).
   line reads the device-fix count (`deviceFixes`). Before such a start the
   gate's `recheck()` runs (M1b-1 review #3); when it leaves the gate
   pending (a dismissed prompt offered again) the tap is not a start.
+- **A creator starts without location only on a stored code:** when the
+  browser reports the location permission `denied` AND the tour stores a
+  code that can line the visit up by its votes
+  (`hooks.creatorCanStartOnCodes`, `creator-measuring.ts`
+  `canStartOnCodes`), the start is codes-only as a visitor's is. Any
+  other creator start asks for location as before. A start that then
+  fails with the permission refused carries `locationRefusal` into the
+  status input: `code-can-start` (the next try starts on the code) or
+  `no-code` (allow location, step outside for a first fix); a
+  permission that cannot be read claims nothing. Reset at every start.
+- **GPS quality counts device fixes only** (`sessionGpsQuality`, through
+  `device-gps-quality.ts`): a code's votes share the GPS history and
+  never count as fixes or set the accuracy.
 
 ## Examples
 

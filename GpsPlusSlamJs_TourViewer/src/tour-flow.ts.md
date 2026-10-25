@@ -100,7 +100,13 @@ codeLinedUp(qr)`: whether the station guide judges on the aligned frame
 - `placementSegment(placement, readiness = null): string` - the placement
   copy; `""` for idle; `waiting-ready` renders `readiness.hint` (or the
   generic wait).
-- `arStatusLine(input): string` - the whole `#ar-status` text.
+- `arStatusLine(input): string` - the whole `#ar-status` text. A failed
+  start reads `<mode> — error[: <cause>]`, followed, when
+  `input.locationRefusal` is set (a creator's start refused the
+  location), by what to do next: `code-can-start` - "Tap Try again to
+  start on the tour's printed code instead."; `no-code` - allow
+  location for the page, then step outside for a first GPS fix.
+- `LocationRefusal` - `"code-can-start" | "no-code"`.
 - `clearCacheLabel(removed): string` - the Clear-cache confirmation
   ("Cache cleared - N stored tours removed", singular for 1, "nothing was
   stored" for 0). `removed` is the store's index length read BEFORE the

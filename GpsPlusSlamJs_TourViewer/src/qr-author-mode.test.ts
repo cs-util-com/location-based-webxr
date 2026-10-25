@@ -764,3 +764,40 @@ describe("driveFileAddress (polish round M2, step 6)", () => {
 
 // (The tests of `walkBakeLine`, the line about the bake at open, stood
 // here: the open bakes no walk any more, and the line went with it.)
+
+describe("authorStatusLine with the tour's own code placing the visit", () => {
+  // Why: indoors a creator may have no GPS fix while a code the tour stores
+  // lines the session up by its votes. The placement then opens on the
+  // code, but a NEW code still needs device fixes to be measured: the line
+  // must say both, and never open the mint on the votes.
+  const stable = {
+    status: "stable",
+    notStableReason: null,
+  } as unknown as QrFusedPose;
+  const votesOnly = { hasMatrix: true, sampleCount: 0 };
+
+  it("says the code places the work, and keeps the mint closed", () => {
+    const line = authorStatusLine("A", stable, votesOnly, false, "seen", true);
+    expect(line.canMint).toBe(false);
+    expect(line.text).toMatch(/code places/i);
+    expect(line.text).toContain("0 of 3 fixes");
+  });
+
+  it("says the plain waiting line without a code's votes", () => {
+    const line = authorStatusLine("A", stable, votesOnly, false, "seen", false);
+    expect(line.canMint).toBe(false);
+    expect(line.text).toMatch(/^Pose stable — waiting for GPS alignment/);
+  });
+
+  it("is the ready line once device fixes are enough, votes or not", () => {
+    const line = authorStatusLine(
+      "A",
+      stable,
+      { hasMatrix: true, sampleCount: 3 },
+      false,
+      "measured",
+      true,
+    );
+    expect(line).toEqual({ text: "Code measured.", canMint: true });
+  });
+});

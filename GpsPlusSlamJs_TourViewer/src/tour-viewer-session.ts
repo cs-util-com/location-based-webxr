@@ -62,6 +62,7 @@ import type { FusedTallies, LastEvaluation } from "./qr-debug-readout.js";
 import type { PrintSizeCheck } from "./print-size-check.js";
 import type { MovedCodeChecks } from "./moved-code-check.js";
 import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
+import type { CodeVoteDeps, CodeVoteOptions } from "./qr-viewer-mode.js";
 import type { ViewerVoteSink } from "./viewer-vote-sink.js";
 import type { ScanGate } from "./scan-gate.js";
 import type { StationContent } from "./station-content.js";
@@ -201,6 +202,14 @@ export interface TourViewerHooks {
   tryPlaceTour(): void;
   startAuthorPipeline(): boolean;
   startViewerPipeline(): boolean;
+  /** The vote half of a creator's pipeline at a code the tour stores: this
+   *  AR entry's vote pieces, the ones the visitor's pipeline votes by
+   *  (`viewer-placement.ts`). Null while nothing is wired: no code votes. */
+  storedCodeVotes(options: CodeVoteOptions): CodeVoteDeps | null;
+  /** The open tour stores a code that can line a creator's visit up
+   *  without a GPS fix (its geo and printed size): a refused location may
+   *  then start on it (`ar-entry.ts`). */
+  creatorCanStartOnCodes(): boolean;
   /** Present the open tour's link in the print panel (M3's prefill), and
    *  advance the wizard. `origin` says which form the creator submitted
    *  from: an open started in step 4 must not answer by jumping to step 2
@@ -291,6 +300,8 @@ export function createUnwiredHooks(): TourViewerHooks {
     tryPlaceTour: () => undefined,
     startAuthorPipeline: () => false,
     startViewerPipeline: () => false,
+    storedCodeVotes: () => null,
+    creatorCanStartOnCodes: () => false,
     presentTourForPrint: () => undefined,
     presentLocalTour: () => undefined,
     presentUnverifiedLink: () => undefined,

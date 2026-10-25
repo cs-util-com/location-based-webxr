@@ -11,10 +11,6 @@
 
 import { copyWithFeedback } from "gps-plus-slam-app-framework/utils/copy-with-feedback";
 import type { EnableGpsArState } from "gps-plus-slam-app-framework/ar";
-import {
-  GPS_POINT_SOURCE_DEVICE,
-  gpsPointSourceOf,
-} from "gps-plus-slam-app-framework/core";
 import type { GpsPosition } from "gps-plus-slam-app-framework/sensors";
 import { createGpsExtentTracker } from "gps-plus-slam-app-framework/state/gps-extent-tracker";
 import {
@@ -27,6 +23,7 @@ import {
   updateDeviceOrientation,
 } from "gps-plus-slam-app-framework/state";
 
+import { deviceGpsQuality } from "./device-gps-quality.js";
 import {
   arButtonView,
   COPY_LINK_LABELS,
@@ -50,7 +47,11 @@ import { describeOpenError } from "./open-errors.js";
 import { debugReadoutLines, visitorFusedHint } from "./qr-debug-readout.js";
 import type { TourViewerSeams } from "./seams.js";
 import { contentStatus } from "./station-content.js";
-import { arStatusLine, type ArStatusInput } from "./tour-flow.js";
+import {
+  arStatusLine,
+  type ArStatusInput,
+  type LocationRefusal,
+} from "./tour-flow.js";
 import { scanCardShown } from "./scan-gate.js";
 import {
   FIND_CODE,
@@ -169,6 +170,10 @@ export function wireArEntry(deps: {
   /** Whether this visit's first tap asked for the location: the button
    *  then reads as step 2 of 2 (polish round M4a, the owner's V4). */
   let hadLocationStep = false;
+  /** A creator's last start failed with the location refused: whether a
+   *  code the tour stores can start the next try (the line says what to
+   *  do next, `tour-flow.ts`). Null: no such failure. */
+  let locationRefusal: LocationRefusal | null = null;
   /** A Copy link tap is running: it owns the button's label until then. */
   let copying = false;
   /** Whether THIS session's depth sampler was started (a recorded entry). */
@@ -338,6 +343,7 @@ export function wireArEntry(deps: {
       mode,
       arStatus: arController.getState().status,
       arError: arController.getState().error ?? null,
+      locationRefusal,
       cameraFrames: ctx.cameraFrameCount,
       codesOnly: ctx.codesOnly,
       tour:
@@ -472,18 +478,12 @@ export function wireArEntry(deps: {
     const positions = selectGpsPositions(arStore.getState());
     if (positions === gpsQualityFor) return gpsQuality;
     gpsQualityFor = positions;
-    const accuracies = positions
-      .filter((p) => gpsPointSourceOf(p) === GPS_POINT_SOURCE_DEVICE)
-      .map((p) => p.latLongAccuracy)
-      .filter((a): a is number => typeof a === "number" && Number.isFinite(a))
-      .sort((a, b) => a - b);
+    // Device fixes only: a code's votes are no GPS (`device-gps-quality.ts`).
+    const device = deviceGpsQuality(positions);
     gpsQuality = {
-      accuracyM:
-        accuracies.length === 0 ? null : accuracies[accuracies.length >> 1]!,
+      accuracyM: device.accuracyM,
       extentM: gpsExtent.update(positions),
-      // Fixes WITH an accuracy are all the fixes there are: the store keeps
-      // no fix without one (ar-entry.test.ts pins it; PR #583 review).
-      fixes: accuracies.length,
+      fixes: device.fixes,
     };
     return gpsQuality;
   }
@@ -700,6 +700,34 @@ export function wireArEntry(deps: {
     });
   }
 
+  /** The browser's location permission; "unknown" when it cannot say. */
+  async function locationPermission(): Promise<string> {
+    try {
+      return await seams.queryGeolocationPermission();
+    } catch {
+      return "unknown";
+    }
+  }
+
+  /**
+   * Whether a creator starts without location: only when the permission is
+   * refused and a code the tour stores can line the visit up by its votes
+   * (`creator-measuring.ts`). Otherwise the start asks for location as it
+   * always did - and fails with its message where it is refused.
+   */
+  async function creatorStartsOnCodes(): Promise<boolean> {
+    if (!hooks.creatorCanStartOnCodes()) return false;
+    return (await locationPermission()) === "denied";
+  }
+
+  /** After a creator's failed start: whether the refused location failed
+   *  it, and whether a stored code can start the next try. A permission
+   *  that cannot be read claims nothing. */
+  async function creatorLocationRefusal(): Promise<LocationRefusal | null> {
+    if ((await locationPermission()) !== "denied") return null;
+    return hooks.creatorCanStartOnCodes() ? "code-can-start" : "no-code";
+  }
+
   async function enterAr(): Promise<void> {
     // The visitor's location-only tap (DEC-N2): request, re-label, and let
     // the next tap start the session inside its own user activation.
@@ -717,6 +745,7 @@ export function wireArEntry(deps: {
     }
     // The start the two steps led to: a later start is one tap again.
     hadLocationStep = false;
+    locationRefusal = null;
     ctx.cameraFrameCount = 0;
     // A refused AUTHOR pipeline (bad size, no detector) keeps AR unstarted —
     // the message is already in the author panel, where the author is
@@ -725,8 +754,12 @@ export function wireArEntry(deps: {
     if (authorMode && !hooks.startAuthorPipeline()) return;
     // A visitor who declined location starts on codes alone (QR-first
     // M1b-1): no location permission, no GPS watch; the scan gate then
-    // offers no GPS escape. Set before the pipeline and its gate start.
-    ctx.codesOnly = !authorMode && locationGate.codesOnly();
+    // offers no GPS escape. Set before the pipeline and its gate start. A
+    // creator does too when the location is refused and a code the tour
+    // stores can line the visit up.
+    ctx.codesOnly = authorMode
+      ? await creatorStartsOnCodes()
+      : locationGate.codesOnly();
     if (!authorMode) hooks.startViewerPipeline();
     const depth = entryDepth();
     const result = await arController.enable(
@@ -771,6 +804,10 @@ export function wireArEntry(deps: {
     // prompt, 2026-10-07).
     if (!result.ok) {
       endQrPipeline(ctx);
+      if (authorMode && !ctx.codesOnly) {
+        locationRefusal = await creatorLocationRefusal();
+        renderArStatus();
+      }
       return;
     }
     const runtime = startTourArRuntime(arStore, {

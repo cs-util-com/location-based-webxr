@@ -12,7 +12,10 @@ M4 replaces its one code in hand with the code book.
 
 ## Public API
 
-- `wireCreatorMeasuring({ ctx, arStore, seams, dom, codes, wizard, codeTour, alignmentPicks, draft, sessionLive, alignmentInfo, placeEarlierObjects, render }): CreatorMeasuring`
+- `wireCreatorMeasuring({ ctx, arStore, seams, dom, codes, wizard, codeTour, alignmentPicks, draft, sessionLive, alignmentInfo, codeVotes?, placeEarlierObjects, render }): CreatorMeasuring`
+  - `codeVotes(options)` (optional): the vote half of the pipeline at a
+    code the tour stores - the viewer placement's `storedCodeVotes`;
+    absent or null, no code votes and the pipeline is the author's alone.
   - `dom` (`CreatorMeasuringDom`): `sizeInput`, `finishButton` (held off
     while a measurement runs), `sizeOffer`, `sizeOfferText`,
     `sizeOfferUse`, `sizeOfferKeep` (whose clicks this module handles).
@@ -29,6 +32,10 @@ M4 replaces its one code in hand with the code book.
   - `endVisit()` - the visit's tries go; `reset()` - a tour closed: the
     sizes adopted for its codes go.
   - `sizeOf(text)` - the printed size a code is solved at (M4c-3).
+  - `canStartOnCodes()` - the tour stores a code that can line a visit up
+    by its votes: one with a geo and a stored printed size, hosted or in
+    this device's code book, not ignored as moved. `ar-entry.ts` starts a
+    creator without location only then.
 - The code in hand, the stored codes' sightings and the levels a Finish
   wrote live in `creator-codes.ts` since M4a; this module reads and writes
   them through it.
@@ -143,12 +150,36 @@ M4 replaces its one code in hand with the code book.
   stable again. While the check has no answer, the ready line asks for a
   sideways step (the mint is not held).
 
+- **A stored code votes in a visit without GPS** (a creator indoors): the
+  pipeline is the viewer's controller config (`buildViewerControllerConfig`)
+  over the vote half `codeVotes` returns - the same stable-pose gate, vote
+  budget, zero check, sixteen-vote ring, entry sink (soft trim) and
+  moved-code veto the visitor votes through; there is no second voting path.
+  Its `fetchLevel` answers a code the tour stores (`codes.references()`,
+  hosted and draft) with the stored geo and the STORED printed size - never a
+  size adopted in this visit, which the stored pose was not measured at - and
+  every other code with the author's geo-less level, which never votes. A
+  code measured in this visit gets no voting level (its pose came from this
+  visit's alignment, so its votes would only repeat it).
+  - **Which visits vote** (`visitVotes`): decided once per AR visit, at the
+    first stable pose of a stored code, and only when no device fix came
+    before it (`alignmentInfo().sampleCount === 0`) - the rule the visitor's
+    code-set origin follows. A visit with GPS keeps placing by GPS, so a
+    creator outdoors works exactly as before. An adopted print size restarts
+    the controller within the visit and keeps the decision and the entry's
+    vote pieces (only the controller is disposed).
+  - Measuring is separate and unchanged: it follows the readout's
+    `canMint`, which needs three DEVICE fixes, so a vote-only visit mints
+    nothing.
+
 ## Tests
 
 Composed, through `wireCreatorSetup`: `fused-pose-wiring.test.ts` (the
 pipeline, the fused pose, the measurement and its identity, Finish held
 while one runs, a new print size), `authoring-settle.test.ts` (automatic
 measuring, the classification, the sightings) and `creator-setup.test.ts`
-(the size offer). The sampled mutants of the regions "measuring", "size
+(the size offer), `creator-code-votes.test.ts` (a stored code's votes:
+which visits vote, a draft-only code, the placement gate, the quality
+counts, the vote-only and mixed settles). The sampled mutants of the regions "measuring", "size
 offer" and "sightings" (`scripts/fixtures/creator-setup.mutants.json`) are
 killed or judged equivalent.

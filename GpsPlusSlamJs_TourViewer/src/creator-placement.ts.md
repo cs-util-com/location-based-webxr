@@ -10,7 +10,9 @@ troubleshooting recording's record of each placement. Split out of
 
 ## Public API
 
-- `wireCreatorPlacement({ ctx, arStore, arController, seams, dom, alignmentPicks, draft, previews, alignmentInfo, sizeOf, settledVisit, lateArrival, stationOf?, render }): CreatorPlacement`
+- `wireCreatorPlacement({ ctx, arStore, arController, seams, dom, alignmentPicks, draft, previews, alignmentInfo, codeVoted?, sizeOf, settledVisit, lateArrival, stationOf?, render }): CreatorPlacement`
+  - `codeVoted()` (optional, default false): a code the tour stores voted
+    in this visit (`creator-setup.ts`: `ctx.viewerVotedLocks > 0`).
   - `dom` (`CreatorPlacementDom`): `pinButton`, `pinLabel`, `pinSave`,
     `pinCancel`, `photoButton`, `newStationButton?` ("New station
     here", D8, below), whose clicks this module handles.
@@ -46,6 +48,13 @@ troubleshooting recording's record of each placement. Split out of
   matrix and at least `MIN_ALIGNMENT_SAMPLES` fixes since the session
   started, M4 review #2), a running session and no rebuild in flight;
   re-checked at every tap.
+  - **Or a stored code's votes:** in a visit with no device fix a code the
+    tour stores lines the session up by its votes (`creator-measuring.ts`),
+    and the gate accepts "a stored code voted in this visit" in place of
+    the three fixes - the matrix is still required. The fix count stays
+    device fixes only (`device-gps-quality.ts`), so the votes never pass
+    for GPS. This is an alternative, never a requirement: a visit without
+    codes places by GPS exactly as below.
 - **Never a code** (field test 2, F5; owner, 2026-10-09): placing an
   object is GPS and tracking only, so a tour builder with no codes places
   exactly as this one does, and the module has no access to the codes. The

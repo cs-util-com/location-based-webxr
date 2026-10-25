@@ -608,6 +608,9 @@ const setup = wireCreatorSetup({
   renderArEntry: () => {
     hooks.renderArEntry();
   },
+  // A code the tour stores votes for a creator as for a visitor: through
+  // the viewer placement, wired after the setup.
+  codeVotes: (options) => hooks.storedCodeVotes(options),
   // Step 6 names the host chosen in step 1 (polish round M2).
   host: () => readTourHost(stepStore),
   codeTour: {
@@ -676,6 +679,7 @@ const setup = wireCreatorSetup({
 });
 hooks.renderAuthorReadout = setup.renderAuthorReadout;
 hooks.startAuthorPipeline = setup.startAuthorPipeline;
+hooks.creatorCanStartOnCodes = setup.creatorCanStartOnCodes;
 hooks.resetFinishStep = setup.resetFinishStep;
 // The save cannot be forgotten (UI round 1, U2): another tour, or leaving
 // the page, asks first while a rebuilt tour file was not saved.
@@ -844,6 +848,7 @@ const viewer = createViewerPlacement({
       }),
 });
 hooks.startViewerPipeline = viewer.startViewerPipeline;
+hooks.storedCodeVotes = viewer.storedCodeVotes;
 hooks.tryPlaceTour = viewer.tryPlaceTour;
 hooks.startScanGate = viewer.startScanGate;
 hooks.resetScanGate = viewer.resetScanGate;

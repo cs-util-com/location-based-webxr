@@ -14,7 +14,12 @@ import {
   mintQrLevel,
   type MintAlignmentInfo,
 } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
-import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
+import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import {
+  createQrTrackingController,
+  type QrDetectionEvent,
+  type QrTrackingControllerConfig,
+} from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import {
   clearQrMarker,
   recordQrDetection,
@@ -36,13 +41,17 @@ import {
   sizeOfferView,
   type CodeReadyState,
 } from "./qr-author-mode.js";
+import {
+  buildViewerControllerConfig,
+  type CodeVoteDeps,
+  type CodeVoteOptions,
+} from "./qr-viewer-mode.js";
 import type { ScanOpen } from "./scan-open.js";
 import type { TourViewerSeams } from "./seams.js";
 import { codeMeasured } from "./tour-authoring-actions.js";
-import {
-  endQrPipeline,
-  type TourViewerSession,
-  type TourViewerStore,
+import type {
+  TourViewerSession,
+  TourViewerStore,
 } from "./tour-viewer-session.js";
 import {
   measurementRole,
@@ -94,6 +103,10 @@ export interface CreatorMeasuring {
   /** The printed size `text` is solved at (M4c-3): adopted, else stored,
    *  else the field's. */
   sizeOf(text: string | null): number;
+  /** The tour stores a code that can line a visit up by its votes: its
+   *  geo and its printed size, hosted or in this device's code book, and
+   *  not ignored as moved. */
+  canStartOnCodes(): boolean;
 }
 
 export function wireCreatorMeasuring(deps: {
@@ -120,6 +133,7 @@ export function wireCreatorMeasuring(deps: {
     | "setInHand"
     | "clearInHand"
     | "hasStoredPose"
+    | "references"
     | "savedText"
     | "noteStoredSighting"
     | "inBook"
@@ -129,6 +143,10 @@ export function wireCreatorMeasuring(deps: {
   >;
   sessionLive: () => boolean;
   alignmentInfo: () => MintAlignmentInfo;
+  /** The vote half of the pipeline at a code the tour stores
+   *  (`storedCodeVotes` of the viewer placement); absent or null: no
+   *  code votes. */
+  codeVotes?: (options: CodeVoteOptions) => CodeVoteDeps | null;
   /** Re-place the earlier visits' objects after a sighting. */
   placeEarlierObjects: () => void;
   render: () => void;
@@ -257,42 +275,121 @@ export function wireCreatorMeasuring(deps: {
     });
     ctx.fusedPose = fusedPose;
     ctx.fusedTallies = tallies;
+    const solvePose: QrTrackingControllerConfig["solvePose"] = (input) =>
+      seams.solveQrPose(input);
+    const getIntrinsics: QrTrackingControllerConfig["getIntrinsics"] = (
+      image,
+    ) => seams.getIntrinsics(image);
+    const onError = (message: string): void => {
+      ctx.authorErrorText = `QR tracking failed: ${message}`;
+      deps.render();
+    };
+    const recordDetection = (event: QrDetectionEvent): void => {
+      ctx.authorErrorText = null; // a live detection supersedes a stale error
+      ctx.lastDetectedText = event.text;
+      arStore.dispatch(recordQrDetection(event));
+      // Step 4's scan-to-open: the code names its tour (plan §9).
+      deps.codeTour.onDetection(event.text);
+      // Evaluated after EVERY detection, not on render: the motion
+      // detector counts detections, and the render path returns early
+      // in several states (plan §61 #7). The readout and the mint read
+      // this result.
+      fusedPose.evaluate(event.text);
+      const fused = fusedPose.last(event.text);
+      noteSighting(event.text, fused);
+      ctx.printSizeCheck?.onDetection(event.text, fused, sizeOf(event.text));
+      if (fused?.status === "stable") adoptedNote = null;
+      ctx.qrDebugView?.update(event.qrPoseWorld, sizeOf(event.text));
+      deps.render();
+    };
+    const author = buildAuthorControllerConfig(ctx.activeSizeM, {
+      frontEnd,
+      solvePose,
+      getIntrinsics,
+      sizeFor: (text) => sizeFor(text, sizeM),
+      recordDetection,
+      onError,
+    });
+    // A code the tour stores votes as it does for a visitor, through the
+    // viewer's own vote half; which frames may vote is this visit's rule.
+    const votes =
+      deps.codeVotes?.({
+        resolvePose: (text) => {
+          const pose = fusedPose.resolve(text);
+          return pose !== null && visitVotes() ? pose : null;
+        },
+        live: () => ctx.fusedPose === fusedPose,
+      }) ?? null;
     ctx.qrController = createQrTrackingController(
-      buildAuthorControllerConfig(ctx.activeSizeM, {
-        frontEnd,
-        solvePose: (input) => seams.solveQrPose(input),
-        getIntrinsics: (image) => seams.getIntrinsics(image),
-        sizeFor: (text) => sizeFor(text, sizeM),
-        recordDetection: (event) => {
-          ctx.authorErrorText = null; // a live detection supersedes a stale error
-          ctx.lastDetectedText = event.text;
-          arStore.dispatch(recordQrDetection(event));
-          // Step 4's scan-to-open: the code names its tour (plan §9).
-          deps.codeTour.onDetection(event.text);
-          // Evaluated after EVERY detection, not on render: the motion
-          // detector counts detections, and the render path returns early
-          // in several states (plan §61 #7). The readout and the mint read
-          // this result.
-          fusedPose.evaluate(event.text);
-          const fused = fusedPose.last(event.text);
-          noteSighting(event.text, fused);
-          ctx.printSizeCheck?.onDetection(
-            event.text,
-            fused,
-            sizeOf(event.text),
-          );
-          if (fused?.status === "stable") adoptedNote = null;
-          ctx.qrDebugView?.update(event.qrPoseWorld, sizeOf(event.text));
-          deps.render();
-        },
-        onError: (message) => {
-          ctx.authorErrorText = `QR tracking failed: ${message}`;
-          deps.render();
-        },
-      }),
+      votes === null
+        ? author
+        : {
+            ...buildViewerControllerConfig({
+              ...votes,
+              frontEnd,
+              solvePose,
+              getIntrinsics,
+              // Unread: the levels come from `fetchLevel` below.
+              getLevels: () => null,
+              recordDetection: (event) => {
+                votes.noteDetection(event);
+                recordDetection(event);
+              },
+              onError,
+            }),
+            // A stored code is fetched with its stored geo and size, and
+            // votes; every other code is the author's geo-less level, which
+            // never votes.
+            fetchLevel: async (text) =>
+              (await votingLevel(text, votes)) ?? author.fetchLevel(text),
+          },
     );
     deps.render();
     return true;
+  }
+
+  /**
+   * Whether this visit's stored codes vote: decided at the first stable
+   * pose of one, and only when no device fix came before it - the rule the
+   * visitor's code-set origin follows. A visit with GPS keeps placing by
+   * GPS, so a creator outdoors works as before; one without a fix is lined
+   * up by the code. Per visit: an adopted print size restarts the pipeline
+   * within the visit and keeps the decision.
+   */
+  let votesDecided: { visit: number; allowed: boolean } | null = null;
+  function visitVotes(): boolean {
+    if (votesDecided?.visit !== ctx.arSessionGeneration) {
+      votesDecided = {
+        visit: ctx.arSessionGeneration,
+        allowed: deps.alignmentInfo().sampleCount === 0,
+      };
+    }
+    return votesDecided.allowed;
+  }
+
+  /**
+   * The level a stored code votes with: its stored geo and its stored
+   * printed size - never a size adopted mid-visit, which the stored pose
+   * was not measured at. Null for a code the tour does not store, a code
+   * without a stored size, and a code measured in this visit (its pose came
+   * from this visit's alignment, so its votes would only repeat it).
+   */
+  async function votingLevel(
+    text: string,
+    votes: CodeVoteDeps,
+  ): Promise<QrLevel | null> {
+    const id =
+      codeIds.get(text) ?? (await qrCodeId(text).catch(() => undefined));
+    if (id === undefined) return null;
+    if (deps.codes.measuredIn(id, ctx.arSessionGeneration)) return null;
+    const geo =
+      deps.codes.references().find((r) => r.levelId === id)?.geo ?? null;
+    const physicalSizeM = storedSize(id);
+    if (geo === null || physicalSizeM === undefined) return null;
+    const level: QrLevel = { version: 1, qr: { physicalSizeM, geo } };
+    sizeByText.set(text, physicalSizeM);
+    votes.onLevelResolved(text, level, id);
+    return level;
   }
 
   /**
@@ -331,7 +428,10 @@ export function wireCreatorMeasuring(deps: {
     deps.placeEarlierObjects();
     // The code is measured again at the new size.
     autoMeasured.clear();
-    endQrPipeline(ctx);
+    // The controller only: this AR entry's code votes - their sink, budget,
+    // hold and checks - go on into the restarted pipeline.
+    ctx.qrController?.dispose();
+    ctx.qrController = null;
     arStore.dispatch(clearQrMarker({ text: offer.text }));
     startAuthorPipeline();
     adoptedNote = adoptedSizeNote(sizeM);
@@ -677,5 +777,14 @@ export function wireCreatorMeasuring(deps: {
       adoptedSizes.clear();
     },
     sizeOf,
+    canStartOnCodes: () =>
+      deps.codes
+        .references()
+        .some(
+          (r) =>
+            r.geo !== null &&
+            storedSize(r.levelId) !== undefined &&
+            !ctx.ignoredCodes.has(r.levelId),
+        ),
   };
 }

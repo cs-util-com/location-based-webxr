@@ -314,6 +314,11 @@ export async function installTourViewerArFakes(page, options = {}) {
           isWebXRSupported: () => Promise.resolve(true),
           requestGeolocationPermission: () => {
             test.geolocationPermissionRequests += 1;
+            // A prompt answered "Block": the browser reports the site
+            // denied from then on, as the permission query reads it.
+            if (test.controllerLocationResult?.granted === false) {
+              test.locationPermission = "denied";
+            }
             return Promise.resolve(test.controllerLocationResult);
           },
           requestOrientationPermission: () =>
@@ -618,11 +623,26 @@ export async function openFixtureTour(page) {
  * measurement keeps it - D10b); placement unlocks. Shared by the editing
  * and the summary specs.
  *
+ * The creator outdoors: the GPS fixes come BEFORE the code is seen. A
+ * stored code seen before any fix lines the visit up by its votes
+ * instead - a different visit, which the indoor-creator specs drive.
+ *
  * @param {import("@playwright/test").Page} page
  */
 export async function enterArAndMeasure(page) {
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
   await page.getByTestId("enter-ar").click();
+  await measureWithGpsFirst(page);
+}
+
+/**
+ * In a running creator visit: the fixes first (`seedAlignment`), then the
+ * fixture's code, fed frames until it is measured; placement unlocks.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+export async function measureWithGpsFirst(page) {
+  await seedAlignment(page);
   await page.evaluate((text) => {
     /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
   }, E2E_QR_TEXT);
@@ -636,14 +656,7 @@ export async function enterArAndMeasure(page) {
       },
       { timeout: 15000 },
     )
-    .toMatch(/waiting for GPS alignment/i);
-  await seedAlignment(page);
-  await expect(page.getByTestId("setup-status")).toContainText(
-    /Code measured/,
-    {
-      timeout: 10000,
-    },
-  );
+    .toMatch(/Code measured/);
   await expect(page.getByTestId("setup-pin")).toBeEnabled();
 }
 

@@ -150,6 +150,9 @@ lives here.
 - `interface TourViewerHooks` / `createUnwiredHooks()` - the late-bound
   cross-module calls (`renderArStatus`, `renderArEntry`, `renderAuthorReadout`,
   `tryPlaceTour`, `startAuthorPipeline`, `startViewerPipeline`,
+  `storedCodeVotes` (the viewer placement's vote half for a creator's
+  pipeline at a stored code; null until wired), `creatorCanStartOnCodes`
+  (whether a creator may start AR without location; false until wired),
   `presentTourForPrint`, `presentLocalTour` (a tour opened from a file:
   no link to print, tour kit plan K0), `presentUnverifiedLink` (step 2's
   link whose file is not there yet, or that could not be checked offline:

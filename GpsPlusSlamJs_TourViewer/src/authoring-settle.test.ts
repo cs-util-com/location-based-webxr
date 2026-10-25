@@ -417,6 +417,13 @@ function authoring(
     accuracyM?: number;
   } = { alignment: yawAlignment(0, [0, 400, 0]), zero: ZERO, walk: null };
   const dispatched: { type: string; payload?: unknown }[] = [];
+  const withAccuracy = (fixes: unknown[]): unknown[] =>
+    gps.accuracyM === undefined
+      ? fixes
+      : fixes.map((fix) => ({
+          latLongAccuracy: gps.accuracyM,
+          ...(fix as object),
+        }));
   const arStore = {
     ...real,
     getState: () =>
@@ -426,12 +433,16 @@ function authoring(
           zero: gps.zero,
           gpsEvents: {
             alignmentMatrix: gps.alignment,
-            gpsPositions:
+            // The store's median accuracy is its fixes', and the creator
+            // reads it from them (device fixes only): a fix stating none
+            // states the median set here.
+            gpsPositions: withAccuracy(
               gps.walk?.fixes ??
-              Array.from({ length: MIN_ALIGNMENT_SAMPLES }, () => ({
-                lat: ZERO.lat,
-                lon: ZERO.lon,
-              })),
+                Array.from({ length: MIN_ALIGNMENT_SAMPLES }, () => ({
+                  lat: ZERO.lat,
+                  lon: ZERO.lon,
+                })),
+            ),
             odometryPositions: gps.walk?.odometry ?? [],
             ...(gps.accuracyM === undefined
               ? {}

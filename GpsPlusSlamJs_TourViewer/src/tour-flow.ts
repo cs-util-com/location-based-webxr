@@ -63,6 +63,10 @@ export interface ArStatusInput {
   /** The session runs without location (QR-first M1b-1): the codes place
    *  the tour, no GPS fix will come. Absent: false. */
   codesOnly?: boolean;
+  /** A creator's start failed with the location permission refused
+   *  (`ar-entry.ts`): whether a code the tour stores can start the next
+   *  try without location. Absent or null: no such failure. */
+  locationRefusal?: LocationRefusal | null;
   tour: TourFlowTour;
   qr: {
     status: QrTrackingStatus | null;
@@ -282,15 +286,32 @@ export function clearCacheLabel(removed: number): string {
   return `Cache cleared - ${String(removed)} stored ${removed === 1 ? "tour" : "tours"} removed`;
 }
 
+/** Why a creator's start failed on a refused location, for what to say. */
+export type LocationRefusal = "code-can-start" | "no-code";
+
+/** What a creator whose refused location failed the start does next. */
+const LOCATION_REFUSAL_HINT: Readonly<Record<LocationRefusal, string>> = {
+  "code-can-start":
+    "Tap Try again to start on the tour's printed code instead.",
+  "no-code":
+    "This tour has no measured code to start from without GPS: allow location for this page, then step outside for a first GPS fix.",
+};
+
 /** The whole `#ar-status` text for a state. */
 export function arStatusLine(input: ArStatusInput): string {
   const mode = input.mode === "creator" ? "Creator mode" : "Visitor mode";
   if (input.arStatus !== "running") {
     // The cause of a failed start, for the creator and ?debug=1: the button
     // only says "Try again" since UI round 1 (U1 milestone review #1).
-    return input.arStatus === "error" && input.arError != null
-      ? `${mode} — error: ${input.arError}`
-      : `${mode} — ${input.arStatus}`;
+    if (input.arStatus !== "error") return `${mode} — ${input.arStatus}`;
+    const cause =
+      input.arError == null
+        ? `${mode} — error`
+        : `${mode} — error: ${input.arError}`;
+    const refusal = input.locationRefusal ?? null;
+    return refusal === null
+      ? cause
+      : `${cause} ${LOCATION_REFUSAL_HINT[refusal]}`;
   }
   // A tour that is not finished yet has nothing to scan for or place: the
   // sentence stands alone after the prefix.
