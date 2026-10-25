@@ -64,6 +64,23 @@ codeLinedUp(qr)`: whether the station guide judges on the aligned frame
   never come for a visitor standing or walking straight). What needs a
   heading latches its first `true` per AR entry, as the placement
   trigger does, so a degraded dip does not take the arrows away (re-review L-B).
+- `compassHeadingVerdict(diagnostics, minWeight = COMPASS_CONFIRMS_WEIGHT)`
+  -> `"confirms" | "distrusts" | "silent"`: what the compass diagnostics
+  (the framework's `getCompassDiagnostics`, read structurally: the
+  applied share `appliedWeight` and `trust.state`) say about the heading.
+  `untrusted` distrusts whatever the share; a finite share in
+  [`minWeight`, 1] (and above 0) confirms; anything else - no
+  diagnostics, no reading (the share is absent then), a share of 0 (GPS
+  alone carries the heading), a value that is no share - is silent. The
+  station guide latches a confirm as the radar's "heading confirmed"
+  (`station-guide.ts`); the HUD's arrows never read it.
+- `COMPASS_CONFIRMS_WEIGHT = 0.25`: the share that confirms. The sweep
+  in `tour-flow.test.ts` (thresholds 0.01-0.9 over six scenarios: a cold
+  start, a hand-back to GPS, a compass first read late at 0.4, none, a
+  share of 0, a sliver of 0.01-0.03) finds the verdicts stable for every
+  threshold in (0.03, 0.4]: above 0.4 the late compass no longer
+  confirms, at 0.03 or below the sliver would. The value sits inside with
+  room on both sides; it was not measured on a phone.
 - `contentSegment(content)` - "N placed objects (K could not load)" once
   the tour's `tour.json` content is rendered (M5).
 - The composed line carries the scan gate's segment (`gateSegment`, from
@@ -143,6 +160,9 @@ arStatusLine({
 - `tour-flow.test.ts` - every branch of the line, string-exact, including
   the e2e-pinned prefix, an unfinished tour's line (the prefix and its
   sentence alone) and the no-codes rule's scope; the waiting wording.
+- `tour-flow.test.ts` also pins `compassHeadingVerdict`: confirms,
+  silent (absent, 0, below the threshold, NaN, negative, infinite, no
+  diagnostics), distrusts, and the threshold sweep above.
 - `tour-flow.property.test.ts` - the no-codes rule for every open-tour
   state and its absence with no tour; no non-idle placement renders as
   silence.

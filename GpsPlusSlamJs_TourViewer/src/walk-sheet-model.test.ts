@@ -75,6 +75,8 @@ function view(over: Partial<GuideView> = {}): GuideView {
     accuracyM: null,
     bearings: new Map(),
     headingDeg: null,
+    radarHeadingDeg: null,
+    headingConfirmed: false,
     snapshot: null,
     distances: new Map([
       ["gate", 30],

@@ -46,14 +46,16 @@ minM: 10, maxM: 600, shrinkBelow: 0.65 }` (module-local; the default
 - `walkRadarModel(input: WalkRadarInput) => WalkRadarModel`
   - input: `stations` (id, number, the list's row state), `order`, `kind`
     (the chip's kind: pending, code, gps, weak, none, lost), `accuracyM`,
-    `live` and `snapshot` geometries (bearings, distances, heading),
+    `live` and `snapshot` geometries (bearings, distances, heading,
+    optional `headingConfirmed`: absent reads as confirmed),
     `fovDeg`, `sizePx`, optional `rangeM`;
   - output: `mode` (live, frozen, pending), `rangeM`, `centre`, `rimR`,
     `rings`, `north` (radians clockwise from up, null without a heading),
     `cone` (half width, radians), `visitor` (pin, blur with tone and
     radius, unknown, pending), `blips` (id, number, look, x, y, r, alpha,
     clamped), `distanceRings` (no heading: how far, not which way),
-    `rimArc` (the focus's angle when outside the view);
+    `rimArc` (the focus's angle when outside the view), `provisional`
+    (the drawn heading is not confirmed);
   - throws `RangeError` for a size too small for a rim or a non-positive
     range; an invalid field of view falls back to 44° (the prototype's camera on a
     square screen).
@@ -74,6 +76,13 @@ minM: 10, maxM: 600, shrinkBelow: 0.65 }` (module-local; the default
   not finite and non-negative. A NaN radius used to reach the canvas, whose radial gradient throws
   on it and stopped the draw; today's wiring filters such a value before
   it gets here, so this is the boundary's own defence.
+- A provisional heading (the geometry's `headingConfirmed` false: no
+  compass, no confident tracking, no code confirmed it yet) keeps north
+  and every blip exactly where a confirmed one would put them - the frame
+  the tour's content is placed in - but draws no view cone and no rim arc
+  (both claim "this is where you look") and the blips at half their
+  opacity (`WALK_PROVISIONAL_ALPHA`; times the too-weak half). Frozen,
+  the snapshot's word counts. Without a heading it is false.
 - No heading: no blips, no cone, no north; dashed rings for the stations
   still to find (found and skipped left out).
 - `pending` draws no stations at all (the prototype's searching rings).
@@ -110,7 +119,8 @@ walkPrecisionChip("weak", 42); // "GPS - about 42 m, too weak"
 - `walk-radar-model.test.ts` - the chip's words, the field of view, the
   rings, blip geometry and clamp, the cone, the looks, the rim arc, each
   precision mark, frozen from the snapshot and without one, pending, no
-  heading, the guards (a NaN accuracy reads as none, an infinite one
+  heading, a provisional heading (no cone, no rim arc, dimmer blips in
+  place; the snapshot's word while frozen), the guards (a NaN accuracy reads as none, an infinite one
   draws the rim, a negative one the smallest blur), the adaptive range.
 - `walk-radar-model.property.test.ts` - a blip's angle is the bearing's
   delta; its radius grows with distance and stays inside the rim for

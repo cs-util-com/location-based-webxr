@@ -40,7 +40,9 @@ WalkRadarView`
     chip's words and `data-kind`, shows the chip only while
     `walkPrecisionChipShown` (hidden for a code's or a good GPS position),
     the wrap's `data-mode` (`frozen` greys
-    the canvas in CSS), the button's `aria-expanded` from the frame's
+    the canvas in CSS), the wrap's `data-heading` (`none`,
+    `provisional` or `confirmed`, from the geometry of that mode: the
+    canvas's look made observable), the button's `aria-expanded` from the frame's
     `listOpen`, and requests a draw;
   - `observeSize(onChange)` - the page's `ResizeObserver` on the canvas:
     a resize makes the next draw read the canvas's size again;
@@ -126,7 +128,8 @@ radar.render({ stations, order, kind, accuracyM, live, snapshot, listOpen });
   cancel), the bursts (find, no replay, skip is no find), the drawing (no
   station distance label, frozen greys and "?", reduced motion, a burst
   ring, a non-finite accuracy drawn without a throw on a canvas whose
-  radial gradient refuses non-finite radii), the view (chip words and modes, the tap, device pixels and the
+  radial gradient refuses non-finite radii; a provisional heading's
+  dimmer north without the cone), the view (the heading's word, (chip words and modes, the tap, device pixels and the
   throttle, no size no draw, the range's hysteresis and reset, a tour in
   order's later stations in the range, `aria-expanded`, the size read
   once until a resize), the colour tokens against `index.html` (and every
@@ -135,6 +138,7 @@ radar.render({ stations, order, kind, accuracyM, live, snapshot, listOpen });
 - The page: `playwright-tests/visitor-walk-radar.spec.js` (the radar opens
   the list, the chip per precision, the rows' and the peek's directions,
   tracking lost, the frozen radar that a move leaves and a skip changes,
-  the `?debug=1` lines; the radar, rows and frozen tests on a tour of
+  the `?debug=1` lines, north drawn provisional at once and confirmed by
+  tracking while the arrows wait; the radar, rows and frozen tests on a tour of
   stories and on one with items) and
   `playwright-tests/visitor-walk-layout.spec.js` (positions and gaps).

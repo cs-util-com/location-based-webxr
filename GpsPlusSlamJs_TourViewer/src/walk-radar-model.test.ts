@@ -410,6 +410,63 @@ describe("walkRadarModel - the visitor's mark by precision", () => {
   });
 });
 
+describe("walkRadarModel - a provisional heading", () => {
+  // Why this test matters: the radar draws north and the blips as soon as
+  // the content is placed, in the same frame as the content, but before
+  // anything confirmed that frame's heading (no compass, no confident
+  // tracking, no code) it can be far off. A provisional heading must look
+  // different: no view cone and no rim arc (both claim "this is where you
+  // look"), the blips dimmer - while north and the blips stay where the
+  // placed content is.
+  const provisional: WalkRadarGeometry = { ...LIVE, headingConfirmed: false };
+
+  it("is confirmed by default and while the geometry says so", () => {
+    for (const live of [LIVE, { ...LIVE, headingConfirmed: true }]) {
+      const m = walkRadarModel(input({ live, snapshot: live }));
+      expect(m.provisional).toBe(false);
+      expect(m.cone).not.toBeNull();
+      // The well, 90° right with a 64° view, is outside it: the rim arc.
+      expect(m.rimArc).toBeCloseTo(Math.PI / 2, 9);
+      expect(blip(m, "well")?.alpha).toBe(1);
+    }
+  });
+
+  it("keeps north and every blip in place, without the cone and the rim arc, the blips dimmer", () => {
+    const sure = walkRadarModel(input());
+    const m = walkRadarModel(input({ live: provisional }));
+    expect(m.provisional).toBe(true);
+    expect(m.mode).toBe("live");
+    expect(m.north).toBe(sure.north);
+    expect(m.cone).toBeNull();
+    expect(m.rimArc).toBeNull();
+    for (const b of m.blips) {
+      const s = blip(sure, b.id)!;
+      expect([b.x, b.y, b.r, b.look]).toEqual([s.x, s.y, s.r, s.look]);
+      expect(b.alpha).toBeCloseTo(s.alpha * 0.5, 9);
+    }
+    // Too weak halves again: dimmer than either alone.
+    const weak = walkRadarModel(
+      input({ live: provisional, kind: "weak", accuracyM: 60 }),
+    );
+    expect(blip(weak, "well")?.alpha).toBeCloseTo(0.25, 9);
+  });
+
+  it("reads the snapshot's word while frozen", () => {
+    const m = walkRadarModel(
+      input({ kind: "none", live: LIVE, snapshot: provisional }),
+    );
+    expect(m.mode).toBe("frozen");
+    expect(m.provisional).toBe(true);
+    expect(walkRadarModel(input({ kind: "none" })).provisional).toBe(false);
+  });
+
+  it("is no heading's word without a heading", () => {
+    const none = { ...provisional, headingDeg: null };
+    expect(walkRadarModel(input({ live: none })).provisional).toBe(false);
+    expect(walkRadarModel(input({ live: null })).provisional).toBe(false);
+  });
+});
+
 describe("walkRadarModel - its guards", () => {
   it("refuses a size or a range that is no positive number", () => {
     expect(() => walkRadarModel(input({ sizePx: 0 }))).toThrow(RangeError);

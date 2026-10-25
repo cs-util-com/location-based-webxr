@@ -11,6 +11,11 @@
  * a frozen radar never reads the live position. The stations' states are
  * always the live ones: a skip made in the list shows at once.
  *
+ * A heading nothing confirmed yet (`headingConfirmed: false`: no compass,
+ * no confident tracking, no code) is drawn provisional: north and the
+ * blips where the placed content is, but no view cone, no rim arc and the
+ * blips dimmer (`WALK_PROVISIONAL_ALPHA`), since it can be far off.
+ *
  * @see walk-radar-model.ts.md
  */
 
@@ -38,6 +43,9 @@ const WALK_RADAR_FALLBACK_VFOV_DEG = { portrait: 64, landscape: 44 };
 /** The blips' radii, px: the focus, the others, a "later" one. */
 const WALK_BLIP_PX = { focus: 8.5, other: 6.5, later: 3.5 };
 
+/** A provisional heading's blips: this share of their opacity. */
+const WALK_PROVISIONAL_ALPHA = 0.5;
+
 /** The GPS blur's smallest radius, px. */
 const BLUR_MIN_PX = 7;
 /** A station beyond the range sits on the rim less this, px. */
@@ -54,6 +62,9 @@ export interface WalkRadarGeometry {
   readonly bearings: ReadonlyMap<string, number>;
   readonly distances: ReadonlyMap<string, number>;
   readonly headingDeg: number | null;
+  /** Whether something confirmed the heading (the guide's
+   *  `headingConfirmed`); absent reads as confirmed. False: provisional. */
+  readonly headingConfirmed?: boolean;
 }
 
 export interface WalkRadarStation {
@@ -133,8 +144,12 @@ export interface WalkRadarModel {
     readonly focus: boolean;
   }[];
   /** The focus outside the view: its angle on the rim, radians clockwise
-   *  from up; null otherwise. */
+   *  from up; null otherwise, and while the heading is provisional. */
   readonly rimArc: number | null;
+  /** The heading drawn is not confirmed: no cone, no rim arc, the blips
+   *  dimmer, north drawn dimmer (`walk-radar.ts`). False without a
+   *  heading. */
+  readonly provisional: boolean;
 }
 
 /** Whole metres, as the line writes them. */
@@ -357,6 +372,7 @@ export function walkRadarModel(input: WalkRadarInput): WalkRadarModel {
   const geo = frozen ? input.snapshot : input.live;
   const heading = geo?.headingDeg ?? null;
   const north = heading === null ? null : -heading * RAD;
+  const provisional = heading !== null && geo?.headingConfirmed === false;
   const empty = {
     rangeM,
     centre,
@@ -365,6 +381,7 @@ export function walkRadarModel(input: WalkRadarInput): WalkRadarModel {
     blips: [],
     distanceRings: [],
     rimArc: null,
+    provisional,
   };
   if (input.kind === "pending") {
     return {
@@ -417,7 +434,9 @@ export function walkRadarModel(input: WalkRadarInput): WalkRadarModel {
     return { ...empty, mode, north: null, cone: null, visitor, distanceRings };
   }
   const half = (fovDeg / 2) * RAD;
-  const alpha = input.kind === "weak" ? 0.5 : 1;
+  const alpha =
+    (input.kind === "weak" ? 0.5 : 1) *
+    (provisional ? WALK_PROVISIONAL_ALPHA : 1);
   let rimArc: number | null = null;
   const blips: WalkRadarBlip[] = [];
   for (const s of input.stations) {
@@ -444,14 +463,15 @@ export function walkRadarModel(input: WalkRadarInput): WalkRadarModel {
       alpha,
       clamped: full > r,
     });
-    if (look === "focus" && Math.abs(a) > half) rimArc = a;
+    if (look === "focus" && Math.abs(a) > half && !provisional) rimArc = a;
   }
   return {
     ...empty,
     mode,
     north,
-    // Heading-up: a cone drawn frozen would claim a live view of nothing.
-    cone: frozen ? null : half,
+    // Heading-up: a cone drawn frozen would claim a live view of nothing,
+    // and one on a provisional heading a view nothing confirmed.
+    cone: frozen || provisional ? null : half,
     visitor,
     blips,
     rimArc,

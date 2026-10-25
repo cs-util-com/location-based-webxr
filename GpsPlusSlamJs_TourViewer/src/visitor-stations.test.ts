@@ -87,6 +87,24 @@ describe("stationAlignmentSignals", () => {
     ctx.viewerVotedLocks = 0;
     expect(signals.trackingReady()).toBe(true);
   });
+
+  // Why: the radar's heading turns confirmed when the compass diagnostics
+  // say a compass contributed. A session with no compass reading must read
+  // silent, and a store the diagnostics cannot answer (the selector is
+  // guarded and may throw) must read silent too, never stop the guide's tick.
+  it("compassHeading is silent with no compass reading and on a store that cannot answer", () => {
+    const ctx = { viewerLockedText: null, viewerVotedLocks: 0 };
+    const store = createTourViewerStore();
+    expect(stationAlignmentSignals(ctx, store).compassHeading()).toBe("silent");
+    const broken = {
+      getState: (): never => {
+        throw new Error("no state");
+      },
+    };
+    expect(stationAlignmentSignals(ctx, broken).compassHeading()).toBe(
+      "silent",
+    );
+  });
 });
 
 describe("createCallGuard", () => {

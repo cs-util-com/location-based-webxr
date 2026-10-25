@@ -27,7 +27,10 @@ VisitorStations` - `{ tick, loadContent, codeLocked, unlockAudio, stop }`
   `isPlacementReady` on the report, which a lined-up code's votes feed
   too: the guide latches its heading on it only without a code): the viewer
   pipeline's voted locks this AR entry (`ctx.viewerLockedText`,
-  `ctx.viewerVotedLocks`) and the store's tracking-quality report.
+  `ctx.viewerVotedLocks`) and the store's tracking-quality report. Also
+  `compassHeading`: `compassHeadingVerdict` over the framework's
+  `getCompassDiagnostics` of the store, guarded (the selector is
+  licence-gated and may throw: then silent, the tick goes on).
   Exported for the same reason. No state of its own: all are read each
   tick.
 
@@ -108,7 +111,9 @@ hooks.tickStations = stations.tick;
 
 - `playwright-tests/stations.spec.js` (the composition).
 - `visitor-stations.test.ts` - `stationAlignmentSignals` against the real
-  tracking-quality slice, `trackingReady` reading the report, not the lock state.
+  tracking-quality slice, `trackingReady` reading the report, not the lock state,
+  `compassHeading` silent with no compass reading and on a store that
+  cannot answer.
 - `viewer-content-alignment.test.ts` ("finds the station on the scanned
   code on the first voted lock"): the real station guide over the real
   placement, `stationPlacementAllowed` and `stationAlignmentSignals`.
@@ -176,7 +181,11 @@ hooks.tickStations = stations.tick;
   (`walk-radar.ts`), rendered with the sheet from the guide's view and
   the store's chip kind (`selectWalkChipKind`); hidden when the sheet is.
   Its stations are the list's rows (the branch rule stays one). A tap
-  toggles the list through `sheetSet`.
+  toggles the list through `sheetSet`. Its live geometry carries the
+  guide's `radarHeadingDeg` and `headingConfirmed`, not `headingDeg`: north
+  shows from the content's first frame, provisional until confirmed, while
+  `walkDirectionsOf` (the words, the peek's arrow) keeps the latched
+  `headingDeg`.
 - `walkDirectionsOf(view, chip, memory)` - each station's word and angle
   (`bearingDeltaDeg(bearing, heading)`) for the sheet model; none without
   a heading or while the chip is not `code` or `gps`, and the memory is

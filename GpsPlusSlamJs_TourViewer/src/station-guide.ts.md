@@ -44,6 +44,9 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
   a heading, `tour-flow.ts` `alignmentReady`), `trackingReady()` (the
   tracking report reads ready, `tour-flow.ts` `isPlacementReady`: it
   latches a heading, only while no code is lined up),
+  `compassHeading?()` (`tour-flow.ts` `compassHeadingVerdict`, re-read
+  each tick: a confirm latches the radar's heading as confirmed for the AR
+  entry, a distrust drops it; never the HUD's latch; absent: silent),
   `startHud(getTargets)`, `now()`, `fixMaxAgeMs?` (default
   `FIX_MAX_AGE_MS`, 5 s), `guideStore?` (the page's store with the
   `visitorGuide` slice, `visitor-guide-slice.ts`: the present station is
@@ -622,9 +625,20 @@ undo, note }`: the line's station, how the position stands
   below `WALK_HEADING_MIN_SHARE` (`camera-heading.ts`: within about 14.5
   degrees of straight down, where a degree of tremor swung the bearing by
   tens of degrees) or a pose has no orientation; null before the latch,
-  reset at `endSession`.
-- `GuideView.snapshot` - the last geometry (distances, bearings,
-  heading) judged while a code or GPS within the ceiling spoke for the
+  reset at `endSession`. The HUD's arrows and the direction words read
+  this one.
+- `GuideView.radarHeadingDeg` - the same bearing whenever there is an
+  alignment (`VisitorPosition.aligned`) or the latch holds: the frame the
+  tour's content is placed in, so the radar agrees with the placed content
+  from its first frame instead of waiting for the latch. Null without an
+  alignment.
+- `GuideView.headingConfirmed` - the heading latch holds, or a compass
+  confirmed the heading this AR entry (`compassHeading`) and no distrust
+  followed; reset at `endSession`. False: the radar draws the heading
+  provisional (`walk-radar-model.ts`). Before it, without a compass, the
+  start yaw can be far off - which is why the arrows keep the latch.
+- `GuideView.snapshot` - the last geometry (distances, bearings, the
+  radar's heading and whether it was confirmed) judged while a code or GPS within the ceiling spoke for the
   position and the store's `trackingLost` was false (never a too-weak
   fix's: a later freeze must not draw where it put the stations); a frozen radar draws
   from it. A closure cache rebuilt from the measurement, never the

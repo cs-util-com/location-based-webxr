@@ -4,10 +4,13 @@ import {
   arStatusLine,
   contentSegment,
   clearCacheLabel,
+  compassHeadingVerdict,
+  COMPASS_CONFIRMS_WEIGHT,
   isPlacementReady,
   placementSegment,
   qrSegment,
   type ArStatusInput,
+  type CompassHeadingVerdict,
   type PlacementState,
 } from "./tour-flow.js";
 
@@ -417,5 +420,129 @@ describe("arStatusLine - a code the moved-code check ignores (D20, M5c)", () => 
     });
     expect(line).toContain("Code ignored - placing the tour by GPS.");
     expect(line).not.toContain("Scanning for the printed code");
+  });
+});
+
+describe("compassHeadingVerdict - whether a compass stands behind the heading", () => {
+  // Why these tests matter: the radar draws north as soon as the content
+  // is placed, and calls that heading confirmed only when something stands
+  // behind it. The compass diagnostics are external data: every field is
+  // absent until measured, and the applied share drops back to 0 once GPS
+  // alone carries the heading. A "confirms" on an absent or zero share
+  // would draw a confident north nothing confirmed.
+  it("confirms once a compass carries a real share of the heading", () => {
+    for (const w of [1, 0.6, COMPASS_CONFIRMS_WEIGHT]) {
+      expect(
+        compassHeadingVerdict({ appliedWeight: w, trust: undefined }),
+      ).toBe("confirms");
+    }
+    expect(
+      compassHeadingVerdict({
+        appliedWeight: 0.9,
+        trust: { state: "trusted" },
+      }),
+    ).toBe("confirms");
+  });
+
+  it("is silent with no compass reading, a share too small, or a value that is no share", () => {
+    for (const w of [
+      undefined,
+      0,
+      COMPASS_CONFIRMS_WEIGHT - 0.01,
+      Number.NaN,
+      -1,
+      Number.POSITIVE_INFINITY,
+    ]) {
+      expect(
+        compassHeadingVerdict({ appliedWeight: w, trust: undefined }),
+      ).toBe("silent");
+    }
+    expect(compassHeadingVerdict(null)).toBe("silent");
+    expect(compassHeadingVerdict(undefined)).toBe("silent");
+    expect(
+      compassHeadingVerdict({
+        appliedWeight: undefined,
+        trust: { state: "dormant" },
+      }),
+    ).toBe("silent");
+  });
+
+  it("distrusts a compass marked untrusted, whatever its share", () => {
+    expect(
+      compassHeadingVerdict({
+        appliedWeight: 1,
+        trust: { state: "untrusted" },
+      }),
+    ).toBe("distrusts");
+  });
+
+  // Why this test matters (the parameter rule: a verdict from one value is
+  // provisional): the threshold decides when a provisional north turns
+  // confirmed. Each scenario is the share a compass has over a few
+  // updates, latched as the guide latches it (a confirm holds until a
+  // distrust or the session's end); the sweep finds every threshold that
+  // gives the shipped verdicts and requires the shipped value inside that
+  // band with room on both sides. The band is (0.03, 0.4]: above 0.4 a
+  // compass first seen once GPS carries 60 % of the heading no longer
+  // confirms it; at or below 0.03 a compass carrying 3 % of it would.
+  it("ships a threshold inside the band where every scenario's verdict holds", () => {
+    const scenarios: {
+      name: string;
+      weights: (number | undefined)[];
+      confirmed: boolean;
+    }[] = [
+      {
+        name: "a cold start, standing still",
+        weights: [1, 1, 0.95],
+        confirmed: true,
+      },
+      {
+        name: "handed back to GPS while walking",
+        weights: [1, 0.8, 0.5, 0.2, 0.05],
+        confirmed: true,
+      },
+      {
+        name: "a compass first seen late",
+        weights: [undefined, undefined, 0.4, 0.3],
+        confirmed: true,
+      },
+      {
+        name: "no compass",
+        weights: [undefined, undefined, undefined],
+        confirmed: false,
+      },
+      { name: "a compass with no share", weights: [0, 0, 0], confirmed: false },
+      {
+        name: "a compass with a sliver",
+        weights: [0.02, 0.03, 0.01],
+        confirmed: false,
+      },
+    ];
+    const latched = (
+      weights: (number | undefined)[],
+      threshold: number,
+    ): boolean => {
+      let held = false;
+      for (const w of weights) {
+        const v: CompassHeadingVerdict = compassHeadingVerdict(
+          { appliedWeight: w, trust: undefined },
+          threshold,
+        );
+        if (v === "confirms") held = true;
+        if (v === "distrusts") held = false;
+      }
+      return held;
+    };
+    const grid = [
+      0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.41,
+      0.45, 0.5, 0.6, 0.75, 0.9,
+    ];
+    const band = grid.filter((t) =>
+      scenarios.every((s) => latched(s.weights, t) === s.confirmed),
+    );
+    expect(band).toEqual([0.04, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]);
+    expect(band).toContain(COMPASS_CONFIRMS_WEIGHT);
+    expect(COMPASS_CONFIRMS_WEIGHT).toBeGreaterThan(band[0]! * 2);
+    expect(COMPASS_CONFIRMS_WEIGHT).toBeLessThan(band[band.length - 1]!);
   });
 });

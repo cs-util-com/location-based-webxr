@@ -321,6 +321,39 @@ test("placed by GPS: the chip says how well, too weak says so, and no heading dr
   );
 });
 
+test("the radar draws north as soon as the content is placed, provisional until tracking confirms it, while the arrows wait", async ({
+  page,
+}) => {
+  // Why this test matters: the tour's content is placed in the
+  // alignment's frame before any heading is confirmed, and a radar that
+  // waited for that confirmation disagreed with what the visitor saw. It
+  // now reads the same frame at once and says it is provisional (dimmer,
+  // no view cone); the direction words and the arrows keep waiting for a
+  // confirmed heading, which confident tracking gives.
+  await openTour(page, WALK_ARCHIVE);
+  await page.getByTestId("enter-ar").click();
+  await seedAlignment(page);
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.fireTimers();
+  });
+  await page.getByTestId("scan-escape").click();
+  await reportArTracking(page, true);
+  await standAt(page, 0, 0, "now", 4);
+  await reportTracking(page, "degraded");
+  await faceBearing(page, 0);
+  const wrap = page.getByTestId("walk-radar-wrap");
+  await expect(wrap).toHaveAttribute("data-mode", "live");
+  await expect(wrap).toHaveAttribute("data-heading", "provisional");
+  await waitForTheGuess(page);
+  await expect(page.locator("#walk-distance-arrow")).not.toHaveAttribute(
+    "data-deg",
+    /./,
+  );
+  await trackingOk(page);
+  await faceBearing(page, 0);
+  await expect(wrap).toHaveAttribute("data-heading", "confirmed");
+});
+
 test("tracking lost pauses the radar: the chip says so and the radar goes grey, and comes back", async ({
   page,
 }) => {

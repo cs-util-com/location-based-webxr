@@ -161,7 +161,10 @@ export function drawWalkRadar(
     );
   }
   if (m.north !== null) {
-    g.fillStyle = "rgba(255,255,255,.7)";
+    // A provisional heading's north is dimmer: it can be far off.
+    g.fillStyle = m.provisional
+      ? "rgba(255,255,255,.38)"
+      : "rgba(255,255,255,.7)";
     g.font = `700 ${String(Math.max(9, w * 0.072))}px system-ui,sans-serif`;
     g.textAlign = "center";
     g.fillText(
@@ -619,6 +622,18 @@ export function wireWalkRadar(deps: {
       const mode =
         next.kind === "none" || next.kind === "lost" ? "frozen" : "live";
       if (dom.wrap.dataset["mode"] !== mode) dom.wrap.dataset["mode"] = mode;
+      // The heading's word, for a test and a stylesheet: none, provisional
+      // or confirmed (the geometry the radar reads in this mode).
+      const geo = mode === "frozen" ? next.snapshot : next.live;
+      const heading =
+        geo?.headingDeg == null
+          ? "none"
+          : geo.headingConfirmed === false
+            ? "provisional"
+            : "confirmed";
+      if (dom.wrap.dataset["heading"] !== heading) {
+        dom.wrap.dataset["heading"] = heading;
+      }
       const expanded = String(next.listOpen);
       if (dom.button.getAttribute("aria-expanded") !== expanded) {
         dom.button.setAttribute("aria-expanded", expanded);

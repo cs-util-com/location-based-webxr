@@ -184,6 +184,51 @@ export function alignmentReady(
   return isPlacementReady(report) || codeLinedUp(qr);
 }
 
+/**
+ * The share of the heading a compass must carry before it confirms the
+ * radar's north (`compassHeadingVerdict`). The sweep in `tour-flow.test.ts`
+ * finds every threshold in (0.03, 0.4] gives the same verdicts on its
+ * scenarios: above 0.4 a compass first read once GPS carries most of the
+ * heading would not confirm it; at 0.03 or below a sliver would.
+ */
+export const COMPASS_CONFIRMS_WEIGHT = 0.25;
+
+/** What the compass diagnostics say about the heading now: a compass
+ *  carried a real share of it (`confirms`), it is marked untrusted
+ *  (`distrusts`), or nothing either way (`silent`). */
+export type CompassHeadingVerdict = "confirms" | "distrusts" | "silent";
+
+/** The compass diagnostics' fields this reads (the framework's
+ *  `getCompassDiagnostics` result, structurally): each absent until
+ *  measured, the share absent while no compass reading exists. */
+interface CompassDiagnosticsLike {
+  readonly appliedWeight?: number | undefined;
+  readonly trust?: { readonly state?: string } | undefined;
+}
+
+/**
+ * Whether a compass stands behind the heading now. Untrusted wins over
+ * any share; a share confirms only when it is a finite number of at least
+ * `minWeight` (at most 1). Anything else - no diagnostics, no reading, a
+ * share of 0 (GPS alone carries the heading), a value that is no share -
+ * is silent, never a confirm.
+ */
+export function compassHeadingVerdict(
+  diagnostics: CompassDiagnosticsLike | null | undefined,
+  minWeight: number = COMPASS_CONFIRMS_WEIGHT,
+): CompassHeadingVerdict {
+  if (diagnostics === null || diagnostics === undefined) return "silent";
+  if (diagnostics.trust?.state === "untrusted") return "distrusts";
+  const w = diagnostics.appliedWeight;
+  return typeof w === "number" &&
+    Number.isFinite(w) &&
+    w >= minWeight &&
+    w <= 1 &&
+    w > 0
+    ? "confirms"
+    : "silent";
+}
+
 /** The printed-code line: the viewer pipeline's status, with the no-codes
  *  rule applied for an open tour. Empty in author mode. */
 const NO_PRINTED_CODES = "This tour has no printed codes.";

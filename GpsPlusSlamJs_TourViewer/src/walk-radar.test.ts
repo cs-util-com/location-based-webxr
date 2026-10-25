@@ -85,7 +85,8 @@ function recordingCanvas() {
     stroke: () =>
       void calls.push({ op: "stroke", args: [], style: g.strokeStyle }),
     setLineDash: (args) => void calls.push({ op: "dash", args }),
-    fillText: (...args) => void calls.push({ op: "fillText", args }),
+    fillText: (...args) =>
+      void calls.push({ op: "fillText", args, style: g.fillStyle }),
     createRadialGradient: () => gradient,
   };
   return { g, calls };
@@ -451,6 +452,57 @@ describe("wireWalkRadar", () => {
     // Its words follow the precision while hidden too, so the chip is
     // right the moment it shows.
     expect(v.d.dom.chipText.textContent).toBe("GPS - about 6 m");
+  });
+
+  // Why this test matters: a provisional heading looks different on the
+  // canvas, which no e2e can read; the wrap's data-heading says which
+  // heading the radar draws (none, provisional, confirmed) from the
+  // geometry of its mode, so the page's behaviour is observable.
+  it("says whether its heading is none, provisional or confirmed, by the geometry it draws", () => {
+    const v = view();
+    const word = (over: Partial<WalkRadarFrame>) => {
+      v.radar.render(frame(over));
+      return v.d.dom.wrap.dataset["heading"];
+    };
+    const provisional = { ...GEO, headingConfirmed: false };
+    expect(word({})).toBe("confirmed");
+    expect(word({ live: provisional })).toBe("provisional");
+    expect(word({ live: { ...GEO, headingDeg: null } })).toBe("none");
+    // Frozen: the snapshot's word, not the live one's.
+    expect(word({ kind: "none", live: provisional, snapshot: GEO })).toBe(
+      "confirmed",
+    );
+    expect(word({ kind: "lost", snapshot: provisional })).toBe("provisional");
+  });
+
+  it("draws a provisional heading's north dimmer, without the cone", () => {
+    const north = (live: WalkRadarGeometry) => {
+      const { g, calls } = recordingCanvas();
+      drawWalkRadar(
+        g,
+        walkRadarModel({
+          stations: STATIONS,
+          order: "any",
+          kind: "gps",
+          accuracyM: 6,
+          live,
+          snapshot: live,
+          fovDeg: 64,
+          sizePx: 132,
+        }),
+        DRAW,
+      );
+      const n = calls.find((c) => c.op === "fillText" && c.args[0] === "N");
+      return {
+        style: n?.style,
+        cones: calls.filter((c) => c.op === "moveTo").length,
+      };
+    };
+    const sure = north(GEO);
+    const unsure = north({ ...GEO, headingConfirmed: false });
+    expect(sure.style).toBe("rgba(255,255,255,.7)");
+    expect(unsure.style).toBe("rgba(255,255,255,.38)");
+    expect(unsure.cones).toBe(sure.cones - 1);
   });
 
   it("a tap on the radar toggles the list", () => {
