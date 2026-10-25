@@ -1523,7 +1523,7 @@ function update(dt, t) {
   }
   camera.updateMatrixWorld();
   // appear on entering the circle (visitor); always shown when making
-  if (S.mode === 'visitor') { const f = fp.visitor, inside = Math.hypot(f.pos.x, f.pos.z) < 25; const tgt = inside ? 1 : 0; S.appear = clamp(S.appear + (tgt > S.appear ? dt / 1.6 : -dt / 0.6), 0, 1); }
+  if (S.mode === 'visitor') { const f = fp.visitor, inside = Math.hypot(f.pos.x, f.pos.z) < 25; const tgt = inside ? 1 : 0; S.appear = clamp(S.appear + (tgt > S.appear ? dt / 1.6 : tgt < S.appear ? -dt / 0.6 : 0), 0, 1); }   // hold at the target: stepping down from it made the picture views shimmer
   else S.appear = 1;
   if (view) { view.setAppear(S.appear); view.update(dt, t); }
   // creator onion skin
