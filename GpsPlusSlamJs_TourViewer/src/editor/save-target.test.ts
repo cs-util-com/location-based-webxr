@@ -521,8 +521,12 @@ describe("adoptsSavedFile", () => {
     expect(adoptsSavedFile(pickers, { userAgent: android })).toBe(false);
     expect(
       adoptsSavedFile(pickers, {
-        // A desktop-site request hides Android in the user agent; the
-        // client hints still name it.
+        // ASSUMPTION, not yet measured on a device: a desktop-site request
+        // hides Android in the user agent while the client hints still
+        // name it. The file-access check page (step 8, a reload with
+        // Desktop site on) logs both to confirm or refute this; until then
+        // this row pins the code's behaviour for that case, not the
+        // browser's.
         userAgent: desktop,
         userAgentData: { platform: "Android" },
       }),

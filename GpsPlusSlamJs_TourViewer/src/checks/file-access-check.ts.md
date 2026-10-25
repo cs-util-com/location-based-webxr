@@ -31,6 +31,17 @@ what was written has to survive the closed tab.
 - `verdictWords(verdict, written)` - the verdict in plain words for the
   log, naming which file it is: the file as it was before the rewrite, the
   rewritten file, or a check file.
+- `Interruption` - `"tab"` or `"browser"`: how a rewrite was stopped
+  (the tab closed, or the whole browser killed from the recent apps or
+  force-stopped). `interruptionWords(kind)` says it for the log;
+  `interruptionOf(value)` reads it back from a stored record, null for
+  anything that is not exactly one of the two (an older record without
+  it, a damaged one).
+- `platformWords(nav)` - the platform line for the log: the client
+  hints' platform ("none given" without hints), whether the user agent
+  names Android, and whether the hints say mobile. Run once with Chrome's
+  Desktop site on, it answers whether the hints still say Android while
+  the user agent hides it.
 
 ## Invariants & assumptions
 
@@ -57,4 +68,7 @@ verdictWords(judge(bytesReadBack), { after: spec }); // "CUT SHORT: the rewritte
 
 `file-access-check.test.ts`: the header and the body, chunks equal to one
 piece, seeds that differ, refused specs; each verdict, and a property that
-every cut of every check file reads as cut short, never as whole.
+every cut of every check file reads as cut short, never as whole; the two
+ways of stopping a rewrite in words and read back (anything else null);
+the platform line for a desktop-site request, a phone's user agent, and
+no facts at all.

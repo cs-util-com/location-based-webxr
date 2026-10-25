@@ -207,3 +207,45 @@ export function verdictWords(
 function sameSpec(a: CheckFileSpec, b: CheckFileSpec | undefined): boolean {
   return b !== undefined && a.bodyBytes === b.bodyBytes && a.seed === b.seed;
 }
+
+/** How step 4's rewrite was interrupted: the tab closed, or the whole
+ *  browser closed (swiped away from the recent apps, or force-stopped). */
+export type Interruption = "tab" | "browser";
+
+/** The way of interrupting in plain words, for the log. */
+export function interruptionWords(kind: Interruption): string {
+  return kind === "tab"
+    ? "the tab was closed during the write"
+    : "the whole browser was closed during the write (swiped away from the recent apps, or force-stopped)";
+}
+
+/** The way of interrupting a stored record names; null for anything that
+ *  is not exactly one of the two (an older record, a damaged one). */
+export function interruptionOf(value: unknown): Interruption | null {
+  return value === "tab" || value === "browser" ? value : null;
+}
+
+/** The part of `navigator` the platform line reads. */
+export interface PlatformFacts {
+  readonly userAgent?: string;
+  readonly userAgentData?: {
+    readonly platform?: string;
+    readonly mobile?: boolean;
+  };
+}
+
+/**
+ * The platform as the log states it: the client hints' platform, whether
+ * the user agent names Android, and whether the hints say mobile. Run
+ * once with Chrome's "Desktop site" on, it answers whether the hints still
+ * say Android while the user agent hides it.
+ */
+export function platformWords(nav: PlatformFacts): string {
+  const platform = nav.userAgentData?.platform;
+  const hinted =
+    typeof platform === "string" && platform !== "" ? platform : "none given";
+  const named = /\bAndroid\b/.test(nav.userAgent ?? "") ? "yes" : "no";
+  const mobile = nav.userAgentData?.mobile;
+  const mobileWords = mobile === undefined ? "not said" : mobile ? "yes" : "no";
+  return `Platform from the client hints: ${hinted} | the user agent names Android: ${named} | mobile: ${mobileWords}`;
+}

@@ -16,8 +16,11 @@ import {
   checkFile,
   fileBytes,
   headerOf,
+  interruptionOf,
+  interruptionWords,
   isCheckFileSpec,
   judge,
+  platformWords,
   sizeWords,
   specOf,
   verdictWords,
@@ -163,6 +166,58 @@ describe("the log's words", () => {
     );
     expect(verdictWords({ kind: "empty" })).toBe(
       "EMPTY: the file holds nothing.",
+    );
+  });
+});
+
+describe("the rewrite's two ways of being cut", () => {
+  // Why: a closed tab and a browser killed from the recent-apps list are
+  // different interruptions (a killed browser gets no chance to finish or
+  // clean up a write), and the log is read later, by someone who did not
+  // run it. It must say which one the file read back went through, and a
+  // stored record it cannot read must not be named as either.
+  it("name which way step 4 was interrupted", () => {
+    expect(interruptionWords("tab")).toBe(
+      "the tab was closed during the write",
+    );
+    expect(interruptionWords("browser")).toBe(
+      "the whole browser was closed during the write (swiped away from the recent apps, or force-stopped)",
+    );
+  });
+
+  it("read the way back from the stored record, and nothing else", () => {
+    expect(interruptionOf("tab")).toBe("tab");
+    expect(interruptionOf("browser")).toBe("browser");
+    for (const other of [undefined, null, "", "Tab", 1, {}, ["tab"]]) {
+      expect(interruptionOf(other)).toBeNull();
+    }
+  });
+});
+
+describe("the platform line", () => {
+  // Why: whether Chrome's "Desktop site" mode still says Android in its
+  // client hints, while its user agent hides it, decides how the editor
+  // can tell an Android phone. The log answers that only if it names both.
+  it("names the client hints' platform and whether the user agent names Android", () => {
+    expect(
+      platformWords({
+        userAgent:
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+        userAgentData: { platform: "Android", mobile: false },
+      }),
+    ).toBe(
+      "Platform from the client hints: Android | the user agent names Android: no | mobile: no",
+    );
+    expect(
+      platformWords({
+        userAgent:
+          "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36",
+      }),
+    ).toBe(
+      "Platform from the client hints: none given | the user agent names Android: yes | mobile: not said",
+    );
+    expect(platformWords({})).toBe(
+      "Platform from the client hints: none given | the user agent names Android: no | mobile: not said",
     );
   });
 });
