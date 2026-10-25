@@ -4,7 +4,7 @@
 
 ## Latest
 
-Last recorded 2026-10-12T08:38:25.192Z · machine `f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)` · branch `r825` @ `3402d711`
+Last recorded 2026-10-25T08:37:45.013Z · machine `f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)` · branch `r931` @ `0365db92`
 
 _Header describes the most recent write only; standalone stage runs update single rows. Median = the stage's same-machine history median. Per-recording provenance lives in the JSON block._
 
@@ -18,7 +18,7 @@ _Header describes the most recent write only; standalone stage runs update singl
 | `check:dup` | 3.6 s | ≈ | 2.5 s | – | – | |
 | `check:cycles` | 1.9 s | ≈ | 1.8 s | – | – | |
 | `check:boundaries` | 3.0 s | ≈ | 2.9 s | – | – | |
-| `typecheck` | 1.4 s | ≈ | 1.8 s | – | – | |
+| `typecheck` | 1.5 s | ≈ | 1.8 s | – | – | |
 | `typecheck:tests` | 2.5 s | ≈ | 2.2 s | – | – | |
 | `test:unit` | 28.2 s | ≈ | 24.3 s | 1768 passed, 1 skipped | 0 | |
 | `test:e2e` | 1305.8 s | ≈ | 1200.9 s | 96 passed | 0 | |
@@ -35,7 +35,7 @@ _Header describes the most recent write only; standalone stage runs update singl
 - `check:dup`: 3.6, 2.5, 3.5, 3.4, 2.4, 2.6, 2.4, 3.4, 2.3, 2.3
 - `check:cycles`: 1.9, 1.8, 1.9, 1.8, 1.7, 2.0, 1.7, 1.7, 1.7, 1.7
 - `check:boundaries`: 3.0, 3.0, 2.9, 2.9, 2.7, 3.1, 2.8, 2.8, 2.7, 2.7
-- `typecheck`: 1.4, 2.0, 2.3, 1.9, 1.8, 1.7, 1.6, 1.8, 2.1, 1.6
+- `typecheck`: 1.5, 1.4, 2.0, 2.3, 1.9, 1.8, 1.7, 1.6, 1.8, 2.1
 - `typecheck:tests`: 2.5, 2.4, 2.3, 2.2, 2.1, 1.8, 2.1, 2.8, 1.7, 2.1
 - `test:unit`: 28.2, 27.3, 24.6, 23.4, 23.8, 28.3, 25.5, 23.8, 24.0, 23.9
 - `test:e2e`: 1305.8, 1320.1, 1195.0, 1200.1, 1201.8, 1206.2, 1199.6, 1194.5, 1196.9, 1246.9
@@ -45,9 +45,10 @@ _Header describes the most recent write only; standalone stage runs update singl
 ```json
 {
   "version": 1,
-  "meta": {"project":"GpsPlusSlamJs_OsmDemo","lastWrite":{"ts":"2026-10-12T08:38:25.192Z","machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","machineLabel":"f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)","git":"3402d711","branch":"r825"}},
+  "meta": {"project":"GpsPlusSlamJs_OsmDemo","lastWrite":{"ts":"2026-10-25T08:37:45.013Z","machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","machineLabel":"f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)","git":"0365db92","branch":"r931"}},
   "stages": {
     "typecheck": { "history": [
+      {"ts":"2026-10-25T08:37:45.013Z","durationMs":1489,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"0365db92"},
       {"ts":"2026-10-12T08:38:25.192Z","durationMs":1420,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"3402d711"},
       {"ts":"2026-09-28T16:25:00.092Z","durationMs":2038,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"542ac053"},
       {"ts":"2026-09-28T12:19:38.376Z","durationMs":2287,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"06abcca3"},
@@ -56,8 +57,7 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-09-27T04:58:23.720Z","durationMs":1734,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"61a2b1c6"},
       {"ts":"2026-09-27T02:47:35.791Z","durationMs":1579,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"0bac5801"},
       {"ts":"2026-09-27T02:39:04.761Z","durationMs":1838,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"949b6e83"},
-      {"ts":"2026-09-27T00:22:52.962Z","durationMs":2053,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"a452753b"},
-      {"ts":"2026-09-26T22:47:53.248Z","durationMs":1587,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"6d08fe08"}
+      {"ts":"2026-09-27T00:22:52.962Z","durationMs":2053,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"a452753b"}
     ] },
     "test:unit": { "history": [
       {"ts":"2026-09-28T16:25:30.867Z","durationMs":28159,"tests":{"passed":1768,"failed":0,"skipped":1,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"542ac053"},
