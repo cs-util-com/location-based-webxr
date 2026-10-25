@@ -46,7 +46,9 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
   latches a heading, only while no code is lined up),
   `compassHeading?()` (`tour-flow.ts` `compassHeadingVerdict`, re-read
   each tick: a confirm latches the radar's heading as confirmed for the AR
-  entry, a distrust drops it; never the HUD's latch; absent: silent),
+  entry, a distrust drops it - in the default configuration the compass's
+  trust is never re-evaluated, so no distrust comes and a confirm is not
+  checked against anything; never the HUD's latch; absent: silent),
   `startHud(getTargets)`, `now()`, `fixMaxAgeMs?` (default
   `FIX_MAX_AGE_MS`, 5 s), `guideStore?` (the page's store with the
   `visitorGuide` slice, `visitor-guide-slice.ts`: the present station is
@@ -674,7 +676,9 @@ undo, note }`: the line's station, how the position stands
   alignment.
 - `GuideView.headingConfirmed` - the heading latch holds, or a compass
   confirmed the heading this AR entry (`compassHeading`) and no distrust
-  followed; reset at `endSession`. False: the radar draws the heading
+  followed (none comes in the default configuration: a compass's confirm
+  is not checked against anything, it holds until the entry ends); reset
+  at `endSession`. False: the radar draws the heading
   provisional (`walk-radar-model.ts`). Before it, without a compass, the
   start yaw can be far off - which is why the arrows keep the latch.
 - `GuideView.there` - `{ id, tail } | null`: the station the visitor is

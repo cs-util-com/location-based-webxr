@@ -76,8 +76,11 @@
  *   forward through the alignment; the last bearing kept while the camera
  *   points near straight down, `camera-heading.ts`) - with whether it is
  *   confirmed (the latch above holds, or a compass contributed this AR
- *   entry: `compassHeading`, latched until it is distrusted; a
- *   provisional heading can be far off, and the radar draws it so), every
+ *   entry: `compassHeading`, latched for the AR entry and dropped by a
+ *   distrust - but in the default configuration the compass's trust is
+ *   never re-evaluated, so no distrust comes and a confirm is not checked
+ *   against anything; a provisional heading can be far off, and the radar
+ *   draws it so), every
  *   station's bearing, and the last judged
  *   snapshot of that geometry - kept while a code or GPS within the
  *   ceiling speaks for the position and tracking is not lost, so a frozen
@@ -280,7 +283,9 @@ export interface GuideView {
    *  null without one. */
   readonly radarHeadingDeg: number | null;
   /** Whether that heading is confirmed: the heading latch holds, or a
-   *  compass contributed this AR entry and was not distrusted since. */
+   *  compass contributed this AR entry and was not distrusted since (in
+   *  the default configuration no distrust comes: a compass's confirm is
+   *  not checked against anything). */
   readonly headingConfirmed: boolean;
   /** The last judged geometry, for a frozen radar (M3, §1.2); null before
    *  the first this AR entry. */
@@ -355,8 +360,10 @@ export interface StationGuideDeps {
   /** What the compass diagnostics say about the heading now
    *  (`tour-flow.ts` `compassHeadingVerdict`; re-read each tick). A
    *  confirm latches the radar's heading as confirmed for the AR entry, a
-   *  distrust drops that latch; absent: always silent. Never the HUD's
-   *  latch: the arrows keep waiting for tracking or a code. */
+   *  distrust drops that latch (in the default configuration none comes:
+   *  the compass's trust is never re-evaluated, so a confirm holds
+   *  unchecked); absent: always silent. Never the HUD's latch: the arrows
+   *  keep waiting for tracking or a code. */
   compassHeading?(): CompassHeadingVerdict;
   /** Start the HUD for this AR session; null while it cannot (no camera
    *  yet). The guide retries on the next tick. `getTargets` and `focusId`
@@ -634,7 +641,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  (r881 third review L2). */
   let headingReady = false;
   /** A compass confirmed the heading this AR entry (`compassHeading`),
-   *  and no distrust followed. Only the radar's word reads it. */
+   *  and no distrust followed (none comes in the default configuration).
+   *  Only the radar's word reads it. */
   let compassConfirmed = false;
   /** The run was replaced or dropped (another tour, or none; never the
    *  first run): the store's presence and its "show all" reset at the end

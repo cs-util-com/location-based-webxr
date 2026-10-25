@@ -485,6 +485,10 @@ describe("compassHeadingVerdict - whether a compass stands behind the heading", 
   // band with room on both sides. The band is (0.03, 0.4]: above 0.4 a
   // compass first seen once GPS carries 60 % of the heading no longer
   // confirms it; at or below 0.03 a compass carrying 3 % of it would.
+  // Provisional: the scenarios are assumed, not recorded. What reverses
+  // the verdict is the share at the first compass reading - about 1 at a
+  // cold start standing still, so there any threshold up to about 0.9
+  // gives the same verdict.
   it("ships a threshold inside the band where every scenario's verdict holds", () => {
     const scenarios: {
       name: string;

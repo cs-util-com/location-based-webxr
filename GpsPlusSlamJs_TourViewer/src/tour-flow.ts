@@ -186,10 +186,14 @@ export function alignmentReady(
 
 /**
  * The share of the heading a compass must carry before it confirms the
- * radar's north (`compassHeadingVerdict`). The sweep in `tour-flow.test.ts`
- * finds every threshold in (0.03, 0.4] gives the same verdicts on its
- * scenarios: above 0.4 a compass first read once GPS carries most of the
- * heading would not confirm it; at 0.03 or below a sliver would.
+ * radar's north (`compassHeadingVerdict`). PROVISIONAL: the sweep in
+ * `tour-flow.test.ts` finds every threshold in (0.03, 0.4] gives the same
+ * verdicts on its scenarios, but the scenarios are assumed, not recorded.
+ * The value that actually reverses the verdict is the applied share at the
+ * first compass reading: about 1 for a visitor standing still at a cold
+ * start, so any threshold up to about 0.9 gives the same verdict there;
+ * only a compass first read once GPS already carries most of the heading
+ * sits near the band's top. Not measured on a phone.
  */
 export const COMPASS_CONFIRMS_WEIGHT = 0.25;
 
@@ -208,7 +212,9 @@ interface CompassDiagnosticsLike {
 
 /**
  * Whether a compass stands behind the heading now. Untrusted wins over
- * any share; a share confirms only when it is a finite number of at least
+ * any share (in the default configuration the trust is never
+ * re-evaluated, so `distrusts` does not occur there and a confirm is not
+ * checked against anything); a share confirms only when it is a finite number of at least
  * `minWeight` (at most 1). Anything else - no diagnostics, no reading, a
  * share of 0 (GPS alone carries the heading), a value that is no share -
  * is silent, never a confirm.

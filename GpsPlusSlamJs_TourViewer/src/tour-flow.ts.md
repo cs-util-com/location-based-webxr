@@ -73,14 +73,22 @@ codeLinedUp(qr)`: whether the station guide judges on the aligned frame
   diagnostics, no reading (the share is absent then), a share of 0 (GPS
   alone carries the heading), a value that is no share - is silent. The
   station guide latches a confirm as the radar's "heading confirmed"
-  (`station-guide.ts`); the HUD's arrows never read it.
+  (`station-guide.ts`); the HUD's arrows never read it. In the default
+  configuration the compass's trust is never re-evaluated: `distrusts`
+  does not occur there, and a confirm is not checked against anything -
+  it holds for the AR entry.
 - `COMPASS_CONFIRMS_WEIGHT = 0.25`: the share that confirms. The sweep
   in `tour-flow.test.ts` (thresholds 0.01-0.9 over six scenarios: a cold
   start, a hand-back to GPS, a compass first read late at 0.4, none, a
   share of 0, a sliver of 0.01-0.03) finds the verdicts stable for every
   threshold in (0.03, 0.4]: above 0.4 the late compass no longer
-  confirms, at 0.03 or below the sliver would. The value sits inside with
-  room on both sides; it was not measured on a phone.
+  confirms, at 0.03 or below the sliver would. That band is PROVISIONAL:
+  its scenarios are assumed, not recorded. The value that actually
+  reverses the verdict is the applied share at the first compass reading,
+  about 1 for a visitor standing still at a cold start, so there any
+  threshold up to about 0.9 gives the same verdict; only a compass first
+  read once GPS carries most of the heading sits near the band's top. Not
+  measured on a phone.
 - `contentSegment(content)` - "N placed objects (K could not load)" once
   the tour's `tour.json` content is rendered (M5).
 - The composed line carries the scan gate's segment (`gateSegment`, from

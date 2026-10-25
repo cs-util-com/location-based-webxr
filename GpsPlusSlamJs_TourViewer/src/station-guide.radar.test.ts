@@ -300,6 +300,8 @@ describe("the radar's heading, provisional until confirmed", () => {
   // reads the same frame at once and says how sure it is: confirmed by the
   // heading latch (confident tracking, a code) or by a compass that
   // contributed; the HUD's arrows and the direction words keep the latch.
+  // The distrust case pins the guide's mechanism; in the default
+  // configuration no distrust comes, so a confirm holds unchecked.
   it("draws the camera's bearing as soon as there is an alignment, provisional", () => {
     const h = harness();
     h.setReady(false);
