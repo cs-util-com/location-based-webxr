@@ -385,7 +385,10 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   their home, and a write prunes it once they are gone), one that keeps
   itself (`keepsItself`) only while an object of the document still
   stands in it, so a station added, saved and undone is gone rather than
-  kept by its own title. A frame the file lacks is kept while an edit
+  kept by its own title. Such a station loses its routes to a station
+  `deletedStations` names: a delete prunes only the stations it lists, so
+  a written station its items left kept its `next` to a station deleted
+  afterwards, and the format refuses that tour. A frame the file lacks is kept while an edit
   names it, it keeps itself (a station added or copied here), or it is a
   bare empty station of the tour as opened (`bareEmptyStations`: nothing
   else would keep one, so its delete, saved, then undone, brought nothing
