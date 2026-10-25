@@ -52,6 +52,17 @@ describe('sentryOptions', () => {
     expect(options.sendDefaultPii).toBe(false);
   });
 
+  it("labels every report with the page's environment", () => {
+    // Branch previews are production builds and send reports too; the
+    // label keeps them, and local runs of a production build, apart from
+    // the live site's (error-report-environment.ts).
+    expect(sentryOptions(OWN, 'gps.csutil.com').environment).toBe('production');
+    expect(
+      sentryOptions(OWN, 'r943-gps-plus-slam.csutil.workers.dev').environment
+    ).toBe('preview');
+    expect(sentryOptions(OWN, 'localhost').environment).toBe('development');
+  });
+
   it('samples traces well below every page load', () => {
     expect(TRACES_SAMPLE_RATE).toBe(0.1);
     expect(options.tracesSampleRate).toBe(TRACES_SAMPLE_RATE);

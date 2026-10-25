@@ -11,6 +11,7 @@
 import * as Sentry from '@sentry/browser';
 import type { BrowserOptions } from '@sentry/browser';
 
+import { errorReportEnvironment } from './error-report-environment';
 import { scrubDeep } from './sentry-scrub';
 
 /**
@@ -37,18 +38,27 @@ const DROPPED_DEFAULT_INTEGRATIONS: ReadonlySet<string> = new Set([
  *
  * @param ownHost this site's host; links to it keep their path in reports
  *   (stack traces need the script paths), links elsewhere keep only the host
+ * @param pageHostname the page's host name, which picks the reports'
+ *   environment label (live site, branch preview or this machine)
  */
 export function sentryOptions(
-  ownHost: string | undefined = globalThis.location?.host
+  ownHost: string | undefined = globalThis.location?.host,
+  pageHostname: string | undefined = globalThis.location?.hostname
 ): BrowserOptions {
   return {
     // DSN is hardcoded intentionally:
-    // - This is a single-environment static frontend (no staging/prod distinction)
+    // - One build serves every deployment (the live site and each branch
+    //   preview); `environment` below tells their reports apart
     // - DSN is not secret (Sentry docs confirm it's safe to expose in client code)
     // - Keeps setup minimal per project philosophy (AGENTS.md)
     // - If multi-environment support is needed later, use: import.meta.env.VITE_SENTRY_DSN || ''
     // The host names the data region; the privacy page names it too.
     dsn: 'https://f45023a2803b24ca8cfe9e93362b909c@o369909.ingest.us.sentry.io/4510756888903680',
+
+    // Branch previews are production builds and send reports too; the
+    // label keeps them, and local runs of a production build, apart from
+    // the live site's.
+    environment: errorReportEnvironment(pageHostname),
 
     // No default personal data: the SDK then tells the service not to infer
     // or store the sender's IP address.

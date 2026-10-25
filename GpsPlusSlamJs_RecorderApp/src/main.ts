@@ -12,11 +12,11 @@
  */
 
 // Initialize Sentry as early as possible for error tracking.
-// Guard with PROD check to avoid sending test/dev data to Sentry.
-// NOTE: We use PROD rather than a dedicated VITE_SENTRY_ENABLED env var because:
-// 1. Cloudflare preview deployments are dev builds where we don't want Sentry noise
-// 2. If staging with separate Sentry is needed later, we'd use VITE_SENTRY_DSN anyway
-// 3. PROD is idiomatic Vite and requires zero configuration
+// Guarded by PROD so the dev server sends nothing. Every production build
+// sends, branch previews included (they deploy the same build as the live
+// site): each report carries an environment label from the page's host
+// (production, preview or development; utils/error-report-environment.ts),
+// so previews' reports stay apart from the live site's.
 import { initSentry } from './utils/sentry';
 if (import.meta.env.PROD) {
   initSentry();

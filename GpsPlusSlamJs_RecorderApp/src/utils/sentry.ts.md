@@ -13,7 +13,11 @@ change in the same commit.
 ### `initSentry(): void`
 
 Initializes the Sentry SDK with `sentryOptions()`. Called as early as
-possible in `main.ts`, and only in production builds (`import.meta.env.PROD`).
+possible in `main.ts`, and only in production builds (`import.meta.env.PROD`):
+the dev server sends nothing. Every production build sends, branch
+previews included (each preview deploys the same build as the live site),
+and so does a production build served on this machine (`vite preview`, the
+e2e suite); the `environment` label below keeps their reports apart.
 
 ```ts
 import { initSentry } from './utils/sentry';
@@ -21,11 +25,13 @@ import { initSentry } from './utils/sentry';
 initSentry();
 ```
 
-### `sentryOptions(ownHost?): BrowserOptions`
+### `sentryOptions(ownHost?, pageHostname?): BrowserOptions`
 
 The options, as a pure function so a unit test can pin them. `ownHost`
 defaults to `location.host`; links to it keep their path in reports, links
 to other hosts keep only the host (see `sentry-scrub.ts.md`).
+`pageHostname` defaults to `location.hostname` and picks the `environment`
+label (`error-report-environment.ts`).
 
 ### `TRACES_SAMPLE_RATE`
 
@@ -37,6 +43,13 @@ reported.
 
 ## The configuration, and why
 
+- `environment` - `production` on the live site (`gps.csutil.com` and the
+  worker's own `gps-plus-slam.csutil.workers.dev`), `development` on this
+  machine (`localhost`, loopback), `preview` on a branch or commit preview
+  (`<label>-gps-plus-slam.csutil.workers.dev`) and on any other host
+  (`error-report-environment.ts.md` says why unknown hosts are previews).
+  The label is derived from the page address the report already carries,
+  so it adds nothing a report did not hold.
 - `sendDefaultPii: false` - the SDK adds no automatic IP address to the user
   or the session, and sets `infer_ip: "never"` in the SDK settings it sends,
   so the service is told not to infer the IP from the connection (verified
@@ -129,8 +142,8 @@ variable to be set in CI/CD.
 
 ## Tests
 
-- `sentry.test.ts` pins the reduced configuration: no default personal
-  data, the trace sample rate, no console logging integration and no Logs,
+- `sentry.test.ts` pins the reduced configuration: the environment label
+  for the three kinds of host, no default personal data, the trace sample rate, no console logging integration and no Logs,
   no session and no culture integration among the integrations the SDK
   really runs (resolved from its own `getDefaultIntegrations` the way
   `init` does), a report with a tour link, a file id and a coordinate pair
