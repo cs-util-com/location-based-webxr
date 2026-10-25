@@ -17,8 +17,13 @@ landing page.
   every app and needs nothing from any app's build.
 - `#privacy` has one part per data flow: the hosting (every app), then the
   Tour Viewer, the Recorder, the anchor starter, the four demos that contact
-  nothing else, the map demo, and the start page with the blog; then storage
-  on the device, the rights, and the order of changes.
+  nothing else, the map demo, the developer test pages, and the start page
+  with the blog; then storage on the device, the rights, and the order of
+  changes.
+- The summary at the top ("In short") must not claim more than the parts
+  below it: it says the camera image and sensor readings are not sent, and
+  names the two ways location does leave the device (map requests for the
+  area you are in, the anchor starter's link).
 
 ## Placeholders (visible on purpose)
 
@@ -35,27 +40,44 @@ goes live]` (`data-testid="operator-placeholder"`): the operator's name
 ## Invariants
 
 - Nothing claims more than the code does. Facts and where they come from:
-  - hosting and the file service log: `wrangler.toml` (Workers Logs on,
-    invocation logs persisted, every `/api/*` request); the logs are kept
-    3 days on the account's plan;
-  - the file service passes on only the file id and the range headers
-    (`GpsPlusSlamJs_SiteWorker`, `drive-proxy.ts`);
+  - hosting and the worker log: `wrangler.toml` (Workers Logs on,
+    invocation logs persisted; the worker runs first for `/api/*` and also
+    for every request that matches no asset, so both are logged); the logs
+    are kept 3 days on the account's plan;
+  - the file service passes on only the file id, `Range` and the cache
+    validators `If-None-Match` / `If-Modified-Since`
+    (`GpsPlusSlamJs_SiteWorker`, `drive-proxy.ts` and its forwarding test);
+  - a bare-name `?qr=` tour link resolves under GitHub's raw host
+    (`GpsPlusSlamJs_TourViewer/src/code-tour.ts`, `DEFAULT_ASSET_PREFIX`);
+  - the editor's "Done editing" dialog and its "Move the debug data out"
+    button: `GpsPlusSlamJs_TourViewer/edit.html`;
   - the Tour Viewer's storage, sensors and tour files: unchanged from the
     page this replaced (`GpsPlusSlamJs_TourViewer/legal.html.md` history);
   - the Recorder's error reports: `GpsPlusSlamJs_RecorderApp/src/utils/
 sentry.ts.md` (configuration and the audit of what log lines carry);
-    the map tiles: the framework's `utils/osm-tiles.ts`;
+    the map tiles: the framework's `utils/osm-tiles.ts`; the Recorder no
+    longer sends a session per page load nor locale and timezone, so it
+    contacts the error service only for an error, a warning or a sampled
+    trace;
   - the starter's link carries the marker's position: its
     `url-anchor-state.ts`;
   - the map demo's hosts: the OSM package's `source/overpass-source.ts`
     and `elevation/terrarium.ts`, the demo's `dem-provider.ts` and the
-    Leaflet stylesheet in its `index.html`.
+    Leaflet stylesheet in its `index.html`;
+  - the developer test pages: `/lookdev/` is the design system's look-dev
+    build (`build-lookdev.mjs`), whose modules reach OpenStreetMap tiles,
+    Overpass, Mapterhorn and the AWS terrain tiles; the Recorder's
+    `ar-hittest-test.html` and `alignment-timing.html` are extra Vite
+    entries that load nothing from other hosts. They carry no link to this
+    page, by decision (the repo-config test lists them as exempt).
 - A change of what any app sends or stores changes this page in the same
   commit, and with it the "Last updated" date and the pinned hash.
 - "Last updated" is written by hand, never at build time: a build changes
   nothing a reader is told. The HTML comment above it says when to change
   it; `tests/repo-config/legal-page.test.js` pins a hash of the visible
-  text together with the date, so neither changes without the other.
+  text together with the date. That makes every change of either a
+  deliberate edit of the test file; it cannot force the date to move with
+  the text (a typo fix updates the hash alone).
 - No clause makes the reader responsible for checking the page for
   changes; the "Changes" paragraph promises the order of events instead.
 - The page names no jurisdiction; the placeholders stay generic.

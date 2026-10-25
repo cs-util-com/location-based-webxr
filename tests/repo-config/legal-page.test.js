@@ -5,9 +5,12 @@
 // them the truth, and each of the ways it can fail is silent:
 // - its "Last updated" date is written by hand (a build-time date would claim
 //   a change on every deploy), so the text can change while the date does
-//   not, or the date can be bumped for nothing. Pinning a hash of the visible
-//   text TOGETHER with the date makes either change fail here until both are
-//   updated in the same commit;
+//   not, or the date can be bumped for nothing. What the pin below enforces,
+//   exactly: any change to the visible text, and any change to the date,
+//   fails here until THIS FILE is edited to match. It does not, and cannot,
+//   force the date to move when the text does (a typo fix updates the hash
+//   alone); it makes every change a deliberate edit of this file, in which
+//   the author decides whether the date moves too;
 // - an app added to the site build without a link to the page leaves its
 //   visitors with no way to reach it;
 // - the site build must emit the page and let every app link it by its
@@ -63,7 +66,7 @@ function visibleText(html) {
  */
 const PINNED = {
   date: '2026-10-25',
-  sha256: 'a76bd5ade9750e4c164c76c46eecf5a8e83bbfcc541d964d1d9ad1e5c75e663f',
+  sha256: '53a068b437a4ad6325d27aa166dc7a9265efe13b4387d98373c298b48732d6a1',
 };
 
 describe('the legal page date and text', () => {
@@ -94,11 +97,16 @@ describe('the legal page date and text', () => {
     expect(visibleText(PAGE)).toMatch(/We change this page before we change/);
   });
 
-  it('keeps both sections and the marked operator placeholder until it is filled in', () => {
+  it('keeps both sections, the contact address and the marked operator placeholder until it is filled in', () => {
     expect(PAGE).toContain('id="notice"');
     expect(PAGE).toContain('id="privacy"');
     expect(visibleText(PAGE)).toContain('support@cs-util.com');
-    expect(visibleText(PAGE)).toContain('cs-util.com');
+    // The operator line stays VISIBLY marked as missing rather than guessed.
+    // Filling it in is a deliberate edit of this check as well: replace it
+    // with one that the placeholder is gone.
+    expect(PAGE).toMatch(
+      /<span class="placeholder" data-testid="operator-placeholder"\s*>\[Operator: [^\]]+\]<\/span/
+    );
   });
 });
 
@@ -122,7 +130,16 @@ function packageFolders() {
   return folders;
 }
 
-/** Pages beyond an app's index.html that a visitor lands on directly. */
+/**
+ * Pages beyond an app's index.html that a visitor lands on directly.
+ *
+ * Exempt, on purpose: the developer test pages the site also deploys but no
+ * app links to - /lookdev/ and every page under it (the design system's
+ * look-dev build, including /lookdev/3d/ and the lab pages), and the
+ * Recorder's secondary entries /recorder/ar-hittest-test.html and
+ * /recorder/alignment-timing.html. The legal page names them in its
+ * "Developer test pages" part instead.
+ */
 const EXTRA_PAGES = ['GpsPlusSlamJs_TourViewer/edit.html'];
 
 const LINK = /href="\/legal\/(#[\w-]+)?"/;
@@ -148,6 +165,11 @@ describe('every app on the site links the legal page', () => {
 
   it.each(EXTRA_PAGES)('%s links /legal/', (page) => {
     expect(read(page)).toMatch(LINK);
+  });
+
+  it('the page names the exempt developer test pages', () => {
+    expect(visibleText(PAGE)).toContain('/lookdev/');
+    expect(visibleText(PAGE)).toContain('/recorder/ar-hittest-test.html');
   });
 
   it("the blog's shared layout links /legal/", () => {

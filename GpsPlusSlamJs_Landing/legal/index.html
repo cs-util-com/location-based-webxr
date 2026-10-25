@@ -133,6 +133,8 @@
 
       .placeholder {
         display: inline;
+        /* stylelint-disable-next-line property-no-vendor-prefix -- Safari still needs the prefix to repeat the border on each line of a wrapped placeholder. */
+        -webkit-box-decoration-break: clone;
         box-decoration-break: clone;
         padding: 2px 6px;
         border: 1px dashed var(--mark);
@@ -192,10 +194,13 @@
         <p>
           <b>In short:</b> no accounts, no advertising, no usage statistics, and
           the apps set no cookies. The camera, your location and the motion
-          sensors are used on your device; the apps do not send that data
-          anywhere. What does leave your device: ordinary web requests, to this
-          website and to the services named below, and, in the Recorder only,
-          error reports.
+          sensors are used on your device; the apps do not send the camera image
+          or the sensor readings anywhere, and your location leaves your device
+          in two ways only, both described below: the map apps ask map services
+          for map images and map data of the area you are in, and the anchor
+          starter writes a placed marker's position into its link. What does
+          leave your device: ordinary web requests, to this website and to the
+          services named below, and, in the Recorder only, error reports.
         </p>
         <p>
           Responsible for this website and the data described here: the operator
@@ -213,13 +218,15 @@
             time and your browser's type.
           </li>
           <li>
-            Requests to the site's file service (addresses starting with
-            <code>/api/</code>, which the Tour Viewer and the Recorder use to
-            fetch files stored on Google Drive) are also written to a log: the
-            request with the file's identifier, the time and your IP address.
-            The log is deleted after 3 days. It is used only to find faults. The
-            file service passes on to Google only the file identifier and which
-            part of the file is needed.
+            Requests handled by the site's worker are also written to a log: the
+            file service (addresses starting with <code>/api/</code>, which the
+            Tour Viewer and the Recorder use to fetch files stored on Google
+            Drive), and addresses that match no page. The log holds the request
+            (for the file service, with the file's identifier), the time and
+            your IP address. The log is deleted after 3 days. It is used only to
+            find faults. The file service passes on to Google only the file
+            identifier, which part of the file is needed and whether your
+            browser's copy is still current (the cache validators).
           </li>
           <li>
             We rely on our legitimate interest in delivering this website,
@@ -235,7 +242,9 @@
             That service receives your IP address and the address of this
             website. For Google Drive the download passes through the site's
             file service (above). The creator chose the service; its own privacy
-            policy applies.
+            policy applies. A tour link that gives only a tour's name, not a
+            full address, loads the file from GitHub
+            (raw.githubusercontent.com), with the same data.
           </li>
           <li>
             <b>Creators only:</b> the editor and the map after finishing a tour
@@ -289,8 +298,8 @@
           data, for you to keep; but the desktop editor always keeps it in the
           file you opened, so if that file is the one you host (for example in a
           synced Google Drive folder), the walk is public too. "Move the debug
-          data out" in the editor's Done dialog takes it out of the tour file.
-          Photos are saved as new images [EXIF: to be confirmed].
+          data out" in the editor's "Done editing" dialog takes it out of the
+          tour file. Photos are saved as new images [EXIF: to be confirmed].
         </p>
 
         <h3 id="privacy-recorder">Recorder (/recorder/)</h3>
@@ -318,13 +327,14 @@
             holds the error message and where in the code it happened, the page
             address without its query, the browser and device type, and the
             app's recent log lines, which can include the names you gave to
-            recordings, scenarios and reference points. Before a report leaves
-            your device, the app removes links to other sites, file identifiers
-            and coordinates from it. The app tells Sentry not to store your IP
-            address; the address still reaches Sentry with the connection. For
-            one page load in ten, the app also sends the timings of the page
-            load and of its network requests, with the same removals. Reports
-            are kept for
+            recordings, scenarios and reference points and the names of the
+            folders and files you chose. Before a report leaves your device, the
+            app removes from it the path of links to other sites (the site's
+            name stays), file identifiers and coordinates; it does not remove
+            those names. The app tells Sentry not to store your IP address; the
+            address still reaches Sentry with the connection. For one page load
+            in ten, the app also sends the timings of the page load and of its
+            network requests, with the same removals. Reports are kept for
             <span class="placeholder" data-testid="retention-placeholder"
               >[Retention: number of days, to be confirmed in the error service
               account before this page goes live]</span
@@ -371,6 +381,16 @@
             AR readout.
           </li>
         </ul>
+
+        <h3 id="privacy-dev">Developer test pages</h3>
+        <p>
+          Test pages that no app links to (/lookdev/ and the pages under it, and
+          the test pages under /recorder/ such as
+          /recorder/ar-hittest-test.html) carry no link to this page. The
+          look-dev pages load map images, map data and terrain heights from the
+          same kinds of services as the map demo (above); the Recorder's test
+          pages contact no service other than this website.
+        </p>
 
         <h3 id="privacy-landing">Start page (/) and blog (/blog/)</h3>
         <p>
