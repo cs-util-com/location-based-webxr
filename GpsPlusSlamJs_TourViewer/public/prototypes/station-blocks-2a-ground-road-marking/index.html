@@ -1,0 +1,1932 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ground road marking</title>
+<style>
+  :root {
+    --chrome: rgba(16, 19, 25, 0.86);
+    --chrome-2: rgba(30, 35, 44, 0.92);
+    --line: rgba(255, 255, 255, 0.12);
+    --ink: #f4f1ea;
+    --ink-2: #b9bdc6;
+    --ink-3: #8a909b;
+    --mint: #5fe3c9;
+    --parch: #f1d79c;
+    --amber: #ffb02e;
+    --bg: #15181e;
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.35 var(--font); }
+  body { overflow: hidden; }
+  button { font: inherit; color: inherit; }
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  /* ---------- top bar (demo chrome) ---------- */
+  #topbar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 7px 10px;
+    background: #0d1014; border-bottom: 1px solid var(--line); z-index: 20; }
+  .seg { display: inline-flex; background: #1b2028; border-radius: 9px; padding: 2px; gap: 2px; }
+  .seg button { border: 0; background: transparent; padding: 5px 10px; border-radius: 7px; cursor: pointer; color: var(--ink-2); white-space: nowrap; }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: #111; font-weight: 600; }
+  .seg button:hover:not([aria-pressed="true"]) { color: var(--ink); }
+  #viewpicker { overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+  #viewpicker::-webkit-scrollbar { display: none; }
+  #viewpicker .vlabel { color: var(--ink-3); padding: 5px 4px 5px 8px; white-space: nowrap; }
+  .tools { margin-left: auto; display: inline-flex; gap: 4px; }
+  .tools button { border: 1px solid var(--line); background: transparent; padding: 4px 9px; border-radius: 8px; cursor: pointer; color: var(--ink-2); }
+  .tools button[aria-pressed="true"] { color: #111; background: var(--ink); border-color: var(--ink); }
+  @media (max-width: 720px) {
+    #topbar { padding: 6px 8px; }
+    #viewpicker { order: 3; width: 100%; }
+    .seg button { padding: 5px 8px; }
+  }
+
+  /* ---------- layout ---------- */
+  #layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr; }
+  #stage-wrap { position: relative; min-height: 0; min-width: 0; display: flex; align-items: center; justify-content: center; background: #1b1f25; overflow: hidden; }
+  #stage { position: relative; width: 100%; height: 100%; overflow: hidden; background: #dfe6ec; touch-action: none; }
+  #stage canvas { display: block; width: 100%; height: 100%; }
+  #app.phone:not([data-mode="editor"]) #stage { border-radius: 30px; box-shadow: 0 0 0 9px #07080a, 0 0 0 10px #2c3139, 0 18px 50px rgba(0,0,0,.5); }
+  #overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .mode-ui { display: none; }
+  #app[data-mode="visitor"] .ui-visitor, #app[data-mode="creator"] .ui-creator, #app[data-mode="editor"] .ui-editor { display: revert; }
+  #app[data-mode="visitor"] .ui-visitor.flex, #app[data-mode="creator"] .ui-creator.flex, #app[data-mode="editor"] .ui-editor.flex { display: flex; }
+  #ed-list, #ed-inspector { display: none; }
+
+  /* editor layout */
+  #app[data-mode="editor"] #layout { grid-template-columns: 230px 1fr 330px; }
+  #app[data-mode="editor"] #ed-list, #app[data-mode="editor"] #ed-inspector { display: block; }
+  @media (max-width: 1100px) {
+    #app[data-mode="editor"] #layout { grid-template-columns: 1fr 310px; }
+    #app[data-mode="editor"] #ed-list { display: none; }
+  }
+  @media (max-width: 720px) {
+    #app[data-mode="editor"] #layout { grid-template-columns: 1fr; grid-template-rows: 42% 58%; }
+    #app[data-mode="editor"] #ed-inspector { border-left: 0; border-top: 1px solid var(--line); }
+  }
+
+  /* ---------- in-app overlays (visitor) ---------- */
+  .glass { background: var(--chrome); color: var(--ink); border: 1px solid var(--line); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  #station-hint { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); padding: 8px 14px 8px 10px; border-radius: 999px; align-items: center; gap: 10px; font-size: 14px; white-space: nowrap; transition: opacity .5s; }
+  #station-hint .arr { width: 26px; height: 26px; border-radius: 50%; background: var(--ink); display: grid; place-items: center; }
+  #station-hint .arr svg { transition: transform .2s; }
+  #station-hint b { font-weight: 650; }
+  #station-hint .d { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  #walk-ui { position: absolute; right: 12px; bottom: 14px; gap: 8px; align-items: center; }
+  #app.phone #walk-ui .hint { display: none; }
+  #walk-ui button { white-space: nowrap; pointer-events: auto; border: 1px solid var(--line); background: var(--chrome); color: var(--ink); padding: 9px 14px; border-radius: 12px; cursor: pointer; font-weight: 600; backdrop-filter: blur(10px); }
+  #walk-ui .hint { color: rgba(20,24,30,.75); font-size: 11.5px; max-width: 170px; text-align: right; }
+  @media (max-width: 500px) { #walk-ui .hint { display: none; } }
+
+  /* ---------- edge hints (a view, screen space) ---------- */
+  .eh { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 8px; padding: 7px 12px 7px 8px; border-radius: 12px;
+    background: rgba(15,18,24,.9); color: var(--ink); font-size: 15px; font-weight: 600; white-space: nowrap; will-change: transform; border: 1px solid rgba(255,255,255,.1);
+    box-shadow: 0 4px 16px rgba(0,0,0,.28); transition: opacity .25s; }
+  .eh .bar { width: 4px; align-self: stretch; border-radius: 2px; }
+  .eh .ar { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+  .eh .body { display: flex; flex-direction: column; min-width: 0; }
+  .eh .tx { max-width: 230px; overflow: hidden; text-overflow: ellipsis; }
+  .eh .desc { display: none; max-width: 230px; white-space: normal; font-weight: 450; font-size: 12.5px; line-height: 1.3; color: var(--ink-2); margin-top: 2px; }
+  .eh .dist { display: none; color: var(--ink-2); font-weight: 500; font-size: 12.5px; font-variant-numeric: tabular-nums; align-self: flex-start; padding-top: 1px; }
+  /* off screen: arrow + caption only; on screen: the tag over its spot; fully in view: description and distance too */
+  .eh.full .desc, .eh.full .dist { display: block; }
+  .eh.inview .ar { display: none; }
+  .eh.inview::after { content: ""; position: absolute; left: 50%; bottom: -7px; margin-left: -7px; border: 7px solid transparent; border-bottom: 0; border-top-color: rgba(15,18,24,.9); }
+  .eh.edge .tx { max-width: 150px; }
+
+  /* ---------- creator (phone in AR) ---------- */
+  #app[data-mode="creator"] #ftime { bottom: auto; top: 8px; }
+  #cr-top { position: absolute; top: 30px; left: 12px; right: 12px; justify-content: center; }
+  #cr-top .chip { pointer-events: auto; display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 14px; max-width: 100%; }
+  #cr-top .chip button { border: 0; background: transparent; width: 34px; height: 34px; border-radius: 10px; cursor: pointer; font-size: 18px; color: var(--ink-2); }
+  #cr-top .chip .mid { padding: 0 6px; min-width: 0; text-align: center; }
+  #cr-top .chip .t { font-weight: 650; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+  #cr-top .chip .s { color: var(--ink-2); font-size: 11.5px; }
+  #cr-reticle { position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; border: 2px solid rgba(255,255,255,.95); box-shadow: 0 0 0 1px rgba(0,0,0,.35), inset 0 0 0 1px rgba(0,0,0,.35); }
+  #cr-reticle::after { content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; border-radius: 50%; background: #fff; }
+  #cr-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 10px 16px; gap: 8px; justify-content: center;
+    background: linear-gradient(to top, rgba(10,12,16,.55), rgba(10,12,16,0)); }
+  #cr-bar button { pointer-events: auto; flex: 1; max-width: 86px; min-height: 64px; border-radius: 16px; border: 1px solid var(--line); background: var(--chrome); color: var(--ink);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer; font-size: 12px; font-weight: 600; backdrop-filter: blur(10px); }
+  #cr-bar button.primary { background: var(--ink); color: #111; }
+  #cr-bar svg { width: 24px; height: 24px; }
+  .sheet { position: absolute; left: 8px; right: 8px; bottom: 98px; border-radius: 18px; padding: 14px; pointer-events: auto; max-width: 520px; margin: 0 auto;
+    transform: translateY(20px); opacity: 0; transition: transform .22s, opacity .22s; visibility: hidden; max-height: calc(100% - 180px); overflow: auto; }
+  .sheet.open { transform: none; opacity: 1; visibility: visible; }
+  .sheet h3 { margin: 0 0 10px; font-size: 13px; color: var(--ink-2); font-weight: 600; letter-spacing: .02em; }
+  .sheet .row { margin: 10px 0; }
+  .sheet textarea, #ed-inspector textarea { width: 100%; resize: none; border-radius: 10px; border: 1px solid var(--line); background: #0c0f13; color: var(--ink); font: 600 16px/1.3 var(--font); padding: 9px 10px; }
+  .count { color: var(--ink-3); font-size: 11.5px; text-align: right; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .count.over { color: var(--amber); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button { border: 1px solid var(--line); background: #1b2028; color: var(--ink-2); border-radius: 10px; padding: 7px 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .chips button[aria-pressed="true"] { background: var(--ink); color: #111; border-color: var(--ink); font-weight: 600; }
+  .chips .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .sheet .done { margin-top: 6px; width: 100%; border: 0; background: var(--ink); color: #111; border-radius: 12px; padding: 11px; font-weight: 650; cursor: pointer; }
+  .viewgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .viewgrid button { border: 1px solid var(--line); background: #1b2028; color: var(--ink); border-radius: 12px; padding: 10px 6px; cursor: pointer; text-align: center; font-weight: 600; }
+  .viewgrid button small { display: block; color: var(--ink-3); font-weight: 400; font-size: 11px; margin-top: 2px; }
+  .viewgrid button[aria-pressed="true"] { background: var(--ink); color: #111; }
+  .viewgrid button[aria-pressed="true"] small { color: #444; }
+  #toast { position: absolute; left: 50%; bottom: 104px; transform: translate(-50%, 8px); padding: 9px 14px; border-radius: 12px; font-size: 13.5px; opacity: 0; transition: opacity .2s, transform .2s; white-space: nowrap; max-width: 92%; overflow: hidden; text-overflow: ellipsis; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #app[data-mode="visitor"] #toast { bottom: 70px; }
+  #app[data-mode="editor"] #toast { bottom: 16px; }
+
+  /* ---------- editor ---------- */
+  #ed-list { background: #101318; border-right: 1px solid var(--line); overflow: auto; padding: 12px 10px; }
+  #ed-list h4, #ed-inspector h4 { margin: 4px 4px 10px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  .blk { display: flex; gap: 9px; align-items: flex-start; width: 100%; text-align: left; border: 1px solid transparent; background: transparent; padding: 8px; border-radius: 10px; cursor: pointer; color: var(--ink-2); }
+  .blk:hover { background: #171b21; }
+  .blk[aria-selected="true"] { background: #1e242d; border-color: var(--line); color: var(--ink); }
+  .blk .ic { width: 22px; height: 22px; flex: none; margin-top: 1px; }
+  .blk .t { font-weight: 600; color: var(--ink); }
+  .blk .s { font-size: 11.5px; color: var(--ink-3); }
+  .blk.other { opacity: .55; cursor: default; }
+  #ed-inspector { background: #101318; border-left: 1px solid var(--line); overflow: auto; padding: 12px 14px 30px; }
+  .insp-sec { border-top: 1px solid var(--line); padding: 12px 2px; }
+  .insp-sec:first-of-type { border-top: 0; }
+  .insp-sec label.l { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--ink-2); margin-bottom: 6px; font-weight: 600; }
+  .insp-sec label.l span { color: var(--ink-3); font-weight: 400; }
+  .insp-sec .help { color: var(--ink-3); font-size: 11.5px; margin-top: 6px; }
+  input[type=range] { width: 100%; accent-color: var(--ink); }
+  .xyz { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .xyz label { display: flex; align-items: center; gap: 4px; background: #0c0f13; border: 1px solid var(--line); border-radius: 8px; padding: 0 6px; color: var(--ink-3); font-size: 11px; }
+  .xyz input { width: 100%; min-width: 0; border: 0; background: transparent; color: var(--ink); font: 12.5px var(--mono); padding: 6px 0; }
+  .btnrow { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .btnrow button { border: 1px solid var(--line); background: #1b2028; color: var(--ink); border-radius: 9px; padding: 6px 10px; cursor: pointer; }
+  .btnrow button[aria-pressed="true"] { background: var(--ink); color: #111; }
+  .blocksel { width: 100%; border-radius: 9px; border: 1px solid var(--line); background: #0c0f13; color: var(--ink); padding: 7px; font: inherit; }
+  #ed-tools { position: absolute; left: 12px; top: 12px; gap: 6px; }
+  #ed-tools .seg { pointer-events: auto; background: rgba(16,19,25,.85); }
+  #ed-tools .seg button { color: var(--ink-2); }
+  #ed-tools .seg button[aria-pressed="true"] { color: #111; }
+  #ed-tools .seg button[aria-pressed="true"] .key { color: #555; }
+  #ed-tools .key { color: var(--ink-3); font-size: 10.5px; margin-left: 4px; }
+  #ed-hint { position: absolute; left: 12px; bottom: 34px; color: rgba(20,24,30,.78); font-size: 11.5px; }
+
+  /* ---------- panels ---------- */
+  #ftime { position: absolute; left: 8px; bottom: 8px; z-index: 30; font: 10.5px/1.2 var(--mono); color: #e9edf2; background: rgba(0,0,0,.55); padding: 3px 6px; border-radius: 6px; pointer-events: none; font-variant-numeric: tabular-nums; }
+  .panel { position: fixed; z-index: 40; background: #0d1015; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.5); }
+  #fields-panel { right: 10px; top: 54px; width: min(380px, calc(100% - 20px)); padding: 14px 16px; max-height: calc(100% - 70px); overflow: auto; }
+  #fields-panel h3 { margin: 0 0 2px; font-size: 15px; }
+  #fields-panel .sub { color: var(--ink-3); margin-bottom: 10px; }
+  #fields-panel dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 7px 12px; }
+  #fields-panel dt { font: 12px var(--mono); color: var(--ink); padding-top: 1px; }
+  #fields-panel dd { margin: 0; color: var(--ink-2); }
+  #fields-panel dt.off { color: var(--ink-3); text-decoration: line-through; }
+  #fields-panel dd.off { color: var(--ink-3); }
+  #notes-panel { inset: 50px 10px 10px; max-width: 860px; margin: 0 auto; padding: 0; display: flex; flex-direction: column; }
+  #notes-panel header { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+  #notes-panel header button { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+  #notes-body { overflow: auto; padding: 6px 22px 30px; font-size: 14px; line-height: 1.5; color: #dfe2e7; }
+  #notes-body h1 { font-size: 20px; } #notes-body h2 { font-size: 16.5px; margin-top: 26px; } #notes-body h3 { font-size: 14.5px; margin-top: 18px; }
+  #notes-body code { font: 12.5px var(--mono); background: #1d222a; padding: 1px 4px; border-radius: 4px; }
+  #notes-body li { margin: 3px 0; }
+  [hidden] { display: none !important; }
+</style>
+<script type="importmap">
+  { "imports": {
+      "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+  } }
+</script>
+</head>
+<body>
+<div id="app" data-mode="visitor">
+  <header id="topbar">
+    <div class="seg" id="modepicker" aria-label="Mode">
+      <button data-mode="visitor">Visitor</button><button data-mode="creator">Creator</button><button data-mode="editor">Editor</button>
+    </div>
+    <div class="seg" id="viewpicker" aria-label="View"></div>
+    <div class="tools">
+      <button id="btn-fields" aria-pressed="false" title="Which fields this view uses">Fields</button>
+      <button id="btn-phone" aria-pressed="false" title="Render into a 9:19.5 portrait phone viewport">Phone</button>
+      <button id="btn-err" aria-pressed="false" title="Draw all content 1 m off, as a 1 m placement error would">1 m error</button><button id="btn-paint" aria-pressed="false" title="Road paint (white, amber for warnings) or the role colour">Paint: road</button>
+      <button id="btn-notes" aria-pressed="false">Notes</button>
+    </div>
+  </header>
+  <div id="layout">
+    <aside id="ed-list" aria-label="Station blocks"></aside>
+    <main id="stage-wrap">
+      <div id="stage">
+        <canvas id="c"></canvas>
+        <div id="overlay"></div>
+        <!-- visitor -->
+        <div id="station-hint" class="glass mode-ui ui-visitor flex" style="pointer-events:none">
+          <span class="arr"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1 L12 11 L7 8.6 L2 11 Z" fill="#111"/></svg></span>
+          <span><b>Market square</b> <span class="d">0 m</span></span>
+        </div>
+        <div id="walk-ui" class="mode-ui ui-visitor flex">
+          <span class="hint">Drag to look. W A S D or arrows to walk.</span>
+          <button id="btn-hold" title="Hold to walk forward">Hold to walk</button>
+          <button id="btn-walkin">Walk in</button>
+        </div>
+        <!-- creator -->
+        <div id="cr-top" class="mode-ui ui-creator flex">
+          <div class="chip glass">
+            <button id="cr-prev" aria-label="Previous block">&#8249;</button>
+            <div class="mid"><div class="t" id="cr-title"></div><div class="s" id="cr-sub"></div></div>
+            <button id="cr-next" aria-label="Next block">&#8250;</button>
+          </div>
+        </div>
+        <div id="cr-reticle" class="mode-ui ui-creator"></div>
+        <div id="cr-sheet-view" class="sheet glass"><h3>View for this block</h3><div class="viewgrid" id="cr-viewgrid"></div><button class="done" data-close>Done</button></div>
+        <div id="cr-sheet-edit" class="sheet glass">
+          <h3>Caption</h3>
+          <textarea id="cr-text" rows="1" maxlength="40" aria-label="Caption"></textarea>
+          <div class="count" id="cr-count"></div>
+          <div class="row"><h3>Description <span style="font-weight:400;color:var(--ink-3)">(optional)</span></h3>
+          <textarea id="cr-desc" rows="3" maxlength="160" aria-label="Description" style="font-weight:450;font-size:15px"></textarea>
+          <div class="count" id="cr-dcount"></div></div>
+          <div class="row"><h3>Role</h3><div class="chips" id="cr-roles"></div></div>
+          <div class="row"><h3>Orientation</h3><div class="chips" id="cr-orients"></div></div>
+          <div class="row"><h3>Points to</h3><div class="chips"><button id="cr-aim">Aim with the ring</button><button id="cr-clear">None</button></div><div class="count" id="cr-pt" style="text-align:left"></div></div>
+          <button class="done" data-close>Done</button>
+        </div>
+        <div id="cr-bar" class="mode-ui ui-creator flex">
+          <button id="cr-b-view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="8" height="7" rx="1.5"/><rect x="13" y="4" width="8" height="7" rx="1.5"/><rect x="3" y="13" width="8" height="7" rx="1.5"/><rect x="13" y="13" width="8" height="7" rx="1.5"/></svg>View</button>
+          <button id="cr-b-edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>Text</button>
+          <button id="cr-b-size"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 18 L8.5 6 L13 18 M5.7 14h5.6"/><path d="M15 18l3-7 3 7M15.9 16h4.2"/></svg><span id="cr-size-l">Size</span></button>
+          <button id="cr-b-turn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M19 12a7 7 0 1 1-2.05-4.95"/><path d="M19 4v4h-4"/></svg>Turn</button>
+          <button id="cr-b-place" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg>Place</button>
+        </div>
+        <!-- editor -->
+        <div id="ed-tools" class="mode-ui ui-editor flex">
+          <div class="seg" id="ed-tc"><button data-tc="move">Move<span class="key">W</span></button><button data-tc="turn">Turn<span class="key">E</span></button><button data-tc="target">Points to<span class="key">T</span></button></div>
+        </div>
+        <div id="ed-hint" class="mode-ui ui-editor">Click a block to select it. Drag empty space to orbit, wheel to zoom.</div>
+        <div id="toast" class="glass"></div>
+        <div id="ftime" title="frame interval, mean / max over the last 2 s">frame -</div>
+      </div>
+    </main>
+    <aside id="ed-inspector" aria-label="Inspector"></aside>
+  </div>
+</div>
+<div id="fields-panel" class="panel" hidden></div>
+<div id="notes-panel" class="panel" hidden>
+  <header><b>Notes - short text, ground view as a road marking</b><button id="notes-close">Close</button></header>
+  <div id="notes-body"></div>
+</div>
+<script type="text/markdown" id="notes-md">
+<!--NOTES-START-->
+# Short text blocks - notes
+
+Family `station-blocks-2-short-text`. One model, six views (four required, two of my own), three example records drawn by every view at once: "This way to the guild house" (instruction, upright, reads at 6 m, points to the guild house door), "Market hall, 1890" (label, face, reads at 12 m, points to nothing) and "Mind the step" (warning, world, reads at 3 m, points to the step in the gap of the ruined keep wall).
+
+## 0. This page: the ground view as a painted road marking
+
+This page is a copy of the short-text page (second round, with caption and description) with only the ground view replaced; the other five views, the three records, `pointsTo`, the walk-in, the modes and the hook are unchanged. It opens in the new ground view ("Road marking" in the view bar), which paints the caption only. Two buttons are new: **1 m error** draws every block and every `pointsTo` 1 m off (as a 1 m anchor error would; the place stays put; visitor mode only; also `&err=1` in the URL hash) and **Paint** switches between road paint and the role colour. The measurements below were taken on a copy of the first-round page; the ground view is the same code, now reading the caption. Sections 0a-5 below are the original page's notes; where they mention the ground rug or its chevrons, read this section instead.
+
+### What it is
+
+- One long arrow of worn paint from the spot of the block toward `pointsTo`, stopping 1.5-3 m short of it, and the caption beside the tail of the arrow in upper-case road letters, condensed across and stretched along the line of sight. No rug, no chevrons, no animation.
+- The paint has a dark contrast edge (the edge concrete roads put under light markings) and is worn at run time: flecks, scuffs along the walking direction, faded patches, the grain of the stone showing through, and edges that wander by a few millimetres.
+- Road paint by default: white for instructions and labels, amber for warnings. The Paint button uses the role colour instead.
+- The paint is lit like the paving, so it sits under the same sun instead of glowing.
+- Without `pointsTo` (the "Market hall" label) there is no arrow, because an arrow that points nowhere would be a lie; only the words are painted.
+- Orientation: `world` reads from the tail of the arrow. `upright` and `face` re-lay the caption in quarter turns (along, against, left or right of the arrow) to the side you read from, with a short fade and some hysteresis. It never spins smoothly: spinning paint stops reading as paint.
+
+### Why it should read better than the old ground arrow
+
+- One visual language instead of three. The old view mixed a dark rounded rug, stretched white letters and flat pulsing chevrons; here arrow and words are the same paint with the same wear, like a real street marking.
+- Arrow and words agree. In the old view the rug turned toward you while the chevrons pointed elsewhere; here the arrow is fixed toward the target and the caption only ever lies beside it, at right angles.
+- No dark rug. In sunlight the rug was a dark hole in the paving; a thin dark edge gives white paint the same contrast on light stone at a fraction of the area.
+- No motion. A real marking does not move; the pulsing runway lights were the part that looked cheap.
+- Letter size from a rule: the stretch is about 1 / sin of the angle at which you see the ground from 1.6 m eye height at `readAtM` (capped at 5.5), and ground letters are 1.5 times wider than upright ones, so the caption is about as big to the eye at `readAtM` as the letters of the sign.
+
+### What it costs to build for real
+
+- Rendering: two textured quads per block (arrow and caption) over the ground plane; per frame one turn and one position. Each texture is at most 2048 px on its long side.
+- CPU: the worn paint is the expensive part. Rebuilding all three blocks took 135-520 ms in most runs on this machine (headless Chromium, the page's `rebuildMs()` hook, 24 runs) and 690-1460 ms in the three runs that came right after many rebuilds; one last run read 2361 ms while the machine was busy with other work (frames at 180 ms instead of 30-50). Against 2-7 ms for the light-trail page. A real build should use ONE tileable wear mask (or a noise function in the shader) shared by every marking, not thousands of canvas strokes per block; then a block costs a few ms.
+- Text: the system font, upper-cased with `toLocaleUpperCase`. A real build wants a proper condensed road typeface (licence to check) and a fallback for scripts without capital letters.
+- The frame readout in headless software rendering settled at about 25-45 ms mean at 390x844, like the other views. That is a CPU rasteriser, not a phone.
+- Editor and creator: nothing new, the same five fields.
+
+### Known weaknesses (seen in the screenshots)
+
+- Off-axis and far, the caption turns into stripes: "Market hall, 1890" seen from the end of the walk-in, 12 m away and well to the side, is a barcode at the left edge at 1440x900. Every ground text does this; re-laying in quarter turns helps only `upright` and `face`.
+- Legible but small on a phone at `readAtM`: "This way to the guild house" from 6-7 m at 844x390 has capitals about 10 px tall, "Market hall, 1890" from 12 m in portrait about the same. The letter factor was swept at 1.0, 1.3, 1.5 and 1.6 (`setParam('letterK', x)`): 1.0 is at the edge of legibility at 6 m, 1.3 and above legible, 1.6 clearly; 1.5 is set. Beyond `readAtM` (the guild caption from 12 m) it cannot be read, as the model intends.
+- Standing on it: at the end of the walk-in the visitor is about 1.5 m from the guild caption and sees only parts of letters in portrait. Ground text needs you to stand back from it.
+- 1 m of error, swept over four directions: at the door 30 m away it is invisible (the arrow runs 1 m to one side). At the step 3.3 m away it shows: toward the step the tip now stops at its face (with a 0.9 m stop the head ran under the step, hence 1.5 m), sideways the arrow points at the wall beside the gap. In AR nothing hides the paint, so where the prototype's step hides the tip, a phone would paint it over the step.
+- It assumes flat ground: a kerb, steps, cobbles with deep joints or a slope under it make it float or sink.
+- Paint is drawn over people standing on it (no occlusion), as in every ground view.
+- Close up and from the side, the dark edge of the letters is thicker along the line of sight (it is stretched with the letters), which reads as an embossed shadow rather than paint.
+- Upper case only; right-to-left and caseless scripts are untested.
+
+### Parameters it rests on
+
+- Letter factor 1.5 (swept 1.0-1.6, above), stretch `readAtM` / 1.6 clamped to 1.6-5.5, head width 5.5 times the letter size (at least 0.42 m) with the shaft 30 % of it, arrow at most 2.5 m + 0.45 x `readAtM`, stop 1.5-3 m (20 % of the distance), re-lay hysteresis 0.3 (cosine).
+- The value that would reverse a verdict is the stop: below about 1.5 m the arrow to the step runs into the step under 1 m of error toward it.
+
+## 0a. Second round (2026-10-25) - what changed and why
+
+The first look's verdicts, and what this round did about each. Sections 1-5 below are the first round's notes, kept as written; where they disagree with this section, this section holds, and where they mention the ground view, section 0 holds.
+
+- **Pin: its arrow pointed the wrong way (a bug).** The pin's instruction icon was a fixed right-pointing arrow baked into the plate, and the pin ignored `pointsTo`; from where the walk-in stops it pointed straight away from the guild house.
+  - Now the pin carries the sign's turning arrow whenever `pointsTo` is set: it points toward the target as seen from where you stand (up = past the pin, left and right = turn, down = behind you).
+  - Without `pointsTo` an instruction shows a plain, non-directional marker (a ring and a dot). The same marker replaces the fixed arrow on the sign and in the editor's list, so no icon claims a direction it does not know.
+- **Speech bubble: the tail looked buggy when strongly bent.** The old tail was a separate mesh whose outline was a scaled copy, not a stroke: the outline thinned as the tail bent, the two shoulders sat asymmetrically, the tip vertex was doubled and the fill cut a notch into the rim where it joined.
+  - Bubble and tail are now one shape in one canvas, outlined once with a constant stroke (stroked at twice the rim width, then filled over the inner half, so the join carries no line). The edges are symmetric curves and the tip is rounded.
+  - The tail's base slides along the bubble's bottom edge toward the target, so the clamp widened from 54 to 72 degrees. Beyond 72 degrees the tail still stops at 72.
+  - Cost: the bubble's canvas is redrawn and re-uploaded when the tail's angle moves by more than 0.6 degrees, which happens only while the visitor moves.
+- **Caption plus description, in the model.** `text` (80 characters) became `caption` (at most 40) plus an optional `description` (at most 160).
+  - Every view shows the caption. Pin, sign, bubble and callout show the description in smaller letters under it (0.62 of the caption's letter height, so it reads from about 60 % of `readAtM`). The ground arrow paints only the caption: 160 characters do not read on the paving.
+  - "Mind the step" has no description, to show the optional case.
+  - The export is now `version: 2` with `caption` and `description`; an old record's `text` is read as its caption (cut to 40 characters).
+- **Edge hint: quieter off screen.** Off screen the chip shows only its arrow and the caption, no distance.
+  - On screen the tag stands over its spot with the caption. The description and the distance appear once the block is fully in view: its projected bounds (a 0.9 m footprint from the ground up to the tag's height of 1.9 m) inside the screen, not only its anchor point.
+  - Hysteresis: they appear once every corner of the bounds is 24 px inside the usable screen, and go only when a corner is more than 8 px outside it, so they do not flicker at the edge.
+  - Whether the tag fits over its spot at all is decided from its compact size (caption only), measured once per screen size. Deciding from its live size let the larger full tag push itself to the edge, where it shrank and came back, every frame on a 390 px phone.
+- **Callout:** left as it was (the first look found it "a bit odd" without naming what); it only gained the description under its tag. Say what looks odd and it changes next round.
+- **Ground arrow:** replaced on this page by the painted road marking; see section 0.
+
+## 1. The model
+
+As built, exactly the fixed fields:
+
+- `text` - string, at most 80 characters (counted as code points; whitespace collapsed; empty becomes "..." rather than an invisible block).
+- `role` - "instruction", "label" or "warning"; unknown values fall back to "label".
+- `orientation` - "world", "upright" or "face"; unknown falls back to "upright".
+- `readAtM` - the intended reading distance, clamped to 1-40 m. It sets the letter height at 2.64 cm per metre (0.066 m reads at 2.5 m), and in the floating views also the height above the ground (1.7 m plus 10 cm per metre: 2.0 m at 3 m, 2.3 m at 6 m, 2.9 m at 12 m), so text meant to be read from far away floats above a crowd.
+- `pointsTo` - optional `{ x, y, z }` in station-local metres, or null.
+
+The block envelope around it (not part of the model): `id`, `view`, `pose { x, y, z, yawDeg }`. `exportModel()` returns `{ family, model: "short-text", version, station, blocks: [{ id, model, view, pose, data: { text, role, orientation, readAtM, pointsTo } }] }`.
+
+What I would change:
+
+- **Add `lang`** (an optional BCP-47 tag). Creators write in any language. Line breaking, right-to-left layout (the sign's icon side, the order of the ground lines) and the font fallback all depend on it, and guessing it from the text is unreliable for 80 characters.
+- **Keep `readAtM`.** It is the best field in the model: a creator understands "who reads this from where", never "font size 0.16". It also gives every view one honest rule for size and height.
+- **`orientation` is really a view parameter, not a model field.** Of six views only three use all three values. The sign treats "face" as "upright" (a sign on posts must not tilt), the ground arrow has only "fixed" or "turns toward you", and the edge hint ignores it. I would keep it in the model (the creator thinks of it as part of the text) but document per view what each value does, as the Fields panel does.
+- **Do not add a font size, a colour or a style field.** The role carries the colour and the icon; letting creators pick colours is how outdoor text becomes unreadable.
+- `pointsTo.y` matters for the callout and the bubble (a door, a window) but the ground arrow ignores it. That is fine; say so in the editor.
+
+## 2. Per view
+
+- **Pin** - a dark head with the role icon on a thin stem, a ring on the ground that pulses slowly.
+  - Fields: text, role, orientation, readAtM. Not pointsTo (a pin marks its own spot).
+  - Why a visitor likes it: it says "here" without covering anything; the stem ties the text to a spot on the ground, so you know what it belongs to.
+  - Weakest: 1 m of placement error moves the "here" by 1 m, and the ring advertises the exact spot. In a crowded square the stem foot is hidden, but the head floats above heads (that is what the readAtM height rule is for).
+- **Sign** - a board on one or two posts with a role-coloured top band. When `pointsTo` is set, the icon slot holds a round arrow that turns toward the target as seen from where the visitor stands: up means "go past the sign", left and right mean turn, down means "behind you".
+  - Fields: all five.
+  - Why: it is the most familiar object here; nobody needs to learn it. The turning arrow is honest wayfinding from any side.
+  - Weakest: it is the biggest and most solid thing in the view, so a placement error (posts standing in a flower bed, or half inside a real bench) shows most. "face" cannot mean anything for a sign on posts.
+- **Ground arrow** - replaced on this page by the painted road marking; see section 0. The original page keeps the rug and chevrons.
+- **Speech bubble** - a rounded bubble with a role-coloured rim, floating and bobbing gently, its tail pointing at `pointsTo` (or at its own foot).
+  - Fields: all five.
+  - Why: it feels like the place is talking; good for labels on things ("Market hall, 1890") and for short friendly instructions.
+  - Weakest: the tail suggests a speaker; with nothing at the end of the tail it can read as a bug. A warning in a bubble feels wrong ("Mind the step" said by whom?). The tail is a dynamic mesh, rebuilt every frame (cheap, 7 vertices).
+- **Callout** (my own) - a compact tag with an accent underline, a leader line in world units to `pointsTo`, ending in a soft 0.6 m halo instead of a precise dot. It quiets itself to a faint tag when it is more than about 16-34 degrees from the centre of the view.
+  - Fields: all five.
+  - Why: it connects text to a real feature (the door, the step) and the halo is deliberately larger than the placement error, so a 1 m offset still looks intended. The fading means only the thing you look at is loud.
+  - Weakest: a long leader (30 m to the door) crosses the whole square; with three callouts the lines start to cross. The fade depends on the centre of the view, which a visitor might not expect (a tag dims while you read it at the edge).
+- **Edge hint** (my own) - screen-space, not world: a tag stuck above the block's spot when it is on screen, and a chip at the screen edge with an arrow and the distance when it is off screen or behind you. Tags that overlap step aside, nearest first.
+  - Fields: text and role only. Not orientation, readAtM or pointsTo (screen space, always the same size, leads to the block itself).
+  - Why: it never fails to be readable (system text, constant size), and it answers "where was that warning?" when you have turned away.
+  - Weakest: it is not in the world, so it does not feel like the place. It needs the DOM overlay of WebXR (or a screen-space quad layer) and it collides with the app's own "nearest station" display at the screen edges. Long text is cut at the edge.
+
+## 3. Costs
+
+Frame time is the readout's mean / max frame interval over 2 s. Headless Chromium here uses software rendering (SwiftShader), so these numbers are a CPU rasteriser's and say almost nothing about a phone GPU; they are listed to compare the views with each other only.
+
+- Measured on this machine, headless Chromium, SwiftShader, 390x844, all three blocks in the view, read 2 s after each switch (so the window still holds the switch and a screenshot capture; the numbers are noisy):
+  - pin: 93.5 mean / 883 max ms
+  - sign: 89.6 / 750
+  - ground arrow (the old rug and chevrons, measured on the original page; this page's numbers are in section 0): 132.3 / 650
+  - speech bubble: 72.0 / 667
+  - callout: 45.2 / 183
+  - edge hint: 55.0 / 350
+  - the whole page at rest after 2.3 s: 26.6 / 183 (390x844), 39.5 / 333 (844x390), 52.6 / 233 (1440x900).
+- Read them as "nothing here is expensive": every view is a handful of transparent quads and one texture per block. The ground arrow is the slowest in software only because its rug and chevrons cover the most pixels with blending; on a phone GPU I would expect all six well inside 16 ms, but that is an expectation, not a measurement.
+
+- Media size: zero. No view stores media; every texture is drawn at run time from `text` and `role` with the system font. A block in the tour file is about 200 bytes of JSON.
+- GPU memory at run time: one canvas texture per block, 112 px per em; "This way to the guild house" is about 1 100 x 380 px for the sign (about 1.7 MB with mipmaps), the ground rug about 900 x 1 000 px (3.6 MB). Three blocks stay under 10 MB. Rebuilt only when the text, role or readAtM changes.
+- Per frame: billboard turns (a few quaternions), one leader line per callout, the bubble tail (7 vertices), five chevrons; the edge hint does two DOM writes per block per frame.
+- The creator's minutes: about one minute per block on the phone (place, type, pick the role, done); the defaults (upright, reads at 6 m, sign view) are right for most instructions. Setting `pointsTo` adds half a minute (aim the ring at the door and press "Aim with the ring").
+
+## 4. The creator's controls
+
+On the phone (creator mode), five large buttons along the bottom, the same for every view:
+
+- **View** - a grid of the six views with a one-line description.
+- **Text** - a sheet with the text (with a live counter to 80), the role chips (with their colour), the orientation chips and "Points to": "Aim with the ring" sets it to the point under the centre ring (ground, wall or door), "None" clears it.
+- **Size** - steps `readAtM` through 2, 3, 4, 6, 8, 12, 16, 20 m and says the letter height ("Reads at 6 m - letters 16 cm").
+- **Turn** - adds 15 degrees to the block's turn, and says so honestly when the orientation makes the turn invisible.
+- **Place** - moves the block onto the ring on the ground.
+- A chip at the top switches between the station's blocks.
+
+In the desktop editor:
+
+- A tilted bird's-eye view with handles: **Move** (W, on the ground plane only), **Turn** (E, about the vertical only) and **Points to** (T, a white diamond handle with a dashed line from the block, free in x, y, z). Click a block to select it.
+- The inspector: block picker, text with counter, role, orientation (with a one-line explanation, and the note that upright and face turn toward the editor camera here), "Reads at" as a logarithmic slider from 1 to 40 m with the resulting letter height and float height, "Points to" as numbers plus "Pick in 3D", "Drag handle" and "Clear", the view grid (required / extra), and the pose as numbers.
+- Per view nothing changes in the controls: every view reads the same five fields. That is the point of one model.
+
+## 5. Blunt self-check
+
+- **Rules the page bends:**
+  - The family asks for several records, rule 1 asks for one record in every view. I drew the same three records in every view at once (the station's three blocks), never a different example per view.
+  - The edge hint draws text in the DOM, not in WebGL. In WebXR that needs the DOM overlay feature (Chrome on Android has it) or a screen-space layer; it is the one view that is not "three.js only".
+  - Creator mode stands 1.6 m from the anchor rather than exactly on it, facing the selected block.
+  - The frame-time readout measures the frame interval; on this machine headless it is software rendering, not a phone.
+- **What I would drop first:** the speech bubble. It is pretty, but it says "someone is talking", and in this model nobody is. Labels read better as pins or callouts, instructions as signs or ground arrows, warnings as signs. If a recurring character speaks, that is family 7's model, not this one.
+- **What I am proudest of:** the sign's turning arrow. It makes `pointsTo` honest from every side: the same block tells a visitor coming from the south "straight on" and one coming from the east "to your right", without a second sign and without the creator thinking about it. Second, the callout's halo: it turns the placement error into part of the design instead of hiding from it.
+- **Context points the views break:**
+  - The ground arrow breaks "looks right with a visible offset" when the ground under it is not flat (a kerb, steps); the app has a ground plane per station, not a ground mesh.
+  - The callout's leader line to a far target (30 m) shows the heading error most: a 3 degree heading error is 1.6 m at the door.
+  - Nothing here uses sound, so "sound off" costs nothing.
+- **Things I did not do:** no right-to-left or vertical scripts, no hyphenation (long words break by character), no occlusion by real people (the camera image is the background; a ground arrow under a person's feet is drawn over them).
+
+<!--NOTES-END-->
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { Line2 } from 'three/addons/lines/Line2.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+
+/* =====================================================================
+   Constants and the fixed model
+   ===================================================================== */
+const FAMILY = 'station-blocks-2a-ground-road-marking';
+const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+const CAPTION_MAX = 40;                 // round 2: the short caption ...
+const DESC_MAX = 160;                   // ... and the optional description (was one 80-character text)
+const DESC_EM = 0.62;                   // description letters, relative to the caption's
+const TAIL_MAX = 72 * Math.PI / 180;    // the bubble tail's widest swing from straight down
+const EYE = 1.6;
+const STATION = { name: 'Market square', x: 0, z: 0, r: 25 };
+const STATION2 = { name: 'East lane', x: 60, z: 0, r: 25 };
+const EM_PER_M = 0.066 / 2.5;          // letter height per metre of reading distance (0.066 m reads at 2.5 m)
+const P = 112;                          // canvas pixels per em for world text
+const ROLES = {
+  instruction: { accent: '#5fe3c9', name: 'Instruction' },
+  label: { accent: '#f1d79c', name: 'Label' },
+  warning: { accent: '#ffb02e', name: 'Warning' },
+};
+const ORIENTS = ['world', 'upright', 'face'];
+const ORIENT_HELP = { world: 'Fixed in the world', upright: 'Turns about the vertical', face: 'Turns fully to the viewer' };
+const SIZE_STEPS = [2, 3, 4, 6, 8, 12, 16, 20];
+
+const FIELDS = [
+  { name: 'caption', type: 'string', max: CAPTION_MAX, about: 'the short line every view shows, at most 40 characters' },
+  { name: 'description', type: 'string|null', max: DESC_MAX, about: 'optional longer line, at most 160 characters; shown under the caption where it fits' },
+  { name: 'role', type: 'enum', values: Object.keys(ROLES), about: 'instruction, label or warning' },
+  { name: 'orientation', type: 'enum', values: ORIENTS, about: 'world (fixed), upright (turns about the vertical), face (turns fully)' },
+  { name: 'readAtM', type: 'number', unit: 'm', about: 'intended reading distance; sets the size' },
+  { name: 'pointsTo', type: 'point|null', about: 'optional local point for arrows and callouts' },
+];
+
+const VIEWS = [
+  { name: 'pin', title: 'Pin', blurb: 'head on a stem', required: true, uses: {
+      caption: 'the lettering on the head',
+      description: 'smaller lines under the caption',
+      role: 'the colour, and the icon when nothing is pointed at',
+      orientation: 'the head turns: world fixed, upright about the stem, face fully',
+      readAtM: 'letter size, and how high the head floats (1.7 m plus 10 cm per metre) so far-read pins clear a crowd',
+      pointsTo: 'the round arrow on the head turns toward it as seen from where you stand (the sign\'s arrow); without it a plain marker',
+    }, unused: {} },
+  { name: 'sign', title: 'Sign', blurb: 'board on posts', required: true, uses: {
+      caption: 'the board lettering',
+      description: 'smaller lines under the caption on the board',
+      role: 'the top band and the icon',
+      orientation: 'world fixed; upright and face both turn the whole sign about its posts (a standing sign never tilts)',
+      readAtM: 'letter size, board height, post thickness',
+      pointsTo: 'the round arrow on the board turns toward it as seen from where you stand (up means go past the sign)',
+    }, unused: {} },
+  { name: 'ground-arrow', title: 'Road marking', blurb: 'worn paint on the paving', required: true, uses: {
+      caption: 'painted in upper-case road letters, condensed across and stretched 1.6-5.5 times along the line of sight, first line nearest the reader',
+      role: 'the paint: white, amber for warnings (the Paint button switches to the role colour)',
+      orientation: 'world: reads from the tail of the arrow; upright and face: the caption is re-laid in quarter turns, with a short fade, to the side you read from (paint never spins)',
+      readAtM: 'letter size and stretch, arrow width and length',
+      pointsTo: 'one arrow from the spot of the block toward it, stopping short (without it: no arrow, the words only)',
+    }, unused: { description: 'the ground views show only the caption; 160 characters do not read painted on the paving' } },
+  { name: 'bubble', title: 'Speech bubble', blurb: 'floating, with a tail', required: true, uses: {
+      caption: 'centred in the bubble',
+      description: 'smaller lines under the caption',
+      role: 'the rim colour',
+      orientation: 'the bubble turns',
+      readAtM: 'size and float height',
+      pointsTo: 'the tail points at it (without it, at its own spot on the ground), up to 72 degrees from straight down',
+    }, unused: {} },
+  { name: 'callout', title: 'Callout', blurb: 'leader line, fades off-axis', required: false, uses: {
+      caption: 'the tag',
+      description: 'smaller lines under the caption on the tag',
+      role: 'underline, leader and halo colour',
+      orientation: 'the tag turns',
+      readAtM: 'size and float height',
+      pointsTo: 'the leader line ends in a soft 0.6 m halo that hides placement error (without it, straight down)',
+    }, unused: {}, extra: 'Quiets itself when it is not near the centre of the view.' },
+  { name: 'edge-hint', title: 'Edge hint', blurb: 'screen tag, at the edge when off-screen', required: false, uses: {
+      caption: 'always: on the tag over the spot, and with the arrow on the chip at the screen edge',
+      description: 'only once the block is fully in view (its bounds inside the screen, with hysteresis), together with the distance',
+      role: 'the colour and the bar',
+    }, unused: { orientation: 'screen space, always flat to the screen', readAtM: 'screen space, always the same size', pointsTo: 'the hint leads to the block itself' } },
+];
+const VIEW_NAMES = VIEWS.map(v => v.name);
+const viewInfo = name => VIEWS.find(v => v.name === name);
+
+/* The station's blocks: three records of the same model, shown by every view. */
+const records = [
+  { id: 'guild-way', view: 'ground-arrow', pose: { x: 2.6, y: 0, z: 10.5, yawDeg: 0 },
+    model: { caption: 'This way to the guild house', description: 'Across the square to the grey front. The door is open from ten to six.', role: 'instruction', orientation: 'upright', readAtM: 6, pointsTo: { x: 2, y: 1.2, z: -19.6 } } },
+  { id: 'market-hall', view: 'ground-arrow', pose: { x: -6.5, y: 0, z: -1.5, yawDeg: 0 },
+    model: { caption: 'Market hall, 1890', description: 'Built as a covered grain market; the upper floor came later.', role: 'label', orientation: 'face', readAtM: 12, pointsTo: null } },
+  { id: 'mind-step', view: 'ground-arrow', pose: { x: -12.6, y: 0, z: -11.2, yawDeg: 22 },
+    model: { caption: 'Mind the step', description: null, role: 'warning', orientation: 'world', readAtM: 3, pointsTo: { x: -14.15, y: 0.18, z: -14 } } },
+];
+
+/* Defensive normalisation at the model boundary: everything the view code sees passes through here. */
+const clipText = (s, max) => Array.from(typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : '').slice(0, max).join('');
+function sanitizeModel(m) {
+  const out = {};
+  // a round-1 record has only `text`: it becomes the caption
+  out.caption = clipText(typeof m?.caption === 'string' ? m.caption : m?.text, CAPTION_MAX) || '...';
+  out.description = clipText(m?.description, DESC_MAX) || null;
+  out.role = Object.hasOwn(ROLES, m?.role) ? m.role : 'label';
+  out.orientation = ORIENTS.includes(m?.orientation) ? m.orientation : 'upright';
+  const r = Number(m?.readAtM);
+  out.readAtM = Number.isFinite(r) ? Math.min(40, Math.max(1, r)) : 5;
+  const p = m?.pointsTo;
+  out.pointsTo = p && [p.x, p.y, p.z].every(Number.isFinite) ? { x: +p.x, y: +p.y, z: +p.z } : null;
+  return out;
+}
+records.forEach(r => { r.model = sanitizeModel(r.model); });
+
+/* Placement error demo. When on (visitor mode only), every block AND every pointsTo is drawn 1 m off, as a
+   1 m error of the station anchor would put them; the real place (the door, the step) does not move. */
+const PLACE_ERR = { on: false, active: false, bearingDeg: 53, dx: 0, dz: 0 };
+const NO_ERR = { dx: 0, dz: 0 };
+const errOff = () => (PLACE_ERR.active ? PLACE_ERR : NO_ERR);
+function ptWorld(M, out) { const o = errOff(); return out.set(M.pointsTo.x + o.dx, M.pointsTo.y, M.pointsTo.z + o.dz); }
+
+const emOf = m => m.readAtM * EM_PER_M;
+const liftOf = m => 1.7 + 0.1 * m.readAtM;
+const cm = v => Math.round(v * 100);
+
+/* =====================================================================
+   Renderer, scene, cameras
+   ===================================================================== */
+const app = document.getElementById('app');
+const stage = document.getElementById('stage');
+const overlay = document.getElementById('overlay');
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
+
+const scene = new THREE.Scene();
+const SKY = new THREE.Color('#dfe6ec');
+scene.background = SKY;
+scene.fog = new THREE.Fog(SKY, 70, 230);
+scene.add(new THREE.HemisphereLight('#ffffff', '#9ea3a6', 2.3));
+const sun = new THREE.DirectionalLight('#ffffff', 0.9); sun.position.set(-30, 50, 20); scene.add(sun);
+
+const cam = new THREE.PerspectiveCamera(50, 1, 0.05, 400); cam.rotation.order = 'YXZ';
+const edCam = new THREE.PerspectiveCamera(38, 1, 0.1, 600);
+edCam.position.set(9, 21, 27);
+const orbit = new OrbitControls(edCam, canvas);
+orbit.target.set(-3, 0, 1); orbit.enableDamping = true; orbit.maxPolarAngle = 1.35; orbit.minDistance = 6; orbit.maxDistance = 140; orbit.update();
+orbit.enabled = false;
+
+const lineMats = new Set();
+const pickables = [];   // place meshes the creator ring and the editor can hit
+
+/* ---------- the plain place (stand-in for the camera image) ---------- */
+function lambert(c) { return new THREE.MeshLambertMaterial({ color: c }); }
+function addBox(w, h, d, x, y, z, color, pick = true) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), lambert(color));
+  m.position.set(x, y, z); scene.add(m); if (pick) pickables.push(m); return m;
+}
+function pavingTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
+  g.fillStyle = '#c1c3c3'; g.fillRect(0, 0, 512, 512);
+  g.strokeStyle = 'rgba(0,0,0,.045)'; g.lineWidth = 2;
+  for (let i = 0; i <= 8; i++) { g.beginPath(); g.moveTo(i * 64, 0); g.lineTo(i * 64, 512); g.stroke(); g.beginPath(); g.moveTo(0, i * 64); g.lineTo(512, i * 64); g.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(5, 5); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = MAX_ANISO; return t;
+}
+function buildPlace() {
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), lambert('#c9cbcc'));
+  ground.rotation.x = -Math.PI / 2; scene.add(ground); pickables.push(ground); ground.userData.ground = true;
+  const sq = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambertMaterial({ map: pavingTexture() }));
+  sq.rotation.x = -Math.PI / 2; sq.position.y = 0.004; scene.add(sq); pickables.push(sq); sq.userData.ground = true;
+  const pathMat = lambert('#b9bcbc');
+  const p1 = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 60), pathMat); p1.rotation.x = -Math.PI / 2; p1.position.set(0, 0.003, 50); scene.add(p1);
+  const p2 = new THREE.Mesh(new THREE.PlaneGeometry(80, 3.2), pathMat); p2.rotation.x = -Math.PI / 2; p2.position.set(60, 0.003, 0); scene.add(p2);
+  // guild house front, door and two windows
+  addBox(28, 6, 6, 2, 3, -23, '#aeb2b5');
+  addBox(28.6, 0.35, 6.4, 2, 6.1, -23, '#9ea3a7');
+  addBox(1.8, 2.5, 0.24, 2, 1.25, -19.95, '#6f7479');
+  addBox(2.2, 1.6, 0.18, -6, 3.5, -19.97, '#80868b');
+  addBox(2.2, 1.6, 0.18, 10, 3.5, -19.97, '#80868b');
+  addBox(2.0, 1.4, 0.2, -6, 3.5, -19.95, '#5f656b');
+  addBox(2.0, 1.4, 0.2, 10, 3.5, -19.95, '#5f656b');
+  // ruined wall with a gap and a step in the gap
+  const segs = [[-18, -16.9, 0.85], [-16.9, -15.9, 1.1], [-15.9, -15.1, 0.7], [-13.2, -12.1, 0.95], [-12.1, -10.9, 0.75], [-10.9, -10, 0.5]];
+  for (const [a, b, h] of segs) addBox(b - a, h, 0.7, (a + b) / 2, h / 2, -14, '#a4a6a3');
+  addBox(1.9, 0.18, 1.0, -14.15, 0.09, -14, '#b0b2ae');
+  // bench and tree
+  addBox(1.9, 0.08, 0.45, 8, 0.46, 7, '#9a9d9f'); addBox(1.9, 0.4, 0.06, 8, 0.75, 7.22, '#9a9d9f');
+  addBox(0.08, 0.42, 0.4, 7.2, 0.21, 7, '#8d9093'); addBox(0.08, 0.42, 0.4, 8.8, 0.21, 7, '#8d9093');
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 2.8, 10), lambert('#8f918f')); trunk.position.set(13, 1.4, -7); scene.add(trunk);
+  const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.3, 1), new THREE.MeshLambertMaterial({ color: '#a7ada7', flatShading: true })); crown.position.set(13, 4.4, -7); scene.add(crown); pickables.push(crown);
+  // station circles, faint on the ground
+  for (const s of [STATION, STATION2]) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(s.r - 0.07, s.r + 0.07, 256), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(s.x, 0.012, s.z); scene.add(ring);
+    const cross = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.32, 40), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.6, depthWrite: false }));
+    cross.rotation.x = -Math.PI / 2; cross.position.set(s.x, 0.012, s.z); scene.add(cross);
+  }
+  // the second, plain station: one stand-in item
+  addBox(0.12, 1.3, 0.12, 60, 0.65, 0, '#8e9296'); addBox(0.9, 0.55, 0.06, 60, 1.45, 0.05, '#9fa4a8');
+}
+buildPlace();
+
+/* =====================================================================
+   Canvas drawing: plates, icons, rugs, halos
+   ===================================================================== */
+function wrapText(ctx, text, maxW) {
+  const words = text.split(' '); const lines = []; let cur = '';
+  const pushLong = w => { // a word longer than the line: break by characters
+    let part = '';
+    for (const ch of Array.from(w)) { if (ctx.measureText(part + ch).width > maxW && part) { lines.push(part); part = ch; } else part += ch; }
+    return part;
+  };
+  for (const w of words) {
+    const t = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(t).width <= maxW) { cur = t; continue; }
+    if (cur) lines.push(cur);
+    cur = ctx.measureText(w).width > maxW ? pushLong(w) : w;
+  }
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [' '];
+}
+
+function drawRoleIcon(ctx, role, cx, cy, r) {
+  const a = ROLES[role].accent;
+  ctx.save();
+  if (role === 'warning') {
+    ctx.fillStyle = a; ctx.beginPath();
+    const h = r * 1.9, w = r * 2.15, top = cy - h * 0.55;
+    ctx.moveTo(cx, top); ctx.lineTo(cx + w / 2, top + h); ctx.lineTo(cx - w / 2, top + h); ctx.closePath();
+    ctx.lineJoin = 'round'; ctx.lineWidth = r * 0.28; ctx.strokeStyle = a; ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#16191e';
+    ctx.fillRect(cx - r * 0.11, top + h * 0.32, r * 0.22, h * 0.36);
+    ctx.beginPath(); ctx.arc(cx, top + h * 0.83, r * 0.13, 0, Math.PI * 2); ctx.fill();
+  } else if (role === 'instruction') {
+    // non-directional on purpose: a baked arrow cannot know where the target is; the turning glyph does that
+    ctx.fillStyle = a; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#13171c'; ctx.lineWidth = r * 0.2;
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.52, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#13171c'; ctx.beginPath(); ctx.arc(cx, cy, r * 0.17, 0, Math.PI * 2); ctx.fill();
+  } else {
+    ctx.strokeStyle = a; ctx.lineWidth = r * 0.2; ctx.beginPath();
+    ctx.moveTo(cx, cy - r * 0.85); ctx.lineTo(cx + r * 0.85, cy); ctx.lineTo(cx, cy + r * 0.85); ctx.lineTo(cx - r * 0.85, cy); ctx.closePath(); ctx.stroke();
+    ctx.fillStyle = a; ctx.beginPath(); ctx.arc(cx, cy, r * 0.25, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+const PLATE = {
+  pin:     { weight: 650, maxEm: 9.5, padX: 0.5, padY: 0.34, icon: true, radius: 0.5, pointer: true, align: 'left' },
+  sign:    { weight: 650, maxEm: 8.6, padX: 0.55, padY: 0.42, icon: true, radius: 0.12, band: true, align: 'left' },
+  bubble:  { weight: 600, maxEm: 8.2, padX: 0.8, padY: 0.52, icon: false, radius: 0.85, rim: true, align: 'center', opaque: true },
+  callout: { weight: 600, maxEm: 10, padX: 0.48, padY: 0.3, icon: false, radius: 0.24, underline: true, align: 'left' },
+};
+const PLATE_FILL = 'rgba(17,21,27,0.95)';
+const BUBBLE_FILL = '#14181e';
+
+/* Caption and description laid out once per text: the caption in the plate's weight, the description smaller
+   and quieter under it (wrapped to the caption's width, at least 8 em, at most 6 lines). */
+function layoutText(ctx, model, st) {
+  const font = `${st.weight} ${P}px ${FONT}`, dfont = `450 ${Math.round(DESC_EM * P)}px ${FONT}`;
+  ctx.font = font;
+  const lines = wrapText(ctx, model.caption, st.maxEm * P);
+  const capW = Math.max(1, ...lines.map(l => ctx.measureText(l).width));
+  let dlines = [], descW = 0;
+  if (model.description) {
+    ctx.font = dfont;
+    dlines = wrapText(ctx, model.description, Math.min((st.maxEm + 2) * P, Math.max(capW, 8 * P)));
+    if (dlines.length > 6) { dlines = dlines.slice(0, 6); dlines[5] = dlines[5].replace(/\s*\S*$/, '') + ' ...'; }
+    descW = Math.max(...dlines.map(l => ctx.measureText(l).width));
+    ctx.font = font;
+  }
+  const LH = 1.17 * P, DLH = 1.3 * DESC_EM * P, gap = 0.36 * P;
+  const capH = LH * (lines.length - 1) + 1.02 * P;
+  const descH = dlines.length ? gap + DLH * dlines.length : 0;
+  return { font, dfont, lines, dlines, textW: Math.max(capW, descW), LH, DLH, gap, capH, descH };
+}
+function drawText(ctx, lay, st, xLeft, cx, contentTop) {
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = lay.font; ctx.fillStyle = '#f7f4ec';
+  lay.lines.forEach((l, i) => {
+    const y = contentTop + 0.8 * P + i * lay.LH;
+    if (st.align === 'center') { ctx.textAlign = 'center'; ctx.fillText(l, cx, y); } else { ctx.textAlign = 'left'; ctx.fillText(l, xLeft, y); }
+  });
+  ctx.font = lay.dfont; ctx.fillStyle = '#c3c8cf';
+  lay.dlines.forEach((l, i) => {
+    const y = contentTop + lay.capH + lay.gap + 0.8 * DESC_EM * P + i * lay.DLH;
+    if (st.align === 'center') { ctx.textAlign = 'center'; ctx.fillText(l, cx, y); } else { ctx.textAlign = 'left'; ctx.fillText(l, xLeft, y); }
+  });
+}
+
+function plateCanvas(model, styleName, opt = {}) {
+  const st = PLATE[styleName];
+  const accent = ROLES[model.role].accent;
+  const c = document.createElement('canvas'); let ctx = c.getContext('2d');
+  const lay = layoutText(ctx, model, st), font = lay.font, lines = lay.lines, textW = lay.textW;
+  const M = Math.round(0.36 * P), LH = lay.LH, band = st.band ? 0.17 * P : 0;
+  const iconW = st.icon ? 1.22 * P : 0;
+  const bodyW = Math.ceil(st.padX * P * 2 + iconW + textW);
+  const bodyH = Math.ceil(st.padY * P * 2 + lay.capH + lay.descH + band);
+  const ptr = st.pointer ? Math.round(0.42 * P) : 0;
+  c.width = bodyW + 2 * M; c.height = bodyH + 2 * M + ptr;
+  ctx = c.getContext('2d'); ctx.font = font;
+  const x0 = M, y0 = M, cx = x0 + bodyW / 2;
+  const body = new Path2D(); body.roundRect(x0, y0, bodyW, bodyH, Math.min(st.radius * P, bodyH / 2));
+  const pointer = new Path2D();
+  if (ptr) { pointer.moveTo(cx - 0.32 * P, y0 + bodyH - 2); pointer.lineTo(cx, y0 + bodyH + ptr); pointer.lineTo(cx + 0.32 * P, y0 + bodyH - 2); pointer.closePath(); }
+  const fill = st.opaque ? BUBBLE_FILL : PLATE_FILL;
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.36)'; ctx.shadowBlur = 0.3 * P; ctx.shadowOffsetY = 0.07 * P;
+  ctx.fillStyle = fill; ctx.fill(body); if (ptr) ctx.fill(pointer); ctx.restore();
+  ctx.save(); ctx.clip(body);
+  const g = ctx.createLinearGradient(0, y0, 0, y0 + bodyH); g.addColorStop(0, 'rgba(255,255,255,0.075)'); g.addColorStop(0.55, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(x0, y0, bodyW, bodyH);
+  if (st.band) { ctx.fillStyle = accent; ctx.fillRect(x0, y0, bodyW, band); }
+  if (st.underline) { ctx.fillStyle = accent; ctx.fillRect(x0, y0 + bodyH - 0.1 * P, bodyW, 0.1 * P); }
+  ctx.restore();
+  ctx.lineWidth = st.rim ? 0.075 * P : 0.03 * P; ctx.strokeStyle = st.rim ? accent : 'rgba(255,255,255,0.17)';
+  const inset = new Path2D(); const lw = ctx.lineWidth / 2;
+  inset.roundRect(x0 + lw, y0 + lw, bodyW - 2 * lw, bodyH - 2 * lw, Math.max(1, Math.min(st.radius * P, bodyH / 2) - lw)); ctx.stroke(inset);
+  if (ptr) { ctx.fillStyle = fill; ctx.fill(pointer); }
+  const contentTop = y0 + band + st.padY * P;
+  const iconCx = x0 + st.padX * P + 0.47 * P, iconCy = contentTop + 0.5 * P + (LH * (lines.length - 1)) / 2;
+  if (st.icon && !opt.emptyIcon) drawRoleIcon(ctx, model.role, iconCx, iconCy, 0.42 * P);
+  drawText(ctx, lay, st, x0 + st.padX * P + iconW, cx, contentTop);
+  return { canvas: c, M, bodyW, bodyH, ptr, icon: { x: iconCx, y: iconCy } };
+}
+
+/* The speech bubble and its tail as ONE shape in one canvas, outlined once with a constant stroke: both parts are
+   stroked at twice the rim width and then filled, so the fill covers the inner half of every stroke and the join
+   between bubble and tail carries no line. Redrawn into the same canvas whenever the tail turns. */
+function bubbleCanvas(model, em) {
+  const st = PLATE.bubble, accent = ROLES[model.role].accent;
+  const c = document.createElement('canvas'); const ctx0 = c.getContext('2d');
+  const lay = layoutText(ctx0, model, st);
+  const bodyW = Math.ceil(st.padX * P * 2 + lay.textW), bodyH = Math.ceil(st.padY * P * 2 + lay.capH + lay.descH);
+  const radius = Math.min(st.radius * P, bodyH / 2), rimPx = 0.075 * P;
+  const w0 = Math.min(bodyW * 0.16, 0.85 * P);                    // half the tail's base
+  const slideMax = Math.max(0, bodyW / 2 - radius - 1.3 * w0);    // how far the base may slide toward the target
+  const Lw = Math.max(0.28, 1.25 * em + 0.12 * bodyH * em / P);    // tail length in metres (as round 1)
+  const Lpx = Lw * P / em;
+  const reach = Math.min(bodyW * 0.3, slideMax) + Lpx * Math.sin(TAIL_MAX) + w0 * 0.4;
+  const MX = Math.ceil(Math.max(0.36 * P, reach - bodyW / 2 + rimPx + 0.4 * P)), MT = Math.ceil(0.36 * P + rimPx);
+  const MB = Math.ceil(Lpx + rimPx + 0.5 * P);
+  c.width = bodyW + 2 * MX; c.height = MT + bodyH + MB;
+  const x0 = MX, y0 = MT, cx = x0 + bodyW / 2;
+  const body = new Path2D(); body.roundRect(x0, y0, bodyW, bodyH, radius);
+  const draw = ang => {
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, c.width, c.height);
+    const bx = cx + Math.max(-slideMax, Math.min(slideMax, Math.sin(ang) * bodyW * 0.3));
+    const by = y0 + bodyH - 0.3 * P;                               // the base starts inside the bubble
+    const tipX = bx + Math.sin(ang) * Lpx, tipY = y0 + bodyH + Math.cos(ang) * Lpx;
+    // symmetric control points below the base: the tail leaves downward, then bends toward the tip, and a strong bend
+    // dips before it sweeps out instead of lying flat; the base widens a little with the bend
+    const ww = w0 * (1 + 0.3 * Math.abs(Math.sin(ang)));
+    const kx = (tipX - bx) * 0.25, ky = by + Math.max((tipY - by) * 0.6, Lpx * 0.4);
+    const tail = new Path2D();
+    tail.moveTo(bx - ww, by); tail.quadraticCurveTo(bx - ww * 0.35 + kx, ky, tipX, tipY);
+    tail.quadraticCurveTo(bx + ww * 0.35 + kx, ky, bx + ww, by); tail.closePath();
+    ctx.lineJoin = 'round'; ctx.lineWidth = 2 * rimPx; ctx.strokeStyle = accent; ctx.fillStyle = accent;
+    ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.36)'; ctx.shadowBlur = 0.3 * P; ctx.shadowOffsetY = 0.07 * P;
+    ctx.stroke(body); ctx.stroke(tail); ctx.restore();
+    ctx.fillStyle = BUBBLE_FILL; ctx.fill(body); ctx.fill(tail);
+    ctx.save(); ctx.clip(body);
+    const g = ctx.createLinearGradient(0, y0, 0, y0 + bodyH); g.addColorStop(0, 'rgba(255,255,255,0.075)'); g.addColorStop(0.55, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(x0, y0, bodyW, bodyH); ctx.restore();
+    drawText(ctx, lay, st, x0 + st.padX * P, cx, y0 + st.padY * P);
+  };
+  return { canvas: c, draw, bodyW, bodyH, ax: cx, ay: y0 + bodyH / 2 };
+}
+
+function texFrom(c) {
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = MAX_ANISO; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true;
+  return t;
+}
+function basicMat(opts) { return new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false, ...opts }); }
+
+/* A plate mesh. anchor 'center' = body centre at origin, 'bottom' = pointer tip (or body bottom) at origin. */
+function plateMesh(info, em, anchor) {
+  const s = em / P, c = info.canvas;
+  const geo = new THREE.PlaneGeometry(c.width * s, c.height * s);
+  const ax = info.M + info.bodyW / 2;
+  const ay = anchor === 'bottom' ? info.M + info.bodyH + info.ptr : info.M + info.bodyH / 2;
+  geo.translate((c.width / 2 - ax) * s, (ay - c.height / 2) * s, 0);
+  const tex = texFrom(c);
+  const mesh = new THREE.Mesh(geo, basicMat({ map: tex }));
+  const toLocal = (px, py) => new THREE.Vector2((px - ax) * s, (ay - py) * s);
+  return { mesh, tex, wBody: info.bodyW * s, hBody: info.bodyH * s, iconLocal: toLocal(info.icon.x, info.icon.y), s };
+}
+
+/* ---------- road marking: paint layers with wear (the ground view) ----------
+   Everything is drawn at run time from text and role: a dark contrast edge (as concrete roads put under light
+   markings, so white paint still reads on light stone in sun) and the paint on top, each knocked about with
+   flecks, scuffs along the walking direction and a few faded patches, so it reads as old paint, not a sticker. */
+const ROAD_PAINT = { instruction: '#f7f6f1', label: '#f7f6f1', warning: '#f4b93e' };
+const PAINT = { mode: 'road' };   // 'road': white, amber for warnings, as real road paint; 'role': the role colour
+const paintOf = role => (PAINT.mode === 'role' ? ROLES[role].accent : ROAD_PAINT[role]);
+const EDGE_INK = 'rgba(36,40,46,0.9)';
+
+function mulberry(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function hashStr(s) { let h = 2166136261; for (const ch of s) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+
+/* ppm = canvas pixels per metre; sizes are in metres so the wear looks the same on every block. */
+function wearLayer(ctx, w, h, ppm, rand, amount) {
+  const px = m => m * ppm, areaM2 = (w / ppm) * (h / ppm);
+  ctx.save(); ctx.globalCompositeOperation = 'destination-out'; ctx.fillStyle = '#000'; ctx.strokeStyle = '#000';
+  const nF = Math.min(9000, Math.round(areaM2 * 2600 * amount));
+  for (let i = 0; i < nF; i++) {                                      // flecks
+    ctx.globalAlpha = 0.25 + rand() * 0.7;
+    ctx.beginPath(); ctx.arc(rand() * w, rand() * h, Math.max(0.6, px(0.0015 + rand() * rand() * rand() * 0.012)), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.lineCap = 'round';
+  const nS = Math.round(areaM2 * 60 * amount);
+  for (let i = 0; i < nS; i++) {                                      // scuffs along the walking direction (canvas y)
+    ctx.globalAlpha = 0.06 + rand() * 0.18; ctx.lineWidth = Math.max(1, px(0.003 + rand() * 0.012));
+    const x = rand() * w, y = rand() * h, len = px(0.05 + rand() * 0.45);
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (rand() - 0.5) * 0.15 * len, y + len); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  const nB = Math.round(areaM2 * 5 * amount) + 1;
+  for (let i = 0; i < nB; i++) {                                      // faded patches
+    const x = rand() * w, y = rand() * h, r = px(0.05 + rand() * 0.22);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(0,0,0,${0.15 + rand() * 0.2})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
+  }
+  ctx.restore();
+  ctx.save(); ctx.globalCompositeOperation = 'source-atop'; ctx.fillStyle = '#5a5c5c';   // the stone's grain showing through
+  const nG = Math.min(12000, Math.round(areaM2 * 4000 * amount));
+  for (let i = 0; i < nG; i++) { ctx.globalAlpha = 0.05 + rand() * 0.1; const r = Math.max(0.5, px(0.0015 + rand() * 0.004)); ctx.fillRect(rand() * w, rand() * h, r, r); }
+  ctx.restore();
+}
+
+/* A closed polygon whose edges wander by up to ampM metres: a painted edge, never a vector-perfect one. */
+function roughPath(pts, ppm, rand, ampM) {
+  const path = new Path2D(), stepPx = Math.max(3, ppm * 0.02);
+  const noise = Array.from({ length: 512 }, () => rand() * 2 - 1);
+  const smooth = i => { const a = Math.floor(i), f = i - a, n0 = noise[a % 512], n1 = noise[(a + 1) % 512]; return n0 + (n1 - n0) * f * f * (3 - 2 * f); };
+  let k = 0, first = true;
+  for (let s = 0; s < pts.length; s++) {
+    const [x0, y0] = pts[s], [x1, y1] = pts[(s + 1) % pts.length];
+    const len = Math.hypot(x1 - x0, y1 - y0) || 1, n = Math.max(1, Math.round(len / stepPx)), nx = -(y1 - y0) / len, ny = (x1 - x0) / len;
+    for (let i = 0; i < n; i++) {
+      const t = i / n, o = smooth(k++ * 0.35) * ampM * ppm;
+      const x = x0 + (x1 - x0) * t + nx * o, y = y0 + (y1 - y0) * t + ny * o;
+      if (first) { path.moveTo(x, y); first = false; } else path.lineTo(x, y);
+    }
+  }
+  path.closePath(); return path;
+}
+
+/* Edge layer and paint layer, each worn, composited. draw(ctx, 'edge' | 'paint') paints one layer. */
+function paintComposite(w, h, ppm, rand, role, draw) {
+  const mk = () => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+  const edge = mk(), ex = edge.getContext('2d'); ex.fillStyle = ex.strokeStyle = EDGE_INK; draw(ex, 'edge'); wearLayer(ex, w, h, ppm, rand, 0.45);
+  const paint = mk(), px = paint.getContext('2d'); px.fillStyle = paintOf(role); draw(px, 'paint'); wearLayer(px, w, h, ppm, rand, 1);
+  const out = mk(), o = out.getContext('2d'); o.drawImage(edge, 0, 0); o.drawImage(paint, 0, 0);
+  return out;
+}
+
+/* One long arrow, tip at the top of the canvas (= away from the tail), tail at the bottom. */
+function roadArrowCanvas(role, g, seed) {
+  const margin = g.edgeM + 0.05, Wm = g.headW + 2 * margin, Hm = g.lenM + 2 * margin;
+  const ppm = Math.min(360, 2048 / Hm, 1024 / Wm), X = m => m * ppm;
+  const w = Math.ceil(Wm * ppm), h = Math.ceil(Hm * ppm);
+  const cx = w / 2, top = X(margin), bot = h - X(margin), hl = X(g.headL), hw = X(g.headW) / 2, sw = X(g.shaftW) / 2, barb = X(g.headL * 0.12);
+  const pts = [[cx, top], [cx + hw, top + hl], [cx + sw, top + hl - barb], [cx + sw, bot], [cx - sw, bot], [cx - sw, top + hl - barb], [cx - hw, top + hl]];
+  const rand = mulberry(seed), path = roughPath(pts, ppm, rand, 0.004);
+  const canvas = paintComposite(w, h, ppm, rand, role, (ctx, kind) => {
+    ctx.save();
+    if (kind === 'edge') { ctx.lineWidth = X(g.edgeM) * 2; ctx.lineJoin = 'round'; ctx.stroke(path); ctx.globalCompositeOperation = 'destination-out'; ctx.fill(path); }
+    else ctx.fill(path);
+    ctx.restore();
+  });
+  return { canvas, wM: w / ppm, hM: h / ppm, margin };
+}
+
+/* The caption in upper-case road letters: condensed across, stretched along the line of sight,
+   first line nearest the reader (lowest on the canvas). emM = metres per font em across. */
+function roadTextCanvas(model, emM, stretch, seed) {
+  const cond = 0.8, text = model.caption.toLocaleUpperCase();
+  const layout = p => {
+    const c = document.createElement('canvas').getContext('2d'); c.font = `800 ${p}px ${FONT}`;
+    const lines = wrapText(c, text, 7 * p / cond);
+    const cap = c.measureText('H').actualBoundingBoxAscent || 0.72 * p;
+    const lineW = Math.max(1, ...lines.map(l => c.measureText(l).width)) * cond;
+    const gap = 0.55 * cap, edge = 0.055 * p, pad = edge * 2 + 0.1 * p, padB = pad + 0.2 * p * stretch;
+    return { p, lines, cap, gap, edge, pad, padB, font: c.font,
+      w: Math.ceil(lineW + 2 * pad), h: Math.ceil((lines.length * cap + (lines.length - 1) * gap) * stretch + pad + padB) };
+  };
+  let L = layout(P);
+  const q = Math.min(1, 2048 / L.h, 2048 / L.w); if (q < 1) L = layout(Math.floor(P * q));
+  const ppm = L.p / emM, n = L.lines.length, rand = mulberry(seed);
+  const canvas = paintComposite(L.w, L.h, ppm, rand, model.role, (ctx, kind) => {
+    ctx.save(); ctx.font = L.font; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
+    L.lines.forEach((line, i) => {
+      const slot = n - 1 - i;
+      ctx.save(); ctx.translate(L.w / 2, L.h - L.padB - slot * (L.cap + L.gap) * stretch); ctx.scale(cond, stretch);
+      if (kind === 'edge') { ctx.lineWidth = L.edge * 2; ctx.strokeText(line, 0, 0); ctx.globalCompositeOperation = 'destination-out'; ctx.fillText(line, 0, 0); }
+      else ctx.fillText(line, 0, 0);
+      ctx.restore();
+    });
+    ctx.restore();
+  });
+  return { canvas, wM: L.w / ppm, dM: L.h / ppm };
+}
+
+let haloTex = null;
+function getHaloTex() {
+  if (haloTex) return haloTex;
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  const grd = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  grd.addColorStop(0, 'rgba(255,255,255,0.10)'); grd.addColorStop(0.55, 'rgba(255,255,255,0.16)');
+  grd.addColorStop(0.74, 'rgba(255,255,255,0.95)'); grd.addColorStop(0.8, 'rgba(255,255,255,0.95)');
+  grd.addColorStop(0.9, 'rgba(255,255,255,0.18)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 256, 256);
+  haloTex = new THREE.CanvasTexture(c); haloTex.colorSpace = THREE.SRGBColorSpace; return haloTex;
+}
+/* The turning arrow: a round role-coloured glyph on a plate that points toward pointsTo as seen from where the visitor
+   stands (up = past the plate, left and right = turn, down = behind you). Shared by the pin and the sign. */
+function addTurningGlyph(v, M, sides, iconLocal, size) {
+  const glyphs = [];
+  for (const side of sides) {
+    const gm = new THREE.Mesh(new THREE.PlaneGeometry(size, size), v.mat(basicMat({ map: glyphTex(M.role) })));
+    gm.position.set(iconLocal.x, iconLocal.y, 0.003); gm.renderOrder = 6; side.add(gm); glyphs.push({ gm, side });
+  }
+  const tgt = v3();
+  return dt => {
+    if (!M.pointsTo) return;
+    for (const g of glyphs) {
+      ptWorld(M, tgt); g.side.updateWorldMatrix(true, false); g.side.worldToLocal(tgt);
+      const ang = Math.atan2(tgt.x - g.gm.position.x, -tgt.z);
+      g.gm.userData.a = dampAngle(g.gm.userData.a ?? -ang, -ang, 8, dt); g.gm.rotation.z = g.gm.userData.a;
+    }
+  };
+}
+let glyphTexCache = {};
+function glyphTex(role) {
+  if (glyphTexCache[role]) return glyphTexCache[role];
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = ROLES[role].accent; g.beginPath(); g.arc(64, 64, 60, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#13171c'; g.lineWidth = 15; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.beginPath(); g.moveTo(64, 98); g.lineTo(64, 32); g.moveTo(38, 56); g.lineTo(64, 30); g.lineTo(90, 56); g.stroke();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = MAX_ANISO;
+  return (glyphTexCache[role] = t);
+}
+
+/* =====================================================================
+   Small math helpers
+   ===================================================================== */
+let snapFrames = 0;   // when > 0, all smoothing jumps to its target (used by the script hook)
+const v3 = () => new THREE.Vector3();
+const tmpV = v3(), tmpV2 = v3(), tmpQ = new THREE.Quaternion();
+function damp(a, b, lambda, dt) { return snapFrames > 0 ? b : a + (b - a) * (1 - Math.exp(-lambda * dt)); }
+function dampAngle(a, b, lambda, dt) { let d = ((b - a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI; return snapFrames > 0 ? b : a + d * (1 - Math.exp(-lambda * dt)); }
+const smoothstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const ease = t => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
+const rad = d => d * Math.PI / 180;
+
+/* Turn a node per the model's orientation. The block root carries the pose (position and yaw). */
+function orient(node, block, camera, dt, yawOnly = false) {
+  const o = block.rec.model.orientation;
+  const ud = node.userData;
+  if (o === 'world') { ud.yaw = 0; node.quaternion.identity(); return; }
+  node.getWorldPosition(tmpV);
+  if (o === 'upright' || yawOnly) {
+    const wy = Math.atan2(camera.position.x - tmpV.x, camera.position.z - tmpV.z);
+    const local = wy - block.root.rotation.y;
+    ud.yaw = dampAngle(ud.yaw ?? local, local, 7, dt);
+    node.quaternion.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, ud.yaw);
+  } else {
+    tmpQ.copy(block.root.quaternion).invert().multiply(camera.quaternion);
+    if (snapFrames > 0 || !ud.faced) { node.quaternion.copy(tmpQ); ud.faced = true; }
+    else node.quaternion.slerp(tmpQ, 1 - Math.exp(-8 * dt));
+  }
+}
+
+/* =====================================================================
+   View instances
+   ===================================================================== */
+class ViewInst {
+  constructor(block) { this.block = block; this.group = new THREE.Group(); this.mats = []; this.disp = []; this.fade = 0; this.extra = 1; this.dom = []; }
+  mat(m, base = m.opacity ?? 1) { m.userData.base = base; this.mats.push(m); this.disp.push(m); if (m instanceof LineMaterial) lineMats.add(m); return m; }
+  keep(x) { this.disp.push(x); return x; }
+  setOpacity(k) { for (const m of this.mats) { m.opacity = m.userData.base * k; m.visible = m.opacity > 0.003; } for (const d of this.dom) d.style.opacity = String(k * (d._k ?? 1)); }
+  update() {}
+  dispose() {
+    for (const d of this.disp) { if (d instanceof LineMaterial) lineMats.delete(d); d.dispose?.(); }
+    this.group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+    for (const d of this.dom) d.remove();
+  }
+}
+
+function makeLine(color, width, base, worldUnits = false) {
+  const geo = new LineGeometry(); geo.setPositions([0, 0, 0, 0, 1, 0]);
+  const mat = new LineMaterial({ color, linewidth: width, transparent: true, depthWrite: false, worldUnits });
+  mat.resolution.set(stage.clientWidth || 1, stage.clientHeight || 1);
+  const line = new Line2(geo, mat); line.frustumCulled = false;
+  return { line, geo, mat, base };
+}
+
+/* ---------- 1. pin ---------- */
+function buildPin(b) {
+  const v = new ViewInst(b), M = b.rec.model, em = emOf(M), lift = liftOf(M), accent = ROLES[M.role].accent, hasPt = !!M.pointsTo;
+  const pm = plateMesh(plateCanvas(M, 'pin', { emptyIcon: hasPt }), em, 'bottom');
+  v.keep(pm.tex); v.mat(pm.mesh.material); pm.mesh.renderOrder = 5;
+  const node = new THREE.Group(); node.position.y = lift; node.add(pm.mesh); v.group.add(node);
+  const turnGlyph = hasPt ? addTurningGlyph(v, M, [pm.mesh], pm.iconLocal, 0.86 * em) : null;
+  const r = Math.max(0.011, em * 0.07);
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(r, r, lift, 10), v.mat(basicMat({ color: '#20262e', opacity: 0.92 })));
+  stem.position.y = lift / 2; stem.renderOrder = 4; v.group.add(stem);
+  const gs = Math.max(0.22, em * 2.4);
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(gs * 0.55, 40), v.mat(basicMat({ color: '#14181e', opacity: 0.5 })));
+  disc.rotation.x = -Math.PI / 2; disc.position.y = 0.02; disc.renderOrder = 2; v.group.add(disc);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(gs * 0.38, gs * 0.5, 48), v.mat(basicMat({ color: accent, opacity: 0.95 })));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.022; ring.renderOrder = 3; v.group.add(ring);
+  const pulseMat = v.mat(basicMat({ color: accent, opacity: 0.6, map: getHaloTex() }));
+  const pulse = new THREE.Mesh(new THREE.PlaneGeometry(gs * 1.2, gs * 1.2), pulseMat);
+  pulse.rotation.x = -Math.PI / 2; pulse.position.y = 0.021; pulse.renderOrder = 2; v.group.add(pulse);
+  v.update = (dt, camera, t) => {
+    orient(node, b, camera, dt);
+    turnGlyph?.(dt);
+    const ph = (t % 2.8) / 2.8; pulse.scale.setScalar(0.7 + ph * 1.5); pulseMat.userData.base = 0.55 * (1 - ph);
+  };
+  return v;
+}
+
+/* ---------- 2. sign ---------- */
+function buildSign(b) {
+  const v = new ViewInst(b), M = b.rec.model, em = emOf(M), hasPt = !!M.pointsTo;
+  const info = plateCanvas(M, 'sign', { emptyIcon: hasPt });
+  const front = plateMesh(info, em, 'center');
+  v.keep(front.tex); v.mat(front.mesh.material); front.mesh.renderOrder = 5;
+  const back = new THREE.Mesh(front.mesh.geometry.clone(), front.mesh.material);
+  back.rotation.y = Math.PI; back.renderOrder = 5;
+  const T = Math.max(0.035, em * 0.25);
+  const yawNode = new THREE.Group(); v.group.add(yawNode);
+  const bottom = 0.95 + 0.04 * M.readAtM, cy = bottom + front.hBody / 2;
+  const board = new THREE.Group(); board.position.y = cy; yawNode.add(board);
+  const edge = new THREE.Mesh(new THREE.BoxGeometry(front.wBody * 0.985, front.hBody * 0.97, T), v.mat(basicMat({ color: '#2a3038', opacity: 1, depthWrite: true })));
+  board.add(edge);
+  front.mesh.position.z = T / 2 + 0.002; back.position.z = -T / 2 - 0.002;
+  board.add(front.mesh, back);
+  const postR = Math.max(0.025, em * 0.16);
+  const postMat = v.mat(basicMat({ color: '#2a3038', opacity: 1, depthWrite: true }));
+  const postXs = front.wBody > 0.9 ? [-front.wBody / 2 + Math.max(0.12, front.wBody * 0.14), front.wBody / 2 - Math.max(0.12, front.wBody * 0.14)] : [0];
+  for (const x of postXs) {
+    const postH = bottom + 0.03;
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(postR, postR * 1.1, postH, 12), postMat);
+    post.position.set(x, postH / 2, 0); yawNode.add(post);
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(postR * 2.2, postR * 2.4, 0.06, 16), postMat); foot.position.set(x, 0.03, 0); yawNode.add(foot);
+  }
+  const turnGlyph = hasPt ? addTurningGlyph(v, M, [front.mesh, back], front.iconLocal, 0.86 * em) : null;
+  v.update = (dt, camera) => {
+    if (M.orientation === 'world') yawNode.quaternion.identity(); else orient(yawNode, b, camera, dt, true);
+    turnGlyph?.(dt);
+  };
+  return v;
+}
+
+/* ---------- 3. ground: painted road marking ----------
+   One long worn arrow from the block's spot toward pointsTo (stopping short of it), and the caption in road
+   letters beside its tail. Nothing moves: paint does not animate. The caption is fixed for "world"; for
+   "upright" and "face" it is re-laid in quarter turns to the side the visitor reads from, with a short fade,
+   because a painted mark that spins smoothly stops reading as paint. Without pointsTo there is no arrow. */
+const ROAD = {
+  letterK: 1.5,                                   // ground letters are this much wider than upright letters for the same readAtM (swept 1.0-1.6)
+  stretch: m => Math.min(5.5, Math.max(1.6, m.readAtM / 1.6)),   // ~1/sin(depression angle) at readAtM from 1.6 m eye height, capped
+  headW: em => Math.max(0.42, em * 5.5),          // arrow head width; the shaft is 30 % of it
+  stop: D => Math.min(3, Math.max(1.5, D * 0.2)), // the tip stops this far short of the target: at least 1 m of error plus half a step
+  maxLen: m => 2.5 + 0.45 * m.readAtM,            // arrow length cap (5.2 m at readAtM 6)
+  switchMargin: 0.3,                              // hysteresis for re-laying the caption (cosine difference)
+};
+function buildGround(b) {
+  const v = new ViewInst(b), M = b.rec.model, em = emOf(M), hasPt = !!M.pointsTo;
+  const seed = hashStr(`${b.rec.id}|${M.caption}|${M.role}`);
+  const stretch = ROAD.stretch(M);
+  const headW = ROAD.headW(em), shaftW = headW * 0.3, headL0 = headW * (0.8 + 0.25 * stretch), edgeM = Math.max(0.025, headW * 0.045);
+  const decal = { transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
+  // caption: lit like the paving (Lambert), so it reads as paint under the same sun, not as a glowing sticker
+  const tc = roadTextCanvas(M, em * ROAD.letterK, stretch, seed);
+  const tTex = v.keep(texFrom(tc.canvas));
+  const tGeo = new THREE.PlaneGeometry(tc.wM, tc.dM); tGeo.rotateX(-Math.PI / 2);
+  const tMat = v.mat(new THREE.MeshLambertMaterial({ ...decal, map: tTex }));
+  const text = new THREE.Mesh(tGeo, tMat); text.renderOrder = 3;
+  const textNode = new THREE.Group(); textNode.position.y = 0.014; textNode.add(text); v.group.add(textNode);
+  // arrow: its texture is rebuilt only when its length changes by more than 20 cm (the block or the target moved)
+  const aMat = v.mat(new THREE.MeshLambertMaterial({ ...decal }));
+  const arrow = new THREE.Mesh(new THREE.BufferGeometry(), aMat); arrow.renderOrder = 3; arrow.position.y = 0.014; arrow.visible = hasPt;
+  v.group.add(arrow);
+  let built = { len: -1, headL: headL0 };
+  const buildArrow = lenM => {
+    const headL = Math.min(headL0, lenM * 0.5);
+    const c = roadArrowCanvas(M.role, { lenM, headW, headL, shaftW, edgeM }, seed ^ 0x9e3779b9);
+    const old = aMat.map; aMat.map = v.keep(texFrom(c.canvas)); aMat.needsUpdate = true; old?.dispose();
+    arrow.geometry.dispose();
+    const g = new THREE.PlaneGeometry(c.wM, c.hM); g.rotateX(-Math.PI / 2); g.translate(0, 0, -(c.hM / 2 - c.margin));   // tail at the origin, tip at -lenM
+    arrow.geometry = g; built = { len: lenM, headL };
+  };
+  const f = v3(), rt = v3(), p = v3(), cam = v3(), focus = v3(), ov = v3();
+  const optVec = (i, out) => { out.copy(i < 2 ? f : rt); if (i % 2) out.negate(); return out; };   // 0 along, 1 against, 2 right, 3 left
+  const st = { cur: null, pending: null, fade: 1 };
+  const place = () => {
+    const r = optVec(st.cur.read, ov);
+    textNode.rotation.y = Math.atan2(-r.x, -r.z);
+    if (!hasPt) { textNode.position.set(0, 0.014, 0); return; }
+    const across = st.cur.read < 2;   // lines run across the arrow (read from the tail or the tip)
+    const alongExt = across ? tc.dM : tc.wM, latExt = across ? tc.wM : tc.dM;
+    const besideHead = alongExt + 0.15 > built.len - built.headL;
+    const lat = (besideHead ? headW / 2 : shaftW / 2) + Math.max(0.12, headW * 0.22) + latExt / 2, u = alongExt / 2 + 0.1;
+    textNode.position.set(f.x * u + rt.x * lat * st.cur.side, 0.014, f.z * u + rt.z * lat * st.cur.side);
+  };
+  v.update = (dt, camera) => {
+    b.root.updateWorldMatrix(true, false);
+    let D = 0;
+    if (hasPt) {
+      ptWorld(M, p); b.root.worldToLocal(p); p.y = 0; D = p.length();
+      f.copy(p); if (D < 1e-3) f.set(0, 0, -1); f.normalize();
+    } else f.set(0, 0, -1);
+    rt.set(-f.z, 0, f.x);
+    if (hasPt) {
+      const lenM = Math.max(built.headL * 1.6, Math.min(ROAD.maxLen(M), D - ROAD.stop(D)), 0.6);
+      if (Math.abs(lenM - built.len) > 0.2) buildArrow(lenM);
+      arrow.rotation.y = Math.atan2(-f.x, -f.z);
+    }
+    // which way the caption reads
+    cam.copy(camera.position); b.root.worldToLocal(cam); cam.y = 0;
+    let want;
+    if (M.orientation === 'world') want = { read: 0, side: 1 };
+    else {
+      focus.copy(f).multiplyScalar(hasPt ? Math.min(built.len, 2) * 0.5 : 0).sub(cam); focus.y = 0;
+      if (focus.lengthSq() > 1e-6) focus.normalize(); else focus.copy(f);
+      const score = i => optVec(i, ov).dot(focus);
+      let best = 0; for (let i = 1; i < 4; i++) if (score(i) > score(best)) best = i;
+      if (st.cur && score(best) < score(st.cur.read) + ROAD.switchMargin) best = st.cur.read;
+      const lateral = cam.dot(rt);
+      let side = st.cur ? st.cur.side : (lateral >= 0 ? 1 : -1);
+      if (best >= 2) side = best === 2 ? -1 : 1;                 // read from the side: the caption lies on the reader's side
+      else if (lateral > 0.4) side = 1; else if (lateral < -0.4) side = -1;
+      want = { read: best, side };
+    }
+    if (!st.cur || snapFrames > 0) { st.cur = want; st.pending = null; st.fade = 1; }
+    else if (want.read !== st.cur.read || want.side !== st.cur.side) st.pending = want;
+    if (st.pending) {
+      st.fade = Math.max(0, st.fade - dt / 0.25);
+      if (st.fade === 0) { st.cur = st.pending; st.pending = null; }
+    } else st.fade = Math.min(1, st.fade + dt / 0.35);
+    place();
+    tMat.userData.base = st.fade;
+  };
+  return v;
+}
+
+/* ---------- 4. speech bubble ---------- */
+function buildBubble(b) {
+  const v = new ViewInst(b), M = b.rec.model, em = emOf(M);
+  const bc = bubbleCanvas(M, em), s = em / P, c = bc.canvas;
+  bc.draw(0);
+  const geo = new THREE.PlaneGeometry(c.width * s, c.height * s);
+  geo.translate((c.width / 2 - bc.ax) * s, (bc.ay - c.height / 2) * s, 0);   // the bubble's body centre at the origin
+  const tex = v.keep(texFrom(c));
+  const mesh = new THREE.Mesh(geo, v.mat(basicMat({ map: tex }))); mesh.renderOrder = 5;
+  const hBody = bc.bodyH * s;
+  const lift = liftOf(M) + 0.25;
+  const node = new THREE.Group(); node.position.y = lift + hBody / 2; node.add(mesh); v.group.add(node);
+  const tgt = v3();
+  let drawnAng = 0;
+  v.update = (dt, camera, t) => {
+    node.position.y = lift + hBody / 2 + Math.sin(t * 1.4 + b.index) * 0.025;
+    orient(node, b, camera, dt);
+    if (M.pointsTo) ptWorld(M, tgt); else { b.root.getWorldPosition(tgt); tgt.y = 0; }
+    node.updateWorldMatrix(true, false); node.worldToLocal(tgt);
+    let ang = Math.atan2(tgt.x, -(tgt.y + hBody / 2));
+    ang = Math.max(-TAIL_MAX, Math.min(TAIL_MAX, ang));
+    node.userData.tail = dampAngle(node.userData.tail ?? ang, ang, 6, dt);
+    // redraw only when the tail has turned visibly: each redraw re-uploads the bubble's texture
+    if (Math.abs(node.userData.tail - drawnAng) > 0.6 * Math.PI / 180) { drawnAng = node.userData.tail; bc.draw(drawnAng); tex.needsUpdate = true; }
+  };
+  v.tailAngle = () => drawnAng;
+  return v;
+}
+
+/* ---------- 5. callout (own idea) ---------- */
+function buildCallout(b) {
+  const v = new ViewInst(b), M = b.rec.model, em = emOf(M), accent = ROLES[M.role].accent;
+  const pm = plateMesh(plateCanvas(M, 'callout'), em, 'bottom');
+  v.keep(pm.tex); const tagMat = v.mat(pm.mesh.material); pm.mesh.renderOrder = 6;
+  const lift = liftOf(M);
+  const node = new THREE.Group(); node.position.y = lift; node.add(pm.mesh); v.group.add(node);
+  const lw = Math.max(0.012, em * 0.13);
+  const shadow = makeLine('#0d1014', lw * 2.6, 0.45, true), lead = makeLine(accent, lw, 1, true);
+  v.mat(shadow.mat, 0.45); v.mat(lead.mat, 1); v.keep(shadow.geo); v.keep(lead.geo);
+  shadow.line.renderOrder = 3; lead.line.renderOrder = 4; v.group.add(shadow.line, lead.line);
+  const knob = new THREE.Mesh(new THREE.CircleGeometry(Math.max(0.03, em * 0.22), 24), v.mat(basicMat({ color: accent })));
+  knob.renderOrder = 7; node.add(knob);
+  const haloMat = v.mat(basicMat({ color: accent, map: getHaloTex(), opacity: 0.95 }));
+  const halo = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.2), haloMat); halo.renderOrder = 2;
+  v.group.add(halo);
+  const tgt = v3(), a = v3(), dirC = v3();
+  v.update = (dt, camera, t) => {
+    orient(node, b, camera, dt);
+    if (M.pointsTo) ptWorld(M, tgt); else { b.root.getWorldPosition(tgt); tgt.y = 0; }
+    b.root.updateWorldMatrix(true, true);
+    const tLocal = b.root.worldToLocal(tgt.clone());
+    a.set(0, 0, 0); node.localToWorld(a); const aLocal = b.root.worldToLocal(a.clone());
+    for (const L of [shadow, lead]) { L.geo.setPositions([aLocal.x, aLocal.y, aLocal.z, tLocal.x, tLocal.y + 0.02, tLocal.z]); L.line.computeLineDistances(); }
+    halo.position.copy(tLocal);
+    if (tgt.y < 0.4) { halo.position.y = tLocal.y + 0.03; halo.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2); }
+    else { halo.quaternion.copy(b.root.quaternion).invert().multiply(camera.quaternion); }
+    halo.scale.setScalar(1 + 0.08 * Math.sin(t * 2.1));
+    // quiet when away from the centre of the view
+    node.getWorldPosition(dirC); dirC.sub(camera.position).normalize();
+    camera.getWorldDirection(tmpV2);
+    const ang = Math.acos(Math.min(1, Math.max(-1, dirC.dot(tmpV2)))) * 180 / Math.PI;
+    const k = 1 - smoothstep(16, 34, ang);
+    v.focus = damp(v.focus ?? k, k, 5, dt);
+    tagMat.userData.base = 0.28 + 0.72 * v.focus; knob.material.userData.base = 0.4 + 0.6 * v.focus;
+    lead.mat.userData.base = 0.12 + 0.88 * v.focus; shadow.mat.userData.base = 0.45 * v.focus; haloMat.userData.base = 0.9 * v.focus;
+  };
+  return v;
+}
+
+/* ---------- 6. edge hint (own idea, screen space) ---------- */
+const ARROW_SVG = '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M1.5 6 H9.5 M6.2 2.4 L9.8 6 L6.2 9.6" fill="none" stroke="#13171c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function buildEdge(b) {
+  const v = new ViewInst(b), M = b.rec.model, accent = ROLES[M.role].accent;
+  const el = document.createElement('div'); el.className = 'eh';
+  el.innerHTML = `<span class="bar"></span><span class="ar">${ARROW_SVG}</span><span class="body"><span class="tx"></span><span class="desc"></span></span><span class="dist"></span>`;
+  el.querySelector('.bar').style.background = accent; el.querySelector('.ar').style.background = accent;
+  el.querySelector('.tx').textContent = M.caption;
+  el.querySelector('.desc').textContent = M.description || '';
+  overlay.appendChild(el); v.dom.push(el);
+  const ring = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), v.mat(basicMat({ color: accent, map: getHaloTex(), opacity: 0.9 })));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03; ring.renderOrder = 2; v.group.add(ring);
+  const p = v3(), pc = v3(), q = v3();
+  v.sx = null; v.sy = null; v.full = false;
+  /* Whether the tag fits over its spot is decided from its compact size (caption only, no arrow), measured once
+     per stage size; the view is rebuilt when the caption changes. The live size grows with the description and
+     the distance, and deciding from it made the tag flip between full and edge every frame. */
+  let compact = null;
+  const compactSize = (W, H) => {
+    if (compact && compact.W === W && compact.H === H) return compact;
+    const cls = el.className; el.className = 'eh inview';
+    const w = el.offsetWidth, h = el.offsetHeight; el.className = cls;
+    if (!w || !h) return { w: 160, h: 36 };
+    return (compact = { W, H, w, h });
+  };
+  /* "Fully in view": every corner of the block's bounds (a 0.9 m footprint from the ground to the tag's 1.9 m)
+     projects inside the usable screen, `margin` px in from its edges. */
+  const CORNERS = [];
+  for (const y of [0, 1.9]) for (const x of [-0.45, 0.45]) for (const z of [-0.45, 0.45]) CORNERS.push([x, y, z]);
+  const boundsInside = (camera, margin, W, H, insetT, insetB, insetX) => {
+    for (const [x, y, z] of CORNERS) {
+      q.set(x, y, z); b.root.localToWorld(q);
+      if (q.clone().applyMatrix4(camera.matrixWorldInverse).z > -0.1) return false;
+      q.project(camera);
+      const sx = (q.x + 1) / 2 * W, sy = (1 - q.y) / 2 * H;
+      if (sx < insetX + margin || sx > W - insetX - margin || sy < insetT + margin || sy > H - insetB - margin) return false;
+    }
+    return true;
+  };
+  v.update = (dt, camera) => {
+    const W = stage.clientWidth, H = stage.clientHeight;
+    b.root.getWorldPosition(p); p.y = 1.9;
+    pc.copy(p).applyMatrix4(camera.matrixWorldInverse);
+    const behind = pc.z > -0.1;
+    const ndc = p.clone().project(camera);
+    const insetT = 14, insetB = app.dataset.mode === 'creator' ? 110 : app.dataset.mode === 'visitor' ? 70 : 20, insetX = 12;
+    let x, y, edge = false, ang = 0;
+    const sx = (ndc.x + 1) / 2 * W, sy = (1 - ndc.y) / 2 * H;
+    const ew = el.offsetWidth || 160, eh = el.offsetHeight || 36, cs = compactSize(W, H);
+    if (!behind && sx > cs.w / 2 + insetX && sx < W - cs.w / 2 - insetX && sy > cs.h + insetT + 8 && sy < H - insetB) {
+      x = Math.min(Math.max(sx - ew / 2, insetX), W - insetX - ew); y = Math.max(insetT, sy - eh - 8);   // the full tag is wider than the compact one it was tested with
+    } else {
+      edge = true;
+      let dx = pc.x, dy = pc.y;
+      if (behind) { dy *= 0.2; if (Math.abs(dx) < 1e-3) dx = 1; }
+      const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
+      const cx = W / 2, cy = (insetT + H - insetB) / 2;
+      const hx = W / 2 - insetX - ew / 2, hy = (H - insetB - insetT) / 2 - eh / 2;
+      const tt = Math.min(Math.abs(dx) > 1e-6 ? hx / Math.abs(dx) : 1e9, Math.abs(dy) > 1e-6 ? hy / Math.abs(dy) : 1e9);
+      x = cx + dx * tt - ew / 2; y = cy - dy * tt - eh / 2; ang = Math.atan2(-dy, dx);
+    }
+    // hysteresis: in once 24 px inside, out only when a corner is more than 8 px outside
+    v.full = !edge && boundsInside(camera, v.full ? -8 : 24, W, H, insetT, insetB, insetX);
+    v.tx = x; v.ty = y; v.w = ew; v.h = eh; v.el = el;
+    el.classList.toggle('edge', edge); el.classList.toggle('inview', !edge); el.classList.toggle('full', v.full);
+    el.querySelector('.ar svg').style.transform = `rotate(${ang}rad)`;
+    const dist = Math.hypot(p.x - camera.position.x, p.z - camera.position.z);
+    el.querySelector('.dist').textContent = `${Math.round(dist)} m`;
+    v.edge = edge; v.dist = dist; v.isEdgeHint = true;
+  };
+  return v;
+}
+
+/* Edge hints of all blocks are placed together: the nearest keeps its spot, the others step aside. */
+function layoutEdgeHints(dt) {
+  const hs = blocks.map(b => b.view).filter(v => v.isEdgeHint && v.tx !== undefined && v.block.root.visible).sort((a, b) => a.dist - b.dist);
+  const placed = [], pad = 6;
+  for (const v of hs) {
+    let x = v.tx, y = v.ty;
+    for (let it = 0; it < 6; it++) {
+      const hit = placed.find(r => x < r.x + r.w + pad && x + v.w + pad > r.x && y < r.y + r.h + pad && y + v.h + pad > r.y);
+      if (!hit) break;
+      if (v.edge) y = hit.y + hit.h + pad; else y = hit.y - v.h - pad;
+    }
+    placed.push({ x, y, w: v.w, h: v.h });
+    if (v.sx === null || snapFrames > 0) { v.sx = x; v.sy = y; }
+    v.sx = damp(v.sx, x, 12, dt); v.sy = damp(v.sy, y, 12, dt);
+    v.el.style.transform = `translate(${v.sx.toFixed(1)}px, ${v.sy.toFixed(1)}px)`;
+  }
+}
+
+const BUILDERS = { pin: buildPin, sign: buildSign, 'ground-arrow': buildGround, bubble: buildBubble, callout: buildCallout, 'edge-hint': buildEdge };
+
+/* =====================================================================
+   Blocks
+   ===================================================================== */
+class Block {
+  constructor(rec, index) {
+    this.rec = rec; this.index = index; this.root = new THREE.Group(); this.root.userData.block = this; scene.add(this.root);
+    this.appear = 0; this.appearTarget = 0; this.view = null; this.syncPose(); this.rebuild();
+  }
+  syncPose() { const p = this.rec.pose, o = errOff(); this.root.position.set(p.x + o.dx, 0, p.z + o.dz); this.root.rotation.set(0, rad(p.yawDeg), 0); this.root.updateMatrixWorld(true); }
+  rebuild() {
+    const prevFade = this.view ? 0.25 : 0;
+    if (this.view) { this.root.remove(this.view.group); this.view.dispose(); }
+    if (!BUILDERS[this.rec.view]) this.rec.view = 'sign';
+    this.view = BUILDERS[this.rec.view](this); this.view.fade = prevFade; this.root.add(this.view.group);
+    this.view.group.traverse(o => { o.userData.block = this; });
+  }
+  update(dt, camera, t) {
+    this.appear = snapFrames > 0 ? this.appearTarget : damp(this.appear, this.appearTarget, this.appearTarget > this.appear ? 3.2 : 6, dt);
+    this.view.fade = snapFrames > 0 ? 1 : Math.min(1, this.view.fade + dt / 0.35);
+    const visible = this.appear > 0.003;
+    this.root.visible = visible;
+    for (const d of this.view.dom) d.style.display = visible ? '' : 'none';
+    if (!visible) return;
+    // entrance: a short rise and fade
+    this.view.group.position.y = (1 - ease(this.appear)) * -0.25;
+    this.view.update(dt, camera, t);
+    this.view.setOpacity(ease(this.appear) * ease(this.view.fade));
+  }
+}
+const GROUND_DEFAULTS = { ...ROAD };
+const blocks = records.map((r, i) => new Block(r, i));
+let selected = 0;
+
+/* =====================================================================
+   Modes, visitor, creator, editor
+   ===================================================================== */
+const state = { mode: 'visitor', phone: false };
+const visitor = { x: 0, z: 27, yaw: 0, pitch: -0.04, inside: false, auto: null, hold: false, keys: new Set() };
+const creator = { x: 0.6, z: 1.5, yaw: Math.PI, pitch: -0.18, hit: null };
+const activeCam = () => (state.mode === 'editor' ? edCam : cam);
+
+function applyCamera() {
+  const s = state.mode === 'creator' ? creator : visitor;
+  cam.position.set(s.x, EYE, s.z); cam.rotation.set(s.pitch, s.yaw, 0); cam.updateMatrixWorld(true);
+}
+
+function setMode(name) {
+  if (!['visitor', 'creator', 'editor'].includes(name)) throw new Error(`unknown mode "${name}"`);
+  state.mode = name; app.dataset.mode = name;
+  PLACE_ERR.active = PLACE_ERR.on && name === 'visitor'; for (const b of blocks) b.syncPose();
+  document.querySelectorAll('#modepicker button').forEach(bn => bn.setAttribute('aria-pressed', String(bn.dataset.mode === name)));
+  orbit.enabled = name === 'editor';
+  tc.enabled = name === 'editor'; tcHelper.visible = name === 'editor';
+  closeSheets();
+  if (name === 'editor') { attachTC(); renderList(); renderInspector(); }
+  else tc.detach();
+  if (name === 'creator') faceSelected(true);
+  layout(); updateHash(); renderViewPicker(); renderCreatorChrome(); renderFieldsPanel();
+}
+
+/* layout: phone frame and resize */
+function layout() {
+  const wrap = document.getElementById('stage-wrap');
+  const phone = state.phone && state.mode !== 'editor';
+  app.classList.toggle('phone', phone);
+  if (phone) {
+    const W = wrap.clientWidth - 40, H = wrap.clientHeight - 40;
+    let h = H, w = h * 9 / 19.5; if (w > W) { w = W; h = w * 19.5 / 9; }
+    stage.style.width = `${Math.floor(w)}px`; stage.style.height = `${Math.floor(h)}px`;
+  } else { stage.style.width = '100%'; stage.style.height = '100%'; }
+  resize();
+}
+function resize() {
+  const w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
+  renderer.setSize(w, h, false);
+  const aspect = w / h;
+  cam.aspect = aspect;
+  const hfov = aspect < 1 ? 42 : 62;                     // a phone camera: ~42 degrees across in portrait
+  cam.fov = 2 * Math.atan(Math.tan(rad(hfov / 2)) / aspect) * 180 / Math.PI;
+  cam.updateProjectionMatrix();
+  edCam.aspect = aspect; edCam.updateProjectionMatrix();
+  for (const m of lineMats) m.resolution.set(w, h);
+}
+new ResizeObserver(() => resize()).observe(stage);
+window.addEventListener('resize', layout);
+
+/* pointer look (visitor and creator) */
+let drag = null;
+canvas.addEventListener('pointerdown', e => {
+  if (state.mode === 'editor') { edPointerDown(e); return; }
+  drag = { x: e.clientX, y: e.clientY, id: e.pointerId }; canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag || drag.id !== e.pointerId) return;
+  const s = state.mode === 'creator' ? creator : visitor;
+  s.yaw += (e.clientX - drag.x) * 0.0048; s.pitch += (e.clientY - drag.y) * 0.0048;
+  s.pitch = Math.max(-1.25, Math.min(1.1, s.pitch)); drag.x = e.clientX; drag.y = e.clientY;
+  if (state.mode === 'visitor') visitor.auto = null;
+});
+canvas.addEventListener('pointerup', e => { if (state.mode === 'editor') edPointerUp(e); drag = null; });
+canvas.addEventListener('pointercancel', () => { drag = null; });
+window.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, select')) return;
+  if (state.mode === 'editor') { const k = { w: 'move', e: 'turn', t: 'target' }[e.key.toLowerCase()]; if (k) setTcMode(k); return; }
+  visitor.keys.add(e.key.toLowerCase());
+});
+window.addEventListener('keyup', e => visitor.keys.delete(e.key.toLowerCase()));
+const holdBtn = document.getElementById('btn-hold');
+holdBtn.addEventListener('pointerdown', e => { visitor.hold = true; visitor.auto = null; holdBtn.setPointerCapture(e.pointerId); });
+holdBtn.addEventListener('pointerup', () => { visitor.hold = false; });
+holdBtn.addEventListener('pointercancel', () => { visitor.hold = false; });
+document.getElementById('btn-walkin').addEventListener('click', () => {
+  visitor.x = 0; visitor.z = 27; visitor.yaw = 0; visitor.pitch = -0.04; visitor.auto = { x: 0, z: 9 };
+});
+
+function updateVisitor(dt) {
+  if (state.mode !== 'visitor') return;
+  const k = visitor.keys; let fwd = 0, side = 0;
+  if (k.has('w') || k.has('arrowup') || visitor.hold) fwd += 1;
+  if (k.has('s') || k.has('arrowdown')) fwd -= 1;
+  if (k.has('a')) side -= 1; if (k.has('d')) side += 1;
+  if (k.has('arrowleft')) visitor.yaw += dt * 1.4; if (k.has('arrowright')) visitor.yaw -= dt * 1.4;
+  const sp = 1.4 * dt;
+  if (fwd || side) {
+    visitor.auto = null;
+    visitor.x += (-Math.sin(visitor.yaw) * fwd + Math.cos(visitor.yaw) * side) * sp;
+    visitor.z += (-Math.cos(visitor.yaw) * fwd - Math.sin(visitor.yaw) * side) * sp;
+  } else if (visitor.auto) {
+    const dx = visitor.auto.x - visitor.x, dz = visitor.auto.z - visitor.z, d = Math.hypot(dx, dz);
+    if (d < 0.05) visitor.auto = null;
+    else { const st = Math.min(d, 1.25 * dt); visitor.x += dx / d * st; visitor.z += dz / d * st; visitor.yaw = dampAngle(visitor.yaw, Math.atan2(-dx, -dz), 2, dt); }
+  }
+  // the station circle gates the content (with a little hysteresis)
+  const d = Math.hypot(visitor.x - STATION.x, visitor.z - STATION.z);
+  if (!visitor.inside && d < STATION.r) visitor.inside = true;
+  else if (visitor.inside && d > STATION.r + 0.6) visitor.inside = false;
+  updateStationHint();
+}
+function updateStationHint() {
+  const el = document.getElementById('station-hint');
+  const d1 = Math.hypot(visitor.x - STATION.x, visitor.z - STATION.z), d2 = Math.hypot(visitor.x - STATION2.x, visitor.z - STATION2.z);
+  const inAny = d1 < STATION.r || d2 < STATION2.r;
+  el.style.opacity = inAny ? '0' : '1';
+  const s = d1 - STATION.r <= d2 - STATION2.r ? STATION : STATION2;
+  const dist = Math.max(0, Math.hypot(visitor.x - s.x, visitor.z - s.z) - s.r);
+  el.querySelector('b').textContent = s.name; el.querySelector('.d').textContent = `${Math.round(dist)} m`;
+  const bearing = Math.atan2(-(s.x - visitor.x), -(s.z - visitor.z));
+  el.querySelector('.arr svg').style.transform = `rotate(${-(bearing - visitor.yaw)}rad)`;
+}
+
+/* ---------- creator ---------- */
+const reticle = new THREE.Group();
+{
+  const r1 = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.34, 48), basicMat({ color: '#ffffff', opacity: 0.95 }));
+  const r2 = new THREE.Mesh(new THREE.CircleGeometry(0.28, 48), basicMat({ color: '#ffffff', opacity: 0.18 }));
+  for (const r of [r1, r2]) { r.rotation.x = -Math.PI / 2; reticle.add(r); }
+  reticle.position.y = 0.03; reticle.renderOrder = 8; scene.add(reticle);
+}
+const selRing = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.7, 64), basicMat({ color: '#ffffff', opacity: 0.85 }));
+selRing.rotation.x = -Math.PI / 2; selRing.position.y = 0.028; scene.add(selRing);
+const raycaster = new THREE.Raycaster();
+function centreHit() {
+  raycaster.setFromCamera(new THREE.Vector2(0, 0), cam);
+  const hits = raycaster.intersectObjects(pickables, false);
+  return hits.find(h => h.distance < 60) || null;
+}
+function updateCreator() {
+  reticle.visible = state.mode === 'creator';
+  selRing.visible = state.mode !== 'visitor';
+  const b = blocks[selected]; selRing.position.x = b.root.position.x; selRing.position.z = b.root.position.z;
+  if (state.mode !== 'creator') return;
+  const h = centreHit(); creator.hit = h;
+  if (h) { reticle.visible = true; reticle.position.set(h.point.x, h.point.y + 0.03, h.point.z); reticle.quaternion.identity();
+    if (!h.object.userData.ground && h.face) { const n = h.face.normal.clone().transformDirection(h.object.matrixWorld); reticle.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), n); } }
+  else reticle.visible = false;
+}
+function faceSelected(snap) {
+  const p = blocks[selected].rec.pose;
+  const yaw = Math.atan2(-(p.x - creator.x), -(p.z - creator.z));
+  if (snap) creator.yaw = yaw;
+  const d = Math.hypot(p.x - creator.x, p.z - creator.z); creator.pitch = -Math.atan2(EYE - 1.6, d) - 0.05;
+}
+const toastEl = document.getElementById('toast'); let toastT = 0;
+function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('show'), 2200); }
+function closeSheets() { document.querySelectorAll('.sheet').forEach(s => s.classList.remove('open')); }
+function openSheet(id) { const s = document.getElementById(id); const was = s.classList.contains('open'); closeSheets(); if (!was) { s.classList.add('open'); renderCreatorChrome(); } }
+document.querySelectorAll('[data-close]').forEach(bn => bn.addEventListener('click', closeSheets));
+document.getElementById('cr-b-view').addEventListener('click', () => openSheet('cr-sheet-view'));
+document.getElementById('cr-b-edit').addEventListener('click', () => openSheet('cr-sheet-edit'));
+document.getElementById('cr-b-size').addEventListener('click', () => {
+  const m = blocks[selected].rec.model; const i = SIZE_STEPS.findIndex(s => s > m.readAtM + 0.01);
+  m.readAtM = SIZE_STEPS[i < 0 ? 0 : i]; blocks[selected].rebuild();
+  toast(`Reads at ${m.readAtM} m - letters ${cm(emOf(m))} cm`); refreshAll();
+});
+document.getElementById('cr-b-turn').addEventListener('click', () => {
+  const r = blocks[selected].rec; r.pose.yawDeg = ((r.pose.yawDeg + 15) % 360 + 360) % 360; blocks[selected].syncPose();
+  toast(r.model.orientation === 'world' ? `Turned to ${r.pose.yawDeg} deg` : `Turned to ${r.pose.yawDeg} deg - it still turns to face visitors (${r.model.orientation})`); refreshAll();
+});
+document.getElementById('cr-b-place').addEventListener('click', () => {
+  const h = creator.hit; if (!h || !h.object.userData.ground) { toast('Aim the ring at the ground to place'); return; }
+  const r = blocks[selected].rec; r.pose.x = +h.point.x.toFixed(2); r.pose.z = +h.point.z.toFixed(2); blocks[selected].syncPose();
+  toast('Placed on the ring'); refreshAll();
+});
+document.getElementById('cr-prev').addEventListener('click', () => selectBlock((selected + blocks.length - 1) % blocks.length));
+document.getElementById('cr-next').addEventListener('click', () => selectBlock((selected + 1) % blocks.length));
+document.getElementById('cr-text').addEventListener('input', e => setField('caption', e.target.value));
+document.getElementById('cr-desc').addEventListener('input', e => setField('description', e.target.value));
+document.getElementById('cr-aim').addEventListener('click', () => {
+  const h = creator.hit; if (!h) { toast('Aim the ring at something first'); return; }
+  blocks[selected].rec.model.pointsTo = { x: +h.point.x.toFixed(2), y: +h.point.y.toFixed(2), z: +h.point.z.toFixed(2) };
+  blocks[selected].rebuild(); toast('Points to the ring'); refreshAll();
+});
+document.getElementById('cr-clear').addEventListener('click', () => { blocks[selected].rec.model.pointsTo = null; blocks[selected].rebuild(); toast('Points to nothing'); refreshAll(); });
+
+/* Caption or description typed by the creator; mutated in place, because the open sheets hold this model object. */
+function setField(key, val) {
+  if (key !== 'caption' && key !== 'description') throw new Error(`unknown text field "${key}"`);
+  const b = blocks[selected];
+  const s = sanitizeModel({ ...b.rec.model, [key]: val });
+  b.rec.model.caption = s.caption; b.rec.model.description = s.description;
+  clearTimeout(setField.t); setField.t = setTimeout(() => { b.rebuild(); }, 60);
+  renderCountsOnly();
+}
+function renderCountsOnly() {
+  const m = blocks[selected].rec.model; const n = Array.from(m.caption).length, nd = m.description ? Array.from(m.description).length : 0;
+  for (const id of ['cr-count', 'ed-count']) { const el = document.getElementById(id); if (el) { el.textContent = `${n} / ${CAPTION_MAX}`; el.classList.toggle('over', n >= CAPTION_MAX); } }
+  for (const id of ['cr-dcount', 'ed-dcount']) { const el = document.getElementById(id); if (el) { el.textContent = nd ? `${nd} / ${DESC_MAX}` : `optional, up to ${DESC_MAX}`; el.classList.toggle('over', nd >= DESC_MAX); } }
+  renderList();
+}
+function chipButtons(container, items, current, onPick, dot) {
+  container.innerHTML = '';
+  for (const it of items) {
+    const bn = document.createElement('button'); bn.type = 'button'; bn.setAttribute('aria-pressed', String(it.value === current));
+    bn.innerHTML = (dot ? `<span class="dot" style="background:${dot(it.value)}"></span>` : '') + it.label;
+    bn.addEventListener('click', () => onPick(it.value)); container.appendChild(bn);
+  }
+}
+function renderCreatorChrome() {
+  const b = blocks[selected], m = b.rec.model;
+  document.getElementById('cr-title').textContent = m.caption;
+  document.getElementById('cr-sub').textContent = `${ROLES[m.role].name} - ${viewInfo(b.rec.view).title} - reads at ${m.readAtM} m`;
+  document.getElementById('cr-size-l').textContent = `${m.readAtM} m`;
+  const ta = document.getElementById('cr-text'); if (document.activeElement !== ta) ta.value = m.caption;
+  const td = document.getElementById('cr-desc'); if (document.activeElement !== td) td.value = m.description || '';
+  const grid = document.getElementById('cr-viewgrid'); grid.innerHTML = '';
+  for (const vw of VIEWS) {
+    const bn = document.createElement('button'); bn.setAttribute('aria-pressed', String(vw.name === b.rec.view));
+    bn.innerHTML = `${vw.title}<small>${vw.blurb}</small>`;
+    bn.addEventListener('click', () => { b.rec.view = vw.name; b.rebuild(); refreshAll(); toast(`${vw.title} view`); });
+    grid.appendChild(bn);
+  }
+  chipButtons(document.getElementById('cr-roles'), Object.keys(ROLES).map(r => ({ value: r, label: ROLES[r].name })), m.role, r => { m.role = r; b.rebuild(); refreshAll(); }, r => ROLES[r].accent);
+  chipButtons(document.getElementById('cr-orients'), ORIENTS.map(o => ({ value: o, label: o[0].toUpperCase() + o.slice(1) })), m.orientation, o => { m.orientation = o; b.rebuild(); refreshAll(); });
+  document.getElementById('cr-pt').textContent = m.pointsTo ? `Points to (${m.pointsTo.x.toFixed(1)}, ${m.pointsTo.y.toFixed(1)}, ${m.pointsTo.z.toFixed(1)}), ${Math.round(Math.hypot(m.pointsTo.x - b.rec.pose.x, m.pointsTo.z - b.rec.pose.z))} m away` : 'Points to nothing';
+  renderCountsOnly();
+}
+function selectBlock(i) {
+  if (!Number.isInteger(i) || i < 0 || i >= blocks.length) return;
+  selected = i; if (state.mode === 'creator') faceSelected(true);
+  attachTC(); refreshAll();
+}
+function refreshAll() { renderCreatorChrome(); renderList(); renderInspector(); renderViewPicker(); renderFieldsPanel(); }
+
+/* ---------- editor ---------- */
+const tc = new TransformControls(edCam, canvas);
+const tcHelper = tc.getHelper(); scene.add(tcHelper); tcHelper.visible = false; tc.enabled = false;
+tc.setTranslationSnap(0.1); tc.setRotationSnap(rad(5)); tc.setSize(0.85);
+let tcMode = 'move';
+const targetHandle = new THREE.Mesh(new THREE.OctahedronGeometry(0.35), basicMat({ color: '#ffffff', opacity: 0.95, depthTest: false }));
+targetHandle.renderOrder = 20; scene.add(targetHandle);
+const linkLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([v3(), v3()]), new THREE.LineDashedMaterial({ color: '#ffffff', dashSize: 0.5, gapSize: 0.35, transparent: true, opacity: 0.9, depthTest: false }));
+linkLine.renderOrder = 19; scene.add(linkLine);
+tc.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; });
+tc.addEventListener('objectChange', () => {
+  const b = blocks[selected];
+  if (tc.object === b.root) {
+    b.rec.pose.x = +b.root.position.x.toFixed(2); b.rec.pose.z = +b.root.position.z.toFixed(2); b.root.position.y = 0;
+    let yd = Math.round(b.root.rotation.y * 180 / Math.PI); b.rec.pose.yawDeg = ((yd % 360) + 360) % 360;
+    b.root.rotation.x = 0; b.root.rotation.z = 0;
+  } else if (tc.object === targetHandle && b.rec.model.pointsTo) {
+    targetHandle.position.y = Math.max(0, targetHandle.position.y);
+    b.rec.model.pointsTo = { x: +targetHandle.position.x.toFixed(2), y: +targetHandle.position.y.toFixed(2), z: +targetHandle.position.z.toFixed(2) };
+  }
+  renderInspectorValues();
+});
+function setTcMode(m) {
+  tcMode = m;
+  if (m === 'target' && !blocks[selected].rec.model.pointsTo) { const p = blocks[selected].rec.pose; blocks[selected].rec.model.pointsTo = { x: p.x, y: 0, z: p.z - 4 }; blocks[selected].rebuild(); renderInspector(); }
+  attachTC();
+}
+function attachTC() {
+  document.querySelectorAll('#ed-tc button').forEach(bn => bn.setAttribute('aria-pressed', String(bn.dataset.tc === tcMode)));
+  if (state.mode !== 'editor') { tc.detach(); return; }
+  const b = blocks[selected];
+  if (tcMode === 'target' && b.rec.model.pointsTo) { tc.attach(targetHandle); tc.setMode('translate'); tc.showX = tc.showY = tc.showZ = true; }
+  else if (tcMode === 'turn') { tc.attach(b.root); tc.setMode('rotate'); tc.showX = false; tc.showZ = false; tc.showY = true; }
+  else { if (tcMode === 'target') tcMode = 'move'; tc.attach(b.root); tc.setMode('translate'); tc.showY = false; tc.showX = tc.showZ = true; }
+}
+document.querySelectorAll('#ed-tc button').forEach(bn => bn.addEventListener('click', () => setTcMode(bn.dataset.tc)));
+let edDown = null, pickTarget = false;
+function edPointerDown(e) { edDown = { x: e.clientX, y: e.clientY }; }
+function edPointerUp(e) {
+  if (!edDown || Math.hypot(e.clientX - edDown.x, e.clientY - edDown.y) > 4 || tc.dragging) { edDown = null; return; }
+  edDown = null;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, edCam);
+  if (pickTarget) {
+    const h = raycaster.intersectObjects(pickables, false)[0];
+    if (h) { blocks[selected].rec.model.pointsTo = { x: +h.point.x.toFixed(2), y: +h.point.y.toFixed(2), z: +h.point.z.toFixed(2) }; blocks[selected].rebuild(); toast('Points to set'); }
+    pickTarget = false; refreshAll(); return;
+  }
+  const objs = blocks.map(b => b.root);
+  const hit = raycaster.intersectObjects(objs, true).find(h => h.object.visible);
+  if (hit) { const b = hit.object.userData.block || blocks.find(bb => { let f = false; bb.root.traverse(o => { if (o === hit.object) f = true; }); return f; }); if (b) selectBlock(b.index); }
+}
+function updateEditor() {
+  const b = blocks[selected], pt = b.rec.model.pointsTo;
+  const show = state.mode === 'editor' && !!pt;
+  targetHandle.visible = show; linkLine.visible = show;
+  if (show) {
+    if (tc.object !== targetHandle || !tc.dragging) targetHandle.position.set(pt.x, pt.y, pt.z);
+    const a = linkLine.geometry.attributes.position; a.setXYZ(0, b.root.position.x, 0.05, b.root.position.z); a.setXYZ(1, pt.x, pt.y, pt.z); a.needsUpdate = true; linkLine.computeLineDistances();
+  }
+  if (state.mode === 'editor') orbit.update();
+}
+const ICON_SVG = role => {
+  const a = ROLES[role].accent;
+  if (role === 'warning') return `<svg class="ic" viewBox="0 0 22 22"><path d="M11 3 L20 18.5 H2 Z" fill="${a}" stroke="${a}" stroke-width="1.6" stroke-linejoin="round"/><rect x="10.1" y="8" width="1.8" height="5.6" fill="#16191e"/><circle cx="11" cy="15.8" r="1.05" fill="#16191e"/></svg>`;
+  if (role === 'instruction') return `<svg class="ic" viewBox="0 0 22 22"><circle cx="11" cy="11" r="9" fill="${a}"/><circle cx="11" cy="11" r="4.7" fill="none" stroke="#13171c" stroke-width="1.8"/><circle cx="11" cy="11" r="1.6" fill="#13171c"/></svg>`;
+  return `<svg class="ic" viewBox="0 0 22 22"><path d="M11 3.5L18.5 11 11 18.5 3.5 11Z" fill="none" stroke="${a}" stroke-width="1.8"/><circle cx="11" cy="11" r="2.2" fill="${a}"/></svg>`;
+};
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function renderList() {
+  const el = document.getElementById('ed-list'); if (state.mode !== 'editor') return;
+  el.innerHTML = `<h4>Market square - blocks</h4>` + blocks.map((b, i) => `<button class="blk" data-i="${i}" aria-selected="${i === selected}">${ICON_SVG(b.rec.model.role)}<span><span class="t">${esc(b.rec.model.caption)}</span><br><span class="s">Short text - ${esc(viewInfo(b.rec.view).title)}${b.rec.model.description ? ' - with description' : ''}</span></span></button>`).join('')
+    + `<h4 style="margin-top:22px">Other blocks (other families)</h4><div class="blk other"><svg class="ic" viewBox="0 0 22 22"><rect x="3" y="5" width="16" height="12" rx="2" fill="none" stroke="#666" stroke-width="1.6"/></svg><span><span class="t" style="color:#999">Picture, narration ...</span><br><span class="s">not part of this prototype</span></span></div>`;
+  el.querySelectorAll('.blk[data-i]').forEach(bn => bn.addEventListener('click', () => selectBlock(+bn.dataset.i)));
+}
+function renderInspector() {
+  const el = document.getElementById('ed-inspector'); if (state.mode !== 'editor') return;
+  const b = blocks[selected], m = b.rec.model, p = b.rec.pose;
+  el.innerHTML = `
+    <div class="insp-sec"><h4>Block</h4><select class="blocksel" id="ed-sel">${blocks.map((bb, i) => `<option value="${i}" ${i === selected ? 'selected' : ''}>${esc(bb.rec.model.caption)}</option>`).join('')}</select></div>
+    <div class="insp-sec"><label class="l">Caption <span>every view shows it</span></label><textarea id="ed-text" rows="1" maxlength="${CAPTION_MAX}">${esc(m.caption)}</textarea><div class="count" id="ed-count"></div>
+      <label class="l" style="margin-top:10px">Description <span>optional, under the caption</span></label><textarea id="ed-desc" rows="3" maxlength="${DESC_MAX}" style="font-weight:450;font-size:14px">${esc(m.description || '')}</textarea><div class="count" id="ed-dcount"></div></div>
+    <div class="insp-sec"><label class="l">Role</label><div class="chips" id="ed-roles"></div></div>
+    <div class="insp-sec"><label class="l">Orientation <span id="ed-ohelp">${ORIENT_HELP[m.orientation]}</span></label><div class="chips" id="ed-orients"></div>
+      <div class="help">Upright and face turn toward each visitor; in the editor they turn toward you.</div></div>
+    <div class="insp-sec"><label class="l">Reads at <span id="ed-read-l"></span></label><input type="range" id="ed-read" min="0" max="1000" step="1">
+      <div class="help" id="ed-read-h"></div></div>
+    <div class="insp-sec"><label class="l">Points to <span>${m.pointsTo ? 'local point, m' : 'none'}</span></label>
+      ${m.pointsTo ? `<div class="xyz">${['x', 'y', 'z'].map(k => `<label>${k}<input type="number" step="0.1" data-pt="${k}" value="${m.pointsTo[k]}"></label>`).join('')}</div>` : ''}
+      <div class="btnrow"><button id="ed-pick" aria-pressed="${pickTarget}">Pick in 3D</button><button id="ed-drag">Drag handle</button>${m.pointsTo ? '<button id="ed-clear">Clear</button>' : ''}</div></div>
+    <div class="insp-sec"><label class="l">View <span>how this block is drawn</span></label><div class="viewgrid" id="ed-views"></div></div>
+    <div class="insp-sec"><label class="l">Pose <span>relative to the station anchor</span></label>
+      <div class="xyz"><label>x<input type="number" step="0.1" data-pose="x" value="${p.x}"></label><label>z<input type="number" step="0.1" data-pose="z" value="${p.z}"></label><label>turn<input type="number" step="5" data-pose="yawDeg" value="${p.yawDeg}"></label></div></div>`;
+  document.getElementById('ed-sel').addEventListener('change', e => selectBlock(+e.target.value));
+  document.getElementById('ed-text').addEventListener('input', e => setField('caption', e.target.value));
+  document.getElementById('ed-desc').addEventListener('input', e => setField('description', e.target.value));
+  chipButtons(document.getElementById('ed-roles'), Object.keys(ROLES).map(r => ({ value: r, label: ROLES[r].name })), m.role, r => { m.role = r; b.rebuild(); refreshAll(); }, r => ROLES[r].accent);
+  chipButtons(document.getElementById('ed-orients'), ORIENTS.map(o => ({ value: o, label: o[0].toUpperCase() + o.slice(1) })), m.orientation, o => { m.orientation = o; b.rebuild(); refreshAll(); });
+  const rng = document.getElementById('ed-read');
+  const toR = v => Math.round(Math.exp(Math.log(1) + v / 1000 * (Math.log(40) - Math.log(1))) * 2) / 2;
+  const fromR = r => Math.round((Math.log(r) / Math.log(40)) * 1000);
+  rng.value = String(fromR(m.readAtM));
+  rng.addEventListener('input', () => { m.readAtM = sanitizeModel({ ...m, readAtM: toR(+rng.value) }).readAtM; renderReadLabel(); clearTimeout(rng.t); rng.t = setTimeout(() => b.rebuild(), 40); renderCreatorChrome(); });
+  renderReadLabel();
+  el.querySelectorAll('[data-pt]').forEach(inp => inp.addEventListener('change', () => { const v = parseFloat(inp.value); if (Number.isFinite(v)) { m.pointsTo[inp.dataset.pt] = v; m.pointsTo = sanitizeModel(m).pointsTo; b.rebuild(); } }));
+  el.querySelectorAll('[data-pose]').forEach(inp => inp.addEventListener('change', () => { const v = parseFloat(inp.value); if (Number.isFinite(v)) { p[inp.dataset.pose] = v; b.syncPose(); } }));
+  document.getElementById('ed-pick').addEventListener('click', () => { pickTarget = !pickTarget; renderInspector(); if (pickTarget) toast('Click the ground or a wall to set where it points'); });
+  document.getElementById('ed-drag').addEventListener('click', () => setTcMode('target'));
+  document.getElementById('ed-clear')?.addEventListener('click', () => { m.pointsTo = null; b.rebuild(); if (tcMode === 'target') tcMode = 'move'; attachTC(); refreshAll(); });
+  const grid = document.getElementById('ed-views');
+  for (const vw of VIEWS) {
+    const bn = document.createElement('button'); bn.setAttribute('aria-pressed', String(vw.name === b.rec.view)); bn.innerHTML = `${vw.title}<small>${vw.required ? 'required' : 'extra'}</small>`;
+    bn.addEventListener('click', () => { b.rec.view = vw.name; b.rebuild(); refreshAll(); }); grid.appendChild(bn);
+  }
+  renderCountsOnly();
+}
+function renderReadLabel() {
+  const m = blocks[selected].rec.model;
+  const l = document.getElementById('ed-read-l'), h = document.getElementById('ed-read-h'); if (!l) return;
+  l.textContent = `${m.readAtM} m`;
+  h.textContent = `Letters ${cm(emOf(m))} cm tall; floats at ${liftOf(m).toFixed(1)} m in pin, bubble and callout.`;
+}
+function renderInspectorValues() {
+  if (state.mode !== 'editor') return;
+  const b = blocks[selected];
+  document.querySelectorAll('#ed-inspector [data-pose]').forEach(inp => { if (document.activeElement !== inp) inp.value = b.rec.pose[inp.dataset.pose]; });
+  if (b.rec.model.pointsTo) document.querySelectorAll('#ed-inspector [data-pt]').forEach(inp => { if (document.activeElement !== inp) inp.value = b.rec.model.pointsTo[inp.dataset.pt]; });
+}
+
+/* ---------- top bar: view picker, fields panel, notes ---------- */
+function currentViewName() { return state.mode === 'visitor' ? (blocks.every(b => b.rec.view === blocks[0].rec.view) ? blocks[0].rec.view : null) : blocks[selected].rec.view; }
+function renderViewPicker() {
+  const el = document.getElementById('viewpicker'); const cur = currentViewName();
+  el.innerHTML = `<span class="vlabel">${state.mode === 'visitor' ? 'View (all blocks)' : 'View (selected)'}</span>` + VIEWS.map(v => `<button data-view="${v.name}" aria-pressed="${v.name === cur}">${v.title}</button>`).join('');
+  el.querySelectorAll('button').forEach(bn => bn.addEventListener('click', () => {
+    if (state.mode === 'visitor') setAllViews(bn.dataset.view); else { blocks[selected].rec.view = bn.dataset.view; blocks[selected].rebuild(); }
+    refreshAll(); updateHash();
+  }));
+}
+function setAllViews(name) {
+  if (!VIEW_NAMES.includes(name)) throw new Error(`unknown view "${name}"`);
+  for (const b of blocks) { b.rec.view = name; b.rebuild(); }
+}
+const fieldsPanel = document.getElementById('fields-panel');
+function renderFieldsPanel() {
+  const name = currentViewName() || blocks[selected].rec.view; const v = viewInfo(name);
+  const rows = FIELDS.map(f => v.uses[f.name] ? `<dt>${f.name}</dt><dd>${esc(v.uses[f.name])}</dd>` : `<dt class="off">${f.name}</dt><dd class="off">not used${v.unused[f.name] ? ': ' + esc(v.unused[f.name]) : ''}</dd>`).join('');
+  fieldsPanel.innerHTML = `<h3>${esc(v.title)} ${v.required ? '' : '<span style="color:#8a909b;font-weight:400">(extra view)</span>'}</h3><div class="sub">Fields of the short-text model this view uses, and how.${v.extra ? ' ' + esc(v.extra) : ''}</div><dl>${rows}</dl>`;
+}
+const btnFields = document.getElementById('btn-fields');
+btnFields.addEventListener('click', () => { fieldsPanel.hidden = !fieldsPanel.hidden; btnFields.setAttribute('aria-pressed', String(!fieldsPanel.hidden)); renderFieldsPanel(); });
+const btnPhone = document.getElementById('btn-phone');
+btnPhone.addEventListener('click', () => { state.phone = !state.phone; btnPhone.setAttribute('aria-pressed', String(state.phone)); layout(); });
+const notesPanel = document.getElementById('notes-panel'), btnNotes = document.getElementById('btn-notes');
+function toggleNotes(open) { notesPanel.hidden = !open; btnNotes.setAttribute('aria-pressed', String(open)); }
+btnNotes.addEventListener('click', () => toggleNotes(notesPanel.hidden));
+document.getElementById('notes-close').addEventListener('click', () => toggleNotes(false));
+document.querySelectorAll('#modepicker button').forEach(bn => bn.addEventListener('click', () => setMode(bn.dataset.mode)));
+
+function setPlaceErr(on, bearingDeg = PLACE_ERR.bearingDeg) {
+  const b = Number(bearingDeg);
+  PLACE_ERR.on = !!on; PLACE_ERR.bearingDeg = Number.isFinite(b) ? b : 53;
+  PLACE_ERR.dx = Math.sin(rad(PLACE_ERR.bearingDeg)); PLACE_ERR.dz = -Math.cos(rad(PLACE_ERR.bearingDeg));   // 1 m, bearing clockwise from north (-z)
+  PLACE_ERR.active = PLACE_ERR.on && state.mode === 'visitor';
+  for (const bl of blocks) bl.syncPose();
+  document.getElementById('btn-err').setAttribute('aria-pressed', String(PLACE_ERR.on));
+}
+document.getElementById('btn-err').addEventListener('click', () => {
+  setPlaceErr(!PLACE_ERR.on); updateHash();
+  toast(PLACE_ERR.on ? (state.mode === 'visitor' ? 'All content drawn 1 m off (the place stays put)' : 'The 1 m error shows in visitor mode') : 'No placement error');
+});
+
+const btnPaint = document.getElementById('btn-paint');
+btnPaint.addEventListener('click', () => {
+  PAINT.mode = PAINT.mode === 'road' ? 'role' : 'road';
+  btnPaint.textContent = PAINT.mode === 'road' ? 'Paint: road' : 'Paint: role';
+  btnPaint.setAttribute('aria-pressed', String(PAINT.mode === 'role'));
+  for (const bl of blocks) if (bl.rec.view === 'ground-arrow') bl.rebuild();
+});
+
+/* tiny markdown renderer for the notes (headings, nested lists, paragraphs, bold, code) */
+function renderNotes() {
+  const src = document.getElementById('notes-md').textContent.replace(/<!--NOTES-(START|END)-->/g, '').trim();
+  const inline = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  let html = '', stack = [], para = [];
+  const flushPara = () => { if (para.length) { html += `<p>${inline(para.join(' '))}</p>`; para = []; } };
+  const closeTo = depth => { while (stack.length > depth) { html += '</li></ul>'; stack.pop(); } };
+  for (const raw of src.split('\n')) {
+    const line = raw.replace(/\s+$/, '');
+    const li = line.match(/^(\s*)- (.*)$/);
+    const h = line.match(/^(#{1,3}) (.*)$/);
+    if (li) {
+      flushPara(); const depth = Math.floor(li[1].length / 2) + 1;
+      if (depth > stack.length) { while (stack.length < depth) { html += '<ul><li>'; stack.push(1); } }
+      else { closeTo(depth); html += '</li><li>'; }
+      html += inline(li[2]);
+    } else if (h) { flushPara(); closeTo(0); html += `<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`; }
+    else if (!line.trim()) { flushPara(); closeTo(0); }
+    else if (stack.length && /^\s+/.test(raw)) { html += ' ' + inline(line.trim()); }
+    else { closeTo(0); para.push(line.trim()); }
+  }
+  flushPara(); closeTo(0);
+  document.getElementById('notes-body').innerHTML = html;
+}
+renderNotes();
+
+/* URL hash: #mode=visitor&view=<name> */
+function updateHash() {
+  const v = currentViewName();
+  const h = `#mode=${state.mode}${v ? `&view=${v}` : ''}${PLACE_ERR.on ? '&err=1' : ''}`;
+  if (location.hash !== h) history.replaceState(null, '', h);
+}
+function readHash() {
+  const q = new URLSearchParams(location.hash.slice(1));
+  const v = q.get('view'); if (v && VIEW_NAMES.includes(v)) setAllViews(v);
+  setPlaceErr(q.get('err') === '1');
+  const m = q.get('mode'); setMode(['visitor', 'creator', 'editor'].includes(m) ? m : 'visitor');
+}
+window.addEventListener('hashchange', readHash);
+
+/* =====================================================================
+   Frame loop and frame-time readout
+   ===================================================================== */
+const ftEl = document.getElementById('ftime');
+const samples = []; let last = performance.now(), frameNo = 0, lastFt = 0;
+const waiters = [];
+function frame(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); const interval = now - last; last = now;
+  const t0 = performance.now();
+  updateVisitor(dt);
+  if (state.mode !== 'editor') applyCamera();
+  updateCreator(); updateEditor();
+  const camera = activeCam(); camera.updateMatrixWorld(true);
+  for (const b of blocks) { b.appearTarget = state.mode === 'visitor' ? (visitor.inside ? 1 : 0) : 1; b.update(dt, camera, now / 1000); }
+  layoutEdgeHints(dt);
+  renderer.render(scene, camera);
+  const work = performance.now() - t0;
+  samples.push({ t: now, work, interval });
+  while (samples.length && now - samples[0].t > 2000) samples.shift();
+  if (now - lastFt > 250 && samples.length) {
+    lastFt = now; const n = samples.length;
+    const mw = samples.reduce((s, x) => s + x.work, 0) / n, xw = Math.max(...samples.map(x => x.work));
+    const mi = samples.reduce((s, x) => s + x.interval, 0) / n, xi = Math.max(...samples.map(x => x.interval));
+    ftEl.textContent = `frame ${mi.toFixed(1)} mean / ${xi.toFixed(1)} max ms`; ftEl.dataset.work = `${mw.toFixed(1)} / ${xw.toFixed(1)}`;
+  }
+  if (snapFrames > 0) snapFrames--;
+  frameNo++;
+  for (let i = waiters.length - 1; i >= 0; i--) if (frameNo >= waiters[i].at) { waiters[i].res(); waiters.splice(i, 1); }
+  requestAnimationFrame(frame);
+}
+const drawn = (n = 3) => new Promise(res => waiters.push({ at: frameNo + n, res }));
+
+/* =====================================================================
+   Script hook
+   ===================================================================== */
+function exportRecord(r) {
+  return { id: r.id, model: 'short-text', view: r.view, pose: { ...r.pose }, data: { ...sanitizeModel(r.model) } };
+}
+window.__stationBlock = {
+  family: FAMILY,
+  views: [...VIEW_NAMES],
+  modes: ['visitor', 'creator', 'editor'],
+  async setMode(name) { setMode(String(name)); snapFrames = 4; await drawn(4); },
+  async setView(name) { setAllViews(String(name)); refreshAll(); updateHash(); snapFrames = 4; await drawn(4); },
+  async walkTo(x, z) {
+    if (![x, z].every(Number.isFinite)) throw new Error('walkTo needs finite x and z');
+    visitor.x = x; visitor.z = z; visitor.auto = null; snapFrames = 4; await drawn(4);
+  },
+  async lookAt(x, y, z) {
+    if (![x, y, z].every(Number.isFinite)) throw new Error('lookAt needs finite x, y and z');
+    const s = state.mode === 'creator' ? creator : visitor;
+    const dx = x - s.x, dy = y - EYE, dz = z - s.z;
+    s.yaw = Math.atan2(-dx, -dz); s.pitch = Math.atan2(dy, Math.hypot(dx, dz)); visitor.auto = null; snapFrames = 4; await drawn(4);
+  },
+  async setPaint(mode) { if (!['road', 'role'].includes(mode)) throw new Error('unknown paint ' + mode); if (PAINT.mode !== mode) btnPaint.click(); snapFrames = 4; await drawn(4); },
+  async rebuildMs() { const t0 = performance.now(); for (const bl of blocks) bl.rebuild(); const ms = performance.now() - t0; snapFrames = 4; await drawn(4); return ms; },
+  async params() { return { ...ROAD }; },
+  async setParam(name, value) {
+    const x = Number(value);
+    if (typeof ROAD[name] !== 'number' || !Number.isFinite(x)) throw new Error('unknown or non-numeric ground parameter ' + name);
+    ROAD[name] = x; for (const bl of blocks) if (bl.rec.view === 'ground-arrow') bl.rebuild(); snapFrames = 4; await drawn(4);
+  },
+  async resetParams() { Object.assign(ROAD, GROUND_DEFAULTS); for (const bl of blocks) if (bl.rec.view === 'ground-arrow') bl.rebuild(); snapFrames = 4; await drawn(4); },
+  async setError(on, bearingDeg = 53) { setPlaceErr(on, bearingDeg); updateHash(); snapFrames = 4; await drawn(4); },
+  async describe() {
+    return { family: FAMILY, fields: FIELDS.map(f => ({ ...f })), views: VIEWS.map(v => ({ name: v.name, required: v.required, usesFields: Object.keys(v.uses) })) };
+  },
+  async exportModel() {
+    return { family: FAMILY, model: 'short-text', version: 2, station: { name: STATION.name, radiusM: STATION.r }, blocks: records.map(exportRecord) };
+  },
+  /* Round-2 probes for the checks: the bubble tail's drawn angle (degrees) and the edge-hint states per block. */
+  async probe() {
+    return blocks.map(b => ({ id: b.rec.id, view: b.rec.view, tailDeg: b.view.tailAngle ? +(b.view.tailAngle() * 180 / Math.PI).toFixed(1) : null,
+      edge: b.view.isEdgeHint ? (b.view.edge ? 'edge' : b.view.full ? 'full' : 'inview') : null }));
+  },
+};
+
+readHash();
+layout();
+requestAnimationFrame(t => { last = t; frame(t); });
+</script>
+</body>
+</html>

@@ -1451,6 +1451,20 @@
           max-height: 55%;
         }
       }
+      /* The site-wide legal notice and privacy page: a small fixed link in
+         the bottom-left corner, out of the header and out of the grid, so it
+         moves no control. Leaflet keeps that corner of the map free. */
+      #legal-link {
+        position: fixed;
+        left: 0.5rem;
+        bottom: 0.4rem;
+        z-index: 1000;
+        padding: 1px 6px;
+        border-radius: 4px;
+        background: rgb(11 11 13 / 70%);
+        color: #9db8ff;
+        font-size: 11px;
+      }
     </style>
   </head>
   <body>
@@ -1774,6 +1788,9 @@
            underneath is what you consult while choosing a time. -->
       <aside id="geo-event-picker" class="plate" hidden></aside>
     </main>
+    <a id="legal-link" href="/legal/" data-testid="legal-link"
+      >Legal notice and privacy</a
+    >
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

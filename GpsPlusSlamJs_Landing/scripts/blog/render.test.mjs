@@ -96,6 +96,16 @@ describe("renderPost", () => {
     expect(html).toMatch(/href="\/"/);
   });
 
+  it("links the site-wide legal notice and privacy page from its footer", () => {
+    // The blog is part of the site, so it carries the same link as every
+    // app; the index shares the layout, so one page proves both.
+    const html = renderPost(post(), { origin: ORIGIN });
+    const footer = html.slice(html.indexOf("<footer"));
+
+    expect(footer).toContain('href="/legal/"');
+    expect(renderIndex([], { origin: ORIGIN })).toContain('href="/legal/"');
+  });
+
   it("refuses to render a draft, which is the D14 gate’s last line", () => {
     // Defence in depth: selection filters drafts, but a future caller that
     // forgets must fail loudly rather than publish.

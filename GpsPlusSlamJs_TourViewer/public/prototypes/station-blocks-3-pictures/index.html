@@ -1,0 +1,1618 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Pictures - a station block</title>
+<script type="importmap">
+  { "imports": {
+      "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+  } }
+</script>
+<style>
+:root{--ink:#f4ede1;--muted:#bcb09c;--dim:#8e8473;--amber:#e9b872;--blue:#9ccbff;--plate:rgba(20,17,14,.80);--plate-strong:rgba(20,17,14,.93);--line:rgba(244,237,225,.12);
+--sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;--mono:ui-monospace,"Cascadia Mono",Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#24211d;color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+body.phone{background:radial-gradient(circle at 50% 40%,#3a352f,#141210)}
+#stage{position:absolute;inset:0;overflow:hidden;background:#dde3e8;user-select:none;-webkit-user-select:none}
+body.phone #stage{inset:auto;left:50%;top:50%;transform:translate(-50%,-50%);border-radius:38px;box-shadow:0 0 0 9px #0c0b0a,0 0 0 10px #4a443d,0 40px 90px rgba(0,0,0,.55)}
+#c{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#c.grabbing{cursor:grabbing}
+.hidden{display:none!important}
+button{font:inherit;color:inherit}
+.bar{position:absolute;left:0;right:0;top:0;z-index:30;padding:10px 12px 0;display:flex;flex-direction:column;gap:7px;pointer-events:none}
+.row{display:flex;align-items:center;gap:8px;pointer-events:none}
+.row>*{pointer-events:auto}
+.seg{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:var(--plate);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 6px 18px rgba(0,0,0,.16)}
+.seg button{border:0;background:none;cursor:pointer;font-size:12.5px;font-weight:600;letter-spacing:.01em;padding:7px 10px;border-radius:999px;color:var(--muted);white-space:nowrap;transition:background .2s,color .2s}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:#1d1913}
+.views button[aria-pressed="true"]{background:var(--amber);color:#1d1508}
+.views{max-width:100%;overflow-x:auto;scrollbar-width:none}
+.views::-webkit-scrollbar{display:none}
+.icons{margin-left:auto;display:flex;gap:4px}
+.ib{border:0;cursor:pointer;width:32px;height:32px;border-radius:50%;background:var(--plate);backdrop-filter:blur(10px);display:grid;place-items:center;color:var(--ink);font-size:10px;font-weight:700;letter-spacing:-.02em;padding:0}
+.ib svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ib[aria-pressed="true"]{background:var(--ink);color:#1d1913}
+.pill{position:absolute;left:50%;transform:translateX(-50%);z-index:25;display:flex;align-items:center;gap:10px;padding:10px 16px 10px 12px;border-radius:999px;background:var(--plate-strong);font-size:15px;font-weight:550;box-shadow:0 8px 24px rgba(0,0,0,.22);white-space:nowrap;pointer-events:none}
+#hint{top:98px}
+#hint svg{width:22px;height:22px;flex:none;fill:var(--amber)}
+#hint .d{color:var(--amber);font-variant-numeric:tabular-nums}
+#cap{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:25;width:min(calc(100% - 24px),560px);display:flex;gap:14px;align-items:center;padding:12px 16px;border-radius:18px;background:var(--plate-strong);cursor:pointer;box-shadow:0 10px 30px rgba(0,0,0,.25);animation:rise .45s cubic-bezier(.2,.8,.2,1)}
+#cap .y{font:600 30px/1 var(--serif);color:var(--amber)}
+#cap .t{font:16px/1.3 var(--serif);color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#cap .m{font-size:12px;color:var(--muted);margin-top:4px}
+#cap .chev{margin-left:auto;color:var(--muted);font-size:20px}
+@keyframes rise{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
+#swipe{position:absolute;inset:0;z-index:20;pointer-events:none}
+#swipe .ln{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:rgba(244,237,225,.92);box-shadow:0 0 10px rgba(0,0,0,.3)}
+#swipe .kn{position:absolute;top:50%;left:50%;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;background:var(--plate-strong);border:2px solid var(--ink);pointer-events:auto;cursor:ew-resize;display:grid;place-items:center;touch-action:none}
+#swipe .kn svg{width:24px;height:24px;stroke:var(--ink);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#swipe .lab{position:absolute;top:150px;font:600 13px/1 var(--sans);padding:7px 11px;border-radius:999px;background:var(--plate-strong);white-space:nowrap}
+#swipe .lab.l{right:12px;color:var(--amber);font-family:var(--serif);font-size:15px}
+#swipe .lab.r{left:12px}
+#tnCtl{position:absolute;left:50%;transform:translateX(-50%);bottom:112px;z-index:26;display:flex;gap:10px;align-items:center}
+#tnCtl input{width:150px;accent-color:var(--amber)}
+#tnCtl .fadebox{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:var(--plate-strong);font-size:12px;color:var(--muted)}
+#sheet{position:absolute;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center}
+#sheet .scrim{position:absolute;inset:0;background:rgba(10,8,6,.55)}
+#sheet .card{position:relative;width:min(100%,640px);max-height:92%;overflow:auto;background:#17140f;border-radius:22px 22px 0 0;padding:58px 16px 22px;box-shadow:0 -10px 40px rgba(0,0,0,.4);animation:up .34s cubic-bezier(.2,.8,.2,1)}
+@keyframes up{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+.wide #sheet{align-items:center}
+.wide #sheet .card{border-radius:20px;display:grid;grid-template-columns:1.5fr 1fr;gap:22px;width:min(94%,1040px);padding:56px 18px 18px;align-items:center}
+#sheet canvas{width:100%;display:block;border-radius:4px;box-shadow:0 10px 28px rgba(0,0,0,.45)}
+#sheet .yr{font:600 42px/1 var(--serif);color:var(--amber);margin:16px 0 10px}
+#sheet .capt{font:18px/1.5 var(--serif);margin:0 0 14px;color:var(--ink)}
+#sheet .cred{font-size:13px;color:var(--muted);margin:0;line-height:1.4}
+#sheet .close{position:absolute;top:12px;right:12px;border:0;border-radius:999px;background:rgba(20,17,14,.85);padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;z-index:2}
+#sheet .src{font-size:11.5px;color:var(--dim);margin-top:14px}
+/* the cut-out's sheet: the text only, the picture is already standing in front of the visitor */
+#sheet .card.textonly canvas,#sheet .card.textonly .src{display:none}
+.wide #sheet .card.textonly{grid-template-columns:1fr;width:min(94%,620px)}
+#sheet .card.textonly .yr{margin-top:0}
+#notes table.sw{border-collapse:collapse;width:100%;font-size:12px;margin:8px 0}
+#notes table.sw th,#notes table.sw td{text-align:right;padding:4px 6px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums;color:#e6ddcd}
+#notes table.sw th{color:var(--muted);font-weight:600}
+#notes table.sw th:first-child,#notes table.sw td:first-child{text-align:left}
+#notes table.sw tr.def td{color:var(--amber);font-weight:600}
+#notes table.sw button{border:1px solid rgba(244,237,225,.25);background:none;border-radius:999px;padding:2px 9px;font-size:11px;cursor:pointer}
+#joy{position:absolute;left:16px;bottom:20px;width:92px;height:92px;border-radius:50%;background:rgba(20,17,14,.45);border:1px solid rgba(255,255,255,.18);z-index:24;touch-action:none}
+#joy .k{position:absolute;left:50%;top:50%;width:38px;height:38px;margin:-19px;border-radius:50%;background:rgba(244,237,225,.85)}
+#cbar{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;z-index:30;display:flex;gap:4px;padding:7px;border-radius:24px;background:var(--plate-strong);width:min(calc(100% - 20px),620px);box-shadow:0 10px 30px rgba(0,0,0,.25)}
+#cbar button{flex:1;border:0;background:none;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 2px 8px;border-radius:17px;font-size:11.5px;font-weight:600;cursor:pointer;min-width:0}
+#cbar button svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+#cbar button[aria-pressed="true"]{background:rgba(233,184,114,.18);color:var(--amber)}
+#cbar button.off{opacity:.32}
+#csheet{position:absolute;left:50%;transform:translateX(-50%);bottom:102px;z-index:31;width:min(calc(100% - 20px),620px);background:var(--plate-strong);border-radius:20px;padding:14px 16px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+#csheet h5{margin:0 0 10px;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
+#csheet .val{font:600 22px/1 var(--sans);font-variant-numeric:tabular-nums}
+#csheet .rowc{display:flex;align-items:center;gap:12px}
+#csheet input[type=range]{flex:1;accent-color:var(--amber);height:28px}
+#csheet .vl button{display:flex;width:100%;text-align:left;gap:12px;align-items:center;border:0;background:none;padding:10px 6px;border-radius:12px;cursor:pointer;border-top:1px solid var(--line)}
+#csheet .vl button:first-child{border-top:0}
+#csheet .vl b{font-size:14.5px;min-width:96px}
+#csheet .vl span{font-size:12.5px;color:var(--muted)}
+#csheet .vl button[aria-pressed="true"]{background:rgba(233,184,114,.14)}
+#csheet .vl button[aria-pressed="true"] b{color:var(--amber)}
+#csheet .big{display:block;width:100%;margin-top:12px;border:0;border-radius:14px;padding:14px;background:var(--amber);color:#1d1508;font-weight:700;font-size:15px;cursor:pointer}
+#csheet .note{font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.4}
+#reticle{position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px;border:2px solid rgba(255,255,255,.95);border-radius:50%;z-index:10;pointer-events:none;box-shadow:0 0 0 1px rgba(0,0,0,.25)}
+#reticle::after{content:"";position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px;border-radius:50%;background:#fff}
+#eList{position:absolute;left:12px;top:94px;bottom:12px;width:226px;z-index:28;background:var(--plate-strong);border-radius:16px;padding:14px 10px;overflow:auto;font-size:13px}
+#eList .eh{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);padding:0 6px 10px}
+#eList .st{font:600 16px/1.2 var(--serif);padding:0 6px 12px;color:var(--ink)}
+#eList .it{display:flex;gap:10px;align-items:center;padding:9px 8px;border-radius:12px;margin:2px 0}
+#eList .it.sel{background:rgba(233,184,114,.15)}
+#eList .it.sel b{color:var(--amber)}
+#eList .it.dim{opacity:.45}
+#eList .it canvas{width:42px;height:28px;border-radius:3px;flex:none}
+#eList .it .ph{width:42px;height:28px;border-radius:3px;flex:none;background:#2c2721;display:grid;place-items:center;font-size:11px;color:var(--muted)}
+#eList .it b{display:block;font-size:13px;font-weight:600}
+#eList .it small{color:var(--muted);font-size:11.5px}
+#eList .add{margin:10px 8px 0;padding:9px;border:1px dashed rgba(244,237,225,.2);border-radius:12px;text-align:center;color:var(--muted);font-size:12.5px}
+#eInsp{position:absolute;right:12px;top:94px;bottom:12px;width:336px;z-index:28;background:var(--plate-strong);border-radius:16px;overflow:auto;font-size:13px}
+.narrow #eList{display:none}
+.narrow #eInsp{left:8px;right:8px;top:auto;bottom:8px;width:auto;height:44%;border-radius:18px}
+#eInsp .hd{padding:14px 16px 12px;position:sticky;top:0;background:#1a1612;z-index:2;border-bottom:1px solid var(--line)}
+#eInsp .hd b{font:600 17px/1.2 var(--serif)}
+#eInsp .hd small{display:block;color:var(--muted);font-size:11.5px;margin-top:3px;font-family:var(--mono)}
+.sec{padding:13px 16px;border-top:1px solid var(--line)}
+.sec:first-of-type{border-top:0}
+.sec h4{margin:0 0 9px;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:baseline;font-weight:600}
+.sec h4 .u{letter-spacing:0;text-transform:none;font-weight:500;color:var(--dim);font-size:11.5px}
+.sec h4 .u.on{color:var(--amber)}
+.sec.unused>*:not(h4){opacity:.4}
+.vgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.vgrid button{border:1px solid rgba(244,237,225,.14);background:#120f0c;border-radius:10px;padding:7px 2px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;color:var(--muted)}
+.vgrid button svg{width:30px;height:22px;stroke:currentColor;fill:none;stroke-width:1.5}
+.vgrid button[aria-pressed="true"]{border-color:var(--amber);color:var(--amber);background:rgba(233,184,114,.1)}
+.imgrow{display:flex;gap:12px;align-items:center}
+.imgrow canvas{width:96px;height:64px;border-radius:4px;flex:none;background:repeating-conic-gradient(#2b2621 0 25%,#1d1915 0 50%) 0 0/12px 12px}
+.imgrow .mt{font-size:12px;color:var(--muted);line-height:1.5}
+.imgrow .mt b{color:var(--ink);font-family:var(--mono);font-weight:500;font-size:11.5px}
+label.f{display:grid;grid-template-columns:62px 1fr;align-items:center;gap:8px;margin:7px 0;font-size:12px;color:var(--muted)}
+label.f.top{align-items:start}
+input,textarea{background:#0f0d0a;border:1px solid rgba(244,237,225,.16);color:var(--ink);border-radius:8px;padding:7px 9px;font:13px var(--sans);width:100%;min-width:0}
+input:focus,textarea:focus{outline:none;border-color:var(--amber)}
+textarea{font:14px/1.38 var(--serif);min-height:70px;resize:vertical}
+.cnt{font-size:11px;color:var(--dim);text-align:right;margin-top:-3px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.g3 input{font-family:var(--mono);font-size:12px;padding:6px 7px}
+.rng{display:flex;gap:8px;align-items:center}
+.rng input[type=range]{flex:1;accent-color:var(--amber);padding:0;border:0;background:none}
+.rng input[type=number]{width:68px;font-family:var(--mono);font-size:12px}
+.btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.btn{border:1px solid rgba(244,237,225,.2);background:none;border-radius:999px;padding:7px 12px;font-size:12px;cursor:pointer;color:var(--ink)}
+.btn.blue{border-color:rgba(156,203,255,.5);color:var(--blue)}
+.tog{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);cursor:pointer}
+.tog input{width:auto;accent-color:var(--blue)}
+.lgd{display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:4px}
+.lgd i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+#eTip{position:absolute;top:100px;left:calc(50% - 55px);transform:translateX(-50%);z-index:27;padding:8px 14px;border-radius:999px;background:var(--plate);font-size:12px;color:var(--muted);white-space:nowrap;pointer-events:none}
+.narrow #eTip{display:none}
+.panel{position:absolute;z-index:50;right:12px;top:94px;width:min(390px,calc(100% - 24px));max-height:calc(100% - 108px);overflow:auto;background:var(--plate-strong);border-radius:16px;padding:14px 16px;font-size:13px;line-height:1.45;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.panel h3{margin:0 0 4px;font:600 17px/1.25 var(--serif)}
+.panel .sub{color:var(--muted);font-size:12px;margin-bottom:10px}
+.panel .fr{display:grid;grid-template-columns:84px 1fr;gap:10px;padding:7px 0;border-top:1px solid var(--line)}
+.panel .fr b{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--amber)}
+.panel .fr.no b{color:var(--dim)}
+.panel .fr.no span{color:var(--dim)}
+#notes{width:min(760px,calc(100% - 24px));font-size:13.5px}
+#notes h4{font:600 15px/1.3 var(--serif);margin:16px 0 6px;color:var(--amber)}
+#notes p,#notes li{color:#e6ddcd}
+#notes ul{padding-left:18px;margin:6px 0}
+#notes details{border-top:1px solid var(--line);padding:6px 0}
+#notes summary{cursor:pointer;font:600 15px/1.4 var(--serif);color:var(--ink);padding:4px 0}
+#toast{position:absolute;left:50%;bottom:122px;transform:translate(-50%,10px);opacity:0;transition:opacity .25s,transform .25s;z-index:70;background:var(--ink);color:#1d1913;font-weight:600;font-size:14px;padding:10px 16px;border-radius:999px;pointer-events:none;white-space:nowrap}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+#ft{position:absolute;right:8px;bottom:6px;z-index:40;font:10.5px/1.3 var(--mono);color:rgba(244,237,225,.9);background:rgba(20,17,14,.6);padding:3px 7px;border-radius:6px;pointer-events:none;text-align:right;white-space:nowrap}
+.m-creator #ft{bottom:auto;top:94px}
+.m-creator #hint{top:130px}
+.m-editor #ft{right:360px}
+.narrow.m-editor #ft{right:12px;bottom:calc(44% + 16px)}
+.m-visitor.withcap #ft{bottom:auto;top:94px}
+/* short landscape screens: one top row, captions and controls side by side */
+.short .bar{flex-direction:row;align-items:center}
+.short .bar .row{display:contents}
+.short #views{flex:1 1 auto;min-width:0}
+.short .icons{order:3;margin-left:0}
+.short #hint{top:56px}
+.short #ft,.short.m-creator #ft{top:auto;bottom:6px}
+.short.m-visitor.withcap #ft{bottom:auto;top:56px}
+.short #cap{left:12px;bottom:10px;transform:none;width:min(58%,560px);animation:none}
+.short #tnCtl{left:auto;right:12px;bottom:14px;transform:none}
+.short #swipe .lab{top:62px}
+.short #cbar{bottom:8px;padding:5px}
+.short #cbar button{padding:6px 2px 5px;gap:3px}
+.short #cbar button svg{width:20px;height:20px}
+.short.m-creator #ft{top:56px;bottom:auto}
+.short.m-creator #hint{top:56px}
+.short #csheet{bottom:78px;max-height:calc(100% - 140px);overflow:auto}
+.short #eList,.short #eInsp,.short .panel{top:56px}
+.short #eTip{display:none}
+</style>
+</head>
+<body>
+<div id="stage" class="m-visitor">
+  <canvas id="c"></canvas>
+
+  <div class="bar">
+    <div class="row">
+      <div class="seg" id="modes" role="group" aria-label="Mode">
+        <button data-mode="visitor">Visitor</button><button data-mode="creator">Creator</button><button data-mode="editor">Editor</button>
+      </div>
+      <div class="icons">
+        <button class="ib" id="bErr" title="Simulate a placement error of about 1 m and 3 degrees">±1m</button>
+        <button class="ib" id="bFields" title="Fields this view uses"><svg viewBox="0 0 24 24"><path d="M5 6.5h14M5 12h9M5 17.5h11"/></svg></button>
+        <button class="ib" id="bPhone" title="Phone frame (9:19.5)"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.6"/><path d="M11 18.3h2"/></svg></button>
+        <button class="ib" id="bNotes" title="Designer notes"><svg viewBox="0 0 24 24"><path d="M6.5 3.5h8l3 3v14h-11z"/><path d="M9.5 10.5h5M9.5 14h5M9.5 17.5h3"/></svg></button>
+      </div>
+    </div>
+    <div class="row"><div class="seg views" id="views" role="group" aria-label="View"></div></div>
+  </div>
+
+  <div id="hint" class="pill hidden"><svg viewBox="0 0 24 24" id="hintArrow"><path d="M12 3.5l6.5 8.5h-4.2v8.5h-4.6V12H5.5z"/></svg><span></span></div>
+  <div id="swipe" class="hidden"><div class="ln"><span class="lab l">1885</span><span class="lab r">Today</span></div><div class="kn"><svg viewBox="0 0 24 24"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/></svg></div></div>
+  <div id="tnCtl" class="hidden">
+    <div class="seg" id="tnMode"><button data-m="swipe">Swipe</button><button data-m="fade">Fade</button></div>
+    <div class="fadebox hidden" id="fadeBox"><span>Today</span><input type="range" id="fadeR" min="0" max="1" step="0.01" value="0"><span id="fadeY">1885</span></div>
+  </div>
+  <div id="cap" class="hidden"></div>
+
+  <div id="sheet" class="hidden"><div class="scrim"></div><div class="card"><button class="close">Close</button><canvas></canvas><div class="meta"><div class="yr"></div><p class="capt"></p><p class="cred"></p><div class="src"></div></div></div></div>
+  <div id="joy" class="hidden"><div class="k"></div></div>
+  <div id="reticle" class="hidden"></div>
+  <div id="csheet" class="hidden"></div>
+  <div id="cbar" class="hidden">
+    <button data-tool="view"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg><span>View</span></button>
+    <button data-tool="place"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/></svg><span>Place</span></button>
+    <button data-tool="size"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg><span>Size</span></button>
+    <button data-tool="turn"><svg viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4v4h-4"/></svg><span>Turn</span></button>
+    <button data-tool="text"><svg viewBox="0 0 24 24"><path d="M5 6V4.5h14V6M12 4.5v15M9 19.5h6"/></svg><span>Text</span></button>
+    <button data-tool="viewpoint"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="14" height="11" rx="2"/><path d="M17 11l4-2.5v8L17 14"/></svg><span>Viewpoint</span></button>
+  </div>
+  <aside id="eList" class="hidden"></aside>
+  <aside id="eInsp" class="hidden"></aside>
+  <div id="eTip" class="hidden">Drag the amber disc to move, its knob to turn, the square to size. Blue is the viewpoint.</div>
+  <div id="fields" class="panel hidden"></div>
+  <div id="notes" class="panel hidden"></div>
+  <div id="toast"></div>
+  <div id="ft">-</div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ================================================================
+   Small helpers
+   ================================================================ */
+const DEG = Math.PI / 180;
+const V3 = THREE.Vector3;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const wrapDeg = d => ((d % 360) + 540) % 360 - 180;
+const round = (v, s) => Math.round(v / s) * s;
+function rng(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const SERIF = '"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif';
+const SANS = 'system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif';
+const $ = s => document.querySelector(s);
+const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+async function drawn() { await nextFrame(); await nextFrame(); await nextFrame(); }
+const yawDir = y => new V3(Math.sin(y * DEG), 0, -Math.cos(y * DEG));
+const yawRight = y => new V3(Math.cos(y * DEG), 0, Math.sin(y * DEG));
+const bearing = (from, to) => Math.atan2(to.x - from.x, -(to.z - from.z)) / DEG;
+function makeCanvas(w, h) { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; }
+function rrect(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+function wrapText(g, text, maxW, maxLines) {
+  const words = String(text || '').split(/\s+/).filter(Boolean); const lines = []; let cur = '';
+  for (const w of words) { const t = cur ? cur + ' ' + w : w; if (g.measureText(t).width <= maxW || !cur) cur = t; else { lines.push(cur); cur = w; } }
+  if (cur) lines.push(cur);
+  if (lines.length > maxLines) {
+    const keep = lines.slice(0, maxLines); let last = keep[maxLines - 1];
+    while (g.measureText(last + '…').width > maxW && last.includes(' ')) last = last.replace(/\s+\S+$/, '');
+    keep[maxLines - 1] = last.replace(/[,.;:]$/, '') + '…'; return { lines: keep, truncated: true };
+  }
+  return { lines, truncated: false };
+}
+function disposeTree(o) { o.traverse(n => { if (n.geometry) n.geometry.dispose(); if (n.material) { (Array.isArray(n.material) ? n.material : [n.material]).forEach(m => { if (m.userData && m.userData.ownMap && m.map) m.map.dispose(); m.dispose(); }); } }); }
+
+/* ================================================================
+   Renderer, stage, camera
+   ================================================================ */
+const stage = $('#stage'), canvas = $('#c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
+function texFrom(c, own = true) { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = Math.min(8, MAX_ANISO); t.userData.own = own; return t; }
+
+const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 700);
+camera.rotation.order = 'YXZ';
+let SW = 1, SH = 1;
+
+/* ================================================================
+   The records (the data a tour file would store)
+   ================================================================ */
+const VP0 = { position: [6, 1.6, 12], yawDeg: -45, pitchDeg: 3, hfovDeg: 56 };
+const hall = {
+  type: 'picture', id: 'market-hall-1885', view: 'framed',
+  image: { src: 'media/market-hall-1885.jpg', width: 1500, height: 1000, alpha: false, bytes: null },
+  caption: 'The timber market hall on a market morning, five years before the fire of 1890. Behind it, the guild house. The hall stood on twenty-four oak posts; under its arcade the fish, cheese and butter sellers kept their stalls, while grain was weighed and stored on the upper floor. The cart in front has come in from the villages to the south with sacks of rye, and the woman on the left is waiting for the scales to open at seven. The photographer set up his camera on the steps of the inn on the south side, which is why the view looks slightly down onto the square. The plate was exposed for about two seconds, long enough for anyone who moved to appear as a faint ghost.',
+  credit: 'Photographer unknown. Town archive, glass plate no. 14.',
+  year: 1885,
+  widthM: 1.6,
+  showTag: true,
+  pose: { position: [-4, 1.75, 2], yawDeg: 115, pitchDeg: 0 },
+  viewpoint: JSON.parse(JSON.stringify(VP0)),
+};
+const stall = {
+  type: 'picture', id: 'fish-stall-1886-cutout', view: 'cutout',
+  image: { src: 'media/fish-stall-1886.webp', width: 1200, height: 900, alpha: true, bytes: null },
+  caption: 'A fish seller at her stall under the east arcade of the market hall.',
+  credit: 'Photographer unknown. Town archive, plate no. 22, cut out.',
+  year: 1886,
+  widthM: 2.6,
+  showTag: true,
+  pose: { position: [-6, 0, 5.5], yawDeg: 140, pitchDeg: 0 },
+  viewpoint: null,
+};
+
+const VIEWS = ['framed', 'cutout', 'then-now', 'mosaic', 'viewpoint-finder', 'viewpoint-sharpen', 'viewpoint-window', 'viewer'];
+const REQUIRED = new Set(['framed', 'cutout', 'then-now', 'mosaic']);
+// the mosaic stays in the gallery so every variant remains reachable, but it is dropped: never to be built
+const VIEW_LABEL = { framed: 'Framed', cutout: 'Cut-out', 'then-now': 'Then & now', mosaic: 'Mosaic (dropped)', 'viewpoint-finder': 'Finder', 'viewpoint-sharpen': 'Sharpen', 'viewpoint-window': 'Window', viewer: 'Viewer' };
+const VIEW_LINE = {
+  framed: 'A framed print with a caption plate.',
+  cutout: 'A cut-out standing on the ground, no frame.',
+  'then-now': 'From the spot it was taken: the old picture fades in, then slide (or swipe) to today.',
+  mosaic: 'Dropped, kept for the gallery: tiles in the air that only line up from the spot.',
+  'viewpoint-finder': 'Four corners in the air meet as a frame only from the spot; then the picture fills it.',
+  'viewpoint-sharpen': 'One whole picture that fades in as you reach the spot and face its way; no blur.',
+  'viewpoint-window': 'A small window at arm\'s length, there only when you stand on the spot.',
+  viewer: 'A sightseeing viewer that fades away into the picture as you step up to it.',
+};
+const FIELDS = ['image', 'caption', 'credit', 'year', 'widthM', 'pose', 'viewpoint', 'showTag'];
+const FIELD_USE = {
+  framed: { image: 'the print inside the frame and mat', caption: 'the plate, up to 3 lines; the full text in the sheet on tap', credit: 'one small line on the plate, and the sheet', year: 'the large figure on the plate', widthM: 'width of the print; mat and frame add about 0.33 m', pose: 'centre of the print, its turn and tilt', viewpoint: null },
+  cutout: { image: 'the cut-out itself (alpha); the second record', caption: 'one line on the foot tag (when shown), all of it in a text-only sheet on tap', credit: 'the sheet', year: 'the foot tag', widthM: 'width of the cut-out; height follows the image', pose: 'foot point on the ground and turn; tilt is ignored', viewpoint: null, showTag: 'whether the small tag (year and title) stands at its foot; the cut-out itself is tappable either way' },
+  'then-now': { image: 'the overlay seen from the viewpoint', caption: 'the card once lined up, and the sheet', credit: 'the sheet', year: 'the swipe label, the marker card', widthM: null, pose: 'only its distance from the viewpoint: the overlay hangs at that depth', viewpoint: 'where to stand, which way to face, and the lens angle that sizes the overlay' },
+  mosaic: { image: 'cut into 14 x 9 tiles', caption: 'the card once assembled, and the sheet', credit: 'the sheet', year: 'the marker card', widthM: null, pose: 'the depth the tiles scatter around', viewpoint: 'the one spot where the tiles line up, and the lens angle' },
+  'viewpoint-finder': { image: 'a centre crop (36 degrees) fills the finder once the corners meet', caption: 'the card once lined up, and the sheet', credit: 'the sheet', year: 'the marker card', widthM: null, pose: 'the depth the picture fills in at', viewpoint: 'the spot and facing; the four corners sit on the lens rays at different depths' },
+  'viewpoint-sharpen': { image: 'one whole picture at the subject depth, transparent far away and opaque at the spot', caption: 'the card once it shows, and the sheet', credit: 'the sheet', year: 'the marker card', widthM: null, pose: 'the depth the picture hangs at', viewpoint: 'its opacity follows your distance to it and your facing; the lens sizes the picture' },
+  'viewpoint-window': { image: 'a centre crop (30 degrees) inside a window 0.7 m in front of the spot', caption: 'the card while you look through, and the sheet', credit: 'the sheet', year: 'the label under the window', widthM: null, pose: null, viewpoint: 'where the window hangs and which way it faces; the lens sets the crop' },
+  viewer: { image: 'fades in at the subject depth as you step up, while the viewer fades out', caption: 'the card once it shows, and the sheet', credit: 'the sheet', year: 'the plate on the post', widthM: null, pose: 'the depth the picture hangs at', viewpoint: 'where the viewer stands and points; the lens sizes the picture' },
+};
+const usesField = (v, f) => FIELD_USE[v][f] != null;
+
+/* ================================================================
+   State
+   ================================================================ */
+const S = {
+  mode: 'visitor', view: 'framed', phone: false, err: false,
+  appear: 0, autowalk: null, split: 0.5, tnMode: 'fade', fade: 0, intro: null,
+  overlay: null, ctool: null, pov: false, dirty: false, hookActive: false,
+};
+const fp = {
+  visitor: { pos: new V3(0, 1.6, 28), yaw: 0, pitch: -2 },
+  creator: { pos: new V3(0, 1.6, 0), yaw: -110, pitch: -4 },
+};
+const orb = { target: new V3(-2, 0, 4), r: 30, th: 0.62, ph: 0.92 };
+const rec = () => (S.view === 'cutout' ? stall : hall);
+const curFP = () => fp[S.mode === 'creator' ? 'creator' : 'visitor'];
+
+/* ================================================================
+   The present-day square (stand-in for the camera image)
+   ================================================================ */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xdde3e8);
+scene.fog = new THREE.Fog(0xdde3e8, 70, 260);
+scene.add(new THREE.HemisphereLight(0xffffff, 0xa7a59e, 2.4));
+const sunNow = new THREE.DirectionalLight(0xffffff, 1.0); sunNow.position.set(15, 30, 22); scene.add(sunNow);
+const lam = c => new THREE.MeshLambertMaterial({ color: c });
+function boxM(w, h, d, mat, x, y, z, parent) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); (parent || scene).add(m); return m; }
+
+function pavingTex() {
+  const c = makeCanvas(512, 512), g = c.getContext('2d'); const r = rng(7);
+  g.fillStyle = '#b9b7b1'; g.fillRect(0, 0, 512, 512);
+  for (let row = 0; row < 8; row++) { const off = (row % 2) * 64; for (let col = -1; col < 5; col++) { const x = col * 128 + off, y = row * 64; const v = 196 + (r() * 12 - 6); g.fillStyle = `rgb(${v},${v - 1},${v - 5})`; g.fillRect(x + 1.5, y + 1.5, 125, 61); } }
+  const t = texFrom(c, false); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(10, 10); return t;
+}
+(function buildNow() {
+  const outer = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), lam(0xb6b9b2)); outer.rotation.x = -Math.PI / 2; outer.position.y = -0.02; scene.add(outer);
+  const sq = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambertMaterial({ map: pavingTex() })); sq.rotation.x = -Math.PI / 2; scene.add(sq);
+  const pathM = lam(0xc8c6c0);
+  const ps = new THREE.Mesh(new THREE.PlaneGeometry(4, 30), pathM); ps.rotation.x = -Math.PI / 2; ps.position.set(0, -0.005, 35); scene.add(ps);
+  const pe = new THREE.Mesh(new THREE.PlaneGeometry(60, 4), pathM); pe.rotation.x = -Math.PI / 2; pe.position.set(50, -0.005, 0); scene.add(pe);
+  // guild house front (north side)
+  const wall = lam(0xcfcbc4);
+  boxM(40, 6, 8, wall, 0, 3, -24);
+  boxM(2, 3, 0.2, lam(0x8e8a84), 0, 1.5, -19.95);
+  for (const x of [-7, 7]) boxM(1.6, 2, 0.2, lam(0x9ba1a7), x, 3.4, -19.95);
+  const roofSh = new THREE.Shape(); roofSh.moveTo(-4.6, 0); roofSh.lineTo(4.6, 0); roofSh.lineTo(0, 2.6); roofSh.closePath();
+  const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(roofSh, { depth: 40.4, bevelEnabled: false }), lam(0xaba7a1)); roof.rotation.y = Math.PI / 2; roof.position.set(-20.2, 6, -24); scene.add(roof);
+  // ruined wall, NW corner, with a gap
+  const stone = lam(0xb2aea5); const r = rng(21);
+  for (const [x0, x1] of [[-19, -15.8], [-14.2, -11]]) { for (let x = x0; x < x1 - 0.01;) { const w = Math.min(x1 - x, 0.7 + r() * 0.6); const h = 0.65 + r() * 0.45; boxM(w, h, 0.8, stone, x + w / 2, h / 2, -15); x += w; } }
+  // bench and tree
+  const bench = new THREE.Group(); const bm = lam(0x9d9890);
+  boxM(1.8, 0.07, 0.45, bm, 0, 0.45, 0, bench); boxM(1.8, 0.4, 0.06, bm, 0, 0.75, -0.2, bench);
+  for (const x of [-0.8, 0.8]) boxM(0.07, 0.45, 0.4, bm, x, 0.225, 0, bench);
+  bench.position.set(9, 0, -7); bench.rotation.y = -0.2; scene.add(bench);
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 3.2, 10), lam(0x8f8a82)); trunk.position.set(14, 1.6, -11); scene.add(trunk);
+  const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.3, 1), lam(0xa6ada1)); crown.position.set(14, 4.4, -11); crown.scale.set(1, 0.9, 1); scene.add(crown);
+  // station circles
+  const ringM = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false });
+  for (const [x, z] of [[0, 0], [60, 0]]) { const ring = new THREE.Mesh(new THREE.RingGeometry(24.88, 25.0, 160), ringM); ring.rotation.x = -Math.PI / 2; ring.position.set(x, 0.015, z); scene.add(ring); }
+  // second station, 60 m east: a plain stand-in item
+  const post = boxM(0.14, 1.2, 0.14, lam(0x8f8b85), 60, 0.6, 0); post.name = 'station2';
+  const pl = boxM(0.6, 0.4, 0.04, lam(0xe4e1db), 60, 1.35, 0.02); pl.rotation.x = -0.25;
+})();
+
+const contentRoot = new THREE.Group(); scene.add(contentRoot);
+
+/* ================================================================
+   The 1885 square, rendered once and turned into an old photograph
+   ================================================================ */
+function cobbleTex() {
+  const S0 = 512, c = makeCanvas(S0, S0), g = c.getContext('2d'); const r = rng(5);
+  g.fillStyle = '#5e574e'; g.fillRect(0, 0, S0, S0); const rowH = 16;
+  for (let y = 0; y < S0; y += rowH) { let x = -(r() * 14); while (x < S0 + 20) { const w = 12 + r() * 10; const v = 140 + r() * 80; g.fillStyle = `rgb(${v},${v * 0.96},${v * 0.9})`; g.beginPath(); g.ellipse(x + w / 2, y + rowH / 2, w / 2 - 1.6, rowH / 2 - 2, 0, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.13)'; g.beginPath(); g.ellipse(x + w / 2 - 1, y + rowH / 2 - 2, w / 3, rowH / 5, 0, 0, 7); g.fill(); x += w; } }
+  const t = texFrom(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(30, 30); return t;
+}
+function plasterTex(seed, base = '#e3dac8') {
+  const c = makeCanvas(256, 256), g = c.getContext('2d'); const r = rng(seed); g.fillStyle = base; g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(${r() < 0.5 ? '255,255,255' : '90,70,50'},${0.05 * r()})`; const s = 3 + r() * 14; g.fillRect(r() * 256, r() * 256, s, s * 0.7); }
+  const t = texFrom(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+function timberTex() {
+  const W = 1024, H = 220, c = makeCanvas(W, H), g = c.getContext('2d'); const r = rng(9);
+  g.fillStyle = '#e8dfcc'; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 500; i++) { g.fillStyle = `rgba(${r() < 0.5 ? '255,255,255' : '110,90,60'},${0.06 * r()})`; g.fillRect(r() * W, r() * H, 4 + r() * 18, 3 + r() * 9); }
+  const beam = '#35281d', bw = 12, bay = W / 12, rail = H * 0.64;
+  g.fillStyle = beam; g.fillRect(0, 0, W, bw * 1.4); g.fillRect(0, H - bw * 1.6, W, bw * 1.6); g.fillRect(0, rail, W, bw * 0.95);
+  for (let i = 0; i < 12; i++) {
+    const x = i * bay;
+    if (i % 2 === 0) { g.fillStyle = '#1f1a16'; g.fillRect(x + bay * 0.24, H * 0.18, bay * 0.52, H * 0.38); g.fillStyle = '#d9d0bd'; g.fillRect(x + bay * 0.5 - 2.5, H * 0.18, 5, H * 0.38); g.fillRect(x + bay * 0.24, H * 0.36, bay * 0.52, 4); }
+    else { g.strokeStyle = beam; g.lineWidth = bw * 0.8; g.beginPath(); g.moveTo(x, rail + bw); g.lineTo(x + bay, H - bw); g.moveTo(x + bay, rail + bw); g.lineTo(x, H - bw); g.stroke(); g.beginPath(); g.moveTo(x, bw * 1.4); g.lineTo(x + bay * 0.45, rail); g.stroke(); }
+  }
+  g.fillStyle = beam; for (let i = 0; i <= 12; i++) g.fillRect(i * bay - bw / 2, 0, bw, H);
+  return texFrom(c);
+}
+function tileTex() {
+  const c = makeCanvas(256, 256), g = c.getContext('2d'); const r = rng(13); g.fillStyle = '#4a3c31'; g.fillRect(0, 0, 256, 256);
+  for (let y = 0; y < 256; y += 16) for (let x = -(y % 32) / 2; x < 256; x += 16) { const v = 90 + r() * 50; g.fillStyle = `rgb(${v},${v * 0.82},${v * 0.7})`; rrect(g, x + 1, y + 1, 14, 13, 5); g.fill(); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x + 1, y + 12, 14, 3); }
+  const t = texFrom(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(0.6, 0.6); return t;
+}
+function stripeTex() {
+  const c = makeCanvas(256, 64), g = c.getContext('2d'); for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#6b4a3a' : '#efe6d6'; g.fillRect(i * 32, 0, 32, 64); }
+  return texFrom(c);
+}
+function std(color, map, rough = 0.9) { const m = new THREE.MeshStandardMaterial({ color, map: map || null, roughness: rough, metalness: 0 }); return m; }
+
+function person(kind, mats, scale = 1) {
+  const g = new THREE.Group(); const v2 = p => p.map(q => new THREE.Vector2(q[0], q[1]));
+  if (kind === 'w') {
+    g.add(new THREE.Mesh(new THREE.LatheGeometry(v2([[0, 0], [0.29, 0], [0.285, 0.1], [0.245, 0.45], [0.19, 0.8], [0.15, 0.98], [0.165, 1.15], [0.178, 1.27], [0.13, 1.36], [0.06, 1.41], [0, 1.41]]), 22), mats.dress));
+    const ap = new THREE.Mesh(new THREE.CylinderGeometry(0.205, 0.272, 0.62, 16, 1, true, -0.85, 1.7), mats.apron); ap.position.y = 0.62; g.add(ap);
+    const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.25, 0.2, 18), mats.shawl); sh.position.y = 1.25; g.add(sh);
+    const scarf = new THREE.Mesh(new THREE.SphereGeometry(0.112, 16, 12, 0, Math.PI * 2, 0, 1.95), mats.apron); scarf.position.y = 1.53; g.add(scarf);
+  } else {
+    for (const x of [-0.09, 0.09]) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.065, 0.82, 10), mats.trous); l.position.set(x, 0.41, 0); g.add(l); }
+    g.add(new THREE.Mesh(new THREE.LatheGeometry(v2([[0, 0.6], [0.215, 0.6], [0.225, 0.85], [0.205, 1.15], [0.225, 1.33], [0.12, 1.43], [0, 1.44]]), 20), mats.coat));
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.015, 18), mats.hat); brim.position.y = 1.635; g.add(brim);
+    const crownH = kind === 'm2' ? 0.08 : 0.16; const cr = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.1, crownH, 16), mats.hat); cr.position.y = 1.64 + crownH / 2; g.add(cr);
+  }
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.095, 16, 12), mats.skin); head.position.y = 1.53; g.add(head);
+  for (const s of [-1, 1]) { const a = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.42, 4, 8), kind === 'w' ? mats.shawl : mats.coat); a.position.set(s * 0.2, 1.06, 0.03); a.rotation.z = s * 0.14; g.add(a); }
+  g.scale.setScalar(scale); return g;
+}
+function stallModel(mats) {
+  const g = new THREE.Group();
+  boxM(2.0, 0.06, 0.8, mats.timber, 0, 0.86, 0, g);
+  for (const x of [-0.94, 0.94]) for (const z of [-0.35, 0.35]) boxM(0.06, 0.86, 0.06, mats.timber, x, 0.43, z, g);
+  boxM(2.02, 0.5, 0.012, mats.cloth, 0, 0.6, 0.41, g);
+  for (const x of [-1.05, 1.05]) { boxM(0.06, 2.2, 0.06, mats.timber, x, 1.1, -0.45, g); boxM(0.06, 1.9, 0.06, mats.timber, x, 0.95, 0.62, g); }
+  const aw = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 1.14), mats.awning); aw.position.set(0, 2.03, 0.085); aw.rotation.x = -Math.PI / 2 + Math.atan2(0.32, 1.07); g.add(aw);
+  const val = boxM(2.3, 0.2, 0.012, mats.awning, 0, 1.8, 0.64, g); val.rotation.x = 0.05;
+  const fishGeo = new THREE.SphereGeometry(1, 10, 8);
+  for (let row = 0; row < 3; row++) for (let i = 0; i < 7; i++) { const f = new THREE.Mesh(fishGeo, mats.fish); f.scale.set(0.17, 0.035, 0.055); f.position.set(-0.8 + i * 0.22 + (row % 2) * 0.1, 0.91, -0.22 + row * 0.2); f.rotation.y = 0.3 * (i % 2 ? 1 : -1); g.add(f); }
+  for (const x of [-0.55, 0.6]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.16, 0.24, 18, 1, true), mats.basket); b.material.side = THREE.DoubleSide; b.position.set(x, 1.0, 0.18); g.add(b); }
+  boxM(0.6, 0.35, 0.45, mats.timber, -0.5, 0.175, -0.05, g); boxM(0.5, 0.3, 0.4, mats.timber, 0.35, 0.15, -0.08, g);
+  return g;
+}
+function cartModel(mats) {
+  const g = new THREE.Group(); boxM(1.6, 0.1, 1.0, mats.timber, 0, 0.75, 0, g);
+  for (const z of [-0.5, 0.5]) boxM(1.6, 0.3, 0.05, mats.timber, 0, 0.95, z, g);
+  for (const x of [-0.8, 0.8]) boxM(0.05, 0.3, 1.0, mats.timber, x, 0.95, 0, g);
+  for (const z of [-0.6, 0.6]) { const w = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.04, 8, 28), mats.dark); w.position.set(0, 0.45, z); g.add(w); for (let i = 0; i < 6; i++) { const s = boxM(0.025, 0.82, 0.025, mats.dark, 0, 0.45, z, g); s.rotation.z = i * Math.PI / 6; } }
+  for (const z of [-0.35, 0.35]) { const s = boxM(1.8, 0.05, 0.05, mats.timber, 1.6, 0.62, z, g); s.rotation.z = -0.12; }
+  for (let i = 0; i < 4; i++) { const sack = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), mats.cloth); sack.scale.set(1, 0.7, 0.8); sack.position.set(-0.45 + i * 0.3, 1.0, (i % 2 ? 0.2 : -0.2)); g.add(sack); }
+  return g;
+}
+function pastMats() {
+  return {
+    dress: std(0x2d2621), apron: std(0xe6dfd2), shawl: std(0x4c4038), trous: std(0x2a2724), coat: std(0x3a332d), hat: std(0x1e1b18), skin: std(0xcdb59c),
+    timber: std(0x5a4636, null, 0.95), dark: std(0x2a221c), cloth: std(0xcfc5b2), awning: new THREE.MeshStandardMaterial({ map: stripeTex(), roughness: 0.95, side: THREE.DoubleSide }),
+    fish: new THREE.MeshStandardMaterial({ color: 0xbfc4c8, roughness: 0.35, metalness: 0.2 }), basket: std(0x7a5f45),
+  };
+}
+function ghostMats(m) { const o = {}; for (const k in m) { o[k] = m[k].clone(); o[k].transparent = true; o[k].opacity = 0.34; o[k].depthWrite = false; } return o; }
+
+function buildPast() {
+  const s = new THREE.Scene(); s.background = new THREE.Color(0xeef1f4);
+  s.add(new THREE.HemisphereLight(0xe6edff, 0x6b6156, 1.25));
+  const sun = new THREE.DirectionalLight(0xfff3df, 3.4); sun.position.set(16, 32, 30); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 1, far: 120 }); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.04; sun.target.position.set(-4, 0, 0); s.add(sun, sun.target);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(140, 140), std(0xffffff, cobbleTex())); ground.rotation.x = -Math.PI / 2; s.add(ground);
+  const M = pastMats();
+  // guild house, the same openings as today
+  const gh = std(0xffffff, plasterTex(4)); gh.map.repeat.set(6, 1.2);
+  boxM(40, 6, 8, gh, 0, 3, -24, s); boxM(40, 0.6, 8.1, std(0x9a8f80), 0, 0.3, -24, s); boxM(40.2, 0.18, 8.2, std(0xb0a594), 0, 3.25, -24, s);
+  boxM(2, 3, 0.25, M.dark, 0, 1.5, -19.95, s);
+  for (const x of [-7, 7]) { boxM(1.9, 2.3, 0.12, std(0xcfc4b0), x, 3.4, -19.94, s); boxM(1.6, 2, 0.2, std(0x231e1a), x, 3.4, -19.9, s); boxM(0.08, 2, 0.24, std(0xcfc4b0), x, 3.4, -19.88, s); }
+  const roofSh = new THREE.Shape(); roofSh.moveTo(-4.6, 0); roofSh.lineTo(4.6, 0); roofSh.lineTo(0, 2.6); roofSh.closePath();
+  const ghRoof = new THREE.Mesh(new THREE.ExtrudeGeometry(roofSh, { depth: 40.4, bevelEnabled: false }), [std(0xd8cfbd), std(0xffffff, tileTex())]); ghRoof.rotation.y = Math.PI / 2; ghRoof.position.set(-20.2, 6, -24); s.add(ghRoof);
+  // the ruin, as today
+  const stone = std(0xffffff, plasterTex(31, '#a39d92')); const r = rng(21);
+  for (const [x0, x1] of [[-19, -15.8], [-14.2, -11]]) { for (let x = x0; x < x1 - 0.01;) { const w = Math.min(x1 - x, 0.7 + r() * 0.6); const h = 0.65 + r() * 0.45; boxM(w, h, 0.8, stone, x + w / 2, h / 2, -15, s); x += w; } }
+  // the timber market hall on the west half
+  const X0 = -17, X1 = -4, Z0 = -8, Z1 = 7, cx = (X0 + X1) / 2, cz = (Z0 + Z1) / 2, W = X1 - X0, L = Z1 - Z0;
+  const hallG = new THREE.Group(); s.add(hallG);
+  const post = (x, z) => boxM(0.32, 3.2, 0.32, M.timber, x, 1.6, z, hallG);
+  for (let i = 0; i <= 6; i++) { const z = Z0 + i * L / 6; post(X0, z); post(X1, z); }
+  for (let i = 1; i < 5; i++) { const x = X0 + i * W / 5; post(x, Z0); post(x, Z1); }
+  for (let i = 0; i < 6; i++) { const z = Z0 + (i + 0.5) * L / 6; for (const s2 of [-1, 1]) { const b = boxM(0.16, 1.1, 0.16, M.timber, X1, 2.75, z + s2 * 0.75, hallG); b.rotation.x = s2 * 0.75; } }
+  for (let i = 0; i < 5; i++) { const x = X0 + (i + 0.5) * W / 5; for (const s2 of [-1, 1]) { const b = boxM(0.16, 1.1, 0.16, M.timber, x + s2 * 0.75, 2.75, Z1, hallG); b.rotation.z = -s2 * 0.75; } }
+  boxM(W - 4, 3.1, L - 4, std(0x1c1814), cx, 1.55, cz, hallG);
+  boxM(W + 0.3, 0.12, L + 0.3, std(0x2a221c), cx, 3.2, cz, hallG);
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(W + 0.7, 3.0, L + 0.7), std(0xffffff, timberTex())); upper.position.set(cx, 4.76, cz); hallG.add(upper);
+  const hr = new THREE.Shape(); hr.moveTo(-(W / 2 + 0.95), 0); hr.lineTo(W / 2 + 0.95, 0); hr.lineTo(0, 4.4); hr.closePath();
+  const gableT = plasterTex(17, '#e6ddca'); gableT.repeat.set(0.25, 0.25);
+  const hallRoof = new THREE.Mesh(new THREE.ExtrudeGeometry(hr, { depth: L + 1.6, bevelEnabled: false }), [std(0xffffff, gableT), std(0xffffff, tileTex())]); hallRoof.position.set(cx, 6.26, Z0 - 0.8); hallG.add(hallRoof);
+  boxM(1.3, 1.8, 1.3, std(0xe2d9c6), cx, 10.0, cz, hallG);
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(1.15, 2.4, 4), std(0x3c3129)); spire.position.set(cx, 12.1, cz); spire.rotation.y = Math.PI / 4; hallG.add(spire);
+  const vane = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), M.dark); vane.position.set(cx, 13.4, cz); hallG.add(vane);
+  // stalls under the east arcade and one in the open
+  for (const z of [-4.5, -0.5, 3.5]) { const st = stallModel(M); st.position.set(X1 - 1.3, 0, z); st.rotation.y = Math.PI / 2; s.add(st); }
+  const op = stallModel(M); op.position.set(0.8, 0, -1.2); op.rotation.y = 0.55; s.add(op);
+  const cart = cartModel(M); cart.position.set(3.2, 0, 7.4); cart.rotation.y = 0.55; s.add(cart);
+  const lamp = new THREE.Group(); boxM(0.12, 0.3, 0.12, M.dark, 0, 0.15, 0, lamp); const lp = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 3.0, 10), M.dark); lp.position.y = 1.6; lamp.add(lp); boxM(0.26, 0.36, 0.26, std(0xd9d2c4), 0, 3.25, 0, lamp); const lc = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.22, 4), M.dark); lc.position.y = 3.54; lc.rotation.y = Math.PI / 4; lamp.add(lc); lamp.position.set(1.0, 0, 9.6); s.add(lamp);
+  for (const [x, z] of [[-3.3, 7.9], [-2.7, 8.4], [-3.1, 8.9]]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.75, 16), M.timber); b.position.set(x, 0.375, z); s.add(b); }
+  const G = ghostMats(M);
+  const people = [[-1.2, 4.5, 'w', 0.4], [0.4, 2.0, 'm', -0.6], [-2.2, 0.6, 'w', 1.2], [1.8, 6.2, 'm2', 2.6], [-0.6, -2.8, 'm', 0.3], [-3.0, 8.4, 'w', 2.0], [-5.6, 2.9, 'm2', 1.6], [-5.8, -1.6, 'w', 1.4], [2.2, -3.6, 'w', 0.8]];
+  for (const [x, z, k, ry] of people) { const p = person(k, M, 0.97 + ((x * 7 + z * 3) % 1 + 1) % 1 * 0.08); p.position.set(x, 0, z); p.rotation.y = ry; s.add(p); }
+  for (const [x, z, k, ry] of [[2.9, 0.4, 'w', 0.9], [3.7, 3.9, 'm', -1.0]]) { for (let i = 0; i < 3; i++) { const p = person(k, G, 1); p.position.set(x + i * 0.22, 0, z - i * 0.12); p.rotation.y = ry; s.add(p); } }
+  s.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  ground.castShadow = false;
+  return s;
+}
+
+function vfovFromH(hfovDeg, aspect) { return 2 * Math.atan(Math.tan(hfovDeg * DEG / 2) / aspect) / DEG; }
+function renderToPixels(sc, cam, w, h, clearAlpha) {
+  const rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.UnsignedByteType });
+  const prevClear = renderer.getClearColor(new THREE.Color()), prevA = renderer.getClearAlpha();
+  renderer.setRenderTarget(rt); renderer.setClearColor(0x000000, clearAlpha); renderer.clear(); renderer.render(sc, cam);
+  const buf = new Uint8Array(w * h * 4); renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf);
+  renderer.setRenderTarget(null); renderer.setClearColor(prevClear, prevA); rt.dispose();
+  const c = makeCanvas(w, h), g = c.getContext('2d'); const id = g.createImageData(w, h); const row = w * 4;
+  for (let y = 0; y < h; y++) id.data.set(buf.subarray((h - 1 - y) * row, (h - y) * row), y * row);
+  g.putImageData(id, 0, 0); return c;
+}
+/** Linear render -> orthochromatic sepia print with grain, blotches and vignette. */
+function tonePhoto(g, W, H, o) {
+  const im = g.getImageData(0, 0, W, H), d = im.data; const r = rng(o.seed);
+  const GX = 10, GY = 7, grid = Array.from({ length: (GX + 1) * (GY + 1) }, () => r());
+  const stops = [[0, [26, 19, 13]], [0.42, [118, 86, 56]], [0.72, [190, 162, 120]], [1, [244, 235, 214]]];
+  for (let y = 0; y < H; y++) {
+    const fy = y / H * GY, iy = Math.min(GY - 1, Math.floor(fy)), ty = fy - iy;
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4; if (d[i + 3] === 0) continue;
+      let l = (0.12 * d[i] + 0.5 * d[i + 1] + 0.38 * d[i + 2]) / 255; l = Math.pow(l, 1 / 2.2);
+      l = clamp((l - 0.03) * 1.12, 0, 1); l = l * l * (3 - 2 * l) * 0.55 + l * 0.45;
+      if (o.vignette) { const nx = (x / W - 0.5) * 2, ny = (y / H - 0.5) * 2; const v = nx * nx * 0.75 + ny * ny; l *= 1 - 0.2 * Math.pow(v, 1.6); }
+      const fx = x / W * GX, ix = Math.min(GX - 1, Math.floor(fx)), tx = fx - ix;
+      const a = grid[iy * (GX + 1) + ix], b = grid[iy * (GX + 1) + ix + 1], c = grid[(iy + 1) * (GX + 1) + ix], e = grid[(iy + 1) * (GX + 1) + ix + 1];
+      l += (lerp(lerp(a, b, tx), lerp(c, e, tx), ty) - 0.5) * 0.08 + (r() - 0.5) * o.grain;
+      l = clamp(l, 0, 1);
+      let k = 1; while (k < stops.length - 1 && l > stops[k][0]) k++;
+      const [l0, c0] = stops[k - 1], [l1, c1] = stops[k]; const t = (l - l0) / (l1 - l0);
+      d[i] = lerp(c0[0], c1[0], t); d[i + 1] = lerp(c0[1], c1[1], t); d[i + 2] = lerp(c0[2], c1[2], t);
+    }
+  }
+  g.putImageData(im, 0, 0);
+}
+function plateDamage(g, W, H, seed) {
+  const r = rng(seed);
+  for (let i = 0; i < 140; i++) { g.fillStyle = r() < 0.8 ? `rgba(250,244,230,${0.25 + r() * 0.5})` : `rgba(30,20,12,${0.2 + r() * 0.4})`; g.beginPath(); g.arc(r() * W, r() * H, 0.4 + r() * 1.5, 0, 7); g.fill(); }
+  g.lineCap = 'round';
+  for (let i = 0; i < 5; i++) { g.strokeStyle = `rgba(250,244,230,${0.18 + r() * 0.2})`; g.lineWidth = 0.6 + r() * 0.6; const x = r() * W, y = r() * H; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + (r() - 0.5) * 60, y + (r() - 0.5) * 60, x + (r() - 0.5) * 90, y + (r() - 0.5) * 90); g.stroke(); }
+  for (let i = 0; i < 2; i++) { g.strokeStyle = 'rgba(250,244,230,0.12)'; g.lineWidth = 1; const x = W * (0.2 + r() * 0.6); g.beginPath(); g.moveTo(x, 0); g.lineTo(x + (r() - 0.5) * 20, H); g.stroke(); }
+  const gr = g.createLinearGradient(0, 0, W, 0); gr.addColorStop(0, 'rgba(60,40,20,0.22)'); gr.addColorStop(0.03, 'rgba(60,40,20,0)'); gr.addColorStop(0.97, 'rgba(60,40,20,0)'); gr.addColorStop(1, 'rgba(60,40,20,0.25)'); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+}
+function makePhoto() {
+  const W = 1500, H = 1000, SS = 2; const sc = buildPast();
+  const cam = new THREE.PerspectiveCamera(vfovFromH(VP0.hfovDeg, W / H), W / H, 0.1, 500); cam.rotation.order = 'YXZ';
+  cam.position.set(...VP0.position); cam.rotation.set(VP0.pitchDeg * DEG, -VP0.yawDeg * DEG, 0); cam.updateMatrixWorld();
+  const big = renderToPixels(sc, cam, W * SS, H * SS, 1); disposeTree(sc);
+  const out = makeCanvas(W, H), g = out.getContext('2d'); g.imageSmoothingQuality = 'high'; g.filter = 'blur(0.7px)'; g.drawImage(big, 0, 0, W, H); g.filter = 'none';
+  tonePhoto(g, W, H, { vignette: true, seed: 11, grain: 0.085 }); plateDamage(g, W, H, 3); return out;
+}
+function makeStallCutout() {
+  const sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xe6edff, 0x6b6156, 1.3));
+  const sun = new THREE.DirectionalLight(0xfff3df, 3.2); sun.position.set(-4, 8, 7); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4 }); sun.shadow.normalBias = 0.03; sc.add(sun);
+  const M = pastMats(); const st = stallModel(M); sc.add(st);
+  const w = person('w', M, 1.0); w.position.set(1.42, 0, 0.35); w.rotation.y = -0.35; sc.add(w);
+  const bk = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.19, 0.3, 18), M.basket); bk.position.set(-1.45, 0.15, 0.5); sc.add(bk);
+  for (let i = 0; i < 5; i++) { const f = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), M.fish); f.scale.set(0.16, 0.035, 0.05); f.position.set(-1.5 + (i % 3) * 0.08, 0.31 + i * 0.012, 0.45 + (i % 2) * 0.08); f.rotation.y = i; sc.add(f); }
+  sc.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  const RW = 2400, RH = 1800; const cam = new THREE.PerspectiveCamera(27, RW / RH, 0.1, 50); cam.position.set(0.15, 1.35, 7.4); cam.lookAt(0.15, 1.08, 0); cam.updateMatrixWorld();
+  const big = renderToPixels(sc, cam, RW, RH, 0); disposeTree(sc);
+  // crop to the alpha bounds (no margin at the feet)
+  const bg = big.getContext('2d'), px = bg.getImageData(0, 0, RW, RH).data; let x0 = RW, x1 = 0, y0 = RH, y1 = 0;
+  for (let y = 0; y < RH; y += 2) for (let x = 0; x < RW; x += 2) if (px[(y * RW + x) * 4 + 3] > 10) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  const m = 24; x0 = Math.max(0, x0 - m); x1 = Math.min(RW, x1 + m); y0 = Math.max(0, y0 - m); y1 = Math.min(RH, y1 + 2);
+  const cw = Math.round((x1 - x0) / 2), ch = Math.round((y1 - y0) / 2);
+  const out = makeCanvas(cw, ch), g = out.getContext('2d'); g.imageSmoothingQuality = 'high'; g.filter = 'blur(0.5px)'; g.drawImage(big, x0, y0, x1 - x0, y1 - y0, 0, 0, cw, ch); g.filter = 'none';
+  tonePhoto(g, cw, ch, { vignette: false, seed: 23, grain: 0.07 });
+  stall.image.width = cw; stall.image.height = ch; return out;
+}
+
+let photoCanvas, stallCanvas, photoTex, stallTex;
+
+/* ================================================================
+   Shared materials and decals for the views
+   ================================================================ */
+const VS_UV = `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`;
+const FS_DEV = `
+uniform sampler2D uTex; uniform float uDev, uAlpha, uFacing; varying vec2 vUv;
+void main(){
+  vec4 c=texture2D(uTex,vUv);
+  float l=dot(c.rgb,vec3(0.3,0.59,0.11));
+  float d=clamp(uDev*1.7-l*0.7,0.0,1.0);
+  vec3 paper=vec3(0.84,0.77,0.62);
+  vec3 col=mix(paper,c.rgb,smoothstep(0.0,1.0,d));
+  float a=c.a*uAlpha;
+  #ifdef CUT
+    a*=uFacing;
+    if(!gl_FrontFacing){ col=vec3(0.02,0.017,0.014); a*=0.6; }
+  #endif
+  if(a<0.004) discard;
+  gl_FragColor=vec4(col,a);
+  #include <colorspace_fragment>
+}`;
+function developMaterial(tex, cut) {
+  return new THREE.ShaderMaterial({ uniforms: { uTex: { value: tex }, uDev: { value: 1 }, uAlpha: { value: 1 }, uFacing: { value: 1 } }, vertexShader: VS_UV, fragmentShader: FS_DEV, transparent: true, side: cut ? THREE.DoubleSide : THREE.FrontSide, depthWrite: !cut, defines: cut ? { CUT: 1 } : {} });
+}
+const FS_TN = `
+uniform sampler2D uTex; uniform float uAlpha, uSplit, uMode, uFade, uFeather; varying vec2 vUv;
+void main(){
+  vec4 c=texture2D(uTex,vUv);
+  float e=smoothstep(0.0,uFeather,vUv.x)*smoothstep(0.0,uFeather,1.0-vUv.x)*smoothstep(0.0,uFeather*1.5,vUv.y)*smoothstep(0.0,uFeather*1.5,1.0-vUv.y);
+  float m = uMode<0.5 ? (1.0-smoothstep(uSplit-1.0,uSplit+1.0,gl_FragCoord.x)) : uFade;
+  float a=e*m*uAlpha; if(a<0.003) discard;
+  gl_FragColor=vec4(c.rgb,a);
+  #include <colorspace_fragment>
+}`;
+function thenNowMaterial(tex) { return new THREE.ShaderMaterial({ uniforms: { uTex: { value: tex }, uAlpha: { value: 0 }, uSplit: { value: 0 }, uMode: { value: 0 }, uFade: { value: 1 }, uFeather: { value: 0.035 } }, vertexShader: VS_UV, fragmentShader: FS_TN, transparent: true, depthTest: false, depthWrite: false }); }
+
+const shadowTex = (() => { const c = makeCanvas(128, 128), g = c.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.5, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return texFrom(c, false); })();
+function shadowDecal(w, d, op) { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: shadowTex, color: 0x000000, transparent: true, opacity: op, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.position.y = 0.012; m.renderOrder = 1; return m; }
+function basicMat(tex, extra = {}) { const m = new THREE.MeshBasicMaterial(Object.assign({ map: tex, transparent: true, toneMapped: false }, extra)); m.userData.ownMap = !!(tex && tex.userData.own); return m; }
+
+/* Caption plate for the framed print: year | caption (3 lines) + credit */
+function framedPlate(r, wM) {
+  const ppm = 520, W = Math.round(wM * ppm), pad = 0.06 * ppm;
+  const m = makeCanvas(4, 4).getContext('2d');
+  const yearTxt = r.year != null && r.year !== '' ? String(r.year) : '';
+  m.font = `600 ${0.15 * ppm}px ${SERIF}`; const yw = yearTxt ? m.measureText(yearTxt).width : 0;
+  const colX = pad + (yearTxt ? yw + 0.09 * ppm : 0), colW = W - colX - pad - 0.05 * ppm;
+  const fs = 0.08 * ppm; m.font = `${fs}px ${SERIF}`; const { lines } = wrapText(m, r.caption, colW, 3);
+  const lh = fs * 1.24, cfs = 0.04 * ppm;
+  const H = Math.round(Math.max(yearTxt ? 0.18 * ppm : 0, lines.length * lh + (r.credit ? cfs * 2.1 : 0)) + 2 * pad);
+  const c = makeCanvas(W, H), g = c.getContext('2d');
+  g.fillStyle = 'rgba(19,16,13,0.9)'; rrect(g, 0, 0, W, H, 0.035 * ppm); g.fill();
+  if (yearTxt) { g.fillStyle = '#e9b872'; g.font = `600 ${0.15 * ppm}px ${SERIF}`; g.fillText(yearTxt, pad, pad + 0.12 * ppm); g.fillStyle = 'rgba(233,184,114,0.35)'; g.fillRect(pad + yw + 0.045 * ppm, pad + 0.01 * ppm, Math.max(2, 0.004 * ppm), H - 2 * pad - 0.02 * ppm); }
+  g.fillStyle = '#f4ede1'; g.font = `${fs}px ${SERIF}`; lines.forEach((l, i) => g.fillText(l, colX, pad + fs * 0.9 + i * lh));
+  if (r.credit) { g.fillStyle = '#a99d8a'; g.font = `${cfs}px ${SANS}`; let ct = r.credit; while (g.measureText(ct).width > colW && ct.length > 4) ct = ct.slice(0, -2); if (ct !== r.credit) ct = ct.trimEnd() + '…'; g.fillText(ct, colX, pad + lines.length * lh + cfs * 1.3); }
+  // a quiet "more" mark
+  const ix = W - pad * 0.9, iy = H - pad * 0.95; g.strokeStyle = 'rgba(233,184,114,0.85)'; g.lineWidth = 0.006 * ppm; g.beginPath(); g.arc(ix, iy, 0.024 * ppm, 0, 7); g.stroke(); g.fillStyle = 'rgba(233,184,114,0.95)'; g.font = `600 ${0.03 * ppm}px ${SERIF}`; g.textAlign = 'center'; g.fillText('i', ix, iy + 0.011 * ppm); g.textAlign = 'left';
+  return { tex: texFrom(c), w: wM, h: H / ppm };
+}
+function matTexture(iw, ih, w, h) {
+  const ppm = 420, W = Math.round(iw * ppm), H = Math.round(ih * ppm), c = makeCanvas(W, H), g = c.getContext('2d'); const r = rng(3);
+  g.fillStyle = '#ebe3d1'; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < W * H / 70; i++) { g.fillStyle = `rgba(${r() < 0.5 ? '255,255,255' : '120,100,70'},${0.05 * r()})`; g.fillRect(r() * W, r() * H, 1.5, 1.5); }
+  const x0 = (iw - w) / 2 * ppm, y0 = (ih - h) / 2 * ppm, ww = w * ppm, hh = h * ppm, b = Math.max(3, 0.007 * ppm);
+  g.fillStyle = '#fbf7ee'; g.fillRect(x0 - b, y0 - b, ww + 2 * b, hh + 2 * b);
+  g.fillStyle = '#c9bea8'; g.beginPath(); g.moveTo(x0 + ww + b, y0 - b); g.lineTo(x0 + ww + b, y0 + hh + b); g.lineTo(x0 - b, y0 + hh + b); g.lineTo(x0, y0 + hh); g.lineTo(x0 + ww, y0 + hh); g.lineTo(x0 + ww, y0); g.closePath(); g.fill();
+  const s = 0.035 * ppm; let gr = g.createLinearGradient(0, 0, 0, s); gr.addColorStop(0, 'rgba(40,28,16,0.28)'); gr.addColorStop(1, 'rgba(40,28,16,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, s);
+  gr = g.createLinearGradient(0, 0, s, 0); gr.addColorStop(0, 'rgba(40,28,16,0.2)'); gr.addColorStop(1, 'rgba(40,28,16,0)'); g.fillStyle = gr; g.fillRect(0, 0, s, H);
+  return texFrom(c);
+}
+/* Small world cards (marker card, foot tag, viewer plate) */
+function cardTexture({ wM, hM, year, line1, line2, thumb, ppm = 560 }) {
+  const W = Math.round(wM * ppm), H = Math.round(hM * ppm), c = makeCanvas(W, H), g = c.getContext('2d'), pad = 0.045 * ppm;
+  g.fillStyle = 'rgba(19,16,13,0.92)'; rrect(g, 0, 0, W, H, 0.03 * ppm); g.fill();
+  let y = pad;
+  if (thumb) { const tw = W - 2 * pad, th = tw * thumb.height / thumb.width; g.save(); rrect(g, pad, y, tw, th, 0.008 * ppm); g.clip(); g.drawImage(thumb, pad, y, tw, th); g.restore(); y += th + 0.035 * ppm; }
+  let x = pad;
+  if (year) { g.fillStyle = '#e9b872'; g.font = `600 ${0.1 * ppm}px ${SERIF}`; g.textBaseline = 'top'; g.fillText(String(year), x, y); x += g.measureText(String(year)).width + 0.035 * ppm; }
+  g.textBaseline = 'top'; g.fillStyle = '#f4ede1'; g.font = `600 ${0.05 * ppm}px ${SANS}`;
+  const maxW = W - x - pad; let t1 = line1 || ''; while (g.measureText(t1).width > maxW && t1.length > 3) t1 = t1.slice(0, -2); if (t1 !== (line1 || '')) t1 = t1.trimEnd() + '…';
+  g.fillText(t1, x, y + 0.008 * ppm);
+  if (line2) { g.fillStyle = '#bcb09c'; g.font = `${0.04 * ppm}px ${SANS}`; let t2 = line2; while (g.measureText(t2).width > maxW && t2.length > 3) t2 = t2.slice(0, -2); g.fillText(t2, x, y + 0.064 * ppm); }
+  return texFrom(c);
+}
+const markerTex = (() => {
+  const S0 = 512, c = makeCanvas(S0, S0), g = c.getContext('2d'), cx = S0 / 2, cy = S0 / 2;
+  g.fillStyle = 'rgba(18,15,12,0.5)'; g.beginPath(); g.arc(cx, cy, 200, 0, 7); g.fill();
+  g.strokeStyle = '#e9b872'; g.lineWidth = 13; g.beginPath(); g.arc(cx, cy, 204, 0, 7); g.stroke();
+  g.strokeStyle = 'rgba(233,184,114,0.45)'; g.lineWidth = 4; g.setLineDash([14, 14]); g.beginPath(); g.arc(cx, cy, 176, 0, 7); g.stroke(); g.setLineDash([]);
+  g.fillStyle = 'rgba(244,237,225,0.95)';
+  for (const sx of [-1, 1]) { g.save(); g.translate(cx + sx * 40, cy + 18); g.rotate(sx * 0.07); g.beginPath(); g.ellipse(0, -30, 23, 46, 0, 0, 7); g.fill(); g.beginPath(); g.ellipse(0, 50, 18, 23, 0, 0, 7); g.fill(); g.restore(); }
+  g.fillStyle = '#e9b872'; g.beginPath(); g.moveTo(cx, 6); g.lineTo(cx + 50, 64); g.lineTo(cx, 46); g.lineTo(cx - 50, 64); g.closePath(); g.fill();
+  return texFrom(c, false);
+})();
+const FS_BEAM = `uniform float uAlpha, uTime; varying vec2 vUv; void main(){ float a=pow(1.0-vUv.y,1.6)*0.55*uAlpha*(0.85+0.15*sin(uTime*2.0-vUv.y*6.0)); gl_FragColor=vec4(vec3(0.82,0.55,0.25),a);
+#include <colorspace_fragment>
+}`;
+
+/** The "stand here" spot: marker on the ground, a soft light column, and a card on a post. */
+function makeSpot(r, kind) {
+  const vp = r.viewpoint, g = new THREE.Group(); const P = new V3(...vp.position);
+  const mk = new THREE.Group(); mk.position.set(P.x, 0.02, P.z); mk.rotation.y = -vp.yawDeg * DEG;
+  const decal = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), basicMat(markerTex, { depthWrite: false })); decal.rotation.x = -Math.PI / 2; decal.renderOrder = 2; mk.add(decal); g.add(mk);
+  const beamMat = new THREE.ShaderMaterial({ uniforms: { uAlpha: { value: 1 }, uTime: { value: 0 } }, vertexShader: VS_UV, fragmentShader: FS_BEAM, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.4, 16, 1, true), beamMat); beam.position.set(P.x, 1.7, P.z); g.add(beam);
+  const right = yawRight(vp.yawDeg), back = yawDir(vp.yawDeg).multiplyScalar(-1);
+  const cardG = new THREE.Group(); cardG.position.copy(P).addScaledVector(right, -1.05).addScaledVector(back, 0.25); cardG.position.y = 0; cardG.rotation.y = -(vp.yawDeg + 180 - 20) * DEG;
+  const cardW = 0.8, thumbH = (cardW - 0.09) * r.image.height / r.image.width, cardH = 0.045 + thumbH + 0.035 + 0.13 + 0.03;
+  const CARD = { thennow: ['Stand on the marker', 'and face the arrow'], mosaic: ['Stand on the marker', 'and the pieces meet'], finder: ['Stand on the marker', 'until the corners meet'], sharpen: ['Walk to the marker', 'and the picture appears'], window: ['Stand on the marker', 'and look through'] }[kind] || ['Stand on the marker', ''];
+  const ct = cardTexture({ wM: cardW, hM: cardH, year: r.year, line1: CARD[0], line2: CARD[1], thumb: (kind === 'mosaic' || kind === 'sharpen') ? null : photoCanvas });
+  const cardM = basicMat(ct); const card = new THREE.Mesh(new THREE.PlaneGeometry(cardW, cardH), cardM); card.position.y = 1.05 + cardH / 2; card.rotation.x = -0.18; cardG.add(card);
+  const pmat = new THREE.MeshStandardMaterial({ color: 0x1d1915, roughness: 0.6, transparent: true }); const postM = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.03, 1.08, 10), pmat); postM.position.y = 0.54; cardG.add(postM);
+  g.add(cardG);
+  return {
+    group: g, pick: [card, decal], P,
+    set(a, cardA, t) { const cw = cardG.getWorldPosition(new V3()); cardG.rotation.y = Math.PI - bearing(cw, camera.position) * DEG - contentRoot.rotation.y; decal.material.opacity = a; beamMat.uniforms.uAlpha.value = Math.min(a, cardA); beamMat.uniforms.uTime.value = t; cardM.opacity = cardA; pmat.opacity = cardA; cardG.visible = cardA > 0.01; },
+  };
+}
+
+/* ================================================================
+   The views - one model, several ways of drawing it
+   ================================================================ */
+class BaseView {
+  constructor(r) { this.rec = r; this.root = new THREE.Group(); this.pick = []; this.build(); }
+  dispose() { disposeTree(this.root); }
+  update() {}
+  hud() { return {}; }
+  onTap() { openDetails(this.rec); }
+}
+
+class FramedView extends BaseView {
+  build() {
+    const r = this.rec, w = r.widthM, h = w * r.image.height / r.image.width;
+    const mat = Math.max(0.05, w * 0.07), fw = clamp(w * 0.034, 0.03, 0.12);
+    const iw = w + 2 * mat, ih = h + 2 * mat, ow = iw + 2 * fw, oh = ih + 2 * fw;
+    this.tilt = new THREE.Group(); this.root.add(this.tilt);
+    const sh = new THREE.Shape(); sh.moveTo(-ow / 2, -oh / 2); sh.lineTo(ow / 2, -oh / 2); sh.lineTo(ow / 2, oh / 2); sh.lineTo(-ow / 2, oh / 2); sh.closePath();
+    const hole = new THREE.Path(); hole.moveTo(-iw / 2, -ih / 2); hole.lineTo(-iw / 2, ih / 2); hole.lineTo(iw / 2, ih / 2); hole.lineTo(iw / 2, -ih / 2); hole.closePath(); sh.holes.push(hole);
+    const fg = new THREE.ExtrudeGeometry(sh, { depth: 0.028, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.011, bevelSegments: 3, curveSegments: 1 });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x2b2018, roughness: 0.45, metalness: 0.05, transparent: true });
+    const frame = new THREE.Mesh(fg, frameMat);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(ow, oh, 0.014), new THREE.MeshStandardMaterial({ color: 0x15110d, roughness: 0.8, transparent: true })); back.position.z = -0.02;
+    const matMesh = new THREE.Mesh(new THREE.PlaneGeometry(iw, ih), basicMat(matTexture(iw, ih, w, h))); matMesh.position.z = 0.004;
+    this.photoMat = developMaterial(photoTex, false); const photo = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.photoMat); photo.position.z = 0.007;
+    const pl = framedPlate(r, ow); const plate = new THREE.Mesh(new THREE.PlaneGeometry(pl.w, pl.h), basicMat(pl.tex)); plate.position.set(0, -oh / 2 - 0.05 - pl.h / 2, 0.0);
+    this.tilt.add(frame, back, matMesh, photo, plate);
+    this.shadow = shadowDecal(ow * 1.2, 0.9, 0.2); this.root.add(this.shadow);
+    this.pick = [frame, matMesh, photo, plate, back];
+    this.fadeMats = [frameMat, back.material, matMesh.material, plate.material];
+    this.sel = { obj: this.tilt, w: ow, h: oh + 0.05 + pl.h, cy: -(0.05 + pl.h) / 2 };
+    this.applyPose();
+  }
+  applyPose() { const p = this.rec.pose; this.root.position.set(p.position[0], 0, p.position[2]); this.root.rotation.y = Math.PI - p.yawDeg * DEG; this.tilt.rotation.x = -(p.pitchDeg || 0) * DEG; this.baseY = p.position[1]; }
+  setAppear(a) { const e = sstep(0, 0.45, a); for (const m of this.fadeMats) m.opacity = e; this.photoMat.uniforms.uAlpha.value = e; this.photoMat.uniforms.uDev.value = sstep(0.3, 1, a); this.shadow.material.opacity = 0.2 * e; this.tilt.position.y = this.baseY - 0.12 * (1 - sstep(0, 0.7, a)); this.root.visible = a > 0.002; }
+}
+
+class CutoutView extends BaseView {
+  build() {
+    const r = this.rec, w = r.widthM, h = w * r.image.height / r.image.width; this.w = w; this.h = h;
+    const geo = new THREE.PlaneGeometry(w, h); geo.translate(0, h / 2, 0);
+    this.mat = developMaterial(stallTex, true); this.mesh = new THREE.Mesh(geo, this.mat); this.mesh.renderOrder = 3;
+    this.inner = new THREE.Group(); this.inner.add(this.mesh); this.root.add(this.inner);
+    this.shadow = shadowDecal(w * 1.05, 1.35, 0.34); this.shadow.position.z = -0.3; this.root.add(this.shadow);
+    this.pick = [this.mesh]; this.tagMat = null; this.stakeMat = null;
+    if (r.showTag !== false) {   // the tag is the creator's choice; the cut-out itself stays tappable without it
+      const tw = 0.62, th = 0.215; const tt = cardTexture({ wM: tw, hM: th, year: r.year, line1: firstPhrase(r.caption), line2: 'Tap for the story' });
+      this.tagMat = basicMat(tt); const tag = new THREE.Mesh(new THREE.PlaneGeometry(tw, th), this.tagMat);
+      const tagG = new THREE.Group(); tagG.position.set(-w * 0.5 * 0.55, 0, 0.75); tag.position.y = 0.62; tag.rotation.x = -0.6; tagG.add(tag);
+      this.stakeMat = new THREE.MeshStandardMaterial({ color: 0x1d1915, roughness: 0.6, transparent: true }); const stake = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.016, 0.6, 8), this.stakeMat); stake.position.y = 0.3; tagG.add(stake);
+      this.root.add(tagG); this.pick.push(tag);
+    }
+    this.sel = { obj: this.inner, w: w, h: h, cy: h / 2 };
+    this.applyPose();
+  }
+  applyPose() { const p = this.rec.pose; this.root.position.set(p.position[0], 0, p.position[2]); this.root.rotation.y = Math.PI - p.yawDeg * DEG; }
+  update() {
+    const n = new V3(0, 0, 1).applyQuaternion(this.root.getWorldQuaternion(new THREE.Quaternion()));
+    const p = this.root.getWorldPosition(new V3()); const to = camera.position.clone().sub(p).setY(0).normalize();
+    this.mat.uniforms.uFacing.value = sstep(0.1, 0.4, Math.abs(n.dot(to)));
+  }
+  setAppear(a) { const e = sstep(0, 0.5, a); this.mat.uniforms.uAlpha.value = e; this.mat.uniforms.uDev.value = sstep(0.3, 1, a); this.inner.scale.y = 0.93 + 0.07 * sstep(0, 0.8, a); this.shadow.material.opacity = 0.34 * e; if (this.tagMat) { this.tagMat.opacity = sstep(0.5, 1, a); this.stakeMat.opacity = sstep(0.5, 1, a); } this.root.visible = a > 0.002; }
+  onTap() { openDetails(this.rec, { textOnly: true }); }   // the picture is already standing there: the sheet carries the words
+}
+function firstSentence(t) { const s = String(t || '').split(/(?<=[.!?])\s/)[0]; return s.length > 110 ? s.slice(0, 108).replace(/\s+\S*$/, '') + '…' : s; }
+function firstPhrase(t) { const s = String(t || '').split(/[.;:]/)[0]; return s.length > 34 ? s.slice(0, 33).replace(/\s+\S*$/, '') + '…' : s; }
+
+/** Distance from the camera to the spot, in the world (honours the simulated placement error). */
+function spotState(P, vp) {
+  const Pw = contentRoot.localToWorld(P.clone()); const cam = camera.position; const ep = Math.hypot(cam.x - Pw.x, cam.z - Pw.z);
+  const yawW = vp.yawDeg - (contentRoot.rotation.y / DEG); const f = curFP();
+  return { ep, Pw, ang: Math.abs(wrapDeg(f.yaw - yawW)), turn: wrapDeg(yawW - f.yaw), toward: wrapDeg(bearing(cam, Pw) - f.yaw) };
+}
+function spotHint(st, verbFar) {
+  if (st.ep > 1.0) return { text: verbFar, dist: st.ep, arrow: st.toward };
+  if (st.ang > 28) return { text: 'Turn this way', arrow: st.turn };
+  return null;
+}
+
+class ThenNowView extends BaseView {
+  build() {
+    const r = this.rec, vp = r.viewpoint; if (!vp) { this.ok = false; return; } this.ok = true;
+    this.P = new V3(...vp.position);
+    this.pic = new PicturePlane(r, { order: 50 }); this.root.add(this.pic.holder);
+    this.spot = makeSpot(r, 'thennow'); this.root.add(this.spot.group); this.pick = this.spot.pick;
+    this.a = 0; this.aligned = false; this.lostFor = Infinity;
+  }
+  setAppear(a) { this.a = a; this.root.visible = a > 0.002; }
+  update(dt, t) {
+    if (!this.ok) return; const st = spotState(this.P, this.rec.viewpoint); this.st = st;
+    const near = sstep(TN.ramp[0], TN.ramp[1], st.ep);
+    // alignment with hysteresis: it starts inside the tight gate and ends only well outside it, so a wobble across
+    // the gate neither drops the controls nor replays the intro
+    const was = this.aligned;
+    if (S.mode !== 'visitor') this.aligned = false;
+    else if (!was) this.aligned = this.a > 0.5 && near > 0.6 && st.ang < TN.enterDeg;
+    else this.aligned = !(near < 0.3 || st.ang > TN.leaveDeg);
+    if (this.aligned && !was) { if (this.lostFor >= TN.freshAfterS && S.tnMode === 'fade') startIntro(); this.lostFor = 0; }
+    if (!this.aligned) this.lostFor += dt;
+    if (S.intro) {   // the intro: the old picture fades from nothing to about half, then the slider takes over
+      S.intro.t += dt; const k = clamp(S.intro.t / TN.introS, 0, 1); S.fade = TN.introTo * sstep(0, 1, k);
+      $('#fadeR').value = S.fade; if (k >= 1) S.intro = null;
+    }
+    let alpha = this.a * pictureAlpha(st, TN.ramp, TN.gate), fade = 1, swipe = false;
+    if (S.mode === 'visitor') { swipe = S.tnMode === 'swipe' && this.aligned; if (S.tnMode === 'fade') fade = S.fade; }
+    if (S.mode === 'editor') alpha = S.pov ? 0.92 : 0.55;
+    if (S.mode === 'creator' && S.ctool === 'viewpoint') alpha = 0;
+    this.pic.set(alpha, { swipe, fade, split: S.split * renderer.domElement.width });
+    this.spot.set(this.a * (S.mode === 'editor' ? 1 : 1 - near * 0.6), this.a * (1 - sstep(1.6, 0.8, st.ep)), t);
+  }
+  hud() {
+    if (!this.ok) return { hint: { text: 'This view needs a viewpoint' } };
+    if (S.mode !== 'visitor' || this.a < 0.5) return {};
+    if (this.aligned) return { swipe: true, cap: { year: this.rec.year, text: firstSentence(this.rec.caption), meta: S.tnMode === 'swipe' ? 'Drag the line to compare' : 'Slide between then and today' } };
+    const h = spotHint(this.st, 'Walk to the marker'); return h ? { hint: h } : {};
+  }
+}
+function startIntro() { S.intro = { t: 0 }; S.fade = 0; $('#fadeR').value = 0; }
+
+const VS_MOS = `
+uniform float uTime, uBob, uGap, uAppear;
+attribute vec3 aCenter; attribute vec3 aBob; attribute float aRand; attribute vec2 aLocal;
+varying vec2 vUv; varying vec2 vLocal; varying float vA;
+void main(){
+  vec3 p = aCenter + (position - aCenter)*uGap;
+  p += aBob * sin(uTime*0.7 + aRand*6.2831) * uBob;
+  vUv=uv; vLocal=aLocal;
+  vA = smoothstep(aRand*0.6, aRand*0.6+0.4, uAppear);
+  gl_Position = projectionMatrix*viewMatrix*vec4(p,1.0);
+}`;
+const FS_MOS = `
+uniform sampler2D uTex; uniform float uSeam; varying vec2 vUv; varying vec2 vLocal; varying float vA;
+void main(){
+  float edge=min(min(vLocal.x,1.0-vLocal.x),min(vLocal.y,1.0-vLocal.y));
+  vec3 col;
+  if(gl_FrontFacing){ col=texture2D(uTex,vUv).rgb; col*=mix(1.0, 0.72+0.28*smoothstep(0.0,0.07,edge), uSeam); }
+  else { col=vec3(0.016,0.013,0.011)+vec3(0.35,0.22,0.09)*(1.0-smoothstep(0.0,0.045,edge)); }
+  if(vA<0.004) discard;
+  gl_FragColor=vec4(col,vA);
+  #include <colorspace_fragment>
+}`;
+class MosaicView extends BaseView {
+  build() {
+    const r = this.rec, vp = r.viewpoint; if (!vp) { this.ok = false; return; } this.ok = true;
+    const P = new V3(...vp.position); this.P = P; const dirH = yawDir(vp.yawDeg);
+    let D = new V3(...r.pose.position).sub(P).setY(0).dot(dirH); D = clamp(D, 3, 200);
+    const asp = r.image.width / r.image.height, tw = Math.tan(vp.hfovDeg * DEG / 2), th = tw / asp;
+    const cols = 14, rows = Math.max(4, Math.round(cols / asp)); this.count = cols * rows;
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(vp.pitchDeg * DEG, -vp.yawDeg * DEG, 0, 'YXZ'));
+    const rnd = rng(77); const pos = [], uv = [], cen = [], bob = [], rr = [], loc = [], idx = [];
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+      const u0 = i / cols, u1 = (i + 1) / cols, v0 = j / rows, v1 = (j + 1) / rows;
+      const cx = (2 * (u0 + u1) / 2 - 1) * tw, cy = (2 * (v0 + v1) / 2 - 1) * th;
+      const dirW = new V3(cx, cy, -1).applyQuaternion(q);
+      let d = D * (0.62 + 0.8 * rnd());
+      const low = new V3(cx, (2 * v0 - 1) * th, -1).applyQuaternion(q); if (low.y < 0) { const maxd = (P.y - 0.12) / (-low.y); d = Math.min(d, maxd * (0.86 + 0.12 * rnd())); }
+      d = Math.max(d, 2.4);
+      const center = new V3(cx * d, cy * d, -d).applyQuaternion(q).add(P);
+      const base = pos.length / 3; const ar = rnd(); const b = new V3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
+      for (const [uu, vv, lx, ly] of [[u0, v0, 0, 0], [u1, v0, 1, 0], [u1, v1, 1, 1], [u0, v1, 0, 1]]) {
+        const x = (2 * uu - 1) * tw * d, y = (2 * vv - 1) * th * d; const w = new V3(x, y, -d).applyQuaternion(q).add(P);
+        pos.push(w.x, w.y, w.z); uv.push(uu, vv); cen.push(center.x, center.y, center.z); bob.push(b.x, b.y, b.z); rr.push(ar); loc.push(lx, ly);
+      }
+      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setAttribute('aCenter', new THREE.Float32BufferAttribute(cen, 3)); geo.setAttribute('aBob', new THREE.Float32BufferAttribute(bob, 3));
+    geo.setAttribute('aRand', new THREE.Float32BufferAttribute(rr, 1)); geo.setAttribute('aLocal', new THREE.Float32BufferAttribute(loc, 2)); geo.setIndex(idx);
+    this.mat = new THREE.ShaderMaterial({ uniforms: { uTex: { value: photoTex }, uTime: { value: 0 }, uBob: { value: 0 }, uGap: { value: 0.9 }, uAppear: { value: 1 }, uSeam: { value: 1 } }, vertexShader: VS_MOS, fragmentShader: FS_MOS, transparent: true, side: THREE.DoubleSide });
+    this.mesh = new THREE.Mesh(geo, this.mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = 4; this.root.add(this.mesh);
+    this.spot = makeSpot(r, 'mosaic'); this.root.add(this.spot.group); this.pick = [...this.spot.pick, this.mesh]; this.a = 0;
+  }
+  setAppear(a) { this.a = a; this.root.visible = a > 0.002; }
+  update(dt, t) {
+    if (!this.ok) return; const st = spotState(this.P, this.rec.viewpoint); this.st = st;
+    const settle = sstep(4, 0.8, st.ep), asm = sstep(0.75, 0.2, st.ep); const u = this.mat.uniforms;
+    u.uTime.value = t; u.uAppear.value = this.a;
+    if (S.mode === 'editor') { u.uBob.value = 0; u.uGap.value = 0.93; u.uSeam.value = 1; }
+    else { u.uBob.value = 0.07 * (1 - settle); u.uGap.value = lerp(0.9, 1.0, asm); u.uSeam.value = 1 - asm; }
+    this.spot.set(this.a * (1 - asm * 0.7), this.a * (1 - sstep(1.6, 0.8, st.ep)), t);
+    this.asm = asm;
+  }
+  hud() {
+    if (!this.ok) return { hint: { text: 'This view needs a viewpoint' } };
+    if (S.mode !== 'visitor' || this.a < 0.5) return {};
+    if (this.asm > 0.8 && this.st.ang < 40) return { cap: { year: this.rec.year, text: firstSentence(this.rec.caption), meta: 'You stand where the photographer stood' } };
+    const h = spotHint(this.st, this.st.ep < 6 ? 'Step onto the marker' : 'Walk to the marker'); return h ? { hint: h } : {};
+  }
+}
+
+class ViewerView extends BaseView {
+  build() {
+    const r = this.rec, vp = r.viewpoint; if (!vp) { this.ok = false; return; } this.ok = true;
+    const P = new V3(...vp.position); this.P = P;
+    const g = new THREE.Group(); g.position.set(P.x, 0, P.z); g.rotation.y = -vp.yawDeg * DEG; this.root.add(g); this.g = g;
+    const body = new THREE.MeshStandardMaterial({ color: 0x2b4a44, roughness: 0.4, metalness: 0.15, transparent: true });
+    const brass = new THREE.MeshStandardMaterial({ color: 0xd2ad62, roughness: 0.35, metalness: 0.25, transparent: true });
+    const rubber = new THREE.MeshStandardMaterial({ color: 0x141210, roughness: 0.8, transparent: true });
+    this.mats = [body, brass, rubber];
+    const st = new THREE.Group(); st.position.z = -0.42; g.add(st);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.33, 0.07, 36), body); base.position.y = 0.035; st.add(base);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.012, 8, 40), brass); ring.rotation.x = Math.PI / 2; ring.position.y = 0.07; st.add(ring);
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.075, 1.1, 24), body); col.position.y = 0.62; st.add(col);
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.05, 24), brass); collar.position.y = 1.18; st.add(collar);
+    const yoke = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.05, 0.08), body); yoke.position.y = 1.23; st.add(yoke);
+    for (const x of [-0.16, 0.16]) { const arm = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.16, 0.06), body); arm.position.set(x, 1.3, 0); st.add(arm); }
+    const head = new THREE.Group(); head.position.y = 1.36; head.rotation.x = vp.pitchDeg * DEG; st.add(head);
+    const hb = new THREE.Mesh(new THREE.CapsuleGeometry(0.115, 0.2, 8, 24), body); hb.rotation.z = Math.PI / 2; head.add(hb);
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.02, 0.2), body); visor.position.set(0, 0.125, -0.02); head.add(visor);
+    for (const x of [-0.105, 0.105]) {
+      const hood = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.07, 0.16, 28, 1, true), body); hood.material.side = THREE.DoubleSide; hood.rotation.x = Math.PI / 2; hood.position.set(x, 0, -0.16); head.add(hood);
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.009, 8, 32), brass); rim.position.set(x, 0, -0.24); head.add(rim);
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.068, 28), new THREE.MeshStandardMaterial({ color: 0x0c1418, roughness: 0.1, metalness: 0.5, transparent: true })); lens.position.set(x, 0, -0.2); lens.rotation.y = Math.PI; head.add(lens); this.mats.push(lens.material);
+      const eye = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.04, 0.07, 20), rubber); eye.rotation.x = Math.PI / 2; eye.position.set(x * 0.85, 0.01, 0.15); head.add(eye);
+    }
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.118, 0.118, 0.035, 28), brass); band.rotation.z = Math.PI / 2; head.add(band);
+    // plate on the column, facing the visitor
+    const pt = cardTexture({ wM: 0.8, hM: 0.353, year: r.year, line1: 'Step up to it', line2: 'and see the square then', ppm: 500 });
+    this.plateMat = basicMat(pt); const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.15), this.plateMat); plate.position.set(0, 0.95, 0.08); plate.rotation.x = -0.35; st.add(plate);
+    this.shadow = shadowDecal(0.9, 0.9, 0.3); this.shadow.position.z = -0.42; g.add(this.shadow);
+    const halo = new THREE.Mesh(new THREE.RingGeometry(0.46, 0.5, 64), new THREE.MeshBasicMaterial({ color: 0xe9b872, transparent: true, opacity: 0.6, depthWrite: false })); halo.rotation.x = -Math.PI / 2; halo.position.set(0, 0.015, -0.42); g.add(halo); this.halo = halo;
+    this.pick = []; st.traverse(o => { if (o.isMesh) this.pick.push(o); });
+    // the picture it shows, in the world: the same plane as then-and-now, fading in as the viewer fades out
+    this.pic = new PicturePlane(r, { order: 50 }); this.root.add(this.pic.holder); this.pick.push(this.pic.mesh);
+    this.a = 0; this.k = 0;
+  }
+  setAppear(a) { this.a = a; this.root.visible = a > 0.002; if (this.g) this.g.position.y = -0.25 * (1 - sstep(0, 0.8, a)); }
+  update(dt, t) {
+    if (!this.ok) return; const st = spotState(this.P, this.rec.viewpoint); this.st = st;
+    const k = S.mode === 'editor' ? 0 : pictureAlpha(st, VIEWER.ramp, VIEWER.gate); this.k = k;
+    const e = sstep(0, 0.6, this.a) * (1 - k);   // the viewer gives way to the picture
+    for (const m of this.mats) m.opacity = e; this.plateMat.opacity = e; this.shadow.material.opacity = 0.3 * e; this.g.visible = e > 0.01;
+    this.halo.material.opacity = e * (0.35 + 0.25 * Math.sin(t * 2.2)) * (st.ep < 4.5 ? 1 : 0.5);
+    this.pic.set(S.mode === 'editor' ? (S.pov ? 0.92 : 0.55) : this.a * k);
+  }
+  hud() {
+    if (!this.ok || S.mode !== 'visitor' || this.a < 0.5 || S.overlay) return {};
+    if (this.k > 0.8) return { cap: { year: this.rec.year, text: firstSentence(this.rec.caption), meta: 'The square from where the viewer stands' } };
+    if (this.st.ep > 6) return {};
+    const h = spotHint(this.st, 'Step up to the viewer'); return h ? { hint: h } : {};
+  }
+}
+/* ---------- viewpoint variants without tiles ---------- */
+/** A whole-picture plane on the viewpoint's axis at depth D, optionally a centre crop (crop = tan(half crop) / tan(half lens)). */
+function axisPlane(r, D, crop, mat) {
+  const vp = r.viewpoint, tw = Math.tan(vp.hfovDeg * DEG / 2) * crop, W = 2 * D * tw, H = W * r.image.height / r.image.width;
+  const geo = new THREE.PlaneGeometry(W, H); const uv = geo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, 0.5 + (uv.getX(i) - 0.5) * crop, 0.5 + (uv.getY(i) - 0.5) * crop);
+  const m = new THREE.Mesh(geo, mat); m.position.z = -D; m.frustumCulled = false;
+  const holder = new THREE.Object3D(); holder.position.set(...vp.position); holder.rotation.set(vp.pitchDeg * DEG, -vp.yawDeg * DEG, 0, 'YXZ'); holder.add(m);
+  return { holder, mesh: m, W, H };
+}
+function poseDepth(r) { const vp = r.viewpoint, P = new V3(...vp.position); return clamp(new V3(...r.pose.position).sub(P).setY(0).dot(yawDir(vp.yawDeg)), 3, 200); }
+
+/* ---------- one mechanism for the pictures that appear at the spot ----------
+   Then-and-now, Sharpen and Viewer all show the whole picture on one plane at the subject's depth, on the
+   viewpoint's axis, sized by the lens. Its opacity is proximity x facing: a distance ramp (far -> near, in m from
+   the spot) times a facing gate (out -> in, in degrees between the visitor's heading and the viewpoint's). Only
+   the numbers differ per view. */
+function pictureAlpha(st, ramp, gate) { return sstep(ramp[0], ramp[1], st.ep) * sstep(gate[0], gate[1], st.ang); }
+class PicturePlane {
+  constructor(r, o = {}) {
+    this.mat = thenNowMaterial(photoTex); const u = this.mat.uniforms; u.uMode.value = 1; u.uFade.value = 1;
+    if (o.feather != null) u.uFeather.value = o.feather;
+    const pl = axisPlane(r, poseDepth(r), 1, this.mat); pl.mesh.renderOrder = o.order ?? 50;
+    this.holder = pl.holder; this.mesh = pl.mesh;
+  }
+  set(alpha, o = {}) { const u = this.mat.uniforms; u.uAlpha.value = alpha; u.uMode.value = o.swipe ? 0 : 1; u.uFade.value = o.fade ?? 1; if (o.split != null) u.uSplit.value = o.split; }
+}
+/* Then-and-now: the picture shows within 2.6 m of the spot and while facing within about 50 degrees of the
+   viewpoint; "aligned" (the controls, the intro) starts under 32 degrees and ends past 44 degrees; the intro fades
+   0 -> 55 % over 5 s and replays only after alignment was lost for 1.5 s or more. */
+const TN = { ramp: [2.6, 0.9], gate: [50, 30], enterDeg: 32, leaveDeg: 44, freshAfterS: 1.5, introTo: 0.55, introS: 5 };
+/* The viewer: it gives way to the picture over the last 3 m and while facing within about 50 degrees. */
+const VIEWER = { ramp: [3.0, 0.8], gate: [50, 25] };
+/* Sharpen, now a plain fade-in. Three distance ramps x three facing gates are swept (sharpenSweep below, shown in
+   the notes); `pick` is the default, chosen from that sweep. The fourth ramp and gate move only an inner end
+   (0.3 m, 10 degrees); they are swept once each against the default (`inner`), not across the grid. */
+const SHARPEN = { ramps: [[4, 0.5], [7, 0.5], [12, 0.5], [7, 0.3]], gates: [[40, 15], [70, 15], [100, 15], [70, 10]], grid: 3, inner: [[3, 1], [1, 3]], pick: [1, 1] };
+const sharpenParams = () => ({ ramp: SHARPEN.ramps[SHARPEN.pick[0]], gate: SHARPEN.gates[SHARPEN.pick[1]] });
+/** The sweep, by the same pictureAlpha the view uses, on the hall record's own viewpoint:
+ *  footprint - share of the station circle (1 m grid) where the picture shows at 10 % or more while you look at it;
+ *  visibleFrom / halfFrom - on the walk in from the circle's south edge (looking at the picture), the distance to
+ *    the spot where it first shows at 10 % / 50 %;
+ *  turnTol - at the spot, how far you may turn from the original facing and still see it at 80 % or more;
+ *  sideStep - its opacity 1 m to the side of the spot, facing the original way. */
+function sharpenSweep() {
+  const r = hall, vp = r.viewpoint, P = new V3(...vp.position), D = poseDepth(r);
+  const C = P.clone().addScaledVector(new V3(0, 0, -1).applyEuler(new THREE.Euler(vp.pitchDeg * DEG, -vp.yawDeg * DEG, 0, 'YXZ')), D);
+  const at = (x, z, yaw, ramp, gate) => pictureAlpha({ ep: Math.hypot(x - P.x, z - P.z), ang: Math.abs(wrapDeg(yaw - vp.yawDeg)) }, ramp, gate);
+  const looking = (x, z) => bearing(new V3(x, 0, z), C);
+  const rows = [];
+  const pairs = [];
+  for (let ri = 0; ri < SHARPEN.grid; ri++) for (let gi = 0; gi < SHARPEN.grid; gi++) pairs.push([ri, gi]);
+  pairs.push(...SHARPEN.inner);
+  pairs.forEach(([ri, gi]) => {
+    const ramp = SHARPEN.ramps[ri], gate = SHARPEN.gates[gi];
+    let n = 0, vis = 0;
+    for (let x = -24.5; x <= 24.5; x += 1) for (let z = -24.5; z <= 24.5; z += 1) { if (x * x + z * z > 625) continue; n++; if (at(x, z, looking(x, z), ramp, gate) >= 0.1) vis++; }
+    const A = new V3(0, 0, 25), L = Math.hypot(P.x - A.x, P.z - A.z); let from10 = null, from50 = null;
+    for (let i = 0; i <= 400; i++) { const s = i / 400, x = lerp(A.x, P.x, s), z = lerp(A.z, P.z, s), a = at(x, z, looking(x, z), ramp, gate); if (from10 == null && a >= 0.1) from10 = L * (1 - s); if (from50 == null && a >= 0.5) from50 = L * (1 - s); }
+    let tol = 0; for (let d = 0; d <= 120; d += 0.5) { if (at(P.x, P.z, vp.yawDeg + d, ramp, gate) >= 0.8) tol = d; else break; }
+    const side = at(P.x + Math.cos(vp.yawDeg * DEG), P.z + Math.sin(vp.yawDeg * DEG), vp.yawDeg, ramp, gate);
+    rows.push({ ri, gi, ramp, gate, footprintPct: +(100 * vis / n).toFixed(1), visibleFromM: from10 == null ? null : +from10.toFixed(1), halfFromM: from50 == null ? null : +from50.toFixed(1), turnTolDeg: tol, sideStep: +side.toFixed(2), isDefault: ri === SHARPEN.pick[0] && gi === SHARPEN.pick[1] });
+  });
+  return rows;
+}
+function sweepTableHTML() {
+  return `<table class="sw"><tr><th>ramp (m)</th><th>gate (deg)</th><th>footprint</th><th>shows from</th><th>half from</th><th>turn at 80 %</th><th>1 m aside</th><th></th></tr>${sharpenSweep().map(w => `<tr class="${w.isDefault ? 'def' : ''}"><td>${w.ramp[0]} to ${w.ramp[1]}</td><td>${w.gate[0]} to ${w.gate[1]}</td><td>${w.footprintPct} %</td><td>${w.visibleFromM ?? '-'} m</td><td>${w.halfFromM ?? '-'} m</td><td>${w.turnTolDeg}°</td><td>${Math.round(w.sideStep * 100)} %</td><td><button data-sw="${w.ri},${w.gi}">${w.isDefault ? 'default' : 'try'}</button></td></tr>`).join('')}</table>`;
+}
+class SpotVariant extends BaseView {
+  setAppear(a) { this.a = a; this.root.visible = a > 0.002; }
+  capFor(meta) { return { year: this.rec.year, text: firstSentence(this.rec.caption), meta }; }
+}
+/** (a) Finder: four corner brackets, each on its own lens ray at a different depth; they read as one frame only from the spot. */
+class FinderView extends SpotVariant {
+  build() {
+    const r = this.rec, vp = r.viewpoint; if (!vp) { this.ok = false; return; } this.ok = true; this.P = new V3(...vp.position); this.a = 0;
+    const crop = Math.tan(18 * DEG) / Math.tan(vp.hfovDeg * DEG / 2), D = poseDepth(r);
+    const tw = Math.tan(vp.hfovDeg * DEG / 2) * crop, th = tw * r.image.height / r.image.width;
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(vp.pitchDeg * DEG, -vp.yawDeg * DEG, 0, 'YXZ'));
+    const ink = [], under = [];
+    for (const [sx, sy, d0] of [[-1, 1, D * 1.2], [1, 1, D * 0.75], [1, -1, 6.5], [-1, -1, 4.5]]) {
+      let d = d0; const ray = new V3(sx * tw, sy * th, -1).applyQuaternion(q); if (ray.y < 0) d = Math.min(d, (this.P.y - 0.25) / -ray.y);
+      const span = 2 * tw * d, L = span * 0.14, t = span * 0.013, cx = sx * tw * d, cy = sy * th * d;
+      const quad = (arr, x0, y0, x1, y1) => arr.push([[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(([x, y]) => new V3(x, y, -d).applyQuaternion(q).add(this.P)));
+      const arm = (arr, tt, o) => { const xa = cx + sx * o, xb = cx - sx * L; quad(arr, Math.min(xa, xb), cy - tt / 2, Math.max(xa, xb), cy + tt / 2); const ya = cy + sy * o, yb = cy - sy * L; quad(arr, cx - tt / 2, Math.min(ya, yb), cx + tt / 2, Math.max(ya, yb)); };
+      arm(under, t * 2.8, t * 0.9); arm(ink, t, t * 0.5);
+    }
+    const mk = (quads, color, op, order) => { const pos = [], idx = []; quads.forEach(p => { const b = pos.length / 3; p.forEach(v => pos.push(v.x, v.y, v.z)); idx.push(b, b + 1, b + 2, b, b + 2, b + 3); }); const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, depthTest: false, depthWrite: false, side: THREE.DoubleSide, toneMapped: false })); m.renderOrder = order; m.frustumCulled = false; this.root.add(m); return m; };
+    this.under = mk(under, 0x14110d, 0.55, 51); this.ink = mk(ink, 0xf4ede1, 1, 52);
+    this.fillMat = thenNowMaterial(photoTex); this.fillMat.uniforms.uMode.value = 1; this.fillMat.uniforms.uFeather.value = 0.004;
+    const pl = axisPlane(r, D, crop, this.fillMat); pl.mesh.renderOrder = 50; this.root.add(pl.holder);
+    this.spot = makeSpot(r, 'finder'); this.root.add(this.spot.group); this.pick = this.spot.pick;
+  }
+  update(dt, t) {
+    if (!this.ok) return; const st = spotState(this.P, this.rec.viewpoint); this.st = st;
+    const on = sstep(0.6, 0.2, st.ep), face = sstep(30, 12, st.ang); this.fill = S.mode === 'editor' ? 0.5 : on * face;
+    this.fillMat.uniforms.uAlpha.value = this.a * this.fill; this.fillMat.uniforms.uFade.value = 1;
+    this.ink.material.opacity = this.a * (1 - 0.35 * this.fill); this.under.material.opacity = this.a * 0.55 * (1 - 0.6 * this.fill);
+    this.ink.material.color.setHex(on > 0.5 ? 0xe9b872 : 0xf4ede1);
+    this.spot.set(this.a * (1 - on * 0.7), this.a * (1 - sstep(1.6, 0.8, st.ep)), t);
+  }
+  hud() {
+    if (!this.ok) return { hint: { text: 'This view needs a viewpoint' } }; if (S.mode !== 'visitor' || this.a < 0.5) return {};
+    if (this.fill > 0.8) return { cap: this.capFor('The corners meet where the photographer stood') };
+    if (this.st.ep <= 1.0 && this.st.ang <= 28) return { hint: { text: 'Step until the corners meet' } };
+    const h = spotHint(this.st, 'Walk to the marker'); return h ? { hint: h } : {};
+  }
+}
+/** (b) Sharpen, second round: no blur any more. One whole picture at the subject's depth, fully transparent far
+ *  away and opaque at the spot (the shared picture plane; its ramp and gate come from the sweep). */
+class SharpenView extends SpotVariant {
+  build() {
+    const r = this.rec, vp = r.viewpoint; if (!vp) { this.ok = false; return; } this.ok = true; this.P = new V3(...vp.position); this.a = 0;
+    this.pic = new PicturePlane(r, { order: 45, feather: 0.02 }); this.root.add(this.pic.holder);
+    this.spot = makeSpot(r, 'sharpen'); this.root.add(this.spot.group); this.pick = [...this.spot.pick, this.pic.mesh];
+  }
+  update(dt, t) {
+    if (!this.ok) return; const st = spotState(this.P, this.rec.viewpoint); this.st = st;
+    const { ramp, gate } = sharpenParams();
+    let k = pictureAlpha(st, ramp, gate); if (S.mode === 'editor') k = S.pov ? 0.92 : 0.55; this.sharp = k;
+    this.pic.set(this.a * k);
+    this.spot.set(this.a * (1 - k * 0.7), this.a * (1 - sstep(1.6, 0.8, st.ep)), t);
+  }
+  hud() {
+    if (!this.ok) return { hint: { text: 'This view needs a viewpoint' } }; if (S.mode !== 'visitor' || this.a < 0.5) return {};
+    if (this.sharp > 0.85) return { cap: this.capFor('Seen from where it was taken') };
+    const h = spotHint(this.st, 'Walk to the marker'); return h ? { hint: h } : {};
+  }
+}
+/** (d) Window: a small framed window 0.7 m in front of the spot, showing the matching centre crop; it exists only within about 1 m. */
+class WindowView extends SpotVariant {
+  build() {
+    const r = this.rec, vp = r.viewpoint; if (!vp) { this.ok = false; return; } this.ok = true; this.P = new V3(...vp.position); this.a = 0;
+    const crop = Math.tan(15 * DEG) / Math.tan(vp.hfovDeg * DEG / 2), D = 0.7;
+    this.mat = thenNowMaterial(photoTex); this.mat.uniforms.uMode.value = 1; this.mat.uniforms.uFeather.value = 0.0005; this.mat.uniforms.uFade.value = 1;
+    const pl = axisPlane(r, D, crop, this.mat); pl.mesh.renderOrder = 62; this.root.add(pl.holder);
+    const mw = 0.014, ew = 0.006; const mat = c => new THREE.MeshBasicMaterial({ color: c, transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
+    this.matM = mat(0xebe3d1); this.edgeM = mat(0x1a1510);
+    const edge = new THREE.Mesh(new THREE.PlaneGeometry(pl.W + 2 * (mw + ew), pl.H + 2 * (mw + ew)), this.edgeM); edge.position.z = -D - 0.002; edge.renderOrder = 60;
+    const mt = new THREE.Mesh(new THREE.PlaneGeometry(pl.W + 2 * mw, pl.H + 2 * mw), this.matM); mt.position.z = -D - 0.001; mt.renderOrder = 61;
+    const lt = cardTexture({ wM: 0.8, hM: 0.2, year: r.year, line1: firstPhrase(r.caption), line2: 'Seen from this spot', ppm: 600 }); this.labM = basicMat(lt, { depthTest: false, depthWrite: false });
+    const lab = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.05), this.labM); lab.position.set(0, -pl.H / 2 - mw - 0.034, -D); lab.renderOrder = 61;
+    pl.holder.add(edge, mt, lab); this.parts = [this.matM, this.edgeM, this.labM];
+    this.spot = makeSpot(r, 'window'); this.root.add(this.spot.group); this.pick = [...this.spot.pick, pl.mesh];
+  }
+  update(dt, t) {
+    if (!this.ok) return; const st = spotState(this.P, this.rec.viewpoint); this.st = st;
+    let w = sstep(1.25, 0.65, st.ep); if (S.mode === 'editor') w = 1; this.w = w;
+    const al = this.a * w; this.mat.uniforms.uAlpha.value = al; for (const m of this.parts) m.opacity = al;
+    this.spot.set(this.a * (1 - w * 0.6), this.a * (1 - sstep(1.6, 0.8, st.ep)), t);
+  }
+  hud() {
+    if (!this.ok) return { hint: { text: 'This view needs a viewpoint' } }; if (S.mode !== 'visitor' || this.a < 0.5) return {};
+    if (this.w > 0.6 && this.st.ang <= 28) return { cap: this.capFor('A window onto the same view') };
+    const h = spotHint(this.st, 'Walk to the marker'); return h ? { hint: h } : {};
+  }
+}
+const VIEW_CLASS = { 'viewpoint-finder': FinderView, 'viewpoint-sharpen': SharpenView, 'viewpoint-window': WindowView, framed: FramedView, cutout: CutoutView, 'then-now': ThenNowView, mosaic: MosaicView, viewer: ViewerView };
+
+/* ================================================================
+   Selection brackets (creator) and handles (editor)
+   ================================================================ */
+const amberLine = new THREE.LineBasicMaterial({ color: 0xe9b872, transparent: true, opacity: 0.95, depthTest: false });
+let selObj = null;
+function rebuildSelection() {
+  if (selObj) { selObj.parent && selObj.parent.remove(selObj); selObj.geometry.dispose(); selObj = null; }
+  if (S.mode !== 'creator' || !view || !view.sel) return;
+  const { obj, w, h, cy } = view.sel, k = Math.min(0.22, w * 0.15), x = w / 2 + 0.06, y = h / 2 + 0.06, z = 0.06, p = [];
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) { p.push(sx * x, cy + sy * y, z, sx * (x - k), cy + sy * y, z, sx * x, cy + sy * y, z, sx * x, cy + sy * (y - k), z); }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+  selObj = new THREE.LineSegments(geo, amberLine); selObj.renderOrder = 40; obj.add(selObj);
+}
+
+const handles = { group: new THREE.Group(), pick: [] }; scene.add(handles.group);
+const hm = (color, op) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+function flat(mesh, x, y, z) { mesh.rotation.x = -Math.PI / 2; mesh.position.set(x, y, z); mesh.renderOrder = 30; return mesh; }
+function lineObj(pts, color, op = 0.9) { const g = new THREE.BufferGeometry().setFromPoints(pts); const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: op, depthTest: false })); l.renderOrder = 30; return l; }
+function rebuildHandles() {
+  disposeTree(handles.group); handles.group.clear(); handles.pick = [];
+  if (S.mode !== 'editor' || S.pov) return;
+  const r = rec(), v = S.view, G = handles.group;
+  const add = (o, kind) => { o.userData.kind = kind; G.add(o); if (kind) handles.pick.push(o); return o; };
+  if (usesField(v, 'pose')) {
+    const p = r.pose, P = new V3(...p.position), A = 0xe9b872;
+    add(flat(new THREE.Mesh(new THREE.CircleGeometry(0.55, 48), hm(A, 0.3)), P.x, 0.03, P.z), 'pose-move');
+    add(flat(new THREE.Mesh(new THREE.RingGeometry(0.55, 0.64, 64), hm(A, 0.95)), P.x, 0.031, P.z));
+    const d = yawDir(p.yawDeg), kn = P.clone().setY(0.03).addScaledVector(d, 1.35);
+    add(lineObj([P.clone().setY(0.03).addScaledVector(d, 0.64), kn], A));
+    const knob = add(new THREE.Mesh(new THREE.SphereGeometry(0.17, 20, 14), hm(A, 1)), 'pose-turn'); knob.position.copy(kn); knob.renderOrder = 31;
+    add(flat(new THREE.Mesh(new THREE.RingGeometry(1.33, 1.37, 96), hm(A, 0.25)), P.x, 0.03, P.z));
+    if (P.y > 0.1) add(lineObj([P.clone().setY(0.03), P.clone()], A, 0.6));
+    if (v === 'framed' || v === 'cutout') {
+      const rt = yawRight(p.yawDeg).multiplyScalar(-1); // the print's local +x seen from the front is the world's -right of its facing
+      const h = v === 'framed' ? P.y : r.widthM * r.image.height / r.image.width / 2;
+      const wk = add(new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18), hm(0xffffff, 1)), 'width'); wk.position.copy(P).setY(h).addScaledVector(rt, r.widthM / 2 + (v === 'framed' ? 0.2 : 0.08)); wk.renderOrder = 31;
+    }
+  }
+  if (usesField(v, 'viewpoint') && r.viewpoint) {
+    const vp = r.viewpoint, P = new V3(...vp.position), B = 0x9ccbff, d = yawDir(vp.yawDeg);
+    add(flat(new THREE.Mesh(new THREE.CircleGeometry(0.5, 48), hm(B, 0.3)), P.x, 0.035, P.z), 'vp-move');
+    add(flat(new THREE.Mesh(new THREE.RingGeometry(0.5, 0.58, 64), hm(B, 0.95)), P.x, 0.036, P.z));
+    const R = 3.4, th0 = (90 - vp.yawDeg - vp.hfovDeg / 2) * DEG;
+    add(flat(new THREE.Mesh(new THREE.CircleGeometry(R, 48, th0, vp.hfovDeg * DEG), hm(B, 0.12)), P.x, 0.032, P.z));
+    const kn = P.clone().setY(0.03).addScaledVector(d, 1.3); add(lineObj([P.clone().setY(0.03).addScaledVector(d, 0.58), kn], B));
+    const knob = add(new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 14), hm(B, 1)), 'vp-turn'); knob.position.copy(kn);
+    const edgeDir = yawDir(vp.yawDeg + vp.hfovDeg / 2), fk = P.clone().setY(0.03).addScaledVector(edgeDir, R);
+    const fknob = add(new THREE.Mesh(new THREE.OctahedronGeometry(0.2), hm(B, 1)), 'vp-fov'); fknob.position.copy(fk);
+    // the camera glyph and its frustum out to the picture's depth
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(vp.pitchDeg * DEG, -vp.yawDeg * DEG, 0, 'YXZ'));
+    let D = new V3(...r.pose.position).sub(P).setY(0).dot(d); D = clamp(D, 3, 200); if (v === 'viewer') D = 6;
+    const tw = Math.tan(vp.hfovDeg * DEG / 2), th = tw * r.image.height / r.image.width;
+    const c = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => new V3(sx * tw * D, sy * th * D, -D).applyQuaternion(q).add(P));
+    const fl = []; for (const k of c) fl.push(P, k); for (let i = 0; i < 4; i++) fl.push(c[i], c[(i + 1) % 4]);
+    const fg = new THREE.BufferGeometry().setFromPoints(fl); const fls = new THREE.LineSegments(fg, new THREE.LineBasicMaterial({ color: B, transparent: true, opacity: 0.55, depthTest: false })); fls.renderOrder = 30; G.add(fls);
+    const camG = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.24, 0.2), hm(B, 0.9)); camG.position.copy(P); camG.quaternion.copy(q); camG.renderOrder = 31; G.add(camG);
+    add(lineObj([P.clone().setY(0.03), P.clone()], B, 0.6));
+  }
+}
+let drag = null;
+const groundPlane = new THREE.Plane(new V3(0, 1, 0), 0);
+function groundHit(e) { const ray = rayFromEvent(e); const p = new V3(); return ray.ray.intersectPlane(groundPlane, p) ? p : null; }
+function rayFromEvent(e) { const rc = canvas.getBoundingClientRect(); const ndc = new THREE.Vector2(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1); const ray = new THREE.Raycaster(); ray.setFromCamera(ndc, camera); return ray; }
+function startHandleDrag(e) {
+  if (!handles.pick.length) return false; const hit = rayFromEvent(e).intersectObjects(handles.pick, false)[0]; if (!hit) return false;
+  const kind = hit.object.userData.kind, gp = groundHit(e) || new V3(); const r = rec();
+  drag = { kind, off: kind === 'pose-move' ? new V3(r.pose.position[0] - gp.x, 0, r.pose.position[2] - gp.z) : kind === 'vp-move' ? new V3(r.viewpoint.position[0] - gp.x, 0, r.viewpoint.position[2] - gp.z) : null };
+  return true;
+}
+function moveHandleDrag(e) {
+  const gp = groundHit(e); if (!gp) return; const r = rec(), p = r.pose, vp = r.viewpoint;
+  switch (drag.kind) {
+    case 'pose-move': p.position[0] = round(gp.x + drag.off.x, 0.05); p.position[2] = round(gp.z + drag.off.z, 0.05); break;
+    case 'pose-turn': p.yawDeg = (round(Math.atan2(gp.x - p.position[0], -(gp.z - p.position[2])) / DEG, 1) + 360) % 360; break;
+    case 'width': { const P = new V3(...p.position); const rt = yawRight(p.yawDeg).multiplyScalar(-1); const s = gp.clone().sub(P).setY(0).dot(rt); r.widthM = clamp(round(2 * (s - (S.view === 'framed' ? 0.2 : 0.08)), 0.05), 0.3, 8); break; }
+    case 'vp-move': vp.position[0] = round(gp.x + drag.off.x, 0.05); vp.position[2] = round(gp.z + drag.off.z, 0.05); break;
+    case 'vp-turn': vp.yawDeg = wrapDeg(round(Math.atan2(gp.x - vp.position[0], -(gp.z - vp.position[2])) / DEG, 1)); break;
+    case 'vp-fov': { const b = Math.atan2(gp.x - vp.position[0], -(gp.z - vp.position[2])) / DEG; vp.hfovDeg = clamp(round(2 * Math.abs(wrapDeg(b - vp.yawDeg)), 1), 20, 110); break; }
+  }
+  markDirty();
+}
+
+/* ================================================================
+   View management
+   ================================================================ */
+let view = null;
+function rebuildView() {
+  if (view) { contentRoot.remove(view.root); view.dispose(); }
+  view = new VIEW_CLASS[S.view](rec()); contentRoot.add(view.root); view.setAppear(S.mode === 'visitor' ? S.appear : 1);
+  rebuildSelection(); rebuildHandles();
+}
+function markDirty() { S.dirty = true; }
+
+/* ================================================================
+   Overlays: details sheet, toast
+   ================================================================ */
+function imageCanvasFor(r) { return r === stall ? stallCanvas : photoCanvas; }
+function openDetails(r, o = {}) {
+  r = r || rec(); const sh = $('#sheet'); sh.classList.remove('hidden'); S.overlay = 'sheet';
+  const textOnly = !!o.textOnly; sh.querySelector('.card').classList.toggle('textonly', textOnly);
+  if (!textOnly) {
+    const cv = sh.querySelector('canvas'), img = imageCanvasFor(r); cv.width = img.width; cv.height = img.height; const g = cv.getContext('2d'); g.clearRect(0, 0, cv.width, cv.height);
+    if (r.image.alpha) { g.fillStyle = '#2a251f'; g.fillRect(0, 0, cv.width, cv.height); }
+    g.drawImage(img, 0, 0);
+  }
+  sh.querySelector('.yr').textContent = r.year != null ? r.year : '';
+  sh.querySelector('.capt').textContent = r.caption || '';
+  sh.querySelector('.cred').textContent = r.credit || '';
+  sh.querySelector('.src').textContent = `${r.image.width} x ${r.image.height} px${r.image.alpha ? ', cut out' : ''}`;
+}
+function closeOverlays() { $('#sheet').classList.add('hidden'); S.overlay = null; }
+$('#sheet .scrim').addEventListener('click', closeOverlays); $('#sheet .close').addEventListener('click', closeOverlays);
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+let toastT = 0; function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 1900); }
+
+/* ================================================================
+   UI: bars, pickers, panels
+   ================================================================ */
+const viewsEl = $('#views');
+viewsEl.innerHTML = VIEWS.map(v => `<button data-view="${v}" title="${esc(VIEW_LINE[v])}">${VIEW_LABEL[v]}</button>`).join('');
+viewsEl.addEventListener('click', e => { const b = e.target.closest('button'); if (b) setView(b.dataset.view); });
+$('#modes').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setMode(b.dataset.mode, { user: true }); });
+$('#bFields').addEventListener('click', () => { $('#fields').classList.toggle('hidden'); $('#notes').classList.add('hidden'); syncChrome(); });
+$('#bNotes').addEventListener('click', () => { $('#notes').classList.toggle('hidden'); $('#fields').classList.add('hidden'); syncChrome(); });
+$('#bPhone').addEventListener('click', () => { S.phone = !S.phone; layout(); syncChrome(); });
+$('#bErr').addEventListener('click', () => { S.err = !S.err; syncChrome(); toast(S.err ? 'Content shifted 0.8 m and turned 3 degrees' : 'Placement error off'); });
+$('#tnMode').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { S.tnMode = b.dataset.m; S.intro = null; syncChrome(); } });
+// a touch on the slider ends the intro: from then on the visitor's own value holds
+$('#fadeR').addEventListener('pointerdown', () => { S.intro = null; });
+$('#fadeR').addEventListener('input', e => { S.intro = null; S.fade = +e.target.value; });
+$('#cap').addEventListener('click', () => openDetails(rec()));
+(() => { // swipe knob
+  const kn = $('#swipe .kn'); let on = false;
+  kn.addEventListener('pointerdown', e => { on = true; kn.setPointerCapture(e.pointerId); e.stopPropagation(); });
+  kn.addEventListener('pointermove', e => { if (!on) return; const rc = stage.getBoundingClientRect(); S.split = clamp((e.clientX - rc.left) / rc.width, 0.04, 0.96); });
+  kn.addEventListener('pointerup', () => { on = false; });
+})();
+
+function fieldsPanelHTML() {
+  const v = S.view, r = rec();
+  const rows = FIELDS.map(f => { const u = FIELD_USE[v][f]; return `<div class="fr ${u ? '' : 'no'}"><b>${f}</b><span>${u ? esc(u) : 'not used by this view'}</span></div>`; }).join('');
+  return `<h3>${VIEW_LABEL[v]}${REQUIRED.has(v) ? '' : ' <span style="font:12px var(--sans);color:var(--amber)">(own idea)</span>'}</h3><div class="sub">Fields of the picture model this view uses, and how. Record: <span style="font-family:var(--mono)">${r.id}</span></div>${rows}`;
+}
+function syncChrome() {
+  stage.className = stage.className.replace(/\bm-\w+\b/g, '').trim() + ' m-' + S.mode;
+  stage.classList.toggle('narrow', SW < 760); stage.classList.toggle('wide', SW > SH); stage.classList.toggle('short', SH < 520);
+  for (const b of $('#modes').children) b.setAttribute('aria-pressed', b.dataset.mode === S.mode);
+  for (const b of viewsEl.children) { b.setAttribute('aria-pressed', b.dataset.view === S.view); if (b.dataset.view === S.view) viewsEl.scrollLeft = Math.max(0, b.offsetLeft - viewsEl.clientWidth / 2 + b.offsetWidth / 2); }
+  $('#bPhone').setAttribute('aria-pressed', S.phone); $('#bErr').setAttribute('aria-pressed', S.err);
+  $('#bFields').setAttribute('aria-pressed', !$('#fields').classList.contains('hidden')); $('#bNotes').setAttribute('aria-pressed', !$('#notes').classList.contains('hidden'));
+  $('#bErr').classList.toggle('hidden', S.mode === 'editor');
+  $('#fields').innerHTML = fieldsPanelHTML();
+  for (const b of $('#tnMode').children) b.setAttribute('aria-pressed', b.dataset.m === S.tnMode);
+  $('#fadeBox').classList.toggle('hidden', S.tnMode !== 'fade');
+  const c = S.mode === 'creator', ed = S.mode === 'editor';
+  $('#cbar').classList.toggle('hidden', !c); $('#reticle').classList.toggle('hidden', !c || S.ctool === 'viewpoint');
+  $('#eList').classList.toggle('hidden', !ed); $('#eInsp').classList.toggle('hidden', !ed); $('#eTip').classList.toggle('hidden', !ed || S.pov);
+  $('#joy').classList.toggle('hidden', ed || !(matchMedia('(pointer: coarse)').matches));
+  if (!c) { S.ctool = null; $('#csheet').classList.add('hidden'); }
+  for (const b of $('#cbar').children) { b.setAttribute('aria-pressed', b.dataset.tool === S.ctool); b.classList.toggle('off', b.dataset.tool === 'viewpoint' && !usesField(S.view, 'viewpoint')); }
+  if (ed) { renderList(); renderInspector(); }
+  const h = `mode=${S.mode}&view=${S.view}`; if (location.hash.slice(1) !== h) history.replaceState(null, '', '#' + h);
+  updateProj();
+}
+
+/* ---------- creator tools ---------- */
+$('#cbar').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; creatorTool(b.dataset.tool); });
+function creatorTool(tool) {
+  const cs = $('#csheet'), r = rec();
+  if (tool === 'place') { placeAhead(); S.ctool = null; cs.classList.add('hidden'); syncChrome(); return; }
+  if (tool === 'viewpoint' && !usesField(S.view, 'viewpoint')) { toast(`${VIEW_LABEL[S.view]} does not use a viewpoint`); return; }
+  S.ctool = S.ctool === tool ? null : tool; cs.classList.toggle('hidden', !S.ctool);
+  if (S.ctool === 'view') cs.innerHTML = `<h5>View for this picture</h5><div class="vl">${VIEWS.map(v => `<button data-v="${v}" aria-pressed="${v === S.view}"><b>${VIEW_LABEL[v]}</b><span>${esc(VIEW_LINE[v])}</span></button>`).join('')}</div>`;
+  if (S.ctool === 'size') cs.innerHTML = `<h5>Width</h5><div class="rowc"><input type="range" id="csz" min="0.3" max="${S.view === 'cutout' ? 6 : 5}" step="0.05" value="${r.widthM}"><span class="val" id="cszv">${r.widthM.toFixed(2)} m</span></div><p class="note">${usesField(S.view, 'widthM') ? 'Height follows the picture.' : 'This view sizes the picture from the viewpoint lens instead.'}</p>`;
+  if (S.ctool === 'turn') cs.innerHTML = `<h5>Turn</h5><div class="rowc"><input type="range" id="ctn" min="0" max="359" step="1" value="${Math.round((r.pose.yawDeg + 360) % 360)}"><span class="val" id="ctnv">${Math.round((r.pose.yawDeg + 360) % 360)}°</span></div><button class="big" id="cface">Face me</button>`;
+  if (S.ctool === 'text') cs.innerHTML = `<h5>Caption</h5><textarea id="ccap" rows="3">${esc(r.caption)}</textarea><label class="f"><span>Credit</span><input id="ccred" value="${esc(r.credit)}"></label><label class="f"><span>Year</span><input id="cyear" inputmode="numeric" value="${esc(r.year ?? '')}"></label>${S.view === 'cutout' ? `<label class="tog"><input type="checkbox" id="ctag" ${r.showTag !== false ? 'checked' : ''}> A small tag at its foot (year and title)</label>` : ''}`;
+  if (S.ctool === 'viewpoint') cs.innerHTML = `<h5>Viewpoint</h5><p class="note" style="margin-top:0">Stand where the photo was taken and line the ghost up with the scene.</p><div class="rowc"><span style="font-size:12px;color:var(--muted)">Lens</span><input type="range" id="cfov" min="20" max="100" step="1" value="${r.viewpoint.hfovDeg}"><span class="val" id="cfovv">${r.viewpoint.hfovDeg}°</span></div><button class="big" id="cset">Set viewpoint here</button>`;
+  bindCSheet(); syncChrome();
+}
+function bindCSheet() {
+  const r = rec(), on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
+  $('#csheet').querySelectorAll('.vl button').forEach(b => b.addEventListener('click', () => { setView(b.dataset.v); creatorTool('view'); creatorTool('view'); }));
+  on('csz', 'input', e => { r.widthM = +e.target.value; $('#cszv').textContent = r.widthM.toFixed(2) + ' m'; markDirty(); });
+  on('ctn', 'input', e => { r.pose.yawDeg = +e.target.value; $('#ctnv').textContent = e.target.value + '°'; markDirty(); });
+  on('cface', 'click', () => { const P = new V3(...r.pose.position); r.pose.yawDeg = (Math.round(bearing(P, camera.position)) + 360) % 360; const el = $('#ctn'); el.value = r.pose.yawDeg; $('#ctnv').textContent = r.pose.yawDeg + '°'; markDirty(); toast('Turned to face you'); });
+  on('ccap', 'input', e => { r.caption = e.target.value; markDirty(); });
+  on('ccred', 'input', e => { r.credit = e.target.value; markDirty(); });
+  on('cyear', 'input', e => { const v = e.target.value.trim(); r.year = v === '' ? null : (Number.isFinite(+v) ? Math.round(+v) : r.year); markDirty(); });
+  on('ctag', 'change', e => { r.showTag = e.target.checked; markDirty(); toast(r.showTag ? 'Tag shown at its foot' : 'No tag: the cut-out alone, still tappable'); });
+  on('cfov', 'input', e => { r.viewpoint.hfovDeg = +e.target.value; $('#cfovv').textContent = e.target.value + '°'; });
+  on('cset', 'click', () => { const f = curFP(); Object.assign(r.viewpoint, { position: [round(f.pos.x, 0.01), round(f.pos.y, 0.01), round(f.pos.z, 0.01)], yawDeg: round(wrapDeg(f.yaw), 0.1), pitchDeg: round(f.pitch, 0.1) }); markDirty(); toast(`Viewpoint saved, facing ${Math.round((f.yaw + 360) % 360)}°`); S.ctool = null; $('#csheet').classList.add('hidden'); syncChrome(); });
+}
+function placeAhead() {
+  const r = rec(), f = curFP(), d = yawDir(f.yaw), P = f.pos.clone().addScaledVector(d, 3);
+  if (usesField(S.view, 'pose') || S.view === 'viewer' || S.view === 'viewpoint-window') {
+    if (S.view === 'viewer' || S.view === 'viewpoint-window') { Object.assign(r.viewpoint, { position: [round(f.pos.x, 0.01), 1.6, round(f.pos.z, 0.01)], yawDeg: round(wrapDeg(f.yaw), 0.1) }); toast(S.view === 'viewer' ? 'Viewer placed where you stand' : 'Window hung where you stand'); }
+    else { r.pose.position = [round(P.x, 0.01), S.view === 'cutout' ? 0 : round(f.pos.y + 0.1, 0.01), round(P.z, 0.01)]; r.pose.yawDeg = (Math.round(bearing(P, f.pos)) + 360) % 360; toast('Placed 3 m ahead, facing you'); }
+    markDirty();
+  }
+}
+/* onion skin for the creator's viewpoint tool: the picture glued to the phone */
+const onion = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), null); onion.renderOrder = 60; onion.frustumCulled = false; scene.add(onion); onion.visible = false;
+
+/* ---------- editor panels ---------- */
+function renderList() {
+  const r = rec();
+  $('#eList').innerHTML = `<div class="eh">Station 1 of 2</div><div class="st">Old market square</div>
+    <div class="it sel"><canvas id="eThumb" width="84" height="56"></canvas><div><b>${esc(firstPhrase(r.caption))}</b><small>Picture · ${VIEW_LABEL[S.view]}</small></div></div>
+    <div class="it dim"><div class="ph">Aa</div><div><b>Welcome to the square</b><small>Short text</small></div></div>
+    <div class="it dim"><div class="ph">♪</div><div><b>Market day</b><small>Audio</small></div></div>
+    <div class="add">+ Add a block</div>`;
+  const g = $('#eThumb').getContext('2d'), img = imageCanvasFor(r); g.fillStyle = '#2a251f'; g.fillRect(0, 0, 84, 56); const s = Math.min(84 / img.width, 56 / img.height); g.drawImage(img, (84 - img.width * s) / 2, (56 - img.height * s) / 2, img.width * s, img.height * s);
+}
+const VIEW_GLYPH = {
+  framed: '<rect x="6" y="3" width="18" height="12" rx="1"/><rect x="9" y="6" width="12" height="6"/><path d="M8 18h14"/>',
+  cutout: '<path d="M8 19V9l4-4 4 3 3-2 3 4v9"/><path d="M5 19.5h20" stroke-dasharray="2 2"/>',
+  'then-now': '<rect x="4" y="4" width="22" height="14" rx="1"/><path d="M15 2v18"/><path d="M4 18l6-6 5 4"/>',
+  mosaic: '<rect x="4" y="4" width="6" height="5"/><rect x="12" y="3" width="6" height="5"/><rect x="20" y="5" width="6" height="5"/><rect x="5" y="12" width="6" height="5"/><rect x="13" y="11" width="6" height="5"/><rect x="20" y="13" width="6" height="5"/>',
+  'viewpoint-finder': '<path d="M5 8V4h5M20 4h5v4M25 15v4h-5M10 19H5v-4"/><circle cx="15" cy="11.5" r="1.5"/>',
+  'viewpoint-sharpen': '<rect x="5" y="4" width="20" height="14" rx="1" stroke-dasharray="2 2"/><rect x="10" y="7.5" width="10" height="7"/>',
+  'viewpoint-window': '<rect x="9" y="5" width="12" height="9"/><path d="M15 14v6M11 20h8"/>',
+  viewer: '<circle cx="11" cy="8" r="4"/><circle cx="19" cy="8" r="4"/><path d="M15 12v8M11 20h8"/>',
+};
+function sec(title, field, body) { const v = S.view; const used = field ? usesField(v, field) : true; return `<div class="sec ${used ? '' : 'unused'}"><h4>${title}<span class="u ${used && field ? 'on' : ''}">${field ? (used ? 'used by ' + VIEW_LABEL[v] : 'not used by ' + VIEW_LABEL[v]) : ''}</span></h4>${body}</div>`; }
+function num(k, v, step = 0.05) { return `<input type="number" data-k="${k}" step="${step}" value="${v}">`; }
+function renderInspector() {
+  const r = rec(), v = S.view, vp = r.viewpoint, kb = r.image.bytes ? Math.round(r.image.bytes / 1024) + ' KB' : '...';
+  const el = $('#eInsp'); const focusK = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.k : null; if (focusK && el.contains(document.activeElement)) { syncInspector(); return; }
+  el.innerHTML = `<div class="hd"><b>Picture block</b><small>${r.id}</small></div>
+  ${sec('View', null, `<div class="vgrid">${VIEWS.map(x => `<button data-view="${x}" aria-pressed="${x === v}" title="${esc(VIEW_LINE[x])}"><svg viewBox="0 0 30 22">${VIEW_GLYPH[x]}</svg>${VIEW_LABEL[x].replace(' & ', '&')}</button>`).join('')}</div>`)}
+  ${sec('Image', 'image', `<div class="imgrow"><canvas id="eImg" width="192" height="128"></canvas><div class="mt"><b>${r.image.src.split('/').pop()}</b><br>${r.image.width} x ${r.image.height} px<br>${kb}, ${r.image.alpha ? 'with alpha' : 'no alpha'}</div></div>`)}
+  ${sec('Caption', 'caption', `<textarea data-k="caption" rows="5">${esc(r.caption)}</textarea><div class="cnt"><span id="eCnt">${r.caption.length}</span> characters, 3 lines show in the world, all of it in the sheet</div>`)}
+  ${sec('Credit', 'credit', `<input data-k="credit" value="${esc(r.credit)}">`)}
+  ${sec('Year', 'year', `<input data-k="year" inputmode="numeric" value="${esc(r.year ?? '')}" placeholder="optional">`)}
+  ${sec('Tag', 'showTag', `<label class="tog"><input type="checkbox" data-k="showTag" ${r.showTag !== false ? 'checked' : ''}> A small tag at its foot (year and title)</label>`)}
+  ${sec('Width', 'widthM', `<div class="rng"><input type="range" data-k="widthM" min="0.3" max="6" step="0.05" value="${r.widthM}">${num('widthM', r.widthM)}</div>`)}
+  ${sec('Pose', 'pose', `<label class="f"><span>x y z</span><span class="g3">${num('px', r.pose.position[0])}${num('py', r.pose.position[1])}${num('pz', r.pose.position[2])}</span></label><label class="f"><span>Turn</span><div class="rng"><input type="range" data-k="yaw" min="0" max="359" step="1" value="${(r.pose.yawDeg + 360) % 360}">${num('yaw', (r.pose.yawDeg + 360) % 360, 1)}</div></label><label class="f"><span>Tilt</span><div class="rng"><input type="range" data-k="pitch" min="-30" max="30" step="1" value="${r.pose.pitchDeg}">${num('pitch', r.pose.pitchDeg, 1)}</div></label>`)}
+  ${sec('Viewpoint', 'viewpoint', vp ? `<label class="f"><span>x y z</span><span class="g3">${num('vx', vp.position[0])}${num('vy', vp.position[1])}${num('vz', vp.position[2])}</span></label><label class="f"><span>Facing</span><div class="rng"><input type="range" data-k="vyaw" min="-180" max="180" step="1" value="${vp.yawDeg}">${num('vyaw', vp.yawDeg, 1)}</div></label><label class="f"><span>Pitch</span><div class="rng"><input type="range" data-k="vpitch" min="-30" max="30" step="0.5" value="${vp.pitchDeg}">${num('vpitch', vp.pitchDeg, 0.5)}</div></label><label class="f"><span>Lens</span><div class="rng"><input type="range" data-k="vfov" min="20" max="110" step="1" value="${vp.hfovDeg}">${num('vfov', vp.hfovDeg, 1)}</div></label><div class="btns"><button class="btn blue" id="ePov">${S.pov ? 'Back to overview' : 'Look from the viewpoint'}</button><button class="btn" id="eVpReset">Reset</button></div>` : `<p style="color:var(--muted);margin:0">No viewpoint on this record.</p>`)}
+  <div class="sec"><div class="lgd"><span><i style="background:#e9b872"></i>pose</span><span><i style="background:#9ccbff"></i>viewpoint</span><span><i style="background:#fff"></i>width</span></div></div>`;
+  const g = $('#eImg').getContext('2d'), img = imageCanvasFor(r); const s = Math.min(192 / img.width, 128 / img.height); g.clearRect(0, 0, 192, 128); g.drawImage(img, (192 - img.width * s) / 2, (128 - img.height * s) / 2, img.width * s, img.height * s);
+  el.querySelectorAll('.vgrid button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+  el.querySelectorAll('[data-k]').forEach(inp => inp.addEventListener('input', () => onInspector(inp)));
+  const pov = $('#ePov'); if (pov) pov.addEventListener('click', () => { S.pov = !S.pov; if (!S.pov) frameEditor(); rebuildHandles(); syncChrome(); });
+  const rs = $('#eVpReset'); if (rs) rs.addEventListener('click', () => { r.viewpoint = JSON.parse(JSON.stringify(VP0)); markDirty(); renderInspector(); });
+}
+function onInspector(inp) {
+  const r = rec(), k = inp.dataset.k, raw = inp.value, n = parseFloat(raw), ok = Number.isFinite(n);
+  switch (k) {
+    case 'caption': r.caption = raw.slice(0, 1200); $('#eCnt').textContent = r.caption.length; break;
+    case 'showTag': r.showTag = !!inp.checked; break;
+    case 'credit': r.credit = raw.slice(0, 160); break;
+    case 'year': r.year = raw.trim() === '' ? null : (ok ? Math.round(n) : r.year); break;
+    case 'widthM': if (ok) r.widthM = clamp(n, 0.3, 8); break;
+    case 'px': if (ok) r.pose.position[0] = n; break; case 'py': if (ok) r.pose.position[1] = clamp(n, 0, 20); break; case 'pz': if (ok) r.pose.position[2] = n; break;
+    case 'yaw': if (ok) r.pose.yawDeg = ((n % 360) + 360) % 360; break; case 'pitch': if (ok) r.pose.pitchDeg = clamp(n, -30, 30); break;
+    case 'vx': if (ok) r.viewpoint.position[0] = n; break; case 'vy': if (ok) r.viewpoint.position[1] = clamp(n, 0.3, 3); break; case 'vz': if (ok) r.viewpoint.position[2] = n; break;
+    case 'vyaw': if (ok) r.viewpoint.yawDeg = wrapDeg(n); break; case 'vpitch': if (ok) r.viewpoint.pitchDeg = clamp(n, -30, 30); break; case 'vfov': if (ok) r.viewpoint.hfovDeg = clamp(n, 20, 110); break;
+  }
+  markDirty(); syncInspector(inp);
+}
+function syncInspector(except) {
+  const r = rec(), vp = r.viewpoint, el = $('#eInsp'); if (el.classList.contains('hidden')) return;
+  const val = { widthM: r.widthM, px: r.pose.position[0], py: r.pose.position[1], pz: r.pose.position[2], yaw: (r.pose.yawDeg + 360) % 360, pitch: r.pose.pitchDeg };
+  if (vp) Object.assign(val, { vx: vp.position[0], vy: vp.position[1], vz: vp.position[2], vyaw: vp.yawDeg, vpitch: vp.pitchDeg, vfov: vp.hfovDeg });
+  el.querySelectorAll('[data-k]').forEach(inp => { if (inp === except || inp === document.activeElement) return; const k = inp.dataset.k; if (k in val) inp.value = +(+val[k]).toFixed(2); });
+}
+function frameEditor() {
+  const r = rec(), pts = []; if (usesField(S.view, 'pose')) pts.push(new V3(...r.pose.position)); if (r.viewpoint && usesField(S.view, 'viewpoint')) pts.push(new V3(...r.viewpoint.position));
+  const c = pts.reduce((a, p) => a.add(p), new V3()).multiplyScalar(1 / pts.length); c.y = 0.6; let span = 0; pts.forEach(p => span = Math.max(span, Math.hypot(p.x - c.x, p.z - c.z)));
+  if (S.view === 'mosaic') span *= 1.4; orb.target.copy(c); orb.r = Math.max(9, span * 2.4 + 7); orb.th = 0.62; orb.ph = 0.9;
+}
+
+/* ================================================================
+   Modes, views, camera
+   ================================================================ */
+function aimCreator() { const f = fp.creator; f.pos.set(0, 1.6, 0); const r = rec(); const t = usesField(S.view, 'pose') ? new V3(...r.pose.position) : new V3(...r.viewpoint.position).setY(1.1); lookAtFP(f, t.x, t.y, t.z); }
+function lookAtFP(f, x, y, z) { const dx = x - f.pos.x, dy = y - f.pos.y, dz = z - f.pos.z; f.yaw = Math.atan2(dx, -dz) / DEG; f.pitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)) / DEG, -80, 80); }
+function setMode(m, o = {}) {
+  if (!['visitor', 'creator', 'editor'].includes(m)) throw new Error('unknown mode ' + m);
+  const prev = S.mode; S.mode = m; closeOverlays(); S.ctool = null; S.pov = false; $('#csheet').classList.add('hidden');
+  if (m === 'creator' && prev !== 'creator') aimCreator();
+  if (m === 'editor') frameEditor();
+  if (m === 'visitor' && o.user) startAutoWalk();
+  syncChrome(); rebuildView();
+}
+function setView(v) {
+  if (!VIEW_CLASS[v]) throw new Error('unknown view ' + v);
+  S.view = v; if (v !== 'cutout') hall.view = v; closeOverlays(); S.intro = null;
+  if (S.mode === 'creator' && S.ctool !== 'viewpoint') aimCreator();
+  if (S.mode === 'editor') { S.pov = false; frameEditor(); }
+  rebuildView(); syncChrome();
+}
+function startAutoWalk() { const f = fp.visitor; f.pos.set(0, 1.6, 30); f.yaw = 0; f.pitch = -2; S.appear = 0; S.autowalk = { t: 0, dur: 7.5, from: new V3(0, 1.6, 30), to: new V3(0, 1.6, 19.5) }; }
+function updateProj() {
+  const a = SW / SH; camera.aspect = a;
+  if (S.mode === 'editor') {
+    const L = $('#eList').classList.contains('hidden') || stage.classList.contains('narrow') ? 0 : 250, R = stage.classList.contains('narrow') ? 0 : 360;
+    const T = stage.classList.contains('short') ? 50 : 90, B = stage.classList.contains('narrow') ? SH * 0.44 + 8 : 0;
+    const effW = SW - L - R, effH = SH - T - B;
+    camera.fov = S.pov ? vfovFromH(rec().viewpoint.hfovDeg, effW / effH) * effH / SH * 1.0 : 38;
+    if (S.pov) camera.fov = 2 * Math.atan(Math.tan(vfovFromH(rec().viewpoint.hfovDeg, effW / effH) * DEG / 2) * SH / effH) / DEG;
+    camera.setViewOffset(SW, SH, (R - L) / 2, (B - T) / 2, SW, SH);
+  } else { camera.clearViewOffset(); camera.fov = a < 1 ? vfovFromH(42, a) : 40; }
+  camera.updateProjectionMatrix();
+}
+function layout() {
+  const iw = innerWidth, ih = innerHeight;
+  if (S.phone) { let h = ih - 28, w = h * 9 / 19.5; if (w > iw - 28) { w = iw - 28; h = w * 19.5 / 9; } stage.style.width = w + 'px'; stage.style.height = h + 'px'; document.body.classList.add('phone'); }
+  else { stage.style.width = ''; stage.style.height = ''; document.body.classList.remove('phone'); }
+  const rc = stage.getBoundingClientRect(); SW = Math.max(1, Math.round(rc.width)); SH = Math.max(1, Math.round(rc.height));
+  renderer.setSize(SW, SH, false); stage.classList.toggle('narrow', SW < 760); stage.classList.toggle('wide', SW > SH); stage.classList.toggle('short', SH < 520);
+  updateProj();
+}
+addEventListener('resize', () => { layout(); syncChrome(); });
+addEventListener('hashchange', () => applyHash());
+function applyHash() { const p = new URLSearchParams(location.hash.slice(1)); const m = p.get('mode'), v = p.get('view'); if (v && VIEW_CLASS[v] && v !== S.view) setView(v); if (m && m !== S.mode && ['visitor', 'creator', 'editor'].includes(m)) setMode(m, { user: true }); }
+
+/* ---------- input ---------- */
+const keys = {}; addEventListener('keydown', e => { if (e.target.closest('input,textarea')) return; keys[e.code] = true; if (e.code === 'Escape') closeOverlays(); }); addEventListener('keyup', e => { keys[e.code] = false; });
+const joy = { x: 0, y: 0 }; (() => { const j = $('#joy'), k = j.querySelector('.k'); let on = false; const mv = e => { const rc = j.getBoundingClientRect(); let x = (e.clientX - rc.left - rc.width / 2) / (rc.width / 2), y = (e.clientY - rc.top - rc.height / 2) / (rc.height / 2); const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; } joy.x = x; joy.y = y; k.style.transform = `translate(${x * 26}px,${y * 26}px)`; }; j.addEventListener('pointerdown', e => { on = true; j.setPointerCapture(e.pointerId); mv(e); }); j.addEventListener('pointermove', e => on && mv(e)); j.addEventListener('pointerup', () => { on = false; joy.x = joy.y = 0; k.style.transform = ''; }); })();
+const ptr = { down: false, x: 0, y: 0, moved: 0, btn: 0, pts: new Map(), pinch: 0 };
+function lookDrag(dx, dy) { const f = curFP(), k = camera.fov / SH; f.yaw -= dx * k * 1.1; f.pitch = clamp(f.pitch + dy * k * 1.1, -75, 75); S.autowalk = null; }
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId); ptr.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (ptr.pts.size === 2) { const [a, b] = [...ptr.pts.values()]; ptr.pinch = Math.hypot(a.x - b.x, a.y - b.y); return; }
+  ptr.down = true; ptr.x = e.clientX; ptr.y = e.clientY; ptr.moved = 0; ptr.btn = e.button; ptr.shift = e.shiftKey; canvas.classList.add('grabbing');
+  if (S.mode === 'editor' && !S.pov && startHandleDrag(e)) ptr.handle = true; else ptr.handle = false;
+});
+canvas.addEventListener('pointermove', e => {
+  if (ptr.pts.has(e.pointerId)) ptr.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (ptr.pts.size === 2 && S.mode === 'editor') { const [a, b] = [...ptr.pts.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); if (ptr.pinch) orb.r = clamp(orb.r * ptr.pinch / d, 4, 140); ptr.pinch = d; return; }
+  if (!ptr.down) { if (S.mode === 'editor' && handles.pick.length) { const h = rayFromEvent(e).intersectObjects(handles.pick, false)[0]; canvas.style.cursor = h ? 'pointer' : ''; } return; }
+  const dx = e.clientX - ptr.x, dy = e.clientY - ptr.y; ptr.x = e.clientX; ptr.y = e.clientY; ptr.moved += Math.abs(dx) + Math.abs(dy);
+  if (ptr.handle) { moveHandleDrag(e); return; }
+  if (S.mode === 'editor') {
+    if (S.pov) return;
+    if (ptr.btn === 2 || ptr.shift) { const k = orb.r * 0.0016, rt = new V3(Math.cos(orb.th), 0, -Math.sin(orb.th)), fw = new V3(-Math.sin(orb.th), 0, -Math.cos(orb.th)); orb.target.addScaledVector(rt, -dx * k).addScaledVector(fw, dy * k); }
+    else { orb.th -= dx * 0.006; orb.ph = clamp(orb.ph - dy * 0.005, 0.12, 1.45); }
+  } else lookDrag(dx, dy);
+});
+function endPtr(e) {
+  ptr.pts.delete(e.pointerId); if (ptr.pts.size) return; canvas.classList.remove('grabbing');
+  if (ptr.down && !ptr.handle && ptr.moved < 7 && S.mode !== 'editor') tapAt(e);
+  if (ptr.handle) { drag = null; ptr.handle = false; }
+  ptr.down = false; ptr.pinch = 0;
+}
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('wheel', e => { if (S.mode !== 'editor' || S.pov) return; e.preventDefault(); orb.r = clamp(orb.r * Math.exp(e.deltaY * 0.0012), 4, 140); }, { passive: false });
+function tapAt(e) { if (!view || !view.pick.length) return; const hit = rayFromEvent(e).intersectObjects(view.pick, false)[0]; if (hit) view.onTap(hit); }
+
+
+/* ================================================================
+   Frame loop
+   ================================================================ */
+const ftS = { list: [], last: 0, work: [] };
+function ftPush(now, work) { if (ftS.last) ftS.list.push([now, now - ftS.last, work]); ftS.last = now; while (ftS.list.length && now - ftS.list[0][0] > 2000) ftS.list.shift(); }
+function ftStats() { const l = ftS.list; if (!l.length) return { mean: 0, max: 0, work: 0, n: 0 }; let s = 0, m = 0, w = 0; for (const [, d, k] of l) { s += d; m = Math.max(m, d); w += k; } return { mean: s / l.length, max: m, work: w / l.length, n: l.length }; }
+let ftShown = 0, lastT = performance.now(), lastHud = '';
+function setHud(h) {
+  const key = JSON.stringify(h, (k, v) => (typeof v === 'number' ? Math.round(v) : v)); if (key === lastHud) return; lastHud = key;
+  const hint = $('#hint'); if (h.hint) { hint.classList.remove('hidden'); const d = h.hint.dist != null ? ` <span class="d">${h.hint.dist < 10 ? h.hint.dist.toFixed(1) : Math.round(h.hint.dist)} m</span>` : ''; hint.querySelector('span').innerHTML = esc(h.hint.text) + d; const ar = $('#hintArrow'); ar.style.display = h.hint.arrow == null ? 'none' : ''; ar.style.transform = `rotate(${h.hint.arrow || 0}deg)`; } else hint.classList.add('hidden');
+  const cap = $('#cap'); if (h.cap) { cap.classList.remove('hidden'); cap.innerHTML = `${h.cap.year != null ? `<div class="y">${esc(h.cap.year)}</div>` : ''}<div><div class="t">${esc(h.cap.text)}</div><div class="m">${esc(h.cap.meta)}</div></div><div class="chev">›</div>`; } else cap.classList.add('hidden');
+  stage.classList.toggle('withcap', !!h.cap);
+  $('#swipe').classList.toggle('hidden', !(h.swipe && S.tnMode === 'swipe')); $('#tnCtl').classList.toggle('hidden', !h.swipe);
+}
+function update(dt, t) {
+  if (S.dirty) { S.dirty = false; rebuildView(); if (S.mode === 'editor') { renderList(); syncInspector(); } $('#fields').innerHTML = fieldsPanelHTML(); }
+  // simulated placement error moves the whole content frame
+  const errOn = S.err && S.mode !== 'editor'; contentRoot.position.set(errOn ? 0.8 : 0, 0, errOn ? -0.6 : 0); contentRoot.rotation.y = errOn ? 3 * DEG : 0;
+  if (S.mode === 'editor') {
+    if (S.pov) { const vp = rec().viewpoint; camera.position.set(...vp.position); camera.rotation.set(vp.pitchDeg * DEG, -vp.yawDeg * DEG, 0); }
+    else { const sp = Math.sin(orb.ph); camera.position.set(orb.target.x + orb.r * sp * Math.sin(orb.th), orb.target.y + orb.r * Math.cos(orb.ph), orb.target.z + orb.r * sp * Math.cos(orb.th)); camera.lookAt(orb.target); }
+  } else {
+    const f = curFP();
+    if (S.autowalk && S.mode === 'visitor') { const w = S.autowalk; w.t += dt; const k = sstep(0, 1, w.t / w.dur); f.pos.lerpVectors(w.from, w.to, k); if (w.t >= w.dur) S.autowalk = null; }
+    let fw = 0, st = 0; if (keys.KeyW || keys.ArrowUp) fw += 1; if (keys.KeyS || keys.ArrowDown) fw -= 1; if (keys.KeyA) st -= 1; if (keys.KeyD) st += 1;
+    if (keys.ArrowLeft || keys.KeyQ) f.yaw -= 70 * dt; if (keys.ArrowRight || keys.KeyE) f.yaw += 70 * dt;
+    fw -= joy.y; st += joy.x;
+    if (fw || st) { S.autowalk = null; const sp = (keys.ShiftLeft ? 3.2 : 1.4) * dt; f.pos.addScaledVector(yawDir(f.yaw), fw * sp).addScaledVector(yawRight(f.yaw), st * sp); }
+    f.pos.y = 1.6; camera.position.copy(f.pos); camera.rotation.set(f.pitch * DEG, -f.yaw * DEG, 0);
+  }
+  camera.updateMatrixWorld();
+  // appear on entering the circle (visitor); always shown when making
+  if (S.mode === 'visitor') { const f = fp.visitor, inside = Math.hypot(f.pos.x, f.pos.z) < 25; const tgt = inside ? 1 : 0; S.appear = clamp(S.appear + (tgt > S.appear ? dt / 1.6 : tgt < S.appear ? -dt / 0.6 : 0), 0, 1); }   // hold at the target: stepping down from it made the picture views shimmer
+  else S.appear = 1;
+  if (view) { view.setAppear(S.appear); view.update(dt, t); }
+  // creator onion skin
+  if (S.mode === 'creator' && S.ctool === 'viewpoint' && hall.viewpoint) {
+    if (!onion.material) onion.material = thenNowMaterial(photoTex);
+    const D = 6, vp = rec().viewpoint, W = 2 * D * Math.tan(vp.hfovDeg * DEG / 2), H = W * hall.image.height / hall.image.width;
+    onion.visible = true; onion.position.copy(camera.position); onion.quaternion.copy(camera.quaternion); onion.translateZ(-D); onion.scale.set(W, H, 1);
+    const u = onion.material.uniforms; u.uAlpha.value = 0.5; u.uMode.value = 1; u.uFade.value = 1;
+  } else onion.visible = false;
+  // HUD
+  let h = {};
+  if (S.mode === 'visitor' && !S.overlay) {
+    const f = fp.visitor, dist = Math.hypot(f.pos.x, f.pos.z);
+    if (dist > 25) h = { hint: { text: 'Station ahead', dist: dist - 25, arrow: wrapDeg(bearing(f.pos, new V3(0, 0, 0)) - f.yaw) } };
+    else if (view) h = view.hud();
+  } else if (S.mode === 'creator' && !S.ctool) h = { hint: { text: usesField(S.view, 'pose') ? 'Aim where it goes, then tap Place' : 'Stand on the spot, then set the viewpoint' } };
+  else if (S.mode === 'creator' && S.ctool === 'viewpoint') h = { hint: { text: 'Line the ghost up with the scene' } };
+  setHud(h);
+  $('#swipe .ln').style.left = (S.split * 100) + '%'; $('#swipe .kn').style.left = (S.split * 100) + '%';
+}
+function frame(now) {
+  const t0 = performance.now(); const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
+  update(dt, now / 1000); renderer.render(scene, camera);
+  ftPush(now, performance.now() - t0);
+  if (now - ftShown > 250) { ftShown = now; const s = ftStats(); $('#ft').textContent = `${s.mean.toFixed(1)} ms avg · ${s.max.toFixed(1)} max · 2 s`; }
+  requestAnimationFrame(frame);
+}
+
+/* ================================================================
+   Boot, the script hook, notes
+   ================================================================ */
+let bytesReady = Promise.resolve(); let readyResolve; const ready = new Promise(r => (readyResolve = r));
+function exportRec(r) { return JSON.parse(JSON.stringify(r)); }
+window.__stationBlock = {
+  family: 'station-blocks-3-pictures',
+  views: VIEWS.slice(),
+  modes: ['visitor', 'creator', 'editor'],
+  async setMode(name) { await ready; S.autowalk = null; setMode(name); if (name === 'visitor') S.appear = Math.hypot(fp.visitor.pos.x, fp.visitor.pos.z) < 25 ? 1 : 0; await drawn(); },
+  async setView(name) { await ready; setView(name); if (S.mode === 'visitor') S.appear = Math.hypot(fp.visitor.pos.x, fp.visitor.pos.z) < 25 ? 1 : 0; await drawn(); },
+  async walkTo(x, z) { await ready; if (!Number.isFinite(x) || !Number.isFinite(z)) throw new Error('walkTo needs two numbers'); S.autowalk = null; const f = curFP(); f.pos.set(x, 1.6, z); if (S.mode === 'visitor') S.appear = Math.hypot(x, z) < 25 ? 1 : 0; await drawn(); },
+  async lookAt(x, y, z) { await ready; if (![x, y, z].every(Number.isFinite)) throw new Error('lookAt needs three numbers'); S.autowalk = null; lookAtFP(curFP(), x, y, z); await drawn(); },
+  async describe() { await ready; return { family: this.family, fields: FIELDS.slice(), records: [hall.id, stall.id], views: VIEWS.map(v => ({ name: v, required: REQUIRED.has(v), record: v === 'cutout' ? stall.id : hall.id, usesFields: FIELDS.filter(f => usesField(v, f)) })) }; },
+  async exportModel() { await ready; await bytesReady; return exportRec(hall); },
+  extras: {
+    async exportAllRecords() { await ready; await bytesReady; return [exportRec(hall), exportRec(stall)]; },
+    async openDetails() { await ready; openDetails(rec()); await drawn(); },
+    /* Round-2 hooks: tap the block as a visitor would; the then-and-now intro state; the sharpen sweep and its
+       parameters; the cut-out's optional tag; where the picture's centre is (to look at it). */
+    async tapBlock() { await ready; view.onTap(); await drawn(); },
+    thenNowState() { return { aligned: !!(view && view.aligned), fade: +S.fade.toFixed(3), intro: !!S.intro, mode: S.tnMode, lostFor: view && Number.isFinite(view.lostFor) ? +view.lostFor.toFixed(2) : null }; },
+    pictureState() { return { view: S.view, alpha: view && view.pic ? +view.pic.mat.uniforms.uAlpha.value.toFixed(3) : null, viewerOpacity: view && view.mats ? +view.mats[0].opacity.toFixed(3) : null, sharpen: sharpenParams() }; },
+    sharpenSweep() { return sharpenSweep(); },
+    async setSharpen(ri, gi) { if (!SHARPEN.ramps[ri] || !SHARPEN.gates[gi]) throw new Error('no such ramp or gate'); SHARPEN.pick = [ri, gi]; await drawn(); },
+    async setTag(on) { stall.showTag = !!on; markDirty(); await drawn(); },
+    pictureCentre() { const vp = hall.viewpoint, P = new V3(...vp.position); const C = P.clone().addScaledVector(new V3(0, 0, -1).applyEuler(new THREE.Euler(vp.pitchDeg * DEG, -vp.yawDeg * DEG, 0, 'YXZ')), poseDepth(hall)); return [C.x, C.y, C.z]; },
+    async closeOverlays() { closeOverlays(); await drawn(); },
+    async creatorTool(name) { await ready; creatorTool(name); await drawn(); },
+    async setSwipe(mode, split) { S.tnMode = mode; if (Number.isFinite(split)) S.split = split; syncChrome(); await drawn(); },
+    async setError(on) { S.err = !!on; syncChrome(); await drawn(); },
+    async editorPov(on) { S.pov = !!on; if (!on) frameEditor(); rebuildHandles(); syncChrome(); await drawn(); },
+    async panels(which) { $('#fields').classList.toggle('hidden', which !== 'fields'); $('#notes').classList.toggle('hidden', which !== 'notes'); syncChrome(); await drawn(); },
+    frameStats() { return ftStats(); },
+  },
+};
+
+function boot() {
+  layout();
+  photoCanvas = makePhoto(); stallCanvas = makeStallCutout();
+  photoTex = texFrom(photoCanvas, false); photoTex.generateMipmaps = true; stallTex = texFrom(stallCanvas, false);
+  const size = (cv, r, type) => new Promise(res => cv.toBlob(b => { if (b) { r.image.bytes = b.size; if (S.mode === 'editor') renderInspector(); } res(); }, type, 0.85));
+  bytesReady = Promise.all([size(photoCanvas, hall, 'image/jpeg'), size(stallCanvas, stall, 'image/webp')]);
+  $('#notes').innerHTML = NOTES_HTML.replace('<!--SWEEP-->', sweepTableHTML());
+  $('#notes').addEventListener('click', e => { const b = e.target.closest('button[data-sw]'); if (!b) return; SHARPEN.pick = b.dataset.sw.split(',').map(Number); $('#notes').classList.add('hidden'); setView('viewpoint-sharpen'); toast(`Sharpen: ramp ${sharpenParams().ramp.join(' to ')} m, gate ${sharpenParams().gate.join(' to ')} deg`); });
+  const p = new URLSearchParams(location.hash.slice(1)); const m = p.get('mode'), v = p.get('view');
+  if (v && VIEW_CLASS[v]) S.view = v; if (m && ['visitor', 'creator', 'editor'].includes(m)) S.mode = m;
+  if (S.mode === 'visitor') startAutoWalk(); if (S.mode === 'creator') aimCreator(); if (S.mode === 'editor') frameEditor();
+  syncChrome(); rebuildView();
+  requestAnimationFrame(t => { lastT = t; requestAnimationFrame(frame); });
+  readyResolve();
+}
+
+const NOTES_HTML = `<h3>Designer notes - pictures</h3><div class="sub">Section 0 is the second round. Sections 1-5 are the first round's notes, kept as written; where they disagree with section 0, section 0 holds.</div><details open><summary>0. Second round (2026-10-25): what changed and why</summary><ul><li><b>Framed: a long caption</b> (about 700 characters), to see the real three-line cut on the plate and the full text in the sheet. The editor now takes up to 1 200 characters.</li><li><b>Cut-out: the tag is optional</b>, a creator toggle (Text in creator mode, "Tag" in the editor; the model field <code>showTag</code>). A tap on the cut-out, with or without the tag, opens the text only: the picture is already standing in front of the visitor, so the sheet no longer shows it again.</li><li><b>Then-and-now: fade is the default, with an intro.</b> Once the visitor stands on the marker and faces the viewpoint, the old picture fades from nothing to 55 % over 5 s, then the slider holds that value. Touching the slider ends the intro at once. The intro replays only on a fresh alignment: "aligned" starts under 32 degrees and ends only past 44 degrees (or on leaving the spot), and it must have ended for at least 1.5 s. A wobble across the gate does nothing. Swipe is one tap away, as before.</li><li><b>One mechanism for three views.</b> Then-and-now, Sharpen and Viewer now share one picture plane at the subject's depth whose opacity is proximity x facing (a distance ramp times a facing gate); only the numbers differ: then-and-now 2.6 to 0.9 m and 50 to 30 degrees, viewer 3.0 to 0.8 m and 50 to 25 degrees, sharpen from the sweep below.</li><li><b>Sharpen is now a proximity fade-in, with no blur:</b> fully transparent far away, opaque at the spot. The mipmap-bias blur and the wash are gone, and so is the pale picture over the whole square.</li><li><b>Viewer: no screen overlay any more.</b> As the visitor steps up, the viewer fades out and the picture fades in, in the world, on the same plane as then-and-now. The binocular overlay and its 1.7x magnification are removed. A tap on the viewer or the picture opens the details sheet.</li><li><b>Mosaic</b> stays in the picker as "Mosaic (dropped)", so the gallery keeps every variant. It is not to be built.</li></ul><h4>The sharpen sweep</h4><p>Three distance ramps (far to near, metres from the spot) times three facing gates (out to in, degrees from the viewpoint's facing), computed in this page by the same function the view uses, on this record's viewpoint. The last two rows move only one inner end against the default: the ramp to 0.3 m, the gate to 10 degrees. Footprint: the share of the station circle (1 m grid) where the picture shows at 10 % or more while you look at it. Shows from / half from: on the walk in from the circle's south edge, the distance to the spot where it first reaches 10 % / 50 %. Turn at 80 %: how far you may turn at the spot and still see it at 80 % or more. 1 m aside: its opacity one step to the side of the spot. "try" switches the view to that pair.</p><!--SWEEP--><p>Parameters this rests on: the inner ends (0.5 m and 15 degrees) are swept once each, in the last two rows, not across the grid; the 10 %, 50 % and 80 % thresholds are mine; the walk-in path is one path (from the south edge, as the station is entered). The default row is marked.</p><p><b>Chosen: 7 to 0.5 m and 70 to 15 degrees.</b> The 12 m ramp shows the picture over 12-15 % of the square, the first round's weakness. The 4 m ramp shows it only in the last 3.3 m of the walk, too late to draw a visitor in. The 40-degree gate leaves only 22 degrees of turn at the spot, tight for a phone held loosely. The gate hardly changes the footprint, because a visitor walking in looks roughly along the axis anyway. What would reverse it: a crowded square where any picture is noise favours the 4 m ramp; wanting it as a teaser from far away favours 12 m; noisier phone headings favour the 100-degree gate.</p><p><b>The inner ends stay at 0.5 m and 15 degrees.</b> A 10-degree inner gate end narrows the turn at 80 % from 30.5 to 27 degrees; a 0.3 m inner ramp end takes the opacity 1 m aside from 98 % to 97 % and the footprint from 5.5 to 4.9 %. Neither is a difference a visitor would see. The gap holds at other thresholds, by the same formula: the turn at 50 % is 42.5 against 40 degrees, at 95 % 22 against 18. What would reverse it: an inner gate end near 0 degrees (20 degrees of turn at 80 %, a third less than now), or the 4 m ramp with its inner end at 0 m (84 % one step aside, where the picture visibly thins just off the marker).</p></details><!--NOTES--><p>Eight views of one picture model: framed, cutout, then-now, mosaic (the four required), three viewpoint variants without tiles (viewpoint-finder, viewpoint-sharpen, viewpoint-window) and one unlisted view of my own (viewer).</p><details open><summary>1. The model as built, and what I would change</summary><ul><li><b>Fields, exactly as given:</b> image (an asset reference with width, height, alpha and bytes), caption, credit, year (optional), widthM, pose (position, yawDeg, pitchDeg) and viewpoint (optional: position, yawDeg, pitchDeg, hfovDeg). The block also stores its chosen view.</li><li><b>One record for every view</b> (market-hall-1885). The cutout view shows the second record the brief allows, a cut-out with alpha (fish-stall-1886-cutout), because a full old photo has no alpha to cut along.</li><li><b>The image is generated in the page.</b> I modelled the 1885 square (the timber hall, stalls, figures, a cart, the guild house) and rendered it once from the viewpoint. Then I toned the render as an orthochromatic sepia print, with grain, blotches, vignette, dust and hairline scratches. So it lines up with the stand-in square as a real photo taken from that spot would.</li><li><b>Add viewpoint.distanceM, the distance to the photographed subject.</b> Then-now, mosaic, finder and sharpen all need a depth at which the picture hangs. Today they borrow it from the pose's distance along the viewpoint axis. That couples two unrelated things: where a framed print stands, and how far away the hall was. A creator who moves the print silently moves the overlay.</li><li><b>Add a short title (about 40 characters).</b> Every view needs a one-line label: the foot tag, the marker card, the window label, the editor list. Deriving it from the caption gives "The timber market hall on a market...", which reads as cut off.</li><li><b>Make year a short text, not a number.</b> Archive pictures are often dated "about 1880" or "1880s". A number forces false precision.</li><li><b>Add alt, a plain description.</b> The caption is a story. A visitor with sound off and poor sight needs "a two-storey timber hall on posts, stalls underneath, a cart in front".</li><li><b>Keep widthM.</b> It is meaningless for the five viewpoint views, where the lens angle and the depth set the size. The editor marks it "not used" per view, which is enough.</li><li><b>Drop nothing else.</b></li></ul></details><details><summary>2. Per view: what it is, fields, why a visitor likes it, where it is weakest</summary><p>Common to all views: tapping the block (or its card) opens a details sheet in a screen overlay with the full picture, year, caption and credit. Long text never sits in the world.</p><ul><li><b>framed</b> - a dark beveled frame with a cream mat and the print, a caption plate below (the year large, the caption in three lines, the credit small), and a soft shadow on the ground. On arrival it rises 12 cm and the print "develops": the darks come first.<ul><li>Fields: image, caption, credit, year, widthM, pose.</li><li>Why: instantly understood; it reads as a museum label in the street.</li><li>Weakest: the plate text (about 0.056 m capitals) is body size only within about 2 m. From 4 m it is a label, and reading happens in the sheet. Seen from a steep side angle, the plate is unreadable.</li><li>Placement error: very forgiving. It hangs in the air, so 1 m or 3 degrees off looks the same.</li><li>Sunlight: the dark frame and plate hold up. Sound off: no sound used.</li></ul></li><li><b>cutout</b> - the stall cut-out standing on the ground with a contact shadow. A small year tag on a stake sits in front. Seen edge-on it fades out, and from behind it shows a dark silhouette, so it never turns into a sliver.<ul><li>Fields: image (alpha), caption, credit, year, widthM, pose (tilt ignored).</li><li>Why: the past is standing in the square at life size.</li><li>Weakest: it stands on the ground, so 0.5 to 1 m of placement error makes it float or sink against real kerbs and steps. In a crowd, people walk "through" it. It needs a good cut-out, which creators do not have.</li></ul></li><li><b>then-now</b> - at the marker, the old photo hangs at the subject's depth, sized from the lens angle. A swipe line (or a fade slider) compares it with the live view.<ul><li>Approach: on the way, a ground marker with footprints and an arrow, a light column, a card with a thumbnail that turns to face you, and a top hint ("Walk to the marker 8.9 m" with an arrow, then "Turn this way"). The photo fades in from 2.6 m to 0.9 m.</li><li>Fields: image, caption, credit, year, pose (depth only), viewpoint.</li><li>Why: the strongest "this is the same place" moment.</li><li>Weakest: placement error. The marker and the photo move together, so the visitor still stands at the content's spot, but the photo no longer matches the real scene. The sweep is in section 3. The +-1m toggle shows it: content shifted 0.8 m and turned 3 degrees.</li></ul></li><li><b>mosaic</b> - 14 x 9 tiles hung at depths from 0.62 to 1.42 times the subject depth, each sized so that it covers its patch of the picture from the viewpoint only. From elsewhere it is a cloud of drifting plates whose backs have an amber rim. Near the spot they settle, and on it the seams close.<ul><li>Fields: image, caption, credit, year, pose (depth), viewpoint.</li><li>Why: walking until it snaps together is a game without rules.</li><li>Weakest: the tiles assemble only within about 0.2 m of the spot. The visitor's own tracking drift of 0.2 to 0.3 m shows seams.</li><li>Generic, and not generic: "content that looks right from only one point" is ordinary perspective, as in every then-and-now overlay. Cutting one image into pieces at different depths that reassemble from one point is the specific mechanism. I avoided that mechanism in the three variants below.</li></ul></li><li><b>viewpoint-finder</b> - four corner brackets in the air, each on its own lens ray at a different depth (4.5 m, 6.5 m, 10.6 m and 17 m). From the spot they form one clean frame and turn amber, and the picture fills it: a 36-degree centre crop, so it fits a portrait screen.<ul><li>Fields: image, caption, credit, year, pose (depth), viewpoint.</li><li>How it differs from the mosaic: the picture is never split, distorted or spread in depth. Only an empty outline is. The picture appears whole, on one plane, once you stand there. The outline is still an arrangement that only lines up from one point, though, so it is not free of the idea. A weaker but cleaner version puts all four corners at one depth: they then form a frame from anywhere, and only look square from the spot.</li><li>Placement error: the self-alignment is immune, because corners and spot move together. The picture-to-scene match suffers exactly as in then-now. The visitor's own offset is the cue: 0.3 m sideways moves the near corners about 3.8 degrees against the far ones, which is visible. It is forgiving for "you are roughly here" within about 0.2 to 0.3 m.</li></ul></li><li><b>viewpoint-sharpen</b> - one whole picture hangs at the subject depth and can be seen from anywhere in the circle. It is blurred (mipmap bias), washed out and at 72 % opacity. It sharpens as the visitor nears the spot and faces the original direction (fully clear within 0.3 m), with the marker and hints as above.<ul><li>Fields: image, caption, credit, year, pose (depth), viewpoint.</li><li>How it differs from the mosaic: no tiles, no distortion and no anamorphosis. It is a reward gradient on one ordinary plane.</li><li>Placement error: the most forgiving of the viewpoint views. The blur hides the mismatch until you are close, the ramp spans 7 m, and 1 m of error changes nothing about the guidance.</li><li>Weakest: a 15 x 10 m pale smear over the square from everywhere. In a crowded or busy square it is visual noise, and against a bright sky it is nearly invisible.</li></ul></li><li><b>viewpoint-window</b> - a small framed window (a 30-degree centre crop, about 0.38 m wide) hung 0.7 m in front of the spot at eye height, with a tiny year label. It exists only within about 1 m of the spot (it fades in from 1.25 m to 0.65 m). From further away there is only the marker.<ul><li>Fields: image, caption, credit, year, viewpoint (pose not used).</li><li>How it differs from the mosaic: one undistorted picture, gated by distance. No piece of it depends on the visitor's exact position to look right.</li><li>Placement error: the frame makes any misfit read as "a print held up to the view", so 1 m and 3 degrees look acceptable.</li><li>Weakest: parallax. At 0.7 m, moving the phone 10 cm moves the window about 8 degrees against the distant scene. It can never truly line up with the scene, and should not pretend to. It also sits inside the near-clipping comfort zone of some phones (unverified).</li></ul></li><li><b>viewer</b> (my own) - a painted sightseeing viewer on a post, standing at the viewpoint and pointing the original way. A plate on the post reads "1885 - Look through". Walk up and tap (within 4.5 m). The screen turns into a binocular view of the picture at 1.7x. Turning the phone swings the view across the picture (a gauge shows where), and the caption and credit sit below.<ul><li>Fields: image, caption, credit, year, viewpoint (position, facing, pitch, and the lens angle sets the swing range). Pose and widthM are not used.</li><li>Why: everyone knows what to do with it, and it brings the visitor to the exact spot without any alignment at all.</li><li>Placement error: fully forgiving. The view is a screen overlay, and the world part is an object, not an overlay.</li><li>Weakest: it is a 3D model coded once in the app, and it is a little whimsical for a sober memorial site. Inside the binoculars you no longer see the real square.</li></ul></li></ul></details><details><summary>3. Costs</summary><ul><li><b>Frame time</b> from the readout (mean and maximum over 2 s), measured headless on this machine with SwiftShader, which is software rendering. These numbers say nothing about a phone GPU; only their order is meaningful. Each value is mean / max in milliseconds at 1440 x 900, device pixel ratio 1, standing at the view's best spot:<ul><li>framed: 94 / 300</li><li>cutout: 174 / 483</li><li>then-now: 217 / 433</li><li>mosaic: 208 / 483</li><li>viewpoint-finder: 191 / 367</li><li>viewpoint-sharpen: 169 / 350</li><li>viewpoint-window: 194 / 333</li><li>viewer: 156 / 300</li><li>editor: 203 / 633</li><li>The script work per frame is 0.5 to 5 ms in the visitor views. In the editor it is about 58 ms, which I did not explain (probably blocking software GL in the overview).</li></ul></li><li><b>Draw calls per view:</b> about 6 (framed), 4 (cutout), 5 (then-now: one plane plus the marker), 5 (mosaic: all 126 tiles in one geometry, animated in the vertex shader), 7 (finder), 5 (sharpen), 8 (window) and about 30 (viewer). None needs a per-block shader. The sharpen blur is a mipmap bias, so it needs mipmaps on the texture.</li><li><b>Overdraw:</b> the then-now, sharpen and finder pictures are large transparent planes covering much of the screen. On a phone that is the real cost.</li><li><b>Media:</b> the hall picture is 1500 x 1000 px, 309 KB as JPEG at quality 0.85 (measured in the page; WebP would be smaller). The stall cut-out is 936 x 592 px with alpha, 55 KB as WebP. Every view uses the same file, so no view adds megabytes.</li><li><b>Creator minutes:</b><ul><li>framed: 1 to 2 minutes (place, size, type the caption);</li><li>cutout: the same in the app, plus 10 to 30 minutes in an image editor to cut the subject out, which is the real cost;</li><li>then-now, mosaic, finder, sharpen, window and viewer: 3 to 5 minutes on site to find the photographer's spot and match the ghost with the lens slider. Finding the spot is the hard part and can take far longer for a picture with few straight edges. Once the viewpoint is set, switching between these six views costs nothing.</li></ul></li></ul><p><b>The parameter sweep behind "placement error breaks the overlay":</b> the angle between the old picture and the real scene is about atan(lateral error / subject distance), plus any heading error.</p><ul><li>Lateral error 0.5 m: 5.7 degrees at a 5 m subject, 2.0 at 14 m, 0.95 at 30 m.</li><li>Lateral error 1 m: 11.3, 4.1 and 1.9 degrees.</li><li>Lateral error 2 m: 21.8, 8.1 and 3.8 degrees.</li><li>3 degrees of heading error adds about 3 degrees at any distance.</li><li>Verdict across the range: the overlay views convince only for subjects about 15 m or more away and with good heading. A near subject (a doorway 5 m away) reverses it for any error over about 0.3 m. The view thresholds are listed in section 5, and I did not sweep them: they are taste values.</li></ul></details><details><summary>4. The creator's controls</summary><ul><li><b>Phone (creator mode):</b> six large buttons along the bottom.<ul><li>View: a list with one-line descriptions.</li><li>Place: framed and cutout go 3 m ahead, facing you. Viewer and window go where you stand.</li><li>Size: a width slider.</li><li>Turn: a slider plus "Face me".</li><li>Text: caption, credit and year.</li><li>Viewpoint: only for the viewpoint views. It shows the photo as a 50 % ghost glued to the phone, with a lens slider. Line it up with the scene and tap "Set viewpoint here", which stores the phone's position, facing and pitch. A toast confirms what was saved.</li></ul></li><li><b>Desktop editor:</b> the block list on the left, and on the right an inspector with:<ul><li>the view grid (eight glyphs) and the image (thumbnail, file, size, alpha);</li><li>caption (with a count), credit and year;</li><li>width;</li><li>pose (x, y, z, turn, tilt);</li><li>viewpoint (x, y, z, facing, pitch, lens), "Look from the viewpoint" (the camera jumps to it and shows exactly what the visitor will see) and Reset.</li><li>Every section says whether the current view uses it, and dims it if not.</li></ul></li><li><b>Handles in the 3D view:</b> an amber disc (drag to move), an amber knob (drag to turn) and a white cube (drag for width) for the pose. For the viewpoint, a blue disc moves it, a blue knob turns it and a blue diamond on the lens wedge sets the lens angle. The frustum lines out to the picture's depth show where it will hang.</li></ul></details><details><summary>5. Blunt self-check</summary><ul><li><b>The demo flatters the viewpoint views.</b> The 1885 photo is a render of my own stand-in model from the exact viewpoint, so it matches the stand-in square perfectly. A real archive photo has lens distortion, a changed ground level and moved buildings, and will never fit this well. Then-now in particular will look worse on site than here.</li><li><b>Text in the world breaks the reading-distance rule</b> wherever the visitor stands further than about 2 m from the plate. I accept that because the world text is a label and the sheet carries the reading.</li><li><b>The mosaic</b> is built as asked, but I would not ship it: the finder and sharpen variants do the same job.</li><li><b>Arbitrary constants in code, not data:</b><ul><li>the crops (36 degrees finder, 30 degrees window), the window distance (0.7 m) and the viewer magnification (1.7x);</li><li>the thresholds: spot hints within 1.0 m; then-now 2.6 to 0.9 m; mosaic 0.75 to 0.2 m; finder 0.6 to 0.2 m; sharpen 7 to 0.3 m; window 1.25 to 0.65 m; viewer tap 4.5 m.</li><li>They are taste values, not swept. A tighter mosaic or finder threshold would make the "line up" moment unreachable with phone tracking drift.</li></ul></li><li><b>Sharpen</b> relies on mipmap-bias blur, which looks blocky on some GPUs (not verified on a device), and it puts a large pale plane over the whole square.</li><li><b>Window</b> cannot truly line up with the scene (the parallax at 0.7 m). It is honest only as a held-up print.</li><li><b>No phone measurements:</b> everything was checked in headless software rendering only.</li><li><b>Drop first:</b> the mosaic (the finder covers it). After that, sharpen (noise for everyone not walking to the spot).</li><li><b>Proudest:</b> the viewer. It brings the visitor to the photographer's exact spot with an object everybody understands, works with sound off, in sunlight (a dark screen overlay) and with any placement error, and costs the creator nothing beyond the viewpoint. Then-now with the swipe is the most beautiful; the viewer is the one I would trust on a real square.</li><li><b>Inspiration, named:</b> then-and-now photo overlays (a common practice in local history projects), coin-operated sightseeing viewers, the camera viewfinder's corner marks, and perspective anamorphosis as a general idea. All code is my own.</li></ul></details><!--/NOTES-->`;
+
+boot();
+</script>
+</body>
+</html>

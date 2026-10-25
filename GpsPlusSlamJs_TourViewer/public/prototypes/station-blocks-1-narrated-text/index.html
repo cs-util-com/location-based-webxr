@@ -1,0 +1,2046 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Narrated Text Block</title>
+<link rel="icon" href="data:,">
+<style>
+:root{
+  --serif:"Iowan Old Style","Palatino Linotype","Book Antiqua",Palatino,Georgia,"Times New Roman",serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"Liberation Mono",monospace;
+  --amber:#f2b45a; --amber-soft:rgba(242,180,90,.16); --ink:#f6f2ea; --ink2:#d8d2c6; --ink3:#a49e92;
+  --plate:rgba(17,18,21,.9); --line:rgba(255,255,255,.09);
+  --barH:48px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#0b0c0e;overflow:hidden;-webkit-tap-highlight-color:transparent}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer}
+#stage{position:fixed;inset:0;overflow:hidden;background:#dfe5e8;font-family:var(--sans);color:var(--ink)}
+body.framed #stage{inset:auto;top:50%;left:50%;transform:translate(-50%,-50%);height:min(calc(100vh - 40px),calc((100vw - 40px)*19.5/9));aspect-ratio:9/19.5;border-radius:40px;box-shadow:0 0 0 9px #1a1b1e,0 0 0 10px #3b3c42,0 30px 90px rgba(0,0,0,.65)}
+#gl{position:absolute;left:0;top:0;width:100%;height:100%;display:block;touch-action:none;outline:none}
+
+/* ---------- chrome (prototype controls, not part of the block) ---------- */
+#topbar{position:absolute;top:8px;left:8px;right:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;z-index:30;pointer-events:none}
+#topbar>*{pointer-events:auto}
+.seg{display:flex;background:rgba(18,19,22,.74);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:999px;padding:3px;gap:2px}
+.seg button{border:0;background:transparent;border-radius:999px;height:28px;padding:0 10px;font-size:12.5px;font-weight:600;color:#d9d4ca;white-space:nowrap}
+.seg button.on{background:var(--ink);color:#16171a}
+#views{overflow-x:auto;scrollbar-width:none;max-width:100%}
+#views::-webkit-scrollbar{display:none}
+#views button.on{background:var(--amber);color:#1a1408}
+#views .vl{font-size:11.5px;color:#9f998d;padding:0 4px 0 9px;align-self:center;white-space:nowrap}
+
+/* ---------- the visitor's own view switch (remembered on the device, per model) ---------- */
+#vswitch{position:absolute;left:10px;top:calc(var(--barH) + 54px);z-index:24}
+#vs-btn{display:flex;align-items:center;gap:7px;height:36px;border-radius:999px;border:1px solid var(--line);background:var(--plate);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:0 12px 0 10px;font-size:12.5px;font-weight:650;color:#efe9de}
+#vs-btn svg{width:16px;height:16px;fill:none;stroke:var(--amber);stroke-width:1.8;stroke-linecap:round}
+#vs-btn small{font-weight:500;color:#9f998d;font-size:11px}
+#vs-menu{position:absolute;left:0;top:42px;width:min(290px,calc(100vw - 30px));background:rgba(18,19,22,.97);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:6px;box-shadow:0 16px 50px rgba(0,0,0,.4)}
+#vs-menu button.vo{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:11px;padding:8px 10px;color:#e9e4da}
+#vs-menu button.vo:hover:not([disabled]){background:rgba(255,255,255,.05)}
+#vs-menu button.vo b{display:flex;justify-content:space-between;gap:8px;font-size:13.5px}
+#vs-menu button.vo b i{font-style:normal;font-weight:500;font-size:11px;color:#9f998d}
+#vs-menu button.vo span{display:block;font-size:11.5px;color:#9f998d;margin-top:1px;line-height:1.35}
+#vs-menu button.vo.on{background:rgba(242,180,90,.12)}
+#vs-menu button.vo.on b{color:#ffd391}
+#vs-menu button.vo[disabled]{opacity:.45;cursor:default}
+#vs-menu .vs-foot{font-size:11px;color:#8f897e;padding:6px 10px 4px;border-top:1px solid rgba(255,255,255,.07);margin-top:4px;line-height:1.4}
+#vs-menu .vs-foot button{border:0;background:none;color:var(--amber);font-weight:650;font-size:11.5px;padding:4px 0 0;display:block}
+.spacer{flex:1}
+.icons{display:flex;gap:4px}
+.ib{height:34px;min-width:34px;border-radius:999px;border:1px solid var(--line);background:rgba(18,19,22,.74);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:grid;place-items:center;padding:0 10px;font-size:12px;font-weight:600;color:#e9e4da}
+.ib.on{background:var(--ink);color:#16171a}
+.ib svg{width:17px;height:17px;fill:currentColor}
+#stage[data-layout=portrait] #views{order:3;flex-basis:100%}
+#stage:not([data-mode=visitor]) #views{display:none}
+#fps{position:absolute;left:10px;top:calc(var(--barH) + 14px);z-index:31;font:500 10px/1.35 var(--mono);color:#e7e3da;background:rgba(14,15,18,.62);padding:3px 7px;border-radius:7px;pointer-events:none;white-space:pre}
+#stage[data-mode=editor]::before{content:"";position:absolute;left:0;right:0;top:0;height:calc(var(--barH) + 14px);background:#17181b;border-bottom:1px solid #26282c;z-index:4}
+#stage[data-mode=editor][data-layout=desktop] #fps{left:220px;top:13px}
+#stage[data-mode=editor] #gl{top:calc(var(--barH) + 14px);height:calc(100% - var(--barH) - 14px)}
+#stage[data-mode=editor][data-layout=portrait] #gl{height:calc(47% - var(--barH) - 14px)}
+#stage[data-mode=editor] #e-left,#stage[data-mode=editor] #e-right{top:calc(var(--barH) + 14px);padding-top:16px}
+#stage[data-mode=editor][data-layout=portrait] #e-right{top:46%}
+#stage[data-mode=editor][data-layout=desktop] #e-tools{top:calc(var(--barH) + 26px)}
+#stage[data-mode=editor]:not([data-layout=desktop]) #fps{display:none}
+
+/* ---------- visitor hints ---------- */
+#hint{position:absolute;left:50%;top:calc(var(--barH) + 52px);transform:translateX(-50%);z-index:12;display:flex;align-items:center;gap:10px;background:var(--plate);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:999px;padding:6px 6px 6px 14px;font-size:13px;color:var(--ink2);white-space:nowrap;transition:opacity .4s}
+#hint b{color:var(--ink);font-weight:650}
+#hint .arrow{width:18px;height:18px;fill:var(--amber);flex:none}
+#hint button{border:0;border-radius:999px;background:var(--amber);color:#1a1408;font-weight:700;font-size:12.5px;height:30px;padding:0 13px}
+#tapHint{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);z-index:11;background:var(--plate);border:1px solid var(--line);border-radius:999px;padding:9px 16px;font-size:13.5px;color:var(--ink2);white-space:nowrap;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+#tapHint b{color:var(--amber)}
+
+/* ---------- reading sheet ---------- */
+#sheet{position:absolute;z-index:20;display:flex;flex-direction:column;background:rgba(18,19,22,.94);backdrop-filter:blur(16px) saturate(1.1);-webkit-backdrop-filter:blur(16px) saturate(1.1);border:1px solid rgba(255,255,255,.07);box-shadow:0 -10px 40px rgba(0,0,0,.25);transition:transform .32s cubic-bezier(.2,.8,.2,1),opacity .32s;color:var(--ink2);overflow:hidden}
+#stage[data-layout=portrait] #sheet{left:0;right:0;bottom:0;height:63%;border-radius:24px 24px 0 0;transform:translateY(104%)}
+#stage[data-layout=landscape] #sheet{top:calc(var(--barH) + 6px);bottom:8px;right:8px;width:min(56%,520px);border-radius:20px;transform:translateX(108%)}
+#stage[data-layout=desktop] #sheet{top:calc(var(--barH) + 12px);bottom:18px;right:18px;width:520px;border-radius:24px;transform:translateX(112%)}
+#sheet.open{transform:none!important}
+#sheet .grab{width:38px;height:4px;border-radius:4px;background:rgba(255,255,255,.18);margin:8px auto 0;flex:none}
+#stage:not([data-layout=portrait]) #sheet .grab{display:none}
+#sheet header{position:relative;padding:12px 58px 10px 24px;flex:none}
+#stage:not([data-layout=portrait]) #sheet header{padding-top:20px}
+#stage[data-layout=landscape] #sheet header{padding-top:12px;padding-bottom:4px}
+#stage[data-layout=landscape] #sh-title{font-size:18px;margin:4px 0 2px}
+#stage[data-layout=landscape] #sh-close{top:10px}
+#stage[data-layout=landscape] #sh-text{font-size:17px}
+#stage[data-layout=landscape] .cb.play{width:48px;height:48px}
+#stage[data-layout=landscape] #sh-foot{padding:2px 14px 8px}
+.over{font:700 10.5px/1.2 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
+#sh-title{font:600 24px/1.18 var(--serif);color:#fff;margin:7px 0 6px;letter-spacing:.003em}
+#sh-meta{font-size:12.5px;color:var(--ink3)}
+#sh-close{position:absolute;right:14px;top:12px;width:36px;height:36px;border-radius:50%;border:0;background:rgba(255,255,255,.07);display:grid;place-items:center}
+#stage:not([data-layout=portrait]) #sh-close{top:18px}
+#sh-close svg{width:16px;height:16px;stroke:#ddd;stroke-width:2.2;fill:none}
+
+.textwrap{position:relative;flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-mask-image:linear-gradient(transparent 0,#000 22px,#000 calc(100% - 30px),transparent);mask-image:linear-gradient(transparent 0,#000 22px,#000 calc(100% - 30px),transparent);scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
+#sh-text{font-family:var(--serif);font-size:18.5px;line-height:1.62;color:var(--ink2);padding:14px 26px 46vh 24px;hyphens:auto;-webkit-hyphens:auto;text-wrap:pretty}
+#stage[data-layout=desktop] #sh-text{font-size:19.5px}
+#sh-text p{margin:0 0 1.05em}
+#sh-text .s{border-radius:4px;padding:2px 0;-webkit-box-decoration-break:clone;box-decoration-break:clone;transition:background-color .35s,color .35s,box-shadow .35s}
+#sheet.live #sh-text .s,#sheet.silent #sh-text .s{cursor:pointer}
+#sh-text .s.cur{background:var(--amber-soft);box-shadow:0 0 0 3px var(--amber-soft);color:#fdfaf3}
+#sh-text .w.on{color:#ffd391;text-decoration:underline;text-decoration-color:var(--amber);text-decoration-thickness:2px;text-underline-offset:4px}
+#sheet.silent #sh-text .s.cur{background:rgba(150,196,220,.13);box-shadow:0 0 0 3px rgba(150,196,220,.13)}
+#sh-follow{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);border:0;border-radius:999px;background:var(--ink);color:#16171a;font-weight:650;font-size:12.5px;height:32px;padding:0 14px;box-shadow:0 6px 20px rgba(0,0,0,.35);z-index:2}
+#sh-foot{flex:none;padding:6px 18px 14px;border-top:1px solid rgba(255,255,255,.07)}
+.bar{position:relative;height:18px;cursor:pointer;margin:2px 4px 0}
+.bar .track{position:absolute;left:0;right:0;top:7px;height:4px;border-radius:4px;background:rgba(255,255,255,.12)}
+.bar .fill{position:absolute;left:0;top:7px;height:4px;border-radius:4px;background:var(--amber);width:0}
+.bar .tick{position:absolute;top:5px;width:2px;height:8px;border-radius:1px;background:rgba(255,255,255,.22)}
+.bar .knob{position:absolute;top:3px;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+#sheet.silent .bar .fill{background:#96c4dc}
+.prow{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:2px}
+.prow .time{font:500 12px var(--mono);color:var(--ink3);min-width:62px}
+.prow .time.r{text-align:right}
+.btns{display:flex;align-items:center;gap:6px}
+.cb{width:46px;height:46px;border-radius:50%;border:0;background:transparent;display:grid;place-items:center;color:#e9e4da}
+.cb:active{background:rgba(255,255,255,.08)}
+.cb svg{width:24px;height:24px;fill:currentColor}
+.cb.play{width:58px;height:58px;background:var(--amber);color:#1a1408}
+.cb.play svg{width:26px;height:26px}
+.cb[disabled]{opacity:.3;cursor:default}
+.credit{text-align:center;font-size:11.5px;color:#8f897e;margin-top:4px;letter-spacing:.01em}
+.credit i{font-style:normal;color:#b8b1a4}
+#sh-pos{font-size:12.5px;color:var(--ink3);text-align:center;min-width:120px}
+
+/* ---------- caption strip ---------- */
+#caption{position:absolute;z-index:15;background:rgba(14,15,18,.86);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.07);border-radius:22px;padding:15px 18px 10px;box-shadow:0 10px 40px rgba(0,0,0,.25);transition:opacity .5s,transform .5s}
+#stage[data-layout=portrait] #caption{left:10px;right:10px;bottom:16px}
+#stage[data-layout=landscape] #caption{left:50%;width:min(660px,80%);transform:translateX(-50%);bottom:8px;padding:11px 16px 7px}
+#stage[data-layout=desktop] #caption{left:50%;width:780px;transform:translateX(-50%);bottom:26px;padding:20px 26px 12px}
+#caption.hide{opacity:0;pointer-events:none}
+#cap-text{font:600 22px/1.33 var(--sans);color:#f7f3eb;min-height:calc(1.33em*3);letter-spacing:.002em;display:flex;align-items:flex-end}
+#stage[data-layout=landscape] #cap-text{font-size:19px;min-height:calc(1.33em*2)}
+#stage[data-layout=desktop] #cap-text{font-size:27px;min-height:calc(1.33em*2)}
+#cap-text .chunk{display:block;animation:capIn .45s cubic-bezier(.2,.8,.2,1)}
+@keyframes capIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+#cap-text .w.todo{color:#bdb7ab}
+#cap-text .w.on{color:#ffd391;text-decoration:underline;text-decoration-color:var(--amber);text-decoration-thickness:3px;text-underline-offset:6px}
+#cap-text .muted{font-weight:500;color:#cfc9bd;font-size:.78em;line-height:1.4}
+.crow{display:flex;align-items:center;gap:8px;margin-top:10px}
+.crow .cb{width:40px;height:40px}
+.crow .cb.play{width:44px;height:44px}
+.crow .cb svg{width:20px;height:20px}
+.cmeta{flex:1;min-width:0}
+.cmeta .t{font:600 13px/1.25 var(--serif);color:#efe9de;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmeta .sub{font-size:11px;color:#8f897e;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{border:1px solid rgba(255,255,255,.14);background:transparent;border-radius:999px;height:34px;padding:0 13px;font-size:12.5px;font-weight:600;color:#e9e4da;white-space:nowrap}
+#cap-bar{height:3px;border-radius:3px;background:rgba(255,255,255,.1);margin-top:9px;overflow:hidden}
+#cap-bar div{height:100%;width:0;background:var(--amber)}
+
+/* ---------- creator ---------- */
+#creator-ui{display:none}
+#stage[data-mode=creator] #creator-ui{display:block}
+#c-top{position:absolute;left:50%;top:calc(var(--barH) + 50px);transform:translateX(-50%);z-index:12;background:var(--plate);border:1px solid var(--line);border-radius:14px;padding:8px 14px;text-align:center;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+#c-top .t{font:600 14px var(--serif);color:#fff;margin-top:3px;max-width:62vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#c-bar{position:absolute;left:10px;right:10px;bottom:12px;z-index:22;display:flex;gap:6px;justify-content:center}
+#c-bar button{flex:1;max-width:96px;height:66px;border-radius:18px;border:1px solid var(--line);background:rgba(18,19,22,.86);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;font-size:11.5px;font-weight:650;color:#e9e4da}
+#c-bar button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#c-bar button.on{background:var(--ink);color:#16171a}
+#c-sheet{position:absolute;left:10px;right:10px;bottom:88px;z-index:21;max-height:calc(100% - var(--barH) - 170px);overflow:auto;background:rgba(18,19,22,.94);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.07);border-radius:22px;padding:16px 16px 14px;color:var(--ink2);font-size:14px}
+#stage[data-layout=desktop] #c-sheet,#stage[data-layout=landscape] #c-sheet{left:auto;width:420px;right:12px;bottom:88px}
+#stage[data-layout=landscape] #c-sheet{top:calc(var(--barH) + 6px);bottom:84px;max-height:none}
+#stage[data-layout=landscape] #c-bar{left:auto;right:12px;width:420px;bottom:8px}
+#stage[data-layout=landscape] #c-bar button{height:62px}
+#stage[data-layout=landscape] #c-top,#stage[data-layout=desktop] #c-top{left:12px;transform:none}
+#stage[data-layout=landscape] #c-top{top:auto;bottom:12px}
+#c-sheet h3{margin:0 0 10px;font:600 17px var(--serif);color:#fff}
+.vcards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.vcard{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);border-radius:14px;padding:10px 11px;text-align:left;min-height:74px}
+.vcard b{display:block;font-size:13.5px;color:#f1ece2;margin-bottom:3px}
+.vcard span{font-size:11.5px;color:#9f998d;line-height:1.35;display:block}
+.vcard.on{border-color:var(--amber);background:rgba(242,180,90,.1)}
+.vcard svg{width:26px;height:20px;fill:none;stroke:var(--amber);stroke-width:1.6;margin-bottom:5px}
+.frow{display:flex;flex-direction:column;gap:5px;margin:0 0 11px;font-size:12px;color:var(--ink3)}
+.frow input[type=text],.frow textarea,.frow select{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:9px 11px;font-size:14.5px;color:#f1ece2;outline:none;width:100%}
+.frow textarea{font-family:var(--serif);font-size:13.5px;line-height:1.45;resize:vertical}
+.frow input:focus,.frow textarea:focus{border-color:rgba(242,180,90,.6)}
+.frow input[type=range]{width:100%;accent-color:var(--amber)}
+.stat{font-size:12px;color:var(--ink3);line-height:1.45}
+.stat b{color:#e9e4da;font-weight:600}
+.ok{color:#9fd3a9}.warn{color:#f0c27a}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.btn{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);border-radius:12px;height:40px;padding:0 14px;font-size:13px;font-weight:600;color:#ece7dd}
+.btn.primary{background:var(--amber);border-color:var(--amber);color:#1a1408}
+.check{display:flex;align-items:center;gap:9px;font-size:13.5px;color:#e5dfd4;margin:6px 0 10px}
+.check input{width:18px;height:18px;accent-color:var(--amber)}
+#reticle{display:none}
+
+/* ---------- editor ---------- */
+#editor-ui{display:none}
+#stage[data-mode=editor] #editor-ui{display:block}
+#stage[data-mode=editor] #stage-bg{display:block}
+#e-left{position:absolute;left:0;top:0;bottom:0;width:260px;padding:calc(var(--barH) + 16px) 12px 12px;background:#17181b;border-right:1px solid #26282c;color:var(--ink2);font-size:13px;z-index:5;overflow:auto}
+#e-right{position:absolute;right:0;top:0;bottom:0;width:360px;padding:calc(var(--barH) + 14px) 16px 24px;background:#17181b;border-left:1px solid #26282c;color:var(--ink2);font-size:13px;z-index:5;overflow:auto}
+#stage[data-mode=editor][data-layout=desktop] #gl{left:260px;width:calc(100% - 620px)}
+#stage[data-mode=editor][data-layout=landscape] #e-left{display:none}
+#stage[data-mode=editor][data-layout=landscape] #e-right{width:330px}
+#stage[data-mode=editor][data-layout=landscape] #gl{width:calc(100% - 330px)}
+#stage[data-mode=editor][data-layout=portrait] #e-left{display:none}
+#stage[data-mode=editor][data-layout=portrait] #e-right{top:46%;width:auto;left:0;padding-top:14px;border-left:0;border-top:1px solid #2a2c31;border-radius:18px 18px 0 0}
+#stage[data-mode=editor][data-layout=portrait] #gl{height:47%}
+.e-st{font:700 10.5px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:#8f897e;margin:4px 4px 8px}
+.e-item{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:11px;margin-bottom:4px;border:1px solid transparent}
+.e-item.on{background:rgba(242,180,90,.09);border-color:rgba(242,180,90,.35)}
+.e-item.dim{opacity:.5}
+.e-item svg{flex:none;width:18px;height:18px;fill:none;stroke:var(--amber);stroke-width:1.7;margin-top:1px}
+.e-item b{display:block;color:#f0ebe1;font-weight:600;font-size:13px}
+.e-item span{display:block;color:#8f897e;font-size:11.5px;margin-top:2px}
+.e-add{margin:6px 4px 18px;font-size:12px;color:#7d776d;border:1px dashed #34363b;border-radius:10px;padding:8px 10px;text-align:center}
+#e-right h4{font:700 10.5px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:#8f897e;margin:18px 0 9px;display:flex;justify-content:space-between}
+#e-right h4 i{font-style:normal;letter-spacing:0;text-transform:none;font-weight:500;color:#6f6a62}
+.i-head .t{font:600 19px/1.2 var(--serif);color:#fff;margin-top:5px}
+.vlist{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.vopt{border:1px solid #2e3035;background:#1d1e22;border-radius:10px;padding:7px 9px;text-align:left;font-size:12px;color:#cfc9bd}
+.vopt b{display:block;color:#f0ebe1;font-size:12.5px}
+.vopt.on{border-color:var(--amber);background:rgba(242,180,90,.1)}
+.vopt.auto{border-style:dashed;opacity:.8}
+.kv{display:flex;justify-content:space-between;gap:10px;font-size:12px;margin:5px 0;color:#8f897e}
+.kv b{color:#e7e1d6;font-weight:500;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:11.5px}
+.drop{border:1.5px dashed #3a3c42;border-radius:14px;padding:14px 12px;text-align:center;font-size:12.5px;color:#bdb7ab;margin:10px 0;line-height:1.45}
+.drop small{color:#7f796f;font-size:11px}
+.drop.hot{border-color:var(--amber);background:rgba(242,180,90,.06)}
+.cov{margin:8px 0 4px}
+.cov canvas{width:100%;height:12px;border-radius:4px;display:block;background:#222428}
+.cov .lg{display:flex;justify-content:space-between;font-size:11px;color:#7f796f;margin-top:4px}
+.pose{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pose label{font-size:11.5px;color:#8f897e;display:flex;flex-direction:column;gap:4px}
+.pose input{background:#1f2024;border:1px solid #2f3136;border-radius:8px;padding:7px 9px;font:500 13px var(--mono);color:#efe9de;width:100%}
+#i-jsonpre{max-height:260px;overflow:auto;background:#101113;border-radius:10px;padding:10px;font:11px/1.45 var(--mono);color:#cfc9bd;white-space:pre-wrap;word-break:break-all}
+#e-tools{position:absolute;z-index:6;top:calc(var(--barH) + 12px);display:flex;gap:6px}
+#stage[data-layout=desktop] #e-tools{left:276px}
+#stage[data-layout=landscape] #e-tools{left:12px}
+#stage[data-layout=portrait] #e-tools{left:10px;top:calc(var(--barH) + 24px)}
+#e-tools .seg button{font-size:12px}
+.mini-legend{position:absolute;z-index:6;bottom:12px;font-size:11.5px;color:#56595f;background:rgba(255,255,255,.7);border-radius:8px;padding:5px 9px}
+#stage[data-layout=desktop] .mini-legend{left:276px}
+#stage:not([data-layout=desktop]) .mini-legend{display:none}
+
+/* ---------- panels ---------- */
+#fields{position:absolute;z-index:40;right:10px;top:calc(var(--barH) + 12px);width:min(360px,calc(100% - 20px));max-height:calc(100% - var(--barH) - 30px);overflow:auto;background:rgba(20,21,24,.97);border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:16px 16px 10px;font-size:12.5px;color:var(--ink2);box-shadow:0 20px 60px rgba(0,0,0,.4)}
+#fields h3{margin:2px 0 4px;font:600 16px var(--serif);color:#fff}
+#fields .fr{display:grid;grid-template-columns:96px 1fr;gap:8px;padding:8px 0;border-top:1px solid rgba(255,255,255,.06)}
+#fields .fr code{font:600 12px var(--mono);color:var(--amber)}
+#fields .fr.unused code{color:#6f6a62;font-weight:400}
+#fields .fr.unused span{color:#76716a}
+#notes{position:absolute;z-index:45;inset:0;background:rgba(12,13,15,.97);overflow:auto;color:var(--ink2);font-size:14.5px;line-height:1.55}
+#notes .in{max-width:760px;margin:0 auto;padding:calc(var(--barH) + 24px) 22px 60px}
+#notes h2{font:600 26px var(--serif);color:#fff;margin:0 0 6px}
+#notes h3{font:600 18px var(--serif);color:#fff;margin:26px 0 8px}
+#notes h4{font-size:13px;color:var(--amber);margin:16px 0 4px;letter-spacing:.02em}
+#notes ul{padding-left:20px;margin:6px 0}
+#notes li{margin:3px 0}
+#notes code{font:12.5px var(--mono);color:#f0d8a8}
+#notes details{border-top:1px solid rgba(255,255,255,.08);padding:6px 0}
+#notes summary{cursor:pointer;font:600 17px var(--serif);color:#fff;padding:8px 0}
+#toast{position:absolute;z-index:50;left:50%;top:calc(var(--barH) + 60px);transform:translateX(-50%) translateY(-6px);opacity:0;transition:opacity .3s,transform .3s;background:#f6f2ea;color:#17181b;border-radius:14px;padding:10px 16px;font-size:13px;font-weight:550;max-width:min(520px,calc(100% - 30px));box-shadow:0 12px 40px rgba(0,0,0,.35);pointer-events:none;line-height:1.4}
+#toast.show{opacity:1;transform:translateX(-50%)}
+#veil{position:absolute;inset:0;z-index:60;background:rgba(14,15,18,.72);display:none;place-items:center;color:#fff;font:600 20px var(--serif);text-align:center;border:3px dashed var(--amber)}
+#veil small{display:block;font:500 13px var(--sans);color:#cfc9bd;margin-top:8px}
+/* ---------- timing by listening (creator + editor) ---------- */
+#tapper{position:absolute;z-index:26;display:flex;flex-direction:column;background:rgba(18,19,22,.97);border:1px solid rgba(255,255,255,.08);border-radius:22px;color:var(--ink2);overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+#stage[data-mode=editor][data-layout=desktop] #tapper{left:276px;right:376px;top:calc(var(--barH) + 72px);bottom:16px}
+#stage[data-mode=editor]:not([data-layout=desktop]) #tapper{left:8px;right:8px;top:calc(var(--barH) + 22px);bottom:8px}
+#stage[data-mode=creator] #tapper{left:10px;right:10px;top:calc(var(--barH) + 52px);bottom:12px}
+#stage[data-layout=portrait] #tapper .why{display:none}
+#stage[data-layout=portrait] .tp-legend{font-size:9.5px;gap:8px}
+#stage[data-layout=portrait] .tp-sub{flex-wrap:nowrap}
+#stage[data-layout=portrait] #tp-stat{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#stage[data-mode=creator][data-layout=landscape] #tapper{left:auto;right:12px;width:440px;top:calc(var(--barH) + 6px);bottom:8px}
+#stage[data-mode=creator][data-layout=desktop] #tapper{left:auto;right:12px;width:480px}
+#tapper header{display:flex;align-items:flex-start;gap:8px;padding:14px 14px 6px 18px;flex:none}
+#tapper header .hd{flex:1;min-width:0}
+#tapper header .btn{height:34px;padding:0 11px;font-size:12.5px}
+#tapper h3{margin:5px 0 0;font:600 17px/1.25 var(--serif);color:#fff}
+#tapper .why{font-size:11.5px;color:#8f897e;margin-top:3px;line-height:1.4}
+.tp-next{margin:4px 14px 6px;padding:9px 12px;border-radius:12px;background:rgba(242,180,90,.08);border:1px solid rgba(242,180,90,.22);flex:none}
+.tp-next .over{font-size:9.5px}
+.tp-next .tx{font:600 15px/1.35 var(--sans);color:#f7f3eb;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#tp-wrap{flex:1;min-height:60px;overflow-y:auto;position:relative;-webkit-mask-image:linear-gradient(transparent 0,#000 14px,#000 calc(100% - 18px),transparent);mask-image:linear-gradient(transparent 0,#000 14px,#000 calc(100% - 18px),transparent)}
+#tp-text{font-family:var(--serif);font-size:16.5px;line-height:2.15;padding:12px 20px 36vh;color:#cfc9bd}
+#tp-text p{margin:0 0 .7em}
+#tp-text .tw{cursor:pointer;border-radius:3px;transition:background-color .2s}
+#tp-text .tw.none{color:#8a857c}
+#tp-text .tw.est{text-decoration:underline dotted rgba(242,180,90,.75);text-decoration-thickness:2px;text-underline-offset:6px}
+#tp-text .tw.ext{text-decoration:underline dotted rgba(255,255,255,.28);text-decoration-thickness:2px;text-underline-offset:6px;color:#b3ada2}
+#tp-text .tw.anc{position:relative;color:#fff;text-decoration:underline solid var(--amber);text-decoration-thickness:3px;text-underline-offset:6px}
+#tp-text .tw.anc::before{content:attr(data-t);position:absolute;left:0;top:-1.25em;font:700 9.5px/1 var(--mono);color:var(--amber);white-space:nowrap}
+#tp-text .tw.anc.snapped::before{color:#9fd3a9}
+#tp-text .tw.on{background:rgba(255,255,255,.16);color:#fff}
+.tp-tl{flex:none;padding:4px 16px 0}
+.tp-tl canvas{display:block;width:100%;height:40px;cursor:pointer}
+.tp-legend{display:flex;gap:12px;font-size:10.5px;color:#7f796f;padding:2px 2px 0;flex-wrap:wrap}
+.tp-legend i{display:inline-block;width:18px;height:0;vertical-align:middle;margin-right:5px;border-top:3px solid var(--amber)}
+.tp-legend i.d{border-top:2px dotted rgba(242,180,90,.85)}
+.tp-legend i.x{border-top:2px dotted rgba(255,255,255,.35)}
+.tp-legend i.g{border-top:3px solid #9fd3a9}
+.tp-ctrl{flex:none;display:flex;align-items:center;gap:6px;padding:8px 14px 4px}
+.tp-ctrl .cb{width:44px;height:44px;flex:none}
+.tp-ctrl .cb.play{width:50px;height:50px}
+#tp-mark{flex:1;min-width:0;height:54px;border-radius:16px;border:0;background:var(--amber);color:#1a1408;font-weight:750;font-size:14.5px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.15}
+#tp-mark small{font-weight:600;font-size:10.5px;opacity:.7}
+#tp-mark:active{transform:scale(.98)}
+#tp-undo{height:44px;border-radius:14px;padding:0 12px;flex:none}
+.tp-sub{flex:none;display:flex;align-items:center;gap:8px;padding:4px 16px 12px;font-size:11.5px;color:#8f897e;flex-wrap:wrap}
+.tp-sub .check{margin:0;font-size:12px}
+.tp-sub .check input{width:15px;height:15px}
+.tp-sub .nb{height:28px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:transparent;padding:0 8px;font:600 11px var(--mono);color:#d9d4ca}
+#tp-stat{flex:1;min-width:150px}
+#stage[data-layout=landscape] .tp-next,#stage[data-layout=landscape] #tapper .why{display:none}
+[hidden]{display:none!important}
+</style>
+<script type="importmap">
+  { "imports": {
+      "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+  } }
+</script>
+</head>
+<body>
+<div id="stage" data-mode="visitor" data-layout="desktop">
+  <canvas id="gl" tabindex="0"></canvas>
+
+  <div id="topbar">
+    <div class="seg" id="modes">
+      <button data-mode="visitor">Visitor</button><button data-mode="creator">Creator</button><button data-mode="editor">Editor</button>
+    </div>
+    <div class="seg" id="views"></div>
+    <div class="spacer"></div>
+    <div class="icons">
+      <button class="ib" id="b-fields" title="Fields this view uses" aria-label="Fields"><svg viewBox="0 0 24 24"><path d="M4 6h3v2H4zm5 0h11v2H9zM4 11h3v2H4zm5 0h11v2H9zM4 16h3v2H4zm5 0h11v2H9z"/></svg></button>
+      <button class="ib" id="b-notes" title="Designer notes" aria-label="Notes"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm8 1.8V8h4.2zM7 11v1.8h10V11zm0 4v1.8h10V15zm0-8v1.8h5V7z"/></svg></button>
+      <button class="ib" id="b-frame" title="Phone frame"><svg viewBox="0 0 24 24"><path d="M8 2h8a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3zm0 2a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H8zm2.5 14h3v1.2h-3z"/></svg></button>
+      <button class="ib" id="b-sound" title="Sound on or off"></button>
+    </div>
+  </div>
+  <div id="fps">frame -</div>
+
+  <div id="hint" hidden><svg class="arrow" viewBox="0 0 24 24"><path d="M12 3l7 9h-4.5v9h-5v-9H5z"/></svg><span id="hint-t"></span><button id="hint-walk">Walk in</button></div>
+  <div id="vswitch" hidden><button id="vs-btn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg><span id="vs-cur"></span><small>change</small></button><div id="vs-menu" role="menu" hidden></div></div>
+  <div id="tapHint" hidden></div>
+
+  <div id="caption" class="hide">
+    <div id="cap-text"></div>
+    <div class="crow">
+      <button class="cb play" id="cap-play" aria-label="Play or pause"></button>
+      <button class="cb" id="cap-back" aria-label="Back 10 seconds"></button>
+      <div class="cmeta"><div class="t" id="cap-title"></div><div class="sub" id="cap-sub"></div></div>
+      <button class="pill" id="cap-open">Full text</button>
+    </div>
+    <div id="cap-bar"><div></div></div>
+  </div>
+
+  <section id="sheet" aria-hidden="true">
+    <div class="grab"></div>
+    <header>
+      <div class="over" id="sh-over">Old market square · Station 1</div>
+      <h2 id="sh-title"></h2>
+      <div id="sh-meta"></div>
+      <button id="sh-close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </header>
+
+    <div class="textwrap" id="sh-wrap"><article id="sh-text" lang="en"></article></div>
+    <button id="sh-follow" hidden>Back to the voice</button>
+    <footer id="sh-foot">
+      <div class="bar" id="sh-bar"><div class="track"></div><div class="fill"></div><div class="knob"></div></div>
+      <div class="prow">
+        <span class="time" id="sh-t0">0:00</span>
+        <div class="btns">
+          <button class="cb" id="sh-back10" aria-label="Back 10 seconds"></button>
+          <button class="cb" id="sh-prev" aria-label="Previous sentence"></button>
+          <span id="sh-pos" hidden></span>
+          <button class="cb play" id="sh-play" aria-label="Play or pause"></button>
+          <button class="cb" id="sh-next" aria-label="Next sentence" hidden></button>
+        </div>
+        <span class="time r" id="sh-t1">0:00</span>
+      </div>
+      <div class="credit" id="sh-credit"></div>
+    </footer>
+  </section>
+
+  <div id="creator-ui">
+    <div id="c-top"><div class="over">Editing block · in AR</div><div class="t" id="c-title"></div></div>
+    <div id="c-sheet"></div>
+    <div id="c-bar">
+      <button data-c="place"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>Place</button>
+      <button data-c="view"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 15h18M8 19v-4"/></svg>View</button>
+      <button data-c="text"><svg viewBox="0 0 24 24"><path d="M5 6h14M5 10h14M5 14h9M5 18h6"/></svg>Text</button>
+      <button data-c="voice"><svg viewBox="0 0 24 24"><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/></svg>Voice</button>
+      <button data-c="size"><svg viewBox="0 0 24 24"><path d="M4 20L20 4M14 4h6v6M10 20H4v-6"/></svg>Size, turn</button>
+    </div>
+  </div>
+
+  <div id="editor-ui">
+    <aside id="e-left">
+      <div class="e-st">Station 1 · Old market square</div>
+      <div class="e-item on"><svg viewBox="0 0 24 24"><path d="M5 6h14M5 10h14M5 14h9M5 18h6"/></svg><div><b id="e-name"></b><span id="e-sub"></span></div></div>
+      <div class="e-item dim"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/></svg><div><b>Other block</b><span>another family's block</span></div></div>
+      <div class="e-add">+ Add block</div>
+      <div class="e-st">Station 2 · East path</div>
+      <div class="e-item dim"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/></svg><div><b>Stand-in item</b><span>60 m east</span></div></div>
+    </aside>
+    <div id="e-tools"><div class="seg" id="e-gizmo"><button data-g="translate" class="on">Move</button><button data-g="rotate">Turn</button></div><button class="ib" id="e-preview">Preview as visitor</button></div>
+    <div class="mini-legend">Drag the arrows to move, the ring to turn. Right drag pans, wheel zooms.</div>
+    <aside id="e-right"></aside>
+  </div>
+
+  <section id="tapper" hidden>
+    <header><div class="hd"><div class="over">Timing by listening</div><h3>Tap as the voice reaches a sentence</h3><div class="why">Mark some points, not every word: the rest is estimated from the text in between. Tap a word to mark it; tap a marked word while paused to remove it.</div></div><button class="btn" id="tp-cancel">Cancel</button><button class="btn primary" id="tp-done">Done</button></header>
+    <div class="tp-next"><div class="over" id="tp-nextlbl">Next sentence start</div><div class="tx" id="tp-next"></div></div>
+    <div id="tp-wrap"><article id="tp-text" lang="en"></article></div>
+    <div class="tp-tl"><canvas id="tp-tl" height="80"></canvas><div class="tp-legend"><span><i></i>marked</span><span><i class="g"></i>snapped to a pause</span><span><i class="d"></i>estimated between marks</span><span><i class="x"></i>extrapolated</span></div></div>
+    <div class="tp-ctrl"><button class="cb" id="tp-back" aria-label="Back 5 seconds"></button><button class="cb play" id="tp-play" aria-label="Play or pause"></button><button id="tp-mark">Mark: this sentence starts now<small>space</small></button><button class="btn" id="tp-undo">Undo</button></div>
+    <div class="tp-sub"><label class="check"><input type="checkbox" id="tp-snap" checked> Snap to pause</label><span id="tp-stat"></span><button class="nb" id="tp-m50">-50 ms</button><button class="nb" id="tp-p50">+50 ms</button></div>
+  </section>
+  <div id="fields" hidden></div>
+  <div id="notes" hidden><div class="in" id="notes-in"></div></div>
+  <div id="toast"></div>
+  <div id="veil"><div>Drop an audio file and a timing file<small>WebVTT or a JSON word list. Files stay in this page's memory; nothing is uploaded.</small></div></div>
+  <input type="file" id="file-in" multiple accept="audio/*,.vtt,.json,.txt,.mp3,.ogg,.opus,.wav,.m4a,.webm" hidden>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+/* =====================================================================
+   1. The example record (one record, every view draws it)
+   ===================================================================== */
+const PARAGRAPHS = [
+`You are standing in the old market square, almost exactly where the town's weekly market has been held for more than six hundred years. Turn to face north. The tall stone front with the single door and the two windows is the guild house, finished in the spring of 1612. To your left, in the north-west corner, a low and broken wall runs along the edge of the paving. It looks like nothing much, a garden wall that lost its garden. It is in fact the oldest thing you can see from here, and the reason the square exists at all. Over the next few minutes we will move through four centuries of this place: the keep that came first, the guild house that still stands, the great timber market hall that once filled the whole west half of the square, and the October night in 1890 when that hall burned to the ground.`,
+`Long before there was a market, there was a rise in the ground and a tower on top of it. The keep was built of rough field stone, bedded in lime mortar that the builders burned in a kiln down by the river. Nobody wrote down the year it was begun. The first record that mentions it is a dispute about firewood, which tells us that by then somebody lived in the tower through the winter and expected the farms around it to keep him warm. The walls were nearly three metres thick at the base. The only door was on the first floor, reached by a wooden stair that could be pulled up or burned in an emergency. From the top a guard could see the ford across the river and the road coming down from the hills, which is exactly what the tower was for.`,
+`A tower that watches a road soon attracts people who want to use the road. Carters stopped below the keep because it was safe there. Smiths and saddlers followed the carters, and bakers followed everyone. By the time the town received the right to hold a market, the open ground at the foot of the tower had already been trampled flat by generations of traders who had not waited for permission. The charter gave them two market days, Wednesday and Saturday, a fair at the end of harvest, and the duty to keep the ground free of dung, carts and quarrels. The last of these duties was the hardest to fulfil, and the town records are full of fines for all three.`,
+`The keep lost its purpose slowly and then all at once. Once the town had its own walls and gates, a single tower in one corner of the market was more of a nuisance than a defence. In a hard winter the council allowed citizens to take stone from the upper storeys, and in the years that followed nobody quite remembered to stop them. Much of that stone is still in the town. It sits in cellar walls, in garden steps and in the foundations of the guild house in front of you. What remained of the keep was cut down to the height of a man's waist, and a cart road was broken through the middle of it. That is the gap you can see in the wall today. Carts loaded with turnips rolled for two hundred years through the place where the lords of the tower once kept their stores.`,
+`The guild house was a joint venture, which in this town meant it took eleven years of argument and four of building. The bakers, the butchers, the weavers and the smiths each wanted the hall for themselves, and each refused to pay for a hall they would have to share. What finally brought them together was not friendship but the town scales. Every sack of grain, every bale of wool and every barrel of salt sold in the square had to be weighed, and the weighing had always been done under an awning that leaked. The guilds agreed to build one solid house with a dry ground floor for the scales and an upper hall for their meetings, and to split the cost by the weight of goods each trade brought to market. The weavers, who sold light cloth, paid the least, and the smiths never forgave them.`,
+`Look at the front of the house. The door in the middle is not the original. The first door was twice as wide, so that a loaded hand-cart could be pushed straight in onto the scales. It was narrowed in the eighteenth century, when the scales moved and the ground floor became a store. The two windows on either side belong to the upper hall. In the original plan there were to be five, one for each guild and one for the town, but the money ran out after the stone was cut for two, and the builders filled the rest of the front with plain wall. The guild masters had the year carved in the stone above the door. If you look closely you may still be able to make out the numbers, softened by four hundred winters of rain.`,
+`Now turn to your left and look across the west half of the square, towards the broken wall. For most of the town's history you would not have been able to see it from here, because this whole half of the square was covered by a roof. The market hall was built about forty years after the guild house, entirely of oak. It stood on thirty-two posts, each one a single trunk, in four rows of eight. The ground floor was open on all sides, so that traders could set up beneath it in rain and in heat. Above the posts there was a closed upper floor where the cloth merchants kept their bales and where, on fair days, the town council held its court. The upper floor was reached by an outside stair at the north end, close to where the keep had stood.`,
+`Those who remembered the hall described it above all by its smell. Under the roof the air was thick with flour dust, with tar from the ropes, with wet wool and with the cheese that the farmers' wives brought in from the villages on Saturdays. Children played between the posts and were chased out again. Dogs slept in the shade. A bell hung under the eaves at the south end, and it was rung at the start and close of each market. Nobody was allowed to sell before the first bell, and anybody still selling after the last one paid a fine to the wardens. On the posts the wardens nailed up the prices of bread and beer, and the posts were so full of old nail holes that a carpenter who repaired one of them claimed it was held together mainly by iron.`,
+`The fire began in the upper floor on a dry night in October 1890, a few hours after the autumn fair had closed. The most likely cause was a lamp left burning in one of the cloth stores, although at the inquiry each of the merchants was able to prove that it had not been his. A wind was blowing from the east. Within a quarter of an hour the roof was alight from end to end, and burning cloth was carried over the square like enormous moths. The town's fire engine was pulled out of the guild house, where it had been stored for decades, and it was found that the leather hose had dried and cracked. So the townspeople did what their grandparents would have done. They formed a line from the well behind the guild house and passed buckets from hand to hand.`,
+`They could not save the market hall, and after the first hour they did not try. The buckets went instead to the guild house, whose roof was only twenty metres downwind of the flames. Men climbed onto it and spread wet sailcloth across the tiles, and others threw water on the sailcloth as fast as the line could deliver it. Twice the cloth caught fire and twice it was beaten out. Shortly before dawn the burning roof of the market hall collapsed into the floor below, and with it the danger was over. When the sun rose, the hall was a field of black posts standing in ash, and the guild house was soot from the ground to the eaves, but it was whole. The sailcloth was later cut into pieces and sold as keepsakes, and one of them still hangs in the upper hall.`,
+`The town never rebuilt the market hall. The council argued about it for six years, as it had once argued about the guild house, and by the end of the argument the traders had grown used to the open sky. Stalls with canvas roofs replaced the posts, and in the new century they were joined by the first carts selling things nobody in the old hall had heard of. The burnt posts were pulled out of the ground in the winter after the fire. Their sockets were filled with stone, and when the square was paved again, the masons laid the stones over them without marking where they had been. Old people in the town could still point to them a generation later. Today nobody can, which is one reason this walk exists.`,
+`The guild house had a quieter century. The guilds themselves faded as their trades changed, and the building passed to the town. For a while it held the town archive, and shelves for the records were built along the walls of the upper hall, right up to the windows. Then it served as a school, and two generations of children learned their letters in the room where the guild masters had once fined each other for bad bread. Later the scales came back, not to weigh anything, but to be looked at, and the ground floor was opened again on market days. If the door is open when you pass, you are welcome to step inside.`,
+`Take a moment to look at the square as it is now. The open paving to your left, between the path and the broken wall, is the floor of the market hall, and if you walk across it you are walking under a roof that has not existed for more than a century. The bench and the tree on the east side mark the place where the carters once watered their horses, beside a trough that was taken away when the first motor car arrived. The broken wall in the corner is what is left of the tower that made the town a town. The guild house still has two windows where there were meant to be five. Nothing on this square is complete, and that is perhaps the most honest thing about it. Each generation took what it needed from the one before, a few stones, a market right, a habit of arguing, and left the rest for the next to find.`,
+`When you are ready, follow the path that leaves the square to the east. About sixty metres along it you will come to the next station, at the place where the carts once queued for the town scales on market mornings. If you would like to hear any part of this story again, come back into the square at any time, and the text will remember where you stopped.`
+];
+const BODY = PARAGRAPHS.join('\n\n');
+// The simulated creator edit used by the "stale" view: one sentence reworded after the timing was made.
+const STALE_FROM = 'If you look closely you may still be able to make out the numbers';
+const STALE_TO = 'Look closely and you can still make out the numbers';
+
+const FIELDS = ['title', 'body', 'lang', 'audio', 'timing', 'voiceCredit', 'synthetic'];
+
+/* =====================================================================
+   2. Text analysis, hashing, generated timing
+   ===================================================================== */
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = ms => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+function hashText(s) {
+  const t = String(s).normalize('NFC');
+  let h = 0x811c9dc5;
+  for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return 'fnv1a32:' + (h >>> 0).toString(16).padStart(8, '0');
+}
+function normWord(s) { return s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/['’]/g, ''); }
+const WORD_RE = () => /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu;
+function tokenize(text) {
+  const out = []; const re = WORD_RE(); let m;
+  while ((m = re.exec(text))) out.push({ from: m.index, to: m.index + m[0].length, norm: normWord(m[0]), text: m[0] });
+  return out;
+}
+
+const analysisCache = new Map();
+function analyze(body) {
+  if (analysisCache.has(body)) return analysisCache.get(body);
+  const paragraphs = [], sentences = [], words = [];
+  const pre = /\n[ \t]*\n/g; let start = 0, m; const cuts = [];
+  while ((m = pre.exec(body))) { cuts.push([start, m.index]); start = pre.lastIndex; }
+  cuts.push([start, body.length]);
+  for (let [a, b] of cuts) {
+    while (a < b && /\s/.test(body[a])) a++;
+    while (b > a && /\s/.test(body[b - 1])) b--;
+    if (b > a) paragraphs.push({ from: a, to: b, s0: 0, s1: 0 });
+  }
+  paragraphs.forEach((p, pi) => {
+    p.s0 = sentences.length;
+    const t = body.slice(p.from, p.to);
+    const pushS = (a, b) => {
+      while (a < b && /\s/.test(t[a])) a++;
+      while (b > a && /\s/.test(t[b - 1])) b--;
+      if (b > a) sentences.push({ from: p.from + a, to: p.from + b, p: pi, w0: -1, w1: -1 });
+    };
+    const re = /[.!?…]+["'”’)\]]*(?=\s|$)/g; let last = 0, mm;
+    while ((mm = re.exec(t))) {
+      const end = mm.index + mm[0].length;
+      let k = end; while (k < t.length && /\s/.test(t[k])) k++;
+      if (k >= t.length || /[\p{Lu}\p{N}"'“‘(\[]/u.test(t[k])) { pushS(last, end); last = end; }
+    }
+    pushS(last, t.length);
+    p.s1 = sentences.length;
+  });
+  const re = WORD_RE(); let si = 0;
+  while ((m = re.exec(body))) {
+    const from = m.index, to = from + m[0].length;
+    while (si < sentences.length - 1 && from >= sentences[si].to) si++;
+    words.push({ from, to, s: si, norm: normWord(m[0]) });
+  }
+  words.forEach((w, i) => { const s = sentences[w.s]; if (!s) return; if (s.w0 < 0) s.w0 = i; s.w1 = i + 1; });
+  const A = { body, paragraphs, sentences, words, hash: hashText(body) };
+  analysisCache.set(body, A);
+  if (analysisCache.size > 8) analysisCache.delete(analysisCache.keys().next().value);
+  return A;
+}
+function lastLE(arr, key, v) { // last index i with key(arr[i]) <= v, or -1
+  let lo = 0, hi = arr.length - 1, r = -1;
+  while (lo <= hi) { const mid = (lo + hi) >> 1; if (key(arr[mid]) <= v) { r = mid; lo = mid + 1; } else hi = mid - 1; }
+  return r;
+}
+const sentenceAt = (A, off) => Math.max(0, lastLE(A.sentences, s => s.from, off));
+const wordAt = (A, off) => lastLE(A.words, w => w.from, off);
+
+// A plausible fake narration track: word durations from word length, pauses at commas, sentence ends and paragraphs.
+function makeFakeTiming(body) {
+  const A = analyze(body); const segs = []; let t = 600;
+  for (let i = 0; i < A.words.length; i++) {
+    const w = A.words[i]; const len = w.to - w.from;
+    const dur = Math.min(720, 105 + 44 * len);
+    segs.push({ startMs: Math.round(t), endMs: Math.round(t + dur), from: w.from, to: w.to });
+    t += dur + 40;
+    const next = A.words[i + 1]; if (!next) break;
+    const gap = body.slice(w.to, next.from);
+    if (/\n\s*\n/.test(gap)) t += 1100; else if (/[.!?]/.test(gap)) t += 430; else if (/[,;:]/.test(gap)) t += 190;
+  }
+  return { granularity: 'word', segments: segs, textHash: hashText(body) };
+}
+
+/* =====================================================================
+   3. Importing a dropped timing file: parse, then align by word sequence
+   ===================================================================== */
+function parseTime(s) {
+  const p = s.trim().replace(',', '.').split(':').map(Number);
+  if (p.some(x => !Number.isFinite(x))) return NaN;
+  return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : p.length === 2 ? p[0] * 60 + p[1] : p[0];
+}
+function parseVTT(text) {
+  const lines = text.replace(/\r/g, '').split('\n');
+  if (!/^﻿?WEBVTT/.test(lines[0] || '')) throw new Error('not a WebVTT file (no WEBVTT header)');
+  const tre = /^\s*((?:\d+:)?\d{1,2}:\d{2}[.,]\d{1,3})\s*-->\s*((?:\d+:)?\d{1,2}:\d{2}[.,]\d{1,3})/;
+  const units = []; let inline = false, cues = 0, bad = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const m = tre.exec(lines[i]); if (!m) continue;
+    const cs = parseTime(m[1]), ce = parseTime(m[2]);
+    const buf = []; i++;
+    while (i < lines.length && lines[i].trim() !== '') { buf.push(lines[i]); i++; }
+    if (!(ce >= cs)) { bad++; continue; }
+    cues++;
+    const raw = buf.join(' ');
+    const tagRe = /<((?:\d+:)?\d{1,2}:\d{2}\.\d{1,3})>/g;
+    if (tagRe.test(raw)) {
+      inline = true;
+      const parts = raw.split(/<((?:\d+:)?\d{1,2}:\d{2}\.\d{1,3})>/);
+      let t0 = cs;
+      for (let k = 0; k < parts.length; k += 2) {
+        const txt = parts[k].replace(/<[^>]*>/g, '');
+        const t1 = k + 1 < parts.length ? parseTime(parts[k + 1]) : ce;
+        if (txt.trim()) units.push({ text: txt, start: t0, end: Math.max(t0, t1), cue: cues - 1 });
+        if (k + 1 < parts.length) t0 = parseTime(parts[k + 1]);
+      }
+    } else {
+      const txt = raw.replace(/<[^>]*>/g, '');
+      if (txt.trim()) units.push({ text: txt, start: cs, end: ce, cue: cues - 1 });
+    }
+  }
+  if (!units.length) throw new Error('no cues found');
+  return { format: inline ? 'WebVTT, inline word times' : 'WebVTT, sentence cues', granularity: inline ? 'word' : 'sentence', units, bad };
+}
+function parseJSONWords(text) {
+  let j; try { j = JSON.parse(text); } catch (e) { throw new Error('not valid JSON'); }
+  let list = Array.isArray(j) ? j : Array.isArray(j?.words) ? j.words : Array.isArray(j?.segments) ? j.segments.flatMap(s => Array.isArray(s?.words) ? s.words : []) : null;
+  if (!list) throw new Error('expected a list of { text, start, end }');
+  const units = []; let bad = 0;
+  for (const w of list) {
+    const t = typeof w?.text === 'string' ? w.text : typeof w?.word === 'string' ? w.word : null;
+    const s = Number(w?.start), e = Number(w?.end);
+    if (t === null || !Number.isFinite(s) || !Number.isFinite(e) || e < s || s < 0) { bad++; continue; }
+    units.push({ text: t, start: s, end: e, cue: units.length });
+  }
+  if (!units.length) throw new Error('no usable words');
+  return { format: 'JSON word list', granularity: 'word', units, bad };
+}
+// Expand timed units into word tokens, splitting each unit's time by character length.
+function unitsToTokens(units) {
+  const toks = [];
+  for (const u of units) {
+    const tk = tokenize(u.text); if (!tk.length) continue;
+    const total = tk.reduce((a, t) => a + (t.to - t.from), 0); let acc = 0;
+    for (const t of tk) {
+      const a = u.start + (u.end - u.start) * acc / total; acc += t.to - t.from;
+      const b = u.start + (u.end - u.start) * acc / total;
+      toks.push({ norm: t.norm, start: a, end: b, cue: u.cue });
+    }
+  }
+  return toks;
+}
+// Map file tokens onto body words by their sequence: unique trigram anchors (longest increasing chain),
+// LCS inside the gaps, and isolated single-word matches dropped. The file's own offsets are never used.
+function alignWords(B, F) {
+  const n = B.length, m = F.length, map = new Int32Array(m).fill(-1);
+  const key = (a, i) => a[i] + '\u0001' + a[i + 1] + '\u0001' + a[i + 2];
+  const cb = new Map(), cf = new Map();
+  for (let i = 0; i + 2 < n; i++) { const k = key(B, i); cb.set(k, cb.has(k) ? -1 : i); }
+  for (let j = 0; j + 2 < m; j++) { const k = key(F, j); cf.set(k, cf.has(k) ? -1 : j); }
+  const anchors = [];
+  for (const [k, j] of cf) { if (j < 0) continue; const i = cb.get(k); if (i !== undefined && i >= 0) anchors.push([i, j]); }
+  anchors.sort((a, b) => a[1] - b[1]);
+  // longest increasing subsequence on body index
+  const tails = [], prev = new Int32Array(anchors.length).fill(-1), tailIdx = [];
+  anchors.forEach(([i], idx) => {
+    let lo = 0, hi = tails.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (tails[mid] < i) lo = mid + 1; else hi = mid; }
+    tails[lo] = i; tailIdx[lo] = idx; prev[idx] = lo > 0 ? tailIdx[lo - 1] : -1;
+  });
+  const chain = []; for (let k = tails.length ? tailIdx[tails.length - 1] : -1; k >= 0; k = prev[k]) chain.push(anchors[k]);
+  chain.reverse();
+  const pairs = []; let li = -1, lj = -1;
+  for (const [i, j] of chain) for (let d = 0; d < 3; d++) if (i + d > li && j + d > lj) { pairs.push([i + d, j + d]); li = i + d; lj = j + d; }
+  pairs.push([n, m]);
+  let pi = -1, pj = -1;
+  for (const [i, j] of pairs) { lcsFill(B, F, pi + 1, i, pj + 1, j, map); if (i < n) map[j] = i; pi = i; pj = j; }
+  // drop isolated single-word matches (common words matching by chance)
+  const keep = new Int32Array(m).fill(-1);
+  for (let j = 0; j < m; j++) {
+    const i = map[j]; if (i < 0) continue;
+    const l = j > 0 && map[j - 1] >= 0 && map[j - 1] === i - 1;
+    const r = j + 1 < m && map[j + 1] >= 0 && map[j + 1] === i + 1;
+    const l2 = j > 1 && map[j - 2] >= 0 && Math.abs(map[j - 2] - (i - 2)) <= 1;
+    const r2 = j + 2 < m && map[j + 2] >= 0 && Math.abs(map[j + 2] - (i + 2)) <= 1;
+    if (l || r || (l2 && r2)) keep[j] = i;
+  }
+  return keep;
+}
+function lcsFill(B, F, i0, i1, j0, j1, map) {
+  const a = i1 - i0, b = j1 - j0; if (a <= 0 || b <= 0) return;
+  if (a * b > 4e6) { let i = i0; for (let j = j0; j < j1 && i < i1; j++) if (B[i] === F[j]) { map[j] = i; i++; } return; }
+  const W = b + 1, L = new Uint16Array((a + 1) * W);
+  for (let x = a - 1; x >= 0; x--) for (let y = b - 1; y >= 0; y--)
+    L[x * W + y] = B[i0 + x] === F[j0 + y] ? L[(x + 1) * W + y + 1] + 1 : Math.max(L[(x + 1) * W + y], L[x * W + y + 1]);
+  let x = 0, y = 0;
+  while (x < a && y < b) {
+    if (B[i0 + x] === F[j0 + y]) { map[j0 + y] = i0 + x; x++; y++; }
+    else if (L[(x + 1) * W + y] >= L[x * W + y + 1]) x++; else y++;
+  }
+}
+function buildTimingFromImport(body, parsed) {
+  const A = analyze(body);
+  const toks = unitsToTokens(parsed.units);
+  const map = alignWords(A.words.map(w => w.norm), toks.map(t => t.norm));
+  const matchedBody = new Uint8Array(A.words.length); let matched = 0;
+  map.forEach(i => { if (i >= 0 && !matchedBody[i]) { matchedBody[i] = 1; matched++; } });
+  const segs = [];
+  if (parsed.granularity === 'word') {
+    toks.forEach((t, j) => { const i = map[j]; if (i < 0) return; const w = A.words[i]; segs.push({ startMs: Math.round(t.start * 1000), endMs: Math.round(t.end * 1000), from: w.from, to: w.to }); });
+  } else {
+    const byCue = new Map();
+    toks.forEach((t, j) => { const i = map[j]; if (i < 0) return; const c = byCue.get(t.cue) || { s: Infinity, e: -Infinity, f: Infinity, to: -Infinity }; c.s = Math.min(c.s, t.start); c.e = Math.max(c.e, t.end); c.f = Math.min(c.f, A.words[i].from); c.to = Math.max(c.to, A.words[i].to); byCue.set(t.cue, c); });
+    [...byCue.keys()].sort((a, b) => a - b).forEach(k => { const c = byCue.get(k); segs.push({ startMs: Math.round(c.s * 1000), endMs: Math.round(c.e * 1000), from: c.f, to: c.to }); });
+  }
+  segs.sort((a, b) => a.startMs - b.startMs);
+  // runs of 8+ unmatched body words count as gaps
+  let gaps = 0, run = 0; for (let i = 0; i <= A.words.length; i++) { if (i < A.words.length && !matchedBody[i]) run++; else { if (run >= 8) gaps++; run = 0; } }
+  return {
+    timing: { granularity: parsed.granularity, segments: segs, textHash: A.hash },
+    report: { format: parsed.format, fileWords: toks.length, matched, bodyWords: A.words.length, coverage: A.words.length ? matched / A.words.length : 0, unmatchedFile: toks.length - map.filter(i => i >= 0).length, gaps, badEntries: parsed.bad }
+  };
+}
+
+/* =====================================================================
+   4. State
+   ===================================================================== */
+const VIEWS = [
+  { name: 'reading', label: 'Reading', required: true, overlay: true, card: 'Short sign in the world, full text with read-along on tap.', visitor: 'The whole text in a sheet, the voice highlighted' },
+  { name: 'caption', label: 'Captions', required: true, card: 'One or two sentences at a time at the bottom, world stays visible. Needs a matching timing; without one, visitors get Reading.', visitor: 'A few lines at a time with the voice, eyes on the place' },
+  { name: 'silent', label: 'Sound off', required: true, overlay: true, card: 'The same text without playback, for places where sound is not allowed.', visitor: 'The whole text to read at your own pace, no voice' },
+  { name: 'stale', label: 'Stale track', required: true, overlay: true, auto: true, card: 'Not chosen: what any view falls back to when the text changed after timing (plain reading, no read-along, no notice).' },
+  { name: 'lectern', label: 'Lectern', required: false, card: 'A reading stand in the world: the current lines on a page, read up close.', visitor: 'A reading stand in the square, read up close' }
+];
+// The views that show the same content: a visitor may swap between them, and the swap is remembered on the
+// device for every narrated text, in every tour. The automatic stale state is not a choice and never takes part.
+const INTERCHANGEABLE = ['reading', 'caption', 'silent', 'lectern'];
+const PREF_KEY = 'tour-viewer.visitor.view.narratedText';
+function readPref() {
+  try { const v = window.localStorage.getItem(PREF_KEY); return INTERCHANGEABLE.includes(v) ? v : null; }
+  catch (e) { return null; }   // storage blocked (private mode, a sandbox): no remembered choice
+}
+function writePref(v) {
+  try { if (v) window.localStorage.setItem(PREF_KEY, v); else window.localStorage.removeItem(PREF_KEY); return true; }
+  catch (e) { return false; }  // the choice then lasts only this visit
+}
+const USES = {
+  reading: { title: 'On the sign in the world and as the sheet heading', body: 'The whole text in the sheet, split into paragraphs, sentences and words', lang: 'The text\'s lang attribute: hyphenation, sentence rules, font fallback', audio: 'Playback (here the generated tone pattern)', timing: 'Sentence highlight, spoken-word mark, tap a sentence to play from it, back 10 s, previous sentence', voiceCredit: 'Credit line under the controls', synthetic: 'Adds "Synthetic voice" in front of the credit' },
+  caption: { title: 'On the small sound marker and in the strip', body: 'Only the sentences around the voice, chunked to three lines', lang: 'Sentence and clause breaking', audio: 'Playback', timing: 'Required: which chunk shows and which word is marked', voiceCredit: 'Strip sub-line', synthetic: 'Adds "Synthetic voice" in front of the credit' },
+  silent: { title: 'On the sign and as the heading', body: 'The whole text; a reading mark the visitor sets by tapping', lang: 'Hyphenation and sentence rules', audio: null, timing: null, voiceCredit: null, synthetic: null },
+  stale: { title: 'On the sign and as the heading', body: 'The whole text as plain reading, with no notice to the visitor (here with one sentence reworded after timing)', lang: 'Hyphenation and sentence rules', audio: 'Plain playback, no read-along', timing: 'Only textHash, compared with the body; segments are ignored', voiceCredit: 'Credit line', synthetic: 'Adds "Synthetic voice"' },
+  lectern: { title: 'Page header on the stand', body: 'The current paragraph, a window of nine lines around the voice', lang: 'Sentence rules', audio: 'Playback, tap the page to pause', timing: 'Sentence highlight and spoken word on the page; page turns follow it', voiceCredit: 'Page footer', synthetic: 'Page footer' }
+};
+const S = {
+  mode: 'visitor', view: 'reading',
+  record: { title: 'The Guild House and the Burnt Hall', body: BODY, lang: 'en', audio: 'media/guild-house-narration.opus', timing: null, voiceCredit: 'Demo narration: a generated tone pattern standing in for a recorded voice', synthetic: true },
+  pose: { x: 0, z: 0, yawDeg: 0, scale: 1 },
+  muted: false, sheetOpen: false, follow: true, readSentence: 4, lecternSentence: 0,
+  audioEl: null, audioName: null, lastImport: null, importReport: null,
+  vis: { x: 0, z: 26.5, yaw: 0, pitch: 0.02 }, cre: { x: 0.5, z: 6.2, yaw: 0.06, pitch: -0.22 },
+  csheet: 'view', gizmo: 'translate', framed: false,
+  pref: readPref()   // the visitor's remembered view, or null for the creator's choice
+};
+// The generated tone narration is the block's "audio" with its own fixed, planted word track.
+// The record's timing starts as a copy of it; listening-and-tapping or an import replaces the
+// record's timing, never the audio's own track (editing the text never changes a recording either).
+const TONE = makeFakeTiming(BODY);
+S.record.timing = JSON.parse(JSON.stringify(TONE));
+const TONEI = buildIndex(analyze(BODY), TONE);
+const ANCHOR = new THREE.Vector3(0, 0, 0), ST2 = new THREE.Vector3(60, 0, 0), RADIUS = 25;
+
+/* derived display state: which body is shown and whether timing drives it */
+// memoised per (timing object, body): shownView() asks this every frame, and the hash walks the whole body
+let tmMemo = { t: undefined, body: undefined, ok: false };
+function timingMatches() {
+  const t = S.record.timing, body = S.record.body;
+  if (tmMemo.t === t && tmMemo.body === body) return tmMemo.ok;
+  const ok = !!(t && Array.isArray(t.segments) && t.segments.length && t.textHash === hashText(body));
+  tmMemo = { t, body, ok }; return ok;
+}
+/* What a visitor actually sees: the creator's view, or the visitor's remembered one when both are interchangeable;
+   and Captions only with a matching timing (it is timing-driven by construction), otherwise Reading.
+   Creator and editor always see the creator's choice. */
+function shownView() {
+  if (S.mode !== 'visitor') return S.view;
+  let v = S.view;
+  if (S.pref && INTERCHANGEABLE.includes(v)) v = S.pref;
+  if (v === 'caption' && !timingMatches()) v = 'reading';
+  return v;
+}
+function display() {
+  const v = shownView();
+  const simulate = v === 'stale' && timingMatches();
+  const body = simulate && S.record.body.includes(STALE_FROM) ? S.record.body.replace(STALE_FROM, STALE_TO) : S.record.body;
+  const live = v !== 'stale' && v !== 'silent' && timingMatches();
+  return { body, A: analyze(body), live, simulate, hasTiming: !!S.record.timing, stale: v === 'stale' || (!!S.record.timing && !timingMatches()) };
+}
+let TI = null;
+// Index a timing track against the analysed body it was made for (sentence/word per segment).
+function buildIndex(A, t) {
+  const segs = t.segments, n = segs.length;
+  const segW = new Int32Array(n), segS0 = new Int32Array(n), segS1 = new Int32Array(n), starts = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    starts[i] = segs[i].startMs;
+    segW[i] = t.granularity === 'word' ? wordAt(A, segs[i].from) : -1;
+    segS0[i] = sentenceAt(A, segs[i].from); segS1[i] = sentenceAt(A, Math.max(segs[i].from, segs[i].to - 1));
+  }
+  const sFirst = new Int32Array(A.sentences.length).fill(-1);
+  for (let i = 0; i < n; i++) for (let s = segS0[i]; s <= segS1[i]; s++) if (sFirst[s] < 0) sFirst[s] = i;
+  return { t, segs, segW, segS0, segS1, sFirst, starts, A };
+}
+function timingIndex() {
+  const t = S.record.timing;
+  if (TI && TI.t === t && TI.A.body === S.record.body) return TI;
+  if (!t || !timingMatches()) { TI = null; return null; }
+  TI = buildIndex(analyze(S.record.body), t);
+  return TI;
+}
+function cursorAt(ms) {
+  const ti = timingIndex(); if (!ti) return null;
+  let lo = 0, hi = ti.starts.length - 1, k = -1;
+  while (lo <= hi) { const mid = (lo + hi) >> 1; if (ti.starts[mid] <= ms) { k = mid; lo = mid + 1; } else hi = mid - 1; }
+  if (k < 0) return { k: -1, s0: -1, s1: -1, w: -1 };
+  return { k, s0: ti.segS0[k], s1: ti.segS1[k], w: ti.segW[k] };
+}
+
+/* =====================================================================
+   5. Playback: a clock, the generated tone voice, or a dropped audio file
+   ===================================================================== */
+const tones = {
+  ctx: null, out: null, nodes: [], next: 0, active: false, base: 0, posBase: 0,
+  ensure() {
+    if (!this.ctx) { try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); this.out = this.ctx.createGain(); this.out.gain.value = S.muted ? 0 : 1; this.out.connect(this.ctx.destination); } catch (e) { this.ctx = null; } }
+    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+  },
+  start(posMs) {
+    this.stop(); const ti = TONEI; if (!this.ctx || !ti) return;
+    this.active = true; this.base = this.ctx.currentTime + 0.05; this.posBase = posMs;
+    this.next = Math.max(0, ti.starts.findIndex(s => s >= posMs)); if (ti.starts[this.next] < posMs) this.next = ti.starts.length;
+  },
+  pump(posMs) {
+    const ti = TONEI; if (!this.active || !this.ctx || !ti) return;
+    while (this.next < ti.segs.length && ti.segs[this.next].startMs < posMs + 300) { this.voice(ti, this.next); this.next++; }
+  },
+  voice(ti, k) {
+    const seg = ti.segs[k], A = ti.A, c = this.ctx;
+    const t = this.base + (seg.startMs - this.posBase) / 1000; if (t < c.currentTime - 0.02) return;
+    const pieces = ti.segW[k] >= 0 ? [[seg.startMs, seg.endMs, ti.segW[k]]] : (() => { const out = []; for (let a = seg.startMs; a < seg.endMs - 120; a += 330) out.push([a, Math.min(seg.endMs, a + 260), -1]); return out; })();
+    for (const [a, b, wi] of pieces) {
+      const t0 = this.base + (a - this.posBase) / 1000, dur = Math.max(0.06, (b - a) / 1000 * 0.82);
+      const s = A.sentences[ti.segS0[k]] || { w0: 0, w1: 1 };
+      const prog = wi >= 0 && s.w1 > s.w0 ? (wi - s.w0) / (s.w1 - s.w0) : ((a - seg.startMs) / Math.max(1, seg.endMs - seg.startMs));
+      const last = wi >= 0 && wi === s.w1 - 1;
+      const h = ((wi >= 0 ? A.words[wi].from : a) * 2654435761) >>> 0;
+      const f = 196 * (1 - 0.16 * prog) * (1 + ((h % 7) - 3) * 0.025) * (last ? 0.86 : 1);
+      const g = c.createGain(), o = c.createOscillator(), o2 = c.createOscillator(), g2 = c.createGain();
+      o.type = 'sine'; o2.type = 'triangle'; o.frequency.setValueAtTime(f, t0); o.frequency.linearRampToValueAtTime(f * (last ? 0.9 : 1.03), t0 + dur);
+      o2.frequency.setValueAtTime(f * 2, t0); g2.gain.value = 0.18;
+      g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.11, t0 + 0.025); g.gain.setTargetAtTime(0.0001, t0 + dur * 0.55, dur * 0.22);
+      o.connect(g); o2.connect(g2); g2.connect(g); g.connect(this.out);
+      o.start(t0); o2.start(t0); o.stop(t0 + dur + 0.2); o2.stop(t0 + dur + 0.2);
+      const rec = { o, o2 }; this.nodes.push(rec);
+      o.onended = () => { const i = this.nodes.indexOf(rec); if (i >= 0) this.nodes.splice(i, 1); };
+    }
+  },
+  stop() { this.active = false; for (const n of this.nodes) { try { n.o.stop(); n.o2.stop(); } catch (e) { /* already stopped */ } } this.nodes = []; },
+  setMuted(m) { if (this.out && this.ctx) this.out.gain.setTargetAtTime(m ? 0 : 1, this.ctx.currentTime, 0.05); }
+};
+const player = {
+  playing: false, pos: 0, p0: 0, t0: 0,
+  duration() {
+    if (S.audioEl && Number.isFinite(S.audioEl.duration)) return S.audioEl.duration * 1000;
+    return S.record.audio ? TONE.segments[TONE.segments.length - 1].endMs + 900 : 0;
+  },
+  now() {
+    if (!this.playing) return this.pos;
+    if (S.audioEl) return S.audioEl.currentTime * 1000;
+    return this.p0 + (performance.now() - this.t0);
+  },
+  play() {
+    if (this.playing) return; const d = this.duration(); if (d <= 0) { toast('Nothing to play: this block has no audio.'); return; }
+    if (this.pos >= d - 60) this.pos = 0;
+    this.playing = true;
+    if (S.audioEl) { S.audioEl.currentTime = this.pos / 1000; S.audioEl.muted = S.muted; S.audioEl.play().catch(() => {}); }
+    else { this.p0 = this.pos; this.t0 = performance.now(); tones.ensure(); tones.start(this.pos); }
+    ui.dirty = true;
+  },
+  pause() {
+    if (!this.playing) return; this.pos = this.now(); this.playing = false;
+    if (S.audioEl) S.audioEl.pause(); tones.stop(); ui.dirty = true;
+  },
+  toggle() { this.playing ? this.pause() : this.play(); },
+  seek(ms) { const was = this.playing; if (was) this.pause(); this.pos = clamp(ms, 0, Math.max(0, this.duration() - 1)); if (was) this.play(); ui.dirty = true; ui.forceScroll = true; }
+};
+function seekToSentence(si, andPlay) {
+  const ti = timingIndex(); if (!ti) return;
+  const k = ti.sFirst[clamp(si, 0, ti.sFirst.length - 1)]; if (k < 0) return;
+  player.seek(ti.segs[k].startMs - 30); if (andPlay) player.play();
+  S.follow = true;
+}
+function prevSentence() {
+  const c = cursorAt(player.now()); if (!c) return;
+  const ti = timingIndex(); const s = Math.max(0, c.s0);
+  const k = ti.sFirst[s]; const into = k >= 0 ? player.now() - ti.segs[k].startMs : 0;
+  seekToSentence(into > 1600 ? s : s - 1, false);
+}
+// The page opens as if the visitor had listened for a little while, so every screenshot shows the read-along.
+(function demoPosition() { const A = analyze(BODY); const s = A.sentences[2]; const segs = S.record.timing.segments; player.pos = segs[s.w0 + 6].startMs + 60; })();
+
+/* =====================================================================
+   6. Three.js scene: the plain square
+   ===================================================================== */
+const canvas = document.getElementById('gl'), stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#dde4e8');
+scene.fog = new THREE.Fog('#dde4e8', 70, 190);
+const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 600); camera.rotation.order = 'YXZ';
+scene.add(new THREE.HemisphereLight(0xffffff, 0xa9a59d, 2.3));
+const sun = new THREE.DirectionalLight(0xffffff, 0.9); sun.position.set(-20, 40, 25); scene.add(sun);
+const MAXANI = renderer.capabilities.getMaxAnisotropy();
+function canvasTex(c) { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = MAXANI; return t; }
+const grey = c => new THREE.MeshLambertMaterial({ color: c });
+
+(function buildPlace() {
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), grey('#bdbab3')); g.rotation.x = -Math.PI / 2; scene.add(g);
+  // paving of the square: a faint 1 m stone grid
+  const pc = document.createElement('canvas'); pc.width = pc.height = 512; const x = pc.getContext('2d');
+  x.fillStyle = '#c9c6bf'; x.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 16; i++) for (let j = 0; j < 16; j++) { const v = 196 + ((i * 7 + j * 13) % 9); x.fillStyle = `rgb(${v},${v - 3},${v - 9})`; x.fillRect(i * 32 + 1, j * 32 + 1, 30, 30); }
+  const pt = canvasTex(pc); pt.wrapS = pt.wrapT = THREE.RepeatWrapping; pt.repeat.set(2.5, 2.5);
+  const sq = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambertMaterial({ map: pt })); sq.rotation.x = -Math.PI / 2; sq.position.y = 0.005; scene.add(sq);
+  const pathM = grey('#b0ada6');
+  const p1 = new THREE.Mesh(new THREE.PlaneGeometry(3, 40), pathM); p1.rotation.x = -Math.PI / 2; p1.position.set(0, 0.004, 40); scene.add(p1);
+  const p2 = new THREE.Mesh(new THREE.PlaneGeometry(70, 3), pathM); p2.rotation.x = -Math.PI / 2; p2.position.set(55, 0.004, 0); scene.add(p2);
+  // guild house front (north side)
+  const wallM = grey('#c3c0ba'), darkM = grey('#7d7a75'), winM = grey('#8e959a');
+  const house = new THREE.Mesh(new THREE.BoxGeometry(18, 6, 8), wallM); house.position.set(0, 3, -24); scene.add(house);
+  const cornice = new THREE.Mesh(new THREE.BoxGeometry(18.4, 0.3, 0.5), grey('#b5b2ab')); cornice.position.set(0, 6.0, -19.9); scene.add(cornice);
+  const door = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.6, 0.1), darkM); door.position.set(0, 1.3, -19.97); scene.add(door);
+  for (const wx of [-5, 5]) { const w = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.7, 0.1), winM); w.position.set(wx, 3.7, -19.97); scene.add(w); }
+  // ruined wall, north-west corner, with a gap
+  const stoneM = grey('#a9a49b');
+  const seg = (x0, x1, hs) => { const n = hs.length, w = (x1 - x0) / n; hs.forEach((h, i) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, h, 0.8), stoneM); b.position.set(x0 + w * (i + 0.5), h / 2, -14); scene.add(b); }); };
+  seg(-18, -15, [0.95, 1.05, 0.8, 1.0, 0.7]); seg(-13.6, -10, [0.6, 0.9, 1.1, 1.0, 0.85, 0.5]);
+  // bench and tree
+  const bench = new THREE.Group(); const bm = grey('#8f8a82');
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 0.45), bm); seat.position.y = 0.45; bench.add(seat);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.4, 0.06), bm); back.position.set(0, 0.75, -0.2); bench.add(back);
+  for (const lx of [-0.8, 0.8]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 0.4), bm); l.position.set(lx, 0.22, 0); bench.add(l); }
+  bench.position.set(9, 0, -5); bench.rotation.y = -0.3; scene.add(bench);
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.26, 3.2, 10), grey('#8d857b')); trunk.position.set(12, 1.6, -8); scene.add(trunk);
+  const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.3, 1), new THREE.MeshLambertMaterial({ color: '#a7ad9f', flatShading: true })); crown.position.set(12, 4.5, -8); scene.add(crown);
+  // station circles, faint on the ground
+  for (const c of [ANCHOR, ST2]) { const r = new THREE.Mesh(new THREE.RingGeometry(RADIUS - 0.07, RADIUS + 0.07, 160), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55 })); r.rotation.x = -Math.PI / 2; r.position.set(c.x, 0.02, c.z); scene.add(r); }
+  const dot = new THREE.Mesh(new THREE.CircleGeometry(0.1, 24), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.3 })); dot.rotation.x = -Math.PI / 2; dot.position.y = 0.02; scene.add(dot);
+  // second, plain station: one stand-in item
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.3, 0.1), grey('#8f8b84')); post.position.set(60, 0.65, 0); scene.add(post);
+  const card = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.65, 0.05), grey('#9c9890')); card.position.set(60, 1.55, 0); scene.add(card);
+})();
+
+/* ---------- the block's world elements ---------- */
+const blockRoot = new THREE.Group(); scene.add(blockRoot);
+const fadeMats = []; // [material, baseOpacity]
+function fm(mat, base = 1) { mat.transparent = true; fadeMats.push([mat, base]); mat.opacity = base; return mat; }
+const interactive = [];
+
+// (a) the short sign: opens the reading sheet
+const labelG = new THREE.Group(); blockRoot.add(labelG);
+const labelCanvas = document.createElement('canvas'); labelCanvas.width = 1024; labelCanvas.height = 420;
+const labelTex = canvasTex(labelCanvas);
+const LABEL_W = 2.5, LABEL_H = LABEL_W * 420 / 1024, LABEL_Y = 2.05;
+const labelMesh = new THREE.Mesh(new THREE.PlaneGeometry(LABEL_W, LABEL_H), fm(new THREE.MeshBasicMaterial({ map: labelTex, toneMapped: false, depthWrite: false })));
+labelMesh.position.y = LABEL_Y; labelMesh.renderOrder = 2; labelMesh.userData.hit = 'label'; labelG.add(labelMesh); interactive.push(labelMesh);
+const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, LABEL_Y - LABEL_H / 2, 8), fm(new THREE.MeshLambertMaterial({ color: '#2a2b2f' }), 0.85));
+stem.position.y = (LABEL_Y - LABEL_H / 2) / 2; labelG.add(stem);
+const baseRing = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.4, 48), fm(new THREE.MeshBasicMaterial({ color: '#f2b45a', depthWrite: false }), 0.85));
+baseRing.rotation.x = -Math.PI / 2; baseRing.position.y = 0.025; labelG.add(baseRing);
+
+// (b) the small sound marker for the caption strip
+const markerG = new THREE.Group(); blockRoot.add(markerG);
+const discCanvas = document.createElement('canvas'); discCanvas.width = discCanvas.height = 256;
+(function drawDisc() {
+  const g = discCanvas.getContext('2d'); g.clearRect(0, 0, 256, 256);
+  g.fillStyle = 'rgba(17,18,21,0.92)'; g.beginPath(); g.arc(128, 128, 124, 0, 7); g.fill();
+  g.fillStyle = '#f2b45a'; g.beginPath(); g.moveTo(78, 108); g.lineTo(102, 108); g.lineTo(134, 80); g.lineTo(134, 176); g.lineTo(102, 148); g.lineTo(78, 148); g.closePath(); g.fill();
+  g.strokeStyle = '#f2b45a'; g.lineWidth = 9; g.lineCap = 'round';
+  for (const r of [26, 50]) { g.beginPath(); g.arc(136, 128, r, -0.75, 0.75); g.stroke(); }
+})();
+const disc = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), fm(new THREE.MeshBasicMaterial({ map: canvasTex(discCanvas), toneMapped: false, depthWrite: false })));
+disc.position.y = 2.45; disc.renderOrder = 2; disc.userData.hit = 'marker'; markerG.add(disc); interactive.push(disc);
+const pulse = [0, 1, 2].map(() => { const m = new THREE.Mesh(new THREE.RingGeometry(0.47, 0.5, 64), fm(new THREE.MeshBasicMaterial({ color: '#f2b45a', depthWrite: false }), 0)); m.position.y = 2.45; markerG.add(m); return m; });
+const pillCanvas = document.createElement('canvas'); pillCanvas.width = 1024; pillCanvas.height = 180;
+const pillTex = canvasTex(pillCanvas);
+const pill = new THREE.Mesh(new THREE.PlaneGeometry(2.7, 2.7 * 180 / 1024), fm(new THREE.MeshBasicMaterial({ map: pillTex, toneMapped: false, depthWrite: false })));
+pill.position.y = 1.72; pill.renderOrder = 2; pill.userData.hit = 'marker'; markerG.add(pill); interactive.push(pill);
+const mstem = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 1.5, 8), fm(new THREE.MeshLambertMaterial({ color: '#2a2b2f' }), 0.8)); mstem.position.y = 0.75; markerG.add(mstem);
+const mring = baseRing.clone(); mring.material = fm(new THREE.MeshBasicMaterial({ color: '#f2b45a', depthWrite: false }), 0.85); markerG.add(mring);
+
+// (c) the lectern: a reading stand, world-fixed, facing its pose
+const lecternG = new THREE.Group(); blockRoot.add(lecternG);
+const LEC_W = 1.2, LEC_H = 0.9, LEC_TILT = THREE.MathUtils.degToRad(16), LEC_Y = 1.32;
+const lecCanvas = document.createElement('canvas'); lecCanvas.width = 1024; lecCanvas.height = 768;
+const lecTex = canvasTex(lecCanvas);
+(function buildLectern() {
+  const dark = fm(new THREE.MeshLambertMaterial({ color: '#2b2d31' }));
+  const board = new THREE.Group(); board.position.y = LEC_Y; board.rotation.x = -LEC_TILT; lecternG.add(board);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(LEC_W + 0.08, LEC_H + 0.08, 0.04), dark); back.position.z = -0.025; board.add(back);
+  const page = new THREE.Mesh(new THREE.PlaneGeometry(LEC_W, LEC_H), fm(new THREE.MeshBasicMaterial({ map: lecTex, toneMapped: false })));
+  page.position.z = 0.0; page.userData.hit = 'lectern'; board.add(page); interactive.push(page);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(LEC_W + 0.08, 0.04, 0.07), dark); lip.position.set(0, -LEC_H / 2 - 0.04, 0.03); board.add(lip);
+  const bottom = LEC_Y - Math.cos(LEC_TILT) * LEC_H / 2;
+  for (const lx of [-0.42, 0.42]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, bottom, 0.05), dark); leg.position.set(lx, bottom / 2, -0.05); lecternG.add(leg);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.04, 0.5), dark); foot.position.set(lx, 0.02, -0.05); lecternG.add(foot);
+  }
+})();
+
+// creator/editor helpers
+const selRing = new THREE.Mesh(new THREE.RingGeometry(0.95, 1.02, 64), new THREE.MeshBasicMaterial({ color: '#f2b45a', transparent: true, opacity: 0.9, depthWrite: false }));
+selRing.rotation.x = -Math.PI / 2; selRing.position.y = 0.03; blockRoot.add(selRing);
+const facing = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.32, 3), new THREE.MeshBasicMaterial({ color: '#f2b45a' }));
+facing.rotation.x = Math.PI / 2; facing.position.set(0, 0.04, 1.2); blockRoot.add(facing);
+const reticle = new THREE.Group(); scene.add(reticle);
+{ const a = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.27, 48), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.95, depthWrite: false })); a.rotation.x = -Math.PI / 2; reticle.add(a);
+  const b = new THREE.Mesh(new THREE.CircleGeometry(0.05, 20), new THREE.MeshBasicMaterial({ color: '#f2b45a' })); b.rotation.x = -Math.PI / 2; b.position.y = 0.002; reticle.add(b); }
+reticle.position.y = 0.03;
+
+/* ---------- canvas drawing helpers ---------- */
+const SERIF = '"Iowan Old Style","Palatino Linotype","Book Antiqua",Palatino,Georgia,serif';
+const SANS = 'system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif';
+function rr(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+function wrap(g, text, maxW) { const ws = text.split(/\s+/); const out = []; let line = ''; for (const w of ws) { const t = line ? line + ' ' + w : w; if (g.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; } if (line) out.push(line); return out; }
+function minutes(ms) { return Math.max(1, Math.round(ms / 60000)); }
+function readMinutes() { return Math.max(1, Math.round(analyze(S.record.body).words.length / 200)); }
+
+function drawLabel() {
+  const g = labelCanvas.getContext('2d'), W = 1024, H = 420; g.clearRect(0, 0, W, H);
+  rr(g, 6, 6, W - 12, H - 12, 46); g.fillStyle = 'rgba(17,18,21,0.93)'; g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,0.10)'; g.stroke();
+  // icon: a round amber seal with text lines and, when there is a voice, a small wave
+  const audible = shownView() !== 'silent' && !!S.record.audio;
+  g.fillStyle = '#f2b45a'; g.beginPath(); g.arc(122, 210, 64, 0, 7); g.fill();
+  g.fillStyle = '#1a1408';
+  if (audible) { for (const [x, h] of [[92, 26], [110, 56], [128, 80], [146, 46], [164, 22]]) { rr(g, x - 6, 210 - h / 2, 12, h, 6); g.fill(); } }
+  else { for (const [y, w] of [[182, 70], [204, 70], [226, 70], [248, 44]]) { rr(g, 87, y - 5, w, 10, 5); g.fill(); } }
+  const over = audible ? `LISTEN OR READ  ·  ${minutes(player.duration())} MIN` : `READ  ·  ${readMinutes()} MIN`;
+  g.fillStyle = '#f2b45a'; g.font = `700 29px ${SANS}`; g.letterSpacing = '4px'; g.fillText(over, 218, 112);
+  g.letterSpacing = '0px'; g.fillStyle = '#ffffff'; g.font = `600 64px ${SERIF}`;
+  const lines = wrap(g, S.record.title || 'Untitled', 760).slice(0, 2);
+  lines.forEach((l, i) => g.fillText(l, 216, (lines.length === 1 ? 210 : 188) + i * 74));
+  g.fillStyle = '#b9b2a5'; g.font = `500 29px ${SANS}`;
+  g.fillText(S.view === 'stale' ? 'Tap to open the text' : 'Tap to open the text', 218, 352);
+  labelTex.needsUpdate = true;
+}
+function drawPill() {
+  const g = pillCanvas.getContext('2d'), W = 1024, H = 180; g.clearRect(0, 0, W, H);
+  rr(g, 6, 6, W - 12, H - 12, 80); g.fillStyle = 'rgba(17,18,21,0.9)'; g.fill();
+  g.textAlign = 'center'; g.fillStyle = '#f2b45a'; g.font = `700 26px ${SANS}`; g.letterSpacing = '4px';
+  g.fillText(player.playing ? 'NOW PLAYING  ·  CAPTIONS BELOW' : 'TAP TO LISTEN  ·  CAPTIONS ON', W / 2, 66);
+  g.letterSpacing = '0px'; g.fillStyle = '#fff'; g.font = `600 50px ${SERIF}`;
+  let t = S.record.title || 'Untitled'; while (g.measureText(t).width > 920 && t.length > 4) t = t.slice(0, -2).trimEnd() + '…';
+  g.fillText(t, W / 2, 134); g.textAlign = 'left';
+  pillTex.needsUpdate = true;
+}
+// lectern page: the current paragraph, wrapped, with a nine-line window around the voice
+const wrapCache = new Map();
+function wrapParagraph(g, A, pi) {
+  const key = A.hash + ':' + pi; if (wrapCache.has(key)) return wrapCache.get(key);
+  const p = A.paragraphs[pi]; const t = A.body.slice(p.from, p.to); const toks = []; const re = /\S+\s*/g; let m;
+  while ((m = re.exec(t))) toks.push({ from: p.from + m.index, to: p.from + m.index + m[0].trimEnd().length, text: m[0].trimEnd(), w: g.measureText(m[0].trimEnd()).width });
+  const space = g.measureText(' ').width, maxW = 900, lines = []; let cur = [], x = 0;
+  for (const tk of toks) { if (cur.length && x + space + tk.w > maxW) { lines.push(cur); cur = []; x = 0; } tk.x = cur.length ? x + space : 0; x = tk.x + tk.w; cur.push(tk); }
+  if (cur.length) lines.push(cur);
+  wrapCache.set(key, lines); if (wrapCache.size > 64) wrapCache.delete(wrapCache.keys().next().value);
+  return lines;
+}
+let lecKey = '';
+function drawLectern(force) {
+  const d = display(), A = d.A; const c = d.live ? cursorAt(player.now()) : null;
+  let fs = c && c.s0 >= 0 ? c.s0 : (d.live ? 0 : clamp(S.lecternSentence, 0, A.sentences.length - 1));
+  const s1 = c && c.s1 >= 0 ? c.s1 : fs;
+  const key = [A.hash, fs, s1, c ? c.w : -2, player.playing, d.live, S.record.title, S.record.synthetic, S.record.voiceCredit, Math.floor(player.now() / 1000)].join('|');
+  if (!force && key === lecKey) return; lecKey = key;
+  const g = lecCanvas.getContext('2d'), W = 1024, H = 768; g.clearRect(0, 0, W, H);
+  g.fillStyle = '#16171a'; g.fillRect(0, 0, W, H);
+  const p = A.sentences[fs] ? A.sentences[fs].p : 0;
+  g.fillStyle = '#f2b45a'; g.font = `700 22px ${SANS}`; g.letterSpacing = '3px';
+  g.fillText(`PARAGRAPH ${p + 1} OF ${A.paragraphs.length}`, 62, 70); g.letterSpacing = '0px';
+  g.fillStyle = '#fff'; g.font = `600 40px ${SERIF}`; let t = S.record.title; while (g.measureText(t).width > 900 && t.length > 4) t = t.slice(0, -2).trimEnd() + '…';
+  g.fillText(t, 60, 122);
+  g.fillStyle = 'rgba(255,255,255,0.1)'; g.fillRect(62, 148, 900, 2);
+  g.font = `400 38px ${SERIF}`;
+  const lines = wrapParagraph(g, A, p); const sF = A.sentences[fs].from, sT = A.sentences[s1].to;
+  let li = lines.findIndex(l => l[l.length - 1].to > sF); if (li < 0) li = 0;
+  const N = 9; let start = Math.max(0, li - 2); if (start + N > lines.length) start = Math.max(0, lines.length - N);
+  const wFrom = c && c.w >= 0 ? A.words[c.w].from : -1;
+  for (let r = 0; r < N && start + r < lines.length; r++) {
+    const line = lines[start + r], y = 206 + r * 54; let hx0 = Infinity, hx1 = -Infinity;
+    for (const tk of line) if (tk.from < sT && tk.to > sF) { hx0 = Math.min(hx0, tk.x); hx1 = Math.max(hx1, tk.x + tk.w); }
+    if (hx1 > hx0) { g.fillStyle = 'rgba(242,180,90,0.17)'; rr(g, 62 + hx0 - 8, y - 38, hx1 - hx0 + 16, 52, 8); g.fill(); }
+    for (const tk of line) {
+      const inCur = tk.from < sT && tk.to > sF, before = tk.to <= sF;
+      const spoken = wFrom >= tk.from && wFrom < tk.to + 1 && d.live;
+      g.fillStyle = spoken ? '#ffd391' : inCur ? '#fdfaf3' : before ? '#7f7a71' : '#c4beb2';
+      g.fillText(tk.text, 62 + tk.x, y);
+      if (spoken) { g.fillStyle = '#f2b45a'; g.fillRect(62 + tk.x, y + 8, tk.w, 4); }
+    }
+  }
+  // footer: progress and the voice line
+  const dur = player.duration(), pos = player.now();
+  g.fillStyle = 'rgba(255,255,255,0.12)'; rr(g, 62, 690, 900, 6, 3); g.fill();
+  if (d.live && dur > 0) { g.fillStyle = '#f2b45a'; rr(g, 62, 690, Math.max(6, 900 * pos / dur), 6, 3); g.fill(); }
+  g.font = `500 22px ${SANS}`; g.fillStyle = '#a49e92';
+  const left = d.live ? `${player.playing ? '❚❚' : '▶'}  ${fmt(pos)} / ${fmt(dur)}  ·  tap the page to ${player.playing ? 'pause' : 'listen'}` : `tap the page to turn  ·  ${fs + 1} / ${A.sentences.length}`;
+  g.fillText(left, 62, 738);
+  if (d.live) { g.textAlign = 'right'; g.fillStyle = '#7f7a71'; let cr = (S.record.synthetic ? 'Synthetic voice · ' : '') + (S.record.voiceCredit || ''); while (g.measureText(cr).width > 420 && cr.length > 4) cr = cr.slice(0, -2).trimEnd() + '…'; g.fillText(cr, 962, 738); g.textAlign = 'left'; }
+  lecTex.needsUpdate = true;
+}
+
+/* =====================================================================
+   7. DOM UI: sheet, caption strip, chrome
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+const ICON = {
+  play: '<svg viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24"><rect x="6.5" y="5" width="4" height="14" rx="1.2"/><rect x="13.5" y="5" width="4" height="14" rx="1.2"/></svg>',
+  back10: '<svg viewBox="0 0 24 24"><path d="M12 5V2L7.5 5.8 12 9.6V6.8a6.2 6.2 0 1 1-6.2 6.2H4a8 8 0 1 0 8-8z"/><text x="12" y="16.6" font-size="7.2" font-family="system-ui,Segoe UI,Arial" font-weight="700" text-anchor="middle">10</text></svg>',
+  prev: '<svg viewBox="0 0 24 24"><rect x="5" y="5" width="2.4" height="14" rx="1"/><path d="M19 6.2v11.6a.9.9 0 0 1-1.4.75L9.7 13a1.2 1.2 0 0 1 0-2l7.9-5.55a.9.9 0 0 1 1.4.75z"/></svg>',
+  next: '<svg viewBox="0 0 24 24"><rect x="16.6" y="5" width="2.4" height="14" rx="1"/><path d="M5 6.2v11.6a.9.9 0 0 0 1.4.75L14.3 13a1.2 1.2 0 0 0 0-2L6.4 5.45A.9.9 0 0 0 5 6.2z"/></svg>',
+  soundOn: '<svg viewBox="0 0 24 24"><path d="M4 9h3.5L12 5v14l-4.5-4H4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
+  soundOff: '<svg viewBox="0 0 24 24"><path d="M4 9h3.5L12 5v14l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
+  info: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.6v.4" stroke-linecap="round"/></svg>'
+};
+$('sh-back10').innerHTML = ICON.back10; $('sh-prev').innerHTML = ICON.prev; $('sh-next').innerHTML = ICON.next; $('cap-back').innerHTML = ICON.back10;
+const ui = { dirty: true, forceScroll: false, builtKey: '', curS: [], curW: null, sentEls: [], wordEls: [], lastTimeTxt: '', playState: null, capKey: '', capWord: -2 };
+
+function creditLine() {
+  if (!S.record.audio && !S.audioEl) return '';
+  const c = S.record.voiceCredit ? esc(S.record.voiceCredit) : '';
+  return (S.record.synthetic ? '<i>Synthetic voice</i>' + (c ? ' · ' : '') : '') + c;
+}
+function buildSheetText() {
+  const d = display(), A = d.A;
+  const key = A.hash + ':' + S.record.lang;
+  if (ui.builtKey === key) return;
+  ui.builtKey = key;
+  const b = A.body; let html = '';
+  for (const p of A.paragraphs) {
+    html += '<p>';
+    for (let si = p.s0; si < p.s1; si++) {
+      const s = A.sentences[si]; let pos = s.from; html += `<span class="s" data-s="${si}">`;
+      if (s.w0 >= 0) for (let wi = s.w0; wi < s.w1; wi++) { const w = A.words[wi]; html += esc(b.slice(pos, w.from)) + `<span class="w" data-w="${wi}">` + esc(b.slice(w.from, w.to)) + '</span>'; pos = w.to; }
+      html += esc(b.slice(pos, s.to)) + '</span>' + (si < p.s1 - 1 ? ' ' : '');
+    }
+    html += '</p>';
+  }
+  const art = $('sh-text'); art.innerHTML = html; art.lang = S.record.lang || 'und';
+  ui.sentEls = [...art.querySelectorAll('.s')]; ui.wordEls = [...art.querySelectorAll('.w')]; ui.curS = []; ui.curW = null;
+}
+function setSheetCursor(s0, s1, w, scroll, instant) {
+  for (const el of ui.curS) el.classList.remove('cur');
+  ui.curS = [];
+  if (s0 >= 0) for (let s = s0; s <= s1; s++) { const el = ui.sentEls[s]; if (el) { el.classList.add('cur'); ui.curS.push(el); } }
+  if (ui.curW) ui.curW.classList.remove('on'); ui.curW = null;
+  if (w >= 0 && ui.wordEls[w]) { ui.curW = ui.wordEls[w]; ui.curW.classList.add('on'); }
+  if (scroll && ui.curS[0] && S.sheetOpen) {
+    const wrapEl = $('sh-wrap'); const top = ui.curS[0].offsetTop - wrapEl.clientHeight * 0.28;
+    wrapEl.scrollTo({ top: Math.max(0, top), behavior: instant ? 'instant' : 'smooth' });
+  }
+}
+function sheetMode() { const d = display(); return shownView() === 'silent' ? 'silent' : d.live ? 'live' : 'plain'; }
+function renderSheetChrome() {
+  const d = display(), mode = sheetMode(), A = d.A;
+  const sh = $('sheet'); sh.classList.toggle('live', mode === 'live'); sh.classList.toggle('silent', mode === 'silent'); sh.classList.toggle('plain', mode === 'plain');
+  $('sh-title').textContent = S.record.title || 'Untitled';
+  const words = A.words.length.toLocaleString('en');
+  $('sh-meta').textContent = mode === 'silent' ? `${words} words · about ${readMinutes()} min to read · sound off` : `${words} words · ${minutes(player.duration())} min narration · ${(S.record.lang || 'und').toUpperCase()}`;
+  // no notice when the read-along is off (stale or missing timing): the visitor has nothing to act on, so the
+  // sheet simply has no highlight; the creator sees the reason in the creator and editor panels
+  const silent = mode === 'silent';
+  $('sh-back10').hidden = silent; $('sh-play').hidden = silent; $('sh-next').hidden = !silent; $('sh-pos').hidden = !silent;
+  $('sh-prev').hidden = mode === 'plain';
+  $('sh-prev').setAttribute('aria-label', silent ? 'Previous sentence' : 'Previous sentence');
+  $('sh-credit').innerHTML = silent ? 'No narration in this view · tap a sentence to keep your place' : creditLine();
+  $('sh-follow').hidden = true;
+  // paragraph ticks on the progress bar
+  const bar = $('sh-bar'); bar.querySelectorAll('.tick').forEach(t => t.remove());
+  const ti = timingIndex(), dur = player.duration();
+  A.paragraphs.forEach((p, i) => {
+    if (i === 0) return; let f;
+    if (silent) f = p.s0 / A.sentences.length; else if (mode === 'live' && ti && dur > 0) { const k = ti.sFirst[p.s0]; if (k < 0) return; f = ti.segs[k].startMs / dur; } else return;
+    const t = document.createElement('div'); t.className = 'tick'; t.style.left = (f * 100) + '%'; bar.appendChild(t);
+  });
+}
+function openSheet(open, instant) {
+  S.sheetOpen = open; const sh = $('sheet');
+  if (instant) { sh.style.transition = 'none'; requestAnimationFrame(() => requestAnimationFrame(() => { sh.style.transition = ''; })); }
+  sh.classList.toggle('open', open); sh.setAttribute('aria-hidden', String(!open));
+  if (open) { buildSheetText(); renderSheetChrome(); S.follow = true; ui.forceScroll = true; ui.instantScroll = true; ui.dirty = true; }
+}
+// caption chunks: one or two sentences, split at clause or word boundaries to fit three lines
+const chunkCache = new Map();
+function chunksFor(A, s0, s1, maxChars) {
+  const key = A.hash + ':' + s0 + ':' + s1 + ':' + maxChars; if (chunkCache.has(key)) return chunkCache.get(key);
+  const from = A.sentences[s0].from, to = A.sentences[s1].to, ws = [];
+  for (let s = s0; s <= s1; s++) { const se = A.sentences[s]; if (se.w0 >= 0) for (let i = se.w0; i < se.w1; i++) ws.push(i); }
+  const chunks = []; let start = from, startW = 0;
+  for (let k = 0; k < ws.length; k++) {
+    const w = A.words[ws[k]];
+    if (w.to - start > maxChars && k > startW) {
+      // look back for a clause break within the last 45% of the chunk
+      let cut = k - 1;
+      for (let b = k - 1; b > startW + 2; b--) { const ww = A.words[ws[b]]; if ((ww.to - start) < maxChars * 0.55) break; if (/[,;:]/.test(A.body.slice(ww.to, A.words[ws[b + 1]].from))) { cut = b; break; } }
+      const endOff = A.words[ws[cut]].to; let e = endOff; while (e < to && /[,;:.!?'"’”)]/.test(A.body[e])) e++;
+      chunks.push({ from: start, to: e, w0: ws[startW], w1: ws[cut] + 1 });
+      startW = cut + 1; start = A.words[ws[startW]].from; k = cut;
+    }
+  }
+  if (startW < ws.length) chunks.push({ from: start, to, w0: ws[startW], w1: ws[ws.length - 1] + 1 });
+  if (!chunks.length) chunks.push({ from, to, w0: -1, w1: -1 });
+  chunkCache.set(key, chunks); if (chunkCache.size > 200) chunkCache.delete(chunkCache.keys().next().value);
+  return chunks;
+}
+function renderCaption(c) {
+  const d = display(), A = d.A, el = $('cap-text');
+  const layout = stage.dataset.layout, maxC = layout === 'portrait' ? 96 : layout === 'landscape' ? 118 : 120;
+  // unreachable for a visitor (Captions without a matching timing is shown as Reading); defensive, and silent
+  if (!d.live) { if (ui.capKey !== 'plain') { ui.capKey = 'plain'; el.textContent = ''; } return; }
+  let s0 = c && c.s0 >= 0 ? c.s0 : 0, s1 = c && c.s1 >= 0 ? c.s1 : 0;
+  const chunks = chunksFor(A, s0, s1, maxC); const w = c ? c.w : -1;
+  let ci = 0; if (w >= 0) { ci = chunks.findIndex(ch => w >= ch.w0 && w < ch.w1); if (ci < 0) ci = 0; }
+  const ch = chunks[ci]; const key = A.hash + ':' + s0 + ':' + s1 + ':' + ci + ':' + maxC;
+  if (ui.capKey !== key) {
+    ui.capKey = key; ui.capWord = -2; let html = '<span class="chunk">', pos = ch.from;
+    if (ch.w0 >= 0) for (let i = ch.w0; i < ch.w1; i++) { const ww = A.words[i]; html += esc(A.body.slice(pos, ww.from)) + `<span class="w" data-w="${i}">${esc(A.body.slice(ww.from, ww.to))}</span>`; pos = ww.to; }
+    html += esc(A.body.slice(pos, ch.to)) + '</span>'; el.innerHTML = html;
+  }
+  if (ui.capWord !== w) {
+    ui.capWord = w;
+    for (const sp of el.querySelectorAll('.w')) { const i = +sp.dataset.w; sp.classList.toggle('on', i === w); sp.classList.toggle('todo', w >= 0 && i > w); }
+  }
+}
+
+/* ---------- per-frame UI refresh ---------- */
+let lastUi = 0;
+/* Keeps the world elements, the sheet and the visitor switch in step with shownView(), which can change without
+   applyView: a visitor's choice, a body edit that makes the timing stale, a mode switch. */
+let lastShown = null;
+function syncShownView() {
+  const v = shownView(); if (v === lastShown) return v;
+  const prev = lastShown; lastShown = v;
+  const info = VIEWS.find(x => x.name === v);
+  labelG.visible = info.overlay === true; markerG.visible = v === 'caption'; lecternG.visible = v === 'lectern';
+  if (prev !== null) {
+    if (player.playing && v === 'silent') player.pause();
+    ui.builtKey = ''; ui.capKey = ''; ui.sheetKey = ''; lecKey = '';
+    drawLabel(); drawPill(); drawLectern(true);
+    if (!info.overlay) openSheet(false, true);
+    else if (S.sheetOpen) { buildSheetText(); renderSheetChrome(); ui.forceScroll = true; ui.instantScroll = true; }
+  }
+  renderVisitorSwitch();
+  return v;
+}
+function renderVisitorSwitch() {
+  const sw = $('vswitch'), shown = shownView();
+  const show = S.mode === 'visitor' && distToAnchor() <= RADIUS && INTERCHANGEABLE.includes(S.view);
+  sw.hidden = !show; if (!show) { $('vs-menu').hidden = true; return; }
+  $('vs-cur').textContent = VIEWS.find(v => v.name === shown).label;
+  const ok = timingMatches();
+  $('vs-menu').innerHTML = INTERCHANGEABLE.map(n => {
+    const v = VIEWS.find(x => x.name === n), off = n === 'caption' && !ok;
+    const tag = off ? 'needs a timing' : n === S.view ? "creator's choice" : '';
+    return `<button class="vo ${n === shown ? 'on' : ''}" data-vs="${n}" role="menuitemradio" aria-checked="${n === shown}" ${off ? 'disabled' : ''}><b>${esc(v.label)}<i>${tag}</i></b><span>${esc(v.visitor)}</span></button>`;
+  }).join('') + `<div class="vs-foot">Your choice is kept on this phone for every narrated text, in every tour.${S.pref ? '<button data-vs="">Use the creator\'s choice again</button>' : ''}</div>`;
+}
+function setVisitorView(name) {
+  if (name !== null && !INTERCHANGEABLE.includes(name)) throw new Error('not a view a visitor can choose: ' + name);
+  if (name === 'caption' && !timingMatches()) { toast('Captions need a timing this text does not have.'); return false; }
+  S.pref = name; const kept = writePref(name);
+  const shown = syncShownView(); renderVisitorSwitch();
+  if (VIEWS.find(v => v.name === shown).overlay && S.mode === 'visitor' && distToAnchor() <= RADIUS && !S.sheetOpen) openSheet(true, true);
+  const label = VIEWS.find(v => v.name === shown).label;
+  toast(name === null ? `Back to the creator's choice: ${label}.` : kept ? `${label} from now on, for every narrated text on this phone.` : `${label} for this visit (this browser does not keep the choice).`);
+  refreshUI(performance.now(), true);
+  return kept;
+}
+function refreshUI(now, force) {
+  const shown = syncShownView();
+  const d = display(), pos = player.now(), dur = player.duration();
+  const c = d.live ? cursorAt(pos) : null;
+  const inVisitor = S.mode === 'visitor', inside = inVisitor && distToAnchor() <= RADIUS;
+  // play icons
+  const ps = player.playing;
+  if (ui.playState !== ps || force) {
+    ui.playState = ps;
+    $('sh-play').innerHTML = ps ? ICON.pause : ICON.play; $('cap-play').innerHTML = ps ? ICON.pause : ICON.play;
+    drawPill();
+  }
+  // sheet
+  if (S.sheetOpen) {
+    const mode = sheetMode();
+    if (mode === 'live' && c) setSheetCursorDiff(c.s0, c.s1, c.w);
+    else if (mode === 'silent') setSheetCursorDiff(S.readSentence, S.readSentence, -1);
+    else setSheetCursorDiff(-1, -1, -1);
+    const frac = mode === 'silent' ? (S.readSentence + 1) / d.A.sentences.length : dur > 0 ? pos / dur : 0;
+    $('sh-bar').querySelector('.fill').style.width = (frac * 100) + '%'; $('sh-bar').querySelector('.knob').style.left = (frac * 100) + '%';
+    if (mode === 'silent') { const p = d.A.sentences[S.readSentence]?.p ?? 0; $('sh-t0').textContent = `¶ ${p + 1}/${d.A.paragraphs.length}`; $('sh-t1').textContent = Math.round(frac * 100) + '%'; $('sh-pos').textContent = `Sentence ${S.readSentence + 1} of ${d.A.sentences.length}`; }
+    else { $('sh-t0').textContent = fmt(pos); $('sh-t1').textContent = '-' + fmt(dur - pos); }
+  }
+  // caption strip
+  const capOn = shown === 'caption' && inside;
+  $('caption').classList.toggle('hide', !capOn);
+  if (capOn) {
+    renderCaption(c);
+    $('cap-title').textContent = S.record.title; $('cap-sub').innerHTML = `${fmt(pos)} / ${fmt(dur)}` + (creditLine() ? ' · ' + creditLine() : '');
+    $('cap-bar').firstElementChild.style.width = (dur > 0 ? pos / dur * 100 : 0) + '%';
+  }
+  // world hints
+  const dist = distToAnchor();
+  const hint = $('hint');
+  if (inVisitor && dist > RADIUS) {
+    hint.hidden = false; const d2 = Math.hypot(S.vis.x - ST2.x, S.vis.z - ST2.z);
+    if (d2 <= RADIUS) { $('hint-t').innerHTML = `<b>Station 2</b> · east path · plain stand-in`; $('hint-walk').textContent = 'Walk back'; }
+    else { $('hint-t').innerHTML = `<b>Old market square</b> · ${Math.max(1, Math.round(dist - RADIUS))} m`; $('hint-walk').textContent = 'Walk in'; }
+    const bearing = Math.atan2(ANCHOR.x - S.vis.x, -(ANCHOR.z - S.vis.z)); hint.querySelector('.arrow').style.transform = `rotate(${(bearing + S.vis.yaw) * 180 / Math.PI}deg)`;
+  } else hint.hidden = true;
+  const th = $('tapHint');
+  const isOverlay = VIEWS.find(v => v.name === shown)?.overlay;
+  if (inside && !S.sheetOpen && (isOverlay || shown === 'lectern')) {
+    th.hidden = false;
+    th.innerHTML = shown === 'lectern' ? (d.live ? 'Walk up to the stand · <b>tap the page</b> to listen' : 'Walk up to the stand · <b>tap the page</b> to turn it') : 'Tap the <b>sign</b> to open the text';
+  } else th.hidden = true;
+  const swShow = inVisitor && inside && INTERCHANGEABLE.includes(S.view);
+  if ($('vswitch').hidden === swShow) renderVisitorSwitch();
+  if (shown === 'lectern' || S.mode !== 'visitor') drawLectern(false);
+}
+function setSheetCursorDiff(s0, s1, w) {
+  const key = s0 + ':' + s1 + ':' + w;
+  if (ui.sheetKey === key && !ui.forceScroll) return;
+  const sentenceChanged = !ui.sheetKey || ui.sheetKey.split(':')[0] !== String(s0);
+  ui.sheetKey = key;
+  setSheetCursor(s0, s1, w, (sentenceChanged && S.follow) || ui.forceScroll, ui.instantScroll);
+  ui.forceScroll = false; ui.instantScroll = false;
+}
+
+/* ---------- chrome: modes, views, panels ---------- */
+function renderChrome() {
+  stage.dataset.mode = S.mode;
+  document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
+  $('views').innerHTML = `<span class="vl">Creator's view</span>` + VIEWS.map(v => `<button data-view="${v.name}" class="${v.name === S.view ? 'on' : ''}">${v.label}</button>`).join('');
+  $('b-sound').innerHTML = S.muted ? ICON.soundOff : ICON.soundOn; $('b-sound').classList.toggle('on', S.muted);
+  $('b-frame').classList.toggle('on', S.framed);
+  $('b-fields').classList.toggle('on', !$('fields').hidden); $('b-notes').classList.toggle('on', !$('notes').hidden);
+  renderFields();
+}
+function renderFields() {
+  const v = VIEWS.find(x => x.name === S.view), u = USES[S.view];
+  $('fields').innerHTML = `<div class="over">Fields this view uses</div><h3>${esc(v.label)}${v.required ? '' : ' <span style="font:500 12px var(--sans);color:#8f897e">(unlisted view)</span>'}</h3>` +
+    FIELDS.map(f => `<div class="fr ${u[f] ? '' : 'unused'}"><code>${f}</code><span>${u[f] ? esc(u[f]) : 'not used'}</span></div>`).join('') +
+    (S.view === 'stale' && timingMatches() ? '<p class="stat" style="margin:10px 0 4px">Preview: one sentence of <b>body</b> is shown reworded, as if the creator had edited it after the timing was made. The stored record is unchanged.</p>' : '');
+}
+function updateHash() { const h = `#mode=${S.mode}&view=${S.view}`; if (location.hash !== h) history.replaceState(null, '', h); }
+function applyView(name, fromUser) {
+  if (!VIEWS.some(v => v.name === name)) throw new Error('unknown view ' + name);
+  S.view = name;
+  lastShown = null; const shown = syncShownView();   // a full re-sync: the creator's view changed
+  if (player.playing && shown === 'silent') player.pause();
+  ui.builtKey = ''; ui.capKey = ''; ui.sheetKey = ''; lecKey = '';
+  drawLabel(); drawPill(); drawLectern(true);
+  const inside = S.mode === 'visitor' && distToAnchor() <= RADIUS;
+  if (VIEWS.find(v => v.name === shown).overlay) { if (inside && fromUser) openSheet(true, true); else if (S.sheetOpen) { buildSheetText(); renderSheetChrome(); ui.forceScroll = true; ui.instantScroll = true; } }
+  else openSheet(false, true);
+  renderChrome(); renderCreator(); renderInspector(); updateHash(); refreshUI(performance.now(), true);
+  // a stored visitor choice wins over the creator's view; when the creator's view is picked by hand in Visitor
+  // mode, say so, so the pick does not look ignored
+  if (fromUser && S.mode === 'visitor' && S.pref && shown !== name) {
+    const label = n => VIEWS.find(v => v.name === n).label;
+    toast(`Showing your own choice: ${label(shown)}. The creator's view is ${label(name)}. To see it, open the switch at the top left and use the creator's choice again.`, 6000);
+  }
+}
+function applyMode(name) {
+  if (!['visitor', 'creator', 'editor'].includes(name)) throw new Error('unknown mode ' + name);
+  if (name === 'visitor' && TP.open) tpOpen(false);
+  S.mode = name; if (name !== 'visitor') openSheet(false, true);
+  if (name === 'creator' && !S.creInit) { resize(); const l = stage.dataset.layout; S.cre.pitch = l === 'portrait' ? -0.22 : -0.07; S.cre.yaw = l === 'portrait' ? 0.06 : l === 'landscape' ? -0.34 : -0.16; S.creInit = true; }
+  orbit.enabled = name === 'editor'; gizmo.enabled = name === 'editor'; gizmoHelper.visible = name === 'editor';
+  selRing.visible = facing.visible = name !== 'visitor';
+  reticle.visible = name === 'creator' && S.csheet === 'place';
+  if (name === 'editor') { gizmo.attach(blockRoot); orbit.target.set(S.pose.x, 1, S.pose.z); }
+  else gizmo.detach();
+  renderChrome(); renderCreator(); renderInspector(); updateHash();
+  requestAnimationFrame(resize); resize(); refreshUI(performance.now(), true);
+}
+
+/* =====================================================================
+   8. Creator (phone in AR) and editor (desktop) panels
+   ===================================================================== */
+const VIEW_ICON = {
+  reading: '<svg viewBox="0 0 26 20"><rect x="1" y="1" width="12" height="7" rx="2"/><path d="M7 8v11M15 5h10M15 9h10M15 13h10M15 17h7"/></svg>',
+  caption: '<svg viewBox="0 0 26 20"><rect x="1" y="11" width="24" height="8" rx="2.5"/><path d="M5 15h12M13 2v6M10 5h6"/></svg>',
+  silent: '<svg viewBox="0 0 26 20"><path d="M3 3h20M3 7h20M3 11h20M3 15h12"/><path d="M19 13l5 5M24 13l-5 5"/></svg>',
+  lectern: '<svg viewBox="0 0 26 20"><path d="M4 2h18l-3 8H7z M9 10v9M17 10v9M6 19h14"/></svg>'
+};
+function renderCreator() {
+  $('c-title').textContent = S.record.title;
+  document.querySelectorAll('#c-bar button').forEach(b => b.classList.toggle('on', b.dataset.c === S.csheet));
+  const sh = $('c-sheet'); if (S.mode !== 'creator') return;
+  sh.hidden = !S.csheet || TP.open; reticle.visible = S.csheet === 'place' && !TP.open;
+  const t = S.record.timing, A = analyze(S.record.body), ok = timingMatches();
+  if (S.csheet === 'view') {
+    sh.innerHTML = `<h3>How visitors see this text</h3><div class="vcards">${VIEWS.filter(v => !v.auto).map(v => `<button class="vcard ${v.name === S.view ? 'on' : ''}" data-cv="${v.name}">${VIEW_ICON[v.name]}<b>${v.label}</b><span>${esc(v.card)}</span></button>`).join('')}</div>
+      <p class="stat" style="margin:10px 2px 8px">If the text changes after the voice was timed, every view shows it as plain reading, without a notice to the visitor; Captions then shows as Reading. Visitors may swap between these four views; their choice is kept on their phone.${ok ? '' : ' <span class="warn">This text has no matching timing now: visitors see no read-along, and Captions shows as Reading.</span>'}</p>
+      <div class="btnrow"><button class="btn" id="c-preview">Preview as visitor</button></div>`;
+  } else if (S.csheet === 'text') {
+    sh.innerHTML = `<h3>Text</h3><div class="frow">Title<input type="text" id="c-ftitle" value="${esc(S.record.title)}"></div>
+      <div class="frow">Language of the text<input type="text" id="c-flang" value="${esc(S.record.lang)}" style="max-width:120px"></div>
+      <div class="stat"><b>${A.words.length.toLocaleString('en')} words</b> in ${A.paragraphs.length} paragraphs · about ${readMinutes()} min to read.<br>Long text is easier to write on the desktop editor; small fixes are fine here.</div>
+      <div class="frow" style="margin-top:10px">Body<textarea id="c-fbody" rows="5">${esc(S.record.body)}</textarea></div>`;
+  } else if (S.csheet === 'voice') {
+    sh.innerHTML = `<h3>Voice</h3>
+      <div class="stat">${S.audioEl ? `<b>${esc(S.audioName)}</b> (dropped, in memory)` : `<b>${esc(S.record.audio || 'no audio')}</b> · generated tone pattern`}<br>
+      ${t ? `${t.granularity} timing, ${t.segments.length.toLocaleString('en')} segments · ${ok ? '<span class="ok">matches the text</span>' : '<span class="warn">made for an older text</span>'}` : '<span class="warn">no timing</span>'}</div>
+      ${S.importReport ? `<div class="stat" style="margin-top:6px">Last import covered <b>${Math.round(S.importReport.coverage * 100)}%</b> of the text.</div>` : ''}
+      <div class="btnrow"><button class="btn primary" id="c-pick">Add audio + timing files</button><button class="btn" id="c-tap">Mark timing by listening</button></div>
+      <label class="check"><input type="checkbox" id="c-synth" ${S.record.synthetic ? 'checked' : ''}> Synthetic voice</label>
+      <div class="frow">Voice credit<input type="text" id="c-credit" value="${esc(S.record.voiceCredit)}"></div>`;
+  } else if (S.csheet === 'size') {
+    sh.innerHTML = `<h3>Size and turn</h3>
+      <div class="frow">Size · <b id="c-sv" style="color:#eee">${S.pose.scale.toFixed(2)}×</b><input type="range" id="c-size" min="0.5" max="2" step="0.05" value="${S.pose.scale}"></div>
+      <div class="frow">Turn · <b id="c-tv" style="color:#eee">${Math.round(S.pose.yawDeg)}°</b><input type="range" id="c-turn" min="-180" max="180" step="1" value="${S.pose.yawDeg}"></div>
+      <div class="stat">${S.view === 'lectern' ? 'The stand keeps this turn; face it towards where visitors arrive.' : 'Signs and markers turn to face each visitor; the turn only matters for the lectern.'}</div>
+      <div class="btnrow"><button class="btn" id="c-faceme">Face me</button></div>`;
+  } else if (S.csheet === 'place') {
+    sh.innerHTML = `<h3>Place</h3><div class="stat">Point the phone at the ground where the text should stand, then tap <b>Place here</b>. It stays inside the station's circle.</div><div class="btnrow"><button class="btn primary" id="c-placehere">Place here</button></div>`;
+  } else sh.innerHTML = '';
+}
+function setBody(text) {
+  S.record.body = String(text ?? '').replace(/\r\n?/g, '\n').slice(0, 200000);
+  ui.builtKey = ''; ui.capKey = ''; lecKey = '';
+  if (player.playing && !timingMatches()) player.pause();
+  drawLabel(); drawLectern(true); if (S.sheetOpen) { buildSheetText(); renderSheetChrome(); }
+  renderInspectorDynamic(); renderFields();
+}
+function renderInspector() {
+  if (S.mode !== 'editor') return;
+  $('e-name').textContent = S.record.title; $('e-sub').textContent = 'Narrated text · ' + VIEWS.find(v => v.name === S.view).label;
+  const r = $('e-right');
+  r.innerHTML = `<div class="i-head"><div class="over">Block · narrated text</div><div class="t" id="i-name">${esc(S.record.title)}</div></div>
+  <h4>View <i>one model, ${VIEWS.length} views</i></h4>
+  <div class="vlist">${VIEWS.map(v => `<button class="vopt ${v.name === S.view ? 'on' : ''} ${v.auto ? 'auto' : ''}" data-ev="${v.name}"><b>${v.label}</b>${v.auto ? 'automatic state' : v.required ? 'required' : 'unlisted'}</button>`).join('')}</div>
+  <h4>Text</h4>
+  <div class="frow">title<input type="text" id="i-title" value="${esc(S.record.title)}"></div>
+  <div class="frow">lang<input type="text" id="i-lang" value="${esc(S.record.lang)}" style="max-width:110px"></div>
+  <div class="frow">body<textarea id="i-body" rows="8">${esc(S.record.body)}</textarea></div>
+  <div class="stat" id="i-bodystat"></div>
+  <h4>Narration</h4>
+  <div class="kv"><span>audio</span><b id="i-audio"></b></div>
+  <div class="drop" id="i-drop">Drop an audio file and its timing file here<br><small>WebVTT (sentence cues or inline word times) or a JSON word list. Kept in memory, never uploaded.</small><div class="btnrow" style="justify-content:center;margin-bottom:0"><button class="btn" id="i-pick">Choose files</button></div></div>
+  <div id="i-import" class="stat"></div>
+  <div class="kv"><span>timing</span><b id="i-timing"></b></div>
+  <div class="kv"><span>textHash</span><b id="i-hash"></b></div>
+  <div class="cov"><canvas id="i-cov" width="600" height="12"></canvas><div class="lg"><span>start of the text</span><span id="i-covtxt"></span><span>end</span></div></div>
+  <div class="btnrow"><button class="btn primary" id="i-tap">Mark timing by listening</button><button class="btn" id="i-remap">Re-map timing</button><button class="btn" id="i-clear">Remove timing</button></div>
+  <label class="check"><input type="checkbox" id="i-synth" ${S.record.synthetic ? 'checked' : ''}> synthetic</label>
+  <div class="frow">voiceCredit<input type="text" id="i-credit" value="${esc(S.record.voiceCredit)}"></div>
+  <h4>Placement <i>relative to the station</i></h4>
+  <div class="pose"><label>x (m)<input type="number" step="0.1" id="i-x"></label><label>z (m)<input type="number" step="0.1" id="i-z"></label><label>turn (°)<input type="number" step="1" id="i-yaw"></label><label>size (×)<input type="number" step="0.05" min="0.5" max="2" id="i-scale"></label></div>
+  <h4>Stored record</h4>
+  <div class="btnrow"><button class="btn" id="i-json">Show the JSON</button></div><pre id="i-jsonpre" hidden></pre>`;
+  renderInspectorDynamic();
+}
+function renderInspectorDynamic() {
+  if (S.mode !== 'editor' || !$('i-bodystat')) return;
+  const A = analyze(S.record.body), t = S.record.timing, ok = timingMatches();
+  $('i-bodystat').innerHTML = `<b>${A.words.length.toLocaleString('en')}</b> words · ${A.sentences.length} sentences · ${A.paragraphs.length} paragraphs · ${(new Blob([S.record.body]).size / 1024).toFixed(1)} KB`;
+  $('i-audio').textContent = S.audioEl ? `${S.audioName} (in memory)` : (S.record.audio || 'none') + (S.record.audio ? ' · tones' : '');
+  $('i-timing').textContent = t ? `${t.granularity} · ${t.segments.length.toLocaleString('en')} segments${TP.timing === t ? ' from ' + TP.marks.length + ' marks' : ''} · ${(JSON.stringify(t).length / 1024).toFixed(0)} KB` : 'none';
+  $('i-hash').innerHTML = t ? (ok ? `<span class="ok">${t.textHash} = body</span>` : `<span class="warn">${t.textHash} ≠ ${hashText(S.record.body)}</span>`) : '-';
+  $('i-import').innerHTML = S.importReport ? importSummary(S.importReport) : '';
+  $('i-remap').textContent = S.lastImport ? 'Re-map the dropped timing file' : 'Re-make the demo timing';
+  const cv = $('i-cov'), g = cv.getContext('2d'); g.clearRect(0, 0, cv.width, cv.height);
+  g.fillStyle = '#2a2c31'; g.fillRect(0, 0, cv.width, cv.height);
+  let covered = 0;
+  if (t && A.words.length) {
+    const mark = new Uint8Array(A.words.length);
+    if (ok) for (const s of t.segments) { let i = Math.max(0, wordAt(A, s.from)); while (i < A.words.length && A.words[i].from < s.to) { mark[i] = 1; i++; } }
+    for (let i = 0; i < A.words.length; i++) if (mark[i]) { covered++; g.fillStyle = '#f2b45a'; g.fillRect(Math.floor(i / A.words.length * cv.width), 0, Math.ceil(cv.width / A.words.length) + 1, cv.height); }
+  }
+  $('i-covtxt').textContent = t ? (ok ? `${Math.round(covered / Math.max(1, A.words.length) * 100)}% of words timed` : 'stale: segments ignored') : 'no timing';
+  const p = S.pose; const set = (id, v) => { const el = $(id); if (el && document.activeElement !== el) el.value = v; };
+  set('i-x', p.x.toFixed(2)); set('i-z', p.z.toFixed(2)); set('i-yaw', Math.round(p.yawDeg)); set('i-scale', p.scale.toFixed(2));
+  if (!$('i-jsonpre').hidden) $('i-jsonpre').textContent = jsonPreview();
+}
+function importSummary(r) {
+  const pct = Math.round(r.coverage * 100);
+  return `<b>${esc(r.format)}</b>: mapped onto <b>${r.matched.toLocaleString('en')} of ${r.bodyWords.toLocaleString('en')}</b> words of the text (<b class="${pct >= 90 ? 'ok' : 'warn'}">${pct}%</b>). ${r.unmatchedFile ? `${r.unmatchedFile} words in the file were not found in the text. ` : ''}${r.gaps ? `${r.gaps} stretch${r.gaps > 1 ? 'es' : ''} of 8+ words without timing. ` : ''}${r.badEntries ? `${r.badEntries} unreadable entries skipped.` : ''}`;
+}
+function jsonPreview() {
+  const m = exportModelSync(); const segs = m.data.timing ? m.data.timing.segments : [];
+  const short = JSON.parse(JSON.stringify(m)); short.data.body = m.data.body.slice(0, 160) + `… (${m.data.body.length} characters)`;
+  if (short.data.timing) short.data.timing.segments = [...segs.slice(0, 3), `… ${segs.length - 3} more`];
+  return JSON.stringify(short, null, 2);
+}
+function exportModelSync() {
+  return {
+    id: 'block-guild-house-text', model: 'narratedText', view: S.view === 'stale' ? 'reading' : S.view,
+    pose: { position: [round2(S.pose.x), 0, round2(S.pose.z)], yawDeg: Math.round(S.pose.yawDeg), scale: round2(S.pose.scale) },
+    data: {
+      title: S.record.title, body: S.record.body, lang: S.record.lang,
+      audio: S.record.audio || null,
+      timing: S.record.timing ? { granularity: S.record.timing.granularity, segments: S.record.timing.segments.map(s => ({ startMs: s.startMs, endMs: s.endMs, from: s.from, to: s.to })), textHash: S.record.timing.textHash } : null,
+      voiceCredit: S.record.voiceCredit, synthetic: !!S.record.synthetic
+    }
+  };
+}
+const round2 = v => Math.round(v * 100) / 100;
+
+/* =====================================================================
+   9. Import of dropped files (memory only)
+   ===================================================================== */
+const AUDIO_EXT = /\.(mp3|ogg|opus|wav|m4a|aac|webm|flac)$/i;
+async function importFiles(fileList) {
+  const files = [...fileList]; if (!files.length) return;
+  const audio = files.find(f => (f.type || '').startsWith('audio/') || AUDIO_EXT.test(f.name));
+  const timingFile = files.find(f => f !== audio && /\.(vtt|json|txt)$/i.test(f.name));
+  try {
+    if (audio && audio.size > 400 * 1024 * 1024) throw new Error('audio file is over 400 MB');
+    let parsed = null;
+    if (timingFile) {
+      if (timingFile.size > 20 * 1024 * 1024) throw new Error('timing file is over 20 MB');
+      const text = await timingFile.text();
+      parsed = /\.json$/i.test(timingFile.name) || /^\s*[\[{]/.test(text) ? parseJSONWords(text) : parseVTT(text);
+    }
+    if (player.playing) player.pause();
+    if (audio) {
+      if (S.audioEl) { URL.revokeObjectURL(S.audioEl.src); S.audioEl.pause(); }
+      const el = new Audio(); el.preload = 'auto'; el.src = URL.createObjectURL(audio); el.muted = S.muted;
+      el.addEventListener('ended', () => { player.pause(); player.pos = player.duration(); });
+      el.addEventListener('loadedmetadata', () => { ui.dirty = true; drawLabel(); if (S.sheetOpen) renderSheetChrome(); });
+      S.audioPauses = null;
+      audio.arrayBuffer().then(buf => new OfflineAudioContext(1, 1, 44100).decodeAudioData(buf)).then(ab => { S.audioPauses = pausesFromSamples(ab.getChannelData(0), ab.sampleRate); if (TP.open) tpPaint(true); }).catch(() => { S.audioPauses = null; });
+      S.audioEl = el; S.audioName = audio.name; S.record.audio = 'media/' + audio.name.replace(/[^\w.\-]+/g, '-');
+      if (!parsed) { S.record.timing = null; S.lastImport = null; S.importReport = null; }
+    }
+    if (parsed) {
+      const { timing, report } = buildTimingFromImport(S.record.body, parsed);
+      S.record.timing = timing; S.lastImport = parsed; S.importReport = report;
+      toast(importSummary(report).replace(/<[^>]+>/g, ''), 6000);
+    } else if (audio) toast('Audio added without a timing file: read-along is off until you drop one.', 5000);
+    else toast('No audio or timing file found among the dropped files.', 4000);
+    player.pos = 0; ui.builtKey = ''; ui.capKey = ''; ui.sheetKey = ''; lecKey = '';
+    drawLabel(); drawLectern(true); if (S.sheetOpen) { buildSheetText(); renderSheetChrome(); }
+    renderCreator(); renderInspectorDynamic();
+  } catch (e) {
+    toast('Could not read the files: ' + (e && e.message ? e.message : String(e)), 6000);
+  }
+}
+let dragDepth = 0;
+stage.addEventListener('dragenter', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); dragDepth++; $('veil').style.display = 'grid'; } });
+stage.addEventListener('dragover', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
+stage.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('veil').style.display = 'none'; });
+stage.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('veil').style.display = 'none'; if (e.dataTransfer?.files?.length) importFiles(e.dataTransfer.files); });
+$('file-in').addEventListener('change', e => { importFiles(e.target.files); e.target.value = ''; });
+
+let toastTimer = 0;
+function toast(text, ms = 3000) { const t = $('toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms); }
+
+/* =====================================================================
+   10. Cameras, controls, walking
+   ===================================================================== */
+const orbit = new OrbitControls(camera, canvas); orbit.enabled = false; orbit.enableDamping = true; orbit.maxPolarAngle = Math.PI * 0.47; orbit.minDistance = 4; orbit.maxDistance = 140;
+const edCam = { pos: new THREE.Vector3(11, 12.5, 17) };
+const gizmo = new TransformControls(camera, canvas); gizmo.setSize(0.9);
+const gizmoHelper = gizmo.getHelper(); scene.add(gizmoHelper); gizmoHelper.visible = false; gizmo.enabled = false;
+function setGizmoMode(m) { S.gizmo = m; gizmo.setMode(m); gizmo.showX = m === 'translate'; gizmo.showZ = m === 'translate'; gizmo.showY = m === 'rotate'; document.querySelectorAll('#e-gizmo button').forEach(b => b.classList.toggle('on', b.dataset.g === m)); }
+gizmo.setTranslationSnap(0.1); gizmo.setRotationSnap(THREE.MathUtils.degToRad(5)); setGizmoMode('translate');
+gizmo.addEventListener('dragging-changed', e => { orbit.enabled = !e.value && S.mode === 'editor'; });
+gizmo.addEventListener('objectChange', () => {
+  const r = Math.hypot(blockRoot.position.x, blockRoot.position.z);
+  if (r > RADIUS - 1) { blockRoot.position.x *= (RADIUS - 1) / r; blockRoot.position.z *= (RADIUS - 1) / r; }
+  blockRoot.position.y = 0; blockRoot.rotation.x = 0; blockRoot.rotation.z = 0;
+  S.pose.x = blockRoot.position.x; S.pose.z = blockRoot.position.z;
+  let y = THREE.MathUtils.radToDeg(blockRoot.rotation.y); y = ((y + 540) % 360) - 180; S.pose.yawDeg = y;
+  renderInspectorDynamic();
+});
+function distToAnchor() { return Math.hypot(S.vis.x - ANCHOR.x, S.vis.z - ANCHOR.z); }
+const keys = new Set();
+window.addEventListener('keydown', e => { if (e.target.closest('input,textarea')) return; keys.add(e.key.toLowerCase()); });
+window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+let walkAnim = null;
+function startWalk(x, z) { walkAnim = { x0: S.vis.x, z0: S.vis.z, x1: x, z1: z, t0: performance.now(), dur: Math.max(600, Math.hypot(x - S.vis.x, z - S.vis.z) / 1.4 * 1000 * 0.55) }; }
+let drag = null;
+canvas.addEventListener('pointerdown', e => { if (S.mode === 'editor') { drag = { x: e.clientX, y: e.clientY, moved: 0, ed: true }; return; } drag = { x: e.clientX, y: e.clientY, moved: 0 }; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.moved += Math.abs(dx) + Math.abs(dy); drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.ed) return; const st = S.mode === 'creator' ? S.cre : S.vis;
+  st.yaw += dx * 0.0042; st.pitch = clamp(st.pitch + dy * 0.0042, -1.2, 1.2);
+});
+canvas.addEventListener('pointerup', e => { const d = drag; drag = null; if (d && d.moved < 6) onTap(e); });
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function onTap(e) {
+  const r = canvas.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const vis = interactive.filter(m => { let o = m; while (o) { if (!o.visible) return false; o = o.parent; } return true; });
+  const hit = ray.intersectObjects(vis, false)[0];
+  if (S.mode === 'visitor') {
+    if (distToAnchor() > RADIUS) { if (hit) toast('Step into the circle first.'); return; }
+    if (hit) {
+      const h = hit.object.userData.hit;
+      if (h === 'label') openSheet(true);
+      else if (h === 'marker') { if (display().live) player.toggle(); else openSheet(true); }
+      else if (h === 'lectern') { if (display().live) player.toggle(); else { lecternTurn(); } }
+      return;
+    }
+    const t = ray.ray.direction.y < -0.01 ? -camera.position.y / ray.ray.direction.y : -1;
+    if (t > 0 && t < 40) { const p = camera.position.clone().addScaledVector(ray.ray.direction, t); startWalk(p.x, p.z); }
+  } else if (S.mode === 'creator' && hit) { S.csheet = 'size'; renderCreator(); }
+}
+function lecternTurn() { const A = display().A; const p = A.sentences[S.lecternSentence]?.p ?? 0; const g = lecCanvas.getContext('2d'); g.font = `400 38px ${SERIF}`; const lines = wrapParagraph(g, A, p); const li = Math.max(0, lines.findIndex(l => l[l.length - 1].to > A.sentences[S.lecternSentence].from)); const nextLine = lines[li + 7]; if (nextLine) S.lecternSentence = sentenceAt(A, nextLine[0].from); else S.lecternSentence = A.paragraphs[p + 1] ? A.paragraphs[p + 1].s0 : 0; lecKey = ''; }
+
+/* =====================================================================
+   11. Frame loop, frame-time readout, resizing
+   ===================================================================== */
+const frameLog = []; let lastT = performance.now(), fpsTxtT = 0;
+let appear = 0;
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  stage.dataset.layout = w / h < 0.85 ? 'portrait' : h < 520 ? 'landscape' : 'desktop';
+  stage.style.setProperty('--barH', $('topbar').offsetHeight + 'px');
+  const cw = canvas.clientWidth || w, ch = canvas.clientHeight || h;
+  renderer.setSize(cw, ch, false);
+  camera.aspect = cw / ch;
+  if (S.mode === 'editor') camera.fov = 45;
+  else camera.fov = camera.aspect < 1 ? 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(21)) / camera.aspect) * 180 / Math.PI : 50;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(() => resize()).observe(stage);
+new ResizeObserver(() => resize()).observe(canvas);
+let prevMode = null;
+function frame() {
+  const now = performance.now(), dt = Math.min(0.1, (now - lastT) / 1000); const interval = now - lastT; lastT = now;
+  const w0 = performance.now();
+  // movement
+  if (S.mode === 'visitor') {
+    let mx = 0, mz = 0;
+    if (keys.has('w') || keys.has('arrowup')) mz -= 1; if (keys.has('s') || keys.has('arrowdown')) mz += 1;
+    if (keys.has('a') || keys.has('arrowleft')) mx -= 1; if (keys.has('d') || keys.has('arrowright')) mx += 1;
+    if (keys.has('q')) S.vis.yaw += dt * 1.4; if (keys.has('e')) S.vis.yaw -= dt * 1.4;
+    if (mx || mz) { walkAnim = null; const sp = (keys.has('shift') ? 3.5 : 1.4) * dt, c = Math.cos(S.vis.yaw), s = Math.sin(S.vis.yaw); S.vis.x += (mx * c + mz * s) * sp; S.vis.z += (-mx * s + mz * c) * sp; }
+    if (walkAnim) { const k = clamp((now - walkAnim.t0) / walkAnim.dur, 0, 1), e = k * k * (3 - 2 * k); S.vis.x = walkAnim.x0 + (walkAnim.x1 - walkAnim.x0) * e; S.vis.z = walkAnim.z0 + (walkAnim.z1 - walkAnim.z0) * e; if (k >= 1) walkAnim = null; }
+    S.vis.x = clamp(S.vis.x, -60, 100); S.vis.z = clamp(S.vis.z, -40, 60);
+    camera.position.set(S.vis.x, 1.6, S.vis.z); camera.rotation.set(S.vis.pitch, S.vis.yaw, 0);
+  } else if (S.mode === 'creator') {
+    camera.position.set(S.cre.x, 1.5, S.cre.z); camera.rotation.set(S.cre.pitch, S.cre.yaw, 0);
+  } else {
+    if (prevMode !== 'editor') { camera.position.copy(edCam.pos); camera.rotation.set(0, 0, 0); orbit.update(); }
+    orbit.update(); edCam.pos.copy(camera.position);
+  }
+  prevMode = S.mode;
+  // the block appears on entering the circle (visitor); always shown while creating/editing
+  const inside = distToAnchor() <= RADIUS;
+  const target = S.mode !== 'visitor' || inside ? 1 : 0;
+  if (target === 0 && appear > 0.5 && S.mode === 'visitor') { if (player.playing) player.pause(); if (S.sheetOpen) openSheet(false); }
+  appear += (target - appear) * Math.min(1, dt * 4.5); if (Math.abs(target - appear) < 0.002) appear = target;
+  for (const [m, b] of fadeMats) m.opacity = b * appear;
+  blockRoot.visible = appear > 0.003;
+  blockRoot.position.set(S.pose.x, (1 - appear) * -0.35, S.pose.z);
+  blockRoot.rotation.set(0, THREE.MathUtils.degToRad(S.pose.yawDeg), 0);
+  blockRoot.scale.setScalar(S.pose.scale);
+  // signs turn to the viewer about the vertical axis (upright); the lectern keeps its pose
+  for (const g of [labelG, markerG]) { const wp = new THREE.Vector3(); g.getWorldPosition(wp); g.rotation.y = Math.atan2(camera.position.x - wp.x, camera.position.z - wp.z) - THREE.MathUtils.degToRad(S.pose.yawDeg); }
+  // pulse rings on the sound marker while playing
+  pulse.forEach((m, i) => { const ph = ((now / 1600) + i / 3) % 1; m.scale.setScalar(1 + ph * 0.9); m.material.opacity = player.playing ? (1 - ph) * 0.7 * appear : 0; });
+  // creator reticle on the ground at the screen centre
+  if (reticle.visible) { const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion); const t = dir.y < -0.02 ? -camera.position.y / dir.y : 10; const p = camera.position.clone().addScaledVector(dir, Math.min(t, 12)); reticle.position.set(p.x, 0.03, p.z); }
+  // playback
+  const pos = player.now();
+  if (player.playing && pos >= player.duration()) { player.pause(); player.pos = player.duration(); }
+  tones.pump(pos);
+  refreshUI(now, ui.dirty); ui.dirty = false;
+  if (TP.open) tpPaint(false);
+  renderer.render(scene, camera);
+  const work = performance.now() - w0;
+  frameLog.push([now, interval, work]); while (frameLog.length && frameLog[0][0] < now - 2000) frameLog.shift();
+  if (now - fpsTxtT > 250) {
+    fpsTxtT = now; const iv = frameLog.slice(1).map(f => f[1]), wk = frameLog.map(f => f[2]);
+    const mean = a => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length);
+    $('fps').textContent = `frame ${mean(iv).toFixed(1)} ms · max ${Math.max(0, ...iv).toFixed(1)}\nwork  ${mean(wk).toFixed(1)} ms · max ${Math.max(0, ...wk).toFixed(1)}  (2 s)`;
+  }
+}
+
+/* =====================================================================
+   12. Wiring
+   ===================================================================== */
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.closest('#tapper')) b.blur();
+  if (b.dataset.mode) { applyMode(b.dataset.mode); return; }
+  if (b.dataset.view) { applyView(b.dataset.view, true); return; }
+  if (b.dataset.cv) { applyView(b.dataset.cv, false); return; }
+  if (b.dataset.ev) { applyView(b.dataset.ev, false); return; }
+  if (b.dataset.c) { S.csheet = S.csheet === b.dataset.c ? null : b.dataset.c; renderCreator(); return; }
+  if (b.dataset.g) { setGizmoMode(b.dataset.g); return; }
+  if (b.dataset.vs !== undefined) { setVisitorView(b.dataset.vs || null); $('vs-menu').hidden = true; $('vs-btn').setAttribute('aria-expanded', 'false'); return; }
+  switch (b.id) {
+    case 'b-fields': $('fields').hidden = !$('fields').hidden; renderChrome(); break;
+    case 'b-notes': $('notes').hidden = !$('notes').hidden; renderChrome(); break;
+    case 'b-frame': S.framed = !S.framed; document.body.classList.toggle('framed', S.framed); renderChrome(); setTimeout(resize, 30); break;
+    case 'b-sound': S.muted = !S.muted; tones.setMuted(S.muted); if (S.audioEl) S.audioEl.muted = S.muted; renderChrome(); toast(S.muted ? 'Sound off: the text still follows the narration silently.' : 'Sound on'); break;
+    case 'hint-walk': if (Math.hypot(S.vis.x - ST2.x, S.vis.z - ST2.z) <= RADIUS) startWalk(14, 1); else startWalk(0, shownView() === 'lectern' ? 2.6 : 7); S.vis.yaw = Math.atan2(-(ANCHOR.x - S.vis.x), -(ANCHOR.z - S.vis.z)) ; break;
+    case 'vs-btn': { const m = $('vs-menu'), open = m.hidden; if (open) renderVisitorSwitch(); m.hidden = !open; b.setAttribute('aria-expanded', String(open)); break; }
+    case 'sh-close': openSheet(false); break;
+    case 'sh-play': case 'cap-play': player.toggle(); S.follow = true; ui.forceScroll = true; break;
+    case 'sh-back10': case 'cap-back': player.seek(player.now() - 10000); S.follow = true; break;
+    case 'sh-prev': if (sheetMode() === 'silent') { S.readSentence = Math.max(0, S.readSentence - 1); ui.forceScroll = true; } else prevSentence(); break;
+    case 'sh-next': S.readSentence = Math.min(display().A.sentences.length - 1, S.readSentence + 1); ui.forceScroll = true; break;
+    case 'sh-follow': S.follow = true; ui.forceScroll = true; $('sh-follow').hidden = true; break;
+    case 'cap-open': openSheet(true); break;
+    case 'c-preview': case 'e-preview': applyMode('visitor'); if (distToAnchor() > RADIUS) { S.vis.x = 0; S.vis.z = S.view === 'lectern' ? 2.6 : 7; S.vis.yaw = 0; S.vis.pitch = 0.02; appear = 1; } applyView(S.view, true); break;
+    case 'c-pick': case 'i-pick': $('file-in').click(); break;
+    case 'c-faceme': S.pose.yawDeg = Math.round(THREE.MathUtils.radToDeg(Math.atan2(camera.position.x - S.pose.x, camera.position.z - S.pose.z))); renderCreator(); break;
+    case 'c-placehere': { const r = Math.hypot(reticle.position.x, reticle.position.z); const k = r > RADIUS - 1 ? (RADIUS - 1) / r : 1; S.pose.x = reticle.position.x * k; S.pose.z = reticle.position.z * k; S.pose.yawDeg = Math.round(THREE.MathUtils.radToDeg(Math.atan2(camera.position.x - S.pose.x, camera.position.z - S.pose.z))); toast('Placed. The text stands here for every visitor.'); break; }
+    case 'i-json': $('i-jsonpre').hidden = !$('i-jsonpre').hidden; b.textContent = $('i-jsonpre').hidden ? 'Show the JSON' : 'Hide the JSON'; renderInspectorDynamic(); break;
+    case 'i-remap':
+      if (S.lastImport) { const { timing, report } = buildTimingFromImport(S.record.body, S.lastImport); S.record.timing = timing; S.importReport = report; toast(importSummary(report).replace(/<[^>]+>/g, ''), 5000); }
+      else { S.record.timing = S.record.body === BODY ? JSON.parse(JSON.stringify(TONE)) : makeFakeTiming(S.record.body); toast(S.record.body === BODY ? 'Timing restored from the narration track.' : 'Demo timing re-made for the edited text (it will not match the tone voice exactly).'); }
+      player.pos = Math.min(player.pos, player.duration()); setBody(S.record.body); break;
+    case 'c-tap': case 'i-tap': tpOpen(true); break;
+    case 'tp-done': tpOpen(false); toast(S.record.timing ? 'Timing kept: ' + TP.marks.length + ' marks, the rest estimated. Every view uses it now.' : 'No marks: read-along stays off.'); break;
+    case 'tp-cancel': S.record.timing = TP.prev; tpOpen(false); ui.sheetKey = ''; lecKey = ''; toast('Cancelled: the previous timing is back.'); break;
+    case 'tp-play': player.toggle(); break;
+    case 'tp-back': player.seek(player.now() - 5000); break;
+    case 'tp-mark': tpMarkNext(); break;
+    case 'tp-undo': tpUndo(); break;
+    case 'tp-m50': tpNudge(-50); break;
+    case 'tp-p50': tpNudge(50); break;
+    case 'i-clear': if (player.playing) player.pause(); S.record.timing = null; S.importReport = null; setBody(S.record.body); break;
+  }
+});
+document.addEventListener('input', e => {
+  const id = e.target.id, v = e.target.value;
+  if (id === 'i-title' || id === 'c-ftitle') { S.record.title = v.slice(0, 120); drawLabel(); drawPill(); lecKey = ''; $('c-title').textContent = S.record.title; if ($('i-name')) $('i-name').textContent = S.record.title; $('e-name').textContent = S.record.title; if (S.sheetOpen) renderSheetChrome(); }
+  else if (id === 'i-lang' || id === 'c-flang') { S.record.lang = v.trim().slice(0, 35) || 'und'; ui.builtKey = ''; if (S.sheetOpen) { buildSheetText(); renderSheetChrome(); } }
+  else if (id === 'i-body' || id === 'c-fbody') { clearTimeout(e.target._t); e.target._t = setTimeout(() => setBody(v), 280); }
+  else if (id === 'i-credit' || id === 'c-credit') { S.record.voiceCredit = v.slice(0, 200); lecKey = ''; if (S.sheetOpen) renderSheetChrome(); }
+  else if (id === 'c-size') { S.pose.scale = clamp(+v, 0.5, 2); $('c-sv').textContent = S.pose.scale.toFixed(2) + '×'; }
+  else if (id === 'c-turn') { S.pose.yawDeg = clamp(+v, -180, 180); $('c-tv').textContent = Math.round(S.pose.yawDeg) + '°'; }
+  else if (['i-x', 'i-z', 'i-yaw', 'i-scale'].includes(id)) {
+    const n = parseFloat(v); if (!Number.isFinite(n)) return;
+    if (id === 'i-x') S.pose.x = clamp(n, -RADIUS + 1, RADIUS - 1); if (id === 'i-z') S.pose.z = clamp(n, -RADIUS + 1, RADIUS - 1);
+    if (id === 'i-yaw') S.pose.yawDeg = clamp(n, -180, 180); if (id === 'i-scale') S.pose.scale = clamp(n, 0.5, 2);
+  }
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'i-synth' || e.target.id === 'c-synth') { S.record.synthetic = e.target.checked; lecKey = ''; if (S.sheetOpen) renderSheetChrome(); }
+});
+$('sh-text').addEventListener('click', e => {
+  const s = e.target.closest('.s'); if (!s) return; const i = +s.dataset.s;
+  const mode = sheetMode();
+  if (mode === 'live') seekToSentence(i, true);
+  else if (mode === 'silent') { S.readSentence = i; ui.sheetKey = ''; }
+});
+for (const ev of ['wheel', 'touchmove']) $('sh-wrap').addEventListener(ev, () => { if (sheetMode() !== 'plain' && S.follow) { S.follow = false; $('sh-follow').hidden = sheetMode() !== 'live'; } }, { passive: true });
+$('sh-bar').addEventListener('click', e => {
+  const r = e.currentTarget.getBoundingClientRect(), f = clamp((e.clientX - r.left) / r.width, 0, 1);
+  if (sheetMode() === 'silent') { S.readSentence = Math.round(f * (display().A.sentences.length - 1)); ui.forceScroll = true; } else player.seek(f * player.duration());
+  S.follow = true;
+});
+stage.addEventListener('dragover', e => { const d = e.target.closest?.('#i-drop'); if (d) d.classList.add('hot'); });
+stage.addEventListener('dragleave', e => { const d = e.target.closest?.('#i-drop'); if (d) d.classList.remove('hot'); });
+window.addEventListener('hashchange', () => readHash());
+function readHash() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  const m = h.get('mode'), v = h.get('view');
+  if (v && VIEWS.some(x => x.name === v) && v !== S.view) applyView(v, false);
+  if (m && ['visitor', 'creator', 'editor'].includes(m) && m !== S.mode) applyMode(m);
+}
+
+/* =====================================================================
+   12b. Timing by listening: a few tapped anchors, the rest estimated
+   ===================================================================== */
+// Word weight: a syllable estimate (vowel groups, silent final e, one per digit) plus pause weights
+// after commas, sentence ends and paragraphs, in syllable units. The "char" mode is kept only for
+// the measurement (it flatters this page, whose tone track is built from word length in characters).
+function syllables(word) {
+  const w = word.toLowerCase();
+  if (/^\d+$/.test(w)) return w.length;
+  const g = w.match(/[aeiouyà-ÿ]+/g); let n = g ? g.length : 1;
+  if (n > 1 && /[^aeiouy]e$/.test(w) && !/[^aeiouy]le$/.test(w)) n--;
+  return Math.max(1, n);
+}
+const PAUSE_UNITS = { comma: 0.7, sentence: 1.5, paragraph: 3.0 };
+const weightCache = new Map();
+function wordWeights(A, mode) {
+  const key = A.hash + ':' + mode; if (weightCache.has(key)) return weightCache.get(key);
+  const n = A.words.length, W = new Float64Array(n), G = new Float64Array(n), cum = new Float64Array(n + 1);
+  const k = mode === 'char' ? 3.2 : 1; // pauses in characters when weighting by characters
+  for (let i = 0; i < n; i++) {
+    const w = A.words[i]; const txt = A.body.slice(w.from, w.to);
+    W[i] = mode === 'char' ? txt.length : syllables(txt);
+    const next = A.words[i + 1]; const gap = next ? A.body.slice(w.to, next.from) : '';
+    G[i] = (/\n\s*\n/.test(gap) ? PAUSE_UNITS.paragraph : /[.!?]/.test(gap) ? PAUSE_UNITS.sentence : /[,;:]/.test(gap) ? PAUSE_UNITS.comma : 0.12) * k;
+    cum[i + 1] = cum[i] + W[i] + G[i];
+  }
+  const r = { W, G, cum }; weightCache.set(key, r); if (weightCache.size > 8) weightCache.delete(weightCache.keys().next().value);
+  return r;
+}
+// anchors: [{ wi, ms }] (word index into A.words, time of that word's start). Returns a word-level
+// timing track (the model's own shape) plus, per word, whether it lies between two real marks.
+function estimateTiming(A, anchors, durationMs, mode = 'syllable') {
+  const n = A.words.length; if (!n || !anchors.length) return null;
+  const { W, cum } = wordWeights(A, mode);
+  const pts = anchors.filter(a => a.wi >= 0 && a.wi < n && Number.isFinite(a.ms)).map(a => ({ i: a.wi, ms: a.ms, real: true })).sort((a, b) => a.i - b.i);
+  if (!pts.length) return null;
+  const defRate = mode === 'char' ? 70 : 235; // ms per unit when there is nothing to learn from
+  const rate = pts.length >= 2 && cum[pts[pts.length - 1].i] > cum[pts[0].i] ? (pts[pts.length - 1].ms - pts[0].ms) / (cum[pts[pts.length - 1].i] - cum[pts[0].i]) : defRate;
+  if (pts[0].i > 0) pts.unshift({ i: 0, ms: Math.max(0, pts[0].ms - rate * cum[pts[0].i]), real: false });
+  const endUnits = cum[n - 1] + W[n - 1], last = pts[pts.length - 1];
+  let endMs = last.ms + rate * (endUnits - cum[last.i]);
+  if (Number.isFinite(durationMs) && durationMs > last.ms) { const r2 = (durationMs - 400 - last.ms) / Math.max(1e-9, endUnits - cum[last.i]); if (r2 > rate * 0.6 && r2 < rate * 1.6) endMs = durationMs - 400; }
+  pts.push({ i: n, ms: endMs, real: false, u: endUnits });
+  const segs = new Array(n), kind = new Uint8Array(n); // 1 = between two marks, 2 = extrapolated
+  for (let k = 0; k + 1 < pts.length; k++) {
+    const p = pts[k], q = pts[k + 1]; const up = cum[p.i], uq = q.u ?? cum[q.i];
+    const scale = uq > up ? (q.ms - p.ms) / (uq - up) : 0;
+    for (let i = p.i; i < q.i; i++) {
+      const st = p.ms + (cum[i] - up) * scale; const w = A.words[i];
+      segs[i] = { startMs: Math.round(st), endMs: Math.round(st + W[i] * scale), from: w.from, to: w.to };
+      kind[i] = p.real && q.real ? 1 : 2;
+    }
+  }
+  return { timing: { granularity: 'word', segments: segs, textHash: A.hash }, kind };
+}
+// Pauses: runs of low energy of at least minPauseMs. For the tone voice the envelope is known from its
+// schedule (a tone sounds for about 86% of its word); a dropped file is decoded and measured in 10 ms frames.
+function tonePauses(track, minPauseMs = 150) {
+  const out = [], segs = track.segments;
+  for (let i = 0; i + 1 < segs.length; i++) { const a = segs[i].startMs + 0.86 * (segs[i].endMs - segs[i].startMs), b = segs[i + 1].startMs; if (b - a >= minPauseMs) out.push([a, b]); }
+  return out;
+}
+function pausesFromSamples(ch, rate, minPauseMs = 150) {
+  const fr = Math.max(1, Math.round(rate / 100)), n = Math.floor(ch.length / fr), rms = new Float32Array(n);
+  for (let f = 0; f < n; f++) { let s = 0; for (let k = f * fr; k < (f + 1) * fr; k++) s += ch[k] * ch[k]; rms[f] = Math.sqrt(s / fr); }
+  const sorted = Float32Array.from(rms).sort(); const lo = sorted[Math.floor(n * 0.1)] || 0, hi = sorted[Math.floor(n * 0.9)] || 0;
+  const thr = lo + 0.12 * (hi - lo); const out = []; let st = -1;
+  for (let f = 0; f <= n; f++) { const quiet = f < n && rms[f] <= thr; if (quiet && st < 0) st = f; if (!quiet && st >= 0) { if ((f - st) * 10 >= minPauseMs) out.push([st * 10, f * 10]); st = -1; } }
+  return out;
+}
+// Snap a tap to the end of the nearest pause (where the voice starts again) within +-windowMs.
+function snapWith(pauses, ms, windowMs = 350) {
+  if (!pauses || !pauses.length) return null;
+  let lo = 0, hi = pauses.length - 1, best = null, bd = Infinity;
+  while (lo <= hi) { const mid = (lo + hi) >> 1; if (pauses[mid][1] < ms) lo = mid + 1; else hi = mid - 1; }
+  for (const k of [lo - 1, lo, lo + 1]) { const p = pauses[k]; if (!p) continue; const d = ms >= p[0] && ms <= p[1] ? 0 : Math.abs(p[1] - ms); if (d < bd) { bd = d; best = p[1]; } }
+  return bd <= windowMs ? best : null;
+}
+
+const TP = { open: false, marks: [], undo: [], prev: null, kind: null, snap: true, last: null, keys: '', onW: -1, pauses: null };
+function audioPauses() { return S.audioEl ? S.audioPauses || null : tonePauses(TONE); }
+function tpRecompute() {
+  const A = analyze(S.record.body);
+  const r = TP.marks.length ? estimateTiming(A, TP.marks, player.duration(), 'syllable') : null;
+  S.record.timing = r ? r.timing : null; TP.kind = r ? r.kind : null; TP.timing = S.record.timing;
+  ui.sheetKey = ''; ui.capKey = ''; lecKey = '';
+  tpPaint(true); renderInspectorDynamic();
+}
+function tpOpen(on) {
+  if (on) {
+    TP.prev = S.record.timing; TP.marks = []; TP.undo = []; TP.last = null; if (player.playing) player.pause(); player.pos = 0;
+    S.record.timing = null; TP.kind = null; TP.open = true; $('tapper').hidden = false; $('c-sheet').hidden = true; $('c-bar').hidden = true;
+    tpBuild(); tpPaint(true); ui.sheetKey = ''; lecKey = ''; renderInspectorDynamic();
+  } else { TP.open = false; $('tapper').hidden = true; $('c-bar').hidden = false; if (player.playing) player.pause(); renderCreator(); renderInspectorDynamic(); }
+}
+function tpBuild() {
+  const A = analyze(S.record.body), b = A.body; let html = '';
+  for (const p of A.paragraphs) {
+    html += '<p>';
+    for (let si = p.s0; si < p.s1; si++) { const s = A.sentences[si]; let pos = s.from;
+      if (s.w0 >= 0) for (let wi = s.w0; wi < s.w1; wi++) { const w = A.words[wi]; html += esc(b.slice(pos, w.from)) + `<span class="tw none" data-w="${wi}">${esc(b.slice(w.from, w.to))}</span>`; pos = w.to; }
+      html += esc(b.slice(pos, s.to)) + (si < p.s1 - 1 ? ' ' : ''); }
+    html += '</p>';
+  }
+  $('tp-text').innerHTML = html; $('tp-text').lang = S.record.lang || 'und';
+  TP.els = [...$('tp-text').querySelectorAll('.tw')]; TP.onW = -1;
+}
+function tpNextSentence() {
+  const A = analyze(S.record.body), now = player.now(); let ref = null;
+  for (const m of TP.marks) if (m.ms <= now + 1 && (!ref || m.ms > ref.ms)) ref = m;
+  return ref ? A.words[ref.wi].s + 1 : 0;
+}
+function tpAdd(wi, ms, viaSentence) {
+  const A = analyze(S.record.body); if (wi < 0 || wi >= A.words.length) return;
+  let snapped = 0;
+  if (TP.snap) { const s = snapWith(audioPauses(), ms); if (s !== null) { snapped = s - ms; ms = s; } }
+  const removed = TP.marks.filter(m => m.wi === wi || (m.wi < wi && m.ms >= ms) || (m.wi > wi && m.ms <= ms));
+  TP.marks = TP.marks.filter(m => !removed.includes(m));
+  const mk = { wi, ms: Math.max(0, ms), snapped }; TP.marks.push(mk); TP.marks.sort((a, b) => a.wi - b.wi);
+  TP.undo.push({ add: mk, removed }); TP.last = mk;
+  const others = removed.filter(m => m.wi !== wi).length;
+  if (others) toast(`Replaced ${others} mark${others > 1 ? 's' : ''} that no longer fit in order.`);
+  tpRecompute();
+}
+function tpRemove(mk) { TP.marks = TP.marks.filter(m => m !== mk); TP.undo.push({ add: null, removed: [mk] }); if (TP.last === mk) TP.last = null; tpRecompute(); }
+function tpUndo() {
+  const op = TP.undo.pop(); if (!op) { toast('Nothing to undo.'); return; }
+  if (op.nudge) { op.nudge.ms -= op.d; }
+  else { if (op.add) TP.marks = TP.marks.filter(m => m !== op.add); TP.marks.push(...op.removed); TP.marks.sort((a, b) => a.wi - b.wi); }
+  TP.last = TP.marks[TP.marks.length - 1] || null; tpRecompute();
+}
+function tpNudge(d) {
+  const mk = TP.last; if (!mk || !TP.marks.includes(mk)) { toast('Mark something first.'); return; }
+  const i = TP.marks.indexOf(mk), lo = TP.marks[i - 1], hi = TP.marks[i + 1];
+  const ms = mk.ms + d; if ((lo && ms <= lo.ms) || (hi && ms >= hi.ms) || ms < 0) { toast('That would pass a neighbouring mark.'); return; }
+  mk.ms = ms; TP.undo.push({ nudge: mk, d }); tpRecompute();
+}
+function tpMarkNext() {
+  const A = analyze(S.record.body), si = tpNextSentence();
+  if (si >= A.sentences.length) { toast('Every sentence has a mark before this point.'); return; }
+  if (!player.playing) { toast('Play the narration first, then tap as the voice starts the sentence.'); return; }
+  tpAdd(A.sentences[si].w0, player.now(), true);
+}
+function tpPaint(full) {
+  if (!TP.open) return;
+  const A = analyze(S.record.body), now = player.now(), dur = player.duration();
+  $('tp-play').innerHTML = player.playing ? ICON.pause : ICON.play;
+  const si = tpNextSentence();
+  $('tp-next').textContent = si < A.sentences.length ? A.body.slice(A.sentences[si].from, A.sentences[si].to) : 'All sentences up to here are marked.';
+  if (full) {
+    const anc = new Map(TP.marks.map(m => [m.wi, m]));
+    TP.els.forEach((el, i) => {
+      const m = anc.get(i); const k = TP.kind ? TP.kind[i] : 0;
+      el.className = 'tw ' + (m ? 'anc' + (m.snapped ? ' snapped' : '') : k === 1 ? 'est' : k === 2 ? 'ext' : 'none');
+      if (m) el.dataset.t = fmtMs(m.ms); else delete el.dataset.t;
+    });
+    TP.onW = -1;
+    const between = TP.kind ? TP.kind.reduce((a, k) => a + (k === 1), 0) : 0;
+    const lastMs = TP.marks.reduce((a, m) => Math.max(a, m.ms), 0), perMin = lastMs > 0 ? TP.marks.length / (lastMs / 60000) : 0;
+    $('tp-stat').textContent = TP.marks.length ? `${TP.marks.length} marks · ${perMin.toFixed(1)}/min · ${Math.round(between / A.words.length * 100)}% of words between marks` : 'No marks yet: read-along stays off.';
+    $('tp-snap').disabled = !audioPauses(); $('tp-snap').checked = TP.snap && !!audioPauses();
+  }
+  // the playing word, by the current estimate (exactly what the reading view will show)
+  const c = cursorAt(now); const w = c ? c.w : -1;
+  if (w !== TP.onW) {
+    if (TP.els[TP.onW]) TP.els[TP.onW].classList.remove('on');
+    TP.onW = w;
+    if (TP.els[w]) { TP.els[w].classList.add('on'); if (player.playing) { const wrap = $('tp-wrap'), el = TP.els[w]; const y = el.offsetTop - wrap.clientHeight * 0.3; if (Math.abs(wrap.scrollTop - y) > wrap.clientHeight * 0.25) wrap.scrollTo({ top: y, behavior: 'smooth' }); } }
+  }
+  tpTimeline(now, dur);
+}
+function fmtMs(ms) { const s = ms / 1000; return Math.floor(s / 60) + ':' + (s % 60).toFixed(1).padStart(4, '0'); }
+const TL_WIN = 40000;
+function tpTimeline(now, dur) {
+  const cv = $('tp-tl'), dpr = Math.min(2, window.devicePixelRatio || 1), W = Math.round(cv.clientWidth * dpr), H = Math.round(40 * dpr);
+  if (!W) return; if (cv.width !== W) { cv.width = W; cv.height = H; }
+  const g = cv.getContext('2d'); g.clearRect(0, 0, W, H);
+  const t0 = clamp(now - TL_WIN * 0.35, 0, Math.max(0, dur - TL_WIN)), x = t => (t - t0) / TL_WIN * W, y = H * 0.55;
+  // pauses (where a snap would land) as faint blocks
+  const ps = audioPauses();
+  if (ps && TP.snap) { g.fillStyle = 'rgba(255,255,255,0.06)'; for (const p of ps) { if (p[1] < t0 || p[0] > t0 + TL_WIN) continue; g.fillRect(x(p[0]), H * 0.2, Math.max(1, x(p[1]) - x(p[0])), H * 0.7); } }
+  g.fillStyle = 'rgba(255,255,255,0.1)'; g.fillRect(0, y - dpr, W, 2 * dpr);
+  // estimated stretches: dotted, amber between marks, grey when extrapolated
+  const segs = S.record.timing && TP.kind ? S.record.timing.segments : null;
+  if (segs) {
+    g.lineWidth = 2 * dpr; g.setLineDash([2 * dpr, 4 * dpr]);
+    for (const kind of [1, 2]) {
+      g.strokeStyle = kind === 1 ? 'rgba(242,180,90,0.9)' : 'rgba(255,255,255,0.35)'; g.beginPath();
+      for (let i = 0; i < segs.length; i++) { if (TP.kind[i] !== kind) continue; const a = segs[i].startMs, b = segs[i].endMs; if (b < t0 || a > t0 + TL_WIN) continue; g.moveTo(x(a), y); g.lineTo(x(b), y); }
+      g.stroke();
+    }
+    g.setLineDash([]);
+  }
+  for (const m of TP.marks) { if (m.ms < t0 || m.ms > t0 + TL_WIN) continue; g.fillStyle = m.snapped ? '#9fd3a9' : '#f2b45a'; g.fillRect(x(m.ms) - 1.5 * dpr, H * 0.15, 3 * dpr, H * 0.8); g.beginPath(); g.arc(x(m.ms), H * 0.15, 4 * dpr, 0, 7); g.fill(); }
+  g.fillStyle = '#fff'; g.fillRect(x(now) - dpr, 0, 2 * dpr, H);
+  g.fillStyle = '#8f897e'; g.font = `${10 * dpr}px ${SANS}`; g.fillText(fmt(t0), 2, H - 2); g.textAlign = 'right'; g.fillText(fmt(t0 + TL_WIN), W - 2, H - 2); g.textAlign = 'left';
+}
+$('tp-back').innerHTML = ICON.back10.replace('>10<', '>5<');
+$('tp-text').addEventListener('click', e => {
+  const el = e.target.closest('.tw'); if (!el) return; const wi = +el.dataset.w;
+  const mk = TP.marks.find(m => m.wi === wi);
+  if (player.playing) tpAdd(wi, player.now(), false);
+  else if (mk) tpRemove(mk);
+  else { const c = S.record.timing && S.record.timing.segments[wi]; if (c && timingMatches()) { player.seek(c.startMs); tpPaint(false); } else toast('Play the narration and tap this word when the voice reaches it.'); }
+});
+$('tp-tl').addEventListener('click', e => { const r = e.currentTarget.getBoundingClientRect(), dur = player.duration(), now = player.now(); const t0 = clamp(now - TL_WIN * 0.35, 0, Math.max(0, dur - TL_WIN)); player.seek(t0 + (e.clientX - r.left) / r.width * TL_WIN); });
+$('tp-snap').addEventListener('change', e => { TP.snap = e.target.checked; tpPaint(true); });
+window.addEventListener('keydown', e => {
+  if (!TP.open || e.target.closest('input,textarea')) return;
+  const k = e.key;
+  if (k === ' ' || k === 'Enter') { e.preventDefault(); if (e.repeat) return; tpMarkNext(); }
+  else if (k === 'z' || k === 'Z' || k === 'Backspace') { e.preventDefault(); tpUndo(); }
+  else if (k === 'k' || k === 'K') { player.toggle(); }
+  else if (k === 'ArrowLeft') { player.seek(player.now() - 5000); }
+  else if (k === '[') tpNudge(-50); else if (k === ']') tpNudge(50);
+}, true);
+
+/* ---------- measurement lab (used by tools/measure.mjs; not part of the block) ---------- */
+function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function gauss(r) { let u = 0, v = 0; while (u === 0) u = r(); v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+// A "true" narration: the tone track's word model with per-word duration and pause jitter.
+function jitteredTruth(seed, jitter) {
+  const A = analyze(BODY), r = rng(seed), segs = []; let t = 600;
+  const f = () => clamp(1 + jitter * gauss(r), 0.45, 1.9);
+  for (let i = 0; i < A.words.length; i++) {
+    const w = A.words[i]; const dur = Math.min(900, (105 + 44 * (w.to - w.from)) * f());
+    segs.push({ startMs: Math.round(t), endMs: Math.round(t + dur), from: w.from, to: w.to }); t += dur + 40 * f();
+    const next = A.words[i + 1]; if (!next) break; const gap = BODY.slice(w.to, next.from);
+    if (/\n\s*\n/.test(gap)) t += 1100 * f(); else if (/[.!?]/.test(gap)) t += 430 * f(); else if (/[,;:]/.test(gap)) t += 190 * f();
+  }
+  return { granularity: 'word', segments: segs, textHash: A.hash };
+}
+function measureAnchoring({ every = 1, sd = 0, lag = 0, jitter = 0.25, snap = false, mode = 'syllable', minPause = 150, window = 350, seed = 1 } = {}) {
+  const A = analyze(BODY), truth = jitteredTruth(seed, jitter), r = rng(seed * 7919 + 13);
+  const pauses = tonePauses(truth, minPause); const ts = truth.segments, durMs = ts[ts.length - 1].endMs + 900;
+  const anchors = []; let snaps = 0;
+  for (let s = 0; s < A.sentences.length; s += every) {
+    const wi = A.sentences[s].w0; if (wi < 0) continue; let ms = ts[wi].startMs + lag + sd * gauss(r);
+    if (snap) { const sn = snapWith(pauses, ms, window); if (sn !== null) { ms = sn; snaps++; } }
+    anchors.push({ wi, ms: Math.max(0, ms) });
+  }
+  // the page's add rule: a later mark replaces earlier ones that break the order
+  const kept = []; for (const a of anchors) { while (kept.length && kept[kept.length - 1].ms >= a.ms) kept.pop(); kept.push(a); }
+  const est = estimateTiming(A, kept, durMs, mode).timing.segments;
+  const errs = est.map((e, i) => Math.abs(e.startMs - ts[i].startMs)).sort((a, b) => a - b);
+  const mean = errs.reduce((a, b) => a + b, 0) / errs.length, p90 = errs[Math.floor(errs.length * 0.9)], med = errs[Math.floor(errs.length * 0.5)];
+  const tStart = Float64Array.from(ts, x => x.startMs), eStart = Float64Array.from(est, x => x.startMs);
+  const at = (arr, t) => { let lo = 0, hi = arr.length - 1, k = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (arr[m] <= t) { k = m; lo = m + 1; } else hi = m - 1; } return k; };
+  let n = 0, sentWrong = 0, wordWrong = 0, wordFar = 0;
+  for (let t = ts[0].startMs; t < ts[ts.length - 1].endMs; t += 50) {
+    const a = at(tStart, t), b = at(eStart, t); n++;
+    const sa = a >= 0 ? A.words[a].s : -1, sb = b >= 0 ? A.words[b].s : -1;
+    if (sa !== sb) sentWrong++; if (a !== b) wordWrong++; if (Math.abs(a - b) > 1) wordFar++;
+  }
+  return { every, sd, lag, jitter, snap, mode, minPause, seed, marks: kept.length, marksPerMin: kept.length / (durMs / 60000), snapped: snaps, wordStartMeanMs: Math.round(mean), wordStartMedianMs: Math.round(med), wordStartP90Ms: Math.round(p90), sentenceWrongPct: +(sentWrong / n * 100).toFixed(2), wordWrongPct: +(wordWrong / n * 100).toFixed(1), wordOffByMoreThanOnePct: +(wordFar / n * 100).toFixed(1), audioMin: +(durMs / 60000).toFixed(2) };
+}
+window.addEventListener('keyup', e => { if (TP.open && (e.key === ' ' || e.key === 'Enter') && !e.target.closest('input,textarea')) e.preventDefault(); }, true);
+window.__narratedTextLab = { measureAnchoring, estimateTiming, syllables };
+
+/* =====================================================================
+   13. Notes panel and the script hook
+   ===================================================================== */
+$('notes-in').innerHTML = document.getElementById('notes-src').innerHTML;
+
+const settle = (ms = 0) => new Promise(r => { let n = 0; const f = () => { if (++n >= 3) setTimeout(() => requestAnimationFrame(() => r()), ms); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
+async function waitAppear() { for (let i = 0; i < 240; i++) { const target = S.mode !== 'visitor' || distToAnchor() <= RADIUS ? 1 : 0; if (appear === target) break; await new Promise(r => requestAnimationFrame(r)); } }
+window.__stationBlock = {
+  family: 'station-blocks-1-narrated-text',
+  views: VIEWS.map(v => v.name),
+  modes: ['visitor', 'creator', 'editor'],
+  async setMode(name) { applyMode(name); await waitAppear(); await settle(380); },
+  async setView(name) { applyView(name, true); await waitAppear(); await settle(420); },
+  async walkTo(x, z) {
+    if (!Number.isFinite(+x) || !Number.isFinite(+z)) throw new Error('walkTo needs two numbers');
+    walkAnim = null; S.vis.x = clamp(+x, -60, 100); S.vis.z = clamp(+z, -40, 60);
+    if (S.mode !== 'visitor') applyMode('visitor');
+    await settle(); await waitAppear(); await settle(120);
+  },
+  async lookAt(x, y, z) {
+    if (![x, y, z].every(n => Number.isFinite(+n))) throw new Error('lookAt needs three numbers');
+    const dx = +x - S.vis.x, dy = +y - 1.6, dz = +z - S.vis.z;
+    S.vis.yaw = Math.atan2(-dx, -dz); S.vis.pitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -1.2, 1.2);
+    await settle(60);
+  },
+  async describe() {
+    return {
+      family: this.family, fields: FIELDS.slice(),
+      views: VIEWS.map(v => ({ name: v.name, required: v.required, usesFields: FIELDS.filter(f => USES[v.name][f]) }))
+    };
+  },
+  async exportModel() { return JSON.parse(JSON.stringify(exportModelSync())); },
+  /* Round-2 hooks for the checks: the visitor's own view choice (null = the creator's), what is shown, and
+     removing the timing (as the editor's "Remove timing" does) to see Captions fall back to Reading. */
+  async setVisitorView(name) { setVisitorView(name === null ? null : String(name)); await settle(300); },
+  async visitorState() { return { creatorView: S.view, pref: S.pref, stored: readPref(), shown: shownView(), timingMatches: timingMatches(), sheetOpen: S.sheetOpen, notice: !!document.getElementById('sh-notice') }; },
+  async clearTiming() { if (player.playing) player.pause(); S.record.timing = null; S.importReport = null; setBody(S.record.body); await settle(200); }
+};
+
+// start
+drawLabel(); drawPill(); drawLectern(true);
+applyView(S.view, false); applyMode(S.mode); readHash(); resize();
+renderer.setAnimationLoop(frame);
+</script>
+
+<template id="notes-src">
+<h2>Narrated text: designer notes</h2><p>Family <code>station-blocks-1-narrated-text</code>. One record (1 928 words, about four A4 pages, on the guild house, the keep and the market hall fire), drawn by five views. Frame times were measured in headless Chromium with software WebGL (SwiftShader) on a shared, busy machine: they say nothing about a phone except that the page is not CPU-bound.</p><details open><summary>0. Second round (2026-10-25): what changed and why</summary><p>The first look's verdicts and what this round did. Sections 1-6 below are the first round's notes, kept as written; where they disagree with this section, this section holds.</p><ul><li><b>No stale-timing notice for the visitor.</b> "It confuses the player": when the text was edited after the voice was timed (or there is no timing), the visitor simply gets plain reading with no highlight, and nothing is said about it. The reading sheet's notice and the caption strip's "Captions are off" text are gone. The creator still sees the reason: the View sheet says so in creator mode, and the editor shows the hash comparison.</li><li><b>Captions fall back to Reading without a matching timing.</b> The caption strip is driven by the timing by construction, so without one it would be an empty strip. A visitor now gets the Reading view instead (the sign, then the sheet). To see it: Editor, "Remove timing", then back to Visitor with Captions chosen.</li><li><b>The visitor's own view, remembered: a visitor preference, offered only between views that show the same content, and kept on the device across tours.</b> Inside the circle a small switch at the top left ("Reading, change") lets the visitor swap between the four views that show the same content: Reading, Captions, Sound off and Lectern. The choice overrides the creator's view for every narrated text, in every tour, on this phone.<ul><li>Stored under <code>tour-viewer.visitor.view.narratedText</code> in the browser's storage, read and written inside try/catch: where storage is blocked the choice lasts only the visit, and the toast says so.</li><li>The switch appears only when the creator's view is one of the four; the automatic stale state is never a choice. Captions is greyed out ("needs a timing") when this text has none. "Use the creator's choice again" clears it.</li><li>The top bar's view picker is the prototype's own control and now reads "Creator's view", so the two are not confused. Picking a view there in Visitor mode while a visitor choice is stored still shows the visitor's choice, and a toast names both views and the way back ("Use the creator's choice again" in the switch).</li></ul></li><li>Not changed: the views themselves, the creator's timing by listening, the lectern.</li></ul></details><details open><summary>1. The model</summary><ul><li>Built exactly as given: <code>title</code>, <code>body</code>, <code>lang</code>, <code>audio</code>, <code>timing { granularity, segments[{ startMs, endMs, from, to }], textHash }</code>, <code>voiceCredit</code>, <code>synthetic</code>. The view and the pose (position, turn, size) belong to the block around the record.</li><li><b>Add <code>segments[].text</code></b> (the word or cue text each segment was made for). With only offsets and a hash, a stale track can only be thrown away. With the words, it can be re-mapped onto the edited body by the same word matching the import already uses, and a one-word typo fix stops costing the creator the whole read-along.</li><li><b>Add <code>timing.source</code></b> (<code>"file"</code>, <code>"tapped"</code>, <code>"generated"</code>) or keep the tapped anchors (<code>timing.anchors: [{ ms, at }]</code>). The measurement in section 6 shows that a word mark estimated between sentence taps is on the wrong word about half the time, so a view should show only the sentence highlight for a tapped track. Without a field it cannot know. Keeping the anchors also lets a creator come back and correct the marks instead of starting again.</li><li><b>Name the hash algorithm in the value</b> (here <code>fnv1a32:...</code>; the app should use SHA-256 over NFC-normalised text). Without the prefix, two apps that normalise differently disagree silently.</li><li><b>Consider <code>durationMs</code></b> on the record: the sign says "12 min" before the audio has loaded, and a visitor deciding whether to start a 12-minute text needs that number first.</li><li>Keep <code>granularity</code>, and make a "sentence" track show sentence highlight only. Interpolating a word mark is dishonest and drifts visibly.</li><li>Do not add "chapters": paragraphs already are the chapters, and the progress bar shows them as ticks.</li></ul></details><details open><summary>2. The views</summary><h4>Reading (required)</h4><ul><li>What: a short upright sign in the world (title, "listen or read, 12 min") opens a sheet: a bottom sheet on a portrait phone, a side panel in landscape and on desktop. The current sentence is softly highlighted and the spoken word underlined. Tap a sentence to play from it; back 10 s; previous sentence. The sheet follows the voice until the visitor scrolls, then offers "Back to the voice".</li><li>Fields: all seven.</li><li>Why a visitor likes it: the long text reads in comfortable 18-19 px serif type, and the square stays visible above or beside the sheet.</li><li>Weakest: in hard sunlight a dark sheet with light text is the best of poor options. On a portrait phone the sheet covers the sign itself, so the visitor reads with the phone tilted down. Few people will read 2 000 words standing in a crowded square. A 1 m placement error does not matter: the sign floats on a stem and nothing in it refers to the scene.</li></ul><h4>Captions (required)</h4><ul><li>What: one chunk of at most about 96 characters (three lines on a 390 px phone) at the bottom of the AR view, the spoken word marked and the words still to come slightly dimmer. Chunks break at commas where possible. A small sound marker stands in the world.</li><li>Fields: all seven. Without a matching timing it says so instead of guessing.</li><li>Why: the visitor keeps looking at the guild house while listening, and with sound off it works as subtitles.</li><li>Weakest: the narration sets the reading pace, so with sound off a slow reader falls behind (back 10 s helps). In a crowd, the strip hides the lower third of the camera image.</li></ul><h4>Sound off (required)</h4><ul><li>What: the same sheet without playback. A calm reading mark (a cooler tint) the visitor sets by tapping a sentence, previous and next sentence, a position readout, ticks per paragraph.</li><li>Fields: title, body, lang.</li><li>Why: for museums and quiet places, and for visitors who read faster than any narrator.</li><li>Weakest: it is just reading on a phone, and nothing in it uses the place.</li></ul><h4>Stale track (required; a state, not a choice)</h4><ul><li>What: when <code>timing.textHash</code> differs from the body's hash, every view falls back: plain text, no highlight, no tap-to-play, and a quiet notice that the voice may differ in places. The voice can still be played. The picker entry previews it by rewording one sentence; editing the body in the editor triggers it for real.</li><li>Fields: title, body, lang, audio, the timing's hash, voiceCredit, synthetic.</li><li>Weakest: one typo fix silently costs the whole read-along unless the creator re-maps it. The editor offers this when the timing file is still in memory, which is exactly why <code>segments[].text</code> should be added.</li></ul><h4>Lectern (unlisted, my own)</h4><ul><li>What: a reading stand in the world, tilted like a lectern, showing nine lines of the current paragraph with the sentence highlighted and the word marked. The page follows the voice. Tap the page to listen or pause; with a stale or missing track, a tap turns the page.</li><li>Fields: all seven.</li><li>Why: it is the only view where the text is in the square. Reading it feels like an exhibit, not like a phone.</li><li>Weakest: it reads only from about 1-2.5 m (letters about 0.045 m), so it serves one or two visitors at a time. It needs a canvas texture redraw per word, and it is the only view where a few degrees of heading error show (the stand faces its pose, not the visitor).</li></ul></details><details open><summary>3. Costs</summary><ul><li>Frame time (headless, software WebGL, mean / max over 2 s, page work per frame in brackets):<ul><li>The frame interval read 110-450 ms mean (max up to 800 ms) on every view, because the machine was shared with another long test run and WebGL ran in software. It measures the machine, not this page.</li><li>The page's own work per frame (the readout's second line: JS, DOM updates and the render call) was 0.8-15 ms mean over two final runs at 390 x 844, 844 x 390 and 1440 x 900 for reading and editor, moving with the machine load. Single frames of up to about 100 ms come from the first texture uploads and from load spikes.</li><li>In development runs: lectern about 4 ms mean, 44 ms max (a page redraw and upload); timing by listening about 20 ms mean in the editor, most of it the 3D view behind the panel.</li><li>On a phone with a GPU the scene is trivial; the cost is the text, not the 3D.</li></ul></li><li>Media per block: body about 10 KB; word timing 1 928 segments, about 105 KB as JSON (roughly a quarter of that zipped). The audio dominates: 12 min of speech at 24-32 kbit/s Opus mono is about 2.2-2.9 MB.</li><li>Reading and sound off: about 1 900 word spans in the DOM; one class change per word.</li><li>Captions: one small DOM update per word.</li><li>Lectern: a 1024 x 768 canvas redrawn and uploaded on each word, about three times a second (3 MB per upload). Fine on a mid-range phone, and the most expensive view here.</li><li>Creator minutes: placing and choosing a view, about 2 minutes on the phone. The text itself is written on the desktop. A voice with a timing file is two dropped files and a coverage check (about 5 minutes) plus making the recording. Without a timing file, timing by listening costs about 4 minutes per A4 page (section 6).</li></ul></details><details open><summary>4. Creator controls</summary><ul><li>Phone (creator): five large buttons along the bottom:<ul><li>Place: a reticle on the ground, then "Place here".</li><li>View: cards for the four views a creator can choose.</li><li>Text: title, language, small body fixes.</li><li>Voice: add audio + timing files, mark timing by listening, synthetic, credit, coverage.</li><li>Size, turn: sliders and "Face me".</li></ul></li><li>Desktop (editor):<ul><li>the station's block list;</li><li>an inspector with every field: title, lang, body; audio; the timing status with the hash comparison and a coverage bar over the text; mark timing by listening; re-map; remove timing; synthetic; voiceCredit;</li><li>the view picker, numeric placement, and the stored JSON;</li><li>move and turn handles in the 3D view, kept inside the circle.</li></ul></li><li>Per view: the sign and the marker turn to the visitor by themselves, so only size and position matter. The lectern also needs its turn.</li></ul></details><details open><summary>5. Blunt self-check</summary><ul><li>The demo opens about 13 s into the narration, paused, so every screenshot shows the read-along; a real first visit starts at 0:00.</li><li>The tone pattern is not speech. Nothing here proves that the word marking feels in sync with a real voice; only a real word-timed recording can test that.</li><li>On a portrait phone the open reading sheet covers the very sign that opened it. I accepted this and say so, rather than moving the camera.</li><li>The import maps words by sequence, so a narrator who reads numbers aloud ("sixteen twelve" for 1612) loses those words; the coverage readout shows it.</li><li>Drop first: the lectern, for its cost and its tiny audience. Proudest: the caption strip, because it keeps the visitor's eyes on the place and degrades honestly when the timing is missing or stale.</li></ul></details><details open><summary>6. Timing by listening</summary><ul><li>What it does: in creator and editor, "Mark timing by listening" plays the narration. The creator presses Space, or the large "Mark: this sentence starts now" button, when the voice begins the sentence shown as "next". Alternatively, they tap any word the moment it is spoken.<ul><li>Each mark is an anchor (time to the word's character offset).</li><li>Between anchors the page estimates each word's start by its share of a <b>syllable estimate</b>: vowel groups, a silent final e, one per digit, plus pause weights of 0.7 syllable after a comma, 1.5 after a sentence and 3 after a paragraph.</li><li>Before the first mark and after the last, it extrapolates at the creator's average pace, ending at the audio's end when that pace agrees within 0.6-1.6 times.</li><li>The result is the ordinary word-level <code>timing.segments</code>, and every view uses it at once.</li></ul></li><li>How it shows the difference:<ul><li>a marked word has a solid amber underline and its time above it (green when snapped to a pause);</li><li>estimated words between marks are dotted amber;</li><li>extrapolated words are dotted grey;</li><li>the timeline shows the same three styles over a 40 s window, with detected pauses as faint blocks.</li></ul></li><li>Corrections: tap a word again while playing to re-mark it; tap a marked word while paused to remove it; Undo (or Z); nudge the last mark by 50 ms. A mark that breaks the order replaces the marks it contradicts, and says so.</li><li>Snap to pause: a tap moves to the end of the nearest pause (at least 150 ms of low energy) within 350 ms. For the tone voice the pauses are known from its schedule; a dropped file is decoded and measured in 10 ms frames. That decoder path ran on no real speech here.</li><li><b>Measured</b> on the page's own tone narration with a planted "true" timing. The truth is the tone track's word model with random per-word duration and pause jitter (15% and 30%), three seeds each. Simulated taps: the true sentence start plus a lag of 0 or 200 ms and noise with a standard deviation of 0, 80 or 160 ms.<ul><li>Error of word starts, syllable weights, 30% jitter, taps 200 ms late with 80 ms noise. Each line gives mean / 90th percentile in ms, then the time the highlighted sentence is wrong, without snap and then with snap:<ul><li>every sentence (8 marks per minute): 323 / 644 ms and 2.7% wrong without snap; 231 / 509 ms and 0.25% with snap;</li><li>every 2 sentences (4 per minute): 350 / 729 ms and 3.4%; 279 / 612 ms and 2.0%;</li><li>every 4 (2 per minute): 454 / 980 ms and 5.2%; 410 / 899 ms and 4.4%;</li><li>every 8 (1 per minute): 721 / 1 561 ms and 9.3%; 676 / 1 519 ms and 8.7%;</li><li>every 16 (0.5 per minute): 871 / 1 844 ms and 11.2%; 841 / 1 729 ms and 10.8%.</li></ul></li><li>Even perfect taps on every sentence leave the estimated word mark on the wrong word 43-49% of the time (15-30% jitter), and more than one word off 6-11% of the time. Mean word-start error is then 180-220 ms. <b>Sentence highlight from taps works; word marking from taps does not feel right</b>, which is why I propose <code>timing.source</code> above.</li><li>Snap mostly removes the creator's lag: with taps 200 ms late it cuts the sentence error from 2.7% to 0.25% at one mark per sentence. With taps on time it changes little (0.8% to 0.0% at 80 ms noise). It helps less as marks get sparser, because the error then comes from the estimate, not the tap.</li><li>Snap parameters (every 2 sentences, 120 ms noise, 200 ms lag): a minimum pause of 150 or 250 ms gives the same result, while 80 ms is worse, because word gaps of about 90 ms become false targets. A window of 150 ms is too small to catch a 200 ms lag (3.3% wrong); 350 ms gives 2.3% and 600 ms 2.0%.</li><li>Character weights look better (126 ms mean with perfect taps every sentence, against 179 ms) <b>only because my planted truth is itself built from word length in characters</b>. I did not trust that result, and kept syllables as the default.</li><li>What would reverse the verdict: real speech has longer, less regular pauses and stretches some words for emphasis. Snap could then help more, and the in-sentence estimate could be worse than measured. The thresholds ("feels right" = the sentence is wrong under about 1% of the time, a word mark within a word) are my choice.</li></ul></li><li>My recommendation: <b>one mark per sentence (about 8 per minute at this pace) with snap on</b>, and show only the sentence highlight for such a track. One mark per two sentences is acceptable only for a sentence highlight that may lag at sentence changes (about 2% of the time).</li><li>Creator minutes per page: an A4 page here is about 480 words, or about 3.0 minutes of narration at this pace. Marking every sentence in one real-time pass plus about 25% for replays and undos is <b>about 4 minutes per page</b>, or about 16 minutes for this text. This is an estimate from the audio length, not timed with a real creator.</li></ul></details>
+</template>
+</body>
+</html>
