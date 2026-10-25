@@ -265,6 +265,19 @@ input[type=range].plain{flex:1;accent-color:var(--accent)}
 
 <template id="notesTpl">
   <h2>Designer notes - video in the world</h2>
+  <details open><summary>0. Second round (2026-10-25): what changed and why</summary>
+    <p>Sections 1-5 are the first round's notes, kept as written; where they disagree with this section, this section holds.</p>
+    <ul>
+      <li><b>Window: nothing over the video any more.</b> The cross bars (the mullion and the transom) and the glass sheen are gone. The opening keeps its outer frame, reveals, stone surround, sill and the warm spill, so it still reads as a window; the clip itself is clear.</li>
+      <li><b>When the video starts is now the creator's choice</b> (<code>start.trigger</code>): on entering the circle (the default, as before), within N metres of the video (<code>start.withinM</code>, 1-20 m), when looked at (the video's centre within 15 degrees of the middle of the view for 0.6 s), or on a tap. The stand-here view ignores it: it starts when its picture has developed on the viewpoint. While a video waits for its trigger, the visitor sees its poster and, for "within N m" and "on a tap", a short hint.</li>
+      <li><b>Sound on or off at the start</b> is the creator's default (<code>sound</code>, "off" by default). Three rules sit on top of it:<ul>
+        <li>the visitor's own choice wins: once a visitor turns the sound on or off, that is kept on the phone and used whenever any video starts (this page has one video; the rule is meant for all of a tour's videos);</li>
+        <li>"sound on" is honoured only after the visitor has tapped the page at least once (<code>navigator.userActivation.hasBeenActive</code>); otherwise the video starts muted, with captions, and the button says "Tap for sound";</li>
+        <li>a browser without that check is treated as not tapped, so it starts muted.</li></ul></li>
+      <li>The visitor's choice is stored under <code>tour-viewer.visitor.videoSound</code>, read and written inside try/catch; where storage is blocked it lasts only the visit.</li>
+      <li>To try the triggers: Creator, More, pick one, then Visitor. Switching back to the visitor now resets the clip to its start, so the trigger can fire again.</li>
+    </ul>
+  </details>
   <details open><summary>1. The model</summary>
     <p>Built exactly as given: <code>video</code>, <code>poster</code>, <code>captions</code> (WebVTT text), <code>alpha</code> ("none" | "stacked"), <code>loop</code>, <code>widthM</code>, <code>pose</code> (position relative to the station anchor plus a compass heading), <code>viewpoint</code> (optional: position, heading, pitch, horizontal field of view). The block also stores which <code>view</code> the creator picked; that is block data, not model data.</p>
     <ul>
@@ -344,6 +357,8 @@ const record = {
   alpha: 'stacked',
   loop: true,
   widthM: 1.6,
+  start: { trigger: 'enter', withinM: 6 },   // when playback begins: 'enter' | 'near' (within withinM metres) | 'look' | 'tap'
+  sound: 'off',                              // the creator's default at the start: 'off' | 'on'
   pose: { position: [5, 2.0, -20.0], headingDeg: 180 },
   viewpoint: { position: [5, 1.6, -13.6], headingDeg: 0, pitchDeg: 3, hfovDeg: 40 },
 };
@@ -568,7 +583,8 @@ let edThumbsDirty = true;
 
 /* ---------- the player (clip clock) ---------- */
 const player = {
-  t: 0, paused: true, muted: true, cc: true, started: false, lastFrame: -1,
+  t: 0, paused: true, muted: true, cc: true, started: false, lastFrame: -1, soundDecided: false,
+  reset() { this.t = 0; this.paused = true; this.started = false; this.lastFrame = -1; this.soundDecided = false; },
   play() { if (!record.loop && this.t >= DUR - 0.05) this.t = 0; this.paused = false; this.started = true; },
   pause() { this.paused = true; },
   toggle() { this.paused ? this.play() : this.pause(); },
@@ -946,18 +962,11 @@ function buildWindow() {
   quad(w / 2, -h / 2, -w / 2, -h / 2, 1.15); // sill inside
   const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); rg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   grp.add(new THREE.Mesh(rg, revMat));
-  // timber frame and cross
+  // the timber frame round the opening; no cross bars and no glass sheen: nothing lies over the clip itself
   const timber = new THREE.MeshLambertMaterial({ color: '#3b2d23', transparent: true }); mats.push(timber);
   const bars = new THREE.Group(); grp.add(bars);
   const tb = 0.06, add = (bw, bh, x, y) => { const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.06), timber); m.position.set(x, y, -0.06); bars.add(m); };
   add(w, tb, 0, h / 2 - tb / 2); add(w, tb, 0, -h / 2 + tb / 2); add(tb, h, -w / 2 + tb / 2, 0); add(tb, h, w / 2 - tb / 2, 0);
-  add(tb * 0.75, h, 0, 0); add(w, tb * 0.75, 0, h * 0.18);
-  // glass sheen
-  const gc = mkCanvas(256, 320), gg = gc.getContext('2d');
-  const sg = gg.createLinearGradient(0, 0, 256, 320); sg.addColorStop(0, 'rgba(255,255,255,0)'); sg.addColorStop(0.32, 'rgba(255,255,255,.0)'); sg.addColorStop(0.4, 'rgba(255,255,255,.55)'); sg.addColorStop(0.47, 'rgba(255,255,255,0)'); sg.addColorStop(0.58, 'rgba(255,255,255,.25)'); sg.addColorStop(0.62, 'rgba(255,255,255,0)');
-  gg.fillStyle = sg; gg.fillRect(0, 0, 256, 320);
-  const glassMat = uiMat(canvasTex(gc), { opacity: 0.14, blending: THREE.AdditiveBlending });
-  const glass = new THREE.Mesh(new THREE.PlaneGeometry(w, h), glassMat); glass.position.z = -0.03; grp.add(glass);
   // stone surround with keystone, and sill
   const m = 0.15, outer = new THREE.Shape();
   outer.moveTo(-w / 2 - m, -h / 2); outer.lineTo(w / 2 + m, -h / 2); outer.lineTo(w / 2 + m, h / 2 + m); outer.lineTo(-w / 2 - m, h / 2 + m); outer.closePath();
@@ -971,15 +980,15 @@ function buildWindow() {
   // caption plate on the wall under the sill
   const cap = new CaptionPlate({ widthM: w + 0.5, letterM: 0.085 });
   cap.mesh.position.set(0, -h / 2 - 0.1 - cap.heightM / 2, 0.02); grp.add(cap.mesh);
-  video.userData.tap = () => player.toggle(); glass.userData.tap = () => player.toggle();
+  video.userData.tap = () => player.toggle();
   const capWorld = new THREE.Vector3(); let strip = false;
   return {
-    group: grp, tappables: [glass, video], bounds: { w: w + 2 * m, h: h + m + 0.1, cy: m / 2 - 0.05, z: 0.02 },
+    group: grp, tappables: [video], bounds: { w: w + 2 * m, h: h + m + 0.1, cy: m / 2 - 0.05, z: 0.02 },
     stop: { dist: 5.4, side: -1.0, lookY: -0.1 },
     update(dt, a) {
       vmat.uniforms.opacity.value = a; vmat.uniforms.posterMix.value = player.started ? 0 : 1;
       for (const mm of mats) mm.opacity = a;
-      glassMat.opacity = 0.14 * a; spill.material.opacity = a * 0.16 * (0.85 + 0.15 * Math.sin(performance.now() / 900));
+      spill.material.opacity = a * 0.16 * (0.85 + 0.15 * Math.sin(performance.now() / 900));
       const cue = player.cc ? activeCue(player.t) : null;
       cap.mesh.getWorldPosition(capWorld);
       const px = letterPx(capWorld, cap.letterM); strip = strip ? px < 15 : px < 13;
@@ -1125,25 +1134,60 @@ function buildStandHere() {
   };
 }
 
+const USE_START = 'when playback begins: on entering the circle, within N m, when looked at, or on a tap';
+const USE_SOUND = 'sound on or off at the start; the visitor\'s own choice wins, and a phone not yet tapped starts muted';
 const VIEW_DEFS = {
   screen: { label: 'Screen', required: true, build: buildScreen,
-    uses: { video: 'plays in the screen (colour half)', poster: 'shown until the first play', captions: 'lower third on the screen; moves to the phone strip when too small to read', loop: 'restart or stop at the end', widthM: 'screen width; height from the clip aspect', pose: 'screen centre, 12 cm in front; heading' },
+    uses: { video: 'plays in the screen (colour half)', poster: 'shown until the first play', captions: 'lower third on the screen; moves to the phone strip when too small to read', loop: 'restart or stop at the end', widthM: 'screen width; height from the clip aspect', pose: 'screen centre, 12 cm in front; heading', start: USE_START, sound: USE_SOUND },
     ignores: { alpha: 'the matte half is not shown', viewpoint: 'not used' } },
   window: { label: 'Window', required: true, build: buildWindow,
-    uses: { video: 'fills the opening, 38 cm deep behind drawn reveals', poster: 'shown until the first play', captions: 'plate on the wall under the sill; phone strip when too small', loop: 'restart or stop at the end', widthM: 'the opening width; height from the clip aspect', pose: 'opening centre on the wall plane; heading = the wall normal' },
+    uses: { video: 'fills the opening, 38 cm deep behind drawn reveals, with nothing over it', poster: 'shown until the first play', captions: 'plate on the wall under the sill; phone strip when too small', loop: 'restart or stop at the end', widthM: 'the opening width; height from the clip aspect', pose: 'opening centre on the wall plane; heading = the wall normal', start: USE_START, sound: USE_SOUND },
     ignores: { alpha: 'the matte half is not shown', viewpoint: 'not used' } },
   cutout: { label: 'Cut-out', required: true, build: buildCutout,
-    uses: { video: 'the colour half', alpha: 'required: the matte half cuts out the stall', captions: 'plate above the stall; phone strip when too small', loop: 'restart or stop at the end', widthM: 'life size: 1.6 m wide makes a 2.0 m tall stall', pose: 'stands on the ground below the pose, 0.5 m out; turns at most 30 degrees toward the visitor' },
+    uses: { video: 'the colour half', alpha: 'required: the matte half cuts out the stall', captions: 'plate above the stall; phone strip when too small', loop: 'restart or stop at the end', widthM: 'life size: 1.6 m wide makes a 2.0 m tall stall', pose: 'stands on the ground below the pose, 0.5 m out; turns at most 30 degrees toward the visitor', start: USE_START, sound: USE_SOUND },
     ignores: { poster: 'not used (a poster has no matte)', viewpoint: 'not used' } },
   porthole: { label: 'Porthole', required: false, build: buildPorthole,
-    uses: { poster: 'the medallion face before playing', video: 'a circular crop in the world; the full frame in the overlay', captions: 'large, in the overlay player', loop: 'restart or stop at the end', widthM: 'medallion diameter = 0.55 x widthM', pose: 'medallion centre, 6 cm in front' },
+    uses: { poster: 'the medallion face before playing', video: 'a circular crop in the world; the full frame in the overlay', captions: 'large, in the overlay player', loop: 'restart or stop at the end', widthM: 'medallion diameter = 0.55 x widthM', pose: 'medallion centre, 6 cm in front', start: USE_START, sound: USE_SOUND },
     ignores: { alpha: 'the matte half is not shown', viewpoint: 'not used' } },
   'stand-here': { label: 'Stand here', required: false, build: buildStandHere,
-    uses: { video: 'projected softly on the wall', captions: 'phone strip, once the picture has developed', loop: 'restart or stop at the end', widthM: 'projection width (feathered, 12 % larger)', pose: 'projection centre on the wall', viewpoint: 'footprints on the ground; the picture develops when the visitor stands there facing the pose (pitch and field of view are used by the editor preview)' },
-    ignores: { poster: 'not used', alpha: 'the matte half is not shown' } },
+    uses: { video: 'projected softly on the wall', captions: 'phone strip, once the picture has developed', loop: 'restart or stop at the end', widthM: 'projection width (feathered, 12 % larger)', pose: 'projection centre on the wall', viewpoint: 'footprints on the ground; the picture develops when the visitor stands there facing the pose (pitch and field of view are used by the editor preview)', sound: USE_SOUND },
+    ignores: { poster: 'not used', alpha: 'the matte half is not shown', start: 'not used: it starts when its picture has developed on the viewpoint' } },
 };
 const VIEW_ORDER = ['screen', 'window', 'cutout', 'porthole', 'stand-here'];
-const FIELDS = ['video', 'poster', 'captions', 'alpha', 'loop', 'widthM', 'pose', 'viewpoint'];
+const FIELDS = ['video', 'poster', 'captions', 'alpha', 'loop', 'widthM', 'pose', 'viewpoint', 'start', 'sound'];
+const START_LABEL = { enter: 'On entering', near: 'Within N m', look: 'When looked at', tap: 'On a tap' };
+// "looked at": the video's centre within 15 degrees of the middle of the view, held for 0.6 s
+const LOOK = { deg: 15, dwellS: 0.6 };
+let lookDwell = 0;
+/** Whether the creator's start trigger has fired this frame (the visitor is inside the circle). */
+function startTriggered(dt) {
+  const s = record.start || { trigger: 'enter' };
+  if (s.trigger === 'enter') return true;
+  const c = blockCentreWorld();
+  if (s.trigger === 'near') return Math.hypot(camera.position.x - c.x, camera.position.z - c.z) <= s.withinM;
+  if (s.trigger === 'look') {
+    const to = c.sub(camera.position).normalize(), fwd = camera.getWorldDirection(new THREE.Vector3());
+    lookDwell = Math.acos(clamp(to.dot(fwd), -1, 1)) / DEG < LOOK.deg ? lookDwell + dt : 0;
+    return lookDwell >= LOOK.dwellS;
+  }
+  return false;   // 'tap': the visitor's own tap on the video starts it
+}
+/* The visitor's sound choice, kept on the device for every video (the same guarded pattern as other visitor
+   preferences): 'on' | 'off' | null when the visitor never chose. */
+const SOUND_KEY = 'tour-viewer.visitor.videoSound';
+function readSoundPref() { try { const v = window.localStorage.getItem(SOUND_KEY); return v === 'on' || v === 'off' ? v : null; } catch (e) { return null; } }
+function writeSoundPref(v) { try { if (v) window.localStorage.setItem(SOUND_KEY, v); else window.localStorage.removeItem(SOUND_KEY); return true; } catch (e) { return false; } }
+/** Sound may start only after the visitor has tapped the page; a browser without the check counts as not tapped. */
+function hasActivation() { const ua = navigator.userActivation; return !!(ua && ua.hasBeenActive); }
+let soundReason = null;
+/** Called once when a video starts for the visitor: the visitor's own choice, else the creator's default, and
+ *  "on" only after a user activation (otherwise muted, with captions, and the button offers the sound). */
+function decideStartSound() {
+  const pref = readSoundPref(), want = pref || record.sound || 'off';
+  if (want === 'on' && !hasActivation()) { sound.setOn(false); player.cc = true; soundReason = 'muted: no tap yet'; }
+  else { sound.setOn(want === 'on'); soundReason = pref ? 'the visitor\'s choice' : 'the creator\'s default'; }
+  refreshButtons();
+}
 
 let view = null;
 function disposeTree(o) { o.traverse((n) => { if (n.geometry) n.geometry.dispose(); if (n.material) { const ms = Array.isArray(n.material) ? n.material : [n.material]; ms.forEach((m) => { if (m.map && m.map !== fpTex && m.map !== shadowTex && m.map !== glowTex) m.map.dispose(); m.dispose(); }); } }); }
@@ -1251,7 +1295,9 @@ function glideToView(resolve) {
 
 function setMode(m) {
   if (!['visitor', 'creator', 'editor'].includes(m)) throw new Error(`unknown mode "${m}"`);
-  mode = m; stage.dataset.mode = m;
+  const prev = mode; mode = m; stage.dataset.mode = m;
+  // back to the visitor from making: the clip starts over, so the creator's start trigger and sound can be tried
+  if (m === 'visitor' && prev !== 'visitor') { player.reset(); lookDwell = 0; }
   $('#visitor').classList.toggle('hidden', m !== 'visitor');
   $('#viewbar').classList.toggle('hidden', m !== 'visitor');
   $('#creator').classList.toggle('hidden', m !== 'creator');
@@ -1383,7 +1429,13 @@ const svgI = {
   muted: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7h2.6L9 3.8v10.4L5.1 11H2.5z" fill="currentColor"/><path d="M12 7l4 4M16 7l-4 4"/></svg>',
   sound: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7h2.6L9 3.8v10.4L5.1 11H2.5z" fill="currentColor"/><path d="M12 6.5a3.6 3.6 0 0 1 0 5M14.2 4.5a6.4 6.4 0 0 1 0 9"/></svg>',
 };
-function setSound(on) { if (sound.setOn(on)) { refreshButtons(); toast(on ? 'Sound on' : 'Sound off'); } }
+function setSound(on) {
+  if (!sound.setOn(on)) return;
+  refreshButtons();
+  // a visitor's own choice is kept for every video; making in creator or editor mode does not touch it
+  const kept = mode === 'visitor' && writeSoundPref(on ? 'on' : 'off');
+  toast((on ? 'Sound on' : 'Sound off') + (kept ? ' for every video' : ''));
+}
 function setCC(on) { player.cc = on; refreshButtons(); }
 function refreshButtons() {
   $('#hudSound').innerHTML = (sound.on ? svgI.sound : svgI.muted) + `<span>${sound.on ? 'Sound on' : 'Tap for sound'}</span>`;
@@ -1461,10 +1513,17 @@ function renderCreatorSheet() {
     $('#crPlace').addEventListener('click', placeAtReticle);
   } else {
     s.innerHTML = `<h3>More</h3>
+      <div class="crRow" style="align-items:flex-start"><span class="lbl" style="flex:none;width:64px;padding-top:9px">Starts</span><div class="chips">${Object.keys(START_LABEL).map((k) => `<button class="chip" data-st="${k}" aria-pressed="${record.start.trigger === k}">${k === 'near' ? `Within ${record.start.withinM} m` : START_LABEL[k]}</button>`).join('')}</div></div>
+      ${record.start.trigger === 'near' ? `<div class="crRow"><span class="lbl">Distance</span><button class="round ghost" data-n="-">&minus;</button><span class="val">${record.start.withinM} m</span><button class="round ghost" data-n="+">+</button></div>` : ''}
+      <div class="crRow"><span class="lbl">Sound at start</span><button class="switch" role="switch" id="crSound" aria-checked="${record.sound === 'on'}"></button></div>
+      <div class="crHint">A visitor's own sound choice wins. Phones that have not been tapped yet start muted, with captions.${currentView === 'stand-here' ? ' Stand here starts by itself on the viewpoint.' : ''}</div>
       <div class="crRow"><span class="lbl">Loop</span><button class="switch" role="switch" id="crLoop" aria-checked="${record.loop}"></button></div>
       <div class="crRow"><span class="lbl">Poster</span><button class="bigbtn" id="crPoster">Use this frame</button></div>
       <div class="crRow"><span class="lbl">Viewpoint</span><button class="bigbtn" id="crVp">Set where I stand</button></div>
       <div class="crHint">Captions: ${cues.length} lines from the video file. Edit them in the desktop editor.</div>`;
+    s.querySelectorAll('[data-st]').forEach((b) => b.addEventListener('click', () => { setStart(b.dataset.st); renderCreatorSheet(); }));
+    s.querySelectorAll('[data-n]').forEach((b) => b.addEventListener('click', () => { setStart('near', record.start.withinM + (b.dataset.n === '+' ? 1 : -1)); renderCreatorSheet(); }));
+    $('#crSound').addEventListener('click', () => { record.sound = record.sound === 'on' ? 'off' : 'on'; renderCreatorSheet(); });
     $('#crLoop').addEventListener('click', () => { record.loop = !record.loop; renderCreatorSheet(); });
     $('#crPoster').addEventListener('click', () => { posterAt = player.t; renderPoster(posterAt); toast(`Poster set to ${player.t.toFixed(1)} s`); });
     $('#crVp').addEventListener('click', () => {
@@ -1474,6 +1533,11 @@ function renderCreatorSheet() {
   }
 }
 const r1 = (v) => Math.round(v * 10) / 10;
+function setStart(trigger, withinM) {
+  if (!START_LABEL[trigger]) throw new Error(`unknown start trigger "${trigger}"`);
+  const n = Number(withinM ?? record.start.withinM);
+  record.start = { trigger, withinM: Number.isFinite(n) ? clamp(Math.round(n), 1, 20) : 6 };
+}
 function hintFor(v) {
   return { screen: 'A screen standing in the air, with its own play and scrub bar.', window: 'Plays inside a real window. Place it exactly on the opening.', cutout: 'The stall stands on the pavement. Needs a stacked-alpha video.', porthole: 'A small medallion; visitors tap it to watch full screen.', 'stand-here': 'Footprints mark the viewpoint; the picture develops there.' }[v];
 }
@@ -1527,6 +1591,8 @@ function renderEditor() {
     <div class="field${un('captions')}"><span class="fl">captions ${use('captions')}</span><textarea class="vtt" id="edVtt" spellcheck="false"></textarea><div class="status" id="edVttStatus"></div></div>
     <div class="field${un('alpha')}"><span class="fl">alpha ${use('alpha')}</span><div class="segs" id="edAlpha"><button data-a="none" aria-pressed="${record.alpha === 'none'}">none</button><button data-a="stacked" aria-pressed="${record.alpha === 'stacked'}">stacked</button></div></div>
     <div class="field${un('loop')}"><span class="fl">loop ${use('loop')}</span><button class="switch" role="switch" id="edLoop" aria-checked="${record.loop}"></button></div>
+    <div class="field${un('start')}"><span class="fl">start ${use('start')}</span><div class="segs" id="edStart">${Object.keys(START_LABEL).map((k) => `<button data-st="${k}" aria-pressed="${record.start.trigger === k}">${START_LABEL[k]}</button>`).join('')}</div>${record.start.trigger === 'near' ? `<div class="vrow" style="margin-top:7px"><span style="font-size:12px;color:var(--muted)">within</span><input class="num" style="width:76px" id="edNear" type="number" step="1" min="1" max="20" value="${record.start.withinM}"><span style="font-size:12px;color:var(--muted)">m of the video</span></div>` : ''}</div>
+    <div class="field${un('sound')}"><span class="fl">sound ${use('sound')}</span><div class="segs" id="edSound"><button data-s="off" aria-pressed="${record.sound !== 'on'}">off</button><button data-s="on" aria-pressed="${record.sound === 'on'}">on</button></div></div>
     <div class="field${un('widthM')}"><span class="fl">widthM ${use('widthM')}</span><div class="vrow"><input type="range" class="plain" id="edW" min="0.3" max="6" step="0.05" value="${record.widthM}"><input class="num" style="width:76px" id="edWn" type="number" step="0.05" min="0.3" max="6" value="${record.widthM}"></div></div>
     <div class="field${un('pose')}"><span class="fl">pose ${use('pose')}</span><div class="grid4">${['x', 'y', 'z'].map((k, i) => `<label><span>${k} m</span><input class="num" data-p="${i}" type="number" step="0.1" value="${P[i]}"></label>`).join('')}<label><span>heading</span><input class="num" id="edHd" type="number" step="1" value="${record.pose.headingDeg}"></label></div></div>
     <div class="field${un('viewpoint')}"><span class="fl">viewpoint ${use('viewpoint')}</span>
@@ -1537,6 +1603,9 @@ function renderEditor() {
   R.querySelectorAll('#edViews button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.v)));
   R.querySelectorAll('#edAlpha button').forEach((b) => b.addEventListener('click', () => { record.alpha = b.dataset.a; rebuildView(); renderEditor(); }));
   $('#edLoop').addEventListener('click', () => { record.loop = !record.loop; renderEditor(); });
+  R.querySelectorAll('#edStart button').forEach((b) => b.addEventListener('click', () => { setStart(b.dataset.st); renderEditor(); }));
+  const en = $('#edNear'); if (en) en.addEventListener('change', () => { setStart('near', en.value); renderEditor(); });
+  R.querySelectorAll('#edSound button').forEach((b) => b.addEventListener('click', () => { record.sound = b.dataset.s === 'on' ? 'on' : 'off'; renderEditor(); }));
   $('#edPlay').addEventListener('click', () => { player.toggle(); });
   $('#edScrub').addEventListener('input', (e) => player.seek(e.target.value / 1000 * DUR));
   $('#edPosterBtn').addEventListener('click', () => { posterAt = player.t; renderPoster(posterAt); $('#edPosterAt').textContent = posterAt.toFixed(1); });
@@ -1641,11 +1710,18 @@ function frame(now) {
   const isIn = mode !== 'visitor' || inside();
   appear = lerp(appear, isIn ? 1 : 0, 1 - Math.exp(-dt * 3.2)); if (appear < 0.002) appear = 0;
   blockRoot.visible = appear > 0.005; if (view && view.extra) view.extra.visible = appear > 0.005;
-  if (isIn && mode === 'visitor' && !player.started && currentView !== 'stand-here') { player.seek(0); player.play(); }
+  if (isIn && mode === 'visitor' && !player.started && currentView !== 'stand-here' && appear > 0.5 && startTriggered(dt)) { player.seek(0); player.play(); }
 
   const frameChanged = player.update(dt);
   let res = { stripCaption: false };
   if (view) res = view.update(dt, appear) || res;
+  // the first time the clip runs for the visitor (any trigger, a tap, stand-here), decide its sound once
+  if (mode === 'visitor' && player.started && !player.paused && !player.soundDecided) { player.soundDecided = true; decideStartSound(); }
+  if (mode === 'visitor' && !player.started && currentView !== 'stand-here' && !res.guide) {
+    const st = record.start;
+    if (st.trigger === 'tap') res.guide = 'Tap the video to play';
+    else if (st.trigger === 'near') { const c = blockCentreWorld(), d = Math.hypot(camera.position.x - c.x, camera.position.z - c.z); res.guide = `Walk closer to start · ${Math.max(1, Math.round(d - st.withinM))} m`; }
+  }
   sound.tick();
 
   // visitor HUD
@@ -1729,6 +1805,7 @@ function exportRecord() {
   return {
     type: 'video', id: 'blk-video-market-day', view: currentView,
     video: record.video, poster: record.poster, captions: record.captions, alpha: record.alpha, loop: record.loop, widthM: record.widthM,
+    start: { trigger: record.start.trigger, withinM: record.start.withinM }, sound: record.sound,
     pose: { position: [...record.pose.position], headingDeg: record.pose.headingDeg },
     viewpoint: record.viewpoint ? { position: [...record.viewpoint.position], headingDeg: record.viewpoint.headingDeg, pitchDeg: record.viewpoint.pitchDeg, hfovDeg: record.viewpoint.hfovDeg } : null,
   };
@@ -1764,6 +1841,16 @@ window.__stationBlock = {
     };
   },
   async exportModel() { return JSON.parse(JSON.stringify(exportRecord())); },
+  /* Round-2 hooks: the sound and start state, the creator's start trigger and sound default, and starting the
+     clip over (as switching back to the visitor does). */
+  extras: {
+    soundState() { return { on: sound.on, muted: player.muted, cc: player.cc, started: player.started, paused: player.paused, decided: player.soundDecided, reason: soundReason, pref: readSoundPref(), activation: hasActivation(), start: { ...record.start }, soundDefault: record.sound, guide: $('#guideChip').classList.contains('hidden') ? null : $('#guideText').textContent, hudSound: $('#hudSound').textContent }; },
+    async setStart(trigger, withinM) { setStart(trigger, withinM); if (mode === 'creator') renderCreatorSheet(); if (mode === 'editor') renderEditor(); await drawn(); },
+    async setSoundDefault(v) { record.sound = v === 'on' ? 'on' : 'off'; await drawn(); },
+    async resetPlayback() { player.reset(); lookDwell = 0; soundReason = null; sound.setOn(false); refreshButtons(); await drawn(); },
+    async clearSoundPref() { writeSoundPref(null); },
+    async openCreatorMore() { crTab = 'more'; renderCreatorSheet(); await drawn(); },
+  },
 };
 </script>
 </body>
