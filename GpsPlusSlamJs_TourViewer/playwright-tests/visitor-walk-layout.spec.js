@@ -706,10 +706,15 @@ for (const viewport of VIEWPORTS) {
       // 30 px from the top and 12 px from the right (108 px and 10 px on a
       // phone held sideways); the chip stands 6 px under it, right-aligned,
       // at most 36 px wider; neither covers the Exit button, the sheet
-      // (closed or open) or the toast's place.
+      // (closed or open) or the toast's place. The chip speaks only while
+      // the position is one the visitor can act on: hidden while a code
+      // holds it, its place measured while tracking is lost.
       await page.setViewportSize(viewport);
       await installTourViewerArFakes(page);
       await enterTheWalk(page, archive);
+      await expect(page.getByTestId("walk-precision")).toBeHidden();
+      await reportArTracking(page, false);
+      await expect(page.getByTestId("walk-precision")).toBeVisible();
       const size = sideways(viewport) ? 108 : 132;
       const radar = await box(page, "walk-radar");
       expect(radar.width).toBeCloseTo(size, 0);
@@ -738,6 +743,10 @@ for (const viewport of VIEWPORTS) {
         expect(overlaps(radar, other)).toBe(false);
         expect(overlaps(chip, other)).toBe(false);
       }
+      // Tracking back: the chip hides again; its place (measured above)
+      // must stay clear of the open list and the toast.
+      await trackingOk(page);
+      await expect(page.getByTestId("walk-precision")).toBeHidden();
       // The list open: still clear of the radar and the chip.
       await page.getByTestId("walk-grab").click();
       await expect(page.getByTestId("walk-list")).toBeVisible();

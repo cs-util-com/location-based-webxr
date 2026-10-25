@@ -37,7 +37,9 @@ the ms each draw took.
 projection0, aspect, devicePixelRatio, reduceMotion, observeSize }) =>
 WalkRadarView`
   - `render(frame | null)` - null hides the radar; otherwise writes the
-    chip's words and `data-kind`, the wrap's `data-mode` (`frozen` greys
+    chip's words and `data-kind`, shows the chip only while
+    `walkPrecisionChipShown` (hidden for a code's or a good GPS position),
+    the wrap's `data-mode` (`frozen` greys
     the canvas in CSS), the button's `aria-expanded` from the frame's
     `listOpen`, and requests a draw;
   - `observeSize(onChange)` - the page's `ResizeObserver` on the canvas:

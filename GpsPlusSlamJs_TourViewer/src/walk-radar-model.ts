@@ -176,6 +176,17 @@ export function walkPrecisionChip(
 }
 
 /**
+ * Whether the chip shows for this precision: only while the position is
+ * too weak, unknown, still pending or tracking is lost - the states the
+ * visitor can act on. A code's or a good GPS position says nothing the
+ * radar's centre does not already draw, and "GPS - about N m" is the
+ * phone's raw location accuracy, not the aligned position's.
+ */
+export function walkPrecisionChipShown(kind: WalkChipKind): boolean {
+  return kind !== "code" && kind !== "gps";
+}
+
+/**
  * The camera's horizontal field of view, degrees: `2 atan(1 / P[0])` of
  * the XR view camera's projection matrix (three.js `elements[0]`); before
  * there is one, or for a value that is no camera's, the prototype's camera

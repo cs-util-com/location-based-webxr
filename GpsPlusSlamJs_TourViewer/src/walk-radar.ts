@@ -1,7 +1,8 @@
 /**
  * The visitor's radar on the page: draws `walk-radar-model.ts`'s model on
  * a canvas inside `#ar-root` (a round button that toggles the list),
- * writes the precision chip under it, and keeps what only a view keeps -
+ * writes the precision chip under it (shown only while the position is
+ * weak, unknown, pending or lost), and keeps what only a view keeps -
  * the range shown last (the adaptive range's hysteresis), the burst ring
  * of a station just found, the redraw clock and the ms each draw took.
  *
@@ -25,6 +26,7 @@ import {
 import type { WalkChipKind } from "./visitor-guide-slice.js";
 import {
   walkPrecisionChip,
+  walkPrecisionChipShown,
   walkRadarAdaptiveRangeM,
   walkRadarFovDeg,
   walkRadarModel,
@@ -487,8 +489,9 @@ export interface WalkRadarDom {
     height: number;
     getContext(kind: "2d"): RadarCanvas | null;
   };
-  /** The chip (`#walk-precision`) and its text. */
-  readonly chip: Pick<HTMLElement, "dataset">;
+  /** The chip (`#walk-precision`) and its text; shown only while
+   *  `walkPrecisionChipShown`. */
+  readonly chip: Pick<HTMLElement, "dataset" | "hidden">;
   readonly chipText: Pick<HTMLElement, "textContent">;
 }
 
@@ -611,6 +614,8 @@ export function wireWalkRadar(deps: {
       if (dom.chip.dataset["kind"] !== next.kind) {
         dom.chip.dataset["kind"] = next.kind;
       }
+      const chipShown = walkPrecisionChipShown(next.kind);
+      if (dom.chip.hidden === chipShown) dom.chip.hidden = !chipShown;
       const mode =
         next.kind === "none" || next.kind === "lost" ? "frozen" : "live";
       if (dom.wrap.dataset["mode"] !== mode) dom.wrap.dataset["mode"] = mode;

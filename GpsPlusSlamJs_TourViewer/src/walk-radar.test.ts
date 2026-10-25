@@ -361,7 +361,7 @@ function dom(width = 132) {
         height: 0,
         getContext: () => g,
       },
-      chip: { dataset: {} as DOMStringMap },
+      chip: { dataset: {} as DOMStringMap, hidden: false },
       chipText: { textContent: "" as string },
     },
   };
@@ -428,6 +428,29 @@ describe("wireWalkRadar", () => {
     expect(v.d.dom.wrap.dataset["mode"]).toBe("frozen");
     v.radar.render(null);
     expect(v.d.dom.wrap.hidden).toBe(true);
+  });
+
+  // Why this test matters: "GPS - about 6 m" is the phone's raw location
+  // accuracy, not the aligned position's; while the position is good the
+  // radar's centre already draws it and the words only invite a wrong
+  // reading. The chip speaks only while the position is weak, unknown,
+  // pending or lost - the states the visitor can act on.
+  it("the chip shows only while the position is weak, unknown, pending or lost", () => {
+    const v = view();
+    const shown = (kind: WalkRadarFrame["kind"]) => {
+      v.radar.render(frame({ kind }));
+      return !v.d.dom.chip.hidden;
+    };
+    expect(shown("code")).toBe(false);
+    expect(shown("gps")).toBe(false);
+    for (const kind of ["weak", "none", "pending", "lost"] as const) {
+      expect(shown(kind)).toBe(true);
+    }
+    // And hides again once the position is good.
+    expect(shown("gps")).toBe(false);
+    // Its words follow the precision while hidden too, so the chip is
+    // right the moment it shows.
+    expect(v.d.dom.chipText.textContent).toBe("GPS - about 6 m");
   });
 
   it("a tap on the radar toggles the list", () => {

@@ -21,6 +21,10 @@ of view and the adaptive range.
   "GPS - about N m", "GPS - about N m, too weak", "Position unknown",
   "Finding your position…", "Paused - tracking lost"; a missing or
   invalid accuracy is left out ("GPS", "GPS - too weak"), never invented.
+- `walkPrecisionChipShown(kind) => boolean` - whether the chip shows:
+  only for weak, none, pending and lost. A code's or a good GPS position
+  needs no words (the radar's centre draws it), and "about N m" is the
+  phone's raw location accuracy, not the aligned position's.
 - `walkRadarFovDeg(projection0, aspect) => number` - `2 atan(1/P[0])`
   in degrees; for a missing, non-finite or non-positive value, the prototype's
   camera at the screen's aspect (width / height),

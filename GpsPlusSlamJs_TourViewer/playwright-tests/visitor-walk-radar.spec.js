@@ -167,12 +167,13 @@ async function firstUnfoundRow(page) {
 }
 
 for (const tour of TOURS) {
-  test(`the radar opens and closes the list, and the chip says a code placed the visitor, on ${tour.name}`, async ({
+  test(`the radar opens and closes the list, and the chip stays quiet while a code placed the visitor, on ${tour.name}`, async ({
     page,
   }) => {
     // Why this test matters: the radar is the list's second
     // door, and the chip names the precision the radar's centre
-    // draws; a code's position reads "Placed by a code", never its 1 m.
+    // draws; a code's position reads "Placed by a code", never its 1 m,
+    // and a good position needs no words: the chip stays hidden.
     await openTour(page, tour.archive);
     await enterAtTheCode(page);
     const wrap = page.getByTestId("walk-radar-wrap");
@@ -180,6 +181,7 @@ for (const tour of TOURS) {
     await expect(page.getByTestId("walk-precision-text")).toHaveText(
       "Placed by a code",
     );
+    await expect(page.getByTestId("walk-precision")).toBeHidden();
     await expect(wrap).toHaveAttribute("data-mode", "live");
     await expect(page.getByTestId("walk-precision")).toHaveAttribute(
       "data-kind",
@@ -291,6 +293,8 @@ test("placed by GPS: the chip says how well, too weak says so, and no heading dr
     "data-kind",
     "gps",
   );
+  // GPS within the ceiling needs no words: the chip stays hidden.
+  await expect(page.getByTestId("walk-precision")).toBeHidden();
   // The no-guess hold: a distance is named once it held.
   await waitForTheGuess(page);
   await expect(page.getByTestId("walk-distance-text")).toHaveText(/^\d+ m$/);
@@ -309,6 +313,8 @@ test("placed by GPS: the chip says how well, too weak says so, and no heading dr
     "data-kind",
     "weak",
   );
+  // Too weak is a state the visitor can act on: the chip says so.
+  await expect(page.getByTestId("walk-precision")).toBeVisible();
   await expect(page.getByTestId("walk-radar-wrap")).toHaveAttribute(
     "data-mode",
     "live",
@@ -325,8 +331,10 @@ test("tracking lost pauses the radar: the chip says so and the radar goes grey, 
   await enterAtTheCode(page);
   const chip = page.getByTestId("walk-precision-text");
   await expect(chip).toHaveText("Placed by a code");
+  await expect(page.getByTestId("walk-precision")).toBeHidden();
   await reportArTracking(page, false);
   await expect(chip).toHaveText("Paused - tracking lost");
+  await expect(page.getByTestId("walk-precision")).toBeVisible();
   await expect(page.getByTestId("walk-radar-wrap")).toHaveAttribute(
     "data-mode",
     "frozen",
@@ -341,6 +349,7 @@ test("tracking lost pauses the radar: the chip says so and the radar goes grey, 
     "data-mode",
     "live",
   );
+  await expect(page.getByTestId("walk-precision")).toBeHidden();
 });
 
 for (const tour of TOURS) {
@@ -384,6 +393,7 @@ for (const tour of TOURS) {
     });
     await trackingOk(page);
     await expect(chip).toHaveText("Position unknown");
+    await expect(page.getByTestId("walk-precision")).toBeVisible();
     await expect(page.getByTestId("walk-radar-wrap")).toHaveAttribute(
       "data-mode",
       "frozen",
