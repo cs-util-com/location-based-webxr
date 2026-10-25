@@ -10,6 +10,7 @@ import {
   openSample,
   view3d,
 } from "./editor3d-fixture.js";
+import { save, viewCommand } from "./editor-menus.js";
 import { useWideFont } from "./wide-font.js";
 
 /**
@@ -71,8 +72,8 @@ async function openWithPin(page) {
     { id: PIN, alt: SQUARE_GROUND_M + N_M + 1.5 },
   );
   expect(placed.kind).toBe("placed");
-  await page.locator("#view-switch").click();
-  await expect(page.locator("#view-switch")).toHaveText("Map view", {
+  await viewCommand(page, "switch");
+  await expect(page.locator("#view-switch")).toHaveText("2D map", {
     timeout: 60_000,
   });
   await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
@@ -200,7 +201,7 @@ function turnDeg(a, b) {
  */
 async function saveAndRead(page) {
   const download = page.waitForEvent("download");
-  await page.locator("#save-btn").click();
+  await save(page);
   const file = await download;
   const bytes = new Uint8Array(readFileSync(await file.path()));
   const reader = new ZipReader(new Uint8ArrayReader(bytes));
@@ -461,4 +462,50 @@ test("draws the gizmo's handles at their size on the screen, at a phone, a table
       expect(p.x, at).toBeLessThan(box.x + box.width);
     }
   }
+});
+
+test("a station's position is locked until it is unlocked in the inspector: its gizmo is its radius dots, and its keys move nothing", async ({
+  page,
+}) => {
+  // Why: a station's pose places every item in it, so a stray drag or
+  // key press would move all of its content on site. Every station opens
+  // locked: its gizmo is its radius dots alone, a nudge says why it did
+  // nothing, and the inspector's lock beside Position unlocks it.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const station = await openWithPin(page);
+  await page.locator(`#tree-body [data-select="station:${station}"]`).click();
+  await expect.poll(() => selected(page)).toBe(`station:${station}`);
+  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
+  /** @param {"middle" | "knob" | "dot"} part */
+  const shown = (part) =>
+    page.evaluate(
+      (p) => /** @type {any} */ (window).__tourEditor.view3dHandle(p),
+      part,
+    );
+  await handle(page, "dot");
+  await afterFrames(page, 2);
+  expect(await shown("knob")).toBeNull();
+  expect(await shown("middle")).toBeNull();
+  const lock = page.locator("#shell-inspector [data-act='lock']");
+  await expect(lock).toHaveAttribute("aria-pressed", "true");
+  const before = await manifest(page);
+  const steps = await changes(page);
+  await page.keyboard.press("ArrowRight");
+  await expect(
+    page.locator(".toast", { hasText: "position is locked" }),
+  ).toBeVisible();
+  expect(await changes(page)).toBe(steps);
+  expect(await manifest(page)).toEqual(before);
+  // Unlocked: the knob and the middle are handles again, and a nudge
+  // moves the station (one step).
+  await lock.click();
+  await expect(lock).toHaveAttribute("aria-pressed", "false");
+  await handle(page, "knob");
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(() => changes(page)).toBe(steps + 1);
+  const moved = (await manifest(page)).stations.find(
+    (/** @type {any} */ s) => s.id === station,
+  );
+  const was = before.stations.find((/** @type {any} */ s) => s.id === station);
+  expect(moved.geo.lon).toBeGreaterThan(was.geo.lon);
 });

@@ -45,6 +45,7 @@ nothing to the store.
   after the press.
 - Over random hills with patchy unloaded ground a dragged item keeps its
   height above the ground (`scene-edits.property.test.ts`).
+- `poseLocked(target)`: a station target with `locked: true`. `startGesture` starts no move and no turn on it (null); its dots still start a radius drag.
 
 ## Examples
 
@@ -63,3 +64,5 @@ dot; a press that moved nothing writes nothing; a key hold adds its
 presses up into one edit, leaves a station's height alone, and writes
 nothing for presses that cancel out. The property tests live with
 `scene-edits.ts`.
+
+`gesture.test.ts` also covers a locked station: no move, no turn, and its radius drag.

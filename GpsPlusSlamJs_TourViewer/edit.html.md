@@ -32,41 +32,55 @@ AR (tour editor plan 2026-10-17-1816, W1).
   `#inspector-body`, hidden without a selection), the map controls
   `#map-controls` (`#compass` with `#compass-needle`, `#zoom-in`,
   `#zoom-out`) and the help `#shell-help`.
-- `#shell-bar` - the 3D view's bottom bar: `#shell-view`, `#shell-hint`,
-  the debug readout (`#shell-history`, `#shell-calls`, `#shell-frame`)
-  and its toggle `#shell-debug`. Hidden on the map.
+- `#shell-bar` - the bottom bar, shown with the top bar in both views:
+  first the save status `#save-status` (a live region; its words also in
+  its `title`) and the 3D view's load line `#view-loading` ("Loading 3D
+  view…", hidden otherwise, `src/editor/view-switch.ts`); then the 3D
+  view's `#shell-view`, `#shell-hint`, the debug readout
+  (`#shell-history`, `#shell-calls`, `#shell-frame`) and its toggle
+  `#shell-debug`, hidden on the map. The map's overlays at its foot (the
+  rail, the debug panel, the map's credits, the toasts) sit above it.
 - `body[data-view]` - `3d` while the 3D view shows, else `2d`: the
   shell's stylesheet (`src/editor/editor-shell/editor-shell.css`, the
   page's second link) dresses the top bar dark, places the view between
   a 40 px top bar and the 24 px bottom bar, and hides the rail, the card,
   the debug panel and the off-screen chip; the studio's controls
-  (`.studio`) and `#shell-bar` show only then.
-- `#debug-panel` - shown for every open tour: the debug layer's "Show
-  debug data" switch (`#debug-switch` around `#debug-data-input`,
-  ticked; shown only while the layer has a source - the tour's walk or
-  added debug data), its line (`#debug-status`, a live region) and "Add
-  debug data…" (`#debug-add`, with its hidden `#debug-add-input`; a file
-  dropped on the panel too; M2 step 5 of the debug-captures plan)
-  (`src/editor/debug-capture-layer.ts`, `src/editor/added-debug-data.ts`).
-  It stacks under the note card (`editor.css`), which may open over the
-  same corner.
+  (`.studio`) show only then.
+- `#debug-panel` - shown for every open tour: the debug layer's line
+  (`#debug-status`, a live region) and "Add debug data…" (`#debug-add`,
+  with its hidden `#debug-add-input`; a file dropped on the panel too;
+  M2 step 5 of the debug-captures plan) (`src/editor/debug-capture-layer.ts`,
+  `src/editor/added-debug-data.ts`). The layer's switch is View's "Show
+  debug data". It stacks under the note card (`editor.css`), which may
+  open over the same corner.
 - `#topbar` - the tour's title (`#tour-name`, a button that opens the
-  tour's details, W2) and file name, the "Keep the debug data in
-  the tour file" switch (`#keep-walk`, only for a tour carrying a walk,
-  unticked; hidden for a file opened for writing, which keeps its walk;
-  its words in `.keep-walk-text` and its `title`, so the 3D view's narrow
-  bar can show the checkbox alone and keep its name), `#save-status`
-  (its words also in its `title`),
-  `#save-btn` (Save downloads the tour, M6 E2a), `#done-btn` ("Done",
-  W2), "Open another tour"; first of them, after the spacer, `#view-switch`
-  ("3D view", the view switch: `src/editor/view-switch.ts`). The 3D
-  view's studio controls sit in it too, hidden on the map: the pencil
-  (`#studio-details`), Undo and Redo (`#studio-undo`, `#studio-redo`)
-  after the title, and Frame, Top view, Help and "Add debug data…"
-  (`#studio-frame`, `#studio-top`, `#studio-help`, `#studio-debug-add`:
-  the map's debug panel is hidden over the 3D view, and this button opens
-  the same `#debug-add-input`) before the switch; their icons are
-  `<i data-icon>` slots the shell fills.
+  tour's details, W2) and file name, then the menus
+  (`src/editor/menu-button.ts`), each command in words:
+  - **File** (`#file-menu-btn`, `#file-menu`; described by
+    `#save-status`): Open… (`#file-open`), Save (`#file-save`, Ctrl+S),
+    Save a copy… (`#file-save-copy`), Tour details… (`#file-details`),
+    Add debug data… (`#file-debug-add`, the same `#debug-add-input` as
+    the map's panel), "Keep the debug data in the tour file"
+    (`#file-keep-walk`, a `menuitemcheckbox` only for a tour carrying a
+    walk, unticked; hidden for a file opened for writing, which keeps its
+    walk) and "Share and publish…" (`#file-publish`, the done dialog).
+  - The unsaved mark `#unsaved-mark` beside File: an amber dot and "Not
+    saved" while changes are not saved (the status's words its `title`);
+    the one warning in the bar against losing work.
+  - **Edit** (`#edit-menu-wrap`, `#edit-menu-btn`, `#edit-menu`, 3D
+    only, shown at a phone's width): Undo (`#edit-undo`) and Redo
+    (`#edit-redo`), where the bar's buttons fold.
+  - **View** (`#view-menu-btn`, `#view-menu`): Top view (`#studio-top`,
+    T, a `menuitemcheckbox`) and Frame (`#studio-frame`, F), the 3D
+    view's; Show debug data (`#view-debug`, a `menuitemcheckbox`, only
+    while the debug layer has a source - the tour's walk or added debug
+    data); and the view switch `#view-switch` ("3D view" / "2D map",
+    `src/editor/view-switch.ts`).
+  - The 3D view's studio buttons, hidden on the map: Details
+    (`#studio-details`), Undo and Redo (`#studio-undo`, `#studio-redo`),
+    and after the spacer Help (`#studio-help`); each an icon and its word
+    (`.lbl`), the icons `<i data-icon>` slots the shell fills. The bar
+    folds in steps as the window narrows (`editor-shell.css`).
 - `#rail` - the codes, pins and photos (`src/editor/editor-rail.ts`).
 - `#card`, `#offscreen-chip` - the card beside the selected marker
   (`src/editor/editor-card.ts`).
@@ -94,7 +108,8 @@ AR (tour editor plan 2026-10-17-1816, W1).
   holds the caps. The phone's `#tour-name-input` (`index.html`) keeps 80:
   the phone writes that field's value without the format's check, so its
   cap is the only bound there until the phone adopts the details rule.
-- `#done-modal` - "Done editing" (W2, D18, D19; `src/editor/done-dialog.ts`):
+- `#done-modal` - "Share and publish" (File's last item; W2, D18, D19;
+  `src/editor/done-dialog.ts`):
   `#done-where`, the host picker `#done-host` (options drawn by
   `edit-main.ts`) with `#done-update`, `#done-public`, `#done-drive-tip`
   (hidden: `DRIVE_MOUNT_TIP_SHOWN` is off until the owner's check),
@@ -131,7 +146,11 @@ linked tour opened, a refused link, text that is not a link),
 back: the editor's paper, not the browser's plain page),
 `playwright-tests/editor.spec.js` (the real file chooser, the rail and the
 markers, the card beside its marker, a capped photo, a refused non-tour,
-the layout at three viewports, the details dialog, the fine print, Done
-and the walk's move), `playwright-tests/editor3d.spec.js` (the 3D view
-and back), `playwright-tests/editor3d-shell.spec.js` (the studio shell's
-layout at four viewports and its tree clicks).
+the layout at three viewports, the menus inside the window, the details
+dialog, the fine print, Share and publish and the walk's move),
+`playwright-tests/editor3d.spec.js` (a tour opening in the 3D view, the
+map as the fallback, the view and back),
+`playwright-tests/editor3d-shell.spec.js` (the studio shell's layout at
+four viewports and every fold step, the menus by keyboard and touch, the
+unsaved mark, its tree clicks). The specs reach the menus through
+`playwright-tests/editor-menus.js`.

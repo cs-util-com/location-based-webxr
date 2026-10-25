@@ -146,6 +146,13 @@ imperative resources only - that handle and the pictures' side table
     carries; `NOT_APPLIED` when the tour changed under the call):
     - `editStation(stationId, edit)` - title, found radius (2 m to 300 m),
       description, card image (`StationEdit`): `edited` or `unchanged`.
+      `unchanged` also when the document dropped the edit (its revision
+      did not move): an edit of a station a delete emptied that leaves it
+      with nothing of its own (its radius alone) is not listed, so no step
+      was taken. Known case, left for the inspector-editing milestone: a
+      title cleared on such a station, while it is selected, takes it off
+      the list under the selection - the edit is right (a reload agrees),
+      but the inspector loses what it showed.
     - `addStation({ lat, lon, alt })` - an empty automatic station there,
       `Station N` by its place: `added` with its new id; `NOT_ON_MAP` for
       a point nobody can draw.
@@ -224,6 +231,12 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     file, and the document learns where in its history that file stands
     (`saved`'s `inPlaceAt`): an undo or a redo across it is then due a
     resave (D33, `../tour-document.ts.md`).
+  - `saveCopy({ keepScan })` - File's "Save a copy…": the same rebuild as
+    `save` (queued behind a running save, the pictures read first), from
+    the same snapshot, named by `copyFileName`; it never lands - the
+    document, its change count, its history and where its file stands are
+    as they were, so the next `save` still writes the tour's own file.
+    Refused like `save` once another tour replaced the session.
   - `debugData()` - the debug data of the OPENED file
     (`session.readWholeArchive()` under the session's budget) as a debug
     bundle (`buildDebugBundle`, the same identity as the move's), queued
@@ -277,6 +290,10 @@ changes`; a label is cut at 40 characters, a label-less note is "a
 - The module-private `WalkMove` and `NO_WALK` are read through `moveWalkOut()`.
 - `EditorSession`, `EditorSave`, `EditorSessionDraft`, `TOO_FAR_FROM_STATION`; the module-private `CoverChoice` (an image id and its zip entry) and `UndoOutcome` (`undo()` / `redo()`'s result) are read through the session's methods.
 
+- `copyFileName(name)` - a copy's file name: " copy" before a trailing
+  `.zip` (any case), or at the end of a name without one
+  ("tour.zip" -> "tour copy.zip").
+
 ## Invariants & assumptions
 
 - `find()` never throws (E2c plan review #11, decided): an id the tour no
@@ -312,6 +329,7 @@ changes`; a label is cut at 40 characters, a label-less note is "a
 - The settings record carries the details only once they were set or
   restored here: a record without them has no opinion about them
   (`editor-draft.ts`).
+- `stationLocked` (optional input): `moveStation` refuses a station it names as locked with `STATION_LOCKED`, before anything is dispatched. A station's radius, title, delete and copy are not pose edits and stay open. Undo and redo are outside the lock: they replay steps already made. So is a draft's Restore (`restore`): it puts back station poses the creator made in an earlier visit, locked or not - a replay of their own work, as an undo is. Without the input (the phone, a test) every station moves as before.
 
 ## Tests
 
@@ -359,7 +377,8 @@ keeps the asset); a restore as one step; an undo after a save that dropped the e
 note back into that station (the M5a milestone review M2,
 `tour-content.ts`).
 `editor-session-stations.test.ts` on real zips: each station edit one
-undo step, and each refusal in words changing nothing; the last station
+undo step, and each refusal in words changing nothing; an edit the document
+drops (the radius of a station a delete emptied) "unchanged"; the last station
 refused, another deleted as one step; a copied photo station saving the
 copy's picture under its own content file; an item moved into a station
 of its own and items put on the ground as one step; renamed, added,
@@ -369,4 +388,9 @@ The tour document (D29-D31): a later open on the same store disowning the
 session (its edits refused, a save begun before landing nowhere, one asked
 for after refused, its reads its own tour), and a replaced session reading
 its tour as it stood when replaced, an edit no read followed included. The
-save thunk itself: `../tour-document-save.test.ts`.
+save thunk itself: `../tour-document-save.test.ts`. Save a copy: the
+copy carrying the edits under "<name> copy.zip" while the change count,
+the undo and the next save are as before; `copyFileName`'s cases; a
+copy asked for during a save waiting for it.
+
+`station-lock.property.test.ts` drives a real session with random command sequences (moves, radius, rename, delete, copy, reorder, item moves and poses, grounding, adds, and the lock itself; up to 30 at full length) and checks that no command changes a station's pose while it is locked, plus the refusal's words and the open edits.

@@ -217,10 +217,6 @@ export function createGizmo(parent: THREE.Object3D, pictures: GizmoPictures) {
         ring.position.set(x, y + RING_LIFT_M, z);
         ring.scale.set(layout.ringM, 1, layout.ringM);
       }
-      disc.visible = true;
-      disc.position.set(x, y + DISC_LIFT_M, z);
-      disc.scale.set(layout.moveM, 1, layout.moveM);
-      moveMaterial.opacity = hovered === "move" ? 1 : 0.85;
       layout.dots.forEach((spot, i) => {
         const dot = dots[i];
         if (dot === undefined) return;
@@ -228,6 +224,12 @@ export function createGizmo(parent: THREE.Object3D, pictures: GizmoPictures) {
         dot.position.set(spot.x, frame.groundY(spot) + DOT_LIFT_M, spot.z);
         dot.scale.setScalar(GIZMO.dotPx * spritePerPx * big("dot"));
       });
+      // A locked station: its radius dots alone.
+      if (!layout.posable) return;
+      disc.visible = true;
+      disc.position.set(x, y + DISC_LIFT_M, z);
+      disc.scale.set(layout.moveM, 1, layout.moveM);
+      moveMaterial.opacity = hovered === "move" ? 1 : 0.85;
       knob.visible = true;
       knob.position.set(
         layout.knob.x,

@@ -89,11 +89,16 @@ export interface GizmoSubject {
   readonly radiusM: number | null;
   /** A placed model's size (m); null for anything else. */
   readonly sizeM: number | null;
+  /** A station whose pose is locked: only its radius dots are handles. */
+  readonly locked?: boolean;
 }
 
 /** Where the gizmo's parts lie (m, in the world). */
 export interface GizmoLayout {
   readonly centre: WorldPoint;
+  /** The move disc, the knob and its stalk are handles (false: a locked
+   *  station, whose gizmo is its radius dots alone). */
+  readonly posable: boolean;
   readonly headingDeg: number;
   /** The ring's radius (an item's); null for a station, whose own circle
    *  is drawn by the tour. */
@@ -173,6 +178,7 @@ export function gizmoLayout(
   const reach = radius + GIZMO.knobGapPx * metresPerPx;
   return {
     centre: subject.centre,
+    posable: !(station && subject.locked === true),
     headingDeg: heading,
     ringM: station ? null : radius,
     moveM,
@@ -195,7 +201,8 @@ export type GizmoHandle = "move" | "turn" | "dot";
  * dots first (whichever is nearest, within half its drawn size); then an
  * object under the pointer - the selected one moves, another one takes
  * no handle (a click there selects it); then the move disc. Null: the
- * pointer moves the camera.
+ * pointer moves the camera. Not `posable` (a locked station): the dots
+ * alone - the knob, the selection and the disc take no handle.
  */
 export function handleAt(input: {
   readonly pointer: ScreenPoint;
@@ -206,8 +213,11 @@ export function handleAt(input: {
   readonly onDisc: boolean;
   /** What object the pointer is over: the selected one, another, none. */
   readonly underPointer: "selected" | "other" | null;
+  /** The middle and the knob are handles (default true). */
+  readonly posable?: boolean;
 }): GizmoHandle | null {
   const { pointer } = input;
+  const posable = input.posable !== false;
   let best: { handle: GizmoHandle; d: number } | null = null;
   const consider = (
     at: ScreenPoint | null,
@@ -218,10 +228,11 @@ export function handleAt(input: {
     const d = Math.hypot(at.x - pointer.x, at.y - pointer.y);
     if (d <= sizePx / 2 && (best === null || d < best.d)) best = { handle, d };
   };
-  consider(input.knob, GIZMO.knobPx, "turn");
+  if (posable) consider(input.knob, GIZMO.knobPx, "turn");
   for (const dot of input.dots) consider(dot, GIZMO.dotPx, "dot");
   const found = best as { handle: GizmoHandle; d: number } | null;
   if (found !== null) return found.handle;
+  if (!posable) return null;
   if (input.underPointer === "selected") return "move";
   if (input.underPointer === "other") return null;
   return input.onDisc ? "move" : null;

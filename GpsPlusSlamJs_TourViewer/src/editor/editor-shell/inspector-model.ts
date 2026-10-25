@@ -6,7 +6,8 @@
  * - A station: its name, "Station n of N", its description and card
  *   picture, its found and preload radii, and where it stands: metres east
  *   and north of the tour's centre (the 3D view's origin,
- *   `tour-origin.ts`), its height over the ellipsoid and its heading.
+ *   `tour-origin.ts`), its height over the ellipsoid and its heading, and
+ *   whether that position is locked (every station is, until unlocked).
  * - An item (pin, photo, 3D model): its name, its kind and station, a
  *   model's size, its offset in the station's frame and its heading
  *   there.
@@ -48,6 +49,9 @@ interface StationInspector {
   readonly activateRadiusM: number;
   /** Null for a station the file does not place. */
   readonly position: InspectorPosition | null;
+  /** Its position, height and heading may not be edited (the page's view
+   *  state, `isStationLocked`): its gizmo is its radius dots alone. */
+  readonly locked: boolean;
 }
 
 interface ItemInspector {
@@ -86,7 +90,9 @@ export function inspectorHint(model: InspectorModel | null): string {
     return "Click a station, an item or a code; drag to orbit, right-drag to pan, wheel to zoom";
   }
   if (model.kind === "station") {
-    return `${model.title} - drag the middle to move (its items follow), a white dot for the radius, the round arrow to turn`;
+    return model.locked
+      ? `${model.title} - a white dot for the radius; its position is locked (unlock it under Position to move or turn it)`
+      : `${model.title} - drag the middle to move (its items follow), a white dot for the radius, the round arrow to turn`;
   }
   if (model.kind === "item") {
     const resize = model.itemKind === "model" ? ", a white dot to resize" : "";
@@ -159,6 +165,9 @@ export function buildInspector(input: {
   readonly stations: readonly TourStation[];
   readonly assets: readonly TourAsset[];
   readonly codes: readonly InspectorCode[];
+  /** The stations whose position is unlocked, by id; every other station
+   *  is locked (none given: all are). */
+  readonly unlockedStations?: readonly string[];
 }): InspectorModel | null {
   const { selected, stations } = input;
   if (selected === null) return null;
@@ -182,6 +191,7 @@ export function buildInspector(input: {
       foundRadiusM: station.foundRadiusM,
       activateRadiusM: station.activateRadiusM,
       position: positionOf(station.geo, origin),
+      locked: !(input.unlockedStations ?? []).includes(id),
     };
   }
   for (const [index, station] of stations.entries()) {

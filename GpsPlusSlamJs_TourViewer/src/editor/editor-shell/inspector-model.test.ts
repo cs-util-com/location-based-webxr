@@ -83,12 +83,13 @@ const CODES = [
   },
 ];
 
-function inspect(selected: string | null) {
+function inspect(selected: string | null, unlockedStations: string[] = []) {
   return buildInspector({
     selected,
     stations: STATIONS,
     assets: [],
     codes: CODES,
+    unlockedStations,
   });
 }
 
@@ -117,6 +118,7 @@ describe("buildInspector", () => {
       imagePath: null,
       foundRadiusM: 25,
       activateRadiusM: 50,
+      locked: true,
       position: {
         eastM: expect.any(Number),
         northM: expect.any(Number),
@@ -194,11 +196,32 @@ describe("buildInspector", () => {
 // a pin offering a "dot to resize" it does not have, or a code offering a
 // drag it refuses, sends the creator looking for what is not there.
 describe("inspectorHint", () => {
+  // Why: the inspector's lock is the only place a station is unlocked, so
+  // it must read the page's lock - locked by default - and the hint must
+  // not invite a drag the lock refuses.
+  it("shows a station locked until it is unlocked, and hints at its radius alone", () => {
+    expect(inspect("station:a")).toMatchObject({ locked: true });
+    const open = buildInspector({
+      selected: "station:a",
+      stations: STATIONS,
+      assets: [],
+      codes: CODES,
+      unlockedStations: ["a"],
+    });
+    expect(open).toMatchObject({ locked: false });
+    expect(inspectorHint(inspect("station:a"))).toBe(
+      "Market Square - a white dot for the radius; its position is locked (unlock it under Position to move or turn it)",
+    );
+    expect(inspectorHint(open)).toBe(
+      "Market Square - drag the middle to move (its items follow), a white dot for the radius, the round arrow to turn",
+    );
+  });
+
   it("names the handles each selection has, and how to select with none", () => {
     expect(inspectorHint(null)).toBe(
       "Click a station, an item or a code; drag to orbit, right-drag to pan, wheel to zoom",
     );
-    expect(inspectorHint(inspect("station:a"))).toBe(
+    expect(inspectorHint(inspect("station:a", ["a"]))).toBe(
       "Market Square - drag the middle to move (its items follow), a white dot for the radius, the round arrow to turn",
     );
     expect(inspectorHint(inspect("pin-1"))).toBe(

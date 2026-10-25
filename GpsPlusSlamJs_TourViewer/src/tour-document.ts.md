@@ -267,6 +267,11 @@ largeTour?, cannotSave? })`.
     one of the document's frames (`framesHolding`), and any other emptied
     one stays unlisted (`framesToList`, as for a delete, a reorder and a
     copy).
+    An edit that leaves an emptied station with nothing of its own (its
+    radius, a title set and then cleared) does not list it
+    (`withoutEmptied`): the next write leaves it out and a reload from the
+    draft does not list it, so the live document does not either; such an
+    edit of a station no frame lists changes nothing.
   - `stationAdded({ at, stationId?, what })` - an automatic station
     (`automaticStationFrame`) at a point on the globe, titled
     `Station N` after the stations it follows; `prepare` mints the id, a
@@ -717,8 +722,11 @@ store.dispatch(tourDocumentActions.undone());
 - `tour-document.property.test.ts` also mixes the station edits (rename,
   radius, add, delete, reorder, copy of a station and of an item, ground,
   an item into a station of its own) into its sequences, and checks that
-  any sequence written to the draft's records and restored over the
-  opened tour gives back the same `manifestToWrite`.
+  any sequence (up to 40 edits, generated at full length: fast-check
+  otherwise stops at 10) written to the draft's records and restored over
+  the opened tour gives back the same `manifestToWrite`; an edit of a
+  station a delete or a move emptied (its radius, a title set then
+  cleared) does not list it again, as a reload does not.
 - `tour-document.test.ts` also carries a placed 3D model (format minor 1)
   through a pin edit, its station's move and a save: its asset, its size in
   metres and its local pose come back exactly, and the write is at minor 1.

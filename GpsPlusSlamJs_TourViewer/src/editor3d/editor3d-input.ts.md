@@ -63,6 +63,7 @@ move the camera only, and a second finger during a drag cancels it.
   E, PageUp and PageDown then are not).
 - A code has no target: no handles, no Del, no Ctrl+D (read-only in the
   3D view, as on the map).
+- A locked station (`poseLocked`) takes no nudge, turn or lift key: the press is refused and said once (`STATION_LOCKED`; a held key's repeats say nothing more). Delete and copy keys still work on it.
 
 ## Examples
 
@@ -93,3 +94,5 @@ turns it red: a dispatch per move, a commit on the second finger, a commit
 per key press, no click threshold, a cancel or a pointercancel that
 commits, no right-button or key-hold guard, a blur or a selection change
 that discards a hold.
+
+`editor3d-input.test.ts` also covers the keys on a locked station: nothing committed, said once a press, delete still works.

@@ -14,6 +14,7 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import type { ScreenPoint } from "./gizmo-maths.js";
 import {
+  poseLocked,
   startGesture,
   startKeyGesture,
   type GestureTarget,
@@ -274,5 +275,31 @@ describe("a key gesture", () => {
     g.press({ kind: "turn", deg: 5 });
     g.press({ kind: "turn", deg: -5 });
     expect(g.edit()).toBeNull();
+  });
+});
+
+// Why: a locked station's pose must not move however the gizmo is
+// grabbed - its middle and its knob take no gesture - while its radius
+// stays a drag of its dots.
+describe("a locked station", () => {
+  const LOCKED: GestureTarget = {
+    kind: "station",
+    id: "st",
+    geo: { lat: 0, lon: 0, alt: 100, headingDeg: 0 },
+    foundRadiusM: 12,
+    centre: { x: 0, y: 0, z: 0 },
+    locked: true,
+  };
+
+  it("takes no move and no turn, and still its radius", () => {
+    const { world } = flatWorld();
+    expect(poseLocked(LOCKED)).toBe(true);
+    expect(poseLocked({ ...LOCKED, locked: false })).toBe(false);
+    expect(poseLocked(PIN)).toBe(false);
+    expect(startGesture("move", LOCKED, at(0, 0), world)).toBeNull();
+    expect(startGesture("turn", LOCKED, at(0, -10), world)).toBeNull();
+    const g = startGesture("dot", LOCKED, at(12, 0), world);
+    g?.move(at(20.3, 0), false);
+    expect(g?.edit()).toEqual({ kind: "radius", id: "st", foundRadiusM: 20.5 });
   });
 });

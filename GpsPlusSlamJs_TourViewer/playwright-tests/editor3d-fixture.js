@@ -5,6 +5,7 @@ import {
   encodeRgbPng,
   terrariumPng,
 } from "../../scripts/e2e/terrarium-png.mjs";
+import { startOnMap } from "./editor-menus.js";
 
 /** A 1x1 grey PNG: a map tile the page can decode. Encoded here, not
  *  pasted: a hand-copied one carried a broken checksum, so the browser
@@ -112,14 +113,33 @@ export async function afterFrames(page, n) {
 }
 
 /**
- * The editor page with the sample tour open on the map.
+ * The editor page with the sample tour open on the 2D map (not in the 3D
+ * view, the default: `openSampleIn3d`), for a spec that edits on the map
+ * first or drives the view switch itself.
  * @param {import("@playwright/test").Page} page
  */
 export async function openSample(page) {
+  await startOnMap(page.context());
   await page.goto("/edit.html");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   // No tour, nothing to show in 3D: the switch waits for one.
   await expect(page.locator("#view-switch")).toBeDisabled();
   await page.locator("#sample-btn").click();
   await expect(page.locator("#rail .row-title")).toHaveCount(3);
+}
+
+/**
+ * The editor page with the sample tour open, as a creator gets it: in the
+ * 3D view, its three stations placed.
+ * @param {import("@playwright/test").Page} page
+ */
+export async function openSampleIn3d(page) {
+  await page.goto("/edit.html");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  await page.locator("#sample-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 60_000,
+  });
+  await expect(page.locator("#view-switch")).toHaveText("2D map");
+  await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
 }

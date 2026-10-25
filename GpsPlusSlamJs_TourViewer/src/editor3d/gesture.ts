@@ -78,6 +78,8 @@ export type GestureTarget =
       readonly geo: QrGeoPose;
       readonly foundRadiusM: number;
       readonly centre: WorldPoint;
+      /** Its pose is locked: only its radius can be dragged. */
+      readonly locked?: boolean;
     }
   | {
       readonly kind: "item";
@@ -140,6 +142,11 @@ function sameGeo(a: QrGeoPose, b: QrGeoPose): boolean {
   );
 }
 
+/** Whether `target` is a station whose pose is locked. */
+export function poseLocked(target: GestureTarget): boolean {
+  return target.kind === "station" && target.locked === true;
+}
+
 /** The ground under the pointer, else the level plane at `y`. */
 function grabPoint(
   world: GestureWorld,
@@ -154,7 +161,7 @@ function grabPoint(
  * A gesture of `handle` on `target`, grabbed at `pressedAt`; null when
  * there is nothing to grab there (neither ground nor the level plane
  * under the pointer) or the handle is not the target's (a dot on a pin or
- * a photo).
+ * a photo; the middle or the knob of a locked station).
  */
 export function startGesture(
   handle: GizmoHandle,
@@ -165,6 +172,7 @@ export function startGesture(
   if (handle === "dot" && target.kind === "item" && target.sizeM === null) {
     return null;
   }
+  if (handle !== "dot" && poseLocked(target)) return null;
   const centre = target.centre;
   const grab =
     handle === "turn"

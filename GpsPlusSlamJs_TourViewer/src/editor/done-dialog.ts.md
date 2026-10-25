@@ -1,8 +1,8 @@
-# `done-dialog.ts` - the editor's "Done" dialog
+# `done-dialog.ts` - the editor's "Share and publish" dialog
 
 ## Purpose
 
-What is left to do when a creator leaves the desktop editor (tour editor
+Opened by File's "Share and publish…" (once "Done"). What is left to do when a creator leaves the desktop editor (tour editor
 plan 2026-10-17-1816, W2, D18, D19): where the changes are, how the tour
 at its link is updated for the host it lives on, that a file at a shared
 link is public as soon as it is uploaded, and - while the file still
@@ -20,7 +20,11 @@ the move (`edit-main.ts`, `EditorSession.moveWalkOut`).
   (the plan's review #10, D18). The words and `#done-drive-tip` are in
   place and tested with the switch on; turning it on is this constant.
 - `DoneSaved`, `DoneFacts` - where the changes went (`in-place`,
-  `downloaded`, `unchanged`, each with the file's name), the host, whether
+  `downloaded`, `unchanged`, each with the file's name; `in-place` with
+  `chosenAtSave: true` when that file is the one the first Save of a tour
+  without a file asked for - said as "the file you chose when you first
+  saved", since it was never opened and may carry another name than the
+  one the tour came under), the host, whether
   the newest bytes carry the walk (`true`, `false`, or `"unknown"` when
   the check failed: said as "may carry", never as none - the M4b milestone
   review #9), and the tip's switch.
@@ -74,8 +78,8 @@ the move (`edit-main.ts`, `EditorSession.moveWalkOut`).
   `moveWalk` (or the pending `confirm`) synchronously, so the page can
   open the browser's save dialog inside it (review #2).
 - **While a move runs the dialog cannot be closed** (Esc and Close do
-  nothing, Close is disabled): the move holds the page's save, and Done
-  pressed meanwhile froze the tab (review #1). `close(true)` is the page's
+  nothing, Close is disabled): the move holds the page's save, and Share and
+  publish pressed meanwhile froze the tab (review #1). `close(true)` is the page's
   own close when it drops the tour; it also forgets a pending confirm.
 - `downloaded` keeps the walk's words and turns the button into
   `MOVE_LABELS.confirm`: a started download is not a landed one, so the
@@ -111,9 +115,9 @@ done.open({
   runs and closed by force; the save of the debug data offered only after
   a save left it out (never with the move), and its in-progress, saved,
   refused, cancelled and thrown states.
-- `playwright-tests/editor.spec.js` - Done saves first and opens the
+- `playwright-tests/editor.spec.js` - Share and publish saves first and opens the
   dialog; the save dialog is asked for on the click and the walk lands in
   the chosen file; without one, the walk is downloaded and the tour is
-  rewritten on the second click; Done stays disabled and the dialog open
+  rewritten on the second click; its item stays disabled and the dialog open
   while the move runs; a failed write of either file leaves the tour file
   unchanged, and the next save still carries the walk.

@@ -82,6 +82,7 @@ import {
 import type { DetailsOutcome } from "./details-dialog.js";
 import type { EditorTourSettings } from "./editor-draft.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
+import { STATION_LOCKED } from "./editor-view.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 import { readZipBlobEntry, zipBlobEntryNames } from "../zip-blob.js";
 
@@ -115,6 +116,14 @@ type UndoOutcome =
   | { readonly kind: "undone" | "redone"; readonly what: string }
   | { readonly kind: "nothing" }
   | EditorRefusal;
+
+/** A copy's file name ("Save a copy…"): the tour's, with " copy" before
+ *  its `.zip` (any case), so the copy is never taken for the tour's own
+ *  file. */
+export function copyFileName(name: string): string {
+  const at = /\.zip$/i.test(name) ? name.length - 4 : name.length;
+  return `${name.slice(0, at)} copy${name.slice(at)}`;
+}
 
 export interface EditorSave {
   readonly blob: Blob;
@@ -319,7 +328,8 @@ export interface EditorSession {
    *  tour can carry. */
   place(object: TourObject): { kind: "placed" } | EditorRefusal;
   /** Move a station's frame (D17): its items move rigidly with it.
-   *  Refused for a station the tour does not carry. */
+   *  Refused for a station the tour does not carry, and for a locked one
+   *  (`stationLocked`): position, height and heading alike. */
   moveStation(
     stationId: string,
     geo: QrGeoPose,
@@ -402,6 +412,11 @@ export interface EditorSession {
      *  that file stands in the history). Default: a download. */
     readonly inPlace?: boolean;
   }): Promise<EditorSave>;
+  /** A copy of the tour as it stands, built from the newest bytes as a
+   *  save is ("Save a copy…"), queued with the saves - but not landed:
+   *  the tour's own file and its pending edits stay as they were. Rejects
+   *  with `TOUR_REPLACED` once another open replaced this one. */
+  saveCopy(options: { readonly keepScan: boolean }): Promise<EditorSave>;
   /** The walk recording's entries in the newest bytes (W2, D19): none
    *  once it was moved out, or when the last save left it out. */
   walkEntries(): Promise<string[]>;
@@ -441,6 +456,10 @@ export function createEditorSession(input: {
    *  views read the same state; a fresh one when absent (tests). Opening
    *  the session opens the document in it - whatever it held is gone. */
   readonly store?: TourViewerStore;
+  /** Whether a station's pose is locked (the page's view state): its move,
+   *  turn and lift are then refused; its radius, name, delete and copy
+   *  stay open. None: nothing is locked (the phone, a test). */
+  readonly stationLocked?: (stationId: string) => boolean;
 }): EditorSession {
   const { session, levels } = input;
   const store: TourViewerStore = input.store ?? createTourViewerStore();
@@ -794,6 +813,11 @@ export function createEditorSession(input: {
       if (station === undefined) {
         return { kind: "refused", reason: NO_SUCH_STATION };
       }
+      // Every move, turn and lift of a station comes through here: the
+      // lock holds whatever asked (a drag, a key, a later control).
+      if (input.stationLocked?.(stationId) === true) {
+        return { kind: "refused", reason: STATION_LOCKED };
+      }
       if (!onMap(geo)) return { kind: "refused", reason: NOT_ON_MAP };
       store.dispatch(
         tourDocumentActions.stationMoved({
@@ -816,14 +840,18 @@ export function createEditorSession(input: {
       const frame = manifestNow(state)?.stations.find(
         (s) => s.id === stationId,
       );
-      store.dispatch(
-        tourDocumentActions.stationEdited({
-          stationId,
-          edit,
-          what: `the change of ${stationName(frame ?? {})}`,
-        }),
+      // The document may drop the edit (a station a delete emptied, left
+      // with nothing of its own): no step was taken, so none is said.
+      const applied = took(() =>
+        store.dispatch(
+          tourDocumentActions.stationEdited({
+            stationId,
+            edit,
+            what: `the change of ${stationName(frame ?? {})}`,
+          }),
+        ),
       );
-      return { kind: "edited" };
+      return applied ? { kind: "edited" } : { kind: "unchanged" };
     },
     addStation(at) {
       if (mine() === null) return notInTour;
@@ -1168,6 +1196,18 @@ export function createEditorSession(input: {
       // The document's save (`tour-document-save.ts`): a thunk, queued with
       // the moves of the walk.
       return dispatchThunk(store, saves.save(options)).then(saveOf);
+    },
+    saveCopy(options) {
+      return dispatchThunk(
+        store,
+        saves.queued(async () => {
+          if (mine() === null) throw new Error(TOUR_REPLACED);
+          const snap = dispatchThunk(store, saves.snapshot());
+          await saves.picturesRead();
+          const copy = saveOf(await saves.rebuild(snap, options.keepScan));
+          return { ...copy, filename: copyFileName(copy.filename) };
+        }),
+      );
     },
     async walkEntries() {
       return scanEntryNames(

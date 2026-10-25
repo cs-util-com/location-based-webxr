@@ -9,7 +9,8 @@
  * draws everything N lower than its file's height).
  *
  * The selection's gizmo is placed each frame from the tour, or from a
- * gesture's preview while one runs; codes have none (read-only here).
+ * gesture's preview while one runs; codes have none (read-only here), and
+ * a locked station's is its radius dots alone.
  * Two fingers move the camera (tilt, or pinch, pan and twist); OrbitControls
  * is told to leave two fingers alone.
  *
@@ -68,6 +69,9 @@ export interface SceneEditingDeps {
   undulationAt(place: { lat: number; lon: number }): number;
   /** The tour as the view draws it now. */
   tour(): TourManifest | null;
+  /** Whether a station's pose is locked (the page's view state): its
+   *  gizmo is then its radius dots alone. */
+  stationLocked(stationId: string): boolean;
   /** The page's selection and the store's dispatch, and its edits. */
   readonly page: InputPage;
   /** The camera's flights: a two-finger touch ends one; a double click
@@ -169,6 +173,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
         geo: station.geo,
         foundRadiusM: station.foundRadiusM,
         centre: { x: c.x, y: c.y, z: c.z },
+        locked: deps.stationLocked(id),
       };
     }
     for (const station of tour.stations) {
@@ -228,6 +233,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
         headingDeg: headingOfGeo(geo),
         radiusM,
         sizeM,
+        locked: target.kind === "station" && target.locked === true,
       },
       metresPerPx,
     );
@@ -266,6 +272,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
         onDisc,
         underPointer:
           under === null ? null : under === selection ? "selected" : "other",
+        posable: layout.posable,
       });
     },
     pickAt(pointer) {

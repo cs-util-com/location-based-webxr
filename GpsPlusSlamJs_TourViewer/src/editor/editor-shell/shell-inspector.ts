@@ -5,7 +5,8 @@
  * only, never markup. Every value is an `<output>` tied to its label, so
  * a screen reader reads the two together. The head's fold and close
  * buttons and the disclosure carry `data-act` (`fold`, `close`,
- * `position`); the shell answers them.
+ * `position`), and a station's lock beside its Position (`lock`, pressed
+ * while locked); the shell answers them.
  *
  * @see shell-inspector.ts.md
  */
@@ -154,6 +155,18 @@ function disclosure(
   return [b, body];
 }
 
+/** A station's position lock: pressed while locked. */
+function lockButton(locked: boolean): HTMLButtonElement {
+  const label = locked
+    ? "Unlock the position (to move or turn the station)"
+    : "Lock the position";
+  const b = iconButton(locked ? "lock" : "unlock", label, "lock");
+  b.classList.add("lock");
+  b.classList.toggle("on", locked);
+  b.setAttribute("aria-pressed", String(locked));
+  return b;
+}
+
 /** The position's disclosure, or a note when there is none to show. */
 function positionPart(
   position: InspectorPosition | null,
@@ -228,14 +241,23 @@ export function drawInspector(
         `Visitors who step inside this circle see the station's content; it starts loading ${fixed(model.activateRadiusM, 0)} m out.`,
       ),
     );
-    parts.push(
-      section,
-      ...positionPart(
-        model.position,
-        state.positionOpen,
-        "The file gives this station no position.",
-      ),
+    const position = positionPart(
+      model.position,
+      state.positionOpen,
+      "The file gives this station no position.",
     );
+    if (model.position === null) {
+      // Nothing for the lock to keep still: the note stands alone.
+      parts.push(section, ...position);
+    } else {
+      // The lock sits on the Position row: the disclosure and the lock
+      // side by side.
+      const [disc, ...open] = position;
+      const row = el("div", "posrow");
+      if (disc !== undefined) row.append(disc);
+      row.append(lockButton(model.locked));
+      parts.push(section, row, ...open);
+    }
   } else if (model.kind === "item") {
     if (model.sizeM !== null) {
       section.append(field("Size", fixed(model.sizeM, 2), "m"));

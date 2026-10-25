@@ -1,13 +1,17 @@
 /**
- * The desktop editor's view switch: one button that opens the 3D view over
- * the map and closes it again (one page, two views; the tour, its edits
- * and the selection are the store's, so neither view owns them).
+ * The desktop editor's view switch: the View menu's item that opens the 3D
+ * view over the 2D map and closes it again (one page, two views; the tour,
+ * its edits and the selection are the store's, so neither view owns them).
+ * The page also opens the 3D view by itself when a tour opens
+ * (`show3d`): it is the editor's default view.
  *
  * The 3D view is async three ways - its code is a lazy chunk, its ground
- * starts up, WebGL may be missing or lost - so the button shows each
- * state (the CLAUDE.md async-UI rule): "Loading 3D view…" and disabled
- * while it loads, "Map view" while it shows, and back to "3D view" with
- * the reason said when it fails or its context is lost. The state lives in
+ * starts up, WebGL may be missing or lost - so the item shows each state
+ * (the CLAUDE.md async-UI rule): "Loading 3D view…" and disabled while it
+ * loads, "2D map" while it shows, and back to "3D view" with the reason
+ * said when it fails or its context is lost. The menu closes on the click
+ * and an automatic open has no click at all, so the load is also said in
+ * a status line (`status`) until it ends. The state lives in
  * `editorView` (`viewMode`, `view3dLoad`, `view3dFailure`); this module
  * runs the opener, keeps the one view handle and draws the button.
  *
@@ -30,15 +34,7 @@ import {
 export const VIEW_SWITCH_LABELS = Object.freeze({
   idle: "3D view",
   loading: "Loading 3D view…",
-  shown: "Map view",
-});
-
-/** A word for each state on a phone-wide window (`data-short`, which
- *  the stylesheet shows below 720 px in place of the label). */
-export const VIEW_SWITCH_SHORT_LABELS = Object.freeze({
-  idle: "3D",
-  loading: "…",
-  shown: "Map",
+  shown: "2D map",
 });
 
 const FAILURE_TEXT: Readonly<Record<View3dFailure, string>> = {
@@ -67,6 +63,13 @@ function reasonOf(error: unknown): View3dFailure {
   return typeof reason === "string" && REASONS.has(reason)
     ? (reason as View3dFailure)
     : "error";
+}
+
+/** The status line that says a load while it runs (structural). */
+export interface ViewSwitchStatus {
+  textContent: string | null;
+  // As the DOM types it (`HTMLElement.hidden`); this module writes booleans.
+  hidden: boolean | "until-found";
 }
 
 /** The part of a button this module uses (structural, for tests). */
@@ -107,16 +110,20 @@ export interface ViewSwitch {
   close(): void;
   /** Off while no tour is open. */
   setEnabled(on: boolean): void;
+  /** Open the 3D view, as the item does from the map; nothing while it
+   *  loads, shows, or the switch is off. */
+  show3d(): void;
 }
 
 /**
- * The switch on `button`. `open` starts the 3D view (resolves once it drew
+ * The switch on `button` (and its load said in `status`). `open` starts the 3D view (resolves once it drew
  * its first frame) and reports a lost context through `contextLost`; `say`
  * is the page's toast; `onShown` follows the view shown or hidden (the
  * page hides what belongs to the map).
  */
 export function createViewSwitch(deps: {
   readonly button: ViewSwitchButton;
+  readonly status?: ViewSwitchStatus;
   readonly store: ViewSwitchStore;
   readonly open: (events: View3dEvents) => Promise<View3dHandle>;
   readonly say: (text: string) => void;
@@ -137,8 +144,12 @@ export function createViewSwitch(deps: {
     const key =
       state === "3d" ? "shown" : state === "loading" ? "loading" : "idle";
     button.textContent = VIEW_SWITCH_LABELS[key];
-    button.dataset["short"] = VIEW_SWITCH_SHORT_LABELS[key];
     button.disabled = !enabled || state === "loading";
+    if (deps.status !== undefined) {
+      deps.status.hidden = state !== "loading";
+      deps.status.textContent =
+        state === "loading" ? VIEW_SWITCH_LABELS.loading : "";
+    }
   };
 
   /** Leave the 3D view (or its load) with `action`. `onShown` comes
@@ -218,6 +229,11 @@ export function createViewSwitch(deps: {
     setEnabled(on) {
       enabled = on;
       render();
+    },
+    show3d() {
+      const { viewMode, view3dLoad } = ui();
+      if (!enabled || view3dLoad === "loading" || viewMode === "3d") return;
+      void open();
     },
   };
 }

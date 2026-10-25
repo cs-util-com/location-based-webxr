@@ -34,6 +34,7 @@ the scene, placed on the selection each frame from its layout
   still be grabbed.
 - The sprites have no size attenuation: their scale is pixels times
   `2 tan(fov / 2) / the view's height`.
+- A layout that is not `posable` (a locked station) draws its ring and radius dots only: the disc, the knob and the bar stay hidden.
 
 ## Examples
 
@@ -49,3 +50,5 @@ station's knob, dots and disc where the layout has them and no ring; a
 pin's ring and no dots, the hovered knob larger; everything hidden
 without a selection and out of the scene once disposed. The on-screen
 sizes in a browser: `playwright-tests/editor3d-edit.spec.js`.
+
+A locked station's drawing is checked in `editor3d-edit.spec.js` (no knob and no middle on the screen, the dots shown).

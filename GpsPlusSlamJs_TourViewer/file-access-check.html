@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>File access check</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        max-width: 720px;
+        line-height: 1.4;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 8px;
+      }
+      h2 {
+        font-size: 16px;
+        margin: 20px 0 4px;
+      }
+      p {
+        margin: 4px 0 8px;
+      }
+      button,
+      select {
+        font: inherit;
+        padding: 10px 14px;
+        margin: 4px 8px 4px 0;
+        min-height: 44px;
+      }
+      #env {
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      #log {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, monospace;
+        font-size: 13px;
+        border: 1px solid #8888;
+        border-radius: 6px;
+        padding: 8px;
+        min-height: 160px;
+        margin: 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>File access check</h1>
+    <p>
+      Checks what this browser lets a web page do with a file you choose: save a
+      new file, keep access to it after a reload, rewrite it, and what is left
+      when the tab, or the whole browser, closes in the middle of a rewrite. Run
+      the steps in order, then take a screenshot of the log.
+    </p>
+    <p id="env"></p>
+
+    <h2>1. Save a new file</h2>
+    <p>
+      Choose where to save a new file (for example Downloads). It is a small
+      test file.
+    </p>
+    <button id="step-save" type="button">Save a new file</button>
+
+    <h2>2. Reload</h2>
+    <p>Reload the page, then go on with step 3.</p>
+    <button id="step-reload" type="button">Reload the page</button>
+
+    <h2>3. Access after the reload</h2>
+    <p>Asks for access to the kept file again and reads it.</p>
+    <button id="step-access" type="button">Check access to the file</button>
+
+    <h2>4. Rewrite it, and close the tab during the write</h2>
+    <p>
+      Writes a larger test file over the kept file. While the log counts up,
+      close this tab (swipe it away), then open this page again and run step 5.
+      If the write finishes first, choose a larger size and try again.
+    </p>
+    <label
+      >Size
+      <select id="size">
+        <option value="20">20 MB</option>
+        <option value="50" selected>50 MB</option>
+        <option value="200">200 MB</option>
+      </select>
+    </label>
+    <button id="step-rewrite" type="button">Rewrite, then close the tab</button>
+
+    <h2>5. Read it after reopening</h2>
+    <p>
+      Reports the file's size, a checksum, whether it is whole, and how the
+      rewrite before it was stopped.
+    </p>
+    <button id="step-read" type="button">Read the file</button>
+
+    <h2>6. Rewrite again, and close the whole browser</h2>
+    <p>
+      The same as step 4, but this time close the whole browser, not only the
+      tab, while the log counts up: open the list of recent apps (swipe up from
+      the bottom of the screen and hold, or tap the square button), then swipe
+      Chrome away. If that does not work, open the phone's Settings, then Apps,
+      then Chrome, and tap Force stop. Then open Chrome and this page again, and
+      run step 5 once more.
+    </p>
+    <button id="step-rewrite-browser" type="button">
+      Rewrite, then close the whole browser
+    </button>
+
+    <h2>7. Open a file to read and write</h2>
+    <p>
+      Choose the test file from step 1 again, this time through the open dialog.
+      Only a test file is written to.
+    </p>
+    <button id="step-open" type="button">Open a file to write</button>
+
+    <h2>8. Once more as a desktop site</h2>
+    <p>
+      Last, open Chrome's menu (the three dots), tick Desktop site, and reload
+      this page. Nothing else needs to run: the log notes what the browser says
+      about itself in that mode. Then untick Desktop site again, and take the
+      screenshot of the log.
+    </p>
+
+    <h2>Log</h2>
+    <div id="log" role="log" aria-live="polite"></div>
+    <button id="copy" type="button">Copy the log</button>
+    <button id="clear" type="button">Clear the log</button>
+
+    <script type="module">
+      // The page's wiring; the check files and the verdicts are
+      // `src/checks/file-access-check.ts` (unit-tested).
+      import {
+        bodyChunk,
+        checkFile,
+        headerOf,
+        interruptionOf,
+        interruptionWords,
+        judge,
+        platformWords,
+        sizeWords,
+        specOf,
+        verdictWords,
+      } from "/src/checks/file-access-check.ts";
+
+      const LOG_KEY = "file-access-check:log";
+      const WRITE_KEY = "file-access-check:rewrite";
+      const MB = 1024 * 1024;
+      const logBox = document.getElementById("log");
+
+      // Browser storage may be missing (a private window): the log then
+      // lasts this page only.
+      function readStored(key) {
+        try {
+          return localStorage.getItem(key);
+        } catch {
+          return null;
+        }
+      }
+      function store(key, value) {
+        try {
+          if (value === null) localStorage.removeItem(key);
+          else localStorage.setItem(key, value);
+        } catch {
+          // Not kept: said once in the log by `start`.
+        }
+      }
+
+      let lines = [];
+      try {
+        const kept = JSON.parse(readStored(LOG_KEY) ?? "[]");
+        if (Array.isArray(kept)) lines = kept.map(String);
+      } catch {
+        lines = [];
+      }
+      function show() {
+        logBox.textContent = lines.join("\n");
+      }
+      function log(text) {
+        const time = new Date().toLocaleTimeString();
+        lines.push(`${time}  ${text}`);
+        store(LOG_KEY, JSON.stringify(lines));
+        show();
+      }
+      function errorText(err) {
+        return err instanceof Error
+          ? `${err.name}: ${err.message}`
+          : String(err);
+      }
+
+      // The kept handle, in IndexedDB (a handle cannot go to localStorage).
+      function database() {
+        return new Promise((resolve, reject) => {
+          const open = indexedDB.open("file-access-check", 1);
+          open.onupgradeneeded = () => open.result.createObjectStore("handles");
+          open.onsuccess = () => resolve(open.result);
+          open.onerror = () => reject(open.error);
+        });
+      }
+      async function keepHandle(handle) {
+        const db = await database();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction("handles", "readwrite");
+          tx.objectStore("handles").put(handle, "file");
+          tx.oncomplete = () => resolve(undefined);
+          tx.onerror = () => reject(tx.error);
+        });
+        db.close();
+      }
+      async function keptHandle() {
+        const db = await database();
+        const handle = await new Promise((resolve, reject) => {
+          const get = db
+            .transaction("handles", "readonly")
+            .objectStore("handles")
+            .get("file");
+          get.onsuccess = () => resolve(get.result ?? null);
+          get.onerror = () => reject(get.error);
+        });
+        db.close();
+        return handle;
+      }
+
+      async function writeAll(handle, bytes) {
+        const writable = await handle.createWritable();
+        await writable.write(bytes);
+        await writable.close();
+      }
+
+      async function readVerdict(handle, written = {}) {
+        const file = await handle.getFile();
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const digest = await crypto.subtle.digest("SHA-256", bytes);
+        const hex = [...new Uint8Array(digest)]
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+        log(`Read ${file.name}: ${sizeWords(file.size)} (${file.size} bytes)`);
+        log(`SHA-256 ${hex.slice(0, 16)}...${hex.slice(-8)}`);
+        log(verdictWords(judge(bytes), written));
+      }
+
+      /** The kept handle with read and write access, or null (said). */
+      async function accessToKept() {
+        let handle;
+        try {
+          handle = await keptHandle();
+        } catch (err) {
+          log(`No kept file could be read from IndexedDB (${errorText(err)}).`);
+          return null;
+        }
+        if (handle === null) {
+          log("No file is kept yet: run step 1 first.");
+          return null;
+        }
+        log(`Kept file: ${handle.name}`);
+        if (typeof handle.queryPermission === "function") {
+          const asked = await handle
+            .queryPermission({ mode: "readwrite" })
+            .catch(errorText);
+          log(`queryPermission (readwrite): ${asked}`);
+          if (asked !== "granted") {
+            const answer = await handle
+              .requestPermission({ mode: "readwrite" })
+              .catch(errorText);
+            log(`requestPermission (readwrite): ${answer}`);
+            if (answer !== "granted") return null;
+          }
+        } else {
+          log("This browser has no queryPermission on a kept file.");
+        }
+        return handle;
+      }
+
+      function randomSeed() {
+        return crypto.getRandomValues(new Uint32Array(1))[0];
+      }
+
+      function button(id, run) {
+        const b = document.getElementById(id);
+        b.addEventListener("click", () => {
+          if (b.disabled) return;
+          b.disabled = true;
+          Promise.resolve()
+            .then(run)
+            .catch((err) => log(`Failed: ${errorText(err)}`))
+            .finally(() => {
+              b.disabled = false;
+            });
+        });
+      }
+
+      button("step-save", async () => {
+        if (typeof window.showSaveFilePicker !== "function") {
+          log("Step 1: this browser has no save dialog (showSaveFilePicker).");
+          return;
+        }
+        const name = `file-access-check-${Date.now()}.bin`;
+        log(`Step 1: asking where to save ${name}...`);
+        let handle;
+        try {
+          handle = await window.showSaveFilePicker({ suggestedName: name });
+        } catch (err) {
+          log(`Step 1: no file chosen (${errorText(err)}).`);
+          return;
+        }
+        log(`Step 1: chosen as ${handle.name}`);
+        const spec = { bodyBytes: 64 * 1024, seed: randomSeed() };
+        await writeAll(handle, checkFile(spec));
+        log(`Step 1: wrote ${sizeWords(spec.bodyBytes)} of test data.`);
+        await readVerdict(handle, { before: spec });
+        try {
+          await keepHandle(handle);
+          log("Step 1: the file's handle is kept in IndexedDB.");
+        } catch (err) {
+          log(`Step 1: the handle could not be kept (${errorText(err)}).`);
+        }
+        store(WRITE_KEY, JSON.stringify({ before: spec }));
+      });
+
+      button("step-reload", () => {
+        log("Step 2: reloading.");
+        location.reload();
+      });
+
+      button("step-access", async () => {
+        log("Step 3: access after the reload...");
+        const handle = await accessToKept();
+        if (handle === null) return;
+        await readVerdict(handle, keptSpecs());
+      });
+
+      function keptSpecs() {
+        try {
+          const kept = JSON.parse(readStored(WRITE_KEY) ?? "{}");
+          return {
+            before: kept.before ?? undefined,
+            after: kept.after ?? undefined,
+          };
+        } catch {
+          return {};
+        }
+      }
+
+      /**
+       * Steps 4 and 6: the kept file rewritten while the person stops the
+       * write - by closing the tab (`tab`) or the whole browser
+       * (`browser`). Which way is kept with the specs, so step 5 names it.
+       */
+      async function rewrite(step, way) {
+        const close =
+          way === "tab"
+            ? "Close the tab while it counts."
+            : "Close the whole browser while it counts (recent apps, swipe Chrome away).";
+        log(
+          `Step ${step}: rewriting the kept file (${interruptionWords(way)})...`,
+        );
+        const handle = await accessToKept();
+        if (handle === null) return;
+        const before = specOf(
+          new Uint8Array(
+            await (await handle.getFile()).slice(0, 64).arrayBuffer(),
+          ),
+        );
+        const sizeMb = Number(document.getElementById("size").value);
+        const after = { bodyBytes: sizeMb * MB, seed: randomSeed() };
+        store(
+          WRITE_KEY,
+          JSON.stringify({
+            before,
+            after,
+            way,
+            startedAt: new Date().toISOString(),
+          }),
+        );
+        log(
+          `Step ${step}: writing ${sizeWords(after.bodyBytes)} over ${handle.name}. ${close}`,
+        );
+        const writable = await handle.createWritable();
+        await writable.write(headerOf(after));
+        let lastSaid = 0;
+        for (let at = 0; at < after.bodyBytes; at += MB) {
+          await writable.write(bodyChunk(after, at, MB));
+          const done = Math.min(after.bodyBytes, at + MB);
+          if (done - lastSaid >= 5 * MB || done === after.bodyBytes) {
+            lastSaid = done;
+            log(
+              `Step ${step}: ${sizeWords(done)} of ${sizeWords(after.bodyBytes)} written`,
+            );
+          }
+        }
+        log(
+          `Step ${step}: closing the file (the browser now puts the new bytes in place)...`,
+        );
+        await writable.close();
+        log(
+          `Step ${step}: the write FINISHED before the ${way === "tab" ? "tab" : "browser"} closed - try a larger size.`,
+        );
+      }
+
+      button("step-rewrite", () => rewrite(4, "tab"));
+      button("step-rewrite-browser", () => rewrite(6, "browser"));
+
+      /** How the last rewrite was stopped, as its record says; null when
+       *  there was none (or an older record that did not say). */
+      function keptWay() {
+        try {
+          return interruptionOf(JSON.parse(readStored(WRITE_KEY) ?? "{}").way);
+        } catch {
+          return null;
+        }
+      }
+
+      button("step-read", async () => {
+        log("Step 5: reading the file after reopening...");
+        const way = keptWay();
+        log(
+          way === null
+            ? "Step 5: no rewrite is recorded (run step 4 or 6 first)."
+            : `Step 5: in the last rewrite, ${interruptionWords(way)}.`,
+        );
+        const handle = await accessToKept();
+        if (handle === null) return;
+        await readVerdict(handle, keptSpecs());
+      });
+
+      button("step-open", async () => {
+        if (typeof window.showOpenFilePicker !== "function") {
+          log("Step 7: this browser has no open dialog (showOpenFilePicker).");
+          return;
+        }
+        let handle;
+        try {
+          [handle] = await window.showOpenFilePicker({ mode: "readwrite" });
+        } catch (err) {
+          log(`Step 7: no file chosen (${errorText(err)}).`);
+          return;
+        }
+        log(`Step 7: opened ${handle.name}`);
+        if (typeof handle.queryPermission === "function") {
+          const asked = await handle
+            .queryPermission({ mode: "readwrite" })
+            .catch(errorText);
+          log(`Step 7: queryPermission (readwrite): ${asked}`);
+        }
+        const file = await handle.getFile();
+        const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
+        if (specOf(head) === null) {
+          log(
+            `Step 7: ${sizeWords(file.size)}, not a test file - nothing is written to it.`,
+          );
+          return;
+        }
+        const spec = { bodyBytes: 64 * 1024, seed: randomSeed() };
+        try {
+          await writeAll(handle, checkFile(spec));
+          log("Step 7: rewrote the test file in place.");
+        } catch (err) {
+          log(`Step 7: the write was refused (${errorText(err)}).`);
+          return;
+        }
+        await readVerdict(handle, { after: spec });
+      });
+
+      // Copying may be missing (an insecure page, an older browser) or be
+      // refused: either way the log says so, and the screenshot stays.
+      document.getElementById("copy").addEventListener("click", () => {
+        const screenshot = "Take a screenshot of the log instead.";
+        if (typeof navigator.clipboard?.writeText !== "function") {
+          log(`This browser cannot copy from this page. ${screenshot}`);
+          return;
+        }
+        navigator.clipboard
+          .writeText(lines.join("\n"))
+          .then(() => log("The log was copied."))
+          .catch((err) => log(`Not copied (${errorText(err)}). ${screenshot}`));
+      });
+      document.getElementById("clear").addEventListener("click", () => {
+        lines = [];
+        store(LOG_KEY, null);
+        show();
+      });
+
+      const platform = navigator.userAgentData?.platform ?? "(no client hints)";
+      document.getElementById("env").textContent = [
+        `Browser: ${navigator.userAgent}`,
+        `Platform: ${platform}`,
+        `Save dialog: ${typeof window.showSaveFilePicker === "function" ? "yes" : "no"}`,
+        `Open dialog: ${typeof window.showOpenFilePicker === "function" ? "yes" : "no"}`,
+        `Secure page: ${window.isSecureContext ? "yes" : "no"}`,
+      ].join(" | ");
+      show();
+      // What the browser says about itself goes into the log too, so the
+      // reload with Desktop site on (step 8) is answered by the log alone.
+      log("Page opened.");
+      log(`Browser: ${navigator.userAgent}`);
+      log(platformWords(navigator));
+    </script>
+  </body>
+</html>

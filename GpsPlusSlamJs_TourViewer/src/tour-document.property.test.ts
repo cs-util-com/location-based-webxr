@@ -473,9 +473,11 @@ describe("tour document (properties)", () => {
     // records (the objects', the deletions, the settings record with the
     // stations whole) must bring back exactly the document they were
     // written from, whatever mix of object and station edits made it.
+    // `size: "max"`: without it fast-check generates at most 10 edits
+    // whatever `maxLength` says, and the drift below needed more.
     const noSave = opArb.filter((op) => op.kind !== "save");
     fc.assert(
-      fc.property(fc.array(noSave, { maxLength: 20 }), (ops) => {
+      fc.property(fc.array(noSave, { maxLength: 40, size: "max" }), (ops) => {
         const state = ops.reduce(apply, opened);
         expect(reloadDrift(state)).toBeNull();
       }),
@@ -571,6 +573,53 @@ describe("tour document (properties)", () => {
       { kind: "ownStation", id: "a", stationId: "o1" },
       { kind: "move", id: "b", dLat: -0.00011 },
       { kind: "rename", id: "b", title: "Gate" },
+    ];
+    const state = ops.reduce(apply, opened);
+    expect(reloadDrift(state)).toBeNull();
+  });
+
+  // Why: a station a delete emptied has nothing of its own, so the next
+  // write leaves it out and a reload does not list it. An edit of that
+  // station alone - its radius, a title set and then cleared - must not
+  // list it again live either, or the creator sees a station a reload
+  // takes away (and the items after it in another order).
+  it.each<[string, Op[]]>([
+    [
+      "a radius",
+      [
+        { kind: "delete", id: "a" },
+        { kind: "radius", id: "a", radius: 25 },
+      ],
+    ],
+    [
+      "a title set, then cleared",
+      [
+        { kind: "delete", id: "a" },
+        { kind: "rename", id: "a", title: "Gate" },
+        { kind: "rename", id: "a", title: "" },
+      ],
+    ],
+  ])(
+    "an edit of a station a delete emptied (%s) does not list it again, as a reload does not",
+    (_what, ops) => {
+      const state = ops.reduce(apply, opened);
+      expect(state.stations.map((s) => s.id)).not.toContain(stationIdOf("a"));
+      expect(reloadDrift(state)).toBeNull();
+    },
+  );
+
+  // Why: the round trip property found this once it generated sequences
+  // past fast-check's default of 10 steps: a station emptied by a move,
+  // a station of its own made for another item, then a radius edit of
+  // the emptied station listed it again in the live order, so the new
+  // station's items read in another order than after a reload.
+  it("an edit of a station a move emptied keeps the live order the reload's", () => {
+    const ops: Op[] = [
+      { kind: "move", id: "a", dLat: 0.00012 },
+      { kind: "ownStation", id: "f", stationId: "o1" },
+      { kind: "move", id: "a", dLat: 0.00019 },
+      { kind: "radius", id: "a", radius: 2 },
+      { kind: "rename", id: "f", title: "Well" },
     ];
     const state = ops.reduce(apply, opened);
     expect(reloadDrift(state)).toBeNull();

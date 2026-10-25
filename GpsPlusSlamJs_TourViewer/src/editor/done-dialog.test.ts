@@ -49,6 +49,21 @@ describe("doneWords", () => {
     );
   });
 
+  // Why: a tour from a link, the sample or a drop is saved into the file
+  // its first Save asked for. That file was never opened, and may carry
+  // another name than the one the tour came under, so "the file you
+  // opened" would send the creator looking for the wrong file.
+  it("says the changes are in the file chosen at the first Save, when that is where they went", () => {
+    expect(
+      doneWords({
+        ...IN_PLACE,
+        saved: { kind: "in-place", name: "castle.zip", chosenAtSave: true },
+      }).where,
+    ).toBe(
+      "Your changes are saved in castle.zip, the file you chose when you first saved.",
+    );
+  });
+
   it("says a download is the tour now, and the opened file does not have the changes", () => {
     const words = doneWords({
       ...IN_PLACE,

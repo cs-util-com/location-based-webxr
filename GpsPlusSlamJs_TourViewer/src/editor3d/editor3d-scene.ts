@@ -42,7 +42,11 @@ import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/fr
 import { loadGlbModel } from "../glb-model.js";
 import { createPinLabel } from "../pin-label.js";
 import { manifestToWrite, type TourDocumentState } from "../tour-document.js";
-import type { EditorViewState, ShellLayer } from "../editor/editor-view.js";
+import {
+  isStationLocked,
+  type EditorViewState,
+  type ShellLayer,
+} from "../editor/editor-view.js";
 import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
 import { tourCentre } from "../editor/tour-origin.js";
 import {
@@ -553,6 +557,8 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       ecefFromWorld,
       undulationAt,
       tour: () => tourNow,
+      stationLocked: (id) =>
+        isStationLocked(deps.store.getState().editorView, id),
       page: {
         ...deps.edits,
         dispatch: (action) => deps.store.dispatch(action),

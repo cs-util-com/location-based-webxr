@@ -1,5 +1,5 @@
 /**
- * The desktop editor's "Done" dialog (tour editor plan 2026-10-17-1816,
+ * The desktop editor's "Share and publish" dialog (tour editor plan 2026-10-17-1816,
  * W2, D18, D19): what is left to do when the creator leaves the editor -
  * where the changes are, how the tour at its link is updated (per host,
  * `tour-host.ts`), that a file at a link is public at once, and, while the
@@ -29,10 +29,16 @@ import {
  */
 export const DRIVE_MOUNT_TIP_SHOWN = false;
 
-/** Where the changes went: written into the opened file, downloaded as a
- *  copy, or nothing was saved because nothing changed. */
+/** Where the changes went: written into the opened file (or, with
+ *  `chosenAtSave`, into the file the first Save of a tour without one
+ *  asked for), downloaded as a copy, or nothing was saved because nothing
+ *  changed. */
 export type DoneSaved =
-  | { readonly kind: "in-place"; readonly name: string }
+  | {
+      readonly kind: "in-place";
+      readonly name: string;
+      readonly chosenAtSave?: boolean;
+    }
   | { readonly kind: "downloaded"; readonly name: string }
   | { readonly kind: "unchanged"; readonly name: string };
 
@@ -74,7 +80,11 @@ const DRIVE_TIP =
 function whereLine(saved: DoneSaved): string {
   switch (saved.kind) {
     case "in-place":
-      return `Your changes are saved in ${saved.name}, the file you opened on this computer.`;
+      // A file the first Save asked for was never opened, and may carry
+      // another name than the one the tour came under.
+      return saved.chosenAtSave === true
+        ? `Your changes are saved in ${saved.name}, the file you chose when you first saved.`
+        : `Your changes are saved in ${saved.name}, the file you opened on this computer.`;
     case "downloaded":
       return `Your changes were downloaded as ${saved.name}. That copy is the tour now: the file you opened does not have them.`;
     case "unchanged":
@@ -141,7 +151,7 @@ export type DebugSaveOutcome =
 
 const NOTHING_SAVED = "Nothing was saved: the debug data's file was not saved.";
 
-/** What a save of the debug data came to, in words: the Done dialog's
+/** What a save of the debug data came to, in words: the publish dialog's
  *  status line, and the toast a lean download's "Save the debug data"
  *  ends with (`edit-main.ts`). */
 export function debugSaveResultLine(outcome: DebugSaveOutcome): string {

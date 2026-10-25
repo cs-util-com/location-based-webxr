@@ -14,6 +14,7 @@ import {
   editorViewActions as act,
   editorViewReducer as reduce,
   initialEditorViewState,
+  isStationLocked,
   pointerDragRuns,
   selectEditorView,
 } from "./editor-view.js";
@@ -29,6 +30,7 @@ const SHELL_START = {
   foldedDocks: { tree: false, inspector: false },
   hiddenLayers: [],
   readout: false,
+  unlockedStations: [],
 };
 
 describe("editorView", () => {
@@ -382,5 +384,54 @@ describe("pointerDragRuns", () => {
         ),
       ),
     ).toBe(false);
+  });
+});
+
+// Why: a station's pose places every item in it, so every station opens
+// locked and only the creator's own unlock opens it to a move; the lock
+// is view state of the open tour - another open must not inherit an
+// unlock the creator gave a station of the tour before.
+describe("the station lock", () => {
+  it("locks every station until it is unlocked, and locks it again", () => {
+    expect(isStationLocked(initialEditorViewState, "a")).toBe(true);
+    const open = reduce(
+      initialEditorViewState,
+      act.stationLocked({ id: "a", locked: false }),
+    );
+    expect(isStationLocked(open, "a")).toBe(false);
+    expect(isStationLocked(open, "b")).toBe(true);
+    // Unlocked twice: listed once.
+    const twice = reduce(open, act.stationLocked({ id: "a", locked: false }));
+    expect(twice.unlockedStations).toEqual(["a"]);
+    const again = reduce(twice, act.stationLocked({ id: "a", locked: true }));
+    expect(isStationLocked(again, "a")).toBe(true);
+    expect(again.unlockedStations).toEqual([]);
+  });
+
+  it("ignores an unlock without an id or a flag", () => {
+    for (const payload of [
+      { id: "", locked: false },
+      { id: 3 as unknown as string, locked: false },
+      { id: "a", locked: "no" as unknown as boolean },
+    ]) {
+      expect(
+        reduce(initialEditorViewState, act.stationLocked(payload)),
+      ).toEqual(initialEditorViewState);
+    }
+  });
+
+  it("locks every station again when another tour opens, or the tour closes", () => {
+    let state = reduce(
+      initialEditorViewState,
+      act.stationLocked({ id: "a", locked: false }),
+    );
+    state = reduce(
+      state,
+      tourDocumentActions.opened({ manifest: createEmptyTourManifest() }),
+    );
+    expect(isStationLocked(state, "a")).toBe(true);
+    state = reduce(state, act.stationLocked({ id: "a", locked: false }));
+    state = reduce(state, tourDocumentActions.closed());
+    expect(isStationLocked(state, "a")).toBe(true);
   });
 });

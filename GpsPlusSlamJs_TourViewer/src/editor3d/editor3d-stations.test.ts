@@ -26,6 +26,7 @@ import { worldFromEcefAt } from "gps-plus-slam-globe/editor";
 
 import {
   BILLBOARD_LIFT_M,
+  CODE_FLAT_GAP_M,
   DEFAULT_CODE_SIZE_M,
   codeQuaternionNue,
   createStationsLayer,
@@ -335,6 +336,121 @@ describe("createStationsLayer", () => {
     );
     expect(log.squares).toEqual([0.3, DEFAULT_CODE_SIZE_M]);
     expect(layer.stats().codes).toBe(2);
+  });
+
+  // Why: looking down, a code on a wall is a thin line; the editor lays it
+  // flat face up by the same morph as the photos, so it reads from above,
+  // and lays it in front of its anchor - on the side its face looks to,
+  // its near edge CODE_FLAT_GAP_M off the anchor - never under the wall
+  // it hangs on. Tilted up it stands where it was measured. Its point
+  // (what a click flies to) does not move.
+  it("lays a code flat face up in front of its anchor when looking down, upright when tilted", () => {
+    const { d, parent } = deps();
+    const layer = createStationsLayer(d);
+    const sizeM = 0.3;
+    layer.setTour(
+      manifest([station("a", 0, 0)]),
+      new Map([
+        [
+          "c1",
+          {
+            qr: {
+              geo: {
+                lat: ZERO.lat,
+                lon: ZERO.lng,
+                alt: 516 + N,
+                headingDeg: 0,
+              },
+              physicalSizeM: sizeM,
+            },
+          } as QrLevel,
+        ],
+      ]),
+    );
+    let square: THREE.Object3D | undefined;
+    parent.traverse((o) => {
+      if (o.userData["pick"] === "c1") square = o;
+    });
+    const sq = square!;
+    const normal = () =>
+      new THREE.Vector3(0, 0, 1).applyQuaternion(sq.quaternion);
+    const point = layer.codePointOf("c1")!;
+    // Heading 0: the face looks east, +z in the code's north-up-east frame.
+    layer.update(view(0, 0, null, 1));
+    expect(normal().z).toBeCloseTo(1, 6);
+    const upright = sq.position.clone();
+    layer.update(view(0, 0, null, 0));
+    expect(normal().y).toBeCloseTo(1, 6);
+    // Its printed top edge points back at the wall (-east): the same flat
+    // pose as a photo facing that way.
+    expect(
+      new THREE.Vector3(0, 1, 0).applyQuaternion(sq.quaternion).z,
+    ).toBeCloseTo(-1, 6);
+    const shift = sq.position.clone().sub(upright);
+    expect(shift.z).toBeCloseTo(sizeM / 2 + CODE_FLAT_GAP_M, 6);
+    expect(shift.x).toBeCloseTo(0, 6);
+    expect(shift.y).toBeCloseTo(0, 6);
+    // Halfway: half turned, half shifted.
+    layer.update(view(0, 0, null, 0.5));
+    expect(normal().angleTo(new THREE.Vector3(0, 1, 0))).toBeCloseTo(
+      Math.PI / 4,
+      6,
+    );
+    expect(sq.position.z - upright.z).toBeCloseTo(
+      (sizeM / 2 + CODE_FLAT_GAP_M) / 2,
+      6,
+    );
+    // And back.
+    layer.update(view(0, 0, null, 1));
+    expect(normal().z).toBeCloseTo(1, 6);
+    expect(sq.position.distanceTo(upright)).toBeCloseTo(0, 9);
+    expect(layer.codePointOf("c1")!.distanceTo(point)).toBe(0);
+  });
+
+  // Why: a code measured lying down (on a table, its full rotation) is
+  // already flat: the morph must neither shift it nor spin it about the
+  // vertical, or its printed pattern would turn as the camera tilts.
+  it("leaves a code that lies face up as it lies", () => {
+    const { d, parent } = deps();
+    const layer = createStationsLayer(d);
+    const lying = new THREE.Quaternion()
+      .setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.7)
+      .multiply(
+        new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(1, 0, 0),
+          -Math.PI / 2,
+        ),
+      );
+    layer.setTour(
+      manifest([station("a", 0, 0)]),
+      new Map([
+        [
+          "c1",
+          {
+            qr: {
+              geo: {
+                lat: ZERO.lat,
+                lon: ZERO.lng,
+                alt: 516 + N,
+                rotation: [lying.x, lying.y, lying.z, lying.w],
+              },
+              physicalSizeM: 0.3,
+            },
+            // A level's other fields are not read by the layer.
+          } as unknown as QrLevel,
+        ],
+      ]),
+    );
+    let square: THREE.Object3D | undefined;
+    parent.traverse((o) => {
+      if (o.userData["pick"] === "c1") square = o;
+    });
+    layer.update(view(0, 0, null, 1));
+    const q = square!.quaternion.clone();
+    const at = square!.position.clone();
+    layer.update(view(0, 0, null, 0));
+    expect(square!.quaternion.angleTo(q)).toBeCloseTo(0, 6);
+    expect(square!.position.distanceTo(at)).toBeCloseTo(0, 9);
   });
 
   // Why: a click on an item's row or a code's row flies the camera there,

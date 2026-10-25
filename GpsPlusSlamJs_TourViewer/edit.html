@@ -31,6 +31,132 @@
           <div class="tour-file" id="tour-file"></div>
         </div>
       </div>
+      <!-- The File and View menus (menu-button.ts): every command of the
+           file and of the view, each with its words. Both views have them. -->
+      <div class="grp menus">
+        <div class="menu-wrap">
+          <!-- Described by the save status: on a keyboard the menu says
+               whether the changes are saved. -->
+          <button
+            class="tbtn menu-btn"
+            id="file-menu-btn"
+            type="button"
+            aria-describedby="save-status"
+          >
+            <i data-icon="folder"></i><span class="lbl">File</span
+            ><i data-icon="down"></i>
+          </button>
+          <div class="menu" id="file-menu">
+            <button role="menuitem" type="button" id="file-open">Open…</button>
+            <button role="menuitem" type="button" id="file-save" disabled>
+              Save<kbd>Ctrl+S</kbd>
+            </button>
+            <button role="menuitem" type="button" id="file-save-copy" disabled>
+              Save a copy…
+            </button>
+            <div role="separator"></div>
+            <button
+              role="menuitem"
+              type="button"
+              id="file-details"
+              aria-haspopup="dialog"
+              disabled
+            >
+              Tour details…
+            </button>
+            <button role="menuitem" type="button" id="file-debug-add">
+              Add debug data…
+            </button>
+            <!-- Only for a tour whose file carries its walk, until the
+                 first save (the phone's rule). -->
+            <button
+              role="menuitemcheckbox"
+              type="button"
+              id="file-keep-walk"
+              aria-checked="false"
+              hidden
+            >
+              Keep the debug data in the tour file
+            </button>
+            <div role="separator"></div>
+            <!-- Saves what is pending, then says where the changes are and
+                 what is left to do (done-dialog.ts). -->
+            <button
+              role="menuitem"
+              type="button"
+              id="file-publish"
+              aria-haspopup="dialog"
+              disabled
+            >
+              Share and publish…
+            </button>
+          </div>
+        </div>
+        <!-- The one warning against losing work in the bar itself: the
+             save status's words are in the bottom bar, and in its title. -->
+        <span class="unsaved-mark" id="unsaved-mark" hidden
+          ><span class="dot" aria-hidden="true"></span
+          ><span class="lbl">Not saved</span></span
+        >
+        <!-- At a phone's width the bar has no room for Undo and Redo in
+             words: they fold into this menu (editor-shell.css). -->
+        <div class="menu-wrap studio" id="edit-menu-wrap">
+          <button class="tbtn menu-btn" id="edit-menu-btn" type="button">
+            <span class="lbl">Edit</span><i data-icon="down"></i>
+          </button>
+          <div class="menu" id="edit-menu">
+            <button role="menuitem" type="button" id="edit-undo" disabled>
+              Undo<kbd>Ctrl+Z</kbd>
+            </button>
+            <button role="menuitem" type="button" id="edit-redo" disabled>
+              Redo<kbd>Ctrl+Shift+Z</kbd>
+            </button>
+          </div>
+        </div>
+        <div class="menu-wrap">
+          <button class="tbtn menu-btn" id="view-menu-btn" type="button">
+            <i data-icon="eye"></i><span class="lbl">View</span
+            ><i data-icon="down"></i>
+          </button>
+          <div class="menu" id="view-menu">
+            <button
+              role="menuitemcheckbox"
+              type="button"
+              class="studio"
+              id="studio-top"
+              aria-checked="false"
+              title="Look straight down (T)"
+            >
+              Top view<kbd>T</kbd>
+            </button>
+            <button
+              role="menuitem"
+              type="button"
+              class="studio"
+              id="studio-frame"
+              title="Frame the selection, or the whole tour (F; Home frames the tour)"
+            >
+              Frame<kbd>F</kbd>
+            </button>
+            <!-- Only while there is debug data to show (the debug layer). -->
+            <button
+              role="menuitemcheckbox"
+              type="button"
+              id="view-debug"
+              aria-checked="true"
+              hidden
+            >
+              Show debug data
+            </button>
+            <div role="separator"></div>
+            <!-- The view switch: the 2D map or the 3D view of the same
+                 tour (view-switch.ts); its load is said in the bottom bar. -->
+            <button role="menuitem" type="button" id="view-switch">
+              3D view
+            </button>
+          </div>
+        </div>
+      </div>
       <!-- The 3D view's studio controls (editor-shell.ts); the map page
            hides them. -->
       <div class="studio grp">
@@ -38,10 +164,10 @@
           class="tbtn"
           id="studio-details"
           type="button"
+          aria-haspopup="dialog"
           title="Tour details: name, cover, description"
-          aria-label="Tour details"
         >
-          <i data-icon="pencil"></i>
+          <i data-icon="pencil"></i><span class="lbl">Details</span>
         </button>
         <button
           class="tbtn"
@@ -63,90 +189,17 @@
         </button>
       </div>
       <div class="topbar-spacer"></div>
-      <div class="studio grp">
-        <button
-          class="tbtn"
-          id="studio-frame"
-          type="button"
-          aria-label="Frame"
-          title="Frame the selection, or the whole tour (F; Home frames the tour)"
-        >
-          <i data-icon="frame"></i><span class="lbl">Frame</span><kbd>F</kbd>
-        </button>
-        <button
-          class="tbtn"
-          id="studio-top"
-          type="button"
-          aria-label="Top view"
-          aria-pressed="false"
-          title="Look straight down (T)"
-        >
-          <i data-icon="top"></i><span class="lbl">Top view</span><kbd>T</kbd>
-        </button>
-      </div>
       <div class="studio grp" id="studio-help-group">
         <button
           class="tbtn"
           id="studio-help"
           type="button"
-          aria-label="Keyboard and mouse"
           aria-expanded="false"
-          title="Keyboard and mouse"
+          title="Keyboard, mouse and touch"
         >
-          <i data-icon="help"></i>
-        </button>
-        <!-- "Add debug data…" in the 3D view, where the map's panel is not
-             shown: the same file input and the same add. -->
-        <button
-          class="tbtn"
-          id="studio-debug-add"
-          type="button"
-          aria-label="Add debug data…"
-          title="Add debug data: a walk recording or debug bundle beside the tour"
-        >
-          <i data-icon="walk"></i><span class="lbl">Debug data</span>
+          <i data-icon="help"></i><span class="lbl">Help</span>
         </button>
       </div>
-      <!-- The view switch: the map or the 3D view of the same tour; it says
-           when the 3D view loads and why it could not open. -->
-      <button class="btn" id="view-switch" type="button">3D view</button>
-      <label
-        class="keep-walk"
-        id="keep-walk"
-        title="Keep the debug data in the tour file"
-        hidden
-      >
-        <input type="checkbox" id="keep-walk-input" />
-        <!-- The words go out of sight on a narrow 3D bar, never out of the
-             checkbox's name. -->
-        <span class="keep-walk-text">Keep the debug data in the tour file</span>
-      </label>
-      <span id="save-status" role="status" aria-live="polite" data-state="clean"
-        >No changes</span
-      >
-      <button class="btn primary" id="save-btn" type="button" disabled>
-        Save
-      </button>
-      <!-- "Done" (W2 of the tour editor plan): saves what is pending, then
-           says where the changes are and what is left to do (done-dialog.ts). -->
-      <button
-        class="btn"
-        id="done-btn"
-        type="button"
-        aria-haspopup="dialog"
-        disabled
-      >
-        Done
-      </button>
-      <button
-        class="btn"
-        id="open-another"
-        type="button"
-        aria-label="Open another tour"
-      >
-        <span class="label-long">Open another tour</span
-        ><span class="label-short">Open</span>
-      </button>
     </header>
 
     <div id="map" aria-label="Tour map"></div>
@@ -259,9 +312,14 @@
       <p class="view3d-credits" id="view3d-credits"></p>
     </div>
 
-    <!-- The 3D view's bottom bar (editor-shell.ts): the view, a hint, and
-         the debug readout behind its toggle. -->
-    <footer id="shell-bar" aria-label="The 3D view's status">
+    <!-- The bottom bar (editor-shell.ts): the save status in both views;
+         in the 3D view also the view, a hint, and the debug readout behind
+         its toggle. Shown with the top bar, once a tour is open. -->
+    <footer id="shell-bar" aria-label="The editor's status" hidden>
+      <span id="save-status" role="status" aria-live="polite" data-state="clean"
+        >No changes</span
+      >
+      <span id="view-loading" role="status" aria-live="polite" hidden></span>
       <div id="shell-view"></div>
       <div id="shell-hint"></div>
       <div id="shell-history" class="mono dbg"></div>
@@ -282,17 +340,14 @@
          debug data added beside it ("Add debug data…", a file input or a
          drop on this panel; added-debug-data.ts). Debug data, never the
          tour's content: an added file is never saved, drafted or kept
-         across a reload. The switch only while the layer shows something. -->
+         across a reload. Its switch is the View menu's "Show debug data",
+         there only while the layer shows something. -->
     <div
       id="debug-panel"
       class="panel debug-panel"
       aria-label="Debug data"
       hidden
     >
-      <label class="debug-data" id="debug-switch" hidden>
-        <input type="checkbox" id="debug-data-input" checked />
-        Show debug data
-      </label>
       <span id="debug-status" role="status" aria-live="polite"></span>
       <button class="btn debug-add" id="debug-add" type="button">
         Add debug data…
@@ -529,7 +584,7 @@
       </form>
     </div>
 
-    <!-- "Done" (W2 of the tour editor plan, D18, D19): where the changes
+    <!-- "Share and publish…" (W2 of the tour editor plan, D18, D19): where the changes
          are, how the tour at its link is updated, that a file at a link is
          public, and - while the file carries the walk - "Move the debug data out"
          (done-dialog.ts). The Drive-mount tip is off until the owner's
@@ -541,7 +596,7 @@
         aria-modal="true"
         aria-labelledby="done-title"
       >
-        <h1 id="done-title">Done editing</h1>
+        <h1 id="done-title">Share and publish</h1>
         <p class="lede" id="done-where"></p>
         <h2>Update the tour at its link</h2>
         <label for="done-host">Where the tour lives</label>

@@ -50,19 +50,67 @@ export type PickOutcome =
       readonly writable: boolean;
     };
 
+/** The part of `navigator` the adoption check reads. */
+export interface PlatformNavigator {
+  readonly userAgent?: string;
+  readonly userAgentData?: { readonly platform?: string };
+}
+
+/** Whether the browser runs on Android: its client hints where it gives
+ *  them, else its user agent. */
+function onAndroid(nav: PlatformNavigator): boolean {
+  const platform = nav.userAgentData?.platform;
+  if (typeof platform === "string" && platform !== "") {
+    return platform === "Android";
+  }
+  return /\bAndroid\b/i.test(nav.userAgent ?? "");
+}
+
+/**
+ * Whether the first Save of a tour without a file (a link, the sample, a
+ * drop, the file input) asks for a file with the save dialog in its click
+ * and then ADOPTS it - saved into in place, and by itself, as a file opened
+ * with "Choose..." is. Where the browser has both file dialogs, but not on
+ * Android: no feature check can tell whether a picked file there can be
+ * created under a new name and rewritten without a cut-short write leaving
+ * half a tour (its files are content URIs, with no replace in one step),
+ * so Android keeps today's Save as a copy until a check on a phone says
+ * otherwise.
+ */
+export function adoptsSavedFile(
+  win: PickerWindow & SavePickerWindow,
+  nav: PlatformNavigator,
+): boolean {
+  return (
+    hasFilePicker(win) &&
+    typeof win.showSaveFilePicker === "function" &&
+    !onAndroid(nav)
+  );
+}
+
 /**
  * The open dialog's fine print about Save, true for this browser (tour
  * editor plan 2026-10-17-1816, W2): where the file picker exists, a chosen
- * file is written in place (and saved by itself after a change); elsewhere,
- * and for a tour from a link or the sample, Save downloads a new copy.
- * It opens with what leaves the computer: nothing of the tour, but the map
- * comes from OpenStreetMap (W6: "nothing is uploaded" hid the tiles).
+ * file is written in place (and saved by itself after a change); a tour
+ * from a link or the sample is saved where the first Save's dialog puts it
+ * and into that file from then on where the browser adopts it
+ * (`adoptsSavedFile`), else as a new copy; without the picker, Save
+ * downloads a new copy. It opens with what leaves the computer: nothing of
+ * the tour, but the map comes from OpenStreetMap (W6: "nothing is
+ * uploaded" hid the tiles).
  */
-export function saveFinePrint(win: PickerWindow): string {
+export function saveFinePrint(
+  win: PickerWindow & SavePickerWindow,
+  nav: PlatformNavigator = {},
+): string {
   const stays =
     "The tour file stays on this computer. The map comes from OpenStreetMap.";
+  const chosen = `${stays} A file you choose is saved into that file, where the browser allows it, and by itself a few seconds after each change.`;
+  if (adoptsSavedFile(win, nav)) {
+    return `${chosen} A tour opened from a link, or the sample, asks where to save it at its first Save, and is saved into that file from then on.`;
+  }
   return hasFilePicker(win)
-    ? `${stays} A file you choose is saved into that file, where the browser allows it, and by itself a few seconds after each change. A tour opened from a link, or the sample, is saved as a new copy to put in place of the old one.`
+    ? `${chosen} A tour opened from a link, or the sample, is saved as a new copy to put in place of the old one.`
     : `${stays} Save gives you a new copy of the tour to put in place of the old one.`;
 }
 
