@@ -287,13 +287,14 @@ The first look's verdicts, and what this round did about each. Sections 1-5 belo
   - Bubble and tail are now one shape in one canvas, outlined once with a constant stroke (stroked at twice the rim width, then filled over the inner half, so the join carries no line). The edges are symmetric curves and the tip is rounded.
   - The tail's base slides along the bubble's bottom edge toward the target, so the clamp widened from 54 to 72 degrees. Beyond 72 degrees the tail still stops at 72.
   - Cost: the bubble's canvas is redrawn and re-uploaded when the tail's angle moves by more than 0.6 degrees, which happens only while the visitor moves.
-- **Caption plus description (the owner's model idea).** `text` (80 characters) became `caption` (at most 40) plus an optional `description` (at most 160).
+- **Caption plus description, in the model.** `text` (80 characters) became `caption` (at most 40) plus an optional `description` (at most 160).
   - Every view shows the caption. Pin, sign, bubble and callout show the description in smaller letters under it (0.62 of the caption's letter height, so it reads from about 60 % of `readAtM`). The ground arrow paints only the caption: 160 characters do not read on the paving.
   - "Mind the step" has no description, to show the optional case.
   - The export is now `version: 2` with `caption` and `description`; an old record's `text` is read as its caption (cut to 40 characters).
 - **Edge hint: quieter off screen.** Off screen the chip shows only its arrow and the caption, no distance.
   - On screen the tag stands over its spot with the caption. The description and the distance appear once the block is fully in view: its projected bounds (a 0.9 m footprint from the ground up to the tag's height of 1.9 m) inside the screen, not only its anchor point.
   - Hysteresis: they appear once every corner of the bounds is 24 px inside the usable screen, and go only when a corner is more than 8 px outside it, so they do not flicker at the edge.
+  - Whether the tag fits over its spot at all is decided from its compact size (caption only), measured once per screen size. Deciding from its live size let the larger full tag push itself to the edge, where it shrank and came back, every frame on a 390 px phone.
 - **Callout:** left as it was (the first look found it "a bit odd" without naming what); it only gained the description under its tag. Say what looks odd and it changes next round.
 - **Ground arrow:** not changed on this page. Six new directions are built as separate pages beside this one.
 
@@ -1104,6 +1105,17 @@ function buildEdge(b) {
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03; ring.renderOrder = 2; v.group.add(ring);
   const p = v3(), pc = v3(), q = v3();
   v.sx = null; v.sy = null; v.full = false;
+  /* Whether the tag fits over its spot is decided from its compact size (caption only, no arrow), measured once
+     per stage size; the view is rebuilt when the caption changes. The live size grows with the description and
+     the distance, and deciding from it made the tag flip between full and edge every frame. */
+  let compact = null;
+  const compactSize = (W, H) => {
+    if (compact && compact.W === W && compact.H === H) return compact;
+    const cls = el.className; el.className = 'eh inview';
+    const w = el.offsetWidth, h = el.offsetHeight; el.className = cls;
+    if (!w || !h) return { w: 160, h: 36 };
+    return (compact = { W, H, w, h });
+  };
   /* "Fully in view": every corner of the block's bounds (a 0.9 m footprint from the ground to the tag's 1.9 m)
      projects inside the usable screen, `margin` px in from its edges. */
   const CORNERS = [];
@@ -1127,9 +1139,9 @@ function buildEdge(b) {
     const insetT = 14, insetB = app.dataset.mode === 'creator' ? 110 : app.dataset.mode === 'visitor' ? 70 : 20, insetX = 12;
     let x, y, edge = false, ang = 0;
     const sx = (ndc.x + 1) / 2 * W, sy = (1 - ndc.y) / 2 * H;
-    const ew = el.offsetWidth || 160, eh = el.offsetHeight || 36;
-    if (!behind && sx > ew / 2 + insetX && sx < W - ew / 2 - insetX && sy > eh + insetT + 8 && sy < H - insetB) {
-      x = sx - ew / 2; y = sy - eh - 8;
+    const ew = el.offsetWidth || 160, eh = el.offsetHeight || 36, cs = compactSize(W, H);
+    if (!behind && sx > cs.w / 2 + insetX && sx < W - cs.w / 2 - insetX && sy > cs.h + insetT + 8 && sy < H - insetB) {
+      x = Math.min(Math.max(sx - ew / 2, insetX), W - insetX - ew); y = Math.max(insetT, sy - eh - 8);   // the full tag is wider than the compact one it was tested with
     } else {
       edge = true;
       let dx = pc.x, dy = pc.y;
