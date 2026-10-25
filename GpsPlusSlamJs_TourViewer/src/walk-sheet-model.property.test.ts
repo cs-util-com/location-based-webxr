@@ -65,10 +65,15 @@ const IDS = TOUR.map((s) => s.id);
 
 const stepArb: fc.Arbitrary<WalkStep> = fc.oneof(
   fc.record({
-    kind: fc.constantFrom("found", "finish", "skip", "unskip"),
+    kind: fc.constantFrom("found", "finish", "skip", "unskip", "left"),
     id: fc.constantFrom(...IDS),
   }) as fc.Arbitrary<WalkStep>,
+  fc.constant({ kind: "finish-tour" as const }),
 );
+
+/** `text`, matched literally inside a RegExp. */
+const literal = (text: string): string =>
+  text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** A measurement: where the visitor stands and what vouches for it. */
 const measurementArb = fc.record({
@@ -85,8 +90,19 @@ type Measurement =
   typeof measurementArb extends fc.Arbitrary<infer T> ? T : never;
 
 /** The line each peek kind must agree with. */
-function linePattern(peek: { kind: string; title: string }): RegExp {
+function linePattern(peek: {
+  kind: string;
+  title: string;
+  eyebrow: string;
+  tail: string | null;
+}): RegExp {
   switch (peek.kind) {
+    case "there":
+      // Being there: the eyebrow and the title, then what is next (the
+      // peek's tail); a note may lead it.
+      return new RegExp(
+        `${literal(peek.eyebrow)}: ${literal(peek.title)}\\. ${literal(peek.tail ?? "")}$`,
+      );
     case "complete":
       return /^Tour complete/;
     case "story":

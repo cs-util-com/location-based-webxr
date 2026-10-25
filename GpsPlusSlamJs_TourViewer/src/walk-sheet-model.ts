@@ -78,8 +78,10 @@ export interface WalkSheetDirection {
 interface WalkPeek {
   /** `walk`: a station to find; `none`: several offered and nothing
    *  vouches for the position; `story`: nothing unfound offered while a
-   *  story plays; `complete`. */
-  readonly kind: "walk" | "none" | "story" | "complete";
+   *  story plays; `there`: the visitor is at a done station, or a complete
+   *  tour waits on its last one (the guide's `there`); `complete`: the
+   *  tour finished. */
+  readonly kind: "walk" | "none" | "story" | "there" | "complete";
   readonly eyebrow: string;
   readonly title: string;
   /** "N m", only while the line shows a distance. */
@@ -340,7 +342,9 @@ function peekOf(
   byId: ReadonlyMap<string, TourStation>,
 ): WalkPeek {
   const { progress, view } = input;
-  if (offered.length === 0) {
+  const there = view.there === null ? undefined : byId.get(view.there.id);
+  // Finished, or (never expected) complete with nowhere to be there.
+  if (offered.length === 0 && (progress.finished || there === undefined)) {
     const { skipped } = counts(progress);
     return {
       kind: "complete",
@@ -354,6 +358,19 @@ function peekOf(
           : input.order === "branch"
             ? "You reached the end of your path."
             : "Every station visited.",
+    };
+  }
+  if (there !== undefined && view.there !== null) {
+    // Being there: the station, and the next one second - not a jump to
+    // it while the visitor still stands among this one's content.
+    const number = input.stations.findIndex((st) => st.id === there.id) + 1;
+    return {
+      kind: "there",
+      eyebrow: `At station ${String(number)} - take your time`,
+      title: stationTitle(there),
+      distance: null,
+      arrowDeg: null,
+      tail: view.there.tail,
     };
   }
   const focus = view.focusId === null ? undefined : byId.get(view.focusId);
@@ -555,8 +572,12 @@ export function walkSheetModel(input: WalkSheetInput): WalkSheetModel {
       title: input.tourTitle,
       chip: CHIPS[input.order],
       progress: progressLine(input.order, progress),
-      completion:
-        offeredList.length === 0 ? completionOf(input.order, progress) : null,
+      // The card waits for the finish: a tour completed by its last
+      // station's end waits until the visitor leaves it or taps "Finish
+      // the tour".
+      completion: progress.finished
+        ? completionOf(input.order, progress)
+        : null,
       hint: offeredList.length === 0 ? null : hintOf(view),
       rows,
     },

@@ -363,6 +363,33 @@ describe("the sheet", () => {
     expect(state.sheet).toBe("peek");
   });
 
+  // Why this test matters: the tour finishes only once the visitor left
+  // the last station or tapped "Finish the tour"; a list that opened the
+  // moment the last story ended covered that station's content while the
+  // visitor still stood among it.
+  it("a completion by a station's end waits: the list opens once the tour finishes, by leaving or the tap", () => {
+    for (const how of ["left", "finish-tour"] as const) {
+      let state = started("fixed", [station("a"), station("b")]);
+      for (const step of [
+        { kind: "found", id: "a" },
+        { kind: "finish", id: "a" },
+        { kind: "found", id: "b" },
+        { kind: "finish", id: "b" },
+      ] as const) {
+        state = visitorWalkReducer(state, walkStepped(step));
+      }
+      expect(walkOffered(progress(state))).toEqual([]);
+      expect(state.sheet).toBe("peek");
+      expect(state.completionSeen).toBe(false);
+      state = visitorWalkReducer(
+        state,
+        walkStepped(how === "left" ? { kind: "left", id: "b" } : { kind: how }),
+      );
+      expect(state.sheet).toBe("list");
+      expect(state.completionSeen).toBe(true);
+    }
+  });
+
   it("a completion undone and reached again opens the list again (once per completion)", () => {
     let state = started("any", [station("a")]);
     state = visitorWalkReducer(state, walkStepped({ kind: "skip", id: "a" }));
@@ -385,14 +412,16 @@ describe("the sheet", () => {
     ).toBe("peek");
   });
 
-  it("over any sequence of steps the list is open after a completion unless closed since", () => {
+  it("over any sequence of steps the list is open after the tour finished unless closed since", () => {
     const steps = fc.constantFrom(
       ...["a", "b", "c"].flatMap((id) => [
         walkStepped({ kind: "found", id }),
         walkStepped({ kind: "finish", id }),
         walkStepped({ kind: "skip", id }),
         walkStepped({ kind: "unskip", id }),
+        walkStepped({ kind: "left", id }),
       ]),
+      walkStepped({ kind: "finish-tour" }),
     );
     fc.assert(
       fc.property(
@@ -403,13 +432,21 @@ describe("the sheet", () => {
           for (const action of actions) {
             const before = state;
             state = visitorWalkReducer(state, action);
-            const complete = walkOffered(progress(state)).length === 0;
-            const wasComplete = walkOffered(progress(before)).length === 0;
-            expect(state.completionSeen).toBe(complete);
-            // A completion just reached opens the list.
-            expect(complete && !wasComplete && state.sheet !== "list").toBe(
+            const finished = progress(state).finished;
+            const wasFinished = progress(before).finished;
+            expect(state.completionSeen).toBe(finished);
+            // Finished only once complete.
+            expect(finished && walkOffered(progress(state)).length > 0).toBe(
               false,
             );
+            // A finish just reached opens the list; a completion alone
+            // opens nothing.
+            expect(finished && !wasFinished && state.sheet !== "list").toBe(
+              false,
+            );
+            expect(
+              !finished && before.sheet === "peek" && state.sheet === "list",
+            ).toBe(false);
           }
         },
       ),

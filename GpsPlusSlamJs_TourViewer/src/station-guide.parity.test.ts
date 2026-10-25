@@ -43,6 +43,13 @@
  * `'none'`) the `hud` may (no marker, each carries a distance label).
  * Every other field equals the golden on every tick, and every field
  * once the no-guess hold has run out with a distance shown.
+ * THE THIRD NAMED EXCEPTION, field by field again: being there. While the
+ * visitor stands at a done station (or a complete tour waits on its last
+ * one) the line reads "At station N - take your time: <title>. <next>"
+ * instead of sending them on, and a complete tour finishes only once they
+ * leave or tap "Finish the tour". On such a tick the `line` may differ and
+ * must have that form, and the `skip` may differ only by offering "Finish
+ * the tour". Every other field is held to the golden.
  *
  * Regenerate ONLY when a guide output is meant to change, say why in the
  * commit, and never in CI:
@@ -185,6 +192,8 @@ interface Scenario {
 interface TickSide {
   readonly noGuess: boolean;
   readonly distance: boolean;
+  /** The visitor is there (the guide's view): the third exception. */
+  readonly there: boolean;
 }
 
 /** The fields the walk's rules may change on a tick, by its state (the header). */
@@ -192,8 +201,13 @@ function m4Exempt(side: TickSide): ReadonlySet<string> {
   const out = new Set<string>();
   if (side.noGuess) for (const k of ["line", "crumbs", "skip"]) out.add(k);
   if (!side.distance) out.add("hud");
+  if (side.there) for (const k of ["line", "skip"]) out.add(k);
   return out;
 }
+
+/** A being-there line: an optional note, then the station and what is
+ *  next (the guide's `thereLine`). */
+const THERE_LINE = /^(.+ )?At station \d+ - take your time: .+\. .+/;
 
 /** A tick held to the golden, but for the fields the rules' exception names. */
 function expectTick(
@@ -206,6 +220,20 @@ function expectTick(
   for (const key of Object.keys(want) as (keyof TickRecord)[]) {
     if (exempt.has(key)) continue;
     expect(got[key], `${at} ${key}`).toEqual(want[key]);
+  }
+  // Exempt is not unchecked: a being-there tick says so, names as next
+  // the station the golden's line named, with the same distance or hint
+  // (outside the no-guess rule, whose line the golden does not hold), and
+  // its skip changes only to finish the tour.
+  if (side.there) {
+    expect(got.line, `${at} line`).toMatch(THERE_LINE);
+    const named = /(?:nearest|your choice|Next): (.+)$/.exec(want.line)?.[1];
+    if (!side.noGuess && named !== undefined) {
+      expect(got.line.endsWith(`Next: ${named}`), `${at} next`).toBe(true);
+    }
+    if (got.skip !== want.skip) {
+      expect(got.skip, `${at} skip`).toBe("Finish the tour");
+    }
   }
 }
 
@@ -338,6 +366,7 @@ function runWithSides(
     sides.push({
       noGuess: view?.noGuess ?? false,
       distance: view?.precision === "code" || view?.precision === "gps",
+      there: (view?.there ?? null) !== null,
     });
     for (const id of found) foundAt.set(id, t);
     const targets = hud.targets?.() ?? [];
@@ -844,6 +873,38 @@ describe("the station guide's precision parity oracle (frozen before the guide m
     expect(fullTicks).toBeGreaterThan(noGuess);
   });
 
+  // Why this test matters (the third exception, being there): an exception
+  // that never applies proves nothing. The streams stand at done stations,
+  // the line really changes there, and it is not every tick. On these
+  // streams it is most of them: presence holds from a station until the
+  // visitor enters the next (its exit hysteresis), and the museum's
+  // exhibits stand 4 m apart - the next-station check above is what holds
+  // those lines to the golden.
+  it("the golden's being-there exception applies field by field, on ticks that reach it", () => {
+    const frozen = JSON.parse(readFileSync(GOLDEN, "utf8")) as Record<
+      string,
+      TickRecord[]
+    >;
+    let there = 0;
+    let lineChanged = 0;
+    let other = 0;
+    for (const s of PARITY) {
+      const got = now[s.name]!;
+      const want = frozen[s.name]!;
+      sidesOf(s.name).forEach((side, t) => {
+        if (!side.there) {
+          other += 1;
+          return;
+        }
+        there += 1;
+        if (got[t]!.line !== want[t]!.line) lineChanged += 1;
+      });
+    }
+    expect(there).toBeGreaterThan(0);
+    expect(lineChanged).toBeGreaterThan(0);
+    expect(other).toBeGreaterThan(0);
+  });
+
   // Why this test matters (plan §12, S3): it is the ONE place the shared
   // rule changes what a visitor gets, so it is pinned tick by tick. Before
   // it, the old guide judged a position nothing vouched for with an
@@ -862,10 +923,17 @@ describe("the station guide's precision parity oracle (frozen before the guide m
       const ticks = exceptionTicks(s);
       const got = now[s.name]!;
       const first = ticks[0]!;
-      // Up to here the old guide's ticks hold (the test above).
-      expect(got[first - 1] ?? null, s.name).toEqual(
-        frozen[s.name]![first - 1] ?? null,
-      );
+      // Up to here the old guide's ticks hold (the test above), field by
+      // field as that test holds them.
+      // (A stream whose exception starts at its first tick has none.)
+      if (first > 0) {
+        expectTick(
+          got[first - 1]!,
+          frozen[s.name]![first - 1]!,
+          sidesOf(s.name)[first - 1]!,
+          `${s.name} t=${String(first - 1)}`,
+        );
+      }
       for (const t of ticks) {
         const at = `${s.name} t=${String(t)}`;
         const tick = got[t]!;

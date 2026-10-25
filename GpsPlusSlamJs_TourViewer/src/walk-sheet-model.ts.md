@@ -36,7 +36,14 @@ the station guide's `view()` and the tour; the DOM writer is
       position…", "Waiting for a steady position…");
     - `story`: nothing unfound offered while a story plays: "Station
       found" / its title / "Its story is playing.";
-    - `complete`: the tour's title / "Tour complete" / "K skipped." or
+    - `there`: the visitor is at a done station (its presence holds, no
+      story plays) or a complete tour waits on its last one (the guide's
+      `view.there`): "At station N - take your time" / its title / the
+      guide's tail ("Next: <title>" with the distance or the position's
+      hint, "N stations still to find - ...", or "Every station is
+      done."), no distance;
+    - `complete`: once the tour finished (or, never expected, complete
+      with no `there`): the tour's title / "Tour complete" / "K skipped." or
       "Every station visited." (branch: "You reached the end of your
       path.").
   - `storyCard: { title } | null` - the card in the peek's place while a
@@ -50,7 +57,8 @@ the station guide's `view()` and the tour; the DOM writer is
     then "K skipped", "L to find" (branch: "N found"); `completion`
     (`completionLine` plus "M of N found. A skipped station can still be
     brought back." - under branch order that sentence alone - or "Thank
-    you for walking with us.") once complete; `hint` while no
+    you for walking with us.") once FINISHED (not merely complete: the
+    card waits while the visitor is still at the last station); `hint` while no
     station is guessed: why, by the position, and "Which one can't you
     reach?" once "Can't get there?" opened the chooser (not while
     tracking is lost: no row offers a Skip then); rows `{ id,

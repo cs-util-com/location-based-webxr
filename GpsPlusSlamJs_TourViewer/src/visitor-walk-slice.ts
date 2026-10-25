@@ -13,8 +13,10 @@
  *
  * The sheet is the visitor's choice, with
  * two changes that follow the walk, here so they hold for every writer: a
- * station found (its story starts) closes the list, and the walk's
- * completion opens it once (`completionSeen`).
+ * station found (its story starts) closes the list, and the tour's finish
+ * opens it once (`completionSeen`) - finished, not merely complete: a
+ * tour completed by its last station's end waits until the visitor leaves
+ * it or taps "Finish the tour" (`station-run.ts`).
  *
  * The walk's rules keep their state here too: the row a
  * Skip armed (`rowArmedId`, apart from the quick action's arm), the list
@@ -41,6 +43,7 @@ import { DEFAULT_TOAST_LINGER_MS } from "gps-plus-slam-app-framework/utils/toast
 import {
   applyWalkStep,
   startWalk,
+  walkFinished,
   walkOffered,
   walkStatus,
   type WalkProgress,
@@ -86,9 +89,9 @@ export interface VisitorWalkState {
   readonly quickArmedId: string | null;
   /** The sheet: its peek, or the list pulled up. */
   readonly sheet: WalkSheet;
-  /** The walk is complete and its completion opened the list already:
-   *  the list opens once per completion, and a walk no longer complete
-   *  (a skip undone) may open it again when it completes again. */
+  /** The tour is finished and its finish opened the list already: the
+   *  list opens once per finish, and a walk no longer finished (a skip
+   *  undone) may open it again when it finishes again. */
   readonly completionSeen: boolean;
   /** The visitor left AR with progress: the next entry's first sheet says
    *  "Welcome back", once. */
@@ -190,19 +193,19 @@ function stepped(state: VisitorWalkState, step: WalkStep): VisitorWalkState {
 }
 
 /** The sheet's two changes that follow the walk: a find whose story
- *  starts closes the list, and the completion opens it once. */
+ *  starts closes the list, and the tour's finish opens it once. */
 function withSheetRules(
   step: WalkStep,
   state: VisitorWalkState & { readonly progress: WalkProgress },
 ): VisitorWalkState {
-  const complete = walkOffered(state.progress).length === 0;
-  if (complete && !state.completionSeen) {
+  const finished = walkFinished(state.progress);
+  if (finished && !state.completionSeen) {
     return withOfferRules({ ...state, sheet: "list", completionSeen: true });
   }
   const next =
-    complete === state.completionSeen
+    finished === state.completionSeen
       ? state
-      : { ...state, completionSeen: complete };
+      : { ...state, completionSeen: finished };
   const storyStarts =
     step.kind === "found" &&
     walkStatus(state.progress, step.id)?.state === "found";

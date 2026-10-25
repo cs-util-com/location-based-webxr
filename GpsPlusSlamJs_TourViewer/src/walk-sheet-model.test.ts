@@ -77,6 +77,7 @@ function view(over: Partial<GuideView> = {}): GuideView {
     headingDeg: null,
     radarHeadingDeg: null,
     headingConfirmed: false,
+    there: null,
     snapshot: null,
     distances: new Map([
       ["gate", 30],
@@ -251,12 +252,13 @@ describe("the peek", () => {
     });
   });
 
-  it("complete: the tour's title, 'Tour complete', the skipped count or every station", () => {
-    const all = [
+  it("finished: the tour's title, 'Tour complete', the skipped count or every station", () => {
+    const all: WalkStep[] = [
       ...done("gate"),
       ...done("well"),
       ...done("tower"),
       ...done("garden"),
+      { kind: "finish-tour" },
     ];
     expect(
       walkSheetModel(
@@ -275,12 +277,65 @@ describe("the peek", () => {
       ...done("well"),
       { kind: "skip", id: "tower" },
       ...done("garden"),
+      { kind: "finish-tour" },
     ]);
     expect(
       walkSheetModel(
         input({ progress: skipped, view: view({ focusId: null }) }),
       ).peek.tail,
     ).toBe("1 skipped.");
+  });
+
+  // Why this test matters: a station done is not the visitor gone. While
+  // they stand at it (the guide's `there`) the peek says so and names
+  // the next station second, instead of jumping to it; once every station
+  // is done the tour waits there for the visitor to leave or tap "Finish
+  // the tour", and only then shows "Tour complete".
+  it("there: 'At station N - take your time', the station, and the guide's next line", () => {
+    const at = walk("fixed", done("gate"));
+    expect(
+      walkSheetModel(
+        input({
+          order: "fixed",
+          progress: at,
+          view: view({
+            there: { id: "gate", tail: "Next: The well, 46 m" },
+          }),
+        }),
+      ).peek,
+    ).toEqual({
+      kind: "there",
+      eyebrow: "At station 1 - take your time",
+      title: "The gate",
+      distance: null,
+      arrowDeg: null,
+      tail: "Next: The well, 46 m",
+    });
+  });
+
+  it("complete but not finished: the being-there peek and no completion card", () => {
+    const complete = walk("any", [
+      ...done("gate"),
+      ...done("well"),
+      ...done("tower"),
+      ...done("garden"),
+    ]);
+    const m = walkSheetModel(
+      input({
+        progress: complete,
+        view: view({
+          focusId: null,
+          there: { id: "garden", tail: "Every station is done." },
+        }),
+      }),
+    );
+    expect(m.peek).toMatchObject({
+      kind: "there",
+      eyebrow: "At station 4 - take your time",
+      title: "The garden",
+      tail: "Every station is done.",
+    });
+    expect(m.list.completion).toBeNull();
   });
 });
 
@@ -491,11 +546,12 @@ describe("the list's header and progress line", () => {
 });
 
 describe("the completion card", () => {
-  const all = [
+  const all: WalkStep[] = [
     ...done("gate"),
     ...done("well"),
     ...done("tower"),
     ...done("garden"),
+    { kind: "finish-tour" },
   ];
   it("none before the tour is complete", () => {
     expect(walkSheetModel(input()).list.completion).toBeNull();
@@ -521,6 +577,7 @@ describe("the completion card", () => {
       ...done("well"),
       { kind: "skip", id: "tower" },
       ...done("garden"),
+      { kind: "finish-tour" },
     ]);
     expect(
       walkSheetModel(
@@ -537,10 +594,11 @@ describe("the completion card", () => {
       ...done("gate"),
       { kind: "skip", id: "well" },
     ]);
-    const last = [...done("tower"), ...done("garden")].reduce(
-      (p, s) => applyWalkStep(p, s).progress,
-      branch,
-    );
+    const last = [
+      ...done("tower"),
+      ...done("garden"),
+      { kind: "finish-tour" } as const,
+    ].reduce((p, s) => applyWalkStep(p, s).progress, branch);
     const m = walkSheetModel(
       input({ order: "branch", progress: last, view: view({ focusId: null }) }),
     );

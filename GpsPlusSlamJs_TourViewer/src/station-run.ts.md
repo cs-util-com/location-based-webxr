@@ -30,9 +30,14 @@ branchReturns }`: per
   - `applyWalkStep(progress, step): { progress, events }` - one
     `type WalkStep`: `found` (an offered waiting station; the caller
     judged the radius), `focus-distance` (the first distance of a clock
-    started without one), `finish`, `skip`, `unskip`, `focus`. A step its
+    started without one), `finish`, `skip`, `unskip`, `focus`, `left`
+    (the visitor's presence at a station ended) and `finish-tour` (the
+    visitor tapped "Finish the tour"). A step its
     rule does not allow returns the SAME progress object and no events, so
     a caller can tell an event from nothing.
+  - `walkFinished(progress)`, `walkFinishWaitId(progress)` - whether the
+    tour finished, and the station a complete tour waits on (null when
+    none: not complete, or finished).
   - `walkOffered(progress)`, `walkStatus(progress, id)` - the offer and
     one status, as the run reads them. The offered list (read-only) and a
     by-id map of the stations are derived once per progress (a `WeakMap`
@@ -52,7 +57,13 @@ branchReturns }`: per
     complete.
   - `status(id)` / `statuses()` - `{ id, state, skipped, focusedAtMs,
 focusDistanceM }`.
-  - `isComplete()`.
+  - `isComplete()` - every station done (nothing offered).
+  - `isFinished()`, `finishWait()` - the tour finished; the station a
+    complete tour waits on.
+  - `left(id)` - the visitor's presence at `id` ended: finishes a
+    complete tour that waits on `id`, else nothing.
+  - `finishTour()` - the visitor's "Finish the tour": finishes a complete
+    tour, else nothing.
   - `observe({ distances, nowMs, precision? }): StationEvent[]` -
     horizontal distances from the phone's best position to the stations
     the caller can place (D16). A non-finite distance is not judged; the
@@ -81,7 +92,7 @@ focusDistanceM }`.
   - `upcoming()` - under `fixed` or `branch` order, while the one offered
     station is found: the station offered once it is done (the prefetch
     reads it ahead, K4 review R5); null otherwise and always under `any`.
-- `StationEvent`: `found`, `done` (`skipped`), `offered` (the full new set), `complete`.
+- `StationEvent`: `found`, `done` (`skipped`), `offered` (the full new set), `complete`, `finished`.
 - `stationTitle(station, number?)` - a station's name, the package's ONE
   rule for it (plan 2026-10-15-0348 M0; the editor had its own until
   then, with another fallback): the trimmed title; an untitled or blank
@@ -124,7 +135,18 @@ focusDistanceM }`.
   from the list, never from a cycle; property-tested over generated tours
   with cyclic `next` links.
 - **A station with no steps** (all left out for a newer minor, K1 review R4)
-  is done the moment it is found.
+  is done the moment it is found (under fixed order too: done is
+  progress, and holding it would hold back the next offer).
+- **Done is progress; finished is the visitor's:** `complete` = every
+  station done, and it still
+  happens at once. The tour **finishes** when it is complete AND the
+  visitor's presence at the last station done ended (`left`) or they
+  tapped "Finish the tour" (`finishTour`); until then `finishWaitId`
+  names that station. A skip that completes the tour finishes it at
+  once (a skipped station is never entered), so its step emits
+  `complete` then `finished`. A station brought back unfinishes the tour
+  (`finished` false, no wait); completing it again follows the same
+  rules. A finished tour is never finished again.
 - **The skip clock** starts when the station becomes the guide's focus
   (`focus`; K4 review R14) and scales with the distance then: 2 minutes
   plus 1 s per 0.5 m. Under `fixed` and `branch` order the focus is the
@@ -150,8 +172,12 @@ run.finish("gate", nowMs); // done, the next station offered
   station whose next is itself, skipped, hands on: its next is read after it is done), the skip,
   the suggestion clock, a station brought back under branch order and the
   path's return (seen red against the old `unskip`), after the path
-  ended too; properties: no deadlock and completion within one
-  action per station for every preset, a done station never offered and
+  ended too; finishing (completing on the last end and waiting there,
+  leaving that station and not another, the tap and never before
+  complete, the completing skip, a bring back, a stepless last station,
+  the pure reads), and a property: every tour finishes within one
+  action more than it takes to complete; properties: no deadlock and
+  completion within one action per station for every preset, a done station never offered and
   never changed; `stationTitle`: the trimmed title, "Station N" by its
   place, "the next station" without one (a blank title included).
 - `station-run.sweep.test.ts` - the suggestion clock over distance, speed,

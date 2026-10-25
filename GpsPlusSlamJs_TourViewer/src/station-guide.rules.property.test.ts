@@ -28,7 +28,8 @@ import { WALK_NO_GUESS_HOLD_MS } from "./walk-no-guess";
  * chosen and only a waiting offered one, an any-order tour names no
  * station while the no-guess rule holds (its condition derived here, from the
  * harness's own clock), and every tour completes within two taps per
- * station through the story card and the three tap paths of the no-guess rule.
+ * station through the story card and the three tap paths of the no-guess rule,
+ * and finishes with one tap more ("Finish the tour") unless a skip completed it.
  */
 
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -253,9 +254,12 @@ describe("the walk's rules over random walks", () => {
           const everFound = new Set<string>();
           const check = (): void => {
             const p = h.progress();
-            // Complete exactly when nothing is offered: the line says so.
+            // Finished only once complete (nothing offered); the line says
+            // "Tour complete" exactly when finished: a tour completed by its
+            // last station's end waits there first.
+            expect(p.finished && !h.complete()).toBe(false);
             expect(h.dom.line.textContent.startsWith("Tour complete")).toBe(
-              h.complete(),
+              p.finished,
             );
             for (const s of stations) {
               const st = walkStatus(p, s.id)!;
@@ -304,10 +308,16 @@ describe("the walk's rules over random walks", () => {
             check();
           }
           // No deadlock: the visitor ends each story and skips each
-          // station still to find, from wherever the walk stands.
-          for (let round = 0; round < 4 * stations.length + 4; round += 1) {
+          // station still to find, from wherever the walk stands, and
+          // finishes a complete tour that waits on its last station.
+          for (let round = 0; round < 4 * stations.length + 5; round += 1) {
             h.advance(500);
-            if (h.complete()) break;
+            if (h.progress().finished) break;
+            if (h.complete()) {
+              h.guide.skipTapped(h.dom.skip);
+              check();
+              continue;
+            }
             const p = h.progress();
             const offered = walkOffered(p);
             const found = offered.find(
@@ -325,6 +335,7 @@ describe("the walk's rules over random walks", () => {
           }
           h.tick();
           expect(h.complete()).toBe(true);
+          expect(h.progress().finished).toBe(true);
           expect(h.dom.line.textContent).toMatch(/^Tour complete/);
         },
       ),
@@ -344,8 +355,11 @@ describe("the walk's rules over random walks", () => {
   // "No order can deadlock", re-stated over the story card and the no-guess rule's three tap paths: "Can't get
   // there?" then the armed row's confirm, "Can't get there?" then a row in
   // the chooser, and a row's Skip then its confirm - each two taps; a
-  // found station's story ends in two taps on its card.
-  it("every tour completes within two taps per station, over the three tap paths and any precision", () => {
+  // found station's story ends in two taps on its card. Finishing the
+  // tour is one tap more ("Finish the tour" on the peek) unless a skip
+  // completed it, which finishes it at once (no presence in this harness,
+  // so leaving the last station never finishes it here).
+  it("every tour finishes within two taps per station plus one, over the three tap paths and any precision", () => {
     fc.assert(
       fc.property(
         tourArb,
@@ -402,6 +416,14 @@ describe("the walk's rules over random walks", () => {
           }
           expect(h.complete()).toBe(true);
           expect(taps).toBeLessThanOrEqual(2 * stations.length);
+          // Complete but not finished: the quick action finishes it.
+          const waiting = !h.progress().finished;
+          expect(waiting ? h.dom.skip.dataset["action"] : "finish-tour").toBe(
+            "finish-tour",
+          );
+          if (waiting) tap(() => h.guide.skipTapped(h.dom.skip));
+          expect(h.progress().finished).toBe(true);
+          expect(taps).toBeLessThanOrEqual(2 * stations.length + 1);
         },
       ),
       { numRuns: 300 },

@@ -322,13 +322,24 @@ test("a found station's story takes the peek's place with its dots, and its end 
   // The focus is not dropped with the hidden button: it
   // moves to the end control beside it.
   await expect(end).toBeFocused();
-  // Two taps end it: the peek is back, naming the next station, and the
-  // focus that sat on the card's end control is on the grab.
+  // Two taps end it: the peek is back, and the focus that sat on the
+  // card's end control is on the grab. The visitor still stands at the
+  // gate, so the peek says so and names the next station second (being
+  // there), instead of sending them on while they look around.
   await end.click();
   await end.click();
   await expect(story).toBeHidden();
   await expect(page.getByTestId("walk-grab")).toBeFocused();
   await expect(page.getByTestId("walk-peek")).toBeVisible();
+  await expect(page.getByTestId("walk-eyebrow")).toHaveText(
+    "At station 1 - take your time",
+  );
+  await expect(page.getByTestId("walk-title")).toHaveText("The gate");
+  await expect(page.getByTestId("walk-tail")).toHaveText(
+    /^Next: The well, \d+ m$/,
+  );
+  // Walking on leaves the gate: the peek names the next station.
+  await standAt(page, 55, 17, 2);
   await expect(page.getByTestId("walk-eyebrow")).toHaveText(
     "Next - station 2 of 4",
   );
@@ -690,8 +701,10 @@ test("a skipped station is brought back after the tour is complete, and the tour
   await expect(
     page.getByTestId("walk-segments").locator("i").nth(2),
   ).not.toHaveAttribute("data-s", "skipped");
+  // The visitor still stands at the well: the line says so, then the
+  // station brought back as the next.
   await expect(page.getByTestId("station-line")).toHaveText(
-    /^(Brought back The tower\. )?Next: The tower, \d+ m$/,
+    /^(Brought back The tower\. )?At station 2 - take your time: The well\. Next: The tower, \d+ m$/,
   );
   // Skipped again, the tour is complete again.
   await walkRowControl(page, "The tower", "act").click();
@@ -702,12 +715,16 @@ test("a skipped station is brought back after the tour is complete, and the tour
   );
 });
 
-test("the completion opens the list once, with its card and the way out", async ({
+test("the completion waits while the visitor is at the last station, then opens the list once, with its card and the way out", async ({
   page,
 }) => {
   // Why this test matters: the end of the walk is shown, not only
   // said - the list opens on its own with the completion card - and only
-  // once: a visitor who closed it is not pulled back into it.
+  // once: a visitor who closed it is not pulled back into it. It waits
+  // for the visitor: every station done, they still stand at the last
+  // one, and the card would cover its content - so the peek says they
+  // are there, offers "Finish the tour", and the tour finishes on that
+  // tap (or once they walk away).
   await openTheWalk(page);
   await enterAtTheCode(page);
   let second = 1;
@@ -716,6 +733,18 @@ test("the completion opens the list once, with its card and the way out", async 
     second += 1;
   }
   const sheet = page.getByTestId("walk-sheet");
+  await expect(sheet).toHaveAttribute("data-sheet", "peek");
+  await expect(sheet).toHaveAttribute("data-complete", "false");
+  await expect(page.getByTestId("walk-eyebrow")).toHaveText(
+    "At station 4 - take your time",
+  );
+  await expect(page.getByTestId("walk-title")).toHaveText("The garden");
+  await expect(page.getByTestId("walk-tail")).toHaveText(
+    "Every station is done.",
+  );
+  const finish = page.getByTestId("station-skip");
+  await expect(finish).toHaveText("Finish the tour");
+  await finish.click();
   await expect(sheet).toHaveAttribute("data-sheet", "list");
   await expect(sheet).toHaveAttribute("data-complete", "true");
   await expect(page.getByTestId("walk-done")).toBeVisible();

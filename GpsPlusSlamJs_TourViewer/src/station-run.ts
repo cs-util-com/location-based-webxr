@@ -22,6 +22,12 @@
  *   R4) is done the moment it is found.
  * - No deadlock (§8 D5): every order preset offers something until the run
  *   is complete, and the skip is always there for an offered station.
+ * - COMPLETE is progress (nothing offered); FINISHED is the visitor's: the
+ *   tour finishes once it is complete AND the visitor left the last
+ *   station done (`left`, the guide's presence) or tapped "Finish the
+ *   tour" (`finish-tour`). A skip that completes it finishes it at once:
+ *   a skipped station is never entered. A station brought back unfinishes
+ *   it. The completion card and the list's opening wait for FINISHED.
  *
  * The rules are pure transitions over plain data (`WalkProgress`): `applyWalkStep` and the
  * queries below. The page's store applies them in its `visitorWalk`
@@ -62,7 +68,8 @@ export type StationEvent =
   | { readonly kind: "done"; readonly id: string; readonly skipped: boolean }
   /** The offered set changed; the full new set. */
   | { readonly kind: "offered"; readonly ids: readonly string[] }
-  | { readonly kind: "complete" };
+  | { readonly kind: "complete" }
+  | { readonly kind: "finished" };
 
 /**
  * A station's name - the package's one rule for it (plan 2026-10-15-0348
@@ -111,6 +118,17 @@ export interface StationRun {
   status(id: string): StationStatus | undefined;
   statuses(): readonly StationStatus[];
   isComplete(): boolean;
+  /** Complete, and the visitor left the last station or tapped "Finish
+   *  the tour" (or a skip completed it). */
+  isFinished(): boolean;
+  /** Complete but not finished: the station the finish waits on (the
+   *  last one done); null otherwise. */
+  finishWait(): string | null;
+  /** The visitor is no longer at this station: finishes the tour when it
+   *  is the station the finish waits on. */
+  left(id: string): StationEvent[];
+  /** "Finish the tour": finishes a complete tour. */
+  finishTour(): StationEvent[];
   /**
    * Horizontal distances (m) from the phone's current best position to the
    * stations the caller can place (D16). A station without a finite
@@ -183,6 +201,11 @@ export interface WalkProgress {
    * brought back in a row return in turn. Empty under the other orders.
    */
   readonly branchReturns: readonly (string | null)[];
+  /** Complete, and finished by the visitor (`walkFinished`). */
+  readonly finished: boolean;
+  /** Complete but not finished: the last station done, whose leaving
+   *  finishes the tour; null otherwise. */
+  readonly finishWaitId: string | null;
 }
 
 /** The tour facts a walk starts from: per station, in list order. */
@@ -200,7 +223,10 @@ export type WalkRoute = readonly {
  * - `finish` - a found station's steps ended;
  * - `skip` - an offered station not yet done;
  * - `unskip` - a skipped station waits again;
- * - `focus` - an offered station's skip clock starts, once.
+ * - `focus` - an offered station's skip clock starts, once;
+ * - `left` - the visitor is no longer at a station: finishes a complete
+ *   tour waiting on it;
+ * - `finish-tour` - "Finish the tour": finishes a complete tour.
  */
 export type WalkStep =
   | { readonly kind: "found"; readonly id: string }
@@ -217,7 +243,9 @@ export type WalkStep =
       readonly id: string;
       readonly atMs: number;
       readonly distanceM: number | null;
-    };
+    }
+  | { readonly kind: "left"; readonly id: string }
+  | { readonly kind: "finish-tour" };
 
 /** A transition's result: the next progress (the same object when nothing
  *  changed) and what happened. */
@@ -251,7 +279,19 @@ export function startWalk(route: WalkRoute, order: TourOrder): WalkProgress {
     })),
     branchCurrent: route[0]?.id ?? null,
     branchReturns: [],
+    finished: false,
+    finishWaitId: null,
   };
+}
+
+/** Whether the visitor finished the tour (`WalkProgress.finished`). */
+export function walkFinished(p: WalkProgress): boolean {
+  return p.finished;
+}
+
+/** The station a complete tour waits on to finish; null otherwise. */
+export function walkFinishWaitId(p: WalkProgress): string | null {
+  return p.finishWaitId;
 }
 
 /** What the run reads of a progress again and again (several times per
@@ -417,14 +457,37 @@ function complete(
   }
   const offered = walkOffered(next);
   events.push({ kind: "offered", ids: [...offered] });
-  if (offered.length === 0) events.push({ kind: "complete" });
+  if (offered.length === 0) {
+    events.push({ kind: "complete" });
+    if (skipped) {
+      // A skipped station is never entered: nothing to leave.
+      next = { ...next, finished: true, finishWaitId: null };
+      events.push({ kind: "finished" });
+    } else {
+      next = { ...next, finishWaitId: id };
+    }
+  }
   return { progress: next, events };
+}
+
+/** The tour finished: the completion card's moment. */
+function finish(p: WalkProgress): WalkTransition {
+  return {
+    progress: { ...p, finished: true, finishWaitId: null },
+    events: [{ kind: "finished" }],
+  };
 }
 
 /** One step of the walk, where its rule allows it (`WalkStep`); otherwise
  *  the same progress and no events. */
 export function applyWalkStep(p: WalkProgress, step: WalkStep): WalkTransition {
   const unchanged: WalkTransition = { progress: p, events: [] };
+  if (step.kind === "finish-tour") {
+    return p.finishWaitId === null ? unchanged : finish(p);
+  }
+  if (step.kind === "left") {
+    return p.finishWaitId === step.id ? finish(p) : unchanged;
+  }
   const s = stationOf(p, step.id);
   if (s === undefined) return unchanged;
   switch (step.kind) {
@@ -456,12 +519,17 @@ export function applyWalkStep(p: WalkProgress, step: WalkStep): WalkTransition {
         : unchanged;
     case "unskip": {
       if (s.state !== "done" || !s.skipped) return unchanged;
-      let next = withStation(p, step.id, {
-        state: "waiting",
-        skipped: false,
-        focusedAtMs: null,
-        focusDistanceM: null,
-      });
+      // Brought back, the tour is no longer complete, nor finished.
+      let next: WalkProgress = {
+        ...withStation(p, step.id, {
+          state: "waiting",
+          skipped: false,
+          focusedAtMs: null,
+          focusDistanceM: null,
+        }),
+        finished: false,
+        finishWaitId: null,
+      };
       // Under branch order the path goes to it, and returns to the station
       // it was on once it is done (the bring-back rule; null: the path had ended).
       if (next.order === "branch") {
@@ -516,6 +584,10 @@ export function stationRunOver(
     status: (id) => walkStatus(holder.read(), id),
     statuses: () => holder.read().stations.map(statusOf),
     isComplete: () => walkOffered(holder.read()).length === 0,
+    isFinished: () => walkFinished(holder.read()),
+    finishWait: () => walkFinishWaitId(holder.read()),
+    left: (id) => holder.perform({ kind: "left", id }),
+    finishTour: () => holder.perform({ kind: "finish-tour" }),
 
     observe({ distances, precision }) {
       // No arrival on a position the guide calls too weak to guide by.

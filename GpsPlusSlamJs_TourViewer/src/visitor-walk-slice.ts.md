@@ -26,7 +26,7 @@ target, with the focus rule `walkFocus` every view reads.
     station; the next tap confirms;
   - `sheet: "peek" | "list"` (`WalkSheet`) - the sheet's peek, or the
     list pulled up;
-  - `completionSeen: boolean` - the walk is complete and its
+  - `completionSeen: boolean` - the walk is finished and its
     completion opened the list already;
   - `welcomePending: boolean` - the visitor left AR with
     progress, and the next entry's first sheet says "Welcome back", once
@@ -107,9 +107,11 @@ target, with the focus rule `walkFocus` every view reads.
   action from `store.subscribe`). A recording therefore replays no walk,
   as it replays no `visitorGuide`.
 - **The sheet's two rules live in the reducer**:
-  the step that completes the walk opens the list, once per completion
-  (`completionSeen`; a skip undone makes the walk incomplete again, and
-  completing it again opens the list again); a station found closes the
+  the step that FINISHES the walk opens the list, once per finish
+  (`completionSeen`; complete is not finished: a tour completed by its
+  last station's end waits until the visitor leaves it or taps "Finish
+  the tour", `station-run.ts`; a skip undone makes the walk unfinished
+  again, and finishing it again opens the list again); a station found closes the
   list, so its story card takes the peek's place (and clears the row arm
   and the chooser with it).
 - **The offer rules:** after every step a row arm and a chosen
@@ -152,8 +154,8 @@ walkOffered(store.getState().visitorWalk.progress!); // the rest
   time for the note) and `SKIP_UNDO_MS` as the toast linger, the one value
   the guide names too; the sheet: `sheetSet`, the completion opening
   the list once, a find closing it, and a property over random steps that
-  `completionSeen` follows completeness and a completion just reached
-  opens the list; the walk's rules: `walkFocus` per order, precision and
+  `completionSeen` follows the finish (with `left` and `finish-tour`
+  among the steps) and a finish just reached opens the list; the walk's rules: `walkFocus` per order, precision and
   choice, `walkNoGuess`, `targetChosen`'s guards and clearing (on a
   find, a skip, the completing skip, another tour), `listOpened` and the
   list's closing, a bring back of a skip that was not the last.

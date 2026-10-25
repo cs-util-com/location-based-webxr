@@ -56,3 +56,21 @@ add after a surprise.
   plausible frame rate. To reproduce a slow runner locally, slow the page
   with the CDP `Emulation.setCPUThrottlingRate` (6x brought it to about
   4.5 frames a second).
+
+## A scripted replace treats `$` in the new text as a pattern
+
+- `s.replace(oldText, newText)` with a string `newText` still expands
+  `$&`, `` $` `` and `$'` in it: a script that inserted a regex-escaping
+  helper (`"\\$&"`) and a regex ending in `` $` `` pasted the file's own
+  text into itself.
+- Rule: in an edit script, replace with `s.split(oldText).join(newText)`,
+  which inserts the text as written; check `git diff --stat` for a file
+  that grew far more than the edit.
+
+## A unit timeout under a loaded machine is not a red test
+
+- With the machine near full CPU from other sessions, vitest's 5 s
+  default timed out property tests and hook-heavy repo-config tests that
+  pass in well under a second alone. Each such red was attributed by
+  running the named files alone with `--testTimeout=120000`; a timeout
+  that also fails there is a real red.

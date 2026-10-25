@@ -49,10 +49,12 @@ describe("sheetAfterDrag", () => {
 });
 
 describe("quickKind", () => {
-  it("an ask, a suggestion (the labelled skip) or an undo; the story's end is not the peek's", () => {
+  it("an ask (or finishing the tour), a suggestion (the labelled skip) or an undo; the story's end is not the peek's", () => {
     expect(quickKind({ kind: "ask-skip", id: "a" })).toBe("ask");
     expect(quickKind({ kind: "skip", id: "a" })).toBe("suggested");
     expect(quickKind({ kind: "undo", id: "a" })).toBe("undo");
+    // "Finish the tour" is the peek's own compact button, as the ask.
+    expect(quickKind({ kind: "finish-tour", id: "a" })).toBe("ask");
     expect(quickKind({ kind: "ask-end", id: "a" })).toBeNull();
     expect(quickKind({ kind: "end", id: "a" })).toBeNull();
     expect(quickKind(null)).toBeNull();

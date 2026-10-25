@@ -43,12 +43,14 @@ export function sheetAfterDrag(
   return dy < 0 ? "list" : "peek";
 }
 
-/** The quick action's look: an ask, a suggestion or an undo. */
+/** The quick action's look: an ask (or finishing the tour), a suggestion
+ *  or an undo. */
 export function quickKind(
   quick: SkipAction | null,
 ): "ask" | "suggested" | "undo" | null {
   switch (quick?.kind) {
     case "ask-skip":
+    case "finish-tour":
       return "ask";
     case "skip":
       return "suggested";

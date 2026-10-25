@@ -115,9 +115,12 @@ test("a station tour: the visitor at the code finds the first station, its knigh
   await page.getByTestId("scene-continue").click();
   await expect(panel).toBeHidden();
 
-  // The next station is offered, and the HUD points at it alone.
+  // The next station is offered, and the HUD points at it alone; the
+  // visitor still stands at the gate, so the line says so first.
   const line = page.getByTestId("station-line");
-  await expect(line).toHaveText(/^Next: The well, \d+ m$/);
+  await expect(line).toHaveText(
+    /^At station 1 - take your time: The gate\. Next: The well, \d+ m$/,
+  );
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -156,7 +159,9 @@ test("a station tour: the visitor at the code finds the first station, its knigh
 
   // The tower is far: skipped on demand, in two taps (§8 D5): "Can't get
   // there?" opens the list on its row, whose confirm skips it.
-  await expect(line).toHaveText(/^Next: The tower, \d+ m$/);
+  await expect(line).toHaveText(
+    /^At station 2 - take your time: The well\. Next: The tower, \d+ m$/,
+  );
   const skip = page.getByTestId("station-skip");
   await expect(skip).toHaveText("Can't get there?");
   await skip.click();
@@ -171,7 +176,7 @@ test("a station tour: the visitor at the code finds the first station, its knigh
   await expect(act).toHaveText("Undo: bring back The tower");
   await act.click();
   await expect(line).toHaveText(
-    /^Brought back The tower\. Next: The tower, \d+ m$/,
+    /^Brought back The tower\. At station 2 - take your time: The well\. Next: The tower, \d+ m$/,
   );
   await expect(skip).toHaveText("Can't get there?");
   await act.click();
@@ -300,7 +305,9 @@ test("without location, a station is reached by its radius on the code-placed po
 
   const line = page.getByTestId("station-line");
   const skip = page.getByTestId("station-skip");
-  await expect(line).toHaveText(/^Next: The well, \d+ m$/);
+  await expect(line).toHaveText(
+    /^At station 1 - take your time: The gate\. Next: The well, \d+ m$/,
+  );
   await expect(skip).toHaveText("Can't get there?");
   // Walk to the well on odometry alone: where the HUD points.
   const well = await page.evaluate(() => {

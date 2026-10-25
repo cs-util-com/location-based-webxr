@@ -360,6 +360,21 @@ activateM)` (each tick, each offered station with a distance: the
   two taps ("Can't get there?", then "Skip <title> - I can't get there"),
   or in one once the suggestion clock ran out (`station-run.ts`). The line
   then says "Skipped <title>." with the next station.
+- **Being there, and finishing:** while
+  the visitor's presence holds at a done, unskipped station (no story
+  playing), or a complete tour waits on its last station
+  (`run.finishWait()`), the line reads "At station N - take your time:
+  <title>. <tail>" (a note may lead it), the tail being "Next: <title>"
+  with the distance or the walking line's own position hint (a wait, GPS
+  too weak, the scan ask), "N stations still to find - ..." while no
+  station is guessed, or "Every station is done."; `view().there`
+  carries it for the peek. Each tick, after presence is judged
+  (`publishPresence` returns whether it judged), a waiting tour whose
+  judged presence is not that station finishes (`run.left`); a tick that
+  judged nothing (no position, a hold, no `guideStore`) finishes
+  nothing, and a presence that changed re-renders the line. While a tour
+  waits, the quick action is "Finish the tour" (`finish-tour`, after a
+  pending undo); "Tour complete ..." is said only once finished.
 - **K4 review R14:**
   - the skip clock starts when a station becomes the focus (`run.focus`,
     called at every render), not at the tour's start: under `any` order
@@ -417,7 +432,8 @@ activateM)` (each tick, each offered station with a distance: the
   not chosen is the one left to find and is named "Next: <title> - ..."
   ("nearest" is a distance's ranking, never said without one),
   "Station found - its story is
-  playing.", "Tour complete - every station visited." or "- N skipped.";
+  playing.", "At station N - take your time: ..." (above), "Tour
+  complete - every station visited." or "- N skipped." once finished;
   under branch order "Tour complete - you reached the end of your path."
   (with ", N skipped."), since the other branches were never offered.
   The line and the skip are written only when their text changes (the
@@ -485,8 +501,14 @@ store.subscribe(() => guide.tick());
   found station never reverts, at most one chosen target and only a
   waiting offered one, and while the no-guess condition holds - derived in the
   harness from its own precision inputs and hold clock, never from the
-  slice's `walkNoGuess` - no focus and a line naming no station; and every tour completes
-  within two taps per station over the three tap paths.
+  slice's `walkNoGuess` - no focus and a line naming no station, and
+  "Tour complete" exactly when finished; and every tour finishes within
+  two taps per station plus one ("Finish the tour") over the three tap
+  paths.
+- `station-guide.rules.test.ts` also covers being there at a station and
+  finishing: the peek's line at a done station and its next, the wait on
+  the last station, finishing on leaving it (not on an unjudged tick),
+  and the "Finish the tour" quick action.
 - `station-guide.walk-store.test.ts` - on the page's store: no walk
   dispatch over frames without an event; one batch per call, last, with the
   line already written from it, and none on a second tick with the same
@@ -637,6 +659,9 @@ undo, note }`: the line's station, how the position stands
   followed; reset at `endSession`. False: the radar draws the heading
   provisional (`walk-radar-model.ts`). Before it, without a compass, the
   start yaw can be far off - which is why the arrows keep the latch.
+- `GuideView.there` - `{ id, tail } | null`: the station the visitor is
+  there at, and the line's tail ("Being there, and finishing" above);
+  null once finished and while a story plays.
 - `GuideView.snapshot` - the last geometry (distances, bearings, the
   radar's heading and whether it was confirmed) judged while a code or GPS within the ceiling spoke for the
   position and the store's `trackingLost` was false (never a too-weak
@@ -678,4 +703,10 @@ undo, note }`: the line's station, how the position stands
   the no-guess rule holds the `line`, `crumbs` and `skip` may differ from the golden;
   on a tick with no distance the `hud` may; every other field equals the
   golden on every tick, and every field once the hold has run out with a
-  distance shown (`station-guide.parity.test.ts`).
+  distance shown (`station-guide.parity.test.ts`). A third, being there:
+  on a tick where `view().there` is set the `line` must read "At station N
+  - take your time: ..." and end with "Next: " and the station and
+    distance (or hint) the golden's line named (outside the no-guess rule),
+    and the `skip` may differ only by "Finish the tour". On the golden's
+    streams that is most ticks: presence holds from a station until the
+    next is entered.

@@ -615,3 +615,105 @@ describe("'End this story?' on the story card whenever a story plays", () => {
     expect(h.dom.end?.hidden).toBe(true);
   });
 });
+
+describe("being there at a station, and finishing the tour", () => {
+  // Why these tests matter: a station is done when its story ends, which
+  // moves the order on, but the visitor still stands among its content.
+  // While its presence holds the peek says so ("At station N - take your
+  // time") with the next station as its second line, instead of jumping
+  // on. The tour finishes - the completion card, the list opening - only
+  // once every station is done and the visitor left the last one, or
+  // tapped "Finish the tour".
+  const FIXED: StationTour = {
+    stations: [station("gate", 0, 0), station("well", 0, 60)],
+    order: "fixed",
+  };
+
+  it("at a done station the view and the line say the visitor is there, the next station second", () => {
+    const h = harness(FIXED, { end: true });
+    h.at(0, 0);
+    h.endStory("gate");
+    h.at(0, 0);
+    expect(h.view().there).toEqual({ id: "gate", tail: "Next: WELL, 60 m" });
+    expect(h.dom.line.textContent).toBe(
+      "At station 1 - take your time: GATE. Next: WELL, 60 m",
+    );
+    // The quick action still serves the next station.
+    expect(h.view().quick).toEqual({ kind: "ask-skip", id: "well" });
+    // Walked away: the walk's own line again.
+    h.at(0, 30);
+    expect(h.view().there).toBeNull();
+    expect(h.dom.line.textContent).toBe("Next: WELL, 30 m");
+  });
+
+  it("the last story's end completes the tour, which waits there; leaving the station finishes it", () => {
+    const h = harness(FIXED, { end: true });
+    h.at(0, 0);
+    h.endStory("gate");
+    h.at(0, 60);
+    h.endStory("well");
+    h.at(0, 60);
+    const p = () => h.walk().progress!;
+    expect(p().finished).toBe(false);
+    expect(h.walk().sheet).toBe("peek");
+    expect(h.view().there).toEqual({
+      id: "well",
+      tail: "Every station is done.",
+    });
+    expect(h.view().quick).toEqual({ kind: "finish-tour", id: "well" });
+    expect(h.dom.skip.textContent).toBe("Finish the tour");
+    expect(h.dom.skip.dataset["action"]).toBe("finish-tour");
+    // Still there: it waits.
+    h.at(0, 61);
+    expect(p().finished).toBe(false);
+    h.at(0, 0);
+    expect(p().finished).toBe(true);
+    expect(h.walk().sheet).toBe("list");
+    expect(h.view().there).toBeNull();
+    expect(h.dom.line.textContent).toMatch(/^Tour complete/);
+  });
+
+  it("'Finish the tour' finishes it where the visitor stands", () => {
+    const h = harness(FIXED, { end: true });
+    h.at(0, 0);
+    h.endStory("gate");
+    h.at(0, 60);
+    h.endStory("well");
+    h.at(0, 60);
+    h.tapQuick();
+    expect(h.walk().progress?.finished).toBe(true);
+    expect(h.walk().sheet).toBe("list");
+    expect(
+      skipActionOf({ dataset: { action: "finish-tour", station: "well" } }),
+    ).toEqual({
+      kind: "finish-tour",
+      id: "well",
+    });
+  });
+
+  it("a position nobody can judge holds the wait; the next judged one away from the station finishes it", () => {
+    const h = harness(FIXED, { end: true });
+    h.at(0, 0);
+    h.endStory("gate");
+    h.at(0, 60);
+    h.endStory("well");
+    h.at(0, 60);
+    h.guide.endSession();
+    // The next AR entry, no position judged yet: nothing finishes.
+    h.unvouched(0, 0);
+    expect(h.walk().progress?.finished).toBe(false);
+    h.at(0, 0);
+    expect(h.walk().progress?.finished).toBe(true);
+  });
+
+  it("a skipped last station finishes the tour at once: it is never entered", () => {
+    const h = harness(FIXED, { end: true });
+    h.at(0, 0);
+    h.endStory("gate");
+    h.at(0, 0);
+    h.guide.rowTapped("well", "skip");
+    h.guide.rowTapped("well", "confirm");
+    expect(h.walk().progress?.finished).toBe(true);
+    expect(h.view().there).toBeNull();
+  });
+});

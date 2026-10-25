@@ -9,6 +9,8 @@ import {
   applyWalkStep,
   createStationRun,
   startWalk,
+  walkFinished,
+  walkFinishWaitId,
   walkOffered,
   walkRoute,
   SKIP_SUGGEST_BASE_MS,
@@ -419,7 +421,7 @@ describe("skip suggestion clock", () => {
     run.unskip("a", 3);
     expect(run.offered()).toEqual(["a"]);
     // Not on to a's next (c, done) and its successor b: the path had ended.
-    expect(run.skip("a", 4).at(-1)).toEqual({ kind: "complete" });
+    expect(run.skip("a", 4)).toContainEqual({ kind: "complete" });
     expect(run.offered()).toEqual([]);
   });
 
@@ -548,6 +550,162 @@ describe("createStationRun: properties", () => {
           expect(run.status(id)).toEqual(before);
         }
       }),
+    );
+  });
+});
+
+describe("finishing the tour: done is progress, finished is the visitor's", () => {
+  // Why these tests matter: "done" moves the order on, so it cannot wait
+  // for the visitor to look at a station's content. Finishing the tour is
+  // separate: every station done AND the visitor left the last one (its
+  // presence ended) or tapped "Finish the tour". Until then the completion
+  // card and the list wait. A skipped last station is never entered, so a
+  // skip that completes the tour finishes it at once. Without this split
+  // the completion card covered the last station's content the moment its
+  // story ended.
+  const two = () =>
+    createStationRun({
+      stations: [station("a"), station("b")],
+      order: "fixed",
+      nowMs: 0,
+    });
+  const doneByVisit = (run: ReturnType<typeof two>, id: string) => {
+    run.observe({ distances: at({ [id]: 0 }), nowMs: 1 });
+    return run.finish(id, 2);
+  };
+
+  it("completes on the last station's end and waits there to finish", () => {
+    const run = two();
+    doneByVisit(run, "a");
+    expect(run.finishWait()).toBeNull();
+    const events = doneByVisit(run, "b");
+    expect(events.map((e) => e.kind)).toEqual(["done", "offered", "complete"]);
+    expect(run.isComplete()).toBe(true);
+    expect(run.isFinished()).toBe(false);
+    expect(run.finishWait()).toBe("b");
+  });
+
+  it("finishes when the visitor leaves the last station, not another", () => {
+    const run = two();
+    doneByVisit(run, "a");
+    doneByVisit(run, "b");
+    expect(run.left("a")).toEqual([]);
+    expect(run.isFinished()).toBe(false);
+    expect(run.left("b")).toEqual([{ kind: "finished" }]);
+    expect(run.isFinished()).toBe(true);
+    expect(run.finishWait()).toBeNull();
+    // Once finished, nothing finishes it again.
+    expect(run.left("b")).toEqual([]);
+    expect(run.finishTour()).toEqual([]);
+  });
+
+  it("finishes on the visitor's tap, and never before the tour is complete", () => {
+    const run = two();
+    doneByVisit(run, "a");
+    expect(run.finishTour()).toEqual([]);
+    expect(run.left("a")).toEqual([]);
+    expect(run.isFinished()).toBe(false);
+    doneByVisit(run, "b");
+    expect(run.finishTour()).toEqual([{ kind: "finished" }]);
+    expect(run.isFinished()).toBe(true);
+  });
+
+  it("a skip that completes the tour finishes it at once: a skipped station is never entered", () => {
+    const run = two();
+    doneByVisit(run, "a");
+    const events = run.skip("b", 3);
+    expect(events.map((e) => e.kind)).toEqual([
+      "done",
+      "offered",
+      "complete",
+      "finished",
+    ]);
+    expect(run.isFinished()).toBe(true);
+    expect(run.finishWait()).toBeNull();
+  });
+
+  it("a station brought back unfinishes the tour; completing again follows the same rules", () => {
+    const run = two();
+    run.skip("a", 1);
+    doneByVisit(run, "b");
+    run.finishTour();
+    expect(run.isFinished()).toBe(true);
+    run.unskip("a", 4);
+    expect(run.isComplete()).toBe(false);
+    expect(run.isFinished()).toBe(false);
+    expect(run.finishWait()).toBeNull();
+    doneByVisit(run, "a");
+    expect(run.isFinished()).toBe(false);
+    expect(run.finishWait()).toBe("a");
+  });
+
+  it("a stepless station is still done the moment it is found, and as the last one it waits too", () => {
+    const run = createStationRun({
+      stations: [station("a"), station("b", { steps: [] })],
+      order: "fixed",
+      nowMs: 0,
+    });
+    doneByVisit(run, "a");
+    run.observe({ distances: at({ b: 0 }), nowMs: 3 });
+    expect(run.status("b")?.state).toBe("done");
+    expect(run.isComplete()).toBe(true);
+    expect(run.finishWait()).toBe("b");
+  });
+
+  it("the pure reads agree with the run, and a walk starts unfinished", () => {
+    const p0 = startWalk(walkRoute([station("a")]), "any");
+    expect(walkFinished(p0)).toBe(false);
+    expect(walkFinishWaitId(p0)).toBeNull();
+    const found = applyWalkStep(p0, { kind: "found", id: "a" }).progress;
+    const done = applyWalkStep(found, { kind: "finish", id: "a" }).progress;
+    expect(walkFinishWaitId(done)).toBe("a");
+    const left = applyWalkStep(done, { kind: "left", id: "a" });
+    expect(walkFinished(left.progress)).toBe(true);
+    expect(left.events).toEqual([{ kind: "finished" }]);
+    // A step that changes nothing returns the same progress.
+    expect(applyWalkStep(p0, { kind: "finish-tour" }).progress).toBe(p0);
+  });
+
+  it("every tour finishes within one action more than it takes to complete, whatever the order and the actions", () => {
+    fc.assert(
+      fc.property(
+        tourArb,
+        fc.boolean(),
+        ([n, nexts, order, actions], leave) => {
+          const stations = nexts.map((next, i) =>
+            station(`s${i}`, next === undefined ? {} : { next: `s${next}` }),
+          );
+          const run = createStationRun({ stations, order, nowMs: 0 });
+          let t = 1;
+          let lastSkipped = false;
+          for (const [pick, how] of actions) {
+            const offered = run.offered();
+            if (offered.length === 0) break;
+            const id = offered[pick % offered.length]!;
+            if (how === "skip") run.skip(id, t++);
+            else {
+              run.observe({ distances: new Map([[id, 0]]), nowMs: t++ });
+              run.finish(id, t++);
+            }
+            lastSkipped = how === "skip";
+            // Never finished before complete.
+            expect(run.isFinished() && !run.isComplete()).toBe(false);
+          }
+          for (let guard = 0; guard < n + 1 && !run.isComplete(); guard += 1) {
+            run.skip(run.offered()[0]!, t++);
+            lastSkipped = true;
+          }
+          expect(run.isComplete()).toBe(true);
+          // A skip that completed it finished it; otherwise one action does.
+          expect(run.isFinished()).toBe(lastSkipped);
+          const wait = run.finishWait();
+          expect(wait === null).toBe(lastSkipped);
+          if (wait !== null && leave) run.left(wait);
+          if (wait !== null && !leave) run.finishTour();
+          expect(run.isFinished()).toBe(true);
+          expect(run.finishWait()).toBeNull();
+        },
+      ),
     );
   });
 });

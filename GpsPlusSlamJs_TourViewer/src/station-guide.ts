@@ -208,11 +208,12 @@ export interface StationGuideDom {
 
 /** What a tap on the skip button (or the story card's end control) does;
  *  its label says which. "Can't get there?" names no station while none
- *  is guessed (the no-guess rule: it opens the list to choose). */
+ *  is guessed (the no-guess rule: it opens the list to choose). "Finish
+ *  the tour" names the station a complete tour waits on. */
 export type SkipAction =
   | { readonly kind: "ask-skip"; readonly id: string | null }
   | {
-      readonly kind: "skip" | "ask-end" | "end" | "undo";
+      readonly kind: "skip" | "ask-end" | "end" | "undo" | "finish-tour";
       readonly id: string;
     };
 
@@ -236,6 +237,7 @@ export function skipActionOf(
     case "ask-end":
     case "end":
     case "undo":
+    case "finish-tour":
       return station === null ? null : { kind, id: station };
     default:
       return null;
@@ -310,6 +312,11 @@ export interface GuideView {
    *  offered - the quick action shows only an undo, the rows no Skip and
    *  no confirm - while the undo and Bring back stay. */
   readonly trackingLost: boolean;
+  /** The visitor is there: at a done station (its presence holds, no story
+   *  plays), or a complete tour waits on its last one. The peek reads "At
+   *  station N - take your time" with `tail` second (the next station, or
+   *  that every station is done); null otherwise and once finished. */
+  readonly there: { readonly id: string; readonly tail: string } | null;
 }
 
 /** The open tour's stations, as the guide reads them each tick. */
@@ -940,9 +947,12 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  judge, and a judgement is dispatched only when it changes the answer.
    *  Called at the END of a tick: a dispatch re-enters the tick through the
    *  store's subscriber, which then finds nothing to change. */
-  function publishPresence(m: Measurement | null, j: Judgement | null): void {
+  function publishPresence(
+    m: Measurement | null,
+    j: Judgement | null,
+  ): boolean {
     const store = deps.guideStore;
-    if (store === undefined) return;
+    if (store === undefined) return false;
     if (tourChangePending) {
       tourChangePending = false;
       presentByCode = false;
@@ -951,19 +961,79 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         store.dispatch(guideTourChanged());
       }
     }
-    if (m === null) return;
+    if (m === null) return false;
     const state = store.getState().visitorGuide;
     if (j === null && presentByCode && m.precision.source !== "code") {
       presentByCode = false;
       if (state.presentStationId !== null) store.dispatch(presenceCleared());
-      return;
+      return false;
     }
     const judgement = presenceJudgement(m, j);
-    if (judgement === null) return;
+    if (judgement === null) return false;
     if (j !== null) presentByCode = m.precision.source === "code";
     if (presenceAfter(state, judgement) !== state.presentStationId) {
       store.dispatch(presenceJudged(judgement));
     }
+    return true;
+  }
+
+  /** The station whose content shows now (the store's presence); null
+   *  without one or without a store. */
+  function presentId(): string | null {
+    return deps.guideStore?.getState().visitorGuide.presentStationId ?? null;
+  }
+
+  /** A complete tour waits on its last station: once a judged presence is
+   *  not that station, the visitor left it and the tour finishes. A tick
+   *  that judged nothing (no position, a hold) finishes nothing. */
+  function finishOnLeaving(wasJudged: boolean): boolean {
+    const run = liveRun();
+    const wait = run?.finishWait() ?? null;
+    if (!wasJudged || run === null || wait === null) return false;
+    if (presentId() === wait) return false;
+    handle(run.left(wait));
+    return true;
+  }
+
+  /** Where the visitor is there (`GuideView.there`): the present station
+   *  if it is done and not skipped, else the station a complete tour waits
+   *  on; none while a story plays and once finished. */
+  function thereOf(): { id: string; tail: string } | null {
+    const run = liveRun();
+    if (run === null || run.isFinished() || storyTarget() !== null) {
+      return null;
+    }
+    const present = presentId();
+    const status = present === null ? undefined : run.status(present);
+    const id =
+      present !== null && status?.state === "done" && !status.skipped
+        ? present
+        : run.finishWait();
+    return id === null ? null : { id, tail: thereTail(run) };
+  }
+
+  /** The being-there peek's second line: the next station with what the
+   *  position says of it (its distance, or the walking line's own hint: a
+   *  wait, GPS too weak, a code to scan), or that every station is done. */
+  function thereTail(run: StationRun): string {
+    if (run.isComplete()) return "Every station is done.";
+    const focus = focusStation();
+    const station = focus === null ? undefined : stationById(focus);
+    if (focus === null || station === undefined) {
+      const n = unfoundOffered(run).length;
+      return `${String(n)} ${n === 1 ? "station" : "stations"} still to find - ${noGuessTail()}`;
+    }
+    const d = last?.distances.get(focus);
+    return `Next: ${stationTitle(station)}${positionTail(positionKind(last, d), d)}`;
+  }
+
+  /** The line while the visitor is there: "At station N - take your
+   *  time: <title>. <tail>", as the peek splits it. */
+  function thereLine(there: { id: string; tail: string }): string {
+    const stations = deps.tour()?.stations ?? [];
+    const n = stations.findIndex((st) => st.id === there.id) + 1;
+    const title = stationTitle(stationById(there.id) ?? {});
+    return `At station ${String(n)} - take your time: ${title}. ${there.tail}`;
   }
 
   /** Every placeable station's horizontal distance and bearing from
@@ -1125,12 +1195,14 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function lineText(): string {
     const run = liveRun();
     if (run === null) return "";
-    if (run.isComplete()) {
+    if (run.isFinished()) {
       const skipped = run.statuses().filter((s) => s.skipped).length;
       return completionLine(deps.tour()?.order ?? "any", skipped);
     }
     const note = noteText();
     const lead = note === null ? "" : `${note} `;
+    const there = thereOf();
+    if (there !== null) return `${lead}${thereLine(there)}`;
     const focus = focusStation();
     const offered = run.offered().length;
     const which = offered > 1 ? `${String(offered)} stations to find` : null;
@@ -1152,17 +1224,26 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       which === null || (!chosen && kind !== "distance")
         ? `Next: ${title}`
         : `${which} - ${chosen ? "your choice" : "nearest"}: ${title}`;
+    return `${lead}${waiting}${positionTail(kind, d)}`;
+  }
+
+  /** What the line says of a named station's position, by its kind; `d`
+   *  its distance. On `none` the focus has no distance (a chosen target,
+   *  or the one station left to find; the no-guess rule covers the rest):
+   *  named, as the peek names it. */
+  function positionTail(
+    kind: GuidePositionKind,
+    d: number | undefined,
+  ): string {
     switch (kind) {
       case "pending":
-        return `${lead}${waiting} - waiting for your position…`;
+        return " - waiting for your position…";
       case "weak":
-        return `${lead}${waiting} - GPS too weak to guide you (±${distanceText(last!.precision.accuracyM!)}); step into the open.`;
+        return ` - GPS too weak to guide you (±${distanceText(last!.precision.accuracyM!)}); step into the open.`;
       case "none":
-        // A focus without a distance (a chosen target, or the one station
-        // left to find; the no-guess rule covers the rest): named, as the peek names it.
-        return `${lead}${waiting} - ${NO_PRECISION_HINT}`;
+        return ` - ${NO_PRECISION_HINT}`;
       case "distance":
-        return `${lead}${waiting}, ${distanceText(d!)}`;
+        return `, ${distanceText(d!)}`;
     }
   }
 
@@ -1341,6 +1422,9 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (run === null) return null;
     const skip = selectUndoableSkip({ visitorWalk: walk() }, deps.now());
     if (skip !== null) return { kind: "undo", id: skip.id };
+    // A complete tour waits on its last station: the visitor may finish.
+    const wait = run.finishWait();
+    if (wait !== null) return { kind: "finish-tour", id: wait };
     // Tracking lost: no skip is offered, only its undo.
     if (trackingLost()) return null;
     const focus = focusStation();
@@ -1375,6 +1459,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         return `End the story of ${title} now`;
       case "undo":
         return `Undo: bring back ${title}`;
+      case "finish-tour":
+        return "Finish the tour";
     }
   }
 
@@ -1492,7 +1578,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       );
     }
     render();
-    publishPresence(m, judgement);
+    const presentBefore = presentId();
+    const judgedPresence = publishPresence(m, judgement);
+    // Leaving the last station finishes a complete tour; the line follows
+    // a presence that changed this tick (being there, or not any more).
+    if (finishOnLeaving(judgedPresence) || presentId() !== presentBefore) {
+      render();
+    }
     // Stations still to point at, and no heading to point with (D34).
     publishHeadingPending(!headingReady && liveRun()?.isComplete() === false);
     publishPrecision(kind);
@@ -1573,6 +1665,9 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         break;
       case "undo":
         bringBack(run, action.id);
+        break;
+      case "finish-tour":
+        handle(run.finishTour());
         break;
     }
     render();
@@ -1690,6 +1785,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
               },
         note: noteText(),
         trackingLost: trackingLost(),
+        there: thereOf(),
       };
     },
 

@@ -1,10 +1,11 @@
 /**
  * The station run held in its closure against the same run with its
  * progress in a store of the walk's slice: random sequences of observe,
- * finish, skip, unskip, focus and waits over generated tours (`next`
- * links with cycles, stations without steps) and the three orders give
- * the same events, statuses, offers, completion, upcoming station and
- * skip suggestion after every call.
+ * finish, skip, unskip, focus, leaving a station, finishing the tour and
+ * waits over generated tours (`next` links with cycles, stations without
+ * steps) and the three orders give the same events, statuses, offers,
+ * completion, finish, upcoming station and skip suggestion after every
+ * call.
  *
  * Why it matters: the guide reads the walk from the store, while the
  * run's own tests and its sweeps drive the closure. Both name the same
@@ -44,6 +45,8 @@ type Call =
   | { readonly kind: "finish"; readonly station: number }
   | { readonly kind: "skip"; readonly station: number }
   | { readonly kind: "unskip"; readonly station: number }
+  | { readonly kind: "left"; readonly station: number }
+  | { readonly kind: "finish-tour" }
   | {
       readonly kind: "focus";
       readonly station: number;
@@ -99,6 +102,11 @@ const callArb = (n: number): fc.Arbitrary<Call> => {
       weight: 2,
       arbitrary: fc.record({ kind: fc.constant("unskip" as const), station }),
     },
+    {
+      weight: 2,
+      arbitrary: fc.record({ kind: fc.constant("left" as const), station }),
+    },
+    { weight: 1, arbitrary: fc.constant({ kind: "finish-tour" as const }) },
     {
       weight: 2,
       arbitrary: fc.record({
@@ -168,6 +176,8 @@ function view(run: StationRun, ids: readonly string[], nowMs: number) {
     statuses: run.statuses(),
     status: ids.map((id) => run.status(id) ?? null),
     complete: run.isComplete(),
+    finished: run.isFinished(),
+    finishWait: run.finishWait(),
     upcoming: run.upcoming(),
     suggested: ids.map((id) => run.skipSuggested(id, nowMs)),
   };
@@ -200,6 +210,10 @@ function call(
       return run.skip(ids[c.station]!, nowMs);
     case "unskip":
       return run.unskip(ids[c.station]!, nowMs);
+    case "left":
+      return run.left(ids[c.station]!);
+    case "finish-tour":
+      return run.finishTour();
     case "focus":
       run.focus(ids[c.station]!, nowMs, c.distanceM);
       return null;
@@ -245,6 +259,7 @@ describe("the station run, held in its closure and through the walk's store", ()
       skipped: 0,
       offered: 0,
       complete: 0,
+      finished: 0,
       unskip: 0,
     };
     fc.assert(
