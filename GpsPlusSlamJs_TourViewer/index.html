@@ -2746,9 +2746,11 @@
       }
 
       /* The list open: the quick action goes (the prototype: the rows carry Skip,
-         its confirm and the undo, M4), and the peek's row once the tour is
-         complete (the card says it); the story card gives the peek back. */
-      .walk-sheet[data-sheet="list"] #station-skip,
+         its confirm and the undo, M4) - but "Finish the tour", which no row
+         carries, stays while the tour waits on its last station - and the
+         peek's row once the tour is complete (the card says it); the story
+         card gives the peek back. */
+      .walk-sheet[data-sheet="list"] #station-skip:not([data-kind="finish"]),
       .walk-sheet[data-sheet="list"][data-complete="true"] #walk-peek-row {
         display: none;
       }

@@ -14,9 +14,10 @@ the peek into the store's `sheetSet`. A thin writer, wired by
   a phone test.
 - `sheetAfterDrag(dy, thresholdPx?)` - up past the threshold `"list"`,
   down `"peek"`, a shorter (or non-finite) drag `null` (a tap).
-- `quickKind(quick)` - the quick action's look: `ask` (Can't get there?,
-  and "Finish the tour", the same compact button), `suggested` (the
-  labelled skip), `undo`; null for the story's end
+- `quickKind(quick)` - the quick action's look: `ask` (Can't get there?),
+  `finish` ("Finish the tour": the same compact look, its own kind so it
+  stays with the list open - no row carries a way to finish), `suggested`
+  (the labelled skip), `undo`; null for the story's end
   controls, which are the story card's.
 - `wireWalkSheet({ dom, setSheet, sheet, keepListening, rowTapped }): WalkSheetView`
   - `render(model | null, { sheet, quick, position, story })` - null hides

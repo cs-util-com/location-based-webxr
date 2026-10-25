@@ -315,7 +315,8 @@ action `walk-row-act` (`data-k` skip, bring or undo), the confirm
 `walk-undobar`; the completion card has no button of its own: the X
 `#enter-ar` is the one way out). While the list
 is open the quick action `#station-skip` is not shown (the prototype: the rows
-carry its actions). In AR a visitor's
+carry its actions), except "Finish the tour" (`data-kind="finish"`) while
+the tour waits on its last station: no row carries it. In AR a visitor's
 `#enter-ar` is the prototype's round Exit button at the top left and `#ar-status`
 is visually hidden (kept for `data-state` and `?debug=1`). The scan
 card's found look is `#scan-card[data-look="found"]` (a check in its

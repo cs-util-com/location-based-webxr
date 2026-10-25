@@ -47,11 +47,14 @@ export function sheetAfterDrag(
  *  or an undo. */
 export function quickKind(
   quick: SkipAction | null,
-): "ask" | "suggested" | "undo" | null {
+): "ask" | "finish" | "suggested" | "undo" | null {
   switch (quick?.kind) {
     case "ask-skip":
-    case "finish-tour":
       return "ask";
+    case "finish-tour":
+      // Looks as the ask; its own kind keeps it with the list open (no
+      // row carries a way to finish the tour).
+      return "finish";
     case "skip":
       return "suggested";
     case "undo":

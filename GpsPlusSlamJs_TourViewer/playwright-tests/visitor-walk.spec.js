@@ -772,6 +772,32 @@ test("the completion waits while the visitor is at the last station, then opens 
   await expect(page.getByTestId("enter-ar")).toHaveText("Back to the tour");
 });
 
+test("with the list open while the tour waits on its last station, 'Finish the tour' stays and finishes it", async ({
+  page,
+}) => {
+  // Why this test matters: the open list hides the peek's quick action
+  // (the rows carry Skip, its confirm and the undo), but no row carries a
+  // way to finish the tour. A visitor who opened the list at the last
+  // station had to close it or walk away to finish.
+  await openTheWalk(page);
+  await enterAtTheCode(page);
+  let second = 1;
+  for (const station of STATIONS) {
+    await visit(page, station, second);
+    second += 1;
+  }
+  const sheet = page.getByTestId("walk-sheet");
+  await expect(sheet).toHaveAttribute("data-complete", "false");
+  await page.getByTestId("walk-grab").click();
+  await expect(sheet).toHaveAttribute("data-sheet", "list");
+  const finish = page.getByTestId("station-skip");
+  await expect(finish).toBeVisible();
+  await expect(finish).toHaveText("Finish the tour");
+  await finish.click();
+  await expect(sheet).toHaveAttribute("data-complete", "true");
+  await expect(page.getByTestId("walk-done")).toBeVisible();
+});
+
 test("leaving AR shows the progress on the start page; coming back is welcomed", async ({
   page,
 }) => {

@@ -49,12 +49,13 @@ describe("sheetAfterDrag", () => {
 });
 
 describe("quickKind", () => {
-  it("an ask (or finishing the tour), a suggestion (the labelled skip) or an undo; the story's end is not the peek's", () => {
+  it("an ask, finishing the tour, a suggestion (the labelled skip) or an undo; the story's end is not the peek's", () => {
     expect(quickKind({ kind: "ask-skip", id: "a" })).toBe("ask");
     expect(quickKind({ kind: "skip", id: "a" })).toBe("suggested");
     expect(quickKind({ kind: "undo", id: "a" })).toBe("undo");
-    // "Finish the tour" is the peek's own compact button, as the ask.
-    expect(quickKind({ kind: "finish-tour", id: "a" })).toBe("ask");
+    // "Finish the tour" looks as the ask, but is its own kind: it stays
+    // when the list opens (the rows carry no way to finish).
+    expect(quickKind({ kind: "finish-tour", id: "a" })).toBe("finish");
     expect(quickKind({ kind: "ask-end", id: "a" })).toBeNull();
     expect(quickKind({ kind: "end", id: "a" })).toBeNull();
     expect(quickKind(null)).toBeNull();
@@ -366,6 +367,42 @@ describe("the walk's CSS under reduced motion", () => {
       `.walk-coach[data-look="spinner"] .walk-coach-spin`,
     );
     expect([...animated].filter((sel) => !stilled.has(sel))).toEqual([]);
+  });
+});
+
+describe("the quick action with the list open", () => {
+  // Why this test matters: the open list hides the peek's quick action,
+  // since the rows carry Skip, its confirm and the undo. "Finish the tour"
+  // has no row of its own: hidden with the list open, a visitor who opened
+  // the list while the tour waited on its last station had no way to
+  // finish it but closing the list or walking away.
+  it("hides it, except 'Finish the tour'", () => {
+    const html = readFileSync(new URL("../index.html", import.meta.url), {
+      encoding: "utf8",
+    });
+    // Each rule's selectors and body, cut at its braces (a nested
+    // @media's own opener is cut off with the text before it).
+    const hiding = html
+      .split("}")
+      .map((chunk) => {
+        const open = chunk.lastIndexOf("{");
+        return open < 0
+          ? null
+          : {
+              selectors: chunk.slice(
+                chunk.lastIndexOf("{", open - 1) + 1,
+                open,
+              ),
+              body: chunk.slice(open + 1),
+            };
+      })
+      .filter((r) => r !== null && /^\s*display: none;\s*$/.test(r.body))
+      .flatMap((r) => r!.selectors.replace(/\/\*[\s\S]*?\*\//g, "").split(","))
+      .map((sel) => sel.trim())
+      .filter((sel) => sel.includes("#station-skip"));
+    expect(hiding).toEqual([
+      '.walk-sheet[data-sheet="list"] #station-skip:not([data-kind="finish"])',
+    ]);
   });
 });
 
