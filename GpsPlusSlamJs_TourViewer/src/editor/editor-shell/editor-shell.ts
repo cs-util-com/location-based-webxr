@@ -88,7 +88,7 @@ type ShellView = Pick<
 
 /** The page's station commands the tree and the bars give: each one undo
  *  step, its outcome said by the page. */
-export interface ShellStationCommands {
+interface ShellStationCommands {
   /** A new station at `at`: the view's centre ("+") or where the ground
    *  menu was opened ("here"). */
   add(at: GroundPlace, where: "centre" | "here"): void;
