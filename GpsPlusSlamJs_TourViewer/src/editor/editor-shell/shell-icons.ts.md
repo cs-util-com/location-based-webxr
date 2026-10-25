@@ -21,6 +21,7 @@ in the current text colour, as SVG elements.
 
 - Constant markup only: nothing from a tour reaches an icon.
 - Original simple paths, the studio prototype's.
+- `lock` and `unlock`: the station pose lock's two states (inline SVG, as every icon here).
 
 ## Examples
 
@@ -35,3 +36,5 @@ placeShellIcons(document.getElementById("topbar")!);
 name and `toString` left; an icon drawn in the text colour and hidden
 from screen readers. `playwright-tests/editor3d-shell.spec.js` shows the
 studio's buttons.
+
+The icons are drawn by `shell-inspector.test.ts`'s lock test.

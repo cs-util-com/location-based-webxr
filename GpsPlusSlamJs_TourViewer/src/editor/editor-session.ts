@@ -82,6 +82,7 @@ import {
 import type { DetailsOutcome } from "./details-dialog.js";
 import type { EditorTourSettings } from "./editor-draft.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
+import { STATION_LOCKED } from "./editor-view.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 import { readZipBlobEntry, zipBlobEntryNames } from "../zip-blob.js";
 
@@ -319,7 +320,8 @@ export interface EditorSession {
    *  tour can carry. */
   place(object: TourObject): { kind: "placed" } | EditorRefusal;
   /** Move a station's frame (D17): its items move rigidly with it.
-   *  Refused for a station the tour does not carry. */
+   *  Refused for a station the tour does not carry, and for a locked one
+   *  (`stationLocked`): position, height and heading alike. */
   moveStation(
     stationId: string,
     geo: QrGeoPose,
@@ -441,6 +443,10 @@ export function createEditorSession(input: {
    *  views read the same state; a fresh one when absent (tests). Opening
    *  the session opens the document in it - whatever it held is gone. */
   readonly store?: TourViewerStore;
+  /** Whether a station's pose is locked (the page's view state): its move,
+   *  turn and lift are then refused; its radius, name, delete and copy
+   *  stay open. None: nothing is locked (the phone, a test). */
+  readonly stationLocked?: (stationId: string) => boolean;
 }): EditorSession {
   const { session, levels } = input;
   const store: TourViewerStore = input.store ?? createTourViewerStore();
@@ -793,6 +799,11 @@ export function createEditorSession(input: {
       const station = state?.stations.find((s) => s.id === stationId);
       if (station === undefined) {
         return { kind: "refused", reason: NO_SUCH_STATION };
+      }
+      // Every move, turn and lift of a station comes through here: the
+      // lock holds whatever asked (a drag, a key, a later control).
+      if (input.stationLocked?.(stationId) === true) {
+        return { kind: "refused", reason: STATION_LOCKED };
       }
       if (!onMap(geo)) return { kind: "refused", reason: NOT_ON_MAP };
       store.dispatch(

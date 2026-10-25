@@ -48,6 +48,7 @@ pure gesture maths reads (`GestureWorld`).
   distance, a twist turns the azimuth, a pan keeps the ground under the
   fingers' midpoint (on the level plane at the orbit's centre); every
   step within the orbit's limits (`clampedPose`).
+- `stationLocked(stationId)` (a dependency, the page's view state): a station's target carries `locked`, its layout is not posable, and `handleAt` is asked with `posable`, so a locked station's gizmo is its radius dots alone.
 
 ## Examples
 
@@ -82,3 +83,5 @@ saved and undone, every key, a second finger's cancel, the camera held
 still from a press during a flight until the release (T and Home
 waiting), the gizmo's on-screen sizes at four window sizes. The two-finger twist's direction
 and the pan on a real tablet are not covered by any test.
+
+The lock's parts are tested where they live (`gizmo-maths`, `gesture`, `editor3d-input`); the page's e2e (`editor3d-edit.spec.js`) checks the gizmo and the keys of a locked and an unlocked station.

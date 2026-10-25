@@ -839,6 +839,27 @@ body[data-view="3d"] #toasts {
   padding: 2px 12px 10px;
 }
 
+/* A station's Position row: the disclosure and its lock side by side. */
+.posrow {
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--s-line);
+}
+
+.posrow .disc {
+  flex: 1;
+  min-width: 0;
+  border-top: 0;
+}
+
+.posrow .lock {
+  margin: 0 6px;
+}
+
+.posrow .lock.on {
+  color: var(--s-text);
+}
+
 /* --- the map controls: white pills, 38 px buttons ------------------------- */
 #map-controls {
   position: absolute;

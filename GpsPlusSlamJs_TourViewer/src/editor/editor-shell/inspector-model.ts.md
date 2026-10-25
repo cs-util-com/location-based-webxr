@@ -47,6 +47,7 @@ code's fields, read-only, as the file holds them. The DOM is
   map shows.
 - A station's position is its own point; an item's is its offset in its
   station's frame (north, up, east).
+- A station's model carries `locked` (from `unlockedStations`, locked by default). A locked station's hint names its radius dot and says how to unlock it, never a drag the lock refuses.
 
 ## Examples
 
@@ -62,3 +63,5 @@ one; a station's, an item's and a code's fields (and a code without a
 position); a station east and north of the tour's centre in metres;
 `headingOfRotation` for turns about up, and none for a forward turned
 straight up or down; `inspectorHint` for each kind and for none.
+
+`inspector-model.test.ts` also covers `locked` and the locked hint.

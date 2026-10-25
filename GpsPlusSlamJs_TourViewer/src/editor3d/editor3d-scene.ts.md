@@ -108,6 +108,7 @@ keys), and writes only through the page's `edits`.
 - **The frame loop never freezes silently:** an error in a frame stops
   the loop; before the first frame the open rejects with
   it, after it `events.failed()` is called.
+- The station lock is read from the store's `editorView` (`isStationLocked`) on every frame's layout, so an unlock in the inspector shows the knob and the disc at once.
 
 ## Examples
 
@@ -149,3 +150,5 @@ zoom steps, north up and the layer chips.
 undone and redone; every key; a second finger cancelling a touch drag;
 the gizmo's sizes on the screen at four window sizes in a wide face. `editor3d-lazy.test.ts` checks no page loads it before an
 `import()` runs.
+
+The lock in the scene: `editor3d-edit.spec.js`.

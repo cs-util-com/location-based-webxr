@@ -158,6 +158,36 @@ describe("the gizmo's layout", () => {
       ),
     );
   });
+
+  // Why: a locked station's gizmo is its radius dots alone, so nothing
+  // drawn invites a drag the lock would refuse.
+  it("keeps a locked station's dots and takes its middle and knob", () => {
+    const subject = {
+      kind: "station" as const,
+      centre: CENTRE,
+      headingDeg: 0,
+      radiusM: 25,
+      sizeM: null,
+    };
+    expect(gizmoLayout(subject, 0.2).posable).toBe(true);
+    const locked = gizmoLayout({ ...subject, locked: true }, 0.2);
+    expect(locked.posable).toBe(false);
+    expect(locked.dots).toHaveLength(4);
+    // A lock means nothing on an item.
+    expect(
+      gizmoLayout(
+        {
+          kind: "item",
+          centre: CENTRE,
+          headingDeg: 0,
+          radiusM: null,
+          sizeM: null,
+          locked: true,
+        },
+        0.2,
+      ).posable,
+    ).toBe(true);
+  });
 });
 
 describe("which handle the pointer is on", () => {
@@ -220,6 +250,29 @@ describe("which handle the pointer is on", () => {
         underPointer: "other",
       }),
     ).toBe("turn");
+  });
+
+  it("answers only a dot when the middle and the knob are no handles (a locked station)", () => {
+    const base = { knob, dots, posable: false } as const;
+    expect(
+      handleAt({ ...base, pointer: knob, onDisc: true, underPointer: null }),
+    ).toBeNull();
+    expect(
+      handleAt({
+        ...base,
+        pointer: { x: 0, y: 0 },
+        onDisc: true,
+        underPointer: "selected",
+      }),
+    ).toBeNull();
+    expect(
+      handleAt({
+        ...base,
+        pointer: { x: 200, y: 100 },
+        onDisc: true,
+        underPointer: null,
+      }),
+    ).toBe("dot");
   });
 });
 

@@ -11,7 +11,9 @@
  * one edit of a finished gesture through the page (`commit`) - one undo
  * step. Nothing during a drag's frames: the preview is the scene's
  * (`InputScene.preview`). A held key is one gesture: its repeats move the
- * preview, and letting go of the keys writes one edit.
+ * preview, and letting go of the keys writes one edit. A locked station
+ * (`GestureTarget.locked`) takes no pose key and no drag of its middle or
+ * knob: its radius dots stay.
  *
  * OrbitControls keeps the camera's own input; a gesture or two fingers
  * lock it (`InputScene.lockCamera`) rather than hide events from it, so
@@ -21,8 +23,9 @@
  */
 import type { UnknownAction } from "@reduxjs/toolkit";
 
-import { editorViewActions } from "../editor/editor-view.js";
+import { editorViewActions, STATION_LOCKED } from "../editor/editor-view.js";
 import {
+  poseLocked,
   startGesture,
   startKeyGesture,
   type Gesture,
@@ -351,6 +354,12 @@ export function createSceneInput(input: {
     if (held === null) {
       const target = scene.target(selection);
       if (target === null) return;
+      // A locked station's pose keys are refused, said once per press (a
+      // held key's repeats say nothing more).
+      if (poseLocked(target)) {
+        if (!event.repeat) page.say(STATION_LOCKED);
+        return;
+      }
       held = {
         gesture: startKeyGesture(target, scene.world),
         selection,

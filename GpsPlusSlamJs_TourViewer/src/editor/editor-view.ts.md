@@ -105,6 +105,7 @@ chrome reads, one copy for every view of the page.
   (`moved`, a `Set` the card reads) stays the page's; nothing is
   dispatched per frame. A 3D gesture dispatches its start and its end
   only (`gesture`); its one edit is the tour's.
+- The station pose lock (`unlockedStations`, `stationLocked`, `isStationLocked`, `STATION_LOCKED`): every station is locked until the inspector's lock unlocks it; the list holds the unlocked ids, so a station a copy or an add made is locked too. View state only - never saved - and `opened`/`closed` lock every station again. A malformed `stationLocked` payload changes nothing.
 
 ## Examples
 
@@ -136,3 +137,5 @@ fields consistent and never changes the selection. The page's use of it is
 covered by `playwright-tests/editor.spec.js` (the 2D editor's walks:
 selection, drag, Done, the picker, the walk) and
 `playwright-tests/editor3d.spec.js` (the switch into 3D and back).
+
+`editor-view.test.ts` also covers the lock: locked by default, unlocked and locked again, listed once, a malformed payload ignored, and every station locked again at an open and a close.

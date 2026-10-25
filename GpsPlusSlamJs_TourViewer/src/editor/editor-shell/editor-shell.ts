@@ -28,11 +28,13 @@ import {
 } from "../../tour-document.js";
 import {
   editorViewActions,
+  isStationLocked,
   pointerDragRuns,
   type EditorViewState,
   type ShellLayer,
   type TreeSection,
 } from "../editor-view.js";
+import { STATION_PREFIX } from "../editor-model.js";
 import { docksAfter, type DockChange } from "./dock-rule.js";
 import {
   buildInspector,
@@ -173,6 +175,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       stations: tour?.stations ?? [],
       assets: tour?.assets ?? [],
       codes: deps.codes(),
+      unlockedStations: ui.unlockedStations,
     });
   };
 
@@ -245,6 +248,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       stations: tour?.stations ?? [],
       assets: tour?.assets ?? [],
       codes,
+      unlockedStations: ui.unlockedStations,
     });
     drawInspector(
       inspector,
@@ -389,6 +393,20 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const act = (event.target as Element).closest<HTMLElement>("[data-act]")
       ?.dataset["act"];
     if (act === "close") deps.select(null);
+    if (act === "lock") {
+      // The selected station's position locked or unlocked: view state,
+      // never an edit; the session refuses its moves while locked.
+      const ui = state().editorView;
+      if (ui.selected?.startsWith(STATION_PREFIX) === true) {
+        const id = ui.selected.slice(STATION_PREFIX.length);
+        store.dispatch(
+          editorViewActions.stationLocked({
+            id,
+            locked: !isStationLocked(ui, id),
+          }),
+        );
+      }
+    }
     if (act === "position") {
       positionOpen = !positionOpen;
       draw();

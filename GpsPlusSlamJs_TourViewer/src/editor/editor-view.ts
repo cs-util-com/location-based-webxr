@@ -6,8 +6,9 @@
  * delivered again, and the view switch: the map or the 3D view, and the
  * 3D view's load and why it last failed, the 3D view's shell: the
  * tree's folds, the docks' folds, the layers turned off and the debug
- * readout, and the 3D view's gesture under way (its start and end only;
- * the drag's preview is the scene's). The tour itself is `tourDocument`'s; this slice holds
+ * readout, the 3D view's gesture under way (its start and end only;
+ * the drag's preview is the scene's), and which stations' poses are
+ * unlocked (every station is locked until the creator unlocks it). The tour itself is `tourDocument`'s; this slice holds
  * what the page's chrome reads, so any view of the page (the map page,
  * a 3D view) reads one copy.
  *
@@ -120,6 +121,10 @@ export interface EditorViewState {
   readonly hiddenLayers: readonly ShellLayer[];
   /** The bottom bar's debug readout shows. */
   readonly readout: boolean;
+  /** The stations whose position, height and heading may be edited, by
+   *  id: every other station is locked (`isStationLocked`). Per open
+   *  tour, never saved: another open starts with every station locked. */
+  readonly unlockedStations: readonly string[];
 }
 
 export const initialEditorViewState: EditorViewState = {
@@ -141,6 +146,7 @@ export const initialEditorViewState: EditorViewState = {
   foldedDocks: { tree: false, inspector: false },
   hiddenLayers: [],
   readout: false,
+  unlockedStations: [],
 };
 
 /** Whether a payload's flag is a flag: anything else changes nothing. */
@@ -273,6 +279,17 @@ const editorViewSlice = createSlice({
     readoutShown(state, action: PayloadAction<{ shown: boolean }>) {
       if (isFlag(action.payload.shown)) state.readout = action.payload.shown;
     },
+    /** A station's pose locked or unlocked. */
+    stationLocked(
+      state,
+      action: PayloadAction<{ id: string; locked: boolean }>,
+    ) {
+      const { id, locked } = action.payload;
+      if (typeof id !== "string" || id === "" || !isFlag(locked)) return;
+      const unlocked = state.unlockedStations.filter((s) => s !== id);
+      if (!locked) unlocked.push(id);
+      state.unlockedStations = unlocked;
+    },
     /** The map asked for (or the tour closed): any load is left, and the
      *  last failure is forgotten. */
     view2dRequested(state) {
@@ -287,10 +304,13 @@ const editorViewSlice = createSlice({
     const foldAll = (state: {
       openStations: string[];
       gesture: EditorGesture | null;
+      unlockedStations: string[];
     }) => {
       state.openStations = [];
       // A gesture belongs to the tour it started on.
       state.gesture = null;
+      // Another tour, or none: every station locked again.
+      state.unlockedStations = [];
     };
     builder
       .addCase(tourDocumentActions.opened, foldAll)
@@ -305,6 +325,19 @@ export const editorViewReducer = editorViewSlice.reducer;
  *  is no drag): the camera must stand still until it ends. */
 export function pointerDragRuns(view: EditorViewState): boolean {
   return view.gesture !== null && view.gesture.handle !== "key";
+}
+
+/** Said when a move, a turn or a lift of a locked station is refused. */
+export const STATION_LOCKED =
+  "This station's position is locked - unlock it in the inspector's Position to move or turn it.";
+
+/** Whether a station's position, height and heading are locked: every
+ *  station is, until the creator unlocks it. */
+export function isStationLocked(
+  view: EditorViewState,
+  stationId: string,
+): boolean {
+  return !view.unlockedStations.includes(stationId);
 }
 
 /** The slice in a store's state. */

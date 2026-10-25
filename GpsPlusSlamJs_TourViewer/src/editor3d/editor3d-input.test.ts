@@ -12,7 +12,7 @@
 import type { UnknownAction } from "@reduxjs/toolkit";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
-import { editorViewActions } from "../editor/editor-view.js";
+import { editorViewActions, STATION_LOCKED } from "../editor/editor-view.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import {
   INPUT,
@@ -621,6 +621,42 @@ describe("the keys with nothing selected", () => {
       expect(tap(code).defaultPrevented, code).toBe(false);
     }
     expect(t.dispatched).toHaveLength(0);
+    t.input.dispose();
+  });
+});
+
+// Why: a locked station's pose keys must move nothing and say why, once
+// per press - not once per repeat of a held key - while its delete and
+// copy keys still work.
+describe("the keys on a locked station", () => {
+  const LOCKED: GestureTarget = {
+    kind: "station",
+    id: "st",
+    geo: { lat: 48.1, lon: 11.5, alt: 520, headingDeg: 0 },
+    foundRadiusM: 12,
+    centre: { x: 0, y: 0, z: 0 },
+    locked: true,
+  };
+
+  it("nudge, turn and lift nothing, say why once a press, and leave delete and copy", () => {
+    const t = setup({ selected: "station:st" });
+    t.scene.target = (id) => (id === "station:st" ? LOCKED : null);
+    tap("ArrowRight");
+    tap("KeyE");
+    tap("PageUp");
+    const held = new KeyboardEvent("keydown", {
+      code: "ArrowLeft",
+      key: "ArrowLeft",
+      repeat: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(held);
+    expect(t.commits).toEqual([]);
+    expect(t.dispatched).toEqual([]);
+    expect(t.page.say).toHaveBeenCalledTimes(3);
+    expect(t.page.say).toHaveBeenCalledWith(STATION_LOCKED);
+    tap("Delete");
+    expect(t.page.remove).toHaveBeenCalledWith("station:st");
     t.input.dispose();
   });
 });

@@ -312,6 +312,7 @@ changes`; a label is cut at 40 characters, a label-less note is "a
 - The settings record carries the details only once they were set or
   restored here: a record without them has no opinion about them
   (`editor-draft.ts`).
+- `stationLocked` (optional input): `moveStation` refuses a station it names as locked with `STATION_LOCKED`, before anything is dispatched. A station's radius, title, delete and copy are not pose edits and stay open. Undo and redo are outside the lock: they replay steps already made. Without the input (the phone, a test) every station moves as before.
 
 ## Tests
 
@@ -370,3 +371,5 @@ session (its edits refused, a save begun before landing nowhere, one asked
 for after refused, its reads its own tour), and a replaced session reading
 its tour as it stood when replaced, an edit no read followed included. The
 save thunk itself: `../tour-document-save.test.ts`.
+
+`station-lock.property.test.ts` drives a real session with random command sequences (moves, radius, rename, delete, copy, reorder, item moves and poses, grounding, adds, and the lock itself; up to 30 at full length) and checks that no command changes a station's pose while it is locked, plus the refusal's words and the open edits.

@@ -51,6 +51,7 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
 - The knob lies the ring's radius plus 30 px along the heading, the dots
   on the ring (the property test sweeps scales over 1e-4..10 m a pixel).
 - A grip is half the drawn size: the pictures carry a transparent margin.
+- A locked station (`GizmoSubject.locked`): `gizmoLayout` reports `posable: false` and `handleAt({ posable: false })` answers only a dot - the knob, the selection and the disc take no handle. `locked` means nothing on an item.
 
 ## Examples
 
@@ -78,3 +79,5 @@ object under the pointer; the disc); the turn, radius and size rules with
 their bounds; every key of the design and the keys left to others; and a
 property: the knob's distance and bearing from the centre and the parts'
 bounds over random subjects and scales.
+
+`gizmo-maths.test.ts` also pins a locked station's layout (dots kept, not posable) and its handles (a dot only).

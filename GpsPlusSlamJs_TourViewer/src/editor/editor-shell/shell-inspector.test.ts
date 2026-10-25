@@ -99,7 +99,11 @@ beforeEach(() => {
 });
 
 /** The inspector drawn for `selected`, from a store holding the tour. */
-function draw(selected: string | null, positionOpen = false) {
+function draw(
+  selected: string | null,
+  positionOpen = false,
+  unlocked: string[] = [],
+) {
   const state = storeWith(selected).getState();
   const tour = manifestToWrite(state.tourDocument);
   const model = buildInspector({
@@ -107,6 +111,7 @@ function draw(selected: string | null, positionOpen = false) {
     stations: tour?.stations ?? [],
     assets: tour?.assets ?? [],
     codes: CODES,
+    unlockedStations: unlocked,
   });
   drawInspector(
     dock,
@@ -128,6 +133,23 @@ function fields(): [string, string][] {
 }
 
 describe("drawInspector", () => {
+  // Why: the lock is the one control that opens a station to a move, so
+  // it sits on the Position row the shell answers, and says its state to
+  // a screen reader: pressed while locked.
+  it("puts a station's lock beside its Position, pressed while locked", () => {
+    draw("station:gate");
+    const lock = () =>
+      dock.body.querySelector<HTMLButtonElement>('.posrow [data-act="lock"]');
+    expect(dock.body.querySelector(".posrow button.disc")).not.toBeNull();
+    expect(lock()?.getAttribute("aria-pressed")).toBe("true");
+    expect(lock()?.getAttribute("aria-label")).toMatch(/^Unlock the position/);
+    draw("station:gate", false, ["gate"]);
+    expect(lock()?.getAttribute("aria-pressed")).toBe("false");
+    expect(lock()?.getAttribute("aria-label")).toBe("Lock the position");
+    draw("photo-1");
+    expect(dock.body.querySelector('[data-act="lock"]')).toBeNull();
+  });
+
   it("is hidden while nothing is selected", () => {
     draw(null);
     expect(dock.root.hidden).toBe(true);

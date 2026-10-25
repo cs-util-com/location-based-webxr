@@ -89,6 +89,7 @@ view shows.
     keep-walk switch shown and the longest status) in a wide platform
     face (Verdana, with DejaVu Sans' metrics), would no longer hold every
     control; measured, every state fits from 320 px up.
+- The inspector's lock (`data-act="lock"`) toggles the selected station's lock in `editorView` (`stationLocked`); both inspector builds pass `unlockedStations`.
 
 ## Examples
 
@@ -125,3 +126,5 @@ deselecting and folding, the folds and a layer kept across a trip to the
 map, Top view by its button and T, the zoom steps and the debug readout,
 and on a phone the folded tree's "Stations" header unfolding the dock
 with its stations shown.
+
+The lock's click in the page: `editor3d-edit.spec.js`.

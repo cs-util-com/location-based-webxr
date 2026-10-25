@@ -31,6 +31,7 @@ import { createTourViewerStore } from "../tour-viewer-session.js";
 import {
   editorViewActions,
   editorViewReducer,
+  isStationLocked,
   selectEditorView,
   type EditorMessage,
   type EditorViewState,
@@ -1750,6 +1751,9 @@ async function openFile(
     manifest: outcome.manifest,
     levels: outcome.levels,
     fileName: outcome.fileName,
+    // A station's pose is locked until the inspector unlocks it: the
+    // session refuses its moves, whichever control asked.
+    stationLocked: (id) => isStationLocked(ui(), id),
     // A deleted photo's picture, from the copy the page reads now (the
     // opened file stops reading once something else rewrote it), for an
     // undo after a save took it out (W2).

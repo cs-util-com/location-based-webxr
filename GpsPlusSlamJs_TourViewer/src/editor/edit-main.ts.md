@@ -65,6 +65,13 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (a card outliving its object) is refused in the session's words
   (`NOT_IN_TOUR`): the delete in a toast, with no "Deleted" toast and no
   Undo; the move on the card (PR #622 bot finding C).
+- **Station pose lock:** the session gets `stationLocked` from the page's
+  view state (`isStationLocked`), so every station opens locked and its
+  move, turn and lift are refused (`STATION_LOCKED`) whichever control
+  asked, until the inspector's lock beside Position unlocks it. The lock
+  is per open tour and never saved; the radius, the name, a delete and a
+  copy stay open while locked. The map's Move moves pins and photos only,
+  never a station.
 - **In place (E2b-1).** "Choose…" and the drop box open the browser's
   file picker where it exists (else the file input), asking for write
   permission on that gesture. A granted file, held by this tab
