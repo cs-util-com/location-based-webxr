@@ -106,15 +106,19 @@ async function lookAtTheCode(page) {
  * Enter AR at the fixture's code under the shifted GPS, see it far from its
  * saved spot, walk on with it in view, and end the visit.
  *
+ * Either order a creator outdoors takes: the fixes before the code, or the
+ * code first. A visit with no fix yet waits for one before the stored code
+ * may line it up (the page's timers fire only on demand here, so the wait
+ * never runs out): the code is then measured against the shifted
+ * alignment once the fixes come, as when they came first.
+ *
  * @param {import("@playwright/test").Page} page
+ * @param {"gps-first" | "code-first"} order
  */
-async function walkUnderShiftedGps(page) {
+async function walkUnderShiftedGps(page, order = "gps-first") {
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
   await page.getByTestId("enter-ar").click();
-  // The fixes come before the code: a visit that has GPS places by it, so
-  // the code is measured against the shifted alignment (one seen before
-  // any fix would line the visit up by its votes instead).
-  await shiftedFixes(page, 0, 3);
+  if (order === "gps-first") await shiftedFixes(page, 0, 3);
   await page.evaluate(
     ({ text, key }) => {
       /** @type {any} */ (window)[key].armQrDetection(text);
@@ -129,7 +133,18 @@ async function walkUnderShiftedGps(page) {
       },
       { timeout: 15000 },
     )
-    .toMatch(/Code seen \d+ m from its saved position/);
+    .toMatch(
+      order === "gps-first"
+        ? /Code seen \d+ m from its saved position/
+        : /waiting for GPS alignment/i,
+    );
+  if (order === "code-first") {
+    await shiftedFixes(page, 0, 3);
+    await expect(page.getByTestId("setup-status")).toContainText(
+      /Code seen \d+ m from its saved position/,
+      { timeout: 10000 },
+    );
+  }
   // No question any more: the visit just goes on.
   for (let i = 3; i < 3 + WALK; i += 10) {
     await shiftedFixes(page, i, 10);
@@ -158,7 +173,7 @@ test("a code seen 36 m from its saved spot after a reliable walk is moved at the
   page,
 }) => {
   await openFixtureTour(page);
-  await walkUnderShiftedGps(page);
+  await walkUnderShiftedGps(page, "code-first");
   // The result line stands between the Finish and the save (the save's own
   // line replaces it).
   await tapFinish(page);

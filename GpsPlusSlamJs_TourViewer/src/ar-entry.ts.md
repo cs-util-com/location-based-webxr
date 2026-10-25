@@ -191,8 +191,11 @@ entry; C7).
   (`hooks.creatorCanStartOnCodes`, `creator-measuring.ts`
   `canStartOnCodes`), the start is codes-only as a visitor's is. Any
   other creator start asks for location as before. A start that then
-  fails with the permission refused carries `locationRefusal` into the
-  status input: `code-can-start` (the next try starts on the code) or
+  fails with its OWN location request refused (the `locationRefusals` dep,
+  counted by `location-permission.ts` `onRefused` in `main.ts`, grew
+  during the start) carries `locationRefusal` into the status input - a
+  permission refused in an earlier visit still reads denied when a start
+  fails for another reason, and the hint would misname that cause: `code-can-start` (the next try starts on the code) or
   `no-code` (allow location, step outside for a first fix); a
   permission that cannot be read claims nothing. Reset at every start.
 - **GPS quality counts device fixes only** (`sessionGpsQuality`, through

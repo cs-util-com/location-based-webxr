@@ -154,6 +154,11 @@ export function wireArEntry(deps: {
      *  frame time, appended to the block. */
     debugLines?(): string[];
   };
+  /** How many location requests the page's requester saw refused
+   *  (`locationPermissionWithoutFix`'s `onRefused`): a creator's failed
+   *  start blames the location only when its own request was refused.
+   *  Absent: never. */
+  locationRefusals?: () => number;
 }): ArEntry {
   const {
     ctx,
@@ -762,6 +767,7 @@ export function wireArEntry(deps: {
       : locationGate.codesOnly();
     if (!authorMode) hooks.startViewerPipeline();
     const depth = entryDepth();
+    const refusalsBefore = deps.locationRefusals?.() ?? 0;
     const result = await arController.enable(
       buildArEnableConfig({
         container: dom.arRoot,
@@ -804,7 +810,11 @@ export function wireArEntry(deps: {
     // prompt, 2026-10-07).
     if (!result.ok) {
       endQrPipeline(ctx);
-      if (authorMode && !ctx.codesOnly) {
+      // Only a start whose own location request was refused: a permission
+      // refused earlier still reads denied when this start failed for
+      // another reason (no AR, the camera), which the hint would misname.
+      const refusedNow = (deps.locationRefusals?.() ?? 0) > refusalsBefore;
+      if (authorMode && !ctx.codesOnly && refusedNow) {
         locationRefusal = await creatorLocationRefusal();
         renderArStatus();
       }

@@ -55,9 +55,11 @@ troubleshooting recording's record of each placement. Split out of
     device fixes only (`device-gps-quality.ts`), so the votes never pass
     for GPS. This is an alternative, never a requirement: a visit without
     codes places by GPS exactly as below.
-- **Never a code** (field test 2, F5; owner, 2026-10-09): placing an
-  object is GPS and tracking only, so a tour builder with no codes places
-  exactly as this one does, and the module has no access to the codes. The
+- **Never a measured code** (field test 2, F5; owner, 2026-10-09):
+  placing an object is GPS and tracking (or a stored code's votes, above)
+  only, so a tour builder with no codes places exactly as this one does;
+  the module never reads a code, only whether a stored code voted in this
+  visit. The
   gate used to need a measured code too: adopting a new print size
   mid-walk emptied the hand and greyed the buttons for the rest of the
   loop. An object placed with no code in the visit is settled through the

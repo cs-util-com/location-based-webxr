@@ -31,7 +31,8 @@ listed in `index.html.md`. The concerns and their modules:
   `presentTourLevels`, r857 review #5).
 - `location-permission.ts` - wraps the AR controller's location request
   (`locationPermissionWithoutFix`) so a granted permission with no fix yet
-  starts AR (M1b-1 review #1).
+  starts AR (M1b-1 review #1), and counts the refused requests
+  (`onRefused`), handed to `wireArEntry` as `locationRefusals`.
 - `creator-setup.ts` - the creator's AR setup panel: measuring, finish
   (the zip rebuild), the download (`wireCreatorSetup`); `main.ts` builds
   the object list's DOM view (`createObjectListView` over `#object-list`,

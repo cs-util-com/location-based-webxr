@@ -192,6 +192,16 @@ were here. What stays is the Finish's side:
   The placement gate and the readout also read `codeVoted()` - a stored
   code voted in this visit (`ctx.viewerVotedLocks > 0`) - which opens
   placing without fixes; the mint still needs three device fixes.
+  The quality is read once per GPS history: the store's arrays are
+  immutable, so the same array and session start read the same, and the
+  readout asks on every camera frame.
+- **A visit's wait for a first fix** starts in `beginAuthorVisit`
+  (`measuring.beginVisit()`, before the scene check): whether a stored
+  code lines the visit up (`creator-measuring.ts`).
+- **A stored code ignored as moved** (`ctx.viewerIgnoredText`): the line
+  leads with `MOVED_CODE_SENTENCE` and "Placing goes by GPS.", as the
+  visitor is told - its votes are withdrawn, so a visit it lined up waits
+  for GPS again and the creator must learn why the pin button went grey.
 
 - **The troubleshooting recording's log** (authoring recording plan
   2026-09-28-0953, M1a; `tour-authoring-actions.ts`): a placed pin or photo

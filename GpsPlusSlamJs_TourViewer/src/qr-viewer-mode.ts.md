@@ -110,7 +110,9 @@ hasVoted)` is forwarded from every controller lock (no detected-text
 - `IGNORED_CODE_LINE` and `viewerStatusLine({ ..., ignoredCode })`: "This
   code seems to have been moved, so its position is not used. Showing the
   tour by GPS." replaces every lock and hold line (no "Relocalized", no
-  "Scan the code again", which the veto would ignore).
+  "Scan the code again", which the veto would ignore). Its first sentence
+  is `MOVED_CODE_SENTENCE`, which the creator's panel shows too
+  (`creator-setup.ts`), followed there by "Placing goes by GPS.".
 
 ## Invariants & assumptions
 

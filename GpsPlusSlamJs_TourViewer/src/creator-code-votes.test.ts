@@ -48,6 +48,7 @@ import { Group, Matrix4, Object3D, Quaternion, Vector3 } from "three";
 import { objectPoseNue } from "./content-placement.js";
 import { wireCreatorSetup, type CreatorSetupDom } from "./creator-setup.js";
 import type { ObjectListHandlers } from "./object-list.js";
+import { SCAN_GATE_ESCAPE_MS } from "./scan-gate.js";
 import { writeSideM } from "./printed-side.js";
 import type { TourViewerSeams } from "./seams.js";
 import {
@@ -259,11 +260,18 @@ async function indoorCreator(
   /** Where the tour keeps it: the hosted zip, or only this device's code
    *  book (a draft never uploaded). */
   kept: "hosted" | "draft" = "hosted",
+  /** The visit's wait for a first GPS fix ran out (indoors): its clock is
+   *  fired right after the visit begins. False: the clock is the test's to
+   *  fire (`graceEnds`). */
+  graceElapsed = true,
 ) {
   captured.configs.length = 0;
   const arStore = createTourViewerStore();
   /** The settle records the visit logs (`tourAuthoring/settled`). */
-  const settled: { basis: string; objects: { basis?: string }[] }[] = [];
+  const settled: {
+    basis: string;
+    objects: { basis?: string }[];
+  }[] = [];
   const dispatch = arStore.dispatch;
   arStore.dispatch = ((action: { type: string; payload?: unknown }) => {
     if (action.type === "tourAuthoring/settled") {
@@ -297,8 +305,16 @@ async function indoorCreator(
     dispose: () => undefined,
   };
   const clock = { nowMs: T0 };
+  /** The page's timers (`seams.schedule`): fired by the test. */
+  const timers: { fn: () => void; ms: number; cancelled: boolean }[] = [];
   const seams = {
-    schedule: () => () => undefined,
+    schedule: (fn: () => void, ms: number) => {
+      const timer = { fn, ms, cancelled: false };
+      timers.push(timer);
+      return () => {
+        timer.cancelled = true;
+      };
+    },
     pickObjectInView: () => null,
     canShareZip: () => false,
     downloadZip: () => Promise.resolve(true),
@@ -363,6 +379,11 @@ async function indoorCreator(
   }
   expect(setup.startAuthorPipeline()).toBe(true);
   setup.beginAuthorVisit();
+  /** The visit's timers run out (the GPS wait among them). */
+  function graceEnds(): void {
+    for (const t of timers.splice(0)) if (!t.cancelled) t.fn();
+  }
+  if (graceElapsed) graceEnds();
 
   /** The levels the controller fetched, per text (it fetches once). */
   const fetched = new Map<string, QrLevel>();
@@ -496,6 +517,10 @@ async function indoorCreator(
     dom,
     setup,
     hooks,
+    levelId,
+    timers,
+    graceEnds,
+    configs: captured.configs,
     look,
     deviceFix,
     placePin,
@@ -716,3 +741,112 @@ describe(
     });
   },
 );
+
+// Why: an outdoor creator often points at the code within seconds of
+// entering AR, before the phone's first GPS fix. Lined up by the code's
+// votes, that visit could never improve the code's stored position, so a
+// visit waits for a first fix before it votes - the same clock the
+// visitor's GPS escape waits on. A codes-only entry (no location at all)
+// votes at once; a fix inside the wait makes it a GPS visit.
+describe(
+  "which creator visits a stored code lines up",
+  { timeout: SLOW_MS },
+  () => {
+    const origin = new Matrix4().makeRotationY(0.2).setPosition(1, 0, -1);
+    const truth = yawAlignment(15, [8, 400, -4]);
+
+    it("waits for a first fix before voting, for as long as the visitor's GPS escape waits", async () => {
+      const c = await indoorCreator(storedCode(truth, origin), "hosted", false);
+      expect(c.timers.map((t) => t.ms)).toContain(SCAN_GATE_ESCAPE_MS);
+      await c.look(origin);
+      expect(c.votes()).toBe(0);
+      // Placement waits too: nothing lines the visit up yet.
+      expect(c.dom.pinButton.disabled).toBe(true);
+      expect(c.dom.status.textContent).toMatch(/waiting for GPS alignment/);
+      // No fix came: the code lines the visit up.
+      c.graceEnds();
+      await c.look(origin, 12, TEXT, 10_000);
+      expect(c.votes()).toBeGreaterThan(0);
+      expect(c.dom.pinButton.disabled).toBe(false);
+    });
+
+    it.each([1, 3, 9])(
+      "makes a visit whose first fix came %d s in a GPS visit, code seen first or not",
+      async (fixAfterS) => {
+        const c = await indoorCreator(
+          storedCode(truth, origin),
+          "hosted",
+          false,
+        );
+        await c.look(origin);
+        c.ctx.lastDetectedText = TEXT;
+        // The fix lands inside the wait (its clock is the page's timer,
+        // which has not fired): the visit is a GPS visit.
+        expect(fixAfterS * 1000).toBeLessThan(SCAN_GATE_ESCAPE_MS);
+        c.deviceFix(truth, [0, 1.4, 0], 5);
+        await c.look(origin, 12, TEXT, 4_000);
+        c.graceEnds();
+        await c.look(origin, 12, TEXT, 12_000);
+        expect(c.votes()).toBe(0);
+      },
+    );
+
+    it("votes at once in a visit started without location", async () => {
+      const c = await indoorCreator(storedCode(truth, origin), "hosted", false);
+      c.ctx.codesOnly = true;
+      await c.look(origin);
+      expect(c.votes()).toBeGreaterThan(0);
+    });
+  },
+);
+
+// Why: a print-size adopted in a visit is the size its code is solved at
+// from then on. A stored code's votes use the stored size (its stored pose
+// was measured at it) - but only in a visit the code lines up; in a GPS
+// visit the code is measured like any other, at the adopted size.
+describe("an adopted print size at a stored code", { timeout: SLOW_MS }, () => {
+  const origin = new Matrix4();
+  const truth = yawAlignment(0, [0, 400, 0]);
+
+  it("is the size a GPS visit solves the code at", async () => {
+    const c = await indoorCreator(storedCode(truth, origin), "hosted", false);
+    c.deviceFix(truth, [0, 1.4, 0], 5);
+    await c.look(origin);
+    const adopted = 0.2;
+    c.ctx.printSizeCheck = {
+      offer: () => ({ text: TEXT, sizeM: adopted }),
+      answer: () => undefined,
+      onDetection: () => undefined,
+      pending: () => false,
+    } as never;
+    const before = c.configs.length;
+    c.dom.sizeOfferUse.click();
+    await flush();
+    expect(c.configs.length).toBe(before + 1);
+    const level = await c.configs.at(-1)!.fetchLevel(TEXT);
+    expect(level.qr.physicalSizeM).toBe(adopted);
+  });
+});
+
+// Why: a stored code the moved-code check ignores no longer lines the visit
+// up - its votes are withdrawn and placing waits for GPS again. A visitor
+// is told so; a creator whose pin button just went grey must be told too,
+// or the visit simply looks stuck.
+describe("a stored code ignored as moved", { timeout: SLOW_MS }, () => {
+  const origin = new Matrix4();
+  const truth = yawAlignment(0, [0, 400, 0]);
+
+  it("tells the creator why placing waits for GPS again", async () => {
+    const c = await indoorCreator(storedCode(truth, origin));
+    await c.look(origin);
+    expect(c.votes()).toBeGreaterThan(0);
+    expect(c.dom.status.textContent).not.toMatch(/moved/);
+    c.ctx.ignoredCodes.set(c.levelId, { text: TEXT, vetoSpreadM: 30 });
+    // Its next lock is an ignored lock (the pipeline routes it so).
+    await c.look(origin, 2, TEXT, 30_000);
+    expect(c.ctx.viewerIgnoredText).toBe(TEXT);
+    expect(c.dom.status.textContent).toMatch(
+      /^This code seems to have been moved, so its position is not used\. Placing goes by GPS\./,
+    );
+  });
+});

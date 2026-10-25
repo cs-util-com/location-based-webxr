@@ -87,7 +87,11 @@ import {
 } from "./qr-author-mode.js";
 
 import { createPrintSizeCheck } from "./print-size-check.js";
-import type { CodeVoteDeps, CodeVoteOptions } from "./qr-viewer-mode.js";
+import {
+  MOVED_CODE_SENTENCE,
+  type CodeVoteDeps,
+  type CodeVoteOptions,
+} from "./qr-viewer-mode.js";
 import { deviceGpsQuality } from "./device-gps-quality.js";
 import type { ScanOpen } from "./scan-open.js";
 import type { TourViewerSeams } from "./seams.js";
@@ -496,6 +500,29 @@ export function wireCreatorSetup(deps: {
     );
   }
 
+  /** The last quality read, by the history it was read from: the store's
+   *  arrays are immutable, so the same array and start read the same - and
+   *  the readout asks on every camera frame, while a fix arrives about once
+   *  a second. */
+  let qualityMemo: {
+    positions: readonly unknown[];
+    start: number;
+    quality: ReturnType<typeof deviceGpsQuality>;
+  } | null = null;
+  function sessionDeviceQuality(
+    positions: ReturnType<typeof selectGpsPositions>,
+    start: number,
+  ): ReturnType<typeof deviceGpsQuality> {
+    if (qualityMemo?.positions !== positions || qualityMemo.start !== start) {
+      qualityMemo = {
+        positions,
+        start,
+        quality: deviceGpsQuality(positions.slice(start)),
+      };
+    }
+    return qualityMemo.quality;
+  }
+
   /**
    * The mint gate's view of the alignment: this session's DEVICE fixes and
    * their median accuracy. A code's votes share the GPS history; counted,
@@ -504,8 +531,9 @@ export function wireCreatorSetup(deps: {
    */
   function authorAlignmentInfo(): MintAlignmentInfo {
     const state = arStore.getState();
-    const device = deviceGpsQuality(
-      selectGpsPositions(state).slice(ctx.gpsSamplesAtSessionStart),
+    const device = sessionDeviceQuality(
+      selectGpsPositions(state),
+      ctx.gpsSamplesAtSessionStart,
     );
     return {
       hasMatrix: selectAlignmentMatrix(state) !== null,
@@ -672,6 +700,11 @@ export function wireCreatorSetup(deps: {
         ? `${DONE_WAITS_FOR_MEASURING} · `
         : "") +
       entryLead() +
+      // A stored code ignored as moved: its votes are withdrawn, so a visit
+      // it lined up waits for GPS again - say why, as the visitor is told.
+      (ctx.viewerIgnoredText === null
+        ? ""
+        : `${MOVED_CODE_SENTENCE} Placing goes by GPS. · `) +
       settle.refusalLead() +
       (ctx.placementNote === null ? "" : `${ctx.placementNote} · `);
     // evaluate, not last: a cache hit unless the detections changed - and
@@ -992,6 +1025,9 @@ export function wireCreatorSetup(deps: {
     creatorCanStartOnCodes: () => creator && measuring.canStartOnCodes(),
     beginAuthorVisit: () => {
       if (!creator) return;
+      // The visit's wait for a first GPS fix (whether a stored code lines
+      // it up) starts with the visit, scene or not.
+      measuring.beginVisit();
       const scene = seams.getScene();
       if (scene === null) return;
       // Earlier visits' objects (plan §3.2): each keeps only its geo in this

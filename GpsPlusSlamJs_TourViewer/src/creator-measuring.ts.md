@@ -156,18 +156,37 @@ M4 replaces its one code in hand with the code book.
   budget, zero check, sixteen-vote ring, entry sink (soft trim) and
   moved-code veto the visitor votes through; there is no second voting path.
   Its `fetchLevel` answers a code the tour stores (`codes.references()`,
-  hosted and draft) with the stored geo and the STORED printed size - never a
-  size adopted in this visit, which the stored pose was not measured at - and
-  every other code with the author's geo-less level, which never votes. A
-  code measured in this visit gets no voting level (its pose came from this
-  visit's alignment, so its votes would only repeat it).
+  hosted and draft) with the stored geo and the STORED printed size, which
+  the stored pose was measured at, and every other code with the author's
+  geo-less level, which never votes. No voting level (the code is then the
+  author's level, at the size it is solved at) for: a code measured in this
+  visit (its pose came from this visit's alignment, so its votes would only
+  repeat it); a code whose print size was adopted (it is solved at that size
+  from then on, in every visit); and every code once the visit is decided
+  not to vote. A visit not decided yet gets the voting level, and the
+  decision gates its votes frame by frame.
   - **Which visits vote** (`visitVotes`): decided once per AR visit, at the
-    first stable pose of a stored code, and only when no device fix came
-    before it (`alignmentInfo().sampleCount === 0`) - the rule the visitor's
-    code-set origin follows. A visit with GPS keeps placing by GPS, so a
-    creator outdoors works exactly as before. An adopted print size restarts
-    the controller within the visit and keeps the decision and the entry's
-    vote pieces (only the controller is disposed).
+    first frame of a stored code that can decide it. A codes-only start (the
+    location refused, `ctx.codesOnly`) votes at once. Any other visit
+    first waits for a device fix for `SCAN_GATE_ESCAPE_MS` (10 s, the
+    visitor's GPS escape wait, reused) from the visit's start
+    (`beginVisit`, through `seams.schedule`): an outdoor creator often
+    points at the code within seconds of entering AR, and a visit lined up
+    by the code can never improve its stored position. A device fix before
+    the decision makes it a GPS visit (placing by GPS exactly as before); a
+    wait that runs out without one makes the code line the visit up.
+  - **What the creator sees during the wait:** nothing votes, so the
+    placement stays closed and the readout is the plain GPS wait ("Pose
+    stable - waiting for GPS alignment (0 of 3 fixes). Walk a few metres
+    with GPS reception."); after the wait the code's votes land on its next
+    stable frames and the line says the code places the visit.
+  - **Not measured:** how long an outdoor phone takes to its first fix
+    after entering AR. 10 s is the existing escape wait, not a fitted
+    value; a phone slower than that, pointed at the code at once, is lined
+    up by the code.
+  - An adopted print size restarts the controller within the visit and
+    keeps the decision and the entry's vote pieces (only the controller is
+    disposed).
   - Measuring is separate and unchanged: it follows the readout's
     `canMint`, which needs three DEVICE fixes, so a vote-only visit mints
     nothing.
@@ -180,6 +199,8 @@ while one runs, a new print size), `authoring-settle.test.ts` (automatic
 measuring, the classification, the sightings) and `creator-setup.test.ts`
 (the size offer), `creator-code-votes.test.ts` (a stored code's votes:
 which visits vote, a draft-only code, the placement gate, the quality
-counts, the vote-only and mixed settles). The sampled mutants of the regions "measuring", "size
+counts, the vote-only and mixed settles, the wait for a first fix with
+fix arrival swept at 1, 3 and 9 s, a GPS visit's adopted size, the
+creator's line when a stored code is ignored as moved). The sampled mutants of the regions "measuring", "size
 offer" and "sightings" (`scripts/fixtures/creator-setup.mutants.json`) are
 killed or judged equivalent.

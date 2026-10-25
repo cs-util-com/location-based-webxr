@@ -17,7 +17,9 @@ import { E2E_QR_TEXT } from "./qr-fixture.mjs";
  * - but only the composed page shows that a creator with no fix can reach a
  * placed pin through the REAL vote path the visitor uses, and that the
  * written pin then sits where the stored code puts it. A creator outdoors
- * (the fixes before the code) is every other creator spec.
+ * - a fix before the code, or within the visit's wait for one - is every
+ * other creator spec: there the page's timers fire only on demand, so that
+ * wait never runs out.
  */
 
 /** The fakes' control surface on `window` (ar-fakes.js). */
@@ -68,6 +70,21 @@ async function lookUntil(page, line) {
       { timeout: 20000 },
     )
     .toMatch(line);
+}
+
+/**
+ * A visit started with location and no fix yet: it first waits for one,
+ * placing nothing, and the stored code lines it up only when that wait
+ * runs out without a fix (the page's timers, fired here by hand).
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function noFixInTime(page) {
+  await lookUntil(page, /waiting for GPS alignment/);
+  await expect(page.getByTestId("setup-pin")).toBeDisabled();
+  await page.evaluate((key) => {
+    /** @type {any} */ (window)[key].fireTimers();
+  }, TEST_KEY);
 }
 
 /** @param {import("@playwright/test").Page} page */
@@ -123,6 +140,7 @@ test("a creator with location allowed but no fix is lined up by the tour's store
   expect((await locationUse(page)).gpsWatch).toBe(true);
 
   await armTheCode(page);
+  await noFixInTime(page);
   await lookUntil(page, CODE_PLACES);
   // Placing is open on the code's votes alone - and the line still says
   // that a NEW code needs GPS.
@@ -242,6 +260,7 @@ test("a code measured in an earlier visit and not yet saved lines up the next vi
   await button.click();
   await expect(button).toHaveText("Done");
   await armTheCode(page);
+  await noFixInTime(page);
   await lookUntil(page, CODE_PLACES);
   await expect(page.getByTestId("setup-pin")).toBeEnabled();
 });

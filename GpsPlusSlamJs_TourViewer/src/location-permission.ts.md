@@ -11,7 +11,7 @@ again." on every tap) - worse off than one who had declined (codes alone).
 
 ## Public API
 
-- `locationPermissionWithoutFix({ query, request }): () => Promise<PermissionStatus>`
+- `locationPermissionWithoutFix({ query, request, onRefused? }): () => Promise<PermissionStatus>`
   - `query()` - the browser's permission state (`seams.queryGeolocationPermission`).
   - `request()` - the framework's requester (`requestGeolocationPermission`,
     or the e2e fakes' stand-in): it prompts while the browser still asks.
@@ -21,6 +21,10 @@ again." on every tap) - worse off than one who had declined (codes alone).
     becomes `granted: true` - only `PERMISSION_DENIED` (`granted: false`)
     refuses. A missing Geolocation API (`supported: false`) passes through.
     A throwing query falls back to the request.
+  - `onRefused()` (optional) - called once for each request answered
+    `granted: false`, and for nothing else: `main.ts` counts them so a
+    creator's failed start blames the location only when its own request
+    was refused (`ar-entry.ts`).
 
 ## Invariants & assumptions
 

@@ -99,6 +99,9 @@ function harness(
     permission?: string;
     /** The tour stores a code that can start a creator without location. */
     codeCanStart?: boolean;
+    /** A failed start's location request was refused (the page's
+     *  requester counts it): the permission reads denied from then on. */
+    refusesLocation?: boolean;
   } = {},
 ) {
   // The entry flags a running session on `document.body.dataset`; the
@@ -113,6 +116,8 @@ function harness(
   let enabled: EnableGpsArConfig | null = null;
   /** The controller's status, settable so a test can walk a session. */
   const ar = { status: options.arStatus ?? "ready" };
+  /** The location refusals the page's requester counted. */
+  const refusals = { count: 0 };
   const arController = {
     getState: () => ({ status: ar.status }),
     subscribe: () => () => undefined,
@@ -121,6 +126,10 @@ function harness(
       enabled = config;
       // By default report a failed start: the session callbacks are already
       // handed over, and nothing after the enable needs a scene.
+      if (options.enableOk !== true && options.refusesLocation === true) {
+        refusals.count += 1;
+        permission.state = "denied";
+      }
       return Promise.resolve({ ok: options.enableOk === true });
     }),
     disable: vi.fn(() => Promise.resolve()),
@@ -211,6 +220,7 @@ function harness(
     } as never,
     dom: dom as unknown as ArEntryDom,
     hooks,
+    locationRefusals: () => refusals.count,
     ...(options.records === undefined
       ? {}
       : { recording: { beginOnArEntry: () => options.records === true } }),
@@ -241,6 +251,7 @@ function harness(
     toastResets,
     enabledConfig: () => enabled,
     permission,
+    refusals,
     meshSurface,
     setArStatus(status: string) {
       ar.status = status;
@@ -1243,7 +1254,11 @@ describe("a creator whose location is refused starts on the tour's stored code",
   });
 
   it("says, after a start the refused location failed, to allow it and step outside when no code can start it", async () => {
-    const h = harness({ mode: "creator", permission: "denied" });
+    const h = harness({
+      mode: "creator",
+      permission: "denied",
+      refusesLocation: true,
+    });
     await h.enter();
     h.setArStatus("error");
     h.entry.renderArStatus();
@@ -1262,6 +1277,7 @@ describe("a creator whose location is refused starts on the tour's stored code",
     });
     h.arController.enable.mockImplementationOnce(() => {
       h.permission.state = "denied";
+      h.refusals.count += 1;
       return Promise.resolve({ ok: false });
     });
     await h.enter();
@@ -1269,6 +1285,20 @@ describe("a creator whose location is refused starts on the tour's stored code",
     h.entry.renderArStatus();
     expect(h.dom.arStatus.textContent).toMatch(
       /Try again to start on the tour's printed code/,
+    );
+  });
+
+  // Why: a permission refused in an earlier visit still reads denied when
+  // this start fails for another reason (no AR, the camera refused). Told
+  // to allow location and step outside, the creator would chase the wrong
+  // cause - the hint is for a start the location request itself failed.
+  it("gives no location hint when the start failed with no location refused in it", async () => {
+    const h = harness({ mode: "creator", permission: "denied" });
+    await h.enter();
+    h.setArStatus("error");
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).not.toMatch(
+      /step outside for a first GPS fix/,
     );
   });
 

@@ -20,6 +20,9 @@ export function locationPermissionWithoutFix(deps: {
   readonly query: () => Promise<LocationPermission>;
   /** The framework's requester (prompts when the browser still asks). */
   readonly request: () => Promise<PermissionStatus>;
+  /** Told of each request the person refused (`granted: false`): what a
+   *  failed start's line blames on the location. */
+  readonly onRefused?: () => void;
 }): () => Promise<PermissionStatus> {
   return async () => {
     let state: LocationPermission = "unknown";
@@ -35,6 +38,7 @@ export function locationPermissionWithoutFix(deps: {
     if (result.supported && result.granted === null) {
       return { supported: true, granted: true };
     }
+    if (result.granted === false) deps.onRefused?.();
     return result;
   };
 }

@@ -445,11 +445,15 @@ export function buildViewerControllerConfig(
   };
 }
 
+/** What a code the moved-code check ignores means, for a visitor and a
+ *  creator alike. */
+export const MOVED_CODE_SENTENCE =
+  "This code seems to have been moved, so its position is not used.";
+
 /** The line for a code the moved-code check ignores (D20, M5c; §7j #4):
  *  no "Relocalized", no invitation to scan again - the veto would ignore
  *  it. */
-export const IGNORED_CODE_LINE =
-  "This code seems to have been moved, so its position is not used. Showing the tour by GPS.";
+export const IGNORED_CODE_LINE = `${MOVED_CODE_SENTENCE} Showing the tour by GPS.`;
 
 /** What the viewer's status line shows — pure, plain-language. */
 export function viewerStatusLine(input: {

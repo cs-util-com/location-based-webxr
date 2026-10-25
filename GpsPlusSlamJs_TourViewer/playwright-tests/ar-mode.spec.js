@@ -625,10 +625,10 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
     /hold the phone on the printed code/i,
   );
 
-  // Outdoors the phone has a fix before the code is in view: the visit
-  // places by GPS, and a stored code seen then is measured, never voted
-  // (a stored code seen before any fix lines the visit up instead - the
-  // indoor creator's tests). The zero and the first of three fixes.
+  // The code before any fix: the visit waits for one (the page's timers
+  // fire only on demand here, so the wait never runs out and the stored
+  // code never lines the visit up), and the code is measured once the
+  // fixes come.
   /** Three odom-GPS pairs, ~15 m apart, in a consistent identity-ish
    *  mapping around the zero reference: the REAL alignment solve's input. */
   const pairs = [
@@ -662,15 +662,6 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
       },
       { pairs, indices },
     );
-  // The identity-matrix hole (milestone review #1): creating gpsData ships
-  // an IDENTITY alignment matrix — the gate must NOT open on it.
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.alignmentStore.dispatch({
-      type: "gpsData/setZeroPos",
-      payload: { lat: 47.5, lon: 8.7 },
-    });
-  });
-  await recordPairs([0]);
 
   await page.evaluate((text) => {
     /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
@@ -688,15 +679,25 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
       { timeout: 15000 },
     )
     .toMatch(/waiting for GPS alignment/i);
-  await expect(page.getByTestId("setup-status")).toHaveText(/1 of 3 fixes/i);
   // Nothing is measured before the gate opens: Finish stays off.
   await expect(page.getByTestId("setup-finish")).toBeDisabled();
   // The size input is locked while the session runs — the solves used the
   // captured value (milestone review #3).
   await expect(page.getByTestId("author-size")).toBeDisabled();
 
-  // Feed the rest of the REAL alignment solve.
-  await recordPairs([1, 2]);
+  // The identity-matrix hole (milestone review #1): creating gpsData ships
+  // an IDENTITY alignment matrix — the gate must NOT open on it.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.alignmentStore.dispatch({
+      type: "gpsData/setZeroPos",
+      payload: { lat: 47.5, lon: 8.7 },
+    });
+  });
+  await expect(page.getByTestId("setup-status")).toHaveText(/0 of 3 fixes/i);
+  await expect(page.getByTestId("setup-finish")).toBeDisabled();
+
+  // Feed the REAL alignment solve.
+  await recordPairs([0, 1, 2]);
   // Measured on its own once the gate opens (UI round 1, U3).
   await expect(page.getByTestId("setup-status")).toContainText(
     /Code measured/i,
@@ -902,10 +903,9 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // above already ended the session.)
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("Done");
-  // One fix of this visit before the code is seen again: the visit places
-  // by GPS (with none, the stored code would line it up by its votes), and
-  // the count must read this visit's one fix, not the dead session's.
-  await recordPairs([0]);
+  // The stored code, seen again before any fix of this visit: the visit
+  // waits for GPS (its wait for a first fix never runs out here), and the
+  // count reads this visit's fixes, not the dead session's.
   await expect
     .poll(
       async () => {
@@ -916,7 +916,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
       },
       { timeout: 15000 },
     )
-    .toMatch(/waiting for GPS alignment \(1 of 3 fixes\)/i);
+    .toMatch(/0 of 3 fixes/i);
   // Placement waits for THIS session's alignment too (M4 review #2): the
   // level survived the session end, the fixes did not.
   await expect(page.getByTestId("setup-pin")).toBeDisabled();
@@ -1307,9 +1307,10 @@ test("the creator's AR visit first asks for the tour's code, and stops asking on
       },
       { timeout: 15000 },
     )
-    // No fix in this visit: the stored code lines it up by its votes, and
-    // the readout says so; with a fix it would read "Pose stable".
-    .toMatch(/Pose stable|The tour's code places you/);
+    // No fix in this visit, and its wait for one never runs out here (the
+    // page's timers fire only on demand): the visit waits for GPS, so the
+    // stored code is not voted and the readout is the plain "Pose stable".
+    .toMatch(/Pose stable/);
   // The code's identity is a hash that lands a moment later; then the hint
   // goes, with nothing else to do.
   await expect(page.getByTestId("setup-status")).not.toHaveText(

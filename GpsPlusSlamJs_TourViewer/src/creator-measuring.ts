@@ -46,6 +46,7 @@ import {
   type CodeVoteDeps,
   type CodeVoteOptions,
 } from "./qr-viewer-mode.js";
+import { SCAN_GATE_ESCAPE_MS } from "./scan-gate.js";
 import type { ScanOpen } from "./scan-open.js";
 import type { TourViewerSeams } from "./seams.js";
 import { codeMeasured } from "./tour-authoring-actions.js";
@@ -107,6 +108,8 @@ export interface CreatorMeasuring {
    *  geo and its printed size, hosted or in this device's code book, and
    *  not ignored as moved. */
   canStartOnCodes(): boolean;
+  /** A visit begins: its wait for a first GPS fix starts. */
+  beginVisit(): void;
 }
 
 export function wireCreatorMeasuring(deps: {
@@ -114,7 +117,7 @@ export function wireCreatorMeasuring(deps: {
   arStore: Pick<TourViewerStore, "getState" | "dispatch">;
   seams: Pick<
     TourViewerSeams,
-    "createQrFrontEnd" | "solveQrPose" | "getIntrinsics"
+    "createQrFrontEnd" | "solveQrPose" | "getIntrinsics" | "schedule"
   >;
   dom: CreatorMeasuringDom;
   wizard: Pick<Wizard, "revealStep">;
@@ -314,10 +317,9 @@ export function wireCreatorMeasuring(deps: {
     // viewer's own vote half; which frames may vote is this visit's rule.
     const votes =
       deps.codeVotes?.({
-        resolvePose: (text) => {
-          const pose = fusedPose.resolve(text);
-          return pose !== null && visitVotes() ? pose : null;
-        },
+        // The visit's rule first: a visit that does not vote (yet) asks the
+        // fused pose for nothing.
+        resolvePose: (text) => (visitVotes() ? fusedPose.resolve(text) : null),
         live: () => ctx.fusedPose === fusedPose,
       }) ?? null;
     ctx.qrController = createQrTrackingController(
@@ -349,35 +351,64 @@ export function wireCreatorMeasuring(deps: {
   }
 
   /**
-   * Whether this visit's stored codes vote: decided at the first stable
-   * pose of one, and only when no device fix came before it - the rule the
-   * visitor's code-set origin follows. A visit with GPS keeps placing by
-   * GPS, so a creator outdoors works as before; one without a fix is lined
-   * up by the code. Per visit: an adopted print size restarts the pipeline
-   * within the visit and keeps the decision.
+   * Whether this visit's stored codes vote. A visit started without
+   * location votes at once. Any other visit first waits for a GPS fix, as
+   * long as the visitor's GPS escape waits (`SCAN_GATE_ESCAPE_MS`): an
+   * outdoor creator often points at the code within seconds of entering
+   * AR, and a visit lined up by the code can never improve its stored
+   * position. A device fix inside the wait - or before the code - makes it
+   * a GPS visit, placing by GPS as before; a wait that ends without one
+   * makes the code line the visit up. Until then nothing votes and the
+   * placement waits (the line asks for GPS). Decided once per visit, at
+   * the first frame of a stored code that can decide it; an adopted print
+   * size restarts the pipeline within the visit and keeps the decision.
    */
   let votesDecided: { visit: number; allowed: boolean } | null = null;
+  /** The visit whose wait for a first fix ran out. */
+  let waitOverIn: number | null = null;
+  let cancelWait: (() => void) | null = null;
   function visitVotes(): boolean {
-    if (votesDecided?.visit !== ctx.arSessionGeneration) {
-      votesDecided = {
-        visit: ctx.arSessionGeneration,
-        allowed: deps.alignmentInfo().sampleCount === 0,
-      };
-    }
-    return votesDecided.allowed;
+    const visit = ctx.arSessionGeneration;
+    if (votesDecided?.visit === visit) return votesDecided.allowed;
+    let allowed: boolean;
+    if (ctx.codesOnly) allowed = true;
+    else if (deps.alignmentInfo().sampleCount > 0) allowed = false;
+    else if (waitOverIn === visit) allowed = true;
+    else return false;
+    votesDecided = { visit, allowed };
+    return allowed;
+  }
+
+  function beginVisit(): void {
+    cancelWait?.();
+    const visit = ctx.arSessionGeneration;
+    cancelWait = seams.schedule(() => {
+      waitOverIn = visit;
+    }, SCAN_GATE_ESCAPE_MS);
   }
 
   /**
    * The level a stored code votes with: its stored geo and its stored
-   * printed size - never a size adopted mid-visit, which the stored pose
-   * was not measured at. Null for a code the tour does not store, a code
-   * without a stored size, and a code measured in this visit (its pose came
-   * from this visit's alignment, so its votes would only repeat it).
+   * printed size, which its stored pose was measured at. Null - the code is
+   * then the author's level, at the size it is solved at - for a code the
+   * tour does not store, a code without a stored size, a code measured in
+   * this visit (its pose came from this visit's alignment, so its votes
+   * would only repeat it), a code whose print size was adopted (it is
+   * solved at that size from then on), and in a visit decided not to vote.
+   * A visit not decided yet gets the voting level: the decision gates its
+   * votes frame by frame (`visitVotes`).
    */
   async function votingLevel(
     text: string,
     votes: CodeVoteDeps,
   ): Promise<QrLevel | null> {
+    if (adoptedSizes.has(text)) return null;
+    if (
+      votesDecided?.visit === ctx.arSessionGeneration &&
+      !votesDecided.allowed
+    ) {
+      return null;
+    }
     const id =
       codeIds.get(text) ?? (await qrCodeId(text).catch(() => undefined));
     if (id === undefined) return null;
@@ -772,7 +803,10 @@ export function wireCreatorMeasuring(deps: {
     inFlight: () => inFlight > 0,
     endVisit: () => {
       autoMeasured.clear();
+      cancelWait?.();
+      cancelWait = null;
     },
+    beginVisit,
     reset: () => {
       adoptedSizes.clear();
     },

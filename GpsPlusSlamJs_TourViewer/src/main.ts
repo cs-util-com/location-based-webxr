@@ -171,6 +171,9 @@ if (showAllStationsFromSearch(location.search)) {
 // The location permission enable() asks for is settled without waiting for
 // a fix (QR-first M1b-1 review #1): indoors a visitor who allowed location
 // got none, and the framework's requester failed enable() on every tap.
+/** Location requests refused in this page: a creator's failed start names
+ *  the location only when its own request was among them (`ar-entry.ts`). */
+let locationRefusals = 0;
 const arController = createEnableGpsArController({
   ...seams.controllerDeps,
   requestGeolocationPermission: locationPermissionWithoutFix({
@@ -178,6 +181,9 @@ const arController = createEnableGpsArController({
     request:
       seams.controllerDeps.requestGeolocationPermission ??
       requestGeolocationPermission,
+    onRefused: () => {
+      locationRefusals += 1;
+    },
   }),
 });
 const ctx = createTourViewerSession(arStore);
@@ -994,6 +1000,7 @@ const arEntry = wireArEntry({
   gpsHandler,
   seams,
   locationGate: visitor.locationGate,
+  locationRefusals: () => locationRefusals,
   dom: {
     arRoot: element("ar-root"),
     arStatus: element("ar-status"),
