@@ -31,6 +31,24 @@ body.framed #stage{inset:auto;top:50%;left:50%;transform:translate(-50%,-50%);he
 #views{overflow-x:auto;scrollbar-width:none;max-width:100%}
 #views::-webkit-scrollbar{display:none}
 #views button.on{background:var(--amber);color:#1a1408}
+#views .vl{font-size:11.5px;color:#9f998d;padding:0 4px 0 9px;align-self:center;white-space:nowrap}
+
+/* ---------- the visitor's own view switch (remembered on the device, per model) ---------- */
+#vswitch{position:absolute;left:10px;top:calc(var(--barH) + 54px);z-index:24}
+#vs-btn{display:flex;align-items:center;gap:7px;height:36px;border-radius:999px;border:1px solid var(--line);background:var(--plate);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:0 12px 0 10px;font-size:12.5px;font-weight:650;color:#efe9de}
+#vs-btn svg{width:16px;height:16px;fill:none;stroke:var(--amber);stroke-width:1.8;stroke-linecap:round}
+#vs-btn small{font-weight:500;color:#9f998d;font-size:11px}
+#vs-menu{position:absolute;left:0;top:42px;width:min(290px,calc(100vw - 30px));background:rgba(18,19,22,.97);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:6px;box-shadow:0 16px 50px rgba(0,0,0,.4)}
+#vs-menu button.vo{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:11px;padding:8px 10px;color:#e9e4da}
+#vs-menu button.vo:hover:not([disabled]){background:rgba(255,255,255,.05)}
+#vs-menu button.vo b{display:flex;justify-content:space-between;gap:8px;font-size:13.5px}
+#vs-menu button.vo b i{font-style:normal;font-weight:500;font-size:11px;color:#9f998d}
+#vs-menu button.vo span{display:block;font-size:11.5px;color:#9f998d;margin-top:1px;line-height:1.35}
+#vs-menu button.vo.on{background:rgba(242,180,90,.12)}
+#vs-menu button.vo.on b{color:#ffd391}
+#vs-menu button.vo[disabled]{opacity:.45;cursor:default}
+#vs-menu .vs-foot{font-size:11px;color:#8f897e;padding:6px 10px 4px;border-top:1px solid rgba(255,255,255,.07);margin-top:4px;line-height:1.4}
+#vs-menu .vs-foot button{border:0;background:none;color:var(--amber);font-weight:650;font-size:11.5px;padding:4px 0 0;display:block}
 .spacer{flex:1}
 .icons{display:flex;gap:4px}
 .ib{height:34px;min-width:34px;border-radius:999px;border:1px solid var(--line);background:rgba(18,19,22,.74);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:grid;place-items:center;padding:0 10px;font-size:12px;font-weight:600;color:#e9e4da}
@@ -78,9 +96,7 @@ body.framed #stage{inset:auto;top:50%;left:50%;transform:translate(-50%,-50%);he
 #sh-close{position:absolute;right:14px;top:12px;width:36px;height:36px;border-radius:50%;border:0;background:rgba(255,255,255,.07);display:grid;place-items:center}
 #stage:not([data-layout=portrait]) #sh-close{top:18px}
 #sh-close svg{width:16px;height:16px;stroke:#ddd;stroke-width:2.2;fill:none}
-#sh-notice{margin:2px 20px 6px;padding:10px 12px 10px 12px;border-radius:12px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.06);font-size:13px;line-height:1.42;color:#cfc9bd;display:flex;gap:10px;flex:none}
-#sh-notice svg{flex:none;width:18px;height:18px;fill:none;stroke:#bfb6a6;stroke-width:1.8;margin-top:1px}
-#sh-notice b{color:#ebe5da;font-weight:600}
+
 .textwrap{position:relative;flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-mask-image:linear-gradient(transparent 0,#000 22px,#000 calc(100% - 30px),transparent);mask-image:linear-gradient(transparent 0,#000 22px,#000 calc(100% - 30px),transparent);scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
 #sh-text{font-family:var(--serif);font-size:18.5px;line-height:1.62;color:var(--ink2);padding:14px 26px 46vh 24px;hyphens:auto;-webkit-hyphens:auto;text-wrap:pretty}
 #stage[data-layout=desktop] #sh-text{font-size:19.5px}
@@ -325,6 +341,7 @@ body.framed #stage{inset:auto;top:50%;left:50%;transform:translate(-50%,-50%);he
   <div id="fps">frame -</div>
 
   <div id="hint" hidden><svg class="arrow" viewBox="0 0 24 24"><path d="M12 3l7 9h-4.5v9h-5v-9H5z"/></svg><span id="hint-t"></span><button id="hint-walk">Walk in</button></div>
+  <div id="vswitch" hidden><button id="vs-btn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg><span id="vs-cur"></span><small>change</small></button><div id="vs-menu" role="menu" hidden></div></div>
   <div id="tapHint" hidden></div>
 
   <div id="caption" class="hide">
@@ -346,7 +363,7 @@ body.framed #stage{inset:auto;top:50%;left:50%;transform:translate(-50%,-50%);he
       <div id="sh-meta"></div>
       <button id="sh-close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </header>
-    <div id="sh-notice" hidden></div>
+
     <div class="textwrap" id="sh-wrap"><article id="sh-text" lang="en"></article></div>
     <button id="sh-follow" hidden>Back to the voice</button>
     <footer id="sh-foot">
@@ -666,17 +683,29 @@ function buildTimingFromImport(body, parsed) {
    4. State
    ===================================================================== */
 const VIEWS = [
-  { name: 'reading', label: 'Reading', required: true, overlay: true, card: 'Short sign in the world, full text with read-along on tap.' },
-  { name: 'caption', label: 'Captions', required: true, card: 'One or two sentences at a time at the bottom, world stays visible.' },
-  { name: 'silent', label: 'Sound off', required: true, overlay: true, card: 'The same text without playback, for places where sound is not allowed.' },
-  { name: 'stale', label: 'Stale track', required: true, overlay: true, auto: true, card: 'Not chosen: what any view falls back to when the text changed after timing.' },
-  { name: 'lectern', label: 'Lectern', required: false, card: 'A reading stand in the world: the current lines on a page, read up close.' }
+  { name: 'reading', label: 'Reading', required: true, overlay: true, card: 'Short sign in the world, full text with read-along on tap.', visitor: 'The whole text in a sheet, the voice highlighted' },
+  { name: 'caption', label: 'Captions', required: true, card: 'One or two sentences at a time at the bottom, world stays visible. Needs a matching timing; without one, visitors get Reading.', visitor: 'A few lines at a time with the voice, eyes on the place' },
+  { name: 'silent', label: 'Sound off', required: true, overlay: true, card: 'The same text without playback, for places where sound is not allowed.', visitor: 'The whole text to read at your own pace, no voice' },
+  { name: 'stale', label: 'Stale track', required: true, overlay: true, auto: true, card: 'Not chosen: what any view falls back to when the text changed after timing (plain reading, no read-along, no notice).' },
+  { name: 'lectern', label: 'Lectern', required: false, card: 'A reading stand in the world: the current lines on a page, read up close.', visitor: 'A reading stand in the square, read up close' }
 ];
+// The views that show the same content (FB-13): a visitor may swap between them, and the swap is remembered on
+// the device for every narrated text (FB-14). The automatic stale state is not a choice and never takes part.
+const INTERCHANGEABLE = ['reading', 'caption', 'silent', 'lectern'];
+const PREF_KEY = 'tour-viewer.visitor.view.narratedText';
+function readPref() {
+  try { const v = window.localStorage.getItem(PREF_KEY); return INTERCHANGEABLE.includes(v) ? v : null; }
+  catch (e) { return null; }   // storage blocked (private mode, a sandbox): no remembered choice
+}
+function writePref(v) {
+  try { if (v) window.localStorage.setItem(PREF_KEY, v); else window.localStorage.removeItem(PREF_KEY); return true; }
+  catch (e) { return false; }  // the choice then lasts only this visit
+}
 const USES = {
   reading: { title: 'On the sign in the world and as the sheet heading', body: 'The whole text in the sheet, split into paragraphs, sentences and words', lang: 'The text\'s lang attribute: hyphenation, sentence rules, font fallback', audio: 'Playback (here the generated tone pattern)', timing: 'Sentence highlight, spoken-word mark, tap a sentence to play from it, back 10 s, previous sentence', voiceCredit: 'Credit line under the controls', synthetic: 'Adds "Synthetic voice" in front of the credit' },
   caption: { title: 'On the small sound marker and in the strip', body: 'Only the sentences around the voice, chunked to three lines', lang: 'Sentence and clause breaking', audio: 'Playback', timing: 'Required: which chunk shows and which word is marked', voiceCredit: 'Strip sub-line', synthetic: 'Adds "Synthetic voice" in front of the credit' },
   silent: { title: 'On the sign and as the heading', body: 'The whole text; a reading mark the visitor sets by tapping', lang: 'Hyphenation and sentence rules', audio: null, timing: null, voiceCredit: null, synthetic: null },
-  stale: { title: 'On the sign and as the heading', body: 'The whole text as plain reading (here with one sentence reworded after timing)', lang: 'Hyphenation and sentence rules', audio: 'Plain playback, no read-along', timing: 'Only textHash, compared with the body; segments are ignored', voiceCredit: 'Credit line', synthetic: 'Adds "Synthetic voice"' },
+  stale: { title: 'On the sign and as the heading', body: 'The whole text as plain reading, with no notice to the visitor (here with one sentence reworded after timing)', lang: 'Hyphenation and sentence rules', audio: 'Plain playback, no read-along', timing: 'Only textHash, compared with the body; segments are ignored', voiceCredit: 'Credit line', synthetic: 'Adds "Synthetic voice"' },
   lectern: { title: 'Page header on the stand', body: 'The current paragraph, a window of nine lines around the voice', lang: 'Sentence rules', audio: 'Playback, tap the page to pause', timing: 'Sentence highlight and spoken word on the page; page turns follow it', voiceCredit: 'Page footer', synthetic: 'Page footer' }
 };
 const S = {
@@ -686,7 +715,8 @@ const S = {
   muted: false, sheetOpen: false, follow: true, readSentence: 4, lecternSentence: 0,
   audioEl: null, audioName: null, lastImport: null, importReport: null,
   vis: { x: 0, z: 26.5, yaw: 0, pitch: 0.02 }, cre: { x: 0.5, z: 6.2, yaw: 0.06, pitch: -0.22 },
-  csheet: 'view', gizmo: 'translate', framed: false
+  csheet: 'view', gizmo: 'translate', framed: false,
+  pref: readPref()   // the visitor's remembered view, or null for the creator's choice
 };
 // The generated tone narration is the block's "audio" with its own fixed, planted word track.
 // The record's timing starts as a copy of it; listening-and-tapping or an import replaces the
@@ -697,12 +727,30 @@ const TONEI = buildIndex(analyze(BODY), TONE);
 const ANCHOR = new THREE.Vector3(0, 0, 0), ST2 = new THREE.Vector3(60, 0, 0), RADIUS = 25;
 
 /* derived display state: which body is shown and whether timing drives it */
-function timingMatches() { const t = S.record.timing; return !!(t && Array.isArray(t.segments) && t.segments.length && t.textHash === hashText(S.record.body)); }
+// memoised per (timing object, body): shownView() asks this every frame, and the hash walks the whole body
+let tmMemo = { t: undefined, body: undefined, ok: false };
+function timingMatches() {
+  const t = S.record.timing, body = S.record.body;
+  if (tmMemo.t === t && tmMemo.body === body) return tmMemo.ok;
+  const ok = !!(t && Array.isArray(t.segments) && t.segments.length && t.textHash === hashText(body));
+  tmMemo = { t, body, ok }; return ok;
+}
+/* What a visitor actually sees: the creator's view, or the visitor's remembered one when both are interchangeable;
+   and Captions only with a matching timing (it is timing-driven by construction), otherwise Reading.
+   Creator and editor always see the creator's choice. */
+function shownView() {
+  if (S.mode !== 'visitor') return S.view;
+  let v = S.view;
+  if (S.pref && INTERCHANGEABLE.includes(v)) v = S.pref;
+  if (v === 'caption' && !timingMatches()) v = 'reading';
+  return v;
+}
 function display() {
-  const simulate = S.view === 'stale' && timingMatches();
+  const v = shownView();
+  const simulate = v === 'stale' && timingMatches();
   const body = simulate && S.record.body.includes(STALE_FROM) ? S.record.body.replace(STALE_FROM, STALE_TO) : S.record.body;
-  const live = S.view !== 'stale' && S.view !== 'silent' && timingMatches();
-  return { body, A: analyze(body), live, simulate, hasTiming: !!S.record.timing, stale: S.view === 'stale' || (!!S.record.timing && !timingMatches()) };
+  const live = v !== 'stale' && v !== 'silent' && timingMatches();
+  return { body, A: analyze(body), live, simulate, hasTiming: !!S.record.timing, stale: v === 'stale' || (!!S.record.timing && !timingMatches()) };
 }
 let TI = null;
 // Index a timing track against the analysed body it was made for (sentence/word per segment).
@@ -949,7 +997,7 @@ function drawLabel() {
   const g = labelCanvas.getContext('2d'), W = 1024, H = 420; g.clearRect(0, 0, W, H);
   rr(g, 6, 6, W - 12, H - 12, 46); g.fillStyle = 'rgba(17,18,21,0.93)'; g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,0.10)'; g.stroke();
   // icon: a round amber seal with text lines and, when there is a voice, a small wave
-  const audible = S.view !== 'silent' && !!S.record.audio;
+  const audible = shownView() !== 'silent' && !!S.record.audio;
   g.fillStyle = '#f2b45a'; g.beginPath(); g.arc(122, 210, 64, 0, 7); g.fill();
   g.fillStyle = '#1a1408';
   if (audible) { for (const [x, h] of [[92, 26], [110, 56], [128, 80], [146, 46], [164, 22]]) { rr(g, x - 6, 210 - h / 2, 12, h, 6); g.fill(); } }
@@ -1079,18 +1127,15 @@ function setSheetCursor(s0, s1, w, scroll, instant) {
     wrapEl.scrollTo({ top: Math.max(0, top), behavior: instant ? 'instant' : 'smooth' });
   }
 }
-function sheetMode() { const d = display(); return S.view === 'silent' ? 'silent' : d.live ? 'live' : 'plain'; }
+function sheetMode() { const d = display(); return shownView() === 'silent' ? 'silent' : d.live ? 'live' : 'plain'; }
 function renderSheetChrome() {
   const d = display(), mode = sheetMode(), A = d.A;
   const sh = $('sheet'); sh.classList.toggle('live', mode === 'live'); sh.classList.toggle('silent', mode === 'silent'); sh.classList.toggle('plain', mode === 'plain');
   $('sh-title').textContent = S.record.title || 'Untitled';
   const words = A.words.length.toLocaleString('en');
   $('sh-meta').textContent = mode === 'silent' ? `${words} words · about ${readMinutes()} min to read · sound off` : `${words} words · ${minutes(player.duration())} min narration · ${(S.record.lang || 'und').toUpperCase()}`;
-  const n = $('sh-notice');
-  if (mode === 'plain' && (S.record.audio || S.audioEl)) {
-    n.hidden = false;
-    n.innerHTML = ICON.info.replace('<svg', '<svg aria-hidden="true"') + (d.hasTiming ? '<div><b>Read-along is off for this text.</b> It was edited after the narration was timed, so the voice may differ from the words in places. You can still listen, or simply read.</div>' : '<div><b>Read-along is off.</b> This narration has no timing yet. You can still listen, or simply read.</div>');
-  } else n.hidden = true;
+  // no notice when the read-along is off (stale or missing timing): the visitor has nothing to act on, so the
+  // sheet simply has no highlight; the creator sees the reason in the creator and editor panels
   const silent = mode === 'silent';
   $('sh-back10').hidden = silent; $('sh-play').hidden = silent; $('sh-next').hidden = !silent; $('sh-pos').hidden = !silent;
   $('sh-prev').hidden = mode === 'plain';
@@ -1138,11 +1183,8 @@ function chunksFor(A, s0, s1, maxChars) {
 function renderCaption(c) {
   const d = display(), A = d.A, el = $('cap-text');
   const layout = stage.dataset.layout, maxC = layout === 'portrait' ? 96 : layout === 'landscape' ? 118 : 120;
-  if (!d.live) {
-    const key = 'plain:' + d.hasTiming;
-    if (ui.capKey !== key) { ui.capKey = key; el.innerHTML = `<span class="chunk muted">${d.hasTiming ? 'Captions are off: the text was edited after the narration was timed.' : 'Captions need a timing track.'} You can still listen, or open the full text.</span>`; }
-    return;
-  }
+  // unreachable for a visitor (Captions without a matching timing is shown as Reading); defensive, and silent
+  if (!d.live) { if (ui.capKey !== 'plain') { ui.capKey = 'plain'; el.textContent = ''; } return; }
   let s0 = c && c.s0 >= 0 ? c.s0 : 0, s1 = c && c.s1 >= 0 ? c.s1 : 0;
   const chunks = chunksFor(A, s0, s1, maxC); const w = c ? c.w : -1;
   let ci = 0; if (w >= 0) { ci = chunks.findIndex(ch => w >= ch.w0 && w < ch.w1); if (ci < 0) ci = 0; }
@@ -1160,7 +1202,49 @@ function renderCaption(c) {
 
 /* ---------- per-frame UI refresh ---------- */
 let lastUi = 0;
+/* Keeps the world elements, the sheet and the visitor switch in step with shownView(), which can change without
+   applyView: a visitor's choice, a body edit that makes the timing stale, a mode switch. */
+let lastShown = null;
+function syncShownView() {
+  const v = shownView(); if (v === lastShown) return v;
+  const prev = lastShown; lastShown = v;
+  const info = VIEWS.find(x => x.name === v);
+  labelG.visible = info.overlay === true; markerG.visible = v === 'caption'; lecternG.visible = v === 'lectern';
+  if (prev !== null) {
+    if (player.playing && v === 'silent') player.pause();
+    ui.builtKey = ''; ui.capKey = ''; ui.sheetKey = ''; lecKey = '';
+    drawLabel(); drawPill(); drawLectern(true);
+    if (!info.overlay) openSheet(false, true);
+    else if (S.sheetOpen) { buildSheetText(); renderSheetChrome(); ui.forceScroll = true; ui.instantScroll = true; }
+  }
+  renderVisitorSwitch();
+  return v;
+}
+function renderVisitorSwitch() {
+  const sw = $('vswitch'), shown = shownView();
+  const show = S.mode === 'visitor' && distToAnchor() <= RADIUS && INTERCHANGEABLE.includes(S.view);
+  sw.hidden = !show; if (!show) { $('vs-menu').hidden = true; return; }
+  $('vs-cur').textContent = VIEWS.find(v => v.name === shown).label;
+  const ok = timingMatches();
+  $('vs-menu').innerHTML = INTERCHANGEABLE.map(n => {
+    const v = VIEWS.find(x => x.name === n), off = n === 'caption' && !ok;
+    const tag = off ? 'needs a timing' : n === S.view ? "creator's choice" : '';
+    return `<button class="vo ${n === shown ? 'on' : ''}" data-vs="${n}" role="menuitemradio" aria-checked="${n === shown}" ${off ? 'disabled' : ''}><b>${esc(v.label)}<i>${tag}</i></b><span>${esc(v.visitor)}</span></button>`;
+  }).join('') + `<div class="vs-foot">Your choice is kept on this phone for every narrated text, in every tour.${S.pref ? '<button data-vs="">Use the creator\'s choice again</button>' : ''}</div>`;
+}
+function setVisitorView(name) {
+  if (name !== null && !INTERCHANGEABLE.includes(name)) throw new Error('not a view a visitor can choose: ' + name);
+  if (name === 'caption' && !timingMatches()) { toast('Captions need a timing this text does not have.'); return false; }
+  S.pref = name; const kept = writePref(name);
+  const shown = syncShownView(); renderVisitorSwitch();
+  if (VIEWS.find(v => v.name === shown).overlay && S.mode === 'visitor' && distToAnchor() <= RADIUS && !S.sheetOpen) openSheet(true, true);
+  const label = VIEWS.find(v => v.name === shown).label;
+  toast(name === null ? `Back to the creator's choice: ${label}.` : kept ? `${label} from now on, for every narrated text on this phone.` : `${label} for this visit (this browser does not keep the choice).`);
+  refreshUI(performance.now(), true);
+  return kept;
+}
 function refreshUI(now, force) {
+  const shown = syncShownView();
   const d = display(), pos = player.now(), dur = player.duration();
   const c = d.live ? cursorAt(pos) : null;
   const inVisitor = S.mode === 'visitor', inside = inVisitor && distToAnchor() <= RADIUS;
@@ -1183,7 +1267,7 @@ function refreshUI(now, force) {
     else { $('sh-t0').textContent = fmt(pos); $('sh-t1').textContent = '-' + fmt(dur - pos); }
   }
   // caption strip
-  const capOn = S.view === 'caption' && inside;
+  const capOn = shown === 'caption' && inside;
   $('caption').classList.toggle('hide', !capOn);
   if (capOn) {
     renderCaption(c);
@@ -1200,12 +1284,14 @@ function refreshUI(now, force) {
     const bearing = Math.atan2(ANCHOR.x - S.vis.x, -(ANCHOR.z - S.vis.z)); hint.querySelector('.arrow').style.transform = `rotate(${(bearing + S.vis.yaw) * 180 / Math.PI}deg)`;
   } else hint.hidden = true;
   const th = $('tapHint');
-  const isOverlay = VIEWS.find(v => v.name === S.view)?.overlay;
-  if (inside && !S.sheetOpen && (isOverlay || S.view === 'lectern')) {
+  const isOverlay = VIEWS.find(v => v.name === shown)?.overlay;
+  if (inside && !S.sheetOpen && (isOverlay || shown === 'lectern')) {
     th.hidden = false;
-    th.innerHTML = S.view === 'lectern' ? (d.live ? 'Walk up to the stand · <b>tap the page</b> to listen' : 'Walk up to the stand · <b>tap the page</b> to turn it') : 'Tap the <b>sign</b> to open the text';
+    th.innerHTML = shown === 'lectern' ? (d.live ? 'Walk up to the stand · <b>tap the page</b> to listen' : 'Walk up to the stand · <b>tap the page</b> to turn it') : 'Tap the <b>sign</b> to open the text';
   } else th.hidden = true;
-  if (S.view === 'lectern' || S.mode !== 'visitor') drawLectern(false);
+  const swShow = inVisitor && inside && INTERCHANGEABLE.includes(S.view);
+  if ($('vswitch').hidden === swShow) renderVisitorSwitch();
+  if (shown === 'lectern' || S.mode !== 'visitor') drawLectern(false);
 }
 function setSheetCursorDiff(s0, s1, w) {
   const key = s0 + ':' + s1 + ':' + w;
@@ -1220,7 +1306,7 @@ function setSheetCursorDiff(s0, s1, w) {
 function renderChrome() {
   stage.dataset.mode = S.mode;
   document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
-  $('views').innerHTML = VIEWS.map(v => `<button data-view="${v.name}" class="${v.name === S.view ? 'on' : ''}">${v.label}</button>`).join('');
+  $('views').innerHTML = `<span class="vl">Creator's view</span>` + VIEWS.map(v => `<button data-view="${v.name}" class="${v.name === S.view ? 'on' : ''}">${v.label}</button>`).join('');
   $('b-sound').innerHTML = S.muted ? ICON.soundOff : ICON.soundOn; $('b-sound').classList.toggle('on', S.muted);
   $('b-frame').classList.toggle('on', S.framed);
   $('b-fields').classList.toggle('on', !$('fields').hidden); $('b-notes').classList.toggle('on', !$('notes').hidden);
@@ -1235,14 +1321,13 @@ function renderFields() {
 function updateHash() { const h = `#mode=${S.mode}&view=${S.view}`; if (location.hash !== h) history.replaceState(null, '', h); }
 function applyView(name, fromUser) {
   if (!VIEWS.some(v => v.name === name)) throw new Error('unknown view ' + name);
-  const changed = S.view !== name; S.view = name;
-  if (changed && player.playing && name === 'silent') player.pause();
-  labelG.visible = VIEWS.find(v => v.name === name).overlay === true;
-  markerG.visible = name === 'caption'; lecternG.visible = name === 'lectern';
+  S.view = name;
+  lastShown = null; const shown = syncShownView();   // a full re-sync: the creator's view changed
+  if (player.playing && shown === 'silent') player.pause();
   ui.builtKey = ''; ui.capKey = ''; ui.sheetKey = ''; lecKey = '';
   drawLabel(); drawPill(); drawLectern(true);
   const inside = S.mode === 'visitor' && distToAnchor() <= RADIUS;
-  if (VIEWS.find(v => v.name === name).overlay) { if (inside && fromUser) openSheet(true, true); else if (S.sheetOpen) { buildSheetText(); renderSheetChrome(); ui.forceScroll = true; ui.instantScroll = true; } }
+  if (VIEWS.find(v => v.name === shown).overlay) { if (inside && fromUser) openSheet(true, true); else if (S.sheetOpen) { buildSheetText(); renderSheetChrome(); ui.forceScroll = true; ui.instantScroll = true; } }
   else openSheet(false, true);
   renderChrome(); renderCreator(); renderInspector(); updateHash(); refreshUI(performance.now(), true);
 }
@@ -1277,7 +1362,7 @@ function renderCreator() {
   const t = S.record.timing, A = analyze(S.record.body), ok = timingMatches();
   if (S.csheet === 'view') {
     sh.innerHTML = `<h3>How visitors see this text</h3><div class="vcards">${VIEWS.filter(v => !v.auto).map(v => `<button class="vcard ${v.name === S.view ? 'on' : ''}" data-cv="${v.name}">${VIEW_ICON[v.name]}<b>${v.label}</b><span>${esc(v.card)}</span></button>`).join('')}</div>
-      <p class="stat" style="margin:10px 2px 8px">If the text changes after the voice was timed, every view shows it as plain reading with a quiet notice.</p>
+      <p class="stat" style="margin:10px 2px 8px">If the text changes after the voice was timed, every view shows it as plain reading, without a notice to the visitor; Captions then shows as Reading. Visitors may swap between these four views; their choice is kept on their phone.${ok ? '' : ' <span class="warn">This text has no matching timing now: visitors see no read-along, and Captions shows as Reading.</span>'}</p>
       <div class="btnrow"><button class="btn" id="c-preview">Preview as visitor</button></div>`;
   } else if (S.csheet === 'text') {
     sh.innerHTML = `<h3>Text</h3><div class="frow">Title<input type="text" id="c-ftitle" value="${esc(S.record.title)}"></div>
@@ -1476,7 +1561,7 @@ function onTap(e) {
     if (hit) {
       const h = hit.object.userData.hit;
       if (h === 'label') openSheet(true);
-      else if (h === 'marker') { if (display().live) player.toggle(); else toast('Captions are off for this text. Open the full text in the strip.'); }
+      else if (h === 'marker') { if (display().live) player.toggle(); else openSheet(true); }
       else if (h === 'lectern') { if (display().live) player.toggle(); else { lecternTurn(); } }
       return;
     }
@@ -1569,12 +1654,14 @@ document.addEventListener('click', e => {
   if (b.dataset.ev) { applyView(b.dataset.ev, false); return; }
   if (b.dataset.c) { S.csheet = S.csheet === b.dataset.c ? null : b.dataset.c; renderCreator(); return; }
   if (b.dataset.g) { setGizmoMode(b.dataset.g); return; }
+  if (b.dataset.vs !== undefined) { setVisitorView(b.dataset.vs || null); $('vs-menu').hidden = true; $('vs-btn').setAttribute('aria-expanded', 'false'); return; }
   switch (b.id) {
     case 'b-fields': $('fields').hidden = !$('fields').hidden; renderChrome(); break;
     case 'b-notes': $('notes').hidden = !$('notes').hidden; renderChrome(); break;
     case 'b-frame': S.framed = !S.framed; document.body.classList.toggle('framed', S.framed); renderChrome(); setTimeout(resize, 30); break;
     case 'b-sound': S.muted = !S.muted; tones.setMuted(S.muted); if (S.audioEl) S.audioEl.muted = S.muted; renderChrome(); toast(S.muted ? 'Sound off: the text still follows the narration silently.' : 'Sound on'); break;
-    case 'hint-walk': if (Math.hypot(S.vis.x - ST2.x, S.vis.z - ST2.z) <= RADIUS) startWalk(14, 1); else startWalk(0, S.view === 'lectern' ? 2.6 : 7); S.vis.yaw = Math.atan2(-(ANCHOR.x - S.vis.x), -(ANCHOR.z - S.vis.z)) ; break;
+    case 'hint-walk': if (Math.hypot(S.vis.x - ST2.x, S.vis.z - ST2.z) <= RADIUS) startWalk(14, 1); else startWalk(0, shownView() === 'lectern' ? 2.6 : 7); S.vis.yaw = Math.atan2(-(ANCHOR.x - S.vis.x), -(ANCHOR.z - S.vis.z)) ; break;
+    case 'vs-btn': { const m = $('vs-menu'), open = m.hidden; if (open) renderVisitorSwitch(); m.hidden = !open; b.setAttribute('aria-expanded', String(open)); break; }
     case 'sh-close': openSheet(false); break;
     case 'sh-play': case 'cap-play': player.toggle(); S.follow = true; ui.forceScroll = true; break;
     case 'sh-back10': case 'cap-back': player.seek(player.now() - 10000); S.follow = true; break;
@@ -1932,7 +2019,12 @@ window.__stationBlock = {
       views: VIEWS.map(v => ({ name: v.name, required: v.required, usesFields: FIELDS.filter(f => USES[v.name][f]) }))
     };
   },
-  async exportModel() { return JSON.parse(JSON.stringify(exportModelSync())); }
+  async exportModel() { return JSON.parse(JSON.stringify(exportModelSync())); },
+  /* Round-2 hooks for the checks: the visitor's own view choice (null = the creator's), what is shown, and
+     removing the timing (as the editor's "Remove timing" does) to see Captions fall back to Reading. */
+  async setVisitorView(name) { setVisitorView(name === null ? null : String(name)); await settle(300); },
+  async visitorState() { return { creatorView: S.view, pref: S.pref, stored: readPref(), shown: shownView(), timingMatches: timingMatches(), sheetOpen: S.sheetOpen, notice: !!document.getElementById('sh-notice') }; },
+  async clearTiming() { if (player.playing) player.pause(); S.record.timing = null; S.importReport = null; setBody(S.record.body); await settle(200); }
 };
 
 // start
@@ -1942,7 +2034,7 @@ renderer.setAnimationLoop(frame);
 </script>
 
 <template id="notes-src">
-<h2>Narrated text: designer notes</h2><p>Family <code>station-blocks-1-narrated-text</code>. One record (1 928 words, about four A4 pages, on the guild house, the keep and the market hall fire), drawn by five views. Frame times were measured in headless Chromium with software WebGL (SwiftShader) on a shared, busy machine: they say nothing about a phone except that the page is not CPU-bound.</p><details open><summary>1. The model</summary><ul><li>Built exactly as given: <code>title</code>, <code>body</code>, <code>lang</code>, <code>audio</code>, <code>timing { granularity, segments[{ startMs, endMs, from, to }], textHash }</code>, <code>voiceCredit</code>, <code>synthetic</code>. The view and the pose (position, turn, size) belong to the block around the record.</li><li><b>Add <code>segments[].text</code></b> (the word or cue text each segment was made for). With only offsets and a hash, a stale track can only be thrown away. With the words, it can be re-mapped onto the edited body by the same word matching the import already uses, and a one-word typo fix stops costing the creator the whole read-along.</li><li><b>Add <code>timing.source</code></b> (<code>"file"</code>, <code>"tapped"</code>, <code>"generated"</code>) or keep the tapped anchors (<code>timing.anchors: [{ ms, at }]</code>). The measurement in section 6 shows that a word mark estimated between sentence taps is on the wrong word about half the time, so a view should show only the sentence highlight for a tapped track. Without a field it cannot know. Keeping the anchors also lets a creator come back and correct the marks instead of starting again.</li><li><b>Name the hash algorithm in the value</b> (here <code>fnv1a32:...</code>; the app should use SHA-256 over NFC-normalised text). Without the prefix, two apps that normalise differently disagree silently.</li><li><b>Consider <code>durationMs</code></b> on the record: the sign says "12 min" before the audio has loaded, and a visitor deciding whether to start a 12-minute text needs that number first.</li><li>Keep <code>granularity</code>, and make a "sentence" track show sentence highlight only. Interpolating a word mark is dishonest and drifts visibly.</li><li>Do not add "chapters": paragraphs already are the chapters, and the progress bar shows them as ticks.</li></ul></details><details open><summary>2. The views</summary><h4>Reading (required)</h4><ul><li>What: a short upright sign in the world (title, "listen or read, 12 min") opens a sheet: a bottom sheet on a portrait phone, a side panel in landscape and on desktop. The current sentence is softly highlighted and the spoken word underlined. Tap a sentence to play from it; back 10 s; previous sentence. The sheet follows the voice until the visitor scrolls, then offers "Back to the voice".</li><li>Fields: all seven.</li><li>Why a visitor likes it: the long text reads in comfortable 18-19 px serif type, and the square stays visible above or beside the sheet.</li><li>Weakest: in hard sunlight a dark sheet with light text is the best of poor options. On a portrait phone the sheet covers the sign itself, so the visitor reads with the phone tilted down. Few people will read 2 000 words standing in a crowded square. A 1 m placement error does not matter: the sign floats on a stem and nothing in it refers to the scene.</li></ul><h4>Captions (required)</h4><ul><li>What: one chunk of at most about 96 characters (three lines on a 390 px phone) at the bottom of the AR view, the spoken word marked and the words still to come slightly dimmer. Chunks break at commas where possible. A small sound marker stands in the world.</li><li>Fields: all seven. Without a matching timing it says so instead of guessing.</li><li>Why: the visitor keeps looking at the guild house while listening, and with sound off it works as subtitles.</li><li>Weakest: the narration sets the reading pace, so with sound off a slow reader falls behind (back 10 s helps). In a crowd, the strip hides the lower third of the camera image.</li></ul><h4>Sound off (required)</h4><ul><li>What: the same sheet without playback. A calm reading mark (a cooler tint) the visitor sets by tapping a sentence, previous and next sentence, a position readout, ticks per paragraph.</li><li>Fields: title, body, lang.</li><li>Why: for museums and quiet places, and for visitors who read faster than any narrator.</li><li>Weakest: it is just reading on a phone, and nothing in it uses the place.</li></ul><h4>Stale track (required; a state, not a choice)</h4><ul><li>What: when <code>timing.textHash</code> differs from the body's hash, every view falls back: plain text, no highlight, no tap-to-play, and a quiet notice that the voice may differ in places. The voice can still be played. The picker entry previews it by rewording one sentence; editing the body in the editor triggers it for real.</li><li>Fields: title, body, lang, audio, the timing's hash, voiceCredit, synthetic.</li><li>Weakest: one typo fix silently costs the whole read-along unless the creator re-maps it. The editor offers this when the timing file is still in memory, which is exactly why <code>segments[].text</code> should be added.</li></ul><h4>Lectern (unlisted, my own)</h4><ul><li>What: a reading stand in the world, tilted like a lectern, showing nine lines of the current paragraph with the sentence highlighted and the word marked. The page follows the voice. Tap the page to listen or pause; with a stale or missing track, a tap turns the page.</li><li>Fields: all seven.</li><li>Why: it is the only view where the text is in the square. Reading it feels like an exhibit, not like a phone.</li><li>Weakest: it reads only from about 1-2.5 m (letters about 0.045 m), so it serves one or two visitors at a time. It needs a canvas texture redraw per word, and it is the only view where a few degrees of heading error show (the stand faces its pose, not the visitor).</li></ul></details><details open><summary>3. Costs</summary><ul><li>Frame time (headless, software WebGL, mean / max over 2 s, page work per frame in brackets):<ul><li>The frame interval read 110-450 ms mean (max up to 800 ms) on every view, because the machine was shared with another long test run and WebGL ran in software. It measures the machine, not this page.</li><li>The page's own work per frame (the readout's second line: JS, DOM updates and the render call) was 0.8-15 ms mean over two final runs at 390 x 844, 844 x 390 and 1440 x 900 for reading and editor, moving with the machine load. Single frames of up to about 100 ms come from the first texture uploads and from load spikes.</li><li>In development runs: lectern about 4 ms mean, 44 ms max (a page redraw and upload); timing by listening about 20 ms mean in the editor, most of it the 3D view behind the panel.</li><li>On a phone with a GPU the scene is trivial; the cost is the text, not the 3D.</li></ul></li><li>Media per block: body about 10 KB; word timing 1 928 segments, about 105 KB as JSON (roughly a quarter of that zipped). The audio dominates: 12 min of speech at 24-32 kbit/s Opus mono is about 2.2-2.9 MB.</li><li>Reading and sound off: about 1 900 word spans in the DOM; one class change per word.</li><li>Captions: one small DOM update per word.</li><li>Lectern: a 1024 x 768 canvas redrawn and uploaded on each word, about three times a second (3 MB per upload). Fine on a mid-range phone, and the most expensive view here.</li><li>Creator minutes: placing and choosing a view, about 2 minutes on the phone. The text itself is written on the desktop. A voice with a timing file is two dropped files and a coverage check (about 5 minutes) plus making the recording. Without a timing file, timing by listening costs about 4 minutes per A4 page (section 6).</li></ul></details><details open><summary>4. Creator controls</summary><ul><li>Phone (creator): five large buttons along the bottom:<ul><li>Place: a reticle on the ground, then "Place here".</li><li>View: cards for the four views a creator can choose.</li><li>Text: title, language, small body fixes.</li><li>Voice: add audio + timing files, mark timing by listening, synthetic, credit, coverage.</li><li>Size, turn: sliders and "Face me".</li></ul></li><li>Desktop (editor):<ul><li>the station's block list;</li><li>an inspector with every field: title, lang, body; audio; the timing status with the hash comparison and a coverage bar over the text; mark timing by listening; re-map; remove timing; synthetic; voiceCredit;</li><li>the view picker, numeric placement, and the stored JSON;</li><li>move and turn handles in the 3D view, kept inside the circle.</li></ul></li><li>Per view: the sign and the marker turn to the visitor by themselves, so only size and position matter. The lectern also needs its turn.</li></ul></details><details open><summary>5. Blunt self-check</summary><ul><li>The demo opens about 13 s into the narration, paused, so every screenshot shows the read-along; a real first visit starts at 0:00.</li><li>The tone pattern is not speech. Nothing here proves that the word marking feels in sync with a real voice; only a real word-timed recording can test that.</li><li>On a portrait phone the open reading sheet covers the very sign that opened it. I accepted this and say so, rather than moving the camera.</li><li>The import maps words by sequence, so a narrator who reads numbers aloud ("sixteen twelve" for 1612) loses those words; the coverage readout shows it.</li><li>Drop first: the lectern, for its cost and its tiny audience. Proudest: the caption strip, because it keeps the visitor's eyes on the place and degrades honestly when the timing is missing or stale.</li></ul></details><details open><summary>6. Timing by listening</summary><ul><li>What it does: in creator and editor, "Mark timing by listening" plays the narration. The creator presses Space, or the large "Mark: this sentence starts now" button, when the voice begins the sentence shown as "next". Alternatively, they tap any word the moment it is spoken.<ul><li>Each mark is an anchor (time to the word's character offset).</li><li>Between anchors the page estimates each word's start by its share of a <b>syllable estimate</b>: vowel groups, a silent final e, one per digit, plus pause weights of 0.7 syllable after a comma, 1.5 after a sentence and 3 after a paragraph.</li><li>Before the first mark and after the last, it extrapolates at the creator's average pace, ending at the audio's end when that pace agrees within 0.6-1.6 times.</li><li>The result is the ordinary word-level <code>timing.segments</code>, and every view uses it at once.</li></ul></li><li>How it shows the difference:<ul><li>a marked word has a solid amber underline and its time above it (green when snapped to a pause);</li><li>estimated words between marks are dotted amber;</li><li>extrapolated words are dotted grey;</li><li>the timeline shows the same three styles over a 40 s window, with detected pauses as faint blocks.</li></ul></li><li>Corrections: tap a word again while playing to re-mark it; tap a marked word while paused to remove it; Undo (or Z); nudge the last mark by 50 ms. A mark that breaks the order replaces the marks it contradicts, and says so.</li><li>Snap to pause: a tap moves to the end of the nearest pause (at least 150 ms of low energy) within 350 ms. For the tone voice the pauses are known from its schedule; a dropped file is decoded and measured in 10 ms frames. That decoder path ran on no real speech here.</li><li><b>Measured</b> on the page's own tone narration with a planted "true" timing. The truth is the tone track's word model with random per-word duration and pause jitter (15% and 30%), three seeds each. Simulated taps: the true sentence start plus a lag of 0 or 200 ms and noise with a standard deviation of 0, 80 or 160 ms.<ul><li>Error of word starts, syllable weights, 30% jitter, taps 200 ms late with 80 ms noise. Each line gives mean / 90th percentile in ms, then the time the highlighted sentence is wrong, without snap and then with snap:<ul><li>every sentence (8 marks per minute): 323 / 644 ms and 2.7% wrong without snap; 231 / 509 ms and 0.25% with snap;</li><li>every 2 sentences (4 per minute): 350 / 729 ms and 3.4%; 279 / 612 ms and 2.0%;</li><li>every 4 (2 per minute): 454 / 980 ms and 5.2%; 410 / 899 ms and 4.4%;</li><li>every 8 (1 per minute): 721 / 1 561 ms and 9.3%; 676 / 1 519 ms and 8.7%;</li><li>every 16 (0.5 per minute): 871 / 1 844 ms and 11.2%; 841 / 1 729 ms and 10.8%.</li></ul></li><li>Even perfect taps on every sentence leave the estimated word mark on the wrong word 43-49% of the time (15-30% jitter), and more than one word off 6-11% of the time. Mean word-start error is then 180-220 ms. <b>Sentence highlight from taps works; word marking from taps does not feel right</b>, which is why I propose <code>timing.source</code> above.</li><li>Snap mostly removes the creator's lag: with taps 200 ms late it cuts the sentence error from 2.7% to 0.25% at one mark per sentence. With taps on time it changes little (0.8% to 0.0% at 80 ms noise). It helps less as marks get sparser, because the error then comes from the estimate, not the tap.</li><li>Snap parameters (every 2 sentences, 120 ms noise, 200 ms lag): a minimum pause of 150 or 250 ms gives the same result, while 80 ms is worse, because word gaps of about 90 ms become false targets. A window of 150 ms is too small to catch a 200 ms lag (3.3% wrong); 350 ms gives 2.3% and 600 ms 2.0%.</li><li>Character weights look better (126 ms mean with perfect taps every sentence, against 179 ms) <b>only because my planted truth is itself built from word length in characters</b>. I did not trust that result, and kept syllables as the default.</li><li>What would reverse the verdict: real speech has longer, less regular pauses and stretches some words for emphasis. Snap could then help more, and the in-sentence estimate could be worse than measured. The thresholds ("feels right" = the sentence is wrong under about 1% of the time, a word mark within a word) are my choice.</li></ul></li><li>My recommendation: <b>one mark per sentence (about 8 per minute at this pace) with snap on</b>, and show only the sentence highlight for such a track. One mark per two sentences is acceptable only for a sentence highlight that may lag at sentence changes (about 2% of the time).</li><li>Creator minutes per page: an A4 page here is about 480 words, or about 3.0 minutes of narration at this pace. Marking every sentence in one real-time pass plus about 25% for replays and undos is <b>about 4 minutes per page</b>, or about 16 minutes for this text. This is an estimate from the audio length, not timed with a real creator.</li></ul></details>
+<h2>Narrated text: designer notes</h2><p>Family <code>station-blocks-1-narrated-text</code>. One record (1 928 words, about four A4 pages, on the guild house, the keep and the market hall fire), drawn by five views. Frame times were measured in headless Chromium with software WebGL (SwiftShader) on a shared, busy machine: they say nothing about a phone except that the page is not CPU-bound.</p><details open><summary>0. Second round (2026-10-25): what changed and why</summary><p>The first look's verdicts and what this round did. Sections 1-6 below are the first round's notes, kept as written; where they disagree with this section, this section holds.</p><ul><li><b>No stale-timing notice for the visitor.</b> "It confuses the player": when the text was edited after the voice was timed (or there is no timing), the visitor simply gets plain reading with no highlight, and nothing is said about it. The reading sheet's notice and the caption strip's "Captions are off" text are gone. The creator still sees the reason: the View sheet says so in creator mode, and the editor shows the hash comparison.</li><li><b>Captions fall back to Reading without a matching timing.</b> The caption strip is driven by the timing by construction, so without one it would be an empty strip. A visitor now gets the Reading view instead (the sign, then the sheet). To see it: Editor, "Remove timing", then back to Visitor with Captions chosen.</li><li><b>The visitor's own view, remembered (the owner's idea, narrowed by FB-13 and FB-14).</b> Inside the circle a small switch at the top left ("Reading, change") lets the visitor swap between the four views that show the same content: Reading, Captions, Sound off and Lectern. The choice overrides the creator's view for every narrated text, in every tour, on this phone.<ul><li>Stored under <code>tour-viewer.visitor.view.narratedText</code> in the browser's storage, read and written inside try/catch: where storage is blocked the choice lasts only the visit, and the toast says so.</li><li>The switch appears only when the creator's view is one of the four; the automatic stale state is never a choice. Captions is greyed out ("needs a timing") when this text has none. "Use the creator's choice again" clears it.</li><li>The top bar's view picker is the prototype's own control and now reads "Creator's view", so the two are not confused.</li></ul></li><li>Not changed: the views themselves, the creator's timing by listening, the lectern.</li></ul></details><details open><summary>1. The model</summary><ul><li>Built exactly as given: <code>title</code>, <code>body</code>, <code>lang</code>, <code>audio</code>, <code>timing { granularity, segments[{ startMs, endMs, from, to }], textHash }</code>, <code>voiceCredit</code>, <code>synthetic</code>. The view and the pose (position, turn, size) belong to the block around the record.</li><li><b>Add <code>segments[].text</code></b> (the word or cue text each segment was made for). With only offsets and a hash, a stale track can only be thrown away. With the words, it can be re-mapped onto the edited body by the same word matching the import already uses, and a one-word typo fix stops costing the creator the whole read-along.</li><li><b>Add <code>timing.source</code></b> (<code>"file"</code>, <code>"tapped"</code>, <code>"generated"</code>) or keep the tapped anchors (<code>timing.anchors: [{ ms, at }]</code>). The measurement in section 6 shows that a word mark estimated between sentence taps is on the wrong word about half the time, so a view should show only the sentence highlight for a tapped track. Without a field it cannot know. Keeping the anchors also lets a creator come back and correct the marks instead of starting again.</li><li><b>Name the hash algorithm in the value</b> (here <code>fnv1a32:...</code>; the app should use SHA-256 over NFC-normalised text). Without the prefix, two apps that normalise differently disagree silently.</li><li><b>Consider <code>durationMs</code></b> on the record: the sign says "12 min" before the audio has loaded, and a visitor deciding whether to start a 12-minute text needs that number first.</li><li>Keep <code>granularity</code>, and make a "sentence" track show sentence highlight only. Interpolating a word mark is dishonest and drifts visibly.</li><li>Do not add "chapters": paragraphs already are the chapters, and the progress bar shows them as ticks.</li></ul></details><details open><summary>2. The views</summary><h4>Reading (required)</h4><ul><li>What: a short upright sign in the world (title, "listen or read, 12 min") opens a sheet: a bottom sheet on a portrait phone, a side panel in landscape and on desktop. The current sentence is softly highlighted and the spoken word underlined. Tap a sentence to play from it; back 10 s; previous sentence. The sheet follows the voice until the visitor scrolls, then offers "Back to the voice".</li><li>Fields: all seven.</li><li>Why a visitor likes it: the long text reads in comfortable 18-19 px serif type, and the square stays visible above or beside the sheet.</li><li>Weakest: in hard sunlight a dark sheet with light text is the best of poor options. On a portrait phone the sheet covers the sign itself, so the visitor reads with the phone tilted down. Few people will read 2 000 words standing in a crowded square. A 1 m placement error does not matter: the sign floats on a stem and nothing in it refers to the scene.</li></ul><h4>Captions (required)</h4><ul><li>What: one chunk of at most about 96 characters (three lines on a 390 px phone) at the bottom of the AR view, the spoken word marked and the words still to come slightly dimmer. Chunks break at commas where possible. A small sound marker stands in the world.</li><li>Fields: all seven. Without a matching timing it says so instead of guessing.</li><li>Why: the visitor keeps looking at the guild house while listening, and with sound off it works as subtitles.</li><li>Weakest: the narration sets the reading pace, so with sound off a slow reader falls behind (back 10 s helps). In a crowd, the strip hides the lower third of the camera image.</li></ul><h4>Sound off (required)</h4><ul><li>What: the same sheet without playback. A calm reading mark (a cooler tint) the visitor sets by tapping a sentence, previous and next sentence, a position readout, ticks per paragraph.</li><li>Fields: title, body, lang.</li><li>Why: for museums and quiet places, and for visitors who read faster than any narrator.</li><li>Weakest: it is just reading on a phone, and nothing in it uses the place.</li></ul><h4>Stale track (required; a state, not a choice)</h4><ul><li>What: when <code>timing.textHash</code> differs from the body's hash, every view falls back: plain text, no highlight, no tap-to-play, and a quiet notice that the voice may differ in places. The voice can still be played. The picker entry previews it by rewording one sentence; editing the body in the editor triggers it for real.</li><li>Fields: title, body, lang, audio, the timing's hash, voiceCredit, synthetic.</li><li>Weakest: one typo fix silently costs the whole read-along unless the creator re-maps it. The editor offers this when the timing file is still in memory, which is exactly why <code>segments[].text</code> should be added.</li></ul><h4>Lectern (unlisted, my own)</h4><ul><li>What: a reading stand in the world, tilted like a lectern, showing nine lines of the current paragraph with the sentence highlighted and the word marked. The page follows the voice. Tap the page to listen or pause; with a stale or missing track, a tap turns the page.</li><li>Fields: all seven.</li><li>Why: it is the only view where the text is in the square. Reading it feels like an exhibit, not like a phone.</li><li>Weakest: it reads only from about 1-2.5 m (letters about 0.045 m), so it serves one or two visitors at a time. It needs a canvas texture redraw per word, and it is the only view where a few degrees of heading error show (the stand faces its pose, not the visitor).</li></ul></details><details open><summary>3. Costs</summary><ul><li>Frame time (headless, software WebGL, mean / max over 2 s, page work per frame in brackets):<ul><li>The frame interval read 110-450 ms mean (max up to 800 ms) on every view, because the machine was shared with another long test run and WebGL ran in software. It measures the machine, not this page.</li><li>The page's own work per frame (the readout's second line: JS, DOM updates and the render call) was 0.8-15 ms mean over two final runs at 390 x 844, 844 x 390 and 1440 x 900 for reading and editor, moving with the machine load. Single frames of up to about 100 ms come from the first texture uploads and from load spikes.</li><li>In development runs: lectern about 4 ms mean, 44 ms max (a page redraw and upload); timing by listening about 20 ms mean in the editor, most of it the 3D view behind the panel.</li><li>On a phone with a GPU the scene is trivial; the cost is the text, not the 3D.</li></ul></li><li>Media per block: body about 10 KB; word timing 1 928 segments, about 105 KB as JSON (roughly a quarter of that zipped). The audio dominates: 12 min of speech at 24-32 kbit/s Opus mono is about 2.2-2.9 MB.</li><li>Reading and sound off: about 1 900 word spans in the DOM; one class change per word.</li><li>Captions: one small DOM update per word.</li><li>Lectern: a 1024 x 768 canvas redrawn and uploaded on each word, about three times a second (3 MB per upload). Fine on a mid-range phone, and the most expensive view here.</li><li>Creator minutes: placing and choosing a view, about 2 minutes on the phone. The text itself is written on the desktop. A voice with a timing file is two dropped files and a coverage check (about 5 minutes) plus making the recording. Without a timing file, timing by listening costs about 4 minutes per A4 page (section 6).</li></ul></details><details open><summary>4. Creator controls</summary><ul><li>Phone (creator): five large buttons along the bottom:<ul><li>Place: a reticle on the ground, then "Place here".</li><li>View: cards for the four views a creator can choose.</li><li>Text: title, language, small body fixes.</li><li>Voice: add audio + timing files, mark timing by listening, synthetic, credit, coverage.</li><li>Size, turn: sliders and "Face me".</li></ul></li><li>Desktop (editor):<ul><li>the station's block list;</li><li>an inspector with every field: title, lang, body; audio; the timing status with the hash comparison and a coverage bar over the text; mark timing by listening; re-map; remove timing; synthetic; voiceCredit;</li><li>the view picker, numeric placement, and the stored JSON;</li><li>move and turn handles in the 3D view, kept inside the circle.</li></ul></li><li>Per view: the sign and the marker turn to the visitor by themselves, so only size and position matter. The lectern also needs its turn.</li></ul></details><details open><summary>5. Blunt self-check</summary><ul><li>The demo opens about 13 s into the narration, paused, so every screenshot shows the read-along; a real first visit starts at 0:00.</li><li>The tone pattern is not speech. Nothing here proves that the word marking feels in sync with a real voice; only a real word-timed recording can test that.</li><li>On a portrait phone the open reading sheet covers the very sign that opened it. I accepted this and say so, rather than moving the camera.</li><li>The import maps words by sequence, so a narrator who reads numbers aloud ("sixteen twelve" for 1612) loses those words; the coverage readout shows it.</li><li>Drop first: the lectern, for its cost and its tiny audience. Proudest: the caption strip, because it keeps the visitor's eyes on the place and degrades honestly when the timing is missing or stale.</li></ul></details><details open><summary>6. Timing by listening</summary><ul><li>What it does: in creator and editor, "Mark timing by listening" plays the narration. The creator presses Space, or the large "Mark: this sentence starts now" button, when the voice begins the sentence shown as "next". Alternatively, they tap any word the moment it is spoken.<ul><li>Each mark is an anchor (time to the word's character offset).</li><li>Between anchors the page estimates each word's start by its share of a <b>syllable estimate</b>: vowel groups, a silent final e, one per digit, plus pause weights of 0.7 syllable after a comma, 1.5 after a sentence and 3 after a paragraph.</li><li>Before the first mark and after the last, it extrapolates at the creator's average pace, ending at the audio's end when that pace agrees within 0.6-1.6 times.</li><li>The result is the ordinary word-level <code>timing.segments</code>, and every view uses it at once.</li></ul></li><li>How it shows the difference:<ul><li>a marked word has a solid amber underline and its time above it (green when snapped to a pause);</li><li>estimated words between marks are dotted amber;</li><li>extrapolated words are dotted grey;</li><li>the timeline shows the same three styles over a 40 s window, with detected pauses as faint blocks.</li></ul></li><li>Corrections: tap a word again while playing to re-mark it; tap a marked word while paused to remove it; Undo (or Z); nudge the last mark by 50 ms. A mark that breaks the order replaces the marks it contradicts, and says so.</li><li>Snap to pause: a tap moves to the end of the nearest pause (at least 150 ms of low energy) within 350 ms. For the tone voice the pauses are known from its schedule; a dropped file is decoded and measured in 10 ms frames. That decoder path ran on no real speech here.</li><li><b>Measured</b> on the page's own tone narration with a planted "true" timing. The truth is the tone track's word model with random per-word duration and pause jitter (15% and 30%), three seeds each. Simulated taps: the true sentence start plus a lag of 0 or 200 ms and noise with a standard deviation of 0, 80 or 160 ms.<ul><li>Error of word starts, syllable weights, 30% jitter, taps 200 ms late with 80 ms noise. Each line gives mean / 90th percentile in ms, then the time the highlighted sentence is wrong, without snap and then with snap:<ul><li>every sentence (8 marks per minute): 323 / 644 ms and 2.7% wrong without snap; 231 / 509 ms and 0.25% with snap;</li><li>every 2 sentences (4 per minute): 350 / 729 ms and 3.4%; 279 / 612 ms and 2.0%;</li><li>every 4 (2 per minute): 454 / 980 ms and 5.2%; 410 / 899 ms and 4.4%;</li><li>every 8 (1 per minute): 721 / 1 561 ms and 9.3%; 676 / 1 519 ms and 8.7%;</li><li>every 16 (0.5 per minute): 871 / 1 844 ms and 11.2%; 841 / 1 729 ms and 10.8%.</li></ul></li><li>Even perfect taps on every sentence leave the estimated word mark on the wrong word 43-49% of the time (15-30% jitter), and more than one word off 6-11% of the time. Mean word-start error is then 180-220 ms. <b>Sentence highlight from taps works; word marking from taps does not feel right</b>, which is why I propose <code>timing.source</code> above.</li><li>Snap mostly removes the creator's lag: with taps 200 ms late it cuts the sentence error from 2.7% to 0.25% at one mark per sentence. With taps on time it changes little (0.8% to 0.0% at 80 ms noise). It helps less as marks get sparser, because the error then comes from the estimate, not the tap.</li><li>Snap parameters (every 2 sentences, 120 ms noise, 200 ms lag): a minimum pause of 150 or 250 ms gives the same result, while 80 ms is worse, because word gaps of about 90 ms become false targets. A window of 150 ms is too small to catch a 200 ms lag (3.3% wrong); 350 ms gives 2.3% and 600 ms 2.0%.</li><li>Character weights look better (126 ms mean with perfect taps every sentence, against 179 ms) <b>only because my planted truth is itself built from word length in characters</b>. I did not trust that result, and kept syllables as the default.</li><li>What would reverse the verdict: real speech has longer, less regular pauses and stretches some words for emphasis. Snap could then help more, and the in-sentence estimate could be worse than measured. The thresholds ("feels right" = the sentence is wrong under about 1% of the time, a word mark within a word) are my choice.</li></ul></li><li>My recommendation: <b>one mark per sentence (about 8 per minute at this pace) with snap on</b>, and show only the sentence highlight for such a track. One mark per two sentences is acceptable only for a sentence highlight that may lag at sentence changes (about 2% of the time).</li><li>Creator minutes per page: an A4 page here is about 480 words, or about 3.0 minutes of narration at this pace. Marking every sentence in one real-time pass plus about 25% for replays and undos is <b>about 4 minutes per page</b>, or about 16 minutes for this text. This is an estimate from the audio length, not timed with a real creator.</li></ul></details>
 </template>
 </body>
 </html>
