@@ -118,7 +118,11 @@ content.update(Date.now());
   own opacity and transparent flag once its fade ends; once every render
   landed and every fade ended, each station shown last that still has a
   part stands in the scene (a table that held every station back would
-  pass the other checks).
+  pass the other checks). "Every render landed" means the microtask queue
+  drained (`setImmediate`): renders run one at a time, so a long sequence
+  can queue dozens of stale renders ahead of the last live one, and a
+  fixed microtask budget left that station still fading in (a found
+  counterexample, pinned as its own case).
 - `station-content.scale.test.ts` - the 100-station object count.
 - `station-content.sweep.test.ts` - the fade length's sweep.
 - End to end: `playwright-tests/stations.spec.js` (the walk from the gate

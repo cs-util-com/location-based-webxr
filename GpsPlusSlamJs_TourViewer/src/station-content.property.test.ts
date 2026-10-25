@@ -23,9 +23,20 @@ import { createStationContent, type ContentPart } from "./station-content.js";
 
 const FADE = 400;
 
-/** Let pending renders land: they settle through microtasks only. */
+/** Let SOME pending renders land (a "settle" step: a fixed number of
+ *  microtasks, so a sequence can stop with renders still in flight). */
 async function flush(): Promise<void> {
   for (let i = 0; i < 30; i += 1) await Promise.resolve();
+}
+
+/** Let EVERY pending render land: renders settle through microtasks only,
+ *  and a macrotask runs once the microtask queue is empty. A fixed count
+ *  of microtasks is not enough here: renders run one at a time, and a
+ *  long sequence queues dozens of stale ones ahead of the last live one.
+ *  `setImmediate`, not `setTimeout(0)`: a timer waits for the clock's
+ *  tick (about 15 ms on Windows), which 150 runs cannot afford. */
+async function drain(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
 }
 const STATIONS = ["a", "b", "c"] as const;
 
@@ -140,11 +151,11 @@ async function run(ops: readonly Op[], presenceOnly: boolean): Promise<void> {
     for (const m of made) expect(m.disposals).toBeLessThanOrEqual(1);
   }
   // Let every render land and every fade end, then check the materials.
-  await flush();
+  await drain();
   for (let i = 0; i < 4; i += 1) {
     clock.ms += FADE;
     content.update(clock.ms);
-    await flush();
+    await drain();
   }
   if (presenceOnly) expect(stationGroups()).toBeLessThanOrEqual(1);
   const standing = new Set(scene.children.map((g) => g.name));
@@ -158,7 +169,7 @@ async function run(ops: readonly Op[], presenceOnly: boolean): Promise<void> {
     expect(m.material.transparent).toBe(m.ownOpacity < 1);
   }
   content.dispose();
-  await flush();
+  await drain();
   for (const m of made) expect(m.disposals).toBe(1);
 }
 
@@ -177,6 +188,55 @@ describe("station content: properties over generated sequences", () => {
     );
     // Every generated sequence ran its checks (`run` asserts).
     expect(runs).toBe(150);
+  });
+
+  it("a counterexample found by the property below: every shown station stands", async () => {
+    // Why this test matters: fast-check seed 1782054768 found this
+    // sequence; pinned so it runs whatever the seed. Its last live render
+    // queues behind many stale ones, and lands only after the fixed
+    // microtask budget of `flush`: the end of `run` must drain the queue,
+    // or a station still fading in reads as materials not restored.
+    // (`run` asserts; it resolves only when every check held.)
+    await expect(
+      run(
+        [
+          {
+            kind: "part",
+            id: "c",
+            key: "y",
+            remove: false,
+            ownOpacity: 1,
+            delay: 0,
+          },
+          { kind: "show-all" },
+          {
+            kind: "part",
+            id: "a",
+            key: "x",
+            remove: false,
+            ownOpacity: 1,
+            delay: 0,
+          },
+          { kind: "show", id: null },
+          { kind: "show-all" },
+          { kind: "show", id: "a" },
+          { kind: "show-all" },
+          { kind: "show", id: "a" },
+          { kind: "show", id: "b" },
+          { kind: "show", id: "a" },
+          { kind: "show", id: "c" },
+          { kind: "frame", ms: 0 },
+          { kind: "show", id: "a" },
+          { kind: "show-all" },
+          { kind: "show", id: "a" },
+          { kind: "frame", ms: 0 },
+          { kind: "show", id: "c" },
+          { kind: "show", id: "a" },
+          { kind: "show", id: "c" },
+        ],
+        false,
+      ),
+    ).resolves.toBeUndefined();
   });
 
   it("with show all mixed in: every shown station stands; every result disposed once; materials restored", async () => {
