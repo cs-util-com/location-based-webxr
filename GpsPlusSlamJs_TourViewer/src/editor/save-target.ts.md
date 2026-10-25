@@ -72,11 +72,21 @@ build plan, re-cut" and its cold review
 - `InPlaceRefusal`, `EditorLock`, `WritableFileHandle`, `PickerWindow`, `PickOutcome`,
   `SaveTarget`.
 
-- `saveFinePrint(win)` (W2 of the tour editor plan 2026-10-17-1816) - the
+- `adoptsSavedFile(win, nav): boolean` - whether the first Save of a
+  tour without a file asks for one with the save dialog and then keeps
+  saving into it (the page's `askSaveFile`): both file dialogs exist
+  and the browser is not on Android. Android is told by its client hints
+  (`userAgentData.platform`) where it gives them, else by its user agent.
+  No feature check can tell what decides it there: a picked file is a
+  content URI with no replace in one step, so whether a rewrite can be
+  cut short by a closed tab, and whether access survives a reload, needs
+  a check on a phone; until then Android keeps the copy.
+- `saveFinePrint(win, nav = {})` (W2 of the tour editor plan 2026-10-17-1816) - the
   open dialog's fine print about Save, true for this browser: where
   `showOpenFilePicker` exists (`../file-picker.ts`, the check the setup
   page's line about the editor uses too), a chosen file is saved into itself (and by
-  itself after a change) while a tour from a link or the sample is saved as
+  itself after a change) while a tour from a link or the sample is saved
+  into the file its first Save asks for where `adoptsSavedFile`, else as
   a new copy; elsewhere Save gives a new copy. It opens with what leaves
   the computer (W6): the tour file stays, the map comes from
   OpenStreetMap (it said "nothing is uploaded", which hid the tiles).
@@ -115,5 +125,7 @@ without Web Locks); the save dialog opened before `pickSaveFile` returns,
 cancelled only by a dismissal, unavailable without one or on any other
 refusal; `isSame` by the browser's answer, else by the name; `isSameFile`
 by the handle's answer, and by the name without a handle or with one that
-cannot tell. The page's e2e (`playwright-tests/editor.spec.js`)
+cannot tell; `adoptsSavedFile` on a desktop, on Android by its user agent
+and by its client hints, and without either dialog, and the fine print's
+words for each. The page's e2e (`playwright-tests/editor.spec.js`)
 writes a real origin-private file through it.

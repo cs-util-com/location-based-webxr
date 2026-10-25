@@ -24,6 +24,7 @@
 
 import {
   downloadZip,
+  requestPersistentStorage,
   writeFileOrAbort,
 } from "gps-plus-slam-app-framework/storage";
 import { createTourViewerStore } from "../tour-viewer-session.js";
@@ -142,6 +143,7 @@ import type {
   Editor3dView,
 } from "../editor3d/editor3d-scene.js";
 import {
+  adoptsSavedFile,
   createSaveTarget,
   holdEditorDraftLock,
   holdEditorLock,
@@ -1327,7 +1329,7 @@ document.addEventListener("keydown", (event) => {
   // here, open tour or not (E2b plan review #10).
   if (commandKey(event, "s")) {
     event.preventDefault();
-    if (modal.hidden) void runSave();
+    if (modal.hidden) void runSave(askSaveFile());
     return;
   }
   if (undoKeys(event)) return;
@@ -1787,6 +1789,7 @@ async function openFile(
   renderSaveState();
   toast(`Opened ${outcome.fileName}: ${openedSummary(model)}`);
   sayNoBackup();
+  keepStorage();
   // Details, station descriptions and card images the reader dropped are
   // said, never lost silently by the next save (M4a review #6); kept until
   // closed, as an instruction.
@@ -1984,7 +1987,25 @@ async function deliver(
   into: SaveTarget | null,
   writes: EditorTourDraft | null,
   offerDownload = true,
-): Promise<{ arrived: boolean; inPlace: boolean; refusal?: string }> {
+  /** The file the first Save of a tour without one asked for in its
+   *  click (`askSaveFile`): written here, and then adopted. */
+  pick: Promise<SaveFilePick> | null = null,
+): Promise<{
+  arrived: boolean;
+  inPlace: boolean;
+  refusal?: string;
+  /** The picked file the save was written into (to adopt). */
+  chosen?: FileSystemFileHandle;
+}> {
+  if (into === null && pick !== null) {
+    const picked = await pick;
+    // Dismissed: nothing written, the save kept for "Save again".
+    if (picked.kind === "cancelled") return { arrived: false, inPlace: false };
+    if (picked.kind === "picked") {
+      return writeChosen(mine, save, picked.handle, writes);
+    }
+    // No dialog after all (the browser refused it): the download below.
+  }
   if (into === null) {
     const arrived = await download(save);
     if (arrived) {
@@ -2039,6 +2060,111 @@ async function deliver(
   return { arrived: true, inPlace: true };
 }
 
+/**
+ * Write `save` into the file the first Save asked for (`deliver`): the
+ * draft follows the written bytes as an in-place write's does, since the
+ * file becomes the tour's own (`adoptChosen`). A failed write keeps the
+ * save for "Save again" and says why.
+ */
+async function writeChosen(
+  mine: EditorSession,
+  save: EditorSave,
+  handle: FileSystemFileHandle,
+  writes: EditorTourDraft | null,
+): Promise<{
+  arrived: boolean;
+  inPlace: boolean;
+  chosen?: FileSystemFileHandle;
+}> {
+  const written = new File([save.blob], save.filename, {
+    type: "application/zip",
+  });
+  const writtenKey = await tourFileKeyOfFile(written).catch(() => fileKey);
+  try {
+    await writeFileOrAbort(handle, save.blob);
+  } catch (err) {
+    if (editor === mine) {
+      fileToasts.push(
+        toast(
+          `Not saved: ${handle.name} could not be written (${err instanceof Error ? err.message : String(err)}). Save again to choose a file.`,
+          undefined,
+          null,
+        ),
+      );
+    }
+    return { arrived: false, inPlace: false };
+  }
+  if (editor === mine && writtenKey !== null) {
+    writes?.landed(save.written, writtenKey);
+    fileKey = writtenKey;
+  }
+  await readPhotosFrom(mine, written).catch(() => undefined);
+  return { arrived: true, inPlace: true, chosen: handle };
+}
+
+/**
+ * The file the first Save wrote becomes the tour's: saved into in place
+ * from now on, and by itself, as a file opened with "Choose..." is
+ * (`attachTarget`). "Save the debug data" then refuses it as the tour
+ * file it is.
+ */
+async function adoptChosen(
+  mine: EditorSession,
+  handle: FileSystemFileHandle,
+): Promise<void> {
+  let file: File;
+  try {
+    file = await handle.getFile();
+  } catch {
+    // Saved all the same; the next Save asks again.
+    return;
+  }
+  if (editor !== mine) return;
+  openedFile = { name: handle.name, handle };
+  element("tour-file").textContent = handle.name;
+  await attachTarget(mine, handle, file);
+}
+
+/**
+ * The first Save of a tour without a file to save into (from a link, the
+ * sample, a drop or the file input) asks where to save it - IN the click,
+ * before any await: Chromium opens the dialog only within a few seconds of
+ * a click, and the build can take longer (the walk's move's rule). Null
+ * where there is nothing to ask: no tour, a file to save into (or one the
+ * page may not write: that stays a download), nothing to save, a save
+ * running, or a browser that does not adopt (`adoptsSavedFile`: none on
+ * Android until a phone check).
+ */
+function askSaveFile(): Promise<SaveFilePick> | null {
+  const mine = editor;
+  if (
+    mine === null ||
+    target !== null ||
+    (openedFile?.handle ?? null) !== null ||
+    saving() ||
+    !unsavedWork() ||
+    !adoptsSavedFile(
+      window as unknown as PickerWindow & SavePickerWindow,
+      navigator,
+    )
+  ) {
+    return null;
+  }
+  return pickSaveFile(window as unknown as SavePickerWindow, mine.savedName());
+}
+
+/** Whether the browser was asked to keep this site's storage (once). */
+let storageAsked = false;
+
+/** At the first open, ask the browser to keep this site's storage (the
+ *  drafts of unsaved work) from being cleared to make room. A refusal
+ *  changes nothing: the drafts are written either way. */
+function keepStorage(): void {
+  if (storageAsked) return;
+  storageAsked = true;
+  void requestPersistentStorage();
+}
+
 /** A save whose tour was closed meanwhile ends quietly; the open tour's
  *  page shows its own state. */
 function abandon(): AutosaveOutcome {
@@ -2054,8 +2180,11 @@ function abandon(): AutosaveOutcome {
  * The explicit Save (the button, Ctrl+S, "Download instead"). Asked for
  * while an autosave runs, it waits for it and runs next; what it comes to
  * tells the autosave (a landed save ends a pause, a failed one pauses it).
+ * `pick`: the file its click asked for (`askSaveFile`), if any.
  */
-async function runSave(): Promise<void> {
+async function runSave(
+  pick: Promise<SaveFilePick> | null = null,
+): Promise<void> {
   if (editor === null) return;
   if (saving()) {
     if (saveState().by === "auto") {
@@ -2067,7 +2196,7 @@ async function runSave(): Promise<void> {
     return;
   }
   const mine = editor;
-  const outcome = await saveTour("explicit");
+  const outcome = await saveTour("explicit", pick);
   if (editor !== mine || outcome === "held") return;
   if (outcome === "saved") autosave.saved();
   else autosave.failed();
@@ -2080,7 +2209,10 @@ async function runSave(): Promise<void> {
  * that it saved; it gives itself back as `held` when an edit began while
  * it checked the file, before the session took its snapshot.
  */
-async function saveTour(mode: "explicit" | "auto"): Promise<AutosaveOutcome> {
+async function saveTour(
+  mode: "explicit" | "auto",
+  pick: Promise<SaveFilePick> | null = null,
+): Promise<AutosaveOutcome> {
   if (editor === null || saving()) return "held";
   // A save belongs to the tour it started on: one opened meanwhile must not
   // receive it (E2a review #5). Claimed FIRST: the commit and the undo's
@@ -2104,7 +2236,7 @@ async function saveTour(mode: "explicit" | "auto"): Promise<AutosaveOutcome> {
       }
       return "saved";
     }
-    return await buildAndDeliver(mine, mode);
+    return await buildAndDeliver(mine, mode, pick);
   } finally {
     // Every path above has said its own state; this only lets go - and
     // never a save of a tour opened meanwhile.
@@ -2128,8 +2260,11 @@ function noteDelivered(
   inPlace: boolean,
   into: SaveTarget | null,
   save: EditorSave,
+  /** The file the first Save asked for, written in place of `into`. */
+  chosen?: FileSystemFileHandle,
 ): void {
-  const name = inPlace ? (into?.name ?? save.filename) : save.filename;
+  const name =
+    chosen?.name ?? (inPlace ? (into?.name ?? save.filename) : save.filename);
   store.dispatch(tourDocumentActions.saveDelivered({ inPlace, name }));
   // A view of the slice's `delivered` (the e2e reads it), never read back.
   const line = savedLine();
@@ -2149,6 +2284,7 @@ function savedLine(): string | null {
 async function buildAndDeliver(
   mine: EditorSession,
   mode: "explicit" | "auto",
+  pick: Promise<SaveFilePick> | null = null,
 ): Promise<AutosaveOutcome> {
   renderSaveState();
   // This tour's draft writes, taken before the first await (review #1).
@@ -2201,7 +2337,14 @@ async function buildAndDeliver(
     keepWalk.hidden = true;
     // The target this save was checked against, even if "Edit here
     // anyway" attached one while it was built (E2b-1 review #1).
-    const { arrived, inPlace } = await deliver(mine, save, into, writes);
+    const { arrived, inPlace, chosen } = await deliver(
+      mine,
+      save,
+      into,
+      writes,
+      true,
+      pick,
+    );
     if (editor !== mine) return abandon();
     setUndelivered(arrived ? null : save);
     if (arrived) {
@@ -2209,7 +2352,8 @@ async function buildAndDeliver(
       const pending = new Set(mine.pendingIds());
       for (const id of [...moved]) if (!pending.has(id)) moved.delete(id);
       say(null);
-      noteDelivered(inPlace, into, save);
+      noteDelivered(inPlace, into, save, chosen);
+      if (chosen !== undefined) void adoptChosen(mine, chosen);
     }
     // Quiet: an autosave says it saved in the status line only (it is
     // always in place, which keeps the walk, so the result has nothing
@@ -2221,7 +2365,9 @@ async function buildAndDeliver(
       // place overwrites (r901 review #1).
       const words = savedToastWords({
         inPlace,
-        name: inPlace ? (into?.name ?? save.filename) : save.filename,
+        name:
+          chosen?.name ??
+          (inPlace ? (into?.name ?? save.filename) : save.filename),
         leftOut: save.scanLeftOut.length,
       });
       const saved = toast(
@@ -2254,7 +2400,7 @@ async function buildAndDeliver(
 }
 
 saveButton.addEventListener("click", () => {
-  void runSave();
+  void runSave(askSaveFile());
 });
 // The debug layer's switch: view state only - no edit, nothing pending.
 debugInput.addEventListener("change", () => {
@@ -2439,6 +2585,8 @@ async function finishEditing(): Promise<void> {
   const mine = editor;
   card.commit();
   if (ui().moving !== null) finishMove();
+  // In the click, before any await: the save dialog needs it.
+  const pick = askSaveFile();
   if (unsavedWork()) {
     store.dispatch(editorViewActions.doneBusyChanged({ busy: true }));
     doneButton.disabled = true;
@@ -2446,7 +2594,7 @@ async function finishEditing(): Promise<void> {
     try {
       // An autosave that runs ends first (and one queued behind it).
       await savesSettled();
-      if (editor === mine && unsavedWork()) await runSave();
+      if (editor === mine && unsavedWork()) await runSave(pick);
       await savesSettled();
     } finally {
       store.dispatch(editorViewActions.doneBusyChanged({ busy: false }));
@@ -2533,8 +2681,8 @@ function saveDebugData(): Promise<DebugSaveOutcome> {
     // move's rule). Refused before anything is read or written.
     if (
       picked.kind === "picked" &&
-      source !== null &&
-      (await isSameFile(source, picked.handle))
+      ((source !== null && (await isSameFile(source, picked.handle))) ||
+        (await target?.isSame(picked.handle)) === true)
     ) {
       return {
         kind: "refused",
@@ -2807,7 +2955,8 @@ doneButton.addEventListener("click", () => {
 // What Save does in this browser (W2): a chosen file is written in place
 // only where the file picker exists.
 element("open-fineprint").textContent = saveFinePrint(
-  window as unknown as PickerWindow,
+  window as unknown as PickerWindow & SavePickerWindow,
+  navigator,
 );
 
 /**

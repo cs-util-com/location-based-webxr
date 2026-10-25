@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  adoptsSavedFile,
   createSaveTarget,
   holdEditorDraftLock,
   holdEditorLock,
@@ -15,6 +16,8 @@ import {
   pickTourFile,
   saveFinePrint,
   InPlaceRefusal,
+  type PickerWindow,
+  type SavePickerWindow,
   type WritableFileHandle,
   isSameFile,
 } from "./save-target.js";
@@ -480,5 +483,74 @@ describe("pickSaveFile", () => {
         "w.zip",
       ),
     ).resolves.toEqual({ kind: "unavailable" });
+  });
+});
+
+/**
+ * Why: a tour opened from a link or the sample used to be saved as a new
+ * copy at every Save, which the creator then had to put in place by hand
+ * - and nothing saved by itself. Where the browser has both file dialogs,
+ * the first Save now asks for a file and keeps saving into it. Android's
+ * picked files cannot be rewritten in one step (no feature check can tell
+ * this), so Android keeps the copy until a check on a phone says
+ * otherwise; these tests pin which browsers adopt and that the fine print
+ * says what each does.
+ */
+describe("adoptsSavedFile", () => {
+  // Never called: the check reads only whether the dialogs exist.
+  const pickers: PickerWindow & SavePickerWindow = {
+    showOpenFilePicker: () => Promise.resolve([]),
+    showSaveFilePicker: () => Promise.reject(new Error("not opened")),
+  };
+  const desktop =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
+  const android =
+    "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36";
+
+  it("adopts on a desktop browser with both file dialogs", () => {
+    expect(adoptsSavedFile(pickers, { userAgent: desktop })).toBe(true);
+    expect(
+      adoptsSavedFile(pickers, {
+        userAgent: desktop,
+        userAgentData: { platform: "Windows" },
+      }),
+    ).toBe(true);
+  });
+
+  it("does not adopt on Android, by its client hints or its user agent", () => {
+    expect(adoptsSavedFile(pickers, { userAgent: android })).toBe(false);
+    expect(
+      adoptsSavedFile(pickers, {
+        // A desktop-site request hides Android in the user agent; the
+        // client hints still name it.
+        userAgent: desktop,
+        userAgentData: { platform: "Android" },
+      }),
+    ).toBe(false);
+  });
+
+  it("does not adopt without either file dialog", () => {
+    expect(
+      adoptsSavedFile(
+        { showOpenFilePicker: () => Promise.resolve([]) },
+        { userAgent: desktop },
+      ),
+    ).toBe(false);
+    expect(
+      adoptsSavedFile(
+        { showSaveFilePicker: () => Promise.reject(new Error("not opened")) },
+        { userAgent: desktop },
+      ),
+    ).toBe(false);
+    expect(adoptsSavedFile({}, {})).toBe(false);
+  });
+
+  it("the fine print says a link's tour is saved into the file its first Save asks for, only where it is", () => {
+    const adopting = saveFinePrint(pickers, { userAgent: desktop });
+    expect(adopting).toContain("asks where to save it at its first Save");
+    expect(adopting).not.toContain("new copy");
+    const phone = saveFinePrint(pickers, { userAgent: android });
+    expect(phone).toContain("saved as a new copy");
+    expect(phone).not.toContain("asks where to save it");
   });
 });

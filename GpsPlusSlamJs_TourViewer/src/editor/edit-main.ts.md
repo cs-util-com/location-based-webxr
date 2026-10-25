@@ -172,6 +172,29 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   save picker - the one undelivered case the page can see, since an
   `<a download>` always reports started - keeps the built file, and
   Save offers it again ("Not saved yet - tap Save again").
+- **The first Save of a tour without a file** (from a link, the sample,
+  a drop or the file input) asks where to save it where the browser
+  adopts the chosen file (`adoptsSavedFile`: both file dialogs, not on
+  Android until a phone check): `askSaveFile` opens the save dialog IN
+  the click - the Save button's, Ctrl+S's and Done's - before any await
+  (Chromium refuses a dialog asked for after a long build; the walk's
+  move's rule), and the pick rides through `runSave`, `saveTour` and
+  `buildAndDeliver` to `deliver`. A picked file is written
+  (`writeChosen`: the draft follows the written bytes as an in-place
+  write's does), the status reads "Saved to <name>", and the file is
+  ADOPTED (`adoptChosen`): `openedFile` and the top bar's file name
+  become it and `attachTarget` makes it the save target, so later saves
+  write it in place and autosave runs, exactly as for a file opened with
+  "Choose…". A dismissed dialog keeps the built file for "Save again"; a
+  refused dialog (no click, an iframe) downloads as before; a failed
+  write says why and keeps the save. Not asked: a tour opened from a file
+  the page may not write (a refused permission, another tab's name), which
+  still downloads, and "Download instead" after an in-place refusal (no
+  pick: a download). The fine print says which the browser does.
+- **Storage kept (at the first open).** The page asks the browser once
+  (`keepStorage`, the framework's `requestPersistentStorage`) to keep
+  this site's storage - the drafts of unsaved work - from being cleared
+  to make room; a refusal changes nothing and is not shown.
 - **Autosave (M6 E2b-2, owner Q-E2-4).** While the tour is written in place
   (a target attached: `autosave.enable(true)`; off after "Download instead"
   and for every download-only tour), the page saves by itself
@@ -304,7 +327,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   The opened tour file itself chosen as its target is refused before
   anything is written (`isSameFile` against `openedFile`, the name and the
   handle it was picked through; r901 review #5): the bundle would land
-  over the file it is read from.
+  over the file it is read from. The file a first Save adopted is refused
+  the same way (`target.isSame`): it is the tour's file then.
   The opened file is read when the save runs, not when the tour opened:
   the page keeps a reference to it (a `File`), valid only while the file
   on disk is unchanged, so a copy put in its place first leaves nothing
@@ -427,9 +451,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 - **Titles:** the top bar and the tab say the tour's name (`model.title`,
   the file's name when it has none): `<name> - Tour editor`.
 - **The open dialog's fine print** is `save-target.ts`'s
-  `saveFinePrint(window)`: Save writes the chosen file where the file
-  picker exists, else gives a new copy (W2: it said "a new copy" in every
-  browser).
+  `saveFinePrint(window, navigator)`: Save writes the chosen file where
+  the file picker exists, a tour from a link is saved into the file its
+  first Save asks for where the browser adopts it, else gives a new copy
+  (W2: it said "a new copy" in every browser).
 - **Leaving** with unsaved work asks first (`beforeunload`), and so does
   "Open another tour" (`window.confirm`).
 - **Free area** for the card: right of the rail, under the top bar (read

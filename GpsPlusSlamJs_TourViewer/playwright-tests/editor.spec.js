@@ -4082,3 +4082,131 @@ test("a tour with no file to write into is downloaded without the walk on a seco
   // the frames are debug data now and go with the walk.
   expect(names).not.toContain("mytour/images/frame-000002.png");
 });
+
+test("a tour without a file is saved into the file its first Save asks for, and from then on in place and by itself", async ({
+  page,
+}) => {
+  // Why: a tour opened from a link, the sample or a drop used to be
+  // downloaded as a new copy at every Save, to be put in place by hand,
+  // and nothing saved by itself. Where the browser has both file dialogs,
+  // the first Save asks for the file IN its click (a dialog asked for
+  // after the build is refused) and the page then keeps that file as the
+  // tour's: a later edit is saved into it without a second dialog.
+  await page.addInitScript(() => {
+    // Put back after the suite's own init script took it away: this
+    // browser has both dialogs.
+    /** @type {any} */ (window).showOpenFilePicker = () =>
+      Promise.reject(new DOMException("not in this test", "AbortError"));
+    // Counted: the open asks once to keep the site's storage (the drafts).
+    Reflect.set(window, "__persistCalls", 0);
+    const persist = navigator.storage.persist.bind(navigator.storage);
+    navigator.storage.persist = () => {
+      Reflect.set(
+        window,
+        "__persistCalls",
+        Reflect.get(window, "__persistCalls") + 1,
+      );
+      return persist();
+    };
+  });
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await expect(page.locator("#open-fineprint")).toContainText(
+    "asks where to save it at its first Save",
+  );
+  await dropOnDropBox(page, await editorTour(), "editor-fixture.zip");
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  expect(await page.evaluate(() => Reflect.get(window, "__persistCalls"))).toBe(
+    1,
+  );
+  await clickBoundSavePicker(page, "saved-tour.zip");
+  await page.locator("#rail .row", { hasText: "Town hall" }).click();
+  await page.locator("#card textarea").fill("Saved into the chosen file");
+  let downloads = 0;
+  page.on("download", () => {
+    downloads += 1;
+  });
+  await page.locator("#save-btn").click();
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to saved-tour.zip",
+  );
+  // One dialog, opened inside the click (the stand-in refuses one outside
+  // it), and no download.
+  expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
+  expect(downloads).toBe(0);
+  const first = await readOpfsTour(page, "saved-tour.zip");
+  expect(first["tour.json"]).toContain("Saved into the chosen file");
+  // A second edit saves by itself, into the same file, with no dialog.
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  await editPin(page, "Saved into the chosen file", "Saved by itself");
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-autosave",
+    "waiting",
+  );
+  await page.clock.runFor(3_500);
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  expect((await readOpfsTour(page, "saved-tour.zip"))["tour.json"]).toContain(
+    "Saved by itself",
+  );
+  expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
+  expect(downloads).toBe(0);
+});
+
+test("a tour without a file whose save dialog was dismissed keeps its save for Save again", async ({
+  page,
+}) => {
+  // Why: a dismissed dialog must not lose the save, nor fall back to a
+  // download the creator did not ask for.
+  await page.addInitScript(() => {
+    /** @type {any} */ (window).showOpenFilePicker = () =>
+      Promise.reject(new DOMException("not in this test", "AbortError"));
+    /** @type {any} */ (window).showSaveFilePicker = () =>
+      Promise.reject(new DOMException("dismissed", "AbortError"));
+  });
+  await page.goto("/edit.html");
+  await dropOnDropBox(page, await editorTour(), "editor-fixture.zip");
+  await page.locator("#rail .row", { hasText: "Town hall" }).click();
+  await page.locator("#card textarea").fill("Not yet saved");
+  let downloads = 0;
+  page.on("download", () => {
+    downloads += 1;
+  });
+  await page.locator("#save-btn").click();
+  await expect(page.locator("#save-status")).toHaveText(
+    "Not saved yet - tap Save again",
+  );
+  expect(downloads).toBe(0);
+});
+
+/**
+ * Open `buffer` by dropping it on the drop box: a tour without a file
+ * handle, opened while the browser's open dialog is in place (the chooser
+ * would go through that dialog).
+ * @param {import("@playwright/test").Page} page
+ * @param {Buffer} buffer
+ * @param {string} name
+ */
+async function dropOnDropBox(page, buffer, name) {
+  await page.evaluate(
+    ({ bytes, fileName }) => {
+      const data = new DataTransfer();
+      data.items.add(
+        new File([new Uint8Array(bytes)], fileName, {
+          type: "application/zip",
+        }),
+      );
+      const target = document.getElementById("drop");
+      if (target === null) throw new Error("no drop box");
+      for (const type of ["dragover", "drop"]) {
+        target.dispatchEvent(
+          new DragEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer: data,
+          }),
+        );
+      }
+    },
+    { bytes: [...buffer], fileName: name },
+  );
+}
