@@ -34,7 +34,15 @@ them.
     (`seams.schedule`, `SCAN_GATE_ESCAPE_MS`, 10 s) while it scans - but
     not in the codes-only mode (`ctx.codesOnly`, QR-first M1b-1): without
     location there is no GPS to continue with, so the "Continue with GPS
-    only" button never shows; idle when no session runs.
+    only" button never shows; idle when no session runs. The clock running
+    out is not enough either: the escape waits for a DEVICE fix of this AR
+    entry (the store's GPS history, which an AR exit resets while the
+    session origin survives, read through `deviceSamples`, the one
+    device-only filter - a code's votes are not GPS). With none yet, the
+    gate keeps scanning without the button, and the first device fix after
+    the clock (`recordDeviceFix`) offers it: indoors a phone may hold the
+    permission and never get a fix, and the escape then promised a
+    placement nothing could make.
     `resetScanGate()` (a tour closed) returns it to idle with the clock
     cancelled - a gate waived for one tour never carries into the next.
     `reconsiderScanGate(levels | "unavailable")` (the levels arrived, or
@@ -370,6 +378,14 @@ ctx.placementUnsubscribe = arStore.subscribe(() => viewer.tryPlaceTour());
 ```
 
 ## Tests
+
+`viewer-placement.test.ts` - the scan gate's driver against a fake clock
+and button: the clock, the escape's tap, the levels' waivers, the reset per
+tour; the escape only with a device fix of this entry (none at the clock
+then one after it, a fix before the clock, an origin kept from an earlier
+entry, codes only). The e2e `ar-mode.spec.js` "a visitor with location
+allowed but no fix is offered the GPS escape only once a fix arrives"
+drives it through the page.
 
 `viewer-placement-photos.test.ts` - through the real
 controller config, the decoder faked: a zip with a walk and frames draws

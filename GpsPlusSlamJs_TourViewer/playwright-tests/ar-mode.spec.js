@@ -362,6 +362,45 @@ test("a visitor who allowed location but gets no fix starts AR with location (M2
   await expect(button).toHaveText("Exit AR");
 });
 
+test("a visitor with location allowed but no fix is offered the GPS escape only once a fix arrives", async ({
+  page,
+}) => {
+  // Why this matters: indoors the permission holds and no fix comes.
+  // "Continue with GPS only" after the clock then promised a placement by
+  // GPS that nothing could make. It waits for this session's first device
+  // fix, and appears with it.
+  await page.addInitScript(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    if (t) {
+      t.locationPermission = "prompt";
+      t.locationOutcome = "unavailable";
+      t.controllerLocationResult = { supported: true, granted: null };
+    }
+  });
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  const button = page.getByTestId("enter-ar");
+  await expect(button).toHaveText("Allow location", { timeout: 10000 });
+  await button.click();
+  await expect(button).toHaveText("Start the tour");
+  await button.click();
+  await expect(button).toHaveText("Exit AR");
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.fireTimers();
+  });
+  const escape = page.getByTestId("scan-escape");
+  await expect(escape).toBeHidden();
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.emitGps({
+      lat: 47.5,
+      lon: 8.7,
+      accuracy: 8,
+      timestamp: 1_790_000_015_000,
+      arPosition: [0, 0, 0],
+    });
+  });
+  await expect(escape).toBeVisible();
+});
+
 test("a first-time visitor is asked for the location on its own tap, then starts the tour on the next (DEC-N2)", async ({
   page,
 }) => {

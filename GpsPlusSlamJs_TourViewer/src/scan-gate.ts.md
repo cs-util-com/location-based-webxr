@@ -18,7 +18,9 @@ clock, the escape button).
   escape clock for the same outcome.
 - `SCAN_GATE_ESCAPE_MS = 10_000` - after this long in `scanning` the escape
   is offered (DEC-N3; 45 s until the owner's S1 scan card offered the skip
-  after 10 s, polish round M4b, Q-Scan).
+  after 10 s, polish round M4b, Q-Scan) - once the AR entry has had a
+  device fix; with none yet, at its first fix (the driver,
+  `viewer-placement.ts`).
 - `scanCardShown(mode, arStatus, gate, unfinished = false): boolean` - the
   visitor's scan card (S1) shows for a visitor's `running` session whose
   gate is `scanning`, and closes by itself on any pass (`ar-entry.ts`

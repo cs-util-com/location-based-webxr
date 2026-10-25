@@ -81,6 +81,7 @@ import {
   type TourViewerStore,
 } from "./tour-viewer-session.js";
 import { startEntryVoteSink } from "./viewer-vote-sink.js";
+import { deviceSamples } from "./visit-log.js";
 import type { ViewingLog } from "./viewing-log.js";
 import {
   createStationContent,
@@ -285,9 +286,43 @@ export function createViewerPlacement(deps: {
   const ignoredLevelIds = (): ReadonlySet<string> =>
     new Set(ctx.ignoredCodes.keys());
 
+  /** The scanning gate's escape clock ran out; the escape waits for GPS. */
+  let escapeClockElapsed = false;
+
+  /**
+   * Whether a device fix arrived in this AR entry: the store's GPS history
+   * is this entry's (an AR exit resets it, while the session origin
+   * survives), read through the one device-only filter, so a code's votes
+   * never count as GPS.
+   */
+  function entryHasDeviceFix(): boolean {
+    const state = arStore.getState();
+    return (
+      deviceSamples({
+        gpsPositions: selectGpsPositions(state),
+        odometryPositions: selectOdometryPositions(state),
+      }).length > 0
+    );
+  }
+
+  /**
+   * "Continue with GPS only" once the clock ran out AND this entry has GPS
+   * to continue with: a phone indoors may hold the permission and never get
+   * a fix, and the escape would then promise a placement nothing can make.
+   * Called when the clock runs out and on every device fix.
+   */
+  function offerEscapeWhenDue(): void {
+    if (!escapeClockElapsed || ctx.scanGate.kind !== "scanning") return;
+    if (ctx.scanGate.escapeOffered || !entryHasDeviceFix()) return;
+    ctx.scanGate = { kind: "scanning", escapeOffered: true };
+    escapeButton.hidden = false;
+    hooks.renderArStatus();
+  }
+
   function resetScanGate(): void {
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
+    escapeClockElapsed = false;
     escapeButton.hidden = true;
     ctx.scanGate = { kind: "idle" };
     ctx.scanGateCodeText = null;
@@ -303,6 +338,7 @@ export function createViewerPlacement(deps: {
     }
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
+    escapeClockElapsed = false;
     ctx.scanGateCodeText = null;
     ctx.scanGate = scanGateAtSessionStart({
       mode,
@@ -314,13 +350,12 @@ export function createViewerPlacement(deps: {
     // no escape clock, so the button never shows.
     if (ctx.scanGate.kind === "scanning" && !ctx.codesOnly) {
       // Its own clock (plan review #11): a device without frames must still
-      // get the escape.
+      // get the escape - once a device fix gives it GPS to continue with.
       ctx.cancelEscapeClock = seams.schedule(() => {
         ctx.cancelEscapeClock = null;
         if (ctx.scanGate.kind !== "scanning") return;
-        ctx.scanGate = { kind: "scanning", escapeOffered: true };
-        escapeButton.hidden = false;
-        hooks.renderArStatus();
+        escapeClockElapsed = true;
+        offerEscapeWhenDue();
       }, SCAN_GATE_ESCAPE_MS);
     }
     hooks.renderArStatus();
@@ -767,6 +802,12 @@ export function createViewerPlacement(deps: {
    * `recordGpsEvent` it always was.
    */
   function recordDeviceFix(fix: RecordGpsEventPayload): void {
+    storeDeviceFix(fix);
+    // The escape waits for the first fix once its clock ran out.
+    offerEscapeWhenDue();
+  }
+
+  function storeDeviceFix(fix: RecordGpsEventPayload): void {
     const sink = ctx.viewerVoteSink;
     if (sink === null) {
       arStore.dispatch(recordGpsEvent(fix));
