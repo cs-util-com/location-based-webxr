@@ -139,7 +139,7 @@ import {
   type StationEvent,
   type StationRun,
 } from "./station-run.js";
-import { presenceCandidates } from "./station-presence.js";
+import { pastFoundExit, presenceCandidates } from "./station-presence.js";
 import {
   guideTourChanged,
   headingPendingSet,
@@ -947,12 +947,9 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  judge, and a judgement is dispatched only when it changes the answer.
    *  Called at the END of a tick: a dispatch re-enters the tick through the
    *  store's subscriber, which then finds nothing to change. */
-  function publishPresence(
-    m: Measurement | null,
-    j: Judgement | null,
-  ): boolean {
+  function publishPresence(m: Measurement | null, j: Judgement | null): void {
     const store = deps.guideStore;
-    if (store === undefined) return false;
+    if (store === undefined) return;
     if (tourChangePending) {
       tourChangePending = false;
       presentByCode = false;
@@ -961,20 +958,19 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         store.dispatch(guideTourChanged());
       }
     }
-    if (m === null) return false;
+    if (m === null) return;
     const state = store.getState().visitorGuide;
     if (j === null && presentByCode && m.precision.source !== "code") {
       presentByCode = false;
       if (state.presentStationId !== null) store.dispatch(presenceCleared());
-      return false;
+      return;
     }
     const judgement = presenceJudgement(m, j);
-    if (judgement === null) return false;
+    if (judgement === null) return;
     if (j !== null) presentByCode = m.precision.source === "code";
     if (presenceAfter(state, judgement) !== state.presentStationId) {
       store.dispatch(presenceJudged(judgement));
     }
-    return true;
   }
 
   /** The station whose content shows now (the store's presence); null
@@ -983,16 +979,45 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     return deps.guideStore?.getState().visitorGuide.presentStationId ?? null;
   }
 
-  /** A complete tour waits on its last station: once a judged presence is
-   *  not that station, the visitor left it and the tour finishes. A tick
-   *  that judged nothing (no position, a hold) finishes nothing. */
-  function finishOnLeaving(wasJudged: boolean): boolean {
+  /** A complete tour waits on its last station: the visitor left it, and
+   *  the tour finishes, once this tick's position is past that station's
+   *  OWN found exit (`pastFoundExit`). Not by presence: presence is one
+   *  station at a time, so where the last station's circle overlaps the
+   *  previous one's exit band the visitor arriving at the last station is
+   *  still present at the previous one. A fix too weak to guide by counts
+   *  only when even its accuracy nearer is past the exit, as it ends
+   *  presence; nothing to judge by (no position, no distance, `'none'`)
+   *  finishes nothing. */
+  function finishOnLeaving(m: Measurement, j: Judgement | null): boolean {
     const run = liveRun();
     const wait = run?.finishWait() ?? null;
-    if (!wasJudged || run === null || wait === null) return false;
-    if (presentId() === wait) return false;
+    if (run === null || wait === null) return false;
+    const slackM = exitSlackM(m, j);
+    const station = stationById(wait);
+    const d = m.distances.get(wait);
+    if (slackM === null || station === undefined || d === undefined) {
+      return false;
+    }
+    const { foundM, foundExitM } = bandsOf(station, m);
+    if (
+      !pastFoundExit({ id: wait, distanceM: d, foundM, foundExitM }, slackM)
+    ) {
+      return false;
+    }
     handle(run.left(wait));
     return true;
+  }
+
+  /** How much nearer than measured the visitor may be when a station's
+   *  exit is judged: none for a judged position, the accuracy for a GPS
+   *  fix too weak to guide by; null when nothing may be judged. */
+  function exitSlackM(m: Measurement, j: Judgement | null): number | null {
+    if (j !== null) return 0;
+    const { precision } = m;
+    if (m.best === null || precision.source !== "gps" || !precision.tooWeak) {
+      return null;
+    }
+    return precision.accuracyM;
   }
 
   /** Where the visitor is there (`GuideView.there`): the present station
@@ -1579,10 +1604,10 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     }
     render();
     const presentBefore = presentId();
-    const judgedPresence = publishPresence(m, judgement);
+    publishPresence(m, judgement);
     // Leaving the last station finishes a complete tour; the line follows
     // a presence that changed this tick (being there, or not any more).
-    if (finishOnLeaving(judgedPresence) || presentId() !== presentBefore) {
+    if (finishOnLeaving(m, judgement) || presentId() !== presentBefore) {
       render();
     }
     // Stations still to point at, and no heading to point with (D34).

@@ -717,3 +717,125 @@ describe("being there at a station, and finishing the tour", () => {
     expect(h.view().there).toBeNull();
   });
 });
+
+describe("leaving the last station is judged by its own distance, not by presence", () => {
+  // Why these tests matter: presence is one station at a time with
+  // hysteresis, so where the last station's circle overlaps the previous
+  // station's exit band (the editor's stations: no steps, a 25 m circle),
+  // a visitor arriving at the last station is still present at the
+  // previous one. Reading "not present at the last station" as "left it"
+  // finished the tour on ARRIVAL. The tour finishes only once the last
+  // station's own distance is beyond its found exit; a fix too weak to
+  // guide by only once even its accuracy nearer is still beyond.
+  function stepless(id: string, north: number, east: number): TourStation {
+    return {
+      ...station(id, north, east),
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      steps: [],
+    };
+  }
+  const pair = (spacingM: number): StationTour => ({
+    stations: [stepless("a", 0, 0), stepless("b", 0, spacingM)],
+    order: "fixed",
+  });
+
+  it("walking from A to B 40 m apart does not finish the tour; walking on beyond B's exit does", () => {
+    const h = harness(pair(40));
+    const finished = () => h.walk().progress?.finished;
+    h.at(0, 0);
+    // B's circle reached at 15 m: B found and done, the tour complete.
+    h.at(0, 15);
+    expect(h.walk().progress?.finishWaitId).toBe("b");
+    expect(finished()).toBe(false);
+    // Still nearer A than B by less than the margin: A's content shows,
+    // and the line names the station whose content the visitor sees.
+    expect(h.store.getState().visitorGuide.presentStationId).toBe("a");
+    expect(h.dom.line.textContent).toBe(
+      "At station 1 - take your time: A. Every station is done.",
+    );
+    expect(h.dom.skip.textContent).toBe("Finish the tour");
+    for (let east = 15.5; east <= 40; east += 0.5) {
+      h.at(0, east);
+      expect(finished()).toBe(false);
+    }
+    expect(h.store.getState().visitorGuide.presentStationId).toBe("b");
+    expect(h.dom.line.textContent).toBe(
+      "At station 2 - take your time: B. Every station is done.",
+    );
+    // B's found exit at ±4 m: 25 + 4 = 29 m.
+    h.at(0, 40 + 29);
+    expect(finished()).toBe(false);
+    h.at(0, 40 + 29.5);
+    expect(finished()).toBe(true);
+  });
+
+  it("a too-weak fix at the last station on the next AR entry does not finish the tour", () => {
+    const h = harness(pair(40));
+    h.at(0, 0);
+    h.at(0, 40);
+    expect(h.walk().progress?.finishWaitId).toBe("b");
+    h.guide.endSession();
+    // The next AR entry, presence cleared, a ±40 m fix at the station.
+    h.at(0, 40, 40);
+    h.at(0, 40, 40);
+    expect(h.walk().progress?.finished).toBe(false);
+    // The weak fix's exit is clamped at the 25 m ceiling: 25 + 25 = 50 m,
+    // left only once even 40 m nearer is beyond it.
+    h.at(0, 40 + 90, 40);
+    expect(h.walk().progress?.finished).toBe(false);
+    h.at(0, 40 + 90.5, 40);
+    expect(h.walk().progress?.finished).toBe(true);
+  });
+
+  it("a too-weak fix at the last station after its code went does not finish the tour", () => {
+    const h = harness(pair(40));
+    h.lined(true);
+    h.unvouched(0, 0);
+    h.unvouched(0, 40);
+    expect(h.walk().progress?.finishWaitId).toBe("b");
+    expect(h.store.getState().visitorGuide.presentStationId).toBe("b");
+    // The code is vetoed: only a ±40 m fix is left, at the same spot.
+    h.lined(false);
+    h.at(0, 40, 40);
+    h.at(0, 40, 40);
+    h.at(0, 40, 40);
+    expect(h.walk().progress?.finished).toBe(false);
+  });
+
+  // The sweep: spacings around the overlap (the old rule failed up to about
+  // 50 m plus the accuracy) and three precisions. Each cell walks A to B in
+  // 0.5 m steps (never finishing), stands at B (the line names B), then
+  // walks on (finishing at the first step beyond B's found exit).
+  const precisions = [
+    { name: "code-held", accuracyM: null, exitM: 25 + 1.5 },
+    { name: "GPS ±6 m", accuracyM: 6, exitM: 25 + 6 },
+    { name: "GPS ±15 m", accuracyM: 15, exitM: 25 + 15 },
+  ] as const;
+  const cells = [30, 40, 50, 60, 80].flatMap((spacingM) =>
+    precisions.map((p) => ({ spacingM, ...p })),
+  );
+  it.each(cells)(
+    "$spacingM m apart, $name: no finish on the way to B, B named at B, finished just beyond B's exit",
+    ({ spacingM, accuracyM, exitM }) => {
+      const h = harness(pair(spacingM));
+      h.lined(accuracyM === null);
+      const go = (east: number) =>
+        accuracyM === null ? h.unvouched(0, east) : h.at(0, east, accuracyM);
+      const finished = () => h.walk().progress?.finished;
+      for (let east = 0; east <= spacingM; east += 0.5) {
+        go(east);
+        expect(finished(), `finished at ${String(east)} m`).toBe(false);
+      }
+      expect(h.walk().progress?.finishWaitId).toBe("b");
+      expect(h.view().there?.id).toBe("b");
+      expect(h.dom.line.textContent).toMatch(/^At station 2 - /);
+      for (let d = 0.5; d <= exitM; d += 0.5) {
+        go(spacingM + d);
+        expect(finished(), `finished ${String(d)} m beyond B`).toBe(false);
+      }
+      go(spacingM + exitM + 0.5);
+      expect(finished()).toBe(true);
+    },
+  );
+});

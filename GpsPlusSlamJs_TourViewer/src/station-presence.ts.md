@@ -24,7 +24,17 @@ the store applies it (`visitor-guide-slice.ts`), the guide feeds it
   enters or hands over, but
   returns null when `d_present - accuracy > foundExit` (an underpass fix that
   places the visitor well away). Holds on no candidates, the present station
-  missing from them, or a nonsense distance or accuracy.
+  missing from them, or a nonsense distance or accuracy. Its exit test is
+  `pastFoundExit`.
+- `pastFoundExit(candidate, slackM): boolean` - whether a position is past
+  one station's found exit by that station's own distance, `slackM` nearer
+  still counted: 0 for a judged position (`d > foundExit`), the accuracy for
+  a too-weak fix (`d - accuracy > foundExit`). False on a nonsense distance,
+  band or slack. `station-guide.ts` finishes a tour waiting on its last
+  station by it: leaving is that station's own distance, never "another
+  station is present" (presence is one station at a time, so where the last
+  circle overlaps the previous station's exit band, the visitor arriving at
+  the last station is still present at the previous one).
 - `takeoverMarginM(precision): number` - the margin for a judged position
   (`PositionPrecision` of the framework's one rule,
   `gps-plus-slam-app-framework/state/position-precision`): the floor for a
@@ -188,7 +198,8 @@ const after = presentAfterWeakFix("a", candidates, 40);
   station gone from the list, non-finite input, the flicker at m 0 that the
   margin removes, `takeoverMarginM`'s floor, ceiling and nonsense (the
   ceiling without a code), `presentAfterWeakFix` (the exit by the accuracy,
-  never an entry or a takeover, holds on what it cannot read), and the
+  never an entry or a takeover, holds on what it cannot read),
+  `pastFoundExit` (strict, the slack, nonsense), and the
   candidates (every station, V-D5; null when none measured).
 - `station-presence.property.test.ts` - one present at most with its exit
   holding the position, on any walk with gaps; no flicker under noise below

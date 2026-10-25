@@ -151,7 +151,21 @@ export function presentAfterWeakFix(
   if (!Number.isFinite(accuracyM) || accuracyM < 0) return presentId;
   const present = candidates.find((c) => c.id === presentId && usable(c));
   if (present === undefined) return presentId;
-  return present.distanceM - accuracyM > present.foundExitM ? null : presentId;
+  return pastFoundExit(present, accuracyM) ? null : presentId;
+}
+
+/**
+ * Whether a position is past one station's found exit by that station's
+ * own distance, with `slackM` nearer the visitor still counted: 0 for a
+ * judged position (`d > foundExit`), the accuracy for a fix too weak to
+ * guide by (`d - accuracy > foundExit`, as `presentAfterWeakFix`). False on
+ * anything it cannot read (a nonsense distance, band or slack). The guide
+ * finishes a tour waiting on its last station by it: leaving is that
+ * station's own distance, never "another station is present".
+ */
+export function pastFoundExit(c: PresenceCandidate, slackM: number): boolean {
+  if (!usable(c) || !Number.isFinite(slackM) || slackM < 0) return false;
+  return c.distanceM - slackM > c.foundExitM;
 }
 
 /** The present station while its exit holds the position (and only while

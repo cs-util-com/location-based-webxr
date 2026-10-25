@@ -7,6 +7,7 @@ import {
 
 import {
   nextPresentStation,
+  pastFoundExit,
   presenceCandidates,
   presentAfterWeakFix,
   takeoverMarginM,
@@ -227,5 +228,28 @@ describe("presenceCandidates", () => {
 
   it("is null when no station has a distance (no position, or no zero yet): presence holds", () => {
     expect(presenceCandidates(stations, new Map(), bands)).toBeNull();
+  });
+});
+
+describe("pastFoundExit", () => {
+  // Why this test matters: the guide finishes a tour waiting on its last
+  // station by this one rule - that station's own distance past its found
+  // exit, a too-weak fix's accuracy counted nearer - so it must agree with
+  // presence's exit (`presentAfterWeakFix`) and never fire on nonsense.
+  it("a judged position: strictly beyond the exit", () => {
+    expect(pastFoundExit(at("a", 3.5), 0)).toBe(false);
+    expect(pastFoundExit(at("a", 3.6), 0)).toBe(true);
+  });
+  it("a too-weak fix: only when even its accuracy nearer is beyond", () => {
+    expect(pastFoundExit(at("a", 43.5), 40)).toBe(false);
+    expect(pastFoundExit(at("a", 43.6), 40)).toBe(true);
+  });
+  it("false on what it cannot read", () => {
+    expect(pastFoundExit(at("a", Number.NaN), 0)).toBe(false);
+    expect(pastFoundExit(at("a", 100), Number.NaN)).toBe(false);
+    expect(pastFoundExit(at("a", 100), -1)).toBe(false);
+    expect(pastFoundExit(at("a", 100, Number.POSITIVE_INFINITY), 0)).toBe(
+      false,
+    );
   });
 });

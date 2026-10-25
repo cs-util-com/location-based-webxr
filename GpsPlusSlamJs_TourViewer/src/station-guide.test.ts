@@ -486,7 +486,7 @@ describe("wireStationGuide", () => {
     h.at(0, 0);
     h.guide.storyEnded("tower");
     // Complete, the tour waits on its last station; the visitor finishes
-    // the tour by the tap (this harness judges no presence to leave).
+    // the tour by the tap (the visitor still stands at it).
     expect(h.dom.skip.textContent).toBe("Finish the tour");
     h.guide.skipTapped();
     expect(h.dom.line.textContent).toBe(

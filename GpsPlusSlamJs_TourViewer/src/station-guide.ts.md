@@ -368,11 +368,22 @@ activateM)` (each tick, each offered station with a distance: the
   with the distance or the walking line's own position hint (a wait, GPS
   too weak, the scan ask), "N stations still to find - ..." while no
   station is guessed, or "Every station is done."; `view().there`
-  carries it for the peek. Each tick, after presence is judged
-  (`publishPresence` returns whether it judged), a waiting tour whose
-  judged presence is not that station finishes (`run.left`); a tick that
-  judged nothing (no position, a hold, no `guideStore`) finishes
-  nothing, and a presence that changed re-renders the line. While a tour
+  carries it for the peek. The station it names is the present one
+  (the station whose content shows) when that is done, else the one the
+  tour waits on: where the last station's circle overlaps the previous
+  station's exit band, a visitor arriving at the last station's rim is
+  still present at (and named as at) the previous one until presence
+  hands over (the last one nearer by more than the takeover margin, or the
+  previous exit passed), and the line follows the content shown. Each
+  tick, after presence is judged, a waiting tour finishes (`run.left`)
+  once the position is past the waiting station's OWN found exit
+  (`pastFoundExit`: `d > foundExit` for a judged position, `d - accuracy >
+  foundExit` for a GPS fix too weak to guide by, as it ends presence) -
+  never because another station is present, which finished the tour on
+  arrival wherever the circles overlap (two editor stations of 25 m up to
+  about 50 m plus the accuracy apart). Nothing to judge by (no position,
+  no distance, `'none'`) finishes nothing; it needs no `guideStore`. A
+  presence that changed re-renders the line. While a tour
   waits, the quick action is "Finish the tour" (`finish-tour`, after a
   pending undo); "Tour complete ..." is said only once finished.
 - **K4 review R14:**
@@ -508,7 +519,14 @@ store.subscribe(() => guide.tick());
 - `station-guide.rules.test.ts` also covers being there at a station and
   finishing: the peek's line at a done station and its next, the wait on
   the last station, finishing on leaving it (not on an unjudged tick),
-  and the "Finish the tour" quick action.
+  and the "Finish the tour" quick action; and leaving judged by the last
+  station's own distance: two stepless 25 m stations 40 m apart walked A
+  to B never finish and name B at B, a too-weak fix at the last station
+  (the next AR entry, or after its code went) finishes nothing until even
+  its accuracy nearer is past the exit, and a table over spacings 30, 40,
+  50, 60, 80 m and code, GPS ±6 m and ±15 m finishes each at the first
+  step past the exit (the old presence rule finished on arrival in 10 of
+  the 15 cells: every cell up to 50 m, and 60 m at ±15 m).
 - `station-guide.walk-store.test.ts` - on the page's store: no walk
   dispatch over frames without an event; one batch per call, last, with the
   line already written from it, and none on a second tick with the same
