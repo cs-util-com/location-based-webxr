@@ -2018,20 +2018,33 @@ function copiedObject(
   return { ...marked, image: `content/${copy.id}.${ext}` };
 }
 
-/** A station's frame replaced (`stationEdited`), as one step. */
+/**
+ * A station's frame replaced (`stationEdited`), as one step. An edit that
+ * leaves an emptied station with nothing of its own - its radius, a title
+ * set and then cleared - does not list it (`withoutEmptied`): the next
+ * write leaves it out and a reload from the draft does not list it, so the
+ * live document must not either. Such an edit of a station the frames do
+ * not list changes nothing.
+ */
 function stationEdit(
   before: TourDocumentState,
   payload: { stationId: string; edit: StationEdit; what: string },
 ): TourDocumentState {
   if (before.written === null) return before;
-  const change = stationEditChange(before, payload.stationId, payload.edit);
+  const { stationId } = payload;
+  const change = stationEditChange(before, stationId, payload.edit);
   if (change.kind !== "edited") return before;
+  const frames = framesHolding(before, stationId).map((s) =>
+    s.id === stationId ? change.frame : s,
+  );
+  const stations = withoutEmptied({ ...before, stations: frames }, [stationId]);
+  const listed = (list: readonly StationFrame[]) =>
+    list.some((s) => s.id === stationId);
+  if (!listed(stations) && !listed(before.stations)) return before;
   return edited(
     before,
     {
-      stations: framesHolding(before, payload.stationId).map((s) =>
-        s.id === payload.stationId ? change.frame : s,
-      ),
+      stations,
       touched: { ...before.touched, stations: true },
       framesRecorded: true,
     },
