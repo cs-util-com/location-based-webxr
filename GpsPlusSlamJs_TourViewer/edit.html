@@ -48,10 +48,21 @@
           </button>
           <div class="menu" id="file-menu">
             <button role="menuitem" type="button" id="file-open">Open…</button>
-            <button role="menuitem" type="button" id="file-save" disabled>
-              Save<kbd>Ctrl+S</kbd>
+            <button
+              role="menuitem"
+              type="button"
+              id="file-save"
+              aria-disabled="true"
+              aria-keyshortcuts="Control+S"
+            >
+              Save<kbd aria-hidden="true">Ctrl+S</kbd>
             </button>
-            <button role="menuitem" type="button" id="file-save-copy" disabled>
+            <button
+              role="menuitem"
+              type="button"
+              id="file-save-copy"
+              aria-disabled="true"
+            >
               Save a copy…
             </button>
             <div role="separator"></div>
@@ -60,7 +71,7 @@
               type="button"
               id="file-details"
               aria-haspopup="dialog"
-              disabled
+              aria-disabled="true"
             >
               Tour details…
             </button>
@@ -86,7 +97,7 @@
               type="button"
               id="file-publish"
               aria-haspopup="dialog"
-              disabled
+              aria-disabled="true"
             >
               Share and publish…
             </button>
@@ -105,11 +116,23 @@
             <span class="lbl">Edit</span><i data-icon="down"></i>
           </button>
           <div class="menu" id="edit-menu">
-            <button role="menuitem" type="button" id="edit-undo" disabled>
-              Undo<kbd>Ctrl+Z</kbd>
+            <button
+              role="menuitem"
+              type="button"
+              id="edit-undo"
+              aria-disabled="true"
+              aria-keyshortcuts="Control+Z"
+            >
+              Undo<kbd aria-hidden="true">Ctrl+Z</kbd>
             </button>
-            <button role="menuitem" type="button" id="edit-redo" disabled>
-              Redo<kbd>Ctrl+Shift+Z</kbd>
+            <button
+              role="menuitem"
+              type="button"
+              id="edit-redo"
+              aria-disabled="true"
+              aria-keyshortcuts="Control+Shift+Z"
+            >
+              Redo<kbd aria-hidden="true">Ctrl+Shift+Z</kbd>
             </button>
           </div>
         </div>
@@ -125,18 +148,20 @@
               class="studio"
               id="studio-top"
               aria-checked="false"
+              aria-keyshortcuts="T"
               title="Look straight down (T)"
             >
-              Top view<kbd>T</kbd>
+              Top view<kbd aria-hidden="true">T</kbd>
             </button>
             <button
               role="menuitem"
               type="button"
               class="studio"
               id="studio-frame"
+              aria-keyshortcuts="F"
               title="Frame the selection, or the whole tour (F; Home frames the tour)"
             >
-              Frame<kbd>F</kbd>
+              Frame<kbd aria-hidden="true">F</kbd>
             </button>
             <!-- Only while there is debug data to show (the debug layer). -->
             <button

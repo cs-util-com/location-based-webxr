@@ -30,7 +30,9 @@ edits and the selection are the store's, so switching keeps them all.
     its drawing through `events.failed()` (`View3dEvents`), while it loads
     or once shown. The page's `open`
     does the dynamic import, so this module never imports the 3D view;
-  - `say(text)` - the page's toast;
+  - `say(text, reason)` - the page's toast, with the `View3dFailure`
+    it says (the page lets a tour with nothing positioned, `"empty"`,
+    pass with a timed line: no failure, the map shows that tour);
   - `onShown(on)` - the view shown (`true`) or left (`false`), called last,
     with the store already in the mode it announces (the page hides and
     shows its map-only parts there, reading the store).

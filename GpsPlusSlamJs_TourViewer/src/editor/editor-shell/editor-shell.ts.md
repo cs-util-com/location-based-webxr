@@ -54,12 +54,17 @@ the 3D view shows.
 - **Layers:** only the codes and the station names are offered (the
   others have nothing drawn yet); hiding the codes deselects a selected
   code.
-- **Keys** while the view shows, outside fields and dialogs and without
-  Ctrl, Cmd or Alt: T toggles Top view, F frames the selection (or the
-  tour), Home frames the tour - none of them while a handle of the gizmo
-  is dragged (`pointerDragRuns`: the camera stands still until the
-  release; a key hold does not count). Esc closes the help first (a
-  capture listener, ahead of the page's Esc, which deselects).
+- **Keys** while the view shows, outside fields, menus and dialogs and
+  without Ctrl, Cmd or Alt (`key-target.ts`): T toggles Top view, F
+  frames the selection (or the tour), Home frames the tour - none of them
+  while a handle of the gizmo is dragged (`pointerDragRuns`: the camera
+  stands still until the release; a key hold does not count). Esc closes
+  the help first (a capture listener, ahead of the page's Esc, which
+  deselects) - but an open menu is the newer popover: Escape closes it
+  first (`closeOpenMenu`, the focus back on its button), whether the focus
+  is in it or has left it, and the help on the next Escape, also from a
+  menu's button. Every other key in a menu or on a menu's button is the
+  menu's.
 - **Read-only:** nothing here edits the tour; Undo and Redo are the
   page's steps, with their titles from `nextStep`.
 - **Text, never markup:** names and lines from the tour are set as text

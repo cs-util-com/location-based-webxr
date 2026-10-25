@@ -169,9 +169,10 @@ export type SettleChange =
       readonly newStationId: string;
     };
 
-/** Who holds a page's one save slot: an explicit Save, the autosave, or
- *  a step of the walk's move. */
-export type TourSaveHolder = "explicit" | "auto" | "walk";
+/** Who holds a page's one save slot: an explicit Save, the autosave, a
+ *  step of the walk's move, or "Save a copy…" (a second file, never the
+ *  tour's own: it takes neither a due resave nor the last error on). */
+export type TourSaveHolder = "explicit" | "auto" | "walk" | "copy";
 
 /** The save status (what used to be a page's module-scope save flags). */
 export interface TourSaveStatus {
@@ -2860,19 +2861,21 @@ const tourDocumentSlice = createSlice({
         }),
       };
     },
-    /** A page took its one save slot (a save, or a step of the walk's
-     *  move). */
+    /** A page took its one save slot (a save, a step of the walk's move,
+     *  or a copy). */
     saveClaimed(state, action: PayloadAction<{ by: TourSaveHolder }>) {
       const before = plain(state);
+      const { by } = action.payload;
       return {
         ...before,
         // A save claimed after a step writes the document as it stands
-        // then, or says why it could not: the resave is taken on (D33).
-        save: saveWith(before.save, {
-          by: action.payload.by,
-          error: null,
-          resave: false,
-        }),
+        // then, or says why it could not: the resave is taken on (D33). A
+        // copy writes another file: the tour's own stays due, and the last
+        // save's error stays said.
+        save: saveWith(
+          before.save,
+          by === "copy" ? { by } : { by, error: null, resave: false },
+        ),
       };
     },
     /** The page let its save slot go; `error` says why the save failed.

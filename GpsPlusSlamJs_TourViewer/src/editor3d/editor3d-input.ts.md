@@ -58,7 +58,7 @@ move the camera only, and a second finger during a drag cancels it.
   were already shown. A key arriving for another selection before the
   next frame writes the old hold first.
 - Keys are ignored during a drag, and wherever `keysFree` says no (a
-  field, a dialog). T, F, Home, Esc, Ctrl+Z and Ctrl+Y are left to the
+  field, a menu or a menu's button, a dialog). T, F, Home, Esc, Ctrl+Z and Ctrl+Y are left to the
   shell and the page; the arrows are taken even with nothing selected (Q,
   E, PageUp and PageDown then are not).
 - A code has no target: no handles, no Del, no Ctrl+D (read-only in the

@@ -676,6 +676,39 @@ test("File's Add debug data opens the same add as the map's panel", async ({
   await expect(add).toHaveText("Add debug data…");
 });
 
+test("View's Show debug data is the map's: not offered over the 3D view, which draws no debug data yet", async ({
+  page,
+}) => {
+  // Why: the switch shows and hides the debug layer, which only the map
+  // draws. Offered over the 3D view it was a checkbox that changed nothing
+  // the creator could see.
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open3d(page);
+  const recording = await (
+    await page.request.get("http://127.0.0.1:5197/ranges-ok/recording-tour.zip")
+  ).body();
+  const chooser = page.waitForEvent("filechooser");
+  await fileCommand(page, "debugAdd");
+  await (
+    await chooser
+  ).setFiles({
+    name: "recording.zip",
+    mimeType: "application/zip",
+    buffer: recording,
+  });
+  // The layer has its source: the page offers the switch...
+  await expect(viewItem(page, "debug")).toHaveJSProperty("hidden", false);
+  // ... on the map only.
+  await page.locator("#view-menu-btn").click();
+  await expect(viewItem(page, "top")).toBeVisible();
+  await expect(viewItem(page, "debug")).toBeHidden();
+  await viewItem(page, "switch").click();
+  await expect(page.locator("body")).toHaveAttribute("data-view", "2d");
+  await page.locator("#view-menu-btn").click();
+  await expect(viewItem(page, "debug")).toBeVisible();
+});
+
 test("a flight ends the orbit's coast: the camera stays where it lands", async ({
   page,
 }) => {

@@ -46,8 +46,10 @@ body:not([data-view="3d"]) #shell-bar > :not(#save-status, #view-loading) {
   display: none !important;
 }
 
-/* What belongs to the map is not shown over the 3D view. */
-body[data-view="3d"] :is(#rail, #card, #debug-panel, #offscreen-chip) {
+/* What belongs to the map is not shown over the 3D view (View's "Show
+ * debug data" too: only the map draws the debug layer yet). */
+body[data-view="3d"]
+  :is(#rail, #card, #debug-panel, #offscreen-chip, #view-debug) {
   display: none !important;
 }
 
@@ -229,13 +231,15 @@ body[data-view="3d"] #topbar .tour-name:hover {
   display: none;
 }
 
-.menu [role^="menuitem"]:hover:not(:disabled),
+.menu [role^="menuitem"]:hover:not(:disabled, [aria-disabled="true"]),
 .menu [role^="menuitem"]:focus-visible {
   outline: none;
   background: var(--s-bg3);
 }
 
-.menu [role^="menuitem"]:disabled {
+/* Disabled the menu pattern's way (aria-disabled): it keeps the focus,
+ * so a keyboard still reaches it, dimmed. */
+.menu [role^="menuitem"]:is(:disabled, [aria-disabled="true"]) {
   color: var(--s-dim);
   cursor: default;
 }

@@ -35,6 +35,8 @@ import {
   type TreeSection,
 } from "../editor-view.js";
 import { STATION_PREFIX } from "../editor-model.js";
+import { inField, inMenu } from "../key-target.js";
+import { closeOpenMenu, setItemDisabled } from "../menu-button.js";
 import { docksAfter, type DockChange } from "./dock-rule.js";
 import {
   buildInspector,
@@ -99,20 +101,16 @@ const SHELL_LAYERS: readonly ShellLayer[] = ["codes", "names"];
  *  camera (ms). */
 const READOUT_MS = 200;
 
+/** Inside an open menu (not on a menu's button): its own Escape closes
+ *  it. */
+function insideMenu(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[role="menu"]') !== null;
+}
+
 function byId<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
   if (found === null) throw new Error(`edit.html lacks #${id}`);
   return found as T;
-}
-
-function inField(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLElement &&
-    (target.isContentEditable ||
-      target instanceof HTMLInputElement ||
-      target instanceof HTMLTextAreaElement ||
-      target instanceof HTMLSelectElement)
-  );
 }
 
 export function createEditorShell(deps: EditorShellDeps): EditorShell {
@@ -203,11 +201,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       const next = nextStep(doc, which);
       const key = which === "undo" ? "Ctrl+Z" : "Ctrl+Shift+Z";
       const verb = which === "undo" ? "Undo" : "Redo";
-      // The bar's button and the Edit menu's item say the same.
-      const buttons =
+      // The bar's button and the Edit menu's item say the same; the
+      // item is disabled the menu pattern's way, its focus kept.
+      const [barButton, item] =
         which === "undo" ? [top.undo, top.editUndo] : [top.redo, top.editRedo];
-      for (const button of buttons) {
-        button.disabled = next === undefined;
+      barButton.disabled = next === undefined;
+      setItemDisabled(item, next === undefined);
+      for (const button of [barButton, item]) {
         button.title =
           next === undefined
             ? `Nothing to ${which}`
@@ -467,12 +467,28 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
 
   // --- while the view shows ------------------------------------------------
   const onKey = (event: KeyboardEvent) => {
-    if (event.key === "Escape" && helpBox.classList.contains("show")) {
-      // Esc closes the help first, as a popover; the next deselects.
+    // An open menu is the newest popover: Escape closes it first (the
+    // focus back on its button), whether the focus is in it or has left
+    // it, even with the help open; the help goes on the next Escape.
+    if (event.key === "Escape" && closeOpenMenu()) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    if (
+      event.key === "Escape" &&
+      helpBox.classList.contains("show") &&
+      !insideMenu(event.target)
+    ) {
+      // Esc closes the help first, as a popover; the next deselects. On a
+      // closed menu's button too (where an Escape just closed its menu).
       event.stopImmediatePropagation();
       showHelp(false);
       return;
     }
+    // Every other key in a menu, or on a menu's button, is the menu's
+    // (its arrows, Home and End move in it).
+    if (inMenu(event.target)) return;
     if (
       event.ctrlKey ||
       event.metaKey ||

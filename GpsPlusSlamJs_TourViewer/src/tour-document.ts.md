@@ -249,7 +249,9 @@ appliedDeletions, stationsAtStart, inPlaceAt? })`, `saveEnded({ generation, erro
 - The page's save slot (the desktop page, `editor/edit-main.ts`):
   `saveClaimed({ by })` (it also takes a due `resave` on: a save claimed
   after a step writes the document as it stands then, or says why it could
-  not - so a refusal never loops), `saveReleased({ error? })`, `saveQueued({ queued })`,
+  not - so a refusal never loops; a `"copy"` claim takes neither the
+  resave nor the last error on: a copy writes another file, so the tour's
+  own save stays due and its error stands), `saveReleased({ error? })`, `saveQueued({ queued })`,
   `saveBuilt()`, `saveDelivered({ inPlace, name })`, `saveLimited({
 largeTour?, cannotSave? })`.
 - The 3D editor's station edits, each ONE step (refused, changing nothing,

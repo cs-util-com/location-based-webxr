@@ -118,15 +118,16 @@ export interface ViewSwitch {
 /**
  * The switch on `button` (and its load said in `status`). `open` starts the 3D view (resolves once it drew
  * its first frame) and reports a lost context through `contextLost`; `say`
- * is the page's toast; `onShown` follows the view shown or hidden (the
- * page hides what belongs to the map).
+ * is the page's toast, told the failure it says (an `empty` tour is no
+ * failure: the page lets its line pass); `onShown` follows the view shown
+ * or hidden (the page hides what belongs to the map).
  */
 export function createViewSwitch(deps: {
   readonly button: ViewSwitchButton;
   readonly status?: ViewSwitchStatus;
   readonly store: ViewSwitchStore;
   readonly open: (events: View3dEvents) => Promise<View3dHandle>;
-  readonly say: (text: string) => void;
+  readonly say: (text: string, reason: View3dFailure) => void;
   readonly onShown?: (on: boolean) => void;
 }): ViewSwitch {
   const { button, store } = deps;
@@ -184,7 +185,7 @@ export function createViewSwitch(deps: {
         // A view that still arrives for this open is dropped.
         if (loading) attempt++;
         leave(editorViewActions.view3dFailed({ reason }));
-        deps.say(view3dFailureText(reason));
+        deps.say(view3dFailureText(reason), reason);
       };
       opened = await deps.open({
         contextLost: () => stopped("context-lost"),
@@ -195,7 +196,7 @@ export function createViewSwitch(deps: {
       const reason = reasonOf(error);
       store.dispatch(editorViewActions.view3dFailed({ reason }));
       render();
-      deps.say(view3dFailureText(reason));
+      deps.say(view3dFailureText(reason), reason);
       return;
     }
     if (mine !== attempt || ui().view3dLoad !== "loading") {

@@ -293,6 +293,9 @@ test("holds the camera still from a press on the gizmo until its release, even m
 test("answers every key: nudges, turns, height, delete, duplicate, Esc, and leaves T, F and Home to the shell", async ({
   page,
 }) => {
+  // About 15 s alone, and past the default 30 s on a loaded machine: a
+  // dozen edits, each waited for in a software-drawn view.
+  test.slow();
   const station = await openWithPin(page);
   await selectPin(page, station);
   const pose = async () => pinOf(await manifest(page))?.item;
@@ -361,6 +364,74 @@ test("answers every key: nudges, turns, height, delete, duplicate, Esc, and leav
   expect(await changes(page)).toBe(steps);
 });
 
+// Why: the menus are driven from the keyboard, and their keys are the
+// menu's own. Pressed in an open menu, or on a menu's button, an arrow
+// nudged the selected pin, Home flew the camera to the whole tour and T
+// switched the top view, each behind the menu where the creator did not
+// look; and the help's Escape, taken first, left an open menu open.
+test("keys pressed in a menu stay in the menu: no nudge, no camera move, no top view", async ({
+  page,
+}) => {
+  test.slow();
+  const station = await openWithPin(page);
+  await selectPin(page, station);
+  await afterFrames(page, 3);
+  const pose = pinOf(await manifest(page))?.item.pose;
+  const steps = await changes(page);
+  const camera = await cameraAt(page);
+  const viewButton = page.locator("#view-menu-btn");
+  const viewMenu = page.locator("#view-menu");
+  await viewButton.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(viewMenu).toBeVisible();
+  for (const key of ["ArrowDown", "ArrowDown", "End", "Home", "t"]) {
+    await page.keyboard.press(key);
+  }
+  await page.keyboard.press("Escape");
+  await expect(viewMenu).toBeHidden();
+  await expect(viewButton).toBeFocused();
+  // On the closed menu's button the same keys are the button's too.
+  await page.keyboard.press("Home");
+  await afterFrames(page, 10);
+  expect(await changes(page)).toBe(steps);
+  expect(pinOf(await manifest(page))?.item.pose).toEqual(pose);
+  expect(await cameraAt(page)).toEqual(camera);
+  expect((await view3d(page))?.top).toBe(false);
+  // Escape closed the menu only: the pin is still selected.
+  expect(await selected(page)).toBe(PIN);
+  // With the help open, Escape in a menu still closes the menu.
+  await page.locator("#studio-help").click();
+  await expect(page.locator("#shell-help")).toBeVisible();
+  await viewButton.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(viewMenu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(viewMenu).toBeHidden();
+  // And with the focus gone from the open menu (to the page), Escape
+  // closes the menu before the help: the newer of the two goes first.
+  await expect(page.locator("#shell-help")).toBeVisible();
+  await page.evaluate(() => {
+    // A script's click: no press outside the help, which stays open.
+    document.getElementById("view-menu-btn")?.click();
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  });
+  await expect(viewMenu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(viewMenu).toBeHidden();
+  await expect(page.locator("#shell-help")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#shell-help")).toBeHidden();
+  expect(await selected(page)).toBe(PIN);
+});
+
+// Why: the bottom bar's and the inspector's item actions are one step
+// each, and only the page shows that the bar's buttons, the 3D view's turn
+// and the clipboard work together: Align must leave the pin facing its
+// station's way exactly (and say so, writing nothing, the second time),
+// the copied text must be the inspector's numbers, and "Move to a new
+// station" must give the pin a station of its own without moving it.
 test.describe("on a touch screen", () => {
   test.use({ hasTouch: true });
 

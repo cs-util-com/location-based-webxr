@@ -64,6 +64,12 @@ AR (tour editor plan 2026-10-17-1816, W1).
     (`#file-keep-walk`, a `menuitemcheckbox` only for a tour carrying a
     walk, unticked; hidden for a file opened for writing, which keeps its
     walk) and "Share and publish…" (`#file-publish`, the done dialog).
+  - **A menu item is disabled by `aria-disabled`, never by `disabled`**
+    (the menu button pattern: it keeps the focus, so a screen reader says
+    it is there); a shown shortcut is `aria-keyshortcuts` (Control+S,
+    Control+Z, Control+Shift+Z, T, F) with its `<kbd>` `aria-hidden`, so
+    it is not read into the item's name. Pinned by
+    `src/editor/edit-menus-markup.test.ts`.
   - The unsaved mark `#unsaved-mark` beside File: an amber dot and "Not
     saved" while changes are not saved (the status's words its `title`);
     the one warning in the bar against losing work.
@@ -74,7 +80,7 @@ AR (tour editor plan 2026-10-17-1816, W1).
     T, a `menuitemcheckbox`) and Frame (`#studio-frame`, F), the 3D
     view's; Show debug data (`#view-debug`, a `menuitemcheckbox`, only
     while the debug layer has a source - the tour's walk or added debug
-    data); and the view switch `#view-switch` ("3D view" / "2D map",
+    data - and only on the map, which alone draws that layer yet); and the view switch `#view-switch` ("3D view" / "2D map",
     `src/editor/view-switch.ts`).
   - The 3D view's studio buttons, hidden on the map: Details
     (`#studio-details`), Undo and Redo (`#studio-undo`, `#studio-redo`),
