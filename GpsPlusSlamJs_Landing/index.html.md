@@ -79,6 +79,13 @@ the copy.
   statically). Regenerate it when the scene/copy changes materially;
   validate with a social-card validator after each deploy.
 
+## The legal link
+
+The links row ends with `Legal notice and privacy` (`/legal/`), the
+site-wide page built from `legal/index.html` in this package.
+`assertLandingHtml` in `scripts/build-site.mjs` requires the link, and
+`tests/repo-config/legal-page.test.js` requires it of every app.
+
 ## Invariants & assumptions
 
 - **FOUC guard:** the inline `<script>` in `<head>` applies the persisted

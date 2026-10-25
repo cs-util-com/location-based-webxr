@@ -22,8 +22,8 @@ The Tour Viewer's Vite config: the dev server (the e2e's too) and the build.
   measurement pages. And `edit.html`, the desktop editor (M6 E1, `edit.html.md`),
   reachable at `/tour/edit.html` and linked from the setup page's "You
   already have a tour?" box and step 5 on a device without AR (tour editor
-  plan 2026-10-17-1816, W1). And `legal.html`, the legal notice and the
-  privacy page (W6, `legal.html.md`), at `/tour/legal.html`.
+  plan 2026-10-17-1816, W1). And `legal.html`, which forwards to the
+  site-wide legal page at `/legal/` (`legal.html.md`), at `/tour/legal.html`.
 
 ## Invariants & assumptions
 

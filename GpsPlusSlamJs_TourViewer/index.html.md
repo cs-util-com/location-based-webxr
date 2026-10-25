@@ -144,8 +144,8 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   design system's `[hidden]` rule wins over (`way-in.spec.js` pins it).
   Behaviour: `have-tour.ts`.
 - **The setup page's foot** (`#setup-foot`, creator-only, W6, D13): the
-  legal notice and the privacy page (`legal.html#notice`,
-  `legal.html#privacy`; `legal.html.md`). The intro's "Runs offline once
+  legal notice and the privacy page, the site-wide page at `/legal/`
+  (`/legal/#notice`, `/legal/#privacy`; `legal.html.md` says why it moved). The intro's "Runs offline once
   opened" became "Works offline once the tour is loaded", and then (the M4b
   fix re-review #3) "Keeps working without signal once a tour has loaded":
   the tour is cached, the page is not (no service worker), so nothing on

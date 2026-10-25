@@ -15,6 +15,7 @@
  *
  *   dist-site/
  *     index.html        ← Landing app (Vite build, base=/)
+ *     legal/            ← site-wide legal notice and privacy page (Landing entry)
  *     assets/           ← Landing bundle
  *     recorder/         ← RecorderApp, base=/recorder/
  *     starter/          ← AnchorStarter, base=/starter/
@@ -71,6 +72,20 @@ function run(cmd, args) {
 }
 
 /**
+ * Site-wide pages every app links by their root-absolute path, whatever its
+ * own base: the legal notice and privacy page lives once, at /legal/ (built
+ * as a second entry of the Landing app), and each app's footer points there.
+ * They are the ONLY root-absolute links outside an app's base that the guard
+ * below accepts, and assertSiteTree requires each of them to exist.
+ */
+const SITE_WIDE_PAGES = ['/legal/'];
+
+/** @param {string} url */
+function isSiteWidePage(url) {
+  return SITE_WIDE_PAGES.includes(url.split('#')[0] ?? '');
+}
+
+/**
  * Assert that every root-absolute `href`/`src` in the built HTML begins with
  * the expected base. Vite rewrites root-absolute URLs in processed `index.html`
  * to be base-prefixed; anything still pointing at bare `/...` would 404 once the
@@ -90,7 +105,7 @@ function assertNoBareAbsoluteUrls(htmlPath, base) {
     // Only root-absolute, single-slash URLs are deployment paths. Skip
     // protocol-relative (`//cdn`) and external/data URLs.
     if (!url.startsWith('/') || url.startsWith('//')) continue;
-    if (!url.startsWith(base)) violations.push(url);
+    if (!url.startsWith(base) && !isSiteWidePage(url)) violations.push(url);
   }
   if (violations.length > 0) {
     throw new Error(
@@ -143,6 +158,9 @@ function assertLandingHtml(htmlPath) {
     // argument (the blog should outrank the GitHub wiki copy of the same
     // article) rests entirely on it.
     '/blog/',
+    // The site-wide legal notice and privacy page: every app links it, and
+    // the landing page is where a visitor to the site root finds it.
+    ...SITE_WIDE_PAGES,
   ];
   const missingLinks = requiredDemoLinks.filter(
     (link) => !html.includes(`href="${link}"`)
@@ -175,6 +193,8 @@ function assertLandingHtml(htmlPath) {
 function assertSiteTree() {
   const required = [
     'index.html',
+    // The site-wide pages every app links (SITE_WIDE_PAGES).
+    ...SITE_WIDE_PAGES.map((page) => `${page.slice(1)}index.html`),
     'recorder/index.html',
     'recorder/ar-hittest-test.html',
     'starter/index.html',

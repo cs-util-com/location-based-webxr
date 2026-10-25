@@ -3501,7 +3501,7 @@ test("Done saves what is pending, says where it is and how to update the tour, a
   await expect(page.locator("#done-public")).toContainText("public");
   await expect(page.locator("#done-walk-text")).toContainText("GPS track");
   await expect(page.locator("#done-drive-tip")).toBeHidden();
-  await expect(done.locator('a[href="legal.html#privacy"]')).toBeVisible();
+  await expect(done.locator('a[href="/legal/#privacy"]')).toBeVisible();
   // No save dialog in this browser: the walk is downloaded, and the tour
   // keeps it until a second click says the download arrived (the M4b
   // milestone review #2: a started download is not a landed one).

@@ -307,6 +307,13 @@ Elements that get `.hidden` toggled at runtime:
 
 ---
 
+## Legal link
+
+The setup screen's scroll area ends with `Legal notice and privacy`
+(`/legal/`, `data-testid="legal-link"`), the site-wide page that also
+describes this app's error reports (`src/utils/sentry.ts.md`). Required of
+every app by `tests/repo-config/legal-page.test.js`.
+
 ## Dynamically Created DOM
 
 These elements do **not** exist in the static HTML — they are created by TypeScript at runtime. The designer cannot style them via HTML alone.

@@ -45,7 +45,7 @@ AR (tour editor plan 2026-10-17-1816, W1).
 - `#open-fineprint` - what Save does, written per browser by
   `edit-main.ts` (`saveFinePrint`); the markup's text is the one for a
   browser without the file picker. A span inside the fine print, beside
-  its Privacy link (`legal.html#privacy`, W6).
+  its Privacy link (`/legal/#privacy`, the site-wide page).
 - `#details-modal` - "Tour details" (W2 of the tour editor plan
   2026-10-17-1816): `#details-form` with `#details-name` (the format keeps
   80 characters), `#details-description` (2000), `#details-covers` (the
@@ -68,7 +68,7 @@ AR (tour editor plan 2026-10-17-1816, W1).
   `#done-move` "Move the debug data out", `#done-save-debug` "Save the
   debug data" after a save that left it out, `#done-move-status`), a
   Privacy link
-  (`legal.html#privacy`) and Close. Above the toasts (z-index).
+  (`/legal/#privacy`) and Close. Above the toasts (z-index).
 - `#toasts` - "Opened <file>: N codes, M notes".
 
 ## Invariants
