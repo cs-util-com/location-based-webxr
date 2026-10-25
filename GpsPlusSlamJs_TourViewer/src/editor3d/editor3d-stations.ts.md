@@ -24,7 +24,9 @@ ray (`pick`).
 - `LayerPreview` - `{ kind: "station", id, geo, foundRadiusM }` or
   `{ kind: "item", id, geo, sizeM }` (ellipsoidal geo poses, as the file).
 - `DEFAULT_CODE_SIZE_M` - 0.2; `BILLBOARD_LIFT_M` - 4.6 (how much higher a
-  billboard stands upright than flat; flat it is 0.6 m over its station).
+  billboard stands upright than flat; flat it is 0.6 m over its station);
+  `CODE_FLAT_GAP_M` - 0.07 (the gap between a code's anchor and the near
+  edge of the code laid flat).
 - `codeQuaternionNue(geo)` - a code's rotation in its north-up-east frame
   for a square whose printed face is +z: its full rotation when it has
   one, else the vertical poster of its heading (+x along the heading by
@@ -61,8 +63,13 @@ ray (`pick`).
   and freed when it leaves; a render finishing after its station left is
   dropped. Every station keeps its billboard.
 - **The morph:** photos slerp between flat face up (their heading kept)
-  and their upright pose; billboards and poles rise with `standing`;
-  models keep their pose. `renderTourStation` skips models, so the layer
+  and their upright pose; codes too, by the shortest turn to face up (a
+  code measured lying face up keeps its pose, so its pattern never
+  spins), their middle moved level along the side their face looks to,
+  half the code plus `CODE_FLAT_GAP_M` out, so a code on a wall lies in
+  front of it and never under it; a code's point (`codePointOf`, what a
+  flight frames) stays its anchor. Billboards and poles rise with
+  `standing`; models keep their pose, and pins stand. `renderTourStation` skips models, so the layer
   adds them at their pose, scaled to their size by `modelScale`; a model
   whose file cannot be read is left out.
 - **The found-radius circle** is the selected station's ring: amber (the
@@ -94,7 +101,9 @@ store): each station at its drawn height where it stands; only the near
 and selected stations rendered, and what leaves freed; a billboard per
 station rising with the morph; photos flat looking down and upright
 tilted; a model at its size and pose; a model that cannot be read left
-out; every code as a square of its printed size; where an item and a
+out; every code as a square of its printed size, laid flat face up in front
+of its anchor looking down and upright tilted, and one lying face up
+left as it lies; where an item and a
 code stand, drawn or not; a station's and an item's (a model's) preview
 shown and taken back; the selected station's circle amber and a selected
 item's station lighter; what is under a ray; names and codes hidden and shown; everything removed on

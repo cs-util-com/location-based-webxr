@@ -9,8 +9,10 @@
  * position is a square of its printed size, facing as printed.
  *
  * The morph (`standing`, 0 looking straight down to 1 tilted up): photos
- * lie flat face up and stand up again, and the billboards and their poles
- * rise. Models keep their pose.
+ * and codes lie flat face up and stand up again - a code laid in front of
+ * its anchor, on the side its face looks to, never under the wall it hangs
+ * on - and the billboards and their poles rise. Models keep their pose;
+ * pins (the phone's labels) stand.
  *
  * The layer chips turn the station names (billboards and poles) and the
  * codes off and on (`setShown`); the camera's flights ask where a
@@ -91,6 +93,13 @@ export interface StationsLayerView {
 
 /** A code's printed side when the tour does not say (m). */
 export const DEFAULT_CODE_SIZE_M = 0.2;
+
+/**
+ * The gap (m) between a code's anchor and the near edge of the code laid
+ * flat: the storyboard prototype's rule, its 0.4 m from the anchor to the
+ * flat poster's middle less the half of its 0.66 m poster.
+ */
+export const CODE_FLAT_GAP_M = 0.07;
 
 /** How much higher a billboard stands upright than flat (m): the pole. */
 export const BILLBOARD_LIFT_M = 4.6;
@@ -177,6 +186,19 @@ const rotation = new THREE.Quaternion();
 const unit = new THREE.Vector3(1, 1, 1);
 const previewFrame = new THREE.Matrix4();
 const tourFrame = new THREE.Matrix4();
+const faceUp = new THREE.Quaternion();
+const normal = new THREE.Vector3();
+
+/** A code's square as the morph moves it: its pose where it was measured,
+ *  and where its middle goes as it lies flat. */
+interface CodeSquare {
+  readonly square: THREE.Object3D;
+  readonly upright: THREE.Quaternion;
+  readonly base: THREE.Vector3;
+  /** The level offset (m, in its root's frame) the middle moves to when
+   *  flat: along its face's direction, half the code plus the gap. */
+  readonly flatShift: THREE.Vector3;
+}
 
 /** The quaternion that lays a plane whose upright pose is `upright` flat,
  *  face up, its heading kept. */
@@ -187,6 +209,30 @@ function flatOf(
   facing.set(0, 0, 1).applyQuaternion(upright);
   const yaw = Math.atan2(facing.x, facing.z);
   return out.setFromAxisAngle(Y_AXIS, yaw).multiply(flatTurn);
+}
+
+/** The quaternion that lays a plane whose pose is `upright` face up by
+ *  the shortest turn: for an upright poster the same as `flatOf`, and a
+ *  plane already face up (a code on a table) keeps its pose - its printed
+ *  pattern never spins as the camera tilts. */
+function faceUpOf(
+  upright: THREE.Quaternion,
+  out: THREE.Quaternion,
+): THREE.Quaternion {
+  normal.set(0, 0, 1).applyQuaternion(upright);
+  return out.setFromUnitVectors(normal, Y_AXIS).multiply(upright);
+}
+
+/** Where a flat code's middle goes (m, level): along the horizontal part of
+ *  its face's direction, `distanceM` out; none for a face up or down. */
+function flatShiftOf(
+  upright: THREE.Quaternion,
+  distanceM: number,
+): THREE.Vector3 {
+  const level = new THREE.Vector3(0, 0, 1).applyQuaternion(upright).setY(0);
+  return level.lengthSq() < 1e-12
+    ? new THREE.Vector3()
+    : level.normalize().multiplyScalar(distanceM);
 }
 
 /**
@@ -281,6 +327,8 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   const stations = new Map<string, StationEntry>();
   let assets = new Map<string, string>();
   let codes: THREE.Group[] = [];
+  /** Each code's square and its morph. */
+  let codeSquares: CodeSquare[] = [];
   /** Each code's point in the world, by its level id. */
   let codePoints = new Map<string, THREE.Vector3>();
   let shownNames = true;
@@ -400,6 +448,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   const setCodes = (levels: ReadonlyMap<string, QrLevel>) => {
     for (const code of codes) freeObject(code);
     codes = [];
+    codeSquares = [];
     codePoints = new Map();
     for (const [levelId, level] of levels) {
       const geo = level.qr.geo;
@@ -410,14 +459,20 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         levelId,
         new THREE.Vector3(0, geo.alt, 0).applyMatrix4(root.matrixWorld),
       );
-      const square = deps.makeCodeSquare(
-        level.qr.physicalSizeM ?? DEFAULT_CODE_SIZE_M,
-      );
+      const sizeM = level.qr.physicalSizeM ?? DEFAULT_CODE_SIZE_M;
+      const square = deps.makeCodeSquare(sizeM);
       square.userData["pick"] = levelId;
       square.position.set(0, geo.alt, 0);
-      square.quaternion.copy(codeQuaternionNue(geo));
+      const upright = codeQuaternionNue(geo);
+      square.quaternion.copy(upright);
       root.add(square);
       codes.push(root);
+      codeSquares.push({
+        square,
+        upright,
+        base: square.position.clone(),
+        flatShift: flatShiftOf(upright, sizeM / 2 + CODE_FLAT_GAP_M),
+      });
     }
   };
 
@@ -632,6 +687,17 @@ export function createStationsLayer(deps: StationsLayerDeps) {
           );
         }
       }
+      for (const code of codeSquares) {
+        code.square.quaternion.slerpQuaternions(
+          faceUpOf(code.upright, faceUp),
+          code.upright,
+          view.standing,
+        );
+        code.square.position
+          .copy(code.flatShift)
+          .multiplyScalar(1 - view.standing)
+          .add(code.base);
+      }
     },
     /** Draw a drag's preview (null: none; what the last one showed is
      *  drawn where the tour has it again). */
@@ -713,6 +779,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       stations.clear();
       for (const code of codes) freeObject(code);
       codes = [];
+      codeSquares = [];
       group.removeFromParent();
     },
   };
