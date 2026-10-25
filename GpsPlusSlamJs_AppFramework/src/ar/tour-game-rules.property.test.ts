@@ -9,7 +9,9 @@
  * must list every label once and show it exactly by held, keep and
  * secret. A greyed option's needs must be exactly what it takes: meeting
  * all of them makes the option available, leaving any one out does not,
- * and only a secret or something the game cannot read ever hides one.
+ * and only a secret or something the game cannot read ever hides one. A
+ * quiz is shown and answered only as a whole: the right answer is refused
+ * exactly when the wrong one is, so a refusal never tells which is right.
  */
 
 import fc from 'fast-check';
@@ -20,7 +22,7 @@ import {
   chooseOption,
   inventory,
   optionDisplay,
-  quizInputDisplay,
+  quizDisplay,
   startNextRound,
   startRun,
   type TourGame,
@@ -327,11 +329,15 @@ describe('tour game rules - properties', () => {
     expect(greyed).toBeGreaterThan(0);
   });
 
-  // A typed answer's input is one box for two possible outcomes: offered
-  // only when both could be paid, and a greyed box's needs must be
-  // exactly what makes both payable.
-  it('offers a typed input only when both outcomes can be paid, with needs that are exact', () => {
+  // A quiz - a typed input box or a choice of answers - is one thing for
+  // two possible outcomes: offered only when both could be paid, and a
+  // greyed quiz's needs must be exactly what makes both payable. Its
+  // answers are accepted or refused together, right and wrong alike:
+  // where only one outcome could be paid on its own (the case counted as
+  // `split`), refusing just the other would show which answer is right.
+  it('offers and accepts a quiz only as a whole, with needs that are exact', () => {
     let greyed = 0;
+    let split = 0;
     fc.assert(
       fc.property(
         game,
@@ -344,7 +350,14 @@ describe('tour game rules - properties', () => {
           const both = (at: TourGameRunState) =>
             answerQuiz(g, at, outcomes, true).ok &&
             answerQuiz(g, at, outcomes, false).ok;
-          const shown = quizInputDisplay(g, s, outcomes);
+          const alone = [correct, wrong].map(
+            (fx) => optionDisplay(g, s, { effects: fx }).shown === 'available'
+          );
+          if (alone[0] !== alone[1]) split += 1;
+          expect(answerQuiz(g, s, outcomes, true).ok).toBe(
+            answerQuiz(g, s, outcomes, false).ok
+          );
+          const shown = quizDisplay(g, s, outcomes);
           expect(shown.shown === 'available').toBe(both(s));
           const needs = shown.shown === 'greyed' ? shown.needs : [];
           if (needs.length > 0) greyed += 1;
@@ -363,12 +376,13 @@ describe('tour game rules - properties', () => {
       { numRuns: 400 }
     );
     expect(greyed).toBeGreaterThan(0);
+    expect(split).toBeGreaterThan(0);
   });
 
   // Hiding is reserved for the creator's secrets and the creator's
   // mistakes; anything else blocked must be greyed with its price. A
-  // typed quiz's input is hidden exactly when one of its two outcomes
-  // would be, so it inherits the same rule.
+  // quiz is hidden exactly when one of its two outcomes would be, so it
+  // inherits the same rule.
   it('hides an option only for a secret or a name or number the game cannot read', () => {
     let hidden = 0;
     let hiddenInputs = 0;
@@ -386,7 +400,7 @@ describe('tour game rules - properties', () => {
           const outcomeHidden = [fx, other].some(
             (e) => optionDisplay(g, s, { effects: e }).shown === 'hidden'
           );
-          const input = quizInputDisplay(g, s, { correct: fx, wrong: other });
+          const input = quizDisplay(g, s, { correct: fx, wrong: other });
           expect(input.shown === 'hidden').toBe(outcomeHidden);
           if (outcomeHidden) hiddenInputs += 1;
           const secrets = new Set(

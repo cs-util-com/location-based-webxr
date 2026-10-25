@@ -12,7 +12,9 @@
  *   never reached by any walk (a false alarm would teach creators to
  *   ignore the checks);
  * - no missed softlock: every choice or quiz some walk reaches with
- *   nothing to pick is reported as one that may trap the visitor.
+ *   nothing to pick is reported as one that may trap the visitor. A quiz
+ *   is answered only as a whole, so one closed by a single outcome the
+ *   visitor cannot pay counts too (guarded: such walks occur).
  *
  * Counts per cause guard both against vacuity: a property that never
  * meets a cause proves nothing about it.
@@ -115,20 +117,12 @@ function stepAt(i: number, count: number): fc.Arbitrary<TourGameStep> {
         ...(r.length === 0 ? {} : { requires: r }),
         options,
       })),
-    fc
-      .record({
-        requires,
-        correct: effects,
-        wrong: effects,
-        typed: fc.boolean(),
-      })
-      .map((q) => ({
-        id,
-        kind: 'quiz' as const,
-        ...(q.requires.length === 0 ? {} : { requires: q.requires }),
-        ...(q.typed ? { typed: true } : {}),
-        outcomes: { correct: q.correct, wrong: q.wrong },
-      }))
+    fc.record({ requires, correct: effects, wrong: effects }).map((q) => ({
+      id,
+      kind: 'quiz' as const,
+      ...(q.requires.length === 0 ? {} : { requires: q.requires }),
+      outcomes: { correct: q.correct, wrong: q.wrong },
+    }))
   );
 }
 
@@ -191,9 +185,9 @@ interface Seen {
   options: Set<string>;
   /** Choices and quizzes some walk reached with nothing to pick. */
   stuck: Set<string>;
-  /** Choice quizzes some walk reached showing one outcome's answers and
-   *  the other's greyed: the quiz gave its answer away. */
-  gaveAway: Set<string>;
+  /** Quizzes some walk reached closed although one outcome alone could
+   *  be paid: the case a quiz shown only as a whole adds to `stuck`. */
+  splitStuck: Set<string>;
 }
 
 interface Walk {
@@ -277,30 +271,18 @@ function sceneMoves(
     push(enter(game, { ...w, run }, si, from));
   };
   if (step.kind === 'quiz') {
-    const results = [true, false].map((correct) =>
-      answerQuiz(game, w.run, step.outcomes, correct)
-    );
-    // A typed input is one box: usable only when both outcomes can be
-    // paid. A choice quiz offers each outcome's answers on their own.
-    const open = step.typed === true ? results.every((r) => r.ok) : true;
-    results.forEach((result, k) => {
-      if (open && result.ok) {
+    // Answered as the rules allow: they take a quiz only as a whole, so
+    // the walk inherits that from them rather than restating it.
+    [true, false].forEach((correct) => {
+      const result = answerQuiz(game, w.run, step.outcomes, correct);
+      if (result.ok) {
         taken(
           result.state,
-          k === 0 ? 'correct' : 'wrong',
+          correct ? 'correct' : 'wrong',
           stepAfter(st.steps, i)
         );
       }
     });
-    if (step.typed !== true) {
-      const shown = [step.outcomes.correct, step.outcomes.wrong].map(
-        (effects) =>
-          optionDisplay(game, w.run, { effects: effects ?? [] }).shown
-      );
-      if (shown.includes('available') && shown.includes('greyed')) {
-        seen.gaveAway.add(ref);
-      }
-    }
   } else {
     for (const option of step.options) {
       const result = chooseOption(game, w.run, option);
@@ -310,6 +292,14 @@ function sceneMoves(
     }
   }
   if (!any) seen.stuck.add(ref);
+  if (!any && step.kind === 'quiz') {
+    const alone = [step.outcomes.correct, step.outcomes.wrong].some(
+      (effects) =>
+        optionDisplay(game, w.run, { effects: effects ?? [] }).shown ===
+        'available'
+    );
+    if (alone) seen.splitStuck.add(ref);
+  }
 }
 
 /** Every walk of up to MAX_ROUNDS rounds, by the rules themselves, short
@@ -321,7 +311,7 @@ function exhaustive(game: TourGame, cap = COUNTER_CAP): Seen {
     steps: new Set(),
     options: new Set(),
     stuck: new Set(),
-    gaveAway: new Set(),
+    splitStuck: new Set(),
   };
   const visited = new Set<string>();
   const queue: Walk[] = [
@@ -386,19 +376,6 @@ function violations(
   for (const ref of seen.stuck) {
     if (!softlocks.has(ref)) out.push(`stuck choice not reported: ${ref}`);
   }
-  // Giving the answer away is reported as the warning, or - when one
-  // outcome can never be paid - as that outcome never being available.
-  const warned = new Set(
-    findings.flatMap((f) =>
-      f.kind === 'quiz-may-give-answer-away' ||
-      (f.kind === 'option-never-available' && f.at.outcome !== undefined)
-        ? [refKey({ station: f.at.station, step: f.at.step })]
-        : []
-    )
-  );
-  for (const ref of seen.gaveAway) {
-    if (!warned.has(ref)) out.push(`answer given away, not reported: ${ref}`);
-  }
   return out;
 }
 
@@ -413,8 +390,7 @@ const GUARDED_CAUSES = [
   'option-never-available:floor',
   'option-never-available:counter-out-of-reach',
   'stuck',
-  'gave-away',
-  'quiz-may-give-answer-away',
+  'stuck-quiz-one-outcome-payable',
 ] as const;
 
 describe('tour game check - against an exhaustive walk search', () => {
@@ -428,10 +404,9 @@ describe('tour game check - against an exhaustive walk search', () => {
         for (const f of findings) {
           if (f.kind === 'unreachable' || f.kind === 'option-never-available')
             count(`${f.kind}:${f.because.kind}`);
-          if (f.kind === 'quiz-may-give-answer-away') count(f.kind);
         }
         count('stuck', seen.stuck.size);
-        count('gave-away', seen.gaveAway.size);
+        count('stuck-quiz-one-outcome-payable', seen.splitStuck.size);
         expect(violations(findings, seen)).toEqual([]);
       }),
       { numRuns: 1000 }

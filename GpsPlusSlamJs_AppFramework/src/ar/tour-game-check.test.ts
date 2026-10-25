@@ -638,8 +638,9 @@ describe('checkTourGame - reachability', () => {
     ]);
   });
 
-  // A quiz answer is an option: one whose cost the tour can never pay is
-  // never available - and the quiz then gives its answer away.
+  // A quiz outcome is an option: one whose cost the tour can never pay is
+  // never available - and since a quiz is answered only as a whole, the
+  // quiz can then never be answered and may trap the visitor.
   it('reports a quiz outcome whose cost the tour can never pay', () => {
     const game: TourGame = {
       labels: [],
@@ -663,6 +664,7 @@ describe('checkTourGame - reachability', () => {
         at: { station: 'a', step: 'q', outcome: 'wrong' },
         because: { kind: 'floor', counter: 'coins', max: 0 },
       },
+      { kind: 'choice-may-softlock', at: { station: 'a', step: 'q' } },
     ]);
   });
 
@@ -858,8 +860,10 @@ describe('checkTourGame - softlocks', () => {
     });
   });
 
-  // A quiz with one free outcome can always be answered that way.
-  it('warns about a reachable quiz only when no outcome is free', () => {
+  // A quiz is answered only as a whole, so a free right answer does not
+  // help while the wrong one cannot be paid: any cost on either outcome
+  // may trap the visitor, and only a quiz that costs nothing cannot.
+  it('warns about a reachable quiz when either outcome costs', () => {
     const quiz = (correct: number, wrong: number): TourGame => ({
       labels: [],
       counters: COINS,
@@ -885,14 +889,12 @@ describe('checkTourGame - softlocks', () => {
         },
       ],
     });
-    // The wrong answer costs a coin but the right one pays: no trap (that
-    // quiz may give its answer away, a separate warning).
-    expect(checkTourGame(quiz(1, -1)).map((f) => f.kind)).not.toContain(
-      'choice-may-softlock'
-    );
-    expect(checkTourGame(quiz(-1, -1))).toEqual([
+    const softlock = [
       { kind: 'choice-may-softlock', at: { station: 'a', step: 'q' } },
-    ]);
+    ];
+    expect(checkTourGame(quiz(1, -1))).toEqual(softlock);
+    expect(checkTourGame(quiz(-1, -1))).toEqual(softlock);
+    expect(checkTourGame(quiz(1, 2))).toEqual([]);
   });
 
   it('does not warn about a choice that is never reached', () => {
@@ -925,14 +927,14 @@ describe('checkTourGame - softlocks', () => {
   });
 });
 
-describe('checkTourGame - typed quizzes and quizzes that give their answer away', () => {
+describe('checkTourGame - a quiz is answered only as a whole', () => {
   /** A farm paying 3 coins, then a quiz with these outcomes. */
   const withQuiz = (
     outcomes: { correct?: number; wrong?: number },
-    extra: { typed?: boolean; counters?: TourGame['counters'] } = {}
+    counters: TourGame['counters'] = COINS
   ): TourGame => ({
     labels: [],
-    counters: extra.counters ?? COINS,
+    counters,
     stations: [
       giver('farm', [
         choiceStep('c', [
@@ -946,7 +948,6 @@ describe('checkTourGame - typed quizzes and quizzes that give their answer away'
           {
             id: 'q',
             kind: 'quiz',
-            ...(extra.typed === true ? { typed: true } : {}),
             outcomes: {
               ...(outcomes.correct === undefined
                 ? {}
@@ -961,43 +962,16 @@ describe('checkTourGame - typed quizzes and quizzes that give their answer away'
       },
     ],
   });
+  const softlock = [
+    { kind: 'choice-may-softlock', at: { station: 'a', step: 'q' } },
+  ];
 
-  // At 1 coin a wrong answer costing 2 is greyed while the right ones
-  // stay: the quiz shows which answer is right. A wrong answer that is
-  // only SOMETIMES unpayable is the case no other finding names.
-  it('warns about a quiz whose outcomes cost differently on a visible counter', () => {
-    expect(checkTourGame(withQuiz({ wrong: -2 }))).toEqual([
-      {
-        kind: 'quiz-may-give-answer-away',
-        at: { station: 'a', step: 'q' },
-        counter: 'coins',
-      },
-    ]);
-    expect(checkTourGame(withQuiz({ correct: 1, wrong: -1 }))).toEqual([
-      {
-        kind: 'quiz-may-give-answer-away',
-        at: { station: 'a', step: 'q' },
-        counter: 'coins',
-      },
-    ]);
-  });
-
-  // Equal costs grey every answer together (the quiz then has no free
-  // answer, which is the softlock warning's business, not this one).
-  it('stays silent for equal costs, costs only upwards, and a typed quiz', () => {
-    const kinds = (game: TourGame) => checkTourGame(game).map((f) => f.kind);
-    const softlock = ['choice-may-softlock'];
-    expect(kinds(withQuiz({ correct: -2, wrong: -2 }))).toEqual(softlock);
-    expect(kinds(withQuiz({ correct: 2, wrong: 1 }))).toEqual([]);
-    // One outcome free and the other a gain: nothing can be greyed.
-    expect(kinds(withQuiz({ correct: 1 }))).toEqual([]);
-    expect(kinds(withQuiz({ wrong: 2 }))).toEqual([]);
-    expect(kinds(withQuiz({ wrong: -2 }, { typed: true }))).toEqual(softlock);
-  });
-
-  // On a secret counter the unpayable answers are hidden, not greyed;
-  // the warning covers visible counters only, by design.
-  it('stays silent when the counter the outcomes differ on is secret', () => {
+  // Outcomes that cost differently cannot give the answer away: at 1
+  // coin a wrong answer costing 2 greys the WHOLE quiz, right answers
+  // included. What remains is that the visitor may be unable to answer,
+  // which is the softlock warning - on a visible or a secret counter
+  // alike, since the whole quiz is hidden then too.
+  it('warns only that a quiz whose outcomes cost differently may trap', () => {
     const secret: TourGame['counters'] = [
       {
         id: 'coins',
@@ -1008,53 +982,40 @@ describe('checkTourGame - typed quizzes and quizzes that give their answer away'
         secret: true,
       },
     ];
-    expect(
-      checkTourGame(withQuiz({ wrong: -2 }, { counters: secret }))
-    ).toEqual([]);
+    expect(checkTourGame(withQuiz({ wrong: -2 }))).toEqual(softlock);
+    expect(checkTourGame(withQuiz({ correct: 1, wrong: -1 }))).toEqual(
+      softlock
+    );
+    expect(checkTourGame(withQuiz({ wrong: -2 }, secret))).toEqual(softlock);
   });
 
-  // When the costly outcome can NEVER be paid the quiz always gives its
-  // answer away; that is said once, by option-never-available.
-  it('leaves an outcome that can never be paid to option-never-available', () => {
-    const findings = checkTourGame(withQuiz({ wrong: -5 }));
-    expect(findings.map((f) => f.kind)).toEqual(['option-never-available']);
+  // Equal costs may trap the visitor like any other cost; a quiz
+  // without costs, or with gains only, is silent.
+  it('treats equal costs as a possible trap and a quiz without costs as clean', () => {
+    expect(checkTourGame(withQuiz({ correct: -2, wrong: -2 }))).toEqual(
+      softlock
+    );
+    expect(checkTourGame(withQuiz({}))).toEqual([]);
+    expect(checkTourGame(withQuiz({ correct: 2, wrong: 1 }))).toEqual([]);
+    expect(checkTourGame(withQuiz({ correct: 1 }))).toEqual([]);
   });
 
-  // A typed quiz is one input for both outcomes: it can be answered only
-  // when both could be paid, so one outcome the tour can never pay closes
-  // the input and stops the scene there - unlike a choice quiz, where the
-  // other outcome's answers stay open.
-  it('closes a typed quiz whose one outcome can never be paid', () => {
-    expect(checkTourGame(withQuiz({ wrong: -5 }, { typed: true }))).toEqual([
-      {
-        kind: 'option-never-available',
-        at: { station: 'a', step: 'q', outcome: 'wrong' },
-        because: { kind: 'floor', counter: 'coins', max: 3 },
-      },
-      { kind: 'choice-may-softlock', at: { station: 'a', step: 'q' } },
-      {
-        kind: 'unreachable',
-        at: { station: 'a', step: 'after' },
-        because: { kind: 'scene-flow' },
-      },
-    ]);
+  // One outcome the tour can never pay closes the quiz for good: that
+  // outcome is never available, the quiz may trap, and the scene never
+  // gets past it - even though the right answer itself would be free.
+  it('closes a quiz whose one outcome can never be paid and stops the scene there', () => {
     expect(checkTourGame(withQuiz({ wrong: -5 }))).toEqual([
       {
         kind: 'option-never-available',
         at: { station: 'a', step: 'q', outcome: 'wrong' },
         because: { kind: 'floor', counter: 'coins', max: 3 },
       },
+      ...softlock,
+      {
+        kind: 'unreachable',
+        at: { station: 'a', step: 'after' },
+        because: { kind: 'scene-flow' },
+      },
     ]);
-  });
-
-  // Any cost on a typed quiz's input means a visitor may be unable to
-  // answer: the input is free only when neither outcome costs.
-  it('warns that a typed quiz with a cost may trap, and not a free one', () => {
-    expect(checkTourGame(withQuiz({ wrong: -1 }, { typed: true }))).toEqual([
-      { kind: 'choice-may-softlock', at: { station: 'a', step: 'q' } },
-    ]);
-    expect(
-      checkTourGame(withQuiz({ correct: 1, wrong: 2 }, { typed: true }))
-    ).toEqual([]);
   });
 });

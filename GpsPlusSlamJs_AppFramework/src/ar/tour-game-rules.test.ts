@@ -6,7 +6,8 @@
  * were misread: the floor judged on a whole effect list, a refused option
  * or quiz answer that changes nothing, a typo that hides content instead
  * of revealing it, a blocked option greyed with what it needs unless a
- * secret blocks it, and a scene that ends on a jump to no step.
+ * secret blocks it, a quiz shown and answered only as a whole, and a scene
+ * that ends on a jump to no step.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -18,7 +19,7 @@ import {
   inventory,
   nextAvailableStep,
   optionDisplay,
-  quizInputDisplay,
+  quizDisplay,
   startNextRound,
   startRun,
   stepAfter,
@@ -292,10 +293,10 @@ describe('answerQuiz', () => {
   } as const;
 
   it('applies the outcome of a right or a wrong answer', () => {
-    const s = startRun(GAME);
+    const s = withState([], { coins: 2, stars: 1 });
     expect(answerQuiz(GAME, s, quiz, true)).toEqual({
       ok: true,
-      state: withState(['red-key'], { coins: 2, stars: 1 }),
+      state: withState(['red-key'], { coins: 4, stars: 1 }),
     });
     expect(
       answerQuiz(GAME, withState([], { coins: 3, stars: 1 }), quiz, false)
@@ -312,6 +313,23 @@ describe('answerQuiz', () => {
       reason: { kind: 'floor', counter: 'coins', need: 1 },
     });
     expect(s).toEqual(withState([], { coins: 1, stars: 1 }));
+  });
+
+  // A quiz is taken as a whole: while either outcome cannot be paid, no
+  // answer is accepted - the right one included. Refusing only the wrong
+  // answer would tell the visitor which one is right.
+  it('refuses the right answer too while the wrong one cannot be paid', () => {
+    const s = withState([], { coins: 1, stars: 1 });
+    expect(answerQuiz(GAME, s, quiz, true)).toEqual({
+      ok: false,
+      reason: { kind: 'floor', counter: 'coins', need: 1 },
+    });
+    expect(
+      answerQuiz(GAME, s, { correct: [{ add: 'coins', by: -2 }] }, false)
+    ).toEqual({
+      ok: false,
+      reason: { kind: 'floor', counter: 'coins', need: 1 },
+    });
   });
 
   it('refuses an outcome with an effect it cannot apply', () => {
@@ -446,10 +464,13 @@ describe('optionDisplay', () => {
   });
 });
 
-// A typed answer (text, code, number) is one input box whose outcome is
-// unknown until the visitor submits: it can be offered only when either
-// outcome could be paid, and greyed or hidden as a whole otherwise.
-describe('quizInputDisplay', () => {
+// A quiz is shown as a whole. A typed answer (text, code, number) is one
+// input box whose outcome is unknown until the visitor submits; a choice
+// quiz must not grey or hide only the answers the visitor cannot pay for,
+// because the answers left standing would give the right one away. So
+// either kind is offered only when both outcomes could be paid, and is
+// greyed or hidden as a whole otherwise.
+describe('quizDisplay', () => {
   const GAME2: TourGame = {
     labels: [],
     counters: [
@@ -468,19 +489,33 @@ describe('quizInputDisplay', () => {
   const at = (coins: number): TourGameRunState =>
     withState([], { coins, karma: 0 });
 
-  it('offers the input only when both outcomes could be paid', () => {
+  it('offers the quiz only when both outcomes could be paid', () => {
     const outcomes = {
       correct: [{ add: 'coins', by: 1 }],
       wrong: [{ add: 'coins', by: -2 }],
     };
-    expect(quizInputDisplay(GAME2, at(2), outcomes)).toEqual({
+    expect(quizDisplay(GAME2, at(2), outcomes)).toEqual({
       shown: 'available',
     });
   });
 
-  it('greys the whole input when one outcome cannot be paid, saying what it needs', () => {
+  // A quiz without costs, or with gains only, can always be answered.
+  it('always offers a quiz whose outcomes cost nothing', () => {
+    expect(quizDisplay(GAME2, at(0), {})).toEqual({ shown: 'available' });
+    expect(
+      quizDisplay(GAME2, at(0), {
+        correct: [{ add: 'coins', by: 2 }],
+        wrong: [{ add: 'karma', by: 1 }],
+      })
+    ).toEqual({ shown: 'available' });
+  });
+
+  // The right answer is free and the visitor could give it, yet the quiz
+  // is greyed as a whole: showing only the wrong answers greyed would
+  // single out the right one.
+  it('greys the whole quiz when one outcome cannot be paid, saying what it needs', () => {
     const outcomes = { wrong: [{ add: 'coins', by: -2 }] };
-    expect(quizInputDisplay(GAME2, at(1), outcomes)).toEqual({
+    expect(quizDisplay(GAME2, at(1), outcomes)).toEqual({
       shown: 'greyed',
       needs: [{ counter: 'coins', need: 1 }],
     });
@@ -492,23 +527,29 @@ describe('quizInputDisplay', () => {
       correct: [{ add: 'coins', by: -1 }],
       wrong: [{ add: 'coins', by: -3 }],
     };
-    expect(quizInputDisplay(GAME2, at(0), outcomes)).toEqual({
+    expect(quizDisplay(GAME2, at(0), outcomes)).toEqual({
       shown: 'greyed',
       needs: [{ counter: 'coins', need: 3 }],
     });
   });
 
-  it('hides the whole input when a secret blocks either outcome', () => {
+  // A secret counter hides rather than greys - and it hides the whole
+  // quiz, not just the answers it blocks, which would leave the right
+  // ones standing alone.
+  it('hides the whole quiz when a secret blocks either outcome', () => {
     const outcomes = {
       correct: [{ add: 'coins', by: -1 }],
       wrong: [{ add: 'karma', by: -1 }],
     };
-    expect(quizInputDisplay(GAME2, at(0), outcomes)).toEqual({
+    expect(quizDisplay(GAME2, at(0), outcomes)).toEqual({
       shown: 'hidden',
     });
     expect(
-      quizInputDisplay(GAME2, at(0), { wrong: [{ set: 'nope' }] })
+      quizDisplay(GAME2, at(5), { wrong: [{ add: 'karma', by: -1 }] })
     ).toEqual({ shown: 'hidden' });
+    expect(quizDisplay(GAME2, at(0), { wrong: [{ set: 'nope' }] })).toEqual({
+      shown: 'hidden',
+    });
   });
 });
 

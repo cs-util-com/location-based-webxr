@@ -19,10 +19,13 @@
  * - An unavailable option is shown GREYED with what it needs when every
  *   label and counter blocking it is visible, and HIDDEN when any of them
  *   is `secret` (or the game cannot read what blocks it).
- * - A TYPED quiz (text, code, number) has one input for both outcomes: it
- *   is judged on both together, available only when both outcomes could
- *   be paid (whichever the answer turns out to be), else greyed or hidden
- *   as a whole (`quizInputDisplay`).
+ * - A QUIZ is judged as a whole on both its outcomes: available only when
+ *   both could be paid (whichever the answer turns out to be), else greyed
+ *   or hidden as a whole (`quizDisplay`), and no answer is accepted until
+ *   then (`answerQuiz`). A typed quiz (text, code, number) has one input
+ *   whose outcome is known only after submitting; a choice quiz must not
+ *   grey or hide just the answers the visitor cannot pay for, because the
+ *   answers left standing would give the right one away.
  * - A scene continues after a step at `stepAfter`: an option's `goto` (the
  *   first step with that id), else the next step; a `goto` naming no step
  *   ends the scene.
@@ -107,9 +110,6 @@ export type TourGameStep =
       readonly kind: 'quiz';
       readonly requires?: readonly TourGameCondition[];
       readonly outcomes: TourGameQuizOutcomes;
-      /** Answered by typing (text, code, number) rather than by picking
-       *  an option: one input for both outcomes. Default false. */
-      readonly typed?: boolean;
     };
 
 /** A placed item (pin, photo, model) as the rules see it. */
@@ -434,11 +434,11 @@ function contradicts(
 }
 
 /**
- * How an option (a choice's option or a quiz answer) shows now: available;
- * greyed with every need when each label and counter blocking it is
- * visible; hidden when any of them is secret, when the game cannot read
- * what blocks it, or when its requirement contradicts itself (no need
- * would ever be enough).
+ * How a scene choice's option shows now: available; greyed with every
+ * need when each label and counter blocking it is visible; hidden when
+ * any of them is secret, when the game cannot read what blocks it, or
+ * when its requirement contradicts itself (no need would ever be enough).
+ * A quiz is shown as a whole by `quizDisplay`, never per answer.
  */
 export function optionDisplay(
   game: TourGame,
@@ -458,14 +458,15 @@ export function optionDisplay(
 }
 
 /**
- * How a typed quiz's input (text, code, number) shows now. The outcome is
- * known only once the visitor submits, so the input is judged on both
- * outcomes together: available only when both outcomes could be paid
- * (whichever the answer turns out to be); otherwise hidden when either
- * outcome is hidden, else greyed with both outcomes' needs merged (per
- * counter the larger shortfall).
+ * How a quiz shows now, as a whole - a typed quiz's input and a choice
+ * quiz's answers alike. Judged on both outcomes together: available only
+ * when both could be paid (whichever the answer turns out to be);
+ * otherwise hidden when either outcome is hidden, else greyed with both
+ * outcomes' needs merged (per counter the larger shortfall). Never shown
+ * per answer: greying or hiding only the answers the visitor cannot pay
+ * for would leave the others standing and give the right one away.
  */
-export function quizInputDisplay(
+export function quizDisplay(
   game: TourGame,
   state: TourGameRunState,
   outcomes: TourGameQuizOutcomes
@@ -504,17 +505,24 @@ export function chooseOption(
   return take(game, state, option);
 }
 
-/** Give a quiz answer, right or wrong: the outcome is an option like any
- *  other, all or nothing, so an answer whose cost the visitor cannot pay
- *  is refused and changes nothing. */
+/** Give a quiz answer, right or wrong: its outcome is applied all or
+ *  nothing, and only while the quiz is open as a whole - both outcomes
+ *  payable (see `quizDisplay`). Otherwise the answer is refused and
+ *  changes nothing, the right one included: refusing only the answers
+ *  that cannot be paid would tell the visitor which one is right. */
 export function answerQuiz(
   game: TourGame,
   state: TourGameRunState,
   outcomes: TourGameQuizOutcomes,
   correct: boolean
 ): TourGameChoice {
-  const effects = (correct ? outcomes.correct : outcomes.wrong) ?? [];
-  return take(game, state, { effects });
+  const given = (correct ? outcomes.correct : outcomes.wrong) ?? [];
+  const other = (correct ? outcomes.wrong : outcomes.correct) ?? [];
+  const result = take(game, state, { effects: given });
+  const closed = availability(game, state, { effects: other });
+  return result.ok && !closed.available
+    ? { ok: false, reason: closed.reason }
+    : result;
 }
 
 /** Where a scene continues after step `from`: the option's `goto` (the

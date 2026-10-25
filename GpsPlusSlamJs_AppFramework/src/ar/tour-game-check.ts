@@ -46,15 +46,9 @@
  * going down; or a pair of otherwise free options requiring `has L` and
  * `lacks L`) MAY leave the visitor with nothing to pick. It never misses
  * such a step, and the cure - one free option such as "leave" - is always
- * cheap. A typed quiz is one option with two outcomes: open only when both
- * could be paid, free only when neither costs.
- *
- * `quiz-may-give-answer-away` makes the same trade: a reachable choice
- * quiz (not typed) whose outcomes could each be paid but cost differently
- * on a visible counter, so at some value of it one outcome's answers are
- * greyed beside the other's and show which is right. It never misses a
- * quiz some walk reaches in that state (or the case where one outcome can
- * never be paid, which `option-never-available` reports instead).
+ * cheap. A quiz is one option with two outcomes, as the rules answer it:
+ * open only when both could be paid (greying only the unpayable answers
+ * would give the right one away), free only when neither costs.
  *
  * Pure and dependency-free; findings come in declaration order,
  * structural first. The input is a parsed game: every array present.
@@ -137,13 +131,7 @@ type TourGameFinding =
       readonly at: TourGameRef;
       readonly because: TourGameCause;
     }
-  | { readonly kind: 'choice-may-softlock'; readonly at: TourGameRef }
-  | {
-      readonly kind: 'quiz-may-give-answer-away';
-      readonly at: TourGameRef;
-      /** The visible counter its outcomes cost differently on. */
-      readonly counter: string;
-    };
+  | { readonly kind: 'choice-may-softlock'; readonly at: TourGameRef };
 
 /** Every finding for this game: structural first, then reachability. */
 export function checkTourGame(game: TourGame): TourGameFinding[] {
@@ -427,9 +415,9 @@ interface Branch {
 }
 
 /** Something a visitor takes at a step: a choice's option (one branch),
- *  a choice quiz's outcome (one branch: its answers are offered on their
- *  own), or a typed quiz's input (two branches: right and wrong share one
- *  input, which is open only when both could be paid). */
+ *  or a quiz (two branches, right and wrong: a quiz is answered only as a
+ *  whole, open only when both could be paid, so that no answer is singled
+ *  out as the right one). */
 interface Answer {
   readonly requires: readonly TourGameCondition[] | undefined;
   readonly branches: readonly Branch[];
@@ -455,13 +443,7 @@ function answersOf(step: TourGameStep): Answer[] {
   }
   if (step.kind !== 'quiz') return [];
   const branches = [quizBranch(step, 'correct'), quizBranch(step, 'wrong')];
-  return step.typed === true
-    ? [{ requires: undefined, branches, option: undefined }]
-    : branches.map((b) => ({
-        requires: undefined,
-        branches: [b],
-        option: undefined,
-      }));
+  return [{ requires: undefined, branches, option: undefined }];
 }
 
 /** Why one branch's effects could never be applied, or null. */
@@ -510,32 +492,6 @@ function neverAvailable(
           },
         ];
   });
-}
-
-/**
- * The visible counter a choice quiz's outcomes cost differently on, if
- * any: with both outcomes payable at some point, some value of it pays
- * the cheaper outcome and not the dearer one, so the dearer one's
- * answers are greyed beside the other's and the quiz gives its answer
- * away. An outcome that can never be paid is left to
- * `option-never-available` (the quiz ALWAYS gives it away); a typed quiz
- * shows one input for both, and a secret counter hides rather than greys.
- */
-function giveAwayCounter(
-  step: TourGameStep,
-  bounds: Bounds,
-  names: Names
-): string | undefined {
-  if (step.kind !== 'quiz' || step.typed === true) return undefined;
-  const lists = [step.outcomes.correct ?? [], step.outcomes.wrong ?? []];
-  if (lists.some((e) => branchCause(e, bounds, names) !== null))
-    return undefined;
-  const [right, wrong] = lists.map(netAdds);
-  return [...names.counters.values()].find((counter) => {
-    const a = right!.get(counter.id) ?? 0;
-    const b = wrong!.get(counter.id) ?? 0;
-    return counter.secret !== true && a !== b && Math.min(a, b) < 0;
-  })?.id;
 }
 
 /** The first effect the game cannot apply, as a cause; else null. */
@@ -655,7 +611,7 @@ function onLoop(
 }
 
 /** The effect lists a playing step can apply: every branch of its
- *  options (or quiz outcomes, or typed input) that could be available. */
+ *  options (or both outcomes of its quiz) that could be available. */
 function sourcesOf(
   step: TourGameStep,
   repeatable: boolean,
@@ -804,10 +760,6 @@ function stationFindings(
     }
     if (!hasFreeOption(answers, names)) {
       out.push({ kind: 'choice-may-softlock', at });
-    }
-    const counter = giveAwayCounter(step, bounds, names);
-    if (counter !== undefined) {
-      out.push({ kind: 'quiz-may-give-answer-away', at, counter });
     }
   });
   return out;
