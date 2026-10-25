@@ -95,6 +95,30 @@ const EXEMPT = new Map([
     'design prototype in the inspiration gallery, wired to nothing',
   ],
   [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2a-ground-road-marking/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2b-ground-light-trail/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2c-ground-chevron-ribbon/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2d-ground-medallion/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2e-ground-spotlight/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2f-ground-stepping-cards/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
     'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-3-pictures/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],

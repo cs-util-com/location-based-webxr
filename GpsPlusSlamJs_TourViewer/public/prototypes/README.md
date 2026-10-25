@@ -53,6 +53,14 @@ wired into its logic: every interaction is faked.
   square, in a visitor, a creator and an editor mode; made 2026-10-22. They
   load three.js from unpkg by an import map; `window.__stationBlock` drives
   them in checks.
+- `station-blocks-2a-ground-road-marking/` ...
+  `station-blocks-2f-ground-stepping-cards/` - six directions for the
+  short-text block's ground view (road marking, light trail, knee ribbon,
+  medallion, spotlight, stepping cards), each a copy of
+  `station-blocks-2-short-text/` with only that view replaced and a "1 m
+  error" button that draws every block and its target 1 m off; made
+  2026-10-25. Section 0 of each page's notes says what it costs and where
+  it fails.
 
 **Kept, the chosen and the unchosen** (owner, 2026-10-11 evening): another
 developer may prefer a variant the owner did not choose and ask their own
