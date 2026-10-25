@@ -192,9 +192,21 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   ADOPTED (`adoptChosen`): `openedFile` and the top bar's file name
   become it and `attachTarget` makes it the save target, so later saves
   write it in place and autosave runs, exactly as for a file opened with
-  "Choose…". A dismissed dialog keeps the built file for "Save again"; a
-  refused dialog (no click, an iframe) downloads as before; a failed
-  write says why and keeps the save. Not asked: a tour opened from a file
+  "Choose…". A save that asked for a file is built as an in-place one
+  (`keepScan` and `inPlace` both true whenever a pick rides along): the
+  chosen file becomes the tour's own, so it keeps the walk (in place the
+  walk always stays), and its write is the in-place save an undo crosses
+  (D33, `stepCrossesInPlaceSave`), so an undo across it writes the file
+  again. A pick the browser refused after all (`unavailable`) still
+  downloads that build, walk included. Done then says the changes are in
+  "the file you chose when you first saved" (`DoneSaved.chosenAtSave`,
+  set by the delivery into a chosen file and reset by every open), never
+  "the file you opened". A chosen file that cannot be read back after its
+  write (`adoptChosen`'s `getFile` fails) is not adopted: the tour is
+  saved, a toast says the editor could not keep saving into that file and
+  that the next Save asks again. A dismissed dialog keeps the built file
+  for "Save again"; a refused dialog (no click, an iframe) downloads as
+  before; a failed write says why and keeps the save. Not asked: a tour opened from a file
   the page may not write (a refused permission, another tab's name), which
   still downloads, and "Download instead" after an in-place refusal (no
   pick: a download). The fine print says which the browser does.
@@ -589,3 +601,14 @@ failure states and the selection kept: `editor3d.spec.js`; the studio
 shell's layout and its tree clicks: `editor3d-shell.spec.js`; editing in
 the 3D view (a drag saved and undone, every key, Ctrl+D and Del, a second
 finger's cancel): `editor3d-edit.spec.js`.
+
+The first Save of a tour without a file (`editor.spec.js`, all with the
+click-bound stand-in save dialog, which a call outside the gesture finds
+refused): adopted and then saved by itself; the walk kept in the chosen
+file and Done naming it as the walk's; an undo across that first save
+writing the file again; a dismissed dialog keeping the save (the stand-in
+dismisses only inside the click, so a dialog asked for after the build
+would download and fail it); Ctrl+S and Done each asking inside their own
+gesture, Done's line naming "the file you chose when you first saved";
+and a chosen file that cannot be read back saying so, the next Save
+asking again.

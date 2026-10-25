@@ -20,7 +20,11 @@ the move (`edit-main.ts`, `EditorSession.moveWalkOut`).
   (the plan's review #10, D18). The words and `#done-drive-tip` are in
   place and tested with the switch on; turning it on is this constant.
 - `DoneSaved`, `DoneFacts` - where the changes went (`in-place`,
-  `downloaded`, `unchanged`, each with the file's name), the host, whether
+  `downloaded`, `unchanged`, each with the file's name; `in-place` with
+  `chosenAtSave: true` when that file is the one the first Save of a tour
+  without a file asked for - said as "the file you chose when you first
+  saved", since it was never opened and may carry another name than the
+  one the tour came under), the host, whether
   the newest bytes carry the walk (`true`, `false`, or `"unknown"` when
   the check failed: said as "may carry", never as none - the M4b milestone
   review #9), and the tip's switch.

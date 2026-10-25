@@ -1613,6 +1613,7 @@ function dropTour(reason: string): void {
   model = null;
   fileKey = null;
   tourDraft = null;
+  savedIntoChosen = false;
   draft.close();
   store.dispatch(tourDocumentActions.closed());
   resetEditing();
@@ -1742,6 +1743,7 @@ async function openFile(
   resetEditing();
   leaveFile();
   openedFile = { name: outcome.fileName, handle: picked };
+  savedIntoChosen = false;
   fileKey = outcome.session.archive.url;
   const writes = draft.writes();
   tourDraft = writes;
@@ -2119,8 +2121,18 @@ async function adoptChosen(
   let file: File;
   try {
     file = await handle.getFile();
-  } catch {
-    // Saved all the same; the next Save asks again.
+  } catch (err) {
+    // Saved all the same, but not adopted: the next Save asks again. Said,
+    // or the creator would wait for saves by itself that never come.
+    if (editor === mine) {
+      fileToasts.push(
+        toast(
+          `Your tour is saved in ${handle.name}, but the editor could not keep saving into that file (${err instanceof Error ? err.message : String(err)}), so the next Save asks for a file again.`,
+          undefined,
+          null,
+        ),
+      );
+    }
     return;
   }
   if (editor !== mine) return;
@@ -2156,6 +2168,11 @@ function askSaveFile(): Promise<SaveFilePick> | null {
   }
   return pickSaveFile(window as unknown as SavePickerWindow, mine.savedName());
 }
+
+/** The open tour's changes were last delivered into a file the first Save
+ *  asked for (`askSaveFile`), not into one opened: Done names it as the
+ *  file chosen then. Reset by every open. */
+let savedIntoChosen = false;
 
 /** Whether the browser was asked to keep this site's storage (once). */
 let storageAsked = false;
@@ -2324,10 +2341,13 @@ async function buildAndDeliver(
       undelivered !== null && mine.changeCount() === 0
         ? undelivered
         : // In place the walk always stays: the file written over may be
-          // the creator's only copy of it (E2b plan review #1).
+          // the creator's only copy of it (E2b plan review #1). A save
+          // into the file its click asked for (`pick`) is in place too:
+          // that file becomes the tour's own (`adoptChosen`), so it keeps
+          // the walk, and an undo across this save writes it again (D33).
           await mine.save({
-            keepScan: ui().keepsWalk || keepWalkInput.checked,
-            inPlace: into !== null,
+            keepScan: ui().keepsWalk || keepWalkInput.checked || pick !== null,
+            inPlace: into !== null || pick !== null,
           });
     if (editor !== mine) return abandon();
     if (save !== undelivered) {
@@ -2357,7 +2377,10 @@ async function buildAndDeliver(
       for (const id of [...moved]) if (!pending.has(id)) moved.delete(id);
       say(null);
       noteDelivered(inPlace, into, save, chosen);
-      if (chosen !== undefined) void adoptChosen(mine, chosen);
+      if (chosen !== undefined) {
+        savedIntoChosen = true;
+        void adoptChosen(mine, chosen);
+      }
     }
     // Quiet: an autosave says it saved in the status line only (it is
     // always in place, which keeps the walk, so the result has nothing
@@ -2564,7 +2587,11 @@ function doneSaved(): DoneSaved {
   const delivered = saveState().delivered;
   if (delivered !== null) {
     return delivered.inPlace
-      ? { kind: "in-place", name: delivered.name }
+      ? {
+          kind: "in-place",
+          name: delivered.name,
+          ...(savedIntoChosen ? { chosenAtSave: true } : {}),
+        }
       : { kind: "downloaded", name: delivered.name };
   }
   return {

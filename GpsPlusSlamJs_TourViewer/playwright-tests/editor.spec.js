@@ -3726,28 +3726,50 @@ test("Done shows its save in progress and stays shut when the save fails, and a 
  * A stand-in for the browser's save dialog that behaves as Chromium's
  * does: it opens only during the click that asked for it (a call after an
  * await of seconds is refused with a SecurityError), and it hands back a
- * real file of the origin-private file system, `name`. `hold` keeps the
- * dialog open until `window.__releaseWalkPick()`.
+ * real file of the origin-private file system, `name`. A key press counts
+ * as a click (Ctrl+S is a gesture too). `hold` keeps the dialog open until
+ * `window.__releaseWalkPick()`; `dismiss` has the creator dismiss it (an
+ * AbortError - only inside the gesture: outside it the refusal comes
+ * first); `unreadable` hands back the file as a handle that writes but
+ * cannot be read back (`getFile` refuses).
  * @param {import("@playwright/test").Page} page
  * @param {string} name
- * @param {{ hold?: boolean }} [options]
+ * @param {{ hold?: boolean, dismiss?: boolean, unreadable?: boolean }} [options]
  */
 async function clickBoundSavePicker(page, name, options = {}) {
   await page.evaluate(
-    async ({ fileName, hold }) => {
+    async ({ fileName, hold, dismiss, unreadable }) => {
       const root = await navigator.storage.getDirectory();
-      const handle = await root.getFileHandle(fileName, { create: true });
+      const real = await root.getFileHandle(fileName, { create: true });
+      const handle = unreadable
+        ? {
+            kind: "file",
+            name: real.name,
+            createWritable: () => real.createWritable(),
+            getFile: () =>
+              Promise.reject(
+                new DOMException(
+                  "the file could not be read",
+                  "NotReadableError",
+                ),
+              ),
+            isSameEntry: (/** @type {FileSystemHandle} */ other) =>
+              real.isSameEntry(other),
+          }
+        : real;
       let inClick = false;
-      document.addEventListener(
-        "click",
-        () => {
-          inClick = true;
-          setTimeout(() => {
-            inClick = false;
-          }, 0);
-        },
-        true,
-      );
+      for (const type of ["click", "keydown"]) {
+        document.addEventListener(
+          type,
+          () => {
+            inClick = true;
+            setTimeout(() => {
+              inClick = false;
+            }, 0);
+          },
+          true,
+        );
+      }
       // @ts-expect-error - read by the test.
       window.__walkPicks = 0;
       // @ts-expect-error - the e2e's own save dialog.
@@ -3762,6 +3784,11 @@ async function clickBoundSavePicker(page, name, options = {}) {
             ),
           );
         }
+        if (dismiss) {
+          return Promise.reject(
+            new DOMException("The user aborted a request.", "AbortError"),
+          );
+        }
         if (!hold) return Promise.resolve(handle);
         return new Promise((resolve) => {
           // @ts-expect-error - called by the test.
@@ -3769,7 +3796,12 @@ async function clickBoundSavePicker(page, name, options = {}) {
         });
       };
     },
-    { fileName: name, hold: options.hold === true },
+    {
+      fileName: name,
+      hold: options.hold === true,
+      dismiss: options.dismiss === true,
+      unreadable: options.unreadable === true,
+    },
   );
 }
 
@@ -4156,17 +4188,17 @@ test("a tour without a file whose save dialog was dismissed keeps its save for S
   page,
 }) => {
   // Why: a dismissed dialog must not lose the save, nor fall back to a
-  // download the creator did not ask for.
-  await page.addInitScript(() => {
-    /** @type {any} */ (window).showOpenFilePicker = () =>
-      Promise.reject(new DOMException("not in this test", "AbortError"));
-    /** @type {any} */ (window).showSaveFilePicker = () =>
-      Promise.reject(new DOMException("dismissed", "AbortError"));
-  });
+  // download the creator did not ask for. The stand-in dialog is
+  // dismissed only when asked for inside the click; asked for later (after
+  // the build, as Chromium refuses it) it is refused, and the page would
+  // download - so this fails if the dialog stops being asked for in the
+  // click.
+  await withBothDialogs(page);
   await page.goto("/edit.html");
   await dropOnDropBox(page, await editorTour(), "editor-fixture.zip");
-  await page.locator("#rail .row", { hasText: "Town hall" }).click();
-  await page.locator("#card textarea").fill("Not yet saved");
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await clickBoundSavePicker(page, "never-written.zip", { dismiss: true });
+  await editTownHall(page, "Not yet saved");
   let downloads = 0;
   page.on("download", () => {
     downloads += 1;
@@ -4175,7 +4207,182 @@ test("a tour without a file whose save dialog was dismissed keeps its save for S
   await expect(page.locator("#save-status")).toHaveText(
     "Not saved yet - tap Save again",
   );
+  expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
   expect(downloads).toBe(0);
+});
+
+/**
+ * A tour without a file, opened by a drop where the browser has both file
+ * dialogs, with the Town hall pin edited to `text`; the save dialog is the
+ * click-bound stand-in giving `saved-tour.zip`. Downloads are counted.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} text
+ * @param {{ unreadable?: boolean }} [options]
+ */
+async function droppedTourEdited(page, text, options = {}) {
+  await withBothDialogs(page);
+  await autosaveOutOfTheWay(page);
+  await page.goto("/edit.html");
+  await dropOnDropBox(page, await editorTour(), "editor-fixture.zip");
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await clickBoundSavePicker(page, "saved-tour.zip", options);
+  await editTownHall(page, text);
+  const counted = { downloads: 0 };
+  page.on("download", () => {
+    counted.downloads += 1;
+  });
+  return counted;
+}
+
+test("Ctrl+S on a tour without a file asks for its file inside the key press", async ({
+  page,
+}) => {
+  // Why: Ctrl+S is the other way to Save, and Chromium opens the save
+  // dialog only within the gesture that asked for it. Asked for after the
+  // build, the stand-in refuses it and the page downloads a copy instead.
+  const counted = await droppedTourEdited(page, "Saved by the keys");
+  await page.keyboard.press("Control+s");
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to saved-tour.zip",
+  );
+  expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
+  expect(counted.downloads).toBe(0);
+  expect((await readOpfsTour(page, "saved-tour.zip"))["tour.json"]).toContain(
+    "Saved by the keys",
+  );
+});
+
+test("Done on a tour without a file asks for its file inside its click, and says the changes are in the file chosen then", async ({
+  page,
+}) => {
+  // Why: Done saves what is pending before its dialog opens, so it too
+  // must ask for the file within its click. Its dialog then names that
+  // file as the one chosen at the first Save - never "the file you
+  // opened", which a tour from a link, the sample or a drop does not have.
+  const counted = await droppedTourEdited(page, "Saved by Done");
+  await page.locator("#done-btn").click();
+  await expect(page.locator("#done-modal")).toBeVisible();
+  await expect(page.locator("#done-where")).toHaveText(
+    "Your changes are saved in saved-tour.zip, the file you chose when you first saved.",
+  );
+  expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
+  expect(counted.downloads).toBe(0);
+  expect((await readOpfsTour(page, "saved-tour.zip"))["tour.json"]).toContain(
+    "Saved by Done",
+  );
+});
+
+test("a first Save whose chosen file cannot be read back says the tour was saved, and that the next Save asks again", async ({
+  page,
+}) => {
+  // Why: the file the first Save wrote is read back to keep saving into
+  // it. When that read fails, the tour is saved all the same, but later
+  // saves cannot go there by themselves - said in words, or the creator
+  // would wait for an autosave that never comes.
+  await droppedTourEdited(page, "Saved, not kept", { unreadable: true });
+  await page.locator("#save-btn").click();
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to saved-tour.zip",
+  );
+  await expect(
+    page.locator(".toast", {
+      hasText:
+        "Your tour is saved in saved-tour.zip, but the editor could not keep saving into that file",
+    }),
+  ).toContainText("so the next Save asks for a file again");
+  expect((await readOpfsTour(page, "saved-tour.zip"))["tour.json"]).toContain(
+    "Saved, not kept",
+  );
+  await editPin(page, "Saved, not kept", "Saved again");
+  await page.locator("#save-btn").click();
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to saved-tour.zip",
+  );
+  expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(2);
+});
+
+/**
+ * The browser has both file dialogs: the open dialog is put back (the
+ * suite's own init script took it away) as a stand-in no test here
+ * answers, so the first Save of a dropped tour asks for its file.
+ * @param {import("@playwright/test").Page} page
+ */
+async function withBothDialogs(page) {
+  await page.addInitScript(() => {
+    /** @type {any} */ (window).showOpenFilePicker = () =>
+      Promise.reject(new DOMException("not in this test", "AbortError"));
+  });
+}
+
+test("the first Save of a tour without a file keeps its walk in the file it asks for, and Done says the walk is there", async ({
+  page,
+}) => {
+  // Why: the file the first Save asks for becomes the tour's own file,
+  // saved into in place from then on - and an in-place save never leaves
+  // the walk out, since that file may become the creator's only copy of
+  // it. The first write once left it out, and since the file then counted
+  // as in place, nothing offered to save the walk apart either.
+  await withBothDialogs(page);
+  await autosaveOutOfTheWay(page);
+  await page.goto("/edit.html");
+  await dropOnDropBox(page, await wrappedTour({ pin: true }), "wrapped.zip");
+  await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
+  await clickBoundSavePicker(page, "saved-wrapped.zip");
+  await editPin(page, "Wrapped pin", "Saved with the walk");
+  await page.locator("#save-btn").click();
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to saved-wrapped.zip",
+  );
+  const saved = await readOpfsTour(page, "saved-wrapped.zip");
+  expect(saved["mytour/tour.json"]).toContain("Saved with the walk");
+  expect(Object.keys(saved)).toContain("mytour/actions/000001.json");
+  expect(Object.keys(saved)).toContain("mytour/images/frame-000002.png");
+  await page.locator("#done-btn").click();
+  await expect(page.locator("#done-modal")).toBeVisible();
+  await expect(page.locator("#done-walk-text")).toContainText(
+    "saved-wrapped.zip also carries your debug data",
+  );
+  await expect(page.locator("#done-move")).toBeVisible();
+});
+
+test("an undo across the first save into a chosen file writes that file again", async ({
+  page,
+}) => {
+  // Why (D33): the file the first Save asked for is written in place, so
+  // an undo across that save must write it again - a reload would
+  // otherwise read a file holding a change the editor no longer shows.
+  // The first write was once not counted as in place, and the undo then
+  // waited for a later save.
+  await withBothDialogs(page);
+  await autosaveOutOfTheWay(page);
+  await page.goto("/edit.html");
+  await dropOnDropBox(page, await editorTour(), "editor-fixture.zip");
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await clickBoundSavePicker(page, "saved-tour.zip");
+  await editTownHall(page, "Saved, then undone");
+  await page.locator("#save-btn").click();
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to saved-tour.zip",
+  );
+  // Adopted: the page saves by itself into it now.
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  expect((await readOpfsTour(page, "saved-tour.zip"))["tour.json"]).toContain(
+    "Saved, then undone",
+  );
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Control+z");
+  await expect(page.locator(".toast").last()).toHaveText(
+    'Undone: the text of "Saved, then undone".',
+  );
+  await expect
+    .poll(
+      async () =>
+        (await readOpfsTour(page, "saved-tour.zip"))["tour.json"] ?? "",
+    )
+    .not.toContain("Saved, then undone");
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to saved-tour.zip",
+  );
 });
 
 /**
