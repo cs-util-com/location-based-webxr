@@ -68,13 +68,16 @@ button{font:inherit;color:inherit}
 #sheet .cred{font-size:13px;color:var(--muted);margin:0;line-height:1.4}
 #sheet .close{position:absolute;top:12px;right:12px;border:0;border-radius:999px;background:rgba(20,17,14,.85);padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;z-index:2}
 #sheet .src{font-size:11.5px;color:var(--dim);margin-top:14px}
-#bino{position:absolute;inset:0;z-index:55;background:#0b0907;touch-action:none;cursor:grab}
-#bino canvas{position:absolute;inset:0;width:100%;height:100%}
-#bino .bc{position:absolute;left:16px;right:16px;bottom:26px;text-align:center}
-#bino .bc .y{font:600 30px/1 var(--serif);color:var(--amber)}
-#bino .bc .t{font:16px/1.4 var(--serif);margin:8px auto 4px;max-width:520px}
-#bino .bc .m{font-size:12px;color:var(--muted)}
-#bino .bc .k{display:inline-block;margin-top:12px;font-size:12px;color:var(--ink);padding:6px 12px;border-radius:999px;border:1px solid rgba(244,237,225,.22)}
+/* the cut-out's sheet: the text only, the picture is already standing in front of the visitor */
+#sheet .card.textonly canvas,#sheet .card.textonly .src{display:none}
+.wide #sheet .card.textonly{grid-template-columns:1fr;width:min(94%,620px)}
+#sheet .card.textonly .yr{margin-top:0}
+#notes table.sw{border-collapse:collapse;width:100%;font-size:12px;margin:8px 0}
+#notes table.sw th,#notes table.sw td{text-align:right;padding:4px 6px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums;color:#e6ddcd}
+#notes table.sw th{color:var(--muted);font-weight:600}
+#notes table.sw th:first-child,#notes table.sw td:first-child{text-align:left}
+#notes table.sw tr.def td{color:var(--amber);font-weight:600}
+#notes table.sw button{border:1px solid rgba(244,237,225,.25);background:none;border-radius:999px;padding:2px 9px;font-size:11px;cursor:pointer}
 #joy{position:absolute;left:16px;bottom:20px;width:92px;height:92px;border-radius:50%;background:rgba(20,17,14,.45);border:1px solid rgba(255,255,255,.18);z-index:24;touch-action:none}
 #joy .k{position:absolute;left:50%;top:50%;width:38px;height:38px;margin:-19px;border-radius:50%;background:rgba(244,237,225,.85)}
 #cbar{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;z-index:30;display:flex;gap:4px;padding:7px;border-radius:24px;background:var(--plate-strong);width:min(calc(100% - 20px),620px);box-shadow:0 10px 30px rgba(0,0,0,.25)}
@@ -214,10 +217,10 @@ textarea{font:14px/1.38 var(--serif);min-height:70px;resize:vertical}
   <div id="swipe" class="hidden"><div class="ln"><span class="lab l">1885</span><span class="lab r">Today</span></div><div class="kn"><svg viewBox="0 0 24 24"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/></svg></div></div>
   <div id="tnCtl" class="hidden">
     <div class="seg" id="tnMode"><button data-m="swipe">Swipe</button><button data-m="fade">Fade</button></div>
-    <div class="fadebox hidden" id="fadeBox"><span>Today</span><input type="range" id="fadeR" min="0" max="1" step="0.01" value="0.85"><span id="fadeY">1885</span></div>
+    <div class="fadebox hidden" id="fadeBox"><span>Today</span><input type="range" id="fadeR" min="0" max="1" step="0.01" value="0"><span id="fadeY">1885</span></div>
   </div>
   <div id="cap" class="hidden"></div>
-  <div id="bino" class="hidden"><canvas></canvas><div class="bc"></div></div>
+
   <div id="sheet" class="hidden"><div class="scrim"></div><div class="card"><button class="close">Close</button><canvas></canvas><div class="meta"><div class="yr"></div><p class="capt"></p><p class="cred"></p><div class="src"></div></div></div></div>
   <div id="joy" class="hidden"><div class="k"></div></div>
   <div id="reticle" class="hidden"></div>
@@ -299,10 +302,11 @@ const VP0 = { position: [6, 1.6, 12], yawDeg: -45, pitchDeg: 3, hfovDeg: 56 };
 const hall = {
   type: 'picture', id: 'market-hall-1885', view: 'framed',
   image: { src: 'media/market-hall-1885.jpg', width: 1500, height: 1000, alpha: false, bytes: null },
-  caption: 'The timber market hall on a market morning, five years before the fire of 1890. Behind it, the guild house.',
+  caption: 'The timber market hall on a market morning, five years before the fire of 1890. Behind it, the guild house. The hall stood on twenty-four oak posts; under its arcade the fish, cheese and butter sellers kept their stalls, while grain was weighed and stored on the upper floor. The cart in front has come in from the villages to the south with sacks of rye, and the woman on the left is waiting for the scales to open at seven. The photographer set up his camera on the steps of the inn on the south side, which is why the view looks slightly down onto the square. The plate was exposed for about two seconds, long enough for anyone who moved to appear as a faint ghost.',
   credit: 'Photographer unknown. Town archive, glass plate no. 14.',
   year: 1885,
   widthM: 1.6,
+  showTag: true,
   pose: { position: [-4, 1.75, 2], yawDeg: 115, pitchDeg: 0 },
   viewpoint: JSON.parse(JSON.stringify(VP0)),
 };
@@ -313,33 +317,35 @@ const stall = {
   credit: 'Photographer unknown. Town archive, plate no. 22, cut out.',
   year: 1886,
   widthM: 2.6,
+  showTag: true,
   pose: { position: [-6, 0, 5.5], yawDeg: 140, pitchDeg: 0 },
   viewpoint: null,
 };
 
 const VIEWS = ['framed', 'cutout', 'then-now', 'mosaic', 'viewpoint-finder', 'viewpoint-sharpen', 'viewpoint-window', 'viewer'];
 const REQUIRED = new Set(['framed', 'cutout', 'then-now', 'mosaic']);
-const VIEW_LABEL = { framed: 'Framed', cutout: 'Cut-out', 'then-now': 'Then & now', mosaic: 'Mosaic', 'viewpoint-finder': 'Finder', 'viewpoint-sharpen': 'Sharpen', 'viewpoint-window': 'Window', viewer: 'Viewer' };
+// the mosaic stays in the gallery so every variant remains reachable, but it is dropped: never to be built
+const VIEW_LABEL = { framed: 'Framed', cutout: 'Cut-out', 'then-now': 'Then & now', mosaic: 'Mosaic (dropped)', 'viewpoint-finder': 'Finder', 'viewpoint-sharpen': 'Sharpen', 'viewpoint-window': 'Window', viewer: 'Viewer' };
 const VIEW_LINE = {
   framed: 'A framed print with a caption plate.',
   cutout: 'A cut-out standing on the ground, no frame.',
-  'then-now': 'From the spot it was taken: swipe or fade to today.',
-  mosaic: 'Tiles in the air that only line up from the spot.',
+  'then-now': 'From the spot it was taken: the old picture fades in, then slide (or swipe) to today.',
+  mosaic: 'Dropped, kept for the gallery: tiles in the air that only line up from the spot.',
   'viewpoint-finder': 'Four corners in the air meet as a frame only from the spot; then the picture fills it.',
-  'viewpoint-sharpen': 'One whole picture, blurred and pale, that clears as you reach the spot.',
+  'viewpoint-sharpen': 'One whole picture that fades in as you reach the spot and face its way; no blur.',
   'viewpoint-window': 'A small window at arm\'s length, there only when you stand on the spot.',
-  viewer: 'A sightseeing viewer that shows the picture magnified.',
+  viewer: 'A sightseeing viewer that fades away into the picture as you step up to it.',
 };
-const FIELDS = ['image', 'caption', 'credit', 'year', 'widthM', 'pose', 'viewpoint'];
+const FIELDS = ['image', 'caption', 'credit', 'year', 'widthM', 'pose', 'viewpoint', 'showTag'];
 const FIELD_USE = {
   framed: { image: 'the print inside the frame and mat', caption: 'the plate, up to 3 lines; the full text in the sheet on tap', credit: 'one small line on the plate, and the sheet', year: 'the large figure on the plate', widthM: 'width of the print; mat and frame add about 0.33 m', pose: 'centre of the print, its turn and tilt', viewpoint: null },
-  cutout: { image: 'the cut-out itself (alpha); the second record', caption: 'one line on the foot tag, all of it in the sheet', credit: 'the sheet', year: 'the foot tag', widthM: 'width of the cut-out; height follows the image', pose: 'foot point on the ground and turn; tilt is ignored', viewpoint: null },
+  cutout: { image: 'the cut-out itself (alpha); the second record', caption: 'one line on the foot tag (when shown), all of it in a text-only sheet on tap', credit: 'the sheet', year: 'the foot tag', widthM: 'width of the cut-out; height follows the image', pose: 'foot point on the ground and turn; tilt is ignored', viewpoint: null, showTag: 'whether the small tag (year and title) stands at its foot; the cut-out itself is tappable either way' },
   'then-now': { image: 'the overlay seen from the viewpoint', caption: 'the card once lined up, and the sheet', credit: 'the sheet', year: 'the swipe label, the marker card', widthM: null, pose: 'only its distance from the viewpoint: the overlay hangs at that depth', viewpoint: 'where to stand, which way to face, and the lens angle that sizes the overlay' },
   mosaic: { image: 'cut into 14 x 9 tiles', caption: 'the card once assembled, and the sheet', credit: 'the sheet', year: 'the marker card', widthM: null, pose: 'the depth the tiles scatter around', viewpoint: 'the one spot where the tiles line up, and the lens angle' },
   'viewpoint-finder': { image: 'a centre crop (36 degrees) fills the finder once the corners meet', caption: 'the card once lined up, and the sheet', credit: 'the sheet', year: 'the marker card', widthM: null, pose: 'the depth the picture fills in at', viewpoint: 'the spot and facing; the four corners sit on the lens rays at different depths' },
-  'viewpoint-sharpen': { image: 'one whole picture at the subject depth, blurred and pale away from the spot', caption: 'the card once clear, and the sheet', credit: 'the sheet', year: 'the marker card', widthM: null, pose: 'the depth the picture hangs at', viewpoint: 'sharpness follows your distance and angle to it; the lens sizes the picture' },
+  'viewpoint-sharpen': { image: 'one whole picture at the subject depth, transparent far away and opaque at the spot', caption: 'the card once it shows, and the sheet', credit: 'the sheet', year: 'the marker card', widthM: null, pose: 'the depth the picture hangs at', viewpoint: 'its opacity follows your distance to it and your facing; the lens sizes the picture' },
   'viewpoint-window': { image: 'a centre crop (30 degrees) inside a window 0.7 m in front of the spot', caption: 'the card while you look through, and the sheet', credit: 'the sheet', year: 'the label under the window', widthM: null, pose: null, viewpoint: 'where the window hangs and which way it faces; the lens sets the crop' },
-  viewer: { image: 'seen magnified through the eyepieces', caption: 'under the eyepiece view, and the sheet', credit: 'under the eyepiece view', year: 'the plate on the post', widthM: null, pose: null, viewpoint: 'where the viewer stands and points; the lens angle sets how far it swings' },
+  viewer: { image: 'fades in at the subject depth as you step up, while the viewer fades out', caption: 'the card once it shows, and the sheet', credit: 'the sheet', year: 'the plate on the post', widthM: null, pose: 'the depth the picture hangs at', viewpoint: 'where the viewer stands and points; the lens sizes the picture' },
 };
 const usesField = (v, f) => FIELD_USE[v][f] != null;
 
@@ -348,9 +354,8 @@ const usesField = (v, f) => FIELD_USE[v][f] != null;
    ================================================================ */
 const S = {
   mode: 'visitor', view: 'framed', phone: false, err: false,
-  appear: 0, autowalk: null, split: 0.5, tnMode: 'swipe', fade: 0.85,
+  appear: 0, autowalk: null, split: 0.5, tnMode: 'fade', fade: 0, intro: null,
   overlay: null, ctool: null, pov: false, dirty: false, hookActive: false,
-  binoU: 0.5, binoV: 0.5,
 };
 const fp = {
   visitor: { pos: new V3(0, 1.6, 28), yaw: 0, pitch: -2 },
@@ -727,7 +732,7 @@ function makeSpot(r, kind) {
   const right = yawRight(vp.yawDeg), back = yawDir(vp.yawDeg).multiplyScalar(-1);
   const cardG = new THREE.Group(); cardG.position.copy(P).addScaledVector(right, -1.05).addScaledVector(back, 0.25); cardG.position.y = 0; cardG.rotation.y = -(vp.yawDeg + 180 - 20) * DEG;
   const cardW = 0.8, thumbH = (cardW - 0.09) * r.image.height / r.image.width, cardH = 0.045 + thumbH + 0.035 + 0.13 + 0.03;
-  const CARD = { thennow: ['Stand on the marker', 'and face the arrow'], mosaic: ['Stand on the marker', 'and the pieces meet'], finder: ['Stand on the marker', 'until the corners meet'], sharpen: ['Walk to the marker', 'and the picture clears'], window: ['Stand on the marker', 'and look through'] }[kind] || ['Stand on the marker', ''];
+  const CARD = { thennow: ['Stand on the marker', 'and face the arrow'], mosaic: ['Stand on the marker', 'and the pieces meet'], finder: ['Stand on the marker', 'until the corners meet'], sharpen: ['Walk to the marker', 'and the picture appears'], window: ['Stand on the marker', 'and look through'] }[kind] || ['Stand on the marker', ''];
   const ct = cardTexture({ wM: cardW, hM: cardH, year: r.year, line1: CARD[0], line2: CARD[1], thumb: (kind === 'mosaic' || kind === 'sharpen') ? null : photoCanvas });
   const cardM = basicMat(ct); const card = new THREE.Mesh(new THREE.PlaneGeometry(cardW, cardH), cardM); card.position.y = 1.05 + cardH / 2; card.rotation.x = -0.18; cardG.add(card);
   const pmat = new THREE.MeshStandardMaterial({ color: 0x1d1915, roughness: 0.6, transparent: true }); const postM = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.03, 1.08, 10), pmat); postM.position.y = 0.54; cardG.add(postM);
@@ -782,12 +787,14 @@ class CutoutView extends BaseView {
     this.mat = developMaterial(stallTex, true); this.mesh = new THREE.Mesh(geo, this.mat); this.mesh.renderOrder = 3;
     this.inner = new THREE.Group(); this.inner.add(this.mesh); this.root.add(this.inner);
     this.shadow = shadowDecal(w * 1.05, 1.35, 0.34); this.shadow.position.z = -0.3; this.root.add(this.shadow);
-    const tw = 0.62, th = 0.215; const tt = cardTexture({ wM: tw, hM: th, year: r.year, line1: firstPhrase(r.caption), line2: 'Tap for the story' });
-    this.tagMat = basicMat(tt); const tag = new THREE.Mesh(new THREE.PlaneGeometry(tw, th), this.tagMat);
-    const tagG = new THREE.Group(); tagG.position.set(-w * 0.5 * 0.55, 0, 0.75); tag.position.y = 0.62; tag.rotation.x = -0.6; tagG.add(tag);
-    this.stakeMat = new THREE.MeshStandardMaterial({ color: 0x1d1915, roughness: 0.6, transparent: true }); const stake = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.016, 0.6, 8), this.stakeMat); stake.position.y = 0.3; tagG.add(stake);
-    this.root.add(tagG);
-    this.pick = [this.mesh, tag];
+    this.pick = [this.mesh]; this.tagMat = null; this.stakeMat = null;
+    if (r.showTag !== false) {   // the tag is the creator's choice; the cut-out itself stays tappable without it
+      const tw = 0.62, th = 0.215; const tt = cardTexture({ wM: tw, hM: th, year: r.year, line1: firstPhrase(r.caption), line2: 'Tap for the story' });
+      this.tagMat = basicMat(tt); const tag = new THREE.Mesh(new THREE.PlaneGeometry(tw, th), this.tagMat);
+      const tagG = new THREE.Group(); tagG.position.set(-w * 0.5 * 0.55, 0, 0.75); tag.position.y = 0.62; tag.rotation.x = -0.6; tagG.add(tag);
+      this.stakeMat = new THREE.MeshStandardMaterial({ color: 0x1d1915, roughness: 0.6, transparent: true }); const stake = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.016, 0.6, 8), this.stakeMat); stake.position.y = 0.3; tagG.add(stake);
+      this.root.add(tagG); this.pick.push(tag);
+    }
     this.sel = { obj: this.inner, w: w, h: h, cy: h / 2 };
     this.applyPose();
   }
@@ -797,7 +804,8 @@ class CutoutView extends BaseView {
     const p = this.root.getWorldPosition(new V3()); const to = camera.position.clone().sub(p).setY(0).normalize();
     this.mat.uniforms.uFacing.value = sstep(0.1, 0.4, Math.abs(n.dot(to)));
   }
-  setAppear(a) { const e = sstep(0, 0.5, a); this.mat.uniforms.uAlpha.value = e; this.mat.uniforms.uDev.value = sstep(0.3, 1, a); this.inner.scale.y = 0.93 + 0.07 * sstep(0, 0.8, a); this.shadow.material.opacity = 0.34 * e; this.tagMat.opacity = sstep(0.5, 1, a); this.stakeMat.opacity = sstep(0.5, 1, a); this.root.visible = a > 0.002; }
+  setAppear(a) { const e = sstep(0, 0.5, a); this.mat.uniforms.uAlpha.value = e; this.mat.uniforms.uDev.value = sstep(0.3, 1, a); this.inner.scale.y = 0.93 + 0.07 * sstep(0, 0.8, a); this.shadow.material.opacity = 0.34 * e; if (this.tagMat) { this.tagMat.opacity = sstep(0.5, 1, a); this.stakeMat.opacity = sstep(0.5, 1, a); } this.root.visible = a > 0.002; }
+  onTap() { openDetails(this.rec, { textOnly: true }); }   // the picture is already standing there: the sheet carries the words
 }
 function firstSentence(t) { const s = String(t || '').split(/(?<=[.!?])\s/)[0]; return s.length > 110 ? s.slice(0, 108).replace(/\s+\S*$/, '') + '…' : s; }
 function firstPhrase(t) { const s = String(t || '').split(/[.;:]/)[0]; return s.length > 34 ? s.slice(0, 33).replace(/\s+\S*$/, '') + '…' : s; }
@@ -817,25 +825,32 @@ function spotHint(st, verbFar) {
 class ThenNowView extends BaseView {
   build() {
     const r = this.rec, vp = r.viewpoint; if (!vp) { this.ok = false; return; } this.ok = true;
-    const P = new V3(...vp.position), dirH = yawDir(vp.yawDeg);
-    let D = new V3(...r.pose.position).sub(P).setY(0).dot(dirH); D = clamp(D, 3, 200); this.D = D;
-    const tw = Math.tan(vp.hfovDeg * DEG / 2), W = 2 * D * tw, H = W * r.image.height / r.image.width;
-    this.planeMat = thenNowMaterial(photoTex); this.plane = new THREE.Mesh(new THREE.PlaneGeometry(W, H), this.planeMat); this.plane.renderOrder = 50; this.plane.frustumCulled = false; this.plane.position.z = -D;
-    const holder = new THREE.Object3D(); holder.position.copy(P); holder.rotation.set(vp.pitchDeg * DEG, -vp.yawDeg * DEG, 0, 'YXZ'); holder.add(this.plane); this.root.add(holder);
-    this.spot = makeSpot(r, 'thennow'); this.root.add(this.spot.group); this.pick = this.spot.pick; this.P = P;
-    this.a = 0;
+    this.P = new V3(...vp.position);
+    this.pic = new PicturePlane(r, { order: 50 }); this.root.add(this.pic.holder);
+    this.spot = makeSpot(r, 'thennow'); this.root.add(this.spot.group); this.pick = this.spot.pick;
+    this.a = 0; this.aligned = false; this.lostFor = Infinity;
   }
   setAppear(a) { this.a = a; this.root.visible = a > 0.002; }
   update(dt, t) {
     if (!this.ok) return; const st = spotState(this.P, this.rec.viewpoint); this.st = st;
-    const near = sstep(2.6, 0.9, st.ep);
-    let alpha = this.a * near;
+    const near = sstep(TN.ramp[0], TN.ramp[1], st.ep);
+    // alignment with hysteresis: it starts inside the tight gate and ends only well outside it, so a wobble across
+    // the gate neither drops the controls nor replays the intro
+    const was = this.aligned;
+    if (S.mode !== 'visitor') this.aligned = false;
+    else if (!was) this.aligned = this.a > 0.5 && near > 0.6 && st.ang < TN.enterDeg;
+    else this.aligned = !(near < 0.3 || st.ang > TN.leaveDeg);
+    if (this.aligned && !was) { if (this.lostFor >= TN.freshAfterS && S.tnMode === 'fade') startIntro(); this.lostFor = 0; }
+    if (!this.aligned) this.lostFor += dt;
+    if (S.intro) {   // the intro: the old picture fades from nothing to about half, then the slider takes over
+      S.intro.t += dt; const k = clamp(S.intro.t / TN.introS, 0, 1); S.fade = TN.introTo * sstep(0, 1, k);
+      $('#fadeR').value = S.fade; if (k >= 1) S.intro = null;
+    }
+    let alpha = this.a * pictureAlpha(st, TN.ramp, TN.gate), fade = 1, swipe = false;
+    if (S.mode === 'visitor') { swipe = S.tnMode === 'swipe' && this.aligned; if (S.tnMode === 'fade') fade = S.fade; }
     if (S.mode === 'editor') alpha = S.pov ? 0.92 : 0.55;
     if (S.mode === 'creator' && S.ctool === 'viewpoint') alpha = 0;
-    const u = this.planeMat.uniforms; u.uAlpha.value = alpha;
-    this.aligned = S.mode === 'visitor' && this.a > 0.5 && near > 0.6 && st.ang < 32;
-    const swipe = S.tnMode === 'swipe' && this.aligned;
-    u.uMode.value = swipe ? 0 : 1; u.uFade.value = S.mode === 'visitor' && this.aligned && S.tnMode === 'fade' ? S.fade : 1; u.uSplit.value = S.split * renderer.domElement.width;
+    this.pic.set(alpha, { swipe, fade, split: S.split * renderer.domElement.width });
     this.spot.set(this.a * (S.mode === 'editor' ? 1 : 1 - near * 0.6), this.a * (1 - sstep(1.6, 0.8, st.ep)), t);
   }
   hud() {
@@ -845,6 +860,7 @@ class ThenNowView extends BaseView {
     const h = spotHint(this.st, 'Walk to the marker'); return h ? { hint: h } : {};
   }
 }
+function startIntro() { S.intro = { t: 0 }; S.fade = 0; $('#fadeR').value = 0; }
 
 const VS_MOS = `
 uniform float uTime, uBob, uGap, uAppear;
@@ -945,17 +961,30 @@ class ViewerView extends BaseView {
     }
     const band = new THREE.Mesh(new THREE.CylinderGeometry(0.118, 0.118, 0.035, 28), brass); band.rotation.z = Math.PI / 2; head.add(band);
     // plate on the column, facing the visitor
-    const pt = cardTexture({ wM: 0.8, hM: 0.353, year: r.year, line1: 'Look through', line2: 'and see the square then', ppm: 500 });
+    const pt = cardTexture({ wM: 0.8, hM: 0.353, year: r.year, line1: 'Step up to it', line2: 'and see the square then', ppm: 500 });
     this.plateMat = basicMat(pt); const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.15), this.plateMat); plate.position.set(0, 0.95, 0.08); plate.rotation.x = -0.35; st.add(plate);
     this.shadow = shadowDecal(0.9, 0.9, 0.3); this.shadow.position.z = -0.42; g.add(this.shadow);
     const halo = new THREE.Mesh(new THREE.RingGeometry(0.46, 0.5, 64), new THREE.MeshBasicMaterial({ color: 0xe9b872, transparent: true, opacity: 0.6, depthWrite: false })); halo.rotation.x = -Math.PI / 2; halo.position.set(0, 0.015, -0.42); g.add(halo); this.halo = halo;
     this.pick = []; st.traverse(o => { if (o.isMesh) this.pick.push(o); });
-    this.a = 0;
+    // the picture it shows, in the world: the same plane as then-and-now, fading in as the viewer fades out
+    this.pic = new PicturePlane(r, { order: 50 }); this.root.add(this.pic.holder); this.pick.push(this.pic.mesh);
+    this.a = 0; this.k = 0;
   }
-  setAppear(a) { this.a = a; const e = sstep(0, 0.6, a); for (const m of this.mats) m.opacity = e; this.plateMat.opacity = e; this.shadow.material.opacity = 0.3 * e; this.root.visible = a > 0.002; if (this.g) this.g.position.y = -0.25 * (1 - sstep(0, 0.8, a)); }
-  update(dt, t) { if (!this.ok) return; const st = spotState(this.P, this.rec.viewpoint); this.st = st; this.halo.material.opacity = this.a * (0.35 + 0.25 * Math.sin(t * 2.2)) * (st.ep < 4.5 ? 1 : 0.5); }
-  hud() { if (!this.ok || S.mode !== 'visitor' || this.a < 0.5 || S.overlay) return {}; if (this.st.ep < 4.5) return { hint: { text: 'Tap the viewer to look through' } }; return {}; }
-  onTap() { if (this.st && this.st.ep > 4.5) { toast('Walk up to the viewer first'); return; } openBino(); }
+  setAppear(a) { this.a = a; this.root.visible = a > 0.002; if (this.g) this.g.position.y = -0.25 * (1 - sstep(0, 0.8, a)); }
+  update(dt, t) {
+    if (!this.ok) return; const st = spotState(this.P, this.rec.viewpoint); this.st = st;
+    const k = S.mode === 'editor' ? 0 : pictureAlpha(st, VIEWER.ramp, VIEWER.gate); this.k = k;
+    const e = sstep(0, 0.6, this.a) * (1 - k);   // the viewer gives way to the picture
+    for (const m of this.mats) m.opacity = e; this.plateMat.opacity = e; this.shadow.material.opacity = 0.3 * e; this.g.visible = e > 0.01;
+    this.halo.material.opacity = e * (0.35 + 0.25 * Math.sin(t * 2.2)) * (st.ep < 4.5 ? 1 : 0.5);
+    this.pic.set(S.mode === 'editor' ? (S.pov ? 0.92 : 0.55) : this.a * k);
+  }
+  hud() {
+    if (!this.ok || S.mode !== 'visitor' || this.a < 0.5 || S.overlay) return {};
+    if (this.k > 0.8) return { cap: { year: this.rec.year, text: firstSentence(this.rec.caption), meta: 'The square from where the viewer stands' } };
+    if (this.st.ep > 6) return {};
+    const h = spotHint(this.st, 'Step up to the viewer'); return h ? { hint: h } : {};
+  }
 }
 /* ---------- viewpoint variants without tiles ---------- */
 /** A whole-picture plane on the viewpoint's axis at depth D, optionally a centre crop (crop = tan(half crop) / tan(half lens)). */
@@ -967,6 +996,58 @@ function axisPlane(r, D, crop, mat) {
   return { holder, mesh: m, W, H };
 }
 function poseDepth(r) { const vp = r.viewpoint, P = new V3(...vp.position); return clamp(new V3(...r.pose.position).sub(P).setY(0).dot(yawDir(vp.yawDeg)), 3, 200); }
+
+/* ---------- one mechanism for the pictures that appear at the spot ----------
+   Then-and-now, Sharpen and Viewer all show the whole picture on one plane at the subject's depth, on the
+   viewpoint's axis, sized by the lens. Its opacity is proximity x facing: a distance ramp (far -> near, in m from
+   the spot) times a facing gate (out -> in, in degrees between the visitor's heading and the viewpoint's). Only
+   the numbers differ per view. */
+function pictureAlpha(st, ramp, gate) { return sstep(ramp[0], ramp[1], st.ep) * sstep(gate[0], gate[1], st.ang); }
+class PicturePlane {
+  constructor(r, o = {}) {
+    this.mat = thenNowMaterial(photoTex); const u = this.mat.uniforms; u.uMode.value = 1; u.uFade.value = 1;
+    if (o.feather != null) u.uFeather.value = o.feather;
+    const pl = axisPlane(r, poseDepth(r), 1, this.mat); pl.mesh.renderOrder = o.order ?? 50;
+    this.holder = pl.holder; this.mesh = pl.mesh;
+  }
+  set(alpha, o = {}) { const u = this.mat.uniforms; u.uAlpha.value = alpha; u.uMode.value = o.swipe ? 0 : 1; u.uFade.value = o.fade ?? 1; if (o.split != null) u.uSplit.value = o.split; }
+}
+/* Then-and-now: the picture shows within 2.6 m of the spot and while facing within about 50 degrees of the
+   viewpoint; "aligned" (the controls, the intro) starts under 32 degrees and ends past 44 degrees; the intro fades
+   0 -> 55 % over 5 s and replays only after alignment was lost for 1.5 s or more. */
+const TN = { ramp: [2.6, 0.9], gate: [50, 30], enterDeg: 32, leaveDeg: 44, freshAfterS: 1.5, introTo: 0.55, introS: 5 };
+/* The viewer: it gives way to the picture over the last 3 m and while facing within about 50 degrees. */
+const VIEWER = { ramp: [3.0, 0.8], gate: [50, 25] };
+/* Sharpen, now a plain fade-in. Three distance ramps x three facing gates are swept (sharpenSweep below, shown in
+   the notes); `pick` is the default, chosen from that sweep. */
+const SHARPEN = { ramps: [[4, 0.5], [7, 0.5], [12, 0.5]], gates: [[40, 15], [70, 15], [100, 15]], pick: [1, 1] };
+const sharpenParams = () => ({ ramp: SHARPEN.ramps[SHARPEN.pick[0]], gate: SHARPEN.gates[SHARPEN.pick[1]] });
+/** The sweep, by the same pictureAlpha the view uses, on the hall record's own viewpoint:
+ *  footprint - share of the station circle (1 m grid) where the picture shows at 10 % or more while you look at it;
+ *  visibleFrom / halfFrom - on the walk in from the circle's south edge (looking at the picture), the distance to
+ *    the spot where it first shows at 10 % / 50 %;
+ *  turnTol - at the spot, how far you may turn from the original facing and still see it at 80 % or more;
+ *  sideStep - its opacity 1 m to the side of the spot, facing the original way. */
+function sharpenSweep() {
+  const r = hall, vp = r.viewpoint, P = new V3(...vp.position), D = poseDepth(r);
+  const C = P.clone().addScaledVector(new V3(0, 0, -1).applyEuler(new THREE.Euler(vp.pitchDeg * DEG, -vp.yawDeg * DEG, 0, 'YXZ')), D);
+  const at = (x, z, yaw, ramp, gate) => pictureAlpha({ ep: Math.hypot(x - P.x, z - P.z), ang: Math.abs(wrapDeg(yaw - vp.yawDeg)) }, ramp, gate);
+  const looking = (x, z) => bearing(new V3(x, 0, z), C);
+  const rows = [];
+  SHARPEN.ramps.forEach((ramp, ri) => SHARPEN.gates.forEach((gate, gi) => {
+    let n = 0, vis = 0;
+    for (let x = -24.5; x <= 24.5; x += 1) for (let z = -24.5; z <= 24.5; z += 1) { if (x * x + z * z > 625) continue; n++; if (at(x, z, looking(x, z), ramp, gate) >= 0.1) vis++; }
+    const A = new V3(0, 0, 25), L = Math.hypot(P.x - A.x, P.z - A.z); let from10 = null, from50 = null;
+    for (let i = 0; i <= 400; i++) { const s = i / 400, x = lerp(A.x, P.x, s), z = lerp(A.z, P.z, s), a = at(x, z, looking(x, z), ramp, gate); if (from10 == null && a >= 0.1) from10 = L * (1 - s); if (from50 == null && a >= 0.5) from50 = L * (1 - s); }
+    let tol = 0; for (let d = 0; d <= 120; d += 0.5) { if (at(P.x, P.z, vp.yawDeg + d, ramp, gate) >= 0.8) tol = d; else break; }
+    const side = at(P.x + Math.cos(vp.yawDeg * DEG), P.z + Math.sin(vp.yawDeg * DEG), vp.yawDeg, ramp, gate);
+    rows.push({ ri, gi, ramp, gate, footprintPct: +(100 * vis / n).toFixed(1), visibleFromM: from10 == null ? null : +from10.toFixed(1), halfFromM: from50 == null ? null : +from50.toFixed(1), turnTolDeg: tol, sideStep: +side.toFixed(2), isDefault: ri === SHARPEN.pick[0] && gi === SHARPEN.pick[1] });
+  }));
+  return rows;
+}
+function sweepTableHTML() {
+  return `<table class="sw"><tr><th>ramp (m)</th><th>gate (deg)</th><th>footprint</th><th>shows from</th><th>half from</th><th>turn at 80 %</th><th>1 m aside</th><th></th></tr>${sharpenSweep().map(w => `<tr class="${w.isDefault ? 'def' : ''}"><td>${w.ramp[0]} to ${w.ramp[1]}</td><td>${w.gate[0]} to ${w.gate[1]}</td><td>${w.footprintPct} %</td><td>${w.visibleFromM ?? '-'} m</td><td>${w.halfFromM ?? '-'} m</td><td>${w.turnTolDeg}°</td><td>${Math.round(w.sideStep * 100)} %</td><td><button data-sw="${w.ri},${w.gi}">${w.isDefault ? 'default' : 'try'}</button></td></tr>`).join('')}</table>`;
+}
 class SpotVariant extends BaseView {
   setAppear(a) { this.a = a; this.root.visible = a > 0.002; }
   capFor(meta) { return { year: this.rec.year, text: firstSentence(this.rec.caption), meta }; }
@@ -1007,34 +1088,24 @@ class FinderView extends SpotVariant {
     const h = spotHint(this.st, 'Walk to the marker'); return h ? { hint: h } : {};
   }
 }
-const FS_SHARP = `
-uniform sampler2D uTex; uniform float uAlpha, uBlur, uWash; varying vec2 vUv;
-void main(){
-  vec4 c=texture2D(uTex,vUv,uBlur);
-  float f=0.02+0.1*clamp(uBlur/6.0,0.0,1.0);
-  float e=smoothstep(0.0,f,vUv.x)*smoothstep(0.0,f,1.0-vUv.x)*smoothstep(0.0,f*1.5,vUv.y)*smoothstep(0.0,f*1.5,1.0-vUv.y);
-  vec3 col=mix(c.rgb,vec3(0.80,0.76,0.70),uWash);
-  float a=e*uAlpha; if(a<0.003) discard;
-  gl_FragColor=vec4(col,a);
-  #include <colorspace_fragment>
-}`;
-/** (b) Sharpen: one whole picture hung at the subject's depth, seen from anywhere, blurred and washed out until you reach the spot. */
+/** (b) Sharpen, second round: no blur any more. One whole picture at the subject's depth, fully transparent far
+ *  away and opaque at the spot (the shared picture plane; its ramp and gate come from the sweep). */
 class SharpenView extends SpotVariant {
   build() {
     const r = this.rec, vp = r.viewpoint; if (!vp) { this.ok = false; return; } this.ok = true; this.P = new V3(...vp.position); this.a = 0;
-    this.mat = new THREE.ShaderMaterial({ uniforms: { uTex: { value: photoTex }, uAlpha: { value: 0 }, uBlur: { value: 6 }, uWash: { value: 0.5 } }, vertexShader: VS_UV, fragmentShader: FS_SHARP, transparent: true, depthWrite: false });
-    const pl = axisPlane(r, poseDepth(r), 1, this.mat); pl.mesh.renderOrder = 45; this.root.add(pl.holder);
-    this.spot = makeSpot(r, 'sharpen'); this.root.add(this.spot.group); this.pick = [...this.spot.pick, pl.mesh];
+    this.pic = new PicturePlane(r, { order: 45, feather: 0.02 }); this.root.add(this.pic.holder);
+    this.spot = makeSpot(r, 'sharpen'); this.root.add(this.spot.group); this.pick = [...this.spot.pick, this.pic.mesh];
   }
   update(dt, t) {
     if (!this.ok) return; const st = spotState(this.P, this.rec.viewpoint); this.st = st;
-    let sharp = Math.pow(sstep(7, 0.3, st.ep) * sstep(70, 10, st.ang), 1.4); if (S.mode === 'editor') sharp = 0.6; this.sharp = sharp;
-    const u = this.mat.uniforms; u.uBlur.value = 5.5 * (1 - sharp); u.uWash.value = 0.3 * (1 - sharp); u.uAlpha.value = this.a * (0.72 + 0.28 * sharp);
-    this.spot.set(this.a * (1 - sharp * 0.7), this.a * (1 - sstep(1.6, 0.8, st.ep)), t);
+    const { ramp, gate } = sharpenParams();
+    let k = pictureAlpha(st, ramp, gate); if (S.mode === 'editor') k = S.pov ? 0.92 : 0.55; this.sharp = k;
+    this.pic.set(this.a * k);
+    this.spot.set(this.a * (1 - k * 0.7), this.a * (1 - sstep(1.6, 0.8, st.ep)), t);
   }
   hud() {
     if (!this.ok) return { hint: { text: 'This view needs a viewpoint' } }; if (S.mode !== 'visitor' || this.a < 0.5) return {};
-    if (this.sharp > 0.85) return { cap: this.capFor('Clear only from here') };
+    if (this.sharp > 0.85) return { cap: this.capFor('Seen from where it was taken') };
     const h = spotHint(this.st, 'Walk to the marker'); return h ? { hint: h } : {};
   }
 }
@@ -1162,48 +1233,25 @@ function rebuildView() {
 function markDirty() { S.dirty = true; }
 
 /* ================================================================
-   Overlays: details sheet, viewer (binoculars), toast
+   Overlays: details sheet, toast
    ================================================================ */
 function imageCanvasFor(r) { return r === stall ? stallCanvas : photoCanvas; }
-function openDetails(r) {
+function openDetails(r, o = {}) {
   r = r || rec(); const sh = $('#sheet'); sh.classList.remove('hidden'); S.overlay = 'sheet';
-  const cv = sh.querySelector('canvas'), img = imageCanvasFor(r); cv.width = img.width; cv.height = img.height; const g = cv.getContext('2d'); g.clearRect(0, 0, cv.width, cv.height);
-  if (r.image.alpha) { g.fillStyle = '#2a251f'; g.fillRect(0, 0, cv.width, cv.height); }
-  g.drawImage(img, 0, 0);
+  const textOnly = !!o.textOnly; sh.querySelector('.card').classList.toggle('textonly', textOnly);
+  if (!textOnly) {
+    const cv = sh.querySelector('canvas'), img = imageCanvasFor(r); cv.width = img.width; cv.height = img.height; const g = cv.getContext('2d'); g.clearRect(0, 0, cv.width, cv.height);
+    if (r.image.alpha) { g.fillStyle = '#2a251f'; g.fillRect(0, 0, cv.width, cv.height); }
+    g.drawImage(img, 0, 0);
+  }
   sh.querySelector('.yr').textContent = r.year != null ? r.year : '';
   sh.querySelector('.capt').textContent = r.caption || '';
   sh.querySelector('.cred').textContent = r.credit || '';
   sh.querySelector('.src').textContent = `${r.image.width} x ${r.image.height} px${r.image.alpha ? ', cut out' : ''}`;
 }
-function closeOverlays() { $('#sheet').classList.add('hidden'); $('#bino').classList.add('hidden'); S.overlay = null; }
+function closeOverlays() { $('#sheet').classList.add('hidden'); S.overlay = null; }
 $('#sheet .scrim').addEventListener('click', closeOverlays); $('#sheet .close').addEventListener('click', closeOverlays);
-function openBino() {
-  S.overlay = 'bino'; const b = $('#bino'); b.classList.remove('hidden'); const r = hall;
-  b.querySelector('.bc').innerHTML = `<div class="y">${esc(r.year ?? '')}</div><div class="t">${esc(r.caption)}</div><div class="m">${esc(r.credit)}</div><div class="k">Turn to look around - tap to step back</div>`;
-  const f = curFP(); const vp = r.viewpoint; S.binoU = 0.5 + wrapDeg(f.yaw - vp.yawDeg) / vp.hfovDeg; S.binoV = 0.5;
-}
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-function drawBino(t) {
-  const b = $('#bino'), cv = b.querySelector('canvas'), dpr = Math.min(2, window.devicePixelRatio || 1);
-  const W = Math.round(SW * dpr), H = Math.round(SH * dpr); if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
-  const g = cv.getContext('2d'), img = photoCanvas, r = hall, vp = r.viewpoint, f = curFP();
-  g.fillStyle = '#0b0907'; g.fillRect(0, 0, W, H);
-  const totalW = Math.min(W * 0.94, H * 1.1), rad = totalW * 0.29, cy = H * (SH > SW ? 0.4 : 0.42), cxL = W / 2 - totalW * 0.21, cxR = W / 2 + totalW * 0.21;
-  const M = 1.7, srcW = img.width / M, srcH = srcW * (2 * rad) / totalW;
-  const vf = vfovFromH(vp.hfovDeg, img.width / img.height);
-  let u = 0.5 + wrapDeg(f.yaw - vp.yawDeg) / vp.hfovDeg, v = 0.5 + (f.pitch - vp.pitchDeg) / vf;
-  const hu = srcW / img.width / 2, hv = srcH / img.height / 2; u = clamp(u, hu, 1 - hu); v = clamp(v, hv, 1 - hv);
-  S.binoU = lerp(S.binoU, u, 0.25); S.binoV = lerp(S.binoV, v, 0.25);
-  const sx = S.binoU * img.width - srcW / 2, sy = (1 - S.binoV) * img.height - srcH / 2;
-  g.save(); g.beginPath(); g.arc(cxL, cy, rad, 0, 7); g.arc(cxR, cy, rad, 0, 7); g.clip();
-  g.drawImage(img, sx, sy, srcW, srcH, W / 2 - totalW / 2, cy - rad, totalW, 2 * rad);
-  for (const cx of [cxL, cxR]) { const gr = g.createRadialGradient(cx, cy, rad * 0.55, cx, cy, rad); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.7)'); g.fillStyle = gr; g.fillRect(cx - rad, cy - rad, 2 * rad, 2 * rad); }
-  g.restore();
-  g.lineWidth = rad * 0.05; g.strokeStyle = '#1d1712'; g.beginPath(); g.arc(cxL, cy, rad, 0, 7); g.stroke(); g.beginPath(); g.arc(cxR, cy, rad, 0, 7); g.stroke();
-  g.lineWidth = rad * 0.012; g.strokeStyle = 'rgba(210,173,98,0.55)'; g.beginPath(); g.arc(cxL, cy, rad * 1.02, 0, 7); g.stroke(); g.beginPath(); g.arc(cxR, cy, rad * 1.02, 0, 7); g.stroke();
-  // where in the picture you are looking: a thin swing gauge under the eyepieces
-  const gw = totalW * 0.36, gx = W / 2 - gw / 2, gy = cy + rad + 18 * dpr; g.fillStyle = 'rgba(244,237,225,0.18)'; g.fillRect(gx, gy, gw, 2 * dpr); g.fillStyle = '#e9b872'; g.fillRect(gx + gw * (S.binoU - hu), gy - 2 * dpr, gw * 2 * hu, 6 * dpr);
-}
 let toastT = 0; function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 1900); }
 
 /* ================================================================
@@ -1217,8 +1265,10 @@ $('#bFields').addEventListener('click', () => { $('#fields').classList.toggle('h
 $('#bNotes').addEventListener('click', () => { $('#notes').classList.toggle('hidden'); $('#fields').classList.add('hidden'); syncChrome(); });
 $('#bPhone').addEventListener('click', () => { S.phone = !S.phone; layout(); syncChrome(); });
 $('#bErr').addEventListener('click', () => { S.err = !S.err; syncChrome(); toast(S.err ? 'Content shifted 0.8 m and turned 3 degrees' : 'Placement error off'); });
-$('#tnMode').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { S.tnMode = b.dataset.m; syncChrome(); } });
-$('#fadeR').addEventListener('input', e => { S.fade = +e.target.value; });
+$('#tnMode').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { S.tnMode = b.dataset.m; S.intro = null; syncChrome(); } });
+// a touch on the slider ends the intro: from then on the visitor's own value holds
+$('#fadeR').addEventListener('pointerdown', () => { S.intro = null; });
+$('#fadeR').addEventListener('input', e => { S.intro = null; S.fade = +e.target.value; });
 $('#cap').addEventListener('click', () => openDetails(rec()));
 (() => { // swipe knob
   const kn = $('#swipe .kn'); let on = false;
@@ -1264,7 +1314,7 @@ function creatorTool(tool) {
   if (S.ctool === 'view') cs.innerHTML = `<h5>View for this picture</h5><div class="vl">${VIEWS.map(v => `<button data-v="${v}" aria-pressed="${v === S.view}"><b>${VIEW_LABEL[v]}</b><span>${esc(VIEW_LINE[v])}</span></button>`).join('')}</div>`;
   if (S.ctool === 'size') cs.innerHTML = `<h5>Width</h5><div class="rowc"><input type="range" id="csz" min="0.3" max="${S.view === 'cutout' ? 6 : 5}" step="0.05" value="${r.widthM}"><span class="val" id="cszv">${r.widthM.toFixed(2)} m</span></div><p class="note">${usesField(S.view, 'widthM') ? 'Height follows the picture.' : 'This view sizes the picture from the viewpoint lens instead.'}</p>`;
   if (S.ctool === 'turn') cs.innerHTML = `<h5>Turn</h5><div class="rowc"><input type="range" id="ctn" min="0" max="359" step="1" value="${Math.round((r.pose.yawDeg + 360) % 360)}"><span class="val" id="ctnv">${Math.round((r.pose.yawDeg + 360) % 360)}°</span></div><button class="big" id="cface">Face me</button>`;
-  if (S.ctool === 'text') cs.innerHTML = `<h5>Caption</h5><textarea id="ccap" rows="3">${esc(r.caption)}</textarea><label class="f"><span>Credit</span><input id="ccred" value="${esc(r.credit)}"></label><label class="f"><span>Year</span><input id="cyear" inputmode="numeric" value="${esc(r.year ?? '')}"></label>`;
+  if (S.ctool === 'text') cs.innerHTML = `<h5>Caption</h5><textarea id="ccap" rows="3">${esc(r.caption)}</textarea><label class="f"><span>Credit</span><input id="ccred" value="${esc(r.credit)}"></label><label class="f"><span>Year</span><input id="cyear" inputmode="numeric" value="${esc(r.year ?? '')}"></label>${S.view === 'cutout' ? `<label class="tog"><input type="checkbox" id="ctag" ${r.showTag !== false ? 'checked' : ''}> A small tag at its foot (year and title)</label>` : ''}`;
   if (S.ctool === 'viewpoint') cs.innerHTML = `<h5>Viewpoint</h5><p class="note" style="margin-top:0">Stand where the photo was taken and line the ghost up with the scene.</p><div class="rowc"><span style="font-size:12px;color:var(--muted)">Lens</span><input type="range" id="cfov" min="20" max="100" step="1" value="${r.viewpoint.hfovDeg}"><span class="val" id="cfovv">${r.viewpoint.hfovDeg}°</span></div><button class="big" id="cset">Set viewpoint here</button>`;
   bindCSheet(); syncChrome();
 }
@@ -1277,6 +1327,7 @@ function bindCSheet() {
   on('ccap', 'input', e => { r.caption = e.target.value; markDirty(); });
   on('ccred', 'input', e => { r.credit = e.target.value; markDirty(); });
   on('cyear', 'input', e => { const v = e.target.value.trim(); r.year = v === '' ? null : (Number.isFinite(+v) ? Math.round(+v) : r.year); markDirty(); });
+  on('ctag', 'change', e => { r.showTag = e.target.checked; markDirty(); toast(r.showTag ? 'Tag shown at its foot' : 'No tag: the cut-out alone, still tappable'); });
   on('cfov', 'input', e => { r.viewpoint.hfovDeg = +e.target.value; $('#cfovv').textContent = e.target.value + '°'; });
   on('cset', 'click', () => { const f = curFP(); Object.assign(r.viewpoint, { position: [round(f.pos.x, 0.01), round(f.pos.y, 0.01), round(f.pos.z, 0.01)], yawDeg: round(wrapDeg(f.yaw), 0.1), pitchDeg: round(f.pitch, 0.1) }); markDirty(); toast(`Viewpoint saved, facing ${Math.round((f.yaw + 360) % 360)}°`); S.ctool = null; $('#csheet').classList.add('hidden'); syncChrome(); });
 }
@@ -1319,9 +1370,10 @@ function renderInspector() {
   el.innerHTML = `<div class="hd"><b>Picture block</b><small>${r.id}</small></div>
   ${sec('View', null, `<div class="vgrid">${VIEWS.map(x => `<button data-view="${x}" aria-pressed="${x === v}" title="${esc(VIEW_LINE[x])}"><svg viewBox="0 0 30 22">${VIEW_GLYPH[x]}</svg>${VIEW_LABEL[x].replace(' & ', '&')}</button>`).join('')}</div>`)}
   ${sec('Image', 'image', `<div class="imgrow"><canvas id="eImg" width="192" height="128"></canvas><div class="mt"><b>${r.image.src.split('/').pop()}</b><br>${r.image.width} x ${r.image.height} px<br>${kb}, ${r.image.alpha ? 'with alpha' : 'no alpha'}</div></div>`)}
-  ${sec('Caption', 'caption', `<textarea data-k="caption" rows="3">${esc(r.caption)}</textarea><div class="cnt"><span id="eCnt">${r.caption.length}</span> characters, 3 lines show in the world</div>`)}
+  ${sec('Caption', 'caption', `<textarea data-k="caption" rows="5">${esc(r.caption)}</textarea><div class="cnt"><span id="eCnt">${r.caption.length}</span> characters, 3 lines show in the world, all of it in the sheet</div>`)}
   ${sec('Credit', 'credit', `<input data-k="credit" value="${esc(r.credit)}">`)}
   ${sec('Year', 'year', `<input data-k="year" inputmode="numeric" value="${esc(r.year ?? '')}" placeholder="optional">`)}
+  ${sec('Tag', 'showTag', `<label class="tog"><input type="checkbox" data-k="showTag" ${r.showTag !== false ? 'checked' : ''}> A small tag at its foot (year and title)</label>`)}
   ${sec('Width', 'widthM', `<div class="rng"><input type="range" data-k="widthM" min="0.3" max="6" step="0.05" value="${r.widthM}">${num('widthM', r.widthM)}</div>`)}
   ${sec('Pose', 'pose', `<label class="f"><span>x y z</span><span class="g3">${num('px', r.pose.position[0])}${num('py', r.pose.position[1])}${num('pz', r.pose.position[2])}</span></label><label class="f"><span>Turn</span><div class="rng"><input type="range" data-k="yaw" min="0" max="359" step="1" value="${(r.pose.yawDeg + 360) % 360}">${num('yaw', (r.pose.yawDeg + 360) % 360, 1)}</div></label><label class="f"><span>Tilt</span><div class="rng"><input type="range" data-k="pitch" min="-30" max="30" step="1" value="${r.pose.pitchDeg}">${num('pitch', r.pose.pitchDeg, 1)}</div></label>`)}
   ${sec('Viewpoint', 'viewpoint', vp ? `<label class="f"><span>x y z</span><span class="g3">${num('vx', vp.position[0])}${num('vy', vp.position[1])}${num('vz', vp.position[2])}</span></label><label class="f"><span>Facing</span><div class="rng"><input type="range" data-k="vyaw" min="-180" max="180" step="1" value="${vp.yawDeg}">${num('vyaw', vp.yawDeg, 1)}</div></label><label class="f"><span>Pitch</span><div class="rng"><input type="range" data-k="vpitch" min="-30" max="30" step="0.5" value="${vp.pitchDeg}">${num('vpitch', vp.pitchDeg, 0.5)}</div></label><label class="f"><span>Lens</span><div class="rng"><input type="range" data-k="vfov" min="20" max="110" step="1" value="${vp.hfovDeg}">${num('vfov', vp.hfovDeg, 1)}</div></label><div class="btns"><button class="btn blue" id="ePov">${S.pov ? 'Back to overview' : 'Look from the viewpoint'}</button><button class="btn" id="eVpReset">Reset</button></div>` : `<p style="color:var(--muted);margin:0">No viewpoint on this record.</p>`)}
@@ -1335,7 +1387,8 @@ function renderInspector() {
 function onInspector(inp) {
   const r = rec(), k = inp.dataset.k, raw = inp.value, n = parseFloat(raw), ok = Number.isFinite(n);
   switch (k) {
-    case 'caption': r.caption = raw.slice(0, 400); $('#eCnt').textContent = r.caption.length; break;
+    case 'caption': r.caption = raw.slice(0, 1200); $('#eCnt').textContent = r.caption.length; break;
+    case 'showTag': r.showTag = !!inp.checked; break;
     case 'credit': r.credit = raw.slice(0, 160); break;
     case 'year': r.year = raw.trim() === '' ? null : (ok ? Math.round(n) : r.year); break;
     case 'widthM': if (ok) r.widthM = clamp(n, 0.3, 8); break;
@@ -1373,7 +1426,7 @@ function setMode(m, o = {}) {
 }
 function setView(v) {
   if (!VIEW_CLASS[v]) throw new Error('unknown view ' + v);
-  S.view = v; if (v !== 'cutout') hall.view = v; closeOverlays();
+  S.view = v; if (v !== 'cutout') hall.view = v; closeOverlays(); S.intro = null;
   if (S.mode === 'creator' && S.ctool !== 'viewpoint') aimCreator();
   if (S.mode === 'editor') { S.pov = false; frameEditor(); }
   rebuildView(); syncChrome();
@@ -1436,7 +1489,7 @@ canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointerca
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => { if (S.mode !== 'editor' || S.pov) return; e.preventDefault(); orb.r = clamp(orb.r * Math.exp(e.deltaY * 0.0012), 4, 140); }, { passive: false });
 function tapAt(e) { if (!view || !view.pick.length) return; const hit = rayFromEvent(e).intersectObjects(view.pick, false)[0]; if (hit) view.onTap(hit); }
-(() => { const b = $('#bino'); let down = null, moved = 0; b.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; moved = 0; b.setPointerCapture(e.pointerId); }); b.addEventListener('pointermove', e => { if (!down) return; const dx = e.clientX - down.x, dy = e.clientY - down.y; down = { x: e.clientX, y: e.clientY }; moved += Math.abs(dx) + Math.abs(dy); lookDrag(dx * 0.5, dy * 0.5); }); b.addEventListener('pointerup', () => { if (moved < 7) closeOverlays(); down = null; }); })();
+
 
 /* ================================================================
    Frame loop
@@ -1489,7 +1542,6 @@ function update(dt, t) {
   } else if (S.mode === 'creator' && !S.ctool) h = { hint: { text: usesField(S.view, 'pose') ? 'Aim where it goes, then tap Place' : 'Stand on the spot, then set the viewpoint' } };
   else if (S.mode === 'creator' && S.ctool === 'viewpoint') h = { hint: { text: 'Line the ghost up with the scene' } };
   setHud(h);
-  if (S.overlay === 'bino') drawBino(t);
   $('#swipe .ln').style.left = (S.split * 100) + '%'; $('#swipe .kn').style.left = (S.split * 100) + '%';
 }
 function frame(now) {
@@ -1512,13 +1564,21 @@ window.__stationBlock = {
   async setMode(name) { await ready; S.autowalk = null; setMode(name); if (name === 'visitor') S.appear = Math.hypot(fp.visitor.pos.x, fp.visitor.pos.z) < 25 ? 1 : 0; await drawn(); },
   async setView(name) { await ready; setView(name); if (S.mode === 'visitor') S.appear = Math.hypot(fp.visitor.pos.x, fp.visitor.pos.z) < 25 ? 1 : 0; await drawn(); },
   async walkTo(x, z) { await ready; if (!Number.isFinite(x) || !Number.isFinite(z)) throw new Error('walkTo needs two numbers'); S.autowalk = null; const f = curFP(); f.pos.set(x, 1.6, z); if (S.mode === 'visitor') S.appear = Math.hypot(x, z) < 25 ? 1 : 0; await drawn(); },
-  async lookAt(x, y, z) { await ready; if (![x, y, z].every(Number.isFinite)) throw new Error('lookAt needs three numbers'); S.autowalk = null; lookAtFP(curFP(), x, y, z); S.binoU = 0.5; await drawn(); },
+  async lookAt(x, y, z) { await ready; if (![x, y, z].every(Number.isFinite)) throw new Error('lookAt needs three numbers'); S.autowalk = null; lookAtFP(curFP(), x, y, z); await drawn(); },
   async describe() { await ready; return { family: this.family, fields: FIELDS.slice(), records: [hall.id, stall.id], views: VIEWS.map(v => ({ name: v, required: REQUIRED.has(v), record: v === 'cutout' ? stall.id : hall.id, usesFields: FIELDS.filter(f => usesField(v, f)) })) }; },
   async exportModel() { await ready; await bytesReady; return exportRec(hall); },
   extras: {
     async exportAllRecords() { await ready; await bytesReady; return [exportRec(hall), exportRec(stall)]; },
     async openDetails() { await ready; openDetails(rec()); await drawn(); },
-    async openViewer() { await ready; openBino(); await drawn(); await drawn(); },
+    /* Round-2 hooks: tap the block as a visitor would; the then-and-now intro state; the sharpen sweep and its
+       parameters; the cut-out's optional tag; where the picture's centre is (to look at it). */
+    async tapBlock() { await ready; view.onTap(); await drawn(); },
+    thenNowState() { return { aligned: !!(view && view.aligned), fade: +S.fade.toFixed(3), intro: !!S.intro, mode: S.tnMode, lostFor: view && Number.isFinite(view.lostFor) ? +view.lostFor.toFixed(2) : null }; },
+    pictureState() { return { view: S.view, alpha: view && view.pic ? +view.pic.mat.uniforms.uAlpha.value.toFixed(3) : null, viewerOpacity: view && view.mats ? +view.mats[0].opacity.toFixed(3) : null, sharpen: sharpenParams() }; },
+    sharpenSweep() { return sharpenSweep(); },
+    async setSharpen(ri, gi) { if (!SHARPEN.ramps[ri] || !SHARPEN.gates[gi]) throw new Error('no such ramp or gate'); SHARPEN.pick = [ri, gi]; await drawn(); },
+    async setTag(on) { stall.showTag = !!on; markDirty(); await drawn(); },
+    pictureCentre() { const vp = hall.viewpoint, P = new V3(...vp.position); const C = P.clone().addScaledVector(new V3(0, 0, -1).applyEuler(new THREE.Euler(vp.pitchDeg * DEG, -vp.yawDeg * DEG, 0, 'YXZ')), poseDepth(hall)); return [C.x, C.y, C.z]; },
     async closeOverlays() { closeOverlays(); await drawn(); },
     async creatorTool(name) { await ready; creatorTool(name); await drawn(); },
     async setSwipe(mode, split) { S.tnMode = mode; if (Number.isFinite(split)) S.split = split; syncChrome(); await drawn(); },
@@ -1535,7 +1595,8 @@ function boot() {
   photoTex = texFrom(photoCanvas, false); photoTex.generateMipmaps = true; stallTex = texFrom(stallCanvas, false);
   const size = (cv, r, type) => new Promise(res => cv.toBlob(b => { if (b) { r.image.bytes = b.size; if (S.mode === 'editor') renderInspector(); } res(); }, type, 0.85));
   bytesReady = Promise.all([size(photoCanvas, hall, 'image/jpeg'), size(stallCanvas, stall, 'image/webp')]);
-  $('#notes').innerHTML = NOTES_HTML;
+  $('#notes').innerHTML = NOTES_HTML.replace('<!--SWEEP-->', sweepTableHTML());
+  $('#notes').addEventListener('click', e => { const b = e.target.closest('button[data-sw]'); if (!b) return; SHARPEN.pick = b.dataset.sw.split(',').map(Number); $('#notes').classList.add('hidden'); setView('viewpoint-sharpen'); toast(`Sharpen: ramp ${sharpenParams().ramp.join(' to ')} m, gate ${sharpenParams().gate.join(' to ')} deg`); });
   const p = new URLSearchParams(location.hash.slice(1)); const m = p.get('mode'), v = p.get('view');
   if (v && VIEW_CLASS[v]) S.view = v; if (m && ['visitor', 'creator', 'editor'].includes(m)) S.mode = m;
   if (S.mode === 'visitor') startAutoWalk(); if (S.mode === 'creator') aimCreator(); if (S.mode === 'editor') frameEditor();
@@ -1544,7 +1605,7 @@ function boot() {
   readyResolve();
 }
 
-const NOTES_HTML = `<h3>Designer notes - pictures</h3><div class="sub">The same text is in notes.md next to this page.</div><!--NOTES--><p>Eight views of one picture model: framed, cutout, then-now, mosaic (the four required), three viewpoint variants without tiles (viewpoint-finder, viewpoint-sharpen, viewpoint-window) and one unlisted view of my own (viewer).</p><details open><summary>1. The model as built, and what I would change</summary><ul><li><b>Fields, exactly as given:</b> image (an asset reference with width, height, alpha and bytes), caption, credit, year (optional), widthM, pose (position, yawDeg, pitchDeg) and viewpoint (optional: position, yawDeg, pitchDeg, hfovDeg). The block also stores its chosen view.</li><li><b>One record for every view</b> (market-hall-1885). The cutout view shows the second record the brief allows, a cut-out with alpha (fish-stall-1886-cutout), because a full old photo has no alpha to cut along.</li><li><b>The image is generated in the page.</b> I modelled the 1885 square (the timber hall, stalls, figures, a cart, the guild house) and rendered it once from the viewpoint. Then I toned the render as an orthochromatic sepia print, with grain, blotches, vignette, dust and hairline scratches. So it lines up with the stand-in square as a real photo taken from that spot would.</li><li><b>Add viewpoint.distanceM, the distance to the photographed subject.</b> Then-now, mosaic, finder and sharpen all need a depth at which the picture hangs. Today they borrow it from the pose's distance along the viewpoint axis. That couples two unrelated things: where a framed print stands, and how far away the hall was. A creator who moves the print silently moves the overlay.</li><li><b>Add a short title (about 40 characters).</b> Every view needs a one-line label: the foot tag, the marker card, the window label, the editor list. Deriving it from the caption gives "The timber market hall on a market...", which reads as cut off.</li><li><b>Make year a short text, not a number.</b> Archive pictures are often dated "about 1880" or "1880s". A number forces false precision.</li><li><b>Add alt, a plain description.</b> The caption is a story. A visitor with sound off and poor sight needs "a two-storey timber hall on posts, stalls underneath, a cart in front".</li><li><b>Keep widthM.</b> It is meaningless for the five viewpoint views, where the lens angle and the depth set the size. The editor marks it "not used" per view, which is enough.</li><li><b>Drop nothing else.</b></li></ul></details><details><summary>2. Per view: what it is, fields, why a visitor likes it, where it is weakest</summary><p>Common to all views: tapping the block (or its card) opens a details sheet in a screen overlay with the full picture, year, caption and credit. Long text never sits in the world.</p><ul><li><b>framed</b> - a dark beveled frame with a cream mat and the print, a caption plate below (the year large, the caption in three lines, the credit small), and a soft shadow on the ground. On arrival it rises 12 cm and the print "develops": the darks come first.<ul><li>Fields: image, caption, credit, year, widthM, pose.</li><li>Why: instantly understood; it reads as a museum label in the street.</li><li>Weakest: the plate text (about 0.056 m capitals) is body size only within about 2 m. From 4 m it is a label, and reading happens in the sheet. Seen from a steep side angle, the plate is unreadable.</li><li>Placement error: very forgiving. It hangs in the air, so 1 m or 3 degrees off looks the same.</li><li>Sunlight: the dark frame and plate hold up. Sound off: no sound used.</li></ul></li><li><b>cutout</b> - the stall cut-out standing on the ground with a contact shadow. A small year tag on a stake sits in front. Seen edge-on it fades out, and from behind it shows a dark silhouette, so it never turns into a sliver.<ul><li>Fields: image (alpha), caption, credit, year, widthM, pose (tilt ignored).</li><li>Why: the past is standing in the square at life size.</li><li>Weakest: it stands on the ground, so 0.5 to 1 m of placement error makes it float or sink against real kerbs and steps. In a crowd, people walk "through" it. It needs a good cut-out, which creators do not have.</li></ul></li><li><b>then-now</b> - at the marker, the old photo hangs at the subject's depth, sized from the lens angle. A swipe line (or a fade slider) compares it with the live view.<ul><li>Approach: on the way, a ground marker with footprints and an arrow, a light column, a card with a thumbnail that turns to face you, and a top hint ("Walk to the marker 8.9 m" with an arrow, then "Turn this way"). The photo fades in from 2.6 m to 0.9 m.</li><li>Fields: image, caption, credit, year, pose (depth only), viewpoint.</li><li>Why: the strongest "this is the same place" moment.</li><li>Weakest: placement error. The marker and the photo move together, so the visitor still stands at the content's spot, but the photo no longer matches the real scene. The sweep is in section 3. The +-1m toggle shows it: content shifted 0.8 m and turned 3 degrees.</li></ul></li><li><b>mosaic</b> - 14 x 9 tiles hung at depths from 0.62 to 1.42 times the subject depth, each sized so that it covers its patch of the picture from the viewpoint only. From elsewhere it is a cloud of drifting plates whose backs have an amber rim. Near the spot they settle, and on it the seams close.<ul><li>Fields: image, caption, credit, year, pose (depth), viewpoint.</li><li>Why: walking until it snaps together is a game without rules.</li><li>Weakest: the tiles assemble only within about 0.2 m of the spot. The visitor's own tracking drift of 0.2 to 0.3 m shows seams.</li><li>Generic, and not generic: "content that looks right from only one point" is ordinary perspective, as in every then-and-now overlay. Cutting one image into pieces at different depths that reassemble from one point is the specific mechanism. I avoided that mechanism in the three variants below.</li></ul></li><li><b>viewpoint-finder</b> - four corner brackets in the air, each on its own lens ray at a different depth (4.5 m, 6.5 m, 10.6 m and 17 m). From the spot they form one clean frame and turn amber, and the picture fills it: a 36-degree centre crop, so it fits a portrait screen.<ul><li>Fields: image, caption, credit, year, pose (depth), viewpoint.</li><li>How it differs from the mosaic: the picture is never split, distorted or spread in depth. Only an empty outline is. The picture appears whole, on one plane, once you stand there. The outline is still an arrangement that only lines up from one point, though, so it is not free of the idea. A weaker but cleaner version puts all four corners at one depth: they then form a frame from anywhere, and only look square from the spot.</li><li>Placement error: the self-alignment is immune, because corners and spot move together. The picture-to-scene match suffers exactly as in then-now. The visitor's own offset is the cue: 0.3 m sideways moves the near corners about 3.8 degrees against the far ones, which is visible. It is forgiving for "you are roughly here" within about 0.2 to 0.3 m.</li></ul></li><li><b>viewpoint-sharpen</b> - one whole picture hangs at the subject depth and can be seen from anywhere in the circle. It is blurred (mipmap bias), washed out and at 72 % opacity. It sharpens as the visitor nears the spot and faces the original direction (fully clear within 0.3 m), with the marker and hints as above.<ul><li>Fields: image, caption, credit, year, pose (depth), viewpoint.</li><li>How it differs from the mosaic: no tiles, no distortion and no anamorphosis. It is a reward gradient on one ordinary plane.</li><li>Placement error: the most forgiving of the viewpoint views. The blur hides the mismatch until you are close, the ramp spans 7 m, and 1 m of error changes nothing about the guidance.</li><li>Weakest: a 15 x 10 m pale smear over the square from everywhere. In a crowded or busy square it is visual noise, and against a bright sky it is nearly invisible.</li></ul></li><li><b>viewpoint-window</b> - a small framed window (a 30-degree centre crop, about 0.38 m wide) hung 0.7 m in front of the spot at eye height, with a tiny year label. It exists only within about 1 m of the spot (it fades in from 1.25 m to 0.65 m). From further away there is only the marker.<ul><li>Fields: image, caption, credit, year, viewpoint (pose not used).</li><li>How it differs from the mosaic: one undistorted picture, gated by distance. No piece of it depends on the visitor's exact position to look right.</li><li>Placement error: the frame makes any misfit read as "a print held up to the view", so 1 m and 3 degrees look acceptable.</li><li>Weakest: parallax. At 0.7 m, moving the phone 10 cm moves the window about 8 degrees against the distant scene. It can never truly line up with the scene, and should not pretend to. It also sits inside the near-clipping comfort zone of some phones (unverified).</li></ul></li><li><b>viewer</b> (my own) - a painted sightseeing viewer on a post, standing at the viewpoint and pointing the original way. A plate on the post reads "1885 - Look through". Walk up and tap (within 4.5 m). The screen turns into a binocular view of the picture at 1.7x. Turning the phone swings the view across the picture (a gauge shows where), and the caption and credit sit below.<ul><li>Fields: image, caption, credit, year, viewpoint (position, facing, pitch, and the lens angle sets the swing range). Pose and widthM are not used.</li><li>Why: everyone knows what to do with it, and it brings the visitor to the exact spot without any alignment at all.</li><li>Placement error: fully forgiving. The view is a screen overlay, and the world part is an object, not an overlay.</li><li>Weakest: it is a 3D model coded once in the app, and it is a little whimsical for a sober memorial site. Inside the binoculars you no longer see the real square.</li></ul></li></ul></details><details><summary>3. Costs</summary><ul><li><b>Frame time</b> from the readout (mean and maximum over 2 s), measured headless on this machine with SwiftShader, which is software rendering. These numbers say nothing about a phone GPU; only their order is meaningful. Each value is mean / max in milliseconds at 1440 x 900, device pixel ratio 1, standing at the view's best spot:<ul><li>framed: 94 / 300</li><li>cutout: 174 / 483</li><li>then-now: 217 / 433</li><li>mosaic: 208 / 483</li><li>viewpoint-finder: 191 / 367</li><li>viewpoint-sharpen: 169 / 350</li><li>viewpoint-window: 194 / 333</li><li>viewer: 156 / 300</li><li>editor: 203 / 633</li><li>The script work per frame is 0.5 to 5 ms in the visitor views. In the editor it is about 58 ms, which I did not explain (probably blocking software GL in the overview).</li></ul></li><li><b>Draw calls per view:</b> about 6 (framed), 4 (cutout), 5 (then-now: one plane plus the marker), 5 (mosaic: all 126 tiles in one geometry, animated in the vertex shader), 7 (finder), 5 (sharpen), 8 (window) and about 30 (viewer). None needs a per-block shader. The sharpen blur is a mipmap bias, so it needs mipmaps on the texture.</li><li><b>Overdraw:</b> the then-now, sharpen and finder pictures are large transparent planes covering much of the screen. On a phone that is the real cost.</li><li><b>Media:</b> the hall picture is 1500 x 1000 px, 309 KB as JPEG at quality 0.85 (measured in the page; WebP would be smaller). The stall cut-out is 936 x 592 px with alpha, 55 KB as WebP. Every view uses the same file, so no view adds megabytes.</li><li><b>Creator minutes:</b><ul><li>framed: 1 to 2 minutes (place, size, type the caption);</li><li>cutout: the same in the app, plus 10 to 30 minutes in an image editor to cut the subject out, which is the real cost;</li><li>then-now, mosaic, finder, sharpen, window and viewer: 3 to 5 minutes on site to find the photographer's spot and match the ghost with the lens slider. Finding the spot is the hard part and can take far longer for a picture with few straight edges. Once the viewpoint is set, switching between these six views costs nothing.</li></ul></li></ul><p><b>The parameter sweep behind "placement error breaks the overlay":</b> the angle between the old picture and the real scene is about atan(lateral error / subject distance), plus any heading error.</p><ul><li>Lateral error 0.5 m: 5.7 degrees at a 5 m subject, 2.0 at 14 m, 0.95 at 30 m.</li><li>Lateral error 1 m: 11.3, 4.1 and 1.9 degrees.</li><li>Lateral error 2 m: 21.8, 8.1 and 3.8 degrees.</li><li>3 degrees of heading error adds about 3 degrees at any distance.</li><li>Verdict across the range: the overlay views convince only for subjects about 15 m or more away and with good heading. A near subject (a doorway 5 m away) reverses it for any error over about 0.3 m. The view thresholds are listed in section 5, and I did not sweep them: they are taste values.</li></ul></details><details><summary>4. The creator's controls</summary><ul><li><b>Phone (creator mode):</b> six large buttons along the bottom.<ul><li>View: a list with one-line descriptions.</li><li>Place: framed and cutout go 3 m ahead, facing you. Viewer and window go where you stand.</li><li>Size: a width slider.</li><li>Turn: a slider plus "Face me".</li><li>Text: caption, credit and year.</li><li>Viewpoint: only for the viewpoint views. It shows the photo as a 50 % ghost glued to the phone, with a lens slider. Line it up with the scene and tap "Set viewpoint here", which stores the phone's position, facing and pitch. A toast confirms what was saved.</li></ul></li><li><b>Desktop editor:</b> the block list on the left, and on the right an inspector with:<ul><li>the view grid (eight glyphs) and the image (thumbnail, file, size, alpha);</li><li>caption (with a count), credit and year;</li><li>width;</li><li>pose (x, y, z, turn, tilt);</li><li>viewpoint (x, y, z, facing, pitch, lens), "Look from the viewpoint" (the camera jumps to it and shows exactly what the visitor will see) and Reset.</li><li>Every section says whether the current view uses it, and dims it if not.</li></ul></li><li><b>Handles in the 3D view:</b> an amber disc (drag to move), an amber knob (drag to turn) and a white cube (drag for width) for the pose. For the viewpoint, a blue disc moves it, a blue knob turns it and a blue diamond on the lens wedge sets the lens angle. The frustum lines out to the picture's depth show where it will hang.</li></ul></details><details><summary>5. Blunt self-check</summary><ul><li><b>The demo flatters the viewpoint views.</b> The 1885 photo is a render of my own stand-in model from the exact viewpoint, so it matches the stand-in square perfectly. A real archive photo has lens distortion, a changed ground level and moved buildings, and will never fit this well. Then-now in particular will look worse on site than here.</li><li><b>Text in the world breaks the reading-distance rule</b> wherever the visitor stands further than about 2 m from the plate. I accept that because the world text is a label and the sheet carries the reading.</li><li><b>The mosaic</b> is built as asked, but I would not ship it: the finder and sharpen variants do the same job.</li><li><b>Arbitrary constants in code, not data:</b><ul><li>the crops (36 degrees finder, 30 degrees window), the window distance (0.7 m) and the viewer magnification (1.7x);</li><li>the thresholds: spot hints within 1.0 m; then-now 2.6 to 0.9 m; mosaic 0.75 to 0.2 m; finder 0.6 to 0.2 m; sharpen 7 to 0.3 m; window 1.25 to 0.65 m; viewer tap 4.5 m.</li><li>They are taste values, not swept. A tighter mosaic or finder threshold would make the "line up" moment unreachable with phone tracking drift.</li></ul></li><li><b>Sharpen</b> relies on mipmap-bias blur, which looks blocky on some GPUs (not verified on a device), and it puts a large pale plane over the whole square.</li><li><b>Window</b> cannot truly line up with the scene (the parallax at 0.7 m). It is honest only as a held-up print.</li><li><b>No phone measurements:</b> everything was checked in headless software rendering only.</li><li><b>Drop first:</b> the mosaic (the finder covers it). After that, sharpen (noise for everyone not walking to the spot).</li><li><b>Proudest:</b> the viewer. It brings the visitor to the photographer's exact spot with an object everybody understands, works with sound off, in sunlight (a dark screen overlay) and with any placement error, and costs the creator nothing beyond the viewpoint. Then-now with the swipe is the most beautiful; the viewer is the one I would trust on a real square.</li><li><b>Inspiration, named:</b> then-and-now photo overlays (a common practice in local history projects), coin-operated sightseeing viewers, the camera viewfinder's corner marks, and perspective anamorphosis as a general idea. All code is my own.</li></ul></details><!--/NOTES-->`;
+const NOTES_HTML = `<h3>Designer notes - pictures</h3><div class="sub">Section 0 is the second round. Sections 1-5 are the first round's notes, kept as written; where they disagree with section 0, section 0 holds.</div><details open><summary>0. Second round (2026-10-25): what changed and why</summary><ul><li><b>Framed: a long caption</b> (about 700 characters), to see the real three-line cut on the plate and the full text in the sheet. The editor now takes up to 1 200 characters.</li><li><b>Cut-out: the tag is optional</b>, a creator toggle (Text in creator mode, "Tag" in the editor; the model field <code>showTag</code>). A tap on the cut-out, with or without the tag, opens the text only: the picture is already standing in front of the visitor, so the sheet no longer shows it again.</li><li><b>Then-and-now: fade is the default, with an intro.</b> Once the visitor stands on the marker and faces the viewpoint, the old picture fades from nothing to 55 % over 5 s, then the slider holds that value. Touching the slider ends the intro at once. The intro replays only on a fresh alignment: "aligned" starts under 32 degrees and ends only past 44 degrees (or on leaving the spot), and it must have ended for at least 1.5 s. A wobble across the gate does nothing. Swipe is one tap away, as before.</li><li><b>One mechanism for three views.</b> Then-and-now, Sharpen and Viewer now share one picture plane at the subject's depth whose opacity is proximity x facing (a distance ramp times a facing gate); only the numbers differ: then-and-now 2.6 to 0.9 m and 50 to 30 degrees, viewer 3.0 to 0.8 m and 50 to 25 degrees, sharpen from the sweep below.</li><li><b>Sharpen is now a proximity fade-in, with no blur:</b> fully transparent far away, opaque at the spot. The mipmap-bias blur and the wash are gone, and so is the pale picture over the whole square.</li><li><b>Viewer: no screen overlay any more.</b> As the visitor steps up, the viewer fades out and the picture fades in, in the world, on the same plane as then-and-now. The binocular overlay and its 1.7x magnification are removed. A tap on the viewer or the picture opens the details sheet.</li><li><b>Mosaic</b> stays in the picker as "Mosaic (dropped)", so the gallery keeps every variant. It is not to be built.</li></ul><h4>The sharpen sweep</h4><p>Three distance ramps (far to near, metres from the spot) times three facing gates (out to in, degrees from the viewpoint's facing), computed in this page by the same function the view uses, on this record's viewpoint. Footprint: the share of the station circle (1 m grid) where the picture shows at 10 % or more while you look at it. Shows from / half from: on the walk in from the circle's south edge, the distance to the spot where it first reaches 10 % / 50 %. Turn at 80 %: how far you may turn at the spot and still see it at 80 % or more. 1 m aside: its opacity one step to the side of the spot. "try" switches the view to that pair.</p><!--SWEEP--><p>Parameters this rests on: the inner ends (0.5 m and 15 degrees) are fixed, not swept; the 10 %, 50 % and 80 % thresholds are mine; the walk-in path is one path (from the south edge, as the station is entered). The default row is marked.</p><p><b>Chosen: 7 to 0.5 m and 70 to 15 degrees.</b> The 12 m ramp shows the picture over 12-15 % of the square, the first round's weakness. The 4 m ramp shows it only in the last 3.3 m of the walk, too late to draw a visitor in. The 40-degree gate leaves only 22 degrees of turn at the spot, tight for a phone held loosely. The gate hardly changes the footprint, because a visitor walking in looks roughly along the axis anyway. What would reverse it: a crowded square where any picture is noise favours the 4 m ramp; wanting it as a teaser from far away favours 12 m; noisier phone headings favour the 100-degree gate.</p></details><!--NOTES--><p>Eight views of one picture model: framed, cutout, then-now, mosaic (the four required), three viewpoint variants without tiles (viewpoint-finder, viewpoint-sharpen, viewpoint-window) and one unlisted view of my own (viewer).</p><details open><summary>1. The model as built, and what I would change</summary><ul><li><b>Fields, exactly as given:</b> image (an asset reference with width, height, alpha and bytes), caption, credit, year (optional), widthM, pose (position, yawDeg, pitchDeg) and viewpoint (optional: position, yawDeg, pitchDeg, hfovDeg). The block also stores its chosen view.</li><li><b>One record for every view</b> (market-hall-1885). The cutout view shows the second record the brief allows, a cut-out with alpha (fish-stall-1886-cutout), because a full old photo has no alpha to cut along.</li><li><b>The image is generated in the page.</b> I modelled the 1885 square (the timber hall, stalls, figures, a cart, the guild house) and rendered it once from the viewpoint. Then I toned the render as an orthochromatic sepia print, with grain, blotches, vignette, dust and hairline scratches. So it lines up with the stand-in square as a real photo taken from that spot would.</li><li><b>Add viewpoint.distanceM, the distance to the photographed subject.</b> Then-now, mosaic, finder and sharpen all need a depth at which the picture hangs. Today they borrow it from the pose's distance along the viewpoint axis. That couples two unrelated things: where a framed print stands, and how far away the hall was. A creator who moves the print silently moves the overlay.</li><li><b>Add a short title (about 40 characters).</b> Every view needs a one-line label: the foot tag, the marker card, the window label, the editor list. Deriving it from the caption gives "The timber market hall on a market...", which reads as cut off.</li><li><b>Make year a short text, not a number.</b> Archive pictures are often dated "about 1880" or "1880s". A number forces false precision.</li><li><b>Add alt, a plain description.</b> The caption is a story. A visitor with sound off and poor sight needs "a two-storey timber hall on posts, stalls underneath, a cart in front".</li><li><b>Keep widthM.</b> It is meaningless for the five viewpoint views, where the lens angle and the depth set the size. The editor marks it "not used" per view, which is enough.</li><li><b>Drop nothing else.</b></li></ul></details><details><summary>2. Per view: what it is, fields, why a visitor likes it, where it is weakest</summary><p>Common to all views: tapping the block (or its card) opens a details sheet in a screen overlay with the full picture, year, caption and credit. Long text never sits in the world.</p><ul><li><b>framed</b> - a dark beveled frame with a cream mat and the print, a caption plate below (the year large, the caption in three lines, the credit small), and a soft shadow on the ground. On arrival it rises 12 cm and the print "develops": the darks come first.<ul><li>Fields: image, caption, credit, year, widthM, pose.</li><li>Why: instantly understood; it reads as a museum label in the street.</li><li>Weakest: the plate text (about 0.056 m capitals) is body size only within about 2 m. From 4 m it is a label, and reading happens in the sheet. Seen from a steep side angle, the plate is unreadable.</li><li>Placement error: very forgiving. It hangs in the air, so 1 m or 3 degrees off looks the same.</li><li>Sunlight: the dark frame and plate hold up. Sound off: no sound used.</li></ul></li><li><b>cutout</b> - the stall cut-out standing on the ground with a contact shadow. A small year tag on a stake sits in front. Seen edge-on it fades out, and from behind it shows a dark silhouette, so it never turns into a sliver.<ul><li>Fields: image (alpha), caption, credit, year, widthM, pose (tilt ignored).</li><li>Why: the past is standing in the square at life size.</li><li>Weakest: it stands on the ground, so 0.5 to 1 m of placement error makes it float or sink against real kerbs and steps. In a crowd, people walk "through" it. It needs a good cut-out, which creators do not have.</li></ul></li><li><b>then-now</b> - at the marker, the old photo hangs at the subject's depth, sized from the lens angle. A swipe line (or a fade slider) compares it with the live view.<ul><li>Approach: on the way, a ground marker with footprints and an arrow, a light column, a card with a thumbnail that turns to face you, and a top hint ("Walk to the marker 8.9 m" with an arrow, then "Turn this way"). The photo fades in from 2.6 m to 0.9 m.</li><li>Fields: image, caption, credit, year, pose (depth only), viewpoint.</li><li>Why: the strongest "this is the same place" moment.</li><li>Weakest: placement error. The marker and the photo move together, so the visitor still stands at the content's spot, but the photo no longer matches the real scene. The sweep is in section 3. The +-1m toggle shows it: content shifted 0.8 m and turned 3 degrees.</li></ul></li><li><b>mosaic</b> - 14 x 9 tiles hung at depths from 0.62 to 1.42 times the subject depth, each sized so that it covers its patch of the picture from the viewpoint only. From elsewhere it is a cloud of drifting plates whose backs have an amber rim. Near the spot they settle, and on it the seams close.<ul><li>Fields: image, caption, credit, year, pose (depth), viewpoint.</li><li>Why: walking until it snaps together is a game without rules.</li><li>Weakest: the tiles assemble only within about 0.2 m of the spot. The visitor's own tracking drift of 0.2 to 0.3 m shows seams.</li><li>Generic, and not generic: "content that looks right from only one point" is ordinary perspective, as in every then-and-now overlay. Cutting one image into pieces at different depths that reassemble from one point is the specific mechanism. I avoided that mechanism in the three variants below.</li></ul></li><li><b>viewpoint-finder</b> - four corner brackets in the air, each on its own lens ray at a different depth (4.5 m, 6.5 m, 10.6 m and 17 m). From the spot they form one clean frame and turn amber, and the picture fills it: a 36-degree centre crop, so it fits a portrait screen.<ul><li>Fields: image, caption, credit, year, pose (depth), viewpoint.</li><li>How it differs from the mosaic: the picture is never split, distorted or spread in depth. Only an empty outline is. The picture appears whole, on one plane, once you stand there. The outline is still an arrangement that only lines up from one point, though, so it is not free of the idea. A weaker but cleaner version puts all four corners at one depth: they then form a frame from anywhere, and only look square from the spot.</li><li>Placement error: the self-alignment is immune, because corners and spot move together. The picture-to-scene match suffers exactly as in then-now. The visitor's own offset is the cue: 0.3 m sideways moves the near corners about 3.8 degrees against the far ones, which is visible. It is forgiving for "you are roughly here" within about 0.2 to 0.3 m.</li></ul></li><li><b>viewpoint-sharpen</b> - one whole picture hangs at the subject depth and can be seen from anywhere in the circle. It is blurred (mipmap bias), washed out and at 72 % opacity. It sharpens as the visitor nears the spot and faces the original direction (fully clear within 0.3 m), with the marker and hints as above.<ul><li>Fields: image, caption, credit, year, pose (depth), viewpoint.</li><li>How it differs from the mosaic: no tiles, no distortion and no anamorphosis. It is a reward gradient on one ordinary plane.</li><li>Placement error: the most forgiving of the viewpoint views. The blur hides the mismatch until you are close, the ramp spans 7 m, and 1 m of error changes nothing about the guidance.</li><li>Weakest: a 15 x 10 m pale smear over the square from everywhere. In a crowded or busy square it is visual noise, and against a bright sky it is nearly invisible.</li></ul></li><li><b>viewpoint-window</b> - a small framed window (a 30-degree centre crop, about 0.38 m wide) hung 0.7 m in front of the spot at eye height, with a tiny year label. It exists only within about 1 m of the spot (it fades in from 1.25 m to 0.65 m). From further away there is only the marker.<ul><li>Fields: image, caption, credit, year, viewpoint (pose not used).</li><li>How it differs from the mosaic: one undistorted picture, gated by distance. No piece of it depends on the visitor's exact position to look right.</li><li>Placement error: the frame makes any misfit read as "a print held up to the view", so 1 m and 3 degrees look acceptable.</li><li>Weakest: parallax. At 0.7 m, moving the phone 10 cm moves the window about 8 degrees against the distant scene. It can never truly line up with the scene, and should not pretend to. It also sits inside the near-clipping comfort zone of some phones (unverified).</li></ul></li><li><b>viewer</b> (my own) - a painted sightseeing viewer on a post, standing at the viewpoint and pointing the original way. A plate on the post reads "1885 - Look through". Walk up and tap (within 4.5 m). The screen turns into a binocular view of the picture at 1.7x. Turning the phone swings the view across the picture (a gauge shows where), and the caption and credit sit below.<ul><li>Fields: image, caption, credit, year, viewpoint (position, facing, pitch, and the lens angle sets the swing range). Pose and widthM are not used.</li><li>Why: everyone knows what to do with it, and it brings the visitor to the exact spot without any alignment at all.</li><li>Placement error: fully forgiving. The view is a screen overlay, and the world part is an object, not an overlay.</li><li>Weakest: it is a 3D model coded once in the app, and it is a little whimsical for a sober memorial site. Inside the binoculars you no longer see the real square.</li></ul></li></ul></details><details><summary>3. Costs</summary><ul><li><b>Frame time</b> from the readout (mean and maximum over 2 s), measured headless on this machine with SwiftShader, which is software rendering. These numbers say nothing about a phone GPU; only their order is meaningful. Each value is mean / max in milliseconds at 1440 x 900, device pixel ratio 1, standing at the view's best spot:<ul><li>framed: 94 / 300</li><li>cutout: 174 / 483</li><li>then-now: 217 / 433</li><li>mosaic: 208 / 483</li><li>viewpoint-finder: 191 / 367</li><li>viewpoint-sharpen: 169 / 350</li><li>viewpoint-window: 194 / 333</li><li>viewer: 156 / 300</li><li>editor: 203 / 633</li><li>The script work per frame is 0.5 to 5 ms in the visitor views. In the editor it is about 58 ms, which I did not explain (probably blocking software GL in the overview).</li></ul></li><li><b>Draw calls per view:</b> about 6 (framed), 4 (cutout), 5 (then-now: one plane plus the marker), 5 (mosaic: all 126 tiles in one geometry, animated in the vertex shader), 7 (finder), 5 (sharpen), 8 (window) and about 30 (viewer). None needs a per-block shader. The sharpen blur is a mipmap bias, so it needs mipmaps on the texture.</li><li><b>Overdraw:</b> the then-now, sharpen and finder pictures are large transparent planes covering much of the screen. On a phone that is the real cost.</li><li><b>Media:</b> the hall picture is 1500 x 1000 px, 309 KB as JPEG at quality 0.85 (measured in the page; WebP would be smaller). The stall cut-out is 936 x 592 px with alpha, 55 KB as WebP. Every view uses the same file, so no view adds megabytes.</li><li><b>Creator minutes:</b><ul><li>framed: 1 to 2 minutes (place, size, type the caption);</li><li>cutout: the same in the app, plus 10 to 30 minutes in an image editor to cut the subject out, which is the real cost;</li><li>then-now, mosaic, finder, sharpen, window and viewer: 3 to 5 minutes on site to find the photographer's spot and match the ghost with the lens slider. Finding the spot is the hard part and can take far longer for a picture with few straight edges. Once the viewpoint is set, switching between these six views costs nothing.</li></ul></li></ul><p><b>The parameter sweep behind "placement error breaks the overlay":</b> the angle between the old picture and the real scene is about atan(lateral error / subject distance), plus any heading error.</p><ul><li>Lateral error 0.5 m: 5.7 degrees at a 5 m subject, 2.0 at 14 m, 0.95 at 30 m.</li><li>Lateral error 1 m: 11.3, 4.1 and 1.9 degrees.</li><li>Lateral error 2 m: 21.8, 8.1 and 3.8 degrees.</li><li>3 degrees of heading error adds about 3 degrees at any distance.</li><li>Verdict across the range: the overlay views convince only for subjects about 15 m or more away and with good heading. A near subject (a doorway 5 m away) reverses it for any error over about 0.3 m. The view thresholds are listed in section 5, and I did not sweep them: they are taste values.</li></ul></details><details><summary>4. The creator's controls</summary><ul><li><b>Phone (creator mode):</b> six large buttons along the bottom.<ul><li>View: a list with one-line descriptions.</li><li>Place: framed and cutout go 3 m ahead, facing you. Viewer and window go where you stand.</li><li>Size: a width slider.</li><li>Turn: a slider plus "Face me".</li><li>Text: caption, credit and year.</li><li>Viewpoint: only for the viewpoint views. It shows the photo as a 50 % ghost glued to the phone, with a lens slider. Line it up with the scene and tap "Set viewpoint here", which stores the phone's position, facing and pitch. A toast confirms what was saved.</li></ul></li><li><b>Desktop editor:</b> the block list on the left, and on the right an inspector with:<ul><li>the view grid (eight glyphs) and the image (thumbnail, file, size, alpha);</li><li>caption (with a count), credit and year;</li><li>width;</li><li>pose (x, y, z, turn, tilt);</li><li>viewpoint (x, y, z, facing, pitch, lens), "Look from the viewpoint" (the camera jumps to it and shows exactly what the visitor will see) and Reset.</li><li>Every section says whether the current view uses it, and dims it if not.</li></ul></li><li><b>Handles in the 3D view:</b> an amber disc (drag to move), an amber knob (drag to turn) and a white cube (drag for width) for the pose. For the viewpoint, a blue disc moves it, a blue knob turns it and a blue diamond on the lens wedge sets the lens angle. The frustum lines out to the picture's depth show where it will hang.</li></ul></details><details><summary>5. Blunt self-check</summary><ul><li><b>The demo flatters the viewpoint views.</b> The 1885 photo is a render of my own stand-in model from the exact viewpoint, so it matches the stand-in square perfectly. A real archive photo has lens distortion, a changed ground level and moved buildings, and will never fit this well. Then-now in particular will look worse on site than here.</li><li><b>Text in the world breaks the reading-distance rule</b> wherever the visitor stands further than about 2 m from the plate. I accept that because the world text is a label and the sheet carries the reading.</li><li><b>The mosaic</b> is built as asked, but I would not ship it: the finder and sharpen variants do the same job.</li><li><b>Arbitrary constants in code, not data:</b><ul><li>the crops (36 degrees finder, 30 degrees window), the window distance (0.7 m) and the viewer magnification (1.7x);</li><li>the thresholds: spot hints within 1.0 m; then-now 2.6 to 0.9 m; mosaic 0.75 to 0.2 m; finder 0.6 to 0.2 m; sharpen 7 to 0.3 m; window 1.25 to 0.65 m; viewer tap 4.5 m.</li><li>They are taste values, not swept. A tighter mosaic or finder threshold would make the "line up" moment unreachable with phone tracking drift.</li></ul></li><li><b>Sharpen</b> relies on mipmap-bias blur, which looks blocky on some GPUs (not verified on a device), and it puts a large pale plane over the whole square.</li><li><b>Window</b> cannot truly line up with the scene (the parallax at 0.7 m). It is honest only as a held-up print.</li><li><b>No phone measurements:</b> everything was checked in headless software rendering only.</li><li><b>Drop first:</b> the mosaic (the finder covers it). After that, sharpen (noise for everyone not walking to the spot).</li><li><b>Proudest:</b> the viewer. It brings the visitor to the photographer's exact spot with an object everybody understands, works with sound off, in sunlight (a dark screen overlay) and with any placement error, and costs the creator nothing beyond the viewpoint. Then-now with the swipe is the most beautiful; the viewer is the one I would trust on a real square.</li><li><b>Inspiration, named:</b> then-and-now photo overlays (a common practice in local history projects), coin-operated sightseeing viewers, the camera viewfinder's corner marks, and perspective anamorphosis as a general idea. All code is my own.</li></ul></details><!--/NOTES-->`;
 
 boot();
 </script>
