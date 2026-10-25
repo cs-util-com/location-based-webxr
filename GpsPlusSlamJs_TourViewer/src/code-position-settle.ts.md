@@ -94,3 +94,16 @@ the code, relative to its saved spot. The automatic code-spot rule
 U3's re-mint are the same pose. The one-code oracle
 (`__golden__/visit-settle.golden.json`) was regenerated for the two
 fields only: 96 added lines, nothing changed or removed.
+
+## The device-only fit (a visit a stored code's votes line up)
+
+`deviceFit` (optional) replaces the source above when the settle passes
+it (`creator-settle.ts`, "A visit a stored code's votes still line up"):
+the code is read through `deviceFit.alignment` at `deviceFit.codeOdomPose`
+(the loop-closed pose, `code-device-fit.ts`), judged with `endQuality`
+(device-only), and a change is re-minted at that pose through a pick
+carrying the fit's alignment, the device-only `alignmentInfo` and the
+end extent - so the stamp and the geo come from one fit. The pick keeps
+the latest kept sighting's moment and walked distance (NaN moment when
+there is none). Tests: `code-position-settle.test.ts` "planCodePosition
+through a device-only fit".

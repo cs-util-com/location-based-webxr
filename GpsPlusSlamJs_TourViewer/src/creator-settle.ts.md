@@ -415,3 +415,56 @@ a known limitation.
 - **A sighting without a fit, live and at the settle,** belongs to
   another known spot only within half the floor of it (`spotByAlignment`,
   review #6). After a frame change the fit classifies nothing (review #5).
+
+## A visit a stored code's votes still line up
+
+A stored code seen in a visit casts votes: synthetic GPS fixes saying the
+phone is where the stored code says. They are re-cast with every device
+fix while the code is held (a 120 s hold and a 120 s fade), and only the
+moved-code check withdraws them. When any vote is still in the GPS history
+at the settle, the store's alignment and every pick are held by the code:
+seen through them, the code sits where it is stored by construction. Read
+as a measurement, that once replaced a code with its own stored spot,
+stamped it with the walk's quality and logged a perfect agreement, so a
+stored error of 10-15 m became permanent.
+
+`settleVisit` therefore builds a device view (`deviceViewOf`) for such a
+visit: the visit's device fixes and their rigid fit
+(`code-device-fit.ts`, `codeDeviceFit`), gated on at least 3 device fixes,
+a walk reliable for their accuracy (`isReliable` of the device-only end
+quality) and no tracking restart.
+
+- **With a fit:** every stored code is judged by the keep-or-replace rule
+  and the code-spot rule through the fit (`planCodePosition`'s
+  `deviceFit`), read at the pose `codeFitPose` picks - the midpoint of
+  the code's first and last sightings when they bracket the walk's fixes
+  (the loop closure: it removes the AR drift the end sighting carries),
+  else its latest sighting, else the creator's own sighting. A change is
+  re-minted through the fit and stamped with the device-only quality, so
+  the geo and its stamp come from the same fit.
+- **Without a fit:** each stored code is kept as stored
+  (`keep` / `code-placed`), nothing is re-minted or stamped, and the
+  code-spot rule gets no candidate (it judges nothing, as for a walk too
+  short to judge).
+- **The visit log** reads every code through the fit, at the fit's pose,
+  or logs no code at all (the fixes and the odometry are still logged);
+  never through the vote-held alignment.
+- **A visit without votes** - one that never voted, or one whose votes the
+  moved-code check withdrew (a code moved 20 m or more) - has no device
+  view and settles exactly as before.
+- **Height** is kept from the vote-held alignment, i.e. the stored code's:
+  the fit is horizontal.
+- **Objects** placed in the visit still settle through their picks (the
+  vote-held alignment): only codes are read through the fit.
+- **Codes measured in the visit** are minted through the vote-held
+  alignment as before; their stamp is the device-only quality block. Not
+  changed here.
+
+Tests: `creator-code-votes.test.ts` - a mixed visit (votes, then a walk
+with GPS, then the code seen again) correcting a code stored 10 or 14 m
+off, no stamp and no logged code when the walk cannot judge, an
+indoor-only visit inventing nothing, the loop closure at 3 % drift, a
+vetoed code at 25 m moving as before, and the sweep (walk 24/38/60 m,
+accuracy 5/8/15 m, stored error 0-25 m, drift 0-3 %): a property that the
+visit's own view of a code does not depend on where it is stored, with
+the full table behind `CREATOR_INDOOR_SWEEP_OUT`.

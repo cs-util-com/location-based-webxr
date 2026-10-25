@@ -389,3 +389,67 @@ describe("planCodePosition", () => {
     expect(plan?.decision).toEqual({ kind: "keep", reason: "far" });
   });
 });
+
+// Why: in a visit a stored code's votes lined up, the sighting's pick and
+// the end alignment are both held by those votes, so the code reads as
+// exactly where it is stored. The planner must then judge and re-mint the
+// code through the visit's device-only fit instead - at the pose the fit is
+// read at - and stamp a change with the device-only quality, never with
+// what the vote-held pick carries.
+describe("planCodePosition through a device-only fit", () => {
+  /** The device-only view: the code 10 m north of its stored spot. */
+  const fitAlignment = yawAlignment(0, [10, 400, 0]);
+  const DEVICE_INFO = { hasMatrix: true, sampleCount: 40, gpsAccuracyM: 5 };
+  /** The pose the fit is read at (a loop closure's midpoint, say). */
+  const AT: Pose = { position: [0.5, 1.5, -2.5], rotation: [0, 0, 0, 1] };
+
+  function fitInput(
+    overrides: Partial<Omit<CodePositionSettleInput, "alignment">> = {},
+  ): CodePositionSettleInput {
+    return input({
+      // The votes hold every other view at the stored spot.
+      alignment: yawAlignment(0, [0, 400, 0]),
+      endQuality: { extentM: 40, accuracyM: 5 },
+      deviceFit: {
+        alignment: fitAlignment,
+        codeOdomPose: AT,
+        alignmentInfo: DEVICE_INFO,
+      },
+      ...overrides,
+    });
+  }
+
+  it("judges the code where the fit sees it, not where the votes hold it", () => {
+    const plan = planCodePosition(fitInput());
+    // At AT the fit sees the code about 10 m north (and the pose's own
+    // half metre) of its stored spot; the pick would say 0.
+    expect(plan?.offsetNorthM).toBeCloseTo(10.5, 6);
+    expect(plan?.offsetEastM).toBeCloseTo(0.2, 6);
+    expect(plan?.candidate).toEqual({ extentM: 40, accuracyM: 5 });
+    expect(plan?.decision).toEqual({ kind: "replace" });
+  });
+
+  it("re-mints a change at the fit's pose, through the fit, with the device-only quality", () => {
+    const plan = planCodePosition(fitInput());
+    expect(plan?.measurement?.odomPose).toEqual(AT);
+    expect(plan?.pick).toEqual({
+      atMs: 1_000,
+      alignment: fitAlignment,
+      alignmentInfo: DEVICE_INFO,
+      gpsExtentM: 40,
+      walkedM: 3,
+    });
+  });
+
+  it("keeps a code the fit cannot judge, as any visit does", () => {
+    const short = planCodePosition(
+      fitInput({ endQuality: { extentM: 8, accuracyM: 5 } }),
+    );
+    expect(short?.decision).toMatchObject({
+      kind: "keep",
+      reason: "not-walked",
+    });
+    expect(short?.measurement).toBeNull();
+    expect(short?.pick).toBeNull();
+  });
+});

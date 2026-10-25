@@ -48,6 +48,11 @@ export type CodePositionDecision =
    *  sets it from the code-spot rule's "not judged". */
   | { kind: "keep"; reason: "far-unjudged"; offsetM: number }
   | { kind: "keep"; reason: "not-walked"; walkMoreM: number }
+  /** The visit was lined up by a stored code's votes, still in its
+   *  alignment at the settle, and its own GPS could not judge the code (no
+   *  device-only fit: too few fixes, too short a walk, or a tracking
+   *  restart). Never decided here: the settle sets it. */
+  | { kind: "keep"; reason: "code-placed" }
   /** `turnedDeg`: replaced because this visit's GPS turned the code
    *  further than it can be off (field test 3, D-F6a), not for its walk. */
   | { kind: "replace"; turnedDeg?: number }

@@ -15,7 +15,11 @@ import type {
   TourObject,
   TourPhoto,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import type { LatLong } from "gps-plus-slam-app-framework/core";
+import {
+  GPS_POINT_SOURCE_SYNTHETIC_QR,
+  gpsPointSourceOf,
+  type LatLong,
+} from "gps-plus-slam-app-framework/core";
 import {
   selectAlignmentMatrix,
   selectGpsPositions,
@@ -30,7 +34,13 @@ import {
 import {
   planCodePosition,
   type CodePositionPlan,
+  type CodePositionSettleInput,
 } from "./code-position-settle.js";
+import {
+  codeDeviceFit,
+  codeFitPose,
+  type DeviceFit,
+} from "./code-device-fit.js";
 import { isReliable } from "./code-position-rule.js";
 import {
   displacementSamples,
@@ -155,6 +165,38 @@ interface SpotVisit {
    *  (the store resets its lists at every session end, after the settle). */
   readonly samples: readonly DisplacementSample[];
   readonly frameChanged: boolean;
+  /** The visit's device-only view of a code when its alignment is held by
+   *  a stored code's votes (`deviceViewOf`); null otherwise. */
+  readonly device: DeviceView | null;
+}
+
+/**
+ * A visit whose alignment a stored code's votes still hold at its end -
+ * they are re-cast with every device fix while the code is held, and only
+ * the moved-code check withdraws them. Through that alignment the code
+ * sits where it is stored by construction, so the settle reads every code
+ * through the visit's own device fixes instead (`code-device-fit.ts`).
+ */
+interface DeviceView {
+  /** The device-only fit; null when the walk cannot judge a code (too few
+   *  fixes, too short a walk for their accuracy, a tracking restart): the
+   *  visit then changes, stamps and logs no code. */
+  readonly fit: DeviceFit | null;
+  /** The visit's device fixes. */
+  readonly samples: readonly DisplacementSample[];
+}
+
+/** A plan for a stored code in a visit its votes lined up whose own GPS
+ *  cannot judge it: kept as stored, nothing to re-mint or stamp. */
+function linedUpByCode(plan: CodePositionPlan | null): CodePositionPlan | null {
+  return plan === null
+    ? null
+    : {
+        ...plan,
+        decision: { kind: "keep", reason: "code-placed" },
+        measurement: null,
+        pick: null,
+      };
 }
 
 /** One kept sighting as the fit reads it: its time, its odometry pose, and
@@ -617,6 +659,9 @@ export function wireCreatorSettle(deps: {
       extentM: alignmentGpsExtentM ?? null,
       accuracyM: gpsAccuracyM ?? null,
     };
+    // A visit whose alignment a stored code's votes still hold reads every
+    // code through its own device fixes instead (`DeviceView`).
+    const device = deviceViewOf(state, zero, visitAlignment, endQuality);
     // The automatic code spots (code book plan M6 v5.1) come FIRST: an undo
     // rewrites a code's level, which everything below reads.
     const spots = settleCodeSpots(
@@ -626,6 +671,7 @@ export function wireCreatorSettle(deps: {
       zero,
       visitAlignment,
       endQuality,
+      device,
     );
     // A sighting of a second print corrects nothing in this settle.
     const picks =
@@ -670,24 +716,27 @@ export function wireCreatorSettle(deps: {
         picks.sightings.filter((s) => s.sighting.levelId === code.id).at(-1)
           ?.sighting ??
         null;
+      const fit = deviceFitFor(device, code.id, picks, sighting);
+      const plan = planCodePosition({
+        visit,
+        mintedLevel: code,
+        measurement,
+        sighting,
+        picks,
+        alignment: visitAlignment,
+        zero,
+        endQuality,
+        // The size the code was solved at in this visit: its
+        // measurement's, else its sighting's - a stored code is solved at
+        // the size the tour stores for it, not the field's (M4 milestone
+        // review #2).
+        sizeM: measurement?.sizeM ?? sizeOfSighting(seen),
+        // The automatic code-spot rule's move (M6), re-minted here.
+        automaticMove: spots.moves.has(code.id),
+        ...(fit === null ? {} : { deviceFit: fit }),
+      });
       return {
-        plan: planCodePosition({
-          visit,
-          mintedLevel: code,
-          measurement,
-          sighting,
-          picks,
-          alignment: visitAlignment,
-          zero,
-          endQuality,
-          // The size the code was solved at in this visit: its
-          // measurement's, else its sighting's - a stored code is solved at
-          // the size the tour stores for it, not the field's (M4 milestone
-          // review #2).
-          sizeM: measurement?.sizeM ?? sizeOfSighting(seen),
-          // The automatic code-spot rule's move (M6), re-minted here.
-          automaticMove: spots.moves.has(code.id),
-        }),
+        plan: device !== null && fit === null ? linedUpByCode(plan) : plan,
         reapplied: false,
       };
     };
@@ -908,6 +957,8 @@ export function wireCreatorSettle(deps: {
       choice?.alignment ?? null,
       plan?.levels ?? [],
       spots.excluded,
+      device,
+      picks,
     );
     if (choice === null || zero === null) return;
     const record: VisitSettleRecord = {
@@ -1143,6 +1194,7 @@ export function wireCreatorSettle(deps: {
     zero: LatLong | null,
     visitAlignment: ReturnType<typeof selectAlignmentMatrix>,
     endQuality: { extentM: number | null; accuracyM: number | null },
+    device: DeviceView | null,
   ): VisitSpots {
     const out: VisitSpots = {
       moves: new Map(),
@@ -1164,10 +1216,6 @@ export function wireCreatorSettle(deps: {
         .filter((c) => c.measurement === null && c.level.id !== inHand?.id)
         .map((c) => c.level),
     ];
-    const start = ctx.gpsSamplesAtSessionStart;
-    // Read defensively: a store without the QR slice has no frame changes.
-    const qrSlice = (state as { qrDetected?: { frameEpoch?: number } })
-      .qrDetected;
     const shared: SpotVisit = {
       visit,
       picks,
@@ -1176,12 +1224,9 @@ export function wireCreatorSettle(deps: {
       end: readAlignment(visitAlignment),
       endQuality,
       inHandId: inHand?.id ?? null,
-      samples: displacementSamples({
-        gpsPositions: selectGpsPositions(state).slice(start),
-        odometryPositions: selectOdometryPositions(state).slice(start),
-        zero,
-      }),
-      frameChanged: (qrSlice?.frameEpoch ?? 0) !== ctx.frameEpochAtSessionStart,
+      samples: device?.samples ?? visitSamples(state, zero),
+      frameChanged: frameChangedIn(state),
+      device,
     };
     for (const code of stored) {
       const done = spotDecisions.get(code.id);
@@ -1213,6 +1258,87 @@ export function wireCreatorSettle(deps: {
     return out;
   }
 
+  /** THIS visit's device fixes, sliced at its start: defensive, because
+   *  the store resets its lists at every session end (after the settle),
+   *  and an earlier visit's odometry has another origin. */
+  function visitSamples(
+    state: ReturnType<typeof arStore.getState>,
+    zero: LatLong | null,
+  ): DisplacementSample[] {
+    const start = ctx.gpsSamplesAtSessionStart;
+    return displacementSamples({
+      gpsPositions: selectGpsPositions(state).slice(start),
+      odometryPositions: selectOdometryPositions(state).slice(start),
+      zero,
+    });
+  }
+
+  /** The tracking restarted in this visit: its odometry is two frames. */
+  function frameChangedIn(state: ReturnType<typeof arStore.getState>): boolean {
+    // Read defensively: a store without the QR slice has no frame changes.
+    const qrSlice = (state as { qrDetected?: { frameEpoch?: number } })
+      .qrDetected;
+    return (qrSlice?.frameEpoch ?? 0) !== ctx.frameEpochAtSessionStart;
+  }
+
+  /** The visit's device-only view (`DeviceView`) when a stored code's
+   *  votes are still in its GPS history - and so in its alignment - at
+   *  the settle; null for a visit without votes (one that never voted, or
+   *  whose votes the moved-code check withdrew): its alignment is its own
+   *  GPS already, and it settles as it always did. */
+  function deviceViewOf(
+    state: ReturnType<typeof arStore.getState>,
+    zero: LatLong | null,
+    visitAlignment: ReturnType<typeof selectAlignmentMatrix>,
+    endQuality: { extentM: number | null; accuracyM: number | null },
+  ): DeviceView | null {
+    const voted = selectGpsPositions(state).some(
+      (p) => gpsPointSourceOf(p) === GPS_POINT_SOURCE_SYNTHETIC_QR,
+    );
+    if (!voted) return null;
+    const samples = visitSamples(state, zero);
+    const fit =
+      visitAlignment === null
+        ? null
+        : codeDeviceFit({
+            samples,
+            reference: visitAlignment,
+            // Device fixes only, both of them: the extent tracker and the
+            // mint gate's accuracy skip the votes.
+            quality: endQuality,
+            frameChanged: frameChangedIn(state),
+          });
+    return { fit, samples };
+  }
+
+  /** Where the device view reads code `levelId`: its fit, at the pose
+   *  `codeFitPose` picks from the visit's kept sightings of it (the
+   *  loop's midpoint, or the latest), else at the creator's own sighting.
+   *  Null without a device fit or any sighting of the code. */
+  function deviceFitFor(
+    device: DeviceView | null,
+    levelId: string,
+    picks: VisitAlignmentPicks,
+    hand: CodeSighting | null,
+  ): NonNullable<CodePositionSettleInput["deviceFit"]> | null {
+    if (device === null || device.fit === null) return null;
+    const kept = picks.sightings
+      .filter((s) => s.sighting.levelId === levelId)
+      .map((s) => ({ atMs: s.atMs, odomPose: s.sighting.odomPose }));
+    const seen =
+      kept.length > 0 || hand?.levelId !== levelId
+        ? kept
+        : [{ atMs: Number.NaN, odomPose: hand.odomPose }];
+    const at = codeFitPose(seen, device.samples);
+    return at === null
+      ? null
+      : {
+          alignment: device.fit.alignment,
+          codeOdomPose: at.pose,
+          alignmentInfo: deps.alignmentInfo(),
+        };
+  }
+
   /** One stored code's spot judgement in the visit; null when the code has
    *  no saved pose or the visit kept no sighting of it. */
   function judgeCodeAtSpots(
@@ -1226,18 +1352,25 @@ export function wireCreatorSettle(deps: {
     if (memory === null || seen.length === 0) return null;
     const known = knownSpotsNue(memory, v.zero);
     // Where a move would mint the code, and how reliable that walk is: the
-    // keep-or-replace rule's own candidate (`planCodePosition`).
-    const first = planCodePosition({
+    // keep-or-replace rule's own candidate (`planCodePosition`) - through
+    // the visit's device-only fit when votes hold its alignment, and none
+    // when that walk cannot judge the code.
+    const inHandSighting =
+      code.id === v.inHandId ? deps.codes.sighting() : null;
+    const fit = deviceFitFor(v.device, code.id, v.picks, inHandSighting);
+    const planned = planCodePosition({
       visit: v.visit,
       mintedLevel: code,
       measurement: null,
-      sighting: code.id === v.inHandId ? deps.codes.sighting() : null,
+      sighting: inHandSighting,
       picks: v.picks,
       alignment: v.visitAlignment,
       zero: v.zero,
       endQuality: v.endQuality,
       sizeM: sizeOfSighting(seen.at(-1)?.sighting ?? null),
+      ...(fit === null ? {} : { deviceFit: fit }),
     });
+    const first = v.device !== null && fit === null ? null : planned;
     const home = known[0]!.pose.position;
     // The clock runs from the current spot's mint. A re-mint at that spot
     // (an improvement) restamps it and so defers the confirmation by up to
@@ -1493,6 +1626,11 @@ export function wireCreatorSettle(deps: {
     savedLevels: readonly { id: string; json: string }[],
     /** Sightings at a second print (M6 v5.1): never a pose of the code. */
     excluded: ReadonlySet<CodeSighting> = new Set(),
+    /** The visit's device-only view when votes hold its alignment: every
+     *  code goes through its fit, at the fit's pose, or is not logged. */
+    device: DeviceView | null = null,
+    /** The visit's kept sightings (second prints left out). */
+    picks: VisitAlignmentPicks | null = null,
   ): void {
     const codes: { levelId: string; odomPose: CodeSighting["odomPose"] }[] = [];
     // Every code measured in this visit (M4e), not only the code in hand.
@@ -1518,12 +1656,25 @@ export function wireCreatorSettle(deps: {
     if (sighting !== null && !excluded.has(sighting)) {
       codes.push({ levelId: sighting.levelId, odomPose: sighting.odomPose });
     }
+    // Votes hold the visit's alignment: through it every code would sit
+    // where a stored code's votes put it, an agreement the visit never
+    // measured. Each code is logged through the visit's own device fit,
+    // at the pose that fit is read at, or none is.
+    if (device !== null && picks !== null) {
+      for (const levelId of new Set(codes.map((c) => c.levelId))) {
+        const fit = deviceFitFor(device, levelId, picks, null);
+        if (fit !== null) codes.push({ levelId, odomPose: fit.codeOdomPose });
+      }
+    }
     const entry = buildVisitLogEntry({
       visitId: newVisitId(deps.pageId, visit),
       atMs: Date.now(),
       gpsPositions: selectGpsPositions(state),
       odometryPositions: selectOdometryPositions(state),
-      alignment: selectAlignmentMatrix(state),
+      alignment:
+        device === null
+          ? selectAlignmentMatrix(state)
+          : (device.fit?.alignment ?? null),
       pathAlignment,
       zero: selectZeroReference(state),
       storeAccuracyM: deps.alignmentInfo().gpsAccuracyM ?? null,

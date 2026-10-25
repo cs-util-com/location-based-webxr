@@ -119,3 +119,11 @@ speaks, because that is where the code now is.
   not tell whether the poster moved: walk with the code in view for a
   minute or more." An automatic move also needs the floor
   (`MOVED_CODE_FLOOR_M`), even when re-planned (review #9).
+
+## Kept because the code placed the visit
+
+`keep` / `code-placed` is set by the settle, never decided here: the
+visit was lined up by a stored code's votes, still in its alignment at
+the settle, and its own GPS could not judge the code (too few device
+fixes, too short a walk for their accuracy, or a tracking restart). The
+code keeps its stored position and stamp; the result line says nothing.

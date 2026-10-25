@@ -16,7 +16,7 @@
  * creator's vote path, or with votes counted as fixes.
  */
 import fc from "fast-check";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   buildObjectPoints,
   projectViewPoint,
@@ -58,10 +58,25 @@ import {
 } from "./tour-viewer-session.js";
 import { odomNueFromWebXr, throughAlignment } from "./visit-anchoring.js";
 import { createViewerPlacement } from "./viewer-placement.js";
+import type * as VisitLogModule from "./visit-log.js";
+import type { VisitLog } from "./visit-log.js";
 
 const captured = vi.hoisted(() => ({
   configs: [] as QrTrackingControllerConfig[],
+  /** The page-side visit logs the creator setups made, newest last. */
+  visitLogs: [] as VisitLog[],
 }));
+vi.mock("./visit-log.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof VisitLogModule>();
+  return {
+    ...actual,
+    createVisitLog: () => {
+      const log = actual.createVisitLog();
+      captured.visitLogs.push(log);
+      return log;
+    },
+  };
+});
 vi.mock("gps-plus-slam-app-framework/ar/qr/qr-tracking-controller", () => ({
   createQrTrackingController: (config: QrTrackingControllerConfig) => {
     captured.configs.push(config);
@@ -79,6 +94,11 @@ vi.mock("gps-plus-slam-app-framework/ar/qr/qr-tracking-controller", () => ({
 // store activates it: before any fixture runs.
 beforeAll(() => {
   createTourViewerStore();
+});
+
+// Each visit drives the page clock and `Date.now()` together (below).
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 /** A whole visit through the real solve and fused pose: about 1 s idle,
@@ -271,6 +291,11 @@ async function indoorCreator(
   const settled: {
     basis: string;
     objects: { basis?: string }[];
+    codePositions?: {
+      levelId: string;
+      decision: { kind: string; reason?: string };
+      applied: boolean;
+    }[];
   }[] = [];
   const dispatch = arStore.dispatch;
   arStore.dispatch = ((action: { type: string; payload?: unknown }) => {
@@ -304,7 +329,15 @@ async function indoorCreator(
       v.copy(reticleLocal).applyMatrix4(world.matrixWorld),
     dispose: () => undefined,
   };
+  /** The page clock. `Date.now()` follows it (only `Date` is faked): the
+   *  settle stamps sightings with `Date.now()` and the device fixes carry
+   *  this clock, so the two must be one clock, as on a phone. */
   const clock = { nowMs: T0 };
+  vi.useFakeTimers({ toFake: ["Date"], now: T0 });
+  function setClock(ms: number): void {
+    clock.nowMs = ms;
+    vi.setSystemTime(ms);
+  }
   /** The page's timers (`seams.schedule`): fired by the test. */
   const timers: { fn: () => void; ms: number; cancelled: boolean }[] = [];
   const seams = {
@@ -373,6 +406,14 @@ async function indoorCreator(
     // and their texts.
     ctx.currentLevels = new Map([[levelId, level]]);
     ctx.currentLevelTexts = new Map([[levelId, JSON.stringify(level)]]);
+    // And the opened zip itself, which a measurement of a stored code
+    // reads the stored level from (`hostedLevelJson`).
+    ctx.session = {
+      archive: { url: "https://example.test/tour.zip", size: 2048 },
+      hostedFileName: () => null,
+      entries: [{ filename: "tour.json" }, { filename: `qr/${levelId}.json` }],
+      loadEntryText: () => Promise.resolve(JSON.stringify(level)),
+    } as never;
   } else {
     // As a restored draft hands them over (`creator-draft.ts`).
     setup.codes.restoreLevels([{ id: levelId, json: JSON.stringify(level) }]);
@@ -393,8 +434,8 @@ async function indoorCreator(
   async function frame(
     i: number,
     origin: Matrix4,
-    text = TEXT,
-    startMs = 0,
+    text: string,
+    startMs: number,
   ): Promise<void> {
     const c = captured.configs.at(-1)!;
     let level = fetched.get(text);
@@ -403,7 +444,9 @@ async function indoorCreator(
       fetched.set(text, level);
     }
     const event = detection(i, origin, text, startMs);
-    clock.nowMs = T0 + event.timestamp;
+    // One clock for the page and the detections: the keep-alive holds a
+    // code's votes for a while after its last lock, timed on this clock.
+    setClock(event.timestamp);
     c.onDetection?.(event);
     const geo = level.qr.geo;
     if (geo !== undefined) {
@@ -421,7 +464,7 @@ async function indoorCreator(
               ? { baselineM: c.voteBaselineM }
               : {}),
             ...(c.voteCount !== undefined ? { count: c.voteCount } : {}),
-            timestamp: T0 + event.timestamp,
+            timestamp: event.timestamp,
           }),
         );
       }
@@ -430,13 +473,15 @@ async function indoorCreator(
     await flush();
   }
 
-  /** Look at a code for `n` frames (stable from about the seventh). */
+  /** Look at a code for `n` frames (stable from about the seventh),
+   *  starting `afterMs` after the page clock. */
   async function look(
     origin: Matrix4,
     n = 12,
     text = TEXT,
-    startMs = 0,
+    afterMs = 500,
   ): Promise<void> {
+    const startMs = clock.nowMs + afterMs;
     for (let i = 0; i < n; i += 1) await frame(i, origin, text, startMs);
     // The level id is an async hash: the sighting waits for it.
     await qrCodeId(text);
@@ -445,14 +490,18 @@ async function indoorCreator(
   }
 
   /** One device fix where `truth` puts the phone at raw WebXR `at`, off by
-   *  `offsetNorthM`, through the page's device-fix path (`main.ts` hands the
-   *  coordinator's `recordFix` to the viewer placement). */
+   *  `offsetNorthM` and `offsetEastM`, recorded against the odometry
+   *  position `odomAt` (where a drifting tracking thinks the phone is),
+   *  through the page's device-fix path (`main.ts` hands the coordinator's
+   *  `recordFix` to the viewer placement). */
   let fixes = 0;
   function deviceFix(
     truth: number[],
     at: [number, number, number],
     accuracyM: number,
     offsetNorthM = 0,
+    offsetEastM = 0,
+    odomAt: [number, number, number] = at,
   ): void {
     const nue = webxrToNUE([...at]);
     const worldPose = throughAlignment(
@@ -463,7 +512,7 @@ async function indoorCreator(
       worldNuePosition: {
         x: worldPose.position[0] + offsetNorthM,
         y: worldPose.position[1],
-        z: worldPose.position[2],
+        z: worldPose.position[2] + offsetEastM,
       },
       worldNueRotation: [0, 0, 0, 1],
       zero: ZERO,
@@ -473,9 +522,9 @@ async function indoorCreator(
       arStore.dispatch(setZeroPos({ lat: geo.lat, lon: geo.lon }));
     }
     fixes += 1;
-    clock.nowMs += 1000;
+    setClock(clock.nowMs + 1000);
     const payload: RecordGpsEventPayload = {
-      odomPosition: at,
+      odomPosition: odomAt,
       odomRotation: [0, 0, 0, 1],
       rawGpsPoint: {
         id: `fix-${String(fixes)}`,
@@ -529,6 +578,12 @@ async function indoorCreator(
     endVisit: () => {
       setup.endAuthorVisit();
     },
+    /** Time passes with no fix (a walk indoors). */
+    advance: (ms: number) => {
+      setClock(clock.nowMs + ms);
+    },
+    /** This setup's page-side visit log. */
+    visitLog: captured.visitLogs.at(-1)!,
     votes: () =>
       selectGpsPositions(arStore.getState()).filter(
         (p) => gpsPointSourceOf(p) === GPS_POINT_SOURCE_SYNTHETIC_QR,
@@ -718,6 +773,41 @@ describe(
       },
     );
 
+    // Why: on a phone the code's votes are re-cast with every device fix
+    // while the keep-alive holds, so a mixed visit carries far more votes
+    // than the locks alone. A harness whose detections ran on another clock
+    // than the fixes never reached that path, and every mixed visit here
+    // tested a visit with a fraction of a phone's votes.
+    it("re-casts the code's votes with each device fix while the keep-alive holds", async () => {
+      const c = await indoorCreator(storedCode(truth, origin));
+      await c.look(origin);
+      const afterLook = c.votes();
+      expect(afterLook).toBeGreaterThan(0);
+      walkWithGps(c, 0);
+      expect(c.votes()).toBeGreaterThanOrEqual(afterLook + 10 * 16);
+    });
+
+    // Why: a stored code's votes line the visit up, but a NEW code is
+    // measured by GPS - its position is what later visits and visitors
+    // rely on - so the mint gate's three fixes are device fixes, however
+    // many votes the alignment holds.
+    it("still needs three device fixes to measure a new code", async () => {
+      const c = await indoorCreator(storedCode(truth, origin));
+      await c.look(origin);
+      const otherId = await qrCodeId(OTHER);
+      const atOther = new Matrix4().makeTranslation(5, 0, 0).multiply(origin);
+      c.deviceFix(truth, [2, 1.4, -1], 5);
+      c.deviceFix(truth, [4, 1.4, -2], 5);
+      await c.look(atOther, 12, OTHER, 20_000);
+      expect(c.votes()).toBeGreaterThan(2 * 16);
+      expect(c.setup.codes.measuredIn(otherId, 0)).toBe(false);
+      c.deviceFix(truth, [6, 1.4, -3], 5);
+      await c.look(atOther, 12, OTHER, 2_000);
+      await vi.waitFor(() => {
+        expect(c.setup.codes.measuredIn(otherId, 0)).toBe(true);
+      });
+    });
+
     it("mints a new code with its device fixes only: their count and accuracy, none of the votes", async () => {
       const c = await indoorCreator(storedCode(truth, origin));
       await c.look(origin);
@@ -850,3 +940,413 @@ describe("a stored code ignored as moved", { timeout: SLOW_MS }, () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// A visit lined up by the stored code that later walks with GPS
+// ---------------------------------------------------------------------------
+
+/** A deterministic random stream (mulberry32) for the walks below. */
+function rng(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** A standard normal draw. */
+function gauss(r: () => number): number {
+  const u = Math.max(1e-12, r());
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r());
+}
+
+/** Horizontal [north, east] of a geo around ZERO. */
+function northEast(geo: Parameters<typeof objectPoseNue>[0]): [number, number] {
+  const p = objectPoseNue(geo, ZERO).positionNue;
+  return [p[0], p[2]];
+}
+
+const distM = (a: readonly number[], b: readonly number[]): number =>
+  Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!);
+
+/** One mixed visit's walk and GPS, as the sweep varies them. */
+interface MixedVisitCase {
+  /** The outdoor loop's diagonal (m); 0: no fix at all, indoors only. */
+  readonly walkM: number;
+  /** The fixes' reported accuracy (m). */
+  readonly accuracyM: number;
+  /** How far the stored code is from the truth (m), in a random
+   *  direction. */
+  readonly storedErrorM: number;
+  /** The tracking's drift, in % of the distance walked. */
+  readonly driftPct?: number;
+  /** GPS noise: AR(1) per axis with a 60 s time constant and a 68 %
+   *  radius of about the accuracy; false: exact fixes. */
+  readonly noise?: boolean;
+  readonly seed?: number;
+  readonly kept?: "hosted" | "draft";
+}
+
+const MIX_ORIGIN = new Matrix4().makeRotationY(0.4).setPosition(3, 0, -2);
+const MIX_TRUTH = yawAlignment(25, [12, 400, -7]);
+/** The indoor legs out to the street and back (m, and s at 1 m/s). */
+const DOOR_M = 10;
+
+/** A point of the room (code at x = z = 0, the phone in front of it on +z)
+ *  in raw WebXR through `origin`, at eye height. */
+function roomToRaw(
+  origin: Matrix4,
+  x: number,
+  z: number,
+): [number, number, number] {
+  const v = new Vector3(x, 1.4, z).applyMatrix4(origin);
+  return [v.x, v.y, v.z];
+}
+
+/**
+ * The creator starts indoors at the stored code (its votes line the visit
+ * up), walks 10 m out, a square loop outdoors whose diagonal is `walkM`
+ * with a fix per metre and second, 10 m back in, and looks at the code
+ * again - in the frame the tracking has drifted to by then. The visit
+ * ends; what the settle did to the code is read back.
+ */
+async function mixedVisit(v: MixedVisitCase) {
+  const r = rng(v.seed ?? 1);
+  const theta = 2 * Math.PI * r();
+  const storedAlignment = [...MIX_TRUTH];
+  storedAlignment[12] = storedAlignment[12]! + v.storedErrorM * Math.cos(theta);
+  storedAlignment[14] = storedAlignment[14]! + v.storedErrorM * Math.sin(theta);
+  const level = storedCode(storedAlignment, MIX_ORIGIN);
+  const c = await indoorCreator(level, v.kept ?? "hosted");
+  await c.look(MIX_ORIGIN);
+  const votesAtStart = c.votes();
+  // Drift: one direction in the room, growing with the distance walked.
+  const driftTheta = 2 * Math.PI * r();
+  const drift = (walkedM: number): [number, number] => [
+    ((v.driftPct ?? 0) / 100) * walkedM * Math.cos(driftTheta),
+    ((v.driftPct ?? 0) / 100) * walkedM * Math.sin(driftTheta),
+  ];
+  const sigma = v.noise === true ? v.accuracyM / 1.51 : 0;
+  const phi = Math.exp(-1 / 60);
+  let eN = sigma * gauss(r);
+  let eE = sigma * gauss(r);
+  let walked = DOOR_M;
+  c.advance(DOOR_M * 1000);
+  if (v.walkM > 0) {
+    const a = v.walkM / Math.SQRT2;
+    const z0 = 1.2 + DOOR_M;
+    const corners: [number, number][] = [
+      [0, z0],
+      [a, z0],
+      [a, z0 + a],
+      [0, z0 + a],
+      [0, z0],
+    ];
+    const steps = Math.round(a);
+    for (let k = 0; k < 4; k += 1) {
+      const [x1, z1] = corners[k]!;
+      const [x2, z2] = corners[k + 1]!;
+      for (let j = 1; j <= steps; j += 1) {
+        const x = x1 + ((x2 - x1) * j) / steps;
+        const z = z1 + ((z2 - z1) * j) / steps;
+        walked += a / steps;
+        eN = phi * eN + Math.sqrt(1 - phi * phi) * sigma * gauss(r);
+        eE = phi * eE + Math.sqrt(1 - phi * phi) * sigma * gauss(r);
+        const [dx, dz] = drift(walked);
+        c.deviceFix(
+          MIX_TRUTH,
+          roomToRaw(MIX_ORIGIN, x, z),
+          v.accuracyM,
+          eN,
+          eE,
+          roomToRaw(MIX_ORIGIN, x + dx, z + dz),
+        );
+      }
+    }
+  }
+  // The page's async work of the walk lands before the way back, as it
+  // does on a phone within milliseconds (an automatic measurement taken
+  // during the walk among it); this walk is fed synchronously.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await flush();
+  c.advance(DOOR_M * 1000);
+  walked += DOOR_M;
+  const [dxEnd, dzEnd] = drift(walked);
+  await c.look(
+    MIX_ORIGIN.clone().multiply(new Matrix4().makeTranslation(dxEnd, 0, dzEnd)),
+  );
+  const votesAtEnd = c.votes();
+  c.endVisit();
+  await flush();
+  const truthCode = throughAlignment(
+    odomNueFromWebXr(inOrigin(TRUE_CODE, MIX_ORIGIN)),
+    MIX_TRUTH,
+  )!.position;
+  const truthNE: [number, number] = [truthCode[0], truthCode[2]];
+  const after = c.setup.codes
+    .references()
+    .find((ref) => ref.levelId === c.levelId)?.geo;
+  const saved = c.setup.codes.savedText(c.levelId);
+  const logged = c.visitLog
+    .entries()
+    .at(-1)
+    ?.codes.find((code) => code.levelId === c.levelId);
+  return {
+    c,
+    level,
+    truthNE,
+    storedNE: northEast(level.qr.geo!),
+    afterNE: after === null || after === undefined ? null : northEast(after),
+    /** The stamp a write gave the code; undefined when none did. */
+    mintQuality:
+      saved === null
+        ? undefined
+        : (JSON.parse(saved) as QrLevel).qr.mintQuality,
+    decision: c.settled
+      .at(-1)
+      ?.codePositions?.find((d) => d.levelId === c.levelId),
+    loggedNE: logged === undefined ? null : northEast(logged.geo),
+    votesAtStart,
+    votesAtEnd,
+    loopGapM: Math.hypot(dxEnd, dzEnd),
+  };
+}
+
+// Why: a visit the stored code lined up keeps the code's votes in its
+// alignment, so read through that alignment the code sits exactly where
+// it is stored. The settle used to "replace" it with that same spot,
+// stamp it with this walk's GPS quality (so later visits keep it as good)
+// and log a perfect agreement - a stored error of 10-15 m became
+// permanent. The visit's own device fixes, fitted without the votes, are
+// its only honest view of the code.
+describe(
+  "a visit the stored code lined up, walked with GPS and the code seen again",
+  { timeout: SLOW_MS },
+  () => {
+    it.each([10, 14])(
+      "corrects a stored code %d m off to where the visit's own GPS puts it, and stamps it",
+      async (storedErrorM) => {
+        const v = await mixedVisit({
+          walkM: 38,
+          accuracyM: 5,
+          storedErrorM,
+        });
+        // The votes were still holding the alignment at the settle.
+        expect(v.votesAtEnd).toBeGreaterThan(v.votesAtStart);
+        expect(v.decision?.decision).toEqual({ kind: "replace" });
+        expect(v.decision?.applied).toBe(true);
+        // Exact fixes: the device fit is exact, so the code lands on the
+        // truth.
+        expect(distM(v.afterNE!, v.truthNE)).toBeLessThan(0.3);
+        expect(v.mintQuality?.gpsAccuracyM).toBe(5);
+        // The log carries the fit's view, never the votes' (the stored
+        // spot).
+        expect(distM(v.loggedNE!, v.truthNE)).toBeLessThan(0.3);
+      },
+    );
+
+    it("writes no stamp and logs no code when the walk cannot judge the code", async () => {
+      // 24 m at 15 m accuracy: the heading needs about 72 m.
+      const v = await mixedVisit({
+        walkM: 24,
+        accuracyM: 15,
+        storedErrorM: 10,
+      });
+      expect(v.votesAtEnd).toBeGreaterThan(0);
+      expect(v.decision?.decision).toEqual({
+        kind: "keep",
+        reason: "code-placed",
+      });
+      expect(v.afterNE).toEqual(v.storedNE);
+      expect(v.mintQuality).toBeUndefined();
+      expect(v.loggedNE).toBeNull();
+      // The walk itself is still logged: the creator's own GPS.
+      expect(v.c.visitLog.entries().at(-1)?.gps.length).toBeGreaterThan(0);
+    });
+
+    it("invents no position, stamp or log entry in a visit that never had a fix", async () => {
+      const v = await mixedVisit({ walkM: 0, accuracyM: 5, storedErrorM: 10 });
+      expect(v.afterNE).toEqual(v.storedNE);
+      expect(v.mintQuality).toBeUndefined();
+      expect(v.decision?.applied ?? false).toBe(false);
+      expect(v.c.visitLog.entries()).toEqual([]);
+    });
+
+    it("closes the loop: the walk's drift does not land on the code", async () => {
+      const v = await mixedVisit({
+        walkM: 38,
+        accuracyM: 5,
+        storedErrorM: 10,
+        driftPct: 3,
+      });
+      // About 3.8 m of drift between the two looks at the code. Read at
+      // the end look alone the code lands about 2.5 m off (measured with
+      // the closure switched off); read at the two looks' midpoint, well
+      // under a quarter of the gap (0.6 m: the rigid fit absorbs part of
+      // the drift as a turn).
+      expect(v.loopGapM).toBeGreaterThan(3);
+      expect(v.decision?.decision).toEqual({ kind: "replace" });
+      expect(distM(v.afterNE!, v.truthNE)).toBeLessThan(v.loopGapM / 4);
+    });
+
+    it("moves a code 25 m off as before: the moved-code check withdraws its votes first", async () => {
+      const v = await mixedVisit({
+        walkM: 38,
+        accuracyM: 5,
+        storedErrorM: 25,
+      });
+      expect(v.votesAtStart).toBeGreaterThan(0);
+      expect(v.votesAtEnd).toBe(0);
+      expect(v.decision?.decision).toEqual({ kind: "move" });
+      expect(distM(v.afterNE!, v.truthNE)).toBeLessThan(1);
+    });
+
+    it("does the same for a code only this device's code book stores", async () => {
+      const v = await mixedVisit({
+        walkM: 38,
+        accuracyM: 5,
+        storedErrorM: 10,
+        kept: "draft",
+      });
+      expect(v.decision?.decision).toEqual({ kind: "replace" });
+      expect(distM(v.afterNE!, v.truthNE)).toBeLessThan(0.3);
+    });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// The sweep: walk, accuracy, stored error and drift, with GPS noise
+// ---------------------------------------------------------------------------
+
+const SWEEP_WALKS_M = [24, 38, 60] as const;
+const SWEEP_ACCURACIES_M = [5, 8, 15] as const;
+const SWEEP_STORED_ERRORS_M = [0, 5, 10, 15, 25] as const;
+const SWEEP_DRIFTS_PCT = [0, 1, 3] as const;
+/** The full table (`CREATOR_INDOOR_SWEEP_OUT=<file>`: one JSON line per
+ *  visit, `CREATOR_INDOOR_SWEEP_SEEDS` seeds per cell, default 4). */
+const SWEEP_OUT = process.env["CREATOR_INDOOR_SWEEP_OUT"];
+
+// Why: the visit's own view of a code - what the settle judges, re-mints
+// and logs in a visit the code's votes still line up - must not depend on
+// where the code is stored. If the votes leaked into it, two visits that
+// differ ONLY in the stored position (same walk, same GPS noise, same
+// drift) would log, and correct to, positions apart by that difference.
+// Drawn over the sweep's walks, accuracies, drifts and stored errors under
+// the moved-code check's floor, with AR(1) GPS noise.
+describe(
+  "the visit's own view of a code (sweep, property)",
+  { timeout: 10 * SLOW_MS },
+  () => {
+    it("is the same whatever the stored position, and a stamp only ever comes with a change", async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          fc.constantFrom(...SWEEP_WALKS_M),
+          fc.constantFrom(...SWEEP_ACCURACIES_M),
+          fc.constantFrom(...SWEEP_DRIFTS_PCT),
+          fc.constantFrom(0, 5, 10, 15),
+          fc.constantFrom(0, 5, 10, 15),
+          fc.integer({ min: 1, max: 1000 }),
+          async (walkM, accuracyM, driftPct, errA, errB, seed) => {
+            const at = (storedErrorM: number) =>
+              mixedVisit({
+                walkM,
+                accuracyM,
+                storedErrorM,
+                driftPct,
+                noise: true,
+                seed,
+              });
+            const a = await at(errA);
+            const b = await at(errB);
+            for (const v of [a, b]) {
+              const changed =
+                v.decision?.applied === true &&
+                (v.decision.decision.kind === "replace" ||
+                  v.decision.decision.kind === "move");
+              expect(v.mintQuality !== undefined).toBe(changed);
+              // Unchanged means exactly as stored.
+              expect(v.afterNE).toEqual(changed ? v.afterNE : v.storedNE);
+              // A code the walk could not judge is not logged.
+              const codePlaced = v.decision?.decision.reason === "code-placed";
+              expect(codePlaced ? v.loggedNE : null).toBeNull();
+            }
+            // Both still lined up by the votes at the settle (the moved-code
+            // check withdrew none): their own views must agree.
+            const bothHeld = a.votesAtEnd > 0 && b.votesAtEnd > 0;
+            expect(
+              bothHeld && (a.loggedNE === null) !== (b.loggedNE === null),
+            ).toBe(false);
+            const gapM =
+              bothHeld && a.loggedNE !== null && b.loggedNE !== null
+                ? distM(a.loggedNE, b.loggedNE)
+                : 0;
+            expect(gapM).toBeLessThan(0.01);
+          },
+        ),
+        { numRuns: 5, seed: 20261025 },
+      );
+    });
+
+    it.runIf(SWEEP_OUT !== undefined)(
+      "writes the full table",
+      async () => {
+        const { appendFileSync, readFileSync, writeFileSync } =
+          await import("node:fs");
+        const seeds = Number(process.env["CREATOR_INDOOR_SWEEP_SEEDS"] ?? 4);
+        writeFileSync(SWEEP_OUT!, "");
+        for (const walkM of SWEEP_WALKS_M) {
+          for (const accuracyM of SWEEP_ACCURACIES_M) {
+            for (const storedErrorM of SWEEP_STORED_ERRORS_M) {
+              for (const driftPct of SWEEP_DRIFTS_PCT) {
+                for (let seed = 1; seed <= seeds; seed += 1) {
+                  const v = await mixedVisit({
+                    walkM,
+                    accuracyM,
+                    storedErrorM,
+                    driftPct,
+                    noise: true,
+                    seed,
+                  });
+                  appendFileSync(
+                    SWEEP_OUT!,
+                    `${JSON.stringify({
+                      walkM,
+                      accuracyM,
+                      storedErrorM,
+                      driftPct,
+                      seed,
+                      decision: v.decision?.decision ?? null,
+                      applied: v.decision?.applied ?? false,
+                      votesAtEnd: v.votesAtEnd,
+                      stamped: v.mintQuality !== undefined,
+                      finalErrM:
+                        v.afterNE === null ? null : distM(v.afterNE, v.truthNE),
+                      loggedErrM:
+                        v.loggedNE === null
+                          ? null
+                          : distM(v.loggedNE, v.truthNE),
+                      loopGapM: v.loopGapM,
+                    })}\n`,
+                  );
+                }
+              }
+            }
+          }
+        }
+        // Every visit of the grid ran to its settle and was written.
+        const rows = readFileSync(SWEEP_OUT!, "utf8").trim().split("\n");
+        expect(rows).toHaveLength(
+          SWEEP_WALKS_M.length *
+            SWEEP_ACCURACIES_M.length *
+            SWEEP_STORED_ERRORS_M.length *
+            SWEEP_DRIFTS_PCT.length *
+            seeds,
+        );
+      },
+      24 * 60 * 60 * 1000,
+    );
+  },
+);
