@@ -97,6 +97,25 @@ describe('the legal page date and text', () => {
     expect(visibleText(PAGE)).toMatch(/We change this page before we change/);
   });
 
+  it('keeps a ready usage-statistics paragraph in a comment, marked not in effect, and out of the visible text', () => {
+    // Why: the day a statistics tool is added, its paragraph must be ready
+    // (what it collects, why, how to object), but until then the page must
+    // not say a word of it: the summary still promises no usage statistics.
+    // The paragraph lives in an HTML comment, which the reader never sees
+    // and the visible-text hash above ignores.
+    const comment = PAGE.match(/<!--\s*NOT IN EFFECT[^]*?-->/)?.[0];
+    expect(comment, 'the ready usage-statistics paragraph is missing').toBeDefined();
+    expect(comment).toMatch(/publish it only in the commit\s+that adds/i);
+    expect(comment).toMatch(/id="privacy-statistics"/);
+    expect(comment).toMatch(/it receives/);
+    expect(comment).toMatch(/legitimate interest/);
+    expect(comment).toMatch(/object/);
+    // An HTML comment ends at its first "--": the paragraph must not hold one.
+    expect(comment?.slice(4, -3)).not.toContain('--');
+    expect(visibleText(PAGE)).not.toMatch(/counts page views/);
+    expect(visibleText(PAGE)).toMatch(/no usage statistics/);
+  });
+
   it('keeps both sections, the contact address and the marked operator placeholder until it is filled in', () => {
     expect(PAGE).toContain('id="notice"');
     expect(PAGE).toContain('id="privacy"');

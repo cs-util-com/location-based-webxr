@@ -37,6 +37,27 @@ goes live]` (`data-testid="operator-placeholder"`): the operator's name
 - `[EXIF: to be confirmed]`: whether photos taken by the Tour Viewer carry
   location metadata, carried over from the Tour Viewer's earlier page.
 
+## Ready, not in effect: the usage-statistics paragraph
+
+An HTML comment after the hosting part ("This website (every app)") holds a
+finished `#privacy-statistics` part for usage statistics: what a cookieless
+counting tool receives, why (legitimate interest), how long it is kept, and
+how to object (the browser's Global Privacy Control or Do Not Track, or a
+mail to the operator). It opens with `NOT IN EFFECT` and says what the
+commit that adds a statistics tool must do with it: uncomment it, fill in
+its brackets (tool, company, region, retention, whether the tool honours
+the browser signal), check every claim against the tool's configuration,
+drop "no usage statistics" from "In short", and move the date and the
+pinned hash. It covers cookieless counting only; a tool that sets cookies,
+reads device storage or follows visitors across sites needs consent first.
+
+- A comment is not visible text, so it does not change the pinned hash
+  (`visibleText` strips comments; the hash test stayed green when it was
+  added).
+- `tests/repo-config/legal-page.test.js` holds it there, marked, with no
+  `--` inside (which would end the comment early), and checks that the
+  visible text still says "no usage statistics".
+
 ## Invariants
 
 - Nothing claims more than the code does. Facts and where they come from:
@@ -104,7 +125,8 @@ Viewer's old `/tour/legal.html` forwards here.
 
 - `tests/repo-config/legal-page.test.js` - the date and the visible text
   change together; every deployed app links `/legal/`; the site build emits
-  and exempts the page; the Recorder's error-service region matches the
+  and exempts the page; the ready usage-statistics paragraph stays a
+  marked comment; the Recorder's error-service region matches the
   text.
 - `playwright-tests/legal.spec.js` - the page loads with both sections and
   its placeholders, the privacy claims held to the code are there, nothing
