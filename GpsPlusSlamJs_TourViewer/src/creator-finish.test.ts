@@ -222,8 +222,8 @@ function alignedArStore(alignment?: number[]): unknown {
         // tests about paths inside the zip see no settle at all.
         alignmentMatrix: alignment ?? new Matrix4(),
         gpsPositions: Array.from({ length: MIN_ALIGNMENT_SAMPLES }, () => ({
-          lat: 47.5,
-          lon: 8.7,
+          latitude: 47.5,
+          longitude: 8.7,
         })),
       },
     },
@@ -352,6 +352,9 @@ async function wireFinishable(options: {
       },
     } as never,
     seams: {
+      // The page's timers (a visit's wait for a first fix among them):
+      // never fired here.
+      schedule: () => () => undefined,
       canShareZip: () => false,
       // The Finish saves the rebuilt zip by itself (field test 2, F4).
       downloadZip: () => Promise.resolve(true),

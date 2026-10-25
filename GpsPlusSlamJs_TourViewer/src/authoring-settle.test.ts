@@ -439,8 +439,8 @@ function authoring(
             gpsPositions: withAccuracy(
               gps.walk?.fixes ??
                 Array.from({ length: MIN_ALIGNMENT_SAMPLES }, () => ({
-                  lat: ZERO.lat,
-                  lon: ZERO.lon,
+                  latitude: ZERO.lat,
+                  longitude: ZERO.lon,
                 })),
             ),
             odometryPositions: gps.walk?.odometry ?? [],

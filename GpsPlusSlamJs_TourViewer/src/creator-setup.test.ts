@@ -288,8 +288,8 @@ function alignedArStore(): unknown {
         // `ctx.gpsSamplesAtSessionStart` is 0 in a fresh session, so the
         // length is the count.
         gpsPositions: Array.from({ length: MIN_ALIGNMENT_SAMPLES }, () => ({
-          lat: 47.5,
-          lon: 8.7,
+          latitude: 47.5,
+          longitude: 8.7,
         })),
       },
     },

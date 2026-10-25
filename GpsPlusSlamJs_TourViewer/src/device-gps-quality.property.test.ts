@@ -6,6 +6,8 @@ import {
   type GpsPoint,
 } from "gps-plus-slam-app-framework/core";
 
+import { interpolatingMedian } from "gps-plus-slam-app-framework/utils/median";
+
 import { deviceGpsQuality } from "./device-gps-quality";
 
 // Why this test matters: the creator's mint quality and placement gate and
@@ -44,9 +46,8 @@ describe("deviceGpsQuality (property)", () => {
           }
           const quality = deviceGpsQuality(history);
           expect(quality.fixes).toBe(accuracies.length);
-          const sorted = [...accuracies].sort((a, b) => a - b);
           expect(quality.accuracyM).toBe(
-            sorted.length === 0 ? null : sorted[sorted.length >> 1],
+            accuracies.length === 0 ? null : interpolatingMedian(accuracies),
           );
         },
       ),

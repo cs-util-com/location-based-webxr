@@ -26,16 +26,17 @@ import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-min
 import { parseGeoPose } from "gps-plus-slam-app-framework/ar/qr/geo-pose";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
-import {
-  GPS_POINT_SOURCE_DEVICE,
-  gpsPointSourceOf,
-  type LatLong,
-  type Matrix4,
-} from "gps-plus-slam-app-framework/core";
+import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
 import { computeFusedPath } from "gps-plus-slam-app-framework/utils/fused-path";
-import { interpolatingMedian } from "gps-plus-slam-app-framework/utils/median";
 
 import type { CodeVisitPose } from "./code-visit-combine.js";
+import {
+  deviceSamples,
+  medianAccuracyM,
+  readGpsPoint,
+  type DeviceGpsPoint,
+  type StoredGpsFix,
+} from "./device-gps-quality.js";
 import { odomNueFromWebXr, throughAlignment } from "./visit-anchoring.js";
 
 /**
@@ -68,12 +69,7 @@ export const VISIT_PATH_MAX_POINTS = 1000;
 const VISIT_LOG_VERSION = 1;
 
 /** One point of a visit's raw GPS track. */
-interface VisitGpsPoint {
-  readonly lat: number;
-  readonly lng: number;
-  /** The fix's reported horizontal accuracy (m), when it had one. */
-  readonly accuracy?: number;
-}
+type VisitGpsPoint = DeviceGpsPoint;
 
 /** One point of a visit's fused path. */
 interface VisitPathPoint {
@@ -129,14 +125,7 @@ export function newVisitId(pageId: string, generation: number): string {
 // ---------------------------------------------------------------------------
 
 /** The store's GPS point, as far as this module reads it. */
-interface VisitGpsFix {
-  readonly latitude?: unknown;
-  readonly longitude?: unknown;
-  readonly latLongAccuracy?: unknown;
-  /** The fix's own time (epoch ms); read by {@link deviceSamples} only. */
-  readonly timestamp?: unknown;
-  readonly source?: string;
-}
+type VisitGpsFix = StoredGpsFix;
 
 export interface VisitLogInput {
   readonly visitId: string;
@@ -241,58 +230,6 @@ export function maxHorizontalExtentM(
   return worst;
 }
 
-/** A readable point (finite, in range), with its accuracy when that is
- *  a positive number; null otherwise. The store's fixes and the draft's
- *  points go through this one check. */
-function gpsPoint(
-  lat: unknown,
-  lng: unknown,
-  accuracy: unknown,
-): VisitGpsPoint | null {
-  if (!isFiniteNumber(lat) || !isFiniteNumber(lng)) return null;
-  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
-  return isFiniteNumber(accuracy) && accuracy > 0
-    ? { lat, lng, accuracy }
-    : { lat, lng };
-}
-
-function finitePosition(p: readonly number[]): boolean {
-  return p.length >= 3 && [p[0], p[1], p[2]].every(isFiniteNumber);
-}
-
-/**
- * The device fixes with readable coordinates, and their odometry partners
- * (index for index), synthetic code votes left out: a vote's odometry is
- * the code's corner, not where the creator stood. The ONE device-only
- * filter over the store's GPS history; the moved-code estimators
- * (`code-displacement.ts`) read through it too, which is why a fix's own
- * time comes along (`timestampMs`, when finite).
- */
-export function deviceSamples(
-  input: Pick<VisitLogInput, "gpsPositions" | "odometryPositions">,
-): {
-  fix: VisitGpsPoint;
-  odom: readonly number[] | null;
-  timestampMs?: number;
-}[] {
-  const paired = input.gpsPositions.length === input.odometryPositions.length;
-  return input.gpsPositions.flatMap((p, i) => {
-    if (gpsPointSourceOf(p) !== GPS_POINT_SOURCE_DEVICE) return [];
-    const fix = gpsPoint(p.latitude, p.longitude, p.latLongAccuracy);
-    if (fix === null) return [];
-    const odom = paired ? (input.odometryPositions[i] ?? null) : null;
-    const sample = {
-      fix,
-      odom: odom !== null && finitePosition(odom) ? odom : null,
-    };
-    return [
-      isFiniteNumber(p.timestamp)
-        ? { ...sample, timestampMs: p.timestamp }
-        : sample,
-    ];
-  });
-}
-
 /** A code's geo through `alignment`, or null when it cannot be minted. */
 function codeGeo(
   odomPose: Pose,
@@ -322,10 +259,8 @@ function visitAccuracyM(
   fixes: readonly VisitGpsPoint[],
   storeAccuracyM: number | null | undefined,
 ): number | null {
-  const accuracies = fixes.flatMap((f) =>
-    f.accuracy === undefined ? [] : [f.accuracy],
-  );
-  if (accuracies.length > 0) return interpolatingMedian(accuracies);
+  const median = medianAccuracyM(fixes);
+  if (median !== null) return median;
   return isFiniteNumber(storeAccuracyM) && storeAccuracyM > 0
     ? storeAccuracyM
     : null;
@@ -456,7 +391,7 @@ export function serializeVisitLogEntry(entry: VisitLogEntry): string {
 function readPoint(value: unknown): VisitGpsPoint | null {
   if (!Array.isArray(value) || value.length < 2) return null;
   const [lat, lng, accuracy] = value as unknown[];
-  return gpsPoint(lat, lng, accuracy);
+  return readGpsPoint(lat, lng, accuracy);
 }
 
 /** The entry's scalar fields, or null when one does not read. */

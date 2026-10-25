@@ -7,6 +7,7 @@ import {
 } from "gps-plus-slam-app-framework/core";
 
 import { deviceGpsQuality } from "./device-gps-quality";
+import { buildVisitLogEntry } from "./visit-log";
 
 // Why these tests matter: a scanned code stores its votes in the same GPS
 // history as the phone's fixes, sixteen at a time and each claiming 5 m.
@@ -36,8 +37,34 @@ describe("deviceGpsQuality", () => {
       point(5, GPS_POINT_SOURCE_SYNTHETIC_QR),
     ]);
     expect(quality.fixes).toBe(2);
-    // The upper middle of [12, 20]: never one of the votes' 5 m.
-    expect(quality.accuracyM).toBe(20);
+    // The median of [12, 20]: never pulled toward the votes' 5 m.
+    expect(quality.accuracyM).toBe(16);
+  });
+
+  it("reads one visit's accuracy as the visit log does, so a code's mint stamp and its visit agree", () => {
+    // Why: a code minted in a visit carries this accuracy in its mint
+    // stamp, and the same visit's log entry carries the visit log's; the
+    // two are read side by side when visits are combined, so one rule.
+    const history = [
+      point(4),
+      point(5, GPS_POINT_SOURCE_SYNTHETIC_QR),
+      point(9, GPS_POINT_SOURCE_DEVICE),
+      point(7),
+      point(5, GPS_POINT_SOURCE_SYNTHETIC_QR),
+      point(12),
+    ];
+    const logged = buildVisitLogEntry({
+      visitId: "v",
+      atMs: 0,
+      gpsPositions: history,
+      odometryPositions: [],
+      alignment: null,
+      pathAlignment: null,
+      zero: null,
+      codes: [],
+    });
+    expect(deviceGpsQuality(history).accuracyM).toBe(logged.gpsAccuracyM);
+    expect(logged.gpsAccuracyM).toBe(8);
   });
 
   it("reads a history of votes alone as no fix and no accuracy", () => {

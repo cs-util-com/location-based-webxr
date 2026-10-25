@@ -25,7 +25,7 @@ number.
 
 ## Invariants & assumptions
 
-- **Device fixes only, through `deviceSamples`** (`visit-log.ts`), the one
+- **Device fixes only, through `deviceSamples`** (`device-gps-quality.ts`), the one
   device-only filter of the store's history (DEC-H3): a synthetic code vote
   or an unknown source is skipped, and the step bridges the device fixes on
   either side.

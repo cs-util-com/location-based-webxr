@@ -37,8 +37,9 @@ them.
     only" button never shows; idle when no session runs. The clock running
     out is not enough either: the escape waits for a DEVICE fix of this AR
     entry (the store's GPS history, which an AR exit resets while the
-    session origin survives, read through `deviceSamples`, the one
-    device-only filter - a code's votes are not GPS). With none yet, the
+    session origin survives, read through `deviceGpsQuality`, which is
+    built on `deviceSamples`, the one device-only filter in
+    `device-gps-quality.ts` - a code's votes are not GPS). With none yet, the
     gate keeps scanning without the button, and the first device fix after
     the clock (`recordDeviceFix`) offers it: indoors a phone may hold the
     permission and never get a fix, and the escape then promised a

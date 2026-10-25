@@ -344,8 +344,8 @@ describe("the creator measures and mints with the fused pose", () => {
         // The stored form: 16 numbers, read with `Matrix4.fromArray`.
         alignmentMatrix: new Matrix4().toArray(),
         gpsPositions: Array.from({ length: MIN_ALIGNMENT_SAMPLES }, () => ({
-          lat: 47.5,
-          lon: 8.7,
+          latitude: 47.5,
+          longitude: 8.7,
         })),
       },
     };

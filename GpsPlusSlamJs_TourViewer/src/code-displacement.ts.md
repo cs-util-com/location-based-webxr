@@ -14,7 +14,7 @@ Pure. The viewer's post-scan veto (M5c) uses it through
 
 - `displacementSamples({ gpsPositions, odometryPositions, zero })` - the
   store's GPS history as `DisplacementSample[]`: device fixes only (through
-  `visit-log.ts` `deviceSamples`, the one device-only filter), in metres
+  `device-gps-quality.ts` `deviceSamples`, the one device-only filter), in metres
   from `zero` (`[north, east]`), with their odometry partner (`[north,
 east]`, odometry-NUE), their own time and reported accuracy. A fix without
   a finite time or an odometry partner is dropped; no zero: `[]`.

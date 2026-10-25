@@ -19,7 +19,7 @@ one file per visit) so a reload keeps it.
   `gpsPositions` and `odometryPositions` (paired index for index),
   `alignment` (the store's at the visit's end: what the codes go through),
   `pathAlignment` (what the visit's objects settled through: what the fused
-  path goes through), `zero`, an optional `storeAccuracyM` fallback, and the
+  path goes through), `zero`, an optional `storeAccuracyM` fallback, the
   `codes` the visit saw (`levelId` + raw WebXR `odomPose`).
 - `VisitLogEntry`: `visitId`, `atMs`, `gpsAccuracyM` (median of the device
   fixes' reported accuracies, else the store's median, else null),
@@ -39,13 +39,10 @@ one file per visit) so a reload keeps it.
   kept), `entries` (oldest first), `ids`, `clear`.
 - `newVisitId(pageId, generation)`, `thinPath(points, distanceM, spacingM?,
 maxPoints?)`, `maxHorizontalExtentM(positions)`.
-- `deviceSamples({ gpsPositions, odometryPositions })` - THE device-only
-  filter over the store's GPS history: each readable device fix
-  (`{ lat, lng, accuracy? }`), its odometry partner (null when the two
-  arrays are not paired or the position is not finite) and its own
-  `timestampMs` when finite; synthetic code votes left out. The entry
-  builder reads through it, and so do the moved-code estimators
-  (`code-displacement.ts`, D20/M5a), which count evidence in time.
+- The device fixes come from `device-gps-quality.ts` (`deviceSamples`, the
+  one device-only filter, and `medianAccuracyM`, the one accuracy median),
+  so a visit's `gpsAccuracyM` is the same number a code minted in that
+  visit is stamped with.
 - Constants: `VISIT_PATH_SPACING_M` (1), `VISIT_PATH_MAX_POINTS` (1,000);
   module-private `VISIT_LOG_VERSION` (1).
 
@@ -153,8 +150,8 @@ combineCodeVisits(codeVisitPoses(log.entries(), levelId));
   an unreadable one costing only itself; `thinPath` (cases and a property); the draft file round trip (case
   and property) and its defensive read; the in-memory log; `codeVisitPoses`
   into `combineCodeVisits`; the move boundary (marked on the moved code
-  only, round-tripped, and combining only from the latest move on); `deviceSamples` keeps device fixes with their
-  odometry and time and drops the votes.
+  only, round-tripped, and combining only from the latest move on); `deviceSamples` keeps device
+  fixes with their odometry and time and drops the votes.
 - `code-displacement.test.ts` and the M5a block of
   `viewer-vote-strength.test.ts` read the store's history (votes present)
   through `deviceSamples`.
