@@ -146,6 +146,13 @@ imperative resources only - that handle and the pictures' side table
     carries; `NOT_APPLIED` when the tour changed under the call):
     - `editStation(stationId, edit)` - title, found radius (2 m to 300 m),
       description, card image (`StationEdit`): `edited` or `unchanged`.
+      `unchanged` also when the document dropped the edit (its revision
+      did not move): an edit of a station a delete emptied that leaves it
+      with nothing of its own (its radius alone) is not listed, so no step
+      was taken. Known case, left for the inspector-editing milestone: a
+      title cleared on such a station, while it is selected, takes it off
+      the list under the selection - the edit is right (a reload agrees),
+      but the inspector loses what it showed.
     - `addStation({ lat, lon, alt })` - an empty automatic station there,
       `Station N` by its place: `added` with its new id; `NOT_ON_MAP` for
       a point nobody can draw.
@@ -312,7 +319,7 @@ changes`; a label is cut at 40 characters, a label-less note is "a
 - The settings record carries the details only once they were set or
   restored here: a record without them has no opinion about them
   (`editor-draft.ts`).
-- `stationLocked` (optional input): `moveStation` refuses a station it names as locked with `STATION_LOCKED`, before anything is dispatched. A station's radius, title, delete and copy are not pose edits and stay open. Undo and redo are outside the lock: they replay steps already made. Without the input (the phone, a test) every station moves as before.
+- `stationLocked` (optional input): `moveStation` refuses a station it names as locked with `STATION_LOCKED`, before anything is dispatched. A station's radius, title, delete and copy are not pose edits and stay open. Undo and redo are outside the lock: they replay steps already made. So is a draft's Restore (`restore`): it puts back station poses the creator made in an earlier visit, locked or not - a replay of their own work, as an undo is. Without the input (the phone, a test) every station moves as before.
 
 ## Tests
 
@@ -360,7 +367,8 @@ keeps the asset); a restore as one step; an undo after a save that dropped the e
 note back into that station (the M5a milestone review M2,
 `tour-content.ts`).
 `editor-session-stations.test.ts` on real zips: each station edit one
-undo step, and each refusal in words changing nothing; the last station
+undo step, and each refusal in words changing nothing; an edit the document
+drops (the radius of a station a delete emptied) "unchanged"; the last station
 refused, another deleted as one step; a copied photo station saving the
 copy's picture under its own content file; an item moved into a station
 of its own and items put on the ground as one step; renamed, added,

@@ -213,6 +213,29 @@ describe("the editor session's station edits", () => {
     await session.close();
   });
 
+  // Why: an edit of a station a delete emptied - its radius alone - is
+  // dropped by the document (the next write and a reload leave such a
+  // station out, so the live tour must not list it again). Reported as
+  // "edited", the page would offer an undo of a step that was never taken
+  // and start an autosave for nothing.
+  it("an edit the document drops, of a station a delete emptied, is unchanged, not edited", async () => {
+    const { session, manifest } = await opened();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.remove("a")).toEqual({ kind: "deleted" });
+    expect(editor.changeCount()).toBe(1);
+    expect(editor.editStation(stationIdOf("a"), { foundRadiusM: 40 })).toEqual({
+      kind: "unchanged",
+    });
+    expect(editor.changeCount()).toBe(1);
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
   it("the last station cannot be deleted; another can, and its delete is one step", async () => {
     const { session, manifest } = await opened();
     const editor = createEditorSession({

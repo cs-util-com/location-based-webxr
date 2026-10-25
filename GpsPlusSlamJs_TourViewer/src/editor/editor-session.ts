@@ -827,14 +827,18 @@ export function createEditorSession(input: {
       const frame = manifestNow(state)?.stations.find(
         (s) => s.id === stationId,
       );
-      store.dispatch(
-        tourDocumentActions.stationEdited({
-          stationId,
-          edit,
-          what: `the change of ${stationName(frame ?? {})}`,
-        }),
+      // The document may drop the edit (a station a delete emptied, left
+      // with nothing of its own): no step was taken, so none is said.
+      const applied = took(() =>
+        store.dispatch(
+          tourDocumentActions.stationEdited({
+            stationId,
+            edit,
+            what: `the change of ${stationName(frame ?? {})}`,
+          }),
+        ),
       );
-      return { kind: "edited" };
+      return applied ? { kind: "edited" } : { kind: "unchanged" };
     },
     addStation(at) {
       if (mine() === null) return notInTour;
