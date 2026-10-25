@@ -268,14 +268,16 @@ input[type=range].plain{flex:1;accent-color:var(--accent)}
   <details open><summary>0. Second round (2026-10-25): what changed and why</summary>
     <p>Sections 1-5 are the first round's notes, kept as written; where they disagree with this section, this section holds.</p>
     <ul>
-      <li><b>Window: nothing over the video any more.</b> The cross bars (the mullion and the transom) and the glass sheen are gone. The opening keeps its outer frame, reveals, stone surround, sill and the warm spill, so it still reads as a window; the clip itself is clear.</li>
-      <li><b>When the video starts is now the creator's choice</b> (<code>start.trigger</code>): on entering the circle (the default, as before), within N metres of the video (<code>start.withinM</code>, 1-20 m), when looked at (the video's centre within 15 degrees of the middle of the view for 0.6 s), or on a tap. The stand-here view ignores it: it starts when its picture has developed on the viewpoint. While a video waits for its trigger, the visitor sees its poster and, for "within N m" and "on a tap", a short hint.</li>
+      <li><b>Window: nothing over the video any more.</b> The cross bars (the mullion and the transom) and the glass sheen are gone. The opening keeps its outer frame, reveals, stone surround, sill and the warm spill, so it still reads as a window. The outer frame's 6 cm timber members still overlap the outer 6 cm of each edge of the clip; inside that border the clip is clear.</li>
+      <li><b>When the video starts is now the creator's choice</b> (<code>start.trigger</code>): on entering the circle (the default, as before), within N metres of the video (<code>start.withinM</code>, 1-20 m), when looked at (the video's centre within 15 degrees of the middle of the view for 0.6 s), or on a tap. The stand-here view ignores the trigger: it starts when its picture has developed on the viewpoint. While a video waits for its trigger, the screen, the window and the porthole show its poster and the cut-out shows the clip's first frame; for "within N m" and "on a tap" a short hint appears too.</li>
       <li><b>Sound on or off at the start</b> is the creator's default (<code>sound</code>, "off" by default). Three rules sit on top of it:<ul>
         <li>the visitor's own choice wins: once a visitor turns the sound on or off, that is kept on the phone and used whenever any video starts (this page has one video; the rule is meant for all of a tour's videos);</li>
         <li>"sound on" is honoured only after the visitor has tapped the page at least once (<code>navigator.userActivation.hasBeenActive</code>); otherwise the video starts muted, with captions, and the button says "Tap for sound";</li>
-        <li>a browser without that check is treated as not tapped, so it starts muted.</li></ul></li>
+        <li>a browser without that check is treated as not tapped, so it starts muted;</li>
+        <li>if the browser still keeps the sound off after the tap (its audio stays suspended once the resume has settled, or after 1 s), the video falls back to the muted start: sound off, captions on, the button says "Tap for sound" and a toast says why. The visitor's stored choice is kept.</li></ul></li>
       <li>The visitor's choice is stored under <code>tour-viewer.visitor.videoSound</code>, read and written inside try/catch; where storage is blocked it lasts only the visit.</li>
-      <li>To try the triggers: Creator, More, pick one, then Visitor. Switching back to the visitor now resets the clip to its start, so the trigger can fire again.</li>
+      <li>To try the triggers: Creator, More, pick one, then Visitor. Switching back to the visitor now resets the clip to its start, so the trigger can fire again; the stand-here clip also plays again, after Creator and after the editor's "Look from viewpoint".</li>
+      <li>With "when looked at", the switch back to the visitor also turns the visitor 60 degrees away from the video: the making view aims straight at it, so the trigger would fire at once and could not be judged. Turn back to the video to see it start.</li>
     </ul>
   </details>
   <details open><summary>1. The model</summary>
@@ -602,7 +604,7 @@ const player = {
 
 /* ---------- sound: never speech; a murmur bed and a tone pattern on the clip's calls ---------- */
 const sound = {
-  ctx: null, on: false, lastT: 0, wasPlaying: false,
+  ctx: null, on: false, lastT: 0, wasPlaying: false, attempt: 0,
   ensure() {
     if (this.ctx) return true;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -627,8 +629,20 @@ const sound = {
   setOn(on) {
     if (on && !this.ensure()) { toast('Sound is not available here'); return false; }
     this.on = on; player.muted = !on;
-    if (this.ctx) { if (on && this.ctx.state === 'suspended') this.ctx.resume(); this.lastT = player.t; }
+    if (this.ctx) { if (on && this.ctx.state !== 'running') this.confirmRunning(); this.lastT = player.t; }
     return true;
+  },
+  /* The browser may refuse the sound even after a tap. Once the resume has settled (or after 1 s, since a refused
+     resume can stay pending), a context that is still not running falls back to the muted start: sound off,
+     captions on, and the button offers the sound again. The visitor's stored choice is left as it is. */
+  confirmRunning() {
+    const c = this.ctx, token = ++this.attempt;
+    const resumed = Promise.resolve().then(() => c.resume()).catch(() => {});
+    Promise.race([resumed, new Promise((r) => setTimeout(r, 1000))]).then(() => {
+      if (token !== this.attempt || !this.on || c.state === 'running') return;
+      this.on = false; player.muted = true; player.cc = true; soundReason = 'muted: the browser kept the sound off';
+      refreshButtons(); toast('The browser kept the sound off - captions are on');
+    });
   },
   voice(when, f, len) {
     const c = this.ctx, o = c.createOscillator(); o.type = 'sawtooth';
@@ -1108,7 +1122,7 @@ function buildStandHere() {
   const pulse = groundDisc(2.2, 2.2, glowTex, 0, true); pulse.position.y = 0.002; fp.add(pulse);
   if (vp) { fp.position.set(vp.position[0], 0.014, vp.position[2]); fp.rotation.y = -vp.headingDeg * DEG; }
   stationRoot.add(fp);
-  let develop = 0, started = false;
+  let develop = 0;
   const to = new THREE.Vector3(), fwd = new THREE.Vector3();
   return {
     group: grp, tappables: [proj], extra: fp, bounds: { w: w * 1.12, h: h * 1.12, cy: 0, z: 0.03 },
@@ -1123,7 +1137,8 @@ function buildStandHere() {
         target = smooth(4.5, 1.0, dist) * smooth(32, 12, ang);
       } else target = 1;
       develop = lerp(develop, target, 1 - Math.exp(-dt * 1.6));
-      if (develop > 0.6 && !started) { started = true; player.seek(0); player.play(); }
+      // the player's own flag, which switching back to the visitor clears, so the clip plays again after a round trip
+      if (develop > 0.6 && !player.started) { player.seek(0); player.play(); }
       const u = vmat.uniforms;
       u.opacity.value = a * (0.13 + 0.87 * develop); u.tone.value = 1 - develop; u.tint.value.setScalar(lerp(1.15, 1.0, develop));
       u.feather.value.set(lerp(0.75, 0.38, develop), 0);
@@ -1297,7 +1312,14 @@ function setMode(m) {
   if (!['visitor', 'creator', 'editor'].includes(m)) throw new Error(`unknown mode "${m}"`);
   const prev = mode; mode = m; stage.dataset.mode = m;
   // back to the visitor from making: the clip starts over, so the creator's start trigger and sound can be tried
-  if (m === 'visitor' && prev !== 'visitor') { player.reset(); lookDwell = 0; }
+  if (m === 'visitor' && prev !== 'visitor') {
+    player.reset(); lookDwell = 0;
+    // "when looked at": the making view aims straight at the video and would fire the trigger at once, so the
+    // visitor is turned 60 degrees away from it; the start is seen when they turn back
+    if (record.start && record.start.trigger === 'look' && currentView !== 'stand-here' && view) {
+      const c = blockCentreWorld(); vis.heading = lookHeadingPitch(vis.pos, c.x, c.y, c.z).heading + 60 * DEG;
+    }
+  }
   $('#visitor').classList.toggle('hidden', m !== 'visitor');
   $('#viewbar').classList.toggle('hidden', m !== 'visitor');
   $('#creator').classList.toggle('hidden', m !== 'creator');
