@@ -8,6 +8,38 @@ wired into its logic: every interaction is faked.
 - `index.html` - the list.
 - `landing-1-editorial/` ... `landing-5-map-path/` - the creator's entry
   and setup page, five visual directions. The app took L5.
+- `landing-r3-0-strip-or-cards/` ... `landing-r3-5-calm-route-cards/` - the
+  landing ideas, third set: six pages that combine what worked in the
+  second set (the motivation first, what a visitor sees, what making looks
+  like, the steps in the order of the story, the setup as stacked
+  sections, example uses at the end); made 2026-10-25. Same AR switch and
+  notes panel as the second set; R3-2 and R3-5 load three.js 0.185.1 from
+  unpkg after the first paint.
+  - `landing-r3-0-strip-or-cards/` - A side-by-side page, not a landing
+    page: the four-phone strip and the three cards, one after the other,
+    each filled with the same animated drawn phones, to choose the layout by
+    seeing both.
+  - `landing-r3-1-drawn-phone-strip/` - The drawn style: a calm drawn phone
+    shows what a visitor sees, then making a tour as a numbered strip of
+    animated phones (place, add, hang the code, a visitor sees it).
+    Weakness: on a phone only one strip frame shows at a time.
+  - `landing-r3-2-route-alive-phone/` - The 3D park and its self-drawing
+    route as the hero, joined by a phone that shows the making side, one
+    scroll step at a time; the camera always stops before the phone acts.
+    Weakness: eight steps is a long scroll on a phone; three.js takes most
+    of the script budget.
+  - `landing-r3-3-two-phones-one-station/` - The same station shown twice,
+    side by side: being made and being seen, moving in step through the
+    story. Weakness: the phones are drawn sideways, while a maker probably
+    holds the phone upright.
+  - `landing-r3-4-makers-story/` - Text first, in the second person ("You
+    know a story about a place"): five story parts, each with a drawn screen
+    of the real step that plays once after its text. Weakness: the longest
+    read, about seven phone screens before the setup.
+  - `landing-r3-5-calm-route-cards/` - The quietest page: the 3D park draws
+    its route once and stops, then three cards with drawn phones that play
+    in turn, then the setup in the order of the story. Weakness: what a
+    visitor sees comes last of the three cards.
 - `landing-r2-1-l5-extended/` ... `landing-r2-10-calm-control/` - the
   landing, round 2: ten directions for the Tour Viewer's own page as the
   landing and the start at once (a would-be maker learns what an AR tour is
