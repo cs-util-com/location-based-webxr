@@ -8,6 +8,46 @@ wired into its logic: every interaction is faked.
 - `index.html` - the list.
 - `landing-1-editorial/` ... `landing-5-map-path/` - the creator's entry
   and setup page, five visual directions. The app took L5.
+- `landing-r2-1-l5-extended/` ... `landing-r2-10-calm-control/` - the
+  landing, round 2: ten directions for the Tour Viewer's own page as the
+  landing and the start at once (a would-be maker learns what an AR tour is
+  and how to start; a visitor with a code gets straight in); made
+  2026-10-25. Each fakes the device's AR support with a switch or
+  `?ar=1` / `?ar=0`, and ends in a folded notes panel with its direction,
+  load-bearing details, measured cost, weaknesses and the values it rests
+  on. Three of them load three.js 0.185.1 from unpkg by an import map,
+  after the first paint.
+  - `landing-r2-1-l5-extended/` - the current setup page kept and grown (a
+    moving intro, a strip of what a visitor sees, an example tour, three
+    plain steps). Weakness: a long page; AR is only drawn.
+  - `landing-r2-2-route-alive-3d/` - a 3D model park where the route draws
+    itself and scrolling drops the camera to eye height inside a phone.
+    Weakness: three.js takes most of the script budget; a long scroll
+    before the steps.
+  - `landing-r2-3-through-the-phone/` - the hero is the view through a
+    phone held up on site, the tour fixed to its spot while the phone
+    sways. Weakness: the drawn phone is small, so its text is tiny.
+  - `landing-r2-4-two-doors/` - take a tour or make one, two sign-like
+    colour blocks with a short path each. Weakness: AR is explained by two
+    small pictures; the visitor door is as loud as the maker's.
+  - `landing-r2-5-creator-story-clay/` - the maker's story in a 3D clay
+    world, one beat per scroll. Weakness: about five screens before step 1;
+    the visitor's view is only implied.
+  - `landing-r2-6-poster-first/` - the printed poster as the hero, read
+    part by part, printable as an A4 example. Weakness: no 3D; AR is one
+    flat drawing.
+  - `landing-r2-7-try-in-30-seconds/` - a playground: place three stops on
+    a drawn park, then watch them as a visitor. Weakness: a drawn map is
+    not the camera; the phone keyboard hides the map while typing.
+  - `landing-r2-8-use-case-gallery/` - six invented example tours with a
+    "With the tour / Without" switch. Weakness: no moving picture of AR; a
+    swiping reader may never reach the last example.
+  - `landing-r2-9-developer-landing-forked/` - the developer landing's dusk
+    3D world rewritten for makers. Weakness: dark and costly on a phone;
+    close in idea to the clay story.
+  - `landing-r2-10-calm-control/` - no 3D, no motion, one plain readable
+    page with step 1 on it. Weakness: may read as dull; one still picture
+    may not make AR clear.
 - `hud-1-chips/`, `hud-2-bottom-sheet/`, `hud-3-drag-surface/` - the AR
   authoring overlay. The app takes H1, with an action strip.
 - `scan-1-centre-card/`, `scan-2-viewfinder/`, `scan-3-coach-mark/` - the
@@ -68,8 +108,8 @@ coding agent to build that one. The verdicts are in the polish-round plan
 (private docs).
 
 **What goes with them:** the `public/prototypes/` lines in the package's
-`.prettierignore` and `.stylelintignore`, and the `landing-5-map-path`
-and the `editor3d-*` entries of `tests/repo-config/slider-pages-load-the-guard.test.js` (`EXEMPT`).
+`.prettierignore` and `.stylelintignore`, and the `landing-5-map-path`,
+`landing-r2-1-l5-extended`, `editor3d-*` and `station-blocks-*` entries of `tests/repo-config/slider-pages-load-the-guard.test.js` (`EXEMPT`).
 The drafts are not held to the app's lint and format rules.
 
 **Owner rule applied after the build:** the three HUD drafts first blocked

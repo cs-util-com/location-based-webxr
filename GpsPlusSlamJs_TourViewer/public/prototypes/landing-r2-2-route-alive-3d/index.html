@@ -1,0 +1,1316 @@
+<!doctype html>
+<html lang="en" data-ar="0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Make an AR Tour</title>
+<script type="importmap">
+  { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.min.js" } }
+</script>
+<style>
+:root {
+  --paper: #f4eedf;
+  --paper-2: #ebe3cf;
+  --paper-3: #ddd2b6;
+  --card: #fbf8ef;
+  --ink: #2a2824;
+  --ink-2: #57534a;
+  --ink-3: #8c8577;
+  --line: #c9bea3;
+  --route: #cf4428;
+  --route-soft: #f5d9cd;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); -webkit-text-size-adjust: 100%; }
+body { overflow-x: hidden; }
+p, h1, h2, h3, ol, ul { margin: 0; }
+button, input { font: inherit; color: inherit; }
+a { color: inherit; }
+
+/* ---------- fixed chrome: prototype label + AR simulation ---------- */
+.proto-label {
+  position: fixed; top: 8px; left: 8px; z-index: 60; pointer-events: none;
+  font: 600 11px/1 var(--sans); letter-spacing: .02em;
+  background: var(--ink); color: var(--paper); padding: 6px 9px; border-radius: 999px; opacity: .9;
+}
+.sim {
+  position: fixed; top: 6px; right: 8px; z-index: 60; display: flex; align-items: center; gap: 2px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 2px 2px 2px 9px;
+  font: 600 11px/1 var(--sans); box-shadow: 0 1px 0 var(--paper-3);
+}
+.sim-l { color: var(--ink-3); margin-right: 4px; }
+.sim button { border: 0; background: none; border-radius: 999px; padding: 6px 9px; cursor: pointer; font: 600 11px/1 var(--sans); color: var(--ink-2); min-height: 26px; }
+.sim button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+/* ---------- the scroll stage: copy, diorama, actions ---------- */
+.scrolly { position: relative; height: 230svh; }
+.stage {
+  position: sticky; top: 0; height: 100svh; max-width: 1440px; margin: 0 auto;
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "copy" "art" "act";
+}
+.copy { grid-area: copy; display: grid; padding: 42px 18px 4px; }
+.copy > .panel, .actions > .act { grid-area: 1 / 1; transition: opacity .35s ease, transform .35s ease, visibility 0s .35s; }
+.stage[data-view="b"] .panel-a, .stage[data-view="b"] .act-a,
+.stage:not([data-view="b"]) .panel-b, .stage:not([data-view="b"]) .act-b { opacity: 0; visibility: hidden; transform: translateY(-6px); }
+.stage[data-view="b"] .panel-b, .stage[data-view="b"] .act-b,
+.stage:not([data-view="b"]) .panel-a, .stage:not([data-view="b"]) .act-a { transition: opacity .35s ease, transform .35s ease, visibility 0s 0s; }
+
+.kicker { font: 700 12px/1.2 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--route); }
+.panel h1, .panel h2 { font-family: var(--serif); font-weight: 600; line-height: 1.06; letter-spacing: -.01em; margin: 8px 0 10px; }
+.panel h1 { font-size: clamp(28px, 7.6vw, 54px); }
+.panel h2 { font-size: clamp(26px, 7vw, 46px); }
+.panel h1 em, .panel h2 em { color: var(--route); font-style: italic; }
+.lede { font-size: 16px; line-height: 1.45; color: var(--ink-2); max-width: 32em; }
+.req { margin-top: 9px; font-size: 13.5px; line-height: 1.4; color: var(--ink-2); display: flex; gap: 8px; align-items: baseline; max-width: 34em; }
+.req::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--ink-3); transform: translateY(1px); }
+html[data-ar="1"] .req::before { background: var(--route); border-color: var(--route); }
+.req b { font-weight: 600; color: var(--ink); }
+html[data-ar="1"] .ar-no, html[data-ar="0"] .ar-yes { display: none; }
+
+.art { grid-area: art; position: relative; min-height: 0; overflow: hidden; }
+/* at eye height the paper behind the model turns into a pale sky */
+.art::before { content: ""; position: absolute; inset: 0; background: linear-gradient(rgba(217, 228, 226, 0) 0%, #d9e4e2 14%, #e9ece2 45%, rgba(244, 238, 223, 0) 75%); opacity: var(--ph, 0); pointer-events: none; }
+.art > svg, .art > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#gl { opacity: 0; transition: opacity .6s ease; touch-action: pan-y; cursor: grab; }
+#gl.on { opacity: 1; }
+#gl.dragging { cursor: grabbing; }
+#floorA, #floorB { transition: opacity .5s ease; }
+.art[data-floor="off"] #floorA, .art[data-floor="off"] #floorB { opacity: 0; }
+.stage[data-view="b"] #floorA, .stage:not([data-view="b"]) #floorB { opacity: 0; }
+#floorB { padding: 6px 0; }
+
+.tags { position: absolute; inset: 0; pointer-events: none; transition: opacity .3s; }
+.tag {
+  position: absolute; left: 0; top: 0; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  font: italic 600 12.5px/1 var(--serif); color: var(--ink); background: rgba(251, 248, 239, .93);
+  border: 1px solid var(--ink); border-radius: 999px; padding: 2px 8px 2px 2px; opacity: 0; transition: opacity .35s;
+  will-change: transform;
+}
+.tag b { font: 700 11px/1 var(--sans); font-style: normal; background: var(--route); color: #fff; border-radius: 50%; width: 18px; height: 18px; display: grid; place-items: center; }
+.tag.start { padding-left: 8px; background: var(--ink); color: var(--paper); }
+.tag.on { opacity: 1; }
+.tag.here { border-color: var(--route); box-shadow: 0 0 0 2px var(--route-soft); }
+
+/* the phone frame that appears at eye height */
+.phone {
+  position: absolute; left: 50%; top: 50%; height: min(94%, 620px); aspect-ratio: 9 / 18.5;
+  transform: translate(-50%, -50%);
+  border: 9px solid var(--ink); border-radius: 30px; pointer-events: none;
+  box-shadow: 5px 6px 0 rgba(42, 40, 36, .2); /* a hard paper shadow: a blurred one cost a long frame the first time it was drawn */
+  opacity: var(--ph, 0);
+}
+/* the world outside the phone is veiled; drawn once per resize into a 2D canvas with a rounded hole
+   (a huge box-shadow spread did the same but cost a 60-100 ms frame when it first became opaque) */
+#veil { pointer-events: none; opacity: calc(var(--ph, 0) * .62); }
+.phone::before { content: ""; position: absolute; top: 5px; left: 50%; width: 34%; height: 5px; margin-left: -17%; background: var(--ink); border-radius: 3px; }
+.ar-card {
+  position: absolute; left: 0; top: 0; width: 148px; pointer-events: none;
+  background: #fff; border: 1px solid var(--ink); border-radius: 6px; padding: 8px 9px 9px;
+  box-shadow: 3px 3px 0 rgba(42, 40, 36, .18); opacity: 0; transition: opacity .35s, translate .35s; will-change: opacity, transform;
+  translate: 0 6px;
+}
+.ar-card.on { opacity: 1; translate: 0 0; }
+.ar-card b { display: block; font: 700 13px/1.15 var(--serif); }
+.ar-card span { display: block; font-size: 11.5px; color: var(--ink-2); margin: 2px 0 6px; }
+.ar-card svg { display: block; width: 100%; height: auto; }
+.ar-card::after { content: ""; position: absolute; left: 50%; bottom: -8px; width: 1px; height: 8px; background: var(--ink); }
+
+.play {
+  position: absolute; right: 10px; bottom: 8px; z-index: 3; display: none; align-items: center; gap: 6px;
+  border: 1px solid var(--line); background: rgba(251, 248, 239, .92); border-radius: 999px;
+  padding: 5px 11px 5px 8px; font: 600 12px/1 var(--sans); color: var(--ink-2); cursor: pointer; min-height: 30px;
+}
+.play svg { width: 12px; height: 12px; fill: currentColor; }
+.art.live .play { display: inline-flex; }
+.stage[data-view="b"] .play { display: none; }
+.hint { position: absolute; left: 12px; bottom: 12px; font-size: 12px; color: var(--ink-3); pointer-events: none; opacity: 0; transition: opacity .4s; }
+.art.live .hint { opacity: 1; }
+.stage[data-view="b"] .hint { opacity: 0; }
+
+.actions { grid-area: act; display: grid; padding: 6px 18px max(14px, env(safe-area-inset-bottom)); }
+.act { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.act .linkish { flex-basis: 100%; }
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font: 600 15px/1.1 var(--sans); min-height: 46px; padding: 11px 18px;
+  border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; color: var(--ink); cursor: pointer;
+}
+.btn.primary { background: var(--route); border-color: var(--route); color: #fff; }
+.btn:active { transform: translateY(1px); }
+.btn svg { width: 16px; height: 16px; flex: none; }
+.linkish { background: none; border: 0; padding: 6px 2px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font-size: 14px; }
+.btn:focus-visible, .linkish:focus-visible, .sim button:focus-visible, .play:focus-visible, summary:focus-visible, input:focus-visible { outline: 3px solid var(--route); outline-offset: 2px; }
+
+@media (orientation: landscape) and (min-width: 600px), (min-width: 1000px) {
+  .stage {
+    grid-template-columns: minmax(300px, .9fr) minmax(0, 1.1fr);
+    grid-template-rows: minmax(0, 1fr) auto auto minmax(0, 1fr);
+    grid-template-areas: ". art" "copy art" "act art" ". art";
+  }
+  .copy { padding: 34px 10px 4px 28px; }
+  .actions { padding: 10px 10px 30px 28px; }
+  .art { margin-top: 38px; }
+}
+@media (min-width: 1000px) {
+  .copy { padding-left: 56px; }
+  .actions { padding-left: 56px; }
+  .lede { font-size: 18px; }
+  .req { font-size: 14.5px; }
+}
+@media (max-height: 520px) and (orientation: landscape) {
+  .panel h1 { font-size: 27px; margin: 5px 0 6px; }
+  .panel h2 { font-size: 25px; margin: 5px 0 6px; }
+  .lede { font-size: 14px; line-height: 1.4; }
+  .req { font-size: 12.5px; margin-top: 6px; }
+  .kicker { font-size: 11px; }
+  .copy { padding-top: 30px; }
+  .actions { padding-top: 8px; padding-bottom: 10px; }
+  .btn { min-height: 42px; padding: 9px 15px; font-size: 14px; }
+  .act .linkish { padding: 2px; font-size: 13px; }
+  .phone { border-width: 7px; border-radius: 22px; }
+  .ar-card { width: 112px; padding: 6px 7px 7px; }
+  .ar-card b { font-size: 11.5px; }
+  .ar-card span { font-size: 10px; margin: 1px 0 4px; }
+}
+
+/* ---------- below the stage ---------- */
+.section { max-width: 1100px; margin: 0 auto; padding: 56px 18px 24px; }
+.section h2 { font: 600 clamp(28px, 6.4vw, 40px)/1.1 var(--serif); margin-bottom: 10px; }
+.section .sub { color: var(--ink-2); font-size: 16px; line-height: 1.5; max-width: 36em; margin-bottom: 22px; }
+.phase { font: 700 12px/1.2 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); margin: 18px 0 10px; }
+.steps { list-style: none; padding: 0; display: grid; gap: 10px; }
+.steps li { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start; background: var(--card); border: 1.5px solid var(--ink); border-radius: 8px; padding: 13px 14px; box-shadow: 3px 3px 0 var(--paper-3); }
+.steps .n { width: 30px; height: 30px; border-radius: 50%; background: var(--route); color: #fff; font: 700 14px/30px var(--sans); text-align: center; }
+.steps h3 { font: 600 18px/1.2 var(--serif); margin-bottom: 3px; }
+.steps p { font-size: 15px; line-height: 1.45; color: var(--ink-2); }
+.steps .note { margin-top: 6px; font-size: 13.5px; color: var(--ink); }
+.steps .note::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--route); margin-right: 7px; vertical-align: 1px; }
+@media (min-width: 760px) {
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; align-items: start; }
+}
+.start-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 24px; }
+
+.visit { border-top: 1px dashed var(--line); }
+.visit form { display: flex; flex-wrap: wrap; gap: 10px; max-width: 560px; }
+.visit input { flex: 1 1 240px; min-height: 46px; padding: 11px 13px; border: 1.5px solid var(--ink); border-radius: 8px; background: #fff; font-size: 15px; }
+.visit .fine { margin-top: 10px; font-size: 13.5px; color: var(--ink-2); }
+
+.notes { max-width: 1100px; margin: 18px auto 0; padding: 0 18px; }
+.notes details { border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.notes summary { cursor: pointer; padding: 12px 14px; font: 600 14px var(--sans); color: var(--ink-2); }
+.notes .body { padding: 0 16px 14px; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+.notes h3 { font: 600 15px var(--serif); color: var(--ink); margin: 12px 0 4px; }
+.notes ul { padding-left: 18px; }
+.notes li { margin-bottom: 3px; }
+.foot { max-width: 1100px; margin: 0 auto; padding: 22px 18px 40px; font-size: 13px; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 8px 22px; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 18px; z-index: 90; transform: translate(-50%, 30px); opacity: 0;
+  background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 999px; font-size: 14px;
+  max-width: calc(100vw - 32px); text-align: center; transition: opacity .25s, transform .3s; pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="proto-label">Prototype: the route comes alive</div>
+<div class="sim" role="group" aria-label="Simulate this device">
+  <span class="sim-l" id="simL">Simulate</span>
+  <button type="button" data-ar-set="1" aria-pressed="false">AR phone</button>
+  <button type="button" data-ar-set="0" aria-pressed="true">No AR</button>
+</div>
+
+<section class="scrolly" id="scrolly">
+  <div class="stage" id="stage">
+    <div class="copy">
+      <div class="panel panel-a" id="panelA">
+        <p class="kicker">AR tours on your phone</p>
+        <h1>Stories that appear <em>right where they happened.</em></h1>
+        <p class="lede">Walk a route and see notes and photos at the real spots, through your phone's camera. Make a tour like this yourself: no code, no sign-up, no account.</p>
+        <p class="req"><span>Needs an Android phone with Chrome (AR support). <b class="ar-yes">This phone has it.</b><b class="ar-no">This device does not, but you can set a tour up here.</b></span></p>
+      </div>
+      <div class="panel panel-b" id="panelB">
+        <p class="kicker">On site, at stop 1</p>
+        <h2>Hold up the phone. <em>The story is right there.</em></h2>
+        <p class="lede">At the mill wheel, a note and an old photo float where the tour's maker placed them. Then the visitor walks on to stop 2.</p>
+        <p class="req"><span><b class="ar-yes">On this phone you can walk a real tour: scan its poster.</b><b class="ar-no">On this device it stays a picture. Walking a tour needs Android with Chrome.</b></span></p>
+      </div>
+    </div>
+
+    <div class="art" id="art" data-floor="on">
+      <svg id="floorA" role="img" aria-label="A small model park with a mill, a pond and trees. A dotted route links a poster at the start with five numbered stops."></svg>
+      <svg id="floorB" viewBox="0 0 240 280" role="img" aria-label="Through a phone: a pin, a note and an old photo float in front of the mill wheel.">
+        <defs>
+          <clipPath id="bScr"><rect x="58" y="32" width="124" height="220" rx="13"/></clipPath>
+        </defs>
+        <g stroke="#8c8577" stroke-width="1.1" fill="none" stroke-linecap="round">
+          <path d="M6 168 H54 M186 166 H234"/>
+          <circle cx="26" cy="146" r="14"/><path d="M26 160 V170"/>
+          <circle cx="214" cy="140" r="17"/><path d="M214 157 V168"/>
+        </g>
+        <rect x="50" y="18" width="140" height="248" rx="22" fill="#2a2824"/>
+        <g clip-path="url(#bScr)">
+          <rect x="58" y="32" width="124" height="220" fill="#e9e2cf"/>
+          <rect x="58" y="152" width="124" height="100" fill="#d9cdae"/>
+          <polygon points="96,252 148,252 124,153 118,153" fill="#f4eedf" stroke="#8c8577" stroke-width=".8"/>
+          <rect x="70" y="112" width="34" height="41" fill="#ebe3cf" stroke="#2a2824" stroke-width="1"/>
+          <path d="M66 113 L87 96 L108 113 Z" fill="#ddd2b6" stroke="#2a2824" stroke-width="1"/>
+          <rect x="83" y="133" width="8" height="20" fill="#ddd2b6" stroke="#2a2824" stroke-width=".8"/>
+          <circle cx="69" cy="140" r="11" fill="none" stroke="#2a2824" stroke-width="1"/>
+          <path d="M69 129 V151 M58 140 H80 M61 132 L77 148 M77 132 L61 148" stroke="#2a2824" stroke-width=".6"/>
+          <circle cx="164" cy="132" r="15" fill="#ddd2b6" stroke="#57534a"/><path d="M164 147 V156" stroke="#57534a"/>
+          <circle cx="143" cy="142" r="8" fill="#ddd2b6" stroke="#57534a"/><path d="M143 150 V155" stroke="#57534a"/>
+          <path d="M100 116 C 96 110 92 106 92 101 A 8 8 0 1 1 108 101 C 108 106 104 110 100 116 Z" fill="#cf4428"/>
+          <circle cx="100" cy="101" r="3" fill="#fff"/>
+          <rect x="94" y="64" width="80" height="22" rx="4" fill="#fff" stroke="#2a2824" stroke-width=".8"/>
+          <text x="100" y="74" font-family="Georgia, serif" font-size="8" font-weight="700" fill="#2a2824">The mill wheel</text>
+          <text x="100" y="82.5" font-family="system-ui, sans-serif" font-size="6.4" fill="#57534a">Turning since 1820</text>
+          <g transform="rotate(-6 152 195)">
+            <rect x="132" y="176" width="40" height="38" fill="#fff" stroke="#2a2824" stroke-width=".8"/>
+            <rect x="135" y="179" width="34" height="25" fill="#c9bea3"/>
+            <path d="M135 204 L146 192 L153 198 L160 189 L169 204 Z" fill="#8c8577"/>
+            <circle cx="162" cy="184" r="2.6" fill="#f4eedf"/>
+            <text x="152" y="211" text-anchor="middle" font-family="Georgia, serif" font-size="5.4" font-style="italic" fill="#2a2824">here, 1910</text>
+          </g>
+        </g>
+        <rect x="104" y="24" width="32" height="4" rx="2" fill="#4a4740"/>
+      </svg>
+      <canvas id="gl" aria-hidden="true"></canvas>
+      <div class="tags" id="tags" aria-hidden="true"></div>
+      <canvas id="veil" aria-hidden="true"></canvas>
+      <div class="phone" id="phone" aria-hidden="true"></div>
+      <div class="ar-card" id="arCard" aria-hidden="true">
+        <b>The mill wheel</b>
+        <span>Turning since 1820.</span>
+        <svg viewBox="0 0 120 70"><rect width="120" height="70" fill="#c9bea3"/><path d="M0 70 L34 34 L54 52 L78 26 L120 70 Z" fill="#8c8577"/><circle cx="92" cy="18" r="7" fill="#f4eedf"/><text x="6" y="64" font-family="Georgia, serif" font-size="10" font-style="italic" fill="#fff">here, 1910</text></svg>
+      </div>
+      <p class="hint" id="dragHint">Drag to turn the park</p>
+      <button type="button" class="play" id="playBtn" aria-label="Pause the walk"><svg viewBox="0 0 12 12" id="playIcon"><rect x="2" y="1" width="3" height="10"/><rect x="7" y="1" width="3" height="10"/></svg><span id="playTxt">Pause</span></button>
+    </div>
+
+    <div class="actions">
+      <div class="act act-a" id="actA">
+        <a class="btn primary" href="#make">Make your tour</a>
+        <button type="button" class="btn" id="toSite">See it on site <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M4 9l4 4 4-4"/></svg></button>
+        <a class="linkish" href="#visit">Have a tour link or a poster? Open the tour</a>
+      </div>
+      <div class="act act-b" id="actB">
+        <a class="btn primary" href="#make">Make your tour</a>
+        <button type="button" class="btn" id="toMap"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M4 7l4-4 4 4"/></svg> Back to the map</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="make">
+  <h2>Make yours in six steps</h2>
+  <p class="sub">Four at your desk, two on site. Nothing to install, and the tour file stays in storage you already have.</p>
+  <div class="cols">
+    <div>
+      <p class="phase">At your desk</p>
+      <ol class="steps">
+        <li><span class="n">1</span><div><h3>Choose where it lives</h3><p>Your tour is one small file: keep it on Google Drive, Dropbox, OneDrive, GitHub or your own server.</p></div></li>
+        <li><span class="n">2</span><div><h3>Paste its share link</h3><p>That link is what your printed code will open.</p></div></li>
+        <li><span class="n">3</span><div><h3>Print your posters</h3><p>One code per poster, made here as a PDF.</p></div></li>
+        <li><span class="n">4</span><div><h3>Hang one where the walk starts</h3><p>Flat, at about chest height, where people stop anyway.</p></div></li>
+      </ol>
+    </div>
+    <div>
+      <p class="phase">On site, with your phone</p>
+      <ol class="steps" start="5">
+        <li><span class="n">5</span><div><h3>Walk the route and place things</h3><p>Scan your poster, walk, and tap to put notes and photos where they belong.</p><p class="note ar-yes">You can do this step on this phone.</p><p class="note ar-no">This step needs an Android phone with Chrome. Do steps 1 to 4 here.</p></div></li>
+        <li><span class="n">6</span><div><h3>Save and put the file back</h3><p>The link and the printed code stay the same. Visitors scan and walk.</p></div></li>
+      </ol>
+    </div>
+  </div>
+  <div class="start-row">
+    <button type="button" class="btn primary" id="beginBtn">Start with step 1</button>
+    <a class="linkish" href="../../">Open today's setup page</a>
+  </div>
+</section>
+
+<section class="section visit" id="visit">
+  <h2>Got a poster or a tour link?</h2>
+  <p class="sub">Point your phone's camera at the poster, or paste the link here.</p>
+  <form id="visitForm" novalidate>
+    <label for="visitIn" class="sr" style="position:absolute;left:-9999px">Tour link</label>
+    <input id="visitIn" type="url" inputmode="url" placeholder="https://" autocomplete="off" spellcheck="false">
+    <button type="submit" class="btn">Open the tour</button>
+  </form>
+  <p class="fine ar-no">Walking a tour in AR needs an Android phone with Chrome.</p>
+  <p class="fine ar-yes">This phone can show the tour in AR.</p>
+</section>
+
+<div class="notes">
+  <details id="notes">
+    <summary>About this prototype</summary>
+    <div class="body">
+      <h3>Direction</h3>
+      <p>The example route comes alive in a small 3D model of a made-up park: the route draws itself, the stops rise as pins, a walker follows them, and scrolling takes the camera down to eye height at stop 1, where a phone frame and a floating note show what a visitor sees.</p>
+      <h3>Why it should work for a non-developer</h3>
+      <ul>
+        <li>"Stops placed in a real place, walked in order" is shown, not explained: a model park reads at a glance as a place, the numbered pins as an order.</li>
+        <li>The descent to eye height is the one moment that says "AR": the same pin, now floating in front of the mill wheel inside a phone.</li>
+        <li>The copy never covers the model: text and diorama sit in separate grid cells at every viewport.</li>
+      </ul>
+      <h3>Load-bearing details (check a later build against these)</h3>
+      <ul>
+        <li>Layout: text in its own grid cell (top in portrait, left column in landscape and desktop), the diorama in its own cell; the camera is fitted to that cell's real frustum, so nothing of the park or its pin labels is cut.</li>
+        <li>Framing: azimuth <span data-n="az"></span>, elevation <span data-n="el"></span> (portrait) and <span data-n="elw"></span> (wide), field of view <span data-n="fov"></span> for the overview (an almost flat, model-like look), fitted with a 9 % margin.</li>
+        <li>Motion: route drawn in about 3 s, each pin rises when the line reaches it, then the walker loops the route three times (about <span data-n="walk"></span> s a loop) and stops. Pause button, no motion with reduced motion.</li>
+        <li>Scroll: the stage is sticky inside a 230svh section; the camera moves between 12 % and 88 % of it; the text panels swap at the middle.</li>
+        <li>Paper palette and serif headings of the current setup page; route red only for the route, pins and the primary button.</li>
+        <li>three.js must be the minified build (three.module.min.js). The unminified files alone are about 412 kB gzip, over budget.</li>
+      </ul>
+      <h3>Measured cost (desktop, not a phone)</h3>
+      <ul id="costList">
+        <li>JS: page script about <span data-n="ownjs"></span> kB gzip, three.js 0.185.1 minified 187.5 kB gzip (86.6 + 100.9), together about <span data-n="totaljs"></span> kB of the 250 kB budget. Loaded after the first paint.</li>
+        <li>Frames: <span data-n="frames"></span></li>
+      </ul>
+      <h3>Known weaknesses</h3>
+      <ul>
+        <li>three.js still costs most of the budget: there is little room left for anything else on this page.</li>
+        <li>The eye-height view is a model, not a photo: it hints at AR, it does not show a camera image.</li>
+        <li>Reduced motion and no-WebGL get two still drawings instead of the model; the drag-to-turn is lost there.</li>
+        <li>The long sticky section asks for a lot of scrolling before the steps on a phone.</li>
+        <li>Frame times were measured on a desktop under load (Intel integrated graphics), with CPU throttling as a rough stand-in for a phone; nothing was measured on a phone.</li>
+        <li>The fixed prototype label and device switch sit over the page content when scrolling.</li>
+      </ul>
+      <h3>Parameters it rests on</h3>
+      <ul>
+        <li>Overview elevation (portrait <span data-n="el"></span>, wide <span data-n="elw"></span>; try <code>?el=40</code> to <code>?el=64</code>: at 40 the park flattens and two labels collide, 50 to 64 all hold), azimuth (<code>?az=</code>; 72 looks along the park's long side so it fills a phone), field of view (<code>?fov=</code>), walker loop length (<code>?walk=</code> seconds), scroll length 230svh, eye height about 1.7 m, pin height about 5.5 m in model scale.</li>
+        <li>URL switches: <code>?ar=1</code> / <code>?ar=0</code> fake the device's AR support; <code>?gl=0</code> forces the drawing without 3D.</li>
+      </ul>
+    </div>
+  </details>
+</div>
+
+<footer class="foot">
+  <span>Building an app of your own? <a href="../../../">See the developer page</a>.</span>
+  <span>Prototype: nothing here is uploaded, saved or sent.</span>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var html = document.documentElement;
+  var qs = new URLSearchParams(location.search);
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function num(k, d, lo, hi) { var v = parseFloat(qs.get(k)); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function smooth(a, b, x) { var t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
+  var DEG = Math.PI / 180;
+
+  /* ================= the park (one data set for the drawing and the 3D model) ================= */
+  // World units: 1 unit is about 2.5 m. x east, y up, z south (towards the viewer).
+  function cr(p0, p1, p2, p3, t) {
+    var t2 = t * t, t3 = t2 * t;
+    return [0, 1].map(function (i) {
+      return 0.5 * (2 * p1[i] + (-p0[i] + p2[i]) * t + (2 * p0[i] - 5 * p1[i] + 4 * p2[i] - p3[i]) * t2 + (-p0[i] + 3 * p1[i] - 3 * p2[i] + p3[i]) * t3);
+    });
+  }
+  function spline(ctrl, per) {
+    var out = [];
+    for (var i = 0; i < ctrl.length - 1; i++) {
+      var p0 = ctrl[Math.max(0, i - 1)], p1 = ctrl[i], p2 = ctrl[i + 1], p3 = ctrl[Math.min(ctrl.length - 1, i + 2)];
+      for (var k = 0; k < per; k++) out.push(cr(p0, p1, p2, p3, k / per));
+    }
+    out.push(ctrl[ctrl.length - 1].slice());
+    return out;
+  }
+  function measured(pts) {
+    var cum = [0];
+    for (var i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    var len = cum[cum.length - 1];
+    function at(s) {
+      s = clamp(s, 0, len);
+      var lo = 0, hi = cum.length - 1;
+      while (hi - lo > 1) { var m = (lo + hi) >> 1; if (cum[m] <= s) lo = m; else hi = m; }
+      var seg = cum[hi] - cum[lo] || 1, f = (s - cum[lo]) / seg, a = pts[lo], b = pts[hi];
+      var dx = b[0] - a[0], dz = b[1] - a[1], dl = Math.hypot(dx, dz) || 1;
+      return { x: a[0] + dx * f, z: a[1] + dz * f, tx: dx / dl, tz: dz / dl };
+    }
+    return { pts: pts, cum: cum, len: len, at: at };
+  }
+
+  var PER = 12;
+  var ROUTE_CTRL = [[-7.4, -5.3], [-10.0, -5.1], [-12.0, -4.4], [-12.3, -1.0], [-11.4, 3.0], [-9.4, 5.6], [-6.4, 6.5], [-2.5, 8.4], [2.0, 8.5], [5.0, 7.0], [9.5, 7.4], [12.2, 5.0], [11.6, 1.6], [8.0, 0.2], [3.8, -1.4], [1.0, -3.0], [0.4, -5.0], [2.8, -5.9], [6.5, -6.6], [10.0, -7.2], [12.8, -6.0]];
+  var route = measured(spline(ROUTE_CTRL, PER));
+  var STATIONS = [
+    { n: 1, name: 'Mill wheel', ctrl: 2, pin: [-13.1, -6.3] },
+    { n: 2, name: 'Old oak', ctrl: 6, pin: [-5.2, 5.0] },
+    { n: 3, name: 'Pond', ctrl: 9, pin: [5.3, 5.2] },
+    { n: 4, name: 'Fountain', ctrl: 16, pin: [-1.4, -6.0] },
+    { n: 5, name: 'Viewpoint', ctrl: 20, pin: [14.4, -4.9] }
+  ];
+  STATIONS.forEach(function (s) { s.s = route.cum[s.ctrl * PER]; });
+  var streamCtrl = [[-14.5, -13.9], [-14.2, -9], [-14.8, -3.5], [-14.1, 2.5], [-14.9, 8.5], [-14.5, 13.9]];
+  var stream = spline(streamCtrl.map(function (p) { return [p[1], p[0]]; }), 8).map(function (p) { return [p[1], p[0]]; });
+  function streamX(z) {
+    for (var i = 1; i < stream.length; i++) if (stream[i][1] >= z) {
+      var a = stream[i - 1], b = stream[i], f = (z - a[1]) / ((b[1] - a[1]) || 1);
+      return a[0] + (b[0] - a[0]) * f;
+    }
+    return stream[stream.length - 1][0];
+  }
+
+  var AZ = num('az', 72, -80, 100);
+  var PARK = {
+    slab: { w: 36, d: 28, r: 2.6, grass: 0.3, earth: 0.9 },
+    mill: { x0: -12.6, x1: -6.2, z0: -11.6, z1: -6.8, h: 2.6, roof: 1.7 },
+    barn: { x0: 6.6, x1: 11.2, z0: -13.0, z1: -10.2, h: 2.0, roof: 1.3 },
+    yard: { x0: -3.6, x1: 4.6, z0: -10.4, z1: -4.0 },
+    fountain: { x: 0.2, z: -7.4 },
+    pond: { x: 6.6, z: 3.6, rx: 3.3, rz: 2.0 },
+    oak: { x: -3.4, z: 2.6, r: 2.1, h: 2.4 },
+    lookout: { x: 14.3, z: -5.6, s: 2.6, h: 0.45 },
+    poster: { x: -6.2, z: -5.6 },
+    wheel: { x: -12.95, z: -9.2, y: 1.15, r: 1.45, w: 0.45 },
+    streamW: 2.2, stream: stream, pathW: 0.9,
+    route: route, stations: STATIONS,
+    pinH: 2.2,
+    light: null, // set from the camera azimuth below: the sun stays front-left of the viewer
+    eye: { pos: [-11.9, 0.68, 0.4], target: [-13.0, 1.85, -6.6] },
+    colors: {
+      grass: '#d3cfa6', grassSide: '#bdb68c', earth: '#b59f7e', path: '#f6f1e3', water: '#b8cbc3', waterLine: '#e3ece6',
+      wall: '#efe7d4', roof: '#a49a86', roof2: '#b8a48a', dark: '#6c665b', paving: '#e7dfc9', tree: '#a7ae7c', conifer: '#8c9a6c',
+      trunk: '#8a735a', ink: '#2a2824', paper: '#f4eedf', route: '#cf4428', stone: '#d8cfba', wood: '#a88c6c'
+    }
+  };
+
+  (function () { var la = (AZ - 55) * DEG, c = Math.sqrt(1 - 0.82 * 0.82); PARK.light = [Math.sin(la) * c, 0.82, Math.cos(la) * c]; })();
+  // the horizontal direction from a point towards the camera: whatever stands on that side hides what is behind it
+  var CAMX = Math.sin(AZ * DEG), CAMZ = Math.cos(AZ * DEG);
+
+  // trees: deterministic scatter, kept off paths, buildings, water, and out of the way of the route as seen from the camera
+  (function () {
+    var s = 7;
+    function rnd() { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }
+    function inBox(b, x, z, m) { return x > b.x0 - m && x < b.x1 + m && z > b.z0 - m && z < b.z1 + m; }
+    var near = function (x, z, d) {
+      for (var i = 0; i < route.pts.length; i += 2) if (Math.hypot(route.pts[i][0] - x, route.pts[i][1] - z) < d) return true;
+      return false;
+    };
+    var trees = [];
+    for (var gx = -16.5; gx <= 16.5; gx += 2.4) for (var gz = -12.6; gz <= 12.6; gz += 2.4) {
+      var x = gx + (rnd() - 0.5) * 1.8, z = gz + (rnd() - 0.5) * 1.8, kind = rnd() < 0.32 ? 1 : 0, sc = 0.78 + rnd() * 0.42;
+      var P = PARK;
+      if (Math.abs(x) > 16.9 || Math.abs(z) > 12.9) continue;
+      if (Math.abs(x) > 15.4 && Math.abs(z) > 10.4) continue;
+      if (near(x, z, 1.7)) continue;
+      if (near(x - CAMX * 1.9, z - CAMZ * 1.9, 1.55)) continue; // would hide the route behind it
+      if (inBox(P.mill, x, z, 1.0) || inBox(P.barn, x, z, 0.9) || inBox(P.yard, x, z, 0.6)) continue;
+      if (x < -12.6 && z > -11 && z < -7.5) continue; // the wheel
+      if (Math.abs(x - streamX(z)) < 2.1) continue;
+      if (Math.pow((x - P.pond.x) / (P.pond.rx + 1), 2) + Math.pow((z - P.pond.z) / (P.pond.rz + 1), 2) < 1) continue;
+      if (Math.hypot(x - P.oak.x, z - P.oak.z) < 3.2 || Math.hypot(x - P.lookout.x, z - P.lookout.z) < 2.6 || Math.hypot(x - P.poster.x, z - P.poster.z) < 1.6) continue;
+      var bad = STATIONS.some(function (st) { return Math.hypot(x - st.pin[0], z - st.pin[1]) < 1.6 || Math.hypot(x - CAMX * 2.2 - st.pin[0], z - CAMZ * 2.2 - st.pin[1]) < 2.0; });
+      if (bad) continue;
+      trees.push({ x: x, z: z, kind: kind, s: sc });
+    }
+    PARK.trees = trees;
+  })();
+
+  /* ================= view parameters (shared by the drawing and the 3D camera) ================= */
+  var art = $('#art'), stage = $('#stage'), scrolly = $('#scrolly');
+  var EL_P = num('el', 56, 20, 75), EL_W = num('elw', num('el', 40, 20, 75), 20, 75), FOV = num('fov', 15, 6, 50);
+  function view() {
+    var w = art.clientWidth || 1, h = art.clientHeight || 1, aspect = w / h;
+    return { w: w, h: h, aspect: aspect, az: AZ * DEG, el: (aspect < 1.2 ? EL_P : EL_W) * DEG, fov: FOV };
+  }
+
+  /* ================= the drawing: the same park, drawn flat in SVG (no-WebGL and reduced-motion floor) ================= */
+  function hex(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; }
+  function shade(c, k) { var v = hex(c).map(function (x) { return clamp(Math.round(x * k), 0, 255); }); return 'rgb(' + v.join(',') + ')'; }
+  function hull(pts) {
+    pts = pts.slice().sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+    function cross(o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); }
+    var lo = [], up = [];
+    pts.forEach(function (p) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); });
+    for (var i = pts.length - 1; i >= 0; i--) { var p = pts[i]; while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+    up.pop(); lo.pop();
+    return lo.concat(up);
+  }
+  function slabOutline(S, inset) {
+    var w = S.w / 2 - inset, d = S.d / 2 - inset, r = S.r - inset, out = [];
+    [[w - r, d - r, 0], [-(w - r), d - r, 90], [-(w - r), -(d - r), 180], [w - r, -(d - r), 270]].forEach(function (c) {
+      for (var k = 0; k <= 6; k++) { var a = (c[2] + k * 15) * DEG; out.push([c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r]); }
+    });
+    return out;
+  }
+
+  function drawFloor(complete) {
+    var V = view(), P = PARK, C = P.colors;
+    var ca = Math.cos(V.az), sa = Math.sin(V.az), ce = Math.cos(V.el), se = Math.sin(V.el);
+    var B = [sa * ce, se, ca * ce], Lt = P.light;
+    var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+    function pr(x, y, z, keep) {
+      var X = x * ca - z * sa, Y = se * sa * x - ce * y + se * ca * z;
+      if (keep !== false) { minX = Math.min(minX, X); maxX = Math.max(maxX, X); minY = Math.min(minY, Y); maxY = Math.max(maxY, Y); }
+      return [X, Y];
+    }
+    function depth(x, y, z) { return x * B[0] + y * B[1] + z * B[2]; }
+    function ptsStr(arr, keep) { return arr.map(function (p) { var q = pr(p[0], p[1], p[2], keep); return q[0].toFixed(2) + ',' + q[1].toFixed(2); }).join(' '); }
+    function poly(arr, fill, extra) { return '<polygon points="' + ptsStr(arr) + '" fill="' + fill + '"' + (extra || '') + '/>'; }
+    function face(arr, n, base) {
+      var l = Math.hypot(n[0], n[1], n[2]); n = [n[0] / l, n[1] / l, n[2] / l];
+      if (n[0] * B[0] + n[1] * B[1] + n[2] * B[2] <= 0.0005) return null;
+      var k = 0.64 + 0.4 * Math.max(0, n[0] * Lt[0] + n[1] * Lt[1] + n[2] * Lt[2]);
+      var col = shade(base, k), d = 0;
+      arr.forEach(function (p) { d += depth(p[0], p[1], p[2]); });
+      return { d: d / arr.length, s: poly(arr, col, ' stroke="' + col + '" stroke-width=".05" stroke-linejoin="round"') };
+    }
+    function faces(list) { return list.filter(Boolean).sort(function (a, b) { return a.d - b.d; }).map(function (f) { return f.s; }).join(''); }
+    function box(x0, x1, y0, y1, z0, z1, c) {
+      return [
+        face([[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], [0, 1, 0], c),
+        face([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 1], c),
+        face([[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]], [0, 0, -1], c),
+        face([[x1, y0, z0], [x1, y0, z1], [x1, y1, z1], [x1, y1, z0]], [1, 0, 0], c),
+        face([[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], [-1, 0, 0], c)
+      ];
+    }
+    function roof(b, c) {
+      var o = 0.3, xa = b.x0 - o, xb = b.x1 + o, za = b.z0 - o, zb = b.z1 + o, zm = (b.z0 + b.z1) / 2, y0 = b.h, y1 = b.h + b.roof, a = zb - zm;
+      return [
+        face([[xa, y0, zb], [xb, y0, zb], [xb, y1, zm], [xa, y1, zm]], [0, a, b.roof], c),
+        face([[xa, y0, za], [xb, y0, za], [xb, y1, zm], [xa, y1, zm]], [0, a, -b.roof], c),
+        face([[b.x0, y0, za + o], [b.x0, y0, zb - o], [b.x0, y1, zm]], [-1, 0, 0], C.wall),
+        face([[b.x1, y0, za + o], [b.x1, y0, zb - o], [b.x1, y1, zm]], [1, 0, 0], C.wall)
+      ];
+    }
+    function prism(x, z, r, y0, y1, n, c, top) {
+      var out = [], i;
+      for (i = 0; i < n; i++) {
+        var a0 = i / n * 2 * Math.PI, a1 = (i + 1) / n * 2 * Math.PI, am = (a0 + a1) / 2;
+        out.push(face([[x + Math.cos(a0) * r, y0, z + Math.sin(a0) * r], [x + Math.cos(a1) * r, y0, z + Math.sin(a1) * r], [x + Math.cos(a1) * r, y1, z + Math.sin(a1) * r], [x + Math.cos(a0) * r, y1, z + Math.sin(a0) * r]], [Math.cos(am), 0, Math.sin(am)], c));
+      }
+      var cap = []; for (i = 0; i < n; i++) cap.push([x + Math.cos(i / n * 2 * Math.PI) * r, y1, z + Math.sin(i / n * 2 * Math.PI) * r]);
+      out.push(face(cap, [0, 1, 0], top || c));
+      return out;
+    }
+    function cone(x, z, r, y0, h, n, c) {
+      var out = [];
+      for (var i = 0; i < n; i++) {
+        var a0 = i / n * 2 * Math.PI, a1 = (i + 1) / n * 2 * Math.PI, am = (a0 + a1) / 2;
+        out.push(face([[x + Math.cos(a0) * r, y0, z + Math.sin(a0) * r], [x + Math.cos(a1) * r, y0, z + Math.sin(a1) * r], [x, y0 + h, z]], [Math.cos(am) * h, r, Math.sin(am) * h], c));
+      }
+      return out;
+    }
+    var ICO = (function () {
+      var t = (1 + Math.sqrt(5)) / 2;
+      var v = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]].map(function (p) { var l = Math.hypot(p[0], p[1], p[2]); return [p[0] / l, p[1] / l, p[2] / l]; });
+      var f = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]];
+      return { v: v, f: f };
+    })();
+    function blob(x, y, z, r, sy, c) {
+      return ICO.f.map(function (f) {
+        var pts = f.map(function (i) { var p = ICO.v[i]; return [x + p[0] * r, y + p[1] * r * sy, z + p[2] * r]; });
+        var n = [0, 1, 2].map(function (k) { return (ICO.v[f[0]][k] + ICO.v[f[1]][k] + ICO.v[f[2]][k]) / 3; });
+        return face(pts, [n[0], n[1] / sy, n[2]], c);
+      });
+    }
+    function shadowOf(pts3) { // pts3: [x, y, z] above the ground; returns the hull of their ground shadow
+      var g = [];
+      pts3.forEach(function (p) { g.push([p[0], p[2]]); g.push([p[0] - Lt[0] / Lt[1] * p[1], p[2] - Lt[2] / Lt[1] * p[1]]); });
+      return poly(hull(g).map(function (q) { return [q[0], 0.03, q[1]]; }), 'rgba(70,56,30,.17)');
+    }
+    function ring(x, z, rx, rz, y, n) { var o = []; for (var i = 0; i < n; i++) { var a = i / n * 2 * Math.PI; o.push([x + Math.cos(a) * rx, y, z + Math.sin(a) * rz]); } return o; }
+    function ribbon(pts, w, y) {
+      var L = [], R = [];
+      for (var i = 0; i < pts.length; i++) {
+        var a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1;
+        var nx = -dz / l * w / 2, nz = dx / l * w / 2;
+        L.push([pts[i][0] + nx, y, pts[i][1] + nz]); R.unshift([pts[i][0] - nx, y, pts[i][1] - nz]);
+      }
+      return L.concat(R);
+    }
+
+    var S = P.slab, out = [], i;
+    // the slab on the table: shadow, sides (grass band over earth), top
+    var ol = slabOutline(S, 0);
+    var top = -S.grass - S.earth;
+    out.push(poly(hull(ol.concat(ol.map(function (q) { return [q[0] - Lt[0] / Lt[1] * 1.6, q[1] - Lt[2] / Lt[1] * 1.6]; }))).map(function (q) { return [q[0], top, q[1]]; }), 'rgba(70,56,30,.12)'));
+    var sides = [];
+    for (i = 0; i < ol.length; i++) {
+      var a = ol[i], b = ol[(i + 1) % ol.length], mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
+      var nx = b[1] - a[1], nz = -(b[0] - a[0]); if (nx * mx + nz * mz < 0) { nx = -nx; nz = -nz; }
+      sides.push(face([[a[0], -S.grass, a[1]], [b[0], -S.grass, b[1]], [b[0], top, b[1]], [a[0], top, a[1]]], [nx, 0, nz], C.earth));
+      sides.push(face([[a[0], 0, a[1]], [b[0], 0, b[1]], [b[0], -S.grass, b[1]], [a[0], -S.grass, a[1]]], [nx, 0, nz], C.grassSide));
+    }
+    out.push(faces(sides));
+    out.push(poly(ol.map(function (q) { return [q[0], 0, q[1]]; }), C.grass));
+    // ground decals
+    out.push(poly(ribbon(P.stream, P.streamW, 0.01), C.water));
+    out.push('<polyline points="' + ptsStr(P.stream.map(function (q) { return [q[0] + 0.25, 0.02, q[1]]; })) + '" fill="none" stroke="' + C.waterLine + '" stroke-width=".18" stroke-dasharray=".9 1.4" stroke-linecap="round"/>');
+    var Y = P.yard;
+    out.push(poly([[Y.x0, 0.01, Y.z0], [Y.x1, 0.01, Y.z0], [Y.x1, 0.01, Y.z1], [Y.x0, 0.01, Y.z1]], C.paving, ' stroke="' + C.stone + '" stroke-width=".12"'));
+    out.push(poly(ring(P.pond.x, P.pond.z, P.pond.rx, P.pond.rz, 0.012, 36), C.water, ' stroke="' + C.stone + '" stroke-width=".18"'));
+    out.push(poly(ribbon(route.pts, P.pathW, 0.02), C.path));
+    // shadows
+    [P.mill, P.barn].forEach(function (b) { out.push(shadowOf([[b.x0, b.h + b.roof * .6, b.z0], [b.x1, b.h + b.roof * .6, b.z0], [b.x1, b.h + b.roof * .6, b.z1], [b.x0, b.h + b.roof * .6, b.z1]])); });
+    P.trees.forEach(function (t) { var hc = (t.kind ? 1.6 : 2.0) * t.s, r = (t.kind ? 0.75 : 0.95) * t.s; out.push(shadowOf(ring(t.x, t.z, r, r, hc, 8))); });
+    out.push(shadowOf(ring(P.oak.x, P.oak.z, P.oak.r * 0.95, P.oak.r * 0.95, P.oak.h + 1.2, 10)));
+    if (complete) {
+      for (var sd = 0.3; sd < route.len; sd += 0.62) { var q = route.at(sd), pp = pr(q.x, 0.05, q.z); out.push('<ellipse cx="' + pp[0].toFixed(2) + '" cy="' + pp[1].toFixed(2) + '" rx=".17" ry="' + (0.17 * se).toFixed(3) + '" fill="' + C.route + '"/>'); }
+    }
+    // objects, far to near
+    var objs = [];
+    function add(x, z, s) { objs.push({ d: depth(x, 0, z), s: s }); }
+    var M = P.mill;
+    add((M.x0 + M.x1) / 2, (M.z0 + M.z1) / 2, faces(box(M.x0, M.x1, 0, M.h, M.z0, M.z1, C.wall).concat(roof(M, C.roof), box(-8.9, -8.1, 0, 1.3, M.z1, M.z1 + 0.05, C.dark), box(-11.4, -10.6, 1.2, 1.9, M.z1, M.z1 + 0.05, C.dark), box(-7.4, -6.8, 1.2, 1.9, M.z1, M.z1 + 0.05, C.dark))));
+    var W = P.wheel, wr = [];
+    for (i = 0; i <= 16; i++) { var aw = i / 16 * 2 * Math.PI; wr.push([W.x - W.w, W.y + Math.cos(aw) * W.r, W.z + Math.sin(aw) * W.r]); }
+    var spokes = '';
+    for (i = 0; i < 4; i++) { var as = i / 8 * 2 * Math.PI, p1 = pr(W.x - W.w, W.y + Math.cos(as) * W.r, W.z + Math.sin(as) * W.r), p2 = pr(W.x - W.w, W.y - Math.cos(as) * W.r, W.z - Math.sin(as) * W.r); spokes += '<line x1="' + p1[0].toFixed(2) + '" y1="' + p1[1].toFixed(2) + '" x2="' + p2[0].toFixed(2) + '" y2="' + p2[1].toFixed(2) + '" stroke="' + C.wood + '" stroke-width=".14"/>'; }
+    add(W.x, W.z + 2.5, '<polygon points="' + ptsStr(wr) + '" fill="none" stroke="' + shade(C.wood, .8) + '" stroke-width=".26"/>' + spokes);
+    var Bn = P.barn;
+    add((Bn.x0 + Bn.x1) / 2, (Bn.z0 + Bn.z1) / 2, faces(box(Bn.x0, Bn.x1, 0, Bn.h, Bn.z0, Bn.z1, C.wall).concat(roof(Bn, C.roof2), box(8.5, 9.3, 0, 1.2, Bn.z1, Bn.z1 + 0.05, C.dark))));
+    var F = P.fountain;
+    add(F.x, F.z, faces(prism(F.x, F.z, 1.0, 0, 0.38, 12, C.stone, C.water).concat(prism(F.x, F.z, 0.18, 0.38, 1.1, 6, C.stone), prism(F.x, F.z, 0.45, 1.1, 1.22, 8, C.stone, C.water))));
+    var LK = P.lookout, hs = LK.s / 2;
+    add(LK.x, LK.z, faces(box(LK.x - hs, LK.x + hs, 0, LK.h, LK.z - hs, LK.z + hs, C.stone).concat(box(LK.x + hs - 0.12, LK.x + hs, LK.h, LK.h + 0.8, LK.z - hs, LK.z + hs, C.wood), box(LK.x - hs, LK.x + hs, LK.h, LK.h + 0.8, LK.z - hs, LK.z - hs + 0.12, C.wood))));
+    P.trees.forEach(function (t) {
+      var trunk = prism(t.x, t.z, 0.13 * t.s, 0, (t.kind ? 0.5 : 0.9) * t.s, 5, C.trunk);
+      var crown = t.kind ? cone(t.x, t.z, 0.75 * t.s, 0.4 * t.s, 2.6 * t.s, 7, C.conifer) : blob(t.x, (0.9 + 0.85) * t.s, t.z, 0.95 * t.s, 0.9, C.tree);
+      add(t.x, t.z, faces(trunk) + faces(crown));
+    });
+    var O = P.oak;
+    add(O.x, O.z, faces(prism(O.x, O.z, 0.32, 0, O.h, 6, C.trunk)) + faces(blob(O.x - 0.5, O.h + 0.9, O.z, O.r * 0.8, 0.85, C.tree).concat(blob(O.x + 0.7, O.h + 0.7, O.z + 0.3, O.r * 0.75, 0.85, C.tree), blob(O.x, O.h + 1.4, O.z - 0.4, O.r * 0.8, 0.85, C.tree))));
+    var PO = P.poster;
+    if (complete) {
+      add(PO.x, PO.z, faces(box(PO.x - 0.06, PO.x + 0.06, 0, 1.0, PO.z - 0.06, PO.z + 0.06, C.wood).concat(box(PO.x - 0.5, PO.x + 0.5, 0.9, 2.1, PO.z + 0.06, PO.z + 0.12, '#ffffff'))));
+      var wq = route.at(STATIONS[1].s + (STATIONS[2].s - STATIONS[1].s) * 0.45), wp = pr(wq.x, 0, wq.z), wh = pr(wq.x, 0.62, wq.z);
+      add(wq.x, wq.z, '<line x1="' + wp[0].toFixed(2) + '" y1="' + (wp[1] - 0.15).toFixed(2) + '" x2="' + wh[0].toFixed(2) + '" y2="' + (wh[1] + 0.3).toFixed(2) + '" stroke="' + C.ink + '" stroke-width=".36" stroke-linecap="round"/><circle cx="' + wh[0].toFixed(2) + '" cy="' + wh[1].toFixed(2) + '" r=".17" fill="' + C.paper + '" stroke="' + C.ink + '" stroke-width=".06"/>');
+    }
+    objs.sort(function (a, b) { return a.d - b.d; }).forEach(function (o) { out.push(o.s); });
+
+    // pins and labels last: they float above everything, like the AR content they stand for
+    var pxPerUnit = 8;
+    var labels = [];
+    if (complete) {
+      STATIONS.forEach(function (st) {
+        var x = st.pin[0], z = st.pin[1], g = pr(x, 0, z), hd = pr(x, P.pinH, z), tip = pr(x, P.pinH - 0.85, z);
+        out.push('<ellipse cx="' + g[0].toFixed(2) + '" cy="' + g[1].toFixed(2) + '" rx=".42" ry="' + (0.42 * se).toFixed(2) + '" fill="rgba(42,40,36,.22)"/>');
+        out.push('<line x1="' + g[0].toFixed(2) + '" y1="' + g[1].toFixed(2) + '" x2="' + tip[0].toFixed(2) + '" y2="' + tip[1].toFixed(2) + '" stroke="' + C.ink + '" stroke-width=".07"/>');
+        out.push('<path d="M' + tip[0].toFixed(2) + ' ' + tip[1].toFixed(2) + ' L' + (hd[0] - 0.5).toFixed(2) + ' ' + (hd[1] + 0.28).toFixed(2) + ' L' + (hd[0] + 0.5).toFixed(2) + ' ' + (hd[1] + 0.28).toFixed(2) + ' Z" fill="' + shade(C.route, .85) + '"/>');
+        out.push('<circle cx="' + hd[0].toFixed(2) + '" cy="' + hd[1].toFixed(2) + '" r=".6" fill="' + C.route + '"/><circle cx="' + (hd[0] - 0.06).toFixed(2) + '" cy="' + (hd[1] - 0.05).toFixed(2) + '" r=".23" fill="#fff"/>');
+        labels.push({ x: hd[0], y: hd[1] - 0.75, n: String(st.n), t: st.name });
+      });
+      var pt = pr(PO.x, 2.4, PO.z);
+      labels.push({ x: pt[0], y: pt[1] - 0.2, n: '', t: 'Start: the poster' });
+    }
+    // fit: the drawing's own bounding box, padded so labels stay inside
+    var pad = 1.2, padTop = complete ? 2.4 : 1.2;
+    var vb = [minX - pad, minY - padTop, maxX - minX + 2 * pad, maxY - minY + pad + padTop];
+    pxPerUnit = Math.min(V.w / vb[2], V.h / vb[3]);
+    var fs = 12 / pxPerUnit, lab = '';
+    labels.forEach(function (l) {
+      var w = (l.t.length * 0.5 + (l.n ? 1.9 : 1.2)) * fs, h = 1.55 * fs, x0 = l.x - w / 2, y0 = l.y - h;
+      lab += '<g class="lb" data-x="' + l.x.toFixed(2) + '" data-h="' + h.toFixed(3) + '" data-fs="' + fs.toFixed(3) + '" data-n="' + (l.n ? 1 : 0) + '"><rect x="' + x0.toFixed(2) + '" y="' + y0.toFixed(2) + '" width="' + w.toFixed(2) + '" height="' + h.toFixed(2) + '" rx="' + (h / 2).toFixed(2) + '" fill="' + (l.n ? 'rgba(251,248,239,.94)' : C.ink) + '" stroke="' + C.ink + '" stroke-width="' + (1 / pxPerUnit).toFixed(3) + '"/>' +
+        (l.n ? '<circle cx="' + (x0 + h / 2).toFixed(2) + '" cy="' + (y0 + h / 2).toFixed(2) + '" r="' + (h / 2 - 1.6 / pxPerUnit).toFixed(2) + '" fill="' + C.route + '"/><text x="' + (x0 + h / 2).toFixed(2) + '" y="' + (y0 + h / 2).toFixed(2) + '" font-family="system-ui, sans-serif" font-weight="700" font-size="' + (fs * 0.9).toFixed(2) + '" fill="#fff" text-anchor="middle" dominant-baseline="central">' + l.n + '</text>' : '') +
+        '<text x="' + (l.n ? x0 + h + 0.3 * fs : l.x).toFixed(2) + '" y="' + (y0 + h / 2).toFixed(2) + '" font-family="Georgia, serif" font-style="italic" font-weight="600" font-size="' + fs.toFixed(2) + '" fill="' + (l.n ? C.ink : C.paper) + '"' + (l.n ? '' : ' text-anchor="middle"') + ' dominant-baseline="central" class="nm">' + l.t + '</text></g>';
+    });
+    var svg = $('#floorA');
+    svg.setAttribute('viewBox', vb.map(function (v) { return v.toFixed(2); }).join(' '));
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svg.innerHTML = out.join('') + lab;
+    // size each label's pill to its real text width (fonts differ per device)
+    Array.prototype.forEach.call(svg.querySelectorAll('.lb'), function (g) {
+      var t = g.querySelector('.nm'), r = g.querySelector('rect'), c = g.querySelector('circle'), num = g.querySelector('text:not(.nm)');
+      var len; try { len = t.getComputedTextLength(); } catch (e) { return; }
+      if (!len) return;
+      var h = +g.dataset.h, f = +g.dataset.fs, x = +g.dataset.x, isN = g.dataset.n === '1';
+      var w = len + (isN ? h + 0.3 * f + 0.7 * f : 1.4 * f), x0 = x - w / 2;
+      r.setAttribute('x', x0.toFixed(2)); r.setAttribute('width', w.toFixed(2));
+      if (isN) { c.setAttribute('cx', (x0 + h / 2).toFixed(2)); num.setAttribute('x', (x0 + h / 2).toFixed(2)); t.setAttribute('x', (x0 + h + 0.3 * f).toFixed(2)); }
+    });
+    floorComplete = complete;
+  }
+
+  /* ================= state, scroll, AR simulation ================= */
+  var floorComplete = false;
+  var state = { p: 0, t: 0, view: 'a', ar: '0' };
+  function hasWebGL() {
+    try {
+      var c = document.createElement('canvas'), g = c.getContext('webgl2') || c.getContext('webgl');
+      if (!g) return false;
+      var ext = g.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext();
+      return true;
+    } catch (e) { return false; }
+  }
+  var want3d = !reduced && qs.get('gl') !== '0' && hasWebGL();
+
+  var L = window.__landing = {
+    park: PARK, view: view, state: state, want3d: want3d, reduced: reduced, scene: null, ready: false, failed: '',
+    smooth: smooth,
+    fail: function (why) {
+      L.failed = why || 'failed';
+      art.classList.remove('live'); art.dataset.floor = 'on'; art.style.removeProperty('--ph');
+      $('#tags').innerHTML = ''; $('#arCard').classList.remove('on');
+      $('#gl').classList.remove('on');
+      drawFloor(true);
+    },
+    onReady: function () { L.ready = true; art.dataset.floor = 'off'; art.classList.add('live'); }
+  };
+
+  drawFloor(!want3d);
+
+  function progress() {
+    var r = scrolly.getBoundingClientRect(), span = r.height - innerHeight;
+    return span > 0 ? clamp(-r.top / span, 0, 1) : 0;
+  }
+  var ticking = false;
+  function onScroll() {
+    if (ticking) return; ticking = true;
+    requestAnimationFrame(function () {
+      ticking = false;
+      state.p = progress();
+      state.t = smooth(0.12, 0.88, state.p);
+      var v = state.t >= 0.5 ? 'b' : 'a';
+      if (v !== state.view) { state.view = v; stage.dataset.view = v; }
+      if (L.scene) L.scene.setT(state.t);
+    });
+  }
+  addEventListener('scroll', onScroll, { passive: true });
+  var lastKey = '';
+  function onResize() {
+    var V = view(), key = Math.round(V.w) + 'x' + Math.round(V.h);
+    if (key === lastKey) return; lastKey = key;
+    if (!L.ready) drawFloor(floorComplete);
+    onScroll();
+  }
+  if ('ResizeObserver' in window) new ResizeObserver(onResize).observe(art); else addEventListener('resize', onResize);
+  addEventListener('pageshow', function () { onScroll(); });
+  onScroll();
+
+  function scrollToY(y) { window.scrollTo({ top: y, behavior: reduced ? 'auto' : 'smooth' }); }
+  $('#toSite').addEventListener('click', function () { scrollToY(scrolly.offsetTop + scrolly.offsetHeight - innerHeight); });
+  $('#toMap').addEventListener('click', function () { scrollToY(scrolly.offsetTop); });
+
+  var toastEl = $('#toast'), toastT;
+  function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(function () { toastEl.classList.remove('show'); }, 3200); }
+  L.toast = toast;
+  $('#beginBtn').addEventListener('click', function () { toast('Prototype: step 1 would open here, choosing where your tour lives.'); });
+  $('#visitForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var v = $('#visitIn').value.trim();
+    if (!/^https?:\/\/[^\s/]+\.[^\s]+/i.test(v)) { toast('That does not look like a tour link yet. It starts with https://'); $('#visitIn').focus(); return; }
+    toast(state.ar === '1' ? 'Prototype: the tour would open here, ready to walk.' : 'Prototype: the tour would open here. Walking it needs Android with Chrome.');
+  });
+
+  var simBtns = Array.prototype.slice.call(document.querySelectorAll('[data-ar-set]'));
+  function setAr(v, source) {
+    state.ar = v ? '1' : '0';
+    html.dataset.ar = state.ar;
+    simBtns.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.arSet === state.ar)); });
+    $('#simL').textContent = source === 'detected' ? 'Detected' : 'Simulate';
+    if (source === 'user') { qs.set('ar', state.ar); history.replaceState(null, '', location.pathname + '?' + qs.toString() + location.hash); }
+  }
+  simBtns.forEach(function (b) { b.addEventListener('click', function () { setAr(b.dataset.arSet === '1', 'user'); }); });
+  if (qs.get('ar') === '1' || qs.get('ar') === '0') setAr(qs.get('ar') === '1', 'url');
+  else {
+    setAr(false, 'detected');
+    if (navigator.xr && navigator.xr.isSessionSupported) {
+      navigator.xr.isSessionSupported('immersive-ar').then(function (ok) { setAr(!!ok, 'detected'); }, function () { setAr(false, 'detected'); });
+    }
+  }
+
+  // numbers in the notes panel
+  var NOTE = { az: AZ + '°', el: EL_P + '°', elw: EL_W + '°', fov: FOV + '°', walk: String(num('walk', 13, 6, 40)), ownjs: '19', totaljs: '206', frames: 'at 390x844, pixel ratio 1, 5 s of the walk and 5 s of scrolling through the camera move: no frame over 50 ms unthrottled or with the CPU slowed 4x, one frame of 50.1 ms (three screen refreshes) at 6x (a 60 to 117 ms frame where the phone frame first appeared was traced to a blurred shadow and removed). At pixel ratio 2 a few 67 to 167 ms frames appeared, as often unthrottled as throttled, while the machine ran at about 54 % load from other work, so they are not attributed; a phone measurement is still owed. If the walk runs slow, the page drops to pixel ratio 1.25 once' };
+  L.note = function (k, v) { NOTE[k] = v; fillNotes(); };
+  function fillNotes() { Array.prototype.forEach.call(document.querySelectorAll('[data-n]'), function (el) { el.textContent = NOTE[el.dataset.n] || ''; }); }
+  fillNotes();
+})();
+</script>
+
+<script type="module">
+const L = window.__landing;
+if (L && L.want3d) boot();
+
+async function boot() {
+  // three.js never blocks the first paint: wait for load, the first contentful paint, then an idle moment
+  if (document.readyState !== 'complete') await new Promise((r) => addEventListener('load', r, { once: true }));
+  await new Promise((r) => {
+    const done = () => { clearTimeout(t); r(); };
+    const t = setTimeout(done, 1500);
+    try {
+      if (performance.getEntriesByName('first-contentful-paint').length) return done();
+      const po = new PerformanceObserver((list) => { if (list.getEntriesByName('first-contentful-paint').length) { po.disconnect(); done(); } });
+      po.observe({ type: 'paint', buffered: true });
+    } catch (e) { requestAnimationFrame(() => requestAnimationFrame(done)); }
+  });
+  await new Promise((r) => ('requestIdleCallback' in window ? requestIdleCallback(r, { timeout: 600 }) : setTimeout(r, 100)));
+  let THREE;
+  try { THREE = await import('three'); } catch (e) { L.fail('three.js could not be loaded'); return; }
+  try { start(THREE); } catch (e) { L.fail('3D could not start: ' + (e && e.message)); }
+}
+
+function start(THREE) {
+  const P = L.park, C = P.colors, route = P.route;
+  const canvas = document.getElementById('gl'), art = document.getElementById('art');
+  const tagsEl = document.getElementById('tags'), phone = document.getElementById('phone'), card = document.getElementById('arCard');
+  const playBtn = document.getElementById('playBtn'), playTxt = document.getElementById('playTxt'), playIcon = document.getElementById('playIcon');
+  const qs = new URLSearchParams(location.search);
+  const smooth = L.smooth;
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x000000, 0);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.autoUpdate = false;
+  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); running = false; L.scene = null; L.fail('WebGL context lost'); }, false);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(15, 1, 1, 2000);
+  scene.add(new THREE.HemisphereLight(0xfff7e8, 0xb6a684, 1.55));
+  const sun = new THREE.DirectionalLight(0xfff0d8, 2.0);
+  sun.position.set(P.light[0] * 40, P.light[1] * 40, P.light[2] * 40);
+  sun.castShadow = true;
+  const small = Math.min(innerWidth, innerHeight) < 700;
+  sun.shadow.mapSize.set(small ? 1024 : 2048, small ? 1024 : 2048);
+  Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 5, far: 90 });
+  sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.03; sun.shadow.radius = 3;
+  scene.add(sun);
+
+  const mats = {};
+  const mat = (c, extra) => {
+    const k = c + (extra ? JSON.stringify(extra) : '');
+    return mats[k] || (mats[k] = new THREE.MeshLambertMaterial(Object.assign({ color: c }, extra || {})));
+  };
+  const mesh = (geo, m, x = 0, y = 0, z = 0, cast = true, recv = true) => {
+    const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = cast; o.receiveShadow = recv; scene.add(o); return o;
+  };
+
+  // --- the slab: a rounded tile of grass on a band of earth, on a table that catches its shadow
+  const S = P.slab;
+  const shape = (inset) => {
+    const w = S.w / 2 - inset, d = S.d / 2 - inset, r = S.r - inset, s = new THREE.Shape();
+    s.moveTo(-w + r, -d); s.lineTo(w - r, -d); s.quadraticCurveTo(w, -d, w, -d + r); s.lineTo(w, d - r); s.quadraticCurveTo(w, d, w - r, d);
+    s.lineTo(-w + r, d); s.quadraticCurveTo(-w, d, -w, d - r); s.lineTo(-w, -d + r); s.quadraticCurveTo(-w, -d, -w + r, -d);
+    return s;
+  };
+  const slab = (inset, depth, bev, top, capC, sideC) => {
+    const g = new THREE.ExtrudeGeometry(shape(inset + bev), { depth, bevelEnabled: true, bevelThickness: bev, bevelSize: bev, bevelSegments: 2, curveSegments: 6 });
+    g.rotateX(-Math.PI / 2);
+    const m = new THREE.Mesh(g, [mat(capC), mat(sideC)]);
+    m.position.y = top - depth - bev; m.receiveShadow = true; m.castShadow = true; scene.add(m); return m;
+  };
+  slab(0, S.grass - 0.1, 0.05, 0, C.grass, C.grassSide);
+  slab(0.04, S.earth - 0.1, 0.05, -S.grass, C.earth, C.earth);
+  const table = new THREE.Mesh(new THREE.PlaneGeometry(140, 140).rotateX(-Math.PI / 2), new THREE.ShadowMaterial({ opacity: 0.13, color: 0x46381e }));
+  table.position.y = -S.grass - S.earth - 0.01; table.receiveShadow = true; scene.add(table);
+
+  // --- ground decals
+  const ribbonGeo = (pts, w, y) => {
+    const pos = [], idx = [];
+    pts.forEach((p, i) => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+      const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = -dz / l * w / 2, nz = dx / l * w / 2;
+      pos.push(p[0] + nx, y, p[1] + nz, p[0] - nx, y, p[1] - nz);
+      if (i) { const k = i * 2; idx.push(k - 2, k, k - 1, k - 1, k, k + 1); }
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+    g.setIndex(idx);
+    return g;
+  };
+  const flat = (c) => mat(c, { side: THREE.DoubleSide });
+  mesh(ribbonGeo(P.stream, P.streamW, 0.012), flat(C.water), 0, 0, 0, false);
+  mesh(ribbonGeo(P.stream.map((q) => [q[0] + 0.25, q[1]]), 0.14, 0.02), flat(C.waterLine), 0, 0, 0, false);
+  const Y = P.yard;
+  mesh(new THREE.PlaneGeometry(Y.x1 - Y.x0, Y.z1 - Y.z0).rotateX(-Math.PI / 2), mat(C.paving), (Y.x0 + Y.x1) / 2, 0.01, (Y.z0 + Y.z1) / 2, false);
+  const pondRim = mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), mat(C.stone), P.pond.x, 0.008, P.pond.z, false);
+  pondRim.scale.set(P.pond.rx + 0.2, 1, P.pond.rz + 0.2);
+  const pond = mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), mat(C.water), P.pond.x, 0.016, P.pond.z, false);
+  pond.scale.set(P.pond.rx, 1, P.pond.rz);
+  mesh(ribbonGeo(route.pts, P.pathW, 0.022), flat(C.path), 0, 0, 0, false);
+
+  // --- buildings
+  const roofGeo = (b) => {
+    const o = 0.3, xa = b.x0 - o, xb = b.x1 + o, za = b.z0 - o, zb = b.z1 + o, zm = (b.z0 + b.z1) / 2, y0 = b.h, y1 = b.h + b.roof;
+    const v = [xa, y0, zb, xb, y0, zb, xb, y1, zm, xa, y0, zb, xb, y1, zm, xa, y1, zm,
+      xb, y0, za, xa, y0, za, xa, y1, zm, xb, y0, za, xa, y1, zm, xb, y1, zm,
+      xa + o, y0, zb - o, xa + o, y1, zm, xa + o, y0, za + o, xb - o, y0, za + o, xb - o, y1, zm, xb - o, y0, zb - o,
+      xa, y0 - 0.02, za, xb, y0 - 0.02, za, xb, y0 - 0.02, zb, xa, y0 - 0.02, za, xb, y0 - 0.02, zb, xa, y0 - 0.02, zb];
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+    g.computeVertexNormals();
+    return g;
+  };
+  const house = (b, roofC, details) => {
+    mesh(new THREE.BoxGeometry(b.x1 - b.x0, b.h, b.z1 - b.z0), mat(C.wall), (b.x0 + b.x1) / 2, b.h / 2, (b.z0 + b.z1) / 2);
+    const r = new THREE.Mesh(roofGeo(b), mat(roofC, { side: THREE.DoubleSide }));
+    r.castShadow = true; r.receiveShadow = true; scene.add(r);
+    details.forEach((d) => mesh(new THREE.BoxGeometry(d[1] - d[0], d[3] - d[2], 0.06), mat(C.dark), (d[0] + d[1]) / 2, (d[2] + d[3]) / 2, b.z1 + 0.03, false, false));
+  };
+  house(P.mill, C.roof, [[-8.9, -8.1, 0, 1.3], [-11.4, -10.6, 1.2, 1.9], [-7.4, -6.8, 1.2, 1.9]]);
+  house(P.barn, C.roof2, [[8.5, 9.3, 0, 1.2]]);
+
+  // --- the mill wheel (turns slowly)
+  const W = P.wheel, wheel = new THREE.Group();
+  wheel.position.set(W.x - W.w / 2, W.y, W.z);
+  const wood = mat(C.wood), woodD = mat('#8f7457');
+  [-W.w / 2, W.w / 2].forEach((dx) => { const t = new THREE.Mesh(new THREE.TorusGeometry(W.r, 0.08, 5, 28).rotateY(Math.PI / 2), woodD); t.position.x = dx; t.castShadow = true; wheel.add(t); });
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const paddle = new THREE.Mesh(new THREE.BoxGeometry(W.w + 0.1, 0.06, 0.42), wood);
+    paddle.position.set(0, Math.cos(a) * (W.r - 0.1), Math.sin(a) * (W.r - 0.1)); paddle.rotation.x = -a; paddle.castShadow = true; wheel.add(paddle);
+    if (i % 3 === 0) { const sp = new THREE.Mesh(new THREE.BoxGeometry(0.08, W.r * 2, 0.08), woodD); sp.rotation.x = a; wheel.add(sp); }
+  }
+  wheel.add(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, W.w + 0.4, 10).rotateZ(Math.PI / 2), woodD));
+  scene.add(wheel);
+
+  // --- fountain, lookout, poster
+  const F = P.fountain;
+  mesh(new THREE.CylinderGeometry(1.0, 1.05, 0.38, 20), mat(C.stone), F.x, 0.19, F.z);
+  mesh(new THREE.CylinderGeometry(0.86, 0.86, 0.02, 20), mat(C.water), F.x, 0.37, F.z, false);
+  mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.75, 8), mat(C.stone), F.x, 0.74, F.z);
+  mesh(new THREE.CylinderGeometry(0.45, 0.3, 0.12, 12), mat(C.stone), F.x, 1.14, F.z);
+  const LK = P.lookout, hs = LK.s / 2;
+  mesh(new THREE.BoxGeometry(LK.s, LK.h, LK.s), mat(C.stone), LK.x, LK.h / 2, LK.z);
+  mesh(new THREE.BoxGeometry(0.12, 0.8, LK.s), wood, LK.x + hs - 0.06, LK.h + 0.4, LK.z);
+  mesh(new THREE.BoxGeometry(LK.s, 0.8, 0.12), wood, LK.x, LK.h + 0.4, LK.z - hs + 0.06);
+  const posterG = new THREE.Group();
+  posterG.position.set(P.poster.x, 0, P.poster.z);
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.0, 0.12), wood); post.position.y = 0.5; post.castShadow = true;
+  const board = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.2, 0.08), mat('#ffffff')); board.position.set(0, 1.5, 0.08); board.castShadow = true;
+  const qr = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), mat(C.ink)); qr.position.set(0, 1.58, 0.125);
+  const qr2 = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.4), mat('#ffffff')); qr2.position.set(0, 1.58, 0.13);
+  const qr3 = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.2), mat(C.ink)); qr3.position.set(0, 1.58, 0.135);
+  posterG.add(post, board, qr, qr2, qr3); posterG.scale.setScalar(0.001); scene.add(posterG);
+
+  // --- trees (instanced)
+  const T = P.trees, round = T.filter((t) => !t.kind), conif = T.filter((t) => t.kind);
+  const icoGeo = new THREE.IcosahedronGeometry(1, 0), coneGeo = new THREE.ConeGeometry(1, 1, 7).translate(0, 0.5, 0), trunkGeo = new THREE.CylinderGeometry(0.1, 0.14, 1, 6).translate(0, 0.5, 0);
+  const inst = (geo, m, list, setter) => {
+    const im = new THREE.InstancedMesh(geo, m, list.length), o = new THREE.Object3D();
+    list.forEach((t, i) => { setter(o, t); o.updateMatrix(); im.setMatrixAt(i, o.matrix); });
+    im.castShadow = true; im.receiveShadow = true; scene.add(im); return im;
+  };
+  inst(icoGeo, mat(C.tree, { flatShading: true }), round, (o, t) => { o.position.set(t.x, 1.75 * t.s, t.z); o.scale.set(0.95 * t.s, 0.86 * t.s, 0.95 * t.s); o.rotation.set(0, t.x * 3.1, 0); });
+  inst(coneGeo, mat(C.conifer, { flatShading: true }), conif, (o, t) => { o.position.set(t.x, 0.4 * t.s, t.z); o.scale.set(0.75 * t.s, 2.6 * t.s, 0.75 * t.s); o.rotation.set(0, t.z * 2.3, 0); });
+  inst(trunkGeo, mat(C.trunk), T, (o, t) => { o.position.set(t.x, 0, t.z); o.scale.set(t.s, (t.kind ? 0.5 : 0.95) * t.s, t.s); o.rotation.set(0, 0, 0); });
+  const O = P.oak;
+  mesh(new THREE.CylinderGeometry(0.26, 0.38, O.h, 7).translate(0, O.h / 2, 0), mat(C.trunk), O.x, 0, O.z);
+  [[-0.5, O.h + 0.9, 0, 0.8], [0.7, O.h + 0.7, 0.3, 0.75], [0, O.h + 1.4, -0.4, 0.8]].forEach((c) => {
+    const m = mesh(icoGeo, mat(C.tree, { flatShading: true }), O.x + c[0], c[1], O.z + c[2]); m.scale.set(O.r * c[3], O.r * c[3] * 0.85, O.r * c[3]);
+  });
+
+  // --- the route: dots that draw themselves
+  const dotPos = [];
+  for (let s = 0.3; s < route.len; s += 0.62) dotPos.push(s);
+  const dotMat = new THREE.MeshBasicMaterial({ color: C.route, transparent: true, opacity: 1 });
+  const dots = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.16, 0.04, 10), dotMat, dotPos.length);
+  { const o = new THREE.Object3D(); dotPos.forEach((s, i) => { const q = route.at(s); o.position.set(q.x, 0.05, q.z); o.updateMatrix(); dots.setMatrixAt(i, o.matrix); }); }
+  dots.count = 0; scene.add(dots);
+
+  // --- pins with blob shadows, and their labels
+  const blobGeo = new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2);
+  const blobMat = new THREE.MeshBasicMaterial({ color: 0x2a2824, transparent: true, opacity: 0.2, depthWrite: false });
+  const red = mat(C.route), ink = mat(C.ink), white = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const pins = P.stations.map((st) => {
+    const g = new THREE.Group(); g.position.set(st.pin[0], 0, st.pin[1]);
+    const head = new THREE.Group();
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.44, 18, 12), red);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.33, 0.66, 16).rotateX(Math.PI), red); tip.position.y = -0.42;
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 8), white);
+    head.add(ball, tip, eye);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 6).translate(0, 0.5, 0), ink);
+    const blob = new THREE.Mesh(blobGeo, blobMat); blob.position.y = 0.03; blob.scale.setScalar(0.45);
+    g.add(head, pole, blob); scene.add(g);
+    const tag = document.createElement('span'); tag.className = 'tag'; tag.innerHTML = '<b>' + st.n + '</b>' + st.name; tagsEl.appendChild(tag);
+    return { st, g, head, pole, blob, eye, tag, rise: 0, pulse: 0 };
+  });
+  const startTag = document.createElement('span'); startTag.className = 'tag start'; startTag.textContent = 'Start: the poster'; tagsEl.appendChild(startTag);
+  const setPin = (p, k) => {
+    p.rise = k;
+    const h = P.pinH * Math.max(0, k);
+    p.head.position.y = h; p.base = Math.min(1, Math.max(0.001, k * 1.3)) * (1 + 0.25 * p.pulse);
+    p.pole.scale.y = Math.max(0.001, h - 0.75); p.pole.visible = h > 0.8;
+    p.blob.scale.setScalar(0.45 * Math.min(1, Math.max(0.001, k)));
+    p.g.visible = k > 0.001;
+  };
+  pins.forEach((p) => setPin(p, 0));
+
+  // --- the walker
+  const walker = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.3, 4, 10), ink); body.position.y = 0.36;
+  const headW = new THREE.Mesh(new THREE.SphereGeometry(0.15, 14, 10), mat(C.paper)); headW.position.y = 0.76;
+  const wBlob = new THREE.Mesh(blobGeo, blobMat); wBlob.position.y = 0.03; wBlob.scale.setScalar(0.3);
+  walker.add(body, headW, wBlob); walker.visible = false; scene.add(walker);
+
+  // --- the camera: a narrow-angle overview fitted to the real frustum, and an eye-height shot at stop 1
+  const keyPts = [];
+  (() => {
+    const w = S.w / 2, d = S.d / 2;
+    for (const [x, z] of [[-w, -d], [w, -d], [w, d], [-w, d], [0, -d], [0, d], [-w, 0], [w, 0]]) { keyPts.push([x, 0, z], [x, -S.grass - S.earth, z]); }
+    const m = P.mill, b = P.barn;
+    keyPts.push([m.x0, m.h + m.roof, (m.z0 + m.z1) / 2], [m.x1, m.h + m.roof, (m.z0 + m.z1) / 2], [b.x0, b.h + b.roof, (b.z0 + b.z1) / 2], [b.x1, b.h + b.roof, (b.z0 + b.z1) / 2]);
+    T.forEach((t) => keyPts.push([t.x, 2.7 * t.s, t.z]));
+    P.stations.forEach((st) => keyPts.push([st.pin[0], P.pinH + 1.9, st.pin[1]]));
+    keyPts.push([P.poster.x, 3.6, P.poster.z]);
+  })();
+  const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+  const dirOf = (az, el) => V3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+  let A = null, Bv = null, azOff = 0;
+  function fitAerial(V) {
+    const az = V.az + azOff, el = V.el, fov = V.fov * Math.PI / 180, tv = Math.tan(fov / 2), th = tv * V.aspect;
+    const dir = dirOf(az, el), up = V3(0, 1, 0);
+    const r = new THREE.Vector3().crossVectors(up, dir).normalize(); // camera right
+    const u = new THREE.Vector3().crossVectors(dir, r).normalize();
+    const target = V3(0, 0.4, 0), MX = 0.91, MY = 0.9, tmp = new THREE.Vector3();
+    const ndc = (d) => {
+      const cam = target.clone().addScaledVector(dir, d); let x0 = 9, x1 = -9, y0 = 9, y1 = -9;
+      for (const k of keyPts) {
+        tmp.set(k[0], k[1], k[2]).sub(cam);
+        const z = -tmp.dot(dir), x = tmp.dot(r) / (z * th), y = tmp.dot(u) / (z * tv);
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+      }
+      return [x0, x1, y0, y1];
+    };
+    let d = 100;
+    for (let it = 0; it < 4; it++) {
+      let lo = 10, hi = 4000;
+      for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2, b = ndc(mid); if (Math.max(-b[0], b[1]) <= MX && Math.max(-b[2], b[3]) <= MY) hi = mid; else lo = mid; }
+      d = hi;
+      const b = ndc(d), cx = (b[0] + b[1]) / 2, cy = (b[2] + b[3]) / 2;
+      target.addScaledVector(r, cx * d * th).addScaledVector(u, cy * d * tv);
+    }
+    return { az, el, d, fov: V.fov, target };
+  }
+  function eyeShot(V) {
+    const pos = V3(...P.eye.pos), target = V3(...P.eye.target);
+    if (V.aspect >= 1.2) target.y += 0.35; // wide frames: look a little higher so the note fits above the pin
+    const dv = pos.clone().sub(target), d = dv.length();
+    dv.normalize();
+    return { az: Math.atan2(dv.x, dv.z), el: Math.asin(dv.y), d, fov: V.aspect < 1.2 ? 60 : 46, target };
+  }
+  const lerp = (a, b, t) => a + (b - a) * t;
+  let T01 = 0;
+  // Two phases, so the flight never cuts through the trees: first glide in high above stop 1
+  // (turning to face it), then come down along the path to eye height.
+  const SPLIT = 0.55, MID_D = 14, MID_EL = 38 * Math.PI / 180;
+  function placeCamera() {
+    const t = T01;
+    let az, el, d, tg;
+    if (t <= SPLIT) {
+      const e = t / SPLIT;
+      az = lerp(A.az, Bv.az, e); el = lerp(A.el, MID_EL, e); d = Math.exp(lerp(Math.log(A.d), Math.log(MID_D), e));
+      tg = A.target.clone().lerp(Bv.target, e);
+      camera.fov = lerp(A.fov, Bv.fov, e);
+    } else {
+      const e = (t - SPLIT) / (1 - SPLIT);
+      az = Bv.az; el = lerp(MID_EL, Bv.el, e); d = Math.exp(lerp(Math.log(MID_D), Math.log(Bv.d), e));
+      tg = Bv.target.clone();
+      camera.fov = Bv.fov;
+    }
+    camera.position.copy(tg).addScaledVector(dirOf(az, el), d);
+    camera.near = Math.max(0.05, d * 0.04); camera.far = d * 4 + 80;
+    camera.lookAt(tg); camera.updateProjectionMatrix();
+  }
+
+  let W0 = 0, H0 = 0;
+  function resize() {
+    const V = L.view(); if (V.w < 2 || V.h < 2) return;
+    W0 = V.w; H0 = V.h;
+    renderer.setSize(V.w, V.h, false);
+    camera.aspect = V.aspect;
+    A = fitAerial(V); Bv = eyeShot(V);
+    drawVeil(V);
+    dirty = true;
+  }
+  const veil = document.getElementById('veil');
+  function drawVeil(V) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2), ctx = veil.getContext('2d');
+    if (!ctx) return;
+    veil.width = Math.round(V.w * dpr); veil.height = Math.round(V.h * dpr);
+    const a = art.getBoundingClientRect(), p = phone.getBoundingClientRect();
+    const rad = (parseFloat(getComputedStyle(phone).borderTopLeftRadius) || 30) * dpr;
+    const x = (p.left - a.left) * dpr + 1, y = (p.top - a.top) * dpr + 1, w = p.width * dpr - 2, h = p.height * dpr - 2, r = Math.min(rad, w / 2, h / 2);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#f4eedf'; ctx.fillRect(0, 0, veil.width, veil.height);
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // --- timeline
+  const DRAW0 = 0.5, DRAW = 3.0, WALK0 = DRAW0 + DRAW + 0.8;
+  const loopS = Math.max(6, Math.min(40, parseFloat(qs.get('walk')) || 13)), PAUSE = 0.9;
+  const stops = [0].concat(P.stations.map((s) => s.s));
+  const speed = route.len / (loopS - PAUSE * P.stations.length);
+  const LOOPS = 3;
+  let clock = 0, playing = true, ended = false, dirty = true, running = true, visible = true, last = performance.now();
+  // the moment the line reaches each stop (the draw is eased with a smoothstep; invert it by bisection)
+  pins.forEach((p) => {
+    const f = p.st.s / route.len; let lo = 0, hi = 1;
+    for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (m * m * (3 - 2 * m) < f) lo = m; else hi = m; }
+    p.riseT = DRAW0 + DRAW * hi;
+  });
+  const easeBack = (x) => { const c = 1.7; x = Math.min(1, Math.max(0, x)); return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+  function walkerAt(tl) { // time within a loop -> arc length and whether paused at a stop
+    let tt = tl;
+    for (let i = 1; i < stops.length; i++) {
+      const seg = (stops[i] - stops[i - 1]) / speed;
+      if (tt < seg) return { s: stops[i - 1] + tt * speed, at: -1 };
+      tt -= seg;
+      if (tt < PAUSE) return { s: stops[i], at: i - 1, k: tt / PAUSE };
+      tt -= PAUSE;
+    }
+    return { s: route.len, at: -1 };
+  }
+  function update() {
+    // poster, route and pins
+    posterG.scale.setScalar(Math.max(0.001, easeBack((clock - 0.2) / 0.5)));
+    startTag.classList.toggle('on', clock > 0.5);
+    const drawn = Math.min(1, Math.max(0, (clock - DRAW0) / DRAW));
+    const sDrawn = route.len * (drawn < 1 ? drawn * drawn * (3 - 2 * drawn) : 1);
+    dots.count = dotPos.filter((s) => s <= sDrawn).length;
+    let w = null;
+    if (clock >= WALK0 && !ended) {
+      const lt = (clock - WALK0) % loopS;
+      if (clock - WALK0 >= loopS * LOOPS) { ended = true; playing = false; syncPlay(); }
+      else w = walkerAt(lt);
+    }
+    pins.forEach((p, i) => {
+      // a pin rises the moment the drawn line reaches its stop
+      const k = Math.min(1, Math.max(0, (clock - p.riseT) / 0.6));
+      p.pulse = w && w.at === i ? Math.sin(Math.PI * w.k) : 0;
+      setPin(p, k < 1 ? easeBack(k) : 1);
+      p.tag.classList.toggle('on', k > 0.6);
+      p.tag.classList.toggle('here', !!(w && w.at === i));
+    });
+    if (w) {
+      const q = route.at(w.s);
+      walker.visible = true;
+      walker.position.set(q.x, w.at < 0 ? Math.abs(Math.sin(clock * 9)) * 0.06 : 0, q.z);
+      walker.rotation.y = Math.atan2(q.tx, q.tz);
+    } else if (ended) { const q = route.at(0); walker.visible = true; walker.position.set(q.x, 0, q.z); }
+    wheel.rotation.x = -clock * 0.5;
+  }
+  function render() {
+    placeCamera();
+    const t = T01;
+    // pins and walker are drawn larger than life in the overview so they read on a phone, life-size at eye height
+    const big = 1.45 - 0.45 * smooth(0.3, 0.9, t);
+    pins.forEach((p) => p.head.scale.setScalar((p.base || 0.001) * big));
+    walker.scale.setScalar(Math.max(0.001, 1.9 * (1 - smooth(0.2, 0.4, t))));
+    dotMat.opacity = 1 - smooth(0.5, 0.78, t); dots.visible = dotMat.opacity > 0.01;
+    // the white "eye" of each pin faces the camera
+    const cd = camera.position;
+    pins.forEach((p) => { const v = cd.clone().sub(p.g.position); v.y = 0; v.normalize().multiplyScalar(0.33); p.eye.position.set(v.x, 0.04, v.z); });
+    renderer.render(scene, camera);
+    // labels: projected into the canvas
+    tagsEl.style.opacity = String(1 - smooth(0.06, 0.22, t));
+    const pv = new THREE.Vector3();
+    const place = (el, x, y, z, dy) => {
+      pv.set(x, y, z).project(camera);
+      const px = (pv.x + 1) / 2 * W0, py = (1 - pv.y) / 2 * H0 - dy;
+      el.style.transform = 'translate(' + px.toFixed(1) + 'px,' + py.toFixed(1) + 'px) translate(-50%,-100%)';
+    };
+    if (t < 0.3) {
+      pins.forEach((p) => place(p.tag, p.g.position.x, P.pinH * Math.max(p.rise, 0.6) + 0.75, p.g.position.z, 4));
+      place(startTag, P.poster.x, 2.2, P.poster.z, 6);
+    }
+    const ph = smooth(0.7, 0.95, t);
+    art.style.setProperty('--ph', ph.toFixed(3));
+    // the note floats just above pin 1, kept inside the phone's screen
+    const pin1 = pins[0];
+    pv.set(pin1.g.position.x, P.pinH + 0.55, pin1.g.position.z).project(camera);
+    const cw = card.offsetWidth, chh = card.offsetHeight;
+    const phH = Math.min(H0 * 0.94, 620), phW = phH * 9 / 18.5, m = 18;
+    let cx = (pv.x + 1) / 2 * W0 - cw / 2, cy = (1 - pv.y) / 2 * H0 - chh - 8;
+    cx = Math.max(W0 / 2 - phW / 2 + m, Math.min(W0 / 2 + phW / 2 - m - cw, cx));
+    cy = Math.max(H0 / 2 - phH / 2 + m + 6, Math.min(H0 / 2 + phH / 2 - m - chh, cy));
+    card.style.transform = 'translate(' + cx.toFixed(1) + 'px,' + cy.toFixed(1) + 'px)';
+    card.classList.toggle('on', t > 0.93);
+  }
+  function frame(now) {
+    if (!running) return;
+    requestAnimationFrame(frame);
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (!visible) return;
+    if (playing) { clock += dt; update(); dirty = true; tier(dt); }
+    if (dirty) { dirty = false; render(); }
+  }
+  // one quality step down if the walk runs slowly: fewer pixels, same picture
+  const samples = []; let lowered = false;
+  function tier(dt) {
+    if (lowered || clock < WALK0) return;
+    samples.push(dt * 1000);
+    if (samples.length < 90) return;
+    const med = samples.sort((a, b) => a - b)[45];
+    lowered = true;
+    if (med > 22 && renderer.getPixelRatio() > 1.25) { renderer.setPixelRatio(1.25); W0 = 0; resize(); }
+  }
+  function syncPlay() {
+    playTxt.textContent = ended ? 'Replay' : playing ? 'Pause' : 'Play';
+    playBtn.setAttribute('aria-label', ended ? 'Replay the walk' : playing ? 'Pause the walk' : 'Play the walk');
+    playIcon.innerHTML = playing ? '<rect x="2" y="1" width="3" height="10"/><rect x="7" y="1" width="3" height="10"/>' : '<path d="M2 1 L11 6 L2 11 Z"/>';
+  }
+  playBtn.addEventListener('click', () => {
+    if (ended) { ended = false; clock = WALK0; playing = true; }
+    else playing = !playing;
+    syncPlay(); dirty = true;
+  });
+
+  // drag to turn the park (overview only); vertical moves keep scrolling the page
+  let drag = null;
+  canvas.addEventListener('pointerdown', (e) => { if (T01 > 0.05) return; drag = { x: e.clientX, az: azOff, id: e.pointerId }; });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x;
+    if (Math.abs(dx) > 4) { canvas.classList.add('dragging'); try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* already released */ } }
+    azOff = Math.max(-0.7, Math.min(0.7, drag.az - dx * 0.006));
+    A = fitAerial(L.view()); dirty = true;
+  });
+  const endDrag = () => { drag = null; canvas.classList.remove('dragging'); };
+  canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
+
+  if ('IntersectionObserver' in window) new IntersectionObserver((es) => { visible = es[0].isIntersecting; dirty = true; }).observe(art);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { last = performance.now(); dirty = true; } });
+  if ('ResizeObserver' in window) new ResizeObserver(resize).observe(art); else addEventListener('resize', resize);
+
+  resize();
+  T01 = L.state.t;
+  update();
+  renderer.shadowMap.needsUpdate = true;
+  render();
+  canvas.classList.add('on');
+  syncPlay();
+  requestAnimationFrame(frame);
+
+  L.scene = {
+    setT(t) { T01 = t; dirty = true; },
+    setClock(c) { clock = c; ended = false; update(); dirty = true; },
+    pause() { playing = false; syncPlay(); },
+    framing() {
+      const pts = keyPts.map((k) => { const v = new THREE.Vector3(k[0], k[1], k[2]).project(camera); return [(v.x + 1) / 2 * W0, (1 - v.y) / 2 * H0]; });
+      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+      return { w: W0, h: H0, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys), dots: dotPos.length, routeLen: route.len, trees: T.length };
+    },
+    info() { const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info'); return { renderer: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'n/a', calls: renderer.info.render.calls, tris: renderer.info.render.triangles, dpr: renderer.getPixelRatio() }; }
+  };
+  L.onReady();
+}
+</script>
+</body>
+</html>

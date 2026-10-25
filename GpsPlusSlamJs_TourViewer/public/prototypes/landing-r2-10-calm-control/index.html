@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en" data-ar="0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Make your own AR tour: visitors see your notes and photos at the real place, through their phone. No code, no sign-up, no account.">
+<title>Make your own AR tour</title>
+<script>
+  // Before first paint: ?ar=1 / ?ar=0 fakes the device's AR support, so the page never flashes the wrong state.
+  (function () { var q = new URLSearchParams(location.search).get('ar'); if (q === '1' || q === '0') document.documentElement.dataset.ar = q; })();
+</script>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-2: #f3f4f2;
+  --ink: #0b0c0c;
+  --ink-2: #464a4c;
+  --rule: #b1b4b6;
+  --link: #1a4fb4;
+  --link-visited: #4c2c92;
+  --go: #00703c;
+  --go-dark: #002d18;
+  --mark: #b3261e;
+  --ok: #00703c;
+  --info: #1a4fb4;
+  --focus: #ffdd00;
+  --screen: #e8eef7;
+  --space: 1.25rem;
+  --measure: 37rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121314;
+    --bg-2: #1d1f21;
+    --ink: #f3f2f1;
+    --ink-2: #c4c7c9;
+    --rule: #5f6466;
+    --link: #8db4ff;
+    --link-visited: #c3a8ff;
+    --go: #2e9a5e;
+    --go-dark: #0b3d22;
+    --mark: #ff8a7a;
+    --ok: #4cc27f;
+    --info: #8db4ff;
+    --screen: #22303f;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 1.125rem;
+  line-height: 1.55;
+  overflow-wrap: break-word;
+}
+@media (min-width: 40rem) { body { font-size: 1.1875rem; } }
+
+/* Spacing is load-bearing: every paragraph, list and heading carries its own margin. */
+p, ul, ol, dl, figure, fieldset { margin: 0 0 var(--space); }
+h1, h2, h3 { line-height: 1.15; margin: 0 0 1rem; font-weight: 700; text-wrap: balance; }
+h1 { font-size: clamp(2rem, 1.4rem + 3vw, 3rem); letter-spacing: -0.01em; margin-bottom: 1.5rem; }
+h2 { font-size: clamp(1.5rem, 1.25rem + 1.2vw, 2rem); }
+h3 { font-size: 1.1875rem; margin-bottom: 0.4rem; }
+ul, ol { padding-left: 1.25em; }
+li + li { margin-top: 0.5rem; }
+strong { font-weight: 700; }
+p, li { text-wrap: pretty; }
+
+a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
+a:visited { color: var(--link-visited); }
+a:hover { text-decoration-thickness: 3px; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 0; box-shadow: 0 0 0 6px var(--ink); }
+a:focus-visible { outline: none; background: var(--focus); color: #0b0c0c; box-shadow: 0 -2px var(--focus), 0 4px #0b0c0c; text-decoration: none; }
+
+.wrap { max-width: 64rem; margin: 0 auto; padding: 0 1rem; }
+@media (min-width: 40rem) { .wrap { padding: 0 2rem; } }
+
+.skip { position: absolute; left: -9999px; top: 0; padding: 0.75rem 1rem; background: var(--focus); color: #0b0c0c; z-index: 10; }
+.skip:focus { left: 0; }
+
+/* ---------- Prototype controls (not part of the design) ---------- */
+.proto { border-bottom: 2px dashed var(--rule); background: var(--bg-2); font-size: 0.9375rem; }
+.proto fieldset { margin: 0; padding: 0.5rem 0; border: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 1.25rem; }
+.proto legend { float: left; padding: 0; margin-right: 0.25rem; font-weight: 700; }
+.proto label { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 2.75rem; cursor: pointer; }
+.proto input { width: 1.25rem; height: 1.25rem; margin: 0; accent-color: var(--ink); }
+
+/* ---------- Header and footer ---------- */
+.top { border-bottom: 0.5rem solid var(--ink); }
+.top .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem 1.5rem; padding-top: 0.875rem; padding-bottom: 0.875rem; }
+.service { font-weight: 700; font-size: 1.25rem; color: var(--ink); text-decoration: none; }
+.service:visited { color: var(--ink); }
+.top nav a { font-size: 1rem; display: inline-block; padding: 0.5rem 0; }
+
+.foot { margin-top: 4rem; border-top: 1px solid var(--rule); background: var(--bg-2); padding: 2rem 0 3rem; font-size: 1rem; }
+.foot ul { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; }
+.foot li + li { margin-top: 0; }
+
+/* ---------- Layout ---------- */
+.page { padding-top: 2.5rem; }
+@media (min-width: 64rem) {
+  .page { display: grid; grid-template-columns: minmax(0, 1fr) 15rem; gap: 4rem; align-items: start; }
+  .contents { position: sticky; top: 1.5rem; order: 2; }
+}
+.prose { max-width: var(--measure); }
+main:focus { outline: none; box-shadow: none; }
+
+.lede { font-size: 1.25rem; }
+@media (min-width: 40rem) { .lede { font-size: 1.375rem; } }
+
+.facts { list-style: none; padding: 0; margin-bottom: 1.75rem; }
+.facts li { padding-left: 1rem; border-left: 4px solid var(--ink); }
+.facts li + li { margin-top: 1rem; }
+
+/* AR state: both texts are always laid out; only the one that applies is shown. */
+html[data-ar="1"] .ar-no, html[data-ar="0"] .ar-yes { display: none; }
+
+.status { padding: 0.875rem 1rem; border-left: 0.5rem solid var(--info); background: var(--bg-2); }
+.status p { margin: 0; }
+html[data-ar="1"] .status { border-left-color: var(--ok); }
+
+.start-btn {
+  display: inline-flex; align-items: center; gap: 0.6rem;
+  font: inherit; font-weight: 700; font-size: 1.1875rem; line-height: 1.2;
+  padding: 0.75rem 1.25rem; min-height: 3rem;
+  color: #fff; background: var(--go); border: 2px solid transparent; border-radius: 0;
+  box-shadow: 0 3px 0 var(--go-dark); text-decoration: none; cursor: pointer;
+}
+.start-btn:visited { color: #fff; }
+.start-btn:hover { filter: brightness(0.92); text-decoration: none; }
+.start-btn:active { transform: translateY(2px); box-shadow: none; }
+.start-btn:focus-visible { outline: 3px solid var(--focus); outline-offset: 0; background: var(--focus); color: #0b0c0c; box-shadow: 0 3px 0 #0b0c0c; }
+.start-btn svg { width: 1.1em; height: 1.1em; flex: none; }
+.cta { margin: 1.75rem 0 2rem; }
+
+.inset { padding: 1rem 1.25rem; border-left: 0.3rem solid var(--rule); }
+.inset p:last-child { margin-bottom: 0; }
+
+.contents { margin-bottom: 0; }
+.contents-h { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; }
+.contents ol { list-style: none; padding: 0; margin: 0; font-size: 1rem; }
+.contents li + li { margin-top: 0.4rem; }
+.contents li { padding-left: 0.75rem; border-left: 2px solid var(--rule); }
+@media (max-width: 63.99rem) { .contents { display: none; } }
+
+section { margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--rule); scroll-margin-top: 1rem; }
+
+/* ---------- Diagram ---------- */
+.diagram { margin: 2rem 0; }
+.diagram svg { display: block; width: 100%; max-width: 34rem; height: auto; color: var(--ink); }
+.diagram figcaption ol { margin: 1rem 0 0; padding: 0; list-style: none; }
+.diagram figcaption li { display: flex; gap: 0.75rem; align-items: baseline; }
+.diagram figcaption li + li { margin-top: 0.5rem; }
+.num { flex: none; display: inline-grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 50%; background: var(--ink); color: var(--bg); font-weight: 700; font-size: 1rem; line-height: 1; }
+.num.mark { background: var(--mark); color: var(--bg); }
+
+/* ---------- Need list ---------- */
+.need { list-style: none; padding: 0; }
+.need li { padding: 0.875rem 0; border-bottom: 1px solid var(--rule); }
+.need li + li { margin-top: 0; }
+.need li:first-child { border-top: 1px solid var(--rule); }
+.need strong { display: block; }
+.need span { color: var(--ink-2); }
+
+/* ---------- Steps ---------- */
+.steps { list-style: none; padding: 0; counter-reset: step; }
+.steps > li { counter-increment: step; position: relative; padding-left: 3.25rem; min-height: 2.5rem; }
+.steps > li + li { margin-top: 1.75rem; }
+.steps > li::before {
+  content: counter(step); position: absolute; left: 0; top: 0;
+  width: 2.25rem; height: 2.25rem; border: 2px solid var(--ink); border-radius: 50%;
+  display: grid; place-items: center; font-weight: 700; font-size: 1.0625rem; line-height: 1;
+}
+.steps p { margin-bottom: 0.4rem; }
+.where { display: inline-block; font-size: 0.9375rem; font-weight: 600; color: var(--ink-2); padding: 0.1rem 0.5rem; border: 1px solid var(--rule); }
+.where.ar { border-color: var(--ink); color: var(--ink); }
+
+/* ---------- FAQ ---------- */
+.faq details { border-bottom: 1px solid var(--rule); }
+.faq details:first-of-type { border-top: 1px solid var(--rule); }
+.faq summary { cursor: pointer; padding: 1rem 2.5rem 1rem 0; font-weight: 700; color: var(--link); list-style: none; position: relative; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; position: absolute; right: 0.25rem; top: 0.75rem; font-size: 1.5rem; line-height: 1.2; font-weight: 400; color: var(--ink); }
+.faq details[open] summary::after { content: "\2212"; }
+.faq summary:hover { text-decoration: underline; text-decoration-thickness: 2px; }
+.faq .answer { padding: 0 0 0.5rem; }
+
+/* ---------- Step 1 form ---------- */
+.form { margin-top: 2rem; padding: 1.5rem 0 0; }
+.form fieldset { border: 0; padding: 0; }
+.form legend { padding: 0; margin-bottom: 0.4rem; font-size: 1.5rem; font-weight: 700; line-height: 1.2; }
+.form .step-of { display: block; font-size: 1.0625rem; font-weight: 400; color: var(--ink-2); margin-bottom: 0.25rem; }
+.hint { color: var(--ink-2); margin-bottom: 1rem; }
+.radios label { display: flex; align-items: center; gap: 0.75rem; min-height: 2.75rem; padding: 0.25rem 0; cursor: pointer; }
+.radios label + label { margin-top: 0.25rem; }
+.radios input { flex: none; width: 1.75rem; height: 1.75rem; margin: 0; accent-color: var(--ink); }
+.fine { font-size: 1rem; color: var(--ink-2); }
+
+/* ---------- Notes (prototype only) ---------- */
+.notes { margin-top: 2rem; font-size: 1rem; }
+.notes summary { cursor: pointer; font-weight: 700; padding: 0.5rem 0; }
+.notes h3 { font-size: 1rem; margin-top: 1.25rem; }
+.notes ul { padding-left: 1.1em; }
+.notes li + li { margin-top: 0.3rem; }
+
+/* Phone held sideways: the headline and all three facts must fit the first screen. */
+@media (orientation: landscape) and (max-height: 31rem) {
+  .proto fieldset { padding: 0.125rem 0; }
+  .proto label { min-height: 2.25rem; }
+  .top .wrap { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+  .top { border-bottom-width: 0.3rem; }
+  .page { padding-top: 1.25rem; }
+  h1 { font-size: 2rem; margin-bottom: 0.875rem; }
+  .facts { margin-bottom: 1.25rem; }
+  .facts li + li { margin-top: 0.5rem; }
+}
+
+@media print {
+  .proto, .contents, .notes, .cta { display: none; }
+  .faq details > .answer { display: block; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<div class="proto" role="region" aria-label="Prototype controls">
+  <div class="wrap">
+    <fieldset>
+      <legend>Prototype - show the page as on:</legend>
+      <label><input type="radio" name="ar" value="1"> a phone with AR</label>
+      <label><input type="radio" name="ar" value="0" checked> a device without AR</label>
+    </fieldset>
+  </div>
+</div>
+
+<header class="top">
+  <div class="wrap">
+    <a class="service" href="./">Tour Viewer</a>
+    <nav aria-label="Other pages"><a href="../../../">For developers</a></nav>
+  </div>
+</header>
+
+<div class="wrap page">
+  <nav class="contents" aria-labelledby="contents-h">
+    <p class="contents-h" id="contents-h">On this page</p>
+    <ol>
+      <li><a href="#what">What it is</a></li>
+      <li><a href="#need">What you need</a></li>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#faq">Questions people ask</a></li>
+      <li><a href="#start">Start your tour</a></li>
+    </ol>
+  </nav>
+
+  <main id="main" class="prose" tabindex="-1">
+    <h1>Make your own AR tour</h1>
+
+    <ul class="facts">
+      <li><strong>It happens on site.</strong> Visitors hold up their phone at the real place, and your notes and photos appear there through the camera. That is AR, augmented reality.</li>
+      <li><strong>You make it yourself.</strong> No code, no sign-up, no account.</li>
+      <li><strong>It needs an Android phone with Chrome</strong> for the AR part, for you and for your visitors. You can plan on any computer.</li>
+    </ul>
+
+    <div class="status" role="status">
+      <p class="ar-yes"><strong>This phone can show AR.</strong> You can do every step here, including the walk.</p>
+      <p class="ar-no"><strong>This device cannot show AR.</strong> You can plan your tour here. For the walk, use an Android phone with Chrome.</p>
+    </div>
+
+    <p class="cta">
+      <a class="start-btn" href="#start">Start now
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12h13M12 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="square"/></svg>
+      </a>
+    </p>
+
+    <div class="inset">
+      <p><strong>Taking a tour, not making one?</strong> Scan the code on the poster with your phone's camera. It takes you straight to the tour.</p>
+    </div>
+
+    <section id="what" aria-labelledby="what-h">
+      <h2 id="what-h">What it is</h2>
+      <p>A tour is a short walk with stations at a real place, such as a park, a museum garden or a school ground. At each station, the visitor's phone shows the notes and photos you put there, fixed to the spot as if they were part of it.</p>
+
+      <figure class="diagram" aria-labelledby="fig-cap">
+        <svg viewBox="0 0 480 270" role="img" aria-labelledby="fig-title">
+          <title id="fig-title">A mill wheel in a park, a phone held up in front of it, and on the phone's screen a note pinned to the wheel.</title>
+          <defs>
+            <clipPath id="scr"><rect x="314" y="48" width="112" height="190" rx="6"/></clipPath>
+          </defs>
+          <g fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+            <!-- the place: a mill and its wheel -->
+            <path d="M14 232H290"/>
+            <path d="M34 232V128h112v104"/>
+            <path d="M24 130l66-46 66 46"/>
+            <rect x="78" y="186" width="26" height="46"/>
+            <rect x="52" y="146" width="22" height="20"/>
+            <rect x="108" y="146" width="22" height="20"/>
+            <circle cx="186" cy="190" r="38" fill="var(--bg)"/>
+            <circle cx="186" cy="190" r="8"/>
+            <path d="M186 152v76M148 190h76M159 163l54 54M213 163l-54 54" stroke-width="2"/>
+            <path d="M228 240c10-6 20 6 30 0s20 6 30 0" stroke-width="2"/>
+            <!-- line of sight from the phone to the wheel -->
+            <path d="M310 150L232 186" stroke-dasharray="2 8" stroke-width="2.5"/>
+            <!-- the phone -->
+            <rect x="306" y="34" width="128" height="218" rx="16" fill="var(--bg)"/>
+          </g>
+          <!-- what the phone's screen shows -->
+          <g clip-path="url(#scr)">
+            <rect x="314" y="48" width="112" height="190" fill="var(--screen)"/>
+            <g fill="none" stroke="currentColor" stroke-width="2.5" opacity=".55">
+              <path d="M300 226H440"/>
+              <path d="M300 150h40v76"/>
+              <circle cx="372" cy="196" r="26"/>
+              <circle cx="372" cy="196" r="5"/>
+              <path d="M372 170v52M346 196h52" stroke-width="1.6"/>
+            </g>
+            <!-- the note, which only the phone shows -->
+            <path d="M372 166v-14" stroke="var(--mark)" stroke-width="3"/>
+            <circle cx="372" cy="168" r="5" fill="var(--mark)"/>
+            <rect x="326" y="76" width="88" height="70" rx="4" fill="var(--bg)" stroke="var(--mark)" stroke-width="3"/>
+            <rect x="336" y="88" width="50" height="7" rx="2" fill="currentColor"/>
+            <rect x="336" y="103" width="66" height="5" rx="2" fill="currentColor" opacity=".5"/>
+            <rect x="336" y="115" width="58" height="5" rx="2" fill="currentColor" opacity=".5"/>
+            <rect x="336" y="127" width="40" height="5" rx="2" fill="currentColor" opacity=".5"/>
+          </g>
+          <!-- numbered markers that match the caption -->
+          <g font-family="system-ui, sans-serif" font-weight="700" font-size="20" text-anchor="middle">
+            <circle cx="30" cy="88" r="17" fill="currentColor"/>
+            <text x="30" y="95" fill="var(--bg)">1</text>
+            <circle cx="456" cy="60" r="17" fill="currentColor"/>
+            <text x="456" y="67" fill="var(--bg)">2</text>
+            <circle cx="292" cy="96" r="17" fill="var(--mark)"/>
+            <text x="292" y="103" fill="var(--bg)">3</text>
+          </g>
+        </svg>
+        <figcaption id="fig-cap">
+          <ol>
+            <li><span class="num" aria-hidden="true">1</span><span>The real place: here, the old mill in Mill Park, an example tour.</span></li>
+            <li><span class="num" aria-hidden="true">2</span><span>A visitor's phone, held up on site.</span></li>
+            <li><span class="num mark" aria-hidden="true">3</span><span>Your note. Only the phone shows it, fixed to the wheel.</span></li>
+          </ol>
+        </figcaption>
+      </figure>
+    </section>
+
+    <section id="need" aria-labelledby="need-h">
+      <h2 id="need-h">What you need</h2>
+      <ul class="need">
+        <li><strong>An Android phone with Chrome that supports AR</strong> <span>To place your stations on site. Your visitors need one too, to walk the tour. Open this page on a phone and it tells you whether that phone can.</span></li>
+        <li><strong>Any computer or phone</strong> <span>To plan the tour, print its posters, and later fix its texts in the editor.</span></li>
+        <li><strong>A printer</strong> <span>For the posters with the code that visitors scan.</span></li>
+        <li><strong>Storage you already have</strong> <span>Google Drive, Dropbox, OneDrive, GitHub or your own web server. Your tour is one small file there.</span></li>
+      </ul>
+      <div class="inset">
+        <p><strong>You do not need</strong> an account, a sign-up, an app to install, or any code.</p>
+      </div>
+    </section>
+
+    <section id="how" aria-labelledby="how-h">
+      <h2 id="how-h">How it works</h2>
+      <p>Six steps. Steps 1 to 4 work on any device. Step 5 is the walk itself, on site.</p>
+      <ol class="steps">
+        <li>
+          <h3>Choose where your tour will live</h3>
+          <p>Pick a storage you already use. This page gives you an empty starter tour to put there.</p>
+          <span class="where">Any device</span>
+        </li>
+        <li>
+          <h3>Paste its share link</h3>
+          <p>Copy the share link of that file and paste it here. Your printed codes point to this link.</p>
+          <span class="where">Any device</span>
+        </li>
+        <li>
+          <h3>Print your posters</h3>
+          <p>Each poster carries a code. Scanning it opens your tour, with nothing to install.</p>
+          <span class="where">Any device and a printer</span>
+        </li>
+        <li>
+          <h3>Hang a poster where the tour starts</h3>
+          <p>Flat on a wall or a post, at about chest height, where a phone can see it squarely from a step away.</p>
+          <span class="where">On site</span>
+        </li>
+        <li>
+          <h3>Walk the route and place your stations</h3>
+          <p>Stand at the poster and start. At each station, place a note or a photo where it belongs. The finished tour is saved on the phone.</p>
+          <span class="where ar">On site, Android phone with Chrome<span class="ar-no"> (not this device)</span></span>
+        </li>
+        <li>
+          <h3>Put the saved tour in place</h3>
+          <p>Replace the starter file in your storage with the saved tour. From then on, everyone who scans the poster gets your tour.</p>
+          <span class="where">Any device</span>
+        </li>
+      </ol>
+    </section>
+
+    <section id="faq" class="faq" aria-labelledby="faq-h">
+      <h2 id="faq-h">Questions people ask</h2>
+      <details>
+        <summary>Does it work on iPhone?</summary>
+        <div class="answer">
+          <p>Not for the AR part, today. AR in a web page works in Chrome on Android phones, and iPhones do not offer it to web pages yet.</p>
+          <p>On an iPhone or a computer you can still plan the tour and print the posters, and on a computer fix its texts in the editor. A visitor with an iPhone can open the tour page but cannot see the tour in AR.</p>
+        </div>
+      </details>
+      <details>
+        <summary>How exact is it?</summary>
+        <div class="answer">
+          <p>It is closest near a printed code, which the phone uses to line the tour up with the place. Further away, the phone follows its own movement, so on a long walk a note can sit a little off from where you put it.</p>
+          <p>How it feels depends on the place and the phone. Try a short route before you plan a big one.</p>
+        </div>
+      </details>
+      <details>
+        <summary>What does it cost?</summary>
+        <div class="answer">
+          <p>There is nothing to buy and no account to pay for. Your costs are your own: printing the posters, and storage space if your tour does not fit in a free plan.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Where is my data?</summary>
+        <div class="answer">
+          <p>With you. Your tour is one file in the storage you chose, and you can delete it there at any time. Until you save it, everything you place stays on your phone.</p>
+          <p>There are no accounts, no cookies, no analytics and no advertising. The camera, your location and the motion sensors are used on the phone to place the tour and are not sent anywhere.</p>
+          <p>If your tour is on Google Drive, phones fetch it through this website's file service, because Drive does not let web pages load files directly. <a href="../../legal.html#privacy">Read the privacy page</a>.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Does it need mobile signal?</summary>
+        <div class="answer">
+          <p>To open the tour, yes. Once the tour has loaded, it keeps working without signal while you walk.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Can I change the tour later?</summary>
+        <div class="answer">
+          <p>Yes. Open it in the editor on a computer to fix its texts, move its pins or remove photos, then save it to your storage again. Visitors who open it after that see the changes.</p>
+        </div>
+      </details>
+    </section>
+
+    <section id="start" aria-labelledby="start-h">
+      <h2 id="start-h">Start your tour</h2>
+      <p class="ar-yes">This phone can do every step, including the walk in step 5.</p>
+      <p class="ar-no">You can do steps 1 to 4 on this device. For step 5, open this page on an Android phone with Chrome.</p>
+
+      <form class="form" action="../../" method="get">
+        <fieldset class="radios" aria-describedby="host-hint">
+          <legend><span class="step-of">Step 1 of 6</span>Where will your tour live?</legend>
+          <p class="hint" id="host-hint">Choose a storage you already use. You can change it later.</p>
+          <label><input type="radio" name="host" value="drive" required> Google Drive</label>
+          <label><input type="radio" name="host" value="dropbox"> Dropbox</label>
+          <label><input type="radio" name="host" value="onedrive"> OneDrive</label>
+          <label><input type="radio" name="host" value="github"> GitHub</label>
+          <label><input type="radio" name="host" value="server"> Your own web server</label>
+        </fieldset>
+        <p><button class="start-btn" type="submit">Continue</button></p>
+        <p class="fine">In this prototype, Continue opens the real setup page.</p>
+      </form>
+
+      <h3>Already have a tour?</h3>
+      <ul>
+        <li><a href="../../edit.html">Open it in the editor</a> (on a computer)</li>
+        <li class="ar-yes"><a href="../../">Open it on this phone</a></li>
+      </ul>
+    </section>
+  </main>
+</div>
+
+<footer class="foot">
+  <div class="wrap">
+    <ul>
+      <li><a href="../../legal.html#notice">Legal notice</a></li>
+      <li><a href="../../legal.html#privacy">Privacy</a></li>
+      <li><a href="../../../">For developers</a></li>
+    </ul>
+
+    <details class="notes">
+      <summary>About this prototype</summary>
+      <h3>Direction</h3>
+      <p>The calm control: no 3D, no animation, no tricks. One quiet, readable page in the spirit of a good public-service or documentation page, to test whether plain clarity does the job the showier variants attempt.</p>
+      <h3>Why it should work for this audience</h3>
+      <ul>
+        <li>A guide, a teacher or a tourism office decides by reading three questions: what is it, can I do it, what does it need. The page answers them in that order, in plain words, before asking for anything.</li>
+        <li>The honest limits (Android with Chrome, no numbers on exactness) sit in the first screen and in the FAQ, not in small print.</li>
+        <li>The first step of setup is on the page itself, as one plain question, so "landing" and "start" are the same page.</li>
+      </ul>
+      <h3>Load-bearing details (check a build against these)</h3>
+      <ul>
+        <li>Body text 18 px on phones, 19 px from 640 px wide, line height 1.55, measure 37 rem (about 70 characters a line at 19 px). Lede 20/22 px. H1 32 to 48 px, H2 24 to 32 px.</li>
+        <li>Every p, ul, ol and fieldset has its own bottom margin (1.25 rem); sections are 4 rem apart with a thin top rule. A design system that zeroes margins removes the page's whole rhythm.</li>
+        <li>The three facts with a black left bar; the AR status box under them; one green "Start now" with a hard bottom shadow; the visitor inset after it.</li>
+        <li>Focus is a yellow fill with a black underline on links and a yellow ring on controls. Buttons, radios and FAQ rows are at least 44 px tall.</li>
+        <li>Steps are numbered circles with a "where" tag; step 5's tag is the only dark-bordered one and says "(not this device)" without AR.</li>
+        <li>FAQ is native details/summary; the + and minus marks are CSS only.</li>
+        <li>No motion at all, so reduced motion needs nothing. No WebGL, no canvas, no web fonts.</li>
+        <li>Light and dark follow the system setting.</li>
+      </ul>
+      <h3>Measured cost</h3>
+      <ul>
+        <li>JS: about 1.1 kB inline (0.53 kB gzip), only for the AR toggle. No external scripts, styles or fonts. The whole page is 28 kB (8.9 kB gzip).</li>
+        <li>Frames at 390x844 on a desktop (not a phone, machine busy with other work): 5 s idle and 5 s scroll, worst frame 17 ms unthrottled and 33 ms at 4x CPU slowdown. Opening all six answers at once lays out in 13 to 18 ms at 4x. The only frame over 50 ms seen was the browser starting up, in the first tab of a fresh browser, whatever the throttle.</li>
+      </ul>
+      <h3>Known weaknesses</h3>
+      <ul>
+        <li>It shows nothing moving, so it explains AR with one still picture and a sentence. A reader who has never seen AR may still not picture it.</li>
+        <li>It looks like a form from an office, which may read as dull to a museum or a tourism office that wants to be excited.</li>
+        <li>Phone landscape shows the headline and the three facts on the first screen; the AR status and "Start now" are one scroll down. On a small phone (360x740) "Start now" is just below the first screen too.</li>
+      </ul>
+      <h3>Parameters it rests on</h3>
+      <ul>
+        <li>Body size 18 px on phones, tried 16, 18 and 20: the three facts stay on the first screen at every size and viewport; "Start now" stays on a 390x844 first screen at 16 and 18 px and drops below it at 20 px. Measure 37 rem, tried 34, 37 and 40 (58, about 70 and 77 characters a line). Section gap 4 rem.</li>
+        <li>The AR toggle is fake: ?ar=1 or ?ar=0 in the address, or the control at the top. Without either, the page asks the browser.</li>
+      </ul>
+    </details>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var d = document.documentElement;
+    var radios = document.querySelectorAll('input[name=ar]');
+    function show(v, write) {
+      d.dataset.ar = v ? '1' : '0';
+      for (var i = 0; i < radios.length; i++) radios[i].checked = radios[i].value === d.dataset.ar;
+      if (write) { var u = new URL(location.href); u.searchParams.set('ar', d.dataset.ar); history.replaceState(null, '', u); }
+    }
+    for (var i = 0; i < radios.length; i++) radios[i].addEventListener('change', function (e) { show(e.target.value === '1', true); });
+    show(d.dataset.ar === '1', false);
+    if (!/[?&]ar=[01]/.test(location.search) && navigator.xr && navigator.xr.isSessionSupported) {
+      navigator.xr.isSessionSupported('immersive-ar').then(function (s) { show(!!s, false); }, function () {});
+    }
+  })();
+</script>
+</body>
+</html>

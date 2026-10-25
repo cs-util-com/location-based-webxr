@@ -1,0 +1,857 @@
+<!doctype html>
+<html lang="en" data-ar="0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Poster First</title>
+<script>
+  /* First paint: the AR state from ?ar=1 / ?ar=0, so no AR-dependent line flashes the wrong text.
+     Without the parameter the page asks the browser later (see the main script). */
+  (function () {
+    try {
+      var q = new URLSearchParams(location.search).get('ar');
+      if (q === '1' || q === '0') document.documentElement.setAttribute('data-ar', q);
+      var pw = parseFloat(new URLSearchParams(location.search).get('pw'));
+      if (pw >= 0.5 && pw <= 0.95) document.documentElement.style.setProperty('--pw', String(pw));
+    } catch (e) { /* old browser: keep the defaults */ }
+  })();
+</script>
+<style>
+:root {
+  /* the wall */
+  --wall: #18241f;
+  --wall-2: #22312b;
+  --on-wall: #f1ece0;
+  --on-wall-2: #b9c3bb;
+  /* the print: paper, two inks (a deep park green, a signal orange) and black */
+  --paper: #f4efe3;
+  --sheet: #e9e5dc;
+  --sheet-2: #dcd7cb;
+  --ink: #141414;
+  --ink-2: #4a4a46;
+  --ink-3: #77756e;
+  --green: #0d6247;
+  --green-tint: #a9cbbb;
+  --green-tint-2: #cfe2d7;
+  --orange: #ff5a1f;
+  --orange-deep: #c63d0c;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --gut: 16px;
+  /* hero poster width as a share of the phone's width (?pw= sweeps it) */
+  --pw: 0.74;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+/* no font boosting: every poster text must scale with its sheet, or the crops and the print drift */
+html { text-size-adjust: 100%; -webkit-text-size-adjust: 100%; }
+body { background: var(--sheet); color: var(--ink); font-family: var(--sans); -webkit-text-size-adjust: 100%; overflow-x: hidden; }
+p, ul, ol, h1, h2, h3, figure { margin: 0; }
+ul, ol { padding: 0; }
+a { color: inherit; }
+button { font: inherit; color: inherit; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.proto-label {
+  position: fixed; left: 6px; bottom: 6px; z-index: 100; pointer-events: none;
+  font: 600 10.5px/1 var(--sans); letter-spacing: .02em; background: var(--ink); color: var(--paper);
+  padding: 5px 8px; border-radius: 3px; opacity: .85;
+}
+
+/* ================= AR state (fake via the toggle or ?ar=) ================= */
+html[data-ar="1"] .ar-no, html[data-ar="0"] .ar-yes { display: none !important; }
+
+/* ================= Top strip ================= */
+.strip {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px var(--gut); color: var(--on-wall);
+}
+.mark { font: 800 13px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
+.mark i { width: 12px; height: 12px; background: var(--orange); display: inline-block; }
+.seg { display: inline-flex; align-items: center; gap: 6px; font: 600 11px/1 var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--on-wall-2); }
+.seg-b { display: inline-flex; border: 1px solid rgba(241, 236, 224, .45); border-radius: 3px; overflow: hidden; }
+.seg button { min-height: 40px; padding: 0 10px; border: 0; background: transparent; color: var(--on-wall); font: 700 11.5px/1 var(--sans); letter-spacing: .04em; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--on-wall); color: var(--wall); }
+.seg button:focus-visible { outline: 2px solid var(--orange); outline-offset: -2px; }
+
+/* ================= Hero: the poster on a wall ================= */
+.hero {
+  position: relative; overflow: hidden; color: var(--on-wall);
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, .018) 0 2px, transparent 2px 7px),
+    radial-gradient(120% 70% at 50% 38%, var(--wall-2), var(--wall) 70%);
+  padding: 50px var(--gut) 22px;
+  display: grid; justify-items: center; gap: 14px;
+}
+.hero h1 {
+  font: 800 clamp(27px, 7.6vw, 34px)/1.06 var(--sans); letter-spacing: -.02em; text-align: center; max-width: 13em;
+}
+.hero h1 b { color: var(--orange); font-weight: 800; }
+.wallpin { position: relative; width: clamp(240px, min(calc(var(--pw) * 100vw), calc((100svh - 352px) / 1.414)), 360px); margin-top: 4px; }
+.lede { font-size: 16px; line-height: 1.42; color: var(--on-wall); text-align: center; max-width: 25em; }
+.lede strong { color: #fff; }
+.req { font-size: 13.5px; line-height: 1.4; color: var(--on-wall-2); text-align: center; max-width: 28em; display: flex; flex-wrap: wrap; gap: 2px 12px; justify-content: center; }
+.req .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--on-wall-2); margin-right: 6px; vertical-align: 0; }
+html[data-ar="1"] .req .dot { background: #5bd38f; border-color: #5bd38f; }
+.cta { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; width: 100%; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 12px 20px;
+  border: 2px solid currentColor; border-radius: 3px; background: transparent; font: 800 15px/1.1 var(--sans); letter-spacing: .01em;
+  text-decoration: none; cursor: pointer; transition: transform .12s;
+}
+.btn:active { transform: translateY(1px); }
+.btn.go { background: var(--orange); border-color: var(--orange); color: var(--ink); }
+.btn.go:hover { background: #ff6d37; }
+.btn.light { color: var(--on-wall); }
+.btn.dark { color: var(--ink); }
+.btn svg { width: 18px; height: 18px; flex: none; }
+.btn:focus-visible, .linkish:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
+.hero .cta .btn { flex: 1 1 150px; max-width: 260px; }
+.btn .short { display: none; }
+@media (max-width: 459px) { .hero .btn .long { display: none; } .hero .btn .short { display: inline; } .hero .cta .btn { padding-left: 12px; padding-right: 12px; } }
+.visit { font-size: 13.5px; color: var(--on-wall-2); text-align: center; }
+.linkish { background: none; border: 0; padding: 4px 2px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font-size: inherit; color: inherit; }
+.visit .linkish { color: var(--on-wall); padding: 12px 4px; }
+
+@media (min-width: 760px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; justify-items: start;
+    column-gap: clamp(28px, 5vw, 80px); row-gap: 14px; min-height: 100svh; padding: 64px clamp(24px, 6vw, 96px) 40px;
+  }
+  .hero > * { grid-column: 2; }
+  .hero > .strip { grid-column: 1 / -1; }
+  .hero .wallpin { grid-column: 1; grid-row: 1 / span 6; justify-self: end; width: min(calc((100svh - 120px) / 1.414), 520px, 40vw); }
+  .hero h1, .lede, .req, .visit { text-align: left; justify-content: flex-start; }
+  .hero h1 { font-size: clamp(34px, 4.2vw, 60px); max-width: 11em; }
+  .lede { font-size: clamp(16px, 1.45vw, 20px); max-width: 27em; }
+  .cta { justify-content: flex-start; }
+  .hero .cta .btn { flex: 0 1 auto; }
+}
+/* phone landscape: the poster at the left, the words at the right, everything inside one screen */
+@media (min-width: 760px) and (max-height: 520px) {
+  .hero { padding: 44px 20px 14px; row-gap: 8px; min-height: 100svh; }
+  .hero .wallpin { width: calc((100svh - 64px) / 1.414); }
+  .hero h1 { font-size: 27px; }
+  .lede { font-size: 14.5px; }
+  .req, .visit { font-size: 12.5px; }
+  .btn { min-height: 44px; padding: 10px 16px; font-size: 14px; }
+}
+
+/* ================= The poster (one template, every size: all lengths are in cqw) ================= */
+.poster {
+  container-type: inline-size; position: relative; width: 100%; aspect-ratio: 210 / 297;
+  background: var(--paper); color: var(--ink);
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.pz { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 6cqw 6.5cqw 5cqw; }
+.p-top { display: flex; justify-content: space-between; align-items: center; font: 800 4cqw/1 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--green); }
+.p-top span:first-child::before { content: ""; display: inline-block; width: 3.2cqw; height: 3.2cqw; background: var(--orange); margin-right: 2cqw; vertical-align: -.2cqw; }
+.p-top span:last-child { color: var(--ink-3); letter-spacing: .06em; }
+.p-words { margin-top: 3cqw; }
+.p-title { font: 900 16.5cqw/.9 var(--sans); letter-spacing: -.045em; color: var(--green); white-space: nowrap; }
+.p-sub { margin-top: 2cqw; font: 600 4.7cqw/1.15 var(--sans); letter-spacing: -.01em; color: var(--ink); }
+.p-map { position: relative; flex: 1; min-height: 0; margin: 3.5cqw 0 3.5cqw; border-top: .7cqw solid var(--ink); border-bottom: .35cqw solid var(--ink); }
+.p-map svg { position: absolute; inset: 1.5cqw 0; width: 100%; height: calc(100% - 3cqw); }
+.p-foot { display: grid; grid-template-columns: 33cqw 1fr; gap: 4.5cqw; align-items: center; }
+.p-code { position: relative; aspect-ratio: 1; background: #fff; padding: 3cqw; }
+.p-code svg { display: block; width: 100%; height: 100%; }
+.p-code::before, .p-code::after, .p-code i::before, .p-code i::after { content: ""; position: absolute; width: 6cqw; height: 6cqw; border: 1.1cqw solid var(--orange); }
+.p-code::before { top: -1.6cqw; left: -1.6cqw; border-right: 0; border-bottom: 0; }
+.p-code::after { top: -1.6cqw; right: -1.6cqw; border-left: 0; border-bottom: 0; }
+.p-code i::before { bottom: -1.6cqw; left: -1.6cqw; border-right: 0; border-top: 0; }
+.p-code i::after { bottom: -1.6cqw; right: -1.6cqw; border-left: 0; border-top: 0; }
+.p-call { font: 900 7.6cqw/.95 var(--sans); letter-spacing: -.03em; }
+.p-call em { font-style: normal; color: var(--orange-deep); }
+.p-how { margin-top: 2cqw; font: 500 4.1cqw/1.2 var(--sans); color: var(--ink-2); }
+.p-how b { color: var(--ink); }
+.p-fine { margin-top: 3.4cqw; font: 500 3.6cqw/1.2 var(--sans); color: var(--ink-3); display: flex; justify-content: space-between; gap: 3cqw; }
+
+/* the map's inks */
+.m-label { font: 800 14px var(--sans); letter-spacing: .04em; }
+.m-small { font: 700 10px var(--sans); letter-spacing: .3em; }
+.m-num { font: 800 12.5px var(--sans); }
+
+/* pins holding the poster on the wall */
+.pin { position: absolute; top: -2.2cqw; width: 6cqw; height: 6cqw; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ff9a6e, var(--orange) 45%, #a8300a); box-shadow: .6cqw 1.6cqw 1.4cqw rgba(0, 0, 0, .45); z-index: 3; }
+.pin.l { left: 4cqw; } .pin.r { right: 4cqw; }
+
+/* hero poster: hung slightly crooked, lit from above */
+.wallpin .poster { transform: rotate(-1.4deg); box-shadow: 0 2px 0 rgba(0, 0, 0, .25), 0 22px 40px -12px rgba(0, 0, 0, .65), 0 0 0 1px rgba(0, 0, 0, .15); }
+.wallpin .poster::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(170deg, rgba(255, 255, 255, .22), transparent 35%, rgba(0, 0, 0, .06)); }
+.hang .poster { animation: hang .9s cubic-bezier(.3, 1.25, .5, 1) both; transform-origin: 50% 0; }
+.hang .pin { animation: pinIn .35s .7s ease-out both; }
+@keyframes hang { from { transform: rotate(3deg) translateY(-14px); opacity: 0; } 40% { opacity: 1; } to { transform: rotate(-1.4deg); opacity: 1; } }
+@keyframes pinIn { from { transform: translateY(-10px) scale(1.4); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ================= Reading the poster ================= */
+.read { position: relative; padding: 56px var(--gut) 40px; }
+.sec-k { font: 800 12px/1 var(--sans); letter-spacing: .18em; text-transform: uppercase; color: var(--green); display: flex; align-items: center; gap: 10px; }
+.sec-k::before { content: ""; width: 26px; height: 3px; background: var(--orange); }
+.read h2 { font: 800 clamp(28px, 7vw, 46px)/1.04 var(--sans); letter-spacing: -.025em; margin: 12px 0 10px; max-width: 14em; }
+.read .intro { font-size: 17px; line-height: 1.5; color: var(--ink-2); max-width: 32em; }
+.layout { display: block; }
+.board { display: none; }
+.items { list-style: none; margin-top: 28px; display: grid; gap: 34px; }
+.item { position: relative; display: grid; gap: 12px; }
+.item-head { display: flex; align-items: baseline; gap: 12px; }
+.tag { flex: none; min-width: 34px; height: 34px; padding: 0 6px; border-radius: 17px; display: inline-grid; place-items: center; background: var(--ink); color: var(--paper); font: 800 15px/1 var(--sans); transform: translateY(6px); }
+.tag.o { background: var(--orange); color: var(--ink); }
+.item h3 { font: 800 clamp(21px, 5.4vw, 26px)/1.15 var(--sans); letter-spacing: -.015em; }
+.item > p { font-size: 16px; line-height: 1.5; color: var(--ink-2); max-width: 32em; }
+.item > p b { color: var(--ink); }
+.onpart { font: 700 12px/1.3 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+.onpart b { color: var(--green); }
+/* phone: each item shows its part of the poster as a cropped detail, like a printer's proof */
+.crop { position: relative; container-type: inline-size; contain: layout paint style; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; background: var(--sheet-2); border: 1px solid var(--ink); }
+.crop .poster { will-change: transform; position: absolute; width: calc(100cqw * var(--z)); left: calc(50cqw - var(--fx) * 100cqw * var(--z)); top: calc(28.125cqw - var(--fy) * 141.43cqw * var(--z)); box-shadow: 0 0 0 1px rgba(0, 0, 0, .2); }
+.crop::after { content: attr(data-cap); position: absolute; left: 0; bottom: 0; background: var(--ink); color: var(--paper); font: 700 11px/1 var(--sans); letter-spacing: .12em; text-transform: uppercase; padding: 6px 8px; }
+.crop .ring { position: absolute; left: 50%; top: 50%; width: calc(var(--rw) * 100cqw); height: calc(var(--rh) * 100cqw); transform: translate(-50%, -50%); border: 3px solid var(--orange); border-radius: 4px; pointer-events: none; }
+.crop.empty { background: repeating-linear-gradient(45deg, var(--sheet-2) 0 6px, var(--sheet) 6px 12px); }
+.ar-fig { width: 100%; max-width: 360px; }
+.ar-fig svg { display: block; width: 100%; height: auto; }
+.ar-fig figcaption { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
+
+.divider { margin: 64px 0 8px; border: 0; border-top: 2px solid var(--ink); position: relative; }
+.maker-head h2 { margin-top: 14px; }
+
+/* wide: one poster stays pinned at the left, the words scroll past it and light up its parts */
+@media (min-width: 760px) {
+  .read { padding: 80px clamp(24px, 5vw, 80px) 60px; max-width: 1360px; margin: 0 auto; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: clamp(28px, 5vw, 80px); align-items: start; }
+  .board { display: block; position: sticky; top: max(24px, calc((100svh - min(86svh, 700px)) / 2)); }
+  .board .frame { position: relative; width: min(calc(min(86svh, 700px) / 1.414), 100%); margin-left: auto; padding: 0; }
+  .crop { display: none; }
+  .items { gap: 0; margin-top: 0; }
+  .item { min-height: 62svh; align-content: center; padding: 30px 0; }
+  .item.first { min-height: 46svh; align-content: start; padding-top: 34px; }
+  .ar-fig { max-width: 300px; }
+}
+@media (min-width: 760px) and (max-height: 520px) {
+  .board .frame { width: min(calc(88svh / 1.414), 100%); }
+  .board { top: 6svh; }
+  .item { min-height: 88svh; }
+  .read h2 { font-size: 30px; }
+}
+/* marks on the pinned poster */
+.board .poster { box-shadow: 0 0 0 1px rgba(0, 0, 0, .25), 0 18px 30px -18px rgba(0, 0, 0, .5); }
+.board [data-part] { transition: opacity .35s, filter .35s; }
+.board.focus [data-part] { opacity: .26; filter: saturate(.4); }
+.board.focus [data-part].on { opacity: 1; filter: none; }
+.hl { position: absolute; border: 3px solid var(--orange); border-radius: 3px; opacity: 0; pointer-events: none; transition: opacity .3s, left .45s, top .45s, width .45s, height .45s; z-index: 4; }
+.board.focus .hl { opacity: 1; }
+.hl b { position: absolute; top: -13px; right: -13px; min-width: 26px; height: 26px; padding: 0 5px; border-radius: 13px; background: var(--orange); color: var(--ink); display: grid; place-items: center; font: 800 12.5px/1 var(--sans); white-space: nowrap; }
+/* proof mode: crop marks around the sheet, once the maker's part begins */
+.cropmarks { position: absolute; inset: -18px; pointer-events: none; opacity: 0; transition: opacity .4s; }
+.cropmarks i { position: absolute; width: 14px; height: 14px; border-color: var(--ink); border-style: solid; border-width: 0; }
+.cropmarks i:nth-child(1) { left: 0; top: 0; border-right-width: 1px; border-bottom-width: 1px; }
+.cropmarks i:nth-child(2) { right: 0; top: 0; border-left-width: 1px; border-bottom-width: 1px; }
+.cropmarks i:nth-child(3) { left: 0; bottom: 0; border-right-width: 1px; border-top-width: 1px; }
+.cropmarks i:nth-child(4) { right: 0; bottom: 0; border-left-width: 1px; border-top-width: 1px; }
+.board.proof .cropmarks { opacity: 1; }
+.board-cap { margin-top: 12px; text-align: right; font: 700 11px/1.3 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+
+/* ================= Start ================= */
+.start { background: var(--wall); color: var(--on-wall); padding: 60px var(--gut) 40px; }
+.start-in { max-width: 1100px; margin: 0 auto; display: grid; gap: 26px; }
+.start h2 { font: 800 clamp(30px, 7.4vw, 52px)/1.03 var(--sans); letter-spacing: -.025em; max-width: 12em; }
+.start h2 b { color: var(--orange); font-weight: 800; }
+.start p { font-size: 16.5px; line-height: 1.5; color: var(--on-wall-2); max-width: 32em; }
+.start .cta { justify-content: flex-start; }
+.facts { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; border-top: 1px solid rgba(241, 236, 224, .3); }
+.facts li { padding: 12px 12px 12px 0; border-bottom: 1px solid rgba(241, 236, 224, .3); font: 700 14px/1.3 var(--sans); }
+.facts li span { display: block; font: 500 13px/1.35 var(--sans); color: var(--on-wall-2); margin-top: 3px; }
+.handoff { display: flex; gap: 14px; align-items: center; padding: 14px; border: 1px dashed rgba(241, 236, 224, .45); max-width: 520px; }
+.handoff .qr { width: 84px; height: 84px; flex: none; background: #fff; padding: 5px; }
+.handoff p { font-size: 14.5px; margin: 0; }
+.have { display: grid; gap: 8px; max-width: 520px; padding-top: 6px; }
+.have h3 { font: 800 17px/1.2 var(--sans); }
+.have form { display: flex; gap: 8px; }
+.have input { flex: 1; min-width: 0; min-height: 46px; padding: 10px 12px; border: 2px solid var(--on-wall); border-radius: 3px; background: transparent; color: var(--on-wall); font: 15px var(--mono); }
+.have input::placeholder { color: rgba(241, 236, 224, .5); }
+.have input:focus { outline: 3px solid var(--orange); outline-offset: 1px; }
+.have .msg { font-size: 13.5px; color: var(--on-wall-2); min-height: 1.3em; }
+@media (min-width: 760px) {
+  .start { padding: 90px clamp(24px, 6vw, 96px) 60px; }
+  .start-in { grid-template-columns: 1.1fr 1fr; column-gap: 60px; align-items: start; }
+  .start-in > .wide { grid-column: 1 / -1; }
+}
+
+/* ================= Notes + foot ================= */
+.notes { background: var(--sheet); padding: 24px var(--gut) 60px; }
+.notes details { max-width: 860px; margin: 0 auto; border: 1px solid var(--ink); background: var(--paper); }
+.notes summary { cursor: pointer; padding: 14px 16px; font: 800 14px/1.2 var(--sans); letter-spacing: .06em; text-transform: uppercase; min-height: 44px; }
+.notes .nb { padding: 0 16px 16px; font-size: 14.5px; line-height: 1.5; color: var(--ink-2); }
+.notes h4 { font: 800 13px/1.2 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--ink); margin: 16px 0 6px; }
+.notes ul { padding-left: 18px; }
+.notes li { margin-bottom: 4px; }
+.notes code { font: 13px var(--mono); background: var(--sheet); padding: 1px 4px; }
+.foot a { display: inline-block; padding: 12px 4px; margin: -12px 0; }
+.foot { display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: center; padding: 18px var(--gut) 40px; font-size: 13px; color: var(--ink-3); background: var(--sheet); }
+
+/* toast */
+.toast { position: fixed; left: 50%; bottom: 20px; z-index: 90; transform: translate(-50%, 24px); opacity: 0; background: var(--ink); color: var(--paper); padding: 11px 16px; border-radius: 3px; font-size: 14px; line-height: 1.35; max-width: calc(100vw - 32px); text-align: center; transition: opacity .25s, transform .3s; pointer-events: none; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+/* ================= Print: one A4 example poster, nothing else ================= */
+#print-sheet { display: none; }
+@page { size: A4 portrait; margin: 0; }
+@media print {
+  html, body { background: #fff !important; }
+  body > *:not(#print-sheet):not(#mp-defs) { display: none !important; }
+  #print-sheet { display: block; width: 210mm; height: 297mm; overflow: hidden; }
+  #print-sheet .poster { width: 210mm; height: 297mm; aspect-ratio: auto; }
+  #print-sheet .pin { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="proto-label">Prototype R2-6 - Poster first</div>
+
+<!-- Shared map art: one copy, referenced by every poster instance (no duplicate ids in the clones). -->
+<svg id="mp-defs" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <pattern id="mp-hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="5" height="5" fill="#0d6247"/><line x1="0" y1="0" x2="0" y2="5" stroke="#f4efe3" stroke-width="1.1" opacity=".35"/>
+    </pattern>
+  </defs>
+</svg>
+
+<!-- ================= The example poster (template) =================
+     Every length inside is in cqw of the poster's own width, so the hero, the crops, the pinned board
+     and the printed A4 sheet are the same design at different sizes. data-part marks the parts the
+     explanation points at. -->
+<template id="poster-tpl">
+  <div class="poster" role="img" aria-label="Example poster: Mill Park, an AR tour. A map of six stops, a code and the words Point your phone here.">
+    <span class="pin l" data-part="hang"></span><span class="pin r" data-part="hang"></span>
+    <div class="pz">
+      <div class="p-top" data-part="words"><span>AR tour starts here</span><span>6 stops</span></div>
+      <div class="p-words" data-part="words">
+        <div class="p-title">Mill Park</div>
+        <p class="p-sub">A walk along the old mill stream, about 25 minutes on foot.</p>
+      </div>
+      <div class="p-map">
+        <svg viewBox="0 0 300 172" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          <g data-part="route">
+          <!-- lane -->
+          <path d="M-10 160 C 80 152 200 166 310 154" fill="none" stroke="#0d6247" stroke-width="15" opacity=".22"/>
+          <text class="m-small" x="196" y="166" fill="#0d6247">MILL LANE</text>
+          <!-- stream -->
+          <path d="M14 -6 C 26 34 6 70 18 104 C 26 128 10 146 16 176" fill="none" stroke="#0d6247" stroke-width="10" opacity=".3"/>
+          <path d="M14 -6 C 26 34 6 70 18 104 C 26 128 10 146 16 176" fill="none" stroke="#0d6247" stroke-width="1.2" stroke-dasharray="4 5"/>
+          <!-- old mill -->
+          <rect x="42" y="10" width="84" height="46" fill="url(#mp-hatch)"/>
+          <text class="m-label" x="84" y="38" text-anchor="middle" fill="#f4efe3" style="font-size:12.5px">OLD MILL</text>
+          <circle cx="30" cy="44" r="10" fill="#f4efe3" stroke="#0d6247" stroke-width="2"/>
+          <path d="M30 34 V54 M20 44 H40 M23 37 L37 51 M37 37 L23 51" stroke="#0d6247" stroke-width="1.1"/>
+          <!-- courtyard -->
+          <rect x="140" y="16" width="62" height="42" fill="#0d6247" opacity=".14"/>
+          <!-- pond -->
+          <ellipse cx="262" cy="122" rx="25" ry="13" fill="#0d6247" opacity=".3"/>
+          <!-- trees -->
+          <g fill="#0d6247" opacity=".55">
+            <circle cx="226" cy="22" r="8"/><circle cx="246" cy="14" r="6"/><circle cx="282" cy="28" r="9"/>
+            <circle cx="204" cy="132" r="5"/><circle cx="112" cy="104" r="8"/>
+            <circle cx="92" cy="96" r="5"/><circle cx="292" cy="80" r="6"/><circle cx="130" cy="128" r="5"/>
+          </g>
+          <!-- the route (dotted, orange) -->
+          <path d="M126 82 C 112 74 100 70 90 70 C 70 70 50 66 40 76 C 30 90 42 120 66 128 C 96 138 128 140 160 134 C 196 128 222 120 236 112 C 256 98 266 70 252 46" fill="none" stroke="#ff5a1f" stroke-width="4.2" stroke-linecap="round" stroke-dasharray=".1 8.4"/>
+          <!-- stops -->
+          <g class="m-num" text-anchor="middle" dominant-baseline="central">
+            <circle cx="90" cy="70" r="9" fill="#ff5a1f"/><text x="90" y="70.5" fill="#141414">1</text>
+            <circle cx="40" cy="76" r="9" fill="#ff5a1f"/><text x="40" y="76.5" fill="#141414">2</text>
+            <circle cx="66" cy="128" r="9" fill="#ff5a1f"/><text x="66" y="128.5" fill="#141414">3</text>
+            <circle cx="160" cy="134" r="9" fill="#ff5a1f"/><text x="160" y="134.5" fill="#141414">4</text>
+            <circle cx="236" cy="112" r="9" fill="#ff5a1f"/><text x="236" y="112.5" fill="#141414">5</text>
+            <circle cx="252" cy="46" r="9" fill="#ff5a1f"/><text x="252" y="46.5" fill="#141414">6</text>
+          </g>
+          </g>
+          <!-- you are here: the poster itself -->
+          <g data-part="here">
+            <circle cx="132" cy="86" r="8.5" fill="#141414"/>
+            <circle cx="132" cy="86" r="3.2" fill="#f4efe3"/>
+            <rect x="143" y="74" width="118" height="23" fill="#141414"/>
+            <text class="m-label" x="202" y="90.5" text-anchor="middle" fill="#f4efe3">YOU ARE HERE</text>
+          </g>
+          <!-- north -->
+          <g transform="translate(286 150)"><path d="M0 -12 L4 2 L0 -1 L-4 2 Z" fill="#141414"/><text x="0" y="-15" text-anchor="middle" font-size="9" font-weight="800" fill="#141414">N</text></g>
+        </svg>
+      </div>
+      <div class="p-foot">
+        <div class="p-code" data-part="code"><i></i><svg viewBox="-0.5 -0.5 22 22" aria-hidden="true"><path class="qrp" fill="#141414" fill-rule="evenodd"/></svg></div>
+        <div data-part="call">
+          <p class="p-call">Point your phone <em>here.</em></p>
+          <p class="p-how">The tour opens in your browser. Nothing to install. <b>Android phone with Chrome.</b></p>
+        </div>
+      </div>
+      <p class="p-fine"><span>Example poster: this code opens nothing.</span><span>Mill Park</span></p>
+    </div>
+  </div>
+</template>
+
+<!-- ================= HERO ================= -->
+<header class="hero" id="top">
+  <div class="strip">
+    <a class="mark" href="#top"><i></i>Tour Viewer</a>
+    <div class="seg" role="group" aria-label="Preview this page as">
+      <span class="sr">Preview as</span>
+      <span aria-hidden="true">Device</span>
+      <span class="seg-b">
+        <button type="button" data-ar-set="1" aria-pressed="false" title="Preview as an Android phone with Chrome (AR supported)">AR phone</button>
+        <button type="button" data-ar-set="0" aria-pressed="true" title="Preview as a computer or iPhone (no AR)">No AR</button>
+      </span>
+    </div>
+  </div>
+
+  <h1>This poster starts an <b>AR tour</b>, on site.</h1>
+  <div class="wallpin" id="heroPoster"><noscript><p style="color:#b9c3bb;text-align:center">An example poster: Mill Park, a map, a code, "Point your phone here".</p></noscript></div>
+  <p class="lede">Point a phone at it, and notes and photos appear in the camera view, right where things happened. <strong>You can make one like it, without code.</strong></p>
+  <p class="req">
+    <span class="ar-no"><span class="dot"></span>The walk needs an Android phone with Chrome (AR).</span>
+    <span class="ar-yes"><span class="dot"></span>This phone can play tours: Android, Chrome, AR.</span>
+    <span>No sign-up, no account.</span>
+  </p>
+  <div class="cta">
+    <a class="btn go" href="../../">Make your tour</a>
+    <button type="button" class="btn light" data-print aria-label="Print an example poster">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M7 9V3h10v6M7 17H4v-7h16v7h-3"/><path d="M7 14h10v7H7z"/></svg>
+      <span class="long">Print an example poster</span><span class="short" aria-hidden="true">Print example</span>
+    </button>
+  </div>
+  <p class="visit">Standing at a poster? Point your phone at its code. <button type="button" class="linkish" data-goto="have">Have a tour link?</button></p>
+</header>
+
+<!-- ================= READ THE POSTER ================= -->
+<main class="read" id="read">
+  <div class="layout">
+    <div class="board" id="board" aria-hidden="true">
+      <div class="frame" id="boardFrame">
+        <div class="cropmarks"><i></i><i></i><i></i><i></i></div>
+        <div class="hl" id="hl"><b id="hlTag">A</b></div>
+      </div>
+      <p class="board-cap" id="boardCap">The example poster</p>
+    </div>
+
+    <div>
+      <div class="item first">
+        <p class="sec-k">Read the poster</p>
+        <h2>Everything a visitor needs is on this sheet.</h2>
+        <p class="intro">A tour is a walk with notes and photos placed at real spots. The poster is where it begins, and each part of it does one job.</p>
+      </div>
+      <ol class="items" aria-label="The parts of the poster">
+        <li class="item" data-part="code" data-tag="A">
+          <div class="item-head"><span class="tag">A</span><h3>The code is what a visitor scans.</h3></div>
+          <div class="crop" data-cap="The code"></div>
+          <p>It opens the tour in the phone's browser, with nothing to install. The phone also uses the printed code to find where it stands, so every note lands in its place.</p>
+          <p class="onpart">On the poster: <b>the code</b></p>
+        </li>
+        <li class="item" data-part="route" data-tag="B">
+          <div class="item-head"><span class="tag">B</span><h3>The route is what they walk.</h3></div>
+          <div class="crop" data-cap="The route"></div>
+          <p>At each stop, the camera view shows what you placed there: a note, a photo from long ago, standing at the real spot. Walk away and it stays where it belongs.</p>
+          <figure class="ar-fig">
+            <svg viewBox="0 0 320 200" role="img" aria-label="A phone held up at stop 2: a note about the mill wheel floats next to the real wheel.">
+              <rect width="320" height="200" fill="#dcd7cb"/>
+              <!-- the real place, drawn in line -->
+              <g stroke="#4a4a46" stroke-width="1.6" fill="none" stroke-linecap="round">
+                <path d="M0 150 H320"/><path d="M14 150 V70 L60 40 L106 70 V150"/><path d="M50 150 V112 H70 V150"/>
+                <circle cx="132" cy="118" r="30"/><path d="M132 88 V148 M102 118 H162 M111 97 L153 139 M153 97 L111 139"/>
+                <path d="M210 150 C 220 128 250 128 262 150" stroke-dasharray="3 5"/>
+                <circle cx="290" cy="96" r="22"/><path d="M290 118 V150"/>
+              </g>
+              <!-- the phone -->
+              <rect x="150" y="26" width="118" height="166" rx="14" fill="#141414"/>
+              <rect x="157" y="36" width="104" height="146" rx="8" fill="#f4efe3"/>
+              <g>
+                <path d="M157 152 H261" stroke="#77756e" stroke-width="1.2"/>
+                <circle cx="168" cy="128" r="34" fill="none" stroke="#77756e" stroke-width="1.4"/>
+                <!-- AR content -->
+                <path d="M200 112 C 196 106 192 102 192 97 A 8 8 0 1 1 208 97 C 208 102 204 106 200 112 Z" fill="#ff5a1f"/>
+                <circle cx="200" cy="97" r="3" fill="#141414"/>
+                <rect x="164" y="48" width="92" height="34" fill="#fff" stroke="#141414" stroke-width="1.2"/>
+                <rect x="164" y="48" width="5" height="34" fill="#ff5a1f"/>
+                <text x="174" y="62" font-family="system-ui,sans-serif" font-size="9.2" font-weight="800" fill="#141414">2  The mill wheel</text>
+                <text x="174" y="75" font-family="system-ui,sans-serif" font-size="8.5" fill="#4a4a46">Turning since 1820</text>
+                <g transform="rotate(-5 236 140)"><rect x="216" y="120" width="38" height="36" fill="#fff" stroke="#141414" stroke-width="1"/><rect x="219" y="123" width="32" height="22" fill="#a9cbbb"/><path d="M219 145 L229 133 L236 139 L243 130 L251 145 Z" fill="#0d6247"/></g>
+              </g>
+              <rect x="190" y="29" width="38" height="3" rx="1.5" fill="#4a4a46"/>
+            </svg>
+            <figcaption>Through the phone at stop 2: the note and the old photo stand next to the real wheel.</figcaption>
+          </figure>
+          <p class="onpart">On the poster: <b>the map and its six stops</b></p>
+        </li>
+        <li class="item" data-part="here" data-tag="C">
+          <div class="item-head"><span class="tag">C</span><h3>The poster hangs where the walk begins.</h3></div>
+          <div class="crop" data-cap="You are here"></div>
+          <p>"You are here" is not a figure of speech: the tour starts at the poster, so visitors meet it at the first step of the walk.</p>
+          <p class="onpart">On the poster: <b>"You are here"</b></p>
+        </li>
+      </ol>
+
+      <hr class="divider">
+      <div class="item first maker-head" id="maker">
+        <p class="sec-k">Your part</p>
+        <h2>Making a tour means making this poster.</h2>
+        <p class="intro">Six steps, in a browser, without code. Each one fills in a part of the sheet.</p>
+      </div>
+      <ol class="items" aria-label="The six steps, mapped onto the poster">
+        <li class="item" data-part="code" data-tag="1">
+          <div class="item-head"><span class="tag o">1</span><h3>Choose where your tour lives.</h3></div>
+          <div class="crop" data-cap="Behind the code"></div>
+          <p>Your tour is one small file in storage you already have: Google Drive, Dropbox, OneDrive, GitHub or your own server. It stays yours.</p>
+          <p class="onpart">Fills in: <b>what the code points to</b></p>
+        </li>
+        <li class="item" data-part="code" data-tag="2">
+          <div class="item-head"><span class="tag o">2</span><h3>Paste its share link.</h3></div>
+          <div class="crop" data-cap="The code"></div>
+          <p>The link becomes the code. Every phone that scans it opens your tour.</p>
+          <p class="onpart">Fills in: <b>the code</b></p>
+        </li>
+        <li class="item" data-part="words" data-tag="3">
+          <div class="item-head"><span class="tag o">3</span><h3>Print the poster.</h3></div>
+          <div class="crop" data-cap="The words"></div>
+          <p>Give it a title and a line about the walk; the code and "Point your phone here" are set for you. Print at actual size, on A4 or larger.</p>
+          <p class="onpart">Fills in: <b>the title and the words</b></p>
+        </li>
+        <li class="item" data-part="hang" data-tag="4">
+          <div class="item-head"><span class="tag o">4</span><h3>Hang it where the walk begins.</h3></div>
+          <div class="crop" data-cap="On the wall"></div>
+          <p>On a flat surface at chest height, in good light, out of the rain, where people naturally stop.</p>
+          <p class="onpart">Fills in: <b>the pins, and makes "You are here" true</b></p>
+        </li>
+        <li class="item" data-part="route" data-tag="5">
+          <div class="item-head"><span class="tag o">5</span><h3>Walk the route and place your stops, in AR.</h3></div>
+          <div class="crop" data-cap="The route"></div>
+          <p>Scan your own poster, walk the way you have in mind, and tap to put notes and photos where they belong. The tour is made by walking it.</p>
+          <p class="onpart">Fills in: <b>the route and its stops</b></p>
+        </li>
+        <li class="item" data-part="code" data-tag="6">
+          <div class="item-head"><span class="tag o">6</span><h3>Put the saved tour back.</h3></div>
+          <div class="crop" data-cap="Same code"></div>
+          <p>Replace the file in your storage with the one the walk saved. <b>The link and the printed code stay the same:</b> come back and add more, nothing to reprint.</p>
+          <p class="onpart">Keeps: <b>the code you already hung</b></p>
+        </li>
+      </ol>
+    </div>
+  </div>
+</main>
+
+<!-- ================= START ================= -->
+<section class="start" id="start" aria-labelledby="startH">
+  <div class="start-in">
+    <div>
+      <p class="sec-k" style="color:var(--on-wall-2)">Start</p>
+      <h2 id="startH" style="margin-top:12px">Your poster, <b>your walk.</b></h2>
+    </div>
+    <div style="display:grid;gap:16px">
+      <p>The setup takes you through the six steps one by one. Steps 1 to 4 work on any computer or phone; the walk in step 5 needs the Android phone.</p>
+      <div class="cta">
+        <a class="btn go" href="../../">Make your tour</a>
+        <button type="button" class="btn light" data-print>Print an example poster</button>
+      </div>
+    </div>
+    <ul class="facts wide">
+      <li>No sign-up, no account<span>Open the page and begin.</span></li>
+      <li>No app to install<span>Visitors only scan the code.</span></li>
+      <li>Your own storage<span>The tour file stays with you.</span></li>
+      <li>Keeps working once loaded<span>A loaded tour does not need signal.</span></li>
+    </ul>
+    <div class="handoff wide ar-no">
+      <svg class="qr" viewBox="-0.5 -0.5 22 22" aria-hidden="true"><path class="qrp" data-seed="91" fill="#141414" fill-rule="evenodd"/></svg>
+      <p>On a computer or an iPhone? Prepare and print here, then scan this with your Android phone to carry on with the walk.</p>
+    </div>
+    <p class="wide ar-yes" style="color:var(--on-wall)">This phone can do every step, from the storage to the walk.</p>
+    <div class="have wide" id="have">
+      <h3>Visiting a tour?</h3>
+      <p class="ar-yes" style="font-size:14.5px">Point the camera at the poster's code, or paste a tour link:</p>
+      <p class="ar-no" style="font-size:14.5px">Paste a tour link. The walk itself opens on an Android phone with Chrome.</p>
+      <form id="haveForm" novalidate>
+        <label class="sr" for="haveIn">Tour link</label>
+        <input id="haveIn" type="url" inputmode="url" placeholder="https://" autocomplete="off" spellcheck="false">
+        <button class="btn light" type="submit" id="haveBtn">Open</button>
+      </form>
+      <p class="msg" id="haveMsg" role="status" aria-live="polite"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= NOTES ================= -->
+<section class="notes" aria-label="About this prototype">
+  <details id="notes">
+    <summary>About this prototype</summary>
+    <div class="nb">
+      <h4>Direction</h4>
+      <p>The printed poster, the one physical object of a tour, is the hero; scrolling reads the poster part by part, first as a visitor, then as the maker whose six steps each fill in one part of it.</p>
+      <h4>Why it should work for this audience</h4>
+      <ul>
+        <li>A guide, a teacher or a tourism office already knows what a poster is and how to make one. Starting from a finished object makes "an AR tour" concrete before any word about storage or links.</li>
+        <li>The visitor's story (scan, walk) and the maker's job (make this sheet) are told on the same object, so the six steps stop looking like an abstract setup.</li>
+        <li>"Print an example poster" gives a would-be maker something to hold and show colleagues.</li>
+      </ul>
+      <h4>Load-bearing details (check a build against these)</h4>
+      <ul>
+        <li>Every poster length is in <code>cqw</code> of the poster's width (container queries), so hero, crops, the pinned board and the A4 print are one design. A port that uses px or rem breaks the print.</li>
+        <li>Hero poster width on a portrait phone: <code>clamp(240px, min(0.74 x 100vw, (100svh - 352px) / 1.414), 360px)</code>. The smallest poster text is 3.6 cqw, about 10 px at 280 px.</li>
+        <li>Wall: deep green-black, poster tilted -1.4 degrees with two orange pins. Two inks only on the poster (green, orange) plus black.</li>
+        <li>Phone portrait: each explanation shows its poster part as a 16:9 crop with an orange ring. 760 px and wider: one sticky poster, parts dim to 26 % and the current part gets an orange frame and the item's tag; crop marks appear in the maker's part.</li>
+        <li>The design system's margin reset is assumed: this page sets every margin it needs explicitly.</li>
+        <li>Poster text must not inherit page rules: a page rule like <code>.item p</code> resized the poster's lines inside the crops and squeezed its map. Scope page rules (<code>.item &gt; p</code>) or the poster drifts from its print.</li>
+        <li>Crops are filled lazily, one per frame, a screen ahead of the reader; the part positions are measured once on an unrotated poster off screen.</li>
+        <li>Motion: the hero poster swings onto the wall once (0.9 s) and the pins drop; nothing loops. Reduced motion removes both.</li>
+        <li>Print: <code>@page A4, margin 0</code>; only the poster prints, 210 x 297 mm, colours forced.</li>
+      </ul>
+      <h4>Measured cost</h4>
+      <p id="costLine">JS: inline only, no CDN, no WebGL: about 4.3 kB gzip (the whole page 16 kB gzip). Desktop Chromium at 390x844 on a loaded machine, not a phone: no frame over 50 ms while scrolling at normal CPU. At 4x CPU slowdown the FIRST scroll has 1 to 2 frames of about 70 to 120 ms, when the first poster crop is painted (hiding the crops removes them; the second scroll is clean). One poster lays out in about 2 ms (6 ms at 4x). On a mid-range phone this first crop may well cost a frame over 50 ms: not measured on a phone.</p>
+      <h4>Known weaknesses</h4>
+      <ul>
+        <li>On a 360x640 phone the hero needs a short scroll for the buttons; the poster stays legible.</li>
+        <li>The printed example code is a pattern, not a working code. A real example tour to scan would be stronger.</li>
+        <li>No 3D: AR is shown by one flat drawing; a reader who has never seen AR may still need the phone view.</li>
+        <li>The dark wall and the light poster are a strong contrast on the first screen; the sections below are light. The jump is deliberate (the wall, then the proof sheet) but could feel like two pages.</li>
+      </ul>
+      <h4>Parameters it rests on</h4>
+      <ul>
+        <li>Hero poster share of phone width, <code>?pw=</code> (default 0.74): tried 0.66, 0.74, 0.82.</li>
+        <li>Wide layout from 760 px; crop zoom computed per part so it fills about 84 % of the crop's width or 74 % of its height, clamped 0.9 to 2.6 (0.9 to 2.4 in use); the part being read is the one crossing the middle 10 % of the viewport.</li>
+        <li>Smallest poster text measured in the hero: 10.4 px (fine print) and 11.8 px (how-to line) at 390x844; 9.9 and 11.3 px at 390x740; 8.3 and 9.5 px in phone landscape, the weakest view.</li>
+      </ul>
+    </div>
+  </details>
+</section>
+<footer class="foot">
+  <a href="../../../">For developers</a>
+  <span>Prototype: nothing here is uploaded, saved or sent.</span>
+</footer>
+
+<div id="print-sheet" aria-hidden="true"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  var doc = document, root = doc.documentElement;
+  var $ = function (s, r) { return (r || doc).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || doc).querySelectorAll(s)); };
+  var reduced = false;
+  try { reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { /* keep motion */ }
+
+  /* ---------- a fake code: a fixed 21x21 pattern with finder squares (opens nothing) ---------- */
+  function qrPath(seed) {
+    var n = 21, s = (Math.imul(seed + 1, 2654435761) >>> 0) || 1, d = '';
+    function r() { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }
+    function finder(x, y) { return (x < 8 && y < 8) || (x > n - 9 && y < 8) || (x < 8 && y > n - 9); }
+    for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) if (!finder(x, y) && r() < 0.47) d += 'M' + x + ' ' + y + 'h1v1h-1z';
+    [[0, 0], [n - 7, 0], [0, n - 7]].forEach(function (f) {
+      d += 'M' + f[0] + ' ' + f[1] + 'h7v7h-7z' + 'M' + (f[0] + 1) + ' ' + (f[1] + 1) + 'v5h5v-5z' + 'M' + (f[0] + 2) + ' ' + (f[1] + 2) + 'h3v3h-3z';
+    });
+    return d;
+  }
+  var POSTER_QR = qrPath(7);
+  $$('.qrp[data-seed]').forEach(function (p) { p.setAttribute('d', qrPath(+p.getAttribute('data-seed'))); });
+
+  var tpl = $('#poster-tpl');
+  function makePoster() {
+    var node = tpl.content.firstElementChild.cloneNode(true);
+    $$('.qrp', node).forEach(function (p) { p.setAttribute('d', POSTER_QR); });
+    return node;
+  }
+
+  /* ---------- toast ---------- */
+  var toastEl = $('#toast'), toastT;
+  function toast(msg) {
+    toastEl.textContent = msg; toastEl.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(function () { toastEl.classList.remove('show'); }, 3200);
+  }
+
+  /* ---------- hero poster ---------- */
+  var hero = $('#heroPoster');
+  hero.textContent = '';
+  hero.appendChild(makePoster());
+  if (!reduced) hero.classList.add('hang');
+
+  /* ---------- AR state: ?ar= wins, else ask the browser; the toggle fakes it ---------- */
+  function setAr(v, fromUser) {
+    root.setAttribute('data-ar', v ? '1' : '0');
+    $$('[data-ar-set]').forEach(function (b) { b.setAttribute('aria-pressed', String((b.getAttribute('data-ar-set') === '1') === v)); });
+    if (fromUser) {
+      try { var u = new URL(location.href); u.searchParams.set('ar', v ? '1' : '0'); history.replaceState(null, '', u); } catch (e) { /* file:// or old browser */ }
+    }
+  }
+  var q = null;
+  try { q = new URLSearchParams(location.search).get('ar'); } catch (e) { /* none */ }
+  if (q === '1' || q === '0') setAr(q === '1');
+  else {
+    setAr(false);
+    try {
+      if (navigator.xr && navigator.xr.isSessionSupported) {
+        navigator.xr.isSessionSupported('immersive-ar').then(function (ok) { setAr(!!ok); }, function () { setAr(false); });
+      }
+    } catch (e) { setAr(false); }
+  }
+  $$('[data-ar-set]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var v = b.getAttribute('data-ar-set') === '1';
+      setAr(v, true);
+      toast(v ? 'Showing the page as an Android phone with Chrome sees it.' : 'Showing the page as a computer or an iPhone sees it.');
+    });
+  });
+
+  /* ---------- print the example poster on A4 ---------- */
+  var sheet = $('#print-sheet');
+  function fillSheet() { if (!sheet.firstChild) sheet.appendChild(makePoster()); }
+  window.addEventListener('beforeprint', fillSheet);
+  $$('[data-print]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      fillSheet();
+      if (typeof window.print === 'function') {
+        try { window.print(); } catch (e) { toast('Printing is not available here.'); }
+      }
+    });
+  });
+
+  /* ---------- visitor link ---------- */
+  $$('[data-goto]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var t = $('#' + b.getAttribute('data-goto'));
+      t.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
+      setTimeout(function () { try { $('#haveIn').focus({ preventScroll: true }); } catch (e) { /* old browser */ } }, reduced ? 0 : 500);
+    });
+  });
+  var haveBtn = $('#haveBtn'), haveMsg = $('#haveMsg'), haveIn = $('#haveIn');
+  $('#haveForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var v = haveIn.value.trim();
+    if (!v) { haveMsg.textContent = 'Paste the link first. It starts with https://'; haveIn.focus(); return; }
+    if (!/^https?:\/\/[^\s/]+\.[^\s]+/i.test(v)) { haveMsg.textContent = 'That does not look like a link yet. It should start with https://'; return; }
+    haveBtn.disabled = true; haveBtn.textContent = 'Opening...'; haveMsg.textContent = '';
+    setTimeout(function () {
+      haveBtn.disabled = false; haveBtn.textContent = 'Open';
+      haveMsg.textContent = 'Prototype: the real page would open this tour\'s start screen now.';
+    }, reduced ? 150 : 900);
+  });
+
+  /* ---------- the parts: crops (phone) and the pinned board (wide) ---------- */
+  var wideMQ = window.matchMedia('(min-width: 760px)');
+  var items = $$('.item[data-part]');
+
+  // Every poster length is in cqw, so a part's place and size, as a share of the sheet's width, are the
+  // same at any size. They are measured ONCE on an unrotated poster off screen; a crop then needs no
+  // layout read of its own. Crops are filled one per frame, a screen ahead of the reader.
+  function unionRect(els) {
+    var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    els.forEach(function (el) { var r = el.getBoundingClientRect(); x0 = Math.min(x0, r.left); y0 = Math.min(y0, r.top); x1 = Math.max(x1, r.right); y1 = Math.max(y1, r.bottom); });
+    return { l: x0, t: y0, w: x1 - x0, h: y1 - y0 };
+  }
+  var PARTS = null;
+  function measureParts() {
+    if (PARTS) return PARTS;
+    var box = doc.createElement('div');
+    box.style.cssText = 'position:absolute;left:-10000px;top:0;width:400px;visibility:hidden;pointer-events:none';
+    var p = makePoster(); box.appendChild(p); doc.body.appendChild(box);
+    var pr = p.getBoundingClientRect(), out = {};
+    ['code', 'route', 'here', 'words', 'hang'].forEach(function (k) {
+      var u = unionRect($$('[data-part="' + k + '"]', p));
+      if (isFinite(u.w) && pr.width) out[k] = { cx: (u.l + u.w / 2 - pr.left) / pr.width, cy: (u.t + u.h / 2 - pr.top) / pr.height, w: u.w / pr.width, h: u.h / pr.width };
+    });
+    doc.body.removeChild(box);
+    PARTS = out;
+    return out;
+  }
+  var cropW = 0;
+  function fillCrop(it) {
+    var c = $('.crop', it);
+    if (!c || c.firstChild) return;
+    var m = measureParts()[it.getAttribute('data-part')];
+    if (!cropW) cropW = c.clientWidth;
+    if (!m || !cropW) return;
+    var pad = 8, cropH = cropW * 9 / 16;
+    var z = Math.max(0.9, Math.min(2.6, (0.84 * cropW - 2 * pad) / (m.w * cropW), (0.74 * cropH - 2 * pad) / (m.h * cropW)));
+    c.style.setProperty('--fx', m.cx.toFixed(4));
+    c.style.setProperty('--fy', m.cy.toFixed(4));
+    c.style.setProperty('--z', z.toFixed(3));
+    c.style.setProperty('--rw', (m.w * z + 2 * pad / cropW).toFixed(4));
+    c.style.setProperty('--rh', (m.h * z + 2 * pad / cropW).toFixed(4));
+    var ring = doc.createElement('span'); ring.className = 'ring';
+    c.setAttribute('aria-hidden', 'true'); // the hero poster already carries the description
+    c.appendChild(makePoster()); c.appendChild(ring);
+  }
+  var queue = [], pumping = false;
+  function enqueue(it) { if (queue.indexOf(it) < 0) queue.push(it); if (!pumping) { pumping = true; requestAnimationFrame(pump); } }
+  function pump() { var it = queue.shift(); if (it) fillCrop(it); if (queue.length) requestAnimationFrame(pump); else pumping = false; }
+  var cropIO = null;
+  if ('IntersectionObserver' in window) {
+    cropIO = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting && !wideMQ.matches) { enqueue(e.target); cropIO.unobserve(e.target); } });
+    }, { rootMargin: '900px 0px' });
+    items.forEach(function (it) { cropIO.observe(it); });
+  } else items.forEach(fillCrop);
+
+  // The board: one poster, built the first time the wide layout is used.
+  var board = $('#board'), frame = $('#boardFrame'), hl = $('#hl'), hlTag = $('#hlTag'), cap = $('#boardCap');
+  var boardPoster = null, current = null;
+  var maker = $('#maker');
+  function ensureBoard() {
+    if (boardPoster) return;
+    boardPoster = makePoster();
+    frame.insertBefore(boardPoster, frame.firstChild);
+  }
+  function partRect(part) {
+    var els = $$('[data-part="' + part + '"]', boardPoster);
+    var f = boardPoster.getBoundingClientRect(), x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    els.forEach(function (el) { var r = el.getBoundingClientRect(); x0 = Math.min(x0, r.left); y0 = Math.min(y0, r.top); x1 = Math.max(x1, r.right); y1 = Math.max(y1, r.bottom); });
+    var pad = 6;
+    return { l: x0 - f.left - pad, t: y0 - f.top - pad, w: x1 - x0 + 2 * pad, h: y1 - y0 + 2 * pad };
+  }
+  var CAPS = { code: 'The code', route: 'The route', here: 'You are here', words: 'The words', hang: 'On the wall' };
+  function activate(it) {
+    if (!boardPoster || it === current) return;
+    current = it;
+    var part = it ? it.getAttribute('data-part') : null;
+    board.classList.toggle('focus', !!part);
+    // the route's drawing contains "You are here", so the route lights it too
+    $$('[data-part]', boardPoster).forEach(function (el) { var k = el.getAttribute('data-part'); el.classList.toggle('on', k === part || (part === 'route' && k === 'here')); });
+    var isMaker = !!it && !!(maker.compareDocumentPosition(it) & Node.DOCUMENT_POSITION_FOLLOWING);
+    board.classList.toggle('proof', isMaker);
+    cap.textContent = part ? (isMaker ? 'Step ' + it.getAttribute('data-tag') + ' fills in: ' : 'Part ' + it.getAttribute('data-tag') + ': ') + CAPS[part].toLowerCase() : 'The example poster';
+    if (part) {
+      var r = partRect(part);
+      hl.style.left = r.l + 'px'; hl.style.top = r.t + 'px'; hl.style.width = r.w + 'px'; hl.style.height = r.h + 'px';
+      hlTag.textContent = it.getAttribute('data-tag');
+    }
+  }
+  var boardIO = null;
+  function startBoard() {
+    ensureBoard();
+    if (boardIO || !('IntersectionObserver' in window)) return;
+    // an item counts as "being read" while it crosses the middle band of the viewport
+    boardIO = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) activate(e.target); });
+    }, { rootMargin: '-45% 0px -45% 0px' });
+    items.forEach(function (it) { boardIO.observe(it); });
+    // above the first part, the board shows the whole poster
+    var firstIO = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) activate(null); });
+    }, { rootMargin: '-45% 0px -45% 0px' });
+    $$('.item.first').slice(0, 1).forEach(function (el) { firstIO.observe(el); });
+  }
+  function onLayout() {
+    if (wideMQ.matches) startBoard();
+    else { cropW = 0; items.forEach(function (it) { var r = it.getBoundingClientRect(); if (r.top < innerHeight + 900) enqueue(it); }); }
+    if (current && boardPoster) { var c = current; current = null; activate(c); }
+  }
+  if (wideMQ.addEventListener) wideMQ.addEventListener('change', onLayout); else if (wideMQ.addListener) wideMQ.addListener(onLayout);
+  var rT;
+  window.addEventListener('resize', function () { clearTimeout(rT); rT = setTimeout(function () { if (current && boardPoster) { var c = current; current = null; activate(c); } }, 120); });
+  onLayout();
+  // bfcache: a page restored from history keeps its DOM; re-sync the board to where the reader is
+  window.addEventListener('pageshow', function (e) { if (e.persisted) onLayout(); });
+
+  window.__landing = { ready: true, setAr: setAr, toast: toast };
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1550 @@
+<!doctype html>
+<html lang="en" data-ar="0">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Make a tour - Location-based WebXR</title>
+<meta name="description" content="Prototype: the site's 3D scroll story, retold for people who want to make an AR tour without code." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='40' fill='%23e0483c'/%3E%3Ccircle cx='50' cy='50' r='15' fill='%23fff'/%3E%3C/svg%3E" type="image/svg+xml" />
+<script type="importmap">
+  { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.min.js" } }
+</script>
+<script>
+  // Fake the device's AR support before first paint: ?ar=1 (Android phone
+  // with Chrome) or ?ar=0 (desktop, iPhone). Without the parameter the page
+  // starts in the universally true state (no AR) and asks the browser later.
+  (function () {
+    try {
+      var v = new URLSearchParams(location.search).get("ar");
+      if (v === "1" || v === "0") document.documentElement.dataset.ar = v;
+    } catch (e) { /* keep the default */ }
+  })();
+</script>
+<style>
+/* The visual language is re-implemented from the site's developer landing
+   (GpsPlusSlamJs_Landing: its "dusk" palette, glass copy panels, hero veil,
+   chapter dots, grain and card styles), so both pages read as one site.
+   Only the dusk theme is kept; the five other palettes are cut. */
+:root {
+  --accent: #e0483c;
+  --accent-hover: #c93a2e;
+  --bg: #142a27;
+  --text: #fed;
+  --muted: #d8bca4;
+  --hl-code: #e8a83d;
+  --hl-ar: #6fa9e0;
+  --hl-story: #d0b3f5;
+  --hl-person: #2dd4bf;
+  --panel: rgb(16 34 31 / 62%);
+  --panel-border: rgb(255 178 128 / 18%);
+  --panel-border-hi: rgb(255 178 128 / 50%);
+  --card: #1c3833;
+  --card-border: #2f524b;
+  --card-hover: #234440;
+  --link: #9cc8e8;
+  --veil: #142a27;
+  --ok: #4cc38a;
+  --warn: #f6c052;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  /* The document never scrolls: <main> is the only scroller, as on the
+     developer landing (keeps the mobile URL bar still). */
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.55;
+}
+
+/* First paint and no-WebGL floor: a CSS/SVG dusk backdrop with the same
+   sky, sun and silhouettes the 3D world shows. The canvas fades in on top. */
+#backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(to bottom, #2c4d6e 0%, #5d6563 38%, #ab7f50 56%, #5e3e23 57.5%, #3d2815 100%);
+}
+#backdrop svg { position: absolute; left: 0; bottom: 0; width: 100%; height: 62%; }
+#scene-root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100lvh;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 0.8s ease;
+}
+#scene-root.on { opacity: 1; }
+#scene-root canvas { display: block; width: 100%; height: 100%; }
+body.no-webgl #scene-root { display: none; }
+
+/* Vignette: the developer landing renders it as a post effect; here it is
+   one CSS gradient (near free). */
+#vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, rgb(5 12 11 / 45%) 100%);
+}
+
+#hero-veil {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100lvh;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(to bottom, var(--veil) 0%, var(--veil) 32%, transparent 80%);
+}
+@media (width <= 600px), (height <= 500px) {
+  #hero-veil {
+    background: linear-gradient(to bottom, var(--veil) 0%, var(--veil) 62%, transparent 96%);
+  }
+}
+
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  pointer-events: none;
+}
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-size: 0.95rem;
+  color: var(--muted);
+  text-shadow: 0 0 2px rgb(16 34 31 / 95%), 0 0 5px rgb(16 34 31 / 85%), 0 1px 14px rgb(16 34 31 / 65%);
+  white-space: nowrap;
+}
+.brand b { color: var(--text); font-weight: 700; }
+/* The AR simulation switch sits where the developer landing has its
+   palette button: same pill, same glass. */
+.ar-switch {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--card-border);
+  background: var(--panel);
+  backdrop-filter: blur(10px);
+  border-radius: 999px;
+  padding: 3px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.ar-switch span { color: var(--muted); padding: 0 6px 0 8px; }
+.ar-switch button {
+  font: inherit;
+  white-space: nowrap;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  min-height: 34px;
+  padding: 0 11px;
+  cursor: pointer;
+}
+.ar-switch button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+@media (width <= 420px) { .ar-switch span { display: none; } .brand { font-size: 0.84rem; } .ar-switch button { padding: 0 9px; } .top-bar { padding: 12px 12px; } }
+
+main {
+  position: fixed;
+  inset: 0 0 -1px;
+  overflow-y: auto;
+  z-index: 2;
+}
+.chapter {
+  min-height: 130vh;
+  display: flex;
+  align-items: center;
+  padding: 8vh 20px;
+}
+.copy {
+  max-width: 460px;
+  --hl-strength: 1;
+  background:
+    linear-gradient(var(--panel), var(--panel)) padding-box,
+    linear-gradient(160deg, var(--panel-border-hi), var(--panel-border) 55%) border-box;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  padding: 24px 26px;
+  backdrop-filter: blur(12px) saturate(150%);
+  margin-left: 6vw;
+  opacity: 0.55;
+  transform: translateY(14px);
+  transition: opacity 0.35s ease, transform 0.45s ease;
+}
+body.no-webgl .copy, body.static .copy { opacity: 1; transform: none; }
+body.no-webgl .copy { backdrop-filter: none; background: linear-gradient(rgb(16 34 31 / 88%), rgb(16 34 31 / 88%)) padding-box, linear-gradient(160deg, var(--panel-border-hi), var(--panel-border) 55%) border-box; }
+.chapter.active .copy { opacity: 1; transform: translateY(0); }
+.chapter:nth-of-type(even) .copy { margin-left: auto; margin-right: 6vw; }
+
+/* Phone portrait: panels ride high in their chapter, so at the moment a
+   chapter's 3D framing holds, the copy covers the top of the screen and
+   the subject (shifted down by the camera's view offset) stays visible. */
+@media (width <= 600px) and (orientation: portrait) {
+  .chapter { align-items: flex-start; padding-top: 21vh; }
+  .copy, .chapter:nth-of-type(even) .copy { margin: 0 auto; }
+}
+@media (orientation: landscape) and (height <= 560px) {
+  .copy { max-width: 340px; font-size: 0.9rem; padding: 16px 20px; }
+  .chapter .copy h2 { font-size: 1.3rem; }
+  .chapter .copy p { font-size: 0.95rem; }
+  .chapter .copy ul { font-size: 0.9rem; }
+  .chapter:nth-of-type(even) .copy { margin-right: 3vw; }
+}
+.tag {
+  margin: 0 0 6px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, Menlo, monospace;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.copy h2 {
+  font-size: clamp(1.4rem, 4vw, 1.9rem);
+  margin: 0 0 10px;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+.copy p { margin: 0; color: var(--muted); font-size: 1.05rem; }
+.copy p + p { margin-top: 10px; }
+.copy ul { margin: 10px 0 0; padding-left: 1.2em; color: var(--muted); font-size: 0.98rem; }
+.copy li { margin: 4px 0; }
+.req {
+  margin-top: 12px !important;
+  font-size: 0.88rem !important;
+  color: var(--text) !important;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.still { display: none; }
+body.no-webgl .still { display: block; width: 100%; max-width: 300px; height: auto; margin: 14px auto 0; }
+.req::before { content: ""; flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--warn); transform: translateY(-1px); }
+[data-ar="1"] .req::before { background: var(--ok); }
+
+/* Hero: a normal-looking landing (no glass panel), as on the developer page. */
+.chapter.hero { display: block; min-height: 112vh; padding-top: 13vh; }
+.hero-content { max-width: 760px; margin-left: 8vw; padding-right: 20px; }
+.kicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: baseline;
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.kicker strong { color: var(--accent); letter-spacing: 0.06em; text-transform: uppercase; font-size: 0.78rem; }
+.kicker a { color: var(--link); text-decoration: none; font-weight: 600; }
+.kicker a:hover { text-decoration: underline; }
+.hero-content h1 {
+  font-size: clamp(2.05rem, 6.5vw, 3.4rem);
+  margin: 0 0 12px;
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+}
+.ar-line {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+  margin: 0 0 16px;
+  max-width: 620px;
+  font-size: 0.98rem;
+  color: var(--text);
+}
+.ar-line::before { content: ""; flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 10px var(--warn); transform: translateY(-1px); }
+[data-ar="1"] .ar-line::before { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+.ar-line b { font-weight: 700; }
+.ar-line .muted { color: var(--muted); }
+.hero-sub { margin: 0 0 16px; max-width: 620px; color: var(--muted); font-size: 1.1rem; }
+.hero-points { list-style: none; margin: 0 0 22px; padding: 0; }
+.hero-points li { margin: 6px 0; padding-left: 1.3em; position: relative; color: var(--text); font-size: 1.02rem; }
+/* The developer page's dash bullet, drawn as a line instead of a glyph. */
+.hero-points li::before { content: ""; position: absolute; left: 0; top: 0.8em; width: 0.75em; height: 1.5px; background: var(--muted); }
+
+/* The recipe: the developer page's collapsible code snippet, same box and
+   same monospace summary line, but the content is the maker's six steps. */
+.recipe {
+  margin: 0 0 22px;
+  max-width: 660px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 12px 18px;
+  backdrop-filter: blur(10px);
+}
+.recipe summary {
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Consolas, Menlo, monospace;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.recipe summary:hover { color: var(--text); }
+.recipe ol { margin: 10px 0 2px; padding: 0; list-style: none; counter-reset: s; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 22px; }
+.recipe li { counter-increment: s; position: relative; padding-left: 30px; font-size: 0.92rem; color: var(--text); line-height: 1.4; }
+.recipe li::before {
+  content: counter(s);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+.recipe li small { display: block; color: var(--muted); font-size: 0.8rem; }
+.recipe li.site::before { background: var(--accent); color: #fff; }
+@media (width <= 600px) {
+  .recipe ol { grid-template-columns: 1fr; }
+  /* Phones: the two links come before the recipe box, so "Make your tour
+     now" sits above the fold on a 390x844 screen. */
+  .chapter.hero { padding-top: 10vh; }
+  .hero-content { display: flex; flex-direction: column; }
+  .hero-links { order: 1; margin-bottom: 18px; }
+  .recipe { order: 2; }
+}
+
+.hero-links { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; margin: 0; }
+.scroll-hint { font-size: 0.9rem; color: var(--accent); font-weight: 600; }
+.hero-links a { color: var(--link); text-decoration: none; font-size: 0.95rem; font-weight: 600; }
+.hero-links a:hover { text-decoration: underline; }
+@media (width > 720px) and (height <= 860px) { .chapter.hero { padding-top: 15vh; } }
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  opacity: 0.055;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Colour coding, matched to the 3D world: amber = the printed code,
+   red = a station (your content at a spot), blue = what AR adds,
+   violet = notes and stories, teal = the person. Scoped to the copy so the
+   rules cannot leak into the drawings. */
+.hero-content .hl-code, .copy .hl-code { color: color-mix(in srgb, var(--hl-code) calc(var(--hl-strength, 1) * 100%), var(--text)); }
+.hero-content .hl-fused, .copy .hl-fused { color: color-mix(in srgb, var(--accent) calc(var(--hl-strength, 1) * 100%), var(--text)); }
+.hero-content .hl-ar, .copy .hl-ar { color: color-mix(in srgb, var(--hl-ar) calc(var(--hl-strength, 1) * 100%), var(--text)); }
+.hero-content .hl-story, .copy .hl-story { color: color-mix(in srgb, var(--hl-story) calc(var(--hl-strength, 1) * 100%), var(--text)); }
+.hero-content .hl-person, .copy .hl-person { color: color-mix(in srgb, var(--hl-person) calc(var(--hl-strength, 1) * 100%), var(--text)); }
+.hero-content h1 .hl-ar { text-shadow: 0 0 18px rgb(111 169 224 / 40%); }
+.hero-content h1 .hl-fused { text-shadow: 0 0 20px rgb(224 72 60 / 50%); }
+
+/* Final chapter */
+#chapter-cta { display: block; padding-top: 14vh; }
+#chapter-cta .copy { margin: 0 auto; max-width: 720px; text-align: center; }
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: none;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 1.05rem;
+  padding: 14px 26px;
+  border-radius: 12px;
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-primary svg { width: 18px; height: 18px; fill: currentcolor; }
+.btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 6px 18px rgb(224 72 60 / 30%); }
+.btn-primary:active { transform: translateY(0) scale(0.98); box-shadow: none; }
+.cta-note { margin-top: 10px !important; font-size: 0.9rem !important; }
+.block { max-width: 720px; margin: 26px auto 0; }
+.block > h3 { text-align: center; font-size: 1rem; color: var(--muted); margin: 0 0 14px; font-weight: 600; }
+
+/* The setup start (step 1), revealed by "Make your tour". */
+#setup {
+  max-width: 720px;
+  margin: 18px auto 0;
+  background: var(--card);
+  border: 1px solid var(--accent);
+  border-radius: 16px;
+  padding: 20px 20px 18px;
+  text-align: left;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 25%);
+}
+#setup[hidden] { display: none; }
+.route {
+  display: flex;
+  justify-content: space-between;
+  position: relative;
+  margin: 2px 4px 16px;
+  padding: 0;
+  list-style: none;
+}
+.route::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 10px;
+  border-top: 2px dashed rgb(224 72 60 / 55%);
+}
+.route li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.7rem; color: var(--muted); width: 16%; text-align: center; line-height: 1.2; }
+.route li i {
+  font-style: normal;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--card);
+  border: 1.5px solid var(--card-border);
+  color: var(--muted);
+}
+.route li.now i { background: var(--accent); border-color: var(--accent); color: #fff; }
+.route li.now { color: var(--text); font-weight: 600; }
+.route li.site i { border-style: dashed; }
+#setup h3 { margin: 0 0 4px; font-size: 1.25rem; letter-spacing: -0.01em; }
+#setup h3:focus { outline: none; }
+#setup .sub { margin: 0 0 14px; color: var(--muted); font-size: 0.95rem; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 10px; }
+.tile {
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 78px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgb(0 0 0 / 14%);
+  border: 1px solid var(--card-border);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.92rem;
+  cursor: pointer;
+  text-align: left;
+}
+.tile svg { width: 22px; height: 22px; fill: none; stroke: var(--muted); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tile:hover { border-color: var(--accent); background: var(--card-hover); }
+.tile[aria-pressed="true"] { border-color: var(--accent); background: rgb(224 72 60 / 14%); }
+.tile[aria-pressed="true"] svg { stroke: var(--accent); }
+.setup-next { margin: 14px 0 0; font-size: 0.92rem; color: var(--muted); min-height: 1.4em; }
+.setup-next a { color: var(--link); font-weight: 600; }
+.setup-foot { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--card-border); font-size: 0.85rem; color: var(--muted); }
+
+#handoff { display: none; width: max-content; max-width: 100%; margin: 20px auto 0; flex-direction: column; align-items: center; gap: 8px; padding: 14px 18px; border-radius: 14px; background: var(--panel); border: 1px solid var(--panel-border); backdrop-filter: blur(10px); }
+#handoff small { font-weight: 400; opacity: 0.8; }
+@media (width > 720px) { [data-ar="0"] #handoff { display: flex; } }
+#handoff svg { width: 120px; height: 120px; background: #fff; padding: 8px; border-radius: 10px; }
+#handoff p { margin: 0; color: var(--muted); font-size: 0.85rem; font-weight: 600; max-width: 340px; text-align: center; }
+
+.card-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (width >= 720px) { .card-grid { grid-template-columns: 1fr 1fr; } }
+.card {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  text-decoration: none;
+  text-align: left;
+  font: inherit;
+  width: 100%;
+  cursor: pointer;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  color: var(--text);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 14%);
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.card::after { content: "›"; margin-left: auto; align-self: center; color: var(--accent); font-size: 1.6rem; line-height: 1; }
+.card:hover { background: var(--card-hover); border-color: var(--accent); transform: translateY(-2px); }
+.card svg { flex: 0 0 auto; width: 34px; height: 34px; margin-top: 2px; }
+.card strong { display: block; font-size: 1rem; margin-bottom: 2px; }
+.card small { color: var(--muted); font-size: 0.85rem; line-height: 1.4; display: block; }
+
+.faq { max-width: 720px; margin: 34px auto 0; content-visibility: auto; contain-intrinsic-size: auto 420px; }
+.faq h3 { text-align: center; font-size: 1rem; color: var(--muted); margin: 0 0 14px; font-weight: 600; }
+.faq details { background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; padding: 12px 16px; margin: 0 0 10px; }
+.faq summary { cursor: pointer; font-weight: 600; font-size: 0.98rem; }
+.faq summary:hover { color: var(--accent); }
+.faq p { margin: 10px 0 2px; color: var(--muted); font-size: 0.95rem; line-height: 1.5; }
+
+.links {
+  max-width: 720px;
+  margin: 34px auto 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--card-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  justify-content: center;
+  font-size: 0.95rem;
+}
+.links a { color: var(--link); text-decoration: none; }
+.links a:hover { text-decoration: underline; }
+
+#notes { max-width: 720px; margin: 22px auto 0; padding-bottom: 48px; font-size: 0.88rem; color: var(--muted); content-visibility: auto; contain-intrinsic-size: auto 60px; }
+#notes summary { cursor: pointer; font-weight: 600; text-align: center; color: var(--muted); }
+#notes .in { margin-top: 12px; background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; padding: 14px 18px; }
+#notes h4 { margin: 14px 0 4px; color: var(--text); font-size: 0.9rem; }
+#notes h4:first-child { margin-top: 0; }
+#notes p, #notes ul { margin: 0; }
+#notes ul { padding-left: 1.2em; }
+#notes li { margin: 3px 0; }
+
+#chapter-dots { position: fixed; right: 14px; top: 50%; transform: translateY(-50%); z-index: 3; display: flex; flex-direction: column; gap: 10px; }
+#chapter-dots:empty { display: none; }
+#chapter-dots button { width: 11px; height: 11px; padding: 0; border-radius: 50%; border: 1px solid var(--panel-border-hi); background: var(--panel); cursor: pointer; transition: background 0.2s ease, transform 0.2s ease; }
+#chapter-dots button.active { background: var(--accent); border-color: var(--accent); transform: scale(1.25); }
+@media (width <= 600px) { #chapter-dots { right: 5px; gap: 8px; } #chapter-dots button { width: 8px; height: 8px; } }
+
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translate(-50%, 8px);
+  z-index: 30;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 10px 18px;
+  border-radius: 14px;
+  background: var(--card);
+  border: 1px solid var(--panel-border-hi);
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+#toast.visible { opacity: 1; transform: translate(-50%, 0); }
+
+[data-ar="1"] .ar-no, [data-ar="0"] .ar-yes { display: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  #scene-root, #toast { transition: none; }
+  .copy { transform: none; transition: none; }
+  .btn-primary, .card, #chapter-dots button { transition: none; }
+  .btn-primary:hover, .card:hover, #chapter-dots button.active { transform: none; }
+}
+</style>
+</head>
+<body>
+<div id="backdrop" aria-hidden="true">
+  <svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMax slice">
+    <circle cx="96" cy="17" r="26" fill="#f0a55c" />
+    <rect x="0" y="22" width="400" height="300" fill="#4a3019" />
+    <path d="M0 52 C 90 40 180 60 260 70 C 320 78 360 95 400 110 L400 300 L0 300 Z" fill="#5e3e23" />
+    <path d="M230 300 C 220 250 160 210 205 160 C 240 120 200 90 150 70 L 166 68 C 222 90 258 120 222 162 C 188 202 245 250 262 300 Z" fill="#8a6b44" />
+    <g fill="#21130e">
+      <path d="M20 70 l14 -48 l14 48 z M52 64 l10 -34 l10 34 z M318 94 l13 -44 l13 44 z M350 106 l16 -54 l16 54 z M120 48 l7 -24 l7 24 z M280 82 l9 -30 l9 30 z" />
+    </g>
+    <g fill="#40605a"><rect x="250" y="8" width="16" height="16" /><rect x="268" y="2" width="12" height="22" /><rect x="282" y="12" width="20" height="12" /></g>
+    <g fill="#e0483c"><circle cx="196" cy="128" r="5" /><circle cx="226" cy="186" r="6" /></g>
+  </svg>
+</div>
+<div id="scene-root" aria-hidden="true"></div>
+<div id="vignette" aria-hidden="true"></div>
+<div id="hero-veil" aria-hidden="true"></div>
+
+<header class="top-bar">
+  <span class="brand">Location-based WebXR <b>Tours</b></span>
+  <div class="ar-switch" role="group" aria-label="Simulate this device's AR support">
+    <span>Simulate</span>
+    <button type="button" data-ar-set="1" aria-pressed="false">AR phone</button>
+    <button type="button" data-ar-set="0" aria-pressed="true">No AR</button>
+  </div>
+</header>
+
+<nav id="chapter-dots" aria-label="Story chapters"></nav>
+
+<main id="story">
+  <section class="chapter hero" id="chapter-hero" data-label="Make your own AR tour">
+    <div class="hero-content">
+      <p class="kicker"><strong>Tours, for makers</strong> <a href="../../../">Building with code? The developer page &rarr;</a></p>
+      <h1>Stories that <span class="hl-ar">appear on site</span>, in the phone's camera. <span class="hl-fused">Make your own tour.</span></h1>
+      <p class="ar-line">
+        <span><b>AR runs on Android phones with Chrome.</b>
+        <span class="muted ar-yes">This phone can do it: you can start right here.</span>
+        <span class="muted ar-no">This device cannot show AR, but you can prepare a tour here.</span></span>
+      </p>
+      <p class="hero-sub">Leave notes, photos and 3D pins at the real spots of a walk. Visitors scan your printed code and see them through their phone, right where you put them.</p>
+      <ul class="hero-points">
+        <li>No code: you make it by walking the route</li>
+        <li>One printed code is the door into the tour</li>
+        <li>No sign-up, no account, no app to install</li>
+      </ul>
+      <details class="recipe" id="recipe">
+        <summary>// the recipe: a tour in six steps</summary>
+        <ol>
+          <li>Pick your storage<small>Drive, Dropbox, OneDrive, GitHub or a server</small></li>
+          <li>Paste its share link<small>the address your code points to</small></li>
+          <li>Print your posters<small>one code each, at 100 %</small></li>
+          <li>Hang one where the walk starts<small>flat, chest height, good light</small></li>
+          <li class="site">Create it on site, in AR<small>scan, walk, tap to place</small></li>
+          <li class="site">Put the saved tour in place<small>upload the file, done</small></li>
+        </ol>
+      </details>
+      <p class="hero-links">
+        <span class="scroll-hint">Scroll to walk in &darr;</span>
+        <a href="#chapter-cta" id="jump-make">Make your tour now &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section class="chapter" id="chapter-poster" data-label="One printed code">
+    <div class="copy">
+      <p class="tag">Steps 1 to 4 &middot; at your desk</p>
+      <h2>It starts with one printed <span class="hl-code">code</span>.</h2>
+      <p>Print a poster and hang it where your walk begins. A visitor scans it with the phone camera: the tour opens in the browser, nothing to install, and the phone knows <span class="hl-fused">the spot it stands on</span>.</p>
+    </div>
+  </section>
+
+  <section class="chapter" id="chapter-walk" data-label="Walk and place stations">
+    <div class="copy">
+      <p class="tag">Step 5 &middot; on site, with your phone</p>
+      <h2>Walk your route. Tap where it <span class="hl-fused">happened</span>.</h2>
+      <p><span class="hl-person">You</span> scan your own poster, then walk. Wherever something belongs, tap: a <span class="hl-fused">station</span> drops onto that spot, and you add a <span class="hl-story">note</span>, a photo or a 3D pin. No code, no map to draw.</p>
+    </div>
+  </section>
+
+  <section class="chapter" id="chapter-dive" data-label="What visitors see">
+    <div class="copy">
+      <p class="tag">Your visitors</p>
+      <h2>This is what your visitors see.</h2>
+      <p>Their <span class="hl-ar">own phone</span> becomes the window. <span class="hl-ar">Arrows</span> lead the way, and your <span class="hl-story">notes</span> and photos wait at the real spots. Outside the screen, the park stays a park.</p>
+      <p class="req">Visitors need an Android phone with Chrome.</p>
+      <svg class="still" viewBox="0 0 220 150" aria-hidden="true"><rect width="220" height="150" rx="10" fill="#3d2815" /><path d="M0 70 H220 V0 H0 Z" fill="#5d6563" /><path d="M0 70 C 60 62 150 64 220 74" fill="#5e3e23" /><path d="M0 70 H220 V150 H0 Z" fill="#5e3e23" opacity=".7" /><path d="M60 150 C 90 110 120 96 130 72 L 138 72 C 132 100 112 120 96 150 Z" fill="#8a6b44" /><rect x="78" y="14" width="64" height="126" rx="7" fill="none" stroke="#4a6ea8" stroke-width="7" /><g><path d="M98 128 l8 -6 l8 6 M102 114 l7 -5 l7 5 M106 101 l6 -4 l6 4" fill="none" stroke="#5b9bd8" stroke-width="3" stroke-linecap="round" /><path d="M121 50 c-6 0 -10 4 -10 10 c0 8 10 20 10 20 s10 -12 10 -20 c0 -6 -4 -10 -10 -10z" fill="#e0483c" /><rect x="84" y="30" width="62" height="13" rx="5" fill="#c9a3e8" /><text x="115" y="39.5" text-anchor="middle" font-size="7" font-family="system-ui, sans-serif" fill="#24123a">The mill wheel</text></g><path d="M10 70 l9 -30 l9 30 z M186 74 l10 -36 l10 36 z" fill="#21130e" /></svg>
+    </div>
+  </section>
+
+  <section class="chapter" id="chapter-yours" data-label="Yours, nothing to install">
+    <div class="copy">
+      <p class="tag">Step 6 &middot; save it</p>
+      <h2>Yours, and nothing to install.</h2>
+      <p>The whole tour is one file in storage you already have: Google Drive, Dropbox, OneDrive, GitHub or your own server. No sign-up, no account, no app.</p>
+      <p>Once a tour has loaded, it keeps working without signal.</p>
+    </div>
+  </section>
+
+  <section class="chapter" id="chapter-ideas" data-label="What will you make">
+    <div class="copy">
+      <h2>What will you make?</h2>
+      <p>Anything that belongs to a place:</p>
+      <ul>
+        <li>A town history walk with old photos at the real corners</li>
+        <li>A museum garden or sculpture trail</li>
+        <li>A school or nature trail with questions on the way</li>
+        <li>What is <span class="hl-ar">long gone</span>, shown right where it stood</li>
+        <li>A treasure hunt for a birthday</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="chapter" id="chapter-cta" data-label="Make your tour">
+    <div class="copy">
+      <h2>Make your tour.</h2>
+      <p>
+        <span class="ar-yes">This phone supports AR, so all six steps work right here.</span>
+        <span class="ar-no">Steps 1 to 4 work on any computer. Steps 5 and 6 happen on site, on an Android phone with Chrome.</span>
+        No sign-up, no account.
+      </p>
+      <button class="btn-primary" type="button" id="make-btn" aria-controls="setup" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2c-4 0-7 3-7 7 0 5.3 7 13 7 13s7-7.7 7-13c0-4-3-7-7-7zm0 9.6a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2z" /></svg>
+        Make your tour
+      </button>
+      <p class="cta-note">Six steps, then your walk.</p>
+    </div>
+
+    <div id="setup" hidden>
+      <ol class="route" aria-label="The six steps">
+        <li class="now"><i>1</i>Storage</li>
+        <li><i>2</i>Link</li>
+        <li><i>3</i>Posters</li>
+        <li><i>4</i>Hang</li>
+        <li class="site"><i>5</i>Create on site</li>
+        <li class="site"><i>6</i>Put in place</li>
+      </ol>
+      <h3 tabindex="-1" id="setup-title">Where will your tour live?</h3>
+      <p class="sub">Your tour is one small file. Keep it in storage you already have.</p>
+      <div class="tiles" role="group" aria-label="Storage options">
+        <button class="tile" type="button" data-host="Google Drive" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M8 3h8l6 11-4 7H6l-4-7z" /><path d="M8 3l6 11H2M16 3l-8 18M14 14h8" /></svg>Google Drive</button>
+        <button class="tile" type="button" data-host="Dropbox" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M3 8l9-4 9 4-9 4z" /><path d="M3 8v8l9 4 9-4V8M12 12v8" /></svg>Dropbox</button>
+        <button class="tile" type="button" data-host="OneDrive" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M7 18h11a4 4 0 0 0 .5-8 6 6 0 0 0-11.3-1.6A4.8 4.8 0 0 0 7 18z" /></svg>OneDrive</button>
+        <button class="tile" type="button" data-host="GitHub" aria-pressed="false"><svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2" /><circle cx="6" cy="19" r="2.2" /><circle cx="18" cy="8" r="2.2" /><path d="M6 7.2v9.6M18 10.2c0 4-6 3-11 6.8" /></svg>GitHub</button>
+        <button class="tile" type="button" data-host="your own server" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6" /></svg>Your own server</button>
+      </div>
+      <p class="setup-next" id="setup-next" role="status" aria-live="polite"></p>
+      <p class="setup-foot">
+        <span class="ar-no">On this device you can do steps 1 to 4 now. For steps 5 and 6, open this page on an Android phone with Chrome at the poster.</span>
+        <span class="ar-yes">Everything works on this phone. Steps 5 and 6 happen at the poster.</span>
+      </p>
+    </div>
+
+    <div id="handoff" aria-label="Continue on your phone">
+      <svg viewBox="0 0 29 29" id="handoff-qr" role="img" aria-label="Code that opens this page on a phone (illustration)"></svg>
+      <p>Creating on site needs a phone: scan this to carry on there. <small>(Illustration only.)</small></p>
+    </div>
+
+    <div class="block">
+      <h3>Or start somewhere else</h3>
+      <div class="card-grid">
+        <button class="card" type="button" data-toast="Would open the example tour Mill Park as a visitor sees it. No AR needed for the preview.">
+          <svg viewBox="0 0 34 34" aria-hidden="true"><rect x="9" y="3" width="16" height="28" rx="3" fill="#4a6ea8" /><rect x="11" y="6" width="12" height="20" rx="1" fill="#8aa3c8" /><path d="M17 9c-2.2 0-4 1.8-4 4 0 3 4 7 4 7s4-4 4-7c0-2.2-1.8-4-4-4z" fill="#e0483c" /></svg>
+          <span><strong>See what a visitor sees</strong><small>Walk the example tour, Mill Park, on this screen.</small></span>
+        </button>
+        <button class="card" type="button" data-toast-ar1="Would open the camera to scan a poster's code and start the tour in AR." data-toast-ar0="Scan the poster's code with an Android phone with Chrome. The tour opens straight away, nothing to install.">
+          <svg viewBox="0 0 34 34" aria-hidden="true"><rect x="4" y="4" width="11" height="11" fill="#e8a83d" /><rect x="7" y="7" width="5" height="5" fill="#1c3833" /><rect x="19" y="4" width="11" height="11" fill="#e8a83d" /><rect x="22" y="7" width="5" height="5" fill="#1c3833" /><rect x="4" y="19" width="11" height="11" fill="#e8a83d" /><rect x="7" y="22" width="5" height="5" fill="#1c3833" /><rect x="19" y="19" width="5" height="5" fill="#e0483c" /><rect x="25" y="25" width="5" height="5" fill="#e0483c" /></svg>
+          <span><strong>Here to walk a tour?</strong><small>Scan the code on its poster. You go straight in.</small></span>
+        </button>
+        <button class="card" type="button" data-toast-ar1="Would list the tours on this phone, or take a tour link, then Play it or Continue setting it up." data-toast-ar0="Would open the editor, to fine-tune a tour you already made on a computer.">
+          <svg viewBox="0 0 34 34" aria-hidden="true"><rect x="4" y="7" width="26" height="18" rx="2" fill="#2f524b" /><rect x="7" y="10" width="20" height="12" fill="#8aa3c8" /><path d="M11 29h12" stroke="#d8bca4" stroke-width="2" /><path d="M10 19l5-5 4 4 5-5" fill="none" stroke="#c9a3e8" stroke-width="2" /></svg>
+          <span><strong>Already made one?</strong><small class="ar-no">Open the editor on this computer.</small><small class="ar-yes">Play it, or continue setting it up.</small></span>
+        </button>
+        <a class="card" href="../../../">
+          <svg viewBox="0 0 34 34" aria-hidden="true"><path d="M12 10l-7 7 7 7M22 10l7 7-7 7" fill="none" stroke="#9cc8e8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          <span><strong>Building your own app?</strong><small>The developer page: the open-source code and its demos.</small></span>
+        </a>
+      </div>
+    </div>
+
+    <div class="faq">
+      <h3>Common questions</h3>
+      <details><summary>Which phones work?</summary><p>Creating on site and walking a tour in AR need an Android phone with Chrome. On a computer or another phone you can prepare a tour: storage, link and posters.</p></details>
+      <details><summary>Do I need to write code?</summary><p>No. You walk the route with your phone and tap where things belong. If you want to fine-tune it later, there is an editor for the computer.</p></details>
+      <details><summary>Where is my tour kept?</summary><p>In your own storage: Google Drive, Dropbox, OneDrive, GitHub or your own server. There is no sign-up and no account.</p></details>
+      <details><summary>Does it work without signal?</summary><p>Once a tour has loaded on the phone, it keeps working without signal.</p></details>
+    </div>
+
+    <div class="links">
+      <a href="#" data-toast="Would open the legal notice.">Legal notice</a>
+      <a href="#" data-toast="Would open the privacy page.">Privacy</a>
+      <a href="../../../">For developers</a>
+    </div>
+
+    <details id="notes">
+      <summary>About this prototype</summary>
+      <div class="in">
+        <h4>Direction</h4>
+        <p>The site's developer landing, forked for makers: the same dusk 3D world, glass panels and scroll story, with every chapter rewritten for someone who wants to make a tour, ending on "Make your tour" and the first setup step.</p>
+        <h4>Why it should work for this audience</h4>
+        <p>The 3D world already explains "things appear at real places through a phone" better than words; what failed a maker was only the copy (a positioning problem, code, "Fork"). Keeping the look makes the two pages one site, so a maker who lands on the developer page and a developer who lands here both recognise where they are.</p>
+        <h4>Kept from the developer page</h4>
+        <ul>
+          <li>The dusk palette (teal base, cream text, crimson accent), film grain, vignette, system font.</li>
+          <li>The fixed 3D world behind a single scroller; the hero veil that lifts as you scroll; glass panels alternating left and right; chapter dots.</li>
+          <li>The world itself, rebuilt smaller: S-shaped path, dark tree silhouettes, low sun, skyline, teal person, red pins, blue AR content, violet labels, the phone frame as a window, the ruin with its ghost building.</li>
+          <li>Colour-coded words that match what is on screen, fading in as a panel rises.</li>
+          <li>The hero's structure: H1, a line under it, dash bullets, a collapsible box with a monospace summary, "Scroll to walk in"; the closing chapter's one red button, card grid, FAQ, link row.</li>
+        </ul>
+        <h4>Changed</h4>
+        <ul>
+          <li>Every chapter's copy: the accuracy, fusion and "offline" library claims became the maker's steps (desk, site, visitors, save).</li>
+          <li>The code snippet box became the six-step recipe, same box and summary style.</li>
+          <li>"Fork &amp; start building" became "Make your tour", which opens step 1 in place; the eight demo cards became four maker paths; the developer page is one card and one link.</li>
+          <li>The AR line under the H1 and in the last chapter, which changes with the device.</li>
+          <li>The palette button became the AR simulation switch; the phone frame now masks the AR content so it is visible only through the screen.</li>
+        </ul>
+        <h4>Cut for the budget</h4>
+        <p>anime.js (scroll position drives the camera directly), the bloom and vignette post effect (vignette is CSS now), shadow maps, five palettes, portal, parkour, satellites, birds and the easter eggs. Lambert materials instead of standard ones.</p>
+        <h4>Load-bearing details</h4>
+        <ul>
+          <li>Phone portrait: panels sit 21vh into a 130vh chapter, and the camera's view offset pushes the 3D subject 20% down, so copy and subject share the screen (12% puts the phone under the panel, 28% cuts it at the bottom). Landscape and desktop shift the subject 18% away from the panel side.</li>
+          <li>The phone frame masks the AR content (arrows, pin, label, photo): outside its screen the park stays plain. This is the page's one idea; keep it.</li>
+          <li>The hero shows H1, the AR line, the sub and "Make your tour now" on a 390x844 screen without scrolling (on phones the links move above the recipe box). At 360x740 the links fall below the fold.</li>
+          <li>The AR line always says Android with Chrome; the second half changes with the device.</li>
+          <li>Paragraph and list margins in the panels are set here, not inherited: a port into the app's reset styles will lose them.</li>
+        </ul>
+        <h4>Cost (desktop machine, not a phone)</h4>
+        <p id="notes-cost">Page script 11 kB gzip, three.js 0.185.1 188 kB gzip (requested only after the first paint): 200 kB of the 250 kB budget. Measured at 390x844 on a loaded desktop, not a phone: 5 s idle, no frame over 17 ms; 5 s scroll through the whole page, one 83 ms frame in a cold browser (none in warm runs); with the CPU slowed 4 times, worst frame 33 ms. The 3D starts in steps (build about 40 ms, shaders compiled up front about 60 ms), none of them a long task in a warm browser.</p>
+        <h4>Known weaknesses</h4>
+        <ul>
+          <li>Close to the clay-story variant in idea (a 3D story for makers); it differs in staying on the developer page's look and order.</li>
+          <li>Dark and dramatic: the paper look of the current setup page is gone.</li>
+          <li>Blurred glass panels repaint over a moving canvas, the costliest part on a phone.</li>
+          <li>The setup start is a stub: step 1 only.</li>
+          <li>On a phone the first screen is text only; the 3D world shows from the first scroll (as on the developer page, whose veil this keeps).</li>
+          <li>The code in the desktop hand-off is a drawn illustration, not a real code.</li>
+        </ul>
+        <h4>Parameters it rests on</h4>
+        <p>Chapter height 130vh, portrait panel offset 21vh, view offset 20% (portrait) and 18% (landscape), scroll damping 6 per second, pixel ratio cap 1.5.</p>
+      </div>
+    </details>
+  </section>
+</main>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script type="module">
+const S = (window.__r29 = { ready: false, failed: false, gl: false, p: 0, ar: false, timing: {} });
+const root = document.documentElement;
+const body = document.body;
+const story = document.getElementById("story");
+const sections = [...document.querySelectorAll(".chapter")];
+const copies = sections.map((s) => s.querySelector(".copy"));
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const veil = document.getElementById("hero-veil");
+const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const smooth = (x) => { x = clamp01(x); return x * x * (3 - 2 * x); };
+
+// --- toast ---------------------------------------------------------------
+const toastEl = document.getElementById("toast");
+let toastTimer = 0;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add("visible");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove("visible"), 3800);
+}
+
+// --- AR simulation -------------------------------------------------------
+const arButtons = [...document.querySelectorAll("[data-ar-set]")];
+let arUserSet = false;
+function setAr(on, fromUser) {
+  S.ar = !!on;
+  root.dataset.ar = on ? "1" : "0";
+  arButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.arSet === root.dataset.ar)));
+  if (fromUser) {
+    arUserSet = true;
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set("ar", on ? "1" : "0");
+      history.replaceState(null, "", u);
+    } catch (e) { /* file URLs etc. */ }
+  }
+}
+const arParam = new URLSearchParams(location.search).get("ar");
+setAr(arParam === "1", false);
+if (arParam !== "1" && arParam !== "0") {
+  // No fake given: ask the browser (the real page would gate the claim on this).
+  try {
+    if (navigator.xr && navigator.xr.isSessionSupported) {
+      navigator.xr.isSessionSupported("immersive-ar").then((ok) => { if (!arUserSet) setAr(ok, false); }, () => {});
+    }
+  } catch (e) { /* no WebXR */ }
+}
+arButtons.forEach((b) => b.addEventListener("click", () => setAr(b.dataset.arSet === "1", true)));
+
+// --- recipe box: open on desktop-class screens, closed on phones -----------
+if (innerWidth > 720 && innerHeight > 700) document.getElementById("recipe").open = true;
+
+// --- buttons with a toast -------------------------------------------------
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-toast],[data-toast-ar1]");
+  if (!t) return;
+  e.preventDefault();
+  toast(t.dataset.toast || (S.ar ? t.dataset.toastAr1 : t.dataset.toastAr0));
+});
+
+// --- Make your tour: open step 1 in place -----------------------------------
+const makeBtn = document.getElementById("make-btn");
+const setup = document.getElementById("setup");
+function openSetup() {
+  setup.hidden = false;
+  makeBtn.setAttribute("aria-expanded", "true");
+  requestAnimationFrame(() => {
+    const top = setup.getBoundingClientRect().top + story.scrollTop - 70;
+    story.scrollTo({ top, behavior: reduced ? "auto" : "smooth" });
+    document.getElementById("setup-title").focus({ preventScroll: true });
+  });
+}
+makeBtn.addEventListener("click", openSetup);
+document.getElementById("jump-make").addEventListener("click", (e) => {
+  e.preventDefault();
+  const cta = document.getElementById("chapter-cta");
+  story.scrollTo({ top: cta.offsetTop, behavior: reduced ? "auto" : "smooth" });
+});
+const nextEl = document.getElementById("setup-next");
+document.querySelectorAll(".tile").forEach((t) =>
+  t.addEventListener("click", () => {
+    document.querySelectorAll(".tile").forEach((o) => o.setAttribute("aria-pressed", String(o === t)));
+    nextEl.innerHTML = "";
+    nextEl.append(`Good: ${t.dataset.host}. Next you put an empty starter file there and paste its share link. `);
+    const a = document.createElement("a");
+    a.href = "../../";
+    a.textContent = "Continue in the tour maker →";
+    nextEl.append(a);
+  }),
+);
+
+// --- the illustration code for the desktop hand-off -------------------------
+(function drawCode() {
+  const svg = document.getElementById("handoff-qr");
+  let s = 91;
+  const rnd = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+  let d = "";
+  const finder = (x, y) => { d += `M${x} ${y}h7v7h-7zM${x + 1} ${y + 1}v5h5v-5zM${x + 2} ${y + 2}h3v3h-3z`; };
+  finder(0, 0); finder(22, 0); finder(0, 22);
+  for (let y = 0; y < 29; y++) for (let x = 0; x < 29; x++) {
+    const inF = (x < 8 && y < 8) || (x > 20 && y < 8) || (x < 8 && y > 20);
+    if (!inF && rnd() < 0.47) d += `M${x} ${y}h1v1h-1z`;
+  }
+  svg.innerHTML = `<path fill="#142a27" fill-rule="evenodd" d="${d}"/>`;
+})();
+
+// --- chapter dots ---------------------------------------------------------
+const dotsNav = document.getElementById("chapter-dots");
+const dots = sections.map((s, i) => {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.setAttribute("aria-label", s.dataset.label || `Chapter ${i + 1}`);
+  b.addEventListener("click", () => story.scrollTo({ top: i === 0 ? 0 : s.offsetTop + (i < sections.length - 1 ? s.offsetHeight / 2 - story.clientHeight / 2 : 0), behavior: reduced ? "auto" : "smooth" }));
+  dotsNav.append(b);
+  return b;
+});
+
+// --- scroll state ---------------------------------------------------------
+// Every chapter has a "middle": the scroll position at which its 3D framing
+// holds. Progress p runs 0..6 between those middles, with a hold zone around
+// each, so the camera rests while a panel is read.
+let mids = [];
+let vh = innerHeight;
+let scene = null;
+function measure() {
+  vh = story.clientHeight || innerHeight;
+  mids = sections.map((s, i) => s.offsetTop + Math.min(s.offsetHeight, 1.3 * vh) / 2 - (i === sections.length - 1 ? 0.15 * vh : 0));
+  mids[0] = vh / 2;
+}
+function progressAt(c) {
+  if (c <= mids[0]) return 0;
+  for (let i = 0; i < mids.length - 1; i++) {
+    if (c < mids[i + 1]) {
+      const f = (c - mids[i]) / (mids[i + 1] - mids[i]);
+      return reduced ? i + Math.round(f) : i + smooth((f - 0.22) / 0.56);
+    }
+  }
+  return mids.length - 1;
+}
+function walkAt(c) {
+  if (reduced) { const p = progressAt(c); return p >= 2 ? 0.86 : 0.14; }
+  const a = mids[1] + 0.25 * (mids[2] - mids[1]);
+  const b = mids[2] + 0.4 * (mids[3] - mids[2]);
+  return 0.14 + 0.72 * smooth((c - a) / (b - a));
+}
+let domQueued = false;
+let activeIdx = -1;
+function updateDom() {
+  domQueued = false;
+  const st = story.scrollTop;
+  const c = st + vh / 2;
+  const p = progressAt(c);
+  const idx = Math.max(0, Math.min(sections.length - 1, Math.round(p)));
+  if (idx !== activeIdx) {
+    sections.forEach((s, i) => s.classList.toggle("active", i === idx));
+    dots.forEach((d, i) => d.classList.toggle("active", i === idx));
+    activeIdx = idx;
+  }
+  veil.style.opacity = String(1 - smooth(st / (0.85 * vh)));
+  if (!reduced) {
+    for (const el of copies) {
+      if (!el) continue;
+      const top = el.getBoundingClientRect().top;
+      el.style.setProperty("--hl-strength", clamp01((0.78 * vh - top) / (0.45 * vh)).toFixed(3));
+    }
+  }
+  if (scene) scene.requestRender();
+}
+function queueDom() { if (!domQueued) { domQueued = true; requestAnimationFrame(updateDom); } }
+story.addEventListener("scroll", queueDom, { passive: true });
+addEventListener("resize", () => { measure(); if (scene) scene.resize(); queueDom(); });
+addEventListener("pageshow", () => { measure(); queueDom(); });
+if (reduced) body.classList.add("static");
+S.mids = () => mids.slice();
+S.vh = () => vh;
+measure();
+updateDom();
+
+// --- the 3D world, started after the first paint ---------------------------
+function hasWebGL() {
+  try {
+    const c = document.createElement("canvas");
+    const gl = c.getContext("webgl2") || c.getContext("webgl");
+    if (!gl) return false;
+    const ext = gl.getExtension("WEBGL_lose_context");
+    if (ext) ext.loseContext();
+    return true;
+  } catch (e) { return false; }
+}
+function goStatic() { body.classList.add("no-webgl"); S.failed = true; }
+async function start3d() {
+  if (!hasWebGL()) { goStatic(); return; }
+  const t0 = performance.now();
+  let THREE;
+  try { THREE = await import("three"); } catch (e) { goStatic(); return; }
+  S.timing.load = Math.round(performance.now() - t0);
+  const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+  await nextFrame();
+  const t1 = performance.now();
+  try { scene = buildWorld(THREE); } catch (e) { goStatic(); return; }
+  S.timing.build = Math.round(performance.now() - t1);
+  await nextFrame();
+  const t2 = performance.now();
+  try { await scene.warm(); } catch (e) { /* compiles lazily instead */ }
+  S.timing.compile = Math.round(performance.now() - t2);
+  await nextFrame();
+  S.gl = true;
+  measure();
+  scene.resize();
+  scene.requestRender();
+  requestAnimationFrame(() => { document.getElementById("scene-root").classList.add("on"); S.ready = true; });
+}
+function later(fn) {
+  const go = () => ("requestIdleCallback" in window ? requestIdleCallback(fn, { timeout: 900 }) : setTimeout(fn, 200));
+  if (document.readyState === "complete") requestAnimationFrame(() => requestAnimationFrame(go));
+  else addEventListener("load", () => requestAnimationFrame(() => requestAnimationFrame(go)), { once: true });
+}
+later(start3d);
+
+function buildWorld(THREE) {
+  const {
+    Scene, PerspectiveCamera, WebGLRenderer, Color, Fog, HemisphereLight, DirectionalLight, Group, Mesh,
+    MeshLambertMaterial, MeshBasicMaterial, CircleGeometry, ConeGeometry, CylinderGeometry, SphereGeometry,
+    BoxGeometry, CapsuleGeometry, RingGeometry, PlaneGeometry, TorusGeometry, BufferGeometry, Float32BufferAttribute,
+    CatmullRomCurve3, Vector3, InstancedMesh, Object3D, Points, PointsMaterial, Sprite, SpriteMaterial,
+    CanvasTexture, SRGBColorSpace, BackSide, Shape, ShapeGeometry, IcosahedronGeometry,
+  } = THREE;
+  const container = document.getElementById("scene-root");
+  const dpr = Math.min(devicePixelRatio || 1, 1.5);
+  const renderer = new WebGLRenderer({ antialias: dpr < 1.5, powerPreference: "high-performance", stencil: true });
+  renderer.setPixelRatio(dpr);
+  container.append(renderer.domElement);
+  renderer.domElement.addEventListener("webglcontextlost", (e) => { e.preventDefault(); stopped = true; goStatic(); });
+
+  const scene3 = new Scene();
+  scene3.background = new Color(0x142a27);
+  scene3.fog = new Fog(0x7a5f40, 40, 110);
+  const camera = new PerspectiveCamera(55, 1, 0.1, 220);
+  scene3.add(camera);
+  scene3.add(new HemisphereLight(0x475a68, 0x241a12, 1.2));
+  const sunLight = new DirectionalLight(0xe89a5e, 1.15);
+  sunLight.position.set(-26, 14, -8);
+  scene3.add(sunLight);
+
+  let seed = 7;
+  const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const mats = new Map();
+  const mat = (color, emissive = 0) => {
+    const k = color + ":" + emissive;
+    if (!mats.has(k)) mats.set(k, new MeshLambertMaterial({ color, flatShading: true, emissive: emissive ? color : 0x000000, emissiveIntensity: emissive }));
+    return mats.get(k);
+  };
+  const mesh = (g, color, emissive) => new Mesh(g, mat(color, emissive));
+  const shadowMat = new MeshBasicMaterial({ color: 0x0b0704, transparent: true, opacity: 0.35, depthWrite: false });
+  const contact = (r) => { const m = new Mesh(new CircleGeometry(r, 16), shadowMat); m.rotation.x = -Math.PI / 2; m.position.y = 0.03; return m; };
+
+  // Sky dome: dark blue zenith over an ochre horizon (unlit, no fog).
+  {
+    const g = new SphereGeometry(150, 24, 16);
+    const pos = g.getAttribute("position");
+    const zen = new Color(0x2c4d6e), hor = new Color(0xab7f50), low = new Color(0x5e4632);
+    const col = [];
+    const c = new Color();
+    for (let i = 0; i < pos.count; i++) {
+      const el = pos.getY(i) / 150;
+      if (el >= 0) c.copy(hor).lerp(zen, smooth(el / 0.3)); else c.copy(hor).lerp(low, smooth(-el / 0.1));
+      col.push(c.r, c.g, c.b);
+    }
+    g.setAttribute("color", new Float32BufferAttribute(col, 3));
+    var dome = new Mesh(g, new MeshBasicMaterial({ vertexColors: true, side: BackSide, fog: false, depthWrite: false }));
+    dome.renderOrder = -2;
+    scene3.add(dome);
+  }
+  // Low sun disc and dark silhouette clouds, placed along the light's azimuth.
+  const sunDir = new Vector3(-26, 0, -8).normalize();
+  const sky = new Group();
+  scene3.add(sky);
+  {
+    const sun = new Mesh(new CircleGeometry(8, 32), new MeshBasicMaterial({ color: 0xf0a55c, fog: false, depthWrite: false }));
+    sun.position.copy(sunDir).multiplyScalar(130).setY(9);
+    sun.lookAt(0, 9, 0);
+    sun.renderOrder = -1;
+    sky.add(sun);
+    const cloudMat = new MeshBasicMaterial({ color: 0x5e4c3d, fog: false, depthWrite: false });
+    for (let i = 0; i < 6; i++) {
+      const cl = new Mesh(new SphereGeometry(1, 10, 6), cloudMat);
+      const a = Math.atan2(sunDir.z, sunDir.x) + (i - 2.5) * 0.22;
+      cl.position.set(Math.cos(a) * 128, 16 + (i % 3) * 7, Math.sin(a) * 128);
+      cl.scale.set(9 + (i % 2) * 4, 2.2, 5);
+      cl.lookAt(0, cl.position.y, 0);
+      cl.renderOrder = -1;
+      sky.add(cl);
+    }
+  }
+
+  // Ground, hills and far skyline.
+  const ground = mesh(new CircleGeometry(95, 40), 0x5e3e23);
+  ground.rotation.x = -Math.PI / 2;
+  scene3.add(ground);
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2 + 0.3;
+    const r = 48 + rnd() * 18;
+    const h = mesh(new IcosahedronGeometry(1, 1), 0x54381f);
+    h.position.set(Math.cos(a) * r, -1, Math.sin(a) * r);
+    h.scale.set(12 + rnd() * 10, 4 + rnd() * 5, 10 + rnd() * 8);
+    scene3.add(h);
+  }
+  {
+    const sk = new Group();
+    const base = new Vector3(-42, 0, -48);
+    for (let i = 0; i < 9; i++) {
+      const w = 3 + rnd() * 4, hh = 4 + rnd() * 9;
+      const b = mesh(new BoxGeometry(w, hh, w), 0x40605a, 0.08);
+      b.position.set(base.x + i * 4.2, hh / 2, base.z + (i % 3) * 2.5);
+      sk.add(b);
+    }
+    const tower = mesh(new CylinderGeometry(0.5, 0.7, 22, 6), 0x40605a, 0.08);
+    tower.position.set(base.x + 17, 11, base.z - 3);
+    const ball = mesh(new SphereGeometry(1.4, 10, 8), 0x40605a, 0.08);
+    ball.position.set(base.x + 17, 17, base.z - 3);
+    sk.add(tower, ball);
+    scene3.add(sk);
+  }
+
+  // The path: the developer page's S-curve, as a lit ribbon with a rim.
+  const curve = new CatmullRomCurve3(
+    [new Vector3(-16, 0, 12), new Vector3(-8, 0, 6), new Vector3(-2, 0, 8), new Vector3(4, 0, 2), new Vector3(2, 0, -6), new Vector3(10, 0, -12)],
+    false, "catmullrom", 0.5,
+  );
+  const samples = curve.getSpacedPoints(160);
+  function ribbon(width, y, color) {
+    const v = [];
+    const idx = [];
+    for (let i = 0; i < samples.length; i++) {
+      const t = curve.getTangentAt(i / (samples.length - 1));
+      const n = new Vector3(-t.z, 0, t.x).multiplyScalar(width / 2);
+      const p = samples[i];
+      v.push(p.x + n.x, y, p.z + n.z, p.x - n.x, y, p.z - n.z);
+      if (i > 0) { const k = i * 2; idx.push(k - 2, k, k - 1, k - 1, k, k + 1); }
+    }
+    const g = new BufferGeometry();
+    g.setAttribute("position", new Float32BufferAttribute(v, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return mesh(g, color);
+  }
+  scene3.add(ribbon(2.1, 0.05, 0x9a6a3a), ribbon(1.6, 0.09, 0x8a6b44));
+  const distToPath = (x, z) => { let m = 1e9; for (const p of samples) { const d = (p.x - x) ** 2 + (p.z - z) ** 2; if (d < m) m = d; } return Math.sqrt(m); };
+
+  // Story spots along the path.
+  const side = (t, off) => { const p = curve.getPointAt(t); const tg = curve.getTangentAt(t); return p.add(new Vector3(-tg.z, 0, tg.x).multiplyScalar(off)); };
+  const DROP_T = 0.14;
+  const signPos = side(DROP_T, -2.3);
+  const STATIONS = [
+    { t: 0.36, off: 1.3, label: "Mill pond" },
+    { t: 0.56, off: 1.3, label: "The mill wheel", photo: true },
+    { t: 0.8, off: 1.3, label: "The miller's bench" },
+  ];
+  STATIONS.forEach((s) => (s.pos = side(s.t, s.off)));
+  const millPos = side(0.56, 4.9);
+  const pondPos = side(0.36, 5);
+  const ruinPos = new Vector3(-12, 0, -5);
+  const keepOut = [signPos, millPos, pondPos, ruinPos];
+
+  // Trees (instanced dark silhouettes) and grass tufts.
+  {
+    const spots = [];
+    let guard = 0;
+    while (spots.length < 90 && guard++ < 2000) {
+      const a = rnd() * Math.PI * 2, r = 6 + Math.sqrt(rnd()) * 40;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if (distToPath(x, z) < 3 || keepOut.some((k) => (k.x - x) ** 2 + (k.z - z) ** 2 < 20)) continue;
+      if ((x - ruinPos.x) ** 2 + (z - ruinPos.z) ** 2 < 50) continue;
+      if (x > ruinPos.x && x < 2 && z > ruinPos.z - 4 && z < ruinPos.z + 9) continue;
+      spots.push([x, z, 0.8 + rnd() * 0.8, 2.4 + rnd() * 2.6]);
+    }
+    const crowns = new InstancedMesh(new ConeGeometry(1, 1, 7), mat(0x21130e), spots.length);
+    const trunks = new InstancedMesh(new CylinderGeometry(0.12, 0.16, 1, 5), mat(0x1c110b), spots.length);
+    const o = new Object3D();
+    spots.forEach(([x, z, r, h], i) => {
+      o.position.set(x, 0.6 + h / 2, z); o.scale.set(r, h, r); o.rotation.y = rnd() * 3; o.updateMatrix(); crowns.setMatrixAt(i, o.matrix);
+      o.position.set(x, 0.4, z); o.scale.set(1, 0.9, 1); o.updateMatrix(); trunks.setMatrixAt(i, o.matrix);
+    });
+    scene3.add(crowns, trunks);
+    const tufts = new InstancedMesh(new ConeGeometry(0.12, 0.45, 4), mat(0x4f321b), 260);
+    for (let i = 0; i < 260; i++) {
+      const a = rnd() * Math.PI * 2, r = 2 + rnd() * 30;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      o.position.set(x, distToPath(x, z) < 1.2 ? -1 : 0.2, z); o.scale.set(1, 0.7 + rnd(), 1); o.rotation.set(0, 0, 0); o.updateMatrix();
+      tufts.setMatrixAt(i, o.matrix);
+    }
+    scene3.add(tufts);
+  }
+
+  // Canvas helpers for the poster code and the AR labels.
+  const textures = [];
+  function canvasTex(w, h, draw) {
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    draw(c.getContext("2d"));
+    const t = new CanvasTexture(c);
+    t.colorSpace = SRGBColorSpace;
+    textures.push(t);
+    return t;
+  }
+  // The poster on its sign, with an amber code: the tour's door.
+  {
+    const sign = new Group();
+    const postL = mesh(new BoxGeometry(0.14, 2.2, 0.14), 0x1c110b); postL.position.set(-0.75, 1.1, 0);
+    const postR = postL.clone(); postR.position.x = 0.75;
+    const board = mesh(new BoxGeometry(1.8, 1.9, 0.1), 0x1c110b); board.position.y = 2.05;
+    const tex = canvasTex(256, 280, (g) => {
+      g.fillStyle = "#e8d0b0"; g.fillRect(0, 0, 256, 280);
+      let sd = 5; const r = () => ((sd = (Math.imul(sd, 1664525) + 1013904223) >>> 0) / 4294967296);
+      g.fillStyle = "#c97a1f";
+      const m = 9, o = 30;
+      for (let y = 0; y < 21; y++) for (let x = 0; x < 21; x++) {
+        const f = (x < 7 && y < 7) || (x > 13 && y < 7) || (x < 7 && y > 13);
+        if (f) { const fx = x < 7 ? x : x - 14, fy = y < 7 ? y : y - 14; const ring = Math.max(Math.abs(fx - 3), Math.abs(fy - 3)); if (ring === 2) continue; }
+        else if (r() < 0.5) continue;
+        g.fillRect(o + x * m, 18 + y * m, m, m);
+      }
+      g.fillStyle = "#3a2a1c"; g.font = "bold 26px system-ui, sans-serif"; g.textAlign = "center";
+      g.fillText("Scan to start", 128, 250);
+    });
+    const face = new Mesh(new PlaneGeometry(1.6, 1.75), new MeshLambertMaterial({ map: tex, emissive: 0xe8d0b0, emissiveIntensity: 0.25, emissiveMap: tex }));
+    face.position.set(0, 2.05, 0.06);
+    sign.add(postL, postR, board, face, contact(1.1));
+    sign.position.copy(signPos);
+    const look = curve.getPointAt(DROP_T);
+    sign.lookAt(look.x, 0, look.z + 3);
+    scene3.add(sign);
+  }
+  // Mill Park's mill: a house with a turning wheel, beside a pond.
+  let wheel;
+  {
+    const mill = new Group();
+    const house = mesh(new BoxGeometry(3.6, 2.8, 3), 0x8a6f52); house.position.y = 1.4;
+    const roof = mesh(new ConeGeometry(3.1, 1.8, 4), 0x4a2c1c); roof.position.y = 3.7; roof.rotation.y = Math.PI / 4; roof.scale.set(1.05, 1, 0.9);
+    wheel = new Group();
+    wheel.add(mesh(new TorusGeometry(1.25, 0.12, 6, 18), 0x1c110b));
+    for (let i = 0; i < 4; i++) { const sp = mesh(new BoxGeometry(2.4, 0.12, 0.12), 0x1c110b); sp.rotation.z = (i * Math.PI) / 4; wheel.add(sp); }
+    wheel.position.set(0, 1.3, 1.75);
+    mill.add(house, roof, wheel, contact(2.8));
+    mill.position.copy(millPos);
+    mill.lookAt(curve.getPointAt(0.56).setY(0));
+    mill.rotateY(Math.PI / 2);
+    scene3.add(mill);
+    const pond = new Mesh(new CircleGeometry(2.6, 20), new MeshLambertMaterial({ color: 0x2f524b, emissive: 0x2f524b, emissiveIntensity: 0.25 }));
+    pond.rotation.x = -Math.PI / 2; pond.position.copy(pondPos).setY(0.04); pond.scale.set(1.4, 1, 1);
+    scene3.add(pond);
+  }
+  // The ruin, and its long-gone building as a translucent AR ghost.
+  const ghostMat = new MeshBasicMaterial({ color: 0x8fb8e8, transparent: true, opacity: 0, depthWrite: false });
+  {
+    const ruin = new Group();
+    const wallBits = [[-2, 1.4, 0, 0.6, 2.8, 4], [2, 0.9, -0.8, 0.6, 1.8, 2.4], [0, 0.6, -2, 4.6, 1.2, 0.6], [-0.6, 2.2, -2, 1.2, 0.6, 0.6]];
+    wallBits.forEach(([x, y, z, w, h, d]) => { const b = mesh(new BoxGeometry(w, h, d), 0x6a5646, 0.12); b.position.set(x, y, z); ruin.add(b); });
+    const ghost = new Group();
+    const gb = new Mesh(new BoxGeometry(5.4, 4.2, 5.4), ghostMat); gb.position.y = 2.1;
+    const gr = new Mesh(new ConeGeometry(4.2, 2.4, 4), ghostMat); gr.position.y = 5.4; gr.rotation.y = Math.PI / 4;
+    const gt = new Mesh(new CylinderGeometry(0.8, 0.8, 6.2, 8), ghostMat); gt.position.set(-2.7, 3.1, 2.7);
+    ghost.add(gb, gr, gt);
+    ruin.add(ghost, contact(3));
+    ruin.position.copy(ruinPos);
+    ruin.rotation.y = 0.5;
+    scene3.add(ruin);
+  }
+
+  // The person (teal), with a soft contact shadow.
+  const person = new Group();
+  {
+    const b = mesh(new CapsuleGeometry(0.32, 0.7, 4, 10), 0x2dd4bf, 0.4); b.position.y = 0.75;
+    const h = mesh(new SphereGeometry(0.22, 10, 8), 0x2dd4bf, 0.4); h.position.y = 1.55;
+    person.add(b, h, contact(0.55));
+  }
+  scene3.add(person);
+  // The red spot ring where the poster scan places the person.
+  const snap = new Mesh(new RingGeometry(0.75, 0.95, 32), new MeshBasicMaterial({ color: 0xe0483c, transparent: true, opacity: 0.9, depthWrite: false }));
+  snap.rotation.x = -Math.PI / 2;
+  snap.position.copy(curve.getPointAt(DROP_T)).setY(0.13);
+  scene3.add(snap);
+
+  // AR content. Every material here can switch to "only through the phone"
+  // (stencil test against the phone's screen) while the visitor view runs.
+  const arMats = [];
+  const arMat = (m) => { m.transparent = true; arMats.push(m); return m; };
+  const pinMat = arMat(new MeshLambertMaterial({ color: 0xe0483c, emissive: 0xe0483c, emissiveIntensity: 0.6, flatShading: true }));
+  const labelTex = (text, w) => canvasTex(w, 96, (g) => {
+    g.fillStyle = "rgba(201,163,232,0.95)";
+    g.beginPath(); g.roundRect(4, 4, w - 8, 88, 22); g.fill();
+    g.fillStyle = "#24123a"; g.font = "600 46px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(text, w / 2, 50);
+  });
+  STATIONS.forEach((s) => {
+    const g = new Group();
+    const tip = new Mesh(new ConeGeometry(0.32, 1.1, 10), pinMat); tip.rotation.x = Math.PI; tip.position.y = 0.55;
+    const head = new Mesh(new SphereGeometry(0.4, 12, 10), pinMat); head.position.y = 1.35;
+    g.add(tip, head);
+    g.position.copy(s.pos);
+    const w = 64 + s.label.length * 24;
+    const lm = arMat(new SpriteMaterial({ map: labelTex(s.label, w), depthWrite: false, fog: false }));
+    const label = new Sprite(lm);
+    label.scale.set((w / 96) * 0.62, 0.62, 1);
+    label.position.set(0, 2.45, 0);
+    g.add(label);
+    s.group = g; s.label3 = label;
+    const shadow = contact(0.4);
+    shadow.position.copy(s.pos).setY(0.11);
+    s.shadow = shadow;
+    scene3.add(g, shadow);
+    if (s.photo) {
+      const pm = arMat(new SpriteMaterial({
+        map: canvasTex(200, 170, (c) => {
+          c.fillStyle = "#f2ead8"; c.fillRect(0, 0, 200, 170);
+          c.fillStyle = "#b9a37c"; c.fillRect(12, 12, 176, 118);
+          c.fillStyle = "#6b5236"; c.fillRect(40, 62, 80, 58); c.beginPath(); c.moveTo(32, 64); c.lineTo(80, 30); c.lineTo(128, 64); c.fill();
+          c.strokeStyle = "#3c2c1c"; c.lineWidth = 5; c.beginPath(); c.arc(134, 100, 24, 0, Math.PI * 2); c.stroke();
+          c.fillStyle = "#3c2c1c"; c.font = "italic 24px Georgia, serif"; c.textAlign = "center"; c.fillText("here, 1910", 100, 158);
+        }), depthWrite: false, fog: false,
+      }));
+      const photo = new Sprite(pm);
+      photo.scale.set(1.5, 1.27, 1);
+      photo.position.set(1.4, 1.15, 0);
+      g.add(photo);
+      s.photo3 = photo;
+    }
+  });
+  // Blue AR arrows on the path, between the first two stations.
+  const arrowMat = arMat(new MeshBasicMaterial({ color: 0x5b9bd8, depthWrite: false }));
+  const arrows = new Group();
+  {
+    const sh = new Shape();
+    sh.moveTo(-0.45, -0.25); sh.lineTo(0, 0.25); sh.lineTo(0.45, -0.25); sh.lineTo(0.45, -0.05); sh.lineTo(0, 0.45); sh.lineTo(-0.45, -0.05); sh.closePath();
+    const ag = new ShapeGeometry(sh);
+    for (let i = 0; i < 9; i++) {
+      const t = 0.37 + i * 0.019;
+      const p = curve.getPointAt(t), tg = curve.getTangentAt(t);
+      const a = new Mesh(ag, arrowMat);
+      a.position.set(p.x, 0.16, p.z);
+      a.rotation.order = "YXZ";
+      a.rotation.y = Math.atan2(tg.x, tg.z) + Math.PI;
+      a.rotation.x = -Math.PI / 2;
+      arrows.add(a);
+    }
+  }
+  scene3.add(arrows);
+
+  // The phone frame: four bars and a glass screen that writes the stencil.
+  const phone = new Group();
+  {
+    [[0.95, 0.1, 0, 0.9], [0.95, 0.1, 0, -0.9], [0.1, 1.9, -0.425, 0], [0.1, 1.9, 0.425, 0]].forEach(([w, h, x, y]) => {
+      const b = mesh(new BoxGeometry(w, h, 0.07), 0x4a6ea8, 0.15); b.position.set(x, y, 0); phone.add(b);
+    });
+    const screenMat = new MeshBasicMaterial({ color: 0x8aa3c8, transparent: true, opacity: 0.16, depthWrite: false, fog: false });
+    screenMat.stencilWrite = true;
+    screenMat.stencilRef = 1;
+    screenMat.stencilFunc = THREE.AlwaysStencilFunc;
+    screenMat.stencilZPass = THREE.ReplaceStencilOp;
+    const screen = new Mesh(new PlaneGeometry(0.82, 1.72), screenMat);
+    screen.position.z = 0.02;
+    screen.renderOrder = 5;
+    phone.add(screen);
+  }
+  phone.visible = false;
+  camera.add(phone);
+  function setArMask(on) {
+    for (const m of arMats) {
+      if (m.stencilWrite === on) continue;
+      m.stencilWrite = on;
+      m.stencilRef = 1;
+      m.stencilFunc = on ? THREE.EqualStencilFunc : THREE.AlwaysStencilFunc;
+    }
+  }
+  [arrows, ...STATIONS.map((s) => s.group)].forEach((o) => o.traverse((c) => { if (c.isMesh || c.isSprite) c.renderOrder = 10; }));
+
+  // Fireflies (still under reduced motion).
+  const flyCount = 110;
+  const flyBase = new Float32Array(flyCount * 3);
+  for (let i = 0; i < flyCount; i++) { const a = rnd() * 6.283, r = 3 + rnd() * 24; flyBase.set([Math.cos(a) * r, 0.5 + rnd() * 3.5, Math.sin(a) * r], i * 3); }
+  const flyGeo = new BufferGeometry();
+  flyGeo.setAttribute("position", new Float32BufferAttribute(flyBase.slice(), 3));
+  const flies = new Points(flyGeo, new PointsMaterial({ color: 0xffd9a0, size: 2.5 * dpr, sizeAttenuation: false, transparent: true, opacity: 0.85, depthWrite: false }));
+  scene3.add(flies);
+
+  // Camera keyframes, one per chapter. side = where that chapter's panel
+  // sits (-1 left, +1 right, 0 centred); the subject is shifted away from it.
+  const sp = (t, y) => curve.getPointAt(t).setY(y);
+  const st2 = STATIONS[1].pos.clone().setY(1.4);
+  const eye = sp(0.345, 1.6);
+  // pz = how much further the camera stands back on a portrait phone (its
+  // horizontal field of view is about half of a desktop's); follow = on a
+  // small screen (portrait, or a landscape phone) the walk chapter follows
+  // the person instead of showing the whole route.
+  const K = [
+    { pos: new Vector3(24, 17, 30), look: new Vector3(-2, 0, 0), side: -1, lift: 0, pz: 1 },
+    { pos: signPos.clone().add(new Vector3(6, 3.2, 9.5)), look: signPos.clone().add(new Vector3(0.8, 1.3, 0.5)), side: 1, lift: 5, pz: 1.45 },
+    { pos: new Vector3(14, 16, 19), look: new Vector3(-1, 0, 1), side: -1, lift: 0, pz: 1, follow: new Vector3(-3, 9, 12.5) },
+    { pos: eye, look: st2, side: 1, lift: 4, pz: 1 },
+    { pos: new Vector3(7, 30, 27), look: new Vector3(-1, 0, -1), side: -1, lift: 6, pz: 1.35 },
+    { pos: ruinPos.clone().add(new Vector3(12.5, 3.6, 4.5)), look: ruinPos.clone().add(new Vector3(0, 2.6, 0)), side: 1, lift: 4, pz: 1.3 },
+    { pos: new Vector3(14, 8, 28), look: new Vector3(-40, 9, -14), side: 0, lift: 3, pz: 1 },
+  ];
+  // Tuning hook for the prototype: ?vo=0.12 .. 0.3 changes the portrait shift.
+  const VIEW_SHIFT = Math.min(0.4, Math.max(0, parseFloat(new URLSearchParams(location.search).get("vo")) || 0.2));
+  const camPos = new Vector3(), camLook = new Vector3();
+  const kPos = [new Vector3(), new Vector3()], kLook = [new Vector3(), new Vector3()];
+  function keyframe(k, portrait, compact, personAt, outPos, outLook) {
+    if (compact && k.follow) { outLook.copy(personAt).setY(0.8); outPos.copy(personAt).add(k.follow); return; }
+    outLook.copy(k.look);
+    outPos.copy(k.pos);
+    if (portrait && k.pz !== 1) outPos.sub(k.look).multiplyScalar(k.pz).add(k.look);
+  }
+  let W = 1, H = 1;
+  let damped = null;
+  let last = performance.now();
+  let stopped = false;
+  let needs = true;
+  let clock = 0;
+
+  function apply(c, now) {
+    const p = progressAt(c);
+    const wt = walkAt(c);
+    S.p = Math.round(p * 1000) / 1000;
+    const i = Math.min(K.length - 2, Math.floor(p));
+    const e = p - i;
+    const a = K[i], b = K[i + 1];
+    const portrait = H > W && W <= 600;
+    const personAt = curve.getPointAt(wt);
+    const compact = portrait || H <= 500;
+    keyframe(a, portrait, compact, personAt, kPos[0], kLook[0]);
+    keyframe(b, portrait, compact, personAt, kPos[1], kLook[1]);
+    camPos.lerpVectors(kPos[0], kPos[1], e);
+    camPos.y += Math.sin(Math.PI * e) * (a.lift + b.lift) * 0.5;
+    camLook.lerpVectors(kLook[0], kLook[1], e);
+    camera.position.copy(camPos);
+    camera.lookAt(camLook);
+    // Frame the subject clear of the panel ("move the text, not the subject").
+    const sideNow = a.side + (b.side - a.side) * e;
+    const dx = portrait ? 0 : -sideNow * 0.18 * W;
+    const dy = portrait && p > 0.5 ? Math.min(1, p - 0.5) * VIEW_SHIFT * H : 0;
+    camera.setViewOffset(W, H, -dx, -dy, W, H);
+    dome.position.copy(camPos);
+    sky.position.set(camPos.x, 0, camPos.z);
+
+    // The person walks the path while the walk chapter scrolls past.
+    const pv = smooth((p - 0.55) / 0.3) * (1 - smooth((p - 2.45) / 0.25));
+    person.visible = pv > 0.01;
+    if (person.visible) {
+      const pt = curve.getPointAt(wt);
+      const tg = curve.getTangentAt(wt);
+      person.position.set(pt.x, 0.1, pt.z);
+      person.rotation.y = Math.atan2(tg.x, tg.z);
+      person.scale.setScalar(pv);
+    }
+    const sv = smooth((p - 0.6) / 0.25) * (1 - smooth((p - 1.7) / 0.4));
+    snap.visible = sv > 0.01;
+    snap.material.opacity = 0.9 * sv * (reduced ? 1 : 0.75 + 0.25 * Math.sin(clock * 3));
+    snap.scale.setScalar(0.6 + 0.4 * sv);
+
+    // Stations drop in as the person passes them, and stay.
+    for (const s of STATIONS) {
+      const k = reduced ? (wt >= s.t ? 1 : 0) : smooth((wt - s.t + 0.01) / 0.05);
+      s.group.visible = k > 0.01;
+      s.shadow.visible = s.group.visible;
+      s.group.position.y = (1 - k) * 2.5;
+      s.group.scale.setScalar(Math.max(0.01, k));
+      s.label3.visible = k > 0.6;
+    }
+    // The visitor view: the phone rises in front of the camera, and the AR
+    // content is drawn only inside its screen.
+    const ph = smooth((p - 2.35) / 0.45) * (1 - smooth((p - 3.3) / 0.4));
+    phone.visible = ph > 0.01;
+    const arOn = phone.visible;
+    setArMask(arOn);
+    arrows.visible = arOn;
+    STATIONS.forEach((s) => { if (s.photo3) s.photo3.visible = arOn; });
+    if (arOn) {
+      const visH = 2 * Math.tan((camera.fov * Math.PI) / 360);
+      const frac = portrait ? 0.5 : 0.8;
+      const d = 1.9 / (visH * frac);
+      phone.position.set(0, -(1 - ph) * visH * d * 0.9, -d);
+      phone.rotation.set(0, 0, 0);
+    }
+    ghostMat.opacity = 0.32 * smooth((p - 4.35) / 0.5) * (1 - smooth((p - 5.45) / 0.4));
+
+    if (!reduced) {
+      wheel.rotation.z = -clock * 0.6;
+      const arr = flyGeo.getAttribute("position");
+      for (let n = 0; n < flyCount; n++) {
+        arr.array[n * 3 + 1] = flyBase[n * 3 + 1] + Math.sin(clock * 0.9 + n) * 0.25;
+        arr.array[n * 3] = flyBase[n * 3] + Math.sin(clock * 0.4 + n * 1.7) * 0.3;
+      }
+      arr.needsUpdate = true;
+    }
+  }
+
+  function frame(now) {
+    if (stopped) return;
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    const target = story.scrollTop + vh / 2;
+    if (damped === null || reduced) damped = target;
+    else damped += (target - damped) * (1 - Math.exp(-dt * 6));
+    const moving = Math.abs(target - damped) > 0.5;
+    if (!reduced) clock += dt;
+    if (!reduced || needs || moving) {
+      apply(damped, now);
+      renderer.render(scene3, camera);
+      needs = false;
+    }
+    if (!reduced && !document.hidden) requestAnimationFrame(frame);
+    else looping = false;
+  }
+  let looping = false;
+  function kick() {
+    needs = true;
+    if (!looping && !stopped) { looping = true; last = performance.now(); requestAnimationFrame(frame); }
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) kick(); });
+  // Compile every shader up front (all parts made visible for the pass), so
+  // no material compiles the first time it scrolls into view.
+  async function warm() {
+    const hidden = [];
+    scene3.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+    if (renderer.compileAsync) await renderer.compileAsync(scene3, camera);
+    else renderer.compile(scene3, camera);
+    hidden.forEach((o) => (o.visible = false));
+    // Upload the label and photo textures now, not when they first appear.
+    textures.forEach((t) => renderer.initTexture(t));
+  }
+  return {
+    warm,
+    resize() {
+      W = container.clientWidth || innerWidth;
+      H = container.clientHeight || innerHeight;
+      renderer.setSize(W, H, false);
+      camera.aspect = W / H;
+      camera.updateProjectionMatrix();
+      kick();
+    },
+    requestRender: kick,
+  };
+}
+</script>
+</body>
+</html>
