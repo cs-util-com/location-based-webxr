@@ -3,14 +3,16 @@
 ## Purpose
 
 The 3D view's studio shell, read-only: the top bar's studio controls
-(pencil, Undo, Redo, Frame, Top view, Help), the tree dock at the left,
-the inspector dock at the right, the compass and the zoom buttons at the
-bottom left, and the bottom bar (the view line, a hint naming the
-selection's handles (`inspectorHint`), the debug readout
-behind its toggle). The page's own controls (the view switch, Save, Done,
-the save status, Open another tour) stay the page's and keep their logic;
-the shell's stylesheet (`editor-shell.css`) only dresses them while the 3D
-view shows.
+(Details, Undo, Redo, Help), the Edit menu's Undo and Redo (where those
+fold at a phone's width), the View menu's Top view and Frame, the tree
+dock at the left, the inspector dock at the right, the compass and the
+zoom buttons at the bottom right, and the bottom bar's 3D parts (the view
+line, a hint naming the selection's handles (`inspectorHint`), the debug
+readout behind its toggle). The page's own controls (the File menu, the
+view switch, Show debug data, the save status and the unsaved mark) stay
+the page's and keep their logic; the shell's stylesheet
+(`editor-shell.css`) dresses the menus in both views and the rest while
+the 3D view shows.
 
 ## Public API
 
@@ -63,32 +65,30 @@ view shows.
 - **Text, never markup:** names and lines from the tour are set as text
   (`shell-tree.ts`, `shell-inspector.ts`).
 - **The stylesheet** (`editor-shell.css`, applied under
-  `body[data-view="3d"]`): a 40 px top bar and a 24 px bottom bar with the
-  view between them; the tree 272 px and the inspector 290 px wide, flush
-  with the window's edges. The save status is cut short with an ellipsis
-  past 220 px (its words stay its text and its title). The tour's name
-  and the status keep a floor (`--s-name-min`, `--s-status-min`), and the
-  bar folds in steps before the name goes under it:
-  - at 1420 px and below the keep-walk switch is its checkbox (its words
-    out of sight, still its name, and its title) and "Add debug data" its
-    icon;
-  - at 1140 px Undo and Redo lose their words and the key hints go
-    ("Open another tour" says "Open");
-  - at 940 px every studio button is its icon, the view switch says its
-    short word and the gaps narrow;
-  - at 820 px the docks shrink to 56 % and 60 % of the width where that
-    is less, and the hint goes; a folded tree's head ends where the
+  `body[data-view="3d"]`, the menus' dress in both views): a 40 px top bar
+  and a 24 px bottom bar with the view between them; the tree 272 px and
+  the inspector 290 px wide, flush with the window's edges, the inspector
+  ending 150 px above the view's foot so the compass and the zoom buttons
+  at the bottom right stay clear of it at every width; the scene's credits
+  at the bottom left. The save status leads the bottom bar, cut short with
+  an ellipsis (its words stay its text and its title). Every top-bar
+  control keeps its words at every width; the tour's name keeps a floor
+  (`--s-name-min`, lowered step by step), and the bar folds in steps
+  before the name goes under it:
+  - at 820 px the unsaved mark keeps its dot (its words are the bottom
+    bar's status line, and its title);
+  - at 820 px too the docks shrink to 56 % and 60 % of the width where
+    that is less, and the hint goes; a folded tree's head ends where the
     inspector begins (156 px at 390), so the inspector never covers its
     fold arrow;
-  - at 720 px the help, the pencil and the mark go (the tour's name opens
-    the same details), the save status is a dot (its words stay its name
-    and title), and Done and Open are icons;
-  - at 440 px Redo goes (Undo stays);
-  - at 375 px "Add debug data" goes (the map's panel keeps it).
-  - Each step starts where the bar, in its most crowded state (the
-    keep-walk switch shown and the longest status) in a wide platform
-    face (Verdana, with DejaVu Sans' metrics), would no longer hold every
-    control; measured, every state fits from 320 px up.
+  - at 720 px Details goes (File's Tour details… and the tour's name open
+    the same dialog) and the buttons drop their icons, keeping words;
+  - at 520 px Undo and Redo fold into the Edit menu;
+  - at 400 px the menus' carets go and the groups close up.
+  - Each step starts where the bar, in its most crowded state (the unsaved
+    mark shown) in a wide platform face (Verdana, with DejaVu Sans'
+    metrics), would no longer hold every control with the name at its
+    floor; measured, every state fits from 320 px up.
 - The inspector's lock (`data-act="lock"`) toggles the selected station's lock in `editorView` (`stationLocked`); both inspector builds pass `unlockedStations`.
 
 ## Examples
@@ -117,13 +117,15 @@ The rules it applies are unit-tested in their own files
 (`shell-tree.test.ts`, `shell-inspector.test.ts`,
 `shell-pictures.test.ts`, `shell-icons.test.ts`). The page is covered
 by `playwright-tests/editor3d-shell.spec.js`: the layout at 390x844,
-844x390, 820x1180 and 1440x900 (bars, docks, map controls, every top-bar
-control inside the bar and none over another, the name over its floor),
-the most crowded bar at each step's edges, the tree from the keyboard
+844x390, 820x1180 and 1440x900 (bars, docks, the map controls at the
+bottom right and under the inspector, every top-bar control inside the
+bar, in words, and none over another, the name over its floor), the most
+crowded bar at each step's edges, the menus from the keyboard, Edit by
+touch at a phone's width, the unsaved mark beside File, the tree from the keyboard
 alone (Tab order: the top bar left to right, then the tree), a card's click selecting,
 unfolding and flying, a double click not toggling, a later click
 deselecting and folding, the folds and a layer kept across a trip to the
-map, Top view by its button and T, the zoom steps and the debug readout,
+map, Top view from View and by T, the zoom steps and the debug readout,
 and on a phone the folded tree's "Stations" header unfolding the dock
 with its stations shown.
 

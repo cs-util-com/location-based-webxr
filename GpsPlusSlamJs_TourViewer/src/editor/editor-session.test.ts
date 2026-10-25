@@ -30,6 +30,7 @@ import {
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import { selectTourDocument, tourDocumentActions } from "../tour-document.js";
 import {
+  copyFileName,
   createEditorSession,
   NOT_IN_TOUR,
   TOO_FAR_FROM_STATION,
@@ -225,6 +226,69 @@ describe("createEditorSession", () => {
     expect((await editor.save({ keepScan: false })).filename).toBe(
       editor.savedName(),
     );
+    await session.close();
+  });
+});
+
+describe("createEditorSession, Save a copy", () => {
+  // Why: "Save a copy…" writes the tour as it stands into a file of its
+  // own, and the tour's own file stays where it was: the edits are still
+  // waiting for the tour's own save, the next save still rebuilds from the
+  // last bytes the tour's file got, and an undo still undoes them.
+  it("carries every edit, and leaves the edits pending for the tour's own save", async () => {
+    const { session, manifest } = await opened([pin("a", "Old"), pin("b")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    editor.editText("a", "New");
+    editor.remove("b");
+    const copy = await editor.saveCopy({ keepScan: false });
+    // Named apart from the tour's own file, so the copy is never taken
+    // for it (a download beside it, a save dialog's suggestion).
+    expect(editor.savedName()).toBe("tour.zip");
+    expect(copy.filename).toBe("tour copy.zip");
+    const tour = await carried(copy.blob);
+    expect(tour.objects.map((o) => o.id)).toEqual(["a"]);
+    expect(tour.objects[0]).toMatchObject({ label: "New" });
+    expect(editor.changeCount()).toBe(2);
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    const saved = await editor.save({ keepScan: false });
+    expect((await carried(saved.blob)).objects.map((o) => o.id)).toEqual([
+      "a",
+      "b",
+    ]);
+    await session.close();
+  });
+
+  it("names a copy apart: ' copy' before the .zip, any case", () => {
+    expect(copyFileName("tour.zip")).toBe("tour copy.zip");
+    expect(copyFileName("Old Town.ZIP")).toBe("Old Town copy.ZIP");
+    // A ".zip" that is not the end is part of the name.
+    expect(copyFileName("a.zip.bak")).toBe("a.zip.bak copy");
+    expect(copyFileName("xzip")).toBe("xzip copy");
+    expect(copyFileName("")).toBe(" copy");
+  });
+
+  it("waits for a save that runs, and copies what it saved too", async () => {
+    const { session, manifest } = await opened([pin("a"), pin("b")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    editor.editText("a", "Saved");
+    const running = editor.save({ keepScan: false });
+    editor.editText("b", "Only in the copy");
+    const copy = editor.saveCopy({ keepScan: false });
+    await running;
+    const labels = (await carried((await copy).blob)).objects.map(
+      (o) => (o as { label: string }).label,
+    );
+    expect(labels).toEqual(["Saved", "Only in the copy"]);
+    // The save's landing stands; the edit made after it still waits.
+    expect(editor.changeCount()).toBe(1);
     await session.close();
   });
 });

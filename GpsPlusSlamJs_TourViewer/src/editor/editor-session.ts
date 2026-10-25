@@ -117,6 +117,14 @@ type UndoOutcome =
   | { readonly kind: "nothing" }
   | EditorRefusal;
 
+/** A copy's file name ("Save a copy…"): the tour's, with " copy" before
+ *  its `.zip` (any case), so the copy is never taken for the tour's own
+ *  file. */
+export function copyFileName(name: string): string {
+  const at = /\.zip$/i.test(name) ? name.length - 4 : name.length;
+  return `${name.slice(0, at)} copy${name.slice(at)}`;
+}
+
 export interface EditorSave {
   readonly blob: Blob;
   /** The opened file's name, made safe to save (the Finish's rule). */
@@ -404,6 +412,11 @@ export interface EditorSession {
      *  that file stands in the history). Default: a download. */
     readonly inPlace?: boolean;
   }): Promise<EditorSave>;
+  /** A copy of the tour as it stands, built from the newest bytes as a
+   *  save is ("Save a copy…"), queued with the saves - but not landed:
+   *  the tour's own file and its pending edits stay as they were. Rejects
+   *  with `TOUR_REPLACED` once another open replaced this one. */
+  saveCopy(options: { readonly keepScan: boolean }): Promise<EditorSave>;
   /** The walk recording's entries in the newest bytes (W2, D19): none
    *  once it was moved out, or when the last save left it out. */
   walkEntries(): Promise<string[]>;
@@ -1183,6 +1196,18 @@ export function createEditorSession(input: {
       // The document's save (`tour-document-save.ts`): a thunk, queued with
       // the moves of the walk.
       return dispatchThunk(store, saves.save(options)).then(saveOf);
+    },
+    saveCopy(options) {
+      return dispatchThunk(
+        store,
+        saves.queued(async () => {
+          if (mine() === null) throw new Error(TOUR_REPLACED);
+          const snap = dispatchThunk(store, saves.snapshot());
+          await saves.picturesRead();
+          const copy = saveOf(await saves.rebuild(snap, options.keepScan));
+          return { ...copy, filename: copyFileName(copy.filename) };
+        }),
+      );
     },
     async walkEntries() {
       return scanEntryNames(

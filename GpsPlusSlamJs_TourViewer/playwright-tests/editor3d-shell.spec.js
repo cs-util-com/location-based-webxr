@@ -2,10 +2,17 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  fileCommand,
+  fileItem,
+  save,
+  viewCommand,
+  viewItem,
+} from "./editor-menus.js";
+import {
   afterFrames,
   answerHosts,
   keepRejections,
-  openSample,
+  openSampleIn3d,
   rejections,
   view3d,
 } from "./editor3d-fixture.js";
@@ -14,17 +21,19 @@ import { useWideFont } from "./wide-font.js";
 /**
  * Why these tests matter: the 3D view's studio shell is a layout over the
  * scene - a 40 px top bar, a 24 px bottom bar, the tree dock flush left,
- * the inspector flush right, the map controls at the bottom left - and a
- * presence check passes a broken one. These pin positions, sizes and gaps
- * at a phone, a phone in landscape, a tablet in portrait and a desktop,
- * the narrow-window rule (below 900 px one dock at a time), every top-bar
- * control inside the window and none over another, the tour's name never
- * squeezed away - also in the bar's most crowded state, at every step it
- * folds, in a wide face; the tree from the keyboard alone, the top bar's
- * Add debug data, a flight leaving no coast behind; and the tree's click
- * rule on the sample tour: a click selects, unfolds and flies there, a
- * second click deselects and folds, a quick second click (a double
- * click) does not toggle, and the folds outlive a trip to the map.
+ * the inspector flush right, the map controls at the bottom right clear
+ * of the inspector - and a presence check passes a broken one. These pin
+ * positions, sizes and gaps at a phone, a phone in landscape, a tablet in
+ * portrait and a desktop, the narrow-window rule (below 900 px one dock
+ * at a time), every top-bar control inside the window, in words, and
+ * none over another, the tour's name never squeezed away - also in the
+ * bar's most crowded state, at every step it folds, in a wide face; the
+ * File, Edit and View menus from the keyboard and by touch, the unsaved
+ * mark, the tree from the keyboard alone, File's Add debug data, a flight
+ * leaving no coast behind; and the tree's click rule on the sample tour: a
+ * click selects, unfolds and flies there, a second click deselects and
+ * folds, a quick second click (a double click) does not toggle, and the
+ * folds outlive a trip to the map.
  */
 
 // One worker for the file, its tests in order: three software-drawn 3D
@@ -39,13 +48,7 @@ const FOLDED_PX = 37;
 /** @param {import("@playwright/test").Page} page */
 async function open3d(page) {
   await answerHosts(page);
-  await openSample(page);
-  await page.locator("#view-switch").click();
-  await expect(page.locator("#view-switch")).toHaveText("Map view", {
-    timeout: 60_000,
-  });
-  await expect(page.locator("body")).toHaveAttribute("data-view", "3d");
-  await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
+  await openSampleIn3d(page);
 }
 
 /** @param {import("@playwright/test").Locator} locator */
@@ -91,23 +94,33 @@ async function expectFrame(page, size) {
     width: size.width,
     height: size.height - 64,
   });
-  // The map controls: 12 px from the left, 14 px over the bottom bar, the
-  // compass 38 px square, the zoom pill 8 px under it.
+  // The map controls: 12 px from the right, 14 px over the bottom bar,
+  // the compass 38 px square, the zoom pill 8 px under it.
   const compass = await box(page.locator("#compass"));
   const zoomIn = await box(page.locator("#zoom-in"));
   const zoomOut = await box(page.locator("#zoom-out"));
-  expect(compass.x).toBe(12);
+  const at = `at ${String(size.width)} px`;
+  expect(compass.x + compass.width, at).toBe(size.width - 12);
+  expect(zoomIn.x + zoomIn.width, at).toBe(size.width - 12);
   expect([compass.width, compass.height]).toEqual([38, 38]);
   expect(zoomIn.y - (compass.y + compass.height)).toBe(8);
   // The second button's 1 px divider is inside its 38 px.
   expect(zoomOut.y).toBe(zoomIn.y + 38);
   expect(size.height - 24 - (zoomOut.y + zoomOut.height)).toBe(14);
+  // Clear of the inspector, open or folded, wherever it shows.
+  const inspector = page.locator("#shell-inspector");
+  if (await inspector.isVisible()) {
+    const dock = await box(inspector);
+    expect(compass.y, `the compass under the inspector ${at}`).toBeGreaterThan(
+      dock.y + dock.height,
+    );
+  }
   // Every top-bar control shown sits inside the bar, left to right, none
-  // over the next.
+  // over the next, and says its words (an icon alone says nothing).
   // Read in one go (as Playwright's isVisible does: a box, not hidden):
   // the crowded sweep checks 34 frames.
   const shown = await page.evaluate(() =>
-    [...document.querySelectorAll("#topbar :is(button, #save-status, label)")]
+    [...document.querySelectorAll("#topbar :is(button, .unsaved-mark)")]
       .map((c) => ({ c, r: c.getBoundingClientRect() }))
       .filter(
         ({ c, r }) =>
@@ -115,10 +128,21 @@ async function expectFrame(page, size) {
           r.height > 0 &&
           getComputedStyle(c).visibility !== "hidden",
       )
-      .map(({ r }) => ({ x: r.x, y: r.y, width: r.width, height: r.height })),
+      .map(({ c, r }) => ({
+        id: c.id,
+        words: /** @type {HTMLElement} */ (c).innerText.trim(),
+        x: r.x,
+        y: r.y,
+        width: r.width,
+        height: r.height,
+      })),
   );
   shown.sort((a, b) => a.x - b.x);
-  const at = `at ${String(size.width)} px`;
+  for (const b of shown) {
+    // The unsaved mark may be its dot alone: its words are the bottom
+    // bar's status line, and its title.
+    if (b.id !== "unsaved-mark") expect(b.words, `${b.id} ${at}`).not.toBe("");
+  }
   for (const [i, b] of shown.entries()) {
     expect(b.x, at).toBeGreaterThanOrEqual(0);
     expect(b.x + b.width, at).toBeLessThanOrEqual(size.width);
@@ -212,7 +236,6 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   const tablet = { width: 820, height: 1180 };
   await page.setViewportSize(tablet);
   await expectFrame(page, tablet);
-  await expect(page.locator("#studio-frame .lbl")).toBeHidden();
   await page.locator('#inspector-head [data-act="fold"]').click();
   await expectTree(page, Math.min(272, 0.56 * 820), false);
   const tabletInspector = await box(page.locator("#shell-inspector"));
@@ -229,7 +252,7 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   const inspector = await box(page.locator("#shell-inspector"));
   expect(inspector).toMatchObject({ x: 1440 - 290, y: 40, width: 290 });
   await expect(page.locator("#inspector-body")).toBeVisible();
-  await expect(page.locator("#studio-frame .lbl")).toBeVisible();
+  await expectFrame(page, desktop);
   // The cards: 8 px in from the dock, 6 px apart, 62 px pictures.
   const tree = await box(page.locator("#shell-tree"));
   const heroes = page.locator("#tree-body .hero");
@@ -296,10 +319,12 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
     "aria-pressed",
     "false",
   );
-  await page.locator("#view-switch").click();
+  await viewCommand(page, "switch");
   await expect(page.locator("body")).toHaveAttribute("data-view", "2d");
-  await expect(page.locator("#shell-bar")).toBeHidden();
-  await page.locator("#view-switch").click();
+  // Over the map the bottom bar keeps only the save status.
+  await expect(page.locator("#save-status")).toBeVisible();
+  await expect(page.locator("#shell-view")).toBeHidden();
+  await viewCommand(page, "switch");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d");
   await expect(gate.locator(".kids")).toBeVisible();
   await expect(page.locator('#tree-body [data-layer="names"]')).toHaveAttribute(
@@ -308,7 +333,7 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   );
 });
 
-test("the top bar's Top view and the zoom buttons drive the camera", async ({
+test("View's Top view and the zoom buttons drive the camera", async ({
   page,
 }) => {
   test.setTimeout(150_000);
@@ -322,11 +347,9 @@ test("the top bar's Top view and the zoom buttons drive the camera", async ({
     await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   };
   await settled();
-  await page.locator("#studio-top").click();
-  await expect(page.locator("#studio-top")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await viewCommand(page, "top");
+  await expect(viewItem(page, "top")).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator("#view-menu")).toBeHidden();
   await settled();
   expect((await view3d(page)).tiltDeg).toBeLessThan(1);
   await expect(page.locator("#shell-view")).toHaveText("Top view");
@@ -358,16 +381,16 @@ const LONGEST_STATUS =
   "Not saved: the opened file changed on disk and can no longer be read - open it again";
 
 /**
- * The bar's most crowded state: the keep-walk switch shown (a tour opened
- * with its walk) and the longest status line.
+ * The bar's most crowded state: the unsaved mark shown and the longest
+ * status line in the bottom bar.
  * @param {import("@playwright/test").Page} page
  */
 async function crowdTheBar(page) {
   await page.evaluate((line) => {
-    const keep = /** @type {HTMLElement} */ (
-      document.getElementById("keep-walk")
+    const mark = /** @type {HTMLElement} */ (
+      document.getElementById("unsaved-mark")
     );
-    keep.hidden = false;
+    mark.hidden = false;
     const status = /** @type {HTMLElement} */ (
       document.getElementById("save-status")
     );
@@ -376,16 +399,19 @@ async function crowdTheBar(page) {
   }, LONGEST_STATUS);
 }
 
+/** Where the top bar folds a step (`editor-shell.css`): each is checked
+ *  at its edges. */
+const FOLD_STEPS = [820, 720, 520, 400];
+
 test("the top bar holds every control in its most crowded state, at every step it folds", async ({
   page,
 }) => {
-  // Why: the layout test saw only the sample's clean state, and
-  // the keep-walk switch or a long status line pushed Done and Open out of
-  // the bar at 1024, 900 and 390 px. The bar folds in steps (1420, 1140,
-  // 940, 720, 440 and 375 px); each is checked at its edges with the
-  // switch shown and the longest status, in a wide face. The crowded bar
-  // is the hardest case: without the switch, or with a shorter status,
-  // every control only has more room.
+  // Why: the layout test saw only the sample's clean state, and a long
+  // status line once pushed the bar's commands out of the window. The bar
+  // folds in steps; each is checked at its edges with the unsaved mark
+  // shown and the longest status, in a wide face, and every control shown
+  // keeps its words. The crowded bar is the hardest case: without the
+  // mark every control only has more room.
   test.setTimeout(300_000);
   await useWideFont(page);
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -398,21 +424,147 @@ test("the top bar holds every control in its most crowded state, at every step i
     (await status.textContent()) ?? "",
   );
   await crowdTheBar(page);
-  for (const width of [
-    1440, 1421, 1420, 1141, 1140, 1024, 941, 940, 900, 821, 720, 441, 440, 390,
-    376, 375, 320,
-  ]) {
+  const widths = [1440, 1280, 900, 600, 390, 320];
+  for (const step of FOLD_STEPS) widths.push(step, step + 1);
+  for (const width of widths.sort((a, b) => b - a)) {
     const size = { width, height: width < 721 ? 844 : 800 };
     await page.setViewportSize(size);
     await expectFrame(page, size);
+    // The status line stays inside the bottom bar, cut short if it must.
+    const line = await box(status);
+    expect(
+      line.x + line.width,
+      `the status at ${String(width)} px`,
+    ).toBeLessThanOrEqual(width);
   }
-  // Folded to its checkbox, the keep-walk switch keeps its name.
-  await page.setViewportSize({ width: 1024, height: 800 });
-  await expect(
-    page.getByRole("checkbox", {
-      name: "Keep the debug data in the tour file",
-    }),
-  ).toBeVisible();
+});
+
+test("the File, Edit and View menus work from the keyboard and by touch", async ({
+  page,
+}) => {
+  // Why: the bar's commands live in menus now; a menu that only a mouse
+  // opens shuts out a keyboard, and one a tap cannot reach shuts out a
+  // phone. The menu button pattern: Enter or ArrowDown opens on the first
+  // item, the arrows move, Escape closes and gives the focus back.
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open3d(page);
+  const fileButton = page.locator("#file-menu-btn");
+  await expect(fileButton).toHaveAttribute("aria-haspopup", "menu");
+  await expect(fileButton).toHaveAttribute("aria-expanded", "false");
+  await fileButton.focus();
+  await page.keyboard.press("Enter");
+  await expect(fileButton).toHaveAttribute("aria-expanded", "true");
+  await expect(fileItem(page, "open")).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  // The last usable item: Share and publish (its item is enabled once a
+  // tour is open).
+  await expect(fileItem(page, "publish")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#file-menu")).toBeHidden();
+  await expect(fileButton).toBeFocused();
+  // Into View with the arrow: Top view first.
+  const viewButton = page.locator("#view-menu-btn");
+  await viewButton.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(viewItem(page, "top")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(viewItem(page, "top")).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator("#view-menu")).toBeHidden();
+  await expect(viewButton).toBeFocused();
+  await page.keyboard.press("t");
+  await expect(viewItem(page, "top")).toHaveAttribute("aria-checked", "false");
+});
+
+test.describe("on a touch screen", () => {
+  test.use({ hasTouch: true });
+
+  test("at a phone's width the menus open by a tap and Edit holds Undo and Redo", async ({
+    page,
+  }) => {
+    // Why: at a phone's width the bar has no room for Undo and Redo in
+    // words; they fold into an Edit menu instead of into bare icons. A tap
+    // opens a menu, a tap on an item runs it and closes the menu, a tap
+    // outside closes it.
+    test.setTimeout(150_000);
+    await useWideFont(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await open3d(page);
+    await expect(page.locator("#studio-undo")).toBeHidden();
+    await expect(page.locator("#studio-details")).toBeHidden();
+    const editButton = page.locator("#edit-menu-btn");
+    await editButton.tap();
+    await expect(page.locator("#edit-undo")).toBeVisible();
+    await expect(page.locator("#edit-undo")).toBeDisabled();
+    await expect(page.locator("#edit-redo")).toBeDisabled();
+    // A tap outside closes it.
+    await page
+      .locator("#view3d canvas")
+      .first()
+      .tap({
+        position: { x: 200, y: 600 },
+      });
+    await expect(page.locator("#edit-menu")).toBeHidden();
+    // An edit through File's Tour details…, then Edit's Undo takes it back.
+    await page.locator("#file-menu-btn").tap();
+    await fileItem(page, "details").tap();
+    await expect(page.locator("#file-menu")).toBeHidden();
+    const name = page.locator("#details-name");
+    const before = await name.inputValue();
+    await name.fill("A renamed tour");
+    await page.locator("#details-apply").tap();
+    await expect(page.locator("#unsaved-mark")).toBeVisible();
+    await editButton.tap();
+    await expect(page.locator("#edit-undo")).toBeEnabled();
+    await page.locator("#edit-undo").tap();
+    await expect(page.locator("#edit-menu")).toBeHidden();
+    await expect(page.locator("#tour-name")).toHaveText(before);
+    await editButton.tap();
+    await expect(page.locator("#edit-redo")).toBeEnabled();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#edit-menu")).toBeHidden();
+  });
+});
+
+test("the unsaved mark shows beside File after an edit and goes with a save", async ({
+  page,
+}) => {
+  // Why: the save status's words moved to the bottom bar; where a tour
+  // lives only in the browser the top bar's mark is the one warning in
+  // sight that work can be lost. It must come with the first edit and go
+  // once the changes are saved.
+  test.setTimeout(150_000);
+  await page.addInitScript(() => {
+    // @ts-expect-error - the save goes to a download the test waits for.
+    delete window.showSaveFilePicker;
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open3d(page);
+  const mark = page.locator("#unsaved-mark");
+  await expect(mark).toBeHidden();
+  // An edit: the tour's name, through Details.
+  await page.locator("#studio-details").click();
+  await page.locator("#details-name").fill("A renamed tour");
+  await page.locator("#details-apply").click();
+  await expect(mark).toBeVisible();
+  await expect(mark).toHaveAttribute(
+    "title",
+    (await page.locator("#save-status").textContent()) ?? "",
+  );
+  const mb = await box(mark);
+  const fb = await box(page.locator("#file-menu-btn"));
+  expect(mb.x).toBeGreaterThanOrEqual(fb.x + fb.width - 0.5);
+  expect(mb.x - (fb.x + fb.width)).toBeLessThan(12);
+  // The sample has no file of its own, and without a save dialog the
+  // save downloads one.
+  const download = page.waitForEvent("download");
+  await save(page);
+  await download;
+  await expect(mark).toBeHidden({ timeout: 30_000 });
+  await expect(page.locator("#save-status")).not.toHaveAttribute(
+    "data-state",
+    "pending",
+  );
 });
 
 test("the tree can be used from the keyboard alone", async ({ page }) => {
@@ -424,8 +576,7 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open3d(page);
   // From the start of the page: a click on the bar's empty corner puts
-  // Tab's starting point there (a blur would leave it at the view switch
-  // the 3D view was opened with).
+  // Tab's starting point there.
   await page.mouse.click(2, 2);
   const visited = [];
   for (let i = 0; i < 40; i += 1) {
@@ -450,8 +601,18 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   expect(keys.at(-1)).toBe("station:gate");
   // The top bar first, left to right.
   const bar = visited.filter((v) => v.inBar);
-  expect(bar.map((v) => v.key)).toContain("studio-frame");
-  expect(bar.map((v) => v.key)).toContain("open-another");
+  // The menus' buttons, not their items (a menu's items are reached with
+  // the arrows inside it), then the studio's buttons and Help.
+  expect(bar.map((v) => v.key)).toEqual(
+    expect.arrayContaining([
+      "file-menu-btn",
+      "view-menu-btn",
+      "studio-details",
+      "studio-help",
+    ]),
+  );
+  for (const v of bar)
+    expect(v.key).not.toMatch(/^(file|view|edit)-(?!menu-btn)/);
   for (const [i, v] of bar.entries()) {
     if (i > 0) expect(v.x).toBeGreaterThan(bar[i - 1]?.x ?? 0);
   }
@@ -481,25 +642,23 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   await expect(gate.locator(".tw")).toBeFocused();
 });
 
-test("the top bar's Add debug data opens the same add as the map's panel", async ({
+test("File's Add debug data opens the same add as the map's panel", async ({
   page,
 }) => {
   // Why: the map's debug panel is hidden over the 3D view, so
-  // "Add debug data" could not be reached there at all. The top bar's
-  // button opens the same file input and runs the same add: a file that
-  // is no debug data is refused in the same words, and the button comes
-  // back idle.
+  // "Add debug data" could not be reached there at all. File's item opens
+  // the same file input and runs the same add: a file that is no debug
+  // data is refused in the same words, and the item comes back idle.
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await open3d(page);
-  const add = page.locator("#studio-debug-add");
-  await expect(add).toBeVisible();
+  const add = fileItem(page, "debugAdd");
   await expect(page.locator("#debug-add")).toBeHidden();
   const sample = await (
     await page.request.get("/samples/marienplatz-tour.zip")
   ).body();
   const chooser = page.waitForEvent("filechooser");
-  await add.click();
+  await fileCommand(page, "debugAdd");
   await (
     await chooser
   ).setFiles({
@@ -514,7 +673,7 @@ test("the top bar's Add debug data opens the same add as the map's panel", async
     }),
   ).toBeVisible();
   await expect(add).toBeEnabled();
-  await expect(add).toHaveAttribute("aria-label", "Add debug data…");
+  await expect(add).toHaveText("Add debug data…");
 });
 
 test("a flight ends the orbit's coast: the camera stays where it lands", async ({

@@ -9,15 +9,19 @@
  * picker, M6 E2b-1), writes the opened file in place - by itself too, a
  * few seconds after a change (M6 E2b-2, `autosave.ts`). The tour's name in
  * the top bar opens its details (W2 of the tour editor plan,
- * `details-dialog.ts`); "Done" says where the changes are and what is
- * left to do, and moves the walk out (`done-dialog.ts`). A tour whose file
- * carries a walk shows its debug camera captures on the map once it has
- * opened (`debug-capture-layer.ts`; debug data, never the tour's
- * content), behind a "Show debug data" switch. The view switch opens the
- * same tour in 3D over the map (`view-switch.ts`; the 3D view's code,
- * `src/editor3d/`, is a dynamic import made only then). Linked from the
- * setup page's "You already have a tour?" box and its step 5 on a device
- * without AR.
+ * `details-dialog.ts`). The top bar's File menu opens, saves, saves a
+ * copy, adds debug data and "Share and publish…" (it says where the
+ * changes are and what is left to do, and moves the walk out,
+ * `done-dialog.ts`); its View menu holds the 3D view's commands and the
+ * view switch (`menu-button.ts`). The save status is the bottom bar's,
+ * with a mark beside File while changes are not saved. A tour opens in the
+ * 3D view (`view-switch.ts`; the 3D view's code, `src/editor3d/`, is a
+ * dynamic import made only then); the 2D map stays reachable from View and
+ * is where the page falls back when the 3D view cannot show. A tour whose
+ * file carries a walk shows its debug camera captures on the map once it
+ * has opened (`debug-capture-layer.ts`; debug data, never the tour's
+ * content), behind View's "Show debug data". Linked from the setup page's
+ * "You already have a tour?" box and its step 5 on a device without AR.
  *
  * @see edit-main.ts.md
  */
@@ -115,6 +119,7 @@ import {
   type AutosaveOutcome,
 } from "./autosave.js";
 import {
+  copyFileName,
   createEditorSession,
   type EditorSave,
   type EditorSession,
@@ -126,16 +131,15 @@ import {
   type DebugBundleTour,
 } from "../debug-bundle.js";
 import {
-  ADD_DEBUG_LABELS,
   addedDebugLine,
   createAddDebugButton,
   notAddedLine,
-  type AddDebugButtonDom,
 } from "./added-debug-data.js";
 import { noGpsWarnings } from "./no-gps-check.js";
 import { revealPadding, type Box } from "./popover-place.js";
 import { createStatusLines } from "./status-lines.js";
 import { createViewSwitch, type View3dHandle } from "./view-switch.js";
+import { createMenuButton } from "./menu-button.js";
 import { createEditorShell } from "./editor-shell/editor-shell.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
@@ -234,6 +238,22 @@ function autosaveSettings(): AutosaveSettings {
 const { maxBytes: autosaveMaxBytes = AUTOSAVE_MAX_BYTES, ...autosaveTimings } =
   autosaveSettings();
 
+/**
+ * Whether an opened tour shows in the 3D view (the editor's default view)
+ * - true, except in the dev server an e2e may set
+ * `window.__tourEditorStartOnMap` (an init script) to start on the 2D map,
+ * where most of the editor's specs work. Inert in a production build, as
+ * `autosaveSettings`: `import.meta.env.DEV` is statically false there.
+ */
+function opensIn3d(): boolean {
+  if (import.meta.env.DEV && !import.meta.env.VITEST) {
+    const onMap = (window as { __tourEditorStartOnMap?: boolean })
+      .__tourEditorStartOnMap;
+    if (onMap === true) return false;
+  }
+  return true;
+}
+
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
   if (found === null) throw new Error(`edit.html lacks #${id}`);
@@ -311,22 +331,58 @@ const tourName = element<HTMLButtonElement>("tour-name");
 const coverList = element("details-covers");
 const coversNone = element("details-covers-none");
 const toasts = element("toasts");
-const saveButton = element<HTMLButtonElement>("save-btn");
-/** "Done" (W2): saves what is pending, then opens its dialog. */
-const doneButton = element<HTMLButtonElement>("done-btn");
+/** The File menu's Save (`edit.html`; the menu: `menu-button.ts`). */
+const saveButton = element<HTMLButtonElement>("file-save");
+/** "Save a copy…": the tour as it stands into a file of its own. */
+const saveCopyButton = element<HTMLButtonElement>("file-save-copy");
+/** "Share and publish…" (W2, once "Done"): saves what is pending, then
+ *  opens its dialog. */
+const doneButton = element<HTMLButtonElement>("file-publish");
+const fileDetailsButton = element<HTMLButtonElement>("file-details");
+const fileMenuButton = element<HTMLButtonElement>("file-menu-btn");
 const saveStatus = element("save-status");
-const keepWalk = element("keep-walk");
-const keepWalkInput = element<HTMLInputElement>("keep-walk-input");
-/** The debug layer's switch and its line (`debug-capture-layer.ts`). */
+/** The mark beside File while changes are not saved (the status's words
+ *  are the bottom bar's). */
+const unsavedMark = element("unsaved-mark");
+/** The bottom bar: the save status in both views. */
+const shellBar = element("shell-bar");
+/** "Keep the debug data in the tour file", a checkbox item of File. */
+const keepWalk = element<HTMLButtonElement>("file-keep-walk");
+/** The debug layer's switch (View's "Show debug data") and its line
+ *  (`debug-capture-layer.ts`). */
 const debugPanel = element("debug-panel");
-const debugSwitch = element("debug-switch");
-const debugInput = element<HTMLInputElement>("debug-data-input");
+const debugSwitch = element<HTMLButtonElement>("view-debug");
 const debugStatus = element("debug-status");
 /** "Add debug data…" and its file input (M2 step 5 of the debug-captures
  *  plan). */
 const debugAddButton = element<HTMLButtonElement>("debug-add");
 const debugAddInput = element<HTMLInputElement>("debug-add-input");
-const studioDebugAdd = element<HTMLButtonElement>("studio-debug-add");
+/** File's "Add debug data…": the same add as the map panel's button. */
+const fileDebugAdd = element<HTMLButtonElement>("file-debug-add");
+
+/** A checkbox item's state (`aria-checked`). */
+function isChecked(item: HTMLElement): boolean {
+  return item.getAttribute("aria-checked") === "true";
+}
+
+function setChecked(item: HTMLElement, on: boolean): void {
+  item.setAttribute("aria-checked", String(on));
+}
+
+/** The top bar's File, Edit and View menus (`menu-button.ts`); Edit is
+ *  the 3D view's, at a phone's width (its items are the shell's). */
+createMenuButton({
+  button: fileMenuButton,
+  menu: element("file-menu"),
+});
+createMenuButton({
+  button: element<HTMLButtonElement>("edit-menu-btn"),
+  menu: element("edit-menu"),
+});
+createMenuButton({
+  button: element<HTMLButtonElement>("view-menu-btn"),
+  menu: element("view-menu"),
+});
 /** The tour's "needs no GPS" setting and its warnings (QR-first M1b-2). */
 const noGpsInput = element<HTMLInputElement>("no-gps-input");
 /** Its warnings' live region: never hidden (an empty one is zero-height),
@@ -606,11 +662,14 @@ function toast(
  *  (read from the bar itself, so the CSS stays the one source). */
 function freeArea(): Box {
   const bar = topbar.hidden ? 0 : topbar.getBoundingClientRect().bottom;
+  const floor = shellBar.hidden
+    ? window.innerHeight
+    : shellBar.getBoundingClientRect().top;
   return {
     left: rail.right() + EDGE_PX,
     top: bar + EDGE_PX,
     right: window.innerWidth - EDGE_PX,
-    bottom: window.innerHeight - EDGE_PX,
+    bottom: floor - EDGE_PX,
   };
 }
 
@@ -698,16 +757,24 @@ function showSaveStatus(state: string, text: string): void {
   saveStatus.dataset["state"] = state;
   saveStatus.textContent = text;
   saveStatus.title = text;
+  // Beside File, the bar's one warning against losing work: changes not
+  // saved, or a save that did not arrive.
+  const unsaved = state === "pending" || state === "error";
+  unsavedMark.hidden = !unsaved;
+  unsavedMark.title = unsaved ? text : "";
 }
 
 function renderSaveState(): void {
   const count = editor?.changeCount() ?? 0;
   if (!ui().doneBusy) doneButton.disabled = editor === null || walkMoving();
+  fileDetailsButton.disabled = editor === null;
   if (saving()) {
     showSaveStatus("saving", "Saving…");
     saveButton.disabled = true;
+    saveCopyButton.disabled = true;
     return;
   }
+  saveCopyButton.disabled = editor === null;
   // On whenever a tour is open: a click commits the card's typing first,
   // so a disabled button would swallow the first edit (E2a review #3).
   saveButton.disabled = editor === null;
@@ -1403,29 +1470,7 @@ let addedDebug: {
 } | null = null;
 /** "Add debug data…" while an add reads its file: disabled, saying so,
  *  and a second add starts nothing (`createAddDebugButton`). */
-const debugAdd = createAddDebugButton(debugAddButton, studioDebugAddDom());
-
-/** The 3D view's top bar's "Add debug data" as the add drives it: its
- *  name says what it does or that it is adding, its short word too. */
-function studioDebugAddDom(): AddDebugButtonDom {
-  const label = studioDebugAdd.querySelector(".lbl");
-  return {
-    get disabled() {
-      return studioDebugAdd.disabled;
-    },
-    set disabled(on: boolean) {
-      studioDebugAdd.disabled = on;
-    },
-    get textContent() {
-      return studioDebugAdd.getAttribute("aria-label");
-    },
-    set textContent(text: string | null) {
-      const adding = text === ADD_DEBUG_LABELS.adding;
-      studioDebugAdd.setAttribute("aria-label", text ?? "");
-      if (label !== null) label.textContent = adding ? "Adding…" : "Debug data";
-    },
-  };
-}
+const debugAdd = createAddDebugButton(debugAddButton, fileDebugAdd);
 
 /** Where the debug layer reads (one seam, so a point cloud reads the
  *  same place): debug data added wins over the tour's own walk - the
@@ -1476,7 +1521,7 @@ function startDebugLayer(): void {
   debugSwitch.hidden = from === null;
   debugStatus.textContent = from?.line ?? "";
   if (from === null) return;
-  debugInput.checked = true;
+  setChecked(debugSwitch, true);
   const layer = createDebugCaptureLayer<HTMLElement>({
     read: (options) => debugCapturesOf(from.source, options),
     loadPicture: from.loadPicture,
@@ -1620,6 +1665,7 @@ function dropTour(reason: string): void {
   leaveFile();
   void open?.close().catch(() => undefined);
   topbar.hidden = true;
+  shellBar.hidden = true;
   renderTourName();
   element("rail").hidden = true;
   showModal(true);
@@ -1779,12 +1825,13 @@ async function openFile(
       outcome.manifest,
       outcome.session.manifestWrap,
     ).length > 0;
-  keepWalkInput.checked = false;
+  setChecked(keepWalk, false);
   keepWalk.hidden = !carriesWalk;
   store.dispatch(editorViewActions.walkChanged({ openedWalk: carriesWalk }));
   renderTourName();
   element("tour-file").textContent = outcome.fileName;
   topbar.hidden = false;
+  shellBar.hidden = false;
   showModal(false);
   rail.render(model);
   // A narrow window starts with the rail folded, as the prototype does.
@@ -1814,6 +1861,9 @@ async function openFile(
   tourWalk = carriesWalk ? opened : null;
   debugPanel.hidden = false;
   startDebugLayer();
+  // The 3D view is the default (its load is said in the bottom bar; a
+  // failure lands on the map with its reason said).
+  if (opensIn3d()) viewSwitch.show3d();
   return true;
 }
 
@@ -2224,6 +2274,79 @@ async function runSave(
 }
 
 /**
+ * "Save a copy…": the tour as it stands, built as a save is, into a file
+ * of its own - the save dialog where the browser has one (asked IN the
+ * click, before any await, as Save's), else a download. The tour's own
+ * file and its pending edits stay as they were: a copy is not the tour's
+ * save, so the status line keeps saying what is not saved. It keeps the
+ * debug data only when "Keep the debug data in the tour file" is ticked
+ * (a copy is what gets shared). It holds the page's save while it is
+ * built ("Saving…"), and its outcome is said in a toast.
+ */
+async function saveCopy(): Promise<void> {
+  const mine = editor;
+  if (mine === null || saving()) return;
+  card.commit();
+  if (ui().moving !== null) finishMove();
+  // First, before any await: the dialog needs the click.
+  const pick = pickSaveFile(
+    window as unknown as SavePickerWindow,
+    copyFileName(mine.savedName()),
+  );
+  const source = openedFile;
+  const ended = claimSave("explicit");
+  renderSaveState();
+  try {
+    const picked = await pick;
+    if (editor !== mine || picked.kind === "cancelled") return;
+    // The tour's own file chosen: the copy would land over it, and the
+    // tour would no longer know what its file holds. Refused before
+    // anything is built or written.
+    if (
+      picked.kind === "picked" &&
+      ((source !== null && (await isSameFile(source, picked.handle))) ||
+        (await target?.isSame(picked.handle)) === true)
+    ) {
+      toast(
+        `${picked.handle.name} is the tour's own file - save the copy under another name. Nothing was written.`,
+        undefined,
+        null,
+      );
+      return;
+    }
+    const copy = await mine.saveCopy({ keepScan: isChecked(keepWalk) });
+    if (editor !== mine) return;
+    let name = copy.filename;
+    if (picked.kind === "picked") {
+      await writeFileOrAbort(picked.handle, copy.blob);
+      name = picked.handle.name;
+    } else if (!(await download(copy))) {
+      return;
+    }
+    if (editor !== mine) return;
+    toast(
+      `Saved a copy as ${name}${
+        copy.scanLeftOut.length > 0 ? ", without the debug data" : ""
+      }. The tour's own file is as it was.`,
+    );
+  } catch (err) {
+    if (editor === mine) {
+      toast(
+        `The copy was not saved: ${err instanceof Error ? err.message : String(err)}`,
+        undefined,
+        null,
+      );
+    }
+  } finally {
+    if (editor === mine) releaseSave();
+    ended();
+    renderSaveState();
+    // An autosave held back while the copy was built runs now.
+    autosave.poke();
+  }
+}
+
+/**
  * Build and deliver one save. `auto` is the autosave's: it commits
  * nothing (it never runs while a field is typed in or a marker moved), ends
  * no undo (it never runs during one), and says only in the status line
@@ -2346,7 +2469,7 @@ async function buildAndDeliver(
           // that file becomes the tour's own (`adoptChosen`), so it keeps
           // the walk, and an undo across this save writes it again (D33).
           await mine.save({
-            keepScan: ui().keepsWalk || keepWalkInput.checked || pick !== null,
+            keepScan: ui().keepsWalk || isChecked(keepWalk) || pick !== null,
             inPlace: into !== null || pick !== null,
           });
     if (editor !== mine) return abandon();
@@ -2429,13 +2552,26 @@ async function buildAndDeliver(
 saveButton.addEventListener("click", () => {
   void runSave(askSaveFile());
 });
+saveCopyButton.addEventListener("click", () => {
+  void saveCopy();
+});
+fileDetailsButton.addEventListener("click", () => {
+  openDetails();
+});
+// "Keep the debug data in the tour file": what the next save keeps, until
+// a save was built (the switch then hides).
+keepWalk.addEventListener("click", () => {
+  setChecked(keepWalk, !isChecked(keepWalk));
+});
 // The debug layer's switch: view state only - no edit, nothing pending.
-debugInput.addEventListener("change", () => {
-  debugLayer?.setVisible(debugInput.checked);
+debugSwitch.addEventListener("click", () => {
+  const on = !isChecked(debugSwitch);
+  setChecked(debugSwitch, on);
+  debugLayer?.setVisible(on);
 });
 // "Add debug data…": its file input, or a file dropped on the panel. The
 // document's own drop guard keeps the browser from opening the file.
-for (const button of [debugAddButton, studioDebugAdd]) {
+for (const button of [debugAddButton, fileDebugAdd]) {
   button.addEventListener("click", () => {
     debugAddInput.click();
   });
@@ -2552,7 +2688,7 @@ linkForm.addEventListener("submit", (event) => {
 cancelButton.addEventListener("click", () => {
   showModal(false);
 });
-element<HTMLButtonElement>("open-another").addEventListener("click", () => {
+element<HTMLButtonElement>("file-open").addEventListener("click", () => {
   // The same guard as leaving the page (`main.ts`'s rule for switching
   // tours, E2 plan review #12).
   if (
@@ -2566,9 +2702,13 @@ element<HTMLButtonElement>("open-another").addEventListener("click", () => {
   showModal(true);
 });
 
-/** Said when Done's save did not land: the dialog waits for it. */
+/** Said when Share and publish's save did not land: the dialog waits
+ *  for it. */
 const DONE_NOT_SAVED =
-  "Not done yet: your changes are not saved (the line beside Save says why). Save them, then press Done again.";
+  "Not ready to share yet: your changes are not saved (the status line at the bottom says why). Save them, then choose Share and publish again.";
+
+/** The words of File's "Share and publish…" item (W2's "Done"). */
+const PUBLISH_LABEL = "Share and publish…";
 
 /** The host Done's steps start with: the link's the tour came from, else
  *  the one chosen in the setup's step 1, else Google Drive. */
@@ -2629,7 +2769,7 @@ async function finishEditing(): Promise<void> {
       await savesSettled();
     } finally {
       store.dispatch(editorViewActions.doneBusyChanged({ busy: false }));
-      doneButton.textContent = "Done";
+      doneButton.textContent = PUBLISH_LABEL;
       doneButton.disabled = editor === null;
     }
     if (editor !== mine) return;
@@ -2975,7 +3115,8 @@ const done = wireDoneDialog({
   onClose: () => {
     releaseOutside?.();
     releaseOutside = null;
-    if (!topbar.hidden) doneButton.focus();
+    // The item that opened it is in the closed menu: its menu's button.
+    if (!topbar.hidden) fileMenuButton.focus();
   },
 });
 
@@ -3042,6 +3183,7 @@ const shell = createEditorShell({
 });
 const viewSwitch = createViewSwitch({
   button: element<HTMLButtonElement>("view-switch"),
+  status: element("view-loading"),
   store,
   open: async (events) => {
     // A module that does not arrive is the connection's (`chunk`).

@@ -34,7 +34,22 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   modal says "Opening <name>…" and its buttons are disabled; then the tour
   is drawn and a toast names what opened, or the reason shows in
   `#open-error` and the modal stays (root `CLAUDE.md`, async feedback).
-- **Open another tour** shows the dialog with Cancel (and Esc) back to
+- **The top bar's menus** (`menu-button.ts`): File (Open…, Save, Save a
+  copy…, Tour details…, Add debug data…, the keep-the-walk checkbox,
+  Share and publish…), Edit (Undo, Redo; the 3D view's, at a phone's
+  width) and View (Top view, Frame, Show debug data, the view switch).
+  Beside File the unsaved mark (`#unsaved-mark`): shown while the status
+  is pending or an error, its `title` the status's words, which are in
+  the bottom bar (`#shell-bar`, shown with the top bar in both views).
+  Checkbox items keep their state in `aria-checked` (`isChecked`,
+  `setChecked`).
+- **The 3D view is the default:** an open that shows a tour ends with
+  `viewSwitch.show3d()`; a 3D view that fails lands on the map, said.
+  In the dev server only, `window.__tourEditorStartOnMap` (an init
+  script) keeps the open on the map, for the specs that edit there
+  (`opensIn3d()`; stripped from a production build like the other dev
+  hooks).
+- **File > Open…** shows the dialog with Cancel (and Esc) back to
   the open tour; the open tour stays until the new file has opened, so a
   refused file costs nothing (E1 review #4).
 - **Details the reader dropped** (a hand-edited description, contact or
@@ -120,9 +135,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   debug-captures plan): once the tour is on screen, the camera captures
   of `debugSource()` are placed (`debugCapturesOf`) and drawn as
   thumbnails, with "Reading the debug data..." and then how many it shows
-  or why none (`#debug-status`). The "Show debug data" switch
-  (`#debug-switch`) shows only while there is a source, starts ticked and
-  only shows or hides them: view state, never in the tour document, a
+  or why none (`#debug-status`). View's "Show debug data" (`#view-debug`,
+  a checkbox item) shows only while there is a source, starts ticked and
+  only shows or hides them on the map (the 3D view does not draw them
+  yet): view state, never in the tour document, a
   save or the draft. Leaving the tour stops it.
   - The note card keeps clear of the panel (`debugPanelBox()`, passed to
     `card.place` as the box to avoid, r901 review #4): both share the
@@ -145,16 +161,15 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   debug data is refused in a toast (`notAddedLine`), the layer kept.
   The button reads "Adding the debug data…" and is disabled meanwhile,
   and is idle and enabled again however the add ends
-  (`createAddDebugButton`). The 3D view's top bar has the same entry
-  (`#studio-debug-add`, since the map's panel is hidden there): both
-  buttons open the one `#debug-add-input` and `createAddDebugButton`
-  drives both (the studio button through an adapter that keeps its icon
-  and says "Adding…" in its label).
+  (`createAddDebugButton`). File's "Add debug data…" (`#file-debug-add`)
+  is the same entry in both views (the map's panel is hidden over the 3D
+  view): both open the one `#debug-add-input` and `createAddDebugButton`
+  drives both.
   Never saved, never drafted, closed with the tour and forgotten at a
   reload (Q-H); a newer add replaces it; an add that ends after another
   tour opened is closed unseen.
-- **Save** builds the tour (`keepScan` from the "Keep the debug data in
-  the tour file" switch, shown only for a tour that carries a walk and
+- **Save** builds the tour (`keepScan` from File's "Keep the debug data
+  in the tour file" checkbox item, shown only for a tour that carries a walk and
   unticked at the open (M2 of the debug-captures plan, E2: the walk is
   saved apart); a file opened for writing keeps its walk in every save,
   a download included - `keepsWalk`, the switch hidden) and downloads it
@@ -183,7 +198,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   a drop or the file input) asks where to save it where the browser
   adopts the chosen file (`adoptsSavedFile`: both file dialogs, not on
   Android until a phone check): `askSaveFile` opens the save dialog IN
-  the click - the Save button's, Ctrl+S's and Done's - before any await
+  the click - File's Save's, Ctrl+S's and Share and publish's - before any await
   (Chromium refuses a dialog asked for after a long build; the walk's
   move's rule), and the pick rides through `runSave`, `saveTour` and
   `buildAndDeliver` to `deliver`. A picked file is written
@@ -198,7 +213,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   walk always stays), and its write is the in-place save an undo crosses
   (D33, `stepCrossesInPlaceSave`), so an undo across it writes the file
   again. A pick the browser refused after all (`unavailable`) still
-  downloads that build, walk included. Done then says the changes are in
+  downloads that build, walk included. Share and publish then says the changes are in
   "the file you chose when you first saved" (`DoneSaved.chosenAtSave`,
   set by the delivery into a chosen file and reset by every open), never
   "the file you opened". A chosen file that cannot be read back after its
@@ -319,11 +334,20 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   stays until closed and covered its buttons). While it shows, the rest of
   the page is `inert` (`page-inert.ts`, M4a review #12): Tab stays in the
   dialog. Opening another tour or losing this one closes it.
-- **Done (W2, D18, D19).** `#done-btn` in the top bar commits the card,
-  waits for a running save and saves what is pending ("Saving…" on the
-  button, disabled, while it runs - the async-UI rule); a save that did
-  not land keeps the dialog shut and says so in a toast ("Not done
-  yet: ..."). Then `done-dialog.ts` opens with the facts: where the last
+- **Save a copy…** (File): the tour as it is now, written to a new file
+  while the tour's own file and its unsaved state stay as they were
+  (`EditorSession.saveCopy`, named by `copyFileName`, "<name> copy.zip").
+  The file is asked for IN the click (`pickSaveFile`), the copy holds the
+  save slot as an explicit save, a pick of the opened file or of the save
+  target is refused before anything is written, and the copy keeps the
+  walk only when the keep-the-walk item is ticked. It is written into the
+  picked file, or downloaded where there is no save dialog; a toast says
+  where ("Saved a copy as <name>…"), or why it was not saved.
+- **Share and publish… (W2, D18, D19; once "Done").** File's
+  `#file-publish` commits the card, waits for a running save and saves
+  what is pending ("Saving…" on the item, disabled, while it runs - the
+  async-UI rule); a save that did not land keeps the dialog shut and says
+  so in a toast ("Not ready to share yet: ..."). Then `done-dialog.ts` opens with the facts: where the last
   save arrived (`delivered`: in place under the target's name, or
   downloaded; "unchanged" when nothing was saved), the host (the link's the
   tour was fetched from, else the setup's stored choice, else Google
@@ -332,11 +356,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   carry", never as "carries none" - the M4b milestone review #9), and the
   Drive-mount tip's switch (`DRIVE_MOUNT_TIP_SHOWN`, off). The rest of the
   page is `inert` while it shows; Esc and Close close it - but not while a
-  move runs - and focus goes back to Done. Done waits for saves with
+  move runs - and focus goes back to the File menu's button. It waits for saves with
   `savesSettled()`, which can never spin: a claim still set on an ended
   `saveEnd` stops the wait.
 - **Save the debug data** (`saveDebugData`, M2 of the debug-captures
-  plan): offered by Done after a save as a new file left the walk out
+  plan): offered by Share and publish after a save as a new file left the walk out
   (`debugLeftOut`: the opened file carried a walk - `openedWalk`, cleared
   by a move that landed and at a close -, it is not opened for writing,
   and the newest bytes carry none). The file is asked for IN the click
@@ -358,8 +382,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   step holds the page's
   one save slot (`claimSave("walk")`, which a save takes too, as
   `"explicit"` or `"auto"`: the save status names the holder and a new
-  `saveEnd` is made for Done to wait on; `walkMoving()` - the holder is
-  the walk - keeps Done disabled), and
+  `saveEnd` is made for Share and publish to wait on; `walkMoving()` - the
+  holder is the walk - keeps it disabled), and
   the dialog cannot be closed meanwhile (the M4b milestone review #1).
   **The walk's file is asked for IN the click** (`pickSaveFile`, before
   any await: Chromium opens its save dialog only within a few seconds of a
@@ -475,9 +499,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   first Save asks for where the browser adopts it, else gives a new copy
   (W2: it said "a new copy" in every browser).
 - **Leaving** with unsaved work asks first (`beforeunload`), and so does
-  "Open another tour" (`window.confirm`).
-- **Free area** for the card: right of the rail, under the top bar (read
-  from the bar's own box), 12 px from the window's edges. The rail starts folded below 760 px.
+  File's Open… (`window.confirm`).
+- **Free area** for the card: right of the rail, under the top bar and
+  above the bottom bar (read from the bars' own boxes), 12 px from the
+  window's edges. The rail starts folded below 760 px.
 - **Closing** a tour (another open) closes its session; the card revokes
   its photo's object URL.
 - **The page's store** (`createTourViewerStore()`, built first: the
@@ -488,7 +513,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   the one save slot (`saveClaimed` / `saveReleased`; `saving()`,
   `walkMoving()`, the autosave's `by === "auto"`), a Save queued behind
   an autosave (`saveQueued`), a save built (`saveBuilt`), where the last
-  one arrived (`saveDelivered`, read by Done and by the status line's
+  one arrived (`saveDelivered`, read by Share and publish and by the status line's
   "Saved to …" / "Saved as …", `savedLine()`; `#save-status[data-saved]`
   is only a view of it, for the e2e, never read back; every write of the
   line goes through `showSaveStatus`, which sets its state, its words and
@@ -513,11 +538,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   page reads the same copy. Kept here on purpose: `moved` (the notes
   moved since the last save, a `Set` only the card reads) and everything
   imperative above.
-- **The 3D view** (`#view-switch`, `view-switch.ts`): the button opens
-  the 3D view over the map by a dynamic `import()` of
+- **The 3D view** (View's `#view-switch`, `view-switch.ts`): the item
+  opens the 3D view over the map by a dynamic `import()` of
   `../editor3d/editor3d-scene.js`, so the page's own code holds none of
-  it, and closes it again. While it loads the button says so and the map
-  stays; once it shows, `#view3d` is unhidden and the card hides (it
+  it, and closes it again. While it loads the item and the bottom bar's
+  `#view-loading` say so and the map stays; once it shows, `#view3d` is unhidden and the card hides (it
   points at a map marker); back on the map the card shows again for the
   same selection. A failure (its code, no WebGL, nothing placed, a lost
   context, an error) lands on the map with a toast saying why; an import
@@ -545,7 +570,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   `2d`, which the shell's stylesheet follows), makes the map `inert`
   while the 3D view shows (out of the Tab order under it), and shows the
   shell over the shown view or hides it. Its selection is the page's `select` (so
-  the map's markers follow), Undo and Redo are `runStep`, the pencil is
+  the map's markers follow), Undo and Redo (the bar's and Edit's) are
+  `runStep`, Details is
   `openDetails` (the tour's name opens the same dialog), its pictures
   and the scene's content are read through `readContent` (the copy the
   page reads now), and its codes come from `shellCodes` (the model's
@@ -580,9 +606,9 @@ writing nothing once the quiet time passed, three undos at a person's pace
 making one write with no refusal, an undo while a write runs written at that
 save's end, a large tour's undo written, no download by itself after
 "Download instead", and a resave waiting while another tour is being chosen
-(D33), and Done with the
+(D33), and Share and publish with the
 walk's move - the save dialog asked for on the click and the walk in the
-chosen file, the dialog held open and Done disabled while it runs, the
+chosen file, the dialog held open and its item disabled while it runs, the
 download's second click, the tour file itself refused as the walk's, a
 tour with no file downloaded on a second click, a dismissed walk save and
 a failed tour write
@@ -596,19 +622,21 @@ tour's walk) and `editor-entry.spec.js` (the
 `editor.spec.js` also renames a station through the test hook, closes the
 tab, and sees the draft offer the change and Restore bring it back (seen
 red with the settings record's stations left out). The chrome state's
-slice: `editor-view.test.ts`. The 3D view's switch, its loading and
-failure states and the selection kept: `editor3d.spec.js`; the studio
-shell's layout and its tree clicks: `editor3d-shell.spec.js`; editing in
+slice: `editor-view.test.ts`. The 3D view as the default, its switch, its
+loading and failure states and the selection kept: `editor3d.spec.js`; the studio
+shell's layout, its fold steps, the menus by keyboard and touch and the
+unsaved mark, and its tree clicks: `editor3d-shell.spec.js`; Save a copy
+and the menus inside the window: `editor.spec.js`; editing in
 the 3D view (a drag saved and undone, every key, Ctrl+D and Del, a second
 finger's cancel): `editor3d-edit.spec.js`.
 
 The first Save of a tour without a file (`editor.spec.js`, all with the
 click-bound stand-in save dialog, which a call outside the gesture finds
 refused): adopted and then saved by itself; the walk kept in the chosen
-file and Done naming it as the walk's; an undo across that first save
+file and Share and publish naming it as the walk's; an undo across that first save
 writing the file again; a dismissed dialog keeping the save (the stand-in
 dismisses only inside the click, so a dialog asked for after the build
-would download and fail it); Ctrl+S and Done each asking inside their own
-gesture, Done's line naming "the file you chose when you first saved";
+would download and fail it); Ctrl+S and Share and publish each asking
+inside their own gesture, its line naming "the file you chose when you first saved";
 and a chosen file that cannot be read back saying so, the next Save
 asking again.

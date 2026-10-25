@@ -1,5 +1,5 @@
 /**
- * The desktop editor's "Done" dialog (tour editor plan 2026-10-17-1816,
+ * The desktop editor's "Share and publish" dialog (tour editor plan 2026-10-17-1816,
  * W2, D18, D19): what is left to do when the creator leaves the editor -
  * where the changes are, how the tour at its link is updated (per host,
  * `tour-host.ts`), that a file at a link is public at once, and, while the
@@ -151,7 +151,7 @@ export type DebugSaveOutcome =
 
 const NOTHING_SAVED = "Nothing was saved: the debug data's file was not saved.";
 
-/** What a save of the debug data came to, in words: the Done dialog's
+/** What a save of the debug data came to, in words: the publish dialog's
  *  status line, and the toast a lean download's "Save the debug data"
  *  ends with (`edit-main.ts`). */
 export function debugSaveResultLine(outcome: DebugSaveOutcome): string {

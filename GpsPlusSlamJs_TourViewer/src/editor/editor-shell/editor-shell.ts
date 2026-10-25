@@ -1,11 +1,11 @@
 /**
- * The 3D view's shell, read-only: the top bar's studio controls (the
- * pencil, Undo and Redo, Frame, Top view, Help), the tree dock at the
- * left, the inspector dock at the right, the compass and the zoom buttons
- * at the bottom left, and the bottom bar with its view line, its hint and
- * its debug readout. The page's own controls (the view switch, Save,
- * Done, the save status) stay the page's; the shell restyles nothing of
- * theirs.
+ * The 3D view's shell: the top bar's studio controls (Details, Undo and
+ * Redo, Help), the Edit menu's Undo and Redo (where they fold at a
+ * phone's width) and the View menu's Top view and Frame, the tree dock at
+ * the left, the inspector dock at the right, the compass and the zoom
+ * buttons at the bottom right, and the bottom bar's view line, hint and
+ * debug readout. The page's own controls (the File menu, the view switch,
+ * the save status) stay the page's.
  *
  * Everything it shows is drawn from the store - the tour from
  * `tourDocument`, the selection and the docks' and tree's folds from
@@ -141,6 +141,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     details: byId<HTMLButtonElement>("studio-details"),
     undo: byId<HTMLButtonElement>("studio-undo"),
     redo: byId<HTMLButtonElement>("studio-redo"),
+    editUndo: byId<HTMLButtonElement>("edit-undo"),
+    editRedo: byId<HTMLButtonElement>("edit-redo"),
     frame: byId<HTMLButtonElement>("studio-frame"),
     topView: byId<HTMLButtonElement>("studio-top"),
     help: byId<HTMLButtonElement>("studio-help"),
@@ -198,15 +200,19 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
 
   const drawHistory = (doc: TourDocumentState) => {
     for (const which of ["undo", "redo"] as const) {
-      const button = which === "undo" ? top.undo : top.redo;
       const next = nextStep(doc, which);
-      button.disabled = next === undefined;
       const key = which === "undo" ? "Ctrl+Z" : "Ctrl+Shift+Z";
       const verb = which === "undo" ? "Undo" : "Redo";
-      button.title =
-        next === undefined
-          ? `Nothing to ${which}`
-          : `${verb} ${next.what} (${key})`;
+      // The bar's button and the Edit menu's item say the same.
+      const buttons =
+        which === "undo" ? [top.undo, top.editUndo] : [top.redo, top.editRedo];
+      for (const button of buttons) {
+        button.disabled = next === undefined;
+        button.title =
+          next === undefined
+            ? `Nothing to ${which}`
+            : `${verb} ${next.what} (${key})`;
+      }
     }
     bar.history.textContent = `History ${String(doc.past.length)} / ${String(
       doc.past.length + doc.future.length,
@@ -288,8 +294,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       r.top || r.tiltDeg < 1
         ? "Top view"
         : `3D view, tilt ${String(Math.round(r.tiltDeg))} deg`;
-    top.topView.classList.toggle("on", r.top);
-    top.topView.setAttribute("aria-pressed", String(r.top));
+    // A checkbox item of the View menu.
+    top.topView.setAttribute("aria-checked", String(r.top));
     bar.calls.textContent = `${String(r.drawCalls)} draw calls`;
     bar.frame.textContent = `${r.frameMs.toFixed(1)} ms / frame`;
   };
@@ -424,12 +430,16 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   top.details.addEventListener("click", () => {
     deps.openDetails();
   });
-  top.undo.addEventListener("click", () => {
-    deps.step("undo");
-  });
-  top.redo.addEventListener("click", () => {
-    deps.step("redo");
-  });
+  for (const button of [top.undo, top.editUndo]) {
+    button.addEventListener("click", () => {
+      deps.step("undo");
+    });
+  }
+  for (const button of [top.redo, top.editRedo]) {
+    button.addEventListener("click", () => {
+      deps.step("redo");
+    });
+  }
   const frame = (whole: boolean) => {
     view?.frame(whole ? null : state().editorView.selected);
   };

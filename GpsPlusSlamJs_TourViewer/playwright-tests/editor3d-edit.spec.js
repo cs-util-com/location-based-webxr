@@ -10,6 +10,7 @@ import {
   openSample,
   view3d,
 } from "./editor3d-fixture.js";
+import { save, viewCommand } from "./editor-menus.js";
 import { useWideFont } from "./wide-font.js";
 
 /**
@@ -71,8 +72,8 @@ async function openWithPin(page) {
     { id: PIN, alt: SQUARE_GROUND_M + N_M + 1.5 },
   );
   expect(placed.kind).toBe("placed");
-  await page.locator("#view-switch").click();
-  await expect(page.locator("#view-switch")).toHaveText("Map view", {
+  await viewCommand(page, "switch");
+  await expect(page.locator("#view-switch")).toHaveText("2D map", {
     timeout: 60_000,
   });
   await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
@@ -200,7 +201,7 @@ function turnDeg(a, b) {
  */
 async function saveAndRead(page) {
   const download = page.waitForEvent("download");
-  await page.locator("#save-btn").click();
+  await save(page);
   const file = await download;
   const bytes = new Uint8Array(readFileSync(await file.path()));
   const reader = new ZipReader(new Uint8ArrayReader(bytes));

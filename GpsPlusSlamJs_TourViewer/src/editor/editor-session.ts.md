@@ -231,6 +231,12 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     file, and the document learns where in its history that file stands
     (`saved`'s `inPlaceAt`): an undo or a redo across it is then due a
     resave (D33, `../tour-document.ts.md`).
+  - `saveCopy({ keepScan })` - File's "Save a copy…": the same rebuild as
+    `save` (queued behind a running save, the pictures read first), from
+    the same snapshot, named by `copyFileName`; it never lands - the
+    document, its change count, its history and where its file stands are
+    as they were, so the next `save` still writes the tour's own file.
+    Refused like `save` once another tour replaced the session.
   - `debugData()` - the debug data of the OPENED file
     (`session.readWholeArchive()` under the session's budget) as a debug
     bundle (`buildDebugBundle`, the same identity as the move's), queued
@@ -283,6 +289,10 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     tour; the editor only shows it (`edit-main.ts`, "Add debug data...").
 - The module-private `WalkMove` and `NO_WALK` are read through `moveWalkOut()`.
 - `EditorSession`, `EditorSave`, `EditorSessionDraft`, `TOO_FAR_FROM_STATION`; the module-private `CoverChoice` (an image id and its zip entry) and `UndoOutcome` (`undo()` / `redo()`'s result) are read through the session's methods.
+
+- `copyFileName(name)` - a copy's file name: " copy" before a trailing
+  `.zip` (any case), or at the end of a name without one
+  ("tour.zip" -> "tour copy.zip").
 
 ## Invariants & assumptions
 
@@ -378,6 +388,9 @@ The tour document (D29-D31): a later open on the same store disowning the
 session (its edits refused, a save begun before landing nowhere, one asked
 for after refused, its reads its own tour), and a replaced session reading
 its tour as it stood when replaced, an edit no read followed included. The
-save thunk itself: `../tour-document-save.test.ts`.
+save thunk itself: `../tour-document-save.test.ts`. Save a copy: the
+copy carrying the edits under "<name> copy.zip" while the change count,
+the undo and the next save are as before; `copyFileName`'s cases; a
+copy asked for during a save waiting for it.
 
 `station-lock.property.test.ts` drives a real session with random command sequences (moves, radius, rename, delete, copy, reorder, item moves and poses, grounding, adds, and the lock itself; up to 30 at full length) and checks that no command changes a station's pose while it is locked, plus the refusal's words and the open edits.

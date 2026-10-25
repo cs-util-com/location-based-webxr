@@ -9,7 +9,7 @@ in the current text colour, as SVG elements.
 
 - `ShellIcon` - the icon names (`pin`, `photo`, `model`, `frame`, `top`,
   `undo`, `redo`, `help`, `qr`, `down`, `right`, `up`, `close`,
-  `station`, `pencil`, `check`, `folder`, `walk`).
+  `station`, `pencil`, `check`, `lock`, `unlock`, `walk`, `eye`, `folder`).
 - `shellIcon(name)` - a new `svg.i` element, `aria-hidden` (the control it
   sits in carries the words).
 - `placeShellIcons(root)` - every `<i data-icon="name">` under `root`

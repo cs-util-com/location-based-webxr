@@ -20,7 +20,6 @@ import {
 } from "./editor-view.js";
 import {
   VIEW_SWITCH_LABELS,
-  VIEW_SWITCH_SHORT_LABELS,
   createViewSwitch,
   view3dFailureText,
   type View3dHandle,
@@ -85,8 +84,10 @@ function setup() {
   /** The store's view mode as each `onShown` call found it. */
   const modes: string[] = [];
   const ui = () => selectEditorView(store.getState());
+  const status = { textContent: "" as string | null, hidden: true };
   const sw = createViewSwitch({
     button: b,
+    status,
     store,
     open: o.open,
     say: (text) => said.push(text),
@@ -95,7 +96,7 @@ function setup() {
       modes.push(ui().viewMode);
     },
   });
-  return { store, b, o, said, shown, modes, sw, ui };
+  return { store, b, o, said, shown, modes, sw, ui, status };
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -283,21 +284,54 @@ describe("createViewSwitch", () => {
     }
   });
 
-  // Why: on a phone-wide window the top bar must keep every control inside
-  // it, so the button carries a short word for each state (the stylesheet
-  // shows it below 720 px) next to its full label, which stays its text.
-  it("carries a short word for each state next to its label", async () => {
-    const { b, o } = setup();
-    expect(b.dataset["short"]).toBe(VIEW_SWITCH_SHORT_LABELS.idle);
+  // Why: the switch is the View menu's item: its words say where it
+  // leads ("3D view" on the map, "2D map" in 3D), and a load the menu no
+  // longer shows (it closes on the click, and the page opens the 3D view
+  // by itself) is said in the status line, then cleared.
+  it("names where it leads, and says a load in the status line until it ends", async () => {
+    const { b, o, status } = setup();
+    expect(VIEW_SWITCH_LABELS).toEqual({
+      idle: "3D view",
+      loading: "Loading 3D view…",
+      shown: "2D map",
+    });
+    expect(status.hidden).toBe(true);
     b.click();
-    expect(b.dataset["short"]).toBe(VIEW_SWITCH_SHORT_LABELS.loading);
+    expect(status.hidden).toBe(false);
+    expect(status.textContent).toBe(VIEW_SWITCH_LABELS.loading);
     o.calls[0]!.resolve(view());
     await settle();
-    expect(b.dataset["short"]).toBe(VIEW_SWITCH_SHORT_LABELS.shown);
-    expect(b.textContent).toBe(VIEW_SWITCH_LABELS.shown);
-    for (const word of Object.values(VIEW_SWITCH_SHORT_LABELS)) {
-      expect(word.length).toBeLessThanOrEqual(3);
-    }
+    expect(b.textContent).toBe("2D map");
+    expect(status.hidden).toBe(true);
+    // A failed load clears the line too (its reason is said by `say`).
+    const s = setup();
+    s.b.click();
+    s.o.calls[0]!.reject(Object.assign(new Error("x"), { reason: "webgl" }));
+    await settle();
+    expect(s.status.hidden).toBe(true);
+    expect(s.b.textContent).toBe("3D view");
+  });
+
+  // Why: the 3D view is the editor's default; the page opens it when a
+  // tour opens, through the same load (its in-progress state and its
+  // failures), and never twice.
+  it("show3d opens the 3D view as the item does, and does nothing while loading, shown or off", async () => {
+    const { b, o, sw, ui } = setup();
+    sw.show3d();
+    expect(ui().view3dLoad).toBe("loading");
+    expect(b.textContent).toBe(VIEW_SWITCH_LABELS.loading);
+    sw.show3d();
+    expect(o.calls).toHaveLength(1);
+    o.calls[0]!.resolve(view());
+    await settle();
+    expect(ui().viewMode).toBe("3d");
+    sw.show3d();
+    expect(o.calls).toHaveLength(1);
+    expect(ui().viewMode).toBe("3d");
+    const off = setup();
+    off.sw.setEnabled(false);
+    off.sw.show3d();
+    expect(off.o.calls).toHaveLength(0);
   });
 
   it("opens nothing more while a load runs", () => {

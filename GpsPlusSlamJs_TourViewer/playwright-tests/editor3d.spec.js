@@ -1,7 +1,13 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
-import { answerHosts, openSample, view3d } from "./editor3d-fixture.js";
+import { viewCommand } from "./editor-menus.js";
+import {
+  answerHosts,
+  openSample,
+  openSampleIn3d,
+  view3d,
+} from "./editor3d-fixture.js";
 
 /**
  * Why these tests matter: the desktop editor's view switch opens the tour
@@ -44,14 +50,18 @@ test("opens the sample tour in 3D after a loading state, and back to the map wit
 
   const button = page.locator("#view-switch");
   await expect(button).toHaveText("3D view");
-  await button.click();
+  await viewCommand(page, "switch");
   await expect(button).toHaveText(LOADING);
   await expect(button).toBeDisabled();
+  // The menu closed with the click: the bottom bar says it loads.
+  await expect(page.locator("#view-loading")).toBeVisible();
+  await expect(page.locator("#view-loading")).toHaveText(LOADING);
   await expect(page.locator("#view3d")).toBeHidden();
   release();
 
-  await expect(button).toHaveText("Map view");
+  await expect(button).toHaveText("2D map");
   await expect(button).toBeEnabled();
+  await expect(page.locator("#view-loading")).toBeHidden();
   await expect(page.locator("#view3d")).toBeVisible();
   await expect(page.locator("#view3d canvas")).toBeVisible();
   await expect(page.locator("#view3d-credits")).toContainText("Mapterhorn");
@@ -112,7 +122,7 @@ test("opens the sample tour in 3D after a loading state, and back to the map wit
     .poll(async () => (await view3d(page))?.standing)
     .toBeGreaterThan(1 - 1e-9);
 
-  await button.click();
+  await viewCommand(page, "switch");
   await expect(button).toHaveText("3D view");
   await expect(page.locator("#view3d")).toBeHidden();
   expect(await view3d(page)).toBeNull();
@@ -121,6 +131,43 @@ test("opens the sample tour in 3D after a loading state, and back to the map wit
   await expect(page.locator("#card")).toContainText("The old gate");
   await expect(page.locator("#save-status")).toHaveText(status ?? "");
   expect(imagery.asks).toBe(0);
+});
+
+// Why: the 3D view is where a creator starts - a tour opens in it, and
+// the map is a step away under View.
+test("a tour opens in the 3D view, and View leads to the 2D map", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await expect(page.locator("#view3d canvas")).toBeVisible();
+  await expect(page.locator("#view-menu-btn")).toBeVisible();
+  await viewCommand(page, "switch");
+  await expect(page.locator("body")).toHaveAttribute("data-view", "2d");
+  await expect(page.locator("#view-switch")).toHaveText("3D view");
+  await expect(page.locator(".mk-station")).toHaveCount(3);
+});
+
+// Why: the map is the fallback - a tour opened where the 3D view cannot
+// load is still edited, on the map, with the reason said.
+test("a tour whose 3D view cannot load opens on the 2D map, said", async ({
+  page,
+}) => {
+  await answerHosts(page);
+  await page.route("**/src/editor3d/editor3d-scene.ts*", (route) =>
+    route.abort(),
+  );
+  await page.goto("/edit.html");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  await page.locator("#sample-btn").click();
+  await expect(
+    page.locator(".toast", { hasText: "The 3D view could not be loaded" }),
+  ).toBeVisible();
+  await expect(page.locator("body")).not.toHaveAttribute("data-view", "3d");
+  await expect(page.locator("#view-switch")).toHaveText("3D view");
+  await expect(page.locator(".mk-station")).toHaveCount(3);
+  await expect(page.locator("#rail .row-title")).toHaveCount(3);
 });
 
 test("a 3D view whose code cannot load lands back on the map, said", async ({
@@ -132,7 +179,7 @@ test("a 3D view whose code cannot load lands back on the map, said", async ({
   );
   await openSample(page);
   const button = page.locator("#view-switch");
-  await button.click();
+  await viewCommand(page, "switch");
   await expect(
     page.locator(".toast", { hasText: "The 3D view could not be loaded" }),
   ).toBeVisible();
@@ -170,12 +217,12 @@ test("a later open that shows the 3D view takes the earlier failure's line away"
   });
   const button = page.locator("#view-switch");
   const line = page.locator(".toast", { hasText: "cannot draw the 3D view" });
-  await button.click();
+  await viewCommand(page, "switch");
   await expect(line).toBeVisible();
   await expect(button).toHaveText("3D view");
   await expect(page.locator("#view3d canvas")).toHaveCount(0);
-  await button.click();
-  await expect(button).toHaveText("Map view", { timeout: 60_000 });
+  await viewCommand(page, "switch");
+  await expect(button).toHaveText("2D map", { timeout: 60_000 });
   await expect(line).toHaveCount(0);
   await expect(page.locator("#view3d canvas")).toHaveCount(1);
 });
@@ -216,7 +263,7 @@ test("a 3D view whose first frame fails lands back on the map, said, with nothin
     }
   });
   const button = page.locator("#view-switch");
-  await button.click();
+  await viewCommand(page, "switch");
   await expect(
     page.locator(".toast", { hasText: "stopped on an error" }),
   ).toBeVisible({ timeout: 60_000 });
@@ -249,9 +296,9 @@ test("switching to 3D and back twenty times keeps the browser's WebGL contexts f
   await openSample(page);
   const button = page.locator("#view-switch");
   for (let i = 0; i < 20; i++) {
-    await button.click();
-    await expect(button).toHaveText("Map view", { timeout: 60_000 });
-    await button.click();
+    await viewCommand(page, "switch");
+    await expect(button).toHaveText("2D map", { timeout: 60_000 });
+    await viewCommand(page, "switch");
     await expect(button).toHaveText("3D view");
   }
   expect(warnings).toEqual([]);
