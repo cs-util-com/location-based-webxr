@@ -325,7 +325,8 @@ test("a found station's story takes the peek's place with its dots, and its end 
   // Two taps end it: the peek is back, and the focus that sat on the
   // card's end control is on the grab. The visitor still stands at the
   // gate, so the peek says so and names the next station second (being
-  // there), instead of sending them on while they look around.
+  // there), instead of sending them on while they look around; the tail
+  // still says which way the next station is.
   await end.click();
   await end.click();
   await expect(story).toBeHidden();
@@ -336,7 +337,7 @@ test("a found station's story takes the peek's place with its dots, and its end 
   );
   await expect(page.getByTestId("walk-title")).toHaveText("The gate");
   await expect(page.getByTestId("walk-tail")).toHaveText(
-    /^Next: The well, \d+ m$/,
+    /^Next: The well, \d+ m - (ahead|to your left|to your right|behind you)$/,
   );
   // Walking on leaves the gate: the peek names the next station.
   await standAt(page, 55, 17, 2);
