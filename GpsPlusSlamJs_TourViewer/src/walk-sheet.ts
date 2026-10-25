@@ -190,8 +190,6 @@ export interface WalkSheetDom {
   /** The list's hint while no station is guessed. */
   readonly hint: El;
   readonly rows: El;
-  readonly foot: El;
-  readonly exit: El;
   readonly away: {
     readonly root: El;
     readonly text: El;
@@ -291,8 +289,6 @@ export function wireWalkSheet(deps: {
   keepListening(): void;
   /** A tap on a row's control (the guide's `rowTapped`). */
   rowTapped(stationId: string, tap: WalkRowTap): void;
-  /** The completion card's "Exit AR": the session's own way out. */
-  exit(): void;
 }): WalkSheetView {
   const { dom } = deps;
   /** What each list was last drawn from: a redraw only on a change. */
@@ -381,9 +377,6 @@ export function wireWalkSheet(deps: {
     if (control instanceof HTMLButtonElement && control.disabled) return;
     focusTap = { id, tap: control.dataset["tap"] ?? "" };
     deps.rowTapped(id, tap);
-  });
-  dom.exit.addEventListener("click", () => {
-    deps.exit();
   });
 
   function drawSegments(el: El, segments: WalkSegments): void {
@@ -617,7 +610,6 @@ export function wireWalkSheet(deps: {
       setHidden(dom.chip, model.list.chip === null);
       const done = model.list.completion;
       setHidden(dom.done, done === null);
-      setHidden(dom.foot, done === null);
       setText(dom.doneTitle, done?.title ?? "");
       setText(dom.doneText, done?.text ?? "");
       setHidden(dom.progress, done !== null);

@@ -366,3 +366,19 @@ describe("the walk's CSS under reduced motion", () => {
     expect([...animated].filter((sel) => !stilled.has(sel))).toEqual([]);
   });
 });
+
+describe("the completion card's way out", () => {
+  // Why this test matters: the card's "Exit AR" only clicked the X at
+  // the top left, the same control a second time; two controls for one
+  // way out read as two different exits. The X stays the one way out.
+  it("carries no button of its own: the X at the top left is the way out", () => {
+    const html = readFileSync(new URL("../index.html", import.meta.url), {
+      encoding: "utf8",
+    });
+    expect(html).not.toContain('id="walk-exit"');
+    expect(html).not.toContain('id="walk-list-foot"');
+    // Non-vacuous: the card itself and the X are still on the page.
+    expect(html).toContain('id="walk-done"');
+    expect(html).toContain('id="enter-ar"');
+  });
+});

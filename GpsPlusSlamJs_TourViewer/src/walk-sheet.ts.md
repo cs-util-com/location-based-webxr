@@ -17,7 +17,7 @@ the peek into the store's `sheetSet`. A thin writer, wired by
 - `quickKind(quick)` - the quick action's look: `ask` (Can't get there?),
   `suggested` (the labelled skip), `undo`; null for the story's end
   controls, which are the story card's.
-- `wireWalkSheet({ dom, setSheet, sheet, keepListening, exit }): WalkSheetView`
+- `wireWalkSheet({ dom, setSheet, sheet, keepListening, rowTapped }): WalkSheetView`
   - `render(model | null, { sheet, quick, position, story })` - null hides
     the sheet (the guide does not run).
   - `renderAway(model | null)` - null hides the away block.
@@ -37,6 +37,9 @@ the peek into the store's `sheetSet`. A thin writer, wired by
   peek, `data-kind` on the quick action and the segments, `data-kind`
   end|ask on the story's end control, `data-state` and `data-id` on rows,
   `data-s` (on, now, off) and `data-timed` on the story's dots.
+- The completion card has no button of its own: the X at the top left
+  (`#enter-ar`) is the one way out of AR (an "Exit AR" there only clicked
+  the X again).
 - "Keep listening" shows only beside the confirm ("End this story" asked).
 - **Focus follows what takes a hidden control's place**
   (`hideKeepingFocus(el, hidden, fallback, active)`, exported): when
@@ -65,7 +68,7 @@ const view = wireWalkSheet({
   sheet: () => selectWalkSheet(store.getState()),
   setSheet: (s) => store.dispatch(sheetSet(s)),
   keepListening: () => guide.cancelAsk(),
-  exit: () => enterAr.click(),
+  rowTapped: (id, tap) => guide.rowTapped(id, tap),
 });
 view.render(model, { sheet: "peek", quick, position: "distance", story: null });
 ```

@@ -236,8 +236,6 @@ export function wireVisitorStations(deps: {
   walk?: {
     dom: WalkSheetDom;
     toast: WalkToast;
-    /** The session's own way out (the completion card's "Exit AR"). */
-    exitAr: () => void;
     /** The sheet came or went: the AR status re-routes its sentence
      *  (a placement wait gives way to a shown walk). */
     onShownChange?: () => void;
@@ -511,9 +509,6 @@ export function wireVisitorStations(deps: {
               guide.rowTapped(stationId, tap);
             });
             renderSheet();
-          },
-          exit: () => {
-            walk.exitAr();
           },
         });
 

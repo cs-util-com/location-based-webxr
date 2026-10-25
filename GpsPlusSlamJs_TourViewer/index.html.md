@@ -298,14 +298,16 @@ target from `::before` around its 5 px pill), the peek `walk-peek` (`walk-segmen
 the story card `walk-story` (`#scene-panel` and its parts, `walk-dots`,
 `walk-story-acts` with `#scene-continue`, `story-end` (`#walk-story-end`)
 and `keep-listening`; while the end is asked (`data-kind="end"`) `#scene-continue` is not shown, so the card offers only its two answers, M4; then `#scene-play-next`), and the list `walk-list`
-(`walk-list-title`, `walk-chip`, `walk-close`, the completion card
+(`walk-list-title`, `walk-chip` - "Any order" only, hidden for a fixed
+or branching order - `walk-close`, the completion card
 `walk-done` with `walk-done-title` and `walk-done-text`, `walk-progress`,
 the hint `walk-hint` (`#walk-hint`, hidden unless no station is guessed,
 M4), `walk-rows` whose rows carry `walk-row`, `data-state`, `data-id`,
 `data-chosen`, the title button `walk-row-main` with a `walk-row-sub`, the
 action `walk-row-act` (`data-k` skip, bring or undo), the confirm
 `walk-row-confirm` with `walk-row-cancel` and the undo's bar
-`walk-undobar`, and `walk-list-foot` with `walk-exit`). While the list
+`walk-undobar`; the completion card has no button of its own: the X
+`#enter-ar` is the one way out). While the list
 is open the quick action `#station-skip` is not shown (the prototype: the rows
 carry its actions). In AR a visitor's
 `#enter-ar` is the prototype's round Exit button at the top left and `#ar-status`

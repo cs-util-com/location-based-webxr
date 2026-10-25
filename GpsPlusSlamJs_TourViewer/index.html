@@ -2605,15 +2605,6 @@
           transform: scaleX(0);
         }
       }
-      .walk-list-foot {
-        display: flex;
-        gap: 8px;
-        padding: 6px 16px 14px;
-      }
-      /* stylelint-disable-next-line no-descending-specificity -- the foot's button and a row's confirm are different elements. */
-      .walk-list-foot .walk-btn {
-        flex: 1;
-      }
 
       /* The list open: the quick action goes (the prototype: the rows carry Skip,
          its confirm and the undo, M4), and the peek's row once the tour is
@@ -5183,21 +5174,6 @@
                     class="walk-rows"
                     data-testid="walk-rows"
                   ></ul>
-                  <div
-                    id="walk-list-foot"
-                    class="walk-list-foot"
-                    data-testid="walk-list-foot"
-                    hidden
-                  >
-                    <button
-                      type="button"
-                      id="walk-exit"
-                      class="btn btn--prose walk-btn"
-                      data-testid="walk-exit"
-                    >
-                      Exit AR
-                    </button>
-                  </div>
                 </div>
               </section>
               <!-- The setup panel (guided-setup plan M3). Inside #ar-root on

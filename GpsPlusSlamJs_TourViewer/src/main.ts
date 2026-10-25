@@ -919,8 +919,6 @@ const stations = wireVisitorStations({
       progress: element("walk-progress"),
       hint: element("walk-hint"),
       rows: element("walk-rows"),
-      foot: element("walk-list-foot"),
-      exit: element("walk-exit"),
       away: {
         root: element("walk-away"),
         text: element("walk-away-text"),
@@ -929,10 +927,6 @@ const stations = wireVisitorStations({
       },
     },
     toast: walkToast,
-    // In AR the entry button is the way out (U2): the same teardown.
-    exitAr: () => {
-      element("enter-ar").click();
-    },
     onShownChange: () => {
       hooks.renderArStatus();
     },

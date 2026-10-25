@@ -725,7 +725,9 @@ test("the completion opens the list once, with its card and the way out", async 
   await expect(page.getByTestId("walk-done-text")).toHaveText(
     "Thank you for walking with us.",
   );
-  await expect(page.getByTestId("walk-exit")).toBeVisible();
+  // The card has no way out of its own: the X at the top left is the one.
+  await expect(page.getByTestId("walk-exit")).toHaveCount(0);
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   await expect(page.getByTestId("walk-row")).toHaveCount(4);
   await page.getByTestId("walk-close").click();
   await expect(sheet).toHaveAttribute("data-sheet", "peek");
@@ -736,9 +738,8 @@ test("the completion opens the list once, with its card and the way out", async 
   });
   await standAt(page, 240, 47, second);
   await expect(sheet).toHaveAttribute("data-sheet", "peek");
-  // "Exit AR" on the card is the session's own way out.
-  await page.getByTestId("walk-grab").click();
-  await page.getByTestId("walk-exit").click();
+  // The X at the top left is the session's way out.
+  await page.getByTestId("enter-ar").click();
   await expect(page.getByTestId("enter-ar")).toHaveText("Back to the tour");
 });
 

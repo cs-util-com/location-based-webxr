@@ -186,7 +186,7 @@ for (const viewport of VIEWPORTS) {
   // The page must not scroll down either (a sideways phone's header once
   // pushed the AR overlay below the fold), in every state the walk's
   // controls take: the peek, the list, a row's armed Skip, the quick
-  // action's full-width undo and the complete tour's foot.
+  // action's full-width undo and the complete tour's card.
   test(`in AR the page does not scroll sideways and every control of the walk is on the screen at ${label}`, async ({
     page,
   }) => {
@@ -260,9 +260,8 @@ for (const viewport of VIEWPORTS) {
       0,
     );
     await pageFits("the quick action's undo");
-    // The tour complete: the list's foot shows and its button is on the
-    // screen (scrolled into the list's view, never the page's; the foot's
-    // bottom padding may lie in the list's scrolled-off part).
+    // The tour complete: the completion card is on the screen (scrolled
+    // into the list's view, never the page's), and the page still fits.
     await page.getByTestId("walk-grab").click();
     for (const title of ["The well", "The tower", "The garden"]) {
       await walkRowControl(page, title, "act").click();
@@ -272,9 +271,9 @@ for (const viewport of VIEWPORTS) {
       "data-complete",
       "true",
     );
-    await page.getByTestId("walk-exit").scrollIntoViewIfNeeded();
-    await expect(page.getByTestId("walk-list-foot")).toBeVisible();
-    onScreen(await box(page, "walk-exit"), "the foot's Exit AR");
+    await page.getByTestId("walk-done").scrollIntoViewIfNeeded();
+    await expect(page.getByTestId("walk-done")).toBeVisible();
+    onScreen(await box(page, "walk-done"), "the completion card");
     await pageFits("the tour complete");
   });
 

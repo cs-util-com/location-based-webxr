@@ -115,7 +115,7 @@ hooks.tickStations = stations.tick;
 
 ## The walk's sheet
 
-- `deps.walk?: { dom: WalkSheetDom, toast: WalkToast, exitAr }` - wires
+- `deps.walk?: { dom: WalkSheetDom, toast: WalkToast }` - wires
   `walk-sheet.ts` and draws it after every tick, code lock, skip tap,
   story change (`scene-view.ts` `onChange`) and sheet change, from
   `walk-sheet-model.ts` over the guide's `view()`, the store's walk
@@ -125,8 +125,8 @@ hooks.tickStations = stations.tick;
   dom; a tap on it or on the skip button hands the guide the tapped
   control (`skipTapped(control)`), whose `data-action` says what it
   showed; "Keep listening"
-  calls `cancelAsk`; the completion card's "Exit AR" calls `exitAr`
-  (`main.ts`: a tap on `#enter-ar`, the session's one way out).
+  calls `cancelAsk`. The completion card has no way out of its own: the
+  X at the top left (`#enter-ar`) is the session's one way out.
 - **The rows' wiring:** a row's taps go to the guide (`rowTapped`, inside a
   call) and the sheet is drawn after; `onUndone` tells the prefetch of a
   station brought back after its skip settled (`prefetch.undone`);
