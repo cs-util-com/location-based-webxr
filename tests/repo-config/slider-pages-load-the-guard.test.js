@@ -1,7 +1,7 @@
 /**
  * Every page with a slider installs the framework's page-wide slider guard.
  *
- * Why this test matters (owner report 2026-09-30): on a phone, a vertical
+ * Why this test matters (a report on a phone, 2026-09-30): a vertical
  * swipe that started on a range input edited that slider instead of scrolling
  * the panel, on every demo page. The fix is ONE framework module,
  * `utils/slider-scroll-guard`, installed once per page with
@@ -14,7 +14,7 @@
  * its entry scripts reach through local imports builds one at runtime. It
  * passes when one of the module scripts the page loads DIRECTLY calls
  * `guardSlidersIn(document)`: the page's own entry is where a reader looks.
- * The call must RUN (review 2026-09-30): comments, HTML comments and string
+ * The call must RUN (hardened 2026-09-30): comments, HTML comments and string
  * contents are blanked before matching, and the call must be a top-level
  * statement or sit directly in a top-level function the module calls at top
  * level (`function main() { guardSlidersIn(document); } main();`).
@@ -416,7 +416,7 @@ describe('every page with a slider installs the page-wide slider guard', () => {
     expect(problems.join('\n')).toContain('PhysicsDemo/index.html');
   });
 
-  // Review 2026-09-30 (A1): an install that never runs must not pass. Each
+  // Hardening of 2026-09-30: an install that never runs must not pass. Each
   // planted page has a range input and an entry that only LOOKS like it
   // installs the guard.
   const plantedPage = (script) =>
