@@ -1,6 +1,6 @@
 # Tour Viewer design prototypes (inspiration gallery)
 
-Standalone HTML drafts made for the owner to choose a direction (polish
+Standalone HTML drafts made to choose a direction between them (polish
 round M1; the rule: root `CLAUDE.md` "Throwaway UX prototypes"). They are
 served at `/tour/prototypes/`, linked from nothing in the app, and NOT
 wired into its logic: every interaction is faked.
@@ -68,7 +68,7 @@ wired into its logic: every interaction is faked.
   version 3 keeps an item's local pose rigid with its station: the real
   editor must choose between the two deliberately.
 - `editor3d-1-studio-r2/` ... `editor3d-4-map-tilt-r2/` - round 2 of the
-  same four after the owner tried them (made 2026-10-19): one shared frame
+  same four after round 1 was tried (made 2026-10-19): one shared frame
   (a docked story-card tree and inspector, one set of handles, a top view,
   a two-finger guard), each keeping its own idea. They move a station's items rigidly with it
   and offer "Put items on the ground", as decided after round 1. The
@@ -102,8 +102,8 @@ wired into its logic: every interaction is faked.
   2026-10-25. Section 0 of each page's notes says what it costs and where
   it fails.
 
-**Kept, the chosen and the unchosen** (owner, 2026-10-11 evening): another
-developer may prefer a variant the owner did not choose and ask their own
+**Kept, the chosen and the unchosen** (decided 2026-10-11 evening): another
+developer may prefer a variant that was not chosen and ask their own
 coding agent to build that one. The verdicts are in the polish-round plan
 (private docs).
 
@@ -112,6 +112,6 @@ coding agent to build that one. The verdicts are in the polish-round plan
 `landing-r2-1-l5-extended`, `editor3d-*` and `station-blocks-*` entries of `tests/repo-config/slider-pages-load-the-guard.test.js` (`EXEMPT`).
 The drafts are not held to the app's lint and format rules.
 
-**Owner rule applied after the build:** the three HUD drafts first blocked
-placing until the code was measured; that contradicts the owner's rule of
+**Rule applied after the build:** the three HUD drafts first blocked
+placing until the code was measured; that contradicts the project's rule of
 2026-10-09 (placing never depends on a code) and was lifted.
