@@ -780,6 +780,127 @@
         max-height: 62svh;
         margin: 0 auto;
       }
+      /* The intro's phone, as the chosen prototype draws it
+         (public/prototypes/landing-5-map-path): the dotted route draws up
+         the path, the pin drops in, its label and the photo follow, on one
+         7 s loop. */
+      .setup-intro-art .h-pin {
+        animation: intro-pin 7s ease-out infinite;
+      }
+      .setup-intro-art .h-label {
+        animation: intro-label 7s ease-out infinite;
+      }
+      .setup-intro-art .h-photo {
+        animation: intro-photo 7s ease-out infinite;
+      }
+      .setup-intro-art .h-dots {
+        stroke-dasharray: 0.1 7;
+      }
+      .setup-intro-art .h-dots-mask {
+        stroke-dasharray: 100 100;
+        animation: intro-dots 7s linear infinite;
+      }
+      .setup-intro-art .h-pin,
+      .setup-intro-art .h-label,
+      .setup-intro-art .h-photo {
+        transform-box: fill-box;
+        transform-origin: 50% 100%;
+      }
+
+      @keyframes intro-dots {
+        0% {
+          stroke-dashoffset: 100;
+        }
+        22%,
+        88% {
+          stroke-dashoffset: 0;
+        }
+        100% {
+          stroke-dashoffset: 0;
+        }
+      }
+
+      @keyframes intro-pin {
+        0%,
+        20% {
+          opacity: 0;
+          transform: translateY(-26px);
+        }
+        28% {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        31% {
+          transform: translateY(-4px);
+        }
+        34%,
+        88% {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        96%,
+        100% {
+          opacity: 0;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes intro-label {
+        0%,
+        33% {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+        40%,
+        88% {
+          opacity: 1;
+          transform: none;
+        }
+        96%,
+        100% {
+          opacity: 0;
+        }
+      }
+
+      @keyframes intro-photo {
+        0%,
+        45% {
+          opacity: 0;
+          transform: scale(0.6) rotate(-14deg);
+        }
+        54%,
+        88% {
+          opacity: 1;
+          transform: scale(1) rotate(-6deg);
+        }
+        96%,
+        100% {
+          opacity: 0;
+          transform: scale(1) rotate(-6deg);
+        }
+      }
+      /* Reduced motion, as the prototype: no animation, the phone's last
+         picture held - the route drawn, the pin, label and photo shown.
+         Each animated rule is named by its own selector. */
+      @media (prefers-reduced-motion: reduce) {
+        .setup-intro-art .h-pin,
+        .setup-intro-art .h-label,
+        .setup-intro-art .h-photo,
+        .setup-intro-art .h-dots-mask {
+          animation: none;
+        }
+        .setup-intro-art .h-pin,
+        .setup-intro-art .h-label,
+        .setup-intro-art .h-photo {
+          opacity: 1;
+        }
+        .setup-intro-art .h-photo {
+          transform: rotate(-6deg);
+        }
+        .setup-intro-art .h-dots-mask {
+          stroke-dashoffset: 0;
+        }
+      }
 
       @media (width >= 720px), (orientation: landscape) and (width >= 600px) {
         .setup-intro {

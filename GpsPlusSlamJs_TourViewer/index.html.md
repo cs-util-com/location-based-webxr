@@ -24,7 +24,11 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   L5 prototype, with the gaps set in the page's own CSS because the design
   system zeroes paragraph and list margins (r820 feedback R1;
   `setup-flow.spec.js` pins rows and gaps at three viewports) - and
-  "Follow the route"), then the stage
+  "Follow the route", beside the prototype's phone (`.setup-intro-art`),
+  whose dotted route, pin, label and photo run the prototype's 7 s loop
+  (`intro-dots`, `intro-pin`, `intro-label`, `intro-photo`; none under
+  reduced motion, the whole picture shown; `setup-flow.spec.js` pins the
+  computed animation names)), then the stage
   (`#setup-stage`): the illustrated map (`#setup-map`, an example route
   with six stations drawn by `setup-stage.ts`; ids prefixed `map-`)
   beside the step card (`#setup-card`) on a wide or landscape screen, above

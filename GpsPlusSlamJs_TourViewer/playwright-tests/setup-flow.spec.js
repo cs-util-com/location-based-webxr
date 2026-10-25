@@ -387,3 +387,72 @@ for (const viewport of [
     });
   });
 }
+
+// Why: the intro's phone came from the chosen prototype without its
+// animation - the markup kept its classes but no rule moved them, so the
+// route, the pin, its label and the photo stood still, and nothing could
+// tell. These pin that each part runs the prototype's 7 s loop, and that
+// a visitor who asked for reduced motion gets none, with the picture
+// shown whole.
+test.describe("the intro's phone", () => {
+  const PARTS = [
+    [".h-dots-mask", "intro-dots"],
+    [".h-pin", "intro-pin"],
+    [".h-label", "intro-label"],
+    [".h-photo", "intro-photo"],
+  ];
+  /** Each part's computed animation, and whether it shows. */
+  const partsOf = (page) =>
+    page.evaluate((parts) => {
+      return parts.map(([selector]) => {
+        const el = document.querySelector(`.setup-intro-art ${selector}`);
+        if (el === null) return null;
+        const style = getComputedStyle(el);
+        return {
+          name: style.animationName,
+          duration: style.animationDuration,
+          iterations: style.animationIterationCount,
+          opacity: style.opacity,
+        };
+      });
+    }, PARTS);
+
+  test("runs the prototype's loop on the route, the pin, its label and the photo", async ({
+    page,
+  }) => {
+    await page.goto("/?nocache=1");
+    await expect(page.getByTestId("setup-intro")).toBeVisible();
+    const parts = await partsOf(page);
+    parts.forEach((part, i) => {
+      expect(part, PARTS[i][0]).toEqual(
+        expect.objectContaining({
+          name: PARTS[i][1],
+          duration: "7s",
+          iterations: "infinite",
+        }),
+      );
+    });
+    // The route is dotted, as the prototype draws it.
+    expect(
+      await page
+        .locator(".setup-intro-art .h-dots")
+        .evaluate((el) => getComputedStyle(el).strokeDasharray),
+    ).toMatch(/^0\.1(px)?,? 7(px)?$/);
+  });
+
+  test("under reduced motion runs nothing and shows the whole picture", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/?nocache=1");
+    await expect(page.getByTestId("setup-intro")).toBeVisible();
+    const parts = await partsOf(page);
+    parts.forEach((part, i) => {
+      expect(part, PARTS[i][0]).not.toBeNull();
+      expect(part?.name, PARTS[i][0]).toBe("none");
+      if (PARTS[i][0] !== ".h-dots-mask") {
+        expect(part?.opacity, PARTS[i][0]).toBe("1");
+      }
+    });
+  });
+});
