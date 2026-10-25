@@ -36,6 +36,12 @@ export default defineConfig({
         // 2026-10-17-1816, W6, `legal.html.md`): one static page, two
         // sections.
         legal: fileURLToPath(new URL("legal.html", import.meta.url)),
+        // On-device check of what a phone's browser lets the editor do with a
+        // file it saves (`file-access-check.html.md`), linked from nothing:
+        // an entry so that it is built and reachable on a branch preview.
+        fileAccessCheck: fileURLToPath(
+          new URL("file-access-check.html", import.meta.url),
+        ),
       },
     },
   },
