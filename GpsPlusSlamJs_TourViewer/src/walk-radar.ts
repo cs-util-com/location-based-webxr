@@ -51,7 +51,7 @@ export const WALK_RADAR_HZ = 15;
 
 /** How long the range label and the chip show after a tap on the radar,
  *  ms: long enough to read "Range: 100 m" and the chip's few words. */
-export const WALK_RADAR_PEEK_MS = 2000;
+const WALK_RADAR_PEEK_MS = 2000;
 
 /** The burst ring at a station just found (the prototype: 1.6 s). */
 export const WALK_BURST_MS = 1600;

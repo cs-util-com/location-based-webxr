@@ -33,7 +33,7 @@ the ms each draw took.
   callback that pushes each tick's `dt` (seconds) as ms at `now()`; a dt
   that is no positive finite number (the first frame) is skipped; returns
   the unregister.
-- `WALK_RADAR_PEEK_MS = 2000` - how long the range label and the chip
+- `WALK_RADAR_PEEK_MS = 2000` (module-local, not exported) - how long the range label and the chip
   show after a tap.
 - `wireWalkRadar({ dom, now, setTimer, clearTimer,
 projection0, aspect, devicePixelRatio, reduceMotion, observeSize }) =>
