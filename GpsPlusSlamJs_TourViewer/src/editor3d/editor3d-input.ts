@@ -39,6 +39,7 @@ import {
   type KeyGesture,
 } from "./gesture.js";
 import { sceneKey, type GizmoHandle, type ScreenPoint } from "./gizmo-maths.js";
+import { createLongPress, LONG_PRESS } from "./long-press.js";
 import { twoFingerMode, type FingerPair } from "./two-finger.js";
 
 /** What the input reads of the scene and asks of it. */
@@ -159,6 +160,25 @@ export function createSceneInput(input: {
   } | null = null;
   let lastTap: { t: number; at: ScreenPoint } | null = null;
   let hovered: GizmoHandle | null = null;
+  /** A finger held still opens the ground menu: iOS sends no context
+   *  menu for a long press. Where the browser does send one too, the
+   *  first of the two opens it and marks the press moved, so the other
+   *  does nothing and the release selects nothing. */
+  const longPress = createLongPress({
+    ...LONG_PRESS,
+    schedule: (run, ms) => window.setTimeout(run, ms),
+    cancel: (id) => {
+      window.clearTimeout(id);
+    },
+    fire: (at) => {
+      const p = press;
+      if (p === null || !p.touch || p.moved || p.multi || drag !== null) {
+        return;
+      }
+      p.moved = true;
+      page.groundMenu(at, groundPlace(scene.world, at));
+    },
+  });
 
   const pointOf = (event: {
     clientX: number;
@@ -211,6 +231,7 @@ export function createSceneInput(input: {
     // A finger on a dock is not the scene's, unless one already is.
     if (touch && (event.target === surface || fingers.size > 0)) {
       fingers.set(event.pointerId, at);
+      longPress.down(event.pointerId, at);
       if (fingers.size > 1) {
         // Two fingers are the camera's: a drag under way is cancelled,
         // the document left as it was, and the camera stays locked until
@@ -258,6 +279,7 @@ export function createSceneInput(input: {
       return;
     }
     event.preventDefault();
+    longPress.cancel();
     drag = { gesture, selection, pointerId: event.pointerId };
     page.dispatch(editorViewActions.gestureStarted({ id: selection, handle }));
     setHover(handle);
@@ -268,6 +290,7 @@ export function createSceneInput(input: {
     const at = pointOf(event);
     if (event.pointerType === "touch" && fingers.has(event.pointerId)) {
       fingers.set(event.pointerId, at);
+      longPress.move(event.pointerId, at);
       const now = fingerPair();
       if (two !== null && now !== null) {
         two.mode ??= twoFingerMode(two.start, now);
@@ -310,6 +333,7 @@ export function createSceneInput(input: {
     const at = pointOf(event);
     if (event.pointerType === "touch") {
       fingers.delete(event.pointerId);
+      longPress.end(event.pointerId);
       if (fingers.size < 2) two = null;
       if (fingers.size === 0 && touchBlocked) {
         touchBlocked = false;
@@ -477,6 +501,7 @@ export function createSceneInput(input: {
     dispose() {
       endDrag(false);
       endHold(false);
+      longPress.cancel();
       element.removeEventListener("pointerdown", onDown, true);
       surface.removeEventListener("dblclick", onDoubleClick);
       surface.removeEventListener("contextmenu", onContextMenu);

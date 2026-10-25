@@ -213,6 +213,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     load: (path) => deps.loadPicture(path),
   });
   const viewBox = byId("view3d");
+  const said = byId("shell-said");
   const ground = createSceneMenu({
     box: viewBox,
     menu: byId("scene-menu"),
@@ -408,7 +409,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
 
   /** The selected station one place earlier or later in the tour (the
-   *  inspector's buttons), the focus kept on the buttons. */
+   *  inspector's buttons), the focus kept on the buttons and the new
+   *  place said (the inspector's line, "Station n of N"). */
   const moveSelected = (selected: string, way: "earlier" | "later") => {
     if (!selected.startsWith(STATION_PREFIX)) return;
     const ids = (manifest()?.stations ?? []).map((s) => s.id);
@@ -428,6 +430,40 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       ? same
       : again(way === "earlier" ? "later" : "earlier")
     )?.focus();
+    const place = inspector.body.querySelector(".sub")?.textContent ?? "";
+    said.textContent = place === "" ? "" : `Now ${place.trim()}`;
+  };
+
+  /** After the inspector's Delete the focus would fall to the page: it
+   *  goes to the tree card that took the deleted station's place (the one
+   *  before it at the end), for an item to its station's card, and to the
+   *  view when the tree is folded or empty. */
+  const deleteSelected = (selected: string) => {
+    const stations = manifest()?.stations ?? [];
+    const stationId = selected.startsWith(STATION_PREFIX)
+      ? selected.slice(STATION_PREFIX.length)
+      : (stations.find((s) => s.items.some((i) => i.id === selected))?.id ??
+        null);
+    const index = stations.findIndex((s) => s.id === stationId);
+    deps.stations.remove(selected);
+    const picks = [
+      ...tree.body.querySelectorAll<HTMLElement>(
+        ".card[data-station] > .hero > .pick",
+      ),
+    ];
+    const own = selected.startsWith(STATION_PREFIX)
+      ? undefined
+      : picks.find(
+          (pick) =>
+            pick.closest<HTMLElement>(".card")?.dataset["station"] ===
+            stationId,
+        );
+    const target = own ?? picks[Math.min(Math.max(index, 0), picks.length - 1)];
+    if (target !== undefined && target.getClientRects().length > 0) {
+      target.focus();
+    } else {
+      viewBox.focus();
+    }
   };
 
   /** The bar's action on the selection. */
@@ -611,7 +647,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const { selected } = state().editorView;
     if (selected === null) return;
     if (act === "earlier" || act === "later") moveSelected(selected, act);
-    if (act === "delete") deps.stations.remove(selected);
+    if (act === "delete") deleteSelected(selected);
     if (act === "split") deps.stations.split(selected);
     if (act === "fold") {
       const folded = !state().editorView.foldedDocks.inspector;
@@ -736,6 +772,14 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       window.removeEventListener("resize", onResize);
       showHelp(false);
       ground.close();
+      // Emptied before the pictures go: a later draw of the same selection
+      // would otherwise be skipped and keep a card picture let go here.
+      drawInspector(
+        inspector,
+        null,
+        { folded: false, positionOpen: false },
+        pictures,
+      );
       pictures.clear();
       drawn = null;
     },

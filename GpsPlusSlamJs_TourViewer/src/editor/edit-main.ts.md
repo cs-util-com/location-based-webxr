@@ -89,6 +89,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   is per open tour and never saved; the radius, the name, a delete and a
   copy stay open while locked. The map's Move moves pins and photos only,
   never a station.
+  A station made in this session - added by "+" or "New station here",
+  split off by "Move to a new station", or copied - starts UNLOCKED
+  (`unlockMade`): it was placed nowhere on site yet, so placing it is the
+  next thing its creator does. Undoing and redoing its add keeps it
+  unlocked; the lock is still view state only.
 - **In place (E2b-1).** "Choose…" and the drop box open the browser's
   file picker where it exists (else the file input), asking for write
   permission on that gesture. A granted file, held by this tab

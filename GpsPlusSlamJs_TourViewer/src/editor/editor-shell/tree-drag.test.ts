@@ -13,7 +13,40 @@ import { createTreeDrag } from "./tree-drag.js";
 
 const IDS = ["a", "b", "c"];
 
-function setUp() {
+/** The cards drawn again (a store change): new elements, same rects. */
+function redraw(body: HTMLElement, ids: readonly string[]): void {
+  const cards = body.querySelector(".cards") as HTMLElement;
+  cards.innerHTML = ids
+    .map(
+      (id) =>
+        `<div class="card" data-station="${id}"><span class="grip" data-drag="${id}"></span></div>`,
+    )
+    .join("");
+  rectsScrolled(body, () => 0);
+}
+
+/** Cards 40 px high from y = 100, moved up by the dock's scroll. */
+function rectsScrolled(body: HTMLElement, scroll: () => number): void {
+  for (const [index, card] of [
+    ...body.querySelectorAll<HTMLElement>(".card"),
+  ].entries()) {
+    vi.spyOn(card, "getBoundingClientRect").mockImplementation(
+      () =>
+        ({
+          top: 100 + index * 40 - scroll(),
+          bottom: 140 + index * 40 - scroll(),
+          height: 40,
+          left: 0,
+          right: 200,
+          width: 200,
+        }) as DOMRect,
+    );
+  }
+}
+
+function setUp(
+  options: { readonly frame?: (run: FrameRequestCallback) => number } = {},
+) {
   document.body.innerHTML = `<div id="tree-body"><div class="cards">${IDS.map(
     (id) =>
       `<div class="card" data-station="${id}"><span class="grip" data-drag="${id}"></span></div>`,
@@ -33,7 +66,13 @@ function setUp() {
     } as DOMRect);
   }
   const reorder = vi.fn();
-  const drag = createTreeDrag({ body, reorder });
+  const drag = createTreeDrag({
+    body,
+    reorder,
+    ...(options.frame === undefined
+      ? {}
+      : { frame: options.frame, cancelFrame: () => undefined }),
+  });
   const grip = (id: string) =>
     body.querySelector(`[data-drag="${id}"]`) as HTMLElement;
   const card = (id: string) =>
@@ -139,6 +178,88 @@ describe("createTreeDrag", () => {
     const down = pointer(grip("a"), "pointerdown", 120);
     expect(down.defaultPrevented).toBe(true);
     pointer(window, "pointerup", 120);
+  });
+
+  // Why: the tree is drawn again on any store change - an autosave's
+  // status lands mid-drag - and the cards the drag held were then
+  // detached: the marks vanished and the drop read stale places. The same
+  // stations drawn again carry on; changed stations end it, writing
+  // nothing.
+  it("carries on across a redraw of the same stations, and ends with nothing written when they changed", () => {
+    const { grip, reorder, body, card } = setUp();
+    pointer(grip("a"), "pointerdown", 120);
+    pointer(window, "pointermove", 175);
+    redraw(body, IDS);
+    pointer(window, "pointermove", 176);
+    expect(card("a").classList.contains("dragging")).toBe(true);
+    expect(card("c").classList.contains("drop-before")).toBe(true);
+    pointer(window, "pointerup", 176);
+    expect(reorder).toHaveBeenCalledWith(["b", "a", "c"]);
+
+    pointer(grip("a"), "pointerdown", 120);
+    pointer(window, "pointermove", 175);
+    redraw(body, ["a", "c"]);
+    pointer(window, "pointermove", 176);
+    pointer(window, "pointerup", 176);
+    expect(reorder).toHaveBeenCalledTimes(1);
+    expect(body.querySelector(".dragging, .drop-before, .drop-after")).toBe(
+      null,
+    );
+  });
+
+  // Why: a tour longer than the dock could only be reordered within what
+  // the dock showed. Held near the dock's edge, the drag scrolls it, and
+  // the slot follows the cards as they move under the still pointer.
+  it("scrolls the dock while the pointer is held near its edge, and lands by where the cards are now", () => {
+    const frames: FrameRequestCallback[] = [];
+    const { grip, reorder, body } = setUp({
+      frame: (run) => {
+        frames.push(run);
+        return frames.length;
+      },
+    });
+    // The dock shows y 100 to 180: a and b; c (middle 200) is below.
+    let scroll = 0;
+    Object.defineProperty(body, "scrollTop", {
+      configurable: true,
+      get: () => scroll,
+      set: (v: number) => {
+        scroll = Math.max(0, Math.min(40, v));
+      },
+    });
+    vi.spyOn(body, "getBoundingClientRect").mockReturnValue({
+      top: 100,
+      bottom: 180,
+      height: 80,
+    } as DOMRect);
+    rectsScrolled(body, () => scroll);
+    pointer(grip("a"), "pointerdown", 120);
+    // Held 4 px above the dock's bottom edge: below b's middle only.
+    pointer(window, "pointermove", 176);
+    for (let i = 0; i < 60 && frames.length > 0; i++) frames.shift()?.(i * 16);
+    expect(scroll).toBe(40);
+    pointer(window, "pointerup", 176);
+    // Scrolled by 40: c's middle is at 160, so the pointer is past it.
+    expect(reorder).toHaveBeenCalledWith(["b", "c", "a"]);
+  });
+
+  it("does not scroll the dock away from its edges", () => {
+    const frames: FrameRequestCallback[] = [];
+    const { grip, body } = setUp({
+      frame: (run) => {
+        frames.push(run);
+        return frames.length;
+      },
+    });
+    vi.spyOn(body, "getBoundingClientRect").mockReturnValue({
+      top: 100,
+      bottom: 300,
+      height: 200,
+    } as DOMRect);
+    pointer(grip("a"), "pointerdown", 120);
+    pointer(window, "pointermove", 200);
+    expect(frames).toHaveLength(0);
+    pointer(window, "pointerup", 200);
   });
 
   it("is gone after dispose", () => {

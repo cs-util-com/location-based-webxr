@@ -301,6 +301,67 @@ describe("drawInspector", () => {
     expect(acts()).toEqual([]);
   });
 
+  // Why: the inspector is drawn from the store, and the store changes for
+  // reasons that are not the inspector's - an autosave claims its save a
+  // few seconds after every edit. A keyboard user on Earlier lost the
+  // focus to the page at that moment, and the next Enter went nowhere.
+  it("keeps the focus on Earlier through a store change that is not the inspector's", () => {
+    const store = storeWith("station:steps");
+    const drawFrom = () => {
+      const s = store.getState();
+      const tour = manifestToWrite(s.tourDocument);
+      drawInspector(
+        dock,
+        buildInspector({
+          selected: s.editorView.selected,
+          stations: tour?.stations ?? [],
+          assets: [],
+          codes: [],
+        }),
+        { folded: false, positionOpen: false },
+        pictures,
+      );
+    };
+    drawFrom();
+    const earlier = () =>
+      dock.body.querySelector<HTMLButtonElement>('[data-act="earlier"]');
+    earlier()?.focus();
+    expect(document.activeElement).toBe(earlier());
+    // An autosave's claim of the save slot: the document changes, the
+    // inspector's model does not.
+    const doc = store.getState().tourDocument;
+    store.dispatch(tourDocumentActions.saveClaimed({ by: "auto" }));
+    expect(store.getState().tourDocument).not.toBe(doc);
+    drawFrom();
+    expect(document.activeElement).toBe(earlier());
+  });
+
+  // Why: a change that IS the inspector's (here the station's radius,
+  // edited elsewhere) draws it again; the control that had the focus must
+  // have it again, or every edit made beside it drops a keyboard user.
+  it("gives the focus back to the same control when the inspector is drawn again", () => {
+    draw("station:steps");
+    dock.body.querySelector<HTMLButtonElement>('[data-act="earlier"]')?.focus();
+    const model = buildInspector({
+      selected: "station:steps",
+      stations: STATIONS.map((s) =>
+        s.id === "steps" ? { ...s, foundRadiusM: 12 } : s,
+      ),
+      assets: [],
+      codes: CODES,
+    });
+    drawInspector(
+      dock,
+      model,
+      { folded: false, positionOpen: false },
+      pictures,
+    );
+    expect(fields()).toContainEqual(["Radius", "12.0 m"]);
+    const again = dock.body.querySelector('[data-act="earlier"]');
+    expect(again).not.toBeNull();
+    expect(document.activeElement).toBe(again);
+  });
+
   it("folds to its head", () => {
     const state = storeWith("station:steps");
     state.dispatch(

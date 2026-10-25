@@ -45,6 +45,13 @@ move the camera only, and a second finger during a drag cancels it.
   waits for the release and opens only if the press did not move; a
   finger's long press opens it at once, and its release then selects
   nothing. Nothing during a gizmo drag; a dock's press is the dock's.
+  iOS sends no `contextmenu` for a long press, so the page times one
+  itself (`long-press.ts`, `LONG_PRESS`: one finger held within 8 px for
+  500 ms): it opens the menu at the point the finger went down, unless the
+  press moved, became part of two fingers or started a gizmo drag.
+  Whichever of the two comes first (the page's timer or a browser's own
+  `contextmenu`) marks the press moved, so the menu opens once and the
+  release selects nothing.
 
 - **What it writes, and nothing else:** `gestureStarted` at a drag's press
   or a key hold's first press, `gestureEnded` when it ends, and the one
@@ -106,5 +113,11 @@ turns it red: a dispatch per move, a commit on the second finger, a commit
 per key press, no click threshold, a cancel or a pointercancel that
 commits, no right-button or key-hold guard, a blur or a selection change
 that discards a hold.
+
+`editor3d-input.test.ts` also covers a finger held still opening the
+ground menu with no `contextmenu` from the browser, once even when the
+browser sends one too, its release selecting nothing; and an orbit or a
+pinch opening nothing. `long-press.ts`'s own sweep is in
+`long-press.test.ts`.
 
 `editor3d-input.test.ts` also covers the keys on a locked station: nothing committed, said once a press, delete still works.

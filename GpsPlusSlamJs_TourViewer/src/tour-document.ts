@@ -265,6 +265,13 @@ export interface TourDocumentState {
    *  the frames (`withFrames`), though a bare one would. Kept until a
    *  write leaves them out. */
   readonly deletedStations: readonly string[];
+  /** The stations the creator added by hand since the open ("+" and "New
+   *  station here", `stationAdded`): each keeps itself as a title would
+   *  (`keptBare`, `withoutEmptied`), so an untitled one with nothing in it
+   *  is written and comes back from a draft. Only grows while the tour is
+   *  open (an id whose frame an undo took away keeps nothing); no step of
+   *  the history, gone with the tour. */
+  readonly handMade: readonly string[];
   readonly past: readonly TourHistoryStep[];
   readonly future: readonly TourHistoryStep[];
   /** Counts every edit, undo and redo. */
@@ -516,6 +523,7 @@ export const initialTourDocumentState: TourDocumentState = {
   stationsRecorded: false,
   framesRecorded: false,
   deletedStations: [],
+  handMade: [],
   past: [],
   future: [],
   revision: 0,
@@ -646,13 +654,14 @@ export function stationsGoneSinceOpen(state: TourDocumentState): string[] {
  * creator's own work (`keepsItself`: a station added or duplicated here),
  * or it is one of `keptBare` (`bareEmptyStations` of the tour as opened:
  * a station with nothing of its own and no items, whose delete a save
- * wrote, comes back with an undo of that delete). A written station no frame names follows unless a
+ * wrote, comes back with an undo of that delete; or one added by hand,
+ * `handMade`). A written station no frame names follows unless a
  * station's delete removed it (`deletedStations`): a bare one always (an
  * automatic one a save added after the step went back, or one its items
  * left: its items keep their home, and a write prunes it once they are
- * gone), one that keeps itself only while an object of the document
- * still stands in it - so one added, saved and undone is gone rather than
- * kept by its own title.
+ * gone), one that keeps itself (or was added by hand) only while an
+ * object of the document still stands in it - so one added, saved and
+ * undone is gone rather than kept by its own title.
  */
 function withFrames(
   written: TourManifest,
@@ -660,7 +669,7 @@ function withFrames(
   placed: readonly EditEntry[],
   deleted: readonly string[] = [],
   deletedStations: readonly string[] = [],
-  keptBare: ReadonlySet<string> = new Set(),
+  keptBare: KeptStations = NONE_KEPT,
 ): TourManifest {
   const byId = new Map(written.stations.map((s) => [s.id, s]));
   const named = new Set(placed.map((p) => p.object.station));
@@ -689,7 +698,8 @@ function withFrames(
           own === undefined &&
           !named.has(frame.id) &&
           !keepsItself(frame, imageAssets) &&
-          !keptBare.has(frame.id)
+          !keptBare.bare.has(frame.id) &&
+          !keptBare.handMade.has(frame.id)
         ) {
           return [];
         }
@@ -698,7 +708,9 @@ function withFrames(
       ...written.stations
         .filter(
           (s) =>
-            !listed.has(s.id) && (inUse(s) || !keepsItself(s, imageAssets)),
+            !listed.has(s.id) &&
+            (inUse(s) ||
+              !(keepsItself(s, imageAssets) || keptBare.handMade.has(s.id))),
         )
         .map((s) => ({ ...withoutRoutesTo(s, removed), items: s.items })),
     ],
@@ -715,6 +727,23 @@ function bareEmptyStations(manifest: TourManifest | null): Set<string> {
       .filter((s) => s.items.length === 0 && !keepsItself(s, imageAssets))
       .map((s) => s.id),
   );
+}
+
+/** The stations `withFrames` keeps though nothing names them: the bare
+ *  empty ones of the tour as opened (`bareEmptyStations`), and those added
+ *  by hand here (`handMade`), which keep themselves as a title would. */
+interface KeptStations {
+  readonly bare: ReadonlySet<string>;
+  readonly handMade: ReadonlySet<string>;
+}
+
+const NONE_KEPT: KeptStations = { bare: new Set(), handMade: new Set() };
+
+function keptStationsOf(state: TourDocumentState): KeptStations {
+  return {
+    bare: bareEmptyStations(state.opened),
+    handMade: new Set(state.handMade),
+  };
 }
 
 /** `manifest` with the "needs no GPS" flag set, or without the field:
@@ -737,7 +766,7 @@ function framed(state: TourDocumentState): TourManifest | null {
         state.placed,
         state.deleted,
         state.deletedStations,
-        bareEmptyStations(state.opened),
+        keptStationsOf(state),
       );
 }
 
@@ -957,7 +986,7 @@ export function unsavedEntries(state: TourDocumentState): EditEntry[] {
       state.placed,
       state.deleted,
       state.deletedStations,
-      bareEmptyStations(state.opened),
+      keptStationsOf(state),
     ),
   );
   return state.placed.filter((p) => !hosted.holds(p.object));
@@ -1008,6 +1037,10 @@ export function objectFits(
 interface Seating {
   readonly newStationId: string;
   readonly newStation?: boolean;
+  /** With `newStation`, on a move: the new station right after the one
+   *  the object leaves (in its place when that one goes), not at the
+   *  tour's end. */
+  readonly afterHome?: boolean;
 }
 
 /** `frames` with `back` (one frame) where it stood in `file`: before the
@@ -1084,9 +1117,9 @@ function seatByRule(
  * AUTOMATIC stations: no object of the document names them, and nothing
  * else keeps them - nothing of their own (a title, story steps, a
  * description, a card image naming an image asset: `keepsItself`), no
- * route from another station. Such a station existed only for its
- * elements; left behind, a visitor's guide would still lead to it.
- * The same array when nothing goes.
+ * route from another station, and not added by hand (`handMade`). Such a
+ * station existed only for its elements; left behind, a visitor's guide
+ * would still lead to it. The same array when nothing goes.
  */
 function withoutEmptied(
   state: TourDocumentState,
@@ -1097,11 +1130,13 @@ function withoutEmptied(
   const named = new Set(documentObjects(state).map((o) => o.object.station));
   const routed = new Set(state.stations.flatMap(routedTo));
   const imageAssets = imageAssetIds(state.written?.assets ?? []);
+  const handMade = new Set(state.handMade);
   const gone = (frame: StationFrame): boolean =>
     ids.has(frame.id) &&
     !named.has(frame.id) &&
     !keepsItself(frame, imageAssets) &&
-    !routed.has(frame.id);
+    !routed.has(frame.id) &&
+    !handMade.has(frame.id);
   return state.stations.some(gone)
     ? state.stations.filter((f) => !gone(f))
     : state.stations;
@@ -1259,7 +1294,7 @@ export function viewOf(state: TourDocumentState): TourDocumentView {
 function contentAt(
   written: TourManifest,
   view: TourDocumentView,
-  keptBare: ReadonlySet<string>,
+  keptBare: KeptStations,
 ): { placed: EditEntry[]; deleted: string[] } {
   const kept = new Set(view.objects.map((o) => o.id));
   const deleted = tourObjects(written)
@@ -1292,7 +1327,7 @@ export function picturesNeeded(
 ): string[] {
   if (state.written === null) return [];
   const hosted = hostedObjects(state.written);
-  return contentAt(state.written, view, bareEmptyStations(state.opened))
+  return contentAt(state.written, view, keptStationsOf(state))
     .placed.filter(
       (p) => p.object.kind === "photo" && hosted.key(p.object.id) === undefined,
     )
@@ -1404,7 +1439,7 @@ function goTo(
   const framesChanged = framesEdited(view.stations, state.stations);
   return {
     ...state,
-    ...contentAt(state.written, view, bareEmptyStations(state.opened)),
+    ...contentAt(state.written, view, keptStationsOf(state)),
     stations: view.stations,
     deletedStations: view.deletedStations ?? [],
     needsNoGps: view.needsNoGps,
@@ -1525,6 +1560,9 @@ interface TourRestore {
   /** Stations the draft deleted: each goes once the objects are back,
    *  unless an object still names it. */
   readonly deletedStations?: readonly string[];
+  /** Stations the draft's page added by hand (`handMade`): they keep
+   *  themselves here too, before the frames and objects come back. */
+  readonly handMadeStations?: readonly string[];
   /** The objects were made in ANOTHER document (work carried into a tour
    *  just opened): the station each named is not this tour's, so each is
    *  seated afresh by the station rule against the opened tour's
@@ -1625,6 +1663,7 @@ interface SeatingInput {
   readonly what: string;
   readonly newStationId?: string;
   readonly newStation?: boolean;
+  readonly afterHome?: boolean;
 }
 
 /** `input` with a station id minted for the rule when it carries none
@@ -1768,7 +1807,7 @@ function stationMove(
  *  seated anew (see `moved`), as one step; `before` for an unknown id. */
 function objectMove(
   before: TourDocumentState,
-  { object, what, newStationId, newStation }: PlacedPayload,
+  { object, what, newStationId, newStation, afterHome }: PlacedPayload,
 ): TourDocumentState {
   const home = homeOf(before, object.id);
   const frame = before.stations.find((s) => s.id === home);
@@ -1786,7 +1825,22 @@ function objectMove(
     ...(newStation === true ? { newStation } : {}),
   });
   if (seated === null) return before;
-  return putObject(before, seated.object, what, seated.stations, home);
+  if (newStation !== true || afterHome !== true) {
+    return putObject(before, seated.object, what, seated.stations, home);
+  }
+  // The rule appends the new frame; it moves to right after the home.
+  const made = seated.stations.filter((f) => !before.stations.includes(f));
+  const others = seated.stations.filter((f) => before.stations.includes(f));
+  const at = others.findIndex((f) => f.id === home) + 1;
+  const next = putObject(
+    before,
+    seated.object,
+    what,
+    [...others.slice(0, at), ...made, ...others.slice(at)],
+    home,
+  );
+  // An order a reload would not give by itself: the draft records it.
+  return next === before ? before : { ...next, framesRecorded: true };
 }
 
 // --- the stations as the creator edits them ---------------------------------
@@ -2059,7 +2113,8 @@ function stationEdit(
   );
 }
 
-/** A station added at `at` (`stationAdded`), as one step. */
+/** A station added at `at` (`stationAdded`), as one step: untitled (named
+ *  by its place in the tour) and made by hand (`handMade`). */
 function stationAdd(
   before: TourDocumentState,
   payload: { at: StationPoint; stationId: string; what: string },
@@ -2068,15 +2123,15 @@ function stationAdd(
   if (!isGlobePoint(payload.at) || !freeStationId(before, payload.stationId)) {
     return before;
   }
-  const count = manifestNow(before)?.stations.length ?? 0;
-  const frame: StationFrame = {
-    ...automaticStationFrame(payload.stationId, payload.at),
-    title: `Station ${String(count + 1)}`,
-  };
+  const frame: StationFrame = automaticStationFrame(
+    payload.stationId,
+    payload.at,
+  );
   return edited(
     before,
     {
       stations: [...before.stations, frame],
+      handMade: [...before.handMade, payload.stationId],
       touched: { ...before.touched, stations: true },
       framesRecorded: true,
     },
@@ -2444,7 +2499,10 @@ const tourDocumentSlice = createSlice({
      *  runs again (`seatByRule`): it joins the station holding its new
      *  spot, or starts one there under the payload's `newStationId`, and
      *  the station it left goes when that leaves it an empty automatic
-     *  one. An unknown id changes nothing. */
+     *  one. With `newStation` it starts its own station in any case, and
+     *  with `afterHome` too that station stands right after the one it
+     *  left (in its place when that one goes), its order recorded for the
+     *  draft. An unknown id changes nothing. */
     moved: {
       reducer(state, action: PayloadAction<PlacedPayload>) {
         return objectMove(plain(state), action.payload);
@@ -2500,10 +2558,10 @@ const tourDocumentSlice = createSlice({
     ) {
       return stationEdit(plain(state), action.payload);
     },
-    /** A station added at `at`, titled by its place ("Station 6"), with the
-     *  automatic radii and nothing in it: it keeps itself by its title. Its
-     *  id is minted outside the reducer; a taken id or a point off the
-     *  globe changes nothing. */
+    /** A station added at `at`, untitled (the tree names it by its
+     *  number), with the automatic radii and nothing in it: it keeps
+     *  itself as added by hand (`handMade`). Its id is minted outside the
+     *  reducer; a taken id or a point off the globe changes nothing. */
     stationAdded: {
       reducer(
         state,
@@ -2713,9 +2771,18 @@ const tourDocumentSlice = createSlice({
           known.add(frame.id);
           created.push(frame);
         }
+        // Stations the draft's page added by hand keep themselves here as
+        // there (before anything below asks whether one emptied).
+        const handMade = [
+          ...plainBefore.handMade,
+          ...(work.handMadeStations ?? []).filter(
+            (id) => known.has(id) && !plainBefore.handMade.includes(id),
+          ),
+        ];
         let next: TourDocumentState = {
           ...plainBefore,
           stations: [...posed, ...created],
+          handMade,
         };
         /** Stations an object or a delete may have left empty. */
         const left: (string | undefined)[] = created.map((f) => f.id);
@@ -2758,6 +2825,7 @@ const tourDocumentSlice = createSlice({
             deleted: next.deleted,
             deletedStations: next.deletedStations,
             stations: withoutEmptied(next, left),
+            handMade,
             ...(work.stations === undefined ? {} : { stationsRecorded: true }),
             ...(recordsStations(work) ? { framesRecorded: true } : {}),
             ...(work.needsNoGps === undefined
@@ -2825,7 +2893,7 @@ const tourDocumentSlice = createSlice({
               before.placed,
               [],
               before.deletedStations,
-              bareEmptyStations(before.opened),
+              keptStationsOf(before),
             ),
         appliedDeletions,
       );

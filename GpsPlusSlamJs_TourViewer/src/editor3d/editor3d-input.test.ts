@@ -23,6 +23,7 @@ import {
 } from "./editor3d-input.js";
 import type { GestureEdit, GestureTarget, GestureWorld } from "./gesture.js";
 import type { GizmoHandle, ScreenPoint } from "./gizmo-maths.js";
+import { LONG_PRESS } from "./long-press.js";
 import { liftedGeo, nudgedGeo, turnedGeo } from "./pose-edits.js";
 
 // The geodesy is licence-gated; the store activates it (as the page does).
@@ -749,6 +750,69 @@ describe("the ground menu", () => {
     );
     expect(t.page.select).not.toHaveBeenCalled();
     t.input.dispose();
+  });
+
+  // Why: iOS sends no contextmenu for a long press, so on an iPhone or
+  // an iPad the ground menu had no way to open. The page times the press
+  // itself; a browser that also sends its contextmenu must not open the
+  // menu twice, and an orbit or a pinch must never open it.
+  it("a finger held still opens it with no contextmenu from the browser, once, and its release selects nothing", () => {
+    vi.useFakeTimers();
+    try {
+      const t = setup({ selected: null, pick: "pin" });
+      t.element.dispatchEvent(
+        pointer("pointerdown", { x: 10, y: 10 }, { touch: true }),
+      );
+      window.dispatchEvent(
+        pointer("pointermove", { x: 13, y: 12 }, { touch: true }),
+      );
+      vi.advanceTimersByTime(LONG_PRESS.holdMs - 1);
+      expect(t.page.groundMenu).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(t.page.groundMenu).toHaveBeenCalledTimes(1);
+      expect(t.page.groundMenu).toHaveBeenCalledWith(
+        { x: 10, y: 10 },
+        expect.objectContaining({ alt: 518.5 }),
+      );
+      // A browser that sends its own contextmenu as well: still once.
+      context(t.element, { x: 10, y: 10 });
+      expect(t.page.groundMenu).toHaveBeenCalledTimes(1);
+      window.dispatchEvent(
+        pointer("pointerup", { x: 10, y: 10 }, { touch: true }),
+      );
+      expect(t.page.select).not.toHaveBeenCalled();
+      t.input.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a finger that moves (the camera's orbit) or a second finger (a pinch) opens nothing", () => {
+    vi.useFakeTimers();
+    try {
+      const t = setup({ selected: null });
+      t.element.dispatchEvent(
+        pointer("pointerdown", { x: 10, y: 10 }, { touch: true, id: 1 }),
+      );
+      window.dispatchEvent(
+        pointer("pointermove", { x: 40, y: 10 }, { touch: true, id: 1 }),
+      );
+      vi.advanceTimersByTime(LONG_PRESS.holdMs * 2);
+      window.dispatchEvent(
+        pointer("pointerup", { x: 40, y: 10 }, { touch: true, id: 1 }),
+      );
+      t.element.dispatchEvent(
+        pointer("pointerdown", { x: 10, y: 10 }, { touch: true, id: 2 }),
+      );
+      t.element.dispatchEvent(
+        pointer("pointerdown", { x: 90, y: 10 }, { touch: true, id: 3 }),
+      );
+      vi.advanceTimersByTime(LONG_PRESS.holdMs * 2);
+      expect(t.page.groundMenu).not.toHaveBeenCalled();
+      t.input.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("is not the docks': a right click on a dock opens nothing", () => {

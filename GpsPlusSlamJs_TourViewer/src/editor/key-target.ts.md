@@ -17,17 +17,21 @@ a menu answers itself, and leave those alone.
   when the target is inside an element with `role="menu"`; when it is
   inside (or is) an element with `aria-haspopup="menu"` (a menu button;
   `menu-button.ts` marks both), only the pattern's keys
-  (`MENU_BUTTON_KEYS`: ArrowDown, ArrowUp, Home, End, Enter, Space,
-  Escape).
+  (`MENU_BUTTON_KEYS`: ArrowDown, ArrowUp, Enter, Space, Escape). Home
+  and End on a closed menu's button are the page's.
 - Both take any `EventTarget | null` and answer false for anything that
   is not an element (the window, the document, null).
 
 ## Invariants & assumptions
 
-- A menu's keys are the menu button pattern's: the arrows, Home and End
-  move in it, Escape closes it (`menu-button.ts`). On a menu's button,
-  ArrowDown and ArrowUp open it. Inside an open menu the page's keys stand
-  back from every key; on the button only from the pattern's keys. A
+- A menu's keys are the menu button pattern's: inside an open menu the
+  arrows, Home and End move between its items and Escape closes it
+  (`menu-button.ts`); on its button ArrowDown and ArrowUp open it, Enter
+  and Space open it as a click does, and Escape closes it when open.
+  Inside an open menu the page's keys stand back from every key; on the
+  button only from those five. Home and End do nothing on the button
+  itself, so they stay the page's there: the shell's Home frames the
+  whole tour whether or not View's button has the focus. A
   letter on the button is the page's: a click on View's Top view puts the
   focus back on View's button, and T must still toggle the top view there
   (typeahead was decided against, so no letter is a menu's).
@@ -41,7 +45,7 @@ a menu answers itself, and leave those alone.
 
 ```ts
 window.addEventListener("keydown", (event) => {
-  if (inField(event.target) || inMenu(event.target)) return;
+  if (inField(event.target) || inMenu(event.target, event.key)) return;
   if (event.code === "KeyT") toggleTop();
 });
 ```
@@ -54,8 +58,9 @@ window.addEventListener("keydown", (event) => {
   button and the body are not a menu's.
 - End to end: `playwright-tests/editor3d-edit.spec.js` ("keys pressed in
   a menu stay in the menu"): with a pin selected in 3D, View opened by
-  ArrowDown, then ArrowDown, ArrowDown, End, Home, T and Escape, and Home
-  on the closed menu's button, change nothing, move neither the pin nor
-  the camera and leave the top view off; with the help open, Escape in a
+  ArrowDown, then ArrowDown, ArrowDown, End, Home, T and Escape change
+  nothing, move neither the pin nor the camera and leave the top view
+  off; Home on the closed menu's button then frames the whole tour (the
+  page's key); with the help open, Escape in a
   menu closes the menu. `editor3d-shell.spec.js`: T on View's button,
   after Top view from the menu, toggles the top view off.

@@ -176,7 +176,8 @@ imperative resources only - that handle and the pictures' side table
       height, turn): beyond its station's radius the rule seats it anew;
       `newStation` ("Move to a new station") starts one where it stands.
     - `moveToNewStation(id)` - "Move to a new station" where the item
-      stands, turned as it is: one step, `{ kind: "moved", stationId }`
+      stands, turned as it is, the new station right after the one it
+      left (`afterHome`): one step, `{ kind: "moved", stationId }`
       naming the station it made; refused for an id the tour lacks.
   - `undo()` / `redo()` (W2 of the tour editor plan 2026-10-17-1816) - one
     step of the edit stack: `{ kind: "undone" | "redone", what }` (`what`
@@ -207,7 +208,8 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     written before far moves re-ran the station rule) is seated by the
     rule, never skipped; the stations the draft's objects were seated in
     that the tour lacks come back whole first (the record's
-    `createdStations`);
+    `createdStations`, with `handMadeStations` naming those added by
+    hand);
     the settings are applied unless the setting was
     changed here since the open (counted among `changed`), and the
     record's details likewise unless they were (each changed field counted;

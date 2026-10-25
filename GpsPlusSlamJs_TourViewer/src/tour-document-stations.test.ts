@@ -399,7 +399,11 @@ describe("the effective card image: a picture that is gone is not written", () =
 });
 
 describe("stationAdded", () => {
-  it("adds a station at a point with the next number as its title, kept and written though it holds nothing", () => {
+  // Why untitled: a station titled "Station 6" when it was added kept
+  // that name after a reorder or a delete moved it, so two stations
+  // showed "Station 4". An untitled station is named by its place, as
+  // every other untitled one, and is kept by having been made by hand.
+  it("adds an untitled station at a point, kept and written though it holds nothing", () => {
     const before = open();
     const after = reduce(
       before,
@@ -407,15 +411,36 @@ describe("stationAdded", () => {
     );
     const frame = frameOf(after, "new1");
     expect(frame).toMatchObject({
-      title: "Station 6",
       foundRadiusM: 25,
       activateRadiusM: 50,
       geo: { lat: AT.lat, lon: AT.lon, alt: AT.alt },
     });
+    expect(frame.title).toBeUndefined();
     expect(after.stations.at(-1)?.id).toBe("new1");
     expect(changeCount(after)).toBe(1);
+    expect(manifestToWrite(after)?.stations.at(-1)?.id).toBe("new1");
     expect(readBack(after).stations.some((s) => s.id === "new1")).toBe(true);
     expectOneStep(before, after);
+  });
+
+  // Why: an added station has nothing of its own, so the rule that drops
+  // an emptied automatic station (one a placement started) would drop it
+  // the moment the one item placed in it was deleted.
+  it("keeps an added station when the item placed in it is deleted, through a save", () => {
+    let state = reduce(
+      open(),
+      act.stationAdded({ at: AT, stationId: "new1", what: "add" }),
+    );
+    state = reduce(
+      state,
+      act.placed({ object: { ...pin("p"), station: "new1" }, what: "place" }),
+    );
+    expect(objectOf(state, "p").station).toBe("new1");
+    state = reduce(state, act.deleted({ id: "p", what: "delete" }));
+    const carried = (s: TourDocumentState) =>
+      manifestToWrite(s)?.stations.some((f) => f.id === "new1");
+    expect(carried(state)).toBe(true);
+    expect(carried(save(state))).toBe(true);
   });
 
   it("refuses an id the tour carries and a point nobody can draw", () => {
@@ -843,6 +868,43 @@ describe("moved, into a station of its own", () => {
     expect(after.stations.some((s) => s.id === stationIdOf("f"))).toBe(false);
     readBack(after);
     expectOneStep(before, after);
+  });
+
+  // Why: the tree's "Move to a new station" put the new station at the
+  // tour's end, so splitting an item off the first station sent the
+  // visitor across the whole tour and back. After its home is where the
+  // creator expects it, and it is still one step.
+  it("seats the new station right after the item's station when asked, as one step", () => {
+    const before = open();
+    const after = reduce(
+      before,
+      act.moved({
+        object: objectOf(before, "b"),
+        newStation: true,
+        afterHome: true,
+        newStationId: "own1",
+        what: "own station",
+      }),
+    );
+    const ids = (manifestNow(after)?.stations ?? []).map((s) => s.id);
+    expect(ids.indexOf("own1")).toBe(ids.indexOf(stationIdOf("b")) + 1);
+    expectOneStep(before, after);
+    // Its home emptied: the write leaves it out, and the new station
+    // stands in its place.
+    const f = reduce(
+      before,
+      act.moved({
+        object: objectOf(before, "f"),
+        newStation: true,
+        afterHome: true,
+        newStationId: "own2",
+        what: "own station",
+      }),
+    );
+    const was = (manifestNow(before)?.stations ?? []).map((s) => s.id);
+    expect(readBack(f).stations.map((s) => s.id)).toEqual(
+      was.map((id) => (id === stationIdOf("f") ? "own2" : id)),
+    );
   });
 });
 

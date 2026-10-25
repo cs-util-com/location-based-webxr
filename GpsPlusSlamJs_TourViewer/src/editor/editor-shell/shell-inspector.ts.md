@@ -11,6 +11,13 @@ exact position folded away under a disclosure.
 - `drawInspector(dock, model, { folded, positionOpen }, pictures)` -
   `dock` is `{ root, head, body }` (`#shell-inspector`,
   `#inspector-head`, `#inspector-body`); a null model hides the dock.
+  Drawn again only when the model or the state changed (the last draw's
+  inputs are remembered per dock), so a store change that is not the
+  inspector's - an autosave's status - leaves its controls alone. When it
+  is drawn again, the control that had the focus (by its `data-act` or
+  `data-field`) has it again, with any text typed and not yet committed;
+  a control drawn disabled leaves the focus where it fell. The shell
+  draws a null model when it is hidden, before it lets the pictures go.
   - A station: "Station n of N", its description, its card picture, its
     radius with what it does (and how far out it starts loading), and
     under "Position" its metres east and north of the tour's centre
@@ -65,3 +72,5 @@ frame, a code without a position, and the folded head. The page by
 `playwright-tests/editor3d-shell.spec.js`.
 
 `shell-inspector.test.ts` also covers the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
+
+It also keeps the focus on Earlier through an autosave's status change, and gives the focus back to the control that had it when the inspector is drawn again.

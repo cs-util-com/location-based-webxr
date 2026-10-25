@@ -225,11 +225,95 @@ const KIND_ICON: Readonly<Record<string, ShellIcon>> = {
   model: "model",
 };
 
+/** What each dock was last drawn from: a draw from the same model and
+ *  state changes nothing, so a store change that is not the inspector's
+ *  (an autosave's status) leaves its controls, their focus and a field
+ *  being typed in alone. */
+const lastDrawn = new WeakMap<HTMLElement, string>();
+
+/** The control that has the focus in `root`, by the name it is drawn
+ *  under again (`data-act` or `data-field`), with a field's text. */
+interface FocusKept {
+  readonly selector: string;
+  readonly typed: {
+    readonly value: string;
+    readonly start: number | null;
+    readonly end: number | null;
+  } | null;
+}
+
+function focusIn(root: HTMLElement): FocusKept | null {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || !root.contains(active)) return null;
+  const act = active.dataset["act"];
+  const name = active.dataset["field"];
+  const selector =
+    act !== undefined
+      ? `[data-act="${act}"]`
+      : name !== undefined
+        ? `[data-field="${name}"]`
+        : null;
+  if (selector === null) return null;
+  const typedIn =
+    active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
+      ? active
+      : null;
+  return {
+    selector,
+    // Only text typed and not yet committed is carried over.
+    typed:
+      typedIn !== null && typedIn.value !== typedIn.defaultValue
+        ? {
+            value: typedIn.value,
+            start: typedIn.selectionStart,
+            end: typedIn.selectionEnd,
+          }
+        : null,
+  };
+}
+
+/** The focus put back on the control drawn again under the same name; a
+ *  disabled one (Earlier at the first place) leaves it where it fell. */
+function focusAgain(root: HTMLElement, kept: FocusKept | null): void {
+  if (kept === null) return;
+  const again = root.querySelector<HTMLElement>(kept.selector);
+  if (again === null || (again as HTMLButtonElement).disabled === true) return;
+  if (
+    kept.typed !== null &&
+    (again instanceof HTMLInputElement || again instanceof HTMLTextAreaElement)
+  ) {
+    again.value = kept.typed.value;
+    again.focus();
+    again.setSelectionRange(kept.typed.start, kept.typed.end);
+    return;
+  }
+  again.focus();
+}
+
 /**
  * The dock drawn from `model` (null: hidden), folded to its head or not,
- * its position disclosure open or not.
+ * its position disclosure open or not. Drawn again only when one of them
+ * changed; the control that had the focus has it again after a draw.
  */
 export function drawInspector(
+  dock: {
+    readonly root: HTMLElement;
+    readonly head: HTMLElement;
+    readonly body: HTMLElement;
+  },
+  model: InspectorModel | null,
+  state: { readonly folded: boolean; readonly positionOpen: boolean },
+  pictures: ShellPictures,
+): void {
+  const key = JSON.stringify([model, state]);
+  if (lastDrawn.get(dock.root) === key) return;
+  lastDrawn.set(dock.root, key);
+  const kept = focusIn(dock.root);
+  drawDock(dock, model, state, pictures);
+  focusAgain(dock.root, kept);
+}
+
+function drawDock(
   dock: {
     readonly root: HTMLElement;
     readonly head: HTMLElement;

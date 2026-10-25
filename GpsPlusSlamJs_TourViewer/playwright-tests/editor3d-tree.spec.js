@@ -128,6 +128,10 @@ test("the tree adds, reorders and deletes stations, each one step to undo", asyn
   ).toBeVisible();
   await expect(card(page, added)).toBeVisible();
   expect(await revision(page)).toBe(start + 1);
+  // Made here, so it starts unlocked: placing it is what comes next.
+  await expect(
+    page.locator("#shell-inspector [data-act='lock']"),
+  ).toHaveAttribute("aria-pressed", "false");
   // Where the camera looks: under the orbit's centre.
   const stats = await view3d(page);
   const point = await page.evaluate(
@@ -183,6 +187,8 @@ test("the tree adds, reorders and deletes stations, each one step to undo", asyn
   await expect(page.locator("#inspector-body .sub")).toHaveText(
     "Station 3 of 4",
   );
+  // Said to a screen reader, which hears no move otherwise.
+  await expect(page.locator("#shell-said")).toHaveText("Now Station 3 of 4");
   await expect(later).toBeEnabled();
   await page.keyboard.press("Control+z");
   await expect
@@ -193,6 +199,9 @@ test("the tree adds, reorders and deletes stations, each one step to undo", asyn
   await page.locator('#inspector-body [data-act="delete"]').click();
   await expect.poll(() => order(page)).toEqual(["column", "gate", "steps"]);
   expect(await selected(page)).toBeNull();
+  // The focus does not fall to the page: it goes to the card now in the
+  // deleted station's place (at the end, the one before it).
+  await expect(card(page, "steps").locator(".pick")).toBeFocused();
   await page
     .locator(".toast", { hasText: "Deleted" })
     .getByRole("button", { name: "Undo" })
@@ -375,6 +384,9 @@ test("a station copied with its photo is saved with a picture of its own, and op
   await expect(
     page.locator(".toast", { hasText: "Duplicated The fountain" }),
   ).toBeVisible();
+  await expect(
+    page.locator("#shell-inspector [data-act='lock']"),
+  ).toHaveAttribute("aria-pressed", "false");
 
   const download = page.waitForEvent("download");
   await save(page);
@@ -454,6 +466,116 @@ async function expectTreeControls(page, size) {
   expect(grip.y + grip.height, at).toBeLessThanOrEqual(hero.y + hero.height);
 }
 
+/**
+ * A tour of three stations a, b and c along the square, each with a pin
+ * (pa, pb, pc), as a zip.
+ */
+async function threePinTour() {
+  const station = (/** @type {string} */ id, /** @type {number} */ dLat) => ({
+    id,
+    title: `Station ${id.toUpperCase()}`,
+    geo: {
+      lat: 48.13725 + dLat,
+      lon: 11.57549,
+      alt: SQUARE_GROUND_M + N_M,
+      headingDeg: 0,
+    },
+    activateRadiusM: 50,
+    foundRadiusM: 25,
+    hint: "arrow",
+    steps: [],
+    items: [
+      {
+        id: `p${id}`,
+        kind: "pin",
+        label: `Pin ${id}`,
+        createdAtIso: "2026-10-25T09:00:00.000Z",
+        pose: { position: [2, 1.5, 0], rotation: [0, 0, 0, 1] },
+      },
+    ],
+  });
+  const manifest = {
+    ...createEmptyTourManifest(),
+    title: "Three pins",
+    // Its own id: a file without one is given a new id at every open.
+    tourId: "0123456789abcdef0123456789abcdef",
+    stations: [station("a", 0), station("b", 0.0002), station("c", 0.0004)],
+  };
+  const writer = new ZipWriter(new Uint8ArrayWriter());
+  await writer.add(
+    "tour.json",
+    new TextReader(serializeTourManifest(/** @type {any} */ (manifest))),
+  );
+  return Buffer.from(await writer.close());
+}
+
+// Why: the tree's commands each write the draft, and a reload must give
+// the same tour back - a station added here (untitled, holding nothing),
+// the order changed, an item split off into a station right after its
+// own, a station deleted with its route. Each piece has unit tests
+// against the reducer; only the page shows the session, the autosave and
+// the restore agreeing on all of them at once.
+test("add, reorder, split and delete come back whole from the draft after a reload", async ({
+  page,
+  context,
+}) => {
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await context.addInitScript(() => {
+    // @ts-expect-error - absent in this browser for the test.
+    delete window.showOpenFilePicker;
+    // @ts-expect-error - absent in this browser for the test.
+    delete window.showSaveFilePicker;
+  });
+  await answerHosts(page);
+  await page.goto("/edit.html");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  const zip = await threePinTour();
+  await openZip(page, zip, "three-pins.zip");
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 60_000,
+  });
+  await expect.poll(() => order(page)).toEqual(["a", "b", "c"]);
+
+  // Add: a station at the view's centre, selected; then one place earlier.
+  await page.locator("#tree-add").click();
+  await expect.poll(async () => (await order(page)).length).toBe(4);
+  const added = (await order(page))[3] ?? "";
+  await page.locator('#inspector-body [data-act="earlier"]').click();
+  await expect.poll(() => order(page)).toEqual(["a", "b", added, "c"]);
+
+  // Split: b's pin into a station of its own, right after b.
+  await card(page, "b").locator(".tw").click();
+  await card(page, "b").locator('[data-select="pb"]').click();
+  await page.locator('#inspector-body [data-act="split"]').click();
+  await expect.poll(async () => (await order(page)).length).toBe(5);
+  const split = (await order(page))[2] ?? "";
+  expect(["a", "b", added, "c"]).not.toContain(split);
+  expect(await order(page)).toEqual(["a", "b", split, added, "c"]);
+
+  // Delete: station a with its pin.
+  await card(page, "a").locator(".pick").click();
+  await page.locator('#inspector-body [data-act="delete"]').click();
+  await expect.poll(() => order(page)).toEqual(["b", split, added, "c"]);
+
+  await expect(page.locator("body")).toHaveAttribute("data-draft", "saved");
+  const before = await tourNow(page);
+  await page.close();
+
+  const next = await context.newPage();
+  await next.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(next);
+  await next.goto("/edit.html");
+  await expect(next.locator("body")).toHaveAttribute("data-editor", "ready");
+  await openZip(next, zip, "three-pins.zip");
+  const offer = next.locator(".toast.draft-offer");
+  await expect(offer).toBeVisible({ timeout: 30_000 });
+  await offer.locator("button", { hasText: "Restore" }).click();
+  await expect(offer).toHaveCount(0);
+  await expect.poll(() => order(next)).toEqual(["b", split, added, "c"]);
+  expect(await tourNow(next)).toEqual(before);
+});
+
 test("the tree's add, its grips and the bar's actions sit in place at a phone, a phone in landscape, a tablet and a desktop", async ({
   page,
 }) => {
@@ -514,4 +636,50 @@ test("the tree's add, its grips and the bar's actions sit in place at a phone, a
     await page.keyboard.press("Escape");
     await expect(acts).toHaveCount(0);
   }
+});
+
+test.describe("on a touch screen", () => {
+  test.use({ hasTouch: true });
+
+  // Why: the grip is drawn 16 x 20 px, too small for a finger; on a touch
+  // screen its hit area grows to 24 x 24 (WCAG's least target size) while
+  // the drawn grip, and the layout pinned above, stay as they are.
+  test("a card's grip takes a press anywhere in 24 x 24 px around it", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await answerHosts(page);
+    await openSampleIn3d(page);
+    expect(
+      await page.evaluate(() => matchMedia("(pointer: coarse)").matches),
+    ).toBe(true);
+    if (
+      await page
+        .locator("#shell-tree")
+        .evaluate((t) => t.classList.contains("collapsed"))
+    ) {
+      await page.locator("#tree-fold").click();
+    }
+    const grip = page.locator('#tree-body [data-drag="gate"]');
+    const b = await box(grip);
+    expect([b.width, b.height]).toEqual([16, 20]);
+    const cx = b.x + b.width / 2;
+    const cy = b.y + b.height / 2;
+    for (const [dx, dy] of [
+      [-11.5, -11.5],
+      [11.5, -11.5],
+      [-11.5, 11.5],
+      [11.5, 11.5],
+    ]) {
+      const hit = await page.evaluate(
+        ([x, y]) =>
+          document
+            .elementFromPoint(x ?? 0, y ?? 0)
+            ?.closest("[data-drag]")
+            ?.getAttribute("data-drag") ?? null,
+        [cx + (dx ?? 0), cy + (dy ?? 0)],
+      );
+      expect(hit, `${String(dx)}, ${String(dy)}`).toBe("gate");
+    }
+  });
 });

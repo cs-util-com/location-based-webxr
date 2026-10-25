@@ -1054,6 +1054,8 @@ export function createEditorSession(input: {
         tourDocumentActions.moved({
           object: found.object,
           newStation: true,
+          // Right after the station it leaves, not at the tour's end.
+          afterHome: true,
           what: `the move of ${objectName(found.object)} to a new station`,
         }),
       );
@@ -1155,8 +1157,13 @@ export function createEditorSession(input: {
       // The stations the draft's objects were seated in that the tour
       // lacks (a far move started one), whole: back before the objects.
       const created = settings?.createdStations ?? [];
-      const createdStations =
-        created.length === 0 ? {} : { createdStations: created };
+      // With the stations added by hand there: untitled and empty, each
+      // keeps itself here as it did there.
+      const handMade = settings?.handMadeStations ?? [];
+      const createdStations = {
+        ...(created.length === 0 ? {} : { createdStations: created }),
+        ...(handMade.length === 0 ? {} : { handMadeStations: handMade }),
+      };
       const needsNoGps =
         settings !== undefined &&
         !state.touched.needsNoGps &&

@@ -390,8 +390,6 @@ test("keys pressed in a menu stay in the menu: no nudge, no camera move, no top 
   await page.keyboard.press("Escape");
   await expect(viewMenu).toBeHidden();
   await expect(viewButton).toBeFocused();
-  // On the closed menu's button the same keys are the button's too.
-  await page.keyboard.press("Home");
   await afterFrames(page, 10);
   expect(await changes(page)).toBe(steps);
   expect(pinOf(await manifest(page))?.item.pose).toEqual(pose);
@@ -399,6 +397,38 @@ test("keys pressed in a menu stay in the menu: no nudge, no camera move, no top 
   expect((await view3d(page))?.top).toBe(false);
   // Escape closed the menu only: the pin is still selected.
   expect(await selected(page)).toBe(PIN);
+  // On the closed menu's button Home is the page's again: it frames the
+  // whole tour. The camera is panned away first so the framing shows.
+  const canvas = await page.locator("#view3d canvas").boundingBox();
+  if (canvas === null) throw new Error("no canvas");
+  const mid = {
+    x: canvas.x + canvas.width / 2,
+    y: canvas.y + canvas.height / 2,
+  };
+  /** The orbit's centre (m in the view's frame). */
+  const target = async () =>
+    /** @type {number[]} */ ((await view3d(page))?.target ?? []);
+  /** @param {number[]} a @param {number[]} b */
+  const apart = (a, b) =>
+    Math.hypot((a[0] ?? 0) - (b[0] ?? 0), (a[2] ?? 0) - (b[2] ?? 0));
+  const framed = await target();
+  await page.mouse.move(mid.x, mid.y);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(mid.x + 160, mid.y + 40, { steps: 8 });
+  await page.mouse.up({ button: "right" });
+  await afterFrames(page, 20);
+  const panned = await target();
+  // The pan still coasts a little (the orbit's damping): Home must take
+  // the centre back much farther than that, half the pan at least.
+  const pan = apart(panned, framed);
+  expect(pan).toBeGreaterThan(1);
+  await viewButton.focus();
+  await page.keyboard.press("Home");
+  await expect
+    .poll(async () => apart(await target(), panned))
+    .toBeGreaterThan(pan / 2);
+  await expect(viewMenu).toBeHidden();
+  expect(await changes(page)).toBe(steps);
   // With the help open, Escape in a menu still closes the menu.
   await page.locator("#studio-help").click();
   await expect(page.locator("#shell-help")).toBeVisible();
@@ -485,6 +515,9 @@ test("an item's actions: turned to its station's way, its position copied, moved
   const own = pinOf(await manifest(page))?.station.id;
   expect(await selected(page)).toBe(`station:${own}`);
   expect(await changes(page)).toBe(before + 1);
+  await expect(
+    page.locator("#shell-inspector [data-act='lock']"),
+  ).toHaveAttribute("aria-pressed", "false");
   const now = await page.evaluate(
     (id) => /** @type {any} */ (window).__tourEditor.view3dPointOf(id),
     PIN,

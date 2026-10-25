@@ -38,7 +38,7 @@ describe("key targets", () => {
     expect(inField(window)).toBe(false);
   });
 
-  it("every key inside a menu is the menu's; on its button, only the keys that open or move in it", () => {
+  it("every key inside a menu is the menu's; on its button, only the keys that open or close it", () => {
     document.body.innerHTML = `
       <button id="btn" aria-haspopup="menu"><span id="lbl">View</span></button>
       <div id="menu" role="menu">
@@ -60,12 +60,16 @@ describe("key targets", () => {
         expect(inMenu(at(id), key), `${id} ${key}`).toBe(true);
       }
     }
+    // On the button only the keys that open or close its menu: Home and
+    // End move only inside an open menu, so on the button they stay the
+    // page's (Home frames the whole tour).
+    const buttonKeys = ["ArrowDown", "ArrowUp", "Enter", " ", "Escape"];
     for (const id of ["#btn", "#lbl"]) {
-      for (const key of patternKeys) {
+      for (const key of buttonKeys) {
         expect(inMenu(at(id), key), `${id} ${key}`).toBe(true);
       }
-      // The page's keys on a closed menu's button: T, F, Delete.
-      for (const key of ["t", "T", "f", "Delete", "ArrowLeft"]) {
+      // The page's keys on a closed menu's button.
+      for (const key of ["t", "T", "f", "Home", "End", "Delete", "ArrowLeft"]) {
         expect(inMenu(at(id), key), `${id} ${key}`).toBe(false);
       }
     }

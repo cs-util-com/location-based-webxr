@@ -112,13 +112,34 @@ describe("createSceneMenu", () => {
     const { scene, item, started } = setUp();
     scene.openAt({ x: 50, y: 60 }, null);
     expect(item.getAttribute("aria-disabled")).toBe("true");
-    expect(item.title).toMatch(/no ground/i);
+    // Said in visible text, part of the item's name: a tooltip never
+    // shows on a touch screen, and a disabled item that does not say why
+    // looks broken.
+    const why = item.querySelector(".why");
+    expect(why?.textContent).toMatch(/no ground/i);
+    expect((why as HTMLElement | null)?.hidden).toBe(false);
+    expect(item.textContent).toMatch(/New station here.*no ground/is);
     item.click();
     expect(started).not.toHaveBeenCalled();
     expect(scene.isOpen()).toBe(true);
     scene.openAt({ x: 50, y: 60 }, PLACE);
     expect(item.hasAttribute("aria-disabled")).toBe(false);
-    expect(item.title).toBe("");
+    expect(item.querySelector<HTMLElement>(".why")?.hidden).toBe(true);
+  });
+
+  // Why: the menu offers the ground under the spot it was opened at; a
+  // zoom moves that ground away from under it, so the offer would start
+  // a station somewhere the creator no longer sees.
+  it("a wheel over the view closes it", () => {
+    const { scene, box } = setUp();
+    scene.openAt({ x: 50, y: 60 }, PLACE);
+    box.dispatchEvent(new Event("wheel", { bubbles: true }));
+    expect(scene.isOpen()).toBe(false);
+    scene.openAt({ x: 50, y: 60 }, PLACE);
+    // Closed, a wheel does nothing more.
+    scene.close();
+    box.dispatchEvent(new Event("wheel", { bubbles: true }));
+    expect(scene.isOpen()).toBe(false);
   });
 
   it("Escape closes it, the focus back on the view, and goes no further", () => {

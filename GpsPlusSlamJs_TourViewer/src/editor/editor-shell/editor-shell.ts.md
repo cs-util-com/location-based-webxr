@@ -90,7 +90,16 @@ nothing to the tour itself.
 - **Reorder:** the drag writes one `reorder` at the drop
   (`tree-drag.ts`); Earlier and Later move the selected station one place
   (`movedTo` of `tree-reorder.ts`) and keep the focus on the button that
-  was pressed, or at an end on the other one.
+  was pressed, or at an end on the other one; the new place is said in a
+  polite live region (`#shell-said`, hidden but read: "Now Station n of
+  N").
+- **Delete in the inspector** moves the focus to the tree card now in
+  the deleted station's place (the one before it, at the end), for an
+  item to its station's card, and to the view's box when the tree is
+  folded or empty: it never falls to the page.
+- **The view's box** (`#view3d`, `tabindex="-1"`) shows a ring only when
+  a key brought the focus there (`:focus-visible`), as the ground menu's
+  Escape does.
 - **The bar's actions** are drawn from the inspector's model
   (`barActions`) with each draw, `data-bar` naming each, the focus kept
   across a draw. Align to station turns an item by its heading in its
@@ -180,8 +189,10 @@ with its stations shown.
 The lock's click in the page: `editor3d-edit.spec.js`.
 
 The tree's editing in the page: `playwright-tests/editor3d-tree.spec.js`
-("+", the drag, Escape during a drag, Earlier and Later, Delete with the
-toast's Undo; New station here; a station with a photo duplicated, saved
+("+", the drag, Escape during a drag, Earlier and Later with the new
+place said, Delete with the focus on the card in its place and the
+toast's Undo; a station made here starts unlocked; the grip's 24 px
+touch target on a touch screen; New station here; a station with a photo duplicated, saved
 and opened again; the "+", the grips and the bar's actions in place at
 the four sizes, the Delete's key in dim letters as the prototype has it) and `editor3d-edit.spec.js` (Align to station, Copy
 position, Move to a new station). Its parts' own tests:

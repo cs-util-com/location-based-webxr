@@ -3,7 +3,8 @@
  * screen) on the scene opens it where the pointer was, with one command,
  * "New station here". It starts a station only at a spot whose ground has
  * loaded; elsewhere (the sky, ground still loading) the item stays,
- * disabled, and its title says why.
+ * disabled, and says why in a line of its own. A wheel over the view (a
+ * zoom) closes it: the ground it offers is no longer under the spot.
  *
  * A menu by the WAI-ARIA pattern, as the bar's (`menu-button.ts`): the
  * focus goes to its item on opening; Escape closes it with the focus back
@@ -51,9 +52,20 @@ export function createSceneMenu(deps: {
   item.setAttribute("role", "menuitem");
   item.setAttribute("tabindex", "-1");
   menu.hidden = true;
+  // The reason a disabled item gives, in its own line: part of its name,
+  // and seen on a touch screen, where a title never shows.
+  const why = document.createElement("span");
+  why.className = "why";
+  why.textContent = NO_GROUND;
+  why.hidden = true;
+  item.append(why);
   let place: GroundPlace | null = null;
 
   const isOpen = (): boolean => !menu.hidden;
+
+  const onWheel = (): void => {
+    close(false);
+  };
 
   const onOutside = (event: Event): void => {
     if (event.target instanceof Node && menu.contains(event.target)) return;
@@ -65,6 +77,7 @@ export function createSceneMenu(deps: {
     menu.hidden = true;
     place = null;
     document.removeEventListener("pointerdown", onOutside, true);
+    box.removeEventListener("wheel", onWheel, true);
     if (returnFocus) deps.returnFocus.focus();
   }
 
@@ -88,7 +101,7 @@ export function createSceneMenu(deps: {
     openAt(point, at) {
       place = at;
       setItemDisabled(item, at === null);
-      item.title = at === null ? NO_GROUND : "";
+      why.hidden = at !== null;
       menu.hidden = false;
       const view = box.getBoundingClientRect();
       const size = menu.getBoundingClientRect();
@@ -103,6 +116,7 @@ export function createSceneMenu(deps: {
       menu.style.left = `${String(left)}px`;
       menu.style.top = `${String(top)}px`;
       document.addEventListener("pointerdown", onOutside, true);
+      box.addEventListener("wheel", onWheel, { capture: true, passive: true });
       item.focus();
     },
     close() {

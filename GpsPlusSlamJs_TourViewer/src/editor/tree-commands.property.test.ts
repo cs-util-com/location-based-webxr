@@ -247,4 +247,79 @@ describe("the tree's station commands", () => {
     );
     await session.close();
   });
+
+  // Why: a station added by "+" or "New station here" used to be titled
+  // "Station n" with the number it had when it was added. A reorder or a
+  // delete moved it, and the tree then showed two stations under one
+  // name - "Station 4" twice - though nobody typed either.
+  it("never shows two stations under one name the creator did not type, after any add, reorder and delete (property)", async () => {
+    const { session, manifest } = await opened();
+    const shaping: fc.Arbitrary<Command> = fc.oneof(
+      fc.record({
+        kind: fc.constant("add" as const),
+        dLat: fc.double({ min: -0.001, max: 0.001, noNaN: true }),
+      }),
+      fc.record({ kind: fc.constant("delete" as const), at }),
+      fc.record({ kind: fc.constant("reorder" as const), at, slot: at }),
+      fc.constant({ kind: "undo" as const }),
+      fc.constant({ kind: "redo" as const }),
+    );
+    fc.assert(
+      fc.property(
+        fc.array(shaping, { maxLength: 20, size: "max" }),
+        (commands) => {
+          const store = createTourViewerStore();
+          const editor = createEditorSession({
+            session,
+            manifest,
+            levels: new Map(),
+            store,
+          });
+          const tour = () => manifestToWrite(store.getState().tourDocument);
+          const ids = () => (tour()?.stations ?? []).map((s) => s.id);
+          for (const c of commands) {
+            const list = ids();
+            if (c.kind === "add") {
+              editor.addStation({ lat: 48.52 + c.dLat, lon: 9.05, alt: 340 });
+            } else if (c.kind === "delete") {
+              const id = list[c.at % Math.max(1, list.length)];
+              if (id !== undefined) editor.deleteStation(id);
+            } else if (c.kind === "reorder") {
+              const from = c.at % Math.max(1, list.length);
+              const order = [...list];
+              const [moving] = order.splice(from, 1);
+              if (moving !== undefined) {
+                order.splice(c.slot % (order.length + 1), 0, moving);
+                editor.reorderStations(order);
+              }
+            } else if (c.kind === "undo") {
+              editor.undo();
+            } else if (c.kind === "redo") {
+              editor.redo();
+            }
+            const stations = tour()?.stations ?? [];
+            // Nobody types here: every name shown is the tour's own.
+            const names = buildTree({
+              stations,
+              assets: [],
+              codes: [],
+              view: {
+                selected: null,
+                openStations: [],
+                openSections: { stations: true, codes: true, layers: true },
+                hiddenLayers: [],
+              },
+              layers: [],
+            }).cards.map((card) => card.title);
+            expect(
+              names.filter((name, i) => names.indexOf(name) !== i),
+              `a name shown twice after ${c.kind}: ${names.join(", ")}`,
+            ).toEqual([]);
+          }
+        },
+      ),
+      { numRuns: 120 },
+    );
+    await session.close();
+  });
 });

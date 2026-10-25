@@ -34,7 +34,8 @@ editor's own namespace, one tab at a time. Design:
     tour document milestone's review #1) as they stand now: the
     `settings` record is written while it differs from the file on disk
     (or from a build's value), removed once it does not; whether it landed.
-    The record may also hold `createdStations`: a station the page created
+    The record may also hold `handMadeStations` (compared like the other
+    fields) and `createdStations`: a station the page created
     (whole frames at their current poses: a note moved beyond its station's
     radius starts one) that the compared file does not carry counts as a
     difference, so a record holding nothing else is kept: the draft's

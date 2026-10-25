@@ -132,6 +132,9 @@ export interface EditorTourSettings {
   readonly order?: readonly string[];
   /** The stations of the file the record deleted. */
   readonly deletedStations?: readonly string[];
+  /** The stations added by hand there (untitled and empty, each keeps
+   *  itself). */
+  readonly handMadeStations?: readonly string[];
 }
 
 /** One of the details' fields (`tour-details-form.ts`), in the order the
@@ -269,6 +272,7 @@ function sameRecord(
       "frames",
       "order",
       "deletedStations",
+      "handMadeStations",
     ] as const
   ).every((key) => sameJson(a[key], b[key]));
   return stationsAlike && changedDetails(a.details, b.details).length === 0;

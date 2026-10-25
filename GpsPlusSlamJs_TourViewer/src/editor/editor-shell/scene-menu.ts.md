@@ -26,13 +26,18 @@ under it (`editor3d-input.ts`, `groundMenu`); the shell opens this menu.
   its item a `menuitem` (`tabindex="-1"`), focused on opening.
 - The menu stays 8 px inside the view's box at every edge.
 - With no place the item is disabled the menu pattern's way
-  (`aria-disabled`, `setItemDisabled`), its title says why, and its click
-  does nothing; the menu stays open.
+  (`aria-disabled`, `setItemDisabled`), says why in a visible line of
+  its own (`.why`, part of its accessible name: a title never shows on a
+  touch screen), and its click does nothing; the menu stays open.
 - A choice closes the menu (focus back on the view) before it starts the
   station, once.
 - Escape closes it with the focus back on the view and goes no further
   (the page's own Escape would deselect); Tab closes it and lets the focus
-  move on; a press outside it closes it (a capture listener while open).
+  move on; a press outside it closes it (a capture listener while open),
+  and so does a wheel over the view (a zoom: the ground offered is no
+  longer under the spot). Every other camera move starts with a press on
+  the view, which is outside the menu; the page's camera keys stand back
+  while the focus is in the menu.
   Its keys never reach the scene: `key-target.ts`'s `inMenu`.
 
 ## Examples
@@ -52,5 +57,6 @@ ground.openAt({ x: 120, y: 80 }, { lat: 48.1, lon: 11.5, alt: 561 });
 
 `scene-menu.test.ts` (jsdom, stubbed boxes): the roles; the place and the
 focus on opening; the edges; a choice starts one station and closes; no
-ground: disabled, said, nothing started; Escape; Tab and a press outside;
+ground: disabled, said in visible text, nothing started; a wheel closes
+it; Escape; Tab and a press outside;
 a press inside. End to end: `playwright-tests/editor3d-tree.spec.js`.

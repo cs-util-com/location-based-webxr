@@ -1189,6 +1189,7 @@ async function duplicateSelection(id: string): Promise<void> {
     toast(outcome.reason);
     return;
   }
+  if ("stationId" in outcome) unlockMade(outcome.stationId);
   select(
     "stationId" in outcome
       ? `${STATION_PREFIX}${outcome.stationId}`
@@ -1213,6 +1214,15 @@ function commitSceneEdit(edit: GestureEdit): void {
   autosave.changed();
 }
 
+/** A station made in this session (added, split off, copied) starts
+ *  unlocked: nothing was placed on site by it yet, so placing it is the
+ *  next thing its creator does. */
+function unlockMade(stationId: string): void {
+  store.dispatch(
+    editorViewActions.stationLocked({ id: stationId, locked: false }),
+  );
+}
+
 /** A station's title, as the tree numbers it, or a stand-in. */
 function stationTitleOf(stationId: string): string {
   const stations =
@@ -1224,8 +1234,9 @@ function stationTitleOf(stationId: string): string {
     : stationTitle(station, index + 1);
 }
 
-/** A station the page made: selected, its card unfolded, said. */
+/** A station the page made: unlocked, selected, its card unfolded, said. */
 function showNewStation(stationId: string, said: (title: string) => string) {
+  unlockMade(stationId);
   refresh();
   select(`${STATION_PREFIX}${stationId}`);
   store.dispatch(
