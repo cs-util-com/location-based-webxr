@@ -435,6 +435,63 @@ describe("the station edits across a reload", () => {
     await session.close();
   });
 
+  // Why: an item split off into a station of its own, right after its
+  // first station, came back from a reload without that station - the
+  // item was seated back into the station it had left - while the save
+  // before the reload had them apart.
+  it("an added station, an order changed, an item split off and a station deleted come back from the draft as the save had them", async () => {
+    const { session, manifest } = await opened();
+    const stores = memoryDraftStores();
+    const draft = draftOver(stores);
+    await draft.open(K, manifest);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft: draft.writes(),
+    });
+    const added = editor.addStation({ lat: 48.53, lon: 9.05, alt: 340 });
+    if (added.kind !== "added") throw new Error("not added");
+    const ids = () =>
+      editor
+        .model()
+        .items.filter((i) => i.kind === "station")
+        .map((i) => i.id.replace(/^station:/, ""));
+    const order = ids();
+    const at = order.indexOf(added.stationId);
+    order.splice(at, 1);
+    order.splice(at - 1, 0, added.stationId);
+    expect(editor.reorderStations(order)).toEqual({ kind: "reordered" });
+    expect(editor.moveToNewStation("b")).toMatchObject({ kind: "moved" });
+    expect(editor.deleteStation(stationIdOf("a"))).toEqual({ kind: "deleted" });
+    const pending = editor.changeCount();
+    const beforeTour = await savedTour(
+      (await editor.save({ keepScan: false })).blob,
+    );
+    await draft.idle();
+    draft.close();
+
+    const again = draftOver(stores);
+    const { offer } = await again.open(K, manifest);
+    expect(offer).not.toBeNull();
+    const reloaded = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft: again.writes(),
+    });
+    reloaded.restore(offer!);
+    expect(reloaded.changeCount()).toBe(pending);
+    const after = await savedTour(
+      (await reloaded.save({ keepScan: false })).blob,
+    );
+    expect(after.stations.map((s) => s.id)).toEqual(
+      beforeTour.stations.map((s) => s.id),
+    );
+    expect(after.stations).toEqual(beforeTour.stations);
+    await session.close();
+  });
+
   /** A draft over `stores`, as one page load opens it. */
   function draftOver(stores: ReturnType<typeof memoryDraftStores>) {
     return createEditorDraft({

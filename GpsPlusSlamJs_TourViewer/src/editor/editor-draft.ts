@@ -1136,7 +1136,26 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         }),
       );
       const hosted = hostedObjects(manifest);
-      const notHosted = draftObjectsNotYetHosted(stored.draft, manifest);
+      // A file object put into a station this page created (moved to a
+      // new station where it stands) reads as hosted - a station the file
+      // lacks is no move to the phone's writer - but the record holds that
+      // station whole, so the move is offered with it.
+      const created = new Set(
+        (storedSettings?.createdStations ?? []).map((f) => f.id),
+      );
+      const hostedHome = new Map(hosted.objects.map((o) => [o.id, o.station]));
+      const yetHosted = draftObjectsNotYetHosted(stored.draft, manifest);
+      const notHosted = [
+        ...yetHosted,
+        ...stored.draft.objects.filter(
+          (o) =>
+            !yetHosted.includes(o) &&
+            o.station !== undefined &&
+            created.has(o.station) &&
+            hostedHome.has(o.id) &&
+            hostedHome.get(o.id) !== o.station,
+        ),
+      ];
       // A record of an id the file does not carry is a copy made here (no
       // file this browser opened showed it: no `seen` base) in a station
       // the file or the record knows, offered with its picture; any other
