@@ -454,5 +454,20 @@ test.describe("the intro's phone", () => {
         expect(part?.opacity, PARTS[i][0]).toBe("1");
       }
     });
+    // The route is drawn whole: the mask's one dash (its path is 100
+    // long) sits at offset 0, not where the loop starts it hidden.
+    const mask = await page
+      .locator(".setup-intro-art .h-dots-mask")
+      .evaluate((el) => {
+        const style = getComputedStyle(el);
+        return {
+          offset: style.strokeDashoffset,
+          dashes: style.strokeDasharray,
+          length: el.getAttribute("pathLength"),
+        };
+      });
+    expect(mask.offset).toMatch(/^0(px)?$/);
+    expect(mask.dashes).toMatch(/^100(px)?,? 100(px)?$/);
+    expect(mask.length).toBe("100");
   });
 });
