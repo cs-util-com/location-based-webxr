@@ -13,7 +13,6 @@
  */
 
 import {
-  getCompassDiagnostics,
   selectAlignmentMatrix,
   selectGpsPositions,
   selectTrackingQuality,
@@ -49,13 +48,7 @@ import {
 } from "./station-guide.js";
 import { createStationPrefetch, decodeFigure } from "./station-prefetch.js";
 import { createStationRelocator, firstDeviceFix } from "./tour-relocation.js";
-import {
-  alignmentReady,
-  codeLinedUp,
-  compassHeadingVerdict,
-  isPlacementReady,
-  type CompassHeadingVerdict,
-} from "./tour-flow.js";
+import { alignmentReady, codeLinedUp, isPlacementReady } from "./tour-flow.js";
 import type {
   TourViewerSession,
   TourViewerStore,
@@ -142,9 +135,9 @@ export function stationPlacementAllowed(
  * (`alignmentReady`, the readiness the walk's photos wait for), and
  * whether the tracking report reads ready (`isPlacementReady`; a lined-up
  * code's votes feed it too, so the guide latches its heading on it only
- * while no code is lined up), and what the compass diagnostics say about
- * the heading (`compassHeadingVerdict`: the radar's north turns confirmed
- * once a compass contributed).
+ * while no code is lined up). Nothing else: the radar's north is
+ * confirmed only by the alignment's own confidence, never by a sensor
+ * (a compass) read here directly.
  */
 export function stationAlignmentSignals(
   ctx: Pick<TourViewerSession, "viewerLockedText" | "viewerVotedLocks">,
@@ -153,7 +146,6 @@ export function stationAlignmentSignals(
   codeLinedUp: () => boolean;
   alignmentReady: () => boolean;
   trackingReady: () => boolean;
-  compassHeading: () => CompassHeadingVerdict;
 } {
   const votes = () => ({
     lockedText: ctx.viewerLockedText,
@@ -165,15 +157,6 @@ export function stationAlignmentSignals(
       alignmentReady(selectTrackingQuality(arStore.getState()), votes()),
     trackingReady: () =>
       isPlacementReady(selectTrackingQuality(arStore.getState())),
-    compassHeading: () => {
-      // Guarded: the selector is licence-gated and throws for a store it
-      // cannot answer; a radar's word must never stop the guide's tick.
-      try {
-        return compassHeadingVerdict(getCompassDiagnostics(arStore.getState()));
-      } catch {
-        return "silent";
-      }
-    },
   };
 }
 

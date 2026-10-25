@@ -87,7 +87,8 @@ minM: 10, maxM: 600, shrinkBelow: 0.65 }` (module-local; the default
   on it and stopped the draw; today's wiring filters such a value before
   it gets here, so this is the boundary's own defence.
 - A provisional heading (the geometry's `headingConfirmed` false: no
-  compass, no confident tracking, no code confirmed it yet) keeps north
+  confident tracking, no code confirmed it yet; only the alignment
+  confirms, never a compass read directly) keeps north
   and every blip exactly where a confirmed one would put them - the frame
   the tour's content is placed in - but draws no view cone and no rim arc
   (both claim "this is where you look") and the blips at half their

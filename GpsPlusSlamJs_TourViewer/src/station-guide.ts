@@ -75,12 +75,10 @@
  *   is placed in, so the radar agrees with it from its first frame (its
  *   forward through the alignment; the last bearing kept while the camera
  *   points near straight down, `camera-heading.ts`) - with whether it is
- *   confirmed (the latch above holds, or a compass contributed this AR
- *   entry: `compassHeading`, latched for the AR entry and dropped by a
- *   distrust - but in the default configuration the compass's trust is
- *   never re-evaluated, so no distrust comes and a confirm is not checked
- *   against anything; a provisional heading can be far off, and the radar
- *   draws it so), every
+ *   confirmed (only the alignment's own confidence confirms it: the latch
+ *   above, earned by confident tracking or a code lined up; no sensor is
+ *   read directly, so a disturbed compass cannot confirm a wrong north; a
+ *   provisional heading can be far off, and the radar draws it so), every
  *   station's bearing, and the last judged
  *   snapshot of that geometry - kept while a code or GPS within the
  *   ceiling speaks for the position and tracking is not lost, so a frozen
@@ -155,7 +153,6 @@ import {
   type WalkPrecisionKind,
 } from "./visitor-guide-slice.js";
 import type { VisitorPosition } from "./visitor-position.js";
-import type { CompassHeadingVerdict } from "./tour-flow.js";
 import type { WalkRadarGeometry } from "./walk-radar-model.js";
 import {
   listOpened,
@@ -282,10 +279,9 @@ export interface GuideView {
    *  alignment (the frame the content is placed in), confirmed or not;
    *  null without one. */
   readonly radarHeadingDeg: number | null;
-  /** Whether that heading is confirmed: the heading latch holds, or a
-   *  compass contributed this AR entry and was not distrusted since (in
-   *  the default configuration no distrust comes: a compass's confirm is
-   *  not checked against anything). */
+  /** Whether that heading is confirmed: the heading latch holds
+   *  (confident tracking this AR entry, or a code lined up now). Only the
+   *  alignment confirms it, never a sensor read directly. */
   readonly headingConfirmed: boolean;
   /** The last judged geometry, for a frozen radar (M3, §1.2); null before
    *  the first this AR entry. */
@@ -357,14 +353,6 @@ export interface StationGuideDeps {
    *  AR entry only while no code is lined up: a lined-up code's votes feed
    *  the report, so a heading only a code gave goes with the code. */
   trackingReady(): boolean;
-  /** What the compass diagnostics say about the heading now
-   *  (`tour-flow.ts` `compassHeadingVerdict`; re-read each tick). A
-   *  confirm latches the radar's heading as confirmed for the AR entry, a
-   *  distrust drops that latch (in the default configuration none comes:
-   *  the compass's trust is never re-evaluated, so a confirm holds
-   *  unchecked); absent: always silent. Never the HUD's latch: the arrows
-   *  keep waiting for tracking or a code. */
-  compassHeading?(): CompassHeadingVerdict;
   /** Start the HUD for this AR session; null while it cannot (no camera
    *  yet). The guide retries on the next tick. `getTargets` and `focusId`
    *  are polled per frame: the targets, and the station the walk is about
@@ -525,7 +513,7 @@ interface Measurement {
   /** The same bearing whenever there is an alignment (or the latch
    *  holds): the radar's, confirmed or not. */
   readonly radarHeadingDeg: number | null;
-  /** The latch holds, or a compass confirmed the heading this AR entry. */
+  /** The heading latch holds (`headingReady`): only the alignment confirms. */
   readonly headingConfirmed: boolean;
 }
 
@@ -640,10 +628,6 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  goes with the code's votes (a veto) while tracking is not ready
    *  (r881 third review L2). */
   let headingReady = false;
-  /** A compass confirmed the heading this AR entry (`compassHeading`),
-   *  and no distrust followed (none comes in the default configuration).
-   *  Only the radar's word reads it. */
-  let compassConfirmed = false;
   /** The run was replaced or dropped (another tour, or none; never the
    *  first run): the store's presence and its "show all" reset at the end
    *  of the tick. */
@@ -803,9 +787,6 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     const ready = deps.alignmentReady();
     const lined = deps.codeLinedUp();
     noteHeading(ready, deps.trackingReady(), lined);
-    const compass = deps.compassHeading?.() ?? "silent";
-    if (compass === "confirms") compassConfirmed = true;
-    else if (compass === "distrusts") compassConfirmed = false;
     // The content's frame has a heading as soon as there is an alignment;
     // what needs it confirmed (the arrows) waits for the latch.
     const radarHeadingDeg =
@@ -826,7 +807,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       bearings: geometry.bearings,
       headingDeg: headingReady ? radarHeadingDeg : null,
       radarHeadingDeg,
-      headingConfirmed: headingReady || compassConfirmed,
+      headingConfirmed: headingReady,
     };
   }
 
@@ -1829,7 +1810,6 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       // The next AR entry earns its own heading (a new session's odometry).
       trackedHeading = false;
       headingReady = false;
-      compassConfirmed = false;
       lastHeadingDeg = null;
       // The next AR entry's first tick without a distance enters the no-guess rule anew.
       noGuessBackAtMs = null;

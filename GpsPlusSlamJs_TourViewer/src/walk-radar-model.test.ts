@@ -416,8 +416,8 @@ describe("walkRadarModel - the visitor's mark by precision", () => {
 describe("walkRadarModel - a provisional heading", () => {
   // Why this test matters: the radar draws north and the blips as soon as
   // the content is placed, in the same frame as the content, but before
-  // anything confirmed that frame's heading (no compass, no confident
-  // tracking, no code) it can be far off. A provisional heading must look
+  // anything confirmed that frame's heading (no confident tracking, no
+  // code) it can be far off. A provisional heading must look
   // different: no view cone and no rim arc (both claim "this is where you
   // look"), the blips dimmer - while north and the blips stay where the
   // placed content is.

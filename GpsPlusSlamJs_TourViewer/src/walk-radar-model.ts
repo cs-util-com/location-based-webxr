@@ -11,8 +11,8 @@
  * a frozen radar never reads the live position. The stations' states are
  * always the live ones: a skip made in the list shows at once.
  *
- * A heading nothing confirmed yet (`headingConfirmed: false`: no compass,
- * no confident tracking, no code) is drawn provisional: north and the
+ * A heading nothing confirmed yet (`headingConfirmed: false`: no confident
+ * tracking, no code; only the alignment confirms it) is drawn provisional: north and the
  * blips where the placed content is, but no view cone, no rim arc and the
  * blips dimmer (`WALK_PROVISIONAL_ALPHA`), since it can be far off.
  *

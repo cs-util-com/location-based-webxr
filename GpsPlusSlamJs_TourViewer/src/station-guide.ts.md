@@ -43,12 +43,9 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
   code, re-read each tick by the find, latched per AR entry by what needs
   a heading, `tour-flow.ts` `alignmentReady`), `trackingReady()` (the
   tracking report reads ready, `tour-flow.ts` `isPlacementReady`: it
-  latches a heading, only while no code is lined up),
-  `compassHeading?()` (`tour-flow.ts` `compassHeadingVerdict`, re-read
-  each tick: a confirm latches the radar's heading as confirmed for the AR
-  entry, a distrust drops it - in the default configuration the compass's
-  trust is never re-evaluated, so no distrust comes and a confirm is not
-  checked against anything; never the HUD's latch; absent: silent),
+  latches a heading, only while no code is lined up). No sensor input:
+  the guide reads no compass, so nothing but the alignment confirms the
+  radar's north,
   `startHud(getTargets)`, `now()`, `fixMaxAgeMs?` (default
   `FIX_MAX_AGE_MS`, 5 s), `guideStore?` (the page's store with the
   `visitorGuide` slice, `visitor-guide-slice.ts`: the present station is
@@ -674,13 +671,23 @@ undo, note }`: the line's station, how the position stands
   tour's content is placed in, so the radar agrees with the placed content
   from its first frame instead of waiting for the latch. Null without an
   alignment.
-- `GuideView.headingConfirmed` - the heading latch holds, or a compass
-  confirmed the heading this AR entry (`compassHeading`) and no distrust
-  followed (none comes in the default configuration: a compass's confirm
-  is not checked against anything, it holds until the entry ends); reset
-  at `endSession`. False: the radar draws the heading
-  provisional (`walk-radar-model.ts`). Before it, without a compass, the
-  start yaw can be far off - which is why the arrows keep the latch.
+- `GuideView.headingConfirmed` - the heading latch holds: only the
+  alignment's own confidence confirms the radar's north (confident
+  tracking this AR entry, or a code lined up now), never a sensor read
+  directly - a disturbed compass would otherwise confirm a wrong north
+  for the whole AR session with nothing to check it against. Reset at
+  `endSession`; a heading only a code gave goes with the code (a veto).
+  False: the radar draws the heading provisional
+  (`walk-radar-model.ts`); before the latch the start yaw can be far
+  off, which is why the arrows wait for it too.
+  - **A visitor standing still with no code** sees north and the blips at
+    once, in the frame the content is placed in, but provisional (no view
+    cone, no rim arc, dimmer blips) for as long as they stand: confident
+    tracking needs a short walk with a turn, so north turns confirmed
+    after a few steps, or at once when a printed code is lined up.
+    Pinned in `station-guide.radar.test.ts` ("stays provisional for a
+    visitor standing still with no code", "is never confirmed by a
+    compass verdict alone").
 - `GuideView.there` - `{ id, tail } | null`: the station the visitor is
   there at, and the line's tail ("Being there, and finishing" above);
   null once finished and while a story plays.

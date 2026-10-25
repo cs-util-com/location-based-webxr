@@ -14,7 +14,6 @@ import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { UnknownAction } from "@reduxjs/toolkit";
 
 import { wireStationGuide } from "./station-guide";
-import type { CompassHeadingVerdict } from "./tour-flow";
 import { createTourViewerStore } from "./tour-viewer-session";
 import {
   precisionKindSet,
@@ -93,7 +92,11 @@ function harness() {
   let lined = false;
   let ready = true;
   let tracking = true;
-  let compass: CompassHeadingVerdict = "silent";
+  /** A compass verdict handed in although the guide has no such input:
+   *  the radar must never read a sensor directly, so this changes
+   *  nothing (spread in so the type of the guide's inputs stays exact). */
+  let strayCompass: "confirms" | "distrusts" | "silent" = "silent";
+  const stray: object = { compassHeading: () => strayCompass };
   const guide = wireStationGuide({
     dom: {
       line: { textContent: "", hidden: true },
@@ -114,7 +117,7 @@ function harness() {
     codeLinedUp: () => lined,
     alignmentReady: () => ready,
     trackingReady: () => tracking,
-    compassHeading: () => compass,
+    ...stray,
     startHud: () => ({ dispose: () => undefined }),
     now: () => 1_000,
     guideStore,
@@ -160,8 +163,8 @@ function harness() {
     setTracking(value: boolean) {
       tracking = value;
     },
-    setCompass(value: CompassHeadingVerdict) {
-      compass = value;
+    setStrayCompass(value: "confirms" | "distrusts" | "silent") {
+      strayCompass = value;
     },
     /** The visitor with no alignment: the fix alone, no camera forward. */
     unaligned() {
@@ -297,11 +300,12 @@ describe("the radar's heading, provisional until confirmed", () => {
   // Why these tests matter: the tour's content is placed in the alignment's
   // frame before anything confirmed that frame's heading, so a radar that
   // waited for the latch disagreed with what the visitor sees. The radar
-  // reads the same frame at once and says how sure it is: confirmed by the
-  // heading latch (confident tracking, a code) or by a compass that
-  // contributed; the HUD's arrows and the direction words keep the latch.
-  // The distrust case pins the guide's mechanism; in the default
-  // configuration no distrust comes, so a confirm holds unchecked.
+  // reads the same frame at once and says how sure it is: confirmed only
+  // by the alignment's own confidence (the heading latch: confident
+  // tracking, or a code lined up), never by a sensor read directly - a
+  // disturbed compass would otherwise confirm a wrong north for the whole
+  // AR session, with nothing to check it against. The HUD's arrows and the
+  // direction words keep the same latch.
   it("draws the camera's bearing as soon as there is an alignment, provisional", () => {
     const h = harness();
     h.setReady(false);
@@ -340,31 +344,56 @@ describe("the radar's heading, provisional until confirmed", () => {
     expect(h.guide.view()?.radarHeadingDeg).toBeCloseTo(70, 9);
   });
 
-  it("is confirmed by a compass, held when it hands back, and dropped when it is distrusted; the HUD still waits", () => {
+  it("is confirmed by a code lined up, and goes with the code", () => {
     const h = harness();
     h.setReady(false);
     h.setTracking(false);
-    h.setCompass("confirms");
+    h.at(20, 0, 4, 90);
+    expect(h.guide.view()?.headingConfirmed).toBe(false);
+    // A code lines the alignment up: ready, and the tracking report reads
+    // ready on the code's own votes (which never latch).
+    h.setLined(true);
+    h.setReady(true);
+    h.setTracking(true);
     h.at(20, 0, 4, 90);
     expect(h.guide.view()?.headingConfirmed).toBe(true);
-    // The arrows and the direction words keep their latch.
+    // The code is vetoed: its votes go, and nothing else earned a heading.
+    h.setLined(false);
+    h.setReady(false);
+    h.setTracking(false);
+    h.at(20, 0, 4, 90);
+    expect(h.guide.view()?.headingConfirmed).toBe(false);
+  });
+
+  it("is never confirmed by a compass verdict alone", () => {
+    const h = harness();
+    h.setReady(false);
+    h.setTracking(false);
+    h.setStrayCompass("confirms");
+    h.at(20, 0, 4, 90);
+    expect(h.guide.view()?.headingConfirmed).toBe(false);
+    expect(h.guide.view()?.snapshot).toMatchObject({ headingConfirmed: false });
     expect(h.guide.view()?.headingDeg).toBeNull();
-    h.setCompass("silent");
-    h.at(20, 0, 4, 90);
-    expect(h.guide.view()?.headingConfirmed).toBe(true);
-    h.setCompass("distrusts");
-    h.at(20, 0, 4, 90);
+  });
+
+  it("stays provisional for a visitor standing still with no code, tick after tick", () => {
+    const h = harness();
+    h.setReady(false);
+    h.setTracking(false);
+    h.setStrayCompass("confirms");
+    for (let i = 0; i < 50; i++) h.at(20, 0, 4, 90);
+    expect(h.guide.view()?.radarHeadingDeg).toBeCloseTo(90, 9);
     expect(h.guide.view()?.headingConfirmed).toBe(false);
   });
 
   it("starts each AR entry unconfirmed", () => {
     const h = harness();
     h.setReady(false);
-    h.setTracking(false);
-    h.setCompass("confirms");
+    h.setTracking(true);
     h.at(20, 0, 4, 90);
+    expect(h.guide.view()?.headingConfirmed).toBe(true);
     h.guide.endSession();
-    h.setCompass("silent");
+    h.setTracking(false);
     h.at(20, 0, 4, 90);
     expect(h.guide.view()?.headingConfirmed).toBe(false);
   });

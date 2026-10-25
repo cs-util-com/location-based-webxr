@@ -88,22 +88,18 @@ describe("stationAlignmentSignals", () => {
     expect(signals.trackingReady()).toBe(true);
   });
 
-  // Why: the radar's heading turns confirmed when the compass diagnostics
-  // say a compass contributed. A session with no compass reading must read
-  // silent, and a store the diagnostics cannot answer (the selector is
-  // guarded and may throw) must read silent too, never stop the guide's tick.
-  it("compassHeading is silent with no compass reading and on a store that cannot answer", () => {
+  // Why: the radar's north is confirmed only by the alignment's own
+  // confidence (tracking, a code). The signals the guide reads must stay the
+  // alignment's three: a sensor read here directly (a compass verdict) would
+  // let a disturbed compass confirm a wrong north for the whole AR session.
+  it("hands the guide the alignment's signals only, no sensor reading", () => {
     const ctx = { viewerLockedText: null, viewerVotedLocks: 0 };
     const store = createTourViewerStore();
-    expect(stationAlignmentSignals(ctx, store).compassHeading()).toBe("silent");
-    const broken = {
-      getState: (): never => {
-        throw new Error("no state");
-      },
-    };
-    expect(stationAlignmentSignals(ctx, broken).compassHeading()).toBe(
-      "silent",
-    );
+    expect(Object.keys(stationAlignmentSignals(ctx, store)).sort()).toEqual([
+      "alignmentReady",
+      "codeLinedUp",
+      "trackingReady",
+    ]);
   });
 });
 

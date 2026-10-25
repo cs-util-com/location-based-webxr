@@ -27,11 +27,9 @@ VisitorStations` - `{ tick, loadContent, codeLocked, unlockAudio, stop }`
   `isPlacementReady` on the report, which a lined-up code's votes feed
   too: the guide latches its heading on it only without a code): the viewer
   pipeline's voted locks this AR entry (`ctx.viewerLockedText`,
-  `ctx.viewerVotedLocks`) and the store's tracking-quality report. Also
-  `compassHeading`: `compassHeadingVerdict` over the framework's
-  `getCompassDiagnostics` of the store, guarded (the selector is
-  licence-gated and may throw: then silent, the tick goes on).
-  Exported for the same reason. No state of its own: all are read each
+  `ctx.viewerVotedLocks`) and the store's tracking-quality report.
+  Nothing else: no sensor (a compass) is read here, so the radar's north
+  is confirmed only by the alignment's own confidence. Exported for the same reason. No state of its own: all are read each
   tick.
 
 ## Invariants & assumptions
@@ -112,8 +110,7 @@ hooks.tickStations = stations.tick;
 - `playwright-tests/stations.spec.js` (the composition).
 - `visitor-stations.test.ts` - `stationAlignmentSignals` against the real
   tracking-quality slice, `trackingReady` reading the report, not the lock state,
-  `compassHeading` silent with no compass reading and on a store that
-  cannot answer.
+  and the signals being those three only (no sensor reading).
 - `viewer-content-alignment.test.ts` ("finds the station on the scanned
   code on the first voted lock"): the real station guide over the real
   placement, `stationPlacementAllowed` and `stationAlignmentSignals`.
