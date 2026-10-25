@@ -21,7 +21,12 @@ of a production build run on this machine, apart from the live site's.
   - Never throws: a value that is not a string is `preview`.
 - `PRODUCTION_HOSTS`: `gps.csutil.com` and `gps-plus-slam.csutil.workers.dev`
   (the worker's own address, which serves the same live deployment; the
-  site's `wrangler.toml` leaves that address on).
+  site's `wrangler.toml` leaves that address on by default, having no
+  `workers_dev` key).
+  - The list mirrors the custom domains set in the hosting provider's
+    dashboard (`wrangler.toml` carries none) and must change with them: a
+    live address missing here would file real visitors' reports as
+    `preview`.
 
 ## Invariants & assumptions
 

@@ -682,12 +682,18 @@ undo, note }`: the line's station, how the position stands
   off, which is why the arrows wait for it too.
   - **A visitor standing still with no code** sees north and the blips at
     once, in the frame the content is placed in, but provisional (no view
-    cone, no rim arc, dimmer blips) for as long as they stand: confident
-    tracking needs a short walk with a turn, so north turns confirmed
-    after a few steps, or at once when a printed code is lined up.
+    cone, no rim arc, dimmer blips) for as long as they stand. North
+    turns confirmed at once when a printed code is lined up; without one,
+    only when the tracking report reads ready (the framework's
+    `state/tracking-quality.ts`): a walk of roughly 10 m with a turn, at
+    least 10 GPS fixes, and a median GPS accuracy of about 14 m or better.
     Pinned in `station-guide.radar.test.ts` ("stays provisional for a
     visitor standing still with no code", "is never confirmed by a
-    compass verdict alone").
+    compass verdict alone"); the readiness rule itself is tested in the
+    framework.
+  - **Poor GPS and no code** (indoors, street canyons): the tracking
+    report never reads ready, so the radar stays provisional for the
+    whole AR entry, however far the visitor walks.
 - `GuideView.there` - `{ id, tail } | null`: the station the visitor is
   there at, and the line's tail ("Being there, and finishing" above);
   null once finished and while a story plays.

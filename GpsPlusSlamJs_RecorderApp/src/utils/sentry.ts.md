@@ -16,8 +16,8 @@ Initializes the Sentry SDK with `sentryOptions()`. Called as early as
 possible in `main.ts`, and only in production builds (`import.meta.env.PROD`):
 the dev server sends nothing. Every production build sends, branch
 previews included (each preview deploys the same build as the live site),
-and so does a production build served on this machine (`vite preview`, the
-e2e suite); the `environment` label below keeps their reports apart.
+and so does a production build served on this machine (`vite preview`, run by
+hand; the e2e suite runs the dev server and sends nothing); the `environment` label below keeps their reports apart.
 
 ```ts
 import { initSentry } from './utils/sentry';

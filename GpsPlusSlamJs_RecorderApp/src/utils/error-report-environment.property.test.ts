@@ -26,7 +26,20 @@ const hostLike = fc
   })
   .map((labels) => labels.join('.'));
 
-const anyHost = fc.oneof(fc.string({ maxLength: 60 }), hostLike);
+/** A live address in any letter case, with or without a trailing dot. */
+const liveHost = fc
+  .tuple(
+    fc.constantFrom(...PRODUCTION_HOSTS),
+    fc.array(fc.boolean(), { minLength: 40, maxLength: 40 }),
+    fc.boolean()
+  )
+  .map(
+    ([host, upper, dot]) =>
+      [...host].map((c, i) => (upper[i] ? c.toUpperCase() : c)).join('') +
+      (dot ? '.' : '')
+  );
+
+const anyHost = fc.oneof(fc.string({ maxLength: 60 }), hostLike, liveHost);
 
 describe('errorReportEnvironment properties', () => {
   it('gives one of the three labels for any input', () => {
@@ -46,6 +59,12 @@ describe('errorReportEnvironment properties', () => {
         expect(errorReportEnvironment(host) === 'production').toBe(live);
       })
     );
+    // The generator does reach the live addresses, so the property is
+    // tested on both sides.
+    const sample = fc.sample(anyHost, { numRuns: 300, seed: 1 });
+    expect(
+      sample.filter((h) => errorReportEnvironment(h) === 'production').length
+    ).toBeGreaterThan(20);
   });
 
   it('labels every branch label in front of the worker address a preview', () => {

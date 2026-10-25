@@ -92,6 +92,8 @@ function harness() {
   let lined = false;
   let ready = true;
   let tracking = true;
+  /** The guide's clock; `at` stamps the fixes with it. */
+  let nowMs = 1_000;
   /** A compass verdict handed in although the guide has no such input:
    *  the radar must never read a sensor directly, so this changes
    *  nothing (spread in so the type of the guide's inputs stays exact). */
@@ -119,7 +121,7 @@ function harness() {
     trackingReady: () => tracking,
     ...stray,
     startHud: () => ({ dispose: () => undefined }),
-    now: () => 1_000,
+    now: () => nowMs,
     guideStore,
     walkStore: store,
     onFound: () => undefined,
@@ -141,7 +143,7 @@ function harness() {
         gpsPoints: accuracyM === null ? [] : [{ latLongAccuracy: accuracyM }],
         fixNue: [north, 400, east],
         aligned: true,
-        fixAtMs: 1_000,
+        fixAtMs: nowMs,
         fixAccuracyM: accuracyM,
         forwardNue:
           bearing === null
@@ -163,6 +165,10 @@ function harness() {
     setTracking(value: boolean) {
       tracking = value;
     },
+    /** Move the guide's clock on. */
+    advance(ms: number) {
+      nowMs += ms;
+    },
     setStrayCompass(value: "confirms" | "distrusts" | "silent") {
       strayCompass = value;
     },
@@ -173,7 +179,7 @@ function harness() {
         gpsPoints: [{ latLongAccuracy: 4 }],
         fixNue: [20, 400, 0],
         aligned: false,
-        fixAtMs: 1_000,
+        fixAtMs: nowMs,
         fixAccuracyM: 4,
         forwardNue: null,
       };
@@ -305,7 +311,9 @@ describe("the radar's heading, provisional until confirmed", () => {
   // tracking, or a code lined up), never by a sensor read directly - a
   // disturbed compass would otherwise confirm a wrong north for the whole
   // AR session, with nothing to check it against. The HUD's arrows and the
-  // direction words keep the same latch.
+  // direction words keep the same latch. Standing still is modelled here
+  // as the tracking report never reading ready; when a real standstill
+  // reads ready is the framework's coverage rule, tested there.
   it("draws the camera's bearing as soon as there is an alignment, provisional", () => {
     const h = harness();
     h.setReady(false);
@@ -381,7 +389,12 @@ describe("the radar's heading, provisional until confirmed", () => {
     h.setReady(false);
     h.setTracking(false);
     h.setStrayCompass("confirms");
-    for (let i = 0; i < 50; i++) h.at(20, 0, 4, 90);
+    // A minute of ticks, one a second, with fresh fixes: time alone never
+    // confirms.
+    for (let i = 0; i < 60; i++) {
+      h.advance(1_000);
+      h.at(20, 0, 4, 90);
+    }
     expect(h.guide.view()?.radarHeadingDeg).toBeCloseTo(90, 9);
     expect(h.guide.view()?.headingConfirmed).toBe(false);
   });

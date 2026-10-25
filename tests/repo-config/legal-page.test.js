@@ -110,8 +110,11 @@ describe('the legal page date and text', () => {
     expect(comment).toMatch(/it receives/);
     expect(comment).toMatch(/legitimate interest/);
     expect(comment).toMatch(/object/);
-    // An HTML comment ends at its first "--": the paragraph must not hold one.
-    expect(comment?.slice(4, -3)).not.toContain('--');
+    // A comment ends at "-->" (or "--!>") and must not nest "<!--"; keeping
+    // every "--" out of its body keeps it unambiguous for any parser.
+    const body = comment?.slice(4, -3) ?? '';
+    expect(body).not.toContain('--');
+    expect(body).not.toContain('<!');
     expect(visibleText(PAGE)).not.toMatch(/counts page views/);
     expect(visibleText(PAGE)).toMatch(/no usage statistics/);
   });

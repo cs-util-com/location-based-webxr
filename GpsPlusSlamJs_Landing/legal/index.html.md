@@ -55,7 +55,8 @@ reads device storage or follows visitors across sites needs consent first.
   (`visibleText` strips comments; the hash test stayed green when it was
   added).
 - `tests/repo-config/legal-page.test.js` holds it there, marked, with no
-  `--` inside (which would end the comment early), and checks that the
+  `--` and no nested `<!` inside (a comment ends at `-->` and must not
+  nest; keeping every `--` out keeps it unambiguous), and checks that the
   visible text still says "no usage statistics".
 
 ## Invariants
