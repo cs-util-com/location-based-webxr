@@ -14,7 +14,8 @@
     `maxAboveGroundM` 200, `maxSpeedMps` 50 (off above these),
     `onBelowAboveGroundM` 180, `onBelowSpeedMps` 45 (on only below
     these), `rampMs` 300 (the drawn map's fade in or out), `reevaluateMs` 500,
-    `reevaluateLimit` 8, `resolution` 256.
+    `reevaluateLimit` 8, `resolution` 256, `keepRegions` 64 (released
+    map textures kept in memory, below).
   - `osmCredit(attributionHtml)`: the framework's `OSM_TILE_ATTRIBUTION`
     as a `GlobeCredit` (`short` "OpenStreetMap", `full` its text,
     `href` its link). RangeError without an https link.
@@ -62,30 +63,68 @@ level)`; a region counts as content only while locked; a release
     `init`), and their locks asked for a level that reads the image
     source only the overlay's init sets up (an uncaught TypeError). The
     re-evaluation picks those tiles up once the overlay is ready.
-    `isLocked`, `wanted`, `stats()`. RangeError for a url without
-    `{z}/{x}/{y}`, TypeError without a gate.
+    **The keep** (`keep`, default `GLOBE_OSM.keepRegions`): a region
+    whose last lock goes keeps its LOADED texture in memory (the library
+    lock is held on), up to `keep` regions, the one released longest ago
+    given back first; a lock of a kept region at the level it was kept at
+    takes it back without the gate and without a request (at another
+    level, after a change of the overlay's resolution, the kept lock is
+    given back and the lock is an ordinary one: the library holds nothing
+    under the new level). A region still loading, or one whose fetch
+    failed (the library holds a promise for both), is given back at once,
+    so a failure is never kept. `setKeep(n)` changes the keep and gives
+    back what is over it at once (all at 0).
+    `isLocked`, `wanted`, `stats()` (`locks`, `gatedLocks`,
+    `lockedRegions`, `releases`: textures given back to the library, which
+    drops them, so a re-visit fetches again; `keep`, `keptRegions`,
+    `keptHits`: locks served from the keep; `finestLevel`). RangeError
+    for a url without `{z}/{x}/{y}` or a keep that is not an integer >= 0,
+    TypeError without a gate.
   - `reevaluateGatedTiles(plugin, overlay, { limit })`: tiles whose map
     was gated when they loaded and that the gate lets through now are
     locked, fetched and drawn the way the plugin's own retry does; at most
-    `limit` per call.
+    `limit` per call. Returns `{ started, left }`: `left` counts the tiles
+    the gate would have let through beyond the limit (the next look's
+    backlog).
   - `createGlobeOsmOverlay({ url, attribution, maxZoom, renderer, fadeM?,
-limits? })` -> `{ credit, limits, overlay, plugin, uniforms, attach(terrain),
+limits?, keep? })` -> `{ credit, limits, overlay, plugin, uniforms, attach(terrain),
 setEnabled(on), setFadeM(m), update(pose), stats() }`:
     - `attach` registers the plugin (tile splitting off, so the relief's
       mesh is not refined for the map) on the relief's tiles and patches
       the fade into every relief material, loaded already or to come
       (each patched material gets a `GLOBE_OSM_FADE` define: its own
       program). Once only (Error on a second call).
+    - `keep` (default `GLOBE_OSM.keepRegions`) is the overlay's keep;
+      RangeError unless an integer >= 0.
     - `update({ position, aboveGroundM, speedMps, nowMs })` each frame:
-      the gate's camera (world to the tiles' frame), the active rule with
-      the last frame's state, the fade's switch ramped over `rampMs`
+      the camera (world to the tiles' frame, taken every frame after
+      `attach`, the map on or off: the gate and `coverage` read it), the
+      active rule with the last frame's state, the fade's switch ramped over `rampMs`
       (requests follow the rule at once; only the drawn map fades), and
       every `reevaluateMs` the gated tiles.
-    - `stats()`: `enabled`, `active`, `requests`, `requestsLastMinute`,
-      `unpatchedShaders` (a library change shows here), `locks`,
-      `gatedLocks`, `lockedRegions`, `finestLevel` (the finest level a lock
-      asked for, null before the first: under 15 the relief is too coarse
-      for the map).
+    - `stats()`: `enabled`, `active`, `on` (the drawn map's strength, the
+      ramped shader switch), `requests`, `requestsLastMinute`,
+      `unpatchedShaders` (a library change shows here), the overlay's
+      `locks`, `gatedLocks`, `lockedRegions`, `releases`, `finestLevel` (the
+      finest level a lock asked for, null before the first: under 15 the
+      relief is too coarse for the map), and the diagnostics of how a
+      drawn tile comes to lack its map: `switchedOff` (updates in which
+      the map went from on to off: by the rule, or by `setEnabled(false)`
+      at the next update), `unknownHeightFrames` (frames, while
+      enabled, whose height over the ground was unknown: the map is off in
+      them), `ceilingFullMs` (time on with the request ceiling full: no new
+      tile asked for), `reevaluateBacklog` (tiles the last look left for
+      the next), `cappedLooks` (looks that left some).
+    - `coverage()` -> `OsmCoverage` `{ near, withMap, coarse, waiting,
+unprocessed }`: the relief tiles drawn in the last update
+      (`tiles.visibleTiles`, optional on `OsmOverlayTerrain`) that come
+      within the fade's start of the camera of the last update (where the
+      map is at full strength), with their map, too coarse for it (the level picked under
+      the coarsest zoom: bare relief by design), or waiting for it (gated,
+      throttled, loading or failed); and drawn tiles the plugin has not
+      placed yet. All zero before `attach`, without `visibleTiles` or while
+      the overlay is not ready. It walks every drawn tile: for checks and
+      measurements, not each frame.
 - Invariants & assumptions:
   - The URL and the attribution are the caller's: the framework's
     `osm-tiles.ts` (DEC-H3, held by `tests/repo-config/osm-tile-url-copies.test.js`).
@@ -131,7 +170,45 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
   - The overlay's textures count in the relief's tile cache
     (`calculateBytesUsed`): about 256 KiB per relief tile that has one.
   - A tile that leaves the reach keeps its texture until the relief
-    unloads the tile; the fade hides it.
+    unloads the tile; the fade hides it. Then the texture goes to the
+    keep.
+  - **The keep is memory outside the relief's budget**, which the
+    relief's cache no longer counts once a region's tile is gone. A kept
+    region holds its region texture (256 px, about 256 KiB) and the
+    library's lock on its source tile bitmap(s) (`TiledRegionImageSource`
+    locks them for the region and unlocks them only when the region is
+    disposed; a source bitmap is about 256 KiB): about 512 KiB a region,
+    about 32 MiB at 64 and 16 MiB at 32. It exists because the relief's
+    cache unloads unused tiles past its floor, and each unload released
+    the tile's map region, which the library drops at once (a
+    reference-counted cache with no keep).
+  - **Why a keep, and its size: a measurement, 2026-10-25.** The 3D
+    editor's page driven by a script (the sample tour, two passes over
+    eight views at 40 and 1100 m and tilts 0, 30, 60 and 80 degrees, each
+    held 6 s, then ten pans away and ten back), desktop Chromium with a
+    GPU via ANGLE on a loaded machine, pixel ratio 1, the map from a fake
+    tile server answering in 300 ms, a synthetic relief with 150 m hills
+    answering in 150 ms. At 390 px wide (the phone's relief budget)
+    without a keep 185 of 294 requests were re-fetches, the 150-a-minute
+    ceiling was full for 5 s, and a tile under the camera had no map in
+    74 % of one view's samples; at 1440 px (the desktop's budget) the
+    relief never unloaded and nothing was re-fetched. Keeps of 0, 16, 32,
+    64 and 128 at 390 px: re-fetches 192, 133, 61, 8, 8; worst minute
+    158, 151, 132, 104, 104; ceiling full 11.5, 4.1, 0, 0, 0 s (64 and
+    128 alike because the run re-visits only about 60 released regions; a
+    wider roam would separate them). At 60 ms tile latency the same
+    mechanism dominated. No phone was measured. The default stays 64; a
+    caller with less memory to spare passes a smaller `keep` (the
+    editor keeps 32 at phone width).
+  - A level is a function of the region while the overlay's resolution
+    is constant (the plugin sets it once, at the overlay's init); the
+    plugin locks and releases without a level, so every release
+    recomputes it, as the library itself does. A kept region remembers
+    its level, so a resolution change between its release and its re-lock
+    gives it back instead of serving it.
+  - The plugin's own dispose releases its regions but never disposes the
+    overlay, so `createGlobeOsmOverlay` wraps it: the keep goes to 0 first
+    and every kept texture is given back before the plugin lets go.
 - Example:
 
   ```ts
@@ -169,8 +246,23 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
   patch against the library's own blend line, the gated lock and release
   through the library class, the finest level asked for, the fetch held
   to the ceiling, the
-  re-evaluation over a fake of the plugin's state and a guard on its
-  private methods, a lock before the overlay is ready turned away without
+  re-evaluation over a fake of the plugin's state (its backlog counted)
+  and a guard on its private methods, the diagnostics (a texture dropped
+  only with its last lock, the switches off and the frames with an
+  unknown height, the time the ceiling was full while on, the drawn tiles
+  near the camera sorted by their map, nothing read before attach or
+  readiness), the keep (a released texture kept and a re-lock served
+  from it past the gate, the region released longest ago given back past
+  the keep, a region loading or failed never kept, 0 keeping nothing and
+  a smaller keep giving back at once, the keep emptied before the
+  plugin's dispose, the caller's keep through the factory, a kept region
+  at another level given back and locked anew, and against the library's
+  real region cache with only its fetch and dispose stubbed: one library
+  lock through a release and a re-lock, the texture disposed only when
+  the keep lets it go, a failed (rejected) and a loading region given
+  back at once and disposed with null; red seen by breaking the keep and
+  `isLoaded` in turn), the drawn tiles sorted from the camera of the last
+  update with the map off, a lock before the overlay is ready turned away without
   the library (red first: the TypeError) with a guard on the plugin's
   init order in its source, the caller's limits through `osmGateLimits`,
   the active rule and the factory's frame loop and gate over a really
