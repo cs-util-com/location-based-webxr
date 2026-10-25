@@ -333,6 +333,8 @@ describe("drawWalkRadar", () => {
 /** A structural DOM for the view. */
 function dom(width = 132) {
   const listeners: (() => void)[] = [];
+  /** The button's attributes (its accessible name). */
+  const attrs = new Map<string, string>();
   const { g, calls } = recordingCanvas();
   /** The canvas's CSS width, and how often a draw read it (a layout
    *  read). */
@@ -341,12 +343,17 @@ function dom(width = 132) {
     calls,
     listeners,
     size,
+    attrs,
     dom: {
       wrap: { hidden: true, dataset: {} as DOMStringMap },
       button: {
         addEventListener: (_: string, fn: () => void) => {
           listeners.push(fn);
         },
+        setAttribute: (name: string, value: string) => {
+          attrs.set(name, value);
+        },
+        getAttribute: (name: string) => attrs.get(name) ?? null,
       } as unknown as WalkRadarDom["button"],
       canvas: {
         get clientWidth() {
@@ -569,12 +576,51 @@ describe("wireWalkRadar", () => {
     const v = view();
     v.radar.render(frame({ kind: "code" }));
     v.tap();
+    v.c.advance(1000);
     v.radar.reset();
     expect(v.d.dom.wrap.dataset["range"]).toBe("auto");
     expect(v.d.dom.rangeLabel.hidden).toBe(true);
     v.radar.render(frame({ kind: "code" }));
     expect(v.d.dom.chip.hidden).toBe(true);
-    expect(v.c.pending()).toBeLessThanOrEqual(1);
+    // The old peek's timer was cleared, not left to fire: a new peek
+    // started after the reset lasts its full 2 s, past the moment the old
+    // timer was due (a timer left running would end it there).
+    v.tap();
+    v.c.advance(1000);
+    expect(v.d.dom.rangeLabel.hidden).toBe(false);
+    v.c.advance(999);
+    expect(v.d.dom.rangeLabel.hidden).toBe(false);
+    v.c.advance(1);
+    expect(v.d.dom.rangeLabel.hidden).toBe(true);
+  });
+
+  // Why this test matters: the range is on screen only for 2 s after a
+  // tap, and a screen reader user may never hear the live label; the
+  // button's own name says the range drawn now, automatic when no step
+  // is chosen, so the range is there whenever the button is reached.
+  it("the button's name says the range drawn: automatic, then each step", () => {
+    const v = view();
+    v.radar.render(frame());
+    const name = () => v.d.attrs.get("aria-label");
+    expect(name()).toBe(
+      "Stations around you, range automatic - tap to change the range",
+    );
+    const names: (string | undefined)[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      v.tap();
+      names.push(name());
+    }
+    expect(names).toEqual([
+      "Stations around you, range 30 m - tap to change the range",
+      "Stations around you, range 100 m - tap to change the range",
+      "Stations around you, range 300 m - tap to change the range",
+      "Stations around you, range automatic - tap to change the range",
+    ]);
+    v.tap();
+    v.radar.reset();
+    expect(name()).toBe(
+      "Stations around you, range automatic - tap to change the range",
+    );
   });
 
   // Why this test matters: the button's name is what a screen reader says
@@ -586,7 +632,7 @@ describe("wireWalkRadar", () => {
     );
     const button = /<button[^>]*id="walk-radar"[^>]*>/.exec(html)?.[0] ?? "";
     expect(button).toContain(
-      'aria-label="Stations around you - tap to change the range"',
+      'aria-label="Stations around you, range automatic - tap to change the range"',
     );
     expect(button).not.toContain("aria-controls");
     expect(button).not.toContain("aria-expanded");

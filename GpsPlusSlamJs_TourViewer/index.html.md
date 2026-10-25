@@ -403,9 +403,10 @@ the size default.
 
 - `#walk-radar-wrap` (hidden until the walk shows; `data-mode` live or
   frozen; `data-range` the tap's step; `data-heading` none, provisional
-  or confirmed) holds `#walk-radar` (a button, "Stations around you - tap
-  to change the range": a tap steps the range, the list opens from the
-  sheet only) with `#walk-radar-canvas`, `#walk-range` (the range
+  or confirmed) holds `#walk-radar` (a button, "Stations around you, range
+  automatic - tap to change the range", the range in its name rewritten
+  on each step by `walk-radar.ts`: a tap steps the range, the list opens
+  from the sheet only) with `#walk-radar-canvas`, `#walk-range` (the range
   label, `aria-live="polite"`, shown for 2 s after a tap, the chip's
   pill: one rule for both), and `#walk-precision` (`data-kind`) with its
   mark and `#walk-precision-text`.

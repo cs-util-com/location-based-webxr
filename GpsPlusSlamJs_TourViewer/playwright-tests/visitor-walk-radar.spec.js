@@ -190,9 +190,11 @@ for (const tour of TOURS) {
       "code",
     );
     const radar = page.getByTestId("walk-radar");
-    await expect(radar).toHaveAccessibleName(
-      "Stations around you - tap to change the range",
-    );
+    // The button's name says the range drawn, automatic until a tap.
+    /** @param {string} range */
+    const named = (range) =>
+      `Stations around you, range ${range} - tap to change the range`;
+    await expect(radar).toHaveAccessibleName(named("automatic"));
     await expect(radar).not.toHaveAttribute("aria-expanded", /./);
     const sheet = page.getByTestId("walk-sheet");
     const range = page.getByTestId("walk-range");
@@ -206,6 +208,9 @@ for (const tour of TOURS) {
     ]) {
       await radar.click();
       await expect(wrap).toHaveAttribute("data-range", step);
+      await expect(radar).toHaveAccessibleName(
+        named(step === "auto" ? "automatic" : `${step} m`),
+      );
       await expect(range).toHaveText(words);
       await expect(range).toBeVisible();
       await expect(page.getByTestId("walk-precision")).toBeVisible();

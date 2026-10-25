@@ -60,8 +60,12 @@ WalkRadarView`
     automatic, 30, 100, 300 m, automatic again), draws the step at once
     and shows the range label (`#walk-range`, `walkRadarRangeLabel`)
     and the chip for `WALK_RADAR_PEEK_MS`; a second tap restarts that
-    time. The adaptive range keeps following the stations under a fixed
-    step, so automatic resumes where it would be. The tap opens no list:
+    time. The button's accessible name carries the range drawn at all
+    times (`walkRadarButtonName`: "Stations around you, range 100 m - tap
+    to change the range", "range automatic" without a step), written only
+    on a change; a reset writes the automatic one. The adaptive range
+    keeps following the stations under a fixed step, so automatic resumes
+    where it would be. The tap opens no list:
     the list's doors are the sheet's (the grab, "Can't get there?").
 
 ## Invariants & assumptions
@@ -141,8 +145,10 @@ radar.render({ stations, order, kind, accuracyM, live, snapshot });
   radial gradient refuses non-finite radii; a provisional heading's
   dimmer north without the cone), the view (chip words and modes, the
   heading's word, the tap's range steps and its 2 s peek of the label and
-  the chip, the reset back to automatic, index.html's button name and the
-  announced label, device pixels and the throttle, no size no draw, the
+  the chip, the reset back to automatic (its peek timer cleared: a new
+  peek after it lasts its full 2 s), the button's name per range step,
+  index.html's button name and the announced label, device pixels and
+  the throttle, no size no draw, the
   range's hysteresis and reset, a tour in order's later stations in the
   range, the size read once until a resize), the colour tokens against `index.html` (and every
   `rgb()` tint of the walk's CSS, and the canvas's tints), the debug

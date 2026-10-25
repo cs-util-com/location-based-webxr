@@ -341,6 +341,16 @@ export function walkRadarNextRangeM(current: number | null): number | null {
   );
 }
 
+/** The radar button's accessible name: what it shows, the range drawn
+ *  (a fixed step by its metres, else "automatic": a name that changed
+ *  with every adaptive metre would be read anew while focused), and what
+ *  a tap does. The range label shows only for 2 s after a tap; the name
+ *  carries the range whenever the button is reached. */
+export function walkRadarButtonName(fixedM: number | null): string {
+  const range = fixedM === null ? "automatic" : metres(fixedM);
+  return `Stations around you, range ${range} - tap to change the range`;
+}
+
 /** The range label's words: a fixed range by its metres, the automatic
  *  one with the range it draws now (`shownM`). */
 export function walkRadarRangeLabel(

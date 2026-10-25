@@ -47,6 +47,10 @@ minM: 10, maxM: 600, shrinkBelow: 0.65 }` (module-local; the default
   the radar steps through, null the automatic one.
 - `walkRadarNextRangeM(current)` - the next step, automatic after 300 m;
   a range that is no step (NaN, 45, a negative) goes back to automatic.
+- `walkRadarButtonName(fixedM)` - the radar button's accessible name:
+  "Stations around you, range 30 m - tap to change the range" for a fixed
+  step, "range automatic" for none (no metres: a name changing with every
+  adaptive metre would be re-read while focused).
 - `walkRadarRangeLabel(fixedM, shownM)` - "Range: 30 m" for a fixed step,
   "Range: auto, 60 m" for the automatic one (the range it draws now).
 - `walkRadarModel(input: WalkRadarInput) => WalkRadarModel`

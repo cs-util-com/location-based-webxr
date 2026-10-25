@@ -31,6 +31,7 @@ import {
   walkPrecisionChip,
   walkPrecisionChipShown,
   walkRadarAdaptiveRangeM,
+  walkRadarButtonName,
   walkRadarFovDeg,
   walkRadarModel,
   walkRadarNextRangeM,
@@ -489,8 +490,12 @@ export interface WalkRadarFrame {
 export interface WalkRadarDom {
   /** The radar and the chip's column (`#walk-radar-wrap`). */
   readonly wrap: Pick<HTMLElement, "hidden" | "dataset">;
-  /** The round button (`#walk-radar`): a tap steps the range. */
-  readonly button: Pick<HTMLElement, "addEventListener">;
+  /** The round button (`#walk-radar`): a tap steps the range; its
+   *  accessible name says the range drawn (`walkRadarButtonName`). */
+  readonly button: Pick<
+    HTMLElement,
+    "addEventListener" | "getAttribute" | "setAttribute"
+  >;
   readonly canvas: {
     readonly clientWidth: number;
     width: number;
@@ -577,6 +582,10 @@ export function wireWalkRadar(deps: {
     const peeking = peekTimer !== null;
     const range = fixedM === null ? "auto" : String(fixedM);
     if (dom.wrap.dataset["range"] !== range) dom.wrap.dataset["range"] = range;
+    const name = walkRadarButtonName(fixedM);
+    if (dom.button.getAttribute("aria-label") !== name) {
+      dom.button.setAttribute("aria-label", name);
+    }
     setText(
       dom.rangeLabel,
       walkRadarRangeLabel(fixedM, fixedM ?? adaptiveM ?? WALK_RADAR_RANGE_M),
