@@ -613,7 +613,8 @@ export function wireWalkSheet(deps: {
       // The list.
       setHidden(dom.list, !list);
       setText(dom.listTitle, model.list.title);
-      setText(dom.chip, model.list.chip);
+      setText(dom.chip, model.list.chip ?? "");
+      setHidden(dom.chip, model.list.chip === null);
       const done = model.list.completion;
       setHidden(dom.done, done === null);
       setHidden(dom.foot, done === null);

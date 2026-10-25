@@ -140,7 +140,8 @@ export interface WalkSheetModel {
   readonly grabLabel: string;
   readonly list: {
     readonly title: string;
-    readonly chip: string;
+    /** "Any order", or null (fixed and branch show no chip). */
+    readonly chip: string | null;
     /** "N of M found" (bold), then the other parts, zero ones left out. */
     readonly progress: { readonly lead: string; readonly rest: string[] };
     readonly completion: {
@@ -470,10 +471,12 @@ function completionOf(
   };
 }
 
-const CHIPS: Record<TourOrder, string> = {
+/** The order chip: only "Any order" tells the visitor something they act
+ *  on (they may choose); a fixed order and a branching path show none. */
+const CHIPS: Record<TourOrder, string | null> = {
   any: "Any order",
-  fixed: "In order",
-  branch: "Your path",
+  fixed: null,
+  branch: null,
 };
 
 /** The list's hint while no station is guessed: what the

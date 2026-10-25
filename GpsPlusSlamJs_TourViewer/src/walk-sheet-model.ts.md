@@ -45,7 +45,8 @@ the station guide's `view()` and the tour; the DOM writer is
     `WALK_SEGMENT_LIMIT`, else `bar` (found, skipped, to find, by count).
   - `grabLabel` - "Show all stations" / "Hide the list".
   - `list: { title, chip, progress: { lead, rest }, completion, hint, rows }`:
-    chip "Any order", "In order" or "Your path"; progress "N of M found"
+    chip "Any order" for any order and null for fixed and branch (it
+    told the visitor nothing they act on; the list hides it); progress "N of M found"
     then "K skipped", "L to find" (branch: "N found"); `completion`
     (`completionLine` plus "M of N found. A skipped station can still be
     brought back." - under branch order that sentence alone - or "Thank

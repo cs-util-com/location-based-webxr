@@ -444,16 +444,21 @@ describe("the list's header and progress line", () => {
       title: "Old town walk",
       chip: "Any order",
     });
-    expect(walkSheetModel(input({ order: "fixed" })).list.chip).toBe(
-      "In order",
-    );
-    expect(walkSheetModel(input({ order: "branch" })).list.chip).toBe(
-      "Your path",
-    );
     expect(walkSheetModel(input()).grabLabel).toBe("Show all stations");
     expect(walkSheetModel(input({ sheet: "list" })).grabLabel).toBe(
       "Hide the list",
     );
+  });
+
+  // Why this test matters: the order chip is only worth its space when it
+  // tells the visitor something they act on. "Any order" does (they may
+  // choose); "In order" and "Your path" told them nothing to do, and every
+  // tour the editor makes reads as fixed, so the chip read "In order" on
+  // every walk.
+  it("the order chip only for 'any' order: none for fixed and branch", () => {
+    expect(walkSheetModel(input({ order: "any" })).list.chip).toBe("Any order");
+    expect(walkSheetModel(input({ order: "fixed" })).list.chip).toBeNull();
+    expect(walkSheetModel(input({ order: "branch" })).list.chip).toBeNull();
   });
 
   it("'N of M found - K skipped - L to find', the zero parts left out", () => {
