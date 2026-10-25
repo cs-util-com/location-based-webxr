@@ -753,7 +753,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
           tiltDeg: cam.tiltDeg(),
           standing,
           ...layer.stats(),
-          osm: ground.osm.stats(),
+          osm: { ...ground.osm.stats(), coverage: ground.osm.coverage() },
           target: [controls.target.x, controls.target.y, controls.target.z],
           camera: [camera.position.x, camera.position.y, camera.position.z],
           distanceM: camera.position.distanceTo(controls.target),

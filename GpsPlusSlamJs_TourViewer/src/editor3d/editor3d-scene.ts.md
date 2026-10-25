@@ -30,7 +30,7 @@ keys), and writes only through the page's `edits`.
     a frame before the first one rejects with that error (the switch
     says `error`).
 - `Editor3dView`: `dispose()`; `stats()` (`Editor3dStats`: frames, the
-  last frame's clip planes `near` and `far`, tilt, standing, the stations layer's counts, the map's stats, and each
+  last frame's clip planes `near` and `far`, tilt, standing, the stations layer's counts, the map's stats with its `coverage` (the drawn tiles near the camera by their map, for the page's checks), and each
   station's drawn height and the drawn ground under it); `setTilt(deg)`
   (the page's checks: the orbit's tilt, its distance and heading kept);
   `setDistance(m)` (the orbit's distance within its limits, its tilt and

@@ -17,8 +17,8 @@ import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import * as THREE from "three";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
-import { XYZTilesOverlay } from "3d-tiles-renderer/plugins";
-import { describe, expect, it, vi } from "vitest";
+import { ImageOverlayPlugin, XYZTilesOverlay } from "3d-tiles-renderer/plugins";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   GLOBE_OSM,
@@ -412,13 +412,16 @@ const proto = XYZTilesOverlay.prototype as unknown as Record<
   (...args: unknown[]) => unknown
 >;
 
-/** An overlay whose library half is spied on (no image source in Node). */
+/** An overlay whose library half is spied on (no image source in Node),
+ *  without a keep: a release goes to the library at once (the keep has
+ *  its own tests). */
 function gatedOverlay(gate: (range: number[], level: number) => boolean) {
   const overlay = new GatedOsmOverlay({
     url: TEMPLATE,
     maxZoom: 19,
     gate,
     ceiling: createRequestCeiling(150),
+    keep: 0,
   });
   const lock = vi
     .spyOn(proto, "lockTexture")
@@ -662,8 +665,10 @@ describe("reevaluateGatedTiles", () => {
     const far = [0.6, 0.6, 0.60001, 0.60001];
     const { overlay, lock } = gatedOverlay((r) => r[0] === 0.5);
     const plugin = fakePlugin(overlay, [near, far]);
-    const started = reevaluateGatedTiles(plugin, overlay, { limit: 10 });
-    expect(started).toBe(1);
+    expect(reevaluateGatedTiles(plugin, overlay, { limit: 10 })).toEqual({
+      started: 1,
+      left: 0,
+    });
     await Promise.resolve();
     await Promise.resolve();
     expect(lock).toHaveBeenCalledTimes(1);
@@ -672,18 +677,26 @@ describe("reevaluateGatedTiles", () => {
     );
     expect(plugin.updated).toHaveLength(1);
     // Locked now: a second pass starts nothing.
-    expect(reevaluateGatedTiles(plugin, overlay, { limit: 10 })).toBe(0);
+    expect(reevaluateGatedTiles(plugin, overlay, { limit: 10 })).toEqual({
+      started: 0,
+      left: 0,
+    });
     vi.restoreAllMocks();
   });
 
-  it("stops at its limit and skips failed or unprocessed tiles", () => {
+  // Why: the tiles left for the next look are the throttle a creator
+  // waits on; the diagnostics count them.
+  it("stops at its limit, counts what it left, and skips failed or unprocessed tiles", () => {
     const ranges = [0, 1, 2, 3].map((i) => [i / 10, 0, i / 10 + 1e-5, 1e-5]);
     const { overlay } = gatedOverlay(() => true);
     const plugin = fakePlugin(overlay, ranges);
     const infos = [...plugin.tileInfo.values()];
     infos[0]!.failed = true;
     infos[1]!.meshInfo = new Map();
-    expect(reevaluateGatedTiles(plugin, overlay, { limit: 1 })).toBe(1);
+    expect(reevaluateGatedTiles(plugin, overlay, { limit: 1 })).toEqual({
+      started: 1,
+      left: 1,
+    });
     vi.restoreAllMocks();
   });
 
@@ -792,5 +805,592 @@ describe("createGlobeOsmOverlay's update", () => {
     ).fromCartographicToNormalizedRange([lon, lat, lon + 1e-5, lat + 1e-5]);
     expect(osm.overlay.wanted(range, 14)).toBe(true);
     expect(osm.overlay.wanted(range, 13)).toBe(false);
+  });
+});
+
+/** A fake of the relief's tiles: the plugin is never initialised in Node. */
+function fakeTerrain(visibleTiles: Set<object> = new Set()) {
+  return {
+    tiles: {
+      group: new THREE.Group(),
+      ellipsoid: WGS84_ELLIPSOID,
+      registerPlugin: () => {},
+      forEachLoadedModel: () => {},
+      addEventListener: () => {},
+      visibleTiles,
+    },
+    plugin: { sampleCartographicElevation: () => 0 },
+  };
+}
+
+describe("the map's diagnostics", () => {
+  // Why: map tiles can vanish, flicker or show bare relief for six
+  // different reasons, and which one dominates is decided by counting, on
+  // the real page, what each one does: a region's texture dropped (a
+  // re-visit fetches it again), the map switched off, a frame whose
+  // height over the ground was unknown, the time the request ceiling was
+  // full, and tiles the re-evaluation had to leave for its next look.
+  // These pin that each counter counts its own event and nothing else.
+  it("counts a region's texture dropped only with its last lock", async () => {
+    const { overlay, release } = gatedOverlay(() => true);
+    const R = [0.5, 0.5, 0.50001, 0.50001];
+    await overlay.lockTexture(R, 16);
+    await overlay.lockTexture(R, 16);
+    overlay.releaseTexture(R, 16);
+    expect(overlay.stats().releases).toBe(0);
+    overlay.releaseTexture(R, 16);
+    expect(overlay.stats().releases).toBe(1);
+    // A release of what was never locked drops nothing.
+    overlay.releaseTexture(R, 16);
+    expect(overlay.stats().releases).toBe(1);
+    expect(release).toHaveBeenCalledTimes(2);
+    vi.restoreAllMocks();
+  });
+
+  it("counts the map switched off and the frames with an unknown height", () => {
+    const osm = createGlobeOsmOverlay({
+      url: TEMPLATE,
+      attribution: ATTRIBUTION,
+      maxZoom: 19,
+      renderer: {} as THREE.WebGLRenderer,
+    });
+    osm.attach(fakeTerrain());
+    osm.setEnabled(true);
+    const position = new THREE.Vector3();
+    let now = 0;
+    const at = (aboveGroundM: number) => {
+      now += 100;
+      osm.update({ position, aboveGroundM, speedMps: 0, nowMs: now });
+    };
+    at(100); // on
+    at(300); // off: 1
+    at(Number.NaN); // unknown, already off
+    at(100); // on
+    at(Number.NaN); // unknown, off: 2
+    at(Number.NaN); // unknown
+    expect(osm.stats()).toMatchObject({
+      switchedOff: 2,
+      unknownHeightFrames: 3,
+    });
+  });
+
+  it("adds the time the request ceiling was full while the map was on", async () => {
+    const osm = createGlobeOsmOverlay({
+      url: TEMPLATE,
+      attribution: ATTRIBUTION,
+      maxZoom: 19,
+      renderer: {} as THREE.WebGLRenderer,
+    });
+    osm.attach(fakeTerrain());
+    osm.setEnabled(true);
+    const position = new THREE.Vector3();
+    osm.update({ position, aboveGroundM: 100, speedMps: 0, nowMs: 0 });
+    osm.update({ position, aboveGroundM: 100, speedMps: 0, nowMs: 250 });
+    expect(osm.stats().ceilingFullMs).toBe(0);
+    vi.spyOn(proto, "fetch").mockImplementation(() => Promise.resolve("ok"));
+    for (let i = 0; i < GLOBE_OSM.requestsPerMinute; i++) {
+      await osm.overlay.fetch(`u${i}`);
+    }
+    osm.update({ position, aboveGroundM: 100, speedMps: 0, nowMs: 500 });
+    osm.update({ position, aboveGroundM: 100, speedMps: 0, nowMs: 900 });
+    expect(osm.stats().ceilingFullMs).toBe(650);
+    // Off, the full ceiling holds nothing back.
+    osm.update({ position, aboveGroundM: 300, speedMps: 0, nowMs: 1_400 });
+    expect(osm.stats().ceilingFullMs).toBe(650);
+    vi.restoreAllMocks();
+  });
+
+  // Why: the drawn picture is what the creator sees, so a measurement
+  // needs it per tile: of the relief tiles drawn where the map is at full strength,
+  // how many carry it, how many are too coarse for it (under the coarsest
+  // zoom: bare relief by design), and how many wait for it (gated,
+  // throttled or loading). Far tiles and tiles of another place are not
+  // counted.
+  it("sorts the drawn tiles near the camera by their map", async () => {
+    const visible = new Set<object>();
+    const osm = createGlobeOsmOverlay({
+      url: TEMPLATE,
+      attribution: ATTRIBUTION,
+      maxZoom: 19,
+      renderer: {} as THREE.WebGLRenderer,
+      fadeM: 1000,
+    });
+    await (osm.overlay as unknown as { init(): Promise<unknown> }).init();
+    osm.attach(fakeTerrain(visible));
+    osm.setEnabled(true);
+    const lat = 48.137;
+    const lon = 11.575;
+    osm.update({
+      position: cameraAt(lat, lon, 100),
+      aboveGroundM: 100,
+      speedMps: 0,
+      nowMs: 0,
+    });
+    const projection = osm.overlay.projection as {
+      fromCartographicToNormalizedRange(r: number[]): number[];
+    };
+    const tileInfo = (
+      osm.plugin as unknown as {
+        overlayInfo: Map<object, { tileInfo: Map<object, unknown> }>;
+      }
+    ).overlayInfo.get(osm.overlay)!.tileInfo;
+    const add = (
+      region: number[] | null,
+      target: unknown,
+      drawn = true,
+    ): void => {
+      const tile = {};
+      tileInfo.set(tile, {
+        range:
+          region === null
+            ? null
+            : projection.fromCartographicToNormalizedRange(region),
+        target,
+        failed: false,
+        meshInfo: new Map([[1, 1]]),
+      });
+      if (drawn) visible.add(tile);
+    };
+    // About 50 m across: z17 or finer.
+    const small = (dLat: number) => regionAround(lat + dLat, lon, 0.0002);
+    add(small(0), "texture"); // near, with its map
+    add(small(0.001), null); // near, waiting
+    add(small(0.002), null, false); // near, not drawn
+    add(small(0.05), null); // about 5.6 km away
+    add(regionAround(lat, lon, 0.05), null); // near, about z12
+    add(null, null); // drawn, not processed yet
+    expect(osm.coverage()).toEqual({
+      near: 3,
+      withMap: 1,
+      coarse: 1,
+      waiting: 1,
+      unprocessed: 1,
+    });
+  });
+
+  // Why: `coverage` sorts the drawn tiles by their distance from the
+  // camera of the last update. The camera was taken only while the map was
+  // on, so after a frame with the map off (an unknown height, a switch-off)
+  // it counted the tiles near where the camera had last been with the map
+  // on, not near where it is.
+  it("measures from the camera of the last update, the map on or off", async () => {
+    const visible = new Set<object>();
+    const osm = createGlobeOsmOverlay({
+      url: TEMPLATE,
+      attribution: ATTRIBUTION,
+      maxZoom: 19,
+      renderer: {} as THREE.WebGLRenderer,
+      fadeM: 1000,
+    });
+    await (osm.overlay as unknown as { init(): Promise<unknown> }).init();
+    osm.attach(fakeTerrain(visible));
+    osm.setEnabled(true);
+    const lat = 48.137;
+    const lon = 11.575;
+    const at = (dLat: number, aboveGroundM: number, nowMs: number) => {
+      osm.update({
+        position: cameraAt(lat + dLat, lon, 100),
+        aboveGroundM,
+        speedMps: 0,
+        nowMs,
+      });
+    };
+    const tile = {};
+    (
+      osm.plugin as unknown as {
+        overlayInfo: Map<object, { tileInfo: Map<object, unknown> }>;
+      }
+    ).overlayInfo
+      .get(osm.overlay)!
+      .tileInfo.set(tile, {
+        range: (
+          osm.overlay.projection as {
+            fromCartographicToNormalizedRange(r: number[]): number[];
+          }
+        ).fromCartographicToNormalizedRange(regionAround(lat, lon, 0.0002)),
+        target: "texture",
+        failed: false,
+        meshInfo: new Map([[1, 1]]),
+      });
+    visible.add(tile);
+    at(0, 100, 0);
+    expect(osm.coverage()).toMatchObject({ near: 1, withMap: 1 });
+    // About 5.6 km away, its height unknown: the map is off.
+    at(0.05, Number.NaN, 16);
+    expect(osm.stats().active).toBe(false);
+    expect(osm.coverage()).toMatchObject({ near: 0, withMap: 0 });
+  });
+
+  it("reads nothing before it is attached or while the overlay is not ready", () => {
+    const osm = createGlobeOsmOverlay({
+      url: TEMPLATE,
+      attribution: ATTRIBUTION,
+      maxZoom: 19,
+      renderer: {} as THREE.WebGLRenderer,
+    });
+    const none = {
+      near: 0,
+      withMap: 0,
+      coarse: 0,
+      waiting: 0,
+      unprocessed: 0,
+    };
+    expect(osm.coverage()).toEqual(none);
+    osm.attach(fakeTerrain(new Set([{}])));
+    expect(osm.coverage()).toEqual(none);
+  });
+});
+
+describe("the keep of released map textures", () => {
+  const A = [0.5, 0.5, 0.50001, 0.50001];
+  const B = [0.6, 0.6, 0.60001, 0.60001];
+  const C = [0.7, 0.7, 0.70001, 0.70001];
+
+  /** A ready overlay with `keep`, its library half spied on; `loaded`
+   *  says what the library holds for a region (a texture, or a promise
+   *  while it loads or after it failed). */
+  function keptOverlay(
+    keep: number,
+    gate: (range: number[]) => boolean = () => true,
+    loaded: () => unknown = () => "texture",
+  ) {
+    const overlay = new GatedOsmOverlay({
+      url: TEMPLATE,
+      maxZoom: 19,
+      gate,
+      ceiling: createRequestCeiling(150),
+      keep,
+    });
+    const lock = vi
+      .spyOn(proto, "lockTexture")
+      .mockImplementation(() => Promise.resolve("texture"));
+    const release = vi
+      .spyOn(proto, "releaseTexture")
+      .mockImplementation(() => {});
+    vi.spyOn(proto, "getTexture").mockImplementation(loaded);
+    vi.spyOn(proto, "hasContent").mockImplementation(() => true);
+    vi.spyOn(proto, "calculateLevel").mockImplementation(() => 16);
+    (overlay as unknown as { isReady: boolean }).isReady = true;
+    return { overlay, lock, release };
+  }
+
+  // Why (a measurement, 2026-10-25: the editor at 390 px wide, its map
+  // from a fake tile server answering in 300 ms): the relief unloads tiles
+  // it no longer uses, and each unload released its map region, which the
+  // library drops at once. 63 % of all map requests were re-fetches of
+  // tiles it had had a minute before, and they filled the 150-a-minute
+  // ceiling: a tile under the camera then had no map for seconds. A released texture now stays in memory, a re-visit takes it
+  // back without a request, and the gate is not asked (it has nothing to
+  // protect: no request is made).
+  it("keeps a released texture and serves a re-lock from memory, past the gate", async () => {
+    let open = true;
+    const { overlay, lock, release } = keptOverlay(4, () => open);
+    expect(await overlay.lockTexture(A)).toBe("texture");
+    overlay.releaseTexture(A);
+    expect(release).not.toHaveBeenCalled();
+    expect(overlay.isLocked(A)).toBe(false);
+    expect(overlay.hasContent(A)).toBe(false);
+    expect(overlay.stats()).toMatchObject({ keptRegions: 1, releases: 0 });
+
+    open = false;
+    expect(await overlay.lockTexture(A)).toBe("texture");
+    expect(lock).toHaveBeenCalledTimes(1);
+    expect(overlay.isLocked(A)).toBe(true);
+    expect(overlay.hasContent(A)).toBe(true);
+    expect(overlay.stats()).toMatchObject({
+      keptRegions: 0,
+      keptHits: 1,
+      locks: 2,
+      gatedLocks: 0,
+    });
+    vi.restoreAllMocks();
+  });
+
+  // Why: the keep is a bound on memory (each region about 512 KiB), so
+  // past it the region released longest ago goes to the library, and its
+  // next lock is an ordinary one: through the gate, fetched.
+  it("lets the region released longest ago go past the keep", async () => {
+    const { overlay, lock, release } = keptOverlay(2);
+    for (const r of [A, B, C]) {
+      await overlay.lockTexture(r);
+      overlay.releaseTexture(r);
+    }
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(release.mock.calls[0]![0]).toEqual(A);
+    expect(overlay.stats()).toMatchObject({ keptRegions: 2, releases: 1 });
+    await overlay.lockTexture(A);
+    expect(lock).toHaveBeenCalledTimes(4);
+    // A re-lock takes B out of the keep; it is the newest again when
+    // released, so C goes first.
+    await overlay.lockTexture(B);
+    overlay.releaseTexture(B);
+    overlay.releaseTexture(A);
+    expect(release.mock.calls[1]![0]).toEqual(C);
+    vi.restoreAllMocks();
+  });
+
+  // Why: what the library holds for a region still loading is its fetch,
+  // and for one that failed a rejected promise. Keeping either would hand
+  // a re-visit the failure forever (or hold a request the view no longer
+  // wants): only a loaded texture is kept.
+  it("never keeps a region still loading or failed", async () => {
+    const { overlay, release } = keptOverlay(4, undefined, () =>
+      Promise.resolve("later"),
+    );
+    await overlay.lockTexture(A);
+    overlay.releaseTexture(A);
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(overlay.stats()).toMatchObject({ keptRegions: 0, releases: 1 });
+    vi.restoreAllMocks();
+  });
+
+  // Why: a keep of 0 is the library's own behaviour, and setting it lower
+  // (to 0 as the map is disposed) lets every kept texture go at once:
+  // the plugin's dispose releases its regions but never disposes the
+  // overlay, so a texture still kept then would outlive the view.
+  it("keeps nothing at 0, and lets the kept go when the keep shrinks", async () => {
+    const { overlay, release } = keptOverlay(4);
+    for (const r of [A, B]) {
+      await overlay.lockTexture(r);
+      overlay.releaseTexture(r);
+    }
+    overlay.setKeep(1);
+    expect(release).toHaveBeenCalledTimes(1);
+    overlay.setKeep(0);
+    expect(release).toHaveBeenCalledTimes(2);
+    await overlay.lockTexture(C);
+    overlay.releaseTexture(C);
+    expect(release).toHaveBeenCalledTimes(3);
+    expect(overlay.stats()).toMatchObject({ keptRegions: 0, releases: 3 });
+    expect(() => overlay.setKeep(-1)).toThrow(RangeError);
+    expect(() => overlay.setKeep(1.5)).toThrow(RangeError);
+    expect(
+      () =>
+        new GatedOsmOverlay({
+          url: TEMPLATE,
+          maxZoom: 19,
+          gate: () => true,
+          ceiling: createRequestCeiling(1),
+          keep: Number.NaN,
+        }),
+    ).toThrow(RangeError);
+    vi.restoreAllMocks();
+  });
+
+  // Why: the map is disposed with the relief (its tiles dispose their
+  // plugins); the overlay's keep must be emptied then, by the plugin's own
+  // dispose, or the kept textures outlive the 3D view.
+  it("empties the keep when the map's plugin is disposed", () => {
+    // (0.5.3's typings omit `dispose`.)
+    const dispose = vi
+      .spyOn(
+        ImageOverlayPlugin.prototype as unknown as { dispose(): void },
+        "dispose",
+      )
+      .mockImplementation(() => {});
+    const osm = createGlobeOsmOverlay({
+      url: TEMPLATE,
+      attribution: ATTRIBUTION,
+      maxZoom: 19,
+      renderer: {} as THREE.WebGLRenderer,
+    });
+    expect(osm.overlay.stats().keep).toBe(GLOBE_OSM.keepRegions);
+    const setKeep = vi.spyOn(osm.overlay, "setKeep");
+    (osm.plugin as unknown as { dispose(): void }).dispose();
+    expect(setKeep).toHaveBeenCalledWith(0);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(setKeep.mock.invocationCallOrder[0]!).toBeLessThan(
+      dispose.mock.invocationCallOrder[0]!,
+    );
+    expect(osm.overlay.stats().keep).toBe(0);
+    vi.restoreAllMocks();
+  });
+
+  // Why: the keep is memory outside the relief's budget, so how much of it
+  // a view may hold is the caller's (the editor keeps fewer on a phone);
+  // a bad size is refused when the map is made, not at its first release.
+  it("takes the caller's keep, and refuses a bad one", () => {
+    const make = (keep?: number) =>
+      createGlobeOsmOverlay({
+        url: TEMPLATE,
+        attribution: ATTRIBUTION,
+        maxZoom: 19,
+        renderer: {} as THREE.WebGLRenderer,
+        ...(keep === undefined ? {} : { keep }),
+      });
+    expect(make().overlay.stats().keep).toBe(GLOBE_OSM.keepRegions);
+    expect(make(8).overlay.stats().keep).toBe(8);
+    expect(make(0).overlay.stats().keep).toBe(0);
+    for (const bad of [-1, 2.5, Number.NaN]) {
+      expect(() => make(bad)).toThrow(RangeError);
+    }
+  });
+
+  // Why: a kept region is held in the library under the level it was
+  // locked at. A lock that asks for another level (the overlay's
+  // resolution changed) must not be served from the keep: the library
+  // holds nothing under the new level, so the lock would read null, and
+  // the kept lock would never be given back. The kept one goes back and
+  // the lock is an ordinary one.
+  it("gives a kept region back, and locks it anew, when its level has changed", async () => {
+    const { overlay, lock, release } = keptOverlay(4);
+    await overlay.lockTexture(A);
+    overlay.releaseTexture(A);
+    expect(overlay.stats().keptRegions).toBe(1);
+    vi.spyOn(proto, "calculateLevel").mockImplementation(() => 17);
+    expect(await overlay.lockTexture(A)).toBe("texture");
+    expect(release.mock.calls).toEqual([[A, 16]]);
+    expect(lock.mock.calls).toEqual([
+      [A, 16],
+      [A, 17],
+    ]);
+    expect(overlay.stats()).toMatchObject({
+      keptRegions: 0,
+      keptHits: 0,
+      releases: 1,
+      locks: 2,
+    });
+    vi.restoreAllMocks();
+  });
+});
+
+describe("the keep, over the library's own region cache", () => {
+  // A spy an earlier test left (one that failed before restoring) would
+  // stand in for the library these tests read.
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+  /** The library's region cache, as far as these tests read it (0.5.3). */
+  interface RegionCache {
+    cache: Record<string, { count: number; result: unknown } | undefined>;
+    count: number;
+    fetchItem(args: unknown[], signal?: AbortSignal): unknown;
+    disposeItem(item: unknown, args: unknown[]): void;
+  }
+  /** About z16 at 256 px, near the middle of the map. */
+  const SIDE = 2 ** -16;
+  const A = [0.5, 0.5, 0.5 + SIDE, 0.5 + SIDE];
+  const B = [0.6, 0.6, 0.6 + SIDE, 0.6 + SIDE];
+  /** Lets the library's queued disposals and settled fetches run. */
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  /** A ready overlay over the library's real region cache (its init runs
+   *  in Node), a region's fetch stubbed by `fetched`: what the keep holds
+   *  is read from the library's own lock counts and disposals. */
+  async function libraryOverlay(
+    keep: number,
+    fetched: (args: unknown[]) => Promise<unknown>,
+  ) {
+    const overlay = new GatedOsmOverlay({
+      url: TEMPLATE,
+      maxZoom: 19,
+      gate: () => true,
+      ceiling: createRequestCeiling(150),
+      keep,
+    });
+    await (overlay as unknown as { init(): Promise<unknown> }).init();
+    const source = (overlay as unknown as { regionImageSource: RegionCache })
+      .regionImageSource;
+    const fetchItem = vi
+      .spyOn(source, "fetchItem")
+      .mockImplementation((args) => fetched(args));
+    // The real one unlocks the source tiles the stubbed fetch never locked.
+    const disposeItem = vi
+      .spyOn(source, "disposeItem")
+      .mockImplementation(() => {});
+    const levelOf = (range: number[]) =>
+      (
+        overlay as unknown as { calculateLevel(r: number[]): number }
+      ).calculateLevel(range);
+    const held = (range: number[]) =>
+      source.cache[[...range, levelOf(range)].join("_")];
+    return { overlay, source, fetchItem, disposeItem, held, levelOf };
+  }
+
+  // Why: the keep's whole contract is a lock the library never sees given
+  // up. Spies on the library's methods cannot show that its own reference
+  // count says the same: one library lock through a release, a re-lock
+  // that neither fetches nor locks twice, and the texture disposed only
+  // when the keep lets the region go (past its size, or at 0).
+  it("holds the library's lock through a release and a re-lock, and gives it back past the keep", async () => {
+    const textures = new Map<string, object>();
+    const { overlay, source, fetchItem, disposeItem, held, levelOf } =
+      await libraryOverlay(1, (args) => {
+        const texture = { region: String(args[0]) };
+        textures.set(String(args[0]), texture);
+        return Promise.resolve(texture);
+      });
+    const texA = await overlay.lockTexture(A);
+    expect(texA).toBe(textures.get(String(A[0])));
+    expect(held(A)?.count).toBe(1);
+
+    overlay.releaseTexture(A);
+    await settle();
+    expect(held(A)?.count).toBe(1);
+    expect(disposeItem).not.toHaveBeenCalled();
+
+    expect(await overlay.lockTexture(A)).toBe(texA);
+    expect(fetchItem).toHaveBeenCalledTimes(1);
+    expect(held(A)?.count).toBe(1);
+    overlay.releaseTexture(A);
+
+    // A second region past a keep of 1: A goes back to the library.
+    await overlay.lockTexture(B);
+    overlay.releaseTexture(B);
+    await settle();
+    expect(held(A)).toBeUndefined();
+    expect(disposeItem).toHaveBeenCalledTimes(1);
+    expect(disposeItem.mock.calls[0]).toEqual([texA, [...A, levelOf(A)]]);
+    expect(held(B)?.count).toBe(1);
+
+    overlay.setKeep(0);
+    await settle();
+    expect(held(B)).toBeUndefined();
+    expect(disposeItem).toHaveBeenCalledTimes(2);
+    expect(source.count).toBe(0);
+    expect(overlay.stats()).toMatchObject({
+      keptRegions: 0,
+      keptHits: 1,
+      releases: 2,
+    });
+    vi.restoreAllMocks();
+  });
+
+  // Why: for a fetch that failed the library holds a REJECTED promise, and
+  // for one still loading a pending one; neither is a texture. Kept, a
+  // failed region would hand every re-visit the same failure and never be
+  // asked for again. Both go back to the library at once, and it disposes
+  // them (with null: nothing was loaded).
+  it("gives back at once a region whose fetch failed, or that is still loading", async () => {
+    let finish: (v: unknown) => void = () => {};
+    const { overlay, source, disposeItem, held } = await libraryOverlay(
+      4,
+      (args) =>
+        args[0] === A[0]
+          ? Promise.reject(new Error("tile failed"))
+          : new Promise((resolve) => {
+              finish = resolve;
+            }),
+    );
+    await expect(overlay.lockTexture(A)).rejects.toThrow("tile failed");
+    expect(held(A)?.result).toBeInstanceOf(Promise);
+    overlay.releaseTexture(A);
+    expect(overlay.stats()).toMatchObject({ keptRegions: 0, releases: 1 });
+    await settle();
+    expect(held(A)).toBeUndefined();
+    expect(disposeItem.mock.calls[0]?.[0]).toBeNull();
+
+    const loading = overlay.lockTexture(B);
+    loading.catch(() => {}); // the library aborts it on the release
+    overlay.releaseTexture(B);
+    expect(overlay.stats()).toMatchObject({ keptRegions: 0, releases: 2 });
+    await settle();
+    expect(held(B)).toBeUndefined();
+    finish({ late: true });
+    await settle();
+    expect(disposeItem).toHaveBeenCalledTimes(2);
+    expect(disposeItem.mock.calls[1]?.[0]).toBeNull();
+    expect(source.count).toBe(0);
+    vi.restoreAllMocks();
   });
 });

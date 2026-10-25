@@ -50,6 +50,15 @@ export const GLOBE_OSM = Object.freeze({
   reevaluateLimit: 8,
   /** The overlay texture per relief tile (px, the plugin's default). */
   resolution: 256,
+  /**
+   * Released map regions kept in memory, so a relief tile unloaded and
+   * loaded again takes its map back without a request. A kept region
+   * holds its region texture and the library's lock on its source tile
+   * bitmap(s): about 512 KiB, so about 32 MiB at 64. Measured 2026-10-25
+   * (a phone-width editor, 390 px, over a fake tile server): without a
+   * keep 63 % of its map requests were re-fetches.
+   */
+  keepRegions: 64,
 });
 
 /**
@@ -325,6 +334,7 @@ export function patchOsmFade(
 /** The library's overlay, as far as this module uses it (0.5.3, untyped parts). */
 interface OverlayInternals {
   calculateLevel(range: number[]): number;
+  getTexture(range: number[], level?: number): unknown;
   lockTexture(range: number[], level?: number): Promise<unknown>;
   releaseTexture(range: number[], level?: number): void;
   hasContent(range: number[], level?: number): boolean;
@@ -356,12 +366,31 @@ const sleepFor = (ms: number, signal?: AbortSignal): Promise<void> =>
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 
+/** RangeError unless `keep` is an integer >= 0. */
+function checkKeep(keep: number): void {
+  if (!(Number.isInteger(keep) && keep >= 0)) {
+    throw new RangeError(
+      `the map's keep must be an integer >= 0, got ${String(keep)}`,
+    );
+  }
+}
+
+/** Whether what the library holds for a region is a loaded texture (not
+ *  its fetch still running, nor a failed one's rejected promise). */
+const isLoaded = (held: unknown): boolean =>
+  held !== null && held !== undefined && !(held instanceof Promise);
+
 /**
  * The library's XYZ overlay behind a gate: the plugin's lock of a region
  * (which fetches) reaches the library only where `gate(range, level)`
  * allows it, a region counts as content only while locked, a release
  * unlocks only what was locked, and every fetch waits for `ceiling`.
- * RangeError for a url without `{z}/{x}/{y}`; TypeError without a gate.
+ * A region whose last lock goes keeps its loaded texture in memory, up
+ * to `keep` regions (the one released longest ago goes first), and a
+ * lock of a kept region at the level it was kept at takes it back without
+ * the gate or a request (at another level it is given back first).
+ * RangeError for a url without `{z}/{x}/{y}` or a keep that is not an
+ * integer >= 0; TypeError without a gate.
  */
 export class GatedOsmOverlay extends XYZTilesOverlay {
   private readonly gate: (range: number[], level: number) => boolean;
@@ -370,6 +399,11 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
   private readonly locked = new Map<string, number>();
   private gatedLocks = 0;
   private locks = 0;
+  private releases = 0;
+  private keptHits = 0;
+  /** Released regions still locked in the library, oldest first. */
+  private readonly kept = new Map<string, { range: number[]; level: number }>();
+  private keep: number;
   private finestLevel: number | null = null;
 
   constructor({
@@ -378,12 +412,15 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
     gate,
     ceiling,
     sleep = sleepFor,
+    keep = GLOBE_OSM.keepRegions,
   }: {
     url: string;
     maxZoom: number;
     gate: (range: number[], level: number) => boolean;
     ceiling: RequestCeiling;
     sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+    /** Released textures kept in memory (regions). */
+    keep?: number;
   }) {
     if (!isTileTemplate(url)) {
       throw new RangeError(
@@ -393,7 +430,9 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
     if (typeof gate !== "function") {
       throw new TypeError("the OSM overlay needs its gate");
     }
+    checkKeep(keep);
     super({ url, levels: maxZoom + 1 });
+    this.keep = keep;
     this.gate = gate;
     this.ceiling = ceiling;
     this.sleep = sleep;
@@ -439,11 +478,25 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
     }
     const l = this.levelOf(range, level);
     this.finestLevel = Math.max(this.finestLevel ?? l, l);
+    const k = this.key(range);
+    const kept = this.kept.get(k);
+    if (kept) {
+      this.kept.delete(k);
+      if (kept.level === l) {
+        // Its library lock was never given up: no gate, no request.
+        this.locked.set(k, 1);
+        this.locks++;
+        this.keptHits++;
+        return Promise.resolve(base.getTexture.call(this, range, l));
+      }
+      // Held under another level: given back, and locked anew below.
+      this.releases++;
+      base.releaseTexture.call(this, kept.range, kept.level);
+    }
     if (!this.gate(range, l)) {
       this.gatedLocks++;
       return Promise.resolve(null);
     }
-    const k = this.key(range);
     this.locked.set(k, (this.locked.get(k) ?? 0) + 1);
     this.locks++;
     return base.lockTexture.call(this, range, l);
@@ -454,9 +507,40 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
     const n = this.locked.get(k) ?? 0;
     if (n === 0) return;
     const l = this.levelOf(range, level);
-    if (n === 1) this.locked.delete(k);
-    else this.locked.set(k, n - 1);
+    if (n > 1) {
+      this.locked.set(k, n - 1);
+      base.releaseTexture.call(this, range, l);
+      return;
+    }
+    this.locked.delete(k);
+    if (this.keep > 0 && isLoaded(base.getTexture.call(this, range, l))) {
+      this.kept.set(k, { range: [...range], level: l });
+      this.trimKept();
+      return;
+    }
+    this.releases++;
     base.releaseTexture.call(this, range, l);
+  }
+
+  /**
+   * How many released textures to keep (regions); the ones released
+   * longest ago go at once past it, all of them at 0. RangeError unless
+   * an integer >= 0.
+   */
+  setKeep(keep: number): void {
+    checkKeep(keep);
+    this.keep = keep;
+    this.trimKept();
+  }
+
+  /** Gives the regions released longest ago back to the library, down to the keep. */
+  private trimKept(): void {
+    for (const [k, { range, level }] of this.kept) {
+      if (this.kept.size <= this.keep) return;
+      this.kept.delete(k);
+      this.releases++;
+      base.releaseTexture.call(this, range, level);
+    }
   }
 
   async fetch(
@@ -472,20 +556,31 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
   }
 
   /**
-   * Locks the gate let through and turned away, regions locked now, and the
-   * finest level a lock asked for (null before the first): under
-   * the coarsest zoom in force, the relief tree is too coarse for the map.
+   * Locks the gate let through and turned away, regions locked now,
+   * textures given back to the library (it drops them, so a re-visit
+   * fetches again), the keep, the regions kept now and the locks served
+   * from it, and the finest level a lock asked for (null before the
+   * first): under the coarsest zoom in force, the relief tree is too
+   * coarse for the map.
    */
   stats(): {
     locks: number;
     gatedLocks: number;
     lockedRegions: number;
+    releases: number;
+    keep: number;
+    keptRegions: number;
+    keptHits: number;
     finestLevel: number | null;
   } {
     return {
       locks: this.locks,
       gatedLocks: this.gatedLocks,
       lockedRegions: this.locked.size,
+      releases: this.releases,
+      keep: this.keep,
+      keptRegions: this.kept.size,
+      keptHits: this.keptHits,
       finestLevel: this.finestLevel,
     };
   }
@@ -536,19 +631,24 @@ const retryable = (info: TileOverlayInfo, overlay: GatedOsmOverlay): boolean =>
  * The tiles whose map was gated when they loaded and that the gate lets
  * through now (processed, no texture, not failed, not locked): locked,
  * fetched and drawn as the plugin's own retry does, at most `limit` per
- * call. Returns how many were started.
+ * call. Returns how many were started and how many more the gate would
+ * have let through (left for a later call).
  */
 export function reevaluateGatedTiles(
   plugin: OverlayPluginInternals,
   overlay: GatedOsmOverlay,
   { limit }: { limit: number },
-): number {
+): { started: number; left: number } {
   const tileInfo = plugin.overlayInfo.get(overlay)?.tileInfo;
-  if (!tileInfo) return 0;
+  if (!tileInfo) return { started: 0, left: 0 };
   let started = 0;
+  let left = 0;
   for (const [tile, info] of tileInfo) {
-    if (started >= limit) break;
     if (!retryable(info, overlay)) continue;
+    if (started >= limit) {
+      left++;
+      continue;
+    }
     const range = info.range!;
     started++;
     void overlay.lockTexture(range).catch(() => {});
@@ -557,7 +657,7 @@ export function reevaluateGatedTiles(
       .then(() => plugin._updateLayers(tile))
       .catch(() => {});
   }
-  return started;
+  return { started, left };
 }
 
 /** What `createGlobeOsmOverlay` attaches to: the relief's tiles. */
@@ -571,11 +671,37 @@ export interface OsmOverlayTerrain {
       type: "load-model",
       cb: (e: { scene: THREE.Object3D }) => void,
     ): void;
+    /** The tiles drawn in the last update (the library's set); only
+     *  `coverage` reads it. */
+    readonly visibleTiles?: ReadonlySet<object>;
   };
   readonly plugin: {
     sampleCartographicElevation(lat: number, lon: number): number | null;
   };
 }
+
+/** The drawn relief tiles near the camera, by their map (`coverage`). */
+export interface OsmCoverage {
+  /** Drawn tiles that come within the fade's start of the camera, where
+   *  the map is drawn at full strength. */
+  readonly near: number;
+  /** Of those, the ones with their map. */
+  readonly withMap: number;
+  /** Too coarse for it: the level picked is under the coarsest zoom. */
+  readonly coarse: number;
+  /** Waiting for it: gated, throttled, loading or failed. */
+  readonly waiting: number;
+  /** Drawn tiles the plugin has not placed yet (no range). */
+  readonly unprocessed: number;
+}
+
+const NO_COVERAGE: OsmCoverage = Object.freeze({
+  near: 0,
+  withMap: 0,
+  coarse: 0,
+  waiting: 0,
+  unprocessed: 0,
+});
 
 /** The pose `update` takes each frame. */
 export interface OsmCameraPose {
@@ -599,8 +725,9 @@ const FADED = Symbol("globe-osm-fade");
  * Off until `setEnabled(true)`. `update(pose)` each frame: the gate's
  * camera, the active rule, the fade's switch, and every `reevaluateMs`
  * the tiles gated at load. `limits` replace the flight's (`GLOBE_OSM`)
- * for the band and the coarsest zoom. RangeError from `osmCredit`,
- * `osmGateLimits` or the overlay for a bad attribution, limit or url.
+ * for the band and the coarsest zoom; `keep` is the overlay's keep.
+ * RangeError from `osmCredit`, `osmGateLimits` or the overlay for a bad
+ * attribution, limit, url or keep.
  */
 export function createGlobeOsmOverlay({
   url,
@@ -609,6 +736,7 @@ export function createGlobeOsmOverlay({
   renderer,
   fadeM = GLOBE_OSM.fadeM,
   limits: callerLimits = {},
+  keep = GLOBE_OSM.keepRegions,
 }: {
   url: string;
   attribution: string;
@@ -616,6 +744,8 @@ export function createGlobeOsmOverlay({
   renderer: THREE.WebGLRenderer;
   fadeM?: number;
   limits?: Partial<OsmGateLimits>;
+  /** Released map regions kept in memory (`GatedOsmOverlay`'s keep). */
+  keep?: number;
 }) {
   if (!(Number.isFinite(fadeM) && fadeM > 0)) {
     throw new RangeError(
@@ -635,9 +765,16 @@ export function createGlobeOsmOverlay({
   let active = false;
   const camera = new THREE.Vector3();
   let unpatched = 0;
-  const gate = (range: number[], level: number): boolean => {
-    if (!terrain || !active || level < limits.minZoom) return false;
-    if (ceiling.waitMs() > 0) return false;
+  // The diagnostics: what each way of losing the map did.
+  let switchedOff = 0;
+  let unknownHeightFrames = 0;
+  let ceilingFullMs = 0;
+  let reevaluateBacklog = 0;
+  let cappedLooks = 0;
+  /** Whether a range (normalised) comes within `withinM` of the camera;
+   *  false for one the projection cannot place. */
+  const rangeNear = (range: number[], withinM: number): boolean => {
+    if (!terrain) return false;
     const { ellipsoid } = terrain.tiles;
     const ground = terrain.plugin;
     try {
@@ -649,20 +786,37 @@ export function createGlobeOsmOverlay({
       return regionNearCamera(region, camera, {
         ellipsoid,
         groundAtM: (la, lo) => ground.sampleCartographicElevation(la, lo),
-        withinM: uniforms.uOsmFadeM.value,
+        withinM,
       });
     } catch {
-      // A range the projection cannot place is never asked for.
       return false;
     }
   };
-  const overlay = new GatedOsmOverlay({ url, maxZoom, gate, ceiling });
+  const gate = (range: number[], level: number): boolean => {
+    if (!terrain || !active || level < limits.minZoom) return false;
+    if (ceiling.waitMs() > 0) return false;
+    // A range the projection cannot place is never asked for.
+    return rangeNear(range, uniforms.uOsmFadeM.value);
+  };
+  const overlay = new GatedOsmOverlay({ url, maxZoom, gate, ceiling, keep });
   const plugin = new ImageOverlayPlugin({
     renderer,
     overlays: [overlay],
     enableTileSplitting: false,
     resolution: GLOBE_OSM.resolution,
   });
+  // The plugin's dispose releases its regions but never disposes the
+  // overlay: emptied first, the keep holds nothing past the view.
+  // (0.5.3's typings omit `dispose`, which the tiles call.)
+  const disposable = plugin as unknown as { dispose(): void };
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- called with the plugin below
+  const disposePlugin = (
+    ImageOverlayPlugin.prototype as unknown as { dispose(this: unknown): void }
+  ).dispose;
+  disposable.dispose = () => {
+    overlay.setKeep(0);
+    disposePlugin.call(plugin);
+  };
   const fade = (scene: THREE.Object3D) => {
     scene.traverse((o) => {
       const m = (o as THREE.Mesh).material as
@@ -682,6 +836,26 @@ export function createGlobeOsmOverlay({
   };
   let lastLook = Number.NEGATIVE_INFINITY;
   let lastNow: number | null = null;
+  /** The diagnostics of one frame, after the rule ran. */
+  const count = (pose: OsmCameraPose, wasActive: boolean) => {
+    if (enabled && !Number.isFinite(pose.aboveGroundM)) unknownHeightFrames++;
+    if (wasActive && !active) switchedOff++;
+    if (active && wasActive && lastNow !== null && ceiling.waitMs() > 0) {
+      ceilingFullMs += Math.max(0, pose.nowMs - lastNow);
+    }
+  };
+  /** A drawn tile's place in `coverage`. */
+  const kindOf = (
+    info: TileOverlayInfo,
+    reach: number,
+  ): "unprocessed" | "far" | "withMap" | "coarse" | "waiting" => {
+    if (info.range === null) return "unprocessed";
+    if (!rangeNear(info.range, reach)) return "far";
+    if (info.target !== null) return "withMap";
+    return base.calculateLevel.call(overlay, info.range) < limits.minZoom
+      ? "coarse"
+      : "waiting";
+  };
   return {
     credit,
     /** The limits in force (the caller's over `GLOBE_OSM`). */
@@ -709,6 +883,7 @@ export function createGlobeOsmOverlay({
       uniforms.uOsmFadeM.value = m;
     },
     update(pose: OsmCameraPose) {
+      const wasActive = active;
       active =
         enabled &&
         terrain !== null &&
@@ -723,24 +898,61 @@ export function createGlobeOsmOverlay({
         active ? 1 : 0,
         lastNow === null ? 0 : pose.nowMs - lastNow,
       );
+      count(pose, wasActive);
       lastNow = pose.nowMs;
-      if (!terrain || !active) return;
+      if (!terrain) return;
+      // Every frame, on or off: `coverage` measures from it too.
       terrain.tiles.group.worldToLocal(camera.copy(pose.position));
+      if (!active) return;
       if (pose.nowMs - lastLook < GLOBE_OSM.reevaluateMs) return;
       lastLook = pose.nowMs;
-      reevaluateGatedTiles(
+      const look = reevaluateGatedTiles(
         plugin as unknown as OverlayPluginInternals,
         overlay,
         { limit: GLOBE_OSM.reevaluateLimit },
       );
+      reevaluateBacklog = look.left;
+      if (look.left > 0) cappedLooks++;
+    },
+    /**
+     * The relief tiles drawn in the last update near the camera, by their
+     * map (all zero before `attach` or while the overlay is not ready).
+     * Walks every drawn tile: for checks and measurements, not each frame.
+     */
+    coverage(): OsmCoverage {
+      const drawn = terrain?.tiles.visibleTiles;
+      const tileInfo = (
+        plugin as unknown as OverlayPluginInternals
+      ).overlayInfo.get(overlay)?.tileInfo;
+      if (!drawn || !tileInfo || !overlay.isReady) return NO_COVERAGE;
+      const reach = uniforms.uOsmFadeStart.value * uniforms.uOsmFadeM.value;
+      const n = { unprocessed: 0, far: 0, withMap: 0, coarse: 0, waiting: 0 };
+      for (const tile of drawn) {
+        const info = tileInfo.get(tile);
+        if (info) n[kindOf(info, reach)]++;
+      }
+      return {
+        near: n.withMap + n.coarse + n.waiting,
+        withMap: n.withMap,
+        coarse: n.coarse,
+        waiting: n.waiting,
+        unprocessed: n.unprocessed,
+      };
     },
     stats() {
       return {
         enabled,
         active,
+        /** The drawn map's strength (the ramped shader switch). */
+        on: uniforms.uOsmOn.value,
         requests: ceiling.total(),
         requestsLastMinute: ceiling.inLastMinute(),
         unpatchedShaders: unpatched,
+        switchedOff,
+        unknownHeightFrames,
+        ceilingFullMs,
+        reevaluateBacklog,
+        cappedLooks,
         ...overlay.stats(),
       };
     },
