@@ -21,6 +21,8 @@ import {
   type DraftFileStore,
 } from "gps-plus-slam-app-framework/storage";
 import { readStoredEntryBytes } from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { manifestToWrite } from "../tour-document.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import { createEditorDraft } from "./editor-draft.js";
@@ -31,6 +33,11 @@ import { stationIdOf, tourOf } from "../test-support/v3-tour.js";
 beforeAll(() => {
   createTourViewerStore();
 });
+
+/** The world view of `tour` (none without one). */
+function tourObjectsOf(tour: TourManifest | null): readonly TourObject[] {
+  return tour === null ? [] : tourObjects(tour);
+}
 
 function pin(id: string, lat = 48.52): TourObject {
   return {
@@ -284,6 +291,40 @@ describe("the editor session's station edits", () => {
     expect(
       tour.stations.find((s) => s.id === stationIdOf("a"))?.items,
     ).toHaveLength(2);
+    await session.close();
+  });
+
+  // Why: "Move to a new station" splits an item out where it stands, and
+  // the page selects the station it made - so the session must say which,
+  // move nothing, and take it back in one undo.
+  it("moveToNewStation gives an item a station of its own where it stands, one step, and names it", async () => {
+    const { session, manifest } = await opened();
+    const store = createTourViewerStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    const tour = () => manifestToWrite(store.getState().tourDocument);
+    const stationOf = (id: string) =>
+      tour()?.stations.find((st) => st.items.some((i) => i.id === id));
+    const before = tourObjectsOf(tour()).find((o) => o.id === "b")?.geo;
+    const outcome = editor.moveToNewStation("b");
+    expect(outcome).toMatchObject({ kind: "moved" });
+    const made = "stationId" in outcome ? outcome.stationId : "";
+    expect(made).not.toBe(stationIdOf("b"));
+    expect(stationOf("b")?.id).toBe(made);
+    // Where it stood, turned as it was.
+    expect(tourObjectsOf(tour()).find((o) => o.id === "b")?.geo).toEqual(
+      before,
+    );
+    expect(editor.changeCount()).toBeGreaterThan(0);
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    expect(stationOf("b")?.id).toBe(stationIdOf("b"));
+    expect(editor.moveToNewStation("nope")).toMatchObject({
+      kind: "refused",
+    });
     await session.close();
   });
 

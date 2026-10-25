@@ -43,6 +43,9 @@ interface StationInspector {
   readonly kind: "station";
   readonly title: string;
   readonly sub: string;
+  /** Its place in the tour (1-based) and the tour's station count: the
+   *  inspector's Earlier and Later. */
+  readonly place: { readonly number: number; readonly count: number };
   readonly description: string | null;
   readonly imagePath: string | null;
   readonly foundRadiusM: number;
@@ -87,7 +90,7 @@ export type InspectorModel = StationInspector | ItemInspector | CodeInspector;
  *  there (no handles). */
 export function inspectorHint(model: InspectorModel | null): string {
   if (model === null) {
-    return "Click a station, an item or a code; drag to orbit, right-drag to pan, wheel to zoom";
+    return "Click a station, an item or a code; drag to orbit, right-drag to pan, wheel to zoom; right-click the ground for a new station";
   }
   if (model.kind === "station") {
     return model.locked
@@ -186,6 +189,7 @@ export function buildInspector(input: {
       kind: "station",
       title: stationTitle(station, index + 1),
       sub: `Station ${String(index + 1)} of ${String(stations.length)}`,
+      place: { number: index + 1, count: stations.length },
       description: description === "" ? null : description,
       imagePath: stationImagePath(station, input.assets),
       foundRadiusM: station.foundRadiusM,

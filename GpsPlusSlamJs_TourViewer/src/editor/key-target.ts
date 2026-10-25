@@ -21,10 +21,27 @@ export function inField(target: EventTarget | null): boolean {
   );
 }
 
-/** Inside a menu, or on (or inside) a button that opens one. */
-export function inMenu(target: EventTarget | null): boolean {
+/** The keys a menu's button answers (the menu button pattern): they open
+ *  its menu, or move in it and close it once open. */
+const MENU_BUTTON_KEYS: ReadonlySet<string> = new Set([
+  "ArrowDown",
+  "ArrowUp",
+  "Home",
+  "End",
+  "Enter",
+  " ",
+  "Escape",
+]);
+
+/** `key` is the menu's: any key inside a menu, and on (or inside) a
+ *  button that opens one the keys that open or move in it. A letter on
+ *  the button stays the page's (View's Top view by a click puts the focus
+ *  back on View's button, and T must still toggle it). */
+export function inMenu(target: EventTarget | null, key: string): boolean {
+  if (!(target instanceof Element)) return false;
+  if (target.closest('[role="menu"]') !== null) return true;
   return (
-    target instanceof Element &&
-    target.closest('[role="menu"], [aria-haspopup="menu"]') !== null
+    MENU_BUTTON_KEYS.has(key) &&
+    target.closest('[aria-haspopup="menu"]') !== null
   );
 }

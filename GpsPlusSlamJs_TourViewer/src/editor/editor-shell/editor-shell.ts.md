@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The 3D view's studio shell, read-only: the top bar's studio controls
+The 3D view's studio shell: the top bar's studio controls
 (Details, Undo, Redo, Help), the Edit menu's Undo and Redo (where those
 fold at a phone's width), the View menu's Top view and Frame, the tree
 dock at the left, the inspector dock at the right, the compass and the
@@ -14,6 +14,15 @@ the page's and keep their logic; the shell's stylesheet
 (`editor-shell.css`) dresses the menus in both views and the rest while
 the 3D view shows.
 
+The tree's editing (G2 M3b) goes through it: "+" in the tree's head adds a
+station at the centre of the view, the scene's ground menu one where it
+was pressed (`scene-menu.ts`); a card's grip reorders the tour by drag
+(`tree-drag.ts`), the inspector's Earlier and Later by the keyboard; the
+inspector's Delete and "Move to a new station"; the bottom bar's power
+actions (`bar-actions.ts`: Duplicate, Align to station, Copy position).
+Each is a page command (`deps.stations`), one undo step; the shell writes
+nothing to the tour itself.
+
 ## Public API
 
 - `createEditorShell(deps)` -> `EditorShell`, made once by `edit-main.ts`:
@@ -24,15 +33,24 @@ the 3D view shows.
   - `deps.openDetails()` - the tour's details dialog;
   - `deps.codes()` - the open tour's codes (`InspectorCode[]`);
   - `deps.loadPicture(path)` - a picture's bytes from the open tour;
-  - `deps.dialogOpen()` - a page dialog shows (the keys stay out of it).
+  - `deps.dialogOpen()` - a page dialog shows (the keys stay out of it);
+  - `deps.stations` (`ShellStationCommands`) - the page's commands:
+    `add(place, "centre" | "here")`, `reorder(order)`, `split(itemId)`,
+    `duplicate(selection)`, `remove(selection)`;
+  - `deps.say(text)` - a passing line (the page's toast).
+- `EditorShell.groundMenu(point, place)` - the 3D view's input asks for
+  the ground menu (a right click, a long press): opened at `point` (px in
+  the view) for `place` (null: no ground loaded there); nothing while the
+  view is hidden.
 - `EditorShell.show(view)` - the 3D view shows: the shell draws from the
   store, applies the dock rule's `opened`, follows the store, the window's
   size and the keys, and reads the camera every 200 ms (`READOUT_MS`).
 - `EditorShell.hide()` - stops all of that and lets the pictures go
   (each draw also sweeps the cards a redraw replaced).
 - `ShellView` - the 3D view's commands it drives (`flyTo`, `frame`,
-  `setTop`, `zoom`, `northUp`, `readout`, `setLayers`); a type only, so
-  the page's code never holds the 3D view's.
+  `setTop`, `zoom`, `northUp`, `readout`, `setLayers`, `centre` for "+",
+  `turn` for Align to station); a type only, so the page's code never
+  holds the 3D view's.
 
 ## Invariants & assumptions
 
@@ -63,10 +81,27 @@ the 3D view shows.
   deselects) - but an open menu is the newer popover: Escape closes it
   first (`closeOpenMenu`, the focus back on its button), whether the focus
   is in it or has left it, and the help on the next Escape, also from a
-  menu's button. Every other key in a menu or on a menu's button is the
-  menu's.
-- **Read-only:** nothing here edits the tour; Undo and Redo are the
-  page's steps, with their titles from `nextStep`.
+  menu's button. Every other key in a menu is the menu's, and on a menu's button the
+  keys that open or move in it (`key-target.ts`); T and F there are the
+  view's.
+- **Edits are the page's:** the shell writes nothing to the tour; Undo
+  and Redo are the page's steps, with their titles from `nextStep`, and
+  every tree command is a `deps.stations` call (one step each).
+- **Reorder:** the drag writes one `reorder` at the drop
+  (`tree-drag.ts`); Earlier and Later move the selected station one place
+  (`movedTo` of `tree-reorder.ts`) and keep the focus on the button that
+  was pressed, or at an end on the other one.
+- **The bar's actions** are drawn from the inspector's model
+  (`barActions`) with each draw, `data-bar` naming each, the focus kept
+  across a draw. Align to station turns an item by its heading in its
+  station's frame (taken as -180 to 180 degrees) through `ShellView.turn`,
+  and says it is already aligned within `ALIGNED_DEG` (nothing written);
+  "Turned ..." is said only once the tour carries the turn. Copy position
+  writes `positionText` to the clipboard and says it, or says the text
+  when the clipboard is refused.
+- **The ground menu** returns the focus to the view's box (`#view3d`,
+  `tabindex="-1"`), where the window's view keys keep working; hiding the
+  view closes it.
 - **Text, never markup:** names and lines from the tour are set as text
   (`shell-tree.ts`, `shell-inspector.ts`).
 - **The stylesheet** (`editor-shell.css`, applied under
@@ -107,6 +142,14 @@ const shell = createEditorShell({
   codes: shellCodes,
   loadPicture: readContent,
   dialogOpen,
+  stations: {
+    add: addStationAt,
+    reorder: reorderStations,
+    split: splitItem,
+    duplicate,
+    remove,
+  },
+  say: (text) => toast(text),
 });
 // the view switch's onShown:
 if (on && shown3d !== null) shell.show(shown3d);
@@ -135,3 +178,12 @@ and on a phone the folded tree's "Stations" header unfolding the dock
 with its stations shown.
 
 The lock's click in the page: `editor3d-edit.spec.js`.
+
+The tree's editing in the page: `playwright-tests/editor3d-tree.spec.js`
+("+", the drag, Escape during a drag, Earlier and Later, Delete with the
+toast's Undo; New station here; a station with a photo duplicated, saved
+and opened again; the "+", the grips and the bar's actions in place at
+the four sizes, the Delete's key in dim letters as the prototype has it) and `editor3d-edit.spec.js` (Align to station, Copy
+position, Move to a new station). Its parts' own tests:
+`tree-reorder.test.ts`, `tree-drag.test.ts`, `bar-actions.test.ts`,
+`scene-menu.test.ts`.

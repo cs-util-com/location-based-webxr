@@ -20,6 +20,13 @@ pure gesture maths reads (`GestureWorld`).
     the gizmo on the selection (from the tour, or from a gesture's preview
     while one runs).
   - `cancel()` - a gesture under way ends unwritten.
+  - `centre()` - the place the view looks at (the orbit's centre) with
+    the ground's ellipsoidal height there, or the centre's own height
+    plus the geoid's N where no ground has loaded (the tree's "+").
+  - `turn(selection, deg)` - the selection turned `deg` clockwise about
+    up where it stands (`turnedGeo`), written as one gesture edit through
+    the page (a locked station's is refused there); false for one with
+    no pose here (a code).
   - `screenOf(selection)`, `handleScreen("middle" | "knob" | "dot")`,
     `handleSizes()` - for the page's checks: CSS px on the canvas.
   - `dispose()`.

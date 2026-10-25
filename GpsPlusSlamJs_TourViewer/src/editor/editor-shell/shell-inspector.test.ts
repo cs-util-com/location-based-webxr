@@ -160,6 +160,7 @@ describe("drawInspector", () => {
         kind: "station",
         title: "Unplaced",
         sub: "Station 1 of 1",
+        place: { number: 1, count: 1 },
         description: null,
         imagePath: null,
         foundRadiusM: 25,
@@ -247,6 +248,57 @@ describe("drawInspector", () => {
     expect(dock.body.querySelector(".note")?.textContent).toBe(
       "No position stored yet.",
     );
+  });
+
+  // Why: the tree's drag is a pointer's; Earlier and Later are the
+  // keyboard's way to reorder (and a touch screen's, where a drag in a
+  // narrow dock is easy to miss), so they sit on the station's own line.
+  it("gives a station Earlier and Later beside its place in the tour, off at the ends", () => {
+    draw("station:gate");
+    const earlier = dock.body.querySelector<HTMLButtonElement>(
+      '.sub [data-act="earlier"]',
+    );
+    const later = dock.body.querySelector<HTMLButtonElement>(
+      '.sub [data-act="later"]',
+    );
+    expect(dock.body.querySelector(".sub")?.textContent).toBe("Station 1 of 2");
+    expect(earlier?.getAttribute("aria-label")).toBe("Earlier in the tour");
+    expect(later?.getAttribute("aria-label")).toBe("Later in the tour");
+    expect(earlier?.disabled).toBe(true);
+    expect(later?.disabled).toBe(false);
+    draw("station:steps");
+    expect(
+      dock.body.querySelector<HTMLButtonElement>('[data-act="earlier"]')
+        ?.disabled,
+    ).toBe(false);
+    expect(
+      dock.body.querySelector<HTMLButtonElement>('[data-act="later"]')
+        ?.disabled,
+    ).toBe(true);
+  });
+
+  // Why: the tree's commands on the selection are the inspector's actions
+  // (the prototype's): Delete for a station, and for an item a station of
+  // its own or Delete - each a button in words, its key announced.
+  it("lists the selection's actions in words: a station's Delete, an item's new station and Delete", () => {
+    const acts = () =>
+      [...dock.body.querySelectorAll<HTMLButtonElement>(".acts .act")].map(
+        (b) => [b.dataset["act"], b.querySelector(".lbl")?.textContent],
+      );
+    draw("station:gate");
+    expect(acts()).toEqual([["delete", "Delete station"]]);
+    const del = dock.body.querySelector('.acts [data-act="delete"]');
+    expect(del?.getAttribute("aria-keyshortcuts")).toBe("Delete");
+    expect(del?.querySelector("kbd")?.getAttribute("aria-hidden")).toBe("true");
+    expect(del?.classList.contains("danger")).toBe(true);
+    draw("photo-1");
+    expect(acts()).toEqual([
+      ["split", "Move to a new station"],
+      ["delete", "Delete photo"],
+    ]);
+    // A code is read-only here: no actions.
+    draw("level-1");
+    expect(acts()).toEqual([]);
   });
 
   it("folds to its head", () => {

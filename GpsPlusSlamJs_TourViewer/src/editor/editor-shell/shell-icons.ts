@@ -35,6 +35,17 @@ const PATHS = {
   eye: '<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>',
   folder:
     '<path d="M2 4.5a1 1 0 0 1 1-1h3.2l1.4 1.6H13a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>',
+  plus: '<path d="M8 3v10M3 8h10"/>',
+  earlier: '<path d="M8 13.5V3M4.5 6.5L8 3l3.5 3.5"/>',
+  later: '<path d="M8 2.5V13M4.5 9.5L8 13l3.5-3.5"/>',
+  trash: '<path d="M3 4.2h10M6.2 4.2V2.6h3.6v1.6M4.5 4.2l.7 9.3h5.6l.7-9.3"/>',
+  split:
+    '<circle cx="5" cy="9" r="3.2"/><circle cx="12" cy="5" r="2.4"/><path d="M12 9.5v4M10 11.5h4"/>',
+  dup: '<rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 5.5V3.2a.7.7 0 0 0-.7-.7H3.2a.7.7 0 0 0-.7.7v6.6c0 .4.3.7.7.7h2.3"/>',
+  align:
+    '<circle cx="8" cy="9.5" r="4.5"/><path d="M8 1.5v8"/><path d="M6 3.5l2-2 2 2"/>',
+  copy: '<circle cx="8" cy="8" r="3.6"/><path d="M8 1.5v2.9M8 11.6v2.9M1.5 8h2.9M11.6 8h2.9"/>',
+  grip: '<path d="M6 3.5h.01M10 3.5h.01M6 8h.01M10 8h.01M6 12.5h.01M10 12.5h.01" stroke-width="2.2" stroke-linecap="round"/>',
 } as const;
 
 export type ShellIcon = keyof typeof PATHS;

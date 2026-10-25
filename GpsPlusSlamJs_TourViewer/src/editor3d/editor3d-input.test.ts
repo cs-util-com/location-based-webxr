@@ -95,6 +95,7 @@ function setup(
     remove: vi.fn(),
     duplicate: vi.fn(),
     say: vi.fn(),
+    groundMenu: vi.fn(),
     keysFree: () => options.keysFree ?? true,
   };
   // The view's box holds the canvas and a dock over it, as on the page.
@@ -657,6 +658,103 @@ describe("the keys on a locked station", () => {
     expect(t.page.say).toHaveBeenCalledWith(STATION_LOCKED);
     tap("Delete");
     expect(t.page.remove).toHaveBeenCalledWith("station:st");
+    t.input.dispose();
+  });
+});
+
+describe("the ground menu", () => {
+  function context(target: EventTarget, at: ScreenPoint): MouseEvent {
+    const event = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: at.x,
+      clientY: at.y,
+      button: 2,
+    });
+    target.dispatchEvent(event);
+    return event;
+  }
+
+  // Why: "New station here" puts a station exactly where the creator
+  // points; the place must be the ground under the pointer, with the
+  // ground's own height, so the station stands on it.
+  it("a right click on the ground opens it at the pointer, with the ground's place", () => {
+    const t = setup({ selected: null });
+    t.element.dispatchEvent(
+      pointer("pointerdown", { x: 30, y: 40 }, { button: 2, buttons: 2 }),
+    );
+    window.dispatchEvent(pointer("pointerup", { x: 30, y: 40 }, { button: 2 }));
+    const event = context(t.element, { x: 30, y: 40 });
+    // The browser's own menu does not open over the scene.
+    expect(event.defaultPrevented).toBe(true);
+    expect(t.page.groundMenu).toHaveBeenCalledTimes(1);
+    expect(t.page.groundMenu).toHaveBeenCalledWith(
+      { x: 30, y: 40 },
+      {
+        lat: PIN.geo.lat - 40 / 111_000,
+        lon: PIN.geo.lon + 30 / 74_000,
+        alt: 518.5,
+      },
+    );
+    // A right click selects nothing.
+    expect(t.page.select).not.toHaveBeenCalled();
+    t.input.dispose();
+  });
+
+  it("opens it with no place where no ground has loaded under the pointer", () => {
+    const t = setup({
+      selected: null,
+      world: { ...WORLD, groundUnder: () => ({ miss: "not-loaded" }) },
+    });
+    context(t.element, { x: 5, y: 5 });
+    expect(t.page.groundMenu).toHaveBeenCalledWith({ x: 5, y: 5 }, null);
+    t.input.dispose();
+    const u = setup({
+      selected: null,
+      world: { ...WORLD, groundAt: () => null },
+    });
+    context(u.element, { x: 5, y: 5 });
+    expect(u.page.groundMenu).toHaveBeenCalledWith({ x: 5, y: 5 }, null);
+    u.input.dispose();
+  });
+
+  // Why: a right drag pans the camera; the browser sends its contextmenu
+  // after the release, and a menu popping up at the end of every pan
+  // would be in the way.
+  it("a right drag (the camera's pan) opens nothing", () => {
+    const t = setup({ selected: null });
+    t.element.dispatchEvent(
+      pointer("pointerdown", { x: 30, y: 40 }, { button: 2, buttons: 2 }),
+    );
+    window.dispatchEvent(
+      pointer("pointermove", { x: 80, y: 40 }, { buttons: 2 }),
+    );
+    window.dispatchEvent(pointer("pointerup", { x: 80, y: 40 }, { button: 2 }));
+    const event = context(t.element, { x: 80, y: 40 });
+    expect(event.defaultPrevented).toBe(true);
+    expect(t.page.groundMenu).not.toHaveBeenCalled();
+    t.input.dispose();
+  });
+
+  it("a long press of a finger opens it, and its release selects nothing", () => {
+    const t = setup({ selected: null, pick: "pin" });
+    t.element.dispatchEvent(
+      pointer("pointerdown", { x: 10, y: 10 }, { touch: true }),
+    );
+    // The browser sends the long press's contextmenu while the finger is down.
+    context(t.element, { x: 10, y: 10 });
+    expect(t.page.groundMenu).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(
+      pointer("pointerup", { x: 10, y: 10 }, { touch: true }),
+    );
+    expect(t.page.select).not.toHaveBeenCalled();
+    t.input.dispose();
+  });
+
+  it("is not the docks': a right click on a dock opens nothing", () => {
+    const t = setup({ selected: null });
+    context(t.dock, { x: 5, y: 5 });
+    expect(t.page.groundMenu).not.toHaveBeenCalled();
     t.input.dispose();
   });
 });

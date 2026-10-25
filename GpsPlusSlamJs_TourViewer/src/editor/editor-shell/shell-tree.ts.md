@@ -20,7 +20,11 @@ stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
     `aria-pressed`): the page's selection id;
   - `data-unfold` - a card's fold arrow: the station's id;
   - `data-section` - a section header (`stations`, `codes`, `layers`);
-  - `data-layer` - a chip, with `aria-pressed`.
+  - `data-layer` - a chip, with `aria-pressed`;
+  - `data-drag` - a card's grip (`.grip`, a `<span>` beside the card's
+    buttons, never inside one, hidden from screen readers, titled "Drag
+    to change its place in the tour"): the station `tree-drag.ts` drags.
+    It sits left of the fold arrow, its height, 4 px apart.
 - Classes as the studio prototype's: `.card` (`.sel`, `.ctx`), `.hero`
   (`.nodesc`), `.kid`, `.row`, `.chip` (`.on`), `.collapsed` on the dock.
 
@@ -45,6 +49,6 @@ drawTree(dock, buildTree(input), view.foldedDocks.tree, pictures);
 card per station with its number, name and description; every card,
 item and code a button, none inside another; the selection and the
 unfolded station shown; the focus kept on the pressed control across a
-redraw; the folded dock. Its model in `tree-model.test.ts` and
+redraw; the folded dock; each card's grip, outside its buttons. Its model in `tree-model.test.ts` and
 `tree-model.property.test.ts`; the keyboard walk (Tab to a card, Enter
 selects, Space folds) in `playwright-tests/editor3d-shell.spec.js`.

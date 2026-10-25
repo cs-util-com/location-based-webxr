@@ -432,6 +432,73 @@ test("keys pressed in a menu stay in the menu: no nudge, no camera move, no top 
 // station's way exactly (and say so, writing nothing, the second time),
 // the copied text must be the inspector's numbers, and "Move to a new
 // station" must give the pin a station of its own without moving it.
+test("an item's actions: turned to its station's way, its position copied, moved into a station of its own", async ({
+  page,
+  context,
+}) => {
+  test.slow();
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const station = await openWithPin(page);
+  await selectPin(page, station);
+  const pose = async () => pinOf(await manifest(page))?.item;
+  const straight = { pose: { rotation: [0, 0, 0, 1] } };
+  let steps = await changes(page);
+  await page.keyboard.press("e");
+  steps += 1;
+  await expect.poll(() => changes(page)).toBe(steps);
+  expect(turnDeg(straight, await pose())).toBeGreaterThan(1);
+
+  const align = page.locator('#shell-acts [data-bar="align"]');
+  await align.click();
+  steps += 1;
+  await expect.poll(() => changes(page)).toBe(steps);
+  expect(turnDeg(straight, await pose())).toBeLessThan(0.01);
+  // Already facing that way: said, nothing written.
+  await align.click();
+  await expect(
+    page.locator(".toast", { hasText: "already faces the way its station" }),
+  ).toBeVisible();
+  expect(await changes(page)).toBe(steps);
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => changes(page)).toBe(steps + 1);
+  expect(turnDeg(straight, await pose())).toBeGreaterThan(1);
+
+  await page.locator('#shell-acts [data-bar="copy"]').click();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toMatch(
+    /^-?\d+\.\d\d m north, -?\d+\.\d\d m east, -?\d+\.\d\d m up of its station, heading \d+ deg$/,
+  );
+  await expect(
+    page.locator(".toast", { hasText: `Position copied: ${copied}` }),
+  ).toBeVisible();
+
+  // Its own station, where it stands: the pin does not move.
+  const at = await page.evaluate(
+    (id) => /** @type {any} */ (window).__tourEditor.view3dPointOf(id),
+    PIN,
+  );
+  const before = await changes(page);
+  await page.locator('#inspector-body [data-act="split"]').click();
+  await expect
+    .poll(async () => pinOf(await manifest(page))?.station.id)
+    .not.toBe(station);
+  const own = pinOf(await manifest(page))?.station.id;
+  expect(await selected(page)).toBe(`station:${own}`);
+  expect(await changes(page)).toBe(before + 1);
+  const now = await page.evaluate(
+    (id) => /** @type {any} */ (window).__tourEditor.view3dPointOf(id),
+    PIN,
+  );
+  for (const axis of [0, 1, 2]) expect(now[axis]).toBeCloseTo(at[axis], 2);
+  await expect(
+    page.locator(".toast", { hasText: "with the pin in it" }),
+  ).toBeVisible();
+  await page.keyboard.press("Control+z");
+  await expect
+    .poll(async () => pinOf(await manifest(page))?.station.id)
+    .toBe(station);
+});
+
 test.describe("on a touch screen", () => {
   test.use({ hasTouch: true });
 

@@ -4,7 +4,9 @@
  * the pointer (nothing: none), a double click or a double tap frames it;
  * the keys nudge, turn, lift, delete and duplicate the selection; two
  * fingers move the camera only, and a second finger during a drag cancels
- * the drag.
+ * the drag. A right click that did not move (a right drag pans), or a
+ * finger's long press, opens the page's ground menu with the ground's
+ * place under it (`InputPage.groundMenu`).
  *
  * What it writes (the store's rule for the 3D view): a gesture's start
  * (`gestureStarted`) and end (`gestureEnded`) to `editorView`, and the
@@ -23,6 +25,7 @@
  */
 import type { UnknownAction } from "@reduxjs/toolkit";
 
+import type { GroundPlace } from "../editor/editor-shell/scene-menu.js";
 import { editorViewActions, STATION_LOCKED } from "../editor/editor-view.js";
 import {
   poseLocked,
@@ -73,8 +76,21 @@ export interface InputPage {
   remove(selection: string): void;
   duplicate(selection: string): void;
   say(text: string): void;
+  /** A right click (a long press of a finger) on the scene: the ground
+   *  menu at `point`, for the ground's place there (its ellipsoidal
+   *  height), or for none where no ground has loaded. */
+  groundMenu(point: ScreenPoint, place: GroundPlace | null): void;
   /** The keys are the view's: no dialog shows, no field has the focus. */
   keysFree(event: KeyboardEvent): boolean;
+}
+
+/** The ground's place under `at`, or null where none has loaded. */
+function groundPlace(world: GestureWorld, at: ScreenPoint): GroundPlace | null {
+  const hit = world.groundUnder(at);
+  if (!("at" in hit)) return null;
+  const place = world.placeOf(hit.at);
+  const alt = world.groundAt(place);
+  return alt === null ? null : { ...place, alt };
 }
 
 /** The input's numbers (the design's). */
@@ -99,6 +115,10 @@ interface Press {
   moved: boolean;
   /** Part of a two-finger touch: never a click. */
   multi: boolean;
+  /** The browser asked for the context menu while the button was down
+   *  (as it does on some systems): the ground menu opens on the release,
+   *  if the press did not move (a right drag pans). */
+  menuOnRelease?: boolean;
 }
 
 /**
@@ -127,6 +147,9 @@ export function createSceneInput(input: {
     readonly codes: Set<string>;
   } | null = null;
   let press: Press | null = null;
+  /** The press that ended last, until the next: the context menu a
+   *  browser sends after a right button's release reads it. */
+  let lastPress: Press | null = null;
   const fingers = new Map<number, ScreenPoint>();
   let touchBlocked = false;
   let two: {
@@ -182,6 +205,7 @@ export function createSceneInput(input: {
   };
 
   const onDown = (event: PointerEvent) => {
+    lastPress = null;
     const at = pointOf(event);
     const touch = event.pointerType === "touch";
     // A finger on a dock is not the scene's, unless one already is.
@@ -297,6 +321,13 @@ export function createSceneInput(input: {
     const p = press;
     if (p === null || event.pointerId !== p.id) return;
     press = null;
+    lastPress = p;
+    if (p.menuOnRelease === true) {
+      if (event.type === "pointerup" && !p.moved && !p.multi) {
+        page.groundMenu(p.at, groundPlace(scene.world, p.at));
+      }
+      return;
+    }
     if (
       event.type !== "pointerup" ||
       wasDrag ||
@@ -320,6 +351,29 @@ export function createSceneInput(input: {
     } else {
       lastTap = { t, at };
     }
+  };
+
+  /** The ground menu: a right click that did not move (a right drag is
+   *  the camera's pan), or a finger's long press. */
+  const onContextMenu = (event: MouseEvent) => {
+    // The browser's own menu never opens over the scene.
+    event.preventDefault();
+    if (drag !== null) return;
+    const p = press ?? lastPress;
+    lastPress = null;
+    if (p !== null && (p.moved || p.multi)) return;
+    if (p !== null && p === press) {
+      // Sent while the button is down: wait for the release, which tells
+      // a click from a pan. A finger's long press opens it now, and its
+      // release selects nothing.
+      if (!p.touch) {
+        p.menuOnRelease = true;
+        return;
+      }
+      p.moved = true;
+    }
+    const at = pointOf(event);
+    page.groundMenu(at, groundPlace(scene.world, at));
   };
 
   const onDoubleClick = (event: MouseEvent) => {
@@ -386,6 +440,7 @@ export function createSceneInput(input: {
 
   element.addEventListener("pointerdown", onDown, true);
   surface.addEventListener("dblclick", onDoubleClick);
+  surface.addEventListener("contextmenu", onContextMenu);
   window.addEventListener("pointermove", onMove);
   window.addEventListener("pointerup", onEnd);
   window.addEventListener("pointercancel", onEnd);
@@ -424,6 +479,7 @@ export function createSceneInput(input: {
       endHold(false);
       element.removeEventListener("pointerdown", onDown, true);
       surface.removeEventListener("dblclick", onDoubleClick);
+      surface.removeEventListener("contextmenu", onContextMenu);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onEnd);
       window.removeEventListener("pointercancel", onEnd);

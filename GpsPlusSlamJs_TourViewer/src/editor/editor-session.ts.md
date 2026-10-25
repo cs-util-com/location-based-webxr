@@ -175,6 +175,9 @@ imperative resources only - that handle and the pictures' side table
     - `pose(id, geo, { newStation? })` - an item at a whole pose (position,
       height, turn): beyond its station's radius the rule seats it anew;
       `newStation` ("Move to a new station") starts one where it stands.
+    - `moveToNewStation(id)` - "Move to a new station" where the item
+      stands, turned as it is: one step, `{ kind: "moved", stationId }`
+      naming the station it made; refused for an id the tour lacks.
   - `undo()` / `redo()` (W2 of the tour editor plan 2026-10-17-1816) - one
     step of the edit stack: `{ kind: "undone" | "redone", what }` (`what`
     names the step: `the text of "<label>"`, `the move of …`, `the delete

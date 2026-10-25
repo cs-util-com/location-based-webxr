@@ -13,9 +13,12 @@ a menu answers itself, and leave those alone.
 
 - `inField(target)` -> `boolean`: an `<input>`, a `<textarea>`, a
   `<select>`, or an element whose `isContentEditable` is true.
-- `inMenu(target)` -> `boolean`: the target is inside an element with
-  `role="menu"`, or inside (or is) an element with
-  `aria-haspopup="menu"` - a menu button (`menu-button.ts` marks both).
+- `inMenu(target, key)` -> `boolean`: `key` is the menu's - every key
+  when the target is inside an element with `role="menu"`; when it is
+  inside (or is) an element with `aria-haspopup="menu"` (a menu button;
+  `menu-button.ts` marks both), only the pattern's keys
+  (`MENU_BUTTON_KEYS`: ArrowDown, ArrowUp, Home, End, Enter, Space,
+  Escape).
 - Both take any `EventTarget | null` and answer false for anything that
   is not an element (the window, the document, null).
 
@@ -23,9 +26,11 @@ a menu answers itself, and leave those alone.
 
 - A menu's keys are the menu button pattern's: the arrows, Home and End
   move in it, Escape closes it (`menu-button.ts`). On a menu's button,
-  ArrowDown and ArrowUp open it. So the page's keys stand back from the
-  whole menu and its button, not only from the keys the menu uses today:
-  a key it learns later (typeahead) needs no change here.
+  ArrowDown and ArrowUp open it. Inside an open menu the page's keys stand
+  back from every key; on the button only from the pattern's keys. A
+  letter on the button is the page's: a click on View's Top view puts the
+  focus back on View's button, and T must still toggle the top view there
+  (typeahead was decided against, so no letter is a menu's).
 - A button that opens a dialog (`aria-haspopup="dialog"`) is not a menu's.
 - The shell asks `inMenu` FIRST, before the help's Escape: with the help
   open, Escape in a menu closes the menu (the help closes on the next).
@@ -52,4 +57,5 @@ window.addEventListener("keydown", (event) => {
   ArrowDown, then ArrowDown, ArrowDown, End, Home, T and Escape, and Home
   on the closed menu's button, change nothing, move neither the pin nor
   the camera and leave the top view off; with the help open, Escape in a
-  menu closes the menu.
+  menu closes the menu. `editor3d-shell.spec.js`: T on View's button,
+  after Top view from the menu, toggles the top view off.

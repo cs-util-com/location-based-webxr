@@ -114,6 +114,7 @@ describe("buildInspector", () => {
       kind: "station",
       title: "Market Square",
       sub: "Station 1 of 2",
+      place: { number: 1, count: 2 },
       description: "Where the market meets",
       imagePath: null,
       foundRadiusM: 25,
@@ -219,7 +220,7 @@ describe("inspectorHint", () => {
 
   it("names the handles each selection has, and how to select with none", () => {
     expect(inspectorHint(null)).toBe(
-      "Click a station, an item or a code; drag to orbit, right-drag to pan, wheel to zoom",
+      "Click a station, an item or a code; drag to orbit, right-drag to pan, wheel to zoom; right-click the ground for a new station",
     );
     expect(inspectorHint(inspect("station:a", ["a"]))).toBe(
       "Market Square - drag the middle to move (its items follow), a white dot for the radius, the round arrow to turn",

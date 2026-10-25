@@ -29,6 +29,17 @@ exact position folded away under a disclosure.
   with `role="img"`.
 - The head's buttons and the disclosure carry `data-act` (`fold`,
   `close`, `position`); the shell answers them.
+- A station's line ("Station n of N", `.sub`) holds Earlier and Later
+  (`data-act` `earlier` / `later`, icon buttons named "Earlier in the
+  tour" and "Later in the tour", disabled at the tour's ends): the
+  keyboard's way to reorder.
+- The selection's commands in words (`.acts`, the prototype's): a
+  station's "Delete station"; an item's "Move to a new station"
+  (`split`) and "Delete pin" / "Delete photo" / "Delete 3D model". Each
+  `.act` is a button with an icon and its words in `.lbl`; Delete is
+  `.danger`, shows its key in a `<kbd>` hidden from screen readers and
+  announces it by `aria-keyshortcuts="Delete"`. A code has none
+  (read-only in the 3D view).
 
 ## Invariants & assumptions
 
@@ -53,4 +64,4 @@ the tour's centre once unfolded, an item's offset in its station's
 frame, a code without a position, and the folded head. The page by
 `playwright-tests/editor3d-shell.spec.js`.
 
-`shell-inspector.test.ts` also covers the lock button's place, state and words, and its absence for a station without a position.
+`shell-inspector.test.ts` also covers the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).

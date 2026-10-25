@@ -11,7 +11,9 @@
  *   page's selection id it selects;
  * - `data-unfold` - a card's fold button: the station's id;
  * - `data-section` - a section's header: the section it folds;
- * - `data-layer` - a chip: the layer it turns on or off.
+ * - `data-layer` - a chip: the layer it turns on or off;
+ * - `data-drag` - a card's grip (no button): the station it drags
+ *   (`tree-drag.ts`).
  *
  * @see shell-tree.ts.md
  */
@@ -111,7 +113,14 @@ function cardOf(card: TreeCard, pictures: ShellPictures): HTMLElement {
   if (card.description !== null) {
     pick.append(el("span", "ds", card.description));
   }
-  hero.append(pick, fold);
+  // The grip a card is dragged by (`tree-drag.ts`): no button - the
+  // inspector's Earlier and Later are the keyboard's way to reorder.
+  const grip = el("span", "grip");
+  grip.dataset["drag"] = card.id;
+  grip.title = "Drag to change its place in the tour";
+  grip.setAttribute("aria-hidden", "true");
+  grip.append(shellIcon("grip"));
+  hero.append(pick, grip, fold);
   box.append(hero);
   if (card.open) {
     const kids = el("div", "kids");

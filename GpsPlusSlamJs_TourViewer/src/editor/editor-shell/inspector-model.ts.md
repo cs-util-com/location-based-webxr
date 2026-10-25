@@ -11,7 +11,7 @@ code's fields, read-only, as the file holds them. The DOM is
 - `buildInspector({ selected, stations, assets, codes })` ->
   `InspectorModel | null`:
   - `StationInspector` - `kind: "station"`, title, `sub` "Station n of
-    N", description, `imagePath`, `foundRadiusM`, `activateRadiusM`,
+    N", `place` (`{ number, count }`, for Earlier and Later), description, `imagePath`, `foundRadiusM`, `activateRadiusM`,
     `position` (`InspectorPosition`), or null when the station's point
     or the tour's centre cannot be read;
   - `ItemInspector` - `kind: "item"`, `itemKind`, title, `sub` naming
@@ -35,7 +35,8 @@ code's fields, read-only, as the file holds them. The DOM is
 - `inspectorHint(model | null)` - the bottom bar's hint: the handles the
   selection's gizmo has in the 3D view (a station: move, radius dot,
   turn; an item: move and turn, a model also a size dot; a code: none,
-  read-only), or how to select when nothing is.
+  read-only), or how to select when nothing is (and that a right click
+  on the ground starts a station).
 
 ## Invariants & assumptions
 

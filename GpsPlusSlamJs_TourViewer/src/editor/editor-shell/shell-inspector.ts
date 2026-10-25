@@ -6,7 +6,10 @@
  * a screen reader reads the two together. The head's fold and close
  * buttons and the disclosure carry `data-act` (`fold`, `close`,
  * `position`), and a station's lock beside its Position (`lock`, pressed
- * while locked); the shell answers them.
+ * while locked); so do a station's Earlier and Later beside its place in
+ * the tour (`earlier`, `later`, off at the ends) and the selection's
+ * commands in words (`delete`; an item's `split`, "Move to a new
+ * station"); the shell answers them.
  *
  * @see shell-inspector.ts.md
  */
@@ -177,6 +180,43 @@ function positionPart(
   return disclosure(open, positionSummary(position), positionFields(position));
 }
 
+/** An item's kind in a command's words. */
+const ITEM_WORD: Readonly<Record<string, string>> = {
+  pin: "pin",
+  photo: "photo",
+  model: "3D model",
+};
+
+/** The page's Delete key, as the command shows and announces it. */
+const DELETE_KEY = { shown: "Del", aria: "Delete" } as const;
+
+/** A command of the selection in words (`data-act` names it), its key
+ *  shown and announced when it has one. */
+function action(
+  act: string,
+  icon: ShellIcon,
+  label: string,
+  key?: { readonly shown: string; readonly aria: string },
+): HTMLButtonElement {
+  const b = el("button", act === "delete" ? "act danger" : "act");
+  b.type = "button";
+  b.dataset["act"] = act;
+  b.append(shellIcon(icon), el("span", "lbl", label));
+  if (key !== undefined) {
+    const kbd = el("kbd", "", key.shown);
+    kbd.setAttribute("aria-hidden", "true");
+    b.append(kbd);
+    b.setAttribute("aria-keyshortcuts", key.aria);
+  }
+  return b;
+}
+
+function actions(buttons: readonly HTMLButtonElement[]): HTMLElement {
+  const box = el("div", "acts");
+  box.append(...buttons);
+  return box;
+}
+
 const KIND_ICON: Readonly<Record<string, ShellIcon>> = {
   station: "station",
   code: "qr",
@@ -221,9 +261,20 @@ export function drawInspector(
     ),
     iconButton("close", "Deselect (Esc)", "close"),
   );
-  const parts: HTMLElement[] = [el("div", "sub", model.sub)];
+  const sub = el("div", "sub");
+  sub.append(el("span", "", model.sub));
+  const parts: HTMLElement[] = [sub];
   const section = el("div", "isec");
   if (model.kind === "station") {
+    const { number, count } = model.place;
+    const earlier = iconButton("earlier", "Earlier in the tour", "earlier");
+    earlier.disabled = number <= 1;
+    const later = iconButton("later", "Later in the tour", "later");
+    later.disabled = number >= count;
+    sub.append(el("span", "sp"), earlier, later);
+    parts.push(
+      actions([action("delete", "trash", "Delete station", DELETE_KEY)]),
+    );
     section.append(textField("Description", model.description ?? "None"));
     if (model.imagePath === null) {
       section.append(textField("Card image", "None"));
@@ -259,6 +310,17 @@ export function drawInspector(
       parts.push(section, row, ...open);
     }
   } else if (model.kind === "item") {
+    parts.push(
+      actions([
+        action("split", "split", "Move to a new station"),
+        action(
+          "delete",
+          "trash",
+          `Delete ${ITEM_WORD[model.itemKind]}`,
+          DELETE_KEY,
+        ),
+      ]),
+    );
     if (model.sizeM !== null) {
       section.append(field("Size", fixed(model.sizeM, 2), "m"));
     }

@@ -5,8 +5,10 @@
  * field or a menu answers itself. A key typed in a field, or an arrow
  * moving through a menu (or opening one from its button), must not also
  * move the selected pin or the camera behind it. These pin which targets
- * keep their keys: the fields, and every element of a menu or a menu's
- * button - and that the rest of the page does not.
+ * keep their keys: the fields, every key inside a menu, and on a menu's
+ * button the keys that open its menu or move in it - while a letter on
+ * the button (T after View's Top view put the focus back there) stays the
+ * page's, and the rest of the page keeps every key.
  */
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -36,7 +38,7 @@ describe("key targets", () => {
     expect(inField(window)).toBe(false);
   });
 
-  it("an item of a menu, the menu itself and a menu's button are the menu's", () => {
+  it("every key inside a menu is the menu's; on its button, only the keys that open or move in it", () => {
     document.body.innerHTML = `
       <button id="btn" aria-haspopup="menu"><span id="lbl">View</span></button>
       <div id="menu" role="menu">
@@ -44,14 +46,34 @@ describe("key targets", () => {
       </div>
       <button id="dialog-btn" aria-haspopup="dialog">Details</button>
       <button id="plain">Help</button>`;
-    for (const id of ["#btn", "#lbl", "#menu", "#item", "#kbd"]) {
-      expect(inMenu(at(id)), id).toBe(true);
+    const patternKeys = [
+      "ArrowDown",
+      "ArrowUp",
+      "Home",
+      "End",
+      "Enter",
+      " ",
+      "Escape",
+    ];
+    for (const id of ["#menu", "#item", "#kbd"]) {
+      for (const key of [...patternKeys, "t", "f", "Delete"]) {
+        expect(inMenu(at(id), key), `${id} ${key}`).toBe(true);
+      }
+    }
+    for (const id of ["#btn", "#lbl"]) {
+      for (const key of patternKeys) {
+        expect(inMenu(at(id), key), `${id} ${key}`).toBe(true);
+      }
+      // The page's keys on a closed menu's button: T, F, Delete.
+      for (const key of ["t", "T", "f", "Delete", "ArrowLeft"]) {
+        expect(inMenu(at(id), key), `${id} ${key}`).toBe(false);
+      }
     }
     // A button that opens a dialog is not a menu's.
-    expect(inMenu(at("#dialog-btn"))).toBe(false);
-    expect(inMenu(at("#plain"))).toBe(false);
-    expect(inMenu(document.body)).toBe(false);
-    expect(inMenu(null)).toBe(false);
-    expect(inMenu(window)).toBe(false);
+    expect(inMenu(at("#dialog-btn"), "ArrowDown")).toBe(false);
+    expect(inMenu(at("#plain"), "ArrowDown")).toBe(false);
+    expect(inMenu(document.body, "ArrowDown")).toBe(false);
+    expect(inMenu(null, "ArrowDown")).toBe(false);
+    expect(inMenu(window, "ArrowDown")).toBe(false);
   });
 });

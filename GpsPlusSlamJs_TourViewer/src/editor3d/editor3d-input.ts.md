@@ -22,7 +22,7 @@ move the camera only, and a second finger during a drag cancels it.
     `twoFinger(mode, last, now)`, `frame(selection)`;
   - `page: InputPage` - `dispatch`, `selected()`, `select(id)`,
     `commit(edit)`, `remove(selection)`, `duplicate(selection)`,
-    `say(text)`, `keysFree(event)`.
+    `say(text)`, `groundMenu(point, place | null)`, `keysFree(event)`.
   - Returns `frame()` (each frame: a drag waiting for its ground tries
     again; a gesture whose selection changed meanwhile is cancelled),
     `cancel()` (a gesture under way ends unwritten: an undo or a redo),
@@ -33,6 +33,18 @@ move the camera only, and a second finger during a drag cancels it.
 - Types `InputScene`, `InputPage` (the input itself is `ReturnType<typeof createSceneInput>`).
 
 ## Invariants & assumptions
+
+- **The ground menu:** a `contextmenu` on the canvas never opens the
+  browser's menu. It opens the page's ground menu (`groundMenu`) with the
+  ground's place under the pointer (`GestureWorld`: the sampled ground's
+  point, its place and the ground's ellipsoidal height there; null where
+  none has loaded) - unless the press moved (a right drag pans: the
+  browser sends its `contextmenu` after the release, so the last ended
+  press is kept until the next) or was part of two fingers. A
+  `contextmenu` sent while a mouse button is still down (some systems do)
+  waits for the release and opens only if the press did not move; a
+  finger's long press opens it at once, and its release then selects
+  nothing. Nothing during a gizmo drag; a dock's press is the dock's.
 
 - **What it writes, and nothing else:** `gestureStarted` at a drag's press
   or a key hold's first press, `gestureEnded` when it ends, and the one
@@ -58,7 +70,7 @@ move the camera only, and a second finger during a drag cancels it.
   were already shown. A key arriving for another selection before the
   next frame writes the old hold first.
 - Keys are ignored during a drag, and wherever `keysFree` says no (a
-  field, a menu or a menu's button, a dialog). T, F, Home, Esc, Ctrl+Z and Ctrl+Y are left to the
+  field, a menu, the pattern's keys on a menu's button, a dialog). T, F, Home, Esc, Ctrl+Z and Ctrl+Y are left to the
   shell and the page; the arrows are taken even with nothing selected (Q,
   E, PageUp and PageDown then are not).
 - A code has no target: no handles, no Del, no Ctrl+D (read-only in the

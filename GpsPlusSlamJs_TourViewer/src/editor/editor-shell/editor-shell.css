@@ -1156,10 +1156,189 @@ body[data-view="3d"] .view3d-credits {
   color: var(--s-accent-text);
 }
 
+/* --- tree editing (the Studio 3 prototype's measures) --------------------- */
+.ib.add {
+  color: var(--s-accent-text);
+}
+
+.ib:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ib:disabled:hover {
+  background: transparent;
+  color: var(--s-muted);
+}
+
+/* A card's grip: beside its fold arrow, the same height, 4 px apart. */
+.hero .grip {
+  position: absolute;
+  z-index: 2;
+  top: 4px;
+  right: 31px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  border-radius: 4px;
+  background: rgb(20 21 24 / 60%);
+  color: #e8eaee;
+  cursor: grab;
+  touch-action: none;
+}
+
+.hero .grip svg.i {
+  width: 12px;
+  height: 12px;
+}
+
+.card.dragging {
+  opacity: 0.55;
+}
+
+.card.dragging .hero .grip {
+  cursor: grabbing;
+}
+
+/* Where a dragged card lands: a line above the card it goes before, or
+ * below the last. */
+.card.drop-before {
+  box-shadow: 0 -3px 0 0 var(--s-accent);
+}
+
+.card.drop-after {
+  box-shadow: 0 3px 0 0 var(--s-accent);
+}
+
+/* The inspector's place in the tour and its commands in words. */
+.sub {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sub .sp {
+  flex: 1;
+}
+
+.sub .ib {
+  width: 22px;
+  height: 20px;
+}
+
+.acts {
+  padding: 4px 6px 6px;
+}
+
+.act {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--s-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.act:hover {
+  background: var(--s-bg3);
+}
+
+.act svg.i {
+  color: #f3c47e;
+}
+
+.act kbd {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--s-dim);
+  font: 10px var(--s-mono);
+}
+
+.act.danger svg.i {
+  color: var(--s-danger);
+}
+
+.act.danger:hover {
+  color: #f0a8a5;
+}
+
+/* The bottom bar's power actions for the selection. */
+#shell-bar > #shell-acts {
+  gap: 2px;
+  padding: 0 4px;
+}
+
+#shell-acts:empty {
+  display: none;
+}
+
+.sact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--s-text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sact svg.i {
+  width: 14px;
+  height: 14px;
+  color: #f3c47e;
+}
+
+.sact:hover {
+  border-color: var(--s-line2);
+  background: var(--s-bg3);
+}
+
+/* The view's box takes the focus back from its menus (`tabindex="-1"`):
+ * no ring around the whole scene. */
+#view3d:focus {
+  outline: none;
+}
+
+/* The ground menu, where the scene was pressed (`scene-menu.ts` places
+ * it). */
+#scene-menu {
+  top: auto;
+  left: auto;
+  min-width: 0;
+}
+
 /* --- narrow windows ------------------------------------------------------- */
 /* A tablet in portrait: the docks take at most about half the width each
  * (one is open at a time, `dock-rule.ts`), and the hint goes. */
 @media (width <= 820px) {
+  /* The bar's actions keep their icons and their names (their titles and
+   * labels), as the prototype's. */
+  .sact .lbl {
+    display: none;
+  }
+
+  /* A folded tree's head is as narrow as a phone allows: its "+" waits
+   * for the tree to open. */
+  #shell-tree.collapsed #tree-add {
+    display: none;
+  }
+
   #shell-tree {
     width: min(272px, 56vw);
   }

@@ -51,7 +51,10 @@ keys), and writes only through the page's `edits`.
   - `setLayers(hidden)` - the station names and the codes off or on (the
     other layers have nothing drawn yet);
   - `pointOf(selection)` - where it stands in the world (the page's
-    checks).
+    checks);
+  - `centre()` - the place the view looks at, on the ground (the tree's
+    "+"); `turn(selection, deg)` - one turn edit through the page (the
+    bar's Align to station), both the editing's (`editor3d-editing.ts`).
 - Editing on `Editor3dView`: `cancelGesture()` (a gesture under way ends
   unwritten: the page calls it before an undo or a redo);
   `screenOf(selection)`, `handleScreen(part)` and `gizmoSizes()` - CSS px

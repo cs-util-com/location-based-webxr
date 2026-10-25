@@ -573,13 +573,29 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     with the toast's Undo, or a station (`deleteStation`);
   - `duplicate` (`duplicateSelection`, Ctrl+D) copies an item or a
     station beside itself, selects the copy and says "Duplicated ...";
-  - `keysFree` is false in a field, in a menu or on a menu's button
+  - `groundMenu` hands a right click's (a long press's) ground menu to the
+    shell (`shell.groundMenu`);
+  - `keysFree` is false in a field, in a menu, or for the pattern's keys on a menu's button
     (`key-target.ts`: the menu's arrows, Home and End must not nudge the
     selection behind it), while a dialog or the modal shows and while the
     page is busy, so the 3D view's keys leave those alone.
     A gesture under way counts as an edit being made (`editing()`, the
     `gesture` field of the view slice), and an undo or a redo cancels it
     first (`runStep`).
+- **The tree's station commands** (G2 M3b), given to the shell as
+  `stations` with a `say` (a toast), each one undo step that ends a
+  delete's Undo offer, refreshes the views and tells autosave:
+  - `add` (`addStationAt`) - a station at the view's centre ("+") or
+    where the ground menu was opened: selected, its card unfolded, said
+    (`Added "Station 4" at the centre of the view` / `... here`); a
+    refusal is said;
+  - `reorder` (`reorderStations`) - the stations in a new order (the
+    tree's drag, the inspector's Earlier and Later);
+  - `split` (`splitItem`) - "Move to a new station"
+    (`editor.moveToNewStation`): the new station selected, unfolded and
+    said (`New station "..." with the pin in it`);
+  - `duplicate` and `remove` - `duplicateSelection` and
+    `deleteSelection`, as the 3D view's Ctrl+D and Del.
 - **The 3D view's studio shell** (`editor-shell/editor-shell.ts`): made
   once at start; the switch's `onShown` sets `body[data-view]` (`3d` or
   `2d`, which the shell's stylesheet follows), makes the map `inert`

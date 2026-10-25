@@ -147,6 +147,8 @@ import {
 import { inField, inMenu } from "./key-target.js";
 import { createEditorShell } from "./editor-shell/editor-shell.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
+import type { GroundPlace } from "./editor-shell/scene-menu.js";
+import { stationTitle } from "../station-run.js";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type {
   Editor3dStats,
@@ -1209,6 +1211,80 @@ function commitSceneEdit(edit: GestureEdit): void {
     return;
   }
   autosave.changed();
+}
+
+/** A station's title, as the tree numbers it, or a stand-in. */
+function stationTitleOf(stationId: string): string {
+  const stations =
+    manifestToWrite(store.getState().tourDocument)?.stations ?? [];
+  const index = stations.findIndex((s) => s.id === stationId);
+  const station = stations[index];
+  return station === undefined
+    ? "the station"
+    : stationTitle(station, index + 1);
+}
+
+/** A station the page made: selected, its card unfolded, said. */
+function showNewStation(stationId: string, said: (title: string) => string) {
+  refresh();
+  select(`${STATION_PREFIX}${stationId}`);
+  store.dispatch(
+    editorViewActions.stationFolded({ id: stationId, open: true }),
+  );
+  toast(said(stationTitleOf(stationId)));
+  autosave.changed();
+}
+
+/**
+ * A new station at `at` (the 3D tree's "+" at the view's centre, or the
+ * ground menu's "New station here"): one step; a refusal is said.
+ */
+function addStationAt(at: GroundPlace, where: "centre" | "here"): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = editor.addStation(at);
+  if (outcome.kind === "refused") {
+    refresh();
+    toast(outcome.reason);
+    return;
+  }
+  showNewStation(
+    outcome.stationId,
+    (title) =>
+      `Added "${title}" ${where === "centre" ? "at the centre of the view" : "here"}`,
+  );
+}
+
+/** The stations put in `order` (the 3D tree's drag, the inspector's
+ *  Earlier and Later): one step. */
+function reorderStations(order: readonly string[]): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = editor.reorderStations(order);
+  refresh();
+  if (outcome.kind === "refused") toast(outcome.reason);
+  else if (outcome.kind === "reordered") autosave.changed();
+}
+
+/** An item given a station of its own where it stands ("Move to a new
+ *  station"): one step; the new station is selected and said. */
+function splitItem(id: string): void {
+  if (editor === null) return;
+  const kind = manifestToWrite(store.getState().tourDocument)
+    ?.stations.flatMap((s) => s.items)
+    .find((i) => i.id === id)?.kind;
+  endUndo();
+  const outcome = editor.moveToNewStation(id);
+  if (outcome.kind === "refused") {
+    refresh();
+    toast(outcome.reason);
+    return;
+  }
+  const word = kind === "model" ? "3D model" : (kind ?? "item");
+  showNewStation(
+    outcome.stationId,
+    (title) => `New station "${title}" with the ${word} in it`,
+  );
 }
 
 /** The cover choices' thumbnails, let go when the dialog closes. */
@@ -3199,6 +3275,18 @@ const shell = createEditorShell({
   codes: shellCodes,
   loadPicture: readContent,
   dialogOpen,
+  stations: {
+    add: addStationAt,
+    reorder: reorderStations,
+    split: splitItem,
+    duplicate: (selection) => {
+      void duplicateSelection(selection);
+    },
+    remove: deleteSelection,
+  },
+  say: (text) => {
+    toast(text);
+  },
 });
 const viewSwitch = createViewSwitch({
   button: menuItemControl(element("view-switch")),
@@ -3232,10 +3320,13 @@ const viewSwitch = createViewSwitch({
         say: (text) => {
           toast(text);
         },
+        groundMenu: (point, place) => {
+          shell.groundMenu(point, place);
+        },
         // A field's and a menu's keys are their own (`key-target.ts`).
         keysFree: (event) =>
           !inField(event.target) &&
-          !inMenu(event.target) &&
+          !inMenu(event.target, event.key) &&
           !dialogOpen() &&
           Boolean(modal.hidden) &&
           !ui().busy,

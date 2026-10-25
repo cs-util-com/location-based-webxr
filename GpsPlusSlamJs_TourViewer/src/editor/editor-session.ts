@@ -382,6 +382,11 @@ export interface EditorSession {
     geo: QrGeoPose,
     options?: { readonly newStation?: boolean },
   ): { kind: "moved" } | EditorRefusal;
+  /** Give an item a station of its own where it stands, turned as it is
+   *  ("Move to a new station"): one step; says the station it made. */
+  moveToNewStation(
+    id: string,
+  ): { kind: "moved"; stationId: string } | EditorRefusal;
   /** Take back the newest edit (W2): the tour goes back to how it stood
    *  before it - an edit like any other, pending until saved and written
    *  to the draft. A note brought back after a save wrote its delete is
@@ -1040,6 +1045,22 @@ export function createEditorSession(input: {
         }),
       );
       return { kind: "moved" };
+    },
+    moveToNewStation(id) {
+      const found = find(id);
+      if (found === undefined) return notInTour;
+      // Where it stands and as it is turned: only its station changes.
+      store.dispatch(
+        tourDocumentActions.moved({
+          object: found.object,
+          newStation: true,
+          what: `the move of ${objectName(found.object)} to a new station`,
+        }),
+      );
+      const stationId = find(id)?.object.station;
+      return stationId === undefined || stationId === found.object.station
+        ? notApplied
+        : { kind: "moved", stationId };
     },
     remove(id) {
       const found = find(id);

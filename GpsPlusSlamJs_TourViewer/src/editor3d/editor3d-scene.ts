@@ -47,6 +47,7 @@ import {
   type EditorViewState,
   type ShellLayer,
 } from "../editor/editor-view.js";
+import type { GroundPlace } from "../editor/editor-shell/scene-menu.js";
 import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
 import { tourCentre } from "../editor/tour-origin.js";
 import {
@@ -141,6 +142,11 @@ export interface Editor3dView {
   /** The layers turned off (the station names and the codes are drawn
    *  here; the others have nothing to draw yet). */
   setLayers(hidden: readonly ShellLayer[]): void;
+  /** The place the view looks at, on the ground (the tree's "+"). */
+  centre(): GroundPlace;
+  /** Turn the selection `deg` clockwise about up, as one edit through the
+   *  page (the bar's Align to station); false for one without a pose. */
+  turn(selection: string, deg: number): boolean;
   /** Where the selection stands in the world (the page's checks). */
   pointOf(selection: string): readonly [number, number, number] | null;
   /** Cancel a gesture under way, writing nothing (an undo, a redo). */
@@ -717,6 +723,8 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
           codes: !hidden.includes("codes"),
         });
       },
+      centre: () => editing.centre(),
+      turn: (selection, deg) => editing.turn(selection, deg),
       pointOf(selection) {
         const place = placeOf(selection);
         return place === null ? null : [place.at.x, place.at.y, place.at.z];
