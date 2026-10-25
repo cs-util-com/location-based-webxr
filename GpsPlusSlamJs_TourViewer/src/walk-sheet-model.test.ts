@@ -121,6 +121,7 @@ describe("the peek", () => {
       title: "The well",
       distance: "46 m",
       arrowDeg: null,
+      nextArrowDeg: null,
       tail: "",
     });
   });
@@ -185,6 +186,7 @@ describe("the peek", () => {
       title: "3 stations to find",
       distance: null,
       arrowDeg: null,
+      nextArrowDeg: null,
       tail: "Scan one of the tour's codes so the guide knows where you are.",
     });
   });
@@ -248,6 +250,7 @@ describe("the peek", () => {
       title: "The well",
       distance: null,
       arrowDeg: null,
+      nextArrowDeg: null,
       tail: "Its story is playing.",
     });
   });
@@ -270,6 +273,7 @@ describe("the peek", () => {
       title: "Tour complete",
       distance: null,
       arrowDeg: null,
+      nextArrowDeg: null,
       tail: "Every station visited.",
     });
     const skipped = walk("any", [
@@ -309,6 +313,7 @@ describe("the peek", () => {
       title: "The gate",
       distance: null,
       arrowDeg: null,
+      nextArrowDeg: null,
       tail: "Next: The well, 46 m",
     });
   });
@@ -661,6 +666,7 @@ describe("the walk's rules in the sheet", () => {
       title: "3 stations to find",
       distance: null,
       arrowDeg: null,
+      nextArrowDeg: null,
       tail: "GPS too weak to guide you (±40 m); step into the open.",
     });
     expect(r2({ position: "pending", precision: "pending" })).toMatchObject({
@@ -824,5 +830,60 @@ describe("the walk's rules in the sheet", () => {
     const fixed = walkSheetModel(input({ view: view({ canChoose: false }) }))
       .list.rows[1]!;
     expect(fixed.choosable).toBe(false);
+  });
+});
+
+describe("the being-there peek keeps the way to the next station", () => {
+  // Why this test matters: standing at a done station, the peek names the
+  // next station second. Without its arrow the visitor lost the one cue
+  // that turns with them; the tail keeps its distance and says the
+  // direction, and the arrow sits by the tail, not by the title (the
+  // title is the station the visitor is at, the distance is not its own).
+  const directions = new Map([
+    ["well", { word: "right" as const, angleDeg: 61.6 }],
+  ]);
+  const at = (over: Partial<GuideView> = {}) =>
+    input({
+      order: "fixed",
+      progress: walk("fixed", done("gate")),
+      directions,
+      view: view({
+        there: { id: "gate", tail: "Next: The well, 46 m" },
+        ...over,
+      }),
+    });
+
+  it("the next station's arrow and direction, with its distance in the tail", () => {
+    expect(walkSheetModel(at()).peek).toEqual({
+      kind: "there",
+      eyebrow: "At station 1 - take your time",
+      title: "The gate",
+      distance: null,
+      arrowDeg: null,
+      nextArrowDeg: 62,
+      tail: "Next: The well, 46 m - to your right",
+    });
+  });
+
+  it("no arrow where no distance is shown, nor without a next station", () => {
+    for (const position of ["weak", "none", "pending"] as const) {
+      const peek = walkSheetModel(
+        at({
+          position,
+          accuracyM: 40,
+          there: { id: "gate", tail: "Next: The well - hint" },
+        }),
+      ).peek;
+      expect(peek.nextArrowDeg).toBeNull();
+      expect(peek.tail).toBe("Next: The well - hint");
+    }
+    const complete = walkSheetModel(
+      at({
+        focusId: null,
+        there: { id: "gate", tail: "Every station is done." },
+      }),
+    ).peek;
+    expect(complete.nextArrowDeg).toBeNull();
+    expect(complete.tail).toBe("Every station is done.");
   });
 });

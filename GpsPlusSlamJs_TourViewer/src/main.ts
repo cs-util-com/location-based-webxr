@@ -904,6 +904,7 @@ const stations = wireVisitorStations({
       distanceText: element("walk-distance-text"),
       distanceArrow: svgElement("walk-distance-arrow"),
       tail: element("walk-tail"),
+      tailArrow: svgElement("walk-tail-arrow"),
       quick: element("station-skip"),
       story: element("walk-story"),
       dots: element("walk-dots"),

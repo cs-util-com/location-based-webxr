@@ -2312,8 +2312,18 @@
         font-size: 13.5px;
         line-height: 1.35;
       }
-      .walk-tail:empty {
+      .walk-tail:empty,
+      .walk-tail-row:has(#walk-tail:empty) {
         display: none;
+      }
+      .walk-tail-row {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+      }
+      .walk-tail-row .walk-arrow {
+        width: 13px;
+        height: 13px;
       }
       .walk-peek[data-position="weak"] #walk-tail {
         color: #fde68a;
@@ -5137,11 +5147,21 @@
                           ></span
                         ></span>
                       </p>
-                      <p
-                        id="walk-tail"
-                        class="walk-tail"
-                        data-testid="walk-tail"
-                      ></p>
+                      <!-- The tail, and on a being-there peek the arrow to
+                       the next station it names (not by the title: that
+                       is the station the visitor is at). -->
+                      <p class="walk-tail walk-tail-row">
+                        <svg
+                          id="walk-tail-arrow"
+                          class="walk-arrow"
+                          data-testid="walk-tail-arrow"
+                          viewBox="0 0 16 16"
+                          aria-hidden="true"
+                        >
+                          <path d="M8 2l5 11-5-3-5 3z" fill="currentColor" />
+                        </svg>
+                        <span id="walk-tail" data-testid="walk-tail"></span>
+                      </p>
                       <p
                         id="walk-code-tail"
                         class="walk-tail"

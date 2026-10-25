@@ -18,7 +18,7 @@ the station guide's `view()` and the tour; the DOM writer is
     `visitor-start.ts` `visitorStartView`), `progress` (`WalkProgress`),
     `view` (`GuideView`), `story: { stationId } | null` (the story
     playing), `sheet: "peek" | "list"`.
-  - `peek: { kind, eyebrow, title, distance, tail }`:
+  - `peek: { kind, eyebrow, title, distance, arrowDeg, nextArrowDeg, tail }`:
     - `walk`: eyebrow "Next - station N of M" (fixed and branch), "N
       stations to find - nearest" (several offered and a distance shown;
       "- your choice" for the visitor's chosen target, the chosen-target rule, in any
@@ -41,7 +41,10 @@ the station guide's `view()` and the tour; the DOM writer is
       `view.there`): "At station N - take your time" / its title / the
       guide's tail ("Next: <title>" with the distance or the position's
       hint, "N stations still to find - ...", or "Every station is
-      done."), no distance;
+      done."), no distance by the title (it is not the station the
+      visitor is at); while the next station's distance is shown and it
+      has a direction, the tail adds " - <direction>" and `nextArrowDeg`
+      turns the arrow beside the tail to it;
     - `complete`: once the tour finished (or, never expected, complete
       with no `there`): the tour's title / "Tour complete" / "K skipped." or
       "Every station visited." (branch: "You reached the end of your
@@ -126,6 +129,9 @@ model.peek; // { kind: "walk", eyebrow: "3 stations to find - nearest", ... }
 
 ## Tests
 
+- `walk-sheet-model.test.ts` - the being-there peek's next station:
+  its arrow (`nextArrowDeg`) and direction with the distance in the tail,
+  none without a distance shown or a next station.
 - `walk-sheet-model.test.ts` - every peek kind and tail, the eyebrow per
   order, segments and the bar above the limit, rows and their subs, the
   chip, the progress line, the completion card, the story card, branch
@@ -150,7 +156,8 @@ model.peek; // { kind: "walk", eyebrow: "3 stations to find - nearest", ... }
 - The peek: `arrowDeg` (whole degrees) and the tail "Ahead." / "To your
   left." / "To your right." / "Behind you." only while a distance is
   shown and the focus has a direction; otherwise `arrowDeg: null` and the
-  tail as before.
+  tail as before. On a being-there peek the arrow is `nextArrowDeg`
+  (beside the tail, the next station's) and `arrowDeg` stays null.
 - A row still to find: "N m - ahead / to your left / to your right /
   behind you" with `arrowDeg`; without a direction "N m" and no arrow;
   found, here, skipped and later rows never have one; no direction where

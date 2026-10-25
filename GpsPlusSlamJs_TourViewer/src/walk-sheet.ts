@@ -174,6 +174,9 @@ export interface WalkSheetDom {
   readonly distanceText: El;
   readonly distanceArrow: SVGElement;
   readonly tail: El;
+  /** The arrow beside the tail: a being-there peek's way to the next
+   *  station (`nextArrowDeg`). */
+  readonly tailArrow: SVGElement;
   /** `#station-skip`: the guide writes its label, this its look. */
   readonly quick: El;
   readonly story: El;
@@ -592,6 +595,7 @@ export function wireWalkSheet(deps: {
       setArrow(dom.distanceArrow, model.peek.arrowDeg);
       setHidden(dom.distance, model.peek.distance === null);
       setText(dom.tail, model.peek.tail);
+      setArrow(dom.tailArrow, model.peek.nextArrowDeg);
       setData(dom.quick, "kind", quickKind(extra.quick));
       // The story card: its dots, and "Keep listening" beside the confirm.
       drawDots(extra.story);

@@ -298,7 +298,9 @@ welcome back, the one toast text no other region announces); and the sheet
 which owns the grab `walk-grab` (`aria-controls="walk-list"`, a 44 px
 target from `::before` around its 5 px pill), the peek `walk-peek` (`walk-segments`,
 `walk-peek-row`, `walk-eyebrow`, `walk-title`, `walk-distance`,
-`walk-tail`, `walk-code-tail`, and `#station-skip` as its quick action),
+`walk-tail` (a span in `.walk-tail-row`, after `walk-tail-arrow`: the
+being-there peek's arrow to the next station; the row hides while the tail
+is empty), `walk-code-tail`, and `#station-skip` as its quick action),
 the story card `walk-story` (`#scene-panel` and its parts, `walk-dots`,
 `walk-story-acts` with `#scene-continue`, `story-end` (`#walk-story-end`)
 and `keep-listening`; while the end is asked (`data-kind="end"`) `#scene-continue` is not shown, so the card offers only its two answers, M4; then `#scene-play-next`), and the list `walk-list`

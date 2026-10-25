@@ -90,6 +90,11 @@ interface WalkPeek {
    *  straight ahead, positive to the right; null without a heading or a
    *  distance shown. */
   readonly arrowDeg: number | null;
+  /** On a being-there peek, the arrow to the next station its tail names
+   *  (the focus), beside the tail - the title is the station the visitor
+   *  is at, so the arrow is not put by it: whole degrees as `arrowDeg`;
+   *  null on every other peek, without a heading or a distance shown. */
+  readonly nextArrowDeg: number | null;
   readonly tail: string;
 }
 
@@ -336,6 +341,29 @@ function rowSubOf(
   }
 }
 
+/** The being-there peek's way on: the guide's tail (the next station and
+ *  its distance or hint), with the next station's direction and arrow
+ *  while its distance is shown and a heading exists. */
+function thereNext(
+  input: WalkSheetInput,
+): Pick<WalkPeek, "nextArrowDeg" | "tail"> {
+  const { view } = input;
+  const tail = view.there?.tail ?? "";
+  const next = view.focusId;
+  const shown =
+    view.position === "distance" &&
+    next !== null &&
+    view.distances.get(next) !== undefined;
+  const direction = shown ? input.directions?.get(next) : undefined;
+  const nextArrowDeg = arrowOf(direction);
+  return direction === undefined || nextArrowDeg === null
+    ? { nextArrowDeg: null, tail }
+    : {
+        nextArrowDeg,
+        tail: `${tail} - ${walkDirectionPhrase(direction.word)}`,
+      };
+}
+
 function peekOf(
   input: WalkSheetInput,
   offered: readonly string[],
@@ -352,6 +380,7 @@ function peekOf(
       title: "Tour complete",
       distance: null,
       arrowDeg: null,
+      nextArrowDeg: null,
       tail:
         skipped > 0
           ? `${String(skipped)} skipped.`
@@ -370,7 +399,7 @@ function peekOf(
       title: stationTitle(there),
       distance: null,
       arrowDeg: null,
-      tail: view.there.tail,
+      ...thereNext(input),
     };
   }
   const focus = view.focusId === null ? undefined : byId.get(view.focusId);
@@ -389,6 +418,7 @@ function peekOf(
       title: `${String(offered.length)} stations to find`,
       distance: null,
       arrowDeg: null,
+      nextArrowDeg: null,
       tail:
         view.position === "pending"
           ? WAITING
@@ -413,6 +443,7 @@ function peekOf(
       title: found === undefined ? "" : stationTitle(found),
       distance: null,
       arrowDeg: null,
+      nextArrowDeg: null,
       tail: "Its story is playing.",
     };
   }
@@ -448,6 +479,7 @@ function peekOf(
     title: stationTitle(focus),
     distance: shown ? distanceText(d) : null,
     arrowDeg,
+    nextArrowDeg: null,
     tail,
   };
 }

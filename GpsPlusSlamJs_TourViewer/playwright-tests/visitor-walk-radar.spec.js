@@ -282,6 +282,33 @@ test("the peek says which way the focus is, and its arrow turns with the camera"
   await expect(page.getByTestId("walk-tail")).toHaveText("Behind you.");
 });
 
+test("being there, the peek keeps the arrow and the way to the next station", async ({
+  page,
+}) => {
+  // Why this test matters: standing at a done station the peek names the
+  // station the visitor is at, with the next one second. The next one's
+  // distance, direction and turning arrow stay on the peek (by the tail,
+  // not by the title, which is not 46 m away); without them the visitor
+  // lost the cue that turns with them.
+  await openTour(page, STATIONS_ARCHIVE);
+  await enterAtTheCode(page);
+  await endTheStory(page);
+  await faceBearing(page, 0);
+  await expect(page.getByTestId("walk-eyebrow")).toHaveText(
+    /^At station \d+ - take your time$/,
+  );
+  await expect(page.getByTestId("walk-tail")).toHaveText(
+    /^Next: .+, \d+ m - (ahead|to your left|to your right|behind you)$/,
+  );
+  await expect(page.getByTestId("walk-tail-arrow")).toHaveAttribute(
+    "data-deg",
+    /^-?\d+$/,
+  );
+  await expect(page.getByTestId("walk-tail-arrow")).toBeVisible();
+  // No distance by the title: it is not the station the visitor is at.
+  await expect(page.getByTestId("walk-distance")).toBeHidden();
+});
+
 test("placed by GPS: the chip says how well, too weak says so, and no heading draws no words", async ({
   page,
 }) => {
