@@ -241,17 +241,23 @@ export function drawInspector(
         `Visitors who step inside this circle see the station's content; it starts loading ${fixed(model.activateRadiusM, 0)} m out.`,
       ),
     );
-    const [disc, ...open] = positionPart(
+    const position = positionPart(
       model.position,
       state.positionOpen,
       "The file gives this station no position.",
     );
-    // The lock sits on the Position row: the disclosure and the lock side
-    // by side.
-    const row = el("div", "posrow");
-    if (disc !== undefined) row.append(disc);
-    row.append(lockButton(model.locked));
-    parts.push(section, row, ...open);
+    if (model.position === null) {
+      // Nothing for the lock to keep still: the note stands alone.
+      parts.push(section, ...position);
+    } else {
+      // The lock sits on the Position row: the disclosure and the lock
+      // side by side.
+      const [disc, ...open] = position;
+      const row = el("div", "posrow");
+      if (disc !== undefined) row.append(disc);
+      row.append(lockButton(model.locked));
+      parts.push(section, row, ...open);
+    }
   } else if (model.kind === "item") {
     if (model.sizeM !== null) {
       section.append(field("Size", fixed(model.sizeM, 2), "m"));

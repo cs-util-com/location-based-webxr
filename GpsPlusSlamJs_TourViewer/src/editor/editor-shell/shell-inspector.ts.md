@@ -36,7 +36,7 @@ exact position folded away under a disclosure.
   with the inspector's actions later.
 - Text, never markup. Numbers are fixed to the decimals shown, "-0"
   shown as 0; a heading the file does not give shows as "-".
-- A station's Position row (`.posrow`) holds its disclosure and the lock button (`data-act="lock"`, `aria-pressed` true while locked, labelled to unlock or to lock). Items have no lock.
+- A station's Position row (`.posrow`) holds its disclosure and the lock button (`data-act="lock"`, `aria-pressed` true while locked, labelled to unlock or to lock). Items have no lock. A station without a position has no lock and no row: its "no position" note stands alone (a lock with nothing to keep still read as if it locked the note).
 
 ## Examples
 
@@ -53,4 +53,4 @@ the tour's centre once unfolded, an item's offset in its station's
 frame, a code without a position, and the folded head. The page by
 `playwright-tests/editor3d-shell.spec.js`.
 
-`shell-inspector.test.ts` also covers the lock button's place, state and words.
+`shell-inspector.test.ts` also covers the lock button's place, state and words, and its absence for a station without a position.

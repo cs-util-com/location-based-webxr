@@ -150,6 +150,34 @@ describe("drawInspector", () => {
     expect(dock.body.querySelector('[data-act="lock"]')).toBeNull();
   });
 
+  // Why: a station the file gives no position has nothing the lock could
+  // keep still, and a lock beside the "no position" note read as if it
+  // locked the note. The note stands alone, with no lock.
+  it("shows no lock for a station without a position, only the note", () => {
+    drawInspector(
+      dock,
+      {
+        kind: "station",
+        title: "Unplaced",
+        sub: "Station 1 of 1",
+        description: null,
+        imagePath: null,
+        foundRadiusM: 25,
+        activateRadiusM: 50,
+        position: null,
+        locked: true,
+      },
+      { folded: false, positionOpen: false },
+      pictures,
+    );
+    expect(dock.body.querySelector('[data-act="lock"]')).toBeNull();
+    expect(dock.body.querySelector(".posrow")).toBeNull();
+    const notes = [...dock.body.querySelectorAll(".note")].map(
+      (n) => n.textContent,
+    );
+    expect(notes).toContain("The file gives this station no position.");
+  });
+
   it("is hidden while nothing is selected", () => {
     draw(null);
     expect(dock.root.hidden).toBe(true);
