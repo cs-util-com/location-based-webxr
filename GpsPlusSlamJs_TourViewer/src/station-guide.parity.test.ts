@@ -48,8 +48,10 @@
  * one) the line reads "At station N - take your time: <title>. <next>"
  * instead of sending them on, and a complete tour finishes only once they
  * leave or tap "Finish the tour". On such a tick the `line` may differ and
- * must have that form, and the `skip` may differ only by offering "Finish
- * the tour". Every other field is held to the golden.
+ * must have that form, naming the golden's present station, and the `skip`
+ * may differ only by offering "Finish the tour". Every other field is held
+ * to the golden. Which ticks those are comes from the FROZEN golden
+ * (`goldenThere`), never from the guide under test, whose view must agree.
  *
  * Regenerate ONLY when a guide output is meant to change, say why in the
  * commit, and never in CI:
@@ -192,31 +194,69 @@ interface Scenario {
 interface TickSide {
   readonly noGuess: boolean;
   readonly distance: boolean;
-  /** The visitor is there (the guide's view): the third exception. */
+  /** The guide's view says the visitor is there (`view().there`): held
+   *  to the golden's own answer (`goldenThere`), never trusted for it. */
   readonly there: boolean;
 }
 
-/** The fields the walk's rules may change on a tick, by its state (the header). */
-function m4Exempt(side: TickSide): ReadonlySet<string> {
+/** The fields the walk's rules may change on a tick, by its state (the
+ *  header); `there` is the golden's own answer (`goldenThere`). */
+function m4Exempt(side: TickSide, there: boolean): ReadonlySet<string> {
   const out = new Set<string>();
   if (side.noGuess) for (const k of ["line", "crumbs", "skip"]) out.add(k);
   if (!side.distance) out.add("hud");
-  if (side.there) for (const k of ["line", "skip"]) out.add(k);
+  if (there) for (const k of ["line", "skip"]) out.add(k);
   return out;
+}
+
+/**
+ * Where the FROZEN golden says the visitor is there, tick by tick: the
+ * station number (1-based, list order) of its present station once that
+ * station is done (its done events so far) while no story plays (no
+ * station found and not yet done); null otherwise. Derived from the golden
+ * alone, so the third exception's tick set does not come from the code
+ * under test. A complete tour would also wait on its last station until
+ * the visitor left it, which the golden cannot tell (it holds no
+ * distances): no frozen stream completes, and a test pins that.
+ */
+function goldenThere(
+  s: Scenario,
+  want: readonly TickRecord[],
+): (number | null)[] {
+  const found = new Set<string>();
+  const done = new Set<string>();
+  return want.map((w) => {
+    for (const id of w.found) found.add(id);
+    for (const id of w.done) done.add(id);
+    const playing = [...found].some((id) => !done.has(id));
+    if (playing || w.present === null || !done.has(w.present)) return null;
+    return s.stations.findIndex((st) => st.id === w.present) + 1;
+  });
+}
+
+/** Whether the frozen golden's stream completes its tour (every station
+ *  done at some tick). */
+function goldenCompletes(s: Scenario, want: readonly TickRecord[]): boolean {
+  const done = new Set(want.flatMap((w) => w.done));
+  return s.stations.every((st) => done.has(st.id));
 }
 
 /** A being-there line: an optional note, then the station and what is
  *  next (the guide's `thereLine`). */
 const THERE_LINE = /^(.+ )?At station \d+ - take your time: .+\. .+/;
 
-/** A tick held to the golden, but for the fields the rules' exception names. */
+/** A tick held to the golden, but for the fields the rules' exception
+ *  names; `there` is the golden's answer for it (`goldenThere`). */
 function expectTick(
   got: TickRecord,
   want: TickRecord,
   side: TickSide,
   at: string,
+  there: number | null,
 ): void {
-  const exempt = m4Exempt(side);
+  // The guide's view agrees with the golden on being there.
+  expect(side.there, `${at} there`).toBe(there !== null);
+  const exempt = m4Exempt(side, there !== null);
   for (const key of Object.keys(want) as (keyof TickRecord)[]) {
     if (exempt.has(key)) continue;
     expect(got[key], `${at} ${key}`).toEqual(want[key]);
@@ -225,8 +265,12 @@ function expectTick(
   // the station the golden's line named, with the same distance or hint
   // (outside the no-guess rule, whose line the golden does not hold), and
   // its skip changes only to finish the tour.
-  if (side.there) {
+  if (there !== null) {
     expect(got.line, `${at} line`).toMatch(THERE_LINE);
+    // "At station N" names the golden's present station.
+    expect(/At station (\d+) - /.exec(got.line)?.[1], `${at} station`).toBe(
+      String(there),
+    );
     const named = /(?:nearest|your choice|Next): (.+)$/.exec(want.line)?.[1];
     if (!side.noGuess && named !== undefined) {
       expect(got.line.endsWith(`Next: ${named}`), `${at} next`).toBe(true);
@@ -787,8 +831,15 @@ describe("the station guide's precision parity oracle (frozen before the guide m
       const ticks = exceptionTicks(s);
       const until = ticks[0] ?? want.length;
       const sides = sidesOf(s.name);
+      const there = goldenThere(s, want);
       for (let t = 0; t < until; t += 1) {
-        expectTick(got[t]!, want[t]!, sides[t]!, `${s.name} t=${String(t)}`);
+        expectTick(
+          got[t]!,
+          want[t]!,
+          sides[t]!,
+          `${s.name} t=${String(t)}`,
+          there[t]!,
+        );
       }
       if (ticks.length === 0) continue;
       // After the window every tick is the old guide's again, presence
@@ -804,6 +855,7 @@ describe("the station guide's precision parity oracle (frozen before the guide m
           want[t]!,
           sides[t]!,
           `${s.name} t=${String(t)} (after the window)`,
+          there[t]!,
         );
         afterWindow += 1;
       }
@@ -831,9 +883,16 @@ describe("the station guide's precision parity oracle (frozen before the guide m
       // Held to the golden outside the exception window, as above.
       const ticks = exceptionTicks(s);
       const want = frozen[s.name]!;
+      const there = goldenThere(s, want);
       for (let t = 0; t < want.length; t += 1) {
         if (ticks.length > 0 && t >= ticks[0]! && t <= ticks.at(-1)!) continue;
-        expectTick(got[t]!, want[t]!, sides[t]!, `${s.name} t=${String(t)}`);
+        expectTick(
+          got[t]!,
+          want[t]!,
+          sides[t]!,
+          `${s.name} t=${String(t)}`,
+          there[t]!,
+        );
       }
     }
   });
@@ -858,13 +917,14 @@ describe("the station guide's precision parity oracle (frozen before the guide m
       const sides = sidesOf(s.name);
       const got = now[s.name]!;
       const want = frozen[s.name]!;
+      const there = goldenThere(s, want);
       sides.forEach((side, t) => {
         if (side.noGuess) noGuess += 1;
         if (side.noGuess && got[t]!.line !== want[t]!.line) lineChanged += 1;
         if (!side.distance && got[t]!.hud.join() !== want[t]!.hud.join()) {
           hudChanged += 1;
         }
-        if (m4Exempt(side).size === 0) fullTicks += 1;
+        if (m4Exempt(side, there[t]! !== null).size === 0) fullTicks += 1;
       });
     }
     expect(noGuess).toBeGreaterThan(0);
@@ -891,14 +951,19 @@ describe("the station guide's precision parity oracle (frozen before the guide m
     for (const s of PARITY) {
       const got = now[s.name]!;
       const want = frozen[s.name]!;
-      sidesOf(s.name).forEach((side, t) => {
-        if (!side.there) {
+      goldenThere(s, want).forEach((n, t) => {
+        if (n === null) {
           other += 1;
           return;
         }
         there += 1;
         if (got[t]!.line !== want[t]!.line) lineChanged += 1;
       });
+    }
+    // The golden-derived tick set is exact only while no stream completes
+    // (`goldenThere`): a completing stream needs the finish rule added.
+    for (const s of [...PARITY, ...EXCEPTION]) {
+      expect(goldenCompletes(s, frozen[s.name]!), s.name).toBe(false);
     }
     expect(there).toBeGreaterThan(0);
     expect(lineChanged).toBeGreaterThan(0);
@@ -932,6 +997,7 @@ describe("the station guide's precision parity oracle (frozen before the guide m
           frozen[s.name]![first - 1]!,
           sidesOf(s.name)[first - 1]!,
           `${s.name} t=${String(first - 1)}`,
+          goldenThere(s, frozen[s.name]!)[first - 1]!,
         );
       }
       for (const t of ticks) {

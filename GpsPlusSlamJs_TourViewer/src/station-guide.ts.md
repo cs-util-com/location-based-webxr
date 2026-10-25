@@ -726,9 +726,14 @@ undo, note }`: the line's station, how the position stands
   on a tick with no distance the `hud` may; every other field equals the
   golden on every tick, and every field once the hold has run out with a
   distance shown (`station-guide.parity.test.ts`). A third, being there:
-  on a tick where `view().there` is set the `line` must read "At station N
-  - take your time: ..." and end with "Next: " and the station and
-    distance (or hint) the golden's line named (outside the no-guess rule),
-    and the `skip` may differ only by "Finish the tour". On the golden's
-    streams that is most ticks: presence holds from a station until the
-    next is entered.
+  on a tick where the FROZEN golden says the visitor is there (its present
+  station done so far, no story playing; derived from the golden, never
+  from the guide, and `view().there` must agree) the `line` must read "At
+  station N - take your time: ...", N the golden's present station, and
+  end with "Next: " and the station and
+  distance (or hint) the golden's line named (outside the no-guess rule),
+  and the `skip` may differ only by "Finish the tour". No frozen stream
+  completes its tour (pinned): the golden holds no distances, so it
+  could not tell when a complete tour's wait ends. On the golden's
+  streams that is most ticks: presence holds from a station until the
+  next is entered.
