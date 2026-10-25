@@ -18,6 +18,7 @@ import {
   afterFrames,
   answerHosts,
   openSampleIn3d,
+  openZip,
   view3d,
 } from "./editor3d-fixture.js";
 import { save } from "./editor-menus.js";
@@ -318,20 +319,6 @@ async function photoTour(page) {
     new Uint8ArrayReader(new Uint8Array(jpeg)),
   );
   return { zip: Buffer.from(await writer.close()), jpeg };
-}
-
-/**
- * Open `zip` through the page's file input, as a dropped file.
- * @param {import("@playwright/test").Page} page
- * @param {Buffer} zip
- * @param {string} name
- */
-async function openZip(page, zip, name) {
-  const chooser = page.waitForEvent("filechooser");
-  await page.locator("#drop").click();
-  await (
-    await chooser
-  ).setFiles({ name, mimeType: "application/zip", buffer: zip });
 }
 
 /**

@@ -149,6 +149,16 @@ export interface Editor3dView {
   turn(selection: string, deg: number): boolean;
   /** Where the selection stands in the world (the page's checks). */
   pointOf(selection: string): readonly [number, number, number] | null;
+  /** The ground's ellipsoidal height at a place, as loaded (null where
+   *  none has loaded yet): "Put on the ground" waits for it. */
+  groundAt(place: {
+    readonly lat: number;
+    readonly lon: number;
+  }): number | null;
+  /** The view's origin: the tour's centre when the view opened, which its
+   *  frame is built on (the inspector's east and north are measured from
+   *  it). */
+  origin(): { readonly lat: number; readonly lng: number };
   /** Cancel a gesture under way, writing nothing (an undo, a redo). */
   cancelGesture(): void;
   /** Where the selection (a station's point, an item's or a code's
@@ -724,6 +734,8 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         });
       },
       centre: () => editing.centre(),
+      groundAt: (place) => editing.groundAt(place),
+      origin: () => ({ lat: centre.lat, lng: centre.lng }),
       turn: (selection, deg) => editing.turn(selection, deg),
       pointOf(selection) {
         const place = placeOf(selection);

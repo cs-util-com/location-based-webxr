@@ -23,6 +23,13 @@ actions (`bar-actions.ts`: Duplicate, Align to station, Copy position).
 Each is a page command (`deps.stations`), one undo step; the shell writes
 nothing to the tour itself.
 
+The inspector's editing goes through it too: a value typed in the
+inspector (a station's name, description, radius, place and heading; a
+pin's text; an item's offset, height and heading; a model's size)
+becomes one edit (`inspector-edits.ts`) and one page command
+(`deps.edits`), one undo step per field; so do Put on the ground, Put
+items on the ground, the card's picture and Add pin.
+
 ## Public API
 
 - `createEditorShell(deps)` -> `EditorShell`, made once by `edit-main.ts`:
@@ -37,6 +44,10 @@ nothing to the tour itself.
   - `deps.stations` (`ShellStationCommands`) - the page's commands:
     `add(place, "centre" | "here")`, `reorder(order)`, `split(itemId)`,
     `duplicate(selection)`, `remove(selection)`;
+  - `deps.edits` (`ShellEditCommands`) - the inspector's edits:
+    `station(stationId, edit)`, `text(id, text)`, `scene(edit)` (a pose
+    or a size, as the gestures write it), `groundItems(items)` (heights,
+    one step), `addPin(stationId)`;
   - `deps.say(text)` - a passing line (the page's toast).
 - `EditorShell.groundMenu(point, place)` - the 3D view's input asks for
   the ground menu (a right click, a long press): opened at `point` (px in
@@ -49,7 +60,8 @@ nothing to the tour itself.
   (each draw also sweeps the cards a redraw replaced).
 - `ShellView` - the 3D view's commands it drives (`flyTo`, `frame`,
   `setTop`, `zoom`, `northUp`, `readout`, `setLayers`, `centre` for "+",
-  `turn` for Align to station); a type only, so the page's code never
+  `turn` for Align to station and a typed heading, `groundAt` and
+  `origin` for the inspector); a type only, so the page's code never
   holds the 3D view's.
 
 ## Invariants & assumptions
@@ -138,6 +150,23 @@ nothing to the tour itself.
     mark shown) in a wide platform face (Verdana, with DejaVu Sans'
     metrics), would no longer hold every control with the name at its
     floor; measured, every state fits from 320 px up.
+- **A typed field commits on leaving it** (blur) **and on Enter**, only
+  when its text differs from the tour's (`defaultValue`): one edit, one
+  undo step per field. The field is set back to the tour's value before
+  the edit is written, so the redraw shows what the tour now holds (a
+  refusal or a value that is no number is said, and the tour's value
+  stays). Escape in a changed field puts the tour's value back and goes
+  no further (the page's Escape would deselect). Text still typed when
+  the selection changes or the view hides is committed to the selection
+  it was typed for.
+- **Put on the ground waits for the ground:** where the ground under
+  what it moves has not loaded, the command shows "Waiting for the
+  ground..." (disabled, `aria-busy`) and reads it again
+  (`ground-wait.ts`) until it has, then writes; after 20 s it says the
+  ground has not loaded. A selection change or hiding the view calls
+  the wait off. What already stands on the ground is said, not written.
+  The inspector is drawn again with the camera readout, so the "N off"
+  and "x m up" notes follow the ground as it loads.
 - The inspector's lock (`data-act="lock"`) toggles the selected station's lock in `editorView` (`stationLocked`); both inspector builds pass `unlockedStations`.
 
 ## Examples
@@ -157,6 +186,13 @@ const shell = createEditorShell({
     split: splitItem,
     duplicate,
     remove,
+  },
+  edits: {
+    station: editStation,
+    text: editText,
+    scene: commitSceneEdit,
+    groundItems,
+    addPin,
   },
   say: (text) => toast(text),
 });
@@ -187,6 +223,16 @@ and on a phone the folded tree's "Stations" header unfolding the dock
 with its stations shown.
 
 The lock's click in the page: `editor3d-edit.spec.js`.
+
+The inspector's editing in the page:
+`playwright-tests/editor3d-inspector.spec.js` (a name by Enter, Escape
+putting it back, a description by leaving it, a radius under its pin
+with the warning, a value that is no number, one undo per field, saved
+and opened again; Put items on the ground as one step, a locked
+station's place read-only, Put on the ground and a typed place and
+heading once unlocked, Add pin and its text; the fields' layout at the
+four sizes). Its parts' own tests: `inspector-edits.test.ts`,
+`ground-wait.test.ts`.
 
 The tree's editing in the page: `playwright-tests/editor3d-tree.spec.js`
 ("+", the drag, Escape during a drag, Earlier and Later with the new

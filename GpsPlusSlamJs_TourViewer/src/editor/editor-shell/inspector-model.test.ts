@@ -11,6 +11,9 @@
  */
 import { describe, expect, it } from "vitest";
 
+// Activates the licence an item's place in the world needs.
+import "../../test-support/v3-tour.js";
+
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import {
@@ -113,12 +116,18 @@ describe("buildInspector", () => {
     expect(inspect("station:a")).toEqual({
       kind: "station",
       title: "Market Square",
+      name: "Market Square",
       sub: "Station 1 of 2",
       place: { number: 1, count: 2 },
       description: "Where the market meets",
       imagePath: null,
+      images: [],
+      imageId: null,
       foundRadiusM: 25,
       activateRadiusM: 50,
+      outside: 0,
+      offGround: null,
+      groundOffM: null,
       locked: true,
       position: {
         eastM: expect.any(Number),
@@ -154,9 +163,12 @@ describe("buildInspector", () => {
       itemKind: "pin",
       title: "Fountain, 1612",
       sub: "Pin in Market Square",
+      stationId: "a",
+      text: "Fountain, 1612",
       sizeM: null,
       offset: { northM: 4, upM: 1.5, eastM: -2 },
       headingDeg: 0,
+      groundOffM: null,
     });
     expect(inspect("model-1")).toMatchObject({
       itemKind: "model",
@@ -261,5 +273,161 @@ describe("headingOfRotation", () => {
     // A hair short of straight up still has one.
     const a = (Math.PI / 2 - 1e-3) / 2;
     expect(headingOfRotation([0, 0, Math.sin(a), Math.cos(a)])).toBe(0);
+  });
+});
+
+describe("buildInspector: the values the inspector edits", () => {
+  const PHOTO_STATION = {
+    id: "p",
+    title: "Gate",
+    image: "img-2",
+    geo: { lat: 48.1371234, lon: 11.5754321, alt: 560, headingDeg: 0 },
+    activateRadiusM: 20,
+    foundRadiusM: 10,
+    hint: "arrow",
+    steps: [],
+    items: [
+      {
+        id: "photo-1",
+        kind: "photo",
+        image: "content/photo-1.jpg",
+        label: "North face",
+        createdAtIso: AT,
+        pose: { position: [3, 1.5, 4], rotation: [0, 0, 0, 1] },
+      },
+      {
+        id: "pin-far",
+        kind: "pin",
+        label: "Far pin",
+        createdAtIso: AT,
+        pose: { position: [12, 0, 0], rotation: [0, 0, 0, 1] },
+      },
+    ],
+  } as unknown as TourStation;
+  const ASSETS = [
+    {
+      id: "img-2",
+      path: "content/img-2.png",
+      kind: "image" as const,
+      width: 4,
+      height: 3,
+    },
+    {
+      id: "horse",
+      path: "content/horse.glb",
+      kind: "model" as const,
+    },
+  ];
+  const at = (
+    selected: string,
+    more: Partial<Parameters<typeof buildInspector>[0]> = {},
+  ) =>
+    buildInspector({
+      selected,
+      stations: [PHOTO_STATION, ...STATIONS],
+      assets: ASSETS,
+      codes: CODES,
+      ...more,
+    });
+
+  // Why: the title box shows what the creator typed, never the stand-in
+  // the tree shows for an untitled station - typing into "Station 2"
+  // would otherwise save that stand-in as a real title.
+  it("gives a station's own name to edit, empty for an untitled one", () => {
+    expect(at("station:p")).toMatchObject({ name: "Gate", title: "Gate" });
+    expect(at("station:b")).toMatchObject({ name: "", title: "Station 3" });
+  });
+
+  // Why: the card picture may be one of the station's photos or an image
+  // of the tour; the picker must offer exactly those (no model, no photo
+  // of another station) and mark the one the card shows now.
+  it("offers the station's photos and the tour's images for the card, the one shown marked", () => {
+    expect(at("station:p")).toMatchObject({
+      images: [
+        { id: "photo-1", path: "content/photo-1.jpg", label: "North face" },
+        { id: "img-2", path: "content/img-2.png", label: "Tour image" },
+      ],
+      imageId: "img-2",
+    });
+    // No card picture named: the first photo is the card's.
+    expect(
+      buildInspector({
+        selected: "station:p",
+        stations: [
+          { ...PHOTO_STATION, image: undefined } as unknown as TourStation,
+        ],
+        assets: [],
+        codes: [],
+      }),
+    ).toMatchObject({
+      images: [{ id: "photo-1" }],
+      imageId: "photo-1",
+    });
+    expect(at("station:b")).toMatchObject({
+      images: [{ id: "img-2" }],
+      imageId: null,
+    });
+  });
+
+  // Why: a radius lowered under its items leaves them where they are; the
+  // inspector is where the creator learns how many now stand outside.
+  it("counts the items outside the circle", () => {
+    expect(at("station:p")).toMatchObject({ outside: 1 });
+    expect(
+      at("station:p", {
+        stations: [{ ...PHOTO_STATION, foundRadiusM: 4 }],
+      }),
+    ).toMatchObject({ outside: 2 });
+    expect(at("station:b")).toMatchObject({ outside: 0 });
+  });
+
+  // Why: the 3D view's frame is fixed when it opens; after a station
+  // moves, the mean of the stations moves too, so metres measured from it
+  // would no longer be where the view draws the station.
+  it("measures a position from the view's origin when it is given", () => {
+    const origin = { lat: 48.1371234, lng: 11.5754321 };
+    const station = at("station:p", { origin });
+    if (station?.kind !== "station" || station.position === null) {
+      throw new Error("no position");
+    }
+    expect(station.position.eastM).toBeCloseTo(0, 6);
+    expect(station.position.northM).toBeCloseTo(0, 6);
+  });
+
+  // Why: "Put on the ground" and "Put items on the ground" are offered
+  // only when something stands off the ground; with the ground not loaded
+  // the inspector cannot know, and says so as null rather than 0.
+  it("says how far the station and its items stand off the ground, or null before it has loaded", () => {
+    const flat = (alt: number) => () => alt;
+    expect(at("station:p", { groundAt: flat(560) })).toMatchObject({
+      groundOffM: 0,
+      offGround: 1,
+    });
+    expect(at("station:p", { groundAt: flat(559) })).toMatchObject({
+      groundOffM: 1,
+      offGround: 2,
+    });
+    expect(at("station:p")).toMatchObject({
+      groundOffM: null,
+      offGround: null,
+    });
+    const photo = at("photo-1", { groundAt: flat(560) });
+    expect(photo).toMatchObject({ kind: "item", stationId: "p" });
+    if (photo?.kind !== "item" || photo.groundOffM === null) {
+      throw new Error("no ground");
+    }
+    expect(photo.groundOffM).toBeCloseTo(1.5, 3);
+    expect(at("pin-far", { groundAt: flat(560) })).toMatchObject({
+      groundOffM: expect.closeTo(0, 3),
+    });
+  });
+
+  // Why: a pin's text is its label and edited here; a photo's or a
+  // model's caption is not (the session edits pins' text only), so its
+  // title is not offered as a field.
+  it("offers a pin's text to edit, and no caption of a photo or a model", () => {
+    expect(at("pin-1")).toMatchObject({ text: "Fountain, 1612" });
+    expect(at("photo-1")).toMatchObject({ text: null });
+    expect(at("model-1")).toMatchObject({ text: null });
   });
 });

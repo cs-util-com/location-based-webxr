@@ -601,6 +601,19 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     said (`New station "..." with the pin in it`);
   - `duplicate` and `remove` - `duplicateSelection` and
     `deleteSelection`, as the 3D view's Ctrl+D and Del.
+- **The inspector's edits**, given to the shell as `edits`, each one
+  undo step that ends a delete's Undo offer, refreshes the views and
+  tells autosave unless nothing changed; a refusal is said
+  (`writeInspectorEdit`):
+  - `station` and `text` - `editor.editStation` (name, description,
+    radius, card picture) and `editor.editText` (a pin's text);
+  - `scene` - `commitSceneEdit`, as a gesture's (a typed place, a size,
+    a station put on the ground);
+  - `groundItems` - `editor.groundItems`, items' heights in one step;
+  - `addPin` (`addPinTo`) - a new pin in the station (`new-pin.ts`:
+    clear of its items, inside its circle, on the ground the 3D view
+    has loaded), placed by `editor.place`, selected and said (`Added a
+pin to "..."`).
 - **The 3D view's studio shell** (`editor-shell/editor-shell.ts`): made
   once at start; the switch's `onShown` sets `body[data-view]` (`3d` or
   `2d`, which the shell's stylesheet follows), makes the map `inert`

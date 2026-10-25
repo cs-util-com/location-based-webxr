@@ -45,6 +45,7 @@ const PATHS = {
   align:
     '<circle cx="8" cy="9.5" r="4.5"/><path d="M8 1.5v8"/><path d="M6 3.5l2-2 2 2"/>',
   copy: '<circle cx="8" cy="8" r="3.6"/><path d="M8 1.5v2.9M8 11.6v2.9M1.5 8h2.9M11.6 8h2.9"/>',
+  ground: '<path d="M1.5 13h13"/><path d="M8 2.5v7M5.5 7.2L8 9.7l2.5-2.5"/>',
   grip: '<path d="M6 3.5h.01M10 3.5h.01M6 8h.01M10 8h.01M6 12.5h.01M10 12.5h.01" stroke-width="2.2" stroke-linecap="round"/>',
 } as const;
 

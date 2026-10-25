@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 /**
  * Why these tests matter: the inspector is what a creator reads to check a
- * station before going out, so its drawing is checked from the page's own
- * store, not only through a 3D view in a browser: the fields it shows, in
- * the units and the order the plan names (a station's place as metres
- * east and north of the tour's centre, its height and heading), every
- * value tied to its label (a screen reader reads "Radius, 25.0 m", not a
- * bare number), and the position folded away until asked for.
+ * station before going out, and where its fields are typed, so its drawing
+ * is checked from the page's own store, not only through a 3D view in a
+ * browser: the fields it shows, in the units and the order of the studio
+ * prototype (a station's place as metres east and north of the tour's
+ * centre, its height and heading), every value and every field tied to its
+ * label (a screen reader reads "Radius, 25.0 m", not a bare number), the
+ * fields a lock keeps still read-only while it is locked, and the position
+ * folded away until asked for.
  */
 import {
   createEmptyTourManifest,
@@ -103,6 +105,7 @@ function draw(
   selected: string | null,
   positionOpen = false,
   unlocked: string[] = [],
+  busy: string | null = null,
 ) {
   const state = storeWith(selected).getState();
   const tour = manifestToWrite(state.tourDocument);
@@ -116,7 +119,7 @@ function draw(
   drawInspector(
     dock,
     model,
-    { folded: state.editorView.foldedDocks.inspector, positionOpen },
+    { folded: state.editorView.foldedDocks.inspector, positionOpen, busy },
     pictures,
   );
 }
@@ -124,12 +127,22 @@ function draw(
 /** Each field's label and what it reads, the label found through the
  *  value's own `labels` (so an untied label reads as missing). */
 function fields(): [string, string][] {
-  return [...dock.body.querySelectorAll("output")].map((out) => {
+  return [
+    ...dock.body.querySelectorAll<HTMLOutputElement | HTMLInputElement>(
+      "output, input",
+    ),
+  ].map((out) => {
     const label =
-      out.labels[0]?.textContent ?? out.getAttribute("aria-label") ?? "?";
+      out.labels?.[0]?.textContent ?? out.getAttribute("aria-label") ?? "?";
     const unit = out.parentElement?.querySelector(".unit")?.textContent;
-    return [label, `${out.textContent ?? ""}${unit ? ` ${unit}` : ""}`];
+    const value = out instanceof HTMLInputElement ? out.value : out.textContent;
+    return [label, `${value}${unit ? ` ${unit}` : ""}`];
   });
+}
+
+/** The typed field `name` of the dock (head or body). */
+function input(name: string): HTMLInputElement | null {
+  return dock.root.querySelector<HTMLInputElement>(`[data-field="${name}"]`);
 }
 
 describe("drawInspector", () => {
@@ -161,10 +174,16 @@ describe("drawInspector", () => {
         title: "Unplaced",
         sub: "Station 1 of 1",
         place: { number: 1, count: 1 },
+        name: "Unplaced",
         description: null,
         imagePath: null,
+        images: [],
+        imageId: null,
         foundRadiusM: 25,
         activateRadiusM: 50,
+        outside: 0,
+        offGround: null,
+        groundOffM: null,
         position: null,
         locked: true,
       },
@@ -185,17 +204,27 @@ describe("drawInspector", () => {
     expect(dock.body.childElementCount).toBe(0);
   });
 
-  it("shows a station's fields, each tied to its label, the position folded", () => {
+  it("shows a station's fields to type, each tied to its label, the position folded", () => {
     draw("station:gate");
     expect(dock.root.hidden).toBe(false);
-    expect(dock.head.querySelector(".ttl")?.textContent).toBe("The old gate");
+    // The name is typed in the head, its stand-in the placeholder.
+    expect(input("title")?.value).toBe("The old gate");
+    expect(input("title")?.getAttribute("aria-label")).toBe("Station name");
+    expect(input("title")?.placeholder).toBe("Station 1");
     expect(dock.body.querySelector(".sub")?.textContent).toBe("Station 1 of 2");
     expect(fields()).toEqual([
       ["Description", "Where the wall stood"],
-      ["Card image", ""],
       ["Radius", "25.0 m"],
     ]);
-    // The card picture is the station's photo, read through the pictures.
+    // The card's pictures to pick from: the station's photo, shown.
+    const picks = [
+      ...dock.body.querySelectorAll<HTMLButtonElement>(
+        '[role="group"][aria-label="Card image"] button.thumb',
+      ),
+    ];
+    expect(
+      picks.map((b) => [b.dataset["act"], b.getAttribute("aria-pressed")]),
+    ).toEqual([["image:photo-1", "true"]]);
     expect(shown.map(([, path]) => path)).toEqual(["content/photo-1.jpg"]);
     // Folded: a one-line summary in the plan's form, metres of the centre.
     const disclosure = dock.body.querySelector("button.disc");
@@ -207,38 +236,129 @@ describe("drawInspector", () => {
 
   it("shows where a station stands in metres of the tour's centre, once unfolded", () => {
     draw("station:gate", true);
-    const position = fields().slice(3);
+    const position = fields().slice(2);
     expect(position.map(([label]) => label)).toEqual([
       "Anchor east",
       "Anchor north",
-      "Height",
       "Heading",
+      "Height",
     ]);
     // Two stations either side of their middle: about 23 m west and 49 m
     // south of it.
-    const [east, north, height, heading] = position.map(([, v]) => v);
+    const [east, north, heading, height] = position.map(([, v]) => v);
     expect(Number.parseFloat(east ?? "")).toBeCloseTo(-22.3, 0);
     expect(Number.parseFloat(north ?? "")).toBeCloseTo(-50.0, 0);
     expect(height).toBe("562.3 m");
-    expect(heading).toBe("30 deg");
+    expect(heading).toBe("30.0 deg");
     expect(
       dock.body
-        .querySelector('[role="group"]')
+        .querySelector('.vec[role="group"]')
         ?.getAttribute("aria-labelledby"),
-    ).toBe(dock.body.querySelector(".f > .flabel")?.id);
+    ).toBe(dock.body.querySelector(".pos .f > .flabel")?.id);
   });
 
-  it("shows an item's offset in its station's frame", () => {
+  it("shows an item's offset in its station's frame, its height and heading to type", () => {
     draw("photo-1", true);
     expect(dock.body.querySelector(".sub")?.textContent).toBe(
       "Photo in The old gate",
     );
     expect(fields()).toEqual([
-      ["Offset north", "4.00"],
-      ["Offset up", "1.50"],
-      ["Offset east", "-2.00"],
-      ["Heading", "0 deg"],
+      ["Offset east", "-2.00 m"],
+      ["Offset north", "4.00 m"],
+      ["Height", "1.50 m"],
+      ["Heading", "0.0 deg"],
     ]);
+    // A photo's caption is not typed here: its title is words.
+    expect(input("title")).toBeNull();
+    expect(dock.head.querySelector(".ttl")?.textContent).toBe("Photo");
+  });
+
+  // Why: the position and the heading of a locked station are refused by
+  // the session; a field that took the typing and then threw it away
+  // would read as broken, so the fields say they are read-only.
+  it("keeps a locked station's place and heading read-only, and its Put on the ground off", () => {
+    draw("station:gate", true);
+    for (const name of ["east", "north", "heading"]) {
+      expect(input(name)?.readOnly, name).toBe(true);
+    }
+    const ground = () =>
+      dock.body.querySelector<HTMLButtonElement>('.pos [data-act="ground"]');
+    expect(ground()?.disabled).toBe(true);
+    draw("station:gate", true, ["gate"]);
+    for (const name of ["east", "north", "heading"]) {
+      expect(input(name)?.readOnly, name).toBe(false);
+    }
+    expect(ground()?.disabled).toBe(false);
+    // The radius is free either way.
+    expect(input("radius")?.readOnly).toBe(false);
+  });
+
+  // Why: a pin's words are its title; they are typed where the title is.
+  it("offers a pin's text in the head", () => {
+    drawInspector(
+      dock,
+      buildInspector({
+        selected: "pin-x",
+        stations: [
+          {
+            ...STATIONS[1],
+            items: [
+              {
+                id: "pin-x",
+                kind: "pin",
+                label: "Look up",
+                createdAtIso: AT,
+                pose: { position: [1, 0, 1], rotation: [0, 0, 0, 1] },
+              },
+            ],
+          } as unknown as TourStation,
+        ],
+        assets: [],
+        codes: [],
+      }),
+      { folded: false, positionOpen: false },
+      pictures,
+    );
+    expect(input("title")?.value).toBe("Look up");
+    expect(input("title")?.getAttribute("aria-label")).toBe("Pin text");
+  });
+
+  // Why: lowering a radius under its items leaves them where they are;
+  // this line is how the creator learns about it.
+  it("warns of items outside the circle", () => {
+    const model = buildInspector({
+      selected: "station:gate",
+      stations: STATIONS.map((s) =>
+        s.id === "gate" ? { ...s, foundRadiusM: 3 } : s,
+      ),
+      assets: [],
+      codes: [],
+    });
+    drawInspector(
+      dock,
+      model,
+      { folded: false, positionOpen: false },
+      pictures,
+    );
+    expect(dock.body.querySelector(".warn")?.textContent).toBe(
+      "1 item stands outside the circle: visitors see it only from inside the circle.",
+    );
+    draw("station:gate");
+    expect(dock.body.querySelector(".warn")).toBeNull();
+  });
+
+  // Why: "Put on the ground" may wait for ground still loading; while it
+  // does, its button says so and takes no second press.
+  it("shows an action waiting for the ground as in progress", () => {
+    draw("station:gate", false, [], "ground-items");
+    const button = dock.body.querySelector<HTMLButtonElement>(
+      '[data-act="ground-items"]',
+    );
+    expect(button?.disabled).toBe(true);
+    expect(button?.getAttribute("aria-busy")).toBe("true");
+    expect(button?.querySelector(".lbl")?.textContent).toBe(
+      "Waiting for the ground...",
+    );
   });
 
   it("says a code has no position stored", () => {
@@ -286,7 +406,11 @@ describe("drawInspector", () => {
         (b) => [b.dataset["act"], b.querySelector(".lbl")?.textContent],
       );
     draw("station:gate");
-    expect(acts()).toEqual([["delete", "Delete station"]]);
+    expect(acts()).toEqual([
+      ["add-pin", "Add pin"],
+      ["ground-items", "Put items on the ground"],
+      ["delete", "Delete station"],
+    ]);
     const del = dock.body.querySelector('.acts [data-act="delete"]');
     expect(del?.getAttribute("aria-keyshortcuts")).toBe("Delete");
     expect(del?.querySelector("kbd")?.getAttribute("aria-hidden")).toBe("true");
@@ -294,6 +418,7 @@ describe("drawInspector", () => {
     draw("photo-1");
     expect(acts()).toEqual([
       ["split", "Move to a new station"],
+      ["ground", "Put on the ground"],
       ["delete", "Delete photo"],
     ]);
     // A code is read-only here: no actions.
@@ -360,6 +485,36 @@ describe("drawInspector", () => {
     const again = dock.body.querySelector('[data-act="earlier"]');
     expect(again).not.toBeNull();
     expect(document.activeElement).toBe(again);
+  });
+
+  // Why: a redraw while a field is being typed in (the ground arrived, a
+  // radius changed elsewhere) must not drop what was typed, nor the
+  // focus: the creator would lose words mid-sentence.
+  it("keeps text typed and not yet committed through a redraw", () => {
+    draw("station:steps");
+    const description = input("description");
+    description?.focus();
+    if (description !== null) description.value = "Half a sente";
+    const model = buildInspector({
+      selected: "station:steps",
+      stations: STATIONS.map((s) =>
+        s.id === "steps" ? { ...s, foundRadiusM: 12 } : s,
+      ),
+      assets: [],
+      codes: CODES,
+    });
+    drawInspector(
+      dock,
+      model,
+      { folded: false, positionOpen: false },
+      pictures,
+    );
+    expect(input("description")).not.toBe(description);
+    expect(document.activeElement).toBe(input("description"));
+    expect(input("description")?.value).toBe("Half a sente");
+    // What the tour holds stays the field's own value: leaving it now
+    // commits the typed text.
+    expect(input("description")?.defaultValue).toBe("");
   });
 
   it("folds to its head", () => {

@@ -322,10 +322,10 @@ export interface EditorSession {
    *  picture is kept for that). Refused, deleting nothing, for an id the
    *  tour no longer carries. */
   remove(id: string): { kind: "deleted" } | EditorRefusal;
-  /** Place a new object (the phone places in AR; the desktop has no
-   *  placing gesture yet - the parity contract drives it): refused for an
-   *  id the tour carries and for a spot further from its station than a
-   *  tour can carry. */
+  /** Place a new object (the phone places in AR; the 3D view's Add pin
+   *  places one in the selected station): refused for an id the tour
+   *  carries and for a spot further from its station than a tour can
+   *  carry. */
   place(object: TourObject): { kind: "placed" } | EditorRefusal;
   /** Move a station's frame (D17): its items move rigidly with it.
    *  Refused for a station the tour does not carry, and for a locked one

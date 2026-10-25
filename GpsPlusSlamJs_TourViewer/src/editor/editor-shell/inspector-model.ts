@@ -1,16 +1,20 @@
 /**
  * The 3D view's inspector, as data (pure): the selected station's, item's
- * or code's fields, read-only, as the file holds them. The DOM is
- * `shell-inspector.ts`'s.
+ * or code's fields as the file holds them, with the values its fields
+ * edit. The DOM is `shell-inspector.ts`'s.
  *
- * - A station: its name, "Station n of N", its description and card
- *   picture, its found and preload radii, and where it stands: metres east
- *   and north of the tour's centre (the 3D view's origin,
- *   `tour-origin.ts`), its height over the ellipsoid and its heading, and
- *   whether that position is locked (every station is, until unlocked).
- * - An item (pin, photo, 3D model): its name, its kind and station, a
- *   model's size, its offset in the station's frame and its heading
- *   there.
+ * - A station: its name (its own, empty when untitled), "Station n of
+ *   N", its description, the pictures its card may show (its photos and
+ *   the tour's images) and the one it shows, its found and preload radii
+ *   and how many of its items stand outside the circle, and where it
+ *   stands: metres east and north of the 3D view's origin (given, else
+ *   the tour's centre, `tour-origin.ts`), its height over the ellipsoid
+ *   and its heading, and whether that position is locked (every station
+ *   is, until unlocked); with the ground known, how far it and its items
+ *   stand off it.
+ * - An item (pin, photo, 3D model): its name (a pin's text to edit), its
+ *   kind and station, a model's size, its offset in the station's frame
+ *   and its heading there, and how far it stands off the ground.
  * - A code: its name, its line, its print size and where it stands, in
  *   the same metres.
  *
@@ -21,6 +25,8 @@ import type {
   TourItem,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+
+import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import { stationTitle } from "../../station-run.js";
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
@@ -39,17 +45,55 @@ export interface InspectorPosition {
   readonly headingDeg: number | null;
 }
 
+/** A picture a station's card may show. */
+export interface InspectorImage {
+  /** What the station's `image` names: a photo item's or an image
+   *  asset's id. */
+  readonly id: string;
+  /** Its content path (`content/<id>.jpg`). */
+  readonly path: string;
+  /** A photo's caption, else "Photo"; "Tour image" for an asset. */
+  readonly label: string;
+}
+
+/** The ground's ellipsoidal height at a place (m), as the 3D view has it
+ *  loaded; null where none has loaded. */
+export type InspectorGround = (place: {
+  readonly lat: number;
+  readonly lon: number;
+}) => number | null;
+
+/** How far off the ground counts as off it (m). */
+export const ON_GROUND_M = 0.05;
+
 interface StationInspector {
   readonly kind: "station";
   readonly title: string;
+  /** Its own title as the file holds it; empty for an untitled one (the
+   *  title then is its stand-in, "Station n"). */
+  readonly name: string;
   readonly sub: string;
   /** Its place in the tour (1-based) and the tour's station count: the
    *  inspector's Earlier and Later. */
   readonly place: { readonly number: number; readonly count: number };
   readonly description: string | null;
   readonly imagePath: string | null;
+  /** The pictures the card may show: the station's photos, then the
+   *  tour's image assets. */
+  readonly images: readonly InspectorImage[];
+  /** The one the card shows now (`imagePath`'s), or null. */
+  readonly imageId: string | null;
   readonly foundRadiusM: number;
   readonly activateRadiusM: number;
+  /** Its items standing outside the found radius (a radius lowered under
+   *  them leaves them there). */
+  readonly outside: number;
+  /** Its items standing more than `ON_GROUND_M` off the ground; null
+   *  while the ground under any of them has not loaded. */
+  readonly offGround: number | null;
+  /** Its point's height over the ground (m); null before the ground there
+   *  has loaded. */
+  readonly groundOffM: number | null;
   /** Null for a station the file does not place. */
   readonly position: InspectorPosition | null;
   /** Its position, height and heading may not be edited (the page's view
@@ -62,6 +106,11 @@ interface ItemInspector {
   readonly itemKind: TourItem["kind"];
   readonly title: string;
   readonly sub: string;
+  /** Its station's id. */
+  readonly stationId: string;
+  /** A pin's text, the field to edit; null for a photo or a model (their
+   *  caption is not edited here). */
+  readonly text: string | null;
   /** A model's largest side (m); null for a pin or a photo. */
   readonly sizeM: number | null;
   /** In the station's frame (m). */
@@ -72,6 +121,9 @@ interface ItemInspector {
   };
   /** Relative to the station; null for a rotation that is no number. */
   readonly headingDeg: number | null;
+  /** Its height over the ground (m); null before the ground there has
+   *  loaded. */
+  readonly groundOffM: number | null;
 }
 
 interface CodeInspector {
@@ -155,6 +207,62 @@ function positionOf(
   return { ...at, altM: geo.alt, headingDeg: heading };
 }
 
+/** A photo's caption, or "Photo". */
+function photoLabel(label: string | undefined): string {
+  const caption = label?.trim() ?? "";
+  return caption === "" ? "Photo" : caption;
+}
+
+/** The pictures `station`'s card may show (its photos, then the tour's
+ *  image assets), and the one it shows (`stationImagePath`'s rule). */
+function cardImages(
+  station: TourStation,
+  assets: readonly TourAsset[],
+): { images: InspectorImage[]; imageId: string | null } {
+  const images: InspectorImage[] = [
+    ...station.items.flatMap((i) =>
+      i.kind === "photo"
+        ? [{ id: i.id, path: i.image, label: photoLabel(i.label) }]
+        : [],
+    ),
+    ...assets.flatMap((a) =>
+      a.kind === "image"
+        ? [{ id: a.id, path: a.path, label: "Tour image" }]
+        : [],
+    ),
+  ];
+  const shown = stationImagePath(station, assets);
+  const named = images.find((i) => i.id === station.image && i.path === shown);
+  return {
+    images,
+    imageId: named?.id ?? images.find((i) => i.path === shown)?.id ?? null,
+  };
+}
+
+/** `geo`'s height over the ground (m), or null where none has loaded. */
+function offGroundOf(
+  geo: { readonly lat: number; readonly lon: number; readonly alt: number },
+  groundAt: InspectorGround | undefined,
+): number | null {
+  const ground = groundAt?.({ lat: geo.lat, lon: geo.lon }) ?? null;
+  return ground === null || !Number.isFinite(ground) ? null : geo.alt - ground;
+}
+
+/** `item`'s height over the ground; null for one that cannot be placed
+ *  or before the ground under it has loaded. */
+function itemOffGround(
+  item: TourItem,
+  station: TourStation,
+  groundAt: InspectorGround | undefined,
+): number | null {
+  if (groundAt === undefined) return null;
+  try {
+    return offGroundOf(itemGeoPose(item.pose, station.geo), groundAt);
+  } catch {
+    return null;
+  }
+}
+
 function itemTitle(item: TourItem): string {
   if (item.kind === "pin") return item.label;
   const caption = item.label?.trim() ?? "";
@@ -171,29 +279,50 @@ export function buildInspector(input: {
   /** The stations whose position is unlocked, by id; every other station
    *  is locked (none given: all are). */
   readonly unlockedStations?: readonly string[];
+  /** The 3D view's origin, fixed when it opened; none given: the tour's
+   *  centre now (the same, until a station moves). */
+  readonly origin?: { readonly lat: number; readonly lng: number } | null;
+  /** The ground as the 3D view has it loaded; none given: unknown. */
+  readonly groundAt?: InspectorGround;
 }): InspectorModel | null {
-  const { selected, stations } = input;
+  const { selected, stations, groundAt } = input;
   if (selected === null) return null;
   // The 3D view's origin: the same centre its frame is built on.
-  const origin = tourCentre(
-    stations,
-    input.codes.flatMap((c) => (c.geo === null ? [] : [c.geo])),
-  );
+  const origin =
+    input.origin ??
+    tourCentre(
+      stations,
+      input.codes.flatMap((c) => (c.geo === null ? [] : [c.geo])),
+    );
   if (selected.startsWith("station:")) {
     const id = selected.slice("station:".length);
     const index = stations.findIndex((s) => s.id === id);
     const station = stations[index];
     if (station === undefined) return null;
     const description = station.description?.trim() ?? "";
+    const offs = station.items.map((item) =>
+      itemOffGround(item, station, groundAt),
+    );
     return {
       kind: "station",
       title: stationTitle(station, index + 1),
+      name: station.title?.trim() ?? "",
       sub: `Station ${String(index + 1)} of ${String(stations.length)}`,
       place: { number: index + 1, count: stations.length },
       description: description === "" ? null : description,
       imagePath: stationImagePath(station, input.assets),
+      ...cardImages(station, input.assets),
       foundRadiusM: station.foundRadiusM,
       activateRadiusM: station.activateRadiusM,
+      outside: station.items.filter(
+        (i) =>
+          Math.hypot(i.pose.position[0], i.pose.position[2]) >
+          station.foundRadiusM,
+      ).length,
+      offGround: offs.includes(null)
+        ? null
+        : offs.filter((m) => m !== null && Math.abs(m) > ON_GROUND_M).length,
+      groundOffM: offGroundOf(station.geo, groundAt),
       position: positionOf(station.geo, origin),
       locked: !(input.unlockedStations ?? []).includes(id),
     };
@@ -207,9 +336,12 @@ export function buildInspector(input: {
       itemKind: item.kind,
       title: itemTitle(item),
       sub: `${KIND_LABEL[item.kind]} in ${stationTitle(station, index + 1)}`,
+      stationId: station.id,
+      text: item.kind === "pin" ? item.label : null,
       sizeM: item.kind === "model" ? item.sizeM : null,
       offset: { northM, upM, eastM },
       headingDeg: headingOfRotation(item.pose.rotation),
+      groundOffM: itemOffGround(item, station, groundAt),
     };
   }
   const code = input.codes.find((c) => c.id === selected);

@@ -27,6 +27,8 @@ pure gesture maths reads (`GestureWorld`).
     up where it stands (`turnedGeo`), written as one gesture edit through
     the page (a locked station's is refused there); false for one with
     no pose here (a code).
+  - `groundAt(place)` - the ground's ellipsoidal height at a place
+    (`world.groundAt`), null where none has loaded.
   - `screenOf(selection)`, `handleScreen("middle" | "knob" | "dot")`,
     `handleSizes()` - for the page's checks: CSS px on the canvas.
   - `dispose()`.

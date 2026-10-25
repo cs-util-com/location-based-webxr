@@ -68,6 +68,7 @@ import {
 } from "./code-book.js";
 import { newObjectId } from "./content-placement.js";
 import { finishedManifest, pendingAfterRebuild } from "./finish-rebuild.js";
+import { keepsHomeDistance } from "./keeps-home.js";
 import { horizontalM } from "./move-with-code.js";
 import { stationHolding, type StationPoint } from "./station-assign.js";
 import {
@@ -1740,11 +1741,12 @@ function unseated(object: TourObject): TourObject {
 }
 
 /** Whether a move of `object` to its new spot keeps it in its station
- *  `frame`: the station's own found radius holds the spot; or the object
- *  stood outside that radius already, and the move takes it no farther
- *  from the anchor (strict: a centimetre farther runs the rule) and into
- *  no other station's radius - a station whose radius held the old spot
- *  too (radii overlap) is not one it moved into. */
+ *  `frame`: the station's own found radius holds the spot; or, by
+ *  distance (`keepsHomeDistance`), it stands within the radius and its
+ *  tolerance, or no farther from the anchor than it stood before the move
+ *  (an item outside the radius already) - and the move takes it into no
+ *  other station's radius: a station whose radius held the old spot too
+ *  (radii overlap) is not one it moved into. */
 function keepsHome(
   state: TourDocumentState,
   frame: StationFrame,
@@ -1754,9 +1756,12 @@ function keepsHome(
   const was = documentObjects(state).find((o) => o.object.id === object.id)
     ?.object.geo;
   if (was === undefined) return false;
-  if (horizontalM(frame.geo, object.geo) > horizontalM(frame.geo, was)) {
-    return false;
-  }
+  const kept = keepsHomeDistance({
+    radiusM: frame.foundRadiusM,
+    wasM: horizontalM(frame.geo, was),
+    nowM: horizontalM(frame.geo, object.geo),
+  });
+  if (!kept) return false;
   const base = manifestNow(state);
   if (base === null) return false;
   const movedInto = base.stations.filter(
@@ -2494,8 +2499,9 @@ const tourDocumentSlice = createSlice({
     },
     /** An object moved (on the map, or in AR). Within its station's own
      *  found radius and the format's reach it keeps its station (whose
-     *  anchor stays put), and so does one already outside that radius
-     *  moved no farther out (`keepsHome`); otherwise the station rule
+     *  anchor stays put), and so does one within the radius and its
+     *  tolerance, or already outside it and moved no farther out
+     *  (`keepsHome`); otherwise the station rule
      *  runs again (`seatByRule`): it joins the station holding its new
      *  spot, or starts one there under the payload's `newStationId`, and
      *  the station it left goes when that leaves it an empty automatic

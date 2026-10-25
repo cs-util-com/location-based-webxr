@@ -156,12 +156,18 @@ afterHome? })`
     reach) the object keeps its station (whose anchor stays put); beyond
     it the rule runs again - the station holding the new spot, or a new
     one there - so no move is ever too far, and none is silently dropped.
-    An object already outside its station's radius (the radius shrank,
-    the station moved) keeps its station when moved no farther from the
-    anchor and into no other station's radius (`keepsHome`); a station
-    whose radius already held the old spot (overlapping radii) is not one
-    it moved into, so a nudge toward its own anchor keeps it. The comparison is
-    strict, so a move a centimetre farther out runs the rule. The station it left goes in the same step when that leaves
+    The object also keeps its station (`keepsHome`, by distance
+    `keepsHomeDistance` of `keeps-home.ts`) when it stands within the
+    radius plus a tolerance of 0.5 m (a typed offset, an AR settle), or
+    no farther from the anchor than it stood before the move (an object
+    outside the radius already: the radius shrank, the station moved) -
+    in both cases only when the move takes it into no other station's
+    radius; a station whose radius already held the old spot (overlapping
+    radii) is not one it moved into, so a nudge toward its own anchor
+    keeps it. The bound is the circle, never the previous place, so no
+    run of nudges carries an object outward without limit. A radius
+    lowered under its objects moves none of them: they stay in the
+    station, outside the circle, until moved. The station it left goes in the same step when that leaves
     it an EMPTY AUTOMATIC station: no object names it, and nothing of its
     own (`keepsItself` of `tour-content.ts`: a title, a story step, a
     non-blank description, a card image naming an image asset) and no

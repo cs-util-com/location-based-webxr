@@ -54,7 +54,12 @@ keys), and writes only through the page's `edits`.
     checks);
   - `centre()` - the place the view looks at, on the ground (the tree's
     "+"); `turn(selection, deg)` - one turn edit through the page (the
-    bar's Align to station), both the editing's (`editor3d-editing.ts`).
+    bar's Align to station, the inspector's typed heading), both the
+    editing's (`editor3d-editing.ts`);
+  - `groundAt(place)` - the ground's ellipsoidal height at a place, null
+    where none has loaded (the inspector's Put on the ground, Add pin);
+  - `origin()` - the place the view's metres are measured from, fixed
+    when it opened (the inspector's east and north).
 - Editing on `Editor3dView`: `cancelGesture()` (a gesture under way ends
   unwritten: the page calls it before an undo or a redo);
   `screenOf(selection)`, `handleScreen(part)` and `gizmoSizes()` - CSS px

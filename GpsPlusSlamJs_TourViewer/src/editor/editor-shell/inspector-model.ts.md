@@ -3,30 +3,46 @@
 ## Purpose
 
 The 3D view's inspector as data, pure: the selected station's, item's or
-code's fields, read-only, as the file holds them. The DOM is
-`shell-inspector.ts`'s.
+code's fields as the file holds them, and what the inspector offers to
+edit. The DOM is `shell-inspector.ts`'s; what a typed value writes is
+`inspector-edits.ts`'s.
 
 ## Public API
 
-- `buildInspector({ selected, stations, assets, codes })` ->
+- `buildInspector({ selected, stations, assets, codes, unlockedStations?,
+origin?, groundAt? })` ->
   `InspectorModel | null`:
   - `StationInspector` - `kind: "station"`, title, `sub` "Station n of
-    N", `place` (`{ number, count }`, for Earlier and Later), description, `imagePath`, `foundRadiusM`, `activateRadiusM`,
-    `position` (`InspectorPosition`), or null when the station's point
-    or the tour's centre cannot be read;
+    N", `place` (`{ number, count }`, for Earlier and Later), `name`
+    (its own title to edit, empty for an untitled one), description,
+    `imagePath`, `images` (`InspectorImage[]`: the station's photos,
+    then the tour's image assets, each `{ id, path, label }`) and
+    `imageId` (the one its card shows, or null), `foundRadiusM`,
+    `activateRadiusM`, `outside` (how many of its items stand outside
+    the found circle), `offGround` (how many items stand more than
+    `ON_GROUND_M` off the ground; null while the ground under any has not
+    loaded), `groundOffM` (the anchor's height over the ground, null while
+    unknown), `position` (`InspectorPosition`), or null when the
+    station's point or the origin cannot be read;
   - `ItemInspector` - `kind: "item"`, `itemKind`, title, `sub` naming
-    its station, `sizeM` (a model's, else null), `offset` (`northM`,
-    `upM`, `eastM` in the station's frame), `headingDeg`;
+    its station, `stationId`, `text` (a pin's label to edit; null for a
+    photo or a model), `sizeM` (a model's, else null), `offset`
+    (`northM`, `upM`, `eastM` in the station's frame), `headingDeg`,
+    `groundOffM` (its height over the ground, null while unknown);
   - `CodeInspector` - `kind: "code"`, title, `sub` (its line),
     `printSizeM`, `position` or null when it has none;
-  - `InspectorPosition` - `eastM` and `northM` from the tour's centre
-    (the 3D view's origin: `tourCentre` of the stations, else of the
-    codes, `../tour-origin.ts`), `altM` over the ellipsoid as the file
+  - `InspectorPosition` - `eastM` and `northM` from `origin` when it
+    is given (the 3D view's, fixed when it opened), else from the tour's
+    centre (`tourCentre` of the stations, else of the codes,
+    `../tour-origin.ts`), `altM` over the ellipsoid as the file
     holds it, and `headingDeg` (the file's, else read from its rotation,
     else null);
   - null without a selection or for one the tour does not have.
 - `InspectorCode` - `{ id, title, meta, geo | null, printSizeM | null }`,
   the page's view of a code.
+- `InspectorGround` - the ground's ellipsoidal height at a place (null
+  where none has loaded), the 3D view's `groundAt`.
+- `ON_GROUND_M` (0.05) - what stands this near the ground is on it.
 - `headingOfRotation(q)` - the bearing (0-360, clockwise from north) a
   rotation in a north-up-east frame turns the item's forward to; null for
   a rotation that is not finite, and null for one that turns the forward
@@ -40,7 +56,7 @@ code's fields, read-only, as the file holds them. The DOM is
 
 ## Invariants & assumptions
 
-- Read-only: nothing here edits. A position is shown as the 3D view
+- Pure: nothing here edits. A position is shown as the 3D view
   places it: metres east and north of the tour's centre (`eastNorthOf`,
   exact on the WGS84 ellipsoid at height 0, so the numbers match the
   scene's x and -z), with the height as the file holds it. A creator
@@ -65,4 +81,9 @@ position); a station east and north of the tour's centre in metres;
 `headingOfRotation` for turns about up, and none for a forward turned
 straight up or down; `inspectorHint` for each kind and for none.
 
-`inspector-model.test.ts` also covers `locked` and the locked hint.
+`inspector-model.test.ts` also covers `locked` and the locked hint, and
+the values the inspector edits: a station's own name, the card's
+choices with the one shown marked, the items outside the circle, a
+position from a given origin, how far a station and its items stand off
+the ground (null before it has loaded), and a pin's text (none for a
+photo or a model).

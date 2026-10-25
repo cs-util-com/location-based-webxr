@@ -18,6 +18,11 @@ view draws the point.
   point or the origin is not a place (a coordinate not finite, a latitude
   past a pole). Both on the WGS84 ellipsoid (height 0); the metres are the
   east and north axes of the plane touching the ellipsoid at the origin.
+- `placeAtEastNorth({ eastM, northM }, origin)` -> `{ lat, lon }`: the
+  inverse, the place `eastNorthOf` reads back as those metres (to well
+  under a millimetre over a tour's reach): the inspector's typed east and
+  north become a station's place by it. Null for metres that are not
+  finite or an origin that is not a place.
 
 ## Invariants & assumptions
 
@@ -46,4 +51,6 @@ const at = centre === null ? null : eastNorthOf(station.geo, centre);
 none, and points that cannot be placed left out; the metres against the
 3D view's frame (the globe's `worldFromEcefAt` on a textbook WGS84) at
 three latitudes and up to about 1.2 km out; null for a point or an origin
-that is not a place.
+that is not a place; `placeAtEastNorth` read back by `eastNorthOf` within
+a millimetre (property, 2 km either way, latitudes to 80 degrees), and
+null for metres or an origin that are no place.

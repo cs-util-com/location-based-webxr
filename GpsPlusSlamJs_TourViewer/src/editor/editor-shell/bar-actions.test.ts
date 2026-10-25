@@ -14,12 +14,18 @@ import type { InspectorModel } from "./inspector-model.js";
 const station: InspectorModel = {
   kind: "station",
   title: "Gate",
+  name: "Gate",
   sub: "Station 1 of 2",
   place: { number: 1, count: 2 },
   description: null,
   imagePath: null,
+  images: [],
+  imageId: null,
   foundRadiusM: 25,
   activateRadiusM: 50,
+  outside: 0,
+  offGround: null,
+  groundOffM: null,
   position: { eastM: 12.345, northM: -4.1, altM: 340.256, headingDeg: 90.4 },
   locked: true,
 };
@@ -29,9 +35,12 @@ const item: InspectorModel = {
   itemKind: "pin",
   title: "Hello",
   sub: "Pin in Gate",
+  stationId: "gate",
+  text: "Hello",
   sizeM: null,
   offset: { northM: 2, upM: 0.5, eastM: -1.25 },
   headingDeg: 15,
+  groundOffM: null,
 };
 
 const code: InspectorModel = {

@@ -23,14 +23,26 @@
  * station"; the bottom bar's power actions (`bar-actions.ts`). Each is the
  * page's command (`EditorShellDeps.stations`), one undo step.
  *
+ * The inspector's editing: a typed field is one edit (`inspector-edits.ts`)
+ * committed when the field is left or on Enter, and only when its text
+ * changed; Escape puts the tour's value back. A selection that changes
+ * with text still typed commits it first, to the selection it was typed
+ * for. The card picture's choices, Add pin, and "Put on the ground" /
+ * "Put items on the ground" - which wait, shown in progress, for ground
+ * that has not loaded (`ground-wait.ts`) and say when they give up. Each
+ * is the page's command (`EditorShellDeps.edits`), one undo step; a
+ * field whose edit the tour did not take shows the tour's value again.
+ *
  * @see editor-shell.ts.md
  */
 import type { UnknownAction } from "@reduxjs/toolkit";
 
 import type { Editor3dView } from "../../editor3d/editor3d-scene.js";
+import type { GestureEdit } from "../../editor3d/gesture.js";
 import {
   manifestToWrite,
   nextStep,
+  type StationEdit,
   type TourDocumentState,
 } from "../../tour-document.js";
 import {
@@ -51,6 +63,8 @@ import {
   type BarAction,
 } from "./bar-actions.js";
 import { docksAfter, type DockChange } from "./dock-rule.js";
+import { waitForGround } from "./ground-wait.js";
+import { groundEdit, inspectorEdit } from "./inspector-edits.js";
 import {
   buildInspector,
   inspectorHint,
@@ -84,6 +98,8 @@ type ShellView = Pick<
   | "setLayers"
   | "centre"
   | "turn"
+  | "groundAt"
+  | "origin"
 >;
 
 /** The page's station commands the tree and the bars give: each one undo
@@ -100,6 +116,23 @@ interface ShellStationCommands {
   duplicate(selection: string): void;
   /** The selection deleted (its Undo in the page's toast). */
   remove(selection: string): void;
+}
+
+/** The page's edits the inspector gives: each one undo step, a refusal
+ *  said by the page. */
+interface ShellEditCommands {
+  /** A station's name, description, found radius or card picture. */
+  station(stationId: string, edit: StationEdit): void;
+  /** A pin's text. */
+  text(itemId: string, text: string): void;
+  /** A pose or a size, as the 3D view's gestures write them. */
+  scene(edit: GestureEdit): void;
+  /** Items' heights (the ground under each), as one step. */
+  groundItems(
+    items: readonly { readonly id: string; readonly alt: number }[],
+  ): void;
+  /** A new pin in the station, at a free spot near its anchor. */
+  addPin(stationId: string): void;
 }
 
 /** The page's store, as the shell reads it. */
@@ -127,6 +160,7 @@ export interface EditorShellDeps {
   /** A dialog of the page shows: the shell's keys stay out of it. */
   readonly dialogOpen: () => boolean;
   readonly stations: ShellStationCommands;
+  readonly edits: ShellEditCommands;
   /** A passing line (the page's toast). */
   readonly say: (text: string) => void;
 }
@@ -231,15 +265,26 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   let timer: number | null = null;
   let memory: TreeClickMemory = NO_TREE_CLICK;
   let positionOpen = false;
+  /** A ground command waiting for the ground: the inspector shows it in
+   *  progress; a new selection or the view hidden calls it off. */
+  let busy: {
+    readonly act: string;
+    readonly stop: AbortController;
+  } | null = null;
   /** What was drawn from: the shell draws again only when it changed. */
   let drawn: {
     doc: TourDocumentState;
     ui: EditorViewState;
     positionOpen: boolean;
+    busy: string | null;
   } | null = null;
 
   const state = () => store.getState();
   const manifest = () => manifestToWrite(state().tourDocument);
+
+  /** The ground as the view has it loaded; none while no view shows. */
+  const groundAt = (place: { readonly lat: number; readonly lon: number }) =>
+    view?.groundAt(place) ?? null;
 
   const inspectorModel = (ui: EditorViewState) => {
     const tour = manifest();
@@ -249,7 +294,25 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       assets: tour?.assets ?? [],
       codes: deps.codes(),
       unlockedStations: ui.unlockedStations,
+      origin: view?.origin() ?? null,
+      groundAt,
     });
+  };
+
+  /** The inspector drawn from the store and the ground now (a draw that
+   *  changes nothing is skipped): also each readout tick, so the ground
+   *  arriving shows. */
+  const drawInspectorNow = (model: InspectorModel | null) => {
+    drawInspector(
+      inspector,
+      model,
+      {
+        folded: state().editorView.foldedDocks.inspector,
+        positionOpen,
+        busy: busy?.act ?? null,
+      },
+      pictures,
+    );
   };
 
   /** The docks after `change` by the dock rule, stored. */
@@ -322,18 +385,20 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
 
   const draw = () => {
     const { tourDocument: doc, editorView: ui } = state();
+    const busyAct = busy?.act ?? null;
     if (
       drawn !== null &&
       drawn.doc === doc &&
       drawn.ui === ui &&
-      drawn.positionOpen === positionOpen
+      drawn.positionOpen === positionOpen &&
+      drawn.busy === busyAct
     ) {
       return;
     }
     const docChanged = drawn?.doc !== doc;
     const uiChanged = drawn?.ui !== ui;
     const before = drawn?.ui ?? null;
-    drawn = { doc, ui, positionOpen };
+    drawn = { doc, ui, positionOpen, busy: busyAct };
     const tour = manifest();
     const codes = deps.codes();
     if (docChanged || uiChanged) {
@@ -350,19 +415,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         pictures,
       );
     }
-    const model = buildInspector({
-      selected: ui.selected,
-      stations: tour?.stations ?? [],
-      assets: tour?.assets ?? [],
-      codes,
-      unlockedStations: ui.unlockedStations,
-    });
-    drawInspector(
-      inspector,
-      model,
-      { folded: ui.foldedDocks.inspector, positionOpen },
-      pictures,
-    );
+    const model = inspectorModel(ui);
+    drawInspectorNow(model);
     drawActs(model);
     bar.hint.textContent = inspectorHint(model);
     bar.root.classList.toggle("debug", ui.readout);
@@ -375,14 +429,114 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
   };
 
+  // --- the inspector's fields and commands ---------------------------------
+
+  /** The inspector's field that has the focus, with text typed and not
+   *  yet committed; null for none. */
+  const typedField = (): HTMLInputElement | null => {
+    const active = document.activeElement;
+    return active instanceof HTMLInputElement &&
+      active.dataset["field"] !== undefined &&
+      inspector.root.contains(active) &&
+      !active.readOnly &&
+      active.value !== active.defaultValue
+      ? active
+      : null;
+  };
+
+  /** `input`'s text written as the edit it types for `selected`: one
+   *  undo step. The field shows the tour's value again first, so a draw
+   *  the edit causes carries nothing over, and a refused edit leaves the
+   *  tour's value showing. */
+  const commitField = (input: HTMLInputElement, selected: string | null) => {
+    const value = input.value;
+    if (selected === null || value === input.defaultValue || input.readOnly) {
+      return;
+    }
+    input.value = input.defaultValue;
+    const edit = inspectorEdit({
+      selected,
+      stations: manifest()?.stations ?? [],
+      origin: view?.origin() ?? null,
+      field: input.dataset["field"] ?? "",
+      value,
+    });
+    if (edit.kind === "invalid") deps.say(edit.reason);
+    else if (edit.kind === "station")
+      deps.edits.station(edit.stationId, edit.edit);
+    else if (edit.kind === "text") deps.edits.text(edit.id, edit.text);
+    else if (edit.kind === "scene") deps.edits.scene(edit.edit);
+    else if (edit.kind === "turn") view?.turn(edit.selection, edit.deg);
+  };
+
+  /** A ground command on the selection: run at once with the ground
+   *  loaded, else shown in progress while it waits for it; said when done,
+   *  when there is nothing to do, and when it gives up. */
+  const runGround = async (which: "ground" | "ground-items") => {
+    const selected = state().editorView.selected;
+    if (selected === null || busy !== null) return;
+    const plan = () =>
+      groundEdit({
+        selected,
+        stations: manifest()?.stations ?? [],
+        which,
+        groundAt,
+      });
+    const stop = new AbortController();
+    const first = plan();
+    let waited: Awaited<
+      ReturnType<typeof waitForGround<NonNullable<typeof first>>>
+    >;
+    if (first === null) {
+      busy = { act: which, stop };
+      draw();
+      waited = await waitForGround(plan, { signal: stop.signal });
+      if (busy?.stop === stop) busy = null;
+      draw();
+    } else {
+      waited = { kind: "ground", value: first };
+    }
+    if (waited.kind === "stopped") return;
+    if (waited.kind === "timeout") {
+      deps.say("The ground here has not loaded yet - try again once it shows");
+      return;
+    }
+    const edit = waited.value;
+    if (edit.kind === "none") {
+      deps.say(
+        which === "ground-items"
+          ? "Every item already stands on the ground"
+          : "Already on the ground",
+      );
+      return;
+    }
+    const before = state().tourDocument;
+    if (edit.kind === "scene") deps.edits.scene(edit.edit);
+    else deps.edits.groundItems(edit.items);
+    if (state().tourDocument === before) return;
+    const count = edit.kind === "ground-items" ? edit.items.length : 1;
+    deps.say(
+      which === "ground-items"
+        ? `Put ${String(count)} ${count === 1 ? "item" : "items"} on the ground`
+        : "Put on the ground",
+    );
+  };
+
   /** The selection changed: the inspector may open, and on a narrow
-   *  window it folds the tree. */
+   *  window it folds the tree. Text still typed is committed first, to
+   *  the selection it was typed for; a ground command waiting is called
+   *  off. */
   let lastSelected: string | null = null;
   const onStore = () => {
     const { selected } = state().editorView;
     if (selected !== lastSelected) {
+      const was = lastSelected;
       lastSelected = selected;
       positionOpen = false;
+      busy?.stop.abort();
+      busy = null;
+      const pending = typedField();
+      if (pending !== null) commitField(pending, was);
       if (selected !== null) applyDocks("selected");
     }
     draw();
@@ -400,6 +554,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     top.topView.setAttribute("aria-checked", String(r.top));
     bar.calls.textContent = `${String(r.drawCalls)} draw calls`;
     bar.frame.textContent = `${r.frameMs.toFixed(1)} ms / frame`;
+    // The ground loads while the view shows: what stands off it shows
+    // once it has.
+    drawInspectorNow(inspectorModel(state().editorView));
   };
 
   const showHelp = (on: boolean) => {
@@ -649,12 +806,53 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (act === "earlier" || act === "later") moveSelected(selected, act);
     if (act === "delete") deleteSelected(selected);
     if (act === "split") deps.stations.split(selected);
+    if (act === "ground" || act === "ground-items") void runGround(act);
+    if (act === "add-pin" && selected.startsWith(STATION_PREFIX)) {
+      deps.edits.addPin(selected.slice(STATION_PREFIX.length));
+    }
+    if (
+      act?.startsWith("image:") === true &&
+      selected.startsWith(STATION_PREFIX)
+    ) {
+      const model = inspectorModel(state().editorView);
+      const image = act.slice("image:".length);
+      if (model?.kind === "station" && model.imageId !== image) {
+        deps.edits.station(selected.slice(STATION_PREFIX.length), { image });
+      }
+    }
     if (act === "fold") {
       const folded = !state().editorView.foldedDocks.inspector;
       store.dispatch(
         editorViewActions.dockFolded({ dock: "inspector", folded }),
       );
       if (!folded) applyDocks("inspector-unfolded");
+    }
+  });
+
+  // A field is committed when it is left (and the title on Enter); one
+  // taken out of the page by a draw is not "left".
+  inspector.root.addEventListener("focusout", (event) => {
+    const input = event.target;
+    if (input instanceof HTMLInputElement && inspector.root.contains(input)) {
+      commitField(input, state().editorView.selected);
+    }
+  });
+  inspector.root.addEventListener("keydown", (event) => {
+    const input = event.target;
+    if (
+      !(input instanceof HTMLInputElement) ||
+      input.dataset["field"] === undefined
+    ) {
+      return;
+    }
+    if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault();
+      commitField(input, state().editorView.selected);
+    } else if (event.key === "Escape" && input.value !== input.defaultValue) {
+      // The tour's value back; the next Escape is the page's again.
+      event.preventDefault();
+      event.stopPropagation();
+      input.value = input.defaultValue;
     }
   });
 
@@ -762,6 +960,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       window.addEventListener("resize", onResize);
     },
     hide() {
+      const pending = typedField();
+      if (pending !== null) commitField(pending, lastSelected);
+      busy?.stop.abort();
+      busy = null;
       view = null;
       unsubscribe?.();
       unsubscribe = null;

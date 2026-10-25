@@ -146,6 +146,8 @@ import {
 } from "./menu-button.js";
 import { inField, inMenu } from "./key-target.js";
 import { createEditorShell } from "./editor-shell/editor-shell.js";
+import { newPin } from "./new-pin.js";
+import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
 import type { GroundPlace } from "./editor-shell/scene-menu.js";
 import { stationTitle } from "../station-run.js";
@@ -1211,6 +1213,53 @@ function commitSceneEdit(edit: GestureEdit): void {
     toast(outcome.reason);
     return;
   }
+  autosave.changed();
+}
+
+/** An edit the 3D inspector typed or pressed, written through `write`:
+ *  one step; a refusal is said, a change counted. */
+function writeInspectorEdit(
+  write: (
+    session: EditorSession,
+  ) =>
+    | { readonly kind: string }
+    | { readonly kind: "refused"; readonly reason: string },
+): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = write(editor);
+  refresh();
+  if ("reason" in outcome) {
+    toast(outcome.reason);
+    return;
+  }
+  if (outcome.kind !== "unchanged") autosave.changed();
+}
+
+/** The 3D inspector's Add pin: a new pin in `stationId`, clear of its
+ *  items and on the ground where that has loaded (`new-pin.ts`), selected
+ *  and said; one step. */
+function addPinTo(stationId: string): void {
+  if (editor === null) return;
+  const station = manifestToWrite(store.getState().tourDocument)?.stations.find(
+    (s) => s.id === stationId,
+  );
+  if (station === undefined) return;
+  endUndo();
+  const pin = newPin({
+    station,
+    id: newObjectId(),
+    nowIso: new Date().toISOString(),
+    groundAt: (place) => shown3d?.groundAt(place) ?? null,
+  });
+  const outcome = editor.place(pin);
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  select(pin.id);
+  toast(`Added a pin to "${stationTitleOf(stationId)}"`);
   autosave.changed();
 }
 
@@ -3294,6 +3343,19 @@ const shell = createEditorShell({
       void duplicateSelection(selection);
     },
     remove: deleteSelection,
+  },
+  edits: {
+    station: (stationId, edit) => {
+      writeInspectorEdit((e) => e.editStation(stationId, edit));
+    },
+    text: (id, text) => {
+      writeInspectorEdit((e) => e.editText(id, text));
+    },
+    scene: commitSceneEdit,
+    groundItems: (items) => {
+      writeInspectorEdit((e) => e.groundItems(items));
+    },
+    addPin: addPinTo,
   },
   say: (text) => {
     toast(text);

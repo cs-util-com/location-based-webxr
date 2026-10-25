@@ -385,6 +385,10 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       };
       return { ...place, alt: c.height + deps.undulationAt(place) };
     },
+    /** The ground's ellipsoidal height at a place, as loaded (null where
+     *  none has loaded yet). */
+    groundAt: (place: { readonly lat: number; readonly lon: number }) =>
+      world.groundAt(place),
     /** Turn the selection `deg` clockwise about up, where it stands: one
      *  edit through the page (a locked station's is refused there).
      *  False for a selection without a pose here (a code). */

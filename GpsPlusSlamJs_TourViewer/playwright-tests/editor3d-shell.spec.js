@@ -279,7 +279,9 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   await hero.click();
   await expect(gate).toHaveClass(/\bsel\b/);
   await expect(gate.locator(".kids")).toBeVisible();
-  await expect(page.locator("#inspector-head .ttl")).toHaveText("The old gate");
+  await expect(
+    page.locator('#inspector-head [data-field="title"]'),
+  ).toHaveValue("The old gate");
   await expect(page.locator("#inspector-body .sub")).toHaveText(
     "Station 2 of 3",
   );
@@ -633,7 +635,9 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   await page.keyboard.press("Enter");
   const gate = card(page, "The old gate");
   await expect(gate).toHaveClass(/\bsel\b/);
-  await expect(page.locator("#inspector-head .ttl")).toHaveText("The old gate");
+  await expect(
+    page.locator('#inspector-head [data-field="title"]'),
+  ).toHaveValue("The old gate");
   await expect(gate.locator(".pick")).toBeFocused();
   await expect(gate.locator(".kids")).toBeVisible();
   // Space on the fold arrow folds the card's items away again.
