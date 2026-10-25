@@ -21,6 +21,18 @@ import { scrubDeep } from './sentry-scrub';
 export const TRACES_SAMPLE_RATE = 0.1;
 
 /**
+ * Default integrations the recorder leaves out:
+ * - `BrowserSession` sends a session to the service on every page load,
+ *   whether or not anything goes wrong;
+ * - `CultureContext` adds the browser's locale and timezone to every report.
+ * Neither helps to fix an error.
+ */
+const DROPPED_DEFAULT_INTEGRATIONS: ReadonlySet<string> = new Set([
+  'BrowserSession',
+  'CultureContext',
+]);
+
+/**
  * The recorder's Sentry options, reduced to what fixing errors needs.
  *
  * @param ownHost this site's host; links to it keep their path in reports
@@ -47,12 +59,21 @@ export function sentryOptions(
     // Trace propagation for local dev; add API URLs here if a backend is added
     tracePropagationTargets: ['localhost'],
 
-    // No console logging integration and no Logs product: warnings and
-    // errors already reach Sentry as Issues through the framework logger.
-    integrations: [Sentry.browserTracingIntegration()],
+    // The SDK's defaults minus the ones that send without an error, plus
+    // tracing. No console logging integration and no Logs product: warnings
+    // and errors already reach Sentry as Issues through the framework logger.
+    integrations: (defaults) => [
+      ...defaults.filter(
+        (integration) => !DROPPED_DEFAULT_INTEGRATIONS.has(integration.name)
+      ),
+      Sentry.browserTracingIntegration(),
+    ],
 
     beforeSend: (event) => scrubDeep(event, ownHost),
     beforeSendTransaction: (event) => scrubDeep(event, ownHost),
+    // Spans sent on their own (web-vital measurements) pass neither hook
+    // above.
+    beforeSendSpan: (span) => scrubDeep(span, ownHost),
 
     // Console breadcrumbs are dropped: the framework logger adds its own
     // breadcrumb for every log line, and the console also carries output

@@ -20,8 +20,10 @@ export const REDACTED = '[redacted]';
 const ID_SEGMENT_MIN_LENGTH = 25;
 
 /**
- * The fewest decimals a number needs to count as one half of a coordinate
- * pair: three decimals are about 100 m, which is already a place. Fewer
+ * The fewest decimals at least ONE number of a pair needs for the pair to
+ * count as a coordinate: three decimals are about 100 m, which is already a
+ * place, and one precise half next to a rounded one still names it. The
+ * other number needs a decimal point. Pairs where both numbers have fewer
  * decimals are left alone so ordinary pairs of measurements survive.
  */
 const PAIR_MIN_DECIMALS = 3;
@@ -29,11 +31,21 @@ const PAIR_MIN_DECIMALS = 3;
 /** A subtree deeper than this is replaced, never sent unread. */
 const MAX_DEPTH = 24;
 
-/** Characters that end a link inside free text. */
-const URL_STOP = String.raw`\s"'<>()[\]{}`;
+/**
+ * Characters that end a link inside free text. Braces are NOT among them:
+ * the framework logger writes `{n}` for digits inside a link, and the rest
+ * of the link after it must go too. `[` and `]` are, so that a scrubbed link
+ * (`.../[redacted]`) is left as it is on a second pass.
+ */
+const URL_STOP = String.raw`\s"'<>()[\]`;
 
+/**
+ * No word boundary before the scheme: whether a link is found must not
+ * depend on the character in front of it, which another rule may replace
+ * (`lat=0https://...` becomes `lat=[redacted]https://...`).
+ */
 const ABSOLUTE_URL = new RegExp(
-  String.raw`\b([a-z][a-z0-9+.-]*:\/\/)([^${URL_STOP}/?#]+)([^${URL_STOP}]*)`,
+  String.raw`([a-z][a-z0-9+.-]*:\/\/)([^${URL_STOP}/?#]+)([^${URL_STOP}]*)`,
   'gi'
 );
 
@@ -47,13 +59,41 @@ const ID_SEGMENT = new RegExp(
   'g'
 );
 
-const KEYED_COORDINATE =
-  /\b(lat|latitude|lon|lng|longitude)("?\s*[:=]?\s*)"?-?\d+(?:\.\d+)?"?/gi;
+/** A label's separator and its number, quoted or not: `":"48.1"`, `= 48`. */
+const LABELLED_VALUE = String.raw`("?\s*[:=]?\s*)"?-?\d+(?:\.\d+)?"?`;
 
-const COORDINATE_PAIR = new RegExp(
-  String.raw`(?<![\d.])-?\d{1,3}\.\d{${PAIR_MIN_DECIMALS},}(?:\s*,\s*|\s+)-?\d{1,3}\.\d{${PAIR_MIN_DECIMALS},}(?![\d.])`,
+/**
+ * `lat`, `latitude`, `lon`, `lng` or `longitude` in any case, after anything
+ * but a letter (`lat`, `start_lat`, `0lat`); not inside a longer word
+ * (`flat`, `salon`). A digit in front does not stop it, because another rule
+ * may turn that digit into `]`, and the second pass must find what the first
+ * found.
+ */
+const KEYED_COORDINATE = new RegExp(
+  String.raw`(?<![a-z])(lat|latitude|lon|lng|longitude)${LABELLED_VALUE}`,
+  'gi'
+);
+
+/** The same labels in camelCase after a lowercase prefix (`originLat`). */
+const CAMEL_KEYED_COORDINATE = new RegExp(
+  String.raw`(?<![A-Za-z])([a-z][A-Za-z0-9]*?(?:Lat|Latitude|Lon|Lng|Longitude))${LABELLED_VALUE}`,
   'g'
 );
+
+const PAIR_PRECISE = String.raw`-?\d{1,3}\.\d{${PAIR_MIN_DECIMALS},}`;
+const PAIR_ANY = String.raw`-?\d{1,3}\.\d+`;
+const PAIR_SEPARATOR = String.raw`(?:\s*,\s*|\s+)`;
+const COORDINATE_PAIR = new RegExp(
+  String.raw`(?<![\d.])(?:${PAIR_PRECISE}${PAIR_SEPARATOR}${PAIR_ANY}|${PAIR_ANY}${PAIR_SEPARATOR}${PAIR_PRECISE})(?![\d.])`,
+  'g'
+);
+
+/**
+ * A value that is nothing but a query or a fragment: the SDK stores a
+ * request's `?id=...` and `#...` as span attributes of their own, with no
+ * path in front that would mark them as part of a link.
+ */
+const QUERY_OR_FRAGMENT_ONLY = /^[?#]\S+$/;
 
 /** A path of this site: id-like segments go, the rest stays. */
 function scrubOwnPath(path: string): string {
@@ -82,7 +122,12 @@ function scrubOwnRest(rest: string): string {
  * - A link to any other host keeps only the host: its path can name a shared
  *   file or, for map tiles, a place.
  * - A relative link loses its query and fragment.
- * - A latitude/longitude pair, or a number labelled lat/lon, is removed.
+ * - A latitude/longitude pair, or a number labelled lat/lon (also as
+ *   `originLat` or `start_lat`), is removed.
+ * - A string that is only a query or a fragment (`?id=...`) is removed. This
+ *   rule runs last, so that a string the other rules turn into one
+ *   (`?48.1371 11.5761` -> `?[redacted]`) is not changed again on a second
+ *   pass.
  *
  * @param text any string; non-strings are the caller's concern
  * @param ownHost this site's host (`location.host`); when unknown every link
@@ -90,7 +135,13 @@ function scrubOwnRest(rest: string): string {
  */
 export function scrubText(text: string, ownHost: string | undefined): string {
   const own = ownHost?.toLowerCase();
-  return text
+  // Coordinates go BEFORE links: `[redacted]` ends a link, so a coordinate
+  // removed from inside a kept link of this site after the link rules had
+  // run would split that link on a second pass and expose what follows.
+  const scrubbed = text
+    .replace(KEYED_COORDINATE, `$1$2${REDACTED}`)
+    .replace(CAMEL_KEYED_COORDINATE, `$1$2${REDACTED}`)
+    .replace(COORDINATE_PAIR, REDACTED)
     .replace(
       ABSOLUTE_URL,
       (match, scheme: string, host: string, rest: string) => {
@@ -106,9 +157,8 @@ export function scrubText(text: string, ownHost: string | undefined): string {
       RELATIVE_URL_WITH_QUERY,
       (_match, lead: string, path: string) =>
         `${lead}${scrubOwnPath(path)}?${REDACTED}`
-    )
-    .replace(KEYED_COORDINATE, `$1$2${REDACTED}`)
-    .replace(COORDINATE_PAIR, REDACTED);
+    );
+  return QUERY_OR_FRAGMENT_ONLY.test(scrubbed) ? REDACTED : scrubbed;
 }
 
 function isPlainObject(value: object): value is Record<string, unknown> {

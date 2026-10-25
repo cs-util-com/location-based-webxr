@@ -48,6 +48,25 @@ describe('scrubText', () => {
     expect(out).toBe(`https://gps.csutil.com/files/${REDACTED}/x`);
   });
 
+  it('keeps nothing of a foreign link after a template placeholder in its path', () => {
+    // The framework logger writes `{n}` in place of digits in a message's
+    // fingerprint; a brace must not end the link, or the rest of its path
+    // would survive.
+    expect(
+      scrubText(`Failed https://drive.example.org/{n}/${DRIVE_ID}/view`, OWN)
+    ).toBe(`Failed https://drive.example.org/${REDACTED}`);
+  });
+
+  it('redacts a value that is only a query or only a fragment', () => {
+    // The SDK's fetch and XHR spans store a request's query and fragment as
+    // attributes of their own (`http.query: "?id=..."`), with no path in
+    // front that would mark them as a link.
+    expect(scrubText(`?id=${DRIVE_ID}`, OWN)).toBe(REDACTED);
+    expect(scrubText('#station-2', OWN)).toBe(REDACTED);
+    expect(scrubText('?', OWN)).toBe('?');
+    expect(scrubText('? not a query', OWN)).toBe('? not a query');
+  });
+
   it('treats every host as foreign when the own host is unknown', () => {
     expect(scrubText('https://gps.csutil.com/recorder/a.js', undefined)).toBe(
       `https://gps.csutil.com/${REDACTED}`
@@ -77,6 +96,31 @@ describe('scrubText', () => {
     expect(scrubText('lat=48.1 lon=11.5', OWN)).toBe(
       `lat=${REDACTED} lon=${REDACTED}`
     );
+  });
+
+  it('removes coordinates under a camelCase or snake_case label', () => {
+    // Objects the app logs name their fields `originLat`, `originLon`,
+    // `start_lat` and so on; a label with a prefix is still a coordinate.
+    expect(scrubText('originLat=48.1 originLon=11.5', OWN)).toBe(
+      `originLat=${REDACTED} originLon=${REDACTED}`
+    );
+    expect(scrubText('{"anchorLatitude":48.13,"x":1}', OWN)).toBe(
+      `{"anchorLatitude":${REDACTED},"x":1}`
+    );
+    expect(scrubText('start_lng: 11.57', OWN)).toBe(`start_lng: ${REDACTED}`);
+  });
+
+  it('does not take a word that merely ends in a label for a coordinate', () => {
+    expect(scrubText('flat=5 salon=3 isLatest=1', OWN)).toBe(
+      'flat=5 salon=3 isLatest=1'
+    );
+  });
+
+  it('removes a pair when only one of its numbers has three or more decimals', () => {
+    expect(scrubText('at 48.1, 11.576124', OWN)).toBe(`at ${REDACTED}`);
+    expect(scrubText('at 48.137154 11.5', OWN)).toBe(`at ${REDACTED}`);
+    // Two short decimals stay: ordinary pairs of measurements.
+    expect(scrubText('scale 1.50, 2.25', OWN)).toBe('scale 1.50, 2.25');
   });
 
   it('leaves ordinary log text alone', () => {

@@ -5,19 +5,39 @@
  * site's privacy page, and that description is only true while this
  * configuration stays reduced: no default personal data (so the service is
  * told not to store the IP address), traces from a sample of page loads
- * rather than all of them, no forwarding of console output as logs, and every
- * report and breadcrumb passed through the scrubber before it leaves. A
- * change to any of these values must fail here, so that it is a decision
- * made together with the privacy text rather than a silent drift.
+ * rather than all of them, no forwarding of console output as logs, no
+ * session sent on every page load and no locale or timezone added to every
+ * report, and every report, span and breadcrumb passed through the scrubber
+ * before it leaves. A change to any of these values must fail here, so that
+ * it is a decision made together with the privacy text rather than a silent
+ * drift.
  */
 
 import { describe, it, expect } from 'vitest';
+import { getDefaultIntegrations } from '@sentry/browser';
 import type { Breadcrumb, BrowserOptions, ErrorEvent } from '@sentry/browser';
 import { TRACES_SAMPLE_RATE, sentryOptions } from './sentry';
 
 type TransactionEvent = Parameters<
   NonNullable<BrowserOptions['beforeSendTransaction']>
 >[0];
+type SpanJson = Parameters<NonNullable<BrowserOptions['beforeSendSpan']>>[0];
+
+/**
+ * The names of the integrations the SDK will actually run with these
+ * options, resolved the way `Sentry.init` resolves them: an array is ADDED
+ * to the SDK's defaults, a function receives the defaults and returns the
+ * final list. Reading only the array would miss every default integration.
+ */
+function runningIntegrationNames(options: BrowserOptions): string[] {
+  const defaults = getDefaultIntegrations(options);
+  const { integrations } = options;
+  const list =
+    typeof integrations === 'function'
+      ? integrations(defaults)
+      : [...defaults, ...(integrations ?? [])];
+  return (Array.isArray(list) ? list : [list]).map((i) => i.name);
+}
 
 const OWN = 'gps.csutil.com';
 const DRIVE_ID = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
@@ -38,9 +58,7 @@ describe('sentryOptions', () => {
   });
 
   it('forwards no console output as logs', () => {
-    const names = (
-      Array.isArray(options.integrations) ? options.integrations : []
-    ).map((integration) => integration.name);
+    const names = runningIntegrationNames(options);
     expect(names).toContain('BrowserTracing');
     expect(names).not.toContain('ConsoleLogs');
     expect(options.enableLogs).not.toBe(true);
@@ -48,6 +66,27 @@ describe('sentryOptions', () => {
       (options as { _experiments?: { enableLogs?: boolean } })._experiments
         ?.enableLogs
     ).not.toBe(true);
+  });
+
+  it('sends no session on page load and adds no locale or timezone to reports', () => {
+    // The SDK's defaults include a session integration that contacts the
+    // service on EVERY page load, error or not, and a culture integration
+    // that adds the browser's locale and timezone to every report. Neither
+    // helps to fix an error.
+    const names = runningIntegrationNames(options);
+    expect(names).not.toContain('BrowserSession');
+    expect(names).not.toContain('CultureContext');
+    // The defaults that catch and describe errors stay.
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'GlobalHandlers',
+        'BrowserApiErrors',
+        'Breadcrumbs',
+        'LinkedErrors',
+        'Dedupe',
+        'BrowserTracing',
+      ])
+    );
   });
 
   it('removes a tour link, a file id and a coordinate pair from an error report', () => {
@@ -84,13 +123,35 @@ describe('sentryOptions', () => {
           span_id: 'b7ad6b7169203331',
           trace_id: '4bf92f3577b34da6a3ce929d0e0e4736',
           start_timestamp: 1,
-          data: {},
+          // The SDK's fetch and XHR spans carry the query and the fragment
+          // as attributes of their own, besides the description.
+          data: {
+            'http.query': `?id=${DRIVE_ID}`,
+            'http.fragment': `#${DRIVE_ID}`,
+          },
           description: `GET https://gps.csutil.com/api/drive-proxy?id=${DRIVE_ID}`,
         },
       ],
     };
     const out = options.beforeSendTransaction?.(transaction, {});
     expect(JSON.stringify(out)).not.toContain(DRIVE_ID);
+  });
+
+  it('scrubs a span sent on its own, outside any trace', () => {
+    // Web-vital measurements (layout shift, interaction delay) are sent as
+    // standalone spans, which pass neither beforeSend nor
+    // beforeSendTransaction.
+    expect(options.beforeSendSpan).toBeTypeOf('function');
+    const span: SpanJson = {
+      span_id: 'b7ad6b7169203331',
+      trace_id: '4bf92f3577b34da6a3ce929d0e0e4736',
+      start_timestamp: 1,
+      data: { 'http.query': `?id=${DRIVE_ID}` },
+      description: TOUR_LINK,
+    };
+    const out = options.beforeSendSpan?.(span);
+    expect(JSON.stringify(out)).not.toContain(DRIVE_ID);
+    expect(out?.span_id).toBe('b7ad6b7169203331');
   });
 
   it('drops console breadcrumbs and scrubs the others', () => {

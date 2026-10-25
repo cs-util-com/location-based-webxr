@@ -44,12 +44,27 @@ reported.
   still reaches the service; whether the project also has the server-side
   "prevent storing IP addresses" switch on is an account setting, not code.
 - `tracesSampleRate: 0.1` - see above.
-- Integrations: only `browserTracingIntegration()`. The console logging
-  integration and the Logs product (`enableLogs`) are off: the framework
-  logger already turns every warning and error into an Issue, so the Logs
-  view was a second copy of the same lines.
-- `beforeSend` and `beforeSendTransaction` pass the whole event through
-  `scrubDeep` (links, file ids, coordinates; `sentry-scrub.ts.md`).
+- Integrations, given as a FUNCTION of the SDK's defaults (an array would
+  be added to all of them): the defaults minus `BrowserSession` and
+  `CultureContext`, plus `browserTracingIntegration()`.
+  - `BrowserSession` (a default in `@sentry/browser` 10.73, `sdk.js`
+    `getDefaultIntegrations`) sends a session to the service on every page
+    load, error or not; without it the Recorder contacts the service only
+    for an error, a warning, or the sampled trace of one load in ten.
+  - `CultureContext` adds the browser's locale and timezone to every
+    report; neither helps to fix an error.
+  - The defaults that catch and describe errors stay (global handlers,
+    browser API errors, breadcrumbs, linked errors, dedupe, inbound
+    filters, HTTP context).
+  - The console logging integration and the Logs product (`enableLogs`)
+    are off: the framework logger already turns every warning and error
+    into an Issue, so the Logs view was a second copy of the same lines.
+- `beforeSend`, `beforeSendTransaction` and `beforeSendSpan` pass the whole
+  event or span through `scrubDeep` (links, file ids, coordinates, bare
+  queries such as the `http.query` span attribute; `sentry-scrub.ts.md`).
+  `beforeSendSpan` is the only hook a standalone span passes: web-vital
+  measurements (layout shift, interaction delay) are sent that way, outside
+  any transaction.
 - `beforeBreadcrumb` drops console breadcrumbs (the framework logger adds
   its own breadcrumb for every log line, and the console also carries output
   of code this app does not audit, such as the core library) and scrubs
@@ -116,9 +131,13 @@ variable to be set in CI/CD.
 
 - `sentry.test.ts` pins the reduced configuration: no default personal
   data, the trace sample rate, no console logging integration and no Logs,
-  a report with a tour link, a file id and a coordinate pair comes out
-  without them, a trace's span is scrubbed, console breadcrumbs are dropped,
-  and the DSN's region is the one the privacy page names.
+  no session and no culture integration among the integrations the SDK
+  really runs (resolved from its own `getDefaultIntegrations` the way
+  `init` does), a report with a tour link, a file id and a coordinate pair
+  comes out without them, a trace's span is scrubbed including its
+  `http.query` and `http.fragment` attributes, a standalone span is
+  scrubbed, console breadcrumbs are dropped, and the DSN's region is the
+  one the privacy page names.
 - `sentry-scrub.test.ts`, `sentry-scrub.property.test.ts` - the scrubber.
 - Whether reports really arrive is checked in the Sentry dashboard after a
   deploy; no test sends one.
