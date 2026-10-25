@@ -543,3 +543,37 @@ test("a flight ends the orbit's coast: the camera stays where it lands", async (
   const after = (await view3d(page)).camera;
   expect(Math.hypot(...after.map((v, i) => v - landed[i]))).toBeLessThan(1e-3);
 });
+
+test("on a phone, a tap on the folded tree's Stations header opens the dock with its stations shown", async ({
+  page,
+}) => {
+  // Why: below 900 px a selection folds the tree to its head, and the
+  // head's "Stations" header is the larger target there. A tap on it
+  // unfolded the dock and also closed the Stations section, so the tree
+  // came back with every station hidden and seemed to have collapsed;
+  // the next tap opened it. On a folded dock the header only unfolds.
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open3d(page);
+  await page.locator("#tree-fold").click();
+  await card(page, "The old gate").locator(".hero").click();
+  await expect(page.locator("#shell-tree")).toHaveClass(/\bcollapsed\b/);
+  await expect(page.locator("#tree-stations")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await page.locator("#tree-stations").click();
+  await expect(page.locator("#shell-tree")).not.toHaveClass(/\bcollapsed\b/);
+  await expect(page.locator("#tree-stations")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await expect(card(page, "The old gate")).toBeVisible();
+  // On an open dock the header still folds its section, as before.
+  await page.locator("#tree-stations").click();
+  await expect(page.locator("#tree-stations")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await expect(card(page, "The old gate")).toHaveCount(0);
+});

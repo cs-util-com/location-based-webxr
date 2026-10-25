@@ -364,18 +364,21 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   });
   tree.stationsHead.addEventListener("click", () => {
     const { openSections, foldedDocks } = state().editorView;
+    // On a folded dock the header is the larger target of its head: a tap
+    // there only unfolds the dock, its sections as they were.
+    if (foldedDocks.tree) {
+      store.dispatch(
+        editorViewActions.dockFolded({ dock: "tree", folded: false }),
+      );
+      applyDocks("tree-unfolded");
+      return;
+    }
     store.dispatch(
       editorViewActions.sectionFolded({
         section: "stations",
         open: !openSections.stations,
       }),
     );
-    if (foldedDocks.tree) {
-      store.dispatch(
-        editorViewActions.dockFolded({ dock: "tree", folded: false }),
-      );
-      applyDocks("tree-unfolded");
-    }
   });
   tree.fold.addEventListener("click", () => {
     const folded = !state().editorView.foldedDocks.tree;

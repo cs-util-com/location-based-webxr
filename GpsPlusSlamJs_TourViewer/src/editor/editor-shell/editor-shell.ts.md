@@ -42,7 +42,10 @@ view shows.
 - **The tree's click rule** (`tree-click.ts`): `treeClick` with the
   event's `timeStamp` and `detail`, then `treeClickPlan`: select, unfold
   or fold, open the codes, fly. A card's fold arrow folds without
-  selecting; a section's header folds its section.
+  selecting; a section's header folds its section. On a folded dock the
+  "Stations" header in its head only unfolds the dock, its sections as
+  they were (a tap there used to unfold the dock and close the stations
+  in one go, so the tree seemed to collapse).
 - **The dock rule** (`dock-rule.ts`): `opened` on show, `selected` when
   the selection becomes another, `resized` on a window resize,
   `tree-unfolded` and `inspector-unfolded` when the creator unfolds one.
@@ -119,4 +122,6 @@ the most crowded bar at each step's edges, the tree from the keyboard
 alone (Tab order: the top bar left to right, then the tree), a card's click selecting,
 unfolding and flying, a double click not toggling, a later click
 deselecting and folding, the folds and a layer kept across a trip to the
-map, Top view by its button and T, the zoom steps and the debug readout.
+map, Top view by its button and T, the zoom steps and the debug readout,
+and on a phone the folded tree's "Stations" header unfolding the dock
+with its stations shown.
