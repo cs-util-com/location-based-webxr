@@ -332,6 +332,30 @@ describe('answerQuiz', () => {
     });
   });
 
+  // The REASON must not tell either: when both outcomes are blocked,
+  // right and wrong answers are refused with one and the same reason
+  // (the first blocked outcome in the fixed order right, then wrong), not
+  // each with its own outcome's price.
+  it('refuses right and wrong answers with the same reason when both are blocked', () => {
+    const s = withState([], { coins: 0, stars: 1 });
+    const sameCounter = {
+      correct: [{ add: 'coins', by: -1 }],
+      wrong: [{ add: 'coins', by: -3 }],
+    };
+    const twoCounters = {
+      correct: [{ add: 'coins', by: -1 }],
+      wrong: [{ add: 'stars', by: -2 }],
+    };
+    const price = {
+      ok: false,
+      reason: { kind: 'floor', counter: 'coins', need: 1 },
+    };
+    for (const outcomes of [sameCounter, twoCounters]) {
+      expect(answerQuiz(GAME, s, outcomes, true)).toEqual(price);
+      expect(answerQuiz(GAME, s, outcomes, false)).toEqual(price);
+    }
+  });
+
   it('refuses an outcome with an effect it cannot apply', () => {
     const result = answerQuiz(
       GAME,

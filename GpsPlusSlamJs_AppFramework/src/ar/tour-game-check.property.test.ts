@@ -379,6 +379,30 @@ function violations(
   return out;
 }
 
+/** Quizzes the walks reached that cost something yet are not reported as
+ *  a possible trap: those whose own step requires what they cost. The
+ *  softlock promise must hold for them too, so the run must meet some. */
+function guardedQuizzes(
+  game: TourGame,
+  findings: ReturnType<typeof checkTourGame>,
+  seen: Seen
+): number {
+  const warned = new Set(
+    findings
+      .filter((f) => f.kind === 'choice-may-softlock')
+      .map((f) => refKey(f.at))
+  );
+  return game.stations
+    .flatMap((st) => st.steps.map((step) => ({ st, step })))
+    .filter(({ st, step }) => {
+      if (step.kind !== 'quiz') return false;
+      const ref = `${st.id}/${step.id}`;
+      const costs = [step.outcomes.correct, step.outcomes.wrong].some((fx) =>
+        (fx ?? []).some((e) => 'add' in e && e.by < 0)
+      );
+      return costs && seen.steps.has(ref) && !warned.has(ref);
+    }).length;
+}
 /** The causes a run of the property must meet at least once each. */
 const GUARDED_CAUSES = [
   'unreachable:label-never-set',
@@ -391,6 +415,7 @@ const GUARDED_CAUSES = [
   'option-never-available:counter-out-of-reach',
   'stuck',
   'stuck-quiz-one-outcome-payable',
+  'quiz-guarded-by-its-step',
 ] as const;
 
 describe('tour game check - against an exhaustive walk search', () => {
@@ -407,6 +432,7 @@ describe('tour game check - against an exhaustive walk search', () => {
         }
         count('stuck', seen.stuck.size);
         count('stuck-quiz-one-outcome-payable', seen.splitStuck.size);
+        count('quiz-guarded-by-its-step', guardedQuizzes(game, findings, seen));
         expect(violations(findings, seen)).toEqual([]);
       }),
       { numRuns: 1000 }

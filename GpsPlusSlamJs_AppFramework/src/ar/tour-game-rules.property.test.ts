@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   answerQuiz,
+  availability,
   chooseOption,
   inventory,
   optionDisplay,
@@ -334,10 +335,13 @@ describe('tour game rules - properties', () => {
   // greyed quiz's needs must be exactly what makes both payable. Its
   // answers are accepted or refused together, right and wrong alike:
   // where only one outcome could be paid on its own (the case counted as
-  // `split`), refusing just the other would show which answer is right.
+  // `split`), refusing just the other would show which answer is right;
+  // where both are blocked at different prices (`priced`), the refusal
+  // must carry the same reason for either answer.
   it('offers and accepts a quiz only as a whole, with needs that are exact', () => {
     let greyed = 0;
     let split = 0;
+    let priced = 0;
     fc.assert(
       fc.property(
         game,
@@ -354,8 +358,19 @@ describe('tour game rules - properties', () => {
             (fx) => optionDisplay(g, s, { effects: fx }).shown === 'available'
           );
           if (alone[0] !== alone[1]) split += 1;
-          expect(answerQuiz(g, s, outcomes, true).ok).toBe(
-            answerQuiz(g, s, outcomes, false).ok
+          const reasons = [correct, wrong].map((fx) =>
+            JSON.stringify(availability(g, s, { effects: fx }))
+          );
+          if (!alone[0] && !alone[1] && reasons[0] !== reasons[1]) {
+            priced += 1;
+          }
+          // Refused alike down to the reason: a refusal that named each
+          // answer's own price would still tell them apart.
+          const right = answerQuiz(g, s, outcomes, true);
+          const wrongAnswer = answerQuiz(g, s, outcomes, false);
+          expect(right.ok).toBe(wrongAnswer.ok);
+          expect(right.ok ? null : right).toEqual(
+            wrongAnswer.ok ? null : wrongAnswer
           );
           const shown = quizDisplay(g, s, outcomes);
           expect(shown.shown === 'available').toBe(both(s));
@@ -377,6 +392,7 @@ describe('tour game rules - properties', () => {
     );
     expect(greyed).toBeGreaterThan(0);
     expect(split).toBeGreaterThan(0);
+    expect(priced).toBeGreaterThan(0);
   });
 
   // Hiding is reserved for the creator's secrets and the creator's

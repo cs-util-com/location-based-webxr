@@ -507,22 +507,23 @@ export function chooseOption(
 
 /** Give a quiz answer, right or wrong: its outcome is applied all or
  *  nothing, and only while the quiz is open as a whole - both outcomes
- *  payable (see `quizDisplay`). Otherwise the answer is refused and
- *  changes nothing, the right one included: refusing only the answers
- *  that cannot be paid would tell the visitor which one is right. */
+ *  payable (see `quizDisplay`). Otherwise every answer is refused with
+ *  one and the same reason, that of the first blocked outcome in the
+ *  fixed order right, then wrong, whichever answer was given: refusing
+ *  only the answers that cannot be paid, or naming each answer's own
+ *  price, would tell the visitor which one is right. */
 export function answerQuiz(
   game: TourGame,
   state: TourGameRunState,
   outcomes: TourGameQuizOutcomes,
   correct: boolean
 ): TourGameChoice {
+  for (const effects of [outcomes.correct, outcomes.wrong]) {
+    const verdict = availability(game, state, { effects: effects ?? [] });
+    if (!verdict.available) return { ok: false, reason: verdict.reason };
+  }
   const given = (correct ? outcomes.correct : outcomes.wrong) ?? [];
-  const other = (correct ? outcomes.wrong : outcomes.correct) ?? [];
-  const result = take(game, state, { effects: given });
-  const closed = availability(game, state, { effects: other });
-  return result.ok && !closed.available
-    ? { ok: false, reason: closed.reason }
-    : result;
+  return take(game, state, { effects: given });
 }
 
 /** Where a scene continues after step `from`: the option's `goto` (the

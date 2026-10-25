@@ -59,7 +59,8 @@ are `tour-game-check.ts`.
   RESULT would break (`"floor"`, with `need`, how much is missing). Use it
   for stations, items, steps and options alike.
 - `optionDisplay(game, state, { requires?, effects? })` - how a scene
-  choice's option shows: `{ shown: "available" }`; `{ shown: "greyed", needs }` when every
+  choice's option shows: `{ shown: "available" }`;
+  `{ shown: "greyed", needs }` when every
   label and counter blocking it is visible, `needs` listing each in order
   (`{ has }`, `{ lacks }`, or `{ counter, need }` - one entry per counter,
   the larger of its requirement's and its cost's shortfall); or
@@ -82,10 +83,12 @@ are `tour-game-check.ts`.
 - `answerQuiz(game, state, outcomes, correct)` - the same for a quiz
   answer: the outcome is applied all or nothing, and only while the quiz
   is open as a whole. While either outcome cannot be paid, every answer is
-  refused (`{ ok: false, reason }`, the given outcome's reason first, else
-  the other's) - the right one included, so a refusal never tells which
-  answer is right - and nothing is ever clamped. A counter the outcome
-  does not touch is left as it is.
+  refused with one and the same `{ ok: false, reason }`: the reason of
+  the first blocked outcome in the fixed order right, then wrong,
+  whichever answer was given. So neither the refusal nor its reason tells
+  which answer is right (naming each answer's own price would), and
+  nothing is ever clamped. A counter the outcome does not touch is left as
+  it is.
 - `stepAfter(steps, from, option?)` - where a scene continues after step
   `from`: the option's `goto` (the first step with that id, backwards
   too), else the next step; -1 (the scene ends) after the last step, for a
@@ -168,11 +171,14 @@ optionDisplay(game, { round: 1, labels: [], counters: { coins: 1 } }, buy);
   counter shortfalls kept, a quiz answer applied without its floor, a
   round label greyed. A quiz is offered exactly when both outcomes are
   accepted, its right and wrong answers are accepted or refused together
-  (guarded: states where only one outcome is payable on its own occur),
-  and its greyed needs are enough together and each necessary for both (a
-  defect that never greys the quiz was caught, 5 of 5 seeds; a defect
-  accepting the right answer while the wrong one cannot be paid is caught
-  by the unit test and this property); the quiz is hidden exactly when
+  and, when refused, with the same reason (guarded: states where only one
+  outcome is payable on its own, and states where both are blocked at
+  different prices, occur), and its greyed needs are enough together and
+  each necessary for both (a defect that never greys the quiz was caught,
+  5 of 5 seeds; a defect accepting the right answer while the wrong one
+  cannot be paid is caught by the unit test and this property; a defect
+  giving the answered outcome's reason first is caught by the unit test
+  and this property, 3 of 3 seeds); the quiz is hidden exactly when
   either outcome would be (a defect hiding it only when both are was
   caught, 3 of 3 runs).
 - `tour-game-scenarios.test.ts` - four tours walked end to end: a path

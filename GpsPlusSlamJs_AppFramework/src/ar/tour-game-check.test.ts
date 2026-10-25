@@ -1019,3 +1019,136 @@ describe('checkTourGame - a quiz is answered only as a whole', () => {
     ]);
   });
 });
+
+describe('checkTourGame - a quiz its own step guards against a missing price', () => {
+  type Net = { coins?: number; stars?: number };
+  const counter = (id: string, start: number, floor = 0) => ({
+    id,
+    name: id,
+    keep: 'round' as const,
+    start,
+    floor,
+  });
+  const adds = (net: Net) =>
+    Object.entries(net).map(([add, by]) => ({ add, by }));
+  /** A farm paying 3 coins, then a quiz with these outcomes, its step
+   *  requiring `guard`. */
+  const guarded = (
+    outcomes: { correct?: Net; wrong?: Net },
+    guard: { counter: string; atLeast: number }[],
+    counters = [counter('coins', 0), counter('stars', 0)]
+  ): TourGame => ({
+    labels: [],
+    counters,
+    stations: [
+      giver('farm', [
+        choiceStep('c', [
+          { id: 'k', effects: [{ add: 'coins', by: 3 }] },
+          LEAVE,
+        ]),
+      ]),
+      {
+        id: 'a',
+        steps: [
+          {
+            id: 'q',
+            kind: 'quiz',
+            ...(guard.length === 0 ? {} : { requires: guard }),
+            outcomes: {
+              correct: adds(outcomes.correct ?? {}),
+              wrong: adds(outcomes.wrong ?? {}),
+            },
+          },
+        ],
+      },
+    ],
+  });
+  const softlock = [
+    { kind: 'choice-may-softlock', at: { station: 'a', step: 'q' } },
+  ];
+
+  // A quiz step that requires as much as either outcome could cost is
+  // passed over when the visitor is short, so it can never be met unable
+  // to pay: the cure the warning points to must silence it.
+  it('does not warn about a quiz whose step requires what either outcome costs', () => {
+    expect(
+      checkTourGame(
+        guarded({ wrong: { coins: -1 } }, [{ counter: 'coins', atLeast: 1 }])
+      )
+    ).toEqual([]);
+    expect(
+      checkTourGame(
+        guarded({ correct: { coins: -1 }, wrong: { coins: -3 } }, [
+          { counter: 'coins', atLeast: 3 },
+        ])
+      )
+    ).toEqual([]);
+    // A floor above zero: the guard must cover floor minus the cost.
+    expect(
+      checkTourGame(
+        guarded(
+          { wrong: { coins: -1 } },
+          [{ counter: 'coins', atLeast: 2 }],
+          [counter('coins', 1, 1), counter('stars', 0)]
+        )
+      )
+    ).toEqual([]);
+  });
+
+  // A guard that falls short of the dearer outcome, or guards another
+  // counter than the one paid, still lets the visitor arrive unable to
+  // pay.
+  it('still warns when the guard covers less than either outcome costs', () => {
+    expect(
+      checkTourGame(
+        guarded({ wrong: { coins: -2 } }, [{ counter: 'coins', atLeast: 1 }])
+      )
+    ).toEqual(softlock);
+    expect(
+      checkTourGame(
+        guarded({ correct: { coins: -1 }, wrong: { coins: -3 } }, [
+          { counter: 'coins', atLeast: 2 },
+        ])
+      )
+    ).toEqual(softlock);
+    expect(
+      checkTourGame(
+        guarded(
+          { wrong: { coins: -1, stars: -1 } },
+          [{ counter: 'coins', atLeast: 1 }],
+          [counter('coins', 0), counter('stars', 1)]
+        )
+      )
+    ).toEqual(softlock);
+    // Above a floor of 1, paying 1 needs 2 coins: a guard of 1 is short.
+    expect(
+      checkTourGame(
+        guarded(
+          { wrong: { coins: -1 } },
+          [{ counter: 'coins', atLeast: 1 }],
+          [counter('coins', 1, 1), counter('stars', 0)]
+        )
+      )
+    ).toEqual(softlock);
+  });
+
+  // Known over-warning, by design: the check knows only an upper bound
+  // per counter, so a start that covers every cost still warns unless the
+  // step itself says so.
+  it('warns about an unguarded quiz even when the start would cover it', () => {
+    expect(
+      checkTourGame(
+        guarded({ wrong: { coins: -1 } }, [], [counter('coins', 100)])
+      )
+    ).toEqual(softlock);
+    expect(
+      checkTourGame(
+        guarded(
+          { correct: { coins: 1 }, wrong: { coins: -1 } },
+          [],
+          [counter('coins', 10)]
+        )
+      )
+    ).toEqual(softlock);
+  });
+});

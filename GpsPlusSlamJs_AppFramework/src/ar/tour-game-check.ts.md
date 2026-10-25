@@ -45,10 +45,26 @@ Findings (`kind`, with where -
   A quiz - typed or a choice of answers - is ONE option with two outcomes,
   as the rules answer it: it can be answered only when both could be paid
   (greying or refusing only the unpayable answers would give the right
-  one away), and it is free only when neither outcome costs. So any cost
-  on either outcome warns: the visitor may reach the quiz unable to pay
-  and find it greyed or hidden as a whole. The cure is a quiz without
-  costs (gains are fine), or a way to earn what it costs before it.
+  one away), and it is free only when neither outcome costs. A costed
+  quiz warns - the visitor may reach it unable to pay and find it greyed
+  or hidden as a whole - unless its own STEP is guarded: its effects all
+  apply, and for every counter either outcome lowers, the step's
+  `requires` has `{ counter, atLeast }` with `atLeast >= floor - d`, d
+  the lower of the two outcomes' nets on that counter. A visitor short of
+  that passes the step over, as the rules pass over any step whose
+  requirement fails, so the quiz is never met unpayable. The cure the view
+  should name: such a requirement on the quiz step ("at least 3 coins"
+  for a wrong answer costing 3 above a floor of 0), or a quiz without
+  costs (gains are fine). Earning the cost earlier in the tour does NOT
+  silence it (see below).
+  - **Known over-warning:** the check knows only an UPPER bound per
+    counter, never how low it can fall, so the warning does not prove the
+    visitor can be short - only that a cost exists and nothing on the step
+    guards it. A round counter starting at 100 with a wrong answer costing
+    1, or at 10 with right +1 and wrong -1, still warns. A lower bound per
+    counter (its start plus every negative add of reachable content
+    counted once, unbounded downwards when that add can repeat or the
+    counter is collectible) would remove those cases; not built.
 - There is no warning about a quiz giving its answer away: answered only
   as a whole, no quiz can single out its right answer, whatever its
   outcomes cost and whether the counter is visible or secret.
@@ -94,7 +110,10 @@ them.
   no counter going down (net); a pair of otherwise free options requiring
   `has L` and `lacks L` of a DECLARED label counts as free together. The
   warning never misses a choice or quiz some walk reaches with nothing to
-  pick, and may warn about one that never is.
+  pick, and may warn about one that never is. A quiz whose own step
+  requires at least `floor - d` of each counter it lowers (d the lower
+  net of its two outcomes) is not warned about: the rules pass that step
+  over whenever the visitor could not pay, so it cannot trap.
 - **The fixpoint ends:** every condition only gets easier as the bounds
   grow, so the set of sources only grows and the bounds are a function of
   it; a pass that changes them adds a source or makes one repeatable, at
@@ -123,13 +142,18 @@ checkTourGame({
 - `tour-game-check.test.ts` - every finding by its smallest tour and its
   near miss (a looping payout and a collectible counter are unbounded; a
   has/lacks pair is free, but not for an undeclared label; a quiz with one
-  free outcome cannot trap), a `goto` naming no step, a chain of options
+  free outcome CAN trap, since it is answered only as a whole), a `goto`
+  naming no step, a chain of options
   the fixpoint climbs one per pass (1 to 300 long), the malformed
   declarations that suppress the reachability verdict, the known
   limitation, and quizzes answered only as a whole: one unpayable outcome
   closes the quiz and stops the scene; different costs, equal costs and a
   secret counter all warn only that the quiz may trap; a quiz without
-  costs, or with gains only, is silent.
+  costs, or with gains only, is silent; a quiz whose step requires what
+  either outcome costs (above the floor) is silent, and a guard short by
+  one, on another counter, or ignoring a floor above zero still warns, as
+  does an unguarded quiz whose start would cover the cost (the known
+  over-warning).
 - `tour-game-check.property.test.ts` - on random small tours (any `goto`,
   backwards, to itself or to no step) an exhaustive search plays every
   walk of up to three rounds with the rules themselves, dropping walk
@@ -142,7 +166,8 @@ checkTourGame({
   `goto`-to-no-step tour is pinned beside it. The tours carry secret
   counters, and the walk answers quizzes as the rules allow - only as a
   whole - so a quiz closed by one unpayable outcome is a stuck step the
-  softlock promise must cover (guarded: such walks occur).
+  softlock promise must cover (guarded: such walks occur), and quizzes
+  silenced by their own step guard are met too (guarded).
 - Parameters swept locally (2026-10-22), green throughout: the counter
   cap 5-50 against rounds 2-4 (600 runs each), up to 6 stations of up to
   5 steps (300 runs), the chain length 1-2000 (2000 takes 1.6 s). Mutants
@@ -154,5 +179,8 @@ checkTourGame({
   2-4 (1000 runs each); mutants caught: a quiz whose outcomes the check
   judges one by one (property 5 of 5 seeds, and unit), the rules
   accepting the right answer while the wrong one cannot be paid (property
-  3 of 3 seeds - it then reaches steps the check calls unreachable).
+  3 of 3 seeds - it then reaches steps the check calls unreachable). With
+  the step guard: green at the same 9 settings; mutants caught: the guard
+  silencing every quiz (property 3 of 3 seeds, and unit), the guard
+  ignoring the floor, `>=` as `>`, and the higher net used for d (unit).
 - `tour-game-scenarios.test.ts` - the four scenario tours are clean.

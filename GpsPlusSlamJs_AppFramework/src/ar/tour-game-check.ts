@@ -48,7 +48,11 @@
  * such a step, and the cure - one free option such as "leave" - is always
  * cheap. A quiz is one option with two outcomes, as the rules answer it:
  * open only when both could be paid (greying only the unpayable answers
- * would give the right one away), free only when neither costs.
+ * would give the right one away), free only when neither costs - or when
+ * its own step requires enough of every counter it lowers, so a visitor
+ * who could not pay passes the step over (`paidByStepGuard`). The warning
+ * knows only an upper bound per counter: it says a cost is unguarded, not
+ * that a visitor can really be short.
  *
  * Pure and dependency-free; findings come in declaration order,
  * structural first. The input is a parsed game: every array present.
@@ -721,6 +725,33 @@ function hasFreeOption(answers: readonly Answer[], names: Names): boolean {
   });
 }
 
+/**
+ * A quiz its own step's requirement guarantees can be paid: its outcomes'
+ * effects all apply, and for every counter either outcome lowers, the step
+ * requires at least `floor - d` of it, d being the lower of the two nets.
+ * A visitor short of that passes the step over (as the rules do with any
+ * step whose requirement fails) and never meets the quiz unable to pay.
+ */
+function paidByStepGuard(step: TourGameStep, names: Names): boolean {
+  if (step.kind !== 'quiz') return false;
+  const lists = [step.outcomes.correct ?? [], step.outcomes.wrong ?? []];
+  if (lists.some((effects) => effectsCause(effects, names) !== null)) {
+    return false;
+  }
+  const lowest = new Map<string, number>();
+  for (const net of lists.map(netAdds)) {
+    for (const [counter, d] of net) {
+      if (d < 0) lowest.set(counter, Math.min(lowest.get(counter) ?? 0, d));
+    }
+  }
+  return [...lowest].every(([counter, d]) => {
+    const floor = names.counters.get(counter)?.floor ?? 0;
+    return (step.requires ?? []).some(
+      (c) => 'atLeast' in c && c.counter === counter && c.atLeast >= floor - d
+    );
+  });
+}
+
 function stationFindings(
   station: TourGameStation,
   bounds: Bounds,
@@ -758,7 +789,7 @@ function stationFindings(
     for (const answer of answers) {
       out.push(...neverAvailable(answer, at, bounds, names));
     }
-    if (!hasFreeOption(answers, names)) {
+    if (!hasFreeOption(answers, names) && !paidByStepGuard(step, names)) {
       out.push({ kind: 'choice-may-softlock', at });
     }
   });
