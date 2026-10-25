@@ -1921,7 +1921,12 @@
         right: calc(8px + env(safe-area-inset-right));
         flex-direction: row-reverse;
       }
-      .walk-precision {
+      /* The range label after a tap wears the chip's pill. */
+      .walk-range[hidden] {
+        display: none;
+      }
+      .walk-precision,
+      .walk-range {
         display: flex;
         gap: 6px;
         align-items: center;
@@ -4859,8 +4864,10 @@
                 </svg>
                 <span id="walk-coach-text" data-testid="walk-coach-text"></span>
               </div>
-              <!-- The radar and the precision chip: a tap
-               on the radar opens or closes the list. -->
+              <!-- The radar, its range label and the precision chip: a
+               tap on the radar steps its range (automatic, 30, 100,
+               300 m, automatic again) and shows the range and the chip
+               for 2 s. The list opens from the sheet only. -->
               <div
                 id="walk-radar-wrap"
                 class="walk-radar-wrap"
@@ -4873,15 +4880,20 @@
                   id="walk-radar"
                   class="walk-radar"
                   data-testid="walk-radar"
-                  aria-controls="walk-list"
-                  aria-expanded="false"
-                  aria-label="Stations around you - open the list"
+                  aria-label="Stations around you - tap to change the range"
                 >
                   <canvas
                     id="walk-radar-canvas"
                     class="walk-radar-canvas"
                   ></canvas>
                 </button>
+                <p
+                  id="walk-range"
+                  class="walk-range"
+                  data-testid="walk-range"
+                  aria-live="polite"
+                  hidden
+                ></p>
                 <p
                   id="walk-precision"
                   class="walk-precision"

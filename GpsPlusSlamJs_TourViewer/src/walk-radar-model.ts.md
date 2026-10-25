@@ -43,6 +43,12 @@ minM: 10, maxM: 600, shrinkBelow: 0.65 }` (module-local; the default
   rounded up to a step of 1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a
   power of ten. It grows at once and shrinks only below 65 % of the
   shown range; with no distance it keeps the shown range (else 300 m).
+- `WALK_RADAR_RANGE_STEPS` - `[null, 30, 100, 300]`: the ranges a tap on
+  the radar steps through, null the automatic one.
+- `walkRadarNextRangeM(current)` - the next step, automatic after 300 m;
+  a range that is no step (NaN, 45, a negative) goes back to automatic.
+- `walkRadarRangeLabel(fixedM, shownM)` - "Range: 30 m" for a fixed step,
+  "Range: auto, 60 m" for the automatic one (the range it draws now).
 - `walkRadarModel(input: WalkRadarInput) => WalkRadarModel`
   - input: `stations` (id, number, the list's row state), `order`, `kind`
     (the chip's kind: pending, code, gps, weak, none, lost), `accuracyM`,
@@ -119,7 +125,7 @@ walkPrecisionChip("weak", 42); // "GPS - about 42 m, too weak"
 - `walk-radar-model.test.ts` - the chip's words, the field of view, the
   rings, blip geometry and clamp, the cone, the looks, the rim arc, each
   precision mark, frozen from the snapshot and without one, pending, no
-  heading, a provisional heading (no cone, no rim arc, dimmer blips in
+  heading, the range steps and their label, a provisional heading (no cone, no rim arc, dimmer blips in
   place; the snapshot's word while frozen), the guards (a NaN accuracy reads as none, an infinite one
   draws the rim, a negative one the smallest blur), the adaptive range.
 - `walk-radar-model.property.test.ts` - a blip's angle is the bearing's

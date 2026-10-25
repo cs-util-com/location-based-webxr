@@ -167,13 +167,15 @@ async function firstUnfoundRow(page) {
 }
 
 for (const tour of TOURS) {
-  test(`the radar opens and closes the list, and the chip stays quiet while a code placed the visitor, on ${tour.name}`, async ({
+  test(`a tap on the radar steps its range and opens no list, and the chip stays quiet while a code placed the visitor, on ${tour.name}`, async ({
     page,
   }) => {
-    // Why this test matters: the radar is the list's second
-    // door, and the chip names the precision the radar's centre
-    // draws; a code's position reads "Placed by a code", never its 1 m,
-    // and a good position needs no words: the chip stays hidden.
+    // Why this test matters: a tap on a radar reads as a zoom, so it steps
+    // the range (automatic, 30, 100, 300 m, automatic again), shows the
+    // range and the chip for 2 s and leaves the list to the sheet; the
+    // chip names the precision the radar's centre draws - a code's
+    // position reads "Placed by a code", never its 1 m - and a good
+    // position needs no words: the chip stays hidden otherwise.
     await openTour(page, tour.archive);
     await enterAtTheCode(page);
     const wrap = page.getByTestId("walk-radar-wrap");
@@ -189,19 +191,30 @@ for (const tour of TOURS) {
     );
     const radar = page.getByTestId("walk-radar");
     await expect(radar).toHaveAccessibleName(
-      "Stations around you - open the list",
+      "Stations around you - tap to change the range",
     );
+    await expect(radar).not.toHaveAttribute("aria-expanded", /./);
     const sheet = page.getByTestId("walk-sheet");
-    // It says whether its list is open, as the grab does.
-    await expect(radar).toHaveAttribute("aria-expanded", "false");
-    await radar.click();
-    await expect(sheet).toHaveAttribute("data-sheet", "list");
-    await expect(page.getByTestId("walk-list")).toBeVisible();
-    await expect(radar).toHaveAttribute("aria-expanded", "true");
-    await radar.click();
-    await expect(sheet).toHaveAttribute("data-sheet", "peek");
-    await expect(page.getByTestId("walk-list")).toBeHidden();
-    await expect(radar).toHaveAttribute("aria-expanded", "false");
+    const range = page.getByTestId("walk-range");
+    await expect(wrap).toHaveAttribute("data-range", "auto");
+    await expect(range).toBeHidden();
+    for (const [step, words] of [
+      ["30", "Range: 30 m"],
+      ["100", "Range: 100 m"],
+      ["300", "Range: 300 m"],
+      ["auto", /^Range: auto, \d+ m$/],
+    ]) {
+      await radar.click();
+      await expect(wrap).toHaveAttribute("data-range", step);
+      await expect(range).toHaveText(words);
+      await expect(range).toBeVisible();
+      await expect(page.getByTestId("walk-precision")).toBeVisible();
+      await expect(sheet).toHaveAttribute("data-sheet", "peek");
+      await expect(page.getByTestId("walk-list")).toBeHidden();
+    }
+    // The moment passes: the label goes, and the chip is quiet again.
+    await expect(range).toBeHidden({ timeout: 5000 });
+    await expect(page.getByTestId("walk-precision")).toBeHidden();
     // The canvas is drawn at the device's pixels (at most 2x).
     const ratio = await page.evaluate(() => {
       const c = /** @type {HTMLCanvasElement} */ (

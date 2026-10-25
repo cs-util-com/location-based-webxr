@@ -333,7 +333,6 @@ describe("drawWalkRadar", () => {
 /** A structural DOM for the view. */
 function dom(width = 132) {
   const listeners: (() => void)[] = [];
-  const attributes = new Map<string, string>();
   const { g, calls } = recordingCanvas();
   /** The canvas's CSS width, and how often a draw read it (a layout
    *  read). */
@@ -348,10 +347,6 @@ function dom(width = 132) {
         addEventListener: (_: string, fn: () => void) => {
           listeners.push(fn);
         },
-        getAttribute: (name: string) => attributes.get(name) ?? null,
-        setAttribute: (name: string, value: string) => {
-          attributes.set(name, value);
-        },
       } as unknown as WalkRadarDom["button"],
       canvas: {
         get clientWidth() {
@@ -364,6 +359,7 @@ function dom(width = 132) {
       },
       chip: { dataset: {} as DOMStringMap, hidden: false },
       chipText: { textContent: "" as string },
+      rangeLabel: { hidden: true, textContent: "" as string },
     },
   };
 }
@@ -376,7 +372,6 @@ function frame(over: Partial<WalkRadarFrame> = {}): WalkRadarFrame {
     accuracyM: 6,
     live: GEO,
     snapshot: GEO,
-    listOpen: false,
     ...over,
   };
 }
@@ -384,15 +379,11 @@ function frame(over: Partial<WalkRadarFrame> = {}): WalkRadarFrame {
 function view(width = 132) {
   const c = clock();
   const d = dom(width);
-  let toggles = 0;
   /** The size observer's callback, once the view observed the canvas. */
   let resized: (() => void) | null = null;
   let observing = 0;
   const radar = wireWalkRadar({
     dom: d.dom,
-    toggleList: () => {
-      toggles += 1;
-    },
     ...c,
     projection0: () => null,
     aspect: () => 0.5,
@@ -407,7 +398,10 @@ function view(width = 132) {
     c,
     d,
     radar,
-    toggles: () => toggles,
+    /** A tap on the radar. */
+    tap() {
+      for (const fn of d.listeners) fn();
+    },
     resize(width: number) {
       d.size.width = width;
       resized?.();
@@ -505,21 +499,100 @@ describe("wireWalkRadar", () => {
     expect(unsure.cones).toBe(sure.cones - 1);
   });
 
-  it("a tap on the radar toggles the list", () => {
+  // Why this test matters: a tap on a radar reads as a zoom, so the tap
+  // steps the range - automatic, 30, 100, 300 m, automatic again - and the
+  // radar draws the step at once; the list opens from the sheet only.
+  it("a tap steps the drawn range: automatic, 30 m, 100 m, 300 m, automatic again", () => {
     const v = view();
-    for (const fn of v.d.listeners) fn();
-    expect(v.toggles()).toBe(1);
+    const ring = () =>
+      v.d.calls
+        .filter((c) => c.op === "fillText")
+        .map((c) => c.args[0] as string)
+        .filter((t) => t.endsWith(" m"))
+        .at(-1);
+    v.radar.render(frame({ kind: "code" }));
+    const auto = ring();
+    expect(v.d.dom.wrap.dataset["range"]).toBe("auto");
+    const seen: [string | undefined, string | undefined][] = [];
+    for (let i = 0; i < 4; i += 1) {
+      v.c.advance(100);
+      v.tap();
+      v.c.advance(100);
+      seen.push([v.d.dom.wrap.dataset["range"], ring()]);
+    }
+    // The outer ring's label: a third of the range, rounded down.
+    expect(seen).toEqual([
+      ["30", "10 m"],
+      ["100", "25 m"],
+      ["300", "100 m"],
+      ["auto", auto],
+    ]);
   });
 
-  // Why this test matters: the radar is a button that opens and closes
-  // the list, as the grab is; a screen reader hears whether its list is
-  // open only from `aria-expanded`.
-  it("says on its button whether the list is open", () => {
+  // Why this test matters: after a tap the visitor reads which range is
+  // drawn and how the position is known, for 2 s, even where the chip is
+  // quiet by its rule (a code's position); then the chip follows its rule
+  // again. A peek that never ended would leave the words on screen.
+  it("after a tap the range label and the chip show for 2 s, then the chip follows its rule", () => {
     const v = view();
-    v.radar.render(frame());
-    expect(v.d.dom.button.getAttribute("aria-expanded")).toBe("false");
-    v.radar.render(frame({ listOpen: true }));
-    expect(v.d.dom.button.getAttribute("aria-expanded")).toBe("true");
+    const { chip, rangeLabel } = v.d.dom;
+    v.radar.render(frame({ kind: "code" }));
+    expect([chip.hidden, rangeLabel.hidden]).toEqual([true, true]);
+    v.tap();
+    expect([chip.hidden, rangeLabel.hidden]).toEqual([false, false]);
+    expect(rangeLabel.textContent).toBe("Range: 30 m");
+    v.c.advance(1999);
+    expect([chip.hidden, rangeLabel.hidden]).toEqual([false, false]);
+    // A render inside the peek keeps it.
+    v.radar.render(frame({ kind: "code" }));
+    expect(chip.hidden).toBe(false);
+    v.c.advance(1);
+    expect([chip.hidden, rangeLabel.hidden]).toEqual([true, true]);
+    // A second tap inside the peek restarts its 2 s.
+    v.tap();
+    v.c.advance(1500);
+    v.tap();
+    expect(rangeLabel.textContent).toBe("Range: 300 m");
+    v.c.advance(1999);
+    expect(rangeLabel.hidden).toBe(false);
+    v.c.advance(1);
+    expect(rangeLabel.hidden).toBe(true);
+    // Where the chip's rule shows it (too weak), it stays after the peek.
+    v.radar.render(frame({ kind: "weak", accuracyM: 60 }));
+    v.tap();
+    v.c.advance(2000);
+    expect([chip.hidden, rangeLabel.hidden]).toEqual([false, true]);
+    expect(rangeLabel.textContent).toMatch(/^Range: auto, \d+ m$/);
+  });
+
+  it("a reset (the AR session's end, another tour) goes back to the automatic range and ends the peek", () => {
+    const v = view();
+    v.radar.render(frame({ kind: "code" }));
+    v.tap();
+    v.radar.reset();
+    expect(v.d.dom.wrap.dataset["range"]).toBe("auto");
+    expect(v.d.dom.rangeLabel.hidden).toBe(true);
+    v.radar.render(frame({ kind: "code" }));
+    expect(v.d.dom.chip.hidden).toBe(true);
+    expect(v.c.pending()).toBeLessThanOrEqual(1);
+  });
+
+  // Why this test matters: the button's name is what a screen reader says
+  // and what the tap does; it must not promise the list, nor point at it.
+  it("index.html names the radar's tap and points at no list; the range label is announced", () => {
+    const html = readFileSync(
+      new URL("../index.html", import.meta.url),
+      "utf8",
+    );
+    const button = /<button[^>]*id="walk-radar"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(button).toContain(
+      'aria-label="Stations around you - tap to change the range"',
+    );
+    expect(button).not.toContain("aria-controls");
+    expect(button).not.toContain("aria-expanded");
+    const label = /<p[^>]*id="walk-range"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(label).toContain('aria-live="polite"');
+    expect(label).toContain("hidden");
   });
 
   // Why this test matters: reading the canvas's CSS size is a layout read,

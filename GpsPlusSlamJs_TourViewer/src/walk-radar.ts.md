@@ -33,25 +33,36 @@ the ms each draw took.
   callback that pushes each tick's `dt` (seconds) as ms at `now()`; a dt
   that is no positive finite number (the first frame) is skipped; returns
   the unregister.
-- `wireWalkRadar({ dom, toggleList, now, setTimer, clearTimer,
+- `WALK_RADAR_PEEK_MS = 2000` - how long the range label and the chip
+  show after a tap.
+- `wireWalkRadar({ dom, now, setTimer, clearTimer,
 projection0, aspect, devicePixelRatio, reduceMotion, observeSize }) =>
 WalkRadarView`
   - `render(frame | null)` - null hides the radar; otherwise writes the
     chip's words and `data-kind`, shows the chip only while
-    `walkPrecisionChipShown` (hidden for a code's or a good GPS position),
+    `walkPrecisionChipShown` (hidden for a code's or a good GPS position)
+    or during a tap's peek, the wrap's `data-range` (`auto`, `30`,
+    `100`, `300`) and the range label's words,
     the wrap's `data-mode` (`frozen` greys
     the canvas in CSS), the wrap's `data-heading` (`none`,
     `provisional` or `confirmed`, from the geometry of that mode: the
-    canvas's look made observable), the button's `aria-expanded` from the frame's
-    `listOpen`, and requests a draw;
+    canvas's look made observable), and requests a draw;
   - `observeSize(onChange)` - the page's `ResizeObserver` on the canvas:
     a resize makes the next draw read the canvas's size again;
   - `drawStats(nowMs)` - the draws' rolling 2 s summary;
-  - `reset()` - the range, the bursts and the stats start anew. Called by
+  - `reset()` - the range (automatic again, the adaptive hysteresis
+    forgotten), the bursts and the stats start anew, and a tap's peek
+    ends. Called by
     `visitor-stations.ts` `stop`, which runs at the AR session's end and
     at an open tour's close (`archive-open.ts`'s teardown,
     `archive-open.test.ts` holds that).
-  - A tap on the radar calls `toggleList` (the list opens or closes).
+  - A tap on the radar steps the range (`walkRadarNextRangeM`:
+    automatic, 30, 100, 300 m, automatic again), draws the step at once
+    and shows the range label (`#walk-range`, `walkRadarRangeLabel`)
+    and the chip for `WALK_RADAR_PEEK_MS`; a second tap restarts that
+    time. The adaptive range keeps following the stations under a fixed
+    step, so automatic resumes where it would be. The tap opens no list:
+    the list's doors are the sheet's (the grab, "Can't get there?").
 
 ## Invariants & assumptions
 
@@ -108,8 +119,7 @@ desktop is not a phone: the field check's numbers are the phone's.
 
 ```ts
 const radar = wireWalkRadar({
-  dom: { wrap, button, canvas, chip, chipText },
-  toggleList: () => store.dispatch(sheetSet(open ? "peek" : "list")),
+  dom: { wrap, button, canvas, chip, chipText, rangeLabel },
   now: () => performance.now(),
   setTimer: (fn, ms) => setTimeout(fn, ms),
   clearTimer: (h) => clearTimeout(h as number),
@@ -119,7 +129,7 @@ const radar = wireWalkRadar({
   reduceMotion: () => matchMedia("(prefers-reduced-motion: reduce)").matches,
   observeSize: (onChange) => new ResizeObserver(onChange).observe(canvas),
 });
-radar.render({ stations, order, kind, accuracyM, live, snapshot, listOpen });
+radar.render({ stations, order, kind, accuracyM, live, snapshot });
 ```
 
 ## Tests
@@ -129,16 +139,19 @@ radar.render({ stations, order, kind, accuracyM, live, snapshot, listOpen });
   station distance label, frozen greys and "?", reduced motion, a burst
   ring, a non-finite accuracy drawn without a throw on a canvas whose
   radial gradient refuses non-finite radii; a provisional heading's
-  dimmer north without the cone), the view (the heading's word, (chip words and modes, the tap, device pixels and the
-  throttle, no size no draw, the range's hysteresis and reset, a tour in
-  order's later stations in the range, `aria-expanded`, the size read
-  once until a resize), the colour tokens against `index.html` (and every
+  dimmer north without the cone), the view (chip words and modes, the
+  heading's word, the tap's range steps and its 2 s peek of the label and
+  the chip, the reset back to automatic, index.html's button name and the
+  announced label, device pixels and the throttle, no size no draw, the
+  range's hysteresis and reset, a tour in order's later stations in the
+  range, the size read once until a resize), the colour tokens against `index.html` (and every
   `rgb()` tint of the walk's CSS, and the canvas's tints), the debug
   lines, the frame sampler.
-- The page: `playwright-tests/visitor-walk-radar.spec.js` (the radar opens
-  the list, the chip per precision, the rows' and the peek's directions,
+- The page: `playwright-tests/visitor-walk-radar.spec.js` (a tap steps
+  the range and opens no list, the chip per precision, the rows' and the peek's directions,
   tracking lost, the frozen radar that a move leaves and a skip changes,
   the `?debug=1` lines, north drawn provisional at once and confirmed by
   tracking while the arrows wait; the radar, rows and frozen tests on a tour of
   stories and on one with items) and
-  `playwright-tests/visitor-walk-layout.spec.js` (positions and gaps).
+  `playwright-tests/visitor-walk-layout.spec.js` (positions and gaps,
+  the range label and the chip after a tap included).

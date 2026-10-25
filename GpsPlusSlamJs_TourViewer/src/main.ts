@@ -937,6 +937,7 @@ const stations = wireVisitorStations({
       canvas: element<HTMLCanvasElement>("walk-radar-canvas"),
       chip: element("walk-precision"),
       chipText: element("walk-precision-text"),
+      rangeLabel: element("walk-range"),
     },
     edgePill: {
       root: element("walk-edge-pill"),

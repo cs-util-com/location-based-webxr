@@ -1,10 +1,13 @@
 /**
  * The visitor's radar on the page: draws `walk-radar-model.ts`'s model on
- * a canvas inside `#ar-root` (a round button that toggles the list),
- * writes the precision chip under it (shown only while the position is
- * weak, unknown, pending or lost), and keeps what only a view keeps -
- * the range shown last (the adaptive range's hysteresis), the burst ring
- * of a station just found, the redraw clock and the ms each draw took.
+ * a canvas inside `#ar-root` (a round button whose tap steps the range:
+ * automatic, 30, 100, 300 m, automatic again), writes the precision chip
+ * under it (shown only while the position is weak, unknown, pending or
+ * lost, and for `WALK_RADAR_PEEK_MS` after a tap, with the range label),
+ * and keeps what only a view keeps - the range step, the range shown last
+ * (the adaptive range's hysteresis), the burst ring of a station just
+ * found, the redraw clock and the ms each draw took. The list opens from
+ * the sheet only.
  *
  * **Never per frame through the store.** The radar's geometry changes with
  * every camera frame; it lives here (a canvas, a closure), and the store
@@ -30,6 +33,9 @@ import {
   walkRadarAdaptiveRangeM,
   walkRadarFovDeg,
   walkRadarModel,
+  walkRadarNextRangeM,
+  walkRadarRangeLabel,
+  WALK_RADAR_RANGE_M,
   type WalkRadarBlip,
   type WalkRadarGeometry,
   type WalkRadarModel,
@@ -42,6 +48,10 @@ import {
  * affordable (the 50 ms frame budget: no frame over 50 ms; the `?debug=1` readout).
  */
 export const WALK_RADAR_HZ = 15;
+
+/** How long the range label and the chip show after a tap on the radar,
+ *  ms: long enough to read "Range: 100 m" and the chip's few words. */
+export const WALK_RADAR_PEEK_MS = 2000;
 
 /** The burst ring at a station just found (the prototype: 1.6 s). */
 export const WALK_BURST_MS = 1600;
@@ -473,19 +483,14 @@ export interface WalkRadarFrame {
   readonly accuracyM: number | null;
   readonly live: WalkRadarGeometry | null;
   readonly snapshot: WalkRadarGeometry | null;
-  /** The list is open: the button says so (`aria-expanded`). */
-  readonly listOpen: boolean;
 }
 
 /** The elements the radar writes (structural, so a test needs no DOM). */
 export interface WalkRadarDom {
   /** The radar and the chip's column (`#walk-radar-wrap`). */
   readonly wrap: Pick<HTMLElement, "hidden" | "dataset">;
-  /** The round button (`#walk-radar`). */
-  readonly button: Pick<
-    HTMLElement,
-    "addEventListener" | "getAttribute" | "setAttribute"
-  >;
+  /** The round button (`#walk-radar`): a tap steps the range. */
+  readonly button: Pick<HTMLElement, "addEventListener">;
   readonly canvas: {
     readonly clientWidth: number;
     width: number;
@@ -493,9 +498,11 @@ export interface WalkRadarDom {
     getContext(kind: "2d"): RadarCanvas | null;
   };
   /** The chip (`#walk-precision`) and its text; shown only while
-   *  `walkPrecisionChipShown`. */
+   *  `walkPrecisionChipShown`, or after a tap. */
   readonly chip: Pick<HTMLElement, "dataset" | "hidden">;
   readonly chipText: Pick<HTMLElement, "textContent">;
+  /** The range label (`#walk-range`), shown only after a tap. */
+  readonly rangeLabel: Pick<HTMLElement, "hidden" | "textContent">;
 }
 
 export interface WalkRadarView {
@@ -504,8 +511,8 @@ export interface WalkRadarView {
   /** The ms per draw over the last 2 s (the `?debug=1` readout). */
   drawStats(nowMs: number): RollingSummary | null;
   /** The AR session's end or the open tour's close (both through the
-   *  stations' `stop`): the range, the bursts and the draw stats start
-   *  anew. */
+   *  stations' `stop`): the range (automatic again), the bursts and the
+   *  draw stats start anew, and a tap's peek ends. */
   reset(): void;
 }
 
@@ -515,8 +522,6 @@ function setText(el: Pick<HTMLElement, "textContent">, text: string): void {
 
 export function wireWalkRadar(deps: {
   readonly dom: WalkRadarDom;
-  /** A tap on the radar: the list opens or closes. */
-  toggleList(): void;
   /** `performance.now()`: the animation's, the throttle's and the draw
    *  clock. */
   now(): number;
@@ -536,7 +541,13 @@ export function wireWalkRadar(deps: {
   const draws = createRollingWindow();
   const bursts = createRadarBursts();
   let frame: WalkRadarFrame | null = null;
-  let rangeM: number | null = null;
+  /** The adaptive range shown last (its hysteresis), kept while a fixed
+   *  step is drawn so automatic resumes where it was. */
+  let adaptiveM: number | null = null;
+  /** The tap's range step: null is automatic. */
+  let fixedM: number | null = null;
+  /** A tap's peek: the range label and the chip show until its timer. */
+  let peekTimer: unknown = null;
   /** The canvas's CSS size as last read: reading it is a layout read, and
    *  a draw follows the sheet's DOM writes of the same render, so it is
    *  read once and again only after a resize (or while it had none). */
@@ -545,8 +556,36 @@ export function wireWalkRadar(deps: {
     sizePx = null;
   });
   dom.button.addEventListener("click", () => {
-    deps.toggleList();
+    fixedM = walkRadarNextRangeM(fixedM);
+    endPeek();
+    peekTimer = deps.setTimer(() => {
+      peekTimer = null;
+      writeWords();
+    }, WALK_RADAR_PEEK_MS);
+    writeWords();
+    throttle.request();
   });
+
+  function endPeek(): void {
+    if (peekTimer !== null) deps.clearTimer(peekTimer);
+    peekTimer = null;
+  }
+
+  /** The range step's word, the range label and whether the chip shows:
+   *  by its rule, or during a tap's peek. */
+  function writeWords(): void {
+    const peeking = peekTimer !== null;
+    const range = fixedM === null ? "auto" : String(fixedM);
+    if (dom.wrap.dataset["range"] !== range) dom.wrap.dataset["range"] = range;
+    setText(
+      dom.rangeLabel,
+      walkRadarRangeLabel(fixedM, fixedM ?? adaptiveM ?? WALK_RADAR_RANGE_M),
+    );
+    if (dom.rangeLabel.hidden === peeking) dom.rangeLabel.hidden = !peeking;
+    const chipShown =
+      peeking || (frame !== null && walkPrecisionChipShown(frame.kind));
+    if (dom.chip.hidden === chipShown) dom.chip.hidden = !chipShown;
+  }
 
   function draw(): void {
     const f = frame;
@@ -572,12 +611,15 @@ export function wireWalkRadar(deps: {
       )
       .map((s) => geo?.distances.get(s.id))
       .filter((d): d is number => d !== undefined);
-    rangeM = walkRadarAdaptiveRangeM(unfound, rangeM);
+    // The adaptive range keeps following under a fixed step, so the
+    // automatic one resumes where it would be.
+    adaptiveM = walkRadarAdaptiveRangeM(unfound, adaptiveM);
+    if (fixedM === null) writeWords();
     const model = walkRadarModel({
       ...f,
       fovDeg: walkRadarFovDeg(deps.projection0(), deps.aspect()),
       sizePx,
-      rangeM,
+      rangeM: fixedM ?? adaptiveM,
     });
     drawWalkRadar(g, model, {
       nowMs: started,
@@ -617,8 +659,7 @@ export function wireWalkRadar(deps: {
       if (dom.chip.dataset["kind"] !== next.kind) {
         dom.chip.dataset["kind"] = next.kind;
       }
-      const chipShown = walkPrecisionChipShown(next.kind);
-      if (dom.chip.hidden === chipShown) dom.chip.hidden = !chipShown;
+      writeWords();
       const mode =
         next.kind === "none" || next.kind === "lost" ? "frozen" : "live";
       if (dom.wrap.dataset["mode"] !== mode) dom.wrap.dataset["mode"] = mode;
@@ -634,17 +675,16 @@ export function wireWalkRadar(deps: {
       if (dom.wrap.dataset["heading"] !== heading) {
         dom.wrap.dataset["heading"] = heading;
       }
-      const expanded = String(next.listOpen);
-      if (dom.button.getAttribute("aria-expanded") !== expanded) {
-        dom.button.setAttribute("aria-expanded", expanded);
-      }
       throttle.request();
     },
     drawStats(nowMs) {
       return draws.summary(nowMs);
     },
     reset() {
-      rangeM = null;
+      adaptiveM = null;
+      fixedM = null;
+      endPeek();
+      writeWords();
       bursts.reset();
       draws.reset();
     },

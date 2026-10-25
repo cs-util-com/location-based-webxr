@@ -467,11 +467,6 @@ export function wireVisitorStations(deps: {
       ? null
       : wireWalkRadar({
           dom: radarDom,
-          toggleList: () => {
-            const open = selectWalkSheet(arStore.getState()) === "list";
-            arStore.dispatch(sheetSet(open ? "peek" : "list"));
-            renderSheet();
-          },
           now: () => win.performance.now(),
           // A real timer: the trailing draw is the radar's own clock, not
           // a step an e2e fires.
@@ -597,7 +592,6 @@ export function wireVisitorStations(deps: {
         headingConfirmed: guideView.headingConfirmed,
       },
       snapshot: guideView.snapshot,
-      listOpen: sheet === "list",
     });
     sheetView.render(model, {
       sheet,

@@ -395,14 +395,16 @@ the size default.
 ## The radar and the precision chip
 
 - `#walk-radar-wrap` (hidden until the walk shows; `data-mode` live or
-  frozen) holds `#walk-radar` (a button, "Stations around you - open the
-  list", `aria-controls="walk-list"`, `aria-expanded` kept by the radar
-  with the list) with `#walk-radar-canvas`, and
-  `#walk-precision` (`data-kind`) with its mark and
-  `#walk-precision-text`.
+  frozen; `data-range` the tap's step; `data-heading` none, provisional
+  or confirmed) holds `#walk-radar` (a button, "Stations around you - tap
+  to change the range": a tap steps the range, the list opens from the
+  sheet only) with `#walk-radar-canvas`, `#walk-range` (the range
+  label, `aria-live="polite"`, shown for 2 s after a tap, the chip's
+  pill: one rule for both), and `#walk-precision` (`data-kind`) with its
+  mark and `#walk-precision-text`.
 - Place: fixed at the top right, 30 px from the top and 12 px from the
   right, 132 px; a phone held sideways 108 px, 10 px from the top. The
-  chip under the radar, 6 px apart, right-aligned, at most the radar plus
+  range label (after a tap) and the chip under the radar, 6 px apart, right-aligned, at most the radar plus
   36 px wide. Frozen: the canvas grayscale(1) brightness(.85).
 - Tokens: `--walk-gps: #93c5fd`, `--walk-weak: #fbbf24`, `--walk-radar`
   (app-local, plan §6 Q2; `walk-radar.test.ts` holds the canvas to them,

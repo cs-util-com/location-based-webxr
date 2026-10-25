@@ -5,8 +5,11 @@ import {
   walkRadarFovDeg,
   walkRadarAdaptiveRangeM,
   walkRadarModel,
+  walkRadarNextRangeM,
+  walkRadarRangeLabel,
   walkRadarRings,
   WALK_RADAR_RANGE_M,
+  WALK_RADAR_RANGE_STEPS,
   type WalkRadarGeometry,
   type WalkRadarInput,
   type WalkRadarStation,
@@ -478,6 +481,33 @@ describe("walkRadarModel - its guards", () => {
   it("treats a field of view that is no angle as the prototype's fallback on a square screen", () => {
     const m = walkRadarModel(input({ fovDeg: Number.NaN }));
     expect(m.cone).toBeCloseTo((22 * Math.PI) / 180, 9);
+  });
+});
+
+describe("the radar's range steps - what a tap on it does", () => {
+  // Why these tests matter: a tap on a radar reads as a zoom, so the radar's
+  // tap steps its range - the automatic one (`walkRadarAdaptiveRangeM`),
+  // then 30, 100 and 300 m, then automatic again - and a label says which
+  // range is drawn. A cycle that skipped a step or never came back to
+  // automatic would strand the visitor on a fixed range.
+  it("cycles automatic, 30 m, 100 m, 300 m and back to automatic", () => {
+    expect(WALK_RADAR_RANGE_STEPS).toEqual([null, 30, 100, 300]);
+    const seen: (number | null)[] = [null];
+    for (let i = 0; i < 4; i += 1) seen.push(walkRadarNextRangeM(seen.at(-1)!));
+    expect(seen).toEqual([null, 30, 100, 300, null]);
+  });
+
+  it("goes back to automatic from a range that is no step", () => {
+    for (const odd of [45, Number.NaN, -30, 0]) {
+      expect(walkRadarNextRangeM(odd)).toBeNull();
+    }
+  });
+
+  it("labels a fixed range by its metres and the automatic one with the range it draws", () => {
+    expect(walkRadarRangeLabel(30, 30)).toBe("Range: 30 m");
+    expect(walkRadarRangeLabel(300, 300)).toBe("Range: 300 m");
+    expect(walkRadarRangeLabel(null, 60)).toBe("Range: auto, 60 m");
+    expect(walkRadarRangeLabel(null, 600)).toBe("Range: auto, 600 m");
   });
 });
 

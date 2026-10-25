@@ -319,6 +319,39 @@ export function walkRadarAdaptiveRangeM(
   return Math.min(rule.maxM, Math.max(rule.minM, stepUp(raw)));
 }
 
+/**
+ * The ranges a tap on the radar steps through, m: the automatic one
+ * (null, `walkRadarAdaptiveRangeM`), then 30, 100 and 300 m - a station
+ * close by, a street, a quarter - then automatic again.
+ */
+export const WALK_RADAR_RANGE_STEPS: readonly (number | null)[] = [
+  null,
+  30,
+  100,
+  300,
+];
+
+/** The range after a tap: the next step, automatic after the last; a
+ *  range that is no step goes back to automatic. */
+export function walkRadarNextRangeM(current: number | null): number | null {
+  const i = WALK_RADAR_RANGE_STEPS.indexOf(current);
+  if (i < 0) return null;
+  return (
+    WALK_RADAR_RANGE_STEPS[(i + 1) % WALK_RADAR_RANGE_STEPS.length] ?? null
+  );
+}
+
+/** The range label's words: a fixed range by its metres, the automatic
+ *  one with the range it draws now (`shownM`). */
+export function walkRadarRangeLabel(
+  fixedM: number | null,
+  shownM: number,
+): string {
+  return fixedM === null
+    ? `Range: auto, ${metres(shownM)}`
+    : `Range: ${metres(fixedM)}`;
+}
+
 const RAD = Math.PI / 180;
 
 /** Whether the radar may name a focus: never frozen. Which station is

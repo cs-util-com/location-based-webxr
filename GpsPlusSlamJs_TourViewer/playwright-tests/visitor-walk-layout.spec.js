@@ -222,8 +222,14 @@ for (const viewport of VIEWPORTS) {
       "walk-grab",
       "walk-peek",
       "station-skip",
-      "walk-precision",
     ]) {
+      onScreen(await box(page, id), id);
+    }
+    // A tap on the radar shows its range label and the chip (quiet while
+    // a code holds the position) for a moment: both on the screen.
+    await page.getByTestId("walk-radar").click();
+    for (const id of ["walk-range", "walk-precision"]) {
+      await expect(page.getByTestId(id)).toBeVisible();
       onScreen(await box(page, id), id);
     }
     // The list open: its close button, its title, its first row and that
@@ -746,6 +752,29 @@ for (const viewport of VIEWPORTS) {
       // Tracking back: the chip hides again; its place (measured above)
       // must stay clear of the open list and the toast.
       await trackingOk(page);
+      await expect(page.getByTestId("walk-precision")).toBeHidden();
+      // A tap steps the range and opens no list: the range label and the
+      // chip show under the radar for a moment, 6 px apart and
+      // right-aligned with it, clear of the Exit button and the sheet.
+      await page.getByTestId("walk-radar").click();
+      await expect(page.getByTestId("walk-range")).toHaveText("Range: 30 m");
+      await expect(page.getByTestId("walk-precision")).toBeVisible();
+      await expect(page.getByTestId("walk-sheet")).toHaveAttribute(
+        "data-sheet",
+        "peek",
+      );
+      const range = await box(page, "walk-range");
+      const tapped = await box(page, "walk-precision");
+      expect(range.y - (radar.y + radar.height)).toBeCloseTo(6, 0);
+      expect(tapped.y - (range.y + range.height)).toBeCloseTo(6, 0);
+      expect(range.x + range.width).toBeCloseTo(radar.x + radar.width, 0);
+      for (const other of [exit, sheet]) {
+        expect(overlaps(range, other)).toBe(false);
+        expect(overlaps(tapped, other)).toBe(false);
+      }
+      await expect(page.getByTestId("walk-range")).toBeHidden({
+        timeout: 5000,
+      });
       await expect(page.getByTestId("walk-precision")).toBeHidden();
       // The list open: still clear of the radar and the chip.
       await page.getByTestId("walk-grab").click();
