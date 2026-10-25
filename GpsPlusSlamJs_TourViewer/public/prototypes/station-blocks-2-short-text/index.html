@@ -87,8 +87,12 @@
     box-shadow: 0 4px 16px rgba(0,0,0,.28); transition: opacity .25s; }
   .eh .bar { width: 4px; align-self: stretch; border-radius: 2px; }
   .eh .ar { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+  .eh .body { display: flex; flex-direction: column; min-width: 0; }
   .eh .tx { max-width: 230px; overflow: hidden; text-overflow: ellipsis; }
-  .eh .dist { color: var(--ink-2); font-weight: 500; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .eh .desc { display: none; max-width: 230px; white-space: normal; font-weight: 450; font-size: 12.5px; line-height: 1.3; color: var(--ink-2); margin-top: 2px; }
+  .eh .dist { display: none; color: var(--ink-2); font-weight: 500; font-size: 12.5px; font-variant-numeric: tabular-nums; align-self: flex-start; padding-top: 1px; }
+  /* off screen: arrow + caption only; on screen: the tag over its spot; fully in view: description and distance too */
+  .eh.full .desc, .eh.full .dist { display: block; }
   .eh.inview .ar { display: none; }
   .eh.inview::after { content: ""; position: absolute; left: 50%; bottom: -7px; margin-left: -7px; border: 7px solid transparent; border-bottom: 0; border-top-color: rgba(15,18,24,.9); }
   .eh.edge .tx { max-width: 150px; }
@@ -231,9 +235,12 @@
         <div id="cr-reticle" class="mode-ui ui-creator"></div>
         <div id="cr-sheet-view" class="sheet glass"><h3>View for this block</h3><div class="viewgrid" id="cr-viewgrid"></div><button class="done" data-close>Done</button></div>
         <div id="cr-sheet-edit" class="sheet glass">
-          <h3>Text</h3>
-          <textarea id="cr-text" rows="2" maxlength="80" aria-label="Text"></textarea>
+          <h3>Caption</h3>
+          <textarea id="cr-text" rows="1" maxlength="40" aria-label="Caption"></textarea>
           <div class="count" id="cr-count"></div>
+          <div class="row"><h3>Description <span style="font-weight:400;color:var(--ink-3)">(optional)</span></h3>
+          <textarea id="cr-desc" rows="3" maxlength="160" aria-label="Description" style="font-weight:450;font-size:15px"></textarea>
+          <div class="count" id="cr-dcount"></div></div>
           <div class="row"><h3>Role</h3><div class="chips" id="cr-roles"></div></div>
           <div class="row"><h3>Orientation</h3><div class="chips" id="cr-orients"></div></div>
           <div class="row"><h3>Points to</h3><div class="chips"><button id="cr-aim">Aim with the ring</button><button id="cr-clear">None</button></div><div class="count" id="cr-pt" style="text-align:left"></div></div>
@@ -268,6 +275,27 @@
 # Short text blocks - notes
 
 Family `station-blocks-2-short-text`. One model, six views (four required, two of my own), three example records drawn by every view at once: "This way to the guild house" (instruction, upright, reads at 6 m, points to the guild house door), "Market hall, 1890" (label, face, reads at 12 m, points to nothing) and "Mind the step" (warning, world, reads at 3 m, points to the step in the gap of the ruined keep wall).
+
+## 0. Second round (2026-10-25) - what changed and why
+
+The first look's verdicts, and what this round did about each. Sections 1-5 below are the first round's notes, kept as written; where they disagree with this section, this section holds.
+
+- **Pin: its arrow pointed the wrong way (a bug).** The pin's instruction icon was a fixed right-pointing arrow baked into the plate, and the pin ignored `pointsTo`; from where the walk-in stops it pointed straight away from the guild house.
+  - Now the pin carries the sign's turning arrow whenever `pointsTo` is set: it points toward the target as seen from where you stand (up = past the pin, left and right = turn, down = behind you).
+  - Without `pointsTo` an instruction shows a plain, non-directional marker (a ring and a dot). The same marker replaces the fixed arrow on the sign and in the editor's list, so no icon claims a direction it does not know.
+- **Speech bubble: the tail looked buggy when strongly bent.** The old tail was a separate mesh whose outline was a scaled copy, not a stroke: the outline thinned as the tail bent, the two shoulders sat asymmetrically, the tip vertex was doubled and the fill cut a notch into the rim where it joined.
+  - Bubble and tail are now one shape in one canvas, outlined once with a constant stroke (stroked at twice the rim width, then filled over the inner half, so the join carries no line). The edges are symmetric curves and the tip is rounded.
+  - The tail's base slides along the bubble's bottom edge toward the target, so the clamp widened from 54 to 72 degrees. Beyond 72 degrees the tail still stops at 72.
+  - Cost: the bubble's canvas is redrawn and re-uploaded when the tail's angle moves by more than 0.6 degrees, which happens only while the visitor moves.
+- **Caption plus description (the owner's model idea).** `text` (80 characters) became `caption` (at most 40) plus an optional `description` (at most 160).
+  - Every view shows the caption. Pin, sign, bubble and callout show the description in smaller letters under it (0.62 of the caption's letter height, so it reads from about 60 % of `readAtM`). The ground arrow paints only the caption: 160 characters do not read on the paving.
+  - "Mind the step" has no description, to show the optional case.
+  - The export is now `version: 2` with `caption` and `description`; an old record's `text` is read as its caption (cut to 40 characters).
+- **Edge hint: quieter off screen.** Off screen the chip shows only its arrow and the caption, no distance.
+  - On screen the tag stands over its spot with the caption. The description and the distance appear once the block is fully in view: its projected bounds (a 0.9 m footprint from the ground up to the tag's height of 1.9 m) inside the screen, not only its anchor point.
+  - Hysteresis: they appear once every corner of the bounds is 24 px inside the usable screen, and go only when a corner is more than 8 px outside it, so they do not flicker at the edge.
+- **Callout:** left as it was (the first look found it "a bit odd" without naming what); it only gained the description under its tag. Say what looks odd and it changes next round.
+- **Ground arrow:** not changed on this page. Six new directions are built as separate pages beside this one.
 
 ## 1. The model
 
@@ -383,7 +411,10 @@ import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
    ===================================================================== */
 const FAMILY = 'station-blocks-2-short-text';
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-const TEXT_MAX = 80;
+const CAPTION_MAX = 40;                 // round 2: the short caption ...
+const DESC_MAX = 160;                   // ... and the optional description (was one 80-character text)
+const DESC_EM = 0.62;                   // description letters, relative to the caption's
+const TAIL_MAX = 72 * Math.PI / 180;    // the bubble tail's widest swing from straight down
 const EYE = 1.6;
 const STATION = { name: 'Market square', x: 0, z: 0, r: 25 };
 const STATION2 = { name: 'East lane', x: 60, z: 0, r: 25 };
@@ -399,7 +430,8 @@ const ORIENT_HELP = { world: 'Fixed in the world', upright: 'Turns about the ver
 const SIZE_STEPS = [2, 3, 4, 6, 8, 12, 16, 20];
 
 const FIELDS = [
-  { name: 'text', type: 'string', max: TEXT_MAX, about: 'the words, at most about 80 characters' },
+  { name: 'caption', type: 'string', max: CAPTION_MAX, about: 'the short line every view shows, at most 40 characters' },
+  { name: 'description', type: 'string|null', max: DESC_MAX, about: 'optional longer line, at most 160 characters; shown under the caption where it fits' },
   { name: 'role', type: 'enum', values: Object.keys(ROLES), about: 'instruction, label or warning' },
   { name: 'orientation', type: 'enum', values: ORIENTS, about: 'world (fixed), upright (turns about the vertical), face (turns fully)' },
   { name: 'readAtM', type: 'number', unit: 'm', about: 'intended reading distance; sets the size' },
@@ -408,41 +440,47 @@ const FIELDS = [
 
 const VIEWS = [
   { name: 'pin', title: 'Pin', blurb: 'head on a stem', required: true, uses: {
-      text: 'the lettering on the head',
-      role: 'the icon and its colour',
+      caption: 'the lettering on the head',
+      description: 'smaller lines under the caption',
+      role: 'the colour, and the icon when nothing is pointed at',
       orientation: 'the head turns: world fixed, upright about the stem, face fully',
       readAtM: 'letter size, and how high the head floats (1.7 m plus 10 cm per metre) so far-read pins clear a crowd',
-    }, unused: { pointsTo: 'a pin marks its own spot' } },
+      pointsTo: 'the round arrow on the head turns toward it as seen from where you stand (the sign\'s arrow); without it a plain marker',
+    }, unused: {} },
   { name: 'sign', title: 'Sign', blurb: 'board on posts', required: true, uses: {
-      text: 'the board lettering',
+      caption: 'the board lettering',
+      description: 'smaller lines under the caption on the board',
       role: 'the top band and the icon',
       orientation: 'world fixed; upright and face both turn the whole sign about its posts (a standing sign never tilts)',
       readAtM: 'letter size, board height, post thickness',
       pointsTo: 'the round arrow on the board turns toward it as seen from where you stand (up means go past the sign)',
     }, unused: {} },
   { name: 'ground-arrow', title: 'Ground arrow', blurb: 'painted on the paving', required: true, uses: {
-      text: 'painted on the ground, letters stretched along the line of sight, first line nearest',
+      caption: 'painted on the ground, letters stretched along the line of sight, first line nearest',
       role: 'the border and chevron colour',
       orientation: 'world: the text reads from the block\'s turn; upright and face: the text turns about the vertical toward the visitor',
       readAtM: 'letter size and stretch (more stretch for far reading)',
       pointsTo: 'the chevrons lead toward it (without it, along the block\'s turn)',
-    }, unused: {} },
+    }, unused: { description: '160 characters do not read painted on the paving' } },
   { name: 'bubble', title: 'Speech bubble', blurb: 'floating, with a tail', required: true, uses: {
-      text: 'centred in the bubble',
+      caption: 'centred in the bubble',
+      description: 'smaller lines under the caption',
       role: 'the rim colour',
       orientation: 'the bubble turns',
       readAtM: 'size and float height',
-      pointsTo: 'the tail points at it (without it, at its own spot on the ground)',
+      pointsTo: 'the tail points at it (without it, at its own spot on the ground), up to 72 degrees from straight down',
     }, unused: {} },
   { name: 'callout', title: 'Callout', blurb: 'leader line, fades off-axis', required: false, uses: {
-      text: 'the tag',
+      caption: 'the tag',
+      description: 'smaller lines under the caption on the tag',
       role: 'underline, leader and halo colour',
       orientation: 'the tag turns',
       readAtM: 'size and float height',
       pointsTo: 'the leader line ends in a soft 0.6 m halo that hides placement error (without it, straight down)',
     }, unused: {}, extra: 'Quiets itself when it is not near the centre of the view.' },
   { name: 'edge-hint', title: 'Edge hint', blurb: 'screen tag, at the edge when off-screen', required: false, uses: {
-      text: 'a screen-space tag; shortened at the screen edge',
+      caption: 'always: on the tag over the spot, and with the arrow on the chip at the screen edge',
+      description: 'only once the block is fully in view (its bounds inside the screen, with hysteresis), together with the distance',
       role: 'the colour and the bar',
     }, unused: { orientation: 'screen space, always flat to the screen', readAtM: 'screen space, always the same size', pointsTo: 'the hint leads to the block itself' } },
 ];
@@ -452,18 +490,20 @@ const viewInfo = name => VIEWS.find(v => v.name === name);
 /* The station's blocks: three records of the same model, shown by every view. */
 const records = [
   { id: 'guild-way', view: 'sign', pose: { x: 2.6, y: 0, z: 10.5, yawDeg: 0 },
-    model: { text: 'This way to the guild house', role: 'instruction', orientation: 'upright', readAtM: 6, pointsTo: { x: 2, y: 1.2, z: -19.6 } } },
+    model: { caption: 'This way to the guild house', description: 'Across the square to the grey front. The door is open from ten to six.', role: 'instruction', orientation: 'upright', readAtM: 6, pointsTo: { x: 2, y: 1.2, z: -19.6 } } },
   { id: 'market-hall', view: 'sign', pose: { x: -6.5, y: 0, z: -1.5, yawDeg: 0 },
-    model: { text: 'Market hall, 1890', role: 'label', orientation: 'face', readAtM: 12, pointsTo: null } },
+    model: { caption: 'Market hall, 1890', description: 'Built as a covered grain market; the upper floor came later.', role: 'label', orientation: 'face', readAtM: 12, pointsTo: null } },
   { id: 'mind-step', view: 'sign', pose: { x: -12.6, y: 0, z: -11.2, yawDeg: 22 },
-    model: { text: 'Mind the step', role: 'warning', orientation: 'world', readAtM: 3, pointsTo: { x: -14.15, y: 0.18, z: -14 } } },
+    model: { caption: 'Mind the step', description: null, role: 'warning', orientation: 'world', readAtM: 3, pointsTo: { x: -14.15, y: 0.18, z: -14 } } },
 ];
 
 /* Defensive normalisation at the model boundary: everything the view code sees passes through here. */
+const clipText = (s, max) => Array.from(typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : '').slice(0, max).join('');
 function sanitizeModel(m) {
   const out = {};
-  let text = typeof m?.text === 'string' ? m.text.replace(/\s+/g, ' ').trim() : '';
-  out.text = Array.from(text).slice(0, TEXT_MAX).join('') || '...';
+  // a round-1 record has only `text`: it becomes the caption
+  out.caption = clipText(typeof m?.caption === 'string' ? m.caption : m?.text, CAPTION_MAX) || '...';
+  out.description = clipText(m?.description, DESC_MAX) || null;
   out.role = Object.hasOwn(ROLES, m?.role) ? m.role : 'label';
   out.orientation = ORIENTS.includes(m?.orientation) ? m.orientation : 'upright';
   const r = Number(m?.readAtM);
@@ -589,9 +629,11 @@ function drawRoleIcon(ctx, role, cx, cy, r) {
     ctx.fillRect(cx - r * 0.11, top + h * 0.32, r * 0.22, h * 0.36);
     ctx.beginPath(); ctx.arc(cx, top + h * 0.83, r * 0.13, 0, Math.PI * 2); ctx.fill();
   } else if (role === 'instruction') {
+    // non-directional on purpose: a baked arrow cannot know where the target is; the turning glyph does that
     ctx.fillStyle = a; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#13171c'; ctx.lineWidth = r * 0.26; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.beginPath(); ctx.moveTo(cx - r * 0.45, cy); ctx.lineTo(cx + r * 0.42, cy); ctx.moveTo(cx + r * 0.05, cy - r * 0.4); ctx.lineTo(cx + r * 0.45, cy); ctx.lineTo(cx + r * 0.05, cy + r * 0.4); ctx.stroke();
+    ctx.strokeStyle = '#13171c'; ctx.lineWidth = r * 0.2;
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.52, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#13171c'; ctx.beginPath(); ctx.arc(cx, cy, r * 0.17, 0, Math.PI * 2); ctx.fill();
   } else {
     ctx.strokeStyle = a; ctx.lineWidth = r * 0.2; ctx.beginPath();
     ctx.moveTo(cx, cy - r * 0.85); ctx.lineTo(cx + r * 0.85, cy); ctx.lineTo(cx, cy + r * 0.85); ctx.lineTo(cx - r * 0.85, cy); ctx.closePath(); ctx.stroke();
@@ -609,18 +651,49 @@ const PLATE = {
 const PLATE_FILL = 'rgba(17,21,27,0.95)';
 const BUBBLE_FILL = '#14181e';
 
+/* Caption and description laid out once per text: the caption in the plate's weight, the description smaller
+   and quieter under it (wrapped to the caption's width, at least 8 em, at most 6 lines). */
+function layoutText(ctx, model, st) {
+  const font = `${st.weight} ${P}px ${FONT}`, dfont = `450 ${Math.round(DESC_EM * P)}px ${FONT}`;
+  ctx.font = font;
+  const lines = wrapText(ctx, model.caption, st.maxEm * P);
+  const capW = Math.max(1, ...lines.map(l => ctx.measureText(l).width));
+  let dlines = [], descW = 0;
+  if (model.description) {
+    ctx.font = dfont;
+    dlines = wrapText(ctx, model.description, Math.min((st.maxEm + 2) * P, Math.max(capW, 8 * P)));
+    if (dlines.length > 6) { dlines = dlines.slice(0, 6); dlines[5] = dlines[5].replace(/\s*\S*$/, '') + ' ...'; }
+    descW = Math.max(...dlines.map(l => ctx.measureText(l).width));
+    ctx.font = font;
+  }
+  const LH = 1.17 * P, DLH = 1.3 * DESC_EM * P, gap = 0.36 * P;
+  const capH = LH * (lines.length - 1) + 1.02 * P;
+  const descH = dlines.length ? gap + DLH * dlines.length : 0;
+  return { font, dfont, lines, dlines, textW: Math.max(capW, descW), LH, DLH, gap, capH, descH };
+}
+function drawText(ctx, lay, st, xLeft, cx, contentTop) {
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = lay.font; ctx.fillStyle = '#f7f4ec';
+  lay.lines.forEach((l, i) => {
+    const y = contentTop + 0.8 * P + i * lay.LH;
+    if (st.align === 'center') { ctx.textAlign = 'center'; ctx.fillText(l, cx, y); } else { ctx.textAlign = 'left'; ctx.fillText(l, xLeft, y); }
+  });
+  ctx.font = lay.dfont; ctx.fillStyle = '#c3c8cf';
+  lay.dlines.forEach((l, i) => {
+    const y = contentTop + lay.capH + lay.gap + 0.8 * DESC_EM * P + i * lay.DLH;
+    if (st.align === 'center') { ctx.textAlign = 'center'; ctx.fillText(l, cx, y); } else { ctx.textAlign = 'left'; ctx.fillText(l, xLeft, y); }
+  });
+}
+
 function plateCanvas(model, styleName, opt = {}) {
   const st = PLATE[styleName];
   const accent = ROLES[model.role].accent;
-  const font = `${st.weight} ${P}px ${FONT}`;
   const c = document.createElement('canvas'); let ctx = c.getContext('2d');
-  ctx.font = font;
-  const lines = wrapText(ctx, model.text, st.maxEm * P);
-  const textW = Math.max(1, ...lines.map(l => ctx.measureText(l).width));
-  const M = Math.round(0.36 * P), LH = 1.17 * P, band = st.band ? 0.17 * P : 0;
+  const lay = layoutText(ctx, model, st), font = lay.font, lines = lay.lines, textW = lay.textW;
+  const M = Math.round(0.36 * P), LH = lay.LH, band = st.band ? 0.17 * P : 0;
   const iconW = st.icon ? 1.22 * P : 0;
   const bodyW = Math.ceil(st.padX * P * 2 + iconW + textW);
-  const bodyH = Math.ceil(st.padY * P * 2 + LH * (lines.length - 1) + 1.02 * P + band);
+  const bodyH = Math.ceil(st.padY * P * 2 + lay.capH + lay.descH + band);
   const ptr = st.pointer ? Math.round(0.42 * P) : 0;
   c.width = bodyW + 2 * M; c.height = bodyH + 2 * M + ptr;
   ctx = c.getContext('2d'); ctx.font = font;
@@ -644,13 +717,52 @@ function plateCanvas(model, styleName, opt = {}) {
   const contentTop = y0 + band + st.padY * P;
   const iconCx = x0 + st.padX * P + 0.47 * P, iconCy = contentTop + 0.5 * P + (LH * (lines.length - 1)) / 2;
   if (st.icon && !opt.emptyIcon) drawRoleIcon(ctx, model.role, iconCx, iconCy, 0.42 * P);
-  ctx.fillStyle = '#f7f4ec'; ctx.textBaseline = 'alphabetic';
-  lines.forEach((l, i) => {
-    const y = contentTop + 0.8 * P + i * LH;
-    if (st.align === 'center') { ctx.textAlign = 'center'; ctx.fillText(l, cx, y); }
-    else { ctx.textAlign = 'left'; ctx.fillText(l, x0 + st.padX * P + iconW, y); }
-  });
+  drawText(ctx, lay, st, x0 + st.padX * P + iconW, cx, contentTop);
   return { canvas: c, M, bodyW, bodyH, ptr, icon: { x: iconCx, y: iconCy } };
+}
+
+/* The speech bubble and its tail as ONE shape in one canvas, outlined once with a constant stroke: both parts are
+   stroked at twice the rim width and then filled, so the fill covers the inner half of every stroke and the join
+   between bubble and tail carries no line. Redrawn into the same canvas whenever the tail turns. */
+function bubbleCanvas(model, em) {
+  const st = PLATE.bubble, accent = ROLES[model.role].accent;
+  const c = document.createElement('canvas'); const ctx0 = c.getContext('2d');
+  const lay = layoutText(ctx0, model, st);
+  const bodyW = Math.ceil(st.padX * P * 2 + lay.textW), bodyH = Math.ceil(st.padY * P * 2 + lay.capH + lay.descH);
+  const radius = Math.min(st.radius * P, bodyH / 2), rimPx = 0.075 * P;
+  const w0 = Math.min(bodyW * 0.16, 0.85 * P);                    // half the tail's base
+  const slideMax = Math.max(0, bodyW / 2 - radius - 1.3 * w0);    // how far the base may slide toward the target
+  const Lw = Math.max(0.28, 1.25 * em + 0.12 * bodyH * em / P);    // tail length in metres (as round 1)
+  const Lpx = Lw * P / em;
+  const reach = Math.min(bodyW * 0.3, slideMax) + Lpx * Math.sin(TAIL_MAX) + w0 * 0.4;
+  const MX = Math.ceil(Math.max(0.36 * P, reach - bodyW / 2 + rimPx + 0.4 * P)), MT = Math.ceil(0.36 * P + rimPx);
+  const MB = Math.ceil(Lpx + rimPx + 0.5 * P);
+  c.width = bodyW + 2 * MX; c.height = MT + bodyH + MB;
+  const x0 = MX, y0 = MT, cx = x0 + bodyW / 2;
+  const body = new Path2D(); body.roundRect(x0, y0, bodyW, bodyH, radius);
+  const draw = ang => {
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, c.width, c.height);
+    const bx = cx + Math.max(-slideMax, Math.min(slideMax, Math.sin(ang) * bodyW * 0.3));
+    const by = y0 + bodyH - 0.3 * P;                               // the base starts inside the bubble
+    const tipX = bx + Math.sin(ang) * Lpx, tipY = y0 + bodyH + Math.cos(ang) * Lpx;
+    // symmetric control points below the base: the tail leaves downward, then bends toward the tip, and a strong bend
+    // dips before it sweeps out instead of lying flat; the base widens a little with the bend
+    const ww = w0 * (1 + 0.3 * Math.abs(Math.sin(ang)));
+    const kx = (tipX - bx) * 0.25, ky = by + Math.max((tipY - by) * 0.6, Lpx * 0.4);
+    const tail = new Path2D();
+    tail.moveTo(bx - ww, by); tail.quadraticCurveTo(bx - ww * 0.35 + kx, ky, tipX, tipY);
+    tail.quadraticCurveTo(bx + ww * 0.35 + kx, ky, bx + ww, by); tail.closePath();
+    ctx.lineJoin = 'round'; ctx.lineWidth = 2 * rimPx; ctx.strokeStyle = accent; ctx.fillStyle = accent;
+    ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.36)'; ctx.shadowBlur = 0.3 * P; ctx.shadowOffsetY = 0.07 * P;
+    ctx.stroke(body); ctx.stroke(tail); ctx.restore();
+    ctx.fillStyle = BUBBLE_FILL; ctx.fill(body); ctx.fill(tail);
+    ctx.save(); ctx.clip(body);
+    const g = ctx.createLinearGradient(0, y0, 0, y0 + bodyH); g.addColorStop(0, 'rgba(255,255,255,0.075)'); g.addColorStop(0.55, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(x0, y0, bodyW, bodyH); ctx.restore();
+    drawText(ctx, lay, st, x0 + st.padX * P, cx, y0 + st.padY * P);
+  };
+  return { canvas: c, draw, bodyW, bodyH, ax: cx, ay: y0 + bodyH / 2 };
 }
 
 function texFrom(c) {
@@ -677,7 +789,7 @@ function groundCanvas(model, stretch) {
   const accent = ROLES[model.role].accent;
   const font = `700 ${P}px ${FONT}`;
   const c = document.createElement('canvas'); let ctx = c.getContext('2d'); ctx.font = font;
-  const lines = wrapText(ctx, model.text, 7.2 * P);
+  const lines = wrapText(ctx, model.caption, 7.2 * P);
   const textW = Math.max(1, ...lines.map(l => ctx.measureText(l).width));
   const M = Math.round(0.5 * P), padX = 0.62 * P, padY = 0.42 * P * Math.min(stretch, 2.2), LH = 1.08 * P * stretch;
   const bodyW = Math.ceil(textW + 2 * padX), bodyH = Math.ceil(LH * lines.length + 2 * padY - 0.12 * P * stretch);
@@ -707,6 +819,24 @@ function getHaloTex() {
   grd.addColorStop(0.9, 'rgba(255,255,255,0.18)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
   g.fillStyle = grd; g.fillRect(0, 0, 256, 256);
   haloTex = new THREE.CanvasTexture(c); haloTex.colorSpace = THREE.SRGBColorSpace; return haloTex;
+}
+/* The turning arrow: a round role-coloured glyph on a plate that points toward pointsTo as seen from where the visitor
+   stands (up = past the plate, left and right = turn, down = behind you). Shared by the pin and the sign. */
+function addTurningGlyph(v, M, sides, iconLocal, size) {
+  const glyphs = [];
+  for (const side of sides) {
+    const gm = new THREE.Mesh(new THREE.PlaneGeometry(size, size), v.mat(basicMat({ map: glyphTex(M.role) })));
+    gm.position.set(iconLocal.x, iconLocal.y, 0.003); gm.renderOrder = 6; side.add(gm); glyphs.push({ gm, side });
+  }
+  const tgt = v3();
+  return dt => {
+    if (!M.pointsTo) return;
+    for (const g of glyphs) {
+      tgt.set(M.pointsTo.x, M.pointsTo.y, M.pointsTo.z); g.side.updateWorldMatrix(true, false); g.side.worldToLocal(tgt);
+      const ang = Math.atan2(tgt.x - g.gm.position.x, -tgt.z);
+      g.gm.userData.a = dampAngle(g.gm.userData.a ?? -ang, -ang, 8, dt); g.gm.rotation.z = g.gm.userData.a;
+    }
+  };
 }
 let glyphTexCache = {};
 function glyphTex(role) {
@@ -781,10 +911,11 @@ function makeLine(color, width, base, worldUnits = false) {
 
 /* ---------- 1. pin ---------- */
 function buildPin(b) {
-  const v = new ViewInst(b), M = b.rec.model, em = emOf(M), lift = liftOf(M), accent = ROLES[M.role].accent;
-  const pm = plateMesh(plateCanvas(M, 'pin'), em, 'bottom');
+  const v = new ViewInst(b), M = b.rec.model, em = emOf(M), lift = liftOf(M), accent = ROLES[M.role].accent, hasPt = !!M.pointsTo;
+  const pm = plateMesh(plateCanvas(M, 'pin', { emptyIcon: hasPt }), em, 'bottom');
   v.keep(pm.tex); v.mat(pm.mesh.material); pm.mesh.renderOrder = 5;
   const node = new THREE.Group(); node.position.y = lift; node.add(pm.mesh); v.group.add(node);
+  const turnGlyph = hasPt ? addTurningGlyph(v, M, [pm.mesh], pm.iconLocal, 0.86 * em) : null;
   const r = Math.max(0.011, em * 0.07);
   const stem = new THREE.Mesh(new THREE.CylinderGeometry(r, r, lift, 10), v.mat(basicMat({ color: '#20262e', opacity: 0.92 })));
   stem.position.y = lift / 2; stem.renderOrder = 4; v.group.add(stem);
@@ -798,6 +929,7 @@ function buildPin(b) {
   pulse.rotation.x = -Math.PI / 2; pulse.position.y = 0.021; pulse.renderOrder = 2; v.group.add(pulse);
   v.update = (dt, camera, t) => {
     orient(node, b, camera, dt);
+    turnGlyph?.(dt);
     const ph = (t % 2.8) / 2.8; pulse.scale.setScalar(0.7 + ph * 1.5); pulseMat.userData.base = 0.55 * (1 - ph);
   };
   return v;
@@ -828,25 +960,10 @@ function buildSign(b) {
     post.position.set(x, postH / 2, 0); yawNode.add(post);
     const foot = new THREE.Mesh(new THREE.CylinderGeometry(postR * 2.2, postR * 2.4, 0.06, 16), postMat); foot.position.set(x, 0.03, 0); yawNode.add(foot);
   }
-  const glyphs = [];
-  if (hasPt) {
-    const gsz = 0.86 * em;
-    for (const side of [front.mesh, back]) {
-      const gm = new THREE.Mesh(new THREE.PlaneGeometry(gsz, gsz), v.mat(basicMat({ map: glyphTex(M.role) })));
-      gm.position.set(front.iconLocal.x, front.iconLocal.y, 0.003); gm.renderOrder = 6; side.add(gm); glyphs.push({ gm, side });
-    }
-  }
-  const tgt = v3();
+  const turnGlyph = hasPt ? addTurningGlyph(v, M, [front.mesh, back], front.iconLocal, 0.86 * em) : null;
   v.update = (dt, camera) => {
     if (M.orientation === 'world') yawNode.quaternion.identity(); else orient(yawNode, b, camera, dt, true);
-    if (hasPt) {
-      for (const g of glyphs) {
-        tgt.set(M.pointsTo.x, M.pointsTo.y, M.pointsTo.z); g.side.updateWorldMatrix(true, false); g.side.worldToLocal(tgt);
-        const lateral = tgt.x - g.gm.position.x, ahead = -tgt.z;
-        const ang = Math.atan2(lateral, ahead);
-        g.gm.userData.a = dampAngle(g.gm.userData.a ?? -ang, -ang, 8, dt); g.gm.rotation.z = g.gm.userData.a;
-      }
-    }
+    turnGlyph?.(dt);
   };
   return v;
 }
@@ -906,39 +1023,30 @@ function buildGround(b) {
 
 /* ---------- 4. speech bubble ---------- */
 function buildBubble(b) {
-  const v = new ViewInst(b), M = b.rec.model, em = emOf(M), accent = ROLES[M.role].accent;
-  const pm = plateMesh(plateCanvas(M, 'bubble'), em, 'center');
-  v.keep(pm.tex); v.mat(pm.mesh.material); pm.mesh.renderOrder = 5;
+  const v = new ViewInst(b), M = b.rec.model, em = emOf(M);
+  const bc = bubbleCanvas(M, em), s = em / P, c = bc.canvas;
+  bc.draw(0);
+  const geo = new THREE.PlaneGeometry(c.width * s, c.height * s);
+  geo.translate((c.width / 2 - bc.ax) * s, (bc.ay - c.height / 2) * s, 0);   // the bubble's body centre at the origin
+  const tex = v.keep(texFrom(c));
+  const mesh = new THREE.Mesh(geo, v.mat(basicMat({ map: tex }))); mesh.renderOrder = 5;
+  const hBody = bc.bodyH * s;
   const lift = liftOf(M) + 0.25;
-  const node = new THREE.Group(); node.position.y = lift + pm.hBody / 2; node.add(pm.mesh); v.group.add(node);
-  const mkTail = (color, order, z) => {
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(7 * 3), 3));
-    g.setIndex([0, 1, 6, 1, 2, 6, 2, 5, 6, 2, 3, 5, 3, 4, 5]);
-    const m = new THREE.Mesh(g, v.mat(basicMat({ color, opacity: 1, side: THREE.DoubleSide }))); m.renderOrder = order; m.position.z = z; m.frustumCulled = false; node.add(m); return m;
-  };
-  const rimTail = mkTail(accent, 4, -0.002);
-  const fillTail = mkTail(BUBBLE_FILL, 6, 0.002);
+  const node = new THREE.Group(); node.position.y = lift + hBody / 2; node.add(mesh); v.group.add(node);
   const tgt = v3();
-  const L = Math.max(0.28, 1.25 * em + 0.12 * pm.hBody), w0 = Math.min(pm.wBody * 0.16, 0.85 * em), rim = 0.075 * em;
-  const setTail = (mesh, grow, ang) => {
-    const a = mesh.geometry.attributes.position; const by = -pm.hBody / 2 + 0.28 * em;
-    const dx = Math.sin(ang), dy = -Math.cos(ang);
-    const tipX = dx * (L + grow * 1.6), tipY = by + dy * (L + grow * 1.6);
-    const ww = w0 + grow;
-    // a gently curved tail: base corners, two shoulders, tip
-    const pts = [[-ww, by], [-ww * 0.55 + tipX * 0.35, by + (tipY - by) * 0.45], [tipX, tipY], [tipX, tipY], [ww * 0.35 + tipX * 0.55, by + (tipY - by) * 0.55], [ww, by], [0, by + 0.2 * em]];
-    pts.forEach((q, i) => a.setXYZ(i, q[0], q[1], 0)); a.needsUpdate = true; mesh.geometry.computeBoundingSphere();
-  };
+  let drawnAng = 0;
   v.update = (dt, camera, t) => {
-    node.position.y = lift + pm.hBody / 2 + Math.sin(t * 1.4 + b.index) * 0.025;
+    node.position.y = lift + hBody / 2 + Math.sin(t * 1.4 + b.index) * 0.025;
     orient(node, b, camera, dt);
     if (M.pointsTo) tgt.set(M.pointsTo.x, M.pointsTo.y, M.pointsTo.z); else { b.root.getWorldPosition(tgt); tgt.y = 0; }
     node.updateWorldMatrix(true, false); node.worldToLocal(tgt);
-    let ang = Math.atan2(tgt.x, -(tgt.y + pm.hBody / 2));
-    ang = Math.max(-0.95, Math.min(0.95, ang));
+    let ang = Math.atan2(tgt.x, -(tgt.y + hBody / 2));
+    ang = Math.max(-TAIL_MAX, Math.min(TAIL_MAX, ang));
     node.userData.tail = dampAngle(node.userData.tail ?? ang, ang, 6, dt);
-    setTail(fillTail, 0, node.userData.tail); setTail(rimTail, rim, node.userData.tail);
+    // redraw only when the tail has turned visibly: each redraw re-uploads the bubble's texture
+    if (Math.abs(node.userData.tail - drawnAng) > 0.6 * Math.PI / 180) { drawnAng = node.userData.tail; bc.draw(drawnAng); tex.needsUpdate = true; }
   };
+  v.tailAngle = () => drawnAng;
   return v;
 }
 
@@ -987,14 +1095,29 @@ const ARROW_SVG = '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M1.5
 function buildEdge(b) {
   const v = new ViewInst(b), M = b.rec.model, accent = ROLES[M.role].accent;
   const el = document.createElement('div'); el.className = 'eh';
-  el.innerHTML = `<span class="bar"></span><span class="ar">${ARROW_SVG}</span><span class="tx"></span><span class="dist"></span>`;
+  el.innerHTML = `<span class="bar"></span><span class="ar">${ARROW_SVG}</span><span class="body"><span class="tx"></span><span class="desc"></span></span><span class="dist"></span>`;
   el.querySelector('.bar').style.background = accent; el.querySelector('.ar').style.background = accent;
-  el.querySelector('.tx').textContent = M.text;
+  el.querySelector('.tx').textContent = M.caption;
+  el.querySelector('.desc').textContent = M.description || '';
   overlay.appendChild(el); v.dom.push(el);
   const ring = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), v.mat(basicMat({ color: accent, map: getHaloTex(), opacity: 0.9 })));
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03; ring.renderOrder = 2; v.group.add(ring);
-  const p = v3(), pc = v3();
-  v.sx = null; v.sy = null;
+  const p = v3(), pc = v3(), q = v3();
+  v.sx = null; v.sy = null; v.full = false;
+  /* "Fully in view": every corner of the block's bounds (a 0.9 m footprint from the ground to the tag's 1.9 m)
+     projects inside the usable screen, `margin` px in from its edges. */
+  const CORNERS = [];
+  for (const y of [0, 1.9]) for (const x of [-0.45, 0.45]) for (const z of [-0.45, 0.45]) CORNERS.push([x, y, z]);
+  const boundsInside = (camera, margin, W, H, insetT, insetB, insetX) => {
+    for (const [x, y, z] of CORNERS) {
+      q.set(x, y, z); b.root.localToWorld(q);
+      if (q.clone().applyMatrix4(camera.matrixWorldInverse).z > -0.1) return false;
+      q.project(camera);
+      const sx = (q.x + 1) / 2 * W, sy = (1 - q.y) / 2 * H;
+      if (sx < insetX + margin || sx > W - insetX - margin || sy < insetT + margin || sy > H - insetB - margin) return false;
+    }
+    return true;
+  };
   v.update = (dt, camera) => {
     const W = stage.clientWidth, H = stage.clientHeight;
     b.root.getWorldPosition(p); p.y = 1.9;
@@ -1017,8 +1140,10 @@ function buildEdge(b) {
       const tt = Math.min(Math.abs(dx) > 1e-6 ? hx / Math.abs(dx) : 1e9, Math.abs(dy) > 1e-6 ? hy / Math.abs(dy) : 1e9);
       x = cx + dx * tt - ew / 2; y = cy - dy * tt - eh / 2; ang = Math.atan2(-dy, dx);
     }
+    // hysteresis: in once 24 px inside, out only when a corner is more than 8 px outside
+    v.full = !edge && boundsInside(camera, v.full ? -8 : 24, W, H, insetT, insetB, insetX);
     v.tx = x; v.ty = y; v.w = ew; v.h = eh; v.el = el;
-    el.classList.toggle('edge', edge); el.classList.toggle('inview', !edge);
+    el.classList.toggle('edge', edge); el.classList.toggle('inview', !edge); el.classList.toggle('full', v.full);
     el.querySelector('.ar svg').style.transform = `rotate(${ang}rad)`;
     const dist = Math.hypot(p.x - camera.position.x, p.z - camera.position.z);
     el.querySelector('.dist').textContent = `${Math.round(dist)} m`;
@@ -1250,7 +1375,8 @@ document.getElementById('cr-b-place').addEventListener('click', () => {
 });
 document.getElementById('cr-prev').addEventListener('click', () => selectBlock((selected + blocks.length - 1) % blocks.length));
 document.getElementById('cr-next').addEventListener('click', () => selectBlock((selected + 1) % blocks.length));
-document.getElementById('cr-text').addEventListener('input', e => setText(e.target.value));
+document.getElementById('cr-text').addEventListener('input', e => setField('caption', e.target.value));
+document.getElementById('cr-desc').addEventListener('input', e => setField('description', e.target.value));
 document.getElementById('cr-aim').addEventListener('click', () => {
   const h = creator.hit; if (!h) { toast('Aim the ring at something first'); return; }
   blocks[selected].rec.model.pointsTo = { x: +h.point.x.toFixed(2), y: +h.point.y.toFixed(2), z: +h.point.z.toFixed(2) };
@@ -1258,15 +1384,19 @@ document.getElementById('cr-aim').addEventListener('click', () => {
 });
 document.getElementById('cr-clear').addEventListener('click', () => { blocks[selected].rec.model.pointsTo = null; blocks[selected].rebuild(); toast('Points to nothing'); refreshAll(); });
 
-function setText(val) {
+/* Caption or description typed by the creator; mutated in place, because the open sheets hold this model object. */
+function setField(key, val) {
+  if (key !== 'caption' && key !== 'description') throw new Error(`unknown text field "${key}"`);
   const b = blocks[selected];
-  b.rec.model.text = sanitizeModel({ ...b.rec.model, text: val }).text;
-  clearTimeout(setText.t); setText.t = setTimeout(() => { b.rebuild(); }, 60);
+  const s = sanitizeModel({ ...b.rec.model, [key]: val });
+  b.rec.model.caption = s.caption; b.rec.model.description = s.description;
+  clearTimeout(setField.t); setField.t = setTimeout(() => { b.rebuild(); }, 60);
   renderCountsOnly();
 }
 function renderCountsOnly() {
-  const m = blocks[selected].rec.model; const n = Array.from(m.text).length;
-  for (const id of ['cr-count', 'ed-count']) { const el = document.getElementById(id); if (el) { el.textContent = `${n} / ${TEXT_MAX}`; el.classList.toggle('over', n >= TEXT_MAX); } }
+  const m = blocks[selected].rec.model; const n = Array.from(m.caption).length, nd = m.description ? Array.from(m.description).length : 0;
+  for (const id of ['cr-count', 'ed-count']) { const el = document.getElementById(id); if (el) { el.textContent = `${n} / ${CAPTION_MAX}`; el.classList.toggle('over', n >= CAPTION_MAX); } }
+  for (const id of ['cr-dcount', 'ed-dcount']) { const el = document.getElementById(id); if (el) { el.textContent = nd ? `${nd} / ${DESC_MAX}` : `optional, up to ${DESC_MAX}`; el.classList.toggle('over', nd >= DESC_MAX); } }
   renderList();
 }
 function chipButtons(container, items, current, onPick, dot) {
@@ -1279,10 +1409,11 @@ function chipButtons(container, items, current, onPick, dot) {
 }
 function renderCreatorChrome() {
   const b = blocks[selected], m = b.rec.model;
-  document.getElementById('cr-title').textContent = m.text;
+  document.getElementById('cr-title').textContent = m.caption;
   document.getElementById('cr-sub').textContent = `${ROLES[m.role].name} - ${viewInfo(b.rec.view).title} - reads at ${m.readAtM} m`;
   document.getElementById('cr-size-l').textContent = `${m.readAtM} m`;
-  const ta = document.getElementById('cr-text'); if (document.activeElement !== ta) ta.value = m.text;
+  const ta = document.getElementById('cr-text'); if (document.activeElement !== ta) ta.value = m.caption;
+  const td = document.getElementById('cr-desc'); if (document.activeElement !== td) td.value = m.description || '';
   const grid = document.getElementById('cr-viewgrid'); grid.innerHTML = '';
   for (const vw of VIEWS) {
     const bn = document.createElement('button'); bn.setAttribute('aria-pressed', String(vw.name === b.rec.view));
@@ -1368,13 +1499,13 @@ function updateEditor() {
 const ICON_SVG = role => {
   const a = ROLES[role].accent;
   if (role === 'warning') return `<svg class="ic" viewBox="0 0 22 22"><path d="M11 3 L20 18.5 H2 Z" fill="${a}" stroke="${a}" stroke-width="1.6" stroke-linejoin="round"/><rect x="10.1" y="8" width="1.8" height="5.6" fill="#16191e"/><circle cx="11" cy="15.8" r="1.05" fill="#16191e"/></svg>`;
-  if (role === 'instruction') return `<svg class="ic" viewBox="0 0 22 22"><circle cx="11" cy="11" r="9" fill="${a}"/><path d="M7 11h7.5M11.2 7.4L14.8 11l-3.6 3.6" fill="none" stroke="#13171c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  if (role === 'instruction') return `<svg class="ic" viewBox="0 0 22 22"><circle cx="11" cy="11" r="9" fill="${a}"/><circle cx="11" cy="11" r="4.7" fill="none" stroke="#13171c" stroke-width="1.8"/><circle cx="11" cy="11" r="1.6" fill="#13171c"/></svg>`;
   return `<svg class="ic" viewBox="0 0 22 22"><path d="M11 3.5L18.5 11 11 18.5 3.5 11Z" fill="none" stroke="${a}" stroke-width="1.8"/><circle cx="11" cy="11" r="2.2" fill="${a}"/></svg>`;
 };
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function renderList() {
   const el = document.getElementById('ed-list'); if (state.mode !== 'editor') return;
-  el.innerHTML = `<h4>Market square - blocks</h4>` + blocks.map((b, i) => `<button class="blk" data-i="${i}" aria-selected="${i === selected}">${ICON_SVG(b.rec.model.role)}<span><span class="t">${esc(b.rec.model.text)}</span><br><span class="s">Short text - ${esc(viewInfo(b.rec.view).title)}</span></span></button>`).join('')
+  el.innerHTML = `<h4>Market square - blocks</h4>` + blocks.map((b, i) => `<button class="blk" data-i="${i}" aria-selected="${i === selected}">${ICON_SVG(b.rec.model.role)}<span><span class="t">${esc(b.rec.model.caption)}</span><br><span class="s">Short text - ${esc(viewInfo(b.rec.view).title)}${b.rec.model.description ? ' - with description' : ''}</span></span></button>`).join('')
     + `<h4 style="margin-top:22px">Other blocks (other families)</h4><div class="blk other"><svg class="ic" viewBox="0 0 22 22"><rect x="3" y="5" width="16" height="12" rx="2" fill="none" stroke="#666" stroke-width="1.6"/></svg><span><span class="t" style="color:#999">Picture, narration ...</span><br><span class="s">not part of this prototype</span></span></div>`;
   el.querySelectorAll('.blk[data-i]').forEach(bn => bn.addEventListener('click', () => selectBlock(+bn.dataset.i)));
 }
@@ -1382,8 +1513,9 @@ function renderInspector() {
   const el = document.getElementById('ed-inspector'); if (state.mode !== 'editor') return;
   const b = blocks[selected], m = b.rec.model, p = b.rec.pose;
   el.innerHTML = `
-    <div class="insp-sec"><h4>Block</h4><select class="blocksel" id="ed-sel">${blocks.map((bb, i) => `<option value="${i}" ${i === selected ? 'selected' : ''}>${esc(bb.rec.model.text)}</option>`).join('')}</select></div>
-    <div class="insp-sec"><label class="l">Text <span>short text</span></label><textarea id="ed-text" rows="2" maxlength="${TEXT_MAX}">${esc(m.text)}</textarea><div class="count" id="ed-count"></div></div>
+    <div class="insp-sec"><h4>Block</h4><select class="blocksel" id="ed-sel">${blocks.map((bb, i) => `<option value="${i}" ${i === selected ? 'selected' : ''}>${esc(bb.rec.model.caption)}</option>`).join('')}</select></div>
+    <div class="insp-sec"><label class="l">Caption <span>every view shows it</span></label><textarea id="ed-text" rows="1" maxlength="${CAPTION_MAX}">${esc(m.caption)}</textarea><div class="count" id="ed-count"></div>
+      <label class="l" style="margin-top:10px">Description <span>optional, under the caption</span></label><textarea id="ed-desc" rows="3" maxlength="${DESC_MAX}" style="font-weight:450;font-size:14px">${esc(m.description || '')}</textarea><div class="count" id="ed-dcount"></div></div>
     <div class="insp-sec"><label class="l">Role</label><div class="chips" id="ed-roles"></div></div>
     <div class="insp-sec"><label class="l">Orientation <span id="ed-ohelp">${ORIENT_HELP[m.orientation]}</span></label><div class="chips" id="ed-orients"></div>
       <div class="help">Upright and face turn toward each visitor; in the editor they turn toward you.</div></div>
@@ -1396,7 +1528,8 @@ function renderInspector() {
     <div class="insp-sec"><label class="l">Pose <span>relative to the station anchor</span></label>
       <div class="xyz"><label>x<input type="number" step="0.1" data-pose="x" value="${p.x}"></label><label>z<input type="number" step="0.1" data-pose="z" value="${p.z}"></label><label>turn<input type="number" step="5" data-pose="yawDeg" value="${p.yawDeg}"></label></div></div>`;
   document.getElementById('ed-sel').addEventListener('change', e => selectBlock(+e.target.value));
-  document.getElementById('ed-text').addEventListener('input', e => setText(e.target.value));
+  document.getElementById('ed-text').addEventListener('input', e => setField('caption', e.target.value));
+  document.getElementById('ed-desc').addEventListener('input', e => setField('description', e.target.value));
   chipButtons(document.getElementById('ed-roles'), Object.keys(ROLES).map(r => ({ value: r, label: ROLES[r].name })), m.role, r => { m.role = r; b.rebuild(); refreshAll(); }, r => ROLES[r].accent);
   chipButtons(document.getElementById('ed-orients'), ORIENTS.map(o => ({ value: o, label: o[0].toUpperCase() + o.slice(1) })), m.orientation, o => { m.orientation = o; b.rebuild(); refreshAll(); });
   const rng = document.getElementById('ed-read');
@@ -1557,7 +1690,12 @@ window.__stationBlock = {
     return { family: FAMILY, fields: FIELDS.map(f => ({ ...f })), views: VIEWS.map(v => ({ name: v.name, required: v.required, usesFields: Object.keys(v.uses) })) };
   },
   async exportModel() {
-    return { family: FAMILY, model: 'short-text', version: 1, station: { name: STATION.name, radiusM: STATION.r }, blocks: records.map(exportRecord) };
+    return { family: FAMILY, model: 'short-text', version: 2, station: { name: STATION.name, radiusM: STATION.r }, blocks: records.map(exportRecord) };
+  },
+  /* Round-2 probes for the checks: the bubble tail's drawn angle (degrees) and the edge-hint states per block. */
+  async probe() {
+    return blocks.map(b => ({ id: b.rec.id, view: b.rec.view, tailDeg: b.view.tailAngle ? +(b.view.tailAngle() * 180 / Math.PI).toFixed(1) : null,
+      edge: b.view.isEdgeHint ? (b.view.edge ? 'edge' : b.view.full ? 'full' : 'inview') : null }));
   },
 };
 
