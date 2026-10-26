@@ -99,9 +99,6 @@ chosen, choosable, mainLabel }` with
   station, the same distance, the same kind of "why not".
 - The named station is offered and waiting; a "next" row is offered; the
   segments are the rows' states.
-- Branch order lists only the stations the path reached: offered now, or
-  found, done or skipped (a station the path may never reach is not
-  promised).
 - The completion card says "A skipped station can still be brought
   back.": the rows can bring a skipped station back at any time.
 - In the no-guess condition no text names a station as next or nearest: the

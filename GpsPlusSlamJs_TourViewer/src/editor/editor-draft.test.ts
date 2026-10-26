@@ -35,6 +35,7 @@ import {
 import type { EditorLock } from "./save-target.js";
 import { tourOf } from "../test-support/v3-tour.js";
 import { hostedObjects } from "../authoring-draft.js";
+import { parseSettingsRecord } from "../tour-document-draft.js";
 
 /** One browser's draft directories: namespace -> files. `failIn` makes
  *  one namespace's writes refuse; `holdPuts` holds every write until
@@ -1579,6 +1580,31 @@ describe("createEditorDraft, the stations the page created", () => {
     ...pin("a"),
     geo: { lat: 48.5205, lon: 9.0, alt: 340, headingDeg: 0 },
     station: "s-new",
+  });
+
+  it("stores a frame with a story step in the file's shape: the stored record reads back with its step", async () => {
+    // Why: the settings writer is the page's own (`settingsRecordText`);
+    // a writer that stored the frame as the page holds it would store a
+    // record the reader drops without a word, and the station's story
+    // would be gone on the next open.
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    const story = {
+      ...frame("s-new"),
+      steps: [
+        {
+          id: "hello",
+          action: { kind: "text" as const, text: "Hello there." },
+          advance: { mode: "tap" as const },
+        },
+      ],
+    };
+    void draft.saveSettings({ needsNoGps: false, frames: [story] });
+    await draft.idle();
+    const stored = b.spaces.get(editorDraftKey(K1))?.get(SETTINGS);
+    expect(typeof stored).toBe("string");
+    expect(parseSettingsRecord(stored as string)?.frames).toEqual([story]);
   });
 
   it("a record holding only created stations is kept, and offered with the note that names them", async () => {

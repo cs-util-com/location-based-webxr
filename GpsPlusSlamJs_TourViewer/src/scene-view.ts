@@ -256,14 +256,14 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   }
 
   /** Show one step's action: its words at once, its media as they load. */
-  function showBlock(station: TourStation, block: TourStepAction): void {
-    switch (block.kind) {
+  function showAction(station: TourStation, action: TourStepAction): void {
+    switch (action.kind) {
       case "text":
-        dom.text.textContent = block.text;
+        dom.text.textContent = action.text;
         return;
       case "image":
-        dom.text.textContent = block.caption ?? "";
-        withAsset(block.asset, "picture", async (blob) => {
+        dom.text.textContent = action.caption ?? "";
+        withAsset(action.asset, "picture", async (blob) => {
           const token = renderToken;
           if ((await deps.checkPicture(blob)) !== null) {
             return "The picture is too large to show here - the words are below.";
@@ -271,40 +271,40 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
           if (token !== renderToken) return undefined;
           liveUrl = deps.objectUrls.create(blob);
           dom.image.src = liveUrl;
-          dom.image.alt = block.caption ?? "";
+          dom.image.alt = action.caption ?? "";
           dom.image.hidden = false;
           return undefined;
         });
         return;
       case "character":
-        dom.text.textContent = block.caption;
-        withAsset(block.image, "figure", (blob) =>
+        dom.text.textContent = action.caption;
+        withAsset(action.image, "figure", (blob) =>
           stageFigure("figure", (onWaiting) =>
             deps.stage.showCharacter(station.id, blob, onWaiting),
           ),
         );
-        if (block.voice !== undefined) playSound(block.voice);
+        if (action.voice !== undefined) playSound(action.voice);
         return;
       case "audio":
-        dom.text.textContent = block.transcript;
-        playSound(block.asset);
+        dom.text.textContent = action.transcript;
+        playSound(action.asset);
         return;
       case "video":
         // Video is later (plan §5 K4): its transcript stands in.
-        dom.text.textContent = block.transcript;
+        dom.text.textContent = action.transcript;
         return;
       case "model":
-        dom.text.textContent = block.caption ?? "";
-        withAsset(block.asset, "3D model", (blob) =>
+        dom.text.textContent = action.caption ?? "";
+        withAsset(action.asset, "3D model", (blob) =>
           stageFigure("3D model", (onWaiting) =>
             deps.stage.showModel(station.id, blob, onWaiting),
           ),
         );
         return;
       case "choice":
-        dom.text.textContent = block.prompt;
+        dom.text.textContent = action.prompt;
         dom.choices.replaceChildren(
-          ...block.options.map((option) =>
+          ...action.options.map((option) =>
             deps.createChoiceButton(option.label, () => {
               if (story !== null) render(story.player.choose(option.id));
             }),
@@ -324,11 +324,11 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       endStory();
       return;
     }
-    const block = step.action;
-    dom.speaker.hidden = block.kind !== "character";
-    dom.speaker.textContent = block.kind === "character" ? block.name : "";
-    dom.continueButton.hidden = block.kind === "choice";
-    showBlock(story.station, block);
+    const action = step.action;
+    dom.speaker.hidden = action.kind !== "character";
+    dom.speaker.textContent = action.kind === "character" ? action.name : "";
+    dom.continueButton.hidden = action.kind === "choice";
+    showAction(story.station, action);
     armTimer(step);
     deps.onChange?.();
   }

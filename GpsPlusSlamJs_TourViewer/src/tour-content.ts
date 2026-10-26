@@ -219,18 +219,18 @@ export function keepsItself(
   );
 }
 
-/** The assets `block` names: its media, a character's image and voice. */
-function blockAssetIds(block: TourStepAction): readonly string[] {
-  switch (block.kind) {
+/** The assets `action` names: its media, a character's image and voice. */
+function actionAssetIds(action: TourStepAction): readonly string[] {
+  switch (action.kind) {
     case "image":
     case "audio":
     case "video":
     case "model":
-      return [block.asset];
+      return [action.asset];
     case "character":
-      return block.voice === undefined
-        ? [block.image]
-        : [block.image, block.voice];
+      return action.voice === undefined
+        ? [action.image]
+        : [action.image, action.voice];
     case "text":
     case "choice":
     case "quiz":
@@ -257,7 +257,7 @@ export function objectAssetIds(object: TourContentFields): readonly string[] {
 export function stepAssetIds(
   station: Pick<TourStation, "steps">,
 ): readonly string[] {
-  return station.steps.flatMap((step) => blockAssetIds(step.action));
+  return station.steps.flatMap((step) => actionAssetIds(step.action));
 }
 
 /**

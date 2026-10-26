@@ -147,7 +147,7 @@ const stop = store.listenToDocument({
   text or the hand changes, not for the same codes, and never for a
   draft without `saveCodes`.
 - `tour-document-stations-draft.test.ts` - the stations through the
-  record and a restore: renamed, added, deleted (its route pruned),
+  record and a restore: renamed, added, deleted,
   reordered, an item copied; only the edited frames recorded, an order
   only when needed, a recorded frame restored at the document's pose, an
   emptied automatic station a save dropped not recorded as deleted; a copied station's own photo as its card

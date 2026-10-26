@@ -17,6 +17,7 @@ import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import { draftKeyForTour } from "./authoring-draft.js";
 import { wireCreatorDraft } from "./creator-draft.js";
 import { META_KEY, objectKey, photoKey } from "./draft-persistence.js";
+import { parseSettingsRecord, SETTINGS_KEY } from "./tour-document-draft.js";
 import { tourOf } from "./test-support/v3-tour.js";
 import {
   createTourViewerSession,
@@ -223,5 +224,42 @@ describe("the phone draft follows the saved file's key", () => {
       draft.follow(NEW),
     ]);
     expect([first, second]).toEqual([true, false]);
+  });
+});
+
+describe("the phone draft's settings record", () => {
+  // Why: the settings writer is the page's own (`settingsRecordText`); a
+  // writer that stored a frame as the page holds it would store a record
+  // the reader drops without a word, and the station's story would be gone
+  // on the next open.
+  it("stores a frame with a story step in the file's shape: the stored record reads back with its step", async () => {
+    const ns = namespaces();
+    const { draft } = await wired(ns);
+    const frame = {
+      id: "s-new",
+      geo: {
+        lat: 48.5205,
+        lon: 9.05,
+        alt: 340,
+        rotation: [0, 0, 0, 1] as const,
+      },
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      hint: "arrow" as const,
+      steps: [
+        {
+          id: "hello",
+          action: { kind: "text" as const, text: "Hello there." },
+          advance: { mode: "tap" as const },
+        },
+      ],
+    };
+    expect(
+      await draft.saveSettings({ needsNoGps: false, frames: [frame] }),
+    ).toBe(true);
+    await flush();
+    const stored = ns.files(OLD).get(SETTINGS_KEY);
+    expect(typeof stored).toBe("string");
+    expect(parseSettingsRecord(stored as string)?.frames).toEqual([frame]);
   });
 });
