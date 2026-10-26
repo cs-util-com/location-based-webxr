@@ -147,6 +147,17 @@ function wire(
   return { dom, panel, downloadPdf };
 }
 
+/** How long a test waits for the tour's codes to be matched to a spelling
+ *  of its link (`presentCodes`). A desktop link whose codes were printed
+ *  from the phone's is the costly case: three spellings of 50 codes each,
+ *  150 plans and hashes, before the fourth spelling matches. Measured
+ *  2026-10-26: 20-40 ms alone, up to 0.2 s beside another package's unit
+ *  tests, and past vi.waitFor's default 1 s in a loaded browser run, where
+ *  the search it left running then planned its spellings into the next
+ *  test's spies and failed that test too. The limit is for a hang; the two
+ *  tests that wait this long have a 20 s time out around it. */
+const MATCHED = { timeout: 10_000 };
+
 /** Resolves when the PDF button has come back to idle. */
 async function settled(dom: { pdfButton: { disabled: boolean } }) {
   await vi.waitFor(() => {
@@ -323,7 +334,7 @@ describe("the link the codes carry (r820 feedback R4, R5)", () => {
     panel.presentCodes();
     await vi.waitFor(() => {
       expect(dom.codeInput.value).toBe("2");
-    });
+    }, MATCHED);
     // ...with no warning: the codes match (M0c review, finding 6c).
     await vi.waitFor(() => {
       expect(dom.info.textContent).not.toMatch(/Note:/);
@@ -332,7 +343,7 @@ describe("the link the codes carry (r820 feedback R4, R5)", () => {
     dom.pdfButton.fire("click");
     await settled(dom);
     expect(new Set(spies.planned)).toEqual(new Set([PHONE]));
-  });
+  }, 20_000);
 
   // Follow-up F2 (M0c review, finding 3): a spelling outside the searched
   // list - Drive for desktop's `open?id=...&usp=drive_fs` - was a new code
@@ -382,10 +393,10 @@ describe("the link the codes carry (r820 feedback R4, R5)", () => {
     expect(dom.pdfButton.textContent).toMatch(/matching/i);
     await vi.waitFor(() => {
       expect(dom.pdfButton.disabled).toBe(false);
-    });
+    }, MATCHED);
     expect(dom.pdfButton.textContent).toBe("Download PDF to print");
     expect(dom.codeInput.value).toBe("2");
-  });
+  }, 20_000);
 
   // M0c review, finding 1: after a tour from a FILE (no link), the print
   // step asks for a link again; the previous tour's spelling must not ride
