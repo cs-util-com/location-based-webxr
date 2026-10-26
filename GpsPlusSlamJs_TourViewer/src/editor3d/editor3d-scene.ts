@@ -200,6 +200,9 @@ export interface Editor3dStats {
   /** Each code's drawn size over its printed one (laid flat, it grows
    *  with the camera's distance). */
   readonly codeScales: readonly number[];
+  /** Each code's drawn side on the canvas (CSS px): its square's corners
+   *  projected by the camera of the last frame. */
+  readonly codePx: readonly number[];
   readonly shown: readonly string[];
   readonly renders: number;
   readonly osm: Record<string, unknown>;
@@ -367,6 +370,9 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       viewportPx: size().h,
       fovDeg: EDITOR_CAMERA.fovDeg,
     });
+    // The view's height, read when it changes (never per frame: a read of
+    // the box's size can force a layout): codes are sized on screen by it.
+    let viewportPx = size().h;
 
     // The codes' printed face, this view's own: freed after the layer.
     const codeFace = createCodeFace();
@@ -407,6 +413,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
 
     const resize = new ResizeObserver(() => {
       const { w, h } = size();
+      viewportPx = h;
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
@@ -648,6 +655,8 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         stationSelected: ui.selected?.startsWith(STATION) ?? false,
         standing,
         camera: camera.position,
+        viewportPx,
+        fovDeg: EDITOR_CAMERA.fovDeg,
       });
       renderer.render(scene, camera);
       frames++;
@@ -777,6 +786,24 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
           tiltDeg: cam.tiltDeg(),
           standing,
           ...layer.stats(),
+          codePx: layer.codeCorners().map((corners) => {
+            const { w, h } = size();
+            const onScreen = corners.map((c) => {
+              const v = c.clone().project(camera);
+              return new THREE.Vector2(
+                ((v.x + 1) / 2) * w,
+                ((1 - v.y) / 2) * h,
+              );
+            });
+            // The mean of its four sides (CSS px).
+            return (
+              onScreen.reduce(
+                (sum, p, i) =>
+                  sum + p.distanceTo(onScreen[(i + 1) % onScreen.length]!),
+                0,
+              ) / onScreen.length
+            );
+          }),
           osm: { ...ground.osm.stats(), coverage: ground.osm.coverage() },
           target: [controls.target.x, controls.target.y, controls.target.z],
           camera: [camera.position.x, camera.position.y, camera.position.z],

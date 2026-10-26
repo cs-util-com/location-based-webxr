@@ -37,8 +37,8 @@ import { useWideFont } from "./wide-font.js";
  * (on a flat relief at the square's height), select it, drag it with the
  * mouse and check the saved file; drive every key; cancel a touch drag
  * with a second finger; and measure the gizmo on the screen at four
- * window sizes, in a wide face. A code laid flat in the top view grows
- * with the camera's distance, at the same four sizes.
+ * window sizes, in a wide face. A code laid flat in the top view is
+ * measured on screen at the same four sizes.
  */
 
 // One worker for the file, its tests in order: software-drawn 3D views
@@ -696,13 +696,14 @@ test("a station's position is locked until it is unlocked in the inspector: its 
 });
 
 /**
- * A tour of one station on the square and one 20 cm code on a wall 10 m
- * east of it, its face to the east. As a zip.
+ * A tour of one station on the square and one 20 cm code on a wall 2 m
+ * east of it, its face to the east (near enough to stay in a phone's view
+ * from 12 m up). As a zip.
  */
 async function oneCodeTour() {
   const lat = 48.13725;
   const lon = 11.57549;
-  const east = 10 / (111_320 * Math.cos((lat * Math.PI) / 180));
+  const east = 2 / (111_320 * Math.cos((lat * Math.PI) / 180));
   const manifest = {
     ...createEmptyTourManifest(),
     title: "One code",
@@ -745,14 +746,21 @@ async function oneCodeTour() {
   return { zip: Buffer.from(await writer.close()), id };
 }
 
-// Why: from high above, a 20 cm code is a dot; laid flat in the top view
-// it is drawn larger the farther the camera is (the camera's distance over
-// about 71 m, up to 8 times), and at its printed size near the camera or
-// tilted up. The page must hand the layer the camera it draws with: a
-// stale or missing camera passes every unit test of the layer.
-test("a code laid flat in the top view grows with the camera's distance, at a phone, a tablet and a desktop", async ({
+// Why: from high above, a 20 cm code at its printed size is a dot (a cap
+// of 8 times left it about 3 px wide). Laid flat in the top view it is
+// drawn 12 px on screen wherever its printed size would look smaller, and
+// at its printed size where that is larger, or tilted up. Measured on the
+// canvas (its square's corners projected by the page's own camera): the
+// page must hand the layer the camera it draws with and the view's real
+// height, or a phone draws the desktop's size - both pass every unit test
+// of the layer.
+test("a code laid flat in the top view is drawn 12 px on screen from high above, at a phone, a tablet and a desktop", async ({
   page,
 }) => {
+  // Fourteen camera moves, each drawn and measured, plus four WebGL
+  // screenshots: more than the 30 s default leaves under a loaded machine
+  // (all of it measured, then timed out on the last near check).
+  test.setTimeout(90_000);
   await page.addInitScript(() => {
     // @ts-expect-error - absent in this browser for the test.
     delete window.showOpenFilePicker;
@@ -775,23 +783,13 @@ test("a code laid flat in the top view grows with the camera's distance, at a ph
     (level) => /** @type {any} */ (window).__tourEditor.view3dPointOf(level),
     id,
   );
-  /** The growth the curve gives the camera's distance from the code now. */
-  const expected = async () => {
-    const stats = await view3d(page);
-    const m = Math.hypot(
-      stats.camera[0] - code[0],
-      stats.camera[1] - code[1],
-      stats.camera[2] - code[2],
-    );
-    return {
-      m,
-      k: Math.min(8, Math.max(1, m * 0.014)),
-      now: stats.codeScales[0],
-    };
-  };
+  /** The least side of a code laid flat on screen (CSS px). */
+  const SCREEN_PX = 12;
+  const PRINTED_M = 0.2;
   /**
    * The camera `m` from the orbit's centre, a screenshot kept for the
-   * eye, and the growth then.
+   * eye at 300 m, and the code then: its growth, its side measured on the canvas,
+   * and the side its printed size alone would have.
    * @param {number} m
    */
   const at = async (m) => {
@@ -800,13 +798,34 @@ test("a code laid flat in the top view grows with the camera's distance, at a ph
       m,
     );
     await afterFrames(page, 2);
-    const size = page.viewportSize();
-    await page.screenshot({
-      path: test
-        .info()
-        .outputPath(`top-view-code-${size?.width}x${size?.height}-${m}m.png`),
-    });
-    return expected();
+    if (m === 300) {
+      const size = page.viewportSize();
+      await page.screenshot({
+        path: test
+          .info()
+          .outputPath(`top-view-code-${size?.width}x${size?.height}-${m}m.png`),
+      });
+    }
+    const stats = await view3d(page);
+    const box = await page.locator(".view3d-canvas").boundingBox();
+    // Pixels per radian of the canvas as drawn, through the 50 degree lens.
+    const focal = (box?.height ?? 0) / 2 / Math.tan((25 * Math.PI) / 180);
+    const toCode = [0, 1, 2].map((i) => code[i] - stats.camera[i]);
+    const dist = Math.hypot(...toCode);
+    const look = [0, 1, 2].map((i) => stats.target[i] - stats.camera[i]);
+    const lookM = Math.hypot(...look);
+    // Its depth in the view: a flat square facing the camera is drawn
+    // its side times the focal over its depth.
+    const depth = toCode.reduce((sum, v, i) => sum + (v * look[i]) / lookM, 0);
+    const printedPx = (PRINTED_M * focal) / dist;
+    return {
+      dist,
+      scale: stats.codeScales[0],
+      px: stats.codePx[0],
+      printedPx,
+      // What it must measure: the larger of the two, seen at its depth.
+      wantPx: (Math.max(SCREEN_PX, printedPx) * dist) / depth,
+    };
   };
   for (const size of [
     { width: 1440, height: 900 },
@@ -815,19 +834,30 @@ test("a code laid flat in the top view grows with the camera's distance, at a ph
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(size);
-    const near = await at(50);
-    expect(near.m, `${size.width}`).toBeLessThan(71);
-    expect(near.now, `${size.width}`).toBe(1);
-    const mid = await at(300);
-    expect(mid.now, `${size.width}: ${mid.m} m`).toBeCloseTo(mid.k, 3);
-    expect(mid.now).toBeGreaterThan(3);
-    const far = await at(1000);
-    expect(far.now, `${size.width}`).toBe(8);
+    for (const m of [12, 300, 1000]) {
+      const now = await at(m);
+      const label = `${size.width}x${size.height} at ${m} m`;
+      expect(now.px, label).toBeGreaterThan(SCREEN_PX - 0.1);
+      expect(Math.abs(now.px - now.wantPx), label).toBeLessThan(0.3);
+      if (now.printedPx >= SCREEN_PX) {
+        expect(now.scale, label).toBe(1);
+      } else {
+        expect(now.scale, label).toBeCloseTo(SCREEN_PX / now.printedPx, 3);
+      }
+      if (m >= 300) expect(now.px, label).toBeLessThan(SCREEN_PX + 0.2);
+    }
   }
+  // Near, on the desktop, the printed size is the larger: the code is
+  // drawn at it, larger than 12 px.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const near = await at(12);
+  expect(near.scale).toBe(1);
+  expect(near.px).toBeGreaterThan(SCREEN_PX + 3);
   // Tilted up, the code stands at its printed size, however far.
+  await at(1000);
   await page.evaluate(() =>
     /** @type {any} */ (window).__tourEditor.view3dTilt(60),
   );
   await expect.poll(async () => (await view3d(page))?.standing).toBe(1);
-  await expect.poll(async () => (await expected()).now).toBe(1);
+  await expect.poll(async () => (await view3d(page))?.codeScales[0]).toBe(1);
 });

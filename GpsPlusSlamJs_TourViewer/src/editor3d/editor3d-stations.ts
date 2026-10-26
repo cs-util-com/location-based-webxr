@@ -12,12 +12,12 @@
  * and codes lie flat face up and stand up again - a code laid in front of
  * its anchor, on the side its face looks to, never under the wall it hangs
  * on - and the billboards and their poles rise. Models keep their pose;
- * pins (the phone's labels) stand. Laid flat, a code is drawn larger the
- * farther the camera is (`codeGrowth`: its printed size within about
- * 71 m, up to 8 times it from about 571 m), its gap from the anchor with
- * it, and it is picked where it is drawn. Between those distances it
- * keeps the size on screen it has at 71 m, a few pixels for a 20 cm code:
- * it shows where a code is, it does not make it readable from high above.
+ * pins (the phone's labels) stand. Laid flat, a code is drawn at least
+ * `CODE_SCREEN_PX` on screen (`codeGrowth`): grown with the camera's
+ * distance wherever its printed size would look smaller, its printed size
+ * where that is larger, its gap from the anchor growing with it, and it is
+ * picked where it is drawn. It shows where a code is and that it is a code
+ * (its three finder squares); no view this small can show its pattern.
  *
  * The layer chips turn the station names (billboards and poles) and the
  * codes off and on (`setShown`); the camera's flights ask where a
@@ -97,6 +97,10 @@ export interface StationsLayerView {
   /** The camera's position in the world: laid flat, a code grows with
    *  its distance from it (`codeGrowth`). */
   readonly camera: THREE.Vector3;
+  /** The view's height (CSS px) and the camera's vertical lens (degrees):
+   *  what a code's size on screen is worked out from (`focalPxOf`). */
+  readonly viewportPx: number;
+  readonly fovDeg: number;
 }
 
 /** A code's printed side when the tour does not say (m). */
@@ -110,33 +114,47 @@ export const DEFAULT_CODE_SIZE_M = 0.2;
 export const CODE_FLAT_GAP_M = 0.07;
 
 /**
- * The camera distance (m) within which a code laid flat is drawn at its
- * printed size: past it, it grows in proportion to the distance (the
- * storyboard prototype's 0.014 per metre, so about 71 m), keeping the size
- * on screen it has here, about 2.7 px for a 20 cm code on a 900 px high
- * view.
+ * The least side (CSS px) a code laid flat is drawn on screen. 12 px shows
+ * its three finder squares at about 3.4 px each; the storyboard prototype's
+ * code read at about 9 to 15 px. The sweep behind the choice (9, 12 and
+ * 15 px, from 10 m to the camera's 1100 m, at four view sizes) is in the
+ * sidecar.
  */
-export const CODE_GROWTH_FROM_M = 1 / 0.014;
-
-/** The most a code laid flat grows (times its printed size). */
-export const CODE_GROWTH_MAX = 8;
+export const CODE_SCREEN_PX = 12;
 
 /**
- * How many times its printed size a code is drawn: the camera's distance
- * over `CODE_GROWTH_FROM_M`, between 1 and `CODE_GROWTH_MAX`, as far as the
- * code lies flat (`standing` 0 looking straight down: all of it; 1 tilted
- * up: its printed size). A distance or morph that is not a finite number
- * (or a negative distance) draws it at its printed size; a morph past 0
- * or 1 is taken at that end.
+ * Pixels per radian straight ahead (the focal length in px) of a view
+ * `viewportPx` tall seen through a vertical lens of `fovDeg`: an object
+ * `s` m across at `d` m is about `s * focalPxOf(...) / d` px on screen.
  */
-export function codeGrowth(distanceM: number, standing: number): number {
+export function focalPxOf(viewportPx: number, fovDeg: number): number {
+  return viewportPx / 2 / Math.tan((fovDeg * Math.PI) / 360);
+}
+
+/**
+ * How many times its printed size a code is drawn: laid flat (`standing`
+ * 0, looking straight down), as many as make it `CODE_SCREEN_PX` on screen
+ * at `distanceM` from the camera - `CODE_SCREEN_PX * distanceM / (sizeM *
+ * focalPx)` - but never fewer than 1, so a code nearer than where its
+ * printed size reads that large keeps its printed size; tilted up
+ * (`standing` 1), its printed size; between, in proportion. No cap: the
+ * size on screen holds to the camera's farthest. A distance, size or focal
+ * length that is not a positive finite number (a distance of 0 is near:
+ * 1), or a morph that is not a number, draws it at its printed size; a
+ * morph past 0 or 1 is taken at that end.
+ */
+export function codeGrowth(
+  distanceM: number,
+  standing: number,
+  sizeM: number,
+  focalPx: number,
+): number {
   if (!Number.isFinite(distanceM) || distanceM < 0) return 1;
   if (!Number.isFinite(standing)) return 1;
+  if (!Number.isFinite(sizeM) || sizeM <= 0) return 1;
+  if (!Number.isFinite(focalPx) || focalPx <= 0) return 1;
   const flat = 1 - Math.min(1, Math.max(0, standing));
-  const far = Math.min(
-    CODE_GROWTH_MAX,
-    Math.max(1, distanceM / CODE_GROWTH_FROM_M),
-  );
+  const far = Math.max(1, (CODE_SCREEN_PX * distanceM) / (sizeM * focalPx));
   return 1 + (far - 1) * flat;
 }
 
@@ -240,6 +258,8 @@ interface CodeSquare {
   readonly flatShift: THREE.Vector3;
   /** Its anchor in the world: the camera's distance from it grows it. */
   readonly point: THREE.Vector3;
+  /** Its printed side (m). */
+  readonly sizeM: number;
 }
 
 /** The quaternion that lays a plane whose upright pose is `upright` flat,
@@ -515,6 +535,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         base: square.position.clone(),
         flatShift: flatShiftOf(upright, sizeM / 2 + CODE_FLAT_GAP_M),
         point: point.clone(),
+        sizeM,
       });
     }
   };
@@ -730,10 +751,13 @@ export function createStationsLayer(deps: StationsLayerDeps) {
           );
         }
       }
+      const focal = focalPxOf(view.viewportPx, view.fovDeg);
       for (const code of codeSquares) {
         const grown = codeGrowth(
           view.camera.distanceTo(code.point),
           view.standing,
+          code.sizeM,
+          focal,
         );
         code.square.quaternion.slerpQuaternions(
           faceUpOf(code.upright, faceUp),
@@ -777,6 +801,23 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         shown: [...shown],
         renders,
       };
+    },
+    /** For the page's checks: each code's drawn square as its four
+     *  corners in the world, in order around it (the page projects them
+     *  to measure the code on screen). */
+    codeCorners(): THREE.Vector3[][] {
+      group.updateMatrixWorld();
+      return codeSquares.map(({ square, sizeM }) => {
+        const h = sizeM / 2;
+        return [
+          [-h, -h],
+          [h, -h],
+          [h, h],
+          [-h, h],
+        ].map(([x, y]) =>
+          new THREE.Vector3(x, y, 0).applyMatrix4(square.matrixWorld),
+        );
+      });
     },
     /** A station's point in the world, or null. */
     pointOf(id: string): THREE.Vector3 | null {

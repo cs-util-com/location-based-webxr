@@ -31,7 +31,9 @@ keys), and writes only through the page's `edits`.
     says `error`).
 - `Editor3dView`: `dispose()`; `stats()` (`Editor3dStats`: frames, the
   last frame's clip planes `near` and `far`, tilt, standing, the stations layer's counts (each code's drawn scale
-  among them), the map's stats with its `coverage` (the drawn tiles near the camera by their map, for the page's checks), and each
+  among them), `codePx` (each code's drawn side on the canvas in CSS px:
+  its square's corners, `codeCorners`, projected by the last frame's
+  camera), the map's stats with its `coverage` (the drawn tiles near the camera by their map, for the page's checks), and each
   station's drawn height and the drawn ground under it); `setTilt(deg)`
   (the page's checks: the orbit's tilt, its distance and heading kept);
   `setDistance(m)` (the orbit's distance within its limits, its tilt and
@@ -97,11 +99,13 @@ keys), and writes only through the page's `edits`.
   ground samples reuse a scratch vector, and sharing it put the clip
   planes at the target, the near plane at its 0.2 m floor everywhere), the
   ground and the map, the editing (its retries, the gizmo, a gesture's
-  preview), the layer (handed the camera's position: a code laid flat
-  grows with its distance), the render.
+  preview), the layer (handed the camera's position, the view's height
+  and the lens: a code laid flat is sized on screen by them), the render.
 - **Sizes:** the box is hidden while the view loads (the map stays in
   view), so the window's size stands in until it shows; a ResizeObserver
-  follows the box and keeps the billboards' screen size.
+  follows the box and keeps the billboards' screen size; it also keeps
+  the view's height the layer sizes codes by (read there, never per
+  frame: a read of the box's size can force a layout).
 - **The geoid** (`gps-plus-slam-osm/elevation/egm96`, about 170 KB) is
   imported here, so only the 3D view pays for it.
 - **Nothing outlives a failure:** everything made after the renderer is
