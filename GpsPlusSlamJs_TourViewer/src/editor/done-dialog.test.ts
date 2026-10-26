@@ -64,6 +64,20 @@ describe("doneWords", () => {
     );
   });
 
+  // Why: a tour from a link or the sample is written into the file asked
+  // for as it opened. The creator never opened that file either, so the
+  // dialog names it as the one chosen then.
+  it("says the changes are in the file chosen when the tour opened, when that is where they went", () => {
+    expect(
+      doneWords({
+        ...IN_PLACE,
+        saved: { kind: "in-place", name: "castle.zip", chosenAtOpen: true },
+      }).where,
+    ).toBe(
+      "Your changes are saved in castle.zip, the file you chose when you opened the tour.",
+    );
+  });
+
   it("says a download is the tour now, and the opened file does not have the changes", () => {
     const words = doneWords({
       ...IN_PLACE,

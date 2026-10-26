@@ -68,6 +68,17 @@ export async function fetchTourFile(
   }
 }
 
+/**
+ * The name the file fetched from `link` will carry (`fetchTourFile`),
+ * worked out from the link alone, before any request: the save dialog
+ * asked for in the open's click suggests it. Null for text that is not an
+ * http(s) link (the open refuses it, and nothing is asked).
+ */
+export function linkFileName(link: string): string | null {
+  const url = link.trim();
+  return isWebLink(url) ? archiveFileName(url) : null;
+}
+
 /** The editor's sentence for a link that did not open: the viewer's words
  *  (`open-errors.ts`), except where those name the viewer's own button. */
 export function linkOpenErrorText(err: unknown, link: string): string {
