@@ -1,0 +1,177 @@
+/*
+ * The landing page's use-case section (use-cases.ts.md). Every selector
+ * starts with .uc; the page variables it reads are --ink, --ink-dim,
+ * --map-route, --map-serif, --space-2, --space-4 and --tap, each with a
+ * fallback. The design sheet zeroes every margin, so every gap is set here.
+ */
+.uc {
+  max-width: 75rem;
+  margin: 0 auto;
+  padding: 40px var(--space-4, 16px) 32px;
+  color: var(--ink, #2a2824);
+}
+
+.uc-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.uc-heading {
+  margin: 0 0 var(--space-2, 8px);
+  font-family: var(--map-serif, georgia, serif);
+  font-weight: 600;
+  font-size: 1.75rem;
+  line-height: 1.1;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.uc-sub {
+  max-width: 36em;
+  margin: 0 0 22px;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--ink-dim, #57534a);
+}
+
+.uc-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 26px 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.uc-item {
+  margin: 0;
+  min-width: 0;
+}
+
+/* A phone held sideways: a dark body around a 21:10 screen. */
+.uc-phone {
+  padding: 1.9% 3.4%;
+  border-radius: 6.5% / 14%;
+  background: #2a2824;
+  box-shadow: 4px 5px 0 rgb(42 40 36 / 16%);
+}
+
+.uc-screen {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 21 / 10;
+  border-radius: 4.2% / 8.8%;
+  overflow: hidden;
+}
+
+.uc-title {
+  margin: 12px 0 5px;
+  font-family: var(--map-serif, georgia, serif);
+  font-weight: 600;
+  font-size: 1.25rem;
+  line-height: 1.2;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.uc-sentence {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--ink-dim, #57534a);
+}
+
+/* "More ideas": a native details element, its summary drawn as a button. */
+.uc-more {
+  margin: 28px 0 0;
+}
+
+.uc-more-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap, 44px);
+  padding: 10px 20px;
+  border: 1.5px solid var(--ink, #2a2824);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink, #2a2824);
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.1;
+  cursor: pointer;
+  list-style: none;
+}
+
+.uc-more-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.uc-more-toggle::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentcolor;
+  border-bottom: 2px solid currentcolor;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.uc-more[open] > .uc-more-toggle::after {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+.uc-more-toggle:focus-visible {
+  outline: 3px solid var(--map-route, #cf4428);
+  outline-offset: 2px;
+}
+
+.uc-more[open] .uc-more-closed,
+.uc-more:not([open]) .uc-more-open {
+  display: none;
+}
+
+.uc-more > .uc-grid {
+  margin-top: 26px;
+}
+
+@media (width >= 640px) {
+  .uc-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (width >= 1040px) {
+  .uc {
+    padding-top: 56px;
+  }
+
+  .uc-heading {
+    font-size: 2.4rem;
+  }
+
+  .uc-sub {
+    font-size: 1.06rem;
+  }
+
+  .uc-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* A phone held sideways: a short screen, so two columns of smaller phones. */
+@media (orientation: landscape) and (height <= 560px) {
+  .uc {
+    padding-top: 24px;
+  }
+
+  .uc-heading {
+    font-size: 1.5rem;
+  }
+
+  .uc-title {
+    font-size: 1.1rem;
+  }
+}
