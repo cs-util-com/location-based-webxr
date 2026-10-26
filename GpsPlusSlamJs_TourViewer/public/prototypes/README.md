@@ -164,6 +164,24 @@ wired into its logic: every interaction is faked.
   - `station-blocks-2o-ground-arc/` - a rail in one arc to a ring before the
     target. Weakness: it passes through head and chest height near both
     ends.
+- `station-blocks-2p-ground-styles-bend-knob/` and
+  `station-blocks-2q-ground-styles-bend-drag/` - one ground view in five
+  styles a creator picks per block (ribbon, vanes, footprints, lights, and
+  the floor arrow lying, hovering or upright, with its caption printed on it
+  where it fits), each a copy of `station-blocks-2l-ground-floor-arrow/` with
+  the ground view and the creator's controls replaced. The arrow runs toward
+  `pointsTo` and stops 2 m short; one scale sets the letters and the length
+  (by default from the target's distance); handles on a circle round the
+  start set the size and the bend in creator and editor mode; hovering
+  pieces float by time alone (off under reduced motion); two free colours per
+  style with a sun warning below 3 : 1. The pages differ only in the bend
+  control; made 2026-10-26.
+  - `station-blocks-2p-ground-styles-bend-knob/` - a turn knob behind the
+    start bends the arrow. Weakness: the same knob turns a block without a
+    target.
+  - `station-blocks-2q-ground-styles-bend-drag/` - a handle in the middle of
+    the arrow, dragged sideways. Weakness: in the editor at phone width the
+    whole bend spans a few pixels, so the slider does it there.
 
 **Kept, the chosen and the unchosen** (decided 2026-10-11 evening): another
 developer may prefer a variant that was not chosen and ask their own
