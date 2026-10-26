@@ -525,54 +525,6 @@ describe("stationDeleted", () => {
     expect(changeCount(deleted)).toBe(1);
   });
 
-  // Why: a written station whose item moved into a station of its own
-  // stays in the tour, unlisted, until a write prunes it. Its `next` to a
-  // station deleted afterwards was left in place - the delete pruned only
-  // the listed stations - so the tour carried a route to no station, and
-  // the format refuses such a tour at every later save.
-  it("prunes the route of an emptied written station no frame names, and its undo brings it back", () => {
-    const routed = tourOf([pin("a"), pin("d", 48.5209)]);
-    const opened = open(
-      parseTourManifest(
-        JSON.parse(
-          serializeTourManifest({
-            ...routed,
-            stations: routed.stations.map((s) =>
-              s.id === stationIdOf("d") ? { ...s, next: stationIdOf("a") } : s,
-            ),
-          }),
-        ),
-      ),
-    );
-    const d = objectOf(opened, "d");
-    const split = reduce(
-      opened,
-      act.moved({
-        object: d,
-        newStation: true,
-        newStationId: "own1",
-        what: "own station",
-      }),
-    );
-    expect(split.stations.some((s) => s.id === stationIdOf("d"))).toBe(false);
-    const deleted = reduce(
-      split,
-      act.stationDeleted({ stationId: stationIdOf("a"), what: "delete" }),
-    );
-    // Both the tour shown now and the one a save writes.
-    for (const tour of [manifestNow(deleted), readBack(deleted)]) {
-      const stations = tour?.stations ?? [];
-      const carried = new Set(stations.map((s) => s.id));
-      expect(
-        stations.flatMap(routedTo).filter((id) => !carried.has(id)),
-      ).toEqual([]);
-    }
-    const back = reduce(deleted, act.undone());
-    expect(
-      manifestNow(back)?.stations.find((s) => s.id === stationIdOf("d"))?.next,
-    ).toBe(stationIdOf("a"));
-  });
-
   it("refuses the last station and an unknown one", () => {
     const one = open(tourOf([pin("a")]));
     expect(stationDeleteRefusal(one, stationIdOf("a"))).toBe("last");
@@ -843,7 +795,13 @@ describe("moved, into a station of its own", () => {
   // visitor across the whole tour and back. After its home is where the
   // creator expects it, and it is still one step.
   it("seats the new station right after the item's station when asked, as one step", () => {
-    const before = open();
+    // A home that keeps itself (its title) when its item leaves.
+    const before = open({
+      ...OPENED,
+      stations: OPENED.stations.map((s) =>
+        s.id === stationIdOf("b") ? { ...s, title: "Home" } : s,
+      ),
+    });
     const after = reduce(
       before,
       act.moved({

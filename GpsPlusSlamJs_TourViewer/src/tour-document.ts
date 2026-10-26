@@ -674,9 +674,6 @@ function withFrames(
   const named = new Set(placed.map((p) => p.object.station));
   const listed = new Set([...frames.map((f) => f.id), ...deletedStations]);
   const gone = new Set(deleted);
-  // A delete prunes the routes of the stations it lists; one that follows
-  // unlisted loses its routes to a deleted station here.
-  const removed = new Set(deletedStations);
   const movedTo = new Map(placed.map((p) => [p.object.id, p.object.station]));
   /** An object of the document stands in `station`: an entry names it, or
    *  one of its written items is neither deleted nor put elsewhere. */
@@ -711,7 +708,6 @@ function withFrames(
             (inUse(s) ||
               !(keepsItself(s, imageAssets) || keptBare.handMade.has(s.id))),
         )
-        .map((s) => ({ ...withoutRoutesTo(s, removed), items: s.items })),
     ],
   };
 }

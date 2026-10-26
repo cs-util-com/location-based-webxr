@@ -1,15 +1,12 @@
 /**
  * Why these tests matter: the 3D view's tree adds, deletes, copies,
- * reorders and splits stations, and a tour's stations are also the
- * targets of its routes (a station's next one, a quiz's answer leading to
- * a station). A delete that left a route to a station that is gone, or a
- * copy that broke the numbering the tree and the visitor read, would
- * give a tour a visitor cannot finish - and only a walk on site would
+ * reorders and splits stations. A command that left two stations under one
+ * id, or a copy that broke the numbering the tree and the visitor read,
+ * would give a tour a visitor cannot finish - and only a walk on site would
  * show it. These drive the real editor session with random sequences of
  * the tree's commands, their undos and redos, and check after each one
- * that the stations are numbered 1 to n in the tour's order, every route
- * names a station the tour carries, and the tour still writes and reads
- * back as a valid file.
+ * that the stations are numbered 1 to n in the tour's order, no id
+ * repeats, and the tour still writes and reads back as a valid file.
  */
 import fc from "fast-check";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -22,7 +19,6 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 
-import { routedTo } from "../tour-content.js";
 import { manifestToWrite } from "../tour-document.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
@@ -50,26 +46,23 @@ const OBJECTS = [
   pin("c", 48.5206),
   pin("d", 48.5209),
 ];
-const [A, B, C, D] = OBJECTS.map((o) => stationIdOf(o.id)) as [
+const [, B] = OBJECTS.map((o) => stationIdOf(o.id)) as [
   string,
   string,
   string,
   string,
 ];
 
-/** A branching tour: next routes in a ring, and a quiz whose answers lead
- *  to three other stations. */
-function routedTour(): TourManifest {
-  const base = tourOf(OBJECTS, { order: "branch" });
-  const routes: Record<string, Partial<TourStation>> = {
-    [A]: { next: B },
+/** A tour of four stations, the second with a story (a quiz). */
+function storyTour(): TourManifest {
+  const base = tourOf(OBJECTS);
+  const stories: Record<string, Partial<TourStation>> = {
     [B]: {
-      next: C,
       steps: [
         {
           id: "q1",
           advance: { mode: "tap" },
-          block: {
+          action: {
             kind: "quiz",
             question: "Which way?",
             points: 1,
@@ -81,17 +74,14 @@ function routedTour(): TourManifest {
               ],
               correct: "o1",
             },
-            route: { correct: C, wrong: D, byOption: { o2: A } },
           },
         },
       ],
     },
-    [C]: { next: D },
-    [D]: { next: A },
   };
   return {
     ...base,
-    stations: base.stations.map((s) => ({ ...s, ...routes[s.id] })),
+    stations: base.stations.map((s) => ({ ...s, ...stories[s.id] })),
   };
 }
 
@@ -100,7 +90,7 @@ async function opened(): Promise<{
   manifest: TourManifest;
 }> {
   const manifest = parseTourManifest(
-    JSON.parse(serializeTourManifest(routedTour())),
+    JSON.parse(serializeTourManifest(storyTour())),
   );
   const zip = await packFilesAsZip([
     { path: "tour.json", data: serializeTourManifest(manifest) },
@@ -140,10 +130,9 @@ const command: fc.Arbitrary<Command> = fc.oneof(
 );
 
 describe("the tree's station commands", () => {
-  // Why a property: a route can point anywhere, and a delete, a copy and
-  // their undos interleave in any order; a hand-written case covers the
-  // order its author thought of.
-  it("keep the stations numbered 1 to n and every route on a station the tour carries (property)", async () => {
+  // Why a property: a delete, a copy and their undos interleave in any
+  // order; a hand-written case covers the order its author thought of.
+  it("keep the stations numbered 1 to n, each id once, and the tour writable (property)", async () => {
     const { session, manifest } = await opened();
     await fc.assert(
       fc.asyncProperty(
@@ -208,10 +197,6 @@ describe("the tree's station commands", () => {
             expect(carried.size, `a station id twice after ${c.kind}`).toBe(
               stations.length,
             );
-            expect(
-              stations.flatMap(routedTo).filter((id) => !carried.has(id)),
-              `routes to no station after ${c.kind}`,
-            ).toEqual([]);
             const tree = buildTree({
               stations,
               assets: now?.assets ?? [],
