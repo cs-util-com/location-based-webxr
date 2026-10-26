@@ -491,4 +491,43 @@ describe("planCodePosition through a device-only fit", () => {
       turnedDeg: expect.closeTo(80, 3),
     });
   });
+
+  /** The fit seeing the code `northM` north of its stored spot, read at the
+   *  code's own pose, after a reliable walk at 5 m accuracy. */
+  const offsetFit = (northM: number) => ({
+    alignment: yawAlignment(0, [northM, 400, 0]),
+    codeOdomPose: CODE,
+    alignmentInfo: DEVICE_INFO,
+    quality: { extentM: 40, accuracyM: 5 },
+  });
+
+  // Why: a fit's own GPS error is a few metres, so a correct code that only
+  // lacks a stamp (because earlier visits were lined up by its votes) was
+  // replaced by that error and then stamped there for good. Through a fit,
+  // an offset under 0.75 times the fit's accuracy (3.75 m at 5 m) is read
+  // as the fit's error, not the code's: the code is kept as it is, with no
+  // new stamp. The boundary is pinned at the owner's chosen factor.
+  it("keeps an unstamped code the fit sees just under 0.75 times its accuracy away", () => {
+    const plan = planCodePosition(fitInput({ deviceFit: offsetFit(3.7) }));
+    expect(plan?.offsetM).toBeCloseTo(3.7, 6);
+    expect(plan?.decision).toEqual({ kind: "keep", reason: "stored-good" });
+    expect(plan?.measurement).toBeNull();
+    expect(plan?.pick).toBeNull();
+  });
+
+  it("replaces an unstamped code the fit sees at 0.75 times its accuracy away", () => {
+    const plan = planCodePosition(fitInput({ deviceFit: offsetFit(3.75) }));
+    expect(plan?.offsetM).toBeCloseTo(3.75, 6);
+    expect(plan?.decision).toEqual({ kind: "replace" });
+    expect(plan?.measurement?.odomPose).toEqual(CODE);
+  });
+
+  // Why: the guard is the fit's only. A visit lined up by its own GPS
+  // replaces an unstamped code after a reliable walk at any offset, as
+  // before (here about 1 m at 4 m accuracy).
+  it("leaves a visit without a fit to replace a code seen close to its spot", () => {
+    const plan = planCodePosition(input());
+    expect(plan?.offsetM).toBeLessThan(0.75 * 4);
+    expect(plan?.decision).toEqual({ kind: "replace" });
+  });
 });

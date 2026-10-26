@@ -447,7 +447,10 @@ accuracy.
   re-minted through the fit and stamped with the fit's quality, so the geo
   and its stamp come from the same fit. A turn alone (the rule's turned
   branch) replaces a code stamped by a better walk than the fit's only
-  through a fit at least as good (`code-position-settle.ts`).
+  through a fit at least as good (`code-position-settle.ts`). A code the
+  fit sees closer to its saved spot than 0.75 times the fit's accuracy is
+  kept (`keep` / `stored-good`, no re-mint, no new stamp): that offset is
+  mostly the fit's own GPS error. It is still logged through the fit.
 - **The visit's own objects, stations and late photos** settle through the
   fit too (`throughDevice`: every object's pick, and the end alignment,
   are the fit), so they move with the codes corrected through it. Objects
@@ -482,7 +485,8 @@ inventing nothing; the loop closure at 3 % drift, also with fixes on the
 way back and at the end look; the visit's pins near a look and far from
 both settling with the corrected code; the path through the fit; a new
 code through the fit, and with no claim of quality without one; a stamped
-code kept; a vetoed code at 25 m moving as before; no automatic
+code kept; an unstamped code stored 0 or 3 m off kept within the fit's
+error; a vetoed code at 25 m moving as before; no automatic
 measurement while the code is out of view; and the sweep (walk 24/38/60 m,
 accuracy 5/8/15 m, stored error 0-25 m, drift 0-3 %): a property that the
 visit's own view of a code does not depend on where it is stored, with the

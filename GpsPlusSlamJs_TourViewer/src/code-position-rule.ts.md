@@ -34,7 +34,10 @@ buttons and the replace's confirm (the code is measured on its own:
     heading is the wrong one, whatever the walk or the stored quality;
   - candidate not reliable: `keep` / `not-walked` with `walkMoreM`;
   - stored position reliable itself: `keep` / `stored-good` (no churn per
-    visit);
+    visit). The settle also sets `stored-good` for a code a device fit
+    sees closer to its saved spot than the fit's own error
+    (`code-position-settle.ts`): the same no-churn meaning, read from this
+    visit rather than from the stamp;
   - otherwise `replace`.
 - `CodePositionOutcome { decision, applied, turnDeg? }` and
   `codePositionSentence(outcomes)` - the result screen's line after Finish

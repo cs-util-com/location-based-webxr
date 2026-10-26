@@ -114,3 +114,40 @@ the code's. An unstamped code is replaced as before. The pick keeps
 the latest kept sighting's moment and walked distance (NaN moment when
 there is none). Tests: `code-position-settle.test.ts` "planCodePosition
 through a device-only fit".
+
+### The replace guard (through a fit only)
+
+Through a fit, a replace for the code's position (not the turned branch)
+needs the fit to see the code at least
+`FIT_REPLACE_MIN_OFFSET_PER_ACCURACY` (0.75) times the fit's accuracy
+from its saved spot. Nearer, the code is kept as `keep` /
+`stored-good`, with no re-mint and no new stamp.
+
+- **Why `stored-good` and not `code-placed`:** `code-placed` means the
+  visit's own GPS could not judge the code (no fit), and a code kept that
+  way is never logged and gives the code-spot rule no candidate. Here the
+  fit did judge it, and found it where it is stored within its own
+  error: the no-churn meaning of `stored-good` (GPS jumps 5-10 m
+  between visits), read from this visit instead of the stamp. Both are
+  silent on the result screen.
+- **Why:** a code stored correctly but never stamped (its earlier visits
+  were lined up by its votes) was replaced by the fit's own GPS error and
+  stamped there, so later visits kept the wrong spot.
+- **Why the turned branch is left out:** it judges the heading, which the
+  offset says nothing about, and has its own guard above.
+- **Measured** on the indoor sweep (`creator-code-votes.test.ts`,
+  `CREATOR_INDOOR_SWEEP_OUT`: walks 24/38/60 m, accuracy 5/8/15 m, stored
+  error 0-25 m, drift 0-3 %, 4 seeds, AR(1) GPS noise), of the voted
+  visits' replaces:
+  - 5 m accuracy: churn of a code stored 0-5 m off avoided 14 / 38 / 50
+    of 64 at k = 0.5 / 0.75 / 1; corrections of a code stored 10-15 m
+    off lost 0 / 0 / 0 of 56.
+  - 8 m accuracy: churn avoided 18 / 28 / 31 of 36; corrections lost 0 /
+    4 / 15 of 28 (they would have reached a median 4.9 / 4.6 m).
+  - 15 m accuracy: no replace at all (the walk gate refuses those fits).
+  - So the verdict turns at 8 m between 0.75 and 1; 0.75 is the owner's
+    choice (2026-10-26).
+- Tests: `code-position-settle.test.ts` (just under and at 0.75 x
+  accuracy; a visit without a fit still replaces close to the spot) and
+  `creator-code-votes.test.ts` (an unstamped code stored 0 or 3 m off
+  kept by a mixed visit).

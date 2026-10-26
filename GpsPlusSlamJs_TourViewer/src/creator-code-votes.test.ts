@@ -1447,6 +1447,27 @@ describe(
       expect(v.afterNE).toEqual(v.storedNE);
     });
 
+    // Why: a code stored correctly but never stamped - every earlier visit
+    // was lined up by its votes - was replaced by the fit's own GPS error
+    // and then stamped there, so later visits kept the wrong spot for good.
+    // Seen within 0.75 times the fit's accuracy, it stays as it is, with no
+    // new stamp; the visit still logs where its own GPS saw it.
+    it.each([0, 3])(
+      "keeps an unstamped code stored %d m off, within the fit's own error",
+      async (storedErrorM) => {
+        const v = await mixedVisit({ walkM: 38, accuracyM: 5, storedErrorM });
+        expect(v.votesAtEnd).toBeGreaterThan(v.votesAtStart);
+        expect(v.decision?.offsetM).toBeLessThan(0.75 * 5);
+        expect(v.decision?.decision).toEqual({
+          kind: "keep",
+          reason: "stored-good",
+        });
+        expect(v.afterNE).toEqual(v.storedNE);
+        expect(v.mintQuality).toBeUndefined();
+        expect(distM(v.loggedNE!, v.truthNE)).toBeLessThan(0.3);
+      },
+    );
+
     // Why: the automatic measurement runs on the render the mint gate
     // opens on - here the walk's third fix, with the code long out of
     // view. Taken then from the last stable pose, it is a code event at

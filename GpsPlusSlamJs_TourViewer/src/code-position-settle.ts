@@ -70,7 +70,8 @@ export interface CodePositionSettleInput {
    *  `quality` (the fit's own walk - the shorter of its GPS spread and the
    *  phone's tracking - and its accuracy) as the candidate's quality, and a
    *  change is re-minted there through it, stamped with `alignmentInfo`
-   *  and that walk. */
+   *  and that walk. A code it sees within its own error of the saved spot
+   *  is not replaced (`FIT_REPLACE_MIN_OFFSET_PER_ACCURACY`). */
   readonly deviceFit?: {
     readonly alignment: readonly number[];
     readonly codeOdomPose: Pose;
@@ -164,7 +165,7 @@ export function planCodePosition(
   const turned =
     !farOff && limit !== null && offset.yawDeg > limit && turnTrusted;
   const far = farOff || (!turned && offset.yawDeg > CORRECTION_MAX_YAW_DEG);
-  const decision = decideCodePosition({
+  const decided = decideCodePosition({
     stored,
     candidate,
     offsetM: offset.horizontalM,
@@ -172,6 +173,13 @@ export function planCodePosition(
     far,
     ...(turned ? { turnedDeg: offset.yawDeg } : {}),
   });
+  const decision: CodePositionDecision =
+    input.deviceFit !== undefined &&
+    decided.kind === "replace" &&
+    decided.turnedDeg === undefined &&
+    withinFitError(offset.horizontalM, candidate)
+      ? { kind: "keep", reason: "stored-good" }
+      : decided;
   const changes = decision.kind === "replace" || decision.kind === "move";
   const base = {
     levelId: level.id,
@@ -194,6 +202,28 @@ export function planCodePosition(
     },
     pick: source.pick,
   };
+}
+
+/**
+ * Through a device fit, a code is replaced for its position only when the
+ * fit sees it at least this many times the fit's accuracy from its saved
+ * spot. Nearer, the offset is mostly the fit's own GPS error: a replace
+ * would move a correct code by that error and stamp it there, and later
+ * visits would then keep the wrong spot. Measured on the indoor sweep
+ * (`creator-code-votes.test.ts`): at 0.75 most of that churn goes at 5-8 m
+ * accuracy and nearly every 10-15 m correction stays; at 1 about half the
+ * corrections at 8 m accuracy are lost.
+ */
+const FIT_REPLACE_MIN_OFFSET_PER_ACCURACY = 0.75;
+
+/** The fit sees the code nearer its saved spot than its own error: below
+ *  `FIT_REPLACE_MIN_OFFSET_PER_ACCURACY` times its accuracy. An unknown
+ *  accuracy guards nothing (such a fit is never reliable anyway). */
+function withinFitError(offsetM: number, fit: PositionQuality): boolean {
+  return (
+    fit.accuracyM !== null &&
+    offsetM < FIT_REPLACE_MIN_OFFSET_PER_ACCURACY * fit.accuracyM
+  );
 }
 
 /** `a` rests on at least the walk of `b`, at no worse an accuracy. */
