@@ -124,7 +124,8 @@ for (const viewport of VIEWPORTS) {
         near(gap(cta, film), expected.film);
 
         // The film's picture keeps its proportion (9:10 upright, the
-        // page's whole width; 3:2 otherwise, centred), the picture and its
+        // page's whole width; 3:2 on a sideways phone and 16:9 from 900 px
+        // wide, centred), the picture and its
         // bar fit the view, and the captions' list (reduced motion) stays
         // inside the box.
         const upright =
@@ -132,7 +133,7 @@ for (const viewport of VIEWPORTS) {
         const filmStage = await at("#landing-film .lf-stage");
         const filmBar = await at("#landing-film .lf-controls");
         expect(filmStage.width / filmStage.height).toBeCloseTo(
-          upright ? 9 / 10 : 3 / 2,
+          upright ? 9 / 10 : viewport.width >= 900 ? 16 / 9 : 3 / 2,
           1,
         );
         if (upright) {
@@ -315,7 +316,7 @@ for (const viewport of VIEWPORTS) {
 }
 
 // A laptop's window less its browser bar is often about 1280x600: the
-// film's picture must keep its 3:2 there too (its width follows the
+// film's picture must keep its 16:9 there too (its width follows the
 // view's height), never only capped in height, with its bar in view.
 test.describe("the film's box on a short desktop window", () => {
   test.use({
@@ -323,13 +324,13 @@ test.describe("the film's box on a short desktop window", () => {
     storageState: FIRST_VISIT,
   });
 
-  test("keeps the picture 3:2 and the picture and bar in view", async ({
+  test("keeps the picture 16:9 and the picture and bar in view", async ({
     page,
   }) => {
     await openLanding(page);
     const stage = await box(page.locator("#landing-film .lf-stage"));
     const bar = await box(page.locator("#landing-film .lf-controls"));
-    expect(stage.width / stage.height).toBeCloseTo(3 / 2, 1);
+    expect(stage.width / stage.height).toBeCloseTo(16 / 9, 1);
     expect(stage.width).toBeLessThan(1280 - 32);
     expect(bar.y + bar.height - stage.y).toBeLessThanOrEqual(600 - 24 + 1);
   });

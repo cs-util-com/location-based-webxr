@@ -820,9 +820,9 @@
       }
 
       /* The film's box, reserved before the film or its still arrives:
-         the picture at the film's own proportion (9:10 upright, the whole
-         width; 3:2 otherwise, its picture and bar never taller than the
-         view) and, under it, the room for the bar and a caption of three
+         the picture at the film's proportion (9:10 upright, the whole
+         width; 3:2 on a phone held sideways and 16:9 from 900 px wide,
+         its picture and bar never taller than the view) and, under it, the room for the bar and a caption of three
          lines (two from 481 px). The still is drawn at the same
          proportion. A reduced-motion list grows the box below. */
       .landing-film {
@@ -1213,9 +1213,10 @@
         }
       }
 
-      /* Not upright: the picture is 3:2 inside a framed box; on a short
-         window its width follows the view's height, so the picture keeps
-         its proportion and the bar stays in view with it. */
+      /* Not upright: the picture is 3:2 inside a framed box (16:9 from
+         900 px wide, below); on a short window its width follows the
+         view's height, so the picture keeps its proportion and the bar
+         stays in view with it. */
       @media (orientation: landscape), (width >= 900px) {
         .landing-film {
           --lf-inset: 12px;
@@ -1259,9 +1260,16 @@
           font-size: 15px;
         }
 
+        /* 16:9 on a wide screen, the same short-window rule. The film
+           fills whatever box it is given; the 3:2 still is letterboxed. */
         .landing-film {
+          max-width: calc((100svh - 66px) * 16 / 9 + 2px);
+          height: calc((100cqw - 2px) * 9 / 16 + var(--film-chrome));
           margin-top: 28px;
           border-radius: 24px;
+        }
+        .landing-film picture {
+          aspect-ratio: 16 / 9;
         }
 
         .landing-story,
@@ -3904,8 +3912,8 @@
               </button>
             </p>
           </div>
-          <!-- The film's host: its aspect is reserved (4:5 on an upright
-               phone, 16:9 otherwise), and it shows the film's last moment
+          <!-- The film's host: its aspect is reserved (9:10 on an upright
+               phone, 3:2 held sideways, 16:9 from 900 px wide), and it shows the film's last moment
                as a drawing until the film mounts (or for good, where it
                cannot). -->
           <div

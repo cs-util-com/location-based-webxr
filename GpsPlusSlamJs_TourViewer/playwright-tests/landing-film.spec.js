@@ -64,8 +64,6 @@ async function openFilm(page) {
 }
 
 test.describe("the hero film on a desktop", () => {
-  // At 1440x900 less than half of the film is in view at the top of the
-  // page, so it waits there and starts only when scrolled to.
   test.use({
     viewport: { width: 1440, height: 900 },
     storageState: FIRST_VISIT,
@@ -74,6 +72,10 @@ test.describe("the hero film on a desktop", () => {
   test("waits below the fold, plays in view, and names its parts on the bar", async ({
     page,
   }) => {
+    // At 1440x800 less than half of the film is in view at the top of the
+    // page (at 1440x900 a little more than half is, so it starts there at
+    // once), so it waits and starts only when scrolled to.
+    await page.setViewportSize({ width: 1440, height: 800 });
     const errors = pageErrors(page);
     const host = await openFilm(page);
     await expect(host).toHaveAttribute("data-film-state", "waiting");

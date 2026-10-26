@@ -218,9 +218,11 @@ its chunk fails, the hero shows its last moment as a drawing).
   whole width, edge to edge with lines above and below only (the
   prototype's picture is full width there too, and a narrower one put the
   phone below the size where its screen keeps its card text); elsewhere
-  the picture is 3:2 in a framed, rounded box, centred, its width
-  following the view's height (`max-width: (100svh - 66px) * 3/2`) so the
-  picture and its bar never outgrow the view. Its heights use `cqw`
+  the picture is 3:2 in a framed, rounded box, centred (16:9 from 900 px
+  wide), its width following the view's height
+  (`max-width: (100svh - 66px) * 3/2`, `* 16/9` from 900 px) so the
+  picture and its bar never outgrow the view. The film fills whatever box
+  it is given; on the 16:9 box the 3:2 still is letterboxed. Its heights use `cqw`
   (`.landing-hero` is an inline-size container). Before the film mounts
   the box shows its last moment as a drawing at the same proportion
   (`public/landing/hero-still-{portrait,landscape}.svg`, 9:10 and 3:2,

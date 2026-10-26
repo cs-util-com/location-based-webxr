@@ -1,7 +1,7 @@
 /**
  * Why these tests matter: the prototype's drawn phone and its close views are laid
  * out against the picture's own box, and the film now fills a box P gives
- * it (about 4:5 on an upright phone, 16:9 elsewhere). The phone must stay
+ * it (9:10 on an upright phone, 3:2 held sideways, 16:9 from 900 px wide). The phone must stay
  * inside the box, clear of its soft top and bottom edges, and the close
  * views must fit into the free space left of the phone, so the phone never
  * covers the person, the pin or the code.

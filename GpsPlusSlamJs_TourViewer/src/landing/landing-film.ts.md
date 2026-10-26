@@ -13,9 +13,9 @@ timeline.
 - `mountLandingFilm(host, { reducedMotion, onArStarting, requestFrame?, onFallback? }): { destroy() }`
   - `host`: the page's box, a fixed height that the film fills: the
     picture (the stage) takes what the bar and the caption leave. The
-    page sizes it so the picture is 9:10 on an upright phone and 3:2
-    elsewhere, the prototype's own proportions (index.html.md, "Reserved
-    sizes"). Its children are replaced and given back on `destroy`.
+    page sizes it so the picture is 9:10 on an upright phone, 3:2 on a
+    phone held sideways and 16:9 from 900 px wide (index.html.md,
+    "Reserved sizes"); the film lays itself out for any box. Its children are replaced and given back on `destroy`.
   - `onArStarting(stop)`: the film registers its `stop`; the page calls it
     when an AR session starts; returns the unregister (called on destroy).
   - `requestFrame`: the frame scheduler (default `requestAnimationFrame`).
