@@ -237,7 +237,7 @@ export const LC_PHONE = `<div class="lc-phone">
 const NS = "http://www.w3.org/2000/svg";
 
 /** A small xorshift generator: the same seed draws the same texture. */
-export function seededRandom(seed: number): () => number {
+function seededRandom(seed: number): () => number {
   let s = seed >>> 0 || 123456789;
   return () => {
     s ^= s << 13;
@@ -250,7 +250,7 @@ export function seededRandom(seed: number): () => number {
 }
 
 /** The fake code's modules as one path (a pattern, not a readable code). */
-export function fakeCodePath(seed = Math.imul(8, 2654435761)): string {
+function fakeCodePath(seed = Math.imul(8, 2654435761)): string {
   const n = 21;
   const r = seededRandom(seed);
   const finder = (x: number, y: number): boolean =>

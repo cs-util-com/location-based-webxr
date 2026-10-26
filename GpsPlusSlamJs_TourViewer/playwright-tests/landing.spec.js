@@ -379,12 +379,15 @@ test.describe("the use cases", () => {
     const more = section.locator("details.uc-more");
     const toggle = more.locator("summary");
     await expect(more).not.toHaveAttribute("open");
-    await expect(toggle).toHaveText("More ideas (14)");
+    // The summary holds both labels; the CSS shows one (innerText reads
+    // only what is rendered).
+    const label = () => toggle.evaluate((el) => el.innerText.trim());
+    await expect.poll(label).toBe("More ideas (14)");
 
     await toggle.focus();
     await page.keyboard.press("Enter");
     await expect(more).toHaveAttribute("open", "");
-    await expect(toggle).toHaveText("Fewer ideas");
+    await expect.poll(label).toBe("Fewer ideas");
     expect(await visible()).toBe(20);
     // The folded grid sits 26 px below the toggle.
     const toggleBox = await box(toggle);
@@ -450,9 +453,22 @@ test.describe("a returning device", () => {
   }) => {
     await page.goto("/?nocache=1");
     await expect(page.getByTestId("setup-card")).toBeVisible();
+    await expect(page.getByTestId("landing-uses")).toHaveAttribute(
+      "data-mount",
+      "ready",
+    );
+    // A reader scrolls by a wheel, a touch or a key: that input releases
+    // the page from the skip's hold (a scripted scroll alone does not).
+    await page.mouse.move(195, 400);
+    await page.mouse.wheel(0, -40);
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-landing-skip",
+      "moved",
+    );
     await page.evaluate(() => {
       window.scrollTo({ top: 300, behavior: "instant" });
     });
+    await expect.poll(() => page.evaluate(() => Math.round(scrollY))).toBe(300);
     await page.reload();
     await expect(page.locator(".landing-cards")).toHaveAttribute(
       "data-mount",

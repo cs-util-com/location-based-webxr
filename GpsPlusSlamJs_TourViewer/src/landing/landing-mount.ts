@@ -48,7 +48,7 @@ export interface LandingLoaders {
   uses(): Promise<{ mountUseCases(host: HTMLElement): LandingPart }>;
 }
 
-export const LANDING_LOADERS: LandingLoaders = {
+const LANDING_LOADERS: LandingLoaders = {
   cards: () => import("./landing-cards.js"),
   film: () => import("./film-placeholder.js"),
   uses: () => import("./use-cases.js"),

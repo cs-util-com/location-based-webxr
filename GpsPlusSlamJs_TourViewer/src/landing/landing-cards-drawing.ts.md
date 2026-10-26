@@ -19,13 +19,14 @@ with every id, class and keyframe prefixed `lc-`.
   dock's `data-kind` (`place`, `add`, `hang`, `scan`) decides what it shows
   (`landing-cards.css`). The card title is split into letters
   (`.lc-ch`, `--lc-i` its place) so the CSS can type it.
-- `seededRandom(seed)` - a xorshift generator in [0, 1).
-- `fakeCodePath(seed?)` - a code-like pattern as one SVG path (21 by 21
-  modules with three finder squares). It is not a readable code.
 - `paintTextures(root, seed = 20261025)` - fills the texture groups (the
   canopies' leaves, the far trees, the facade's stones, the grass, the
   path's edge stones, the tufts) and the code's path, in the prototype's
   order from one seed, so the drawing is the same on every load.
+
+Module-private helpers: `seededRandom(seed)`, a xorshift generator in
+[0, 1), and `fakeCodePath(seed?)`, a code-like pattern as one SVG path (21
+by 21 modules with three finder squares; not a readable code).
 
 ## Invariants & assumptions
 

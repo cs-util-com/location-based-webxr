@@ -25,7 +25,7 @@ film's still are static in `index.html` and show without this module.
   - `ready` settles once every part mounted or failed; it never rejects.
   - `destroy()` destroys every mounted part and removes the marks; a part
     whose load settles after `destroy()` is destroyed at once.
-- `LANDING_LOADERS` - the default loaders: `./landing-cards.js`,
+- The default loaders (module-private, replaced by `loaders` in tests): `./landing-cards.js`,
   `./use-cases.js` (the section replaces the host's static list, its
   heading with it) and `./film-placeholder.js` until the film lands (a
   one-line change here).

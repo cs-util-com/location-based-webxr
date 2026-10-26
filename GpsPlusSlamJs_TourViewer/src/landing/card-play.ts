@@ -40,7 +40,7 @@ export const HOLD_MS = 2000;
  *  its place against one just as much in view. */
 const TIE = 0.001;
 
-export type CardPhase = "still" | "playing" | "holding";
+type CardPhase = "still" | "playing" | "holding";
 
 /** What a card shows: its last frame (`still`), its sequence running
  *  (`playing`, `run` counts the starts so a renderer can restart it), or its
