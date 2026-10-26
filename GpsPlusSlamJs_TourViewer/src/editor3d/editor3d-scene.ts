@@ -47,6 +47,7 @@ import {
   type EditorViewState,
   type ShellLayer,
 } from "../editor/editor-view.js";
+import type { GroundPlace } from "../editor/editor-shell/scene-menu.js";
 import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
 import { tourCentre } from "../editor/tour-origin.js";
 import {
@@ -141,8 +142,23 @@ export interface Editor3dView {
   /** The layers turned off (the station names and the codes are drawn
    *  here; the others have nothing to draw yet). */
   setLayers(hidden: readonly ShellLayer[]): void;
+  /** The place the view looks at, on the ground (the tree's "+"). */
+  centre(): GroundPlace;
+  /** Turn the selection `deg` clockwise about up, as one edit through the
+   *  page (the bar's Align to station); false for one without a pose. */
+  turn(selection: string, deg: number): boolean;
   /** Where the selection stands in the world (the page's checks). */
   pointOf(selection: string): readonly [number, number, number] | null;
+  /** The ground's ellipsoidal height at a place, as loaded (null where
+   *  none has loaded yet): "Put on the ground" waits for it. */
+  groundAt(place: {
+    readonly lat: number;
+    readonly lon: number;
+  }): number | null;
+  /** The view's origin: the tour's centre when the view opened, which its
+   *  frame is built on (the inspector's east and north are measured from
+   *  it). */
+  origin(): { readonly lat: number; readonly lng: number };
   /** Cancel a gesture under way, writing nothing (an undo, a redo). */
   cancelGesture(): void;
   /** Where the selection (a station's point, an item's or a code's
@@ -181,6 +197,9 @@ export interface Editor3dStats {
   readonly standing: number;
   readonly stations: number;
   readonly codes: number;
+  /** Each code's drawn size over its printed one (laid flat, it grows
+   *  with the camera's distance). */
+  readonly codeScales: readonly number[];
   readonly shown: readonly string[];
   readonly renders: number;
   readonly osm: Record<string, unknown>;
@@ -628,6 +647,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         selectedStation: selectedStationOf(ui.selected, tourNow),
         stationSelected: ui.selected?.startsWith(STATION) ?? false,
         standing,
+        camera: camera.position,
       });
       renderer.render(scene, camera);
       frames++;
@@ -717,6 +737,10 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
           codes: !hidden.includes("codes"),
         });
       },
+      centre: () => editing.centre(),
+      groundAt: (place) => editing.groundAt(place),
+      origin: () => ({ lat: centre.lat, lng: centre.lng }),
+      turn: (selection, deg) => editing.turn(selection, deg),
       pointOf(selection) {
         const place = placeOf(selection);
         return place === null ? null : [place.at.x, place.at.y, place.at.z];
@@ -753,7 +777,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
           tiltDeg: cam.tiltDeg(),
           standing,
           ...layer.stats(),
-          osm: ground.osm.stats(),
+          osm: { ...ground.osm.stats(), coverage: ground.osm.coverage() },
           target: [controls.target.x, controls.target.y, controls.target.z],
           camera: [camera.position.x, camera.position.y, camera.position.z],
           distanceM: camera.position.distanceTo(controls.target),

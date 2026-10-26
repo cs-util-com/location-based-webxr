@@ -1,13 +1,26 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
-import { TextWriter, Uint8ArrayReader, ZipReader } from "@zip.js/zip.js";
+import {
+  TextReader,
+  TextWriter,
+  Uint8ArrayReader,
+  Uint8ArrayWriter,
+  ZipReader,
+  ZipWriter,
+} from "@zip.js/zip.js";
 import { readFileSync } from "node:fs";
+import {
+  createEmptyTourManifest,
+  serializeTourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 
 import {
   SQUARE_GROUND_M,
   afterFrames,
   answerHosts,
   openSample,
+  openZip,
   view3d,
 } from "./editor3d-fixture.js";
 import { save, viewCommand } from "./editor-menus.js";
@@ -24,7 +37,8 @@ import { useWideFont } from "./wide-font.js";
  * (on a flat relief at the square's height), select it, drag it with the
  * mouse and check the saved file; drive every key; cancel a touch drag
  * with a second finger; and measure the gizmo on the screen at four
- * window sizes, in a wide face.
+ * window sizes, in a wide face. A code laid flat in the top view grows
+ * with the camera's distance, at the same four sizes.
  */
 
 // One worker for the file, its tests in order: software-drawn 3D views
@@ -293,6 +307,9 @@ test("holds the camera still from a press on the gizmo until its release, even m
 test("answers every key: nudges, turns, height, delete, duplicate, Esc, and leaves T, F and Home to the shell", async ({
   page,
 }) => {
+  // About 15 s alone, and past the default 30 s on a loaded machine: a
+  // dozen edits, each waited for in a software-drawn view.
+  test.slow();
   const station = await openWithPin(page);
   await selectPin(page, station);
   const pose = async () => pinOf(await manifest(page))?.item;
@@ -359,6 +376,174 @@ test("answers every key: nudges, turns, height, delete, duplicate, Esc, and leav
   // Nothing selected: the arrows edit nothing.
   await page.keyboard.press("ArrowRight");
   expect(await changes(page)).toBe(steps);
+});
+
+// Why: the menus are driven from the keyboard, and their keys are the
+// menu's own. Pressed in an open menu, or on a menu's button, an arrow
+// nudged the selected pin, Home flew the camera to the whole tour and T
+// switched the top view, each behind the menu where the creator did not
+// look; and the help's Escape, taken first, left an open menu open.
+test("keys pressed in a menu stay in the menu: no nudge, no camera move, no top view", async ({
+  page,
+}) => {
+  test.slow();
+  const station = await openWithPin(page);
+  await selectPin(page, station);
+  await afterFrames(page, 3);
+  const pose = pinOf(await manifest(page))?.item.pose;
+  const steps = await changes(page);
+  const camera = await cameraAt(page);
+  const viewButton = page.locator("#view-menu-btn");
+  const viewMenu = page.locator("#view-menu");
+  await viewButton.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(viewMenu).toBeVisible();
+  for (const key of ["ArrowDown", "ArrowDown", "End", "Home", "t"]) {
+    await page.keyboard.press(key);
+  }
+  await page.keyboard.press("Escape");
+  await expect(viewMenu).toBeHidden();
+  await expect(viewButton).toBeFocused();
+  await afterFrames(page, 10);
+  expect(await changes(page)).toBe(steps);
+  expect(pinOf(await manifest(page))?.item.pose).toEqual(pose);
+  expect(await cameraAt(page)).toEqual(camera);
+  expect((await view3d(page))?.top).toBe(false);
+  // Escape closed the menu only: the pin is still selected.
+  expect(await selected(page)).toBe(PIN);
+  // On the closed menu's button Home is the page's again: it frames the
+  // whole tour. The camera is panned away first so the framing shows.
+  const canvas = await page.locator("#view3d canvas").boundingBox();
+  if (canvas === null) throw new Error("no canvas");
+  const mid = {
+    x: canvas.x + canvas.width / 2,
+    y: canvas.y + canvas.height / 2,
+  };
+  /** The orbit's centre (m in the view's frame). */
+  const target = async () =>
+    /** @type {number[]} */ ((await view3d(page))?.target ?? []);
+  /** @param {number[]} a @param {number[]} b */
+  const apart = (a, b) =>
+    Math.hypot((a[0] ?? 0) - (b[0] ?? 0), (a[2] ?? 0) - (b[2] ?? 0));
+  const framed = await target();
+  await page.mouse.move(mid.x, mid.y);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(mid.x + 160, mid.y + 40, { steps: 8 });
+  await page.mouse.up({ button: "right" });
+  await afterFrames(page, 20);
+  const panned = await target();
+  // The pan still coasts a little (the orbit's damping): Home must take
+  // the centre back much farther than that, half the pan at least.
+  const pan = apart(panned, framed);
+  expect(pan).toBeGreaterThan(1);
+  await viewButton.focus();
+  await page.keyboard.press("Home");
+  await expect
+    .poll(async () => apart(await target(), panned))
+    .toBeGreaterThan(pan / 2);
+  await expect(viewMenu).toBeHidden();
+  expect(await changes(page)).toBe(steps);
+  // With the help open, Escape in a menu still closes the menu.
+  await page.locator("#studio-help").click();
+  await expect(page.locator("#shell-help")).toBeVisible();
+  await viewButton.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(viewMenu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(viewMenu).toBeHidden();
+  // And with the focus gone from the open menu (to the page), Escape
+  // closes the menu before the help: the newer of the two goes first.
+  await expect(page.locator("#shell-help")).toBeVisible();
+  await page.evaluate(() => {
+    // A script's click: no press outside the help, which stays open.
+    document.getElementById("view-menu-btn")?.click();
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  });
+  await expect(viewMenu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(viewMenu).toBeHidden();
+  await expect(page.locator("#shell-help")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#shell-help")).toBeHidden();
+  expect(await selected(page)).toBe(PIN);
+});
+
+// Why: the bottom bar's and the inspector's item actions are one step
+// each, and only the page shows that the bar's buttons, the 3D view's turn
+// and the clipboard work together: Align must leave the pin facing its
+// station's way exactly (and say so, writing nothing, the second time),
+// the copied text must be the inspector's numbers, and "Move to a new
+// station" must give the pin a station of its own without moving it.
+test("an item's actions: turned to its station's way, its position copied, moved into a station of its own", async ({
+  page,
+  context,
+}) => {
+  test.slow();
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const station = await openWithPin(page);
+  await selectPin(page, station);
+  const pose = async () => pinOf(await manifest(page))?.item;
+  const straight = { pose: { rotation: [0, 0, 0, 1] } };
+  let steps = await changes(page);
+  await page.keyboard.press("e");
+  steps += 1;
+  await expect.poll(() => changes(page)).toBe(steps);
+  expect(turnDeg(straight, await pose())).toBeGreaterThan(1);
+
+  const align = page.locator('#shell-acts [data-bar="align"]');
+  await align.click();
+  steps += 1;
+  await expect.poll(() => changes(page)).toBe(steps);
+  expect(turnDeg(straight, await pose())).toBeLessThan(0.01);
+  // Already facing that way: said, nothing written.
+  await align.click();
+  await expect(
+    page.locator(".toast", { hasText: "already faces the way its station" }),
+  ).toBeVisible();
+  expect(await changes(page)).toBe(steps);
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => changes(page)).toBe(steps + 1);
+  expect(turnDeg(straight, await pose())).toBeGreaterThan(1);
+
+  await page.locator('#shell-acts [data-bar="copy"]').click();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toMatch(
+    /^-?\d+\.\d\d m north, -?\d+\.\d\d m east, -?\d+\.\d\d m up of its station, heading \d+ deg$/,
+  );
+  await expect(
+    page.locator(".toast", { hasText: `Position copied: ${copied}` }),
+  ).toBeVisible();
+
+  // Its own station, where it stands: the pin does not move.
+  const at = await page.evaluate(
+    (id) => /** @type {any} */ (window).__tourEditor.view3dPointOf(id),
+    PIN,
+  );
+  const before = await changes(page);
+  await page.locator('#inspector-body [data-act="split"]').click();
+  await expect
+    .poll(async () => pinOf(await manifest(page))?.station.id)
+    .not.toBe(station);
+  const own = pinOf(await manifest(page))?.station.id;
+  expect(await selected(page)).toBe(`station:${own}`);
+  expect(await changes(page)).toBe(before + 1);
+  await expect(
+    page.locator("#shell-inspector [data-act='lock']"),
+  ).toHaveAttribute("aria-pressed", "false");
+  const now = await page.evaluate(
+    (id) => /** @type {any} */ (window).__tourEditor.view3dPointOf(id),
+    PIN,
+  );
+  for (const axis of [0, 1, 2]) expect(now[axis]).toBeCloseTo(at[axis], 2);
+  await expect(
+    page.locator(".toast", { hasText: "with the pin in it" }),
+  ).toBeVisible();
+  await page.keyboard.press("Control+z");
+  await expect
+    .poll(async () => pinOf(await manifest(page))?.station.id)
+    .toBe(station);
 });
 
 test.describe("on a touch screen", () => {
@@ -508,4 +693,141 @@ test("a station's position is locked until it is unlocked in the inspector: its 
   );
   const was = before.stations.find((/** @type {any} */ s) => s.id === station);
   expect(moved.geo.lon).toBeGreaterThan(was.geo.lon);
+});
+
+/**
+ * A tour of one station on the square and one 20 cm code on a wall 10 m
+ * east of it, its face to the east. As a zip.
+ */
+async function oneCodeTour() {
+  const lat = 48.13725;
+  const lon = 11.57549;
+  const east = 10 / (111_320 * Math.cos((lat * Math.PI) / 180));
+  const manifest = {
+    ...createEmptyTourManifest(),
+    title: "One code",
+    stations: [
+      {
+        id: "a",
+        title: "Station A",
+        geo: { lat, lon, alt: SQUARE_GROUND_M + N_M, headingDeg: 0 },
+        activateRadiusM: 30,
+        foundRadiusM: 5,
+        hint: "arrow",
+        steps: [],
+        items: [],
+      },
+    ],
+  };
+  const id = await qrCodeId("https://gps.csutil.com/tour/?qr=editor3d&n=1");
+  const writer = new ZipWriter(new Uint8ArrayWriter());
+  await writer.add(
+    "tour.json",
+    new TextReader(serializeTourManifest(/** @type {any} */ (manifest))),
+  );
+  await writer.add(
+    `qr/${id}.json`,
+    new TextReader(
+      JSON.stringify({
+        version: 1,
+        qr: {
+          physicalSizeM: 0.2,
+          geo: {
+            lat,
+            lon: lon + east,
+            alt: SQUARE_GROUND_M + N_M + 1.5,
+            headingDeg: 0,
+          },
+        },
+      }),
+    ),
+  );
+  return { zip: Buffer.from(await writer.close()), id };
+}
+
+// Why: from high above, a 20 cm code is a dot; laid flat in the top view
+// it is drawn larger the farther the camera is (the camera's distance over
+// about 71 m, up to 8 times), and at its printed size near the camera or
+// tilted up. The page must hand the layer the camera it draws with: a
+// stale or missing camera passes every unit test of the layer.
+test("a code laid flat in the top view grows with the camera's distance, at a phone, a tablet and a desktop", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    // @ts-expect-error - absent in this browser for the test.
+    delete window.showOpenFilePicker;
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await page.goto("/edit.html");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  const { zip, id } = await oneCodeTour();
+  await openZip(page, zip, "one-code.zip");
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 60_000,
+  });
+  await expect.poll(async () => (await view3d(page))?.codes).toBe(1);
+  await page.keyboard.press("t");
+  await expect.poll(async () => (await view3d(page))?.top).toBe(true);
+  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
+  await expect.poll(async () => (await view3d(page))?.standing).toBe(0);
+  const code = await page.evaluate(
+    (level) => /** @type {any} */ (window).__tourEditor.view3dPointOf(level),
+    id,
+  );
+  /** The growth the curve gives the camera's distance from the code now. */
+  const expected = async () => {
+    const stats = await view3d(page);
+    const m = Math.hypot(
+      stats.camera[0] - code[0],
+      stats.camera[1] - code[1],
+      stats.camera[2] - code[2],
+    );
+    return {
+      m,
+      k: Math.min(8, Math.max(1, m * 0.014)),
+      now: stats.codeScales[0],
+    };
+  };
+  /**
+   * The camera `m` from the orbit's centre, a screenshot kept for the
+   * eye, and the growth then.
+   * @param {number} m
+   */
+  const at = async (m) => {
+    await page.evaluate(
+      (d) => /** @type {any} */ (window).__tourEditor.view3dDistance(d),
+      m,
+    );
+    await afterFrames(page, 2);
+    const size = page.viewportSize();
+    await page.screenshot({
+      path: test
+        .info()
+        .outputPath(`top-view-code-${size?.width}x${size?.height}-${m}m.png`),
+    });
+    return expected();
+  };
+  for (const size of [
+    { width: 1440, height: 900 },
+    { width: 820, height: 1180 },
+    { width: 844, height: 390 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(size);
+    const near = await at(50);
+    expect(near.m, `${size.width}`).toBeLessThan(71);
+    expect(near.now, `${size.width}`).toBe(1);
+    const mid = await at(300);
+    expect(mid.now, `${size.width}: ${mid.m} m`).toBeCloseTo(mid.k, 3);
+    expect(mid.now).toBeGreaterThan(3);
+    const far = await at(1000);
+    expect(far.now, `${size.width}`).toBe(8);
+  }
+  // Tilted up, the code stands at its printed size, however far.
+  await page.evaluate(() =>
+    /** @type {any} */ (window).__tourEditor.view3dTilt(60),
+  );
+  await expect.poll(async () => (await view3d(page))?.standing).toBe(1);
+  await expect.poll(async () => (await expected()).now).toBe(1);
 });

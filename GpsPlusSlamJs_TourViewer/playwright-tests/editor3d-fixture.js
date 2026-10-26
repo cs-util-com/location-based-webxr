@@ -143,3 +143,17 @@ export async function openSampleIn3d(page) {
   await expect(page.locator("#view-switch")).toHaveText("2D map");
   await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
 }
+
+/**
+ * Open `zip` through the page's file input, as a dropped file.
+ * @param {import("@playwright/test").Page} page
+ * @param {Buffer} zip
+ * @param {string} name
+ */
+export async function openZip(page, zip, name) {
+  const chooser = page.waitForEvent("filechooser");
+  await page.locator("#drop").click();
+  await (
+    await chooser
+  ).setFiles({ name, mimeType: "application/zip", buffer: zip });
+}

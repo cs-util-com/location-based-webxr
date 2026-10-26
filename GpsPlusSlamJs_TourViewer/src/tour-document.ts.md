@@ -53,6 +53,12 @@ reducers' building blocks, so a page cannot apply them differently.
   bare station would come back as one its items left. Kept in each view
   (absent when empty), so an undo of the delete brings the station back;
   a landed save drops the ids the write left out.
+- `handMade: string[]` - the stations the creator added by hand since the
+  open (`stationAdded`). Each keeps itself as a title would: an untitled
+  one with nothing in it is not dropped as emptied (`withoutEmptied`), is
+  kept in the frames (`keptBare`) and written, and comes back from a
+  draft (the settings record's `handMadeStations`). Only grows while the
+  tour is open; no step of the history.
 - `past` / `future: TourHistoryStep[]` - the history: each step a
   `TourDocumentView` (`stations`, the world `objects`, `needsNoGps`,
   `details`, `deletedStations` when any) and the edit in words. At most
@@ -109,13 +115,17 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   Only who holds the page's save slot (`save.by`) is kept: the slot is
   the page's, and the save holding it lets it go once it sees its tour
   gone (as the page's own flag behaved).
-- `placed` / `edited` / `moved({ object, what, newStationId?, newStation? })`
+- `placed` / `edited` / `moved({ object, what, newStationId?, newStation?,
+afterHome? })`
   - one entry per id (`upsertPlaced`): a new object, a pin's text, a move
     on the map or in AR. Three names so a log reads as what happened. None
     changes anything for a pending object put again with the same content
     and the same stations (`objectContentKey`): the AR settle re-poses
     every object of a visit, and an unchanged one is no step - it would
-    withdraw a delete's Undo.
+    withdraw a delete's Undo. `moved` with `newStation` and `afterHome`
+    puts the station it starts right after the one the object left (in
+    its place when that one is dropped as emptied) instead of at the
+    end, and sets `framesRecorded` so the draft records that order.
 - **Every object belongs to a station from the moment it is placed** (the
   station rule, `seatByRule`). It reads the stations of `manifestNow` (a
   written station no frame names still counts: seated in, it is listed
@@ -146,12 +156,18 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
     reach) the object keeps its station (whose anchor stays put); beyond
     it the rule runs again - the station holding the new spot, or a new
     one there - so no move is ever too far, and none is silently dropped.
-    An object already outside its station's radius (the radius shrank,
-    the station moved) keeps its station when moved no farther from the
-    anchor and into no other station's radius (`keepsHome`); a station
-    whose radius already held the old spot (overlapping radii) is not one
-    it moved into, so a nudge toward its own anchor keeps it. The comparison is
-    strict, so a move a centimetre farther out runs the rule. The station it left goes in the same step when that leaves
+    The object also keeps its station (`keepsHome`, by distance
+    `keepsHomeDistance` of `keeps-home.ts`) when it stands within the
+    radius plus a tolerance of 0.5 m (a typed offset, an AR settle), or
+    no farther from the anchor than it stood before the move (an object
+    outside the radius already: the radius shrank, the station moved) -
+    in both cases only when the move takes it into no other station's
+    radius; a station whose radius already held the old spot (overlapping
+    radii) is not one it moved into, so a nudge toward its own anchor
+    keeps it. The bound is the circle, never the previous place, so no
+    run of nudges carries an object outward without limit. A radius
+    lowered under its objects moves none of them: they stay in the
+    station, outside the circle, until moved. The station it left goes in the same step when that leaves
     it an EMPTY AUTOMATIC station: no object names it, and nothing of its
     own (`keepsItself` of `tour-content.ts`: a title, a story step, a
     non-blank description, a card image naming an image asset) keeps it.
@@ -207,8 +223,8 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   saved texts too, under the rule of `settleApplied` above, and the step
   it leaves for the way back carries the codes it set.
 - `restored({ objects, deleted, needsNoGps?, details?, stations?,
-createdStations?, frames?, order?, deletedStations?, rerun?, what,
-newStationIds? })` - a draft's work,
+createdStations?, handMadeStations?, frames?, order?, deletedStations?,
+rerun?, what, newStationIds? })` - a draft's work,
   already filtered by the page's rules, as one step to undo; not live work
   (`touched` unchanged). In order: the station poses (each named
   station's frame takes its pose, `stationsRecorded` set); the CREATED
@@ -229,7 +245,8 @@ newStationIds? })` - a draft's work,
   object names goes (a written one joins `deletedStations`); and the stations
   follow the recorded `order`, those it does not name after them (no
   order: the opened file's, then the added ones). Stations the record does
-  not name keep the opened file's version, title and all.
+  not name keep the opened file's version, title and all. The ids of
+  `handMadeStations` the restored tour carries join `handMade`.
   A record without these fields (written before stations were kept
   whole) restores as before. Every frame a restore brings - recorded or
   created - is checked against the tour it is restored into: one whose
@@ -248,7 +265,9 @@ appliedDeletions, stationsAtStart, inPlaceAt? })`, `saveEnded({ generation, erro
 - The page's save slot (the desktop page, `editor/edit-main.ts`):
   `saveClaimed({ by })` (it also takes a due `resave` on: a save claimed
   after a step writes the document as it stands then, or says why it could
-  not - so a refusal never loops), `saveReleased({ error? })`, `saveQueued({ queued })`,
+  not - so a refusal never loops; a `"copy"` claim takes neither the
+  resave nor the last error on: a copy writes another file, so the tour's
+  own save stays due and its error stands), `saveReleased({ error? })`, `saveQueued({ queued })`,
   `saveBuilt()`, `saveDelivered({ inPlace, name })`, `saveLimited({
 largeTour?, cannotSave? })`.
 - The 3D editor's station edits, each ONE step (refused, changing nothing,
@@ -272,9 +291,10 @@ largeTour?, cannotSave? })`.
     draft does not list it, so the live document does not either; such an
     edit of a station no frame lists changes nothing.
   - `stationAdded({ at, stationId?, what })` - an automatic station
-    (`automaticStationFrame`) at a point on the globe, titled
-    `Station N` after the stations it follows; `prepare` mints the id, a
-    taken or malformed one changes nothing.
+    (`automaticStationFrame`) at a point on the globe, UNTITLED (the tree
+    names it by its number, so a reorder or a delete never leaves two
+    stations under one name nobody typed), joining `handMade`; `prepare`
+    mints the id, a taken or malformed one changes nothing.
   - `stationDeleted({ stationId, what })` - the station with its items
     (each deleted as `deleted` does); a written station joins `deletedStations`. The tour's last
     station is refused (`stationDeleteRefusal`: `missing` or `last`). The
@@ -380,11 +400,15 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   their home, and a write prunes it once they are gone), one that keeps
   itself (`keepsItself`) only while an object of the document still
   stands in it, so a station added, saved and undone is gone rather than
-  kept by its own title. A frame the file lacks is kept while an edit
+  kept by its own title. Such a station loses its routes to a station
+  `deletedStations` names: a delete prunes only the stations it lists, so
+  a written station its items left kept its `next` to a station deleted
+  afterwards, and the format refuses that tour. A frame the file lacks is kept while an edit
   names it, it keeps itself (a station added or copied here), or it is a
   bare empty station of the tour as opened (`bareEmptyStations`: nothing
   else would keep one, so its delete, saved, then undone, brought nothing
-  back). Not for a bare empty station only a later write held (added,
+  back) or one added by hand (`handMade`); `keptBare` is the two.
+  Not for a bare empty station only a later write held (added,
   its title cleared, saved): its delete, saved and undone, stays gone.
 - `stationImages(state)` (module-private) - the images each station's
   card may show, by station id: a photo of that station as the document

@@ -44,6 +44,7 @@ import {
   manifestToWrite,
   selectTourDocument,
   tourDocumentActions,
+  type TourDocumentState,
   type TourSaveHolder,
   type TourSaveStatus,
 } from "../tour-document.js";
@@ -139,9 +140,19 @@ import { noGpsWarnings } from "./no-gps-check.js";
 import { revealPadding, type Box } from "./popover-place.js";
 import { createStatusLines } from "./status-lines.js";
 import { createViewSwitch, type View3dHandle } from "./view-switch.js";
-import { createMenuButton } from "./menu-button.js";
+import {
+  createMenuButton,
+  menuItemControl,
+  setItemDisabled,
+} from "./menu-button.js";
+import { inField, inMenu } from "./key-target.js";
 import { createEditorShell } from "./editor-shell/editor-shell.js";
+import { newPin } from "./new-pin.js";
+import { reseatOf, type Reseat } from "./reseat-note.js";
+import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
+import type { GroundPlace } from "./editor-shell/scene-menu.js";
+import { stationTitle } from "../station-run.js";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type {
   Editor3dStats,
@@ -753,31 +764,50 @@ function select(id: string | null, pan = false): void {
 /** The save status: its state and its words, the words also its title
  *  (the 3D view's top bar cuts a long line short with an ellipsis; the
  *  whole line stays announced, and shows on hover). */
-function showSaveStatus(state: string, text: string): void {
+function showSaveStatus(
+  state: string,
+  text: string,
+  // Beside File, the bar's one warning against losing work: changes not
+  // saved, or a save that did not arrive.
+  unsaved = state === "pending" || state === "error",
+): void {
   saveStatus.dataset["state"] = state;
   saveStatus.textContent = text;
   saveStatus.title = text;
-  // Beside File, the bar's one warning against losing work: changes not
-  // saved, or a save that did not arrive.
-  const unsaved = state === "pending" || state === "error";
   unsavedMark.hidden = !unsaved;
   unsavedMark.title = unsaved ? text : "";
 }
 
+/** The File menu's items that follow the open tour and the save slot. */
+function renderFileItems(): void {
+  if (!ui().doneBusy) {
+    setItemDisabled(doneButton, editor === null || walkMoving());
+  }
+  setItemDisabled(fileDetailsButton, editor === null);
+  // On whenever a tour is open and no save runs: a click commits the
+  // card's typing first, so a disabled button would swallow the first
+  // edit (E2a review #3).
+  setItemDisabled(saveButton, editor === null || saving());
+  setItemDisabled(saveCopyButton, editor === null || saving());
+}
+
 function renderSaveState(): void {
   const count = editor?.changeCount() ?? 0;
-  if (!ui().doneBusy) doneButton.disabled = editor === null || walkMoving();
-  fileDetailsButton.disabled = editor === null;
+  renderFileItems();
   if (saving()) {
-    showSaveStatus("saving", "Saving…");
-    saveButton.disabled = true;
-    saveCopyButton.disabled = true;
+    // A copy is not the tour's save: the mark stays while the tour's own
+    // file is still due its changes.
+    if (saveState().by === "copy") {
+      showSaveStatus(
+        "saving",
+        "Saving a copy…",
+        count > 0 || undelivered !== null || saveState().error !== null,
+      );
+    } else {
+      showSaveStatus("saving", "Saving…");
+    }
     return;
   }
-  saveCopyButton.disabled = editor === null;
-  // On whenever a tour is open: a click commits the card's typing first,
-  // so a disabled button would swallow the first edit (E2a review #3).
-  saveButton.disabled = editor === null;
   if (undelivered !== null && count === 0) {
     showSaveStatus("error", "Not saved yet - tap Save again");
     return;
@@ -967,10 +997,18 @@ function finishMove(): void {
   store.dispatch(editorViewActions.moveEnded());
   if (done.drop !== null) {
     try {
+      const before = store.getState().tourDocument;
       const outcome = editor.move(done.id, done.drop.lat, done.drop.lng);
       if (outcome.kind === "moved") {
         moved.add(done.id);
-        say({ id: done.id, text: "Moved - not saved yet." });
+        const reseat = announceReseat(before, done.id);
+        say({
+          id: done.id,
+          text:
+            reseat === null
+              ? "Moved - not saved yet."
+              : `${reseat.said} - not saved yet.`,
+        });
         endUndo();
         autosave.changed();
       } else {
@@ -1163,6 +1201,7 @@ async function duplicateSelection(id: string): Promise<void> {
     toast(outcome.reason);
     return;
   }
+  if ("stationId" in outcome) unlockMade(outcome.stationId);
   select(
     "stationId" in outcome
       ? `${STATION_PREFIX}${outcome.stationId}`
@@ -1177,6 +1216,7 @@ async function duplicateSelection(id: string): Promise<void> {
 function commitSceneEdit(edit: GestureEdit): void {
   if (editor === null) return;
   endUndo();
+  const before = store.getState().tourDocument;
   const outcome = applySceneEdit(editor, edit);
   say(null);
   refresh();
@@ -1184,7 +1224,151 @@ function commitSceneEdit(edit: GestureEdit): void {
     toast(outcome.reason);
     return;
   }
+  if (edit.kind === "item-pose") {
+    const reseat = announceReseat(before, edit.id);
+    if (reseat !== null) toast(reseat.said);
+  }
   autosave.changed();
+}
+
+/** An item a write gave another station (`reseat-note.ts`): a station
+ *  the rule made for it starts unlocked, as every station made in this
+ *  session; the line saying so is the caller's to show. */
+function announceReseat(before: TourDocumentState, id: string): Reseat | null {
+  const reseat = reseatOf(before, store.getState().tourDocument, id);
+  if (reseat?.made === true) unlockMade(reseat.stationId);
+  return reseat;
+}
+
+/** An edit the 3D inspector typed or pressed, written through `write`:
+ *  one step; a refusal is said, a change counted. */
+function writeInspectorEdit(
+  write: (
+    session: EditorSession,
+  ) =>
+    | { readonly kind: string }
+    | { readonly kind: "refused"; readonly reason: string },
+): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = write(editor);
+  refresh();
+  if ("reason" in outcome) {
+    toast(outcome.reason);
+    return;
+  }
+  if (outcome.kind !== "unchanged") autosave.changed();
+}
+
+/** The 3D inspector's Add pin: a new pin in `stationId`, clear of its
+ *  items and on the ground where that has loaded (`new-pin.ts`), selected
+ *  and said; one step. */
+function addPinTo(stationId: string): void {
+  if (editor === null) return;
+  const station = manifestToWrite(store.getState().tourDocument)?.stations.find(
+    (s) => s.id === stationId,
+  );
+  if (station === undefined) return;
+  endUndo();
+  const pin = newPin({
+    station,
+    id: newObjectId(),
+    nowIso: new Date().toISOString(),
+    groundAt: (place) => shown3d?.groundAt(place) ?? null,
+  });
+  const outcome = editor.place(pin);
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  select(pin.id);
+  toast(`Added a pin to "${stationTitleOf(stationId)}"`);
+  autosave.changed();
+}
+
+/** A station made in this session (added, split off, copied) starts
+ *  unlocked: nothing was placed on site by it yet, so placing it is the
+ *  next thing its creator does. */
+function unlockMade(stationId: string): void {
+  store.dispatch(
+    editorViewActions.stationLocked({ id: stationId, locked: false }),
+  );
+}
+
+/** A station's title, as the tree numbers it, or a stand-in. */
+function stationTitleOf(stationId: string): string {
+  const stations =
+    manifestToWrite(store.getState().tourDocument)?.stations ?? [];
+  const index = stations.findIndex((s) => s.id === stationId);
+  const station = stations[index];
+  return station === undefined
+    ? "the station"
+    : stationTitle(station, index + 1);
+}
+
+/** A station the page made: unlocked, selected, its card unfolded, said. */
+function showNewStation(stationId: string, said: (title: string) => string) {
+  unlockMade(stationId);
+  refresh();
+  select(`${STATION_PREFIX}${stationId}`);
+  store.dispatch(
+    editorViewActions.stationFolded({ id: stationId, open: true }),
+  );
+  toast(said(stationTitleOf(stationId)));
+  autosave.changed();
+}
+
+/**
+ * A new station at `at` (the 3D tree's "+" at the view's centre, or the
+ * ground menu's "New station here"): one step; a refusal is said.
+ */
+function addStationAt(at: GroundPlace, where: "centre" | "here"): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = editor.addStation(at);
+  if (outcome.kind === "refused") {
+    refresh();
+    toast(outcome.reason);
+    return;
+  }
+  showNewStation(
+    outcome.stationId,
+    (title) =>
+      `Added "${title}" ${where === "centre" ? "at the centre of the view" : "here"}`,
+  );
+}
+
+/** The stations put in `order` (the 3D tree's drag, the inspector's
+ *  Earlier and Later): one step. */
+function reorderStations(order: readonly string[]): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = editor.reorderStations(order);
+  refresh();
+  if (outcome.kind === "refused") toast(outcome.reason);
+  else if (outcome.kind === "reordered") autosave.changed();
+}
+
+/** An item given a station of its own where it stands ("Move to a new
+ *  station"): one step; the new station is selected and said. */
+function splitItem(id: string): void {
+  if (editor === null) return;
+  const kind = manifestToWrite(store.getState().tourDocument)
+    ?.stations.flatMap((s) => s.items)
+    .find((i) => i.id === id)?.kind;
+  endUndo();
+  const outcome = editor.moveToNewStation(id);
+  if (outcome.kind === "refused") {
+    refresh();
+    toast(outcome.reason);
+    return;
+  }
+  const word = kind === "model" ? "3D model" : (kind ?? "item");
+  showNewStation(
+    outcome.stationId,
+    (title) => `New station "${title}" with the ${word} in it`,
+  );
 }
 
 /** The cover choices' thumbnails, let go when the dialog closes. */
@@ -1324,21 +1508,9 @@ function openDetails(): void {
 
 tourName.addEventListener("click", openDetails);
 
-/** Where a key goes to a field's own undo (typing in the card, a dialog,
- *  the search): the page's undo stays out of it. */
 /** One of the page's dialogs shows. */
 function dialogOpen(): boolean {
   return !modal.hidden || details.isOpen() || done.isOpen();
-}
-
-function inField(at: EventTarget | null): boolean {
-  return (
-    at instanceof HTMLElement &&
-    (at.isContentEditable ||
-      at instanceof HTMLInputElement ||
-      at instanceof HTMLTextAreaElement ||
-      at instanceof HTMLSelectElement)
-  );
 }
 
 /** Whether `event` is the letter `letter` with Ctrl (or Cmd) and no Alt:
@@ -1470,7 +1642,10 @@ let addedDebug: {
 } | null = null;
 /** "Add debug data…" while an add reads its file: disabled, saying so,
  *  and a second add starts nothing (`createAddDebugButton`). */
-const debugAdd = createAddDebugButton(debugAddButton, fileDebugAdd);
+const debugAdd = createAddDebugButton(
+  debugAddButton,
+  menuItemControl(fileDebugAdd),
+);
 
 /** Where the debug layer reads (one seam, so a point cloud reads the
  *  same place): debug data added wins over the tour's own walk - the
@@ -2294,7 +2469,8 @@ async function saveCopy(): Promise<void> {
     copyFileName(mine.savedName()),
   );
   const source = openedFile;
-  const ended = claimSave("explicit");
+  // A copy's own claim: the tour's due resave and its last error stay.
+  const ended = claimSave("copy");
   renderSaveState();
   try {
     const picked = await pick;
@@ -2341,8 +2517,10 @@ async function saveCopy(): Promise<void> {
     if (editor === mine) releaseSave();
     ended();
     renderSaveState();
-    // An autosave held back while the copy was built runs now.
+    // An autosave held back while the copy was built runs now, and so
+    // does a resave (D33) that fell due meanwhile.
     autosave.poke();
+    if (editor === mine) void resaveIfDue();
   }
 }
 
@@ -2544,7 +2722,7 @@ async function buildAndDeliver(
     releaseSave(said);
     renderSaveState();
     showSaveStatus("error", said);
-    saveButton.disabled = false;
+    setItemDisabled(saveButton, false);
     return "failed";
   }
 }
@@ -2760,7 +2938,7 @@ async function finishEditing(): Promise<void> {
   const pick = askSaveFile();
   if (unsavedWork()) {
     store.dispatch(editorViewActions.doneBusyChanged({ busy: true }));
-    doneButton.disabled = true;
+    setItemDisabled(doneButton, true);
     doneButton.textContent = "Saving…";
     try {
       // An autosave that runs ends first (and one queued behind it).
@@ -2770,7 +2948,7 @@ async function finishEditing(): Promise<void> {
     } finally {
       store.dispatch(editorViewActions.doneBusyChanged({ busy: false }));
       doneButton.textContent = PUBLISH_LABEL;
-      doneButton.disabled = editor === null;
+      setItemDisabled(doneButton, editor === null);
     }
     if (editor !== mine) return;
     if (unsavedWork()) {
@@ -3137,7 +3315,8 @@ element("open-fineprint").textContent = saveFinePrint(
  * selection from the store, and its photos and models from the copy the
  * page reads now. A failure is said and kept until closed (the async-UI
  * rule: the creator asked for something that did not happen), or until a
- * later open shows the view: then it says what is no longer so.
+ * later open shows the view: then it says what is no longer so. A tour
+ * with nothing positioned is no failure: its line passes.
  */
 const view3dBox = element("view3d");
 let view3dFailureToast: HTMLElement | null = null;
@@ -3180,9 +3359,34 @@ const shell = createEditorShell({
   codes: shellCodes,
   loadPicture: readContent,
   dialogOpen,
+  stations: {
+    add: addStationAt,
+    reorder: reorderStations,
+    split: splitItem,
+    duplicate: (selection) => {
+      void duplicateSelection(selection);
+    },
+    remove: deleteSelection,
+  },
+  edits: {
+    station: (stationId, edit) => {
+      writeInspectorEdit((e) => e.editStation(stationId, edit));
+    },
+    text: (id, text) => {
+      writeInspectorEdit((e) => e.editText(id, text));
+    },
+    scene: commitSceneEdit,
+    groundItems: (items) => {
+      writeInspectorEdit((e) => e.groundItems(items));
+    },
+    addPin: addPinTo,
+  },
+  say: (text) => {
+    toast(text);
+  },
 });
 const viewSwitch = createViewSwitch({
-  button: element<HTMLButtonElement>("view-switch"),
+  button: menuItemControl(element("view-switch")),
   status: element("view-loading"),
   store,
   open: async (events) => {
@@ -3213,8 +3417,13 @@ const viewSwitch = createViewSwitch({
         say: (text) => {
           toast(text);
         },
+        groundMenu: (point, place) => {
+          shell.groundMenu(point, place);
+        },
+        // A field's and a menu's keys are their own (`key-target.ts`).
         keysFree: (event) =>
           !inField(event.target) &&
+          !inMenu(event.target, event.key) &&
           !dialogOpen() &&
           Boolean(modal.hidden) &&
           !ui().busy,
@@ -3229,9 +3438,15 @@ const viewSwitch = createViewSwitch({
     };
     return handle;
   },
-  say: (text) => {
+  say: (text, reason) => {
     view3dFailureToast?.remove();
-    view3dFailureToast = toast(text, undefined, null);
+    // A tour with nothing positioned is no failure: the map shows it, and
+    // a passing line says why.
+    view3dFailureToast = toast(
+      text,
+      undefined,
+      reason === "empty" ? UNDO_MS : null,
+    );
     fileToasts.push(view3dFailureToast);
   },
   onShown: (on) => {

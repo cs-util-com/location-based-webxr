@@ -21,6 +21,8 @@ import {
   type DraftFileStore,
 } from "gps-plus-slam-app-framework/storage";
 import { readStoredEntryBytes } from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { manifestToWrite } from "../tour-document.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import { createEditorDraft } from "./editor-draft.js";
@@ -31,6 +33,11 @@ import { stationIdOf, tourOf } from "../test-support/v3-tour.js";
 beforeAll(() => {
   createTourViewerStore();
 });
+
+/** The world view of `tour` (none without one). */
+function tourObjectsOf(tour: TourManifest | null): readonly TourObject[] {
+  return tour === null ? [] : tourObjects(tour);
+}
 
 function pin(id: string, lat = 48.52): TourObject {
   return {
@@ -287,6 +294,40 @@ describe("the editor session's station edits", () => {
     await session.close();
   });
 
+  // Why: "Move to a new station" splits an item out where it stands, and
+  // the page selects the station it made - so the session must say which,
+  // move nothing, and take it back in one undo.
+  it("moveToNewStation gives an item a station of its own where it stands, one step, and names it", async () => {
+    const { session, manifest } = await opened();
+    const store = createTourViewerStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    const tour = () => manifestToWrite(store.getState().tourDocument);
+    const stationOf = (id: string) =>
+      tour()?.stations.find((st) => st.items.some((i) => i.id === id));
+    const before = tourObjectsOf(tour()).find((o) => o.id === "b")?.geo;
+    const outcome = editor.moveToNewStation("b");
+    expect(outcome).toMatchObject({ kind: "moved" });
+    const made = "stationId" in outcome ? outcome.stationId : "";
+    expect(made).not.toBe(stationIdOf("b"));
+    expect(stationOf("b")?.id).toBe(made);
+    // Where it stood, turned as it was.
+    expect(tourObjectsOf(tour()).find((o) => o.id === "b")?.geo).toEqual(
+      before,
+    );
+    expect(editor.changeCount()).toBeGreaterThan(0);
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    expect(stationOf("b")?.id).toBe(stationIdOf("b"));
+    expect(editor.moveToNewStation("nope")).toMatchObject({
+      kind: "refused",
+    });
+    await session.close();
+  });
+
   it("an item moved into a station of its own, and items put on the ground as one step", async () => {
     const { session, manifest } = await opened();
     const editor = createEditorSession({
@@ -391,6 +432,63 @@ describe("the station edits across a reload", () => {
         );
       }
     }
+    await session.close();
+  });
+
+  // Why: an item split off into a station of its own, right after its
+  // first station, came back from a reload without that station - the
+  // item was seated back into the station it had left - while the save
+  // before the reload had them apart.
+  it("an added station, an order changed, an item split off and a station deleted come back from the draft as the save had them", async () => {
+    const { session, manifest } = await opened();
+    const stores = memoryDraftStores();
+    const draft = draftOver(stores);
+    await draft.open(K, manifest);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft: draft.writes(),
+    });
+    const added = editor.addStation({ lat: 48.53, lon: 9.05, alt: 340 });
+    if (added.kind !== "added") throw new Error("not added");
+    const ids = () =>
+      editor
+        .model()
+        .items.filter((i) => i.kind === "station")
+        .map((i) => i.id.replace(/^station:/, ""));
+    const order = ids();
+    const at = order.indexOf(added.stationId);
+    order.splice(at, 1);
+    order.splice(at - 1, 0, added.stationId);
+    expect(editor.reorderStations(order)).toEqual({ kind: "reordered" });
+    expect(editor.moveToNewStation("b")).toMatchObject({ kind: "moved" });
+    expect(editor.deleteStation(stationIdOf("a"))).toEqual({ kind: "deleted" });
+    const pending = editor.changeCount();
+    const beforeTour = await savedTour(
+      (await editor.save({ keepScan: false })).blob,
+    );
+    await draft.idle();
+    draft.close();
+
+    const again = draftOver(stores);
+    const { offer } = await again.open(K, manifest);
+    expect(offer).not.toBeNull();
+    const reloaded = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft: again.writes(),
+    });
+    reloaded.restore(offer!);
+    expect(reloaded.changeCount()).toBe(pending);
+    const after = await savedTour(
+      (await reloaded.save({ keepScan: false })).blob,
+    );
+    expect(after.stations.map((s) => s.id)).toEqual(
+      beforeTour.stations.map((s) => s.id),
+    );
+    expect(after.stations).toEqual(beforeTour.stations);
     await session.close();
   });
 

@@ -27,16 +27,23 @@ AR (tour editor plan 2026-10-17-1816, W1).
   OpenStreetMap) as its last child, so its links come after the docks in
   the Tab order (the docks' z-index keeps them painted over it). Inside it the studio shell's parts
   (`src/editor/editor-shell/editor-shell.ts`): the tree dock
-  `#shell-tree` (`#tree-stations`, `#tree-fold`, `#tree-body`), the
+  `#shell-tree` (`#tree-stations`, `#tree-add` - the "+" that adds a
+  station at the centre of the view -, `#tree-fold`, `#tree-body`), the
   inspector dock `#shell-inspector` (`#inspector-head`,
   `#inspector-body`, hidden without a selection), the map controls
   `#map-controls` (`#compass` with `#compass-needle`, `#zoom-in`,
-  `#zoom-out`) and the help `#shell-help`.
+  `#zoom-out`), the help `#shell-help` and the ground menu `#scene-menu`
+  (`#scene-new-station`, "New station here"; `scene-menu.ts`). The box
+  has `tabindex="-1"`: the ground menu gives the focus back to it, and the
+  view's window keys work from there.
 - `#shell-bar` - the bottom bar, shown with the top bar in both views:
   first the save status `#save-status` (a live region; its words also in
   its `title`) and the 3D view's load line `#view-loading` ("Loading 3D
   view…", hidden otherwise, `src/editor/view-switch.ts`); then the 3D
-  view's `#shell-view`, `#shell-hint`, the debug readout
+  view's `#shell-view`, the selection's power actions `#shell-acts`
+  (Duplicate, Align to station, Copy position; `bar-actions.ts`, drawn
+  by the shell, their words hidden at 820 px and below), `#shell-hint`,
+  the debug readout
   (`#shell-history`, `#shell-calls`, `#shell-frame`) and its toggle
   `#shell-debug`, hidden on the map. The map's overlays at its foot (the
   rail, the debug panel, the map's credits, the toasts) sit above it.
@@ -64,6 +71,12 @@ AR (tour editor plan 2026-10-17-1816, W1).
     (`#file-keep-walk`, a `menuitemcheckbox` only for a tour carrying a
     walk, unticked; hidden for a file opened for writing, which keeps its
     walk) and "Share and publish…" (`#file-publish`, the done dialog).
+  - **A menu item is disabled by `aria-disabled`, never by `disabled`**
+    (the menu button pattern: it keeps the focus, so a screen reader says
+    it is there); a shown shortcut is `aria-keyshortcuts` (Control+S,
+    Control+Z, Control+Shift+Z, T, F) with its `<kbd>` `aria-hidden`, so
+    it is not read into the item's name. Pinned by
+    `src/editor/edit-menus-markup.test.ts`.
   - The unsaved mark `#unsaved-mark` beside File: an amber dot and "Not
     saved" while changes are not saved (the status's words its `title`);
     the one warning in the bar against losing work.
@@ -74,7 +87,7 @@ AR (tour editor plan 2026-10-17-1816, W1).
     T, a `menuitemcheckbox`) and Frame (`#studio-frame`, F), the 3D
     view's; Show debug data (`#view-debug`, a `menuitemcheckbox`, only
     while the debug layer has a source - the tour's walk or added debug
-    data); and the view switch `#view-switch` ("3D view" / "2D map",
+    data - and only on the map, which alone draws that layer yet); and the view switch `#view-switch` ("3D view" / "2D map",
     `src/editor/view-switch.ts`).
   - The 3D view's studio buttons, hidden on the map: Details
     (`#studio-details`), Undo and Redo (`#studio-undo`, `#studio-redo`),

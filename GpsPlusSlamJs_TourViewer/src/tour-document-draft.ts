@@ -25,6 +25,7 @@ import type { EditEntry } from "./object-edits.js";
 import { DETAIL_FIELDS, type TourDetailFields } from "./tour-details-form.js";
 import {
   createdStationFrames,
+  documentFrames,
   framesOf,
   levelsNotHosted,
   type LevelText,
@@ -64,6 +65,10 @@ export interface TourSettingsRecord {
   /** The stations of the opened or written tour the document no longer
    *  carries, recorded with `frames`; absent when none. */
   readonly deletedStations?: readonly string[];
+  /** The stations the next write carries that were added by hand here
+   *  (`handMade`): they keep themselves though untitled and empty.
+   *  Recorded with `frames`; absent when none. */
+  readonly handMadeStations?: readonly string[];
 }
 
 /** The settings record's file in a draft namespace, on both pages. Not a
@@ -231,6 +236,7 @@ export function parseSettingsRecord(
     const frames = parseFrames(record["frames"], against);
     const order = parseIds(record["order"]);
     const deletedStations = parseIds(record["deletedStations"]);
+    const handMade = parseIds(record["handMadeStations"]);
     return {
       needsNoGps,
       ...(details === undefined ? {} : { details }),
@@ -243,6 +249,9 @@ export function parseSettingsRecord(
       ...(deletedStations === undefined || deletedStations.length === 0
         ? {}
         : { deletedStations }),
+      ...(handMade === undefined || handMade.length === 0
+        ? {}
+        : { handMadeStations: handMade }),
     };
   } catch {
     return undefined;
@@ -301,6 +310,8 @@ export function settingsRecord(state: TourDocumentState): TourSettingsRecord {
   const created = createdStationFrames(state);
   const gone = state.framesRecorded ? stationsGoneSinceOpen(state) : [];
   const order = state.framesRecorded ? recordedOrder(state) : undefined;
+  const carried = new Set(documentFrames(state).map((f) => f.id));
+  const handMade = state.handMade.filter((id) => carried.has(id));
   return {
     needsNoGps: state.needsNoGps,
     ...(state.detailsRecorded ? { details: state.details } : {}),
@@ -311,6 +322,7 @@ export function settingsRecord(state: TourDocumentState): TourSettingsRecord {
     ...(state.framesRecorded ? { frames: recordedFrames(state) } : {}),
     ...(order === undefined ? {} : { order }),
     ...(gone.length === 0 ? {} : { deletedStations: gone }),
+    ...(handMade.length === 0 ? {} : { handMadeStations: handMade }),
   };
 }
 

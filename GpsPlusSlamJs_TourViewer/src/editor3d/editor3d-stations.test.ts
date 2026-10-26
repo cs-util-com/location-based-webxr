@@ -24,10 +24,15 @@ import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import { worldFromEcefAt } from "gps-plus-slam-globe/editor";
 
+import fc from "fast-check";
+
 import {
   BILLBOARD_LIFT_M,
   CODE_FLAT_GAP_M,
+  CODE_GROWTH_MAX,
+  CODE_GROWTH_FROM_M,
   DEFAULT_CODE_SIZE_M,
+  codeGrowth,
   codeQuaternionNue,
   createStationsLayer,
   type StationsLayerDeps,
@@ -163,11 +168,14 @@ const view = (
   selected: string | null,
   standing = 1,
   stationSelected = false,
+  // At the stations' drawn height over the centre: no code grows.
+  camera = new THREE.Vector3(east, 516, -north),
 ) => ({
   centre: new THREE.Vector3(east, 0, -north),
   selectedStation: selected,
   stationSelected,
   standing,
+  camera,
 });
 
 describe("createStationsLayer", () => {
@@ -451,6 +459,88 @@ describe("createStationsLayer", () => {
     layer.update(view(0, 0, null, 0));
     expect(square!.quaternion.angleTo(q)).toBeCloseTo(0, 6);
     expect(square!.position.distanceTo(at)).toBeCloseTo(0, 9);
+  });
+
+  // Why: from high above, a 20 cm code laid flat is a dot or nothing; the
+  // editor draws it larger the farther the camera is (up to 8 times its
+  // printed size), still beside its anchor - the gap grows with it, so a
+  // grown code never covers the wall it hangs on - and a click lands on
+  // the code where it is drawn, not only on its printed square. Near the
+  // camera, or tilted up, it is its printed size.
+  it("grows a code laid flat with the camera's distance, beside its anchor, and picks it where it is drawn", () => {
+    const { d, parent } = deps();
+    const layer = createStationsLayer(d);
+    const sizeM = 0.2;
+    layer.setTour(
+      // Its station 50 m north: only the code is under the rays.
+      manifest([station("a", 0, 50)]),
+      new Map([
+        [
+          "c1",
+          {
+            qr: {
+              geo: {
+                lat: ZERO.lat,
+                lon: ZERO.lng,
+                alt: 516 + N,
+                headingDeg: 0,
+              },
+              physicalSizeM: sizeM,
+            },
+          } as QrLevel,
+        ],
+      ]),
+    );
+    let square: THREE.Object3D | undefined;
+    parent.traverse((o) => {
+      if (o.userData["pick"] === "c1") square = o;
+    });
+    const sq = square!;
+    const point = layer.codePointOf("c1")!;
+    const above = (m: number) => point.clone().add(new THREE.Vector3(0, m, 0));
+    layer.update(view(0, 0, null, 1));
+    const upright = sq.position.clone();
+    const shiftZ = () => sq.position.z - upright.z;
+
+    layer.update(view(0, 0, null, 0, false, above(300)));
+    expect(sq.scale.x).toBeCloseTo(300 * (1 / CODE_GROWTH_FROM_M), 6);
+    expect(sq.scale.y).toBeCloseTo(sq.scale.x, 9);
+    expect(layer.stats().codeScales).toEqual([sq.scale.x]);
+    // The whole flat layout grows: the near edge stays the grown gap off
+    // the anchor.
+    expect(shiftZ()).toBeCloseTo((sizeM / 2 + CODE_FLAT_GAP_M) * sq.scale.x, 6);
+
+    // A ray straight down 0.3 m off the drawn middle meets the grown code
+    // (half its side 0.42 m) but not one at its printed size (0.1 m).
+    const middle = sq.getWorldPosition(new THREE.Vector3());
+    const down = (from: THREE.Vector3) => {
+      const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+      camera.position.copy(from).add(new THREE.Vector3(0.3, 300, 0.3));
+      camera.up.set(0, 0, -1);
+      camera.lookAt(camera.position.clone().setY(0));
+      camera.updateMatrixWorld(true);
+      const r = new THREE.Raycaster();
+      r.setFromCamera(new THREE.Vector2(0, 0), camera);
+      return r;
+    };
+    expect(layer.pick(down(middle))).toBe("c1");
+
+    // Within the distance its printed size reads at: its printed size.
+    layer.update(view(0, 0, null, 0, false, above(50)));
+    expect(sq.scale.x).toBe(1);
+    expect(shiftZ()).toBeCloseTo(sizeM / 2 + CODE_FLAT_GAP_M, 6);
+    expect(
+      layer.pick(down(sq.getWorldPosition(new THREE.Vector3()))),
+    ).toBeNull();
+
+    // Far off, at most 8 times; tilted up, its printed size wherever.
+    layer.update(view(0, 0, null, 0, false, above(5000)));
+    expect(sq.scale.x).toBe(CODE_GROWTH_MAX);
+    layer.update(view(0, 0, null, 1, false, above(5000)));
+    expect(sq.scale.x).toBe(1);
+    expect(sq.position.distanceTo(upright)).toBeCloseTo(0, 9);
+    // Its point (what a click on its row flies to) never moves.
+    expect(layer.codePointOf("c1")!.distanceTo(point)).toBe(0);
   });
 
   // Why: a click on an item's row or a code's row flies the camera there,
@@ -809,5 +899,78 @@ describe("codeQuaternionNue", () => {
       rotation: [flat.x, flat.y, flat.z, flat.w],
     });
     expect(axes(q).z.y).toBeCloseTo(1, 9);
+  });
+});
+
+describe("codeGrowth", () => {
+  // Why: the storyboard prototype's curve - the distance times 0.014,
+  // between 1 and 8 - so a code laid flat keeps, from about 71 m to about
+  // 571 m, the size on screen it has at 71 m, and is its printed size
+  // nearer. (That size is small: a 20 cm code is about 2.7 px on a 900 px
+  // high view.)
+  it("is 1 within about 71 m, and grows with the distance looking down, up to 8 times", () => {
+    expect(CODE_GROWTH_FROM_M).toBeCloseTo(1 / 0.014, 9);
+    for (const standing of [0, 0.5, 1]) {
+      for (const m of [0, 10, 71, CODE_GROWTH_FROM_M]) {
+        expect(codeGrowth(m, standing), `${m} m, ${standing}`).toBeCloseTo(
+          1,
+          12,
+        );
+      }
+    }
+    expect(codeGrowth(100, 0)).toBeCloseTo(1.4, 12);
+    expect(codeGrowth(300, 0)).toBeCloseTo(4.2, 12);
+    expect(codeGrowth(8 * CODE_GROWTH_FROM_M, 0)).toBeCloseTo(8, 12);
+    expect(codeGrowth(5000, 0)).toBe(CODE_GROWTH_MAX);
+    expect(CODE_GROWTH_MAX).toBe(8);
+  });
+
+  // Why: the code grows only as far as it lies flat: tilted up it stands
+  // at its printed size where it was measured, and halfway it is halfway.
+  it("grows only as far as the code lies flat", () => {
+    expect(codeGrowth(5000, 1)).toBe(1);
+    expect(codeGrowth(5000, 0.5)).toBeCloseTo(4.5, 12);
+    expect(codeGrowth(300, 0.25)).toBeCloseTo(1 + 3.2 * 0.75, 12);
+  });
+
+  // Why: a camera or a morph that is not a number (a view not set up yet)
+  // draws the code at its printed size, never at no size or a NaN one.
+  it("is 1 for a distance or a morph that is not a number", () => {
+    for (const [m, s] of [
+      [Number.NaN, 0],
+      [Number.POSITIVE_INFINITY, 0],
+      [-5, 0],
+      [300, Number.NaN],
+    ] as const) {
+      expect(codeGrowth(m, s), `${m}, ${s}`).toBe(1);
+    }
+    // A morph past either end is taken at that end.
+    expect(codeGrowth(300, -1)).toBeCloseTo(4.2, 12);
+    expect(codeGrowth(300, 2)).toBe(1);
+  });
+
+  // Why: whatever the camera does, the code is never drawn smaller than
+  // printed nor past 8 times, grows (or stays) as the camera goes farther,
+  // and shrinks (or stays) as the view tilts up - no jump the eye catches.
+  it("stays within 1 to 8 times, grows with distance, shrinks as the view tilts up", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 20_000, noNaN: true }),
+        fc.double({ min: 0, max: 20_000, noNaN: true }),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        (m1, m2, s1, s2) => {
+          const k = codeGrowth(m1, s1);
+          expect(k).toBeGreaterThanOrEqual(1);
+          expect(k).toBeLessThanOrEqual(CODE_GROWTH_MAX);
+          const [near, far] = m1 <= m2 ? [m1, m2] : [m2, m1];
+          expect(codeGrowth(far, s1)).toBeGreaterThanOrEqual(
+            codeGrowth(near, s1),
+          );
+          const [low, high] = s1 <= s2 ? [s1, s2] : [s2, s1];
+          expect(codeGrowth(m1, high)).toBeLessThanOrEqual(codeGrowth(m1, low));
+        },
+      ),
+    );
   });
 });

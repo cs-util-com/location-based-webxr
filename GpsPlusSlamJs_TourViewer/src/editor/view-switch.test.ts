@@ -80,6 +80,9 @@ function setup() {
   const b = button();
   const o = opener();
   const said: string[] = [];
+  /** The failure each line was said for: the page lets an empty tour's
+   *  line pass, and keeps a failure's until it is closed. */
+  const reasons: View3dFailure[] = [];
   const shown: boolean[] = [];
   /** The store's view mode as each `onShown` call found it. */
   const modes: string[] = [];
@@ -90,13 +93,16 @@ function setup() {
     status,
     store,
     open: o.open,
-    say: (text) => said.push(text),
+    say: (text, reason) => {
+      said.push(text);
+      reasons.push(reason);
+    },
     onShown: (on) => {
       shown.push(on);
       modes.push(ui().viewMode);
     },
   });
-  return { store, b, o, said, shown, modes, sw, ui, status };
+  return { store, b, o, said, reasons, shown, modes, sw, ui, status };
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -158,7 +164,7 @@ describe("createViewSwitch", () => {
   ])(
     "lands on the map with the reason said when the load fails (%s)",
     async (_name, error, reason) => {
-      const { b, o, said, shown, ui } = setup();
+      const { b, o, said, reasons, shown, ui } = setup();
       b.click();
       o.calls[0]!.reject(error);
       await settle();
@@ -170,12 +176,13 @@ describe("createViewSwitch", () => {
       expect(b.textContent).toBe(VIEW_SWITCH_LABELS.idle);
       expect(b.disabled).toBe(false);
       expect(said).toEqual([view3dFailureText(reason)]);
+      expect(reasons).toEqual([reason]);
       expect(shown).toEqual([]);
     },
   );
 
   it("falls back to the map, said, when the shown view loses its context", async () => {
-    const { b, o, said, shown, ui } = setup();
+    const { b, o, said, reasons, shown, ui } = setup();
     b.click();
     const v = view();
     o.calls[0]!.resolve(v);
@@ -187,6 +194,7 @@ describe("createViewSwitch", () => {
     });
     expect(v.disposed).toBe(1);
     expect(said).toEqual([view3dFailureText("context-lost")]);
+    expect(reasons).toEqual(["context-lost"]);
     expect(shown).toEqual([true, false]);
     // Lost twice (the event can fire again): said once.
     o.calls[0]!.contextLost();

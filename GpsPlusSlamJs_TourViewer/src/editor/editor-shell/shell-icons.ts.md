@@ -9,7 +9,10 @@ in the current text colour, as SVG elements.
 
 - `ShellIcon` - the icon names (`pin`, `photo`, `model`, `frame`, `top`,
   `undo`, `redo`, `help`, `qr`, `down`, `right`, `up`, `close`,
-  `station`, `pencil`, `check`, `lock`, `unlock`, `walk`, `eye`, `folder`).
+  `station`, `pencil`, `check`, `lock`, `unlock`, `walk`, `eye`, `folder`,
+  and for the tree's editing `plus`, `earlier`, `later`, `trash`, `split`,
+  `dup`, `align`, `copy` (the prototype's) and `grip` (a card's six dots),
+  and for the inspector's Put on the ground `ground` (the prototype's)).
 - `shellIcon(name)` - a new `svg.i` element, `aria-hidden` (the control it
   sits in carries the words).
 - `placeShellIcons(root)` - every `<i data-icon="name">` under `root`

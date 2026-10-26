@@ -44,7 +44,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   Checkbox items keep their state in `aria-checked` (`isChecked`,
   `setChecked`).
 - **The 3D view is the default:** an open that shows a tour ends with
-  `viewSwitch.show3d()`; a 3D view that fails lands on the map, said.
+  `viewSwitch.show3d()`; a 3D view that fails lands on the map, said in
+  a line kept until closed. A tour with nothing positioned is no failure:
+  it opens on the map with a passing line (`say`'s reason `"empty"`).
   In the dev server only, `window.__tourEditorStartOnMap` (an init
   script) keeps the open on the map, for the specs that edit there
   (`opensIn3d()`; stripped from a production build like the other dev
@@ -87,6 +89,12 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   is per open tour and never saved; the radius, the name, a delete and a
   copy stay open while locked. The map's Move moves pins and photos only,
   never a station.
+  A station made in this session - added by "+" or "New station here",
+  split off by "Move to a new station", copied, or started by the station
+  rule for an item moved out of every circle - starts UNLOCKED
+  (`unlockMade`): it was placed nowhere on site yet, so placing it is the
+  next thing its creator does. Undoing and redoing its add keeps it
+  unlocked; the lock is still view state only.
 - **In place (E2b-1).** "Choose…" and the drop box open the browser's
   file picker where it exists (else the file input), asking for write
   permission on that gesture. A granted file, held by this tab
@@ -136,9 +144,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   of `debugSource()` are placed (`debugCapturesOf`) and drawn as
   thumbnails, with "Reading the debug data..." and then how many it shows
   or why none (`#debug-status`). View's "Show debug data" (`#view-debug`,
-  a checkbox item) shows only while there is a source, starts ticked and
-  only shows or hides them on the map (the 3D view does not draw them
-  yet): view state, never in the tour document, a
+  a checkbox item) shows only while there is a source and only on the
+  map (`editor-shell.css`: the 3D view does not draw them yet), starts
+  ticked and shows or hides them there: view state, never in the tour document, a
   save or the draft. Leaving the tour stops it.
   - The note card keeps clear of the panel (`debugPanelBox()`, passed to
     `card.place` as the box to avoid, r901 review #4): both share the
@@ -338,11 +346,22 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   while the tour's own file and its unsaved state stay as they were
   (`EditorSession.saveCopy`, named by `copyFileName`, "<name> copy.zip").
   The file is asked for IN the click (`pickSaveFile`), the copy holds the
-  save slot as an explicit save, a pick of the opened file or of the save
-  target is refused before anything is written, and the copy keeps the
-  walk only when the keep-the-walk item is ticked. It is written into the
-  picked file, or downloaded where there is no save dialog; a toast says
-  where ("Saved a copy as <name>…"), or why it was not saved.
+  save slot as a `"copy"` (which leaves a due resave and the last save
+  error as they were), a pick of the opened file or of the save target is
+  refused before anything is written, and the copy keeps the walk only
+  when the keep-the-walk item is ticked. While it runs the status says
+  "Saving a copy…" and keeps the unsaved mark for what the tour's own
+  file still lacks; once it ends, a resave that fell due runs
+  (`resaveIfDue`). It is written into the picked file, or downloaded
+  where there is no save dialog; a toast says where ("Saved a copy as
+  <name>…"), or why it was not saved.
+- **The File menu's items** follow the open tour and the save slot
+  (`renderFileItems`): Save and Save a copy off while no tour is open or a
+  save runs, Tour details off without a tour, Share and publish off
+  without a tour or while the walk moves out. They are disabled the menu
+  pattern's way (`setItemDisabled`, `aria-disabled`: reachable, a click
+  ignored); the debug data add and the view switch drive their item
+  through `menuItemControl`.
 - **Share and publish… (W2, D18, D19; once "Done").** File's
   `#file-publish` commits the card, waits for a running save and saves
   what is pending ("Saving…" on the item, disabled, while it runs - the
@@ -556,15 +575,51 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   - `commit` (`commitSceneEdit`) writes a finished gesture as one undo
     step (`applySceneEdit` of `scene-edits.ts`): it ends a delete's Undo
     offer, refreshes the views and tells autosave, or toasts a refusal;
+    an item pose that gave the item another station is said in a toast
+    (`announceReseat`, `reseat-note.ts`), and a station the rule made
+    for it starts unlocked. The 2D map's drag (`finishMove`) says the
+    same on the card ("... - not saved yet.");
   - `remove` (`deleteSelection`, the card's Delete too) deletes an item
     with the toast's Undo, or a station (`deleteStation`);
   - `duplicate` (`duplicateSelection`, Ctrl+D) copies an item or a
     station beside itself, selects the copy and says "Duplicated ...";
-  - `keysFree` is false in a field, while a dialog or the modal shows and
-    while the page is busy, so the 3D view's keys leave those alone.
+  - `groundMenu` hands a right click's (a long press's) ground menu to the
+    shell (`shell.groundMenu`);
+  - `keysFree` is false in a field, in a menu, or for the pattern's keys on a menu's button
+    (`key-target.ts`: the menu's arrows, Home and End must not nudge the
+    selection behind it), while a dialog or the modal shows and while the
+    page is busy, so the 3D view's keys leave those alone.
     A gesture under way counts as an edit being made (`editing()`, the
     `gesture` field of the view slice), and an undo or a redo cancels it
     first (`runStep`).
+- **The tree's station commands** (G2 M3b), given to the shell as
+  `stations` with a `say` (a toast), each one undo step that ends a
+  delete's Undo offer, refreshes the views and tells autosave:
+  - `add` (`addStationAt`) - a station at the view's centre ("+") or
+    where the ground menu was opened: selected, its card unfolded, said
+    (`Added "Station 4" at the centre of the view` / `... here`); a
+    refusal is said;
+  - `reorder` (`reorderStations`) - the stations in a new order (the
+    tree's drag, the inspector's Earlier and Later);
+  - `split` (`splitItem`) - "Move to a new station"
+    (`editor.moveToNewStation`): the new station selected, unfolded and
+    said (`New station "..." with the pin in it`);
+  - `duplicate` and `remove` - `duplicateSelection` and
+    `deleteSelection`, as the 3D view's Ctrl+D and Del.
+- **The inspector's edits**, given to the shell as `edits`, each one
+  undo step that ends a delete's Undo offer, refreshes the views and
+  tells autosave unless nothing changed; a refusal is said
+  (`writeInspectorEdit`):
+  - `station` and `text` - `editor.editStation` (name, description,
+    radius, card picture) and `editor.editText` (a pin's text);
+  - `scene` - `commitSceneEdit`, as a gesture's (a typed place, a size,
+    a station put on the ground);
+  - `groundItems` - `editor.groundItems`, items' heights in one step
+    (the ground under each, or a typed Height: their places untouched);
+  - `addPin` (`addPinTo`) - a new pin in the station (`new-pin.ts`:
+    clear of its items, inside its circle, on the ground the 3D view
+    has loaded), placed by `editor.place`, selected and said (`Added a
+pin to "..."`).
 - **The 3D view's studio shell** (`editor-shell/editor-shell.ts`): made
   once at start; the switch's `onShown` sets `body[data-view]` (`3d` or
   `2d`, which the shell's stylesheet follows), makes the map `inert`

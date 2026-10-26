@@ -48,10 +48,21 @@
           </button>
           <div class="menu" id="file-menu">
             <button role="menuitem" type="button" id="file-open">Open…</button>
-            <button role="menuitem" type="button" id="file-save" disabled>
-              Save<kbd>Ctrl+S</kbd>
+            <button
+              role="menuitem"
+              type="button"
+              id="file-save"
+              aria-disabled="true"
+              aria-keyshortcuts="Control+S"
+            >
+              Save<kbd aria-hidden="true">Ctrl+S</kbd>
             </button>
-            <button role="menuitem" type="button" id="file-save-copy" disabled>
+            <button
+              role="menuitem"
+              type="button"
+              id="file-save-copy"
+              aria-disabled="true"
+            >
               Save a copy…
             </button>
             <div role="separator"></div>
@@ -60,7 +71,7 @@
               type="button"
               id="file-details"
               aria-haspopup="dialog"
-              disabled
+              aria-disabled="true"
             >
               Tour details…
             </button>
@@ -86,7 +97,7 @@
               type="button"
               id="file-publish"
               aria-haspopup="dialog"
-              disabled
+              aria-disabled="true"
             >
               Share and publish…
             </button>
@@ -105,11 +116,23 @@
             <span class="lbl">Edit</span><i data-icon="down"></i>
           </button>
           <div class="menu" id="edit-menu">
-            <button role="menuitem" type="button" id="edit-undo" disabled>
-              Undo<kbd>Ctrl+Z</kbd>
+            <button
+              role="menuitem"
+              type="button"
+              id="edit-undo"
+              aria-disabled="true"
+              aria-keyshortcuts="Control+Z"
+            >
+              Undo<kbd aria-hidden="true">Ctrl+Z</kbd>
             </button>
-            <button role="menuitem" type="button" id="edit-redo" disabled>
-              Redo<kbd>Ctrl+Shift+Z</kbd>
+            <button
+              role="menuitem"
+              type="button"
+              id="edit-redo"
+              aria-disabled="true"
+              aria-keyshortcuts="Control+Shift+Z"
+            >
+              Redo<kbd aria-hidden="true">Ctrl+Shift+Z</kbd>
             </button>
           </div>
         </div>
@@ -125,18 +148,20 @@
               class="studio"
               id="studio-top"
               aria-checked="false"
+              aria-keyshortcuts="T"
               title="Look straight down (T)"
             >
-              Top view<kbd>T</kbd>
+              Top view<kbd aria-hidden="true">T</kbd>
             </button>
             <button
               role="menuitem"
               type="button"
               class="studio"
               id="studio-frame"
+              aria-keyshortcuts="F"
               title="Frame the selection, or the whole tour (F; Home frames the tour)"
             >
-              Frame<kbd>F</kbd>
+              Frame<kbd aria-hidden="true">F</kbd>
             </button>
             <!-- Only while there is debug data to show (the debug layer). -->
             <button
@@ -207,7 +232,7 @@
     <!-- The 3D view (view-switch.ts, src/editor3d/): over the map while it
          shows, its code loaded only when the switch asks for it. The
          panels stay above it; the credits (the relief's and the map's) close it. -->
-    <div id="view3d" aria-label="The tour in 3D" hidden>
+    <div id="view3d" aria-label="The tour in 3D" tabindex="-1" hidden>
       <!-- The studio shell's docks over the scene (editor-shell.ts): the
            tree at the left, the selection's inspector at the right. -->
       <aside class="dock" id="shell-tree" aria-label="Stations and codes">
@@ -219,6 +244,15 @@
             title="Fold or unfold the stations"
           ></button>
           <span class="sp"></span>
+          <button
+            class="ib add"
+            id="tree-add"
+            type="button"
+            title="Add a station at the centre of the view"
+            aria-label="Add a station at the centre of the view"
+          >
+            <i data-icon="plus"></i>
+          </button>
           <button class="ib" id="tree-fold" type="button"></button>
         </div>
         <div class="dbody" id="tree-body"></div>
@@ -300,12 +334,33 @@
           >click a station card, an item or a code; click it again to
           deselect</span
         >
+        <span>Right click</span
+        ><span
+          >on the ground: a new station there (a long press on a touch
+          screen)</span
+        >
         <span><kbd>T</kbd></span
         ><span>top view on / off</span> <span><kbd>F</kbd></span
         ><span>frame the selection, <kbd>Home</kbd> the tour</span>
         <span><kbd>Esc</kbd></span
         ><span>deselect</span> <span><kbd>Ctrl</kbd>+<kbd>Z</kbd></span
         ><span>undo, add <kbd>Shift</kbd> to redo</span>
+      </div>
+      <!-- What a keyboard reorder did, said to a screen reader (the
+           inspector's Earlier and Later). -->
+      <p id="shell-said" class="said" role="status" aria-live="polite"></p>
+      <!-- The ground menu (scene-menu.ts): a right click or a long press on
+           the scene opens it where it was pressed. -->
+      <div id="scene-menu" class="menu" hidden>
+        <button
+          role="menuitem"
+          type="button"
+          id="scene-new-station"
+          tabindex="-1"
+        >
+          <i data-icon="plus"></i>
+          New station here
+        </button>
       </div>
       <!-- Last in the view: its links come after the docks in the Tab order,
            and it paints under them (they carry a z-index). -->
@@ -321,6 +376,9 @@
       >
       <span id="view-loading" role="status" aria-live="polite" hidden></span>
       <div id="shell-view"></div>
+      <!-- The selection's power actions (bar-actions.ts), drawn by the
+           shell: Duplicate, Align to station, Copy position. -->
+      <div id="shell-acts" role="group" aria-label="The selection"></div>
       <div id="shell-hint"></div>
       <div id="shell-history" class="mono dbg"></div>
       <div id="shell-calls" class="mono dbg"></div>

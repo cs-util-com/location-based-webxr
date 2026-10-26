@@ -34,7 +34,8 @@ editor's own namespace, one tab at a time. Design:
     tour document milestone's review #1) as they stand now: the
     `settings` record is written while it differs from the file on disk
     (or from a build's value), removed once it does not; whether it landed.
-    The record may also hold `createdStations`: a station the page created
+    The record may also hold `handMadeStations` (compared like the other
+    fields) and `createdStations`: a station the page created
     (whole frames at their current poses: a note moved beyond its station's
     radius starts one) that the compared file does not carry counts as a
     difference, so a record holding nothing else is kept: the draft's
@@ -134,7 +135,12 @@ editor's own namespace, one tab at a time. Design:
   then each in-place write that landed) and `written` (each build's
   version). A record is offered back only when the file's version is in
   one of them; otherwise it gave way to a newer edit elsewhere and goes,
-  said once. **A deletion has no base**: a restored deletion deletes a
+  said once. A file object put into a station this page created
+  ("Move to a new station", where it stands) is offered too, though its
+  content matches the file's: to the phone's writer a station the file
+  lacks is no move, but the record carries that station whole
+  (`createdStations`), and without the offer the reload put the object
+  back into the station it had left. **A deletion has no base**: a restored deletion deletes a
   newer edit made elsewhere since (named, not covered).
 - **The editor places nothing new - but it copies**: a record of an id
   the file does not carry is offered back as a copy made here (`made`)

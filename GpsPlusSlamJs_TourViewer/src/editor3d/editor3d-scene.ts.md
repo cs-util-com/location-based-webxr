@@ -30,7 +30,8 @@ keys), and writes only through the page's `edits`.
     a frame before the first one rejects with that error (the switch
     says `error`).
 - `Editor3dView`: `dispose()`; `stats()` (`Editor3dStats`: frames, the
-  last frame's clip planes `near` and `far`, tilt, standing, the stations layer's counts, the map's stats, and each
+  last frame's clip planes `near` and `far`, tilt, standing, the stations layer's counts (each code's drawn scale
+  among them), the map's stats with its `coverage` (the drawn tiles near the camera by their map, for the page's checks), and each
   station's drawn height and the drawn ground under it); `setTilt(deg)`
   (the page's checks: the orbit's tilt, its distance and heading kept);
   `setDistance(m)` (the orbit's distance within its limits, its tilt and
@@ -51,7 +52,15 @@ keys), and writes only through the page's `edits`.
   - `setLayers(hidden)` - the station names and the codes off or on (the
     other layers have nothing drawn yet);
   - `pointOf(selection)` - where it stands in the world (the page's
-    checks).
+    checks);
+  - `centre()` - the place the view looks at, on the ground (the tree's
+    "+"); `turn(selection, deg)` - one turn edit through the page (the
+    bar's Align to station, the inspector's typed heading), both the
+    editing's (`editor3d-editing.ts`);
+  - `groundAt(place)` - the ground's ellipsoidal height at a place, null
+    where none has loaded (the inspector's Put on the ground, Add pin);
+  - `origin()` - the place the view's metres are measured from, fixed
+    when it opened (the inspector's east and north).
 - Editing on `Editor3dView`: `cancelGesture()` (a gesture under way ends
   unwritten: the page calls it before an undo or a redo);
   `screenOf(selection)`, `handleScreen(part)` and `gizmoSizes()` - CSS px
@@ -88,7 +97,8 @@ keys), and writes only through the page's `edits`.
   ground samples reuse a scratch vector, and sharing it put the clip
   planes at the target, the near plane at its 0.2 m floor everywhere), the
   ground and the map, the editing (its retries, the gizmo, a gesture's
-  preview), the layer, the render.
+  preview), the layer (handed the camera's position: a code laid flat
+  grows with its distance), the render.
 - **Sizes:** the box is hidden while the view loads (the map stays in
   view), so the window's size stands in until it shows; a ResizeObserver
   follows the box and keeps the billboards' screen size.

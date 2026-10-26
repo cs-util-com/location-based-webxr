@@ -358,20 +358,89 @@ for (const viewport of [
     );
     // Every top-bar control inside the bar, and so the window (E2a review
     // #11): the bar is fixed, so the page's scroll width cannot see an
-    // overflow.
-    for (const control of await page
-      .locator("#topbar button, #save-status")
-      .all()) {
-      if (!(await control.isVisible())) continue;
-      const b = await box(control);
-      expect(b.x + b.width).toBeLessThanOrEqual(top.x + top.width);
-    }
+    // overflow. (The save status is the bottom bar's.)
+    await expectMapBarHolds(page, viewport.width);
     // Nothing wider than the window.
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(viewport.width);
   });
 }
+
+/**
+ * Every control the map's top bar shows sits inside the bar, left to
+ * right with none over the next, and says its words (the unsaved mark may
+ * be its dot alone). Read in one go, as Playwright's isVisible does.
+ * @param {import("@playwright/test").Page} page
+ * @param {number} width
+ */
+async function expectMapBarHolds(page, width) {
+  const at = `at ${String(width)} px`;
+  const top = await box(page.locator("#topbar"));
+  const shown = await page.evaluate(() =>
+    [...document.querySelectorAll("#topbar :is(button, .unsaved-mark)")]
+      .map((c) => ({ c, r: c.getBoundingClientRect() }))
+      .filter(
+        ({ c, r }) =>
+          r.width > 0 &&
+          r.height > 0 &&
+          getComputedStyle(c).visibility !== "hidden",
+      )
+      .map(({ c, r }) => ({
+        id: c.id,
+        words: /** @type {HTMLElement} */ (c).innerText.trim(),
+        x: r.x,
+        y: r.y,
+        width: r.width,
+        height: r.height,
+      })),
+  );
+  shown.sort((a, b) => a.x - b.x);
+  expect(shown.length, at).toBeGreaterThan(0);
+  for (const [i, b] of shown.entries()) {
+    if (b.id !== "unsaved-mark") expect(b.words, `${b.id} ${at}`).not.toBe("");
+    expect(b.x, `${b.id} ${at}`).toBeGreaterThanOrEqual(top.x);
+    expect(b.x + b.width, `${b.id} ${at}`).toBeLessThanOrEqual(
+      top.x + top.width,
+    );
+    expect(b.y, `${b.id} ${at}`).toBeGreaterThanOrEqual(top.y);
+    expect(b.y + b.height, `${b.id} ${at}`).toBeLessThanOrEqual(
+      top.y + top.height,
+    );
+    const next = shown[i + 1];
+    if (next !== undefined) {
+      expect(next.x, `${next.id} after ${b.id} ${at}`).toBeGreaterThanOrEqual(
+        b.x + b.width - 0.5,
+      );
+    }
+  }
+}
+
+test("the map's top bar holds every control with the unsaved mark shown, at each step the bars fold", async ({
+  page,
+}) => {
+  // Why: the layout test above saw the bar's clean state only, and the
+  // fold steps were measured on the 3D view's bar. On the map the bar
+  // carries the same File and View menus and, after an edit, the unsaved
+  // mark with its words: each width where either bar changes its layout
+  // is checked on both sides of its edge, in a wide face.
+  test.setTimeout(120_000);
+  await useWideFont(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/edit.html");
+  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+  await editPin(page, "Town hall", "A change to save");
+  await expect(page.locator("#unsaved-mark")).toBeVisible();
+  // The map's own steps (980, 720) and the 3D view's (820, 720, 520,
+  // 400), each with the pixel beyond it.
+  const widths = [1440, 1280, 390];
+  for (const step of [980, 820, 720, 520, 400]) widths.push(step, step + 1);
+  for (const width of widths.sort((a, b) => b - a)) {
+    await page.setViewportSize({ width, height: width < 721 ? 844 : 800 });
+    await expect(page.locator("#unsaved-mark")).toBeVisible();
+    await expectMapBarHolds(page, width);
+  }
+});
 
 for (const width of [390, 1280]) {
   test(`on the map, the File and View menus open inside the window at ${width} px, every command in words`, async ({
@@ -391,6 +460,17 @@ for (const width of [390, 1280]) {
     ]) {
       await page.locator(button).click();
       await expect(page.locator(menu)).toBeVisible();
+      // A separator parts two groups shown: never the first or the last
+      // line of a menu (over the map, View's 3D commands are not shown).
+      const lines = await page
+        .locator(menu)
+        .evaluate((m) =>
+          [...m.children]
+            .filter((c) => c.getBoundingClientRect().height > 0)
+            .map((c) => c.getAttribute("role")),
+        );
+      expect(lines[0], menu).not.toBe("separator");
+      expect(lines.at(-1), menu).not.toBe("separator");
       const items = page.locator(`${menu} [role^="menuitem"]`);
       for (const item of await items.all()) {
         if (!(await item.isVisible())) continue;
@@ -1445,6 +1525,121 @@ async function readOpfsTour(page, name) {
   await reader.close();
   return texts;
 }
+
+/**
+ * The editor fixture opened from a writable file of the origin-private
+ * file system (saved in place), autosave out of the way, and the Town
+ * hall pin's text changed to `text`.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} text
+ */
+async function inPlaceTourEdited(page, text) {
+  await autosaveOutOfTheWay(page);
+  await page.goto("/edit.html");
+  await offerOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await editPin(page, "Town hall", text);
+}
+
+/**
+ * The page's save dialog answers with the file `name` of the
+ * origin-private file system (made if it is not there).
+ * @param {import("@playwright/test").Page} page
+ * @param {string} name
+ */
+async function savePickerAnswers(page, name) {
+  await page.evaluate(async (fileName) => {
+    const root = await navigator.storage.getDirectory();
+    const handle = await root.getFileHandle(fileName, { create: true });
+    // @ts-expect-error - the e2e's own save dialog.
+    window.showSaveFilePicker = () => Promise.resolve(handle);
+  }, name);
+}
+
+test("Save a copy refuses the tour's own file, and writes through another file picked", async ({
+  page,
+}) => {
+  // Why: the copy lands in whatever file the save dialog gives. Given the
+  // tour's own file it would land over it, and the tour would no longer
+  // know what its file holds; so it is refused before anything is built,
+  // and nothing is written. Given another file, the copy is written there
+  // and the tour's own file and its pending change stay as they were.
+  await inPlaceTourEdited(page, "The copied text");
+  const status = page.locator("#save-status");
+  await expect(status).toHaveText("1 change not saved");
+  const before = await readOpfsTour(page, "editor-fixture.zip");
+  await savePickerAnswers(page, "editor-fixture.zip");
+  await fileCommand(page, "saveCopy");
+  await expect(
+    page.locator(".toast", {
+      hasText:
+        "editor-fixture.zip is the tour's own file - save the copy under another name. Nothing was written.",
+    }),
+  ).toBeVisible();
+  expect(await readOpfsTour(page, "editor-fixture.zip")).toEqual(before);
+  await expect(status).toHaveText("1 change not saved");
+  await savePickerAnswers(page, "another name.zip");
+  await fileCommand(page, "saveCopy");
+  await expect(
+    page.locator(".toast", { hasText: "Saved a copy as another name.zip" }),
+  ).toBeVisible();
+  const copy = await readOpfsTour(page, "another name.zip");
+  expect(copy["tour.json"]).toContain("The copied text");
+  expect(await readOpfsTour(page, "editor-fixture.zip")).toEqual(before);
+  await expect(status).toHaveText("1 change not saved");
+  await expect(page.locator("#unsaved-mark")).toBeVisible();
+});
+
+test("a copy leaves the tour's own save due: it says it saves a copy, keeps the unsaved mark, and a step across the file is written after it", async ({
+  page,
+}) => {
+  // Why: a copy holds the page's save slot while it is built, and used to
+  // claim it as a save of the tour does: the bottom bar said "Saving…"
+  // with the unsaved mark gone, though the tour's own file was not being
+  // saved, and the claim took on an undo's due rewrite of the file (D33),
+  // which then never came - a reload would have opened the file with the
+  // undone change still in it. The page's timers are held while the undo
+  // and the copy's click happen, so the copy claims inside the undo's
+  // quiet time, as a quick hand's does.
+  await page.clock.install();
+  await inPlaceTourEdited(page, "Written first");
+  await save(page);
+  const status = page.locator("#save-status");
+  await expect(status).toHaveText("Saved to editor-fixture.zip");
+  expect(
+    (await readOpfsTour(page, "editor-fixture.zip"))["tour.json"],
+  ).toContain("Written first");
+  // The copy's save dialog stays open until the test dismisses it.
+  await page.evaluate(() => {
+    // @ts-expect-error - the e2e's own save dialog.
+    window.showSaveFilePicker = () =>
+      new Promise((_resolve, reject) => {
+        // @ts-expect-error - called by the test.
+        window.__dismiss = () =>
+          reject(new DOMException("dismissed", "AbortError"));
+      });
+  });
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1_000);
+  await page.keyboard.press("Control+z");
+  await expect(status).toHaveText("1 change not saved");
+  await fileCommand(page, "saveCopy");
+  await expect(status).toHaveText("Saving a copy…");
+  await expect(page.locator("#unsaved-mark")).toBeVisible();
+  // The undo's quiet time ends while the copy holds the slot.
+  await page.clock.runFor(2_000);
+  await page.clock.resume();
+  await page.evaluate(() => {
+    // @ts-expect-error - set by the held dialog.
+    window.__dismiss();
+  });
+  // The undo crossed the file written in place: it is written again.
+  await expect(status).toHaveText("Saved to editor-fixture.zip");
+  expect(
+    (await readOpfsTour(page, "editor-fixture.zip"))["tour.json"],
+  ).not.toContain("Written first");
+  await expect(page.locator("#unsaved-mark")).toBeHidden();
+});
 
 test("saves in place to the file it opened, and keeps the walk recording", async ({
   page,

@@ -1053,11 +1053,11 @@ const ROWS: readonly Row[] = [
       return p.reopenRestored();
     },
     each: ({ written }) => {
-      expect(written.stations.map(titleOrId)).toEqual([
-        "Station 4",
-        "st-f",
-        "st-a",
-      ]);
+      // The added station is untitled: the tree names it by its number.
+      const [added, ...rest] = written.stations;
+      expect(added?.id.startsWith("st-")).toBe(false);
+      expect(added?.title).toBeUndefined();
+      expect(rest.map(titleOrId)).toEqual(["st-f", "st-a"]);
       expect(itemsByStation(written).opened).toEqual([["f"], ["a"]]);
     },
   },

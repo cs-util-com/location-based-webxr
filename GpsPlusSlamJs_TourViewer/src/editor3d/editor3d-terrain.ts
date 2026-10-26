@@ -8,13 +8,19 @@
  * editor's start view, top view and farthest zoom over the sample tour's
  * square (2026-10-22): with the flight's limits (off above 200 m over the
  * ground, a 300 m fade) none of those views drew any map; with the map off
- * only above 1250 m (on again below 1125 m), faded out at 1600 m and asked
- * for at z15 and finer, every one did, at 23-83 requests a view, never
- * near the 150 a minute ceiling. A coarser relief (a mesh below level 17)
- * would draw z14 under the target and need `minZoom` 14; a fade below
- * about 1300 m loses the farthest view. The flight's speed limits are
+ * only above 1250 m (on again below 1125 m; opened since, below), faded
+ * out at 1600 m and asked for at z15 and finer, every one did, at 23-83
+ * requests a view, never near the 150 a minute ceiling. The far map now
+ * reaches 2400 m at z14 (one zoom coarser): over 1100 m views it covers
+ * 0.78-1.00 of the drawn ground instead of 0.58-0.87, for about 11 %
+ * more requests on a desktop (measured 2026-10-26, see the sidecar). A
+ * fade below about 1300 m loses the farthest view. The flight's speed limits are
  * opened: an editor's camera jumps across the place as it orbits, and the
- * map would blank in an ordinary turn.
+ * map would blank in an ordinary turn. The height limit is opened too
+ * (measured 2026-10-25, see the sidecar): the orbit keeps the camera
+ * within 1100 m of its centre, so the fade's reach already bounds what is
+ * asked for, and the 1250 m line switched the whole map off at the top
+ * view over a valley (over 400 m hills; never over 150 m ones).
  *
  * @see editor3d-terrain.ts.md
  */
@@ -49,15 +55,26 @@ export const EDITOR_MESH_LEVEL = 17;
 
 /** The map's gate for the editor (see the module comment). */
 export const EDITOR_OSM_LIMITS: Readonly<OsmGateLimits> = Object.freeze({
-  minZoom: 15,
-  maxAboveGroundM: 1250,
-  onBelowAboveGroundM: 1125,
+  minZoom: 14,
+  maxAboveGroundM: Number.POSITIVE_INFINITY,
+  onBelowAboveGroundM: Number.POSITIVE_INFINITY,
   maxSpeedMps: Number.POSITIVE_INFINITY,
   onBelowSpeedMps: Number.POSITIVE_INFINITY,
 });
 
 /** Where the map has faded out, and how far it is asked for (m). */
-export const EDITOR_OSM_FADE_M = 1600;
+export const EDITOR_OSM_FADE_M = 2400;
+
+/**
+ * Released map regions kept in memory, by relief device class: about
+ * 512 KiB each outside the relief's budget, the globe's 64 (about 32 MiB)
+ * on a phone too. A phone has a quarter of a desktop's relief budget, but
+ * with 32 a minute of orbiting filled the request ceiling with regions
+ * asked for again (see the sidecar for the measurement); a measurement on
+ * a phone showing the memory is not there would lower it.
+ */
+const EDITOR_OSM_KEEP: Readonly<Record<ReliefDeviceClass, number>> =
+  Object.freeze({ phone: 64, desktop: 64 });
 
 /** The plain ground's colour where no map is drawn. */
 const GROUND_COLOUR = 0xd9d4c7;
@@ -148,6 +165,7 @@ export function createEditorTerrain(input: {
     renderer: input.renderer,
     fadeM: EDITOR_OSM_FADE_M,
     limits: EDITOR_OSM_LIMITS,
+    keep: EDITOR_OSM_KEEP[input.device],
   });
   osm.attach(terrain);
   osm.setEnabled(true);

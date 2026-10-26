@@ -1,5 +1,10 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
+import { TextReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
+import {
+  createEmptyTourManifest,
+  serializeTourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { viewCommand } from "./editor-menus.js";
 import {
@@ -168,6 +173,50 @@ test("a tour whose 3D view cannot load opens on the 2D map, said", async ({
   await expect(page.locator("#view-switch")).toHaveText("3D view");
   await expect(page.locator(".mk-station")).toHaveCount(3);
   await expect(page.locator("#rail .row-title")).toHaveCount(3);
+});
+
+// Why: a new tour, or one of notes alone, has nothing with a position to
+// show in 3D. That is no failure: such a tour opens on the map, which
+// shows it, and a line that stays until it is closed - the failures' way -
+// made a plain open look broken. At most a passing line says it.
+test("a tour with nothing positioned opens on the 2D map quietly: a passing line at most", async ({
+  page,
+}) => {
+  await answerHosts(page);
+  await page.addInitScript(() => {
+    // @ts-expect-error - the e2e opens through the file input.
+    delete window.showOpenFilePicker;
+  });
+  await page.goto("/edit.html");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  const writer = new ZipWriter(new Uint8ArrayWriter());
+  await writer.add(
+    "tour.json",
+    new TextReader(
+      serializeTourManifest({
+        ...createEmptyTourManifest(),
+        title: "Nothing placed yet",
+      }),
+    ),
+  );
+  const chooser = page.waitForEvent("filechooser");
+  await page.locator("#drop").click();
+  await (
+    await chooser
+  ).setFiles({
+    name: "nothing-placed.zip",
+    mimeType: "application/zip",
+    buffer: Buffer.from(await writer.close()),
+  });
+  await expect(page.locator("#tour-name")).toHaveText("Nothing placed yet");
+  await expect(page.locator("#view-switch")).toHaveText("3D view");
+  await expect(page.locator("body")).not.toHaveAttribute("data-view", "3d");
+  const line = page.locator(".toast", {
+    hasText: "nothing with a position to show in 3D",
+  });
+  // Nothing to close: the line goes by itself.
+  await expect(line.getByRole("button", { name: "Close" })).toHaveCount(0);
+  await expect(line).toHaveCount(0, { timeout: 20_000 });
 });
 
 test("a 3D view whose code cannot load lands back on the map, said", async ({

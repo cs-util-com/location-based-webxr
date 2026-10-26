@@ -115,6 +115,9 @@ function reloaded(state: TourDocumentState): TourDocumentState {
       ...(record.deletedStations === undefined
         ? {}
         : { deletedStations: record.deletedStations }),
+      ...(record.handMadeStations === undefined
+        ? {}
+        : { handMadeStations: record.handMadeStations }),
       what: "restore",
     }),
   );
@@ -187,6 +190,33 @@ describe("the draft keeps the stations whole", () => {
     expect(restored.stations.some((s) => s.id === stationIdOf("b"))).toBe(
       false,
     );
+  });
+
+  // Why: a station split off its item's station would come back at the
+  // tour's end from a reload unless the draft records the order.
+  it("a station split off its item's station comes back in that station's place", () => {
+    const state0 = open();
+    const found = documentObjects(state0).find((o) => o.object.id === "a");
+    if (found === undefined) throw new Error("no a");
+    const state = reduce(
+      state0,
+      act.moved({
+        object: { ...found.object, geo: { ...found.object.geo, alt: 401 } },
+        newStation: true,
+        afterHome: true,
+        newStationId: "own1",
+        what: "split",
+      }),
+    );
+    // The item's station is left empty and leaves the tour; the new one
+    // takes its place rather than the tour's end.
+    expect((manifestToWrite(state)?.stations ?? []).map((s) => s.id)).toEqual([
+      "story",
+      "own1",
+      stationIdOf("b"),
+      stationIdOf("f"),
+    ]);
+    expectSameDocument(reloaded(state), state);
   });
 
   it("the record carries only the stations edited here, and an order only when a restore needs one", () => {

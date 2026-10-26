@@ -23,6 +23,7 @@
   --s-accent-line: rgb(233 162 59 / 55%);
   --s-accent-text: #f3c47e;
   --s-danger: #d97d79;
+  --s-focus: #5b9cf0;
   --s-ax-e: #e0575b;
   --s-ax-n: #4f8fe8;
   --s-ax-u: #67bb57;
@@ -46,8 +47,10 @@ body:not([data-view="3d"]) #shell-bar > :not(#save-status, #view-loading) {
   display: none !important;
 }
 
-/* What belongs to the map is not shown over the 3D view. */
-body[data-view="3d"] :is(#rail, #card, #debug-panel, #offscreen-chip) {
+/* What belongs to the map is not shown over the 3D view (View's "Show
+ * debug data" too: only the map draws the debug layer yet). */
+body[data-view="3d"]
+  :is(#rail, #card, #debug-panel, #offscreen-chip, #view-debug) {
   display: none !important;
 }
 
@@ -229,15 +232,35 @@ body[data-view="3d"] #topbar .tour-name:hover {
   display: none;
 }
 
-.menu [role^="menuitem"]:hover:not(:disabled),
+.menu [role^="menuitem"]:hover:not(:disabled, [aria-disabled="true"]),
 .menu [role^="menuitem"]:focus-visible {
   outline: none;
   background: var(--s-bg3);
 }
 
-.menu [role^="menuitem"]:disabled {
+/* Disabled the menu pattern's way (aria-disabled): it keeps the focus,
+ * so a keyboard still reaches it, dimmed. */
+.menu [role^="menuitem"]:is(:disabled, [aria-disabled="true"]) {
   color: var(--s-dim);
   cursor: default;
+}
+
+/* The ground menu's item, disabled where no ground has loaded, says why
+ * on a line of its own (a title never shows on a touch screen). */
+#scene-new-station {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+#scene-new-station .why {
+  flex-basis: 100%;
+  max-width: 220px;
+  font-size: 11px;
+  white-space: normal;
+}
+
+#scene-new-station .why[hidden] {
+  display: none;
 }
 
 /* A checkbox item says its state with a check mark in the gutter. */
@@ -737,7 +760,7 @@ body[data-view="3d"] #view3d {
   border-color: #5a5e66;
 }
 
-/* The inspector: the selection's fields, read-only. */
+/* The inspector: the selection's fields, typed or read-only. */
 .hic {
   display: inline-flex;
   justify-content: center;
@@ -873,6 +896,118 @@ body[data-view="3d"] #view3d {
   border: 1px solid var(--s-line2);
   border-radius: 4px;
   background: #33363c center / cover no-repeat;
+}
+
+/* The fields a creator types: the name in the head, a line of text, and
+   numbers in their boxes (read-only boxes stay outlined only). */
+.ttlin {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  outline: none;
+  background: transparent;
+  color: #f0f1f3;
+  font: 600 13.5px var(--s-sans);
+  text-overflow: ellipsis;
+}
+
+.ttlin:hover {
+  border-color: var(--s-line2);
+}
+
+.ttlin:focus {
+  border-color: var(--s-focus);
+  background: var(--s-bg2);
+}
+
+.tfield {
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--s-line2);
+  border-radius: 3px;
+  outline: none;
+  background: var(--s-bg2);
+  color: var(--s-text);
+  font: 12px var(--s-sans);
+}
+
+.tfield:focus {
+  border-color: var(--s-focus);
+}
+
+/* Prose (the description): one line high like a line field, growing with
+ * its text up to six lines, then scrolling. */
+textarea.tfield {
+  display: block;
+  height: auto;
+  min-height: 24px;
+  max-height: 92px;
+  padding: 4px 7px;
+  line-height: 14px;
+  field-sizing: content;
+  resize: none;
+}
+
+.num:not(.ro) {
+  border-color: var(--s-line2);
+  background: var(--s-bg2);
+}
+
+.num:focus-within {
+  border-color: var(--s-focus);
+}
+
+input.val {
+  height: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font: 11px var(--s-mono);
+}
+
+.num:not(.ro) input.val {
+  color: var(--s-text);
+}
+
+.thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+button.thumb {
+  padding: 0;
+  cursor: pointer;
+}
+
+button.thumb:hover {
+  border-color: #6a6f78;
+}
+
+button.thumb.on {
+  border-color: var(--s-accent);
+  box-shadow: 0 0 0 1px var(--s-accent);
+}
+
+button.thumb:focus-visible {
+  outline: 2px solid var(--s-focus);
+  outline-offset: 1px;
+}
+
+.warn {
+  margin: 4px 0 2px;
+  color: #e9b86b;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.pos .acts {
+  padding: 2px 0 4px;
 }
 
 .disc {
@@ -1152,10 +1287,233 @@ body[data-view="3d"] .view3d-credits {
   color: var(--s-accent-text);
 }
 
+/* --- tree editing (the Studio 3 prototype's measures) --------------------- */
+.ib.add {
+  color: var(--s-accent-text);
+}
+
+.ib:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ib:disabled:hover {
+  background: transparent;
+  color: var(--s-muted);
+}
+
+/* A card's grip: beside its fold arrow, the same height, 4 px apart. */
+.hero .grip {
+  position: absolute;
+  z-index: 2;
+  top: 4px;
+  right: 31px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  border-radius: 4px;
+  background: rgb(20 21 24 / 60%);
+  color: #e8eaee;
+  cursor: grab;
+  touch-action: none;
+}
+
+/* On a touch screen the grip takes a finger: its hit area grows to
+ * 24 x 24 px around the drawn 16 x 20 (WCAG's least target), reaching the
+ * fold arrow's edge 4 px away but not over it. */
+@media (pointer: coarse) {
+  .hero .grip::after {
+    content: "";
+    position: absolute;
+    inset: -2px -4px;
+  }
+}
+
+.hero .grip svg.i {
+  width: 12px;
+  height: 12px;
+}
+
+.card.dragging {
+  opacity: 0.55;
+}
+
+.card.dragging .hero .grip {
+  cursor: grabbing;
+}
+
+/* Where a dragged card lands: a line above the card it goes before, or
+ * below the last. */
+.card.drop-before {
+  box-shadow: 0 -3px 0 0 var(--s-accent);
+}
+
+.card.drop-after {
+  box-shadow: 0 3px 0 0 var(--s-accent);
+}
+
+/* The inspector's place in the tour and its commands in words. */
+.sub {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sub .sp {
+  flex: 1;
+}
+
+.sub .ib {
+  width: 22px;
+  height: 20px;
+}
+
+.acts {
+  padding: 4px 6px 6px;
+}
+
+.act {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--s-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.act:hover:not(:disabled, [aria-disabled="true"]) {
+  background: var(--s-bg3);
+}
+
+.act .note {
+  margin: 0;
+  color: var(--s-dim);
+  font-size: 11px;
+}
+
+/* Off, or waiting (aria-disabled: it keeps the keyboard's focus), as the
+ * menus do. */
+.act:is(:disabled, [aria-disabled="true"]) {
+  color: var(--s-dim);
+  cursor: default;
+}
+
+.act:is(:disabled, [aria-disabled="true"]) svg.i {
+  color: var(--s-dim);
+}
+
+.act svg.i {
+  color: #f3c47e;
+}
+
+.act kbd {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--s-dim);
+  font: 10px var(--s-mono);
+}
+
+.act.danger svg.i {
+  color: var(--s-danger);
+}
+
+.act.danger:hover {
+  color: #f0a8a5;
+}
+
+/* The bottom bar's power actions for the selection. */
+#shell-bar > #shell-acts {
+  gap: 2px;
+  padding: 0 4px;
+}
+
+#shell-acts:empty {
+  display: none;
+}
+
+.sact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--s-text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sact svg.i {
+  width: 14px;
+  height: 14px;
+  color: #f3c47e;
+}
+
+.sact:hover {
+  border-color: var(--s-line2);
+  background: var(--s-bg3);
+}
+
+/* The view's box takes the focus back from its menus (`tabindex="-1"`):
+ * a ring only when a key brought it there, inside the box. */
+#view3d:focus {
+  outline: none;
+}
+
+#view3d:focus-visible {
+  outline: 2px solid var(--s-accent);
+  outline-offset: -2px;
+}
+
+/* Said to a screen reader only (`#shell-said`). */
+.said {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The ground menu, where the scene was pressed (`scene-menu.ts` places
+ * it). */
+#scene-menu {
+  top: auto;
+  left: auto;
+  min-width: 0;
+}
+
 /* --- narrow windows ------------------------------------------------------- */
 /* A tablet in portrait: the docks take at most about half the width each
  * (one is open at a time, `dock-rule.ts`), and the hint goes. */
 @media (width <= 820px) {
+  /* The bar's actions keep their icons and their names (their titles and
+   * labels), as the prototype's. */
+  .sact .lbl {
+    display: none;
+  }
+
+  /* A folded tree's head is as narrow as a phone allows: its "+" waits
+   * for the tree to open. */
+  #shell-tree.collapsed #tree-add {
+    display: none;
+  }
+
   #shell-tree {
     width: min(272px, 56vw);
   }

@@ -25,19 +25,24 @@ import {
 } from "./editor3d-terrain.js";
 
 describe("the editor's map gate", () => {
-  // Why: the values measured for the editor's views: off above 1250 m
-  // over the ground, on again below 1125 m, faded out at 1600 m, asked for
-  // at z15 and finer over a mesh of level 17, and no speed limit (an
-  // orbiting camera crosses the place fast and must keep its map).
+  // Why: the values measured for the editor's views: faded out at 2400 m
+  // (also the request reach), asked for at z14 and finer over a mesh of
+  // level 17 - one zoom coarser than the near map, so the far map reaches
+  // the horizon of an overview instead of fading at 1600 m, within the
+  // request ceiling (measured 2026-10-26) - no speed limit (an orbiting camera crosses the place fast
+  // and must keep its map) and no height limit (the orbit keeps the
+  // camera within 1100 m of its centre, so the reach already bounds the
+  // requests, and a height line switched the whole map off over a deep
+  // valley: measured 2026-10-25).
   it("is the measured one, and the overlay accepts it", () => {
     expect(EDITOR_OSM_LIMITS).toEqual({
-      minZoom: 15,
-      maxAboveGroundM: 1250,
-      onBelowAboveGroundM: 1125,
+      minZoom: 14,
+      maxAboveGroundM: Number.POSITIVE_INFINITY,
+      onBelowAboveGroundM: Number.POSITIVE_INFINITY,
       maxSpeedMps: Number.POSITIVE_INFINITY,
       onBelowSpeedMps: Number.POSITIVE_INFINITY,
     });
-    expect(EDITOR_OSM_FADE_M).toBe(1600);
+    expect(EDITOR_OSM_FADE_M).toBe(2400);
     expect(EDITOR_MESH_LEVEL).toBe(17);
     expect(osmGateLimits(EDITOR_OSM_LIMITS, OSM_TILE_MAX_ZOOM)).toEqual(
       EDITOR_OSM_LIMITS,
@@ -125,6 +130,52 @@ describe("createEditorTerrain", () => {
       expect(placed[i]).toBeCloseTo(v, 6);
     });
     ground.dispose();
+  });
+
+  // Why (a measurement, 2026-10-25: the editor at 1440 x 900 over a
+  // synthetic relief with 400 m hills and a fake tile server): the map
+  // switched off when the camera was more than 1250 m over the ground
+  // under it, which an orbit at its 1100 m limit reaches over a valley;
+  // the top view at 1100 m showed no map at all. The editor's map stays on at any
+  // height its orbit can reach; only an unknown height keeps it off.
+  it("keeps the map on however high over the ground the camera is", () => {
+    const ground = make();
+    const position = new THREE.Vector3();
+    ground.osm.update({ position, aboveGroundM: 1700, speedMps: 0, nowMs: 0 });
+    expect(ground.osm.stats().active).toBe(true);
+    ground.osm.update({ position, aboveGroundM: 5000, speedMps: 0, nowMs: 16 });
+    expect(ground.osm.stats()).toMatchObject({ active: true, switchedOff: 0 });
+    ground.osm.update({
+      position,
+      aboveGroundM: Number.NaN,
+      speedMps: 0,
+      nowMs: 32,
+    });
+    expect(ground.osm.stats().active).toBe(false);
+    ground.dispose();
+  });
+
+  // Why: a kept map region (its texture and the library's lock on its
+  // source bitmap, about 512 KiB) is memory outside the relief's budget,
+  // and a phone's relief budget is a quarter of a desktop's, so the keep
+  // is chosen per device class. Measured 2026-10-25 (the editor at 390 px
+  // over a fake tile server answering in 300 ms): over a five-minute
+  // scripted camera tour a keep of 32 stayed under the request ceiling at
+  // 61 re-fetches, 64 at 8; a minute of orbiting at 600-1100 m and tilts
+  // 70-75 filled the ceiling with 32 for 19-50 s, most of it re-fetches.
+  // A phone keeps 64 too (about 32 MiB), until a phone shows the memory
+  // is not there.
+  it("keeps as many released map regions on a phone as on a desktop", () => {
+    const phone = createEditorTerrain({
+      renderer: {} as THREE.WebGLRenderer,
+      centre: { lat: 48.137393, lng: 11.575493 },
+      device: "phone",
+    });
+    expect(phone.osm.stats().keep).toBe(64);
+    phone.dispose();
+    const desktop = make();
+    expect(desktop.osm.stats().keep).toBe(64);
+    desktop.dispose();
   });
 
   // Why: before any height tile has loaded there is no ground under the

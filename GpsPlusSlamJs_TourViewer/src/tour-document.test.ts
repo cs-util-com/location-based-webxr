@@ -1485,6 +1485,35 @@ describe("tour document: a step across an in-place save (D33)", () => {
     expect(saveInPlace(state).save.inPlaceAt).toBe(state.position);
   });
 
+  // Why: "Save a copy…" writes a second file, never the tour's own. It
+  // holds the page's save slot while it is built, but a claim used to
+  // clear the due resave and the last save's error as any save's does:
+  // after a copy, the step across the in-place file was never written,
+  // and the failed save's reason was gone though nothing had saved.
+  it("a copy holds the slot but takes neither the resave nor the last error on", () => {
+    const due = undo(saveInPlace(del(open(), "b")));
+    expect(due.save.resave).toBe(true);
+    const copying = reduce(due, act.saveClaimed({ by: "copy" }));
+    expect(copying.save).toMatchObject({
+      by: "copy",
+      status: "saving",
+      resave: true,
+    });
+    expect(reduce(copying, act.saveReleased({})).save.resave).toBe(true);
+    const failed = reduce(
+      reduce(open(), act.saveClaimed({ by: "explicit" })),
+      act.saveReleased({ error: "Not saved: disk" }),
+    );
+    const afterCopy = reduce(
+      reduce(failed, act.saveClaimed({ by: "copy" })),
+      act.saveReleased({}),
+    );
+    expect(afterCopy.save).toMatchObject({
+      status: "error",
+      error: "Not saved: disk",
+    });
+  });
+
   it("a claimed save takes the resave on; an open forgets it; a refused undo sets nothing", () => {
     const due = undo(saveInPlace(del(open(), "b")));
     expect(reduce(due, act.saveClaimed({ by: "auto" })).save.resave).toBe(

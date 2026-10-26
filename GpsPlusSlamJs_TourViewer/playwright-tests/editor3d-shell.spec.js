@@ -279,7 +279,9 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   await hero.click();
   await expect(gate).toHaveClass(/\bsel\b/);
   await expect(gate.locator(".kids")).toBeVisible();
-  await expect(page.locator("#inspector-head .ttl")).toHaveText("The old gate");
+  await expect(
+    page.locator('#inspector-head [data-field="title"]'),
+  ).toHaveValue("The old gate");
   await expect(page.locator("#inspector-body .sub")).toHaveText(
     "Station 2 of 3",
   );
@@ -620,9 +622,11 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   // scene's credits close the view, after the docks).
   expect(visited.findIndex((v) => !v.inBar)).toBe(bar.length);
   expect(keys[bar.length]).toBe("tree-stations");
-  // Then the tree: its head, then the first card and its fold arrow.
-  expect(keys.slice(-5)).toEqual([
+  // Then the tree: its head ("Stations", "+", the fold arrow), then the
+  // first card and its fold arrow.
+  expect(keys.slice(-6)).toEqual([
     "tree-stations",
+    "tree-add",
     "tree-fold",
     "station:column",
     "unfold:column",
@@ -631,7 +635,9 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   await page.keyboard.press("Enter");
   const gate = card(page, "The old gate");
   await expect(gate).toHaveClass(/\bsel\b/);
-  await expect(page.locator("#inspector-head .ttl")).toHaveText("The old gate");
+  await expect(
+    page.locator('#inspector-head [data-field="title"]'),
+  ).toHaveValue("The old gate");
   await expect(gate.locator(".pick")).toBeFocused();
   await expect(gate.locator(".kids")).toBeVisible();
   // Space on the fold arrow folds the card's items away again.
@@ -674,6 +680,39 @@ test("File's Add debug data opens the same add as the map's panel", async ({
   ).toBeVisible();
   await expect(add).toBeEnabled();
   await expect(add).toHaveText("Add debug data…");
+});
+
+test("View's Show debug data is the map's: not offered over the 3D view, which draws no debug data yet", async ({
+  page,
+}) => {
+  // Why: the switch shows and hides the debug layer, which only the map
+  // draws. Offered over the 3D view it was a checkbox that changed nothing
+  // the creator could see.
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open3d(page);
+  const recording = await (
+    await page.request.get("http://127.0.0.1:5197/ranges-ok/recording-tour.zip")
+  ).body();
+  const chooser = page.waitForEvent("filechooser");
+  await fileCommand(page, "debugAdd");
+  await (
+    await chooser
+  ).setFiles({
+    name: "recording.zip",
+    mimeType: "application/zip",
+    buffer: recording,
+  });
+  // The layer has its source: the page offers the switch...
+  await expect(viewItem(page, "debug")).toHaveJSProperty("hidden", false);
+  // ... on the map only.
+  await page.locator("#view-menu-btn").click();
+  await expect(viewItem(page, "top")).toBeVisible();
+  await expect(viewItem(page, "debug")).toBeHidden();
+  await viewItem(page, "switch").click();
+  await expect(page.locator("body")).toHaveAttribute("data-view", "2d");
+  await page.locator("#view-menu-btn").click();
+  await expect(viewItem(page, "debug")).toBeVisible();
 });
 
 test("a flight ends the orbit's coast: the camera stays where it lands", async ({

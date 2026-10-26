@@ -4,7 +4,8 @@
  * point stands as metres east and north of it (`eastNorthOf`), as that
  * frame draws it: the east-north-up plane touching the WGS84 ellipsoid at
  * the origin. The inspector says a station's place in these metres, so
- * the number it shows is where the 3D view draws the station.
+ * the number it shows is where the 3D view draws the station, and a
+ * place typed there in metres is found back by `placeAtEastNorth`.
  *
  * @see tour-origin.ts.md
  */
@@ -92,4 +93,51 @@ export function eastNorthOf(
       Math.sin(phi) * Math.sin(lambda) * dy +
       Math.cos(phi) * dz,
   };
+}
+
+/** Metres per degree of latitude and of longitude at `latDeg` on the
+ *  ellipsoid (the meridian's and the parallel's radii of curvature). */
+function metresPerDegree(latDeg: number): { lat: number; lon: number } {
+  const s = Math.sin(latDeg * DEG);
+  const w = Math.sqrt(1 - WGS84_E2 * s * s);
+  const meridian = (WGS84_A * (1 - WGS84_E2)) / (w * w * w);
+  const normal = WGS84_A / w;
+  return {
+    lat: meridian * DEG,
+    lon: Math.max(1e-9, normal * Math.cos(latDeg * DEG) * DEG),
+  };
+}
+
+/**
+ * The place (degrees) that stands `at.eastM` east and `at.northM` north of
+ * `origin` as `eastNorthOf` measures it: its inverse, to well under a
+ * millimetre over a tour's reach (a few Newton steps on the local
+ * metres per degree). Null when the metres are not finite or the origin
+ * is not a place.
+ */
+export function placeAtEastNorth(
+  at: { readonly eastM: number; readonly northM: number },
+  origin: { readonly lat: number; readonly lng: number },
+): { lat: number; lon: number } | null {
+  if (
+    !Number.isFinite(at.eastM) ||
+    !Number.isFinite(at.northM) ||
+    !isPlace(origin.lat, origin.lng)
+  ) {
+    return null;
+  }
+  let place = { lat: origin.lat, lon: origin.lng };
+  for (let step = 0; step < 6; step += 1) {
+    const now = eastNorthOf(place, origin);
+    if (now === null) return null;
+    const missE = at.eastM - now.eastM;
+    const missN = at.northM - now.northM;
+    if (Math.abs(missE) < 1e-6 && Math.abs(missN) < 1e-6) break;
+    const scale = metresPerDegree(place.lat);
+    place = {
+      lat: place.lat + missN / scale.lat,
+      lon: place.lon + missE / scale.lon,
+    };
+  }
+  return isPlace(place.lat, place.lon) ? place : null;
 }

@@ -322,10 +322,10 @@ export interface EditorSession {
    *  picture is kept for that). Refused, deleting nothing, for an id the
    *  tour no longer carries. */
   remove(id: string): { kind: "deleted" } | EditorRefusal;
-  /** Place a new object (the phone places in AR; the desktop has no
-   *  placing gesture yet - the parity contract drives it): refused for an
-   *  id the tour carries and for a spot further from its station than a
-   *  tour can carry. */
+  /** Place a new object (the phone places in AR; the 3D view's Add pin
+   *  places one in the selected station): refused for an id the tour
+   *  carries and for a spot further from its station than a tour can
+   *  carry. */
   place(object: TourObject): { kind: "placed" } | EditorRefusal;
   /** Move a station's frame (D17): its items move rigidly with it.
    *  Refused for a station the tour does not carry, and for a locked one
@@ -382,6 +382,11 @@ export interface EditorSession {
     geo: QrGeoPose,
     options?: { readonly newStation?: boolean },
   ): { kind: "moved" } | EditorRefusal;
+  /** Give an item a station of its own where it stands, turned as it is
+   *  ("Move to a new station"): one step; says the station it made. */
+  moveToNewStation(
+    id: string,
+  ): { kind: "moved"; stationId: string } | EditorRefusal;
   /** Take back the newest edit (W2): the tour goes back to how it stood
    *  before it - an edit like any other, pending until saved and written
    *  to the draft. A note brought back after a save wrote its delete is
@@ -1041,6 +1046,24 @@ export function createEditorSession(input: {
       );
       return { kind: "moved" };
     },
+    moveToNewStation(id) {
+      const found = find(id);
+      if (found === undefined) return notInTour;
+      // Where it stands and as it is turned: only its station changes.
+      store.dispatch(
+        tourDocumentActions.moved({
+          object: found.object,
+          newStation: true,
+          // Right after the station it leaves, not at the tour's end.
+          afterHome: true,
+          what: `the move of ${objectName(found.object)} to a new station`,
+        }),
+      );
+      const stationId = find(id)?.object.station;
+      return stationId === undefined || stationId === found.object.station
+        ? notApplied
+        : { kind: "moved", stationId };
+    },
     remove(id) {
       const found = find(id);
       if (found === undefined) return notInTour;
@@ -1134,8 +1157,13 @@ export function createEditorSession(input: {
       // The stations the draft's objects were seated in that the tour
       // lacks (a far move started one), whole: back before the objects.
       const created = settings?.createdStations ?? [];
-      const createdStations =
-        created.length === 0 ? {} : { createdStations: created };
+      // With the stations added by hand there: untitled and empty, each
+      // keeps itself here as it did there.
+      const handMade = settings?.handMadeStations ?? [];
+      const createdStations = {
+        ...(created.length === 0 ? {} : { createdStations: created }),
+        ...(handMade.length === 0 ? {} : { handMadeStations: handMade }),
+      };
       const needsNoGps =
         settings !== undefined &&
         !state.touched.needsNoGps &&

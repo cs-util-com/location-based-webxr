@@ -10,10 +10,14 @@ after the reducer, never from `store.subscribe`.
 ## Public API
 
 - `TourSettingsRecord` - `{ needsNoGps, details?, stations?,
-createdStations?, frames?, order?, deletedStations? }` (`stations`: `StationPose[]`, each station's
-  `{ id, geo }`; `createdStations`: the whole frames of the stations this
-  page created, `createdStationFrames` of `tour-document.ts`, absent when
-  none), the draft's settings record (`editor/editor-draft.ts`'s
+createdStations?, handMadeStations?, frames?, order?, deletedStations? }`
+  (`stations`: `StationPose[]`, each station's `{ id, geo }`;
+  `createdStations`: the whole frames of the stations this page created,
+  `createdStationFrames` of `tour-document.ts`, absent when none;
+  `handMadeStations`: the ids of the document's `handMade` stations it
+  carries, absent when none, so an untitled station added by hand and
+  holding nothing comes back from a reload instead of being dropped as
+  emptied), the draft's settings record (`editor/editor-draft.ts`'s
   `EditorTourSettings` has the same shape). Every object belongs to a
   station from its placement on, and the objects' records only NAME it:
   the record keeps the frame, so a reload brings a pin's station back

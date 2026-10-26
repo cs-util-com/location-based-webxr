@@ -442,6 +442,9 @@ function reloadedFromDraft(state: TourDocumentState): TourDocumentState {
       ...(record.deletedStations === undefined
         ? {}
         : { deletedStations: record.deletedStations }),
+      ...(record.handMadeStations === undefined
+        ? {}
+        : { handMadeStations: record.handMadeStations }),
       what: "restore",
     }),
   );

@@ -12,7 +12,9 @@ import { describe, expect, it } from "vitest";
 
 import { worldFromEcefAt } from "gps-plus-slam-globe/editor";
 
-import { eastNorthOf, tourCentre } from "./tour-origin.js";
+import fc from "fast-check";
+
+import { eastNorthOf, placeAtEastNorth, tourCentre } from "./tour-origin.js";
 
 describe("tourCentre", () => {
   const geo = (lat: number, lon: number, alt: number) => ({
@@ -108,6 +110,43 @@ describe("eastNorthOf", () => {
     expect(eastNorthOf({ lat: 48, lon: 11 }, { lat: 91, lng: 11 })).toBeNull();
     expect(
       eastNorthOf({ lat: 48, lon: 11 }, { lat: 48, lng: Infinity }),
+    ).toBeNull();
+  });
+});
+
+describe("placeAtEastNorth", () => {
+  // Why: the inspector's typed east and north become a station's place
+  // here; a place that read back other metres than the ones typed would
+  // move the station somewhere the creator did not ask for. Checked within
+  // a millimetre over 2 km either way, at latitudes up to 80 degrees.
+  it("is the place eastNorthOf reads back as the same metres (property)", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -80, max: 80, noNaN: true }),
+        fc.double({ min: -179, max: 179, noNaN: true }),
+        fc.double({ min: -2000, max: 2000, noNaN: true }),
+        fc.double({ min: -2000, max: 2000, noNaN: true }),
+        (lat, lng, eastM, northM) => {
+          const origin = { lat, lng };
+          const place = placeAtEastNorth({ eastM, northM }, origin);
+          if (place === null) throw new Error("no place");
+          const back = eastNorthOf(place, origin);
+          expect(Math.abs((back?.eastM ?? NaN) - eastM)).toBeLessThan(1e-3);
+          expect(Math.abs((back?.northM ?? NaN) - northM)).toBeLessThan(1e-3);
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
+  it("is null for metres or an origin that are no place", () => {
+    const origin = { lat: 48, lng: 11 };
+    expect(
+      placeAtEastNorth({ eastM: Number.NaN, northM: 0 }, origin),
+    ).toBeNull();
+    expect(placeAtEastNorth({ eastM: 0, northM: Infinity }, origin)).toBeNull();
+    expect(
+      placeAtEastNorth({ eastM: 0, northM: 0 }, { lat: 91, lng: 11 }),
     ).toBeNull();
   });
 });

@@ -188,6 +188,22 @@ describe("drawTree", () => {
     }
   });
 
+  // Why: a card is dragged by its grip to reorder the tour. The grip is
+  // no button (Earlier and Later in the inspector are the keyboard's way),
+  // so it sits beside the card's buttons, never inside one, hidden from a
+  // screen reader.
+  it("gives each card a grip to drag it by, outside its buttons", () => {
+    draw();
+    const grips = [...dock.body.querySelectorAll<HTMLElement>(".card .grip")];
+    expect(grips.map((g) => g.dataset["drag"])).toEqual(["gate", "steps"]);
+    for (const grip of grips) {
+      expect(grip.tagName).toBe("SPAN");
+      expect(grip.closest("button")).toBeNull();
+      expect(grip.getAttribute("aria-hidden")).toBe("true");
+      expect(grip.title).toBe("Drag to change its place in the tour");
+    }
+  });
+
   it("folds the dock to its head", () => {
     store.dispatch(
       editorViewActions.dockFolded({ dock: "tree", folded: true }),

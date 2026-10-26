@@ -20,6 +20,8 @@ stats.
 - `openSampleIn3d(page)` - `/edit.html`, the sample tour open as a
   creator gets it: in the 3D view (`body[data-view="3d"]`, the switch
   saying "2D map"), its three stations placed.
+- `openZip(page, zip, name)` - a tour zip opened through the page's file
+  input, as a dropped file.
 - `view3d(page)` - `window.__tourEditor.view3d()`: the shown 3D view's
   stats, or null on the map.
 

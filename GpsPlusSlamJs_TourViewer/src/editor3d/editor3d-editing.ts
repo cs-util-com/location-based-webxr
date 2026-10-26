@@ -23,6 +23,7 @@ import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest"
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { groundHit } from "gps-plus-slam-globe/editor";
 
+import type { GroundPlace } from "../editor/editor-shell/scene-menu.js";
 import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
 import { EDITOR_CAMERA } from "./editor3d-camera.js";
 import {
@@ -48,7 +49,7 @@ import {
   type ScreenPoint,
   type WorldPoint,
 } from "./gizmo-maths.js";
-import { headingOfGeo } from "./pose-edits.js";
+import { headingOfGeo, turnedGeo } from "./pose-edits.js";
 import { mapGestureOf, tiltedPolarRad } from "./two-finger.js";
 
 const DEG = Math.PI / 180;
@@ -370,6 +371,38 @@ export function createSceneEditing(deps: SceneEditingDeps) {
   });
 
   return {
+    /** The place the view looks at (the orbit's centre), on the ground:
+     *  the ground's ellipsoidal height there, or the centre's own height
+     *  where no ground has loaded yet. */
+    centre(): GroundPlace {
+      const at = controls.target;
+      const place = placeOf(at);
+      const groundAlt = world.groundAt(place);
+      if (groundAlt !== null) return { ...place, alt: groundAlt };
+      ecef.copy(at).applyMatrix4(deps.ecefFromWorld);
+      const c = ellipsoid.getPositionToCartographic(ecef, {}) as {
+        height: number;
+      };
+      return { ...place, alt: c.height + deps.undulationAt(place) };
+    },
+    /** The ground's ellipsoidal height at a place, as loaded (null where
+     *  none has loaded yet). */
+    groundAt: (place: { readonly lat: number; readonly lon: number }) =>
+      world.groundAt(place),
+    /** Turn the selection `deg` clockwise about up, where it stands: one
+     *  edit through the page (a locked station's is refused there).
+     *  False for a selection without a pose here (a code). */
+    turn(selection: string, deg: number): boolean {
+      const target = targetOf(selection);
+      if (target === null) return false;
+      const geo = turnedGeo(target.geo, deg);
+      deps.page.commit(
+        target.kind === "station"
+          ? { kind: "station-pose", id: target.id, geo }
+          : { kind: "item-pose", id: target.id, geo },
+      );
+      return true;
+    },
     /** Each frame: the input's retries, then the gizmo on the selection. */
     update() {
       input.frame();
