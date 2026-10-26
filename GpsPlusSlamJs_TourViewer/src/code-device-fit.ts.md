@@ -34,7 +34,7 @@ stored error of 10-15 m became permanent (the mixed-visit tests in
     the moved-code rule's minimum (`CODE_MOVE_RULE.minSpreadM`, 2 m): no
     turn is fitted then, and the reference's heading would stand in.
 - `fitSamples(samples)` - the fixes a fit uses: all but those reporting an
-  accuracy more than `FIT_ACCURACY_OUTLIER_FACTOR` (2) times the median of
+  accuracy more than 2 times (the private `FIT_ACCURACY_OUTLIER_FACTOR`) the median of
   the reported ones; a fix without an accuracy is kept.
 - `codeDeviceFit({ samples, reference, quality, frameChanged })` - the
   settle's gate on the fit, over `fitSamples(samples)`: null unless at

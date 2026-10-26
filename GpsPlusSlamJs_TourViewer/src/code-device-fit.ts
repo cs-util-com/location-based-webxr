@@ -88,7 +88,7 @@ export interface DeviceFit {
  *  median is left out of the fit. Not swept: it removes fixes several
  *  times worse than the rest, which the median accuracy the code is
  *  stamped with does not describe. */
-export const FIT_ACCURACY_OUTLIER_FACTOR = 2;
+const FIT_ACCURACY_OUTLIER_FACTOR = 2;
 
 /**
  * The fixes a fit uses: all but those reporting an accuracy more than
