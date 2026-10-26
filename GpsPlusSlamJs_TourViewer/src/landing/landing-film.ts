@@ -279,6 +279,12 @@ export function createLandingFilm(
   let share = 0;
   let buildMs = 0;
   let lastFrameNow: number | null = null;
+  /**
+   * After AR took the GPU, only a new entry into view (or a tap) builds
+   * a renderer again: a view change while still in view (a layout shift
+   * during the session) must not build one behind it.
+   */
+  let rebuildOnEntry = false;
   let lastEmit = "";
   let listMode = false;
   let destroyed = false;
@@ -489,6 +495,7 @@ export function createLandingFilm(
   const stop = () => {
     if (destroyed) return;
     player.release();
+    rebuildOnEntry = true;
     if (owned) {
       const s = owned;
       toFloor();
@@ -547,7 +554,8 @@ export function createLandingFilm(
   layout();
   const unobserveView = env.observeView(host, (v) => {
     share = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
-    if (share > 0) ensureScene();
+    if (share === 0) rebuildOnEntry = false;
+    else if (!rebuildOnEntry) ensureScene();
     player.setViewShare(share);
   });
   const unregisterAr = options.onArStarting(stop);

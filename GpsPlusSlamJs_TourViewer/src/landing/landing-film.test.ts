@@ -306,9 +306,12 @@ describe("landing film: renderer and fallback", () => {
     // the released scene's late lost-context event is not a loss
     t.scenes[0]!.onLost();
     expect(t.onFallback).not.toHaveBeenCalled();
-    // still in view after AR: it does not restart by itself
+    // still in view after AR: it does not restart by itself, nor build a
+    // renderer behind the session when the view changes (a layout shift)
     t.view(0.6);
+    t.view(0.7);
     expect(t.frames.requestFrame.mock.calls.length).toBe(asked);
+    expect(t.scenes).toHaveLength(1);
     t.view(0);
     t.view(0.6);
     expect(t.scenes).toHaveLength(2);
