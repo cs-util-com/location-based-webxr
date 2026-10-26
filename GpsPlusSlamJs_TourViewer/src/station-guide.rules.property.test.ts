@@ -51,7 +51,7 @@ function station(i: number, north: number, east: number): TourStation {
     steps: [
       {
         id: "ask",
-        block: {
+        action: {
           kind: "choice",
           prompt: "Again?",
           options: [{ id: "yes", label: "Yes", goto: "ask" }],

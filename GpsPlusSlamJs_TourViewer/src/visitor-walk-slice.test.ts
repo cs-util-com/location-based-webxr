@@ -50,7 +50,7 @@ import {
 
 const step = {
   id: "t",
-  block: { kind: "text", text: "Hi" },
+  action: { kind: "text", text: "Hi" },
   advance: { mode: "tap" },
 } as const;
 

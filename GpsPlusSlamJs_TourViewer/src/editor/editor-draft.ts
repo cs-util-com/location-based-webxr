@@ -103,6 +103,7 @@ import { sameJson } from "../same-json.js";
 import {
   changedStations,
   parseSettingsRecord,
+  settingsRecordText,
   SETTINGS_KEY,
 } from "../tour-document-draft.js";
 
@@ -765,7 +766,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           await store.remove(SETTINGS_KEY);
           return true;
         }
-        return store.put(SETTINGS_KEY, JSON.stringify(value));
+        return store.put(SETTINGS_KEY, settingsRecordText(value));
       }),
     ).catch(() => false);
   }

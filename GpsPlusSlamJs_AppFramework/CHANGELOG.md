@@ -4,6 +4,17 @@
 
 ### ⚠️ Breaking changes
 
+- **A step's content is `TourStep.action`, typed `TourStepAction`**
+  (`ar/tour-stations`, `ar/tour-manifest`): it was `TourStep.block`, typed
+  `TourBlock`. Only the reader's in-memory names change: the file still
+  stores a step's content under `block`, the reader maps that key to
+  `action`, and the writer maps it back, so every file reads as before and
+  every tour is written with the same bytes. A writer of its own must map
+  to the file's shape with `tourStationRecord` (or `tourManifestRecord`,
+  new) before `JSON.stringify`; `TourStepRecord` types a step in that
+  shape. This breaks the API and still ships in a minor release, by
+  decision, because its one known consumer is this repository's Tour
+  Viewer, changed with it.
 - **`captureSpots` and its types**: `TourManifest.captureSpots`,
   `TourCaptureSpots`, `TourCapture`, `TourCaptureGeo` and
   `tourCaptureGeos` (all since 1.27.0). A walk's camera captures are debug

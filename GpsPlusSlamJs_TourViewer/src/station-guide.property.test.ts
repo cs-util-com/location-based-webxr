@@ -83,7 +83,7 @@ describe("wireStationGuide (properties)", () => {
             steps: [
               {
                 id: "ask",
-                block: {
+                action: {
                   kind: "choice",
                   prompt: "Again?",
                   options: [{ id: "yes", label: "Yes", goto: "ask" }],
@@ -186,7 +186,7 @@ describe("wireStationGuide (properties)", () => {
             steps: [
               {
                 id: "t",
-                block: { kind: "text", text: "Hi" },
+                action: { kind: "text", text: "Hi" },
                 advance: { mode: "tap" },
               },
             ],
@@ -259,7 +259,7 @@ describe("wireStationGuide (properties)", () => {
             steps: [
               {
                 id: "t",
-                block: { kind: "text", text: "Hi" },
+                action: { kind: "text", text: "Hi" },
                 advance: { mode: "tap" },
               },
             ],

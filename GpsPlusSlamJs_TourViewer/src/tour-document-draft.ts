@@ -14,6 +14,7 @@ import { parseGeoPose } from "gps-plus-slam-app-framework/ar/qr/geo-pose";
 import {
   createEmptyTourManifest,
   parseTourManifest,
+  tourStationRecord,
   type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_ID_PATTERN } from "gps-plus-slam-app-framework/ar/tour-archive";
@@ -278,6 +279,29 @@ export function parseSettingsRecord(
   } catch {
     return undefined;
   }
+}
+
+/** A settings record as a draft stores it: its frames in the tour file's
+ *  shape (a step's action under `block`, `tourStationRecord`), every
+ *  other field and the key order as they are. `parseSettingsRecord` reads
+ *  a frame as the format reads a station, so a frame stored in the
+ *  reader's own shape would be lost; and a draft stored before reads the
+ *  same as one stored now. */
+export function settingsRecordText<
+  R extends Pick<
+    TourSettingsRecord,
+    "needsNoGps" | "createdStations" | "frames"
+  >,
+>(record: R): string {
+  return JSON.stringify({
+    ...record,
+    ...(record.createdStations === undefined
+      ? {}
+      : { createdStations: record.createdStations.map(tourStationRecord) }),
+    ...(record.frames === undefined
+      ? {}
+      : { frames: record.frames.map(tourStationRecord) }),
+  });
 }
 
 /** The codes a draft keeps (plan M3b): the code in hand, and every code

@@ -56,6 +56,7 @@ import {
   changedStations,
   parseSettingsRecord,
   settingsRecord,
+  settingsRecordText,
   SETTINGS_KEY,
   type TourCodesRecord,
   type TourSettingsRecord,
@@ -479,7 +480,7 @@ export function wireCreatorDraft(deps: {
             : record;
         return store.put(
           SETTINGS_KEY,
-          JSON.stringify(withCreated(posed, held?.created ?? null)),
+          settingsRecordText(withCreated(posed, held?.created ?? null)),
         );
       })
       .catch(() => false);

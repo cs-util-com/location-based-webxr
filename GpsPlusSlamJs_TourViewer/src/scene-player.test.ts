@@ -18,13 +18,13 @@ import {
 
 const text = (id: string, auto?: number): TourStep => ({
   id,
-  block: { kind: "text", text: `text ${id}` },
+  action: { kind: "text", text: `text ${id}` },
   advance:
     auto === undefined ? { mode: "tap" } : { mode: "auto", afterS: auto },
 });
 const choice = (id: string, options: [string, string][]): TourStep => ({
   id,
-  block: {
+  action: {
     kind: "choice",
     prompt: "Which way?",
     options: options.map(([oid, go]) => ({ id: oid, label: oid, goto: go })),
@@ -33,7 +33,7 @@ const choice = (id: string, options: [string, string][]): TourStep => ({
 });
 const quiz: TourStep = {
   id: "q",
-  block: {
+  action: {
     kind: "quiz",
     question: "How old?",
     points: 1,
@@ -118,7 +118,7 @@ describe("createScenePlayer", () => {
           )
             shown.push(s.id);
           const expected = steps
-            .filter((s) => s.block.kind !== "quiz")
+            .filter((s) => s.action.kind !== "quiz")
             .map((s) => s.id);
           expect(shown).toEqual(expected.slice(0, taps + 1));
           expect(taps + 1 < expected.length || p.ended()).toBe(true);

@@ -40,6 +40,14 @@ createdStations?, frames?, order?, deletedStations? }` (`stations`: `StationPose
   (`codesRecord(state, hand)`, not exported).
 - `SETTINGS_KEY` (`"settings"`) - the record's file in a draft
   namespace, on both pages; `readDraft` skips it.
+- `settingsRecordText(record)` - the text a draft stores for a settings
+  record (both pages write through it): `JSON.stringify` of the record
+  with its `createdStations` and `frames` in the tour file's shape
+  (`tourStationRecord`: a step's action under the file's key `block`),
+  every other field and the key order as they are. `parseSettingsRecord`
+  reads a frame as the format reads a station, so a frame stored in the
+  reader's own shape (`action`) would be lost, and drafts stored before
+  read the same as ones stored now.
 - `parseSettingsRecord(text, against?)` - a stored record, or undefined
   when it does not read (a bad station pose or detail costs the record,
   never the objects beside it). `against` is the opened tour: its

@@ -37,12 +37,12 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import { tourImageIds } from "gps-plus-slam-app-framework/ar/tour-details";
 import type { TourContentFields } from "gps-plus-slam-app-framework/ar/tour-items";
 import type {
-  TourBlock,
   TourItem,
   TourManifest,
   TourObject,
   TourQuizRoute,
   TourStation,
+  TourStepAction,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   itemGeoPose,
@@ -227,7 +227,7 @@ export function keepsItself(
 /** The stations `station` routes to: its `next` and its quizzes' routes. */
 export function routedTo(station: Omit<TourStation, "items">): string[] {
   const ids = station.next === undefined ? [] : [station.next];
-  for (const { block } of station.steps) {
+  for (const { action: block } of station.steps) {
     if (block.kind !== "quiz" || block.route === undefined) continue;
     const { correct, wrong, byOption } = block.route;
     if (correct !== undefined) ids.push(correct);
@@ -270,13 +270,13 @@ export function withoutRoutesTo(
 ): Omit<TourStation, "items"> {
   if (!routedTo(station).some((id) => gone.has(id))) return station;
   const steps = station.steps.map((step) => {
-    const { block } = step;
+    const { action: block } = step;
     if (block.kind !== "quiz" || block.route === undefined) return step;
     const route = routeWithout(block.route, gone);
     const { route: _old, ...rest } = block;
     return {
       ...step,
-      block: route === undefined ? rest : { ...rest, route },
+      action: route === undefined ? rest : { ...rest, route },
     };
   });
   const { next, ...rest } = station;
@@ -288,7 +288,7 @@ export function withoutRoutesTo(
 }
 
 /** The assets `block` names: its media, a character's image and voice. */
-function blockAssetIds(block: TourBlock): readonly string[] {
+function blockAssetIds(block: TourStepAction): readonly string[] {
   switch (block.kind) {
     case "image":
     case "audio":
@@ -325,7 +325,7 @@ export function objectAssetIds(object: TourContentFields): readonly string[] {
 export function stepAssetIds(
   station: Pick<TourStation, "steps">,
 ): readonly string[] {
-  return station.steps.flatMap((step) => blockAssetIds(step.block));
+  return station.steps.flatMap((step) => blockAssetIds(step.action));
 }
 
 /**

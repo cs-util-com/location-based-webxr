@@ -884,7 +884,7 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
           steps: [
             {
               id: "hi",
-              block: { kind: "text", text: "Hello" },
+              action: { kind: "text", text: "Hello" },
               advance: { mode: "tap" },
             },
           ],

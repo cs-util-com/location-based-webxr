@@ -103,12 +103,12 @@ const OPENED: TourManifest = parseTourManifest(
               steps: [
                 {
                   id: "s1",
-                  block: { kind: "image", asset: "img1" },
+                  action: { kind: "image", asset: "img1" },
                   advance: { mode: "tap" },
                 },
                 {
                   id: "q1",
-                  block: {
+                  action: {
                     kind: "quiz",
                     question: "Which way?",
                     points: 1,
@@ -463,7 +463,7 @@ describe("stationDeleted", () => {
     }
     const story = frameOf(after, "story");
     expect(story.next).toBeUndefined();
-    const quiz = story.steps.find((s) => s.id === "q1")?.block;
+    const quiz = story.steps.find((s) => s.id === "q1")?.action;
     expect(quiz?.kind === "quiz" ? quiz.route : null).toEqual({
       wrong: stationIdOf("a"),
       byOption: { o2: stationIdOf("a") },
@@ -517,7 +517,7 @@ describe("stationDeleted", () => {
     );
     const quiz = frameOf(state, "story").steps.find(
       (s) => s.id === "q1",
-    )?.block;
+    )?.action;
     expect(quiz?.kind === "quiz" ? quiz.route : "none").toBeUndefined();
     const empty = reduce(
       open(),

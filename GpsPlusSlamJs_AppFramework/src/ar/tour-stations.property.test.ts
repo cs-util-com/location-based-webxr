@@ -11,7 +11,11 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { parseTourAssets, parseTourStations } from './tour-stations';
+import {
+  parseTourAssets,
+  parseTourStations,
+  tourStationRecord,
+} from './tour-stations';
 
 class Invalid extends Error {}
 const fail = (message: string): never => {
@@ -182,14 +186,14 @@ describe('unknown values of a newer minor (properties, K1 milestone review R4)',
           const modes = station.steps.map((s) => s.advance.mode);
           expect(modes.every((m) => m === 'tap' || m === 'auto')).toBe(true);
           const assetRefs = station.steps.flatMap((s) => {
-            const asset = (s.block as unknown as Record<string, unknown>)[
+            const asset = (s.action as unknown as Record<string, unknown>)[
               'asset'
             ];
             return typeof asset === 'string' ? [asset] : [];
           });
           expect(assetRefs.every((a) => assetIds.has(a))).toBe(true);
           const choices = station.steps.flatMap((s) =>
-            s.block.kind === 'choice' ? [s.block] : []
+            s.action.kind === 'choice' ? [s.action] : []
           );
           expect(
             choices.every(
@@ -216,7 +220,10 @@ describe('tour stations (properties)', () => {
     fc.assert(
       fc.property(stations, (data) => {
         const parsed = parseAll(data);
-        expect(parseAll(JSON.parse(JSON.stringify(parsed)))).toEqual(parsed);
+        // Through the file's shape: a step's action is stored as `block`.
+        expect(
+          parseAll(JSON.parse(JSON.stringify(parsed.map(tourStationRecord))))
+        ).toEqual(parsed);
       }),
       { numRuns: 150 }
     );

@@ -45,7 +45,7 @@ function station(
     steps: [
       {
         id: "s",
-        block: { kind: "text", text: "Hi" },
+        action: { kind: "text", text: "Hi" },
         advance: { mode: "tap" },
       },
     ],

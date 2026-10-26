@@ -89,7 +89,7 @@ function stationOf(
     hint: "arrow",
     steps: ["figure", "voice", "picture"].map((kind, i) => ({
       id: `s${String(i)}`,
-      block: { kind: "image", asset: `${prefix}-${kind}` },
+      action: { kind: "image", asset: `${prefix}-${kind}` },
       advance: { mode: "tap" },
     })),
   };

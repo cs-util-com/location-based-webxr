@@ -34,7 +34,11 @@ import {
   type TourDocumentState,
   type TourDocumentView,
 } from "./tour-document.js";
-import { parseSettingsRecord, settingsRecord } from "./tour-document-draft.js";
+import {
+  parseSettingsRecord,
+  settingsRecord,
+  settingsRecordText,
+} from "./tour-document-draft.js";
 
 function pin(id: string, lat: number): TourObject {
   return {
@@ -418,7 +422,7 @@ const opened = reduce(
  *  records, restored into a fresh open. */
 function reloadedFromDraft(state: TourDocumentState): TourDocumentState {
   const record = parseSettingsRecord(
-    JSON.stringify(settingsRecord(state)),
+    settingsRecordText(settingsRecord(state)),
     OPENED,
   );
   if (record === undefined) throw new Error("the settings record did not read");

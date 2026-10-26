@@ -31,7 +31,7 @@ function station(id: string, assetIds: readonly string[]): TourStation {
     hint: "arrow",
     steps: assetIds.map((asset, i) => ({
       id: `s${String(i)}`,
-      block: { kind: "image", asset },
+      action: { kind: "image", asset },
       advance: { mode: "tap" },
     })),
   };

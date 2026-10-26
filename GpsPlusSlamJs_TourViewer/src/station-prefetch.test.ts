@@ -39,7 +39,7 @@ function station(id: string, assetIds: string[]): TourStation {
     hint: "arrow",
     steps: assetIds.map((asset, i) => ({
       id: `s${String(i)}`,
-      block: { kind: "image", asset },
+      action: { kind: "image", asset },
       advance: { mode: "tap" },
     })),
   };
@@ -81,7 +81,7 @@ describe("stationAssetIds", () => {
       steps: [
         {
           id: "a",
-          block: {
+          action: {
             kind: "character",
             name: "K",
             image: "knight",
@@ -92,17 +92,17 @@ describe("stationAssetIds", () => {
         },
         {
           id: "b",
-          block: { kind: "text", text: "t" },
+          action: { kind: "text", text: "t" },
           advance: { mode: "tap" },
         },
         {
           id: "c",
-          block: { kind: "model", asset: "arch" },
+          action: { kind: "model", asset: "arch" },
           advance: { mode: "tap" },
         },
         {
           id: "d",
-          block: {
+          action: {
             kind: "character",
             name: "K",
             image: "knight",
@@ -123,7 +123,7 @@ describe("stationAssetIds", () => {
       steps: [
         {
           id: "v",
-          block: { kind: "video", asset: "film", transcript: "t" },
+          action: { kind: "video", asset: "film", transcript: "t" },
           advance: { mode: "tap" },
         },
         ...station("gate", ["knight"]).steps,

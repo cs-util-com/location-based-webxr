@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import {
   parseTourAssets,
   parseTourStations,
+  tourStationRecord,
   type TourAsset,
 } from './tour-stations';
 
@@ -160,7 +161,7 @@ describe('parseTourStations', () => {
     expect(parsed?.title).toBe('The gate');
     expect(parsed?.geo).toEqual(geo);
     expect(parsed?.hint).toBe('arrow');
-    expect(parsed?.steps.map((s) => s.block.kind)).toEqual([
+    expect(parsed?.steps.map((s) => s.action.kind)).toEqual([
       'character',
       'choice',
       'model',
@@ -198,7 +199,7 @@ describe('parseTourStations', () => {
     ]);
     expect(
       parsed?.steps.map((s) =>
-        s.block.kind === 'quiz' ? s.block.answer.type : null
+        s.action.kind === 'quiz' ? s.action.answer.type : null
       )
     ).toEqual(['single', 'multiple', 'text', 'number', 'code']);
   });
@@ -232,7 +233,7 @@ describe('parseTourStations', () => {
       station({ id: 's3' }),
     ]);
     expect(stations[0]?.next).toBe('s2');
-    const block = stations[0]?.steps[0]?.block;
+    const block = stations[0]?.steps[0]?.action;
     expect(block?.kind === 'quiz' ? block.route : null).toEqual({
       byOption: { l: 's2', r: 's3' },
       wrong: 's3',
@@ -913,5 +914,47 @@ describe("a station's description and card image (minor 2, G2 build plan M1a)", 
     expect(parsed[0]?.items).toEqual([]);
     expect(parsed[0]).not.toHaveProperty('image');
     expect(dropped).toEqual([]);
+  });
+});
+
+describe("a step's action and the file's key", () => {
+  // Why: the reader names what a step does `action`, while the file keeps
+  // its key `block`, so every file written before still reads and every
+  // file written now has the same bytes. A writer that forgot the mapping
+  // would write a file no reader opens; one that wrote both keys would
+  // change every tour's bytes.
+  it('reads the file key block into the field action, and keeps no block key', () => {
+    const step = parse([station()])[0]?.steps[0];
+    expect(step).toEqual({
+      id: 'a',
+      action: { kind: 'text', text: 'Welcome' },
+      advance: { mode: 'tap' },
+    });
+    expect(step).not.toHaveProperty('block');
+  });
+
+  it('a step stored with action and no block is refused: the file format is unchanged', () => {
+    expect(() =>
+      parse([
+        station({
+          steps: [{ id: 'a', action: { kind: 'text', text: 'Welcome' } }],
+        }),
+      ])
+    ).toThrow(/steps\[0\]\.block/);
+  });
+
+  it('tourStationRecord writes the action back under block, in the order id, block, advance, every other key as it was', () => {
+    const parsed = parse([station({ title: 'Gate' })])[0]!;
+    const record = tourStationRecord(parsed);
+    expect(Object.keys(record)).toEqual(Object.keys(parsed));
+    expect(record.steps).toEqual([
+      {
+        id: 'a',
+        block: { kind: 'text', text: 'Welcome' },
+        advance: { mode: 'tap' },
+      },
+    ]);
+    expect(Object.keys(record.steps[0]!)).toEqual(['id', 'block', 'advance']);
+    expect(parse([JSON.parse(JSON.stringify(record))])[0]).toEqual(parsed);
   });
 });

@@ -37,7 +37,15 @@ Guided-setup plan DEC-N7/N8/N9 for the original pins and photos
   through the reader, refuses a manifest of a newer minor, then
   pretty-prints `{ version: 3, minor, ... }` at the lowest minor the tour
   needs (`minorNeeded`: 2 while a station carries a description or a card
-  image, else 1 while it carries a model, else 0).
+  image, else 1 while it carries a model, else 0). The reader holds a
+  step's action as `action` and the file stores it under `block`, so the
+  writer maps to the file's shape (`tourManifestRecord`) both before the
+  re-validation and before printing: the written bytes are those of the
+  file format, unchanged by the in-memory name.
+- `tourManifestRecord(manifest)` - the manifest in the file's shape:
+  every station through `tourStationRecord` (`tour-stations.ts`), every
+  other field and the key order as they are. `tourStationRecord` and
+  `tourStepRecord` are re-exported from here.
 - `createEmptyTourManifest(): TourManifest` - `{ version: 3, minor: 0,
 order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - `tourItems(tour): TourItem[]` - every station's items, in station order.
@@ -55,7 +63,8 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
   `TourItem`, `TourPinItem`, `TourPhotoItem`, `TourModelItem`,
   `TourLocalPose`; and from
   `tour-stations.ts`: `TourAsset`, `TourAssetKind`, `TourOrder`,
-  `TourStation`, `TourStep`, `TourStepAdvance`, `TourBlock`,
+  `TourStation`, `TourStep`, `TourStepAction`, `TourStepRecord`,
+  `TourStepAdvance`,
   `TourChoiceOption`, `TourQuizOption`, `TourQuizAnswer`, `TourQuizRoute`.
 
 ## Version 3 (W3; a major)

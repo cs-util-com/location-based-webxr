@@ -22,6 +22,7 @@ import {
   parseTourManifest,
   serializeTourManifest,
   tourItems,
+  tourManifestRecord,
   type TourManifest,
 } from './tour-manifest';
 
@@ -296,7 +297,8 @@ describe('tour manifest version 3 (properties)', () => {
     fc.assert(
       fc.property(manifest, (m) => {
         const once = parseTourManifest(m);
-        expect(parseTourManifest(once)).toEqual(once);
+        // Read again from the file's shape (`tourManifestRecord`).
+        expect(parseTourManifest(tourManifestRecord(once))).toEqual(once);
       })
     );
   });

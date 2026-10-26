@@ -40,7 +40,7 @@ function fakeDom() {
 
 const tap = (id: string, text: string): TourStep => ({
   id,
-  block: { kind: "text", text },
+  action: { kind: "text", text },
   advance: { mode: "tap" },
 });
 
@@ -167,7 +167,7 @@ describe("createSceneView", () => {
       station("gate", [
         {
           id: "k",
-          block: {
+          action: {
             kind: "character",
             name: "Sir Kay",
             image: "knight",
@@ -212,7 +212,7 @@ describe("createSceneView", () => {
       station("gate", [
         {
           id: "k",
-          block: {
+          action: {
             kind: "character",
             name: "Sir Kay",
             image: "knight",
@@ -249,7 +249,7 @@ describe("createSceneView", () => {
       station("gate", [
         {
           id: "k",
-          block: {
+          action: {
             kind: "character",
             name: "Sir Kay",
             image: "knight",
@@ -319,7 +319,7 @@ describe("createSceneView", () => {
       station("gate", [
         {
           id: "k",
-          block: {
+          action: {
             kind: "character",
             name: "Sir Kay",
             image: "knight",
@@ -346,7 +346,7 @@ describe("createSceneView", () => {
       station("s", [
         {
           id: "a",
-          block: { kind: "audio", asset: "voice", transcript: "Listen." },
+          action: { kind: "audio", asset: "voice", transcript: "Listen." },
           advance: { mode: "tap" },
         },
       ]),
@@ -362,7 +362,7 @@ describe("createSceneView", () => {
       station("s", [
         {
           id: "m",
-          block: { kind: "model", asset: "arch", caption: "The arch" },
+          action: { kind: "model", asset: "arch", caption: "The arch" },
           advance: { mode: "tap" },
         },
       ]),
@@ -379,7 +379,7 @@ describe("createSceneView", () => {
       station("s", [
         {
           id: "i",
-          block: { kind: "image", asset: "knight", caption: "The knight" },
+          action: { kind: "image", asset: "knight", caption: "The knight" },
           advance: { mode: "tap" },
         },
         tap("t", "Next"),
@@ -397,7 +397,7 @@ describe("createSceneView", () => {
       station("s", [
         {
           id: "i",
-          block: { kind: "image", asset: "knight" },
+          action: { kind: "image", asset: "knight" },
           advance: { mode: "tap" },
         },
         tap("t", "Next"),
@@ -420,7 +420,7 @@ describe("createSceneView", () => {
       station("s", [
         {
           id: "i",
-          block: { kind: "image", asset: "knight", caption: "The knight" },
+          action: { kind: "image", asset: "knight", caption: "The knight" },
           advance: { mode: "tap" },
         },
       ]),
@@ -465,7 +465,7 @@ describe("createSceneView", () => {
       station("s", [
         {
           id: "c",
-          block: {
+          action: {
             kind: "choice",
             prompt: "Enter?",
             options: [
@@ -623,7 +623,7 @@ describe("the story card's dots and its redraw", () => {
         tap("a", "One"),
         {
           id: "c",
-          block: {
+          action: {
             kind: "choice",
             prompt: "Which?",
             options: [{ id: "x", label: "X", goto: "a" }],

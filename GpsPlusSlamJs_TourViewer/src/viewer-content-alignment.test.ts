@@ -571,7 +571,7 @@ describe("after a code-set zero the content shows on the first voted lock (no co
         steps: [
           {
             id: "s",
-            block: { kind: "text", text: "Hi" },
+            action: { kind: "text", text: "Hi" },
             advance: { mode: "tap" },
           },
         ],

@@ -16,9 +16,9 @@
 
 import type {
   TourAsset,
-  TourBlock,
   TourStation,
   TourStep,
+  TourStepAction,
 } from "gps-plus-slam-app-framework/ar/tour-stations";
 
 import {
@@ -255,8 +255,8 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     });
   }
 
-  /** Show one step's block: its words at once, its media as they load. */
-  function showBlock(station: TourStation, block: TourBlock): void {
+  /** Show one step's action: its words at once, its media as they load. */
+  function showBlock(station: TourStation, block: TourStepAction): void {
     switch (block.kind) {
       case "text":
         dom.text.textContent = block.text;
@@ -324,7 +324,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       endStory();
       return;
     }
-    const block = step.block;
+    const block = step.action;
     dom.speaker.hidden = block.kind !== "character";
     dom.speaker.textContent = block.kind === "character" ? block.name : "";
     dom.continueButton.hidden = block.kind === "choice";
@@ -335,7 +335,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
 
   /** An auto step's timer, from its full length; none while held. */
   function armTimer(step: TourStep): void {
-    if (held || step.advance.mode !== "auto" || step.block.kind === "choice") {
+    if (held || step.advance.mode !== "auto" || step.action.kind === "choice") {
       return;
     }
     cancelTimer = deps.schedule(() => {

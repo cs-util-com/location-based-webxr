@@ -35,7 +35,7 @@ import {
 
 const step = {
   id: "s1",
-  block: { kind: "text", text: "Hello" },
+  action: { kind: "text", text: "Hello" },
   advance: { mode: "tap" },
 } as const;
 

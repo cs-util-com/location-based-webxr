@@ -95,7 +95,7 @@ const VOTE_ACCURACY_M = 0.5;
 
 const step = {
   id: "s",
-  block: { kind: "text", text: "Hi" },
+  action: { kind: "text", text: "Hi" },
   advance: { mode: "tap" },
 } as const;
 

@@ -452,7 +452,7 @@ describe("rebuildFinishedTour drops the assets nothing uses", () => {
       steps: [
         {
           id: "look",
-          block: { kind: "image", asset: "used" },
+          action: { kind: "image", asset: "used" },
           advance: { mode: "tap" },
         },
       ],

@@ -15,7 +15,7 @@ import type { TourStep } from "gps-plus-slam-app-framework/ar/tour-stations";
 
 /** Whether this build shows the step (quizzes arrive with K5). */
 export function isPlayableInK4(step: TourStep): boolean {
-  return step.block.kind !== "quiz";
+  return step.action.kind !== "quiz";
 }
 
 /**
@@ -25,7 +25,7 @@ export function isPlayableInK4(step: TourStep): boolean {
  */
 export function playableStepCount(steps: readonly TourStep[]): number | null {
   const playable = steps.filter(isPlayableInK4);
-  return playable.some((s) => s.block.kind === "choice")
+  return playable.some((s) => s.action.kind === "choice")
     ? null
     : playable.length;
 }
@@ -59,14 +59,14 @@ export function createScenePlayer(steps: readonly TourStep[]): ScenePlayer {
     current,
     next() {
       const step = current();
-      if (step === null || step.block.kind === "choice") return step;
+      if (step === null || step.action.kind === "choice") return step;
       index = playableFrom(index + 1);
       return current();
     },
     choose(optionId) {
       const step = current();
-      if (step === null || step.block.kind !== "choice") return step;
-      const option = step.block.options.find((o) => o.id === optionId);
+      if (step === null || step.action.kind !== "choice") return step;
+      const option = step.action.options.find((o) => o.id === optionId);
       const target = option === undefined ? undefined : byId.get(option.goto);
       if (target === undefined) return step;
       index = playableFrom(target);

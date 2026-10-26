@@ -18,6 +18,7 @@ import { stationsAsFinished } from "./creator-stations.js";
 import { manifestToWrite, tourDocumentActions } from "./tour-document.js";
 import {
   parseSettingsRecord,
+  settingsRecordText,
   type TourDocumentDraft,
   type TourSettingsRecord,
 } from "./tour-document-draft.js";
@@ -833,7 +834,7 @@ describe("the creator's document: 'New station here' (D8)", () => {
     expect(own).toBeDefined();
     expect(own).not.toBe(doc.state().stations[0]!.id);
     // The record as a later open reads it back from disk.
-    const read = parseSettingsRecord(JSON.stringify(settings));
+    const read = parseSettingsRecord(settingsRecordText(settings!));
     expect(read?.createdStations?.map((f) => f.id)).toEqual([own]);
     // A later page restoring those records starts the same separate
     // station, anchored where it stood.

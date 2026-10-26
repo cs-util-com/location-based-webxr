@@ -38,7 +38,7 @@ code-only station), its pins and photos as `items` at local poses
   when lenient). Shared with version 4's story the same way.
 - Types: `TourAsset`, `TourAssetKind`, `TourStationDrop`, `TourQuiz`, `TourOrder` (`fixed | any |
 branch`), `TourStation`, `TourStep`,
-  `TourStepAdvance`, `TourBlock`, `TourChoiceOption`, `TourQuizOption`,
+  `TourStepAdvance`, `TourStepAction`, `TourStepRecord`, `TourChoiceOption`, `TourQuizOption`,
   `TourQuizAnswer`, `TourQuizRoute`.
 - `fail` is the caller's: `tour-manifest.ts` passes one that throws
   `TourManifestValidationError`, so both modules raise the same error and
@@ -86,7 +86,13 @@ branch`), `TourStation`, `TourStep`,
     name one of them.
 - **Step**: `id` (unique per station), `block`, `advance` (`{ mode: "tap" }`
   by default, or `{ mode: "auto", afterS > 0 }`). The default is written
-  out on parse, so a renderer never guesses.
+  out on parse, so a renderer never guesses. The reader holds the file's
+  `block` as the step's `action` (`TourStep`: `{ id, action, advance }`);
+  `tourStepRecord(step)` and `tourStationRecord(station)` map back to
+  the file's shape (`TourStepRecord`: `{ id, block, advance }`, in that
+  key order; every other station field and its position kept), which
+  every writer applies before writing. A file step carrying `action`
+  and no `block` is refused: the file format is unchanged.
 - **Blocks**:
   - `text { text }`;
   - `image { asset, caption? }` (an image asset);

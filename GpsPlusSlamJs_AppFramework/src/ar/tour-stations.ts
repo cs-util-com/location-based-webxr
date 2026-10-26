@@ -158,7 +158,9 @@ export interface TourQuizRoute {
   readonly wrong?: string;
 }
 
-export type TourBlock =
+/** What a version 3 step does: its content shown, a scene choice, or a
+ *  quiz. Stored in the file under the step's key `block`. */
+export type TourStepAction =
   | { readonly kind: 'text'; readonly text: string }
   | {
       readonly kind: 'image';
@@ -198,10 +200,33 @@ export type TourBlock =
       readonly route?: TourQuizRoute;
     };
 
+/** A step as the reader holds it: what it does is its `action`, which
+ *  the file stores under the key `block` ({@link tourStepRecord}). */
 export interface TourStep {
   readonly id: string;
-  readonly block: TourBlock;
+  readonly action: TourStepAction;
   readonly advance: TourStepAdvance;
+}
+
+/** A step as the file stores it: its action under the key `block`. */
+export interface TourStepRecord {
+  readonly id: string;
+  readonly block: TourStepAction;
+  readonly advance: TourStepAdvance;
+}
+
+/** A step in the file's shape, keys in the order the file writes them. */
+export function tourStepRecord(step: TourStep): TourStepRecord {
+  return { id: step.id, block: step.action, advance: step.advance };
+}
+
+/** A station (or station frame) in the file's shape: its steps' actions
+ *  under the key `block`, every other field and the key order as they
+ *  are. Writers map with it before writing; the reader maps back. */
+export function tourStationRecord<
+  S extends { readonly steps: readonly TourStep[] },
+>(station: S): Omit<S, 'steps'> & { steps: TourStepRecord[] } {
+  return { ...station, steps: station.steps.map(tourStepRecord) };
 }
 
 export interface TourStation {
@@ -404,7 +429,7 @@ function parseCharacter(
   v: Record<string, unknown>,
   at: string,
   ctx: BlockContext
-): TourBlock {
+): TourStepAction {
   const voice =
     v.voice === undefined
       ? {}
@@ -435,7 +460,7 @@ function parseChoice(
   v: Record<string, unknown>,
   at: string,
   fail: Fail
-): TourBlock {
+): TourStepAction {
   const options = requireArray(v.options, `${at}.options`, fail).map((o, i) =>
     parseChoiceOption(o, `${at}.options[${String(i)}]`, fail)
   );
@@ -461,7 +486,7 @@ function parseMedia(
   v: Record<string, unknown>,
   at: string,
   ctx: BlockContext
-): TourBlock {
+): TourStepAction {
   const asset = requireAsset(v.asset, kind, `${at}.asset`, ctx);
   if (kind === 'audio' || kind === 'video') {
     const transcript = requireText(v.transcript, `${at}.transcript`, ctx.fail);
@@ -470,7 +495,11 @@ function parseMedia(
   return { kind, asset, ...optionalText(v.caption) };
 }
 
-function parseBlock(value: unknown, at: string, ctx: BlockContext): TourBlock {
+function parseBlock(
+  value: unknown,
+  at: string,
+  ctx: BlockContext
+): TourStepAction {
   if (!isRecord(value)) ctx.fail(`"${at}" must be an object`);
   switch (value.kind) {
     case 'text':
@@ -691,7 +720,7 @@ function parseQuiz(
   v: Record<string, unknown>,
   at: string,
   ctx: BlockContext
-): TourBlock {
+): TourStepAction {
   const quiz = parseTourQuiz(v, at, ctx);
   if (quiz === null) throw new SkippedStep();
   const route =
@@ -733,16 +762,17 @@ function parseStep(
 ): TourStep | null {
   if (!isRecord(value)) ctx.fail(`"${at}" must be an object`);
   const id = requireId(value.id, `${at}.id`, ctx.fail);
-  let block: TourBlock;
+  let action: TourStepAction;
   try {
-    block = parseBlock(value.block, `${at}.block`, ctx);
+    // The file's key is `block`; the reader's field is `action`.
+    action = parseBlock(value.block, `${at}.block`, ctx);
   } catch (err) {
     if (err instanceof SkippedStep) return null;
     throw err;
   }
   return {
     id,
-    block,
+    action,
     advance: parseTourStepAdvance(value.advance, `${at}.advance`, ctx),
   };
 }
@@ -759,13 +789,13 @@ function withoutStrandedChoices(steps: readonly TourStep[]): TourStep[] {
     const ids = new Set(kept.map((s) => s.id));
     let changed = false;
     const next = kept.flatMap((step): TourStep[] => {
-      if (step.block.kind !== 'choice') return [step];
-      const options = step.block.options.filter((o) => ids.has(o.goto));
-      if (options.length === step.block.options.length) return [step];
+      if (step.action.kind !== 'choice') return [step];
+      const options = step.action.options.filter((o) => ids.has(o.goto));
+      if (options.length === step.action.options.length) return [step];
       changed = true;
       return options.length < 2
         ? []
-        : [{ ...step, block: { ...step.block, options } }];
+        : [{ ...step, action: { ...step.action, options } }];
     });
     if (!changed) return next;
     kept = next;
@@ -972,7 +1002,7 @@ function checkStepReferences(
   requireStation: (id: string | undefined, at: string) => void,
   fail: Fail
 ): void {
-  const block = step.block;
+  const block = step.action;
   if (block.kind === 'choice') {
     block.options.forEach((option, i) => {
       if (!stepIds.has(option.goto)) {

@@ -57,7 +57,7 @@ function station(
     steps: [
       {
         id: "t",
-        block: { kind: "text", text: "Hi" },
+        action: { kind: "text", text: "Hi" },
         advance: { mode: "tap" },
       },
     ],
@@ -485,7 +485,7 @@ describe("the station guide on the page's store", () => {
             steps: [
               {
                 id: "ask",
-                block: {
+                action: {
                   kind: "choice",
                   prompt: "Again?",
                   options: [{ id: "yes", label: "Yes", goto: "ask" }],

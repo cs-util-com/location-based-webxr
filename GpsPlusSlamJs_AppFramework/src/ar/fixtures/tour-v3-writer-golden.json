@@ -1,0 +1,4402 @@
+{
+  "cases": [
+    {
+      "input": {
+        "version": 3,
+        "title": " ",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "geo": {
+              "lat": 1.4671926715155228e-205,
+              "lon": 2.0140754608175564e-150,
+              "alt": -399.99999999999943,
+              "headingDeg": 5e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s0-i0",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "2099-12-31T23:59:59.959Z",
+                "pose": {
+                  "position": [
+                    -1.7502662284143975e-70, 5.419324658598822e-294,
+                    -4.588828707124631e-44
+                  ],
+                  "rotation": [0, 4e-323, 0, 1]
+                },
+                "sizeM": 0.050000000000000044
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "title": "applyla",
+            "geo": {
+              "lat": 88.99999999999973,
+              "lon": 1.8554952506950147e-16,
+              "alt": -1.4557800826257003e-208,
+              "headingDeg": 9.236556750039894e-81
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "video",
+                  "asset": "clip",
+                  "transcript": "Knights ride."
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 1.1971983926105778
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.9402209896138853
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s1-i0",
+                "kind": "pin",
+                "createdAtIso": "2070-09-24T09:52:23.152Z",
+                "pose": {
+                  "position": [
+                    3.5463444843162256e-164, -2.536858926337095e-184, -8.4e-323
+                  ],
+                  "rotation": [0, 4.1064977741870985e-40, 0, 1]
+                },
+                "label": " my"
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "10666d330553d9927033b0b2deb1197150716656798070c9f14613d3a57ca416",
+      "bytes": 4134
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "E",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "soeAKA",
+            "geo": {
+              "lat": 1e-323,
+              "lon": 7e-323,
+              "alt": 4e-323,
+              "headingDeg": 1.5e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "model",
+                  "asset": "arch",
+                  "caption": "The arch"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 9.446219409369622
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s0-i0",
+                "kind": "pin",
+                "createdAtIso": "2091-01-13T22:23:00.592Z",
+                "pose": {
+                  "position": [
+                    -499.99999999999983, -1.1109772047651243e-167,
+                    6.989514917385042e-204
+                  ],
+                  "rotation": [0, 1.3197411179737213e-255, 0, 1]
+                },
+                "label": "mydb"
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "title": "enamealuep",
+            "geo": {
+              "lat": -1.904772349064945e-121,
+              "lon": 178.9999999999995,
+              "alt": 1.7266344180093977e-54,
+              "headingDeg": 359.89999999999986
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [],
+            "items": [
+              {
+                "id": "s1-i0",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "2099-12-31T23:59:59.969Z",
+                "pose": {
+                  "position": [-1.8303748215780208e-87, 4.4e-323, -7.4e-323],
+                  "rotation": [0, 3e-323, 0, 1]
+                },
+                "sizeM": 0.050000000000000024
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "fcc7f0740267bd661359da23565ea147f2a329c1ff730fbf617979b9ec63fd44",
+      "bytes": 2741
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "aXID",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "WkoBDnsYWT",
+            "geo": {
+              "lat": 1e-323,
+              "lon": 5e-323,
+              "alt": -3.1430009161356355e-144,
+              "headingDeg": 359.89999999999975
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "model",
+                  "asset": "arch",
+                  "caption": "The arch"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 23.719125587533895
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s0-i0",
+                "kind": "pin",
+                "createdAtIso": "2099-12-31T23:59:59.997Z",
+                "pose": {
+                  "position": [
+                    4.621752441660238e-206, -2.1557354607597513e-72,
+                    -1.512820275659426e-184
+                  ],
+                  "rotation": [0, 3e-323, 0, 1]
+                },
+                "label": "P w"
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "title": "frdqmdINrdz",
+            "geo": {
+              "lat": -3.6136190058433117e-53,
+              "lon": -3.202638643476608e-150,
+              "alt": 7999.999999999999,
+              "headingDeg": 359.8999999999992
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 44.027679074241355
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s1-i0",
+                "kind": "photo",
+                "image": "content/s1-i0.jpg",
+                "createdAtIso": "1984-02-26T00:39:26.798Z",
+                "pose": {
+                  "position": [
+                    -2.2935225190244088e-172, 7.472276361155757e-305,
+                    -2.984945622990385e-70
+                  ],
+                  "rotation": [0, 3.2656691286125623e-137, 0, 1]
+                },
+                "imageWidth": 2,
+                "imageHeight": 380
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "title": "cGbv",
+            "geo": {
+              "lat": -5.4e-323,
+              "lon": 1.1540509596741631e-43,
+              "alt": -7e-323,
+              "headingDeg": 1.8125286989576165e-172
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 55,
+                  "answer": {
+                    "type": "single",
+                    "options": [
+                      {
+                        "id": "a",
+                        "label": "A"
+                      },
+                      {
+                        "id": "b",
+                        "label": "B"
+                      }
+                    ],
+                    "correct": "b"
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10000000000000005
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "model",
+                  "asset": "arch",
+                  "caption": "The arch"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s2-i0",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "2099-12-31T23:59:59.969Z",
+                "pose": {
+                  "position": [
+                    -4.7352935355152074e-49, -49.99999999999996, 4.4e-323
+                  ],
+                  "rotation": [0, 1.966443315564139e-168, 0, 1]
+                },
+                "sizeM": 1.7036699609938004
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "geo": {
+              "lat": -3.252713086421509e-61,
+              "lon": -9.741745747720305e-300,
+              "alt": 0,
+              "headingDeg": 2.2187629854975995e-209
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [],
+            "items": []
+          }
+        ]
+      },
+      "sha256": "240a3a899719faf5a35aa07b5ddd35bab7e828bdfea8fa470ec6c24af735e5ec",
+      "bytes": 5363
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "Be",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "dPzc",
+            "geo": {
+              "lat": 88.99999999999987,
+              "lon": 5.4e-323,
+              "alt": -5.658874169894727e-126,
+              "headingDeg": 8e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [],
+            "items": []
+          },
+          {
+            "id": "s1",
+            "title": "RMkCfpub",
+            "geo": {
+              "lat": 2.6636129956909145e-113,
+              "lon": -4.541711102704902e-80,
+              "alt": -399.9999999999994,
+              "headingDeg": 359.89999999999895
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 98,
+                  "answer": {
+                    "type": "multiple",
+                    "options": [
+                      {
+                        "id": "a",
+                        "label": "A"
+                      },
+                      {
+                        "id": "b",
+                        "label": "B"
+                      },
+                      {
+                        "id": "c",
+                        "label": "C"
+                      }
+                    ],
+                    "correct": ["a", "c"]
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": []
+          }
+        ]
+      },
+      "sha256": "f05fb4e09a7331f0148de18530b60976d050a2efec1d6b4336d3e03c8ba82517",
+      "bytes": 2043
+    },
+    {
+      "input": {
+        "version": 3,
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "wdrMaSgORCnb",
+            "geo": {
+              "lat": 1.3763251355541689e-68,
+              "lon": -178.99999999999974,
+              "alt": -4.2159620228089955e-294,
+              "headingDeg": 1.0317448194186824e-176
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "video",
+                  "asset": "clip",
+                  "transcript": "Knights ride."
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s0-i0",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "2073-12-06T15:03:38.323Z",
+                "pose": {
+                  "position": [
+                    -4.6728826701051366e-285, 5.4e-323, -9.150327368907766e-246
+                  ],
+                  "rotation": [0, 1.3698686159138054e-163, 0, 1]
+                },
+                "sizeM": 499.99999999999903
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "geo": {
+              "lat": -3.6652136863620045e-50,
+              "lon": -2.488402205462224e-297,
+              "alt": -2.0704393053738426e-168,
+              "headingDeg": 0
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 7.609919484405964
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s1-i0",
+                "kind": "photo",
+                "image": "content/s1-i0.jpg",
+                "createdAtIso": "1975-08-06T01:47:05.859Z",
+                "pose": {
+                  "position": [
+                    -499.99999999999903, 1.2128101431653467e-231,
+                    -1.6098574464252622e-77
+                  ],
+                  "rotation": [0, 4.4e-323, 0, 1]
+                },
+                "imageWidth": 925,
+                "imageHeight": 391
+              },
+              {
+                "id": "s1-i1",
+                "kind": "photo",
+                "image": "content/s1-i1.jpg",
+                "createdAtIso": "2031-10-26T00:04:37.088Z",
+                "pose": {
+                  "position": [
+                    -1.339438557515594e-27, 1.4009865535915462e-300,
+                    -4.2682638035802446e-270
+                  ],
+                  "rotation": [0, 1.4808224706676979e-116, 0, 1]
+                },
+                "imageWidth": 2182,
+                "imageHeight": 131
+              },
+              {
+                "id": "s1-i2",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "1970-01-01T00:00:00.018Z",
+                "pose": {
+                  "position": [
+                    -0.08138755247215464, 4.149781727487157e-35,
+                    4.387268425966469e-130
+                  ],
+                  "rotation": [0, 5.895624407965549e-15, 0, -1]
+                },
+                "sizeM": 18.08934184937205
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "3cbdb65345e745a309643603da759774aa9f6a657e5182ced93cd781e04bbe62",
+      "bytes": 3916
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "Od ",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "UFV",
+            "geo": {
+              "lat": 1.9037996959254102,
+              "lon": 3e-323,
+              "alt": -3.620140913267353e-294,
+              "headingDeg": 8.768209107437765e-187
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": []
+          },
+          {
+            "id": "s1",
+            "title": "LsgBKRfOmL",
+            "geo": {
+              "lat": 9.234938063962801e-178,
+              "lon": 7.075408075732945e-157,
+              "alt": -7.528074471670971e-13,
+              "headingDeg": 9.09866350750191e-53
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "video",
+                  "asset": "clip",
+                  "transcript": "Knights ride."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 2.66444843792374
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 35.49770652426002
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s1-i0",
+                "kind": "photo",
+                "image": "content/s1-i0.jpg",
+                "createdAtIso": "2067-03-30T03:20:21.640Z",
+                "pose": {
+                  "position": [8.4e-323, 49.99999999999993, -8.4e-323],
+                  "rotation": [0, 1.7614876206991038e-206, 0, 1]
+                },
+                "imageWidth": 1723,
+                "imageHeight": 3584
+              },
+              {
+                "id": "s1-i1",
+                "kind": "pin",
+                "createdAtIso": "1976-04-01T21:57:48.456Z",
+                "pose": {
+                  "position": [
+                    1.6404667693004597e-304, -3.1521741603367615e-265,
+                    499.9999999999994
+                  ],
+                  "rotation": [0, 5.381674732173658e-19, 0, 1]
+                },
+                "label": "E"
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "e134d02bfb842be937965ded621772e21a48df4eb6f0d8f2c5b708e9482a7b8f",
+      "bytes": 3169
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "Hrekey ",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "refDx",
+            "geo": {
+              "lat": 6.4e-323,
+              "lon": -1.6707831766877926e-129,
+              "alt": -7.1015196521586215e-255,
+              "headingDeg": 359.8999999999992
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "model",
+                  "asset": "arch",
+                  "caption": "The arch"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 10.005637828617404
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 73,
+                  "answer": {
+                    "type": "text",
+                    "salt": "s1",
+                    "sha256": [
+                      "0000000000000000000000000000000000000000000000000000000000000000"
+                    ]
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": []
+          }
+        ]
+      },
+      "sha256": "298e22b2f4c4344072c0503399b7ea3ebdcdb1b9b482f86c369e34792a215f20",
+      "bytes": 2202
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "q nho qVl iL",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "fWlgdKKdLBO",
+            "geo": {
+              "lat": -4e-323,
+              "lon": -3.5e-323,
+              "alt": 0,
+              "headingDeg": 1e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 1.219161302724977
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10000000000000024
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s0-i0",
+                "kind": "pin",
+                "createdAtIso": "2099-12-31T23:59:59.977Z",
+                "pose": {
+                  "position": [
+                    -1.7466880577807003e-120, 1.436963450102916e-141,
+                    1.0620154286822242e-86
+                  ],
+                  "rotation": [0, 7.887554064042206e-250, 0, 1]
+                },
+                "label": " yNznA"
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "db8ffe7512e2e563c79db35440c797f15803219eeee4221af79db6e3f1105885",
+      "bytes": 2464
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "   pjx",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "Aa",
+            "geo": {
+              "lat": 2.7387615833831664e-40,
+              "lon": -178.99999999999957,
+              "alt": 3.0802589078172577e-59,
+              "headingDeg": 1.0444597222932811e-176
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [],
+            "items": [
+              {
+                "id": "s0-i0",
+                "kind": "pin",
+                "createdAtIso": "2062-09-08T02:35:43.434Z",
+                "pose": {
+                  "position": [-8e-323, -7e-323, -2.503588663157459e-212],
+                  "rotation": [0, 1.4992936716536319e-177, 0, 1]
+                },
+                "label": "h tGYiQ  T"
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "title": "ll",
+            "geo": {
+              "lat": 2.1292955415935862e-141,
+              "lon": 1.0206944111003196e-21,
+              "alt": -399.9999999999996,
+              "headingDeg": 1.2563039663385849e-83
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s1-i0",
+                "kind": "photo",
+                "image": "content/s1-i0.jpg",
+                "createdAtIso": "2099-12-31T23:59:59.959Z",
+                "pose": {
+                  "position": [6e-323, 9.4e-323, -2.2119480848597187e-162],
+                  "rotation": [0, 2.3658618706003933e-116, 0, 1]
+                },
+                "imageWidth": 4091,
+                "imageHeight": 4095
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "title": "zknPXXTjE",
+            "geo": {
+              "lat": 5.308720004138969e-174,
+              "lon": 3.2887431814857642e-211,
+              "alt": -2e-323,
+              "headingDeg": 4e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": []
+          },
+          {
+            "id": "s3",
+            "title": "bdeXSwHcYdIt",
+            "geo": {
+              "lat": -4e-323,
+              "lon": 3.5e-323,
+              "alt": 7.907582332704542e-167,
+              "headingDeg": 359.8999999999993
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.1581256411011097
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s3-i0",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "1970-01-01T00:00:00.015Z",
+                "pose": {
+                  "position": [4.4e-323, -3e-323, -1.013402616106927e-52],
+                  "rotation": [0, 4e-323, 0, 1]
+                },
+                "sizeM": 1.283973541599566
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "de22343c640f834de41f2ba23474abb5638b9a142e88880b005ffd0c9337230d",
+      "bytes": 4381
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "  oVaA  rt",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "vcoEA",
+            "geo": {
+              "lat": -88.99999999999974,
+              "lon": 1.5e-323,
+              "alt": -399.9999999999989,
+              "headingDeg": 9.4e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 62,
+                  "answer": {
+                    "type": "text",
+                    "salt": "s1",
+                    "sha256": [
+                      "0000000000000000000000000000000000000000000000000000000000000000"
+                    ]
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 23.488112652844165
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "model",
+                  "asset": "arch",
+                  "caption": "The arch"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": []
+          },
+          {
+            "id": "s1",
+            "title": "xcexEjbWMyEw",
+            "geo": {
+              "lat": 3.854285260998547e-118,
+              "lon": 0,
+              "alt": 8.229670740119642e-165,
+              "headingDeg": 1.6403569848243633e-167
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "text",
+                  "text": "NG"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 15.897803147809118
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 3.142981854296531
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s1-i0",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "2100-01-01T00:00:00.000Z",
+                "pose": {
+                  "position": [
+                    -3.719505070035136e-43, -1.5917215049440312e-140,
+                    1.7630474286405358e-292
+                  ],
+                  "rotation": [0, 3.5e-323, 0, 1]
+                },
+                "sizeM": 11.156456114429378
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "2ab5ae8d3e5c8a90cc707fa1fd7fc1fff95f1956aaa01d54a963951dd8056413",
+      "bytes": 3844
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "C",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "lpNGlPV",
+            "geo": {
+              "lat": -2.2576809137413896e-250,
+              "lon": 8.351487031128258e-127,
+              "alt": -6.748196413906258e-101,
+              "headingDeg": 8.130795078860378e-207
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "model",
+                  "asset": "arch",
+                  "caption": "The arch"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.7234148800154916
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s0-i0",
+                "kind": "photo",
+                "image": "content/s0-i0.jpg",
+                "createdAtIso": "1970-01-01T00:00:00.018Z",
+                "pose": {
+                  "position": [
+                    3.261847012200867e-139, -1.5691336241119705e-174,
+                    -3.059440246416421e-242
+                  ],
+                  "rotation": [0, 1.5091331334463117e-193, 0, 1]
+                },
+                "imageWidth": 4096,
+                "imageHeight": 3331
+              },
+              {
+                "id": "s0-i1",
+                "kind": "photo",
+                "image": "content/s0-i1.jpg",
+                "createdAtIso": "1970-01-01T00:00:00.041Z",
+                "pose": {
+                  "position": [
+                    -1.2100311210944278e-107, 1.0196350761136955e-275,
+                    6.985472878553781e-72
+                  ],
+                  "rotation": [0, 4e-323, 0, 1]
+                },
+                "imageWidth": 4007,
+                "imageHeight": 2414
+              },
+              {
+                "id": "s0-i2",
+                "kind": "photo",
+                "image": "content/s0-i2.jpg",
+                "createdAtIso": "2034-11-19T05:36:02.492Z",
+                "pose": {
+                  "position": [
+                    -1.151603256477461e-137, 6.158725886810472e-83, 7e-323
+                  ],
+                  "rotation": [0, 6.1286410780346396e-30, 0, 1]
+                },
+                "imageWidth": 4092,
+                "imageHeight": 1812
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "title": "zsDoghuBYduD",
+            "geo": {
+              "lat": 1.6557524024681577e-124,
+              "lon": -4.891007125282685e-24,
+              "alt": 5e-323,
+              "headingDeg": 7.567252373801761e-59
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 5.051567132354013
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "text",
+                  "text": "k"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st3",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s1-i0",
+                "kind": "photo",
+                "image": "content/s1-i0.jpg",
+                "createdAtIso": "2089-12-05T13:49:00.841Z",
+                "pose": {
+                  "position": [
+                    499.9999999999997, -5e-323, -4.1644810086573605e-104
+                  ],
+                  "rotation": [0, 6.2209902659399325e-61, 0, 1]
+                },
+                "imageWidth": 4086,
+                "imageHeight": 4096
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "b4a79cc3970096c75bd221c8e5e2abb3d6eb3521d638ad889673aea7210d00d5",
+      "bytes": 4959
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "X",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "kTUi",
+            "geo": {
+              "lat": 9.353322379081584e-131,
+              "lon": 3.1126171281946995e-221,
+              "alt": 1.5e-323,
+              "headingDeg": 4.895078219731683e-173
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "text",
+                  "text": "z2I!K3!Lj"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 59.99999999999992
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.925167797677573
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s0-i0",
+                "kind": "photo",
+                "image": "content/s0-i0.jpg",
+                "createdAtIso": "2019-03-22T16:59:06.936Z",
+                "pose": {
+                  "position": [
+                    499.99999999999994, 9.4e-323, -1.8396951973513752e-239
+                  ],
+                  "rotation": [0, 1.748441829046764e-106, 0, 1]
+                },
+                "imageWidth": 3670,
+                "imageHeight": 4087
+              },
+              {
+                "id": "s0-i1",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "1989-05-14T01:36:30.181Z",
+                "pose": {
+                  "position": [
+                    -1.1823356412349127e-109, -1e-323, 3.1222168034722482e-28
+                  ],
+                  "rotation": [0, 1.5838384291177227e-115, 0, 1]
+                },
+                "sizeM": 0.050000000000000024
+              },
+              {
+                "id": "s0-i2",
+                "kind": "photo",
+                "image": "content/s0-i2.jpg",
+                "createdAtIso": "2060-12-11T13:50:36.728Z",
+                "pose": {
+                  "position": [
+                    -1.9646851329037474e-154, 3e-323, -2.1364389563770918e-294
+                  ],
+                  "rotation": [0, 1.2061728703134216e-63, 0, 1]
+                },
+                "imageWidth": 2824,
+                "imageHeight": 5
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "title": "E",
+            "geo": {
+              "lat": 88.99999999999982,
+              "lon": 1.4845028206230194e-294,
+              "alt": -1.9854336158530937e-255,
+              "headingDeg": 4.445116862032362e-68
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 22,
+                  "answer": {
+                    "type": "text",
+                    "salt": "s1",
+                    "sha256": [
+                      "0000000000000000000000000000000000000000000000000000000000000000"
+                    ]
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 39,
+                  "answer": {
+                    "type": "code",
+                    "salt": "s2",
+                    "sha256": [
+                      "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                    ]
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 39.573034284327285
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "video",
+                  "asset": "clip",
+                  "transcript": "Knights ride."
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s1-i0",
+                "kind": "photo",
+                "image": "content/s1-i0.jpg",
+                "createdAtIso": "2099-12-31T23:59:59.978Z",
+                "pose": {
+                  "position": [4e-323, -4.6104185245206416e-219, -5.4e-323],
+                  "rotation": [0, 8.116070457215862e-15, 0, -1]
+                },
+                "imageWidth": 2897,
+                "imageHeight": 3
+              },
+              {
+                "id": "s1-i1",
+                "kind": "photo",
+                "image": "content/s1-i1.jpg",
+                "createdAtIso": "1970-01-01T00:00:00.024Z",
+                "pose": {
+                  "position": [5e-323, -7.306529559725641e-159, 1.5e-323],
+                  "rotation": [0, 3.0913122056593385e-300, 0, 1]
+                },
+                "imageWidth": 2153,
+                "imageHeight": 2477
+              },
+              {
+                "id": "s1-i2",
+                "kind": "photo",
+                "image": "content/s1-i2.jpg",
+                "createdAtIso": "2065-10-01T13:45:03.275Z",
+                "pose": {
+                  "position": [3.028444333065925e-73, -1.5e-323, -3e-323],
+                  "rotation": [0, 5.895624407965549e-15, 0, -1]
+                },
+                "imageWidth": 3816,
+                "imageHeight": 1121
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "title": "cDGwAbzO",
+            "geo": {
+              "lat": 1.3176730177166735e-26,
+              "lon": 2.501639706317536e-50,
+              "alt": -399.9999999999996,
+              "headingDeg": 4.519000586939065e-151
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "video",
+                  "asset": "clip",
+                  "transcript": "Knights ride."
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 15,
+                  "answer": {
+                    "type": "single",
+                    "options": [
+                      {
+                        "id": "a",
+                        "label": "A"
+                      },
+                      {
+                        "id": "b",
+                        "label": "B"
+                      }
+                    ],
+                    "correct": "b"
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s2-i0",
+                "kind": "pin",
+                "createdAtIso": "1973-07-20T23:56:21.533Z",
+                "pose": {
+                  "position": [
+                    -1.0269931520230905e-47, 1.4298489179921306e-269,
+                    -8.925367332718857e-166
+                  ],
+                  "rotation": [0, 3e-323, 0, 1]
+                },
+                "label": "y a"
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "520580f20003fc9eb545855aeb942634a9663412452fc628ceca18c827d80f4f",
+      "bytes": 8975
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "qf  ibVg j",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "key",
+            "geo": {
+              "lat": -0.08874186412536553,
+              "lon": -178.9999999999997,
+              "alt": 3.5398099940436214e-45,
+              "headingDeg": 2.5008699053622482e-51
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.4843946907782647
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 13.763769267433018
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s0-i0",
+                "kind": "pin",
+                "createdAtIso": "2087-05-26T16:09:25.896Z",
+                "pose": {
+                  "position": [
+                    -1.863474468458583e-174, -1.5004892711907826e-65,
+                    -1.4825057902378414e-202
+                  ],
+                  "rotation": [0, 6.240170853662765e-186, 0, 1]
+                },
+                "label": " E"
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "4d70b5af249bf1bc79b9adfa9e489727e143c220162274f210cab80cf90442b3",
+      "bytes": 2870
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "X",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "ufDzSgosvFu",
+            "geo": {
+              "lat": 0.002980716765467977,
+              "lon": -1.1363907212999652e-245,
+              "alt": -7.21792551205531e-183,
+              "headingDeg": 1.748986623392731e-46
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 7.586250941454164
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "text",
+                  "text": "`CA+H,<j YX"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.717484155687666
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "video",
+                  "asset": "clip",
+                  "transcript": "Knights ride."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 3.3520589886699104
+                }
+              },
+              {
+                "id": "st3",
+                "block": {
+                  "kind": "video",
+                  "asset": "clip",
+                  "transcript": "Knights ride."
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s0-i0",
+                "kind": "photo",
+                "image": "content/s0-i0.jpg",
+                "createdAtIso": "2084-12-16T03:26:33.003Z",
+                "pose": {
+                  "position": [
+                    1.6840625399212175e-127, -5.068184701333267e-143,
+                    -1.3951153881008896e-155
+                  ],
+                  "rotation": [0, 0.007223472937645668, 0, 0.9999739103790254]
+                },
+                "imageWidth": 3075,
+                "imageHeight": 4087
+              },
+              {
+                "id": "s0-i1",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "2066-11-22T09:12:52.257Z",
+                "pose": {
+                  "position": [
+                    -7.34737335424764e-72, 8.112186939195752e-166,
+                    -1.2032135362812803e-145
+                  ],
+                  "rotation": [0, 3.189072872326053e-149, 0, 1]
+                },
+                "sizeM": 3.7677040592146795
+              },
+              {
+                "id": "s0-i2",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "2094-09-02T06:06:49.251Z",
+                "pose": {
+                  "position": [
+                    -4e-323, 3.024262171229959e-217, -2.0454249310925393e-54
+                  ],
+                  "rotation": [0, 1.5699710350875028e-37, 0, 1]
+                },
+                "sizeM": 2.4972094031060084
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "title": "OLS",
+            "geo": {
+              "lat": -4.536020051352084e-221,
+              "lon": 2.321720238926884e-184,
+              "alt": -7.483052974235428e-116,
+              "headingDeg": 359.8999999999999
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 14.698145329453302
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "model",
+                  "asset": "arch",
+                  "caption": "The arch"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 3.6566196916612164
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s1-i0",
+                "kind": "photo",
+                "image": "content/s1-i0.jpg",
+                "createdAtIso": "2003-01-27T17:09:06.579Z",
+                "pose": {
+                  "position": [
+                    6.130389211328421e-259, -1.0776988589190514e-227,
+                    -2.5630503379584716e-251
+                  ],
+                  "rotation": [0, 5.1742814427488706e-191, 0, 1]
+                },
+                "imageWidth": 1968,
+                "imageHeight": 4096
+              },
+              {
+                "id": "s1-i1",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "2049-03-28T18:06:34.063Z",
+                "pose": {
+                  "position": [
+                    -1.5e-323, 1.5590042568476717e-269, 1.5268738528413926e-233
+                  ],
+                  "rotation": [0, 9.658384743528981e-43, 0, 1]
+                },
+                "sizeM": 0.050000000000000044
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "geo": {
+              "lat": 4.873881551121513e-36,
+              "lon": -2.436560910523609e-181,
+              "alt": 8.884908766224643e-7,
+              "headingDeg": 5.344407166986796e-202
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 93,
+                  "answer": {
+                    "type": "single",
+                    "options": [
+                      {
+                        "id": "a",
+                        "label": "A"
+                      },
+                      {
+                        "id": "b",
+                        "label": "B"
+                      }
+                    ],
+                    "correct": "b"
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 1.9937010090664051
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "model",
+                  "asset": "arch",
+                  "caption": "The arch"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.47729700895204674
+                }
+              },
+              {
+                "id": "st3",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 43.30572603984694
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s2-i0",
+                "kind": "photo",
+                "image": "content/s2-i0.jpg",
+                "createdAtIso": "1970-01-01T00:00:00.028Z",
+                "pose": {
+                  "position": [
+                    1.1770501261574144e-72, -1.9313310310012895e-207,
+                    1.1185770760386677e-262
+                  ],
+                  "rotation": [0, 5e-324, 0, 1]
+                },
+                "imageWidth": 2009,
+                "imageHeight": 2074
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "title": "O",
+            "geo": {
+              "lat": -1.2021641011843605e-225,
+              "lon": 9e-323,
+              "alt": -6.719735601818048e-57,
+              "headingDeg": 4.5808455772453005e-260
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "video",
+                  "asset": "clip",
+                  "transcript": "Knights ride."
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "text",
+                  "text": "Esc71HPu[B"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.46252780921087056
+                }
+              }
+            ],
+            "items": []
+          }
+        ]
+      },
+      "sha256": "668621645de51541aefe66079100e27705b86acf4bdfe8569aee827a95aa5e45",
+      "bytes": 9508
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": " Z  ",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "dQyPR",
+            "geo": {
+              "lat": 88.99999999999979,
+              "lon": 2.5e-323,
+              "alt": -3.5e-323,
+              "headingDeg": 1.836349256797679e-95
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "text",
+                  "text": "gI=rj"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 1.9972256119464484
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.22266176791483497
+                }
+              },
+              {
+                "id": "st3",
+                "block": {
+                  "kind": "text",
+                  "text": "T"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 27.855883907327662
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": []
+          },
+          {
+            "id": "s1",
+            "title": "name",
+            "geo": {
+              "lat": -6.142392471772303e-80,
+              "lon": -8.221039749264194e-94,
+              "alt": -9e-323,
+              "headingDeg": 0.00012152005035613574
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "text",
+                  "text": "v"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.1913164104473247
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": []
+          },
+          {
+            "id": "s2",
+            "title": "lrsPjU",
+            "geo": {
+              "lat": -6e-323,
+              "lon": -4.278964568483518e-214,
+              "alt": -5.4e-323,
+              "headingDeg": 4.4e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": []
+          }
+        ]
+      },
+      "sha256": "adaf7808615fd9cb1506245ddb413a81ce905f2ea288b95729f58e7661dc4840",
+      "bytes": 4338
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "d",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "geo": {
+              "lat": 1.0304353808250124e-211,
+              "lon": 6.521911477570927e-127,
+              "alt": -9.751187995820559e-303,
+              "headingDeg": 8.145722620589584e-22
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "video",
+                  "asset": "clip",
+                  "transcript": "Knights ride."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 32.90357086134104
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 8,
+                  "answer": {
+                    "type": "text",
+                    "salt": "s1",
+                    "sha256": [
+                      "0000000000000000000000000000000000000000000000000000000000000000"
+                    ]
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.22386907738619313
+                }
+              },
+              {
+                "id": "st3",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.7936901322385862
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s0-i0",
+                "kind": "photo",
+                "image": "content/s0-i0.jpg",
+                "createdAtIso": "1994-05-30T21:55:39.991Z",
+                "pose": {
+                  "position": [
+                    -6.516668240658296e-31, 7.321857606832881e-193,
+                    499.9999999999996
+                  ],
+                  "rotation": [0, 1.5e-323, 0, 1]
+                },
+                "imageWidth": 4,
+                "imageHeight": 4085
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "9d1f1e6d545db23f21dbbae5f16639e9194cd515c2e1f914d8360d488a3ef85a",
+      "bytes": 3331
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "eBb ",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "ilYSCxod",
+            "geo": {
+              "lat": 2.330534008362834e-249,
+              "lon": 7.631250303921602e-79,
+              "alt": 0,
+              "headingDeg": 1e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 35.77056098695048
+                }
+              }
+            ],
+            "items": []
+          }
+        ]
+      },
+      "sha256": "37864e93ac68711aac89c70c2b4be6f1a946eabb708c4d255b2ca79cd7388e76",
+      "bytes": 1240
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "R   ",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "eCY",
+            "geo": {
+              "lat": 8.067740138582758e-47,
+              "lon": -3.60937467070657e-111,
+              "alt": -4.683848025444182e-67,
+              "headingDeg": 4.614246401073319e-182
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [],
+            "items": [
+              {
+                "id": "s0-i0",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "2099-12-31T23:59:59.967Z",
+                "pose": {
+                  "position": [
+                    -7.4e-323, -6.265056536165277e-56, 2.6506875894766723e-251
+                  ],
+                  "rotation": [0, 2e-323, 0, 1]
+                },
+                "sizeM": 0.05
+              },
+              {
+                "id": "s0-i1",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "2023-06-20T18:19:45.392Z",
+                "pose": {
+                  "position": [
+                    3.761547675804818e-236, -49.999999999999986, 6.4e-323
+                  ],
+                  "rotation": [0, 4e-323, 0, 1]
+                },
+                "sizeM": 0.3270647328269313
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "title": "hXDIcgtdjqq",
+            "geo": {
+              "lat": 8.37474165401628e-188,
+              "lon": 0.0006509054309719719,
+              "alt": 2.637900411933785e-309,
+              "headingDeg": 8.4e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "video",
+                  "asset": "clip",
+                  "transcript": "Knights ride."
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.7681493856175261
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st3",
+                "block": {
+                  "kind": "model",
+                  "asset": "arch",
+                  "caption": "The arch"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 59.99999999999998
+                }
+              }
+            ],
+            "items": []
+          },
+          {
+            "id": "s2",
+            "title": "lcWqAvUagdC",
+            "geo": {
+              "lat": 1.9973924277146015e-137,
+              "lon": 9.562372501139133e-133,
+              "alt": 3.49864775876739e-306,
+              "headingDeg": 359.89999999999907
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "text",
+                  "text": ":8JmGPCjG-W~"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s2-i0",
+                "kind": "pin",
+                "createdAtIso": "2036-02-01T13:08:06.280Z",
+                "pose": {
+                  "position": [
+                    3.5e-323, -49.99999999999999, -3.0558951001778423e-114
+                  ],
+                  "rotation": [0, 7.98491910863645e-229, 0, 1]
+                },
+                "label": "m"
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "8073247981449dd7afbce1428df7052d0c034f68c5eaacec67a10c1b9d0bdb3b",
+      "bytes": 4451
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "pR",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "iyAzErKvtAh",
+            "geo": {
+              "lat": -2.8623727952138723e-40,
+              "lon": -178.99999999999972,
+              "alt": 1.1546182807390224e-123,
+              "headingDeg": 5.308757174952397e-146
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "video",
+                  "asset": "clip",
+                  "transcript": "Knights ride."
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "text",
+                  "text": "Z??~^xjzf0"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.488548175766683
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": []
+          }
+        ]
+      },
+      "sha256": "880a7016b3f89b07573412f18bf17e972e6c7ff3e4a37fa33f4f392af560c6b6",
+      "bytes": 1969
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "M wY",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "geo": {
+              "lat": -6.911085160893132e-122,
+              "lon": 7.18886890607259e-59,
+              "alt": 2e-323,
+              "headingDeg": 1.3469783861312136e-197
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.9516033244804273
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "video",
+                  "asset": "clip",
+                  "transcript": "Knights ride."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 3.158725207733825
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 25,
+                  "answer": {
+                    "type": "code",
+                    "salt": "s2",
+                    "sha256": [
+                      "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                    ]
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": []
+          },
+          {
+            "id": "s1",
+            "geo": {
+              "lat": 88.99999999999973,
+              "lon": 7.4e-323,
+              "alt": -4e-323,
+              "headingDeg": 4.4e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "video",
+                  "asset": "clip",
+                  "transcript": "Knights ride."
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "model",
+                  "asset": "arch",
+                  "caption": "The arch"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 6.321493522024129
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s1-i0",
+                "kind": "pin",
+                "createdAtIso": "1970-06-12T00:51:24.640Z",
+                "pose": {
+                  "position": [
+                    -499.9999999999998, 7.4e-323, -499.9999999999991
+                  ],
+                  "rotation": [0, 1.2762716264706502e-194, 0, 1]
+                },
+                "label": "P"
+              },
+              {
+                "id": "s1-i1",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "1997-01-06T00:11:59.463Z",
+                "pose": {
+                  "position": [
+                    -5.816127406341913e-253, 4.477553281612085e-201,
+                    1.2241283907689195e-91
+                  ],
+                  "rotation": [0, 2.538933861138705e-36, 0, 1]
+                },
+                "sizeM": 4.4951207549835575
+              },
+              {
+                "id": "s1-i2",
+                "kind": "photo",
+                "image": "content/s1-i2.jpg",
+                "createdAtIso": "2082-01-30T22:35:41.619Z",
+                "pose": {
+                  "position": [1.0885724197585639e-48, 7.4e-323, 7.4e-323],
+                  "rotation": [0, 2.548605569350684e-173, 0, 1]
+                },
+                "imageWidth": 3296,
+                "imageHeight": 4093
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "title": "DhNX",
+            "geo": {
+              "lat": 5.818181154098364e-267,
+              "lon": 6.100339398602815e-247,
+              "alt": 8.243051806096966e-262,
+              "headingDeg": 4.1512455504070853e-72
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 36.168128199164045
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 10.436657976635654
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st3",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": []
+          },
+          {
+            "id": "s3",
+            "title": "VeEfaMwLzSOq",
+            "geo": {
+              "lat": 4.4e-323,
+              "lon": 178.99999999999991,
+              "alt": -1.6275184124719706e-71,
+              "headingDeg": 3.6097550553235803e-94
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.1391393048732378
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 6.553945638781465
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.2695845543136393
+                }
+              },
+              {
+                "id": "st3",
+                "block": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 97,
+                  "answer": {
+                    "type": "single",
+                    "options": [
+                      {
+                        "id": "a",
+                        "label": "A"
+                      },
+                      {
+                        "id": "b",
+                        "label": "B"
+                      }
+                    ],
+                    "correct": "b"
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s3-i0",
+                "kind": "pin",
+                "createdAtIso": "2078-12-02T08:05:13.855Z",
+                "pose": {
+                  "position": [
+                    -2.85514884213983e-253, 1.4149900539832358e-85,
+                    2.4169618826914637e-109
+                  ],
+                  "rotation": [0, 1.4547323094649232e-15, 0, -1]
+                },
+                "label": "s Z   qKNb"
+              },
+              {
+                "id": "s3-i1",
+                "kind": "pin",
+                "createdAtIso": "2099-12-31T23:59:59.962Z",
+                "pose": {
+                  "position": [-4.4e-323, 49.99999999999996, 1.5e-323],
+                  "rotation": [0, 1.0861671191437837e-265, 0, 1]
+                },
+                "label": "  re  e e"
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "26cc97db404cbdd18f824ccb75b16afd36584c76cd718f29d065193864e2e554",
+      "bytes": 8809
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": " a k",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "QScrHGwAbGj",
+            "geo": {
+              "lat": 3.5715470582852087e-212,
+              "lon": -1.9168483358363808e-33,
+              "alt": -1.0298426884158888e-137,
+              "headingDeg": 4.8783997651994535e-141
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.7288484272701444
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s0-i0",
+                "kind": "pin",
+                "createdAtIso": "2098-05-07T09:23:23.145Z",
+                "pose": {
+                  "position": [
+                    -1.1293494676987836e-212, 2.6470471446773223e-87,
+                    1.149573048652031e-279
+                  ],
+                  "rotation": [0, 3e-323, 0, 1]
+                },
+                "label": "  s fL OTET"
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "6c9a12aacad2e31bc6128e52d41428aa3cfd747aba208aa45e02334126aa2a39",
+      "bytes": 1762
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "Y O",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "Z",
+            "geo": {
+              "lat": -7.4e-323,
+              "lon": 178.99999999999955,
+              "alt": 2e-323,
+              "headingDeg": 9e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "audio",
+                  "asset": "voice",
+                  "transcript": "Hello there."
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 14.829815363195822
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s0-i0",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "2011-03-03T17:25:44.251Z",
+                "pose": {
+                  "position": [
+                    -2.369178259383699e-68, -3.594697165463613e-186,
+                    2.8176289763644776e-32
+                  ],
+                  "rotation": [0, 3.917150182467755e-230, 0, 1]
+                },
+                "sizeM": 0.12171207841716648
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "title": "TzHGiDDfNWWe",
+            "geo": {
+              "lat": -1.0462007758399746e-32,
+              "lon": 1.2764303989024746e-217,
+              "alt": 8.667912285452871e-75,
+              "headingDeg": 8.512277232980423e-80
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "model",
+                  "asset": "arch",
+                  "caption": "The arch"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 9.720033935694472
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "video",
+                  "asset": "clip",
+                  "transcript": "Knights ride."
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "text",
+                  "text": ":v"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s1-i0",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "2060-06-01T09:00:24.015Z",
+                "pose": {
+                  "position": [
+                    -1.7407737920817964e-233, 1.1620851784937214e-50,
+                    4.334647053604438e-261
+                  ],
+                  "rotation": [0, 3.2310891488651735e-15, 0, -1]
+                },
+                "sizeM": 0.05000000000000001
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "geo": {
+              "lat": -5e-324,
+              "lon": -2.0407025227105395e-81,
+              "alt": -3.905183126334181e-74,
+              "headingDeg": 6.4e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "text",
+                  "text": "$Q 868*fI\""
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 3.5642175203254487
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 40,
+                  "answer": {
+                    "type": "text",
+                    "salt": "s1",
+                    "sha256": [
+                      "0000000000000000000000000000000000000000000000000000000000000000"
+                    ]
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 7.816496772580045
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s2-i0",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "2069-07-04T13:53:46.842Z",
+                "pose": {
+                  "position": [
+                    -5.452931610595553e-173, -1.29515052889149e-198, 5e-324
+                  ],
+                  "rotation": [0, 3.5679027608164607e-40, 0, 1]
+                },
+                "sizeM": 0.1236129568270537
+              },
+              {
+                "id": "s2-i1",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "2019-05-07T04:13:27.496Z",
+                "pose": {
+                  "position": [
+                    4.4e-323, -4.867489262523542e-128, -6.12522560707178e-257
+                  ],
+                  "rotation": [0, 1.3465838952347902e-21, 0, 1]
+                },
+                "sizeM": 7.422454163793229
+              },
+              {
+                "id": "s2-i2",
+                "kind": "photo",
+                "image": "content/s2-i2.jpg",
+                "createdAtIso": "2099-12-31T23:59:59.994Z",
+                "pose": {
+                  "position": [
+                    7.444817282561277e-67, 2.1930757482853058e-294,
+                    2.5072342562236414e-33
+                  ],
+                  "rotation": [0, 1.325919315965492e-83, 0, 1]
+                },
+                "imageWidth": 3126,
+                "imageHeight": 2749
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "title": "bBSBx",
+            "geo": {
+              "lat": -88.9999999999999,
+              "lon": 4.9734274816097754e-70,
+              "alt": -3.5e-323,
+              "headingDeg": 1.211995262442135e-83
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate",
+                  "caption": "A gate"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.9689469927458569
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s3-i0",
+                "kind": "photo",
+                "image": "content/s3-i0.jpg",
+                "createdAtIso": "2009-07-12T10:09:43.383Z",
+                "pose": {
+                  "position": [
+                    -2.340148842566901e-162, -7.03637598776846e-147,
+                    1.7975101653307672e-48
+                  ],
+                  "rotation": [0, 1.6287986332908492e-307, 0, 1]
+                },
+                "imageWidth": 3977,
+                "imageHeight": 10
+              },
+              {
+                "id": "s3-i1",
+                "kind": "photo",
+                "image": "content/s3-i1.jpg",
+                "createdAtIso": "2011-10-04T05:49:01.793Z",
+                "pose": {
+                  "position": [
+                    7.541171269908117e-193, -8.760016120762556e-43, 500
+                  ],
+                  "rotation": [0, 6.68401752281628e-261, 0, 1]
+                },
+                "imageWidth": 4052,
+                "imageHeight": 1513
+              },
+              {
+                "id": "s3-i2",
+                "kind": "photo",
+                "image": "content/s3-i2.jpg",
+                "createdAtIso": "2043-04-07T03:42:03.473Z",
+                "pose": {
+                  "position": [
+                    5e-324, 7.761852542429475e-219, -1.0074264413210194e-261
+                  ],
+                  "rotation": [0, 9.552169918353922e-162, 0, 1]
+                },
+                "imageWidth": 2398,
+                "imageHeight": 1120
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "6d96138edf4f4ba2653170122d881a4ba20573ab73b2a7bc97c1672bda7efc66",
+      "bytes": 9804
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "M i s ",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "ZVf",
+            "geo": {
+              "lat": 1.4171850542827599e-306,
+              "lon": 6.054630540845947,
+              "alt": 6.47282485736636e-179,
+              "headingDeg": 9.545105310208927e-183
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "image",
+                  "asset": "gate"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": []
+          },
+          {
+            "id": "s1",
+            "title": "valueOflBb",
+            "geo": {
+              "lat": 8.236198742659998e-168,
+              "lon": 178.99999999999977,
+              "alt": -6.838875273126994e-300,
+              "headingDeg": 5.2100637698366265e-133
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [],
+            "items": [
+              {
+                "id": "s1-i0",
+                "kind": "model",
+                "asset": "arch",
+                "createdAtIso": "2064-03-17T08:01:26.967Z",
+                "pose": {
+                  "position": [
+                    6.464997550931738e-208, 3.647165514164017e-70,
+                    3.399647382798299e-106
+                  ],
+                  "rotation": [0, 3e-323, 0, 1]
+                },
+                "sizeM": 0.634441946287464
+              },
+              {
+                "id": "s1-i1",
+                "kind": "photo",
+                "image": "content/s1-i1.jpg",
+                "createdAtIso": "2074-07-24T11:52:11.484Z",
+                "pose": {
+                  "position": [
+                    -499.99999999999966, -2.9802120583606806e-299,
+                    6.844589268631538e-292
+                  ],
+                  "rotation": [0, 1.6387082871996357e-254, 0, 1]
+                },
+                "imageWidth": 1492,
+                "imageHeight": 1988
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "title": "RdkzPZyh",
+            "geo": {
+              "lat": -1.5e-323,
+              "lon": -4.4e-323,
+              "alt": -399.99999999999983,
+              "headingDeg": 9.587642335763803e-273
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "model",
+                  "asset": "arch",
+                  "caption": "The arch"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 60
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 16,
+                  "answer": {
+                    "type": "single",
+                    "options": [
+                      {
+                        "id": "a",
+                        "label": "A"
+                      },
+                      {
+                        "id": "b",
+                        "label": "B"
+                      }
+                    ],
+                    "correct": "b"
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.24277370104341778
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": [
+              {
+                "id": "s2-i0",
+                "kind": "pin",
+                "createdAtIso": "1970-01-01T00:00:00.034Z",
+                "pose": {
+                  "position": [
+                    -2.038304639385696e-208, -49.99999999999997,
+                    499.9999999999998
+                  ],
+                  "rotation": [0, 2e-323, 0, 1]
+                },
+                "label": "x P xH Cd"
+              },
+              {
+                "id": "s2-i1",
+                "kind": "pin",
+                "createdAtIso": "1970-01-01T00:00:00.008Z",
+                "pose": {
+                  "position": [
+                    -2.1463278625676047e-95, 2.6603133208894143e-101,
+                    -499.99999999999994
+                  ],
+                  "rotation": [0, 3.547624353816459e-140, 0, 1]
+                },
+                "label": "XZWKqE"
+              },
+              {
+                "id": "s2-i2",
+                "kind": "pin",
+                "createdAtIso": "1971-08-28T13:17:22.427Z",
+                "pose": {
+                  "position": [
+                    1.5572364769698418e-298, -5.96511572807762e-237,
+                    -7.961014926653088e-294
+                  ],
+                  "rotation": [0, 3.7309796329315326e-63, 0, 1]
+                },
+                "label": " C"
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "51eaa332a57504239b79da9826c7024e7fc733efd29c2a724a14552ef124e8c6",
+      "bytes": 5664
+    },
+    {
+      "input": {
+        "version": 3,
+        "title": "J Q",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "Vref",
+            "geo": {
+              "lat": -9e-323,
+              "lon": 8.982975418559313e-116,
+              "alt": -3.489063801776081e-267,
+              "headingDeg": 5.2823130352644526e-92
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "steps": [
+              {
+                "id": "st0",
+                "block": {
+                  "kind": "model",
+                  "asset": "arch",
+                  "caption": "The arch"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "st1",
+                "block": {
+                  "kind": "character",
+                  "name": "Knight",
+                  "image": "knight",
+                  "caption": "Halt!",
+                  "voice": "voice"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 1.3138054154784418
+                }
+              },
+              {
+                "id": "st2",
+                "block": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 7,
+                  "answer": {
+                    "type": "multiple",
+                    "options": [
+                      {
+                        "id": "a",
+                        "label": "A"
+                      },
+                      {
+                        "id": "b",
+                        "label": "B"
+                      },
+                      {
+                        "id": "c",
+                        "label": "C"
+                      }
+                    ],
+                    "correct": ["a", "c"]
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.4028166858173768
+                }
+              },
+              {
+                "id": "st3",
+                "block": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 57,
+                  "answer": {
+                    "type": "text",
+                    "salt": "s1",
+                    "sha256": [
+                      "0000000000000000000000000000000000000000000000000000000000000000"
+                    ]
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "pick",
+                "block": {
+                  "kind": "choice",
+                  "prompt": "Which?",
+                  "options": [
+                    {
+                      "id": "x",
+                      "label": "X",
+                      "goto": "st0"
+                    },
+                    {
+                      "id": "y",
+                      "label": "Y",
+                      "goto": "st1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "items": []
+          }
+        ]
+      },
+      "sha256": "0cf28278a1e8eee68e119d0ca192542aa0957d049e5f0d9e0ac8c39b9f52ea96",
+      "bytes": 3258
+    }
+  ]
+}

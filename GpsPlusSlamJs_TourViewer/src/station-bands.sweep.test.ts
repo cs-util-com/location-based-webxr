@@ -160,7 +160,7 @@ const JUDGED_RADII = [5, STATION_RADIUS_M];
 const CODE_ACCURACIES = [1, 3, 5];
 const JUDGED_STEP = {
   id: "s",
-  block: { kind: "text", text: "Hi" },
+  action: { kind: "text", text: "Hi" },
   advance: { mode: "tap" },
 } as const;
 

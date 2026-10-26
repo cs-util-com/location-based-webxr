@@ -27,7 +27,11 @@ import {
   type StationFrame,
   type TourDocumentState,
 } from "./tour-document.js";
-import { parseSettingsRecord, settingsRecord } from "./tour-document-draft.js";
+import {
+  parseSettingsRecord,
+  settingsRecord,
+  settingsRecordText,
+} from "./tour-document-draft.js";
 import { stationIdOf, tourOf } from "./test-support/v3-tour.js";
 
 function pin(id: string, lat: number): TourObject {
@@ -78,7 +82,7 @@ const OPENED: TourManifest = parseTourManifest(
             steps: [
               {
                 id: "s1",
-                block: { kind: "image", asset: "img1" },
+                action: { kind: "image", asset: "img1" },
                 advance: { mode: "tap" },
               },
             ],
@@ -97,7 +101,7 @@ function open(): TourDocumentState {
 /** What a reload brings back: the record as stored, read against the
  *  opened tour, and the objects' records, restored into a fresh open. */
 function reloaded(state: TourDocumentState): TourDocumentState {
-  const text = JSON.stringify(settingsRecord(state));
+  const text = settingsRecordText(settingsRecord(state));
   const record = parseSettingsRecord(text, OPENED);
   if (record === undefined) throw new Error("the record did not read");
   return reduce(
@@ -318,7 +322,7 @@ describe("the draft keeps the stations whole", () => {
       }),
     );
     const record = parseSettingsRecord(
-      JSON.stringify(settingsRecord(state)),
+      settingsRecordText(settingsRecord(state)),
       OPENED,
     );
     expect(record?.frames?.find((f) => f.id === "fcopy")?.image).toBe("f2");
@@ -341,7 +345,7 @@ describe("the draft keeps the stations whole", () => {
         what: "rename",
       }),
     );
-    const text = JSON.stringify(settingsRecord(state));
+    const text = settingsRecordText(settingsRecord(state));
     expect(
       parseSettingsRecord(text, OPENED)?.frames?.some((f) => f.id === "story"),
     ).toBe(true);
@@ -419,7 +423,7 @@ describe("the draft keeps the stations whole", () => {
             steps: [
               {
                 id: "s1",
-                block: { kind: "image", asset: "elsewhere" },
+                action: { kind: "image", asset: "elsewhere" },
                 advance: { mode: "tap" },
               },
             ],

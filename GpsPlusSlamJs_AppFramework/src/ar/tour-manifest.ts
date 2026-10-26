@@ -92,16 +92,17 @@ import {
 import {
   parseTourAssets,
   parseTourStations,
+  tourStationRecord,
   type TourAsset,
   type TourOrder,
   type TourStation,
   type TourStationDrop,
 } from './tour-stations.js';
 
+export { tourStationRecord, tourStepRecord } from './tour-stations.js';
 export type {
   TourAsset,
   TourAssetKind,
-  TourBlock,
   TourChoiceOption,
   TourOrder,
   TourQuizAnswer,
@@ -110,7 +111,9 @@ export type {
   TourStation,
   TourStationDrop,
   TourStep,
+  TourStepAction,
   TourStepAdvance,
+  TourStepRecord,
 } from './tour-stations.js';
 export type {
   TourItem,
@@ -392,6 +395,19 @@ export function parseTourManifest(
 }
 
 /**
+ * A manifest in the file's shape: every station's steps with their action
+ * under the key `block` (`tourStationRecord`), every other field and the
+ * key order as they are. What `JSON.stringify` writes and the reader reads.
+ */
+export function tourManifestRecord<M extends Pick<TourManifest, 'stations'>>(
+  manifest: M
+): Omit<M, 'stations'> & {
+  stations: ReturnType<typeof tourStationRecord<TourStation>>[];
+} {
+  return { ...manifest, stations: manifest.stations.map(tourStationRecord) };
+}
+
+/**
  * Serialize a manifest to the JSON document `parseTourManifest` reads. The
  * input is re-validated first so a programming error fails LOUD here
  * instead of producing a broken file a creator uploads. A manifest of a
@@ -422,7 +438,8 @@ export function serializeTourManifest(
       `"tourId" must be 1-64 letters, digits, "_" or "-", got ${JSON.stringify(manifest.tourId)}`
     );
   }
-  const parsed = parseTourManifest(manifest, {
+  // The reader reads the file's shape (a step's action under `block`).
+  const parsed = parseTourManifest(tourManifestRecord(manifest), {
     onDropped: (drop) => {
       if (drop.cause !== 'image-gone' && drop.cause !== 'station-image-gone') {
         fail(drop.reason);
@@ -435,7 +452,11 @@ export function serializeTourManifest(
       `this tour was made with a newer version of the app (format ${String(TOUR_MANIFEST_VERSION)}.${String(parsed.minor)}); saving it here would drop what this version cannot read`
     );
   }
-  return JSON.stringify({ ...parsed, minor: minorNeeded(parsed) }, null, 2);
+  return JSON.stringify(
+    tourManifestRecord({ ...parsed, minor: minorNeeded(parsed) }),
+    null,
+    2
+  );
 }
 
 /** The lowest minor that carries the tour: 2 with a station's description

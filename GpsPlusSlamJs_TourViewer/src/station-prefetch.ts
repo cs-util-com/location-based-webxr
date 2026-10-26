@@ -96,7 +96,7 @@ export async function decodeFigure<T>(
  *  video may be as large as the tour's entry cap allows. */
 export function stationAssetIds(station: TourStation): string[] {
   const ids = station.steps.flatMap((step: TourStep): string[] => {
-    const block = step.block;
+    const block = step.action;
     switch (block.kind) {
       case "image":
       case "audio":

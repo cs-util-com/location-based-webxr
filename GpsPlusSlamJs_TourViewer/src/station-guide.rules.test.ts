@@ -33,7 +33,7 @@ createSlamAppStore({ storageBackend: new NullStorageBackend() });
 const zero = { lat: 47.5, lon: 8.7 };
 const step = {
   id: "s",
-  block: { kind: "text", text: "Hi" },
+  action: { kind: "text", text: "Hi" },
   advance: { mode: "tap" },
 } as const;
 

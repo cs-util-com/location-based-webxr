@@ -15,6 +15,7 @@ import {
   followDocument,
   parseSettingsRecord,
   settingsRecord,
+  settingsRecordText,
   type TourDocumentDraft,
 } from "./tour-document-draft.js";
 import {
@@ -367,7 +368,7 @@ describe("followDocument, the stations this page created", () => {
       started.calls.filter((c) => c.startsWith("saveSettings")),
     ).toHaveLength(1);
     // Read back from disk as the frame it was.
-    expect(parseSettingsRecord(JSON.stringify(record))).toEqual(record);
+    expect(parseSettingsRecord(settingsRecordText(record))).toEqual(record);
   });
 
   // Why: the created frames were read as one list, so one broken frame
@@ -389,7 +390,7 @@ describe("followDocument, the stations this page created", () => {
         { ...frame, id: "made", title: "A second made" },
       ],
     };
-    expect(parseSettingsRecord(JSON.stringify(record))).toEqual({
+    expect(parseSettingsRecord(settingsRecordText(record))).toEqual({
       needsNoGps: false,
       createdStations: [frame, other],
     });
@@ -526,5 +527,46 @@ describe("followDocument, the codes record (plan M3b)", () => {
         false,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("settingsRecordText", () => {
+  // Why: a draft stores its station frames inside the settings record,
+  // and the record's reader reads each frame as the tour format reads a
+  // station - a step's content under the file's key `block`. The reader's
+  // own field is `action`, so a record stored without mapping would lose
+  // every frame with a story on reload. Drafts stored before keep reading.
+  const frame = {
+    id: "gate",
+    geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
+    activateRadiusM: 30,
+    foundRadiusM: 10,
+    hint: "arrow" as const,
+    steps: [
+      {
+        id: "s1",
+        action: { kind: "text" as const, text: "Welcome" },
+        advance: { mode: "tap" as const },
+      },
+    ],
+  };
+
+  it("stores a frame's steps under block, and reads them back as the frames they were", () => {
+    const record = { needsNoGps: false, frames: [frame] };
+    const text = settingsRecordText(record);
+    const stored = JSON.parse(text) as {
+      frames: { steps: Record<string, unknown>[] }[];
+    };
+    expect(Object.keys(stored.frames[0]!.steps[0]!)).toEqual([
+      "id",
+      "block",
+      "advance",
+    ]);
+    expect(parseSettingsRecord(text)?.frames).toEqual([frame]);
+  });
+
+  it("changes nothing else: the same text as before for a record without frames", () => {
+    const record = { needsNoGps: true, order: ["a", "b"] };
+    expect(settingsRecordText(record)).toBe(JSON.stringify(record));
   });
 });

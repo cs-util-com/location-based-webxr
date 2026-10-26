@@ -843,7 +843,7 @@ describe("tour document: every object belongs to a station", () => {
             steps: [
               {
                 id: "x",
-                block: { kind: "text", text: "Hi" },
+                action: { kind: "text", text: "Hi" },
                 advance: { mode: "tap" },
               },
             ],

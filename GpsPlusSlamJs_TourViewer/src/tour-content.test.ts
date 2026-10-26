@@ -16,7 +16,7 @@
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type {
   TourAsset,
-  TourBlock,
+  TourStepAction,
   TourManifest,
   TourObject,
   TourStation,
@@ -208,7 +208,7 @@ describe("withTourContent", () => {
       steps: [
         {
           id: "t",
-          block: { kind: "text", text: "Hi" },
+          action: { kind: "text", text: "Hi" },
           advance: { mode: "tap" },
         },
       ],
@@ -346,14 +346,14 @@ describe("withReferencedAssets", () => {
   ];
   /** A tour with every asset and one station telling `blocks`. */
   function telling(
-    blocks: readonly TourBlock[],
+    blocks: readonly TourStepAction[],
     extra: Partial<TourManifest> = {},
   ): TourManifest {
     const told = {
       ...station("told", 0, 0),
       steps: blocks.map((block, i) => ({
         id: `step-${String(i)}`,
-        block,
+        action: block,
         advance: { mode: "tap" as const },
       })),
     };
@@ -362,7 +362,7 @@ describe("withReferencedAssets", () => {
   const kept = (manifest: TourManifest) =>
     withReferencedAssets(manifest).assets.map((a) => a.id);
 
-  const cases: readonly [string, TourBlock, readonly string[]][] = [
+  const cases: readonly [string, TourStepAction, readonly string[]][] = [
     ["an image", { kind: "image", asset: "picture" }, ["picture"]],
     [
       "a character's image and voice",
@@ -412,7 +412,7 @@ describe("withReferencedAssets", () => {
       steps: [
         {
           id: "s",
-          block: { kind: "image", asset: "picture" } as const,
+          action: { kind: "image", asset: "picture" } as const,
           advance: { mode: "tap" } as const,
         },
       ],

@@ -116,7 +116,7 @@ describe('tourManifestV3Arbitrary', () => {
       fc.property(tourManifestV3Arbitrary, (record) => {
         const manifest = parseTourManifest(JSON.parse(JSON.stringify(record)));
         for (const station of manifest.stations) {
-          for (const step of station.steps) kinds.add(step.block.kind);
+          for (const step of station.steps) kinds.add(step.action.kind);
         }
       }),
       { numRuns: 200, seed: 9 }

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -9,7 +10,10 @@ import {
 } from "@zip.js/zip.js";
 import { describe, expect, it } from "vitest";
 
-import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  parseTourManifest,
+  serializeTourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   checkGlbInert,
   checkImageWithinCap,
@@ -155,5 +159,21 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     }
     // TextWriter keeps the import honest for a text entry read.
     expect(TextWriter).toBeDefined();
+  });
+
+  it("is written back by today's writer to exactly the recorded bytes", async () => {
+    // Why: the editor re-saves a tour it opened through this writer. A
+    // change to the reader's in-memory model (a renamed field, a reshaped
+    // type) must not change one written byte; this pins the writer's
+    // output for a real tour, beside the generated ones in the framework.
+    const files = await entries();
+    const json = JSON.parse(
+      new TextDecoder().decode(files.get("tour.json")),
+    ) as unknown;
+    const written = serializeTourManifest(parseTourManifest(json));
+    expect(written.length).toBe(3412);
+    expect(createHash("sha256").update(written).digest("hex")).toBe(
+      "7e1762c5ff70d65904632f6cf7776bfee2eb725bf724b6df894682726857b247",
+    );
   });
 });

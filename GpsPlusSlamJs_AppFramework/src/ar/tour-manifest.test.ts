@@ -280,7 +280,7 @@ describe('the version policy (tour editor plan W3, D5)', () => {
     expect(manifest.title).toBe('Castle walk');
     expect(manifest.order).toBe('branch');
     expect(manifest.assets[0]?.kind).toBe('image');
-    expect(manifest.stations[0]?.steps[0]?.block.kind).toBe('character');
+    expect(manifest.stations[0]?.steps[0]?.action.kind).toBe('character');
     expect(manifest.stations[0]?.items.map((i) => i.id)).toEqual(['p1']);
   });
 
