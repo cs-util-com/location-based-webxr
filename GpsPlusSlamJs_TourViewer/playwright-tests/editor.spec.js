@@ -120,7 +120,7 @@ async function editorTour({ station = false, farStation = false } = {}) {
               activateRadiusM: 30,
               foundRadiusM: 5,
               hint: "arrow",
-              steps: [{ id: "hi", block: { kind: "text", text: "Hello" } }],
+              steps: [{ id: "hi", action: { kind: "text", text: "Hello" } }],
               items: [],
             },
           ]
@@ -137,7 +137,7 @@ async function editorTour({ station = false, farStation = false } = {}) {
               activateRadiusM: 30,
               foundRadiusM: 5,
               hint: "arrow",
-              steps: [{ id: "w", block: { kind: "text", text: "A well" } }],
+              steps: [{ id: "w", action: { kind: "text", text: "A well" } }],
               items: [],
             },
             {
@@ -146,7 +146,7 @@ async function editorTour({ station = false, farStation = false } = {}) {
               activateRadiusM: 30,
               foundRadiusM: 5,
               hint: "arrow",
-              steps: [{ id: "b", block: { kind: "text", text: "A bench" } }],
+              steps: [{ id: "b", action: { kind: "text", text: "A bench" } }],
               items: [],
             },
           ]
