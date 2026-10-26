@@ -28,7 +28,15 @@ code-only station), its pins and photos as `items` at local poses
   `{ field: "description" | "image", station, reason, cause? }`; `cause`
   is `"station-image-gone"` for an image whose picture went and absent for
   a malformed value; minor 2, below).
-- Types: `TourAsset`, `TourAssetKind`, `TourStationDrop`, `TourOrder` (`fixed | any |
+- `parseTourQuiz(value, at, { fail, lenient? }): TourQuiz | null` - a
+  quiz's `question`, `points` and `answer` (its route is read by the
+  step, not here). `null` when a lenient reader meets an answer type it
+  does not know; the caller skips the step. Shared with version 4's story
+  (`tour-story.ts`), so both versions read a quiz alike.
+- `parseTourStepAdvance(value, at, { fail, lenient? }): TourStepAdvance` -
+  how a step advances (`tap` when absent; an unknown mode reads as `tap`
+  when lenient). Shared with version 4's story the same way.
+- Types: `TourAsset`, `TourAssetKind`, `TourStationDrop`, `TourQuiz`, `TourOrder` (`fixed | any |
 branch`), `TourStation`, `TourStep`,
   `TourStepAdvance`, `TourBlock`, `TourChoiceOption`, `TourQuizOption`,
   `TourQuizAnswer`, `TourQuizRoute`.

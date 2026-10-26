@@ -78,6 +78,27 @@
   yes at least 90 % right on an honest raw-fix accuracy report, in a row,
   a square grid and a hex grid of targets), a code judged as 1 m
   (`CODE_HELD_ERROR_M`). Reads no clock.
+- **`ar/tour-blocks`** (deep import): the station blocks of the coming
+  `tour.json` version 4, defined and validated ahead of the reader that
+  will use them (nothing reads or writes version 4 yet). Seven kinds
+  (`shortText`, `longText`, `picture`, `video`, `audio`, `model`,
+  `character`), each with a `view` from `TOUR_BLOCK_VIEWS` and a local
+  pose; caps per text in `TOUR_BLOCK_TEXT_RULES`, all counted by one
+  function, `tourTextCount` (code points after trimming and collapsing
+  whitespace; UTF-16 units for a long text's body). `readTourBlocks`,
+  `placeTourBlocks`, `checkTourBlockText`, `tourFloorView`,
+  `checkTourBlockIdsUnique`.
+- **`ar/tour-story`** (deep import): a version 4 station's story - `show`
+  a block, a `choice` whose options jump to a step or continue, a `quiz`
+  with no route - read together with its blocks
+  (`parseTourStationContent`, `serializeTourStationContent`).
+- **`parseTourQuiz` and `parseTourStepAdvance`** (`ar/tour-stations`):
+  the version 3 quiz and advance readers, exported so version 4 reads both
+  alike.
+- **`test-utils/tour-arbitraries`** (deep import): fast-check generators
+  of valid tour content (texts at every cap, blocks of every kind and
+  view, station contents, version 3 manifests). `fast-check` is not
+  bundled: a consumer brings its own.
 
 ### Fixed
 

@@ -75,6 +75,10 @@ const entryFiles = [
   // W3), deep-imported by the Tour Viewer the same way.
   'src/ar/tour-items.ts',
   'src/ar/tour-station-pose.ts',
+  // Version 4's station blocks and the story that shows them, deep-
+  // imported by the Tour Viewer the same way.
+  'src/ar/tour-blocks.ts',
+  'src/ar/tour-story.ts',
   'src/ar/tour-signed-manifest.ts',
   'src/ar/tour-signature.ts',
   'src/ar/frame-loop.ts',
@@ -247,6 +251,10 @@ const entryFiles = [
   // left-behind sweep measured D28 with, shared with the Tour Viewer's
   // authoring-settle sweep so both measure the same drift.
   'src/test-utils/integrated-slam-drift.ts',
+  // Generators of valid tours (texts at every cap, blocks of every kind
+  // and view, version 3 manifests), shared with the Tour Viewer's property
+  // tests so both packages test against the same notion of a valid file.
+  'src/test-utils/tour-arbitraries.ts',
 
   // types/
   'src/types/index.ts',
@@ -482,6 +490,15 @@ export default defineConfig({
   clean: true,
   outExtensions: () => ({ js: '.js', dts: '.d.ts' }),
   deps: {
-    neverBundle: ['three', 'leaflet', 'h3-js', '@zip.js/zip.js', 'vitest'],
+    neverBundle: [
+      'three',
+      'leaflet',
+      'h3-js',
+      '@zip.js/zip.js',
+      'vitest',
+      // The shipped test generators (test-utils/tour-arbitraries) use the
+      // consumer's fast-check, never a private copy.
+      'fast-check',
+    ],
   },
 });

@@ -143,6 +143,14 @@ export type TourQuizAnswer =
       readonly unit?: string;
     };
 
+/** A quiz as both versions of the format read it: the question, its
+ *  points and the accepted answer. */
+export interface TourQuiz {
+  readonly question: string;
+  readonly points: number;
+  readonly answer: TourQuizAnswer;
+}
+
 /** For `branch` order: the next station by answer. */
 export interface TourQuizRoute {
   readonly byOption?: Readonly<Record<string, string>>;
@@ -574,12 +582,14 @@ function parseNumberAnswer(
   };
 }
 
+/** A quiz's answer, or null when a lenient reader does not know its type
+ *  (a newer minor's). */
 function parseAnswer(
   value: unknown,
   at: string,
-  ctx: BlockContext
-): TourQuizAnswer {
-  const fail: Fail = ctx.fail;
+  fail: Fail,
+  lenient: boolean
+): TourQuizAnswer | null {
   if (!isRecord(value)) fail(`"${at}" must be an object`);
   switch (value.type) {
     case 'single':
@@ -591,8 +601,8 @@ function parseAnswer(
     case 'number':
       return parseNumberAnswer(value, at, fail);
     default:
-      return unknownValue(
-        ctx,
+      if (lenient) return null;
+      return fail(
         `"${at}.type" must be single, multiple, text, number or code`
       );
   }
@@ -647,44 +657,66 @@ function parseByOption(
   return out;
 }
 
+/**
+ * A quiz's question, points and answer: one rule for both versions of the
+ * format (`tour-story.ts` reads version 4's quiz with it). Null when a
+ * lenient reader does not know the answer's type (a newer minor's): the
+ * step cannot be shown.
+ */
+export function parseTourQuiz(
+  v: Record<string, unknown>,
+  at: string,
+  options: { readonly fail: Fail; readonly lenient?: boolean }
+): TourQuiz | null {
+  const fail: Fail = options.fail;
+  const { points } = v;
+  if (!isFiniteNumber(points) || !Number.isInteger(points) || points < 0) {
+    fail(`"${at}.points" must be an integer >= 0`);
+  }
+  const answer = parseAnswer(
+    v.answer,
+    `${at}.answer`,
+    fail,
+    options.lenient === true
+  );
+  if (answer === null) return null;
+  return {
+    question: requireText(v.question, `${at}.question`, fail),
+    points,
+    answer,
+  };
+}
+
 function parseQuiz(
   v: Record<string, unknown>,
   at: string,
   ctx: BlockContext
 ): TourBlock {
-  const fail: Fail = ctx.fail;
-  const { points } = v;
-  if (!isFiniteNumber(points) || !Number.isInteger(points) || points < 0) {
-    fail(`"${at}.points" must be an integer >= 0`);
-  }
-  const answer = parseAnswer(v.answer, `${at}.answer`, ctx);
+  const quiz = parseTourQuiz(v, at, ctx);
+  if (quiz === null) throw new SkippedStep();
   const route =
     v.route === undefined
       ? {}
-      : { route: parseRoute(v.route, answer, `${at}.route`, fail) };
-  return {
-    kind: 'quiz',
-    question: requireText(v.question, `${at}.question`, fail),
-    points,
-    answer,
-    ...route,
-  };
+      : { route: parseRoute(v.route, quiz.answer, `${at}.route`, ctx.fail) };
+  return { kind: 'quiz', ...quiz, ...route };
 }
 
 // --- steps and stations ------------------------------------------------
 
-function parseAdvance(
+/** How a step advances (both versions of the format): tap when absent; a
+ *  newer minor's mode reads as tap for a lenient reader. */
+export function parseTourStepAdvance(
   value: unknown,
   at: string,
-  ctx: BlockContext
+  options: { readonly fail: Fail; readonly lenient?: boolean }
 ): TourStepAdvance {
-  const fail: Fail = ctx.fail;
+  const fail: Fail = options.fail;
   if (value === undefined) return { mode: 'tap' };
   if (!isRecord(value)) fail(`"${at}" must be an object`);
   if (value.mode === 'tap') return { mode: 'tap' };
   if (value.mode !== 'auto') {
     // A newer minor's mode: the visitor taps on, as with no rule at all.
-    if (ctx.lenient) return { mode: 'tap' };
+    if (options.lenient === true) return { mode: 'tap' };
     fail(`"${at}.mode" must be "tap" or "auto"`);
   }
   if (!isFiniteNumber(value.afterS) || value.afterS <= 0) {
@@ -711,7 +743,7 @@ function parseStep(
   return {
     id,
     block,
-    advance: parseAdvance(value.advance, `${at}.advance`, ctx),
+    advance: parseTourStepAdvance(value.advance, `${at}.advance`, ctx),
   };
 }
 
