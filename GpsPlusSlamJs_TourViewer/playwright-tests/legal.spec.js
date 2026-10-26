@@ -99,11 +99,11 @@ test("the setup page's footer links the legal notice and the privacy page, and i
   // No service worker: the page itself needs a connection, so only an
   // open tour keeps working without one (the M4b fix re-review #3, as the
   // privacy page says). Hidden steps and settings are read as text.
-  await expect(page.getByTestId("setup-intro")).toContainText(
+  await expect(page.getByTestId("landing-make")).toContainText(
     "Keeps working without signal once a tour has loaded",
   );
   for (const said of [
-    page.getByTestId("setup-intro"),
+    page.getByTestId("landing"),
     page.getByTestId("step-host"),
     page.getByTestId("storage-panel"),
   ]) {

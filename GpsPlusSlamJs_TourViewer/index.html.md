@@ -17,18 +17,8 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   half a landscape phone).
 
   **The L5 look since polish round M2b** (the owner's prototype verdict,
-  D-P1): on the creator page an intro (`#setup-intro`: the opening, the
-  "why" list - four reasons two per row ("No sign-up, no account" in place
-  of the privacy line since 2026-10-12: the Drive relay passes tours through
-  the site worker, so "no servers of ours" was not true), as in the
-  L5 prototype, with the gaps set in the page's own CSS because the design
-  system zeroes paragraph and list margins (r820 feedback R1;
-  `setup-flow.spec.js` pins rows and gaps at three viewports) - and
-  "Follow the route", beside the prototype's phone (`.setup-intro-art`),
-  whose dotted route, pin, label and photo run the prototype's 7 s loop
-  (`intro-dots`, `intro-pin`, `intro-label`, `intro-photo`; none under
-  reduced motion, the whole picture shown; `setup-flow.spec.js` pins the
-  computed animation names)), then the stage
+  D-P1): on the creator page the landing (`#landing`, see "The landing"
+  below; it replaced the intro, `#setup-intro`, on 2026-10-26), then the stage
   (`#setup-stage`): the illustrated map (`#setup-map`, an example route
   with six stations drawn by `setup-stage.ts`; ids prefixed `map-`)
   beside the step card (`#setup-card`) on a wide or landscape screen, above
@@ -189,11 +179,78 @@ Behaviour lives in the wiring modules composed by `src/main.ts` (see
 (alpha-hex borders - the stylelint csstree validator predates
 `color-mix()`).
 
+## The landing
+
+The top of a creator's page, built from two of the landing prototypes:
+the step cards of the maker's story, and the route-alive scene as the hero
+(its film follows; until then the hero shows its last moment as a
+drawing).
+
+- **Shown by CSS, before `main.ts`:** `#landing` is `.creator-only` but
+  not authored `hidden`; `body[data-mode="creator"] .landing` shows it, and
+  the first-paint script (`#first-paint-mode`) sets the mode before the
+  first paint. `visitor-screen.ts` sets `hidden` on it for a visitor.
+- **Top to bottom:** `.landing-way` (a visitor's way in: scan the code, or
+  `#have-tour` for a link), the hero (`.landing-kicker`, the `h1`
+  "You know a story about a place.", `.landing-lede`, `.landing-make-line`,
+  `.landing-needs` "Tours run on Android phones with Chrome." and a "Make
+  your tour" button, `.landing-begin`), the film's host `#landing-film`,
+  the five step cards (`.landing-cards`, each `.landing-card`: kicker,
+  `h3`, two lines, a picture box `.landing-pic` with its dock
+  `.lc-dock[data-kind]` and, for cards 2 to 5, a pause button over the
+  picture `.landing-hold`, authored `hidden`, and "Show again"
+  `.landing-again`, invisible but in the layout until the cards' module
+  marks it `data-ready`), a closing line, "Make your own
+  tour" (`.landing-make`: six reasons in one list, two columns from 600 px;
+  a line that the setup's steps open in any order; `#setup-begin`), and the
+  use cases' host `#landing-uses` (a short static list until their section
+  mounts).
+- **Reserved sizes:** the film's box is 4:5 on an upright phone and 16:9
+  otherwise, never taller than the view minus 24 px; it shows the film's
+  last moment as a drawing (`public/landing/hero-still-{portrait,
+landscape}.svg`, `loading="lazy"`, so a visitor's hidden page never
+  fetches it). Each picture box is `2 * --pw + 28px` tall, `--pw` the
+  phone's width: 206 px (56vw under 368 px), 214 px from 900 px wide, and
+  `(100svh - 74px) / 2 - 14px` on a phone held sideways (at most 560 px
+  high), where the picture is `1.6 * --pw` wide beside its text.
+- **Gaps** (all set here, the design system zeroes margins): the hero's
+  kicker 16 px under the band (34 px from 900 px), the `h1` 8 px, lede 10,
+  make-line 12 (20 from 900 px), needs 7, button 14, film 18 (28 from
+  900 px); on a phone held sideways 6, 6, 4 and 10. Cards: text then
+  picture 20 px (stacked) or side by side with a 56 px (desktop) or 22 px
+  (sideways phone) column gap; caption 9 px under the picture; 52 px (76 px
+  desktop, 40 px sideways) after each card. "Make your own tour": 14 px
+  between heading, list, line and button. `landing.spec.js` pins them at
+  390x844, 844x390 and 1440x900, also in a wide face.
+- **Sizes without `clamp()` or `min()`:** the prototypes' fluid sizes are
+  steps at 600, 900 and 1160 px (`h1` 29, 44, 56, 60 px; 25 px on a phone
+  held sideways); the csstree validator rejects `clamp()`, `min()` and
+  `max()` here.
+- **Its moving parts** are mounted by `src/landing/landing-mount.ts`
+  (dynamic imports, a creator only; see its sidecar): the cards' pictures
+  (`landing-cards.ts`, which play by `card-play.ts`), the film and the use
+  cases (stand-ins until they land). Each host says `data-mount="ready"`
+  or `"failed"`; a failed one keeps its static content.
+- **The returning-device skip:** `#landing-skip`, a classic script right
+  after `#setup-stage` (marked by the comment `<!-- /setup-stage -->`),
+  scrolls the stage to the top, instantly, for a device with a stored host
+  or last link, no hash, and a plain navigation (`src/landing/landing-skip.ts`
+  states the rule; `landing-skip.test.ts` holds the copy to it). The stage
+  is at least `100vh` tall for a creator so its top is reachable at that
+  moment. The script marks `<html data-landing-skip="applied">` (`"moved"`
+  on the reader's first wheel, touch, key or pointer input), and `main.ts`
+  holds the stage at the top while the parts above and in it settle
+  (`holdLandingSkip`): scroll anchoring alone followed the step card and
+  left the stage 218 px off.
+
 ## Public API
 
 The `data-testid` contract the e2e suite drives: `wizard`, `step-host`
-(owns `host-tiles`, `host-steps`, `host-continue`), `setup-intro` (owns
-`setup-begin`), `setup-stage`, `setup-map` (owns `setup-map-svg` and the
+(owns `host-tiles`, `host-steps`, `host-continue`), `landing` (owns
+`landing-way`, `landing-needs`, `landing-begin-top`, `landing-film` with
+`landing-still`, `landing-story`, `landing-cards` with five
+`landing-card`, `landing-make` with `setup-begin`, `landing-uses`),
+`setup-stage`, `setup-map` (owns `setup-map-svg` and the
 drawn `map-station-<step>`), `setup-card` (owns `setup-badge`, `setup-of`,
 `setup-dots` with `station-<step>`, `setup-nav`, `setup-back`,
 `setup-next`), `step-link` (owns

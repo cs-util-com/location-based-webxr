@@ -47,6 +47,8 @@ import { meshCursorFromSearch, viewerModeFromSearch } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { wireHostPicker } from "./host-picker.js";
 import { wireSetupStage } from "./setup-stage.js";
+import { mountLanding, watchArStarting } from "./landing/landing-mount.js";
+import { holdLandingSkip } from "./landing/landing-skip.js";
 import { readTourHost } from "./tour-host.js";
 import { checkLink } from "./link-check.js";
 import { wirePrintPanel } from "./print-panel.js";
@@ -136,6 +138,26 @@ const cacheStore =
 // DEV Playwright run.
 const mode = viewerModeFromSearch(location.search);
 const seams = getSeams();
+/** Read on each use: the reader can change it while the page is open. */
+const reducedMotion = (): boolean =>
+  typeof matchMedia === "function" &&
+  matchMedia("(prefers-reduced-motion: reduce)").matches;
+// The landing's moving parts (src/landing/landing-mount.ts): dynamic
+// imports, for a creator only; its text and still are static markup.
+{
+  const film = document.getElementById("landing-film");
+  const cards = document.querySelector<HTMLElement>(".landing-cards");
+  const uses = document.getElementById("landing-uses");
+  mountLanding({
+    mode,
+    dom:
+      film === null || cards === null || uses === null
+        ? null
+        : { film, cards, uses },
+    reducedMotion: reducedMotion(),
+    onArStarting: watchArStarting(document),
+  });
+}
 // `?debug=1` (the apps' shared reader): the QR readout in the AR overlay
 // (plan §66), the visitor's troubleshooting recording (M1b); the visitor
 // link carries it on.
@@ -498,9 +520,12 @@ if (mode === "creator") {
       nav: element("setup-nav"),
       back: element("setup-back"),
       next: element("setup-next"),
-      begin: element("setup-begin"),
+      begins: Array.from(
+        document.querySelectorAll<HTMLButtonElement>(".landing-begin"),
+      ),
       stage: element("setup-stage"),
     },
+    reducedMotion,
     openStep: (step) => {
       wizard.openStep(step);
     },
@@ -1099,3 +1124,8 @@ if (mode === "creator") {
 archive.boot().catch((err: unknown) => {
   errorBox.textContent = describeOpenError(err, undefined, mode);
 });
+
+// A returning device's page was scrolled to the setup before the parts
+// revealed above (and the landing's pictures) showed: it is kept there
+// while they settle, until the reader's first input.
+holdLandingSkip(document);

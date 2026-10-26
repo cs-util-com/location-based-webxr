@@ -23,6 +23,8 @@ class FakeNode {
   readonly attributes = new Map<string, string>();
   readonly dataset: Record<string, string> = {};
   scrolled = 0;
+  scrolls: (ScrollIntoViewOptions | undefined)[] = [];
+  focused: (FocusOptions | undefined)[] = [];
   private readonly listeners = new Map<string, ((e: FakeEvent) => void)[]>();
   constructor(readonly tagName: string) {}
   setAttribute(name: string, value: string) {
@@ -48,8 +50,12 @@ class FakeNode {
     for (const fn of this.listeners.get(type) ?? []) fn(event);
     return event;
   }
-  scrollIntoView() {
+  scrollIntoView(options?: ScrollIntoViewOptions) {
     this.scrolled += 1;
+    this.scrolls.push(options);
+  }
+  focus(options?: FocusOptions) {
+    this.focused.push(options);
   }
 }
 
@@ -60,7 +66,7 @@ class FakeEvent {
   }
 }
 
-function setup(initiallyOpen: WizardStep = "host") {
+function setup(initiallyOpen: WizardStep = "host", reducedMotion = false) {
   const steps = Object.fromEntries(
     WIZARD_STEPS.map((s) => [s, new FakeNode("details")]),
   ) as Record<WizardStep, FakeNode>;
@@ -77,7 +83,7 @@ function setup(initiallyOpen: WizardStep = "host") {
     nav: new FakeNode("div"),
     back: new FakeNode("button"),
     next: new FakeNode("button"),
-    begin: new FakeNode("button"),
+    begins: [new FakeNode("button"), new FakeNode("button")],
     stage: new FakeNode("div"),
   };
   const opened: WizardStep[] = [];
@@ -91,6 +97,7 @@ function setup(initiallyOpen: WizardStep = "host") {
     dom,
     openStep,
     createElement: (tag) => new FakeNode(tag),
+    reducedMotion: () => reducedMotion,
   });
   const dot = (step: WizardStep) => {
     const found = dom.dots.children.find((d) => d.dataset.step === step);
@@ -152,9 +159,30 @@ describe("wireSetupStage", () => {
     expect(dom.nav.hidden).toBe(true);
   });
 
-  it("the intro's button scrolls to the stage", () => {
-    const { dom } = setup();
-    dom.begin.fire("click");
-    expect(dom.stage.scrolled).toBe(1);
+  // The landing has a "Make your tour" near the top and one after the
+  // cards: each must bring the setup into view and put the keyboard on the
+  // open step's heading, else a keyboard or screen-reader user is left at
+  // the button with the setup scrolled past them.
+  it("every Make your tour button scrolls to the stage and focuses the open step's heading", () => {
+    const { dom, summaries } = setup("print");
+    for (const begin of dom.begins) begin.fire("click");
+    expect(dom.stage.scrolls).toEqual([
+      { block: "start", behavior: "smooth" },
+      { block: "start", behavior: "smooth" },
+    ]);
+    // The scroll is the button's; the focus must not scroll again.
+    expect(summaries.print.focused).toEqual([
+      { preventScroll: true },
+      { preventScroll: true },
+    ]);
+    expect(summaries.host.focused).toEqual([]);
+  });
+
+  it("scrolls at once under reduced motion", () => {
+    const { dom } = setup("host", true);
+    dom.begins[0]?.fire("click");
+    expect(dom.stage.scrolls).toEqual([
+      { block: "start", behavior: "instant" },
+    ]);
   });
 });

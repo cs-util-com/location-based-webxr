@@ -183,7 +183,8 @@ test.describe("the L5 look (polish round M2b)", () => {
     page,
   }) => {
     await page.goto("/?nocache=1");
-    await expect(page.getByTestId("setup-intro")).toBeVisible();
+    // The landing sits above the stage, on the same page.
+    await expect(page.getByTestId("landing")).toBeVisible();
     await expect(page.getByTestId("map-station-host")).toBeVisible();
     const openSteps = page.locator("#setup-card .step[open]");
     await expect(openSteps).toHaveCount(1);
@@ -233,7 +234,7 @@ test.describe("the L5 look (polish round M2b)", () => {
       `/?qr=${encodeURIComponent("http://127.0.0.1:5197/ranges-ok/tour.zip")}`,
     );
     await expect(page.getByTestId("visitor-screen")).toBeVisible();
-    await expect(page.getByTestId("setup-intro")).toBeHidden();
+    await expect(page.getByTestId("landing")).toBeHidden();
     await expect(page.getByTestId("setup-map")).toBeHidden();
     const paper = () =>
       page.evaluate(() =>
@@ -339,135 +340,7 @@ test.describe("step 3 on a phone (the owner's r819 screenshot)", () => {
   });
 });
 
-// Why (r820 feedback R1): the intro reached the owner with the prototype's
-// spacing gone (the design system zeroes paragraph and list margins) and
-// its four "why" bullets wrapping raggedly; every test passed, because
-// they asserted presence and fit. These pin the arrangement the owner
-// chose in the L5 prototype: four bullets, two per row, and room between
-// the text, the bullets and the button - at a phone, a phone held across,
-// and a desktop.
-for (const viewport of [
-  { width: 412, height: 915 },
-  { width: 915, height: 412 },
-  { width: 1366, height: 900 },
-]) {
-  test.describe(`the intro at ${String(viewport.width)}x${String(viewport.height)}`, () => {
-    test.use({ viewport });
-
-    test("lays the four reasons out two per row, with room around them", async ({
-      page,
-    }) => {
-      await page.goto("/?nocache=1");
-      await expect(page.getByTestId("setup-intro")).toBeVisible();
-      const box = async (selector) => {
-        const found = await page.locator(selector).boundingBox();
-        if (found === null) throw new Error(`no box for ${selector}`);
-        return found;
-      };
-      const items = await page.locator(".setup-why li").evaluateAll((els) =>
-        els.map((el) => {
-          const r = el.getBoundingClientRect();
-          return { top: Math.round(r.top), left: Math.round(r.left) };
-        }),
-      );
-      expect(items).toHaveLength(4);
-      const rows = [...new Set(items.map((i) => i.top))];
-      expect(rows).toHaveLength(2);
-      for (const top of rows) {
-        expect(items.filter((i) => i.top === top)).toHaveLength(2);
-      }
-      // The two columns line up.
-      expect(items[0]?.left).toBe(items[2]?.left);
-      expect(items[1]?.left).toBe(items[3]?.left);
-      const lede = await box(".setup-lede");
-      const why = await box(".setup-why");
-      const cta = await box(".setup-cta");
-      expect(why.y - (lede.y + lede.height)).toBeGreaterThanOrEqual(12);
-      expect(cta.y - (why.y + why.height)).toBeGreaterThanOrEqual(16);
-    });
-  });
-}
-
-// Why: the intro's phone came from the chosen prototype without its
-// animation - the markup kept its classes but no rule moved them, so the
-// route, the pin, its label and the photo stood still, and nothing could
-// tell. These pin that each part runs the prototype's 7 s loop, and that
-// a visitor who asked for reduced motion gets none, with the picture
-// shown whole.
-test.describe("the intro's phone", () => {
-  const PARTS = [
-    [".h-dots-mask", "intro-dots"],
-    [".h-pin", "intro-pin"],
-    [".h-label", "intro-label"],
-    [".h-photo", "intro-photo"],
-  ];
-  /** Each part's computed animation, and whether it shows. */
-  const partsOf = (page) =>
-    page.evaluate((parts) => {
-      return parts.map(([selector]) => {
-        const el = document.querySelector(`.setup-intro-art ${selector}`);
-        if (el === null) return null;
-        const style = getComputedStyle(el);
-        return {
-          name: style.animationName,
-          duration: style.animationDuration,
-          iterations: style.animationIterationCount,
-          opacity: style.opacity,
-        };
-      });
-    }, PARTS);
-
-  test("runs the prototype's loop on the route, the pin, its label and the photo", async ({
-    page,
-  }) => {
-    await page.goto("/?nocache=1");
-    await expect(page.getByTestId("setup-intro")).toBeVisible();
-    const parts = await partsOf(page);
-    parts.forEach((part, i) => {
-      expect(part, PARTS[i][0]).toEqual(
-        expect.objectContaining({
-          name: PARTS[i][1],
-          duration: "7s",
-          iterations: "infinite",
-        }),
-      );
-    });
-    // The route is dotted, as the prototype draws it.
-    expect(
-      await page
-        .locator(".setup-intro-art .h-dots")
-        .evaluate((el) => getComputedStyle(el).strokeDasharray),
-    ).toMatch(/^0\.1(px)?,? 7(px)?$/);
-  });
-
-  test("under reduced motion runs nothing and shows the whole picture", async ({
-    page,
-  }) => {
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto("/?nocache=1");
-    await expect(page.getByTestId("setup-intro")).toBeVisible();
-    const parts = await partsOf(page);
-    parts.forEach((part, i) => {
-      expect(part, PARTS[i][0]).not.toBeNull();
-      expect(part?.name, PARTS[i][0]).toBe("none");
-      if (PARTS[i][0] !== ".h-dots-mask") {
-        expect(part?.opacity, PARTS[i][0]).toBe("1");
-      }
-    });
-    // The route is drawn whole: the mask's one dash (its path is 100
-    // long) sits at offset 0, not where the loop starts it hidden.
-    const mask = await page
-      .locator(".setup-intro-art .h-dots-mask")
-      .evaluate((el) => {
-        const style = getComputedStyle(el);
-        return {
-          offset: style.strokeDashoffset,
-          dashes: style.strokeDasharray,
-          length: el.getAttribute("pathLength"),
-        };
-      });
-    expect(mask.offset).toMatch(/^0(px)?$/);
-    expect(mask.dashes).toMatch(/^100(px)?,? 100(px)?$/);
-    expect(mask.length).toBe("100");
-  });
-});
+// The intro's spacing and its phone's animation (r820 feedback R1 and the
+// loop that once stood still) are pinned for the landing that replaced it
+// in landing.spec.js: positions and gaps at three viewports, the cards'
+// pictures playing, pausing and holding still under reduced motion.

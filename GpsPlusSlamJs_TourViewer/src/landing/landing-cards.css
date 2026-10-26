@@ -1,0 +1,921 @@
+/*
+ * The landing cards' drawn phones (from R3-4), loaded with landing-cards.ts
+ * for a creator only. Every class, id and keyframe is prefixed lc- so
+ * nothing here reaches the rest of the page. The page's own CSS
+ * (index.html, "The landing") sets each dock's phone width --pw and
+ * reserves the dock's height before this file arrives.
+ *
+ * Each dock shows its final frame; .lc-play on the dock runs its short
+ * sequence from the first frame, and data-paused="true" freezes it.
+ */
+:root {
+  --lc-ink: #23211d;
+  --lc-ink-2: #534f47;
+  --lc-line: #cfc5ae;
+  --lc-place: #dfe2d4;
+  --lc-route: #cf4428;
+  --lc-route-dark: #b43a21;
+  --lc-route-soft: #f6dbd0;
+  --lc-ok: #2f7a4c;
+  --lc-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --lc-serif:
+    "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia,
+    serif;
+}
+
+/* the shared drawing: referenced by every phone, never shown itself */
+.lc-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* ---------- a dock: the place drawn pale, a phone held up in it ---------- */
+.lc-dock {
+  position: relative;
+  overflow: hidden;
+  background: var(--lc-place);
+  height: calc(var(--pw) * 2 + 28px);
+  -webkit-user-select: none;
+  user-select: none;
+}
+.lc-dock > .lc-back {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+/* outside the phone the place is paler: the phone is where the tour is */
+.lc-dock > .lc-pale {
+  position: absolute;
+  inset: 0;
+  background: rgba(245, 241, 232, 0.5);
+}
+.lc-phone {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  width: var(--pw);
+  aspect-ratio: 1 / 2;
+  margin-left: calc(var(--pw) / -2);
+  margin-top: calc(var(--pw) * -1);
+  border-radius: 15% / 7.5%;
+  background: #17181b;
+  box-shadow:
+    0 0 0 1px #4a4b50 inset,
+    0 0 0 2px #0d0d0f,
+    0 24px 44px -18px rgba(38, 30, 18, 0.55),
+    0 6px 14px rgba(38, 30, 18, 0.2);
+  transform-origin: 50% 50%;
+}
+.lc-screen {
+  position: absolute;
+  inset: 1.7% 3.4%;
+  border-radius: 12.7% / 6.1%;
+  overflow: hidden;
+  background: #cfd9dd;
+  container-type: inline-size;
+  isolation: isolate;
+}
+.lc-screen > * {
+  font-size: max(13px, min(6.6cqw, 17px));
+}
+.lc-cam {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+}
+.lc-cam > .lc-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+  will-change: transform;
+}
+.lc-grain {
+  position: absolute;
+  inset: -20px;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .45 0 0 0 0 .4 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.lc-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    120% 90% at 50% 45%,
+    transparent 55%,
+    rgba(30, 24, 14, 0.26) 100%
+  );
+}
+
+/* screen chrome: moves with the phone, never with the place */
+.lc-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.lc-status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.3em;
+  font: 600 0.74em/1 var(--lc-sans);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.lc-status svg {
+  height: 0.95em;
+  width: auto;
+  fill: #fff;
+}
+.lc-punch {
+  position: absolute;
+  left: 50%;
+  top: 0.62em;
+  width: 0.72em;
+  height: 0.72em;
+  margin-left: -0.36em;
+  border-radius: 50%;
+  background: #0c0c0e;
+}
+.lc-hud {
+  position: absolute;
+  left: 0.6em;
+  right: 0.6em;
+  top: 2.2em;
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+}
+.lc-hud-x {
+  flex: none;
+  width: 2.1em;
+  height: 2.1em;
+  border-radius: 50%;
+  background: rgba(16, 18, 22, 0.52);
+  display: grid;
+  place-items: center;
+}
+.lc-hud-x svg {
+  width: 0.85em;
+  height: 0.85em;
+  stroke: #fff;
+  stroke-width: 2.4;
+  fill: none;
+  stroke-linecap: round;
+}
+.lc-pill {
+  display: none;
+  min-width: 0;
+  flex: 1;
+  height: 2.1em;
+  border-radius: 999px;
+  background: rgba(16, 18, 22, 0.55);
+  color: #fff;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0 0.8em;
+  font: 600 0.9em/1 var(--lc-sans);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.lc-pill .lc-dots {
+  display: flex;
+  gap: 0.28em;
+  margin-left: auto;
+}
+.lc-pill .lc-dots i {
+  width: 0.42em;
+  height: 0.42em;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.45);
+}
+.lc-pill .lc-dots i.lc-on {
+  background: #fff;
+}
+.lc-pill .lc-tag {
+  flex: none;
+  font-size: 0.84em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--lc-route);
+  padding: 0.3em 0.45em;
+  border-radius: 0.4em;
+}
+.lc-pill .lc-tag.lc-ok {
+  background: var(--lc-ok);
+}
+.lc-chip {
+  position: absolute;
+  left: 50%;
+  top: 5em;
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.45em 0.8em;
+  border-radius: 999px;
+  background: var(--lc-ok);
+  color: #fff;
+  font: 700 0.86em/1 var(--lc-sans);
+  white-space: nowrap;
+  box-shadow: 0 0.3em 0.9em rgba(0, 0, 0, 0.25);
+}
+.lc-chip svg {
+  width: 1em;
+  height: 1em;
+  stroke: #fff;
+  stroke-width: 3;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lc-sheet {
+  display: none;
+  position: absolute;
+  left: 0.5em;
+  right: 0.5em;
+  bottom: 0.5em;
+  background: rgba(251, 249, 243, 0.97);
+  color: var(--lc-ink);
+  border-radius: 1.2em;
+  padding: 0.75em 0.8em 0.8em;
+  box-shadow: 0 0.6em 1.6em rgba(0, 0, 0, 0.28);
+}
+.lc-sheet .lc-hint {
+  font-size: 0.92em;
+  line-height: 1.3;
+  color: var(--lc-ink-2);
+  text-align: center;
+}
+.lc-sheet .lc-hint b {
+  display: block;
+  font: 700 1.05em/1.2 var(--lc-serif);
+  color: var(--lc-ink);
+}
+.lc-tools {
+  display: flex;
+  gap: 0.4em;
+}
+.lc-tool {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0.45em 0.2em 0.4em;
+  border-radius: 0.8em;
+  border: 1.5px solid var(--lc-line);
+  font: 600 0.9em/1 var(--lc-sans);
+  color: var(--lc-ink-2);
+  background: #fff;
+}
+.lc-tool svg {
+  width: 1.5em;
+  height: 1.5em;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.lc-sbtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.55em;
+  height: 2.5em;
+  border-radius: 999px;
+  background: var(--lc-route);
+  color: #fff;
+  font: 700 0.9em/1 var(--lc-sans);
+}
+.lc-share-row {
+  display: flex;
+  gap: 0.6em;
+  align-items: center;
+}
+.lc-share-row .lc-qr {
+  width: 3.6em;
+  height: 3.6em;
+  flex: none;
+}
+.lc-share-row b {
+  display: block;
+  font: 700 1em/1.15 var(--lc-serif);
+}
+.lc-share-row span {
+  display: block;
+  font-size: 0.84em;
+  line-height: 1.28;
+  color: var(--lc-ink-2);
+  margin-top: 0.15em;
+}
+.lc-share-btns {
+  display: flex;
+  gap: 0.4em;
+  margin-top: 0.55em;
+}
+.lc-share-btns span {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.3em;
+  border-radius: 999px;
+  font: 700 0.82em/1 var(--lc-sans);
+  border: 1.5px solid var(--lc-ink);
+}
+.lc-share-btns span.lc-p {
+  background: var(--lc-route);
+  border-color: var(--lc-route);
+  color: #fff;
+}
+
+/* AR content, fixed to the place (HTML, positioned by the script) */
+.lc-anchors {
+  position: absolute;
+  inset: 0;
+}
+.lc-anc {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  display: none;
+}
+.lc-tcard {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: min(10.4em, 84cqw);
+  background: rgba(251, 249, 243, 0.96);
+  border-radius: 0.85em;
+  padding: 0.58em 0.7em 0.62em;
+  box-shadow:
+    0 0.5em 1.4em rgba(20, 16, 8, 0.28),
+    0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+.lc-tcard .lc-t {
+  font: 700 1.08em/1.15 var(--lc-serif);
+  color: var(--lc-ink);
+  min-height: 1.15em;
+}
+.lc-tcard .lc-b {
+  font-size: 0.94em;
+  line-height: 1.3;
+  color: var(--lc-ink-2);
+  margin-top: 0.2em;
+}
+.lc-tcard .lc-k {
+  display: none;
+  font: 700 0.72em/1 var(--lc-sans);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lc-route-dark);
+  margin-bottom: 0.3em;
+}
+.lc-caret {
+  display: none;
+  width: 1.5px;
+  height: 1em;
+  background: var(--lc-route);
+  vertical-align: -0.12em;
+  margin-left: 1px;
+}
+.lc-pic {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 30cqw;
+  background: #fff;
+  padding: 1.3cqw 1.3cqw 0;
+  border-radius: 3px;
+  box-shadow: 0 0.4em 1.1em rgba(20, 16, 8, 0.3);
+}
+.lc-pic svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.lc-pic .lc-pcap {
+  font: italic 0.72em/1 var(--lc-serif);
+  color: var(--lc-ink-2);
+  text-align: center;
+  padding: 0.35em 0 0.4em;
+  white-space: nowrap;
+}
+.lc-pic-ghost {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 30cqw;
+  height: 25cqw;
+  border: 1.5px dashed #fff;
+  border-radius: 4px;
+  background: rgba(28, 26, 22, 0.42);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font: 700 0.8em/1 var(--lc-sans);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+}
+.lc-nextlbl,
+.lc-foundlbl {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  white-space: nowrap;
+  background: rgba(251, 249, 243, 0.96);
+  color: var(--lc-ink);
+  border-radius: 999px;
+  padding: 0.42em 0.7em 0.42em 0.5em;
+  font: 600 0.88em/1 var(--lc-sans);
+  box-shadow: 0 0.35em 1em rgba(20, 16, 8, 0.25);
+}
+.lc-nextlbl {
+  transform: translateX(-50%);
+}
+.lc-foundlbl {
+  transform: translateY(-100%);
+}
+.lc-nextlbl svg {
+  width: 1.2em;
+  height: 1.2em;
+  flex: none;
+}
+.lc-foundlbl i {
+  flex: none;
+  width: 1.35em;
+  height: 1.35em;
+  border-radius: 50%;
+  background: var(--lc-route);
+  color: #fff;
+  font: 800 0.82em/1.35em var(--lc-sans);
+  font-style: normal;
+  text-align: center;
+}
+@container (max-width: 140px) {
+  .lc-nextlbl,
+  .lc-foundlbl {
+    display: none;
+  }
+}
+@container (max-width: 160px) {
+  .lc-tcard .lc-b,
+  .lc-share-row span,
+  .lc-share-btns span + span,
+  .lc-hud-x,
+  .lc-pill .lc-dots {
+    display: none;
+  }
+  .lc-share-row .lc-qr {
+    width: 3em;
+    height: 3em;
+  }
+}
+.lc-callout {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: min(9.6em, 80cqw);
+  background: rgba(251, 249, 243, 0.97);
+  border-radius: 0.8em;
+  padding: 0.5em 0.65em;
+  font-size: 0.9em;
+  line-height: 1.28;
+  color: var(--lc-ink-2);
+  box-shadow: 0 0.4em 1.1em rgba(20, 16, 8, 0.28);
+}
+.lc-callout b {
+  display: block;
+  color: var(--lc-ink);
+  font: 700 1.05em/1.15 var(--lc-serif);
+}
+.lc-callout::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -0.4em;
+  width: 0.8em;
+  height: 0.8em;
+  margin-left: -0.4em;
+  background: inherit;
+  transform: rotate(45deg);
+}
+
+/* what each phone shows (final states; the short entries follow) */
+.lc-world .lc-o {
+  display: none;
+}
+
+.lc-dock[data-kind="place"] :is(.lc-o-mk, .lc-o-ripple, .lc-o-retic),
+.lc-dock[data-kind="add"] :is(.lc-o-mk, .lc-o-leader),
+.lc-dock[data-kind="hang"] :is(.lc-o-poster, .lc-o-halo),
+.lc-dock[data-kind="scan"]
+  :is(.lc-o-poster, .lc-o-scan, .lc-o-mk, .lc-o-ripple) {
+  display: inline;
+}
+
+.lc-dock[data-kind="add"] :is(.lc-a-card, .lc-a-pic),
+.lc-dock[data-kind="hang"] .lc-a-callout,
+.lc-dock[data-kind="scan"] .lc-a-found {
+  display: block;
+}
+.lc-dock[data-kind="scan"] .lc-p-visit,
+.lc-dock:is([data-kind="place"], [data-kind="add"]) .lc-p-make,
+.lc-dock[data-kind="hang"] .lc-p-saved {
+  display: flex;
+}
+.lc-dock[data-kind="scan"] .lc-chip {
+  display: flex;
+}
+.lc-dock[data-kind="place"] .lc-s-place,
+.lc-dock[data-kind="add"] .lc-s-add,
+.lc-dock[data-kind="hang"] .lc-s-share,
+.lc-dock[data-kind="scan"] .lc-s-go {
+  display: block;
+}
+.lc-dock[data-kind="add"] .lc-tcard {
+  border: 1.5px dashed var(--lc-route);
+  background: rgba(251, 249, 243, 0.92);
+}
+.lc-dock[data-kind="add"] .lc-tcard .lc-k {
+  display: block;
+}
+.lc-dock[data-kind="add"].lc-play .lc-caret {
+  display: inline-block;
+}
+/* the caret goes once the title is typed */
+.lc-dock[data-kind="add"].lc-play .lc-caret {
+  animation: lc-fadeIn 0.2s 1.45s reverse both;
+}
+.lc-o-retic,
+.lc-o-ripple {
+  opacity: 0;
+}
+.lc-dock .lc-back .lc-bposter {
+  display: none;
+}
+.lc-dock:is([data-kind="hang"], [data-kind="scan"]) .lc-back .lc-bposter {
+  display: inline;
+}
+.lc-t-pic {
+  border-color: var(--lc-route);
+  color: var(--lc-route-dark);
+  background: var(--lc-route-soft);
+}
+
+/* entries: one short sequence per phone, played once when its part of the story arrives */
+.lc-o-mk,
+.lc-o-retic,
+.lc-o-chev,
+.lc-o-ripple,
+.lc-o-posterg,
+.lc-o-halo,
+.lc-o-scan {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+.lc-o-posterg {
+  transform-origin: 50% 0;
+}
+
+.lc-dock[data-kind="place"].lc-play .lc-o-retic {
+  animation: lc-retic 1.9s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+.lc-dock[data-kind="place"].lc-play .lc-sbtn {
+  animation: lc-press 0.32s 1.15s both;
+}
+.lc-dock[data-kind="place"].lc-play .lc-o-mk {
+  animation: lc-mkDrop 0.6s 1.3s cubic-bezier(0.3, 1.5, 0.5, 1) both;
+}
+.lc-dock[data-kind="place"].lc-play .lc-o-ripple {
+  animation: lc-ripple 1s 1.55s ease-out both;
+}
+
+.lc-dock[data-kind="add"].lc-play .lc-tcard {
+  animation: lc-cardIn 0.45s 0.15s cubic-bezier(0.3, 1.3, 0.5, 1) both;
+}
+.lc-dock[data-kind="add"].lc-play .lc-tcard .lc-b {
+  animation: lc-fadeIn 0.4s 1.45s both;
+}
+.lc-dock[data-kind="add"].lc-play .lc-t-text {
+  animation: lc-toolOff 0.25s 2.1s both;
+}
+.lc-dock[data-kind="add"].lc-play .lc-t-pic {
+  animation: lc-toolOn 0.25s 2.1s both;
+}
+.lc-dock[data-kind="add"].lc-play .lc-pic-ghost {
+  animation: lc-ghost 1.1s 1.9s both;
+}
+.lc-dock[data-kind="add"].lc-play .lc-pic {
+  animation: lc-picIn 0.6s 2.6s cubic-bezier(0.3, 1.3, 0.5, 1) both;
+}
+
+.lc-dock[data-kind="hang"].lc-play .lc-o-posterg {
+  animation: lc-hang 0.9s 0.3s cubic-bezier(0.3, 1.2, 0.5, 1) both;
+}
+.lc-dock[data-kind="hang"].lc-play .lc-o-halo {
+  animation: lc-fadeIn 0.4s 1.25s both;
+}
+.lc-dock[data-kind="hang"].lc-play .lc-callout {
+  animation: lc-cardIn 0.45s 1.5s cubic-bezier(0.3, 1.3, 0.5, 1) both;
+}
+.lc-dock[data-kind="hang"].lc-play .lc-s-share {
+  animation: lc-fadeIn 0.4s 2.1s both;
+}
+
+.lc-dock[data-kind="scan"].lc-play .lc-o-scan {
+  animation: lc-scanIn 0.55s 0.2s cubic-bezier(0.3, 1.3, 0.5, 1) both;
+}
+.lc-dock[data-kind="scan"].lc-play .lc-chip {
+  animation: lc-chipIn 0.4s 0.75s both;
+}
+.lc-dock[data-kind="scan"].lc-play .lc-o-mk {
+  animation: lc-mkDrop 0.6s 1.25s cubic-bezier(0.3, 1.5, 0.5, 1) both;
+}
+.lc-dock[data-kind="scan"].lc-play .lc-o-ripple {
+  animation: lc-ripple 1s 1.5s ease-out both;
+}
+.lc-dock[data-kind="scan"].lc-play .lc-foundlbl {
+  animation: lc-fadeIn 0.4s 1.75s both;
+}
+.lc-dock[data-kind="scan"].lc-play .lc-s-go {
+  animation: lc-fadeIn 0.4s 2.1s both;
+}
+
+@keyframes lc-mkDrop {
+  0% {
+    opacity: 0;
+    transform: translateY(-46px) scale(1.25);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes lc-ripple {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.7);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.1);
+  }
+}
+@keyframes lc-fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes lc-cardIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(0.8em) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+}
+@keyframes lc-picIn {
+  from {
+    opacity: 0;
+    transform: scale(0.82) rotate(-3deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes lc-retic {
+  0% {
+    opacity: 0;
+    transform: translate(70px, 50px);
+  }
+  12% {
+    opacity: 1;
+  }
+  55% {
+    transform: none;
+  }
+  70% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: none;
+  }
+}
+@keyframes lc-press {
+  0%,
+  100% {
+    transform: none;
+  }
+  50% {
+    transform: scale(0.94);
+    background: var(--lc-route-dark);
+  }
+}
+@keyframes lc-toolOn {
+  from {
+    border-color: var(--lc-line);
+    color: var(--lc-ink-2);
+    background: #fff;
+  }
+  to {
+    border-color: var(--lc-route);
+    color: var(--lc-route-dark);
+    background: var(--lc-route-soft);
+  }
+}
+@keyframes lc-toolOff {
+  from {
+    border-color: var(--lc-route);
+    color: var(--lc-route-dark);
+    background: var(--lc-route-soft);
+  }
+  to {
+    border-color: var(--lc-line);
+    color: var(--lc-ink-2);
+    background: #fff;
+  }
+}
+@keyframes lc-ghost {
+  0% {
+    opacity: 0;
+  }
+  25%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes lc-hang {
+  0% {
+    opacity: 0;
+    transform: translateY(-34px) rotate(9deg);
+  }
+  35% {
+    opacity: 1;
+  }
+  60% {
+    transform: rotate(-4deg);
+  }
+  80% {
+    transform: rotate(1.5deg);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes lc-scanIn {
+  from {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes lc-chipIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-0.4em);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+}
+
+/* the card title is typed letter by letter (each letter's --lc-i is its place) */
+.lc-dock[data-kind="add"].lc-play .lc-ch {
+  animation: lc-type 1ms calc(0.585s + var(--lc-i) * 0.065s) both;
+}
+@keyframes lc-type {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
+  }
+}
+
+/* a paused picture freezes where it is */
+.lc-dock[data-paused="true"] * {
+  animation-play-state: paused;
+}
+
+/* the first card is a place, not a phone: drawn at full colour, with the
+   old photo and a written note laid on it */
+.lc-dock[data-kind="scene"] {
+  background: #cfd9dd;
+}
+.lc-dock > .lc-scene-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.lc-oldphoto {
+  position: absolute;
+  left: 7%;
+  bottom: 8%;
+  width: min(46%, 210px);
+  background: #fffdf6;
+  padding: 6px 6px 0;
+  box-shadow: 0 10px 24px rgba(30, 22, 10, 0.35);
+  transform: rotate(-5deg);
+}
+.lc-oldphoto svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  filter: sepia(0.35);
+}
+.lc-oldphoto span {
+  display: block;
+  font: italic 14px/1 var(--lc-serif);
+  color: var(--lc-ink-2);
+  text-align: center;
+  padding: 7px 0 8px;
+}
+.lc-oldphoto::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -9px;
+  width: 54px;
+  height: 18px;
+  margin-left: -27px;
+  background: rgba(236, 226, 196, 0.85);
+  transform: rotate(3deg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+.lc-note {
+  position: absolute;
+  right: 6%;
+  top: 9%;
+  width: min(44%, 200px);
+  background: #fbf6e6;
+  padding: 10px 12px 11px;
+  box-shadow: 0 8px 20px rgba(30, 22, 10, 0.28);
+  transform: rotate(2.5deg);
+  font: italic 15px/1.35 var(--lc-serif);
+  color: var(--lc-ink);
+  background-image: repeating-linear-gradient(
+    transparent 0 19px,
+    rgba(120, 140, 170, 0.25) 19px 20px
+  );
+  background-position: 0 8px;
+}
+@media (orientation: landscape) and (max-height: 560px) {
+  .lc-note {
+    font-size: 13px;
+    padding: 8px 10px;
+    width: 50%;
+  }
+  .lc-oldphoto span {
+    font-size: 12px;
+    padding: 5px 0 6px;
+  }
+}

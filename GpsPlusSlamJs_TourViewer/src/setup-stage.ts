@@ -62,19 +62,24 @@ interface DotNode extends Listening {
   removeAttribute(name: string): void;
 }
 
+interface SummaryNode extends Listening {
+  focus(options?: FocusOptions): void;
+}
+
 export interface SetupStageDom<T> {
   steps: Record<WizardStep, StepNode>;
   /** Each step's `<summary>`: a tap on the open step's heading must not
-   *  collapse it (the card would be empty). */
-  summaries: Partial<Record<WizardStep, Listening>>;
+   *  collapse it (the card would be empty), and "Make your tour" puts the
+   *  keyboard on it. */
+  summaries: Partial<Record<WizardStep, SummaryNode>>;
   badge: { textContent: string | null };
   of: { textContent: string | null };
   dots: { replaceChildren(...nodes: T[]): void };
   nav: { hidden: Hidden };
   back: { hidden: Hidden } & Listening;
   next: { hidden: Hidden } & Listening;
-  /** The intro's "Follow the route". */
-  begin: Listening;
+  /** The landing's "Make your tour" buttons. */
+  begins: readonly Listening[];
   stage: { scrollIntoView(options?: ScrollIntoViewOptions): void };
 }
 
@@ -102,6 +107,9 @@ export function wireSetupStage<T extends DotNode>(deps: {
   /** `document.createElement`, injectable for the tests. */
   createElement: (tag: "button") => T;
   map?: SetupMapDom;
+  /** Whether the reader asked for reduced motion: the scroll is then
+   *  instant. Read on each tap. */
+  reducedMotion?: () => boolean;
 }): SetupStage {
   const { dom, openStep } = deps;
 
@@ -168,9 +176,19 @@ export function wireSetupStage<T extends DotNode>(deps: {
       event.preventDefault();
     });
   }
-  dom.begin.addEventListener("click", () => {
-    dom.stage.scrollIntoView({ block: "start", behavior: "smooth" });
-  });
+  // "Make your tour": the setup into view, and the keyboard onto the open
+  // step's heading (the stage has no heading of its own; the open step's
+  // is what the reader acts on next).
+  for (const begin of dom.begins) {
+    begin.addEventListener("click", () => {
+      const instant = deps.reducedMotion?.() === true;
+      dom.stage.scrollIntoView({
+        block: "start",
+        behavior: instant ? "instant" : "smooth",
+      });
+      dom.summaries[openNow() ?? "host"]?.focus({ preventScroll: true });
+    });
+  }
 
   /** The six stations along the route, each opening its step. */
   function drawStations(map: SetupMapDom): SVGGElement[] {
