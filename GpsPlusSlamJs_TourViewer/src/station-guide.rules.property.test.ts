@@ -350,7 +350,10 @@ describe("the walk's rules over random walks", () => {
     // the floor (2026-10-22). It guards against the condition never or
     // rarely being reached, not against a number.
     expect(r2Checks).toBeGreaterThan(60);
-  });
+    // 600 random walks: 3.0 s on an idle machine, 6.6 s in a loaded
+    // gate run and 13.4 s alone under load (2026-10-26), past the default
+    // 5 s. The time out is for a hang, not for a slow machine.
+  }, 30_000);
 
   // "No order can deadlock", re-stated over the story card and the no-guess rule's three tap paths: "Can't get
   // there?" then the armed row's confirm, "Can't get there?" then a row in
