@@ -701,13 +701,12 @@ function withFrames(
         }
         return [{ ...frame, items: own?.items ?? [] }];
       }),
-      ...written.stations
-        .filter(
-          (s) =>
-            !listed.has(s.id) &&
-            (inUse(s) ||
-              !(keepsItself(s, imageAssets) || keptBare.handMade.has(s.id))),
-        )
+      ...written.stations.filter(
+        (s) =>
+          !listed.has(s.id) &&
+          (inUse(s) ||
+            !(keepsItself(s, imageAssets) || keptBare.handMade.has(s.id))),
+      ),
     ],
   };
 }
