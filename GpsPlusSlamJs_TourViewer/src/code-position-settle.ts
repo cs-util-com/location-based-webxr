@@ -209,10 +209,13 @@ export function planCodePosition(
  * fit sees it at least this many times the fit's accuracy from its saved
  * spot. Nearer, the offset is mostly the fit's own GPS error: a replace
  * would move a correct code by that error and stamp it there, and later
- * visits would then keep the wrong spot. Measured on the indoor sweep
- * (`creator-code-votes.test.ts`): at 0.75 most of that churn goes at 5-8 m
- * accuracy and nearly every 10-15 m correction stays; at 1 about half the
- * corrections at 8 m accuracy are lost.
+ * visits would then keep the wrong spot. The guard also gives up some
+ * small real improvements (a code stored 5 m off), but a code it keeps
+ * stays unstamped, so a later visit through a fit can still correct it,
+ * while a replaced one is stamped for good. Measured on the indoor sweep
+ * (`creator-code-votes.test.ts`; the numbers in the sidecar): at 0.75
+ * nearly every 10-15 m correction stays; at 1 about half of those at 8 m
+ * accuracy are lost.
  */
 const FIT_REPLACE_MIN_OFFSET_PER_ACCURACY = 0.75;
 

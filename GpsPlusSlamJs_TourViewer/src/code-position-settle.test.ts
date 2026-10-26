@@ -506,7 +506,7 @@ describe("planCodePosition through a device-only fit", () => {
   // replaced by that error and then stamped there for good. Through a fit,
   // an offset under 0.75 times the fit's accuracy (3.75 m at 5 m) is read
   // as the fit's error, not the code's: the code is kept as it is, with no
-  // new stamp. The boundary is pinned at the owner's chosen factor.
+  // new stamp. The boundary is pinned at the chosen factor.
   it("keeps an unstamped code the fit sees just under 0.75 times its accuracy away", () => {
     const plan = planCodePosition(fitInput({ deviceFit: offsetFit(3.7) }));
     expect(plan?.offsetM).toBeCloseTo(3.7, 6);

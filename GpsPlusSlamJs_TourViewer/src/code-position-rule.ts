@@ -41,6 +41,10 @@ export function isReliable(q: PositionQuality): boolean {
 }
 
 export type CodePositionDecision =
+  /** `stored-good`: the saved position was itself walked well. The settle
+   *  also sets it when a visit's own device fit sees the code within that
+   *  fit's error of its saved spot (`code-position-settle.ts`); the
+   *  stored quality is then not reliable. */
   | { kind: "keep"; reason: "stored-good" | "far" }
   /** Seen far from its saved spot in a visit that could not judge whether
    *  the poster moved (too short a walk, no gated fit, or a tracking
