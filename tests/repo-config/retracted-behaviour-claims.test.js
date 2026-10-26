@@ -141,7 +141,8 @@ function trackedDocs() {
 /**
  * ONE pass over the tree for ALL patterns, memoised.
  *
- * The scan covers ~1850 tracked files and ~3.7 MB. Re-reading that per
+ * The scan covers ~3 660 tracked files and ~33 MB (2026-10-26; ~1850 and
+ * ~3.7 MB when this was written). Re-reading that per
  * behaviour put the suite over vitest's default 5 s timeout the moment a
  * second behaviour was added — i.e. the guard's cost grew with exactly the
  * thing it is meant to accumulate, which would have made every future entry
@@ -175,6 +176,15 @@ function scanTree() {
     if (!/alignment|walk|drift|converg|android/i.test(text)) {
       continue;
     }
+    // The trigger words now pass about half the files (1 697 of 3 661 on
+    // 2026-10-26), so the line split is skipped too where no entry's pattern
+    // matches the file's text at all: about two files remain, and the scan
+    // after the reads drops from ~0.4 s to ~0.15 s. Exact, not a heuristic:
+    // the patterns are unanchored, so a pattern that matches a line matches
+    // the text holding it; the per-line checks below still decide.
+    if (!REMOVED_BEHAVIOURS.some(({ pattern }) => pattern.test(text))) {
+      continue;
+    }
     text.split('\n').forEach((line, index) => {
       if (MARKERS.test(line)) {
         return;
@@ -202,9 +212,15 @@ describe('removed behaviour is not described as current', () => {
   // assertion) the whole scan was charged to whichever test ran first. A hook
   // has its own limit, and the default per-test timeout below still holds
   // (see the note on the last case).
+  //
+  // That limit, vitest's default 10 s, is now given a measured one. The scan
+  // reads every tracked .md and .ts file: ~1-3 s alone, 1.2-2.2 s beside
+  // another package's unit tests, 1.6 s and 4.6 s in two repo-config runs,
+  // and past 10 s in a loaded gate run (2026-10-25, the hook timed out,
+  // never an assertion). The time out is for a hang, not for a slow machine.
   beforeAll(() => {
     scanTree();
-  });
+  }, 30_000);
   // Why this test matters: it proves the patterns are not vacuous. A guard that
   // matches nothing passes forever and protects nothing — the exact failure
   // mode the sibling guard was rewritten for.
