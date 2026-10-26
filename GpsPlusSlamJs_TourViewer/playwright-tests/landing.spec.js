@@ -123,16 +123,31 @@ for (const viewport of VIEWPORTS) {
         near(gap(needs, cta), expected.cta);
         near(gap(cta, film), expected.film);
 
-        // The film's box keeps its aspect (4:5 upright, 16:9 otherwise),
-        // never taller than the view, and shows the still.
+        // The film's picture keeps its proportion (9:10 upright, the
+        // page's whole width; 3:2 otherwise, centred), the picture and its
+        // bar fit the view, and the captions' list (reduced motion) stays
+        // inside the box.
         const upright =
           viewport.width < viewport.height && viewport.width < 900;
-        expect(film.width / film.height).toBeCloseTo(
-          upright ? 4 / 5 : 16 / 9,
-          2,
+        const filmStage = await at("#landing-film .lf-stage");
+        const filmBar = await at("#landing-film .lf-controls");
+        expect(filmStage.width / filmStage.height).toBeCloseTo(
+          upright ? 9 / 10 : 3 / 2,
+          1,
         );
-        expect(film.height).toBeLessThanOrEqual(viewport.height - 24 + 1);
-        await expect(page.getByTestId("landing-still")).toBeVisible();
+        if (upright) {
+          expect(film.x).toBe(0);
+          expect(film.width).toBe(viewport.width);
+        } else {
+          near(film.x, (viewport.width - film.width) / 2);
+        }
+        expect(filmBar.y + filmBar.height - filmStage.y).toBeLessThanOrEqual(
+          viewport.height - 24 + 1,
+        );
+        const filmList = await at("#landing-film .lf-captions");
+        expect(filmList.y + filmList.height).toBeLessThanOrEqual(
+          film.y + film.height,
+        );
 
         // The first five seconds: the motivation and the phone it needs.
         if (viewport.height >= 800) {
@@ -300,20 +315,23 @@ for (const viewport of VIEWPORTS) {
 }
 
 // A laptop's window less its browser bar is often about 1280x600: the
-// film fills its box at a fixed aspect, so the box must stay 16:9 there
-// too, never only capped in height.
+// film's picture must keep its 3:2 there too (its width follows the
+// view's height), never only capped in height, with its bar in view.
 test.describe("the film's box on a short desktop window", () => {
   test.use({
     viewport: { width: 1280, height: 600 },
     storageState: FIRST_VISIT,
   });
 
-  test("stays 16:9 and fits the view", async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: "reduce" });
+  test("keeps the picture 3:2 and the picture and bar in view", async ({
+    page,
+  }) => {
     await openLanding(page);
-    const film = await box(page.locator("#landing-film"));
-    expect(film.width / film.height).toBeCloseTo(16 / 9, 2);
-    expect(film.height).toBeLessThanOrEqual(600 - 24 + 1);
+    const stage = await box(page.locator("#landing-film .lf-stage"));
+    const bar = await box(page.locator("#landing-film .lf-controls"));
+    expect(stage.width / stage.height).toBeCloseTo(3 / 2, 1);
+    expect(stage.width).toBeLessThan(1280 - 32);
+    expect(bar.y + bar.height - stage.y).toBeLessThanOrEqual(600 - 24 + 1);
   });
 });
 
@@ -470,10 +488,12 @@ test.describe("a returning device", () => {
   // The suite's default storage holds a chosen host: a returning device.
   test.use({ viewport: { width: 390, height: 844 } });
 
+  // Rounded to the pixel; "+ 0" reads a top just above the line (-0.3
+  // rounds to -0, the film's box is a fractional height) as 0.
   const stageTop = (/** @type {import("@playwright/test").Page} */ page) =>
     page
       .getByTestId("setup-stage")
-      .evaluate((el) => Math.round(el.getBoundingClientRect().top));
+      .evaluate((el) => Math.round(el.getBoundingClientRect().top) + 0);
 
   /**
    * Holds back the module at `pattern` until `release` is called (the dev
@@ -716,7 +736,8 @@ test.describe("a first visit", () => {
       .poll(() =>
         page
           .getByTestId("setup-stage")
-          .evaluate((el) => Math.round(el.getBoundingClientRect().top)),
+          // "+ 0": a top just above the line rounds to -0 (see stageTop)
+          .evaluate((el) => Math.round(el.getBoundingClientRect().top) + 0),
       )
       .toBe(0);
     await expect(
@@ -727,7 +748,8 @@ test.describe("a first visit", () => {
 
 /** What the landing downloads for a creator: its chunks' modules (the dev
  *  server serves each by its own URL) and the hero's still. */
-const LANDING_DOWNLOADS = /landing-cards|film-placeholder|use-case|hero-still/;
+const LANDING_DOWNLOADS =
+  /landing-cards|landing-film|film-|use-case|hero-still/;
 
 /**
  * Every URL the page asks for from now on.
@@ -763,5 +785,6 @@ test("a visitor's page shows no landing and downloads none of it", async ({
   await openLanding(page);
   const seen = creator.filter((url) => LANDING_DOWNLOADS.test(url));
   expect(seen.some((url) => url.includes("landing-cards"))).toBe(true);
+  expect(seen.some((url) => url.includes("landing-film"))).toBe(true);
   expect(seen.some((url) => url.includes("use-case"))).toBe(true);
 });

@@ -351,6 +351,30 @@ describe("landing film: the page's side", () => {
     expect(seen.at(-1)).toMatchObject({ status: "playing", beat: 5 });
   });
 
+  // The cards below hold still while the host says the film plays (they
+  // read `data-playing`): two things moving at once split the reader's
+  // eye. It must turn false whenever the film stops moving for any reason,
+  // or the cards would stay frozen under a paused or finished film.
+  it("says on the host whether it plays, for the cards", () => {
+    // the fake scene: running the whole film out stays cheap
+    const t = setup({ webgl: true });
+    expect(t.host.dataset.playing).toBe("false");
+    t.view(0.6);
+    expect(t.host.dataset.playing).toBe("true");
+    t.film.toggle();
+    expect(t.host.dataset.playing).toBe("false");
+    t.film.toggle();
+    expect(t.host.dataset.playing).toBe("true");
+    t.view(0);
+    expect(t.host.dataset.playing).toBe("false");
+    t.view(0.6);
+    t.frames.runOut();
+    expect(t.host.dataset.filmState).toBe("finished");
+    expect(t.host.dataset.playing).toBe("false");
+    t.film.destroy();
+    expect(t.host.dataset.playing).toBeUndefined();
+  });
+
   it("gives the host back as it was, and unregisters from AR", () => {
     const t = setup({ webgl: true });
     t.view(0.6);

@@ -50,7 +50,7 @@ export interface LandingLoaders {
 
 const LANDING_LOADERS: LandingLoaders = {
   cards: () => import("./landing-cards.js"),
-  film: () => import("./film-placeholder.js"),
+  film: () => import("./landing-film.js"),
   uses: () => import("./use-cases.js"),
 };
 
@@ -137,6 +137,11 @@ export function mountLanding(options: MountLandingOptions): MountedLanding {
       (await loaders.film()).mountLandingFilm(dom.film, {
         reducedMotion: reduced,
         onArStarting: options.onArStarting,
+        // Why the film draws flat, on its host (no WebGL, or a lost
+        // context): for the page's styles, a debug look and the e2e.
+        onFallback: (reason) => {
+          if (!destroyed) dom.film.dataset["filmFallback"] = reason;
+        },
       }),
     );
   const mountCards = () =>
@@ -173,6 +178,7 @@ export function mountLanding(options: MountLandingOptions): MountedLanding {
       for (const host of [dom.film, dom.cards, dom.uses]) {
         delete host.dataset["mount"];
       }
+      delete dom.film.dataset["filmFallback"];
     },
   };
 }

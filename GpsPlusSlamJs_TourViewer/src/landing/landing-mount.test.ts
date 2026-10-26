@@ -121,6 +121,7 @@ describe("mountLanding", () => {
     expect(of("film")?.options).toEqual({
       reducedMotion: true,
       onArStarting: noAr,
+      onFallback: expect.any(Function),
     });
     expect(of("cards")?.host).toBe(dom.cards);
     expect(of("cards")?.options).toEqual({
@@ -179,7 +180,9 @@ describe("mountLanding", () => {
     expect(late.destroyed.sort()).toEqual(["cards", "film", "uses"]);
   });
 
-  it("mounts the real chunks: the cards' pictures, the use cases, the film's stand-in", async () => {
+  // jsdom has no WebGL and no IntersectionObserver: the real film mounts
+  // its drawn floor, reads itself as in view, and says why it draws flat.
+  it("mounts the real chunks: the cards' pictures, the use cases, the film", async () => {
     const dom = makeDom();
     const registered: (() => void)[] = [];
     const onArStarting = (stop: () => void) => {
@@ -193,7 +196,9 @@ describe("mountLanding", () => {
       onArStarting,
     });
     await mounted.ready;
-    expect(dom.film.dataset["film"]).toBe("still");
+    expect(dom.film.querySelector(".lf-film")).not.toBeNull();
+    expect(dom.film.querySelector("img")).toBeNull();
+    expect(dom.film.dataset["filmFallback"]).toBe("no-webgl");
     expect(registered).toHaveLength(1);
     // The use cases' section replaces the host's static list, its own
     // heading with it: one "What people make with it", never two.
@@ -206,7 +211,10 @@ describe("mountLanding", () => {
       dom.cards.querySelector('[data-kind="scene"] .lc-scene-art'),
     ).not.toBeNull();
     mounted.destroy();
-    expect(dom.film.dataset["film"]).toBeUndefined();
+    // The page's still comes back with the film gone.
+    expect(dom.film.querySelector(".lf-film")).toBeNull();
+    expect(dom.film.querySelector("img")).not.toBeNull();
+    expect(dom.film.dataset["filmFallback"]).toBeUndefined();
     expect(dom.cards.querySelector(".lc-phone")).toBeNull();
     expect(dom.uses.querySelector(".uc")).toBeNull();
   });

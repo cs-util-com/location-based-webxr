@@ -60,11 +60,13 @@ const LANDING_STATIC = [
  *  JavaScript from above). JavaScript only: the chunks' CSS is not
  *  counted, nor the hero's still drawing (public/landing, about 16 kB
  *  gzip for each of its two layouts, one of which a creator's page
- *  fetches). Measured 2026-10-26 at
- *  26.3 kB with the cards, the use cases and the film's stand-in; the
- *  budget leaves about a fifth of headroom, and the film sets it anew
+ *  fetches), nor three.js, which the film imports from chunks the main
+ *  page loads statically anyway. Measured 2026-10-26 at 61.7 kB with the
+ *  cards, the use cases and the film (the film 35.0 of it; minified the
+ *  three are 43.8 kB); the budget leaves about a fifth of headroom, far
+ *  under the plan's 250 kB ceiling for the landing's own code
  *  (landing-mount.ts.md, "Size"). */
-const LANDING_BUDGET_KB = 32;
+const LANDING_BUDGET_KB = 74;
 
 /** The pages with a script of their own (`legal.html` has none: it loads
  *  no module at all). */

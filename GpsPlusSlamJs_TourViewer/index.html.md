@@ -183,8 +183,8 @@ Behaviour lives in the wiring modules composed by `src/main.ts` (see
 
 The top of a creator's page, built from two of the landing prototypes:
 the step cards of the maker's story, and the route-alive scene as the hero
-(its film follows; until then the hero shows its last moment as a
-drawing).
+film (`src/landing/landing-film.ts`; until it mounts, and for good where
+its chunk fails, the hero shows its last moment as a drawing).
 
 - **Shown by CSS, before `main.ts`:** `#landing` is `.creator-only` but
   not authored `hidden`; `body[data-mode="creator"] .landing` shows it, and
@@ -210,13 +210,28 @@ drawing).
   keeps the landing's section gap and gutters and drops the section's own
   outer padding, `.landing-uses > .uc`, and sets its heading and line in
   the landing's own sizes).
-- **Reserved sizes:** the film's box is 4:5 on an upright phone and 16:9
-  otherwise, never taller than the view minus 24 px (its width follows the
-  view's height, so a short desktop window such as 1280x600 keeps 16:9);
-  it shows the film's
-  last moment as a drawing (`public/landing/hero-still-{portrait,
-landscape}.svg`, `loading="lazy"`, so a visitor's hidden page never
-  fetches it). Each picture box is `2 * --pw + 28px` tall, `--pw` the
+- **Reserved sizes:** the film's box is a fixed height that holds the
+  film's picture at the prototype's own proportion plus the room for its
+  bar and a caption (`--film-chrome`: 133 px for three caption lines up
+  to 480 px wide, 114 px for two, 110 px framed). Upright (narrower than
+  900 px and taller than wide) the picture is 9:10 and the box the page's
+  whole width, edge to edge with lines above and below only (the
+  prototype's picture is full width there too, and a narrower one put the
+  phone below the size where its screen keeps its card text); elsewhere
+  the picture is 3:2 in a framed, rounded box, centred, its width
+  following the view's height (`max-width: (100svh - 66px) * 3/2`) so the
+  picture and its bar never outgrow the view. Its heights use `cqw`
+  (`.landing-hero` is an inline-size container). Before the film mounts
+  the box shows its last moment as a drawing at the same proportion
+  (`public/landing/hero-still-{portrait,landscape}.svg`, 9:10 and 3:2,
+  `loading="lazy"`, so a visitor's hidden page never fetches it), where
+  the picture will be, and the box keeps its size when the film replaces
+  it. Measured 2026-10-26 at eleven viewports from 320x640 to 1920x1080:
+  no change of size on mount, the still within 1 px of the picture. A
+  reduced-motion list of captions grows the box below
+  (`:has(> .lf-list)`), 119 to 195 px, once at mount (below the fold on
+  an upright phone) and back when the film is played. The film's inner
+  room is `--lf-inset` (16 px upright, the page's gutter; 12 px framed). Each picture box is `2 * --pw + 28px` tall, `--pw` the
   phone's width: 206 px (56vw under 368 px), 214 px from 900 px wide, and
   `(100svh - 74px) / 2 - 14px` on a phone held sideways (at most 560 px
   high), where the picture is `1.6 * --pw` wide beside its text.
@@ -248,8 +263,9 @@ landscape}.svg`, `loading="lazy"`, so a visitor's hidden page never
 - **Its moving parts** are mounted by `src/landing/landing-mount.ts`
   (dynamic imports, a creator only; see its sidecar): the cards' pictures
   (`landing-cards.ts`, which play by `card-play.ts`), the use cases
-  (`use-cases.ts`) and the film (a stand-in that keeps the still until it
-  lands). Each host says `data-mount="ready"`
+  (`use-cases.ts`) and the film (`landing-film.ts`; its host also says
+  `data-film-state`, `data-film-beat`, `data-playing` and, where it draws
+  flat, `data-film-fallback`). Each host says `data-mount="ready"`
   or `"failed"`; a failed one keeps its static content.
 - **The returning-device skip:** `#landing-skip`, a classic script right
   after `#setup-stage` (marked by the comment `<!-- /setup-stage -->`),

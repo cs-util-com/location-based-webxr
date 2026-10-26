@@ -3,7 +3,9 @@
    --paper, --map-card, --map-line, --map-ink-3, --map-route,
    --map-route-soft, --map-paper-3, --map-serif and --font-ui
    (landing-film.ts.md). Sizes that the prototype took from container units are
-   custom properties the film sets from its layout (--lf-sw, --lf-fs). */
+   custom properties the film sets from its layout (--lf-sw, --lf-fs).
+   One is the page's to set on the host: --lf-inset, the room between the
+   box's edges and the bar, the caption and the bottom (0 when unset). */
 
 .lf-film {
   --lf-ink: var(--ink, #2a2824);
@@ -36,12 +38,18 @@
   --lf-track-line: #847d70;
 
   position: relative;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   width: 100%;
   height: 100%;
+  padding-bottom: var(--lf-inset, 0);
   color: var(--lf-ink);
   font-family: var(--lf-sans);
+
+  /* the prototype's figures stand on the line; the page's face sets
+     old-style ones, which shrink a station's number and the clock */
+  font-variant-numeric: lining-nums;
 }
 
 .lf-film[hidden] {
@@ -868,6 +876,7 @@
   gap: 8px;
   align-items: center;
   margin: 6px 0 0;
+  padding-inline: var(--lf-inset, 0);
 }
 
 .lf-play {
@@ -1007,6 +1016,7 @@
   flex: none;
   min-height: 2.7em;
   margin: 8px 0 0;
+  padding-inline: var(--lf-inset, 0);
   color: var(--lf-ink);
   font: 600 17px/1.35 var(--lf-serif);
 }
@@ -1014,7 +1024,7 @@
 .lf-captions {
   flex: none;
   margin: 8px 0 0;
-  padding: 0 0 0 1.5em;
+  padding: 0 var(--lf-inset, 0) 0 calc(1.5em + var(--lf-inset, 0px));
   color: var(--lf-ink-2);
   font-size: 14px;
   line-height: 1.35;

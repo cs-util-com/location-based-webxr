@@ -31,6 +31,7 @@ import { createGpuLifecycle, type FallbackReason } from "./film-gpu.js";
 import { filmLayout, type FilmLayout } from "./film-layout.js";
 import { createPhoneView, floorAnchors } from "./film-phone.js";
 import { createFilmPlayer, type PlayerSnapshot } from "./film-player.js";
+import type { LandingFilmOptions, LandingPart } from "./landing-mount.js";
 import {
   createFilmScene,
   FULL_QUALITY,
@@ -50,18 +51,6 @@ import {
   type Segment,
   type TimelinePace,
 } from "./film-timeline.js";
-
-export interface LandingFilmOptions {
-  readonly reducedMotion: boolean;
-  /** The page calls `stop` when an AR session starts; returns the unregister. */
-  readonly onArStarting: (stop: () => void) => () => void;
-  readonly requestFrame?: (cb: FrameRequestCallback) => number;
-  readonly onFallback?: (reason: "no-webgl" | "context-lost") => void;
-}
-
-export interface LandingFilm {
-  destroy(): void;
-}
 
 /** The film's pace and gating (each swept; see landing-film.ts.md). */
 export interface FilmTuning extends TimelinePace {
@@ -117,7 +106,7 @@ export interface FilmEnv {
 }
 
 /** What a harness can see and do; the page uses only `destroy`. */
-export interface LandingFilmHandle extends LandingFilm {
+export interface LandingFilmHandle extends LandingPart {
   snapshot(): PlayerSnapshot;
   jumpTo(beat: number): void;
   toggle(): void;
@@ -344,6 +333,8 @@ export function createLandingFilm(
       host.dataset.filmState = snap.status;
       host.dataset.filmBeat = String(snap.position.beat);
       host.dataset.filmMoving = String(snap.moving);
+      // the cards below hold still while this is "true" (landing-cards.ts)
+      host.dataset.playing = String(snap.status === "playing");
       host.dispatchEvent(
         new (win?.CustomEvent ?? CustomEvent)("landing-film-change", {
           detail: {
@@ -571,6 +562,7 @@ export function createLandingFilm(
       delete host.dataset.filmState;
       delete host.dataset.filmBeat;
       delete host.dataset.filmMoving;
+      delete host.dataset.playing;
     },
   };
 }
@@ -579,7 +571,7 @@ export function createLandingFilm(
 export function mountLandingFilm(
   host: HTMLElement,
   options: LandingFilmOptions,
-): LandingFilm {
+): LandingPart {
   const film = createLandingFilm(host, options);
   return { destroy: () => film.destroy() };
 }

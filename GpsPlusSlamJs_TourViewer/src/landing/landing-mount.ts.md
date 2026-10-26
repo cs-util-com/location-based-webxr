@@ -16,7 +16,9 @@ film's still are static in `index.html` and show without this module.
   - `dom` - `{ film, cards, uses }`: the film's host (`#landing-film`), the
     cards' list (`.landing-cards`) and the use cases' host
     (`#landing-uses`).
-  - Mounts the film with `{ reducedMotion, onArStarting }`, the cards with
+  - Mounts the film with `{ reducedMotion, onArStarting, onFallback }`
+    (`onFallback` marks the host `data-film-fallback="no-webgl"` or
+    `"context-lost"`, removed on destroy), the cards with
     `{ reducedMotion, filmHost }` (so no card moves while the film plays)
     and the use cases with their host.
   - Each host gets `data-mount="ready"`, or `"failed"` when its chunk did
@@ -33,8 +35,7 @@ film's still are static in `index.html` and show without this module.
     whose load settles after `destroy()` is destroyed at once.
 - The default loaders (module-private, replaced by `loaders` in tests): `./landing-cards.js`,
   `./use-cases.js` (the section replaces the host's static list, its
-  heading with it) and `./film-placeholder.js` until the film lands (a
-  one-line change here).
+  heading with it) and `./landing-film.js`.
 - `watchArStarting(document)` - the page's "AR is starting" signal in the
   film's shape, `(stop) => unregister`: a capture-phase click on or inside
   `#enter-ar`, and `body[data-ar-active="true"]` (written by `ar-entry.ts`)
@@ -59,15 +60,19 @@ film's still are static in `index.html` and show without this module.
 ## Size
 
 - The landing's dynamic chunks' JavaScript together (the cards' pictures,
-  the use cases, the film's stand-in), gzipped as the unminified test build
-  writes it, measured 26.3 kB on 2026-10-26; the budget in
-  `editor3d-lazy.test.ts` is 32 kB (about a fifth of headroom). It counts
-  JavaScript only and bounds it from above (the shipped build is minified).
-  Not counted: the chunks' CSS, and the hero's still drawings
-  (`public/landing/hero-still-*.svg`, 15.7 and 16.0 KiB gzip; a creator's
-  page fetches the one for its layout). The film sets it anew when it lands, under the start page's
-  ceiling of 250 kB gzip for the landing's own code (three.js, already on
-  the page, excluded).
+  the use cases, the film, and a shared helper), gzipped as the unminified
+  test build writes it, measured 61.7 kB on 2026-10-26 (the film's chunk
+  35.0 kB, the cards' 11.4, the use cases' 14.1, the shared drawn code
+  1.2); the budget in `editor3d-lazy.test.ts` is 74 kB (about a fifth of
+  headroom). It counts JavaScript only and bounds it from above: minified,
+  as shipped, the same chunks are 43.8 kB (the film 24.4). Not counted:
+  the chunks' CSS (minified: film 3.4 kB, cards 3.7, use cases 0.9), the
+  hero's still drawings (`public/landing/hero-still-*.svg`, 15.7 and
+  16.0 KiB gzip; a creator's page fetches the one for its layout), and
+  three.js: the film imports it from `three.core` and the shared
+  renderer chunk, both already in the main page's static graph, so the
+  film adds no three.js download. All of it is under the start page's
+  ceiling of 250 kB gzip for the landing's own code.
 
 ## Examples
 
