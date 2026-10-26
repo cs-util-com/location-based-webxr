@@ -25,22 +25,24 @@ import {
 } from "./editor3d-terrain.js";
 
 describe("the editor's map gate", () => {
-  // Why: the values measured for the editor's views: faded out at 1600 m
-  // (also the request reach), asked for at z15 and finer over a mesh of
-  // level 17, no speed limit (an orbiting camera crosses the place fast
+  // Why: the values measured for the editor's views: faded out at 2400 m
+  // (also the request reach), asked for at z14 and finer over a mesh of
+  // level 17 - one zoom coarser than the near map, so the far map reaches
+  // the horizon of an overview instead of fading at 1600 m, within the
+  // request ceiling (measured 2026-10-26) - no speed limit (an orbiting camera crosses the place fast
   // and must keep its map) and no height limit (the orbit keeps the
   // camera within 1100 m of its centre, so the reach already bounds the
   // requests, and a height line switched the whole map off over a deep
   // valley: measured 2026-10-25).
   it("is the measured one, and the overlay accepts it", () => {
     expect(EDITOR_OSM_LIMITS).toEqual({
-      minZoom: 15,
+      minZoom: 14,
       maxAboveGroundM: Number.POSITIVE_INFINITY,
       onBelowAboveGroundM: Number.POSITIVE_INFINITY,
       maxSpeedMps: Number.POSITIVE_INFINITY,
       onBelowSpeedMps: Number.POSITIVE_INFINITY,
     });
-    expect(EDITOR_OSM_FADE_M).toBe(1600);
+    expect(EDITOR_OSM_FADE_M).toBe(2400);
     expect(EDITOR_MESH_LEVEL).toBe(17);
     expect(osmGateLimits(EDITOR_OSM_LIMITS, OSM_TILE_MAX_ZOOM)).toEqual(
       EDITOR_OSM_LIMITS,

@@ -9,9 +9,9 @@ near the camera under the editor's own gate, and the credits both need.
 ## Public API
 
 - `EDITOR_MESH_LEVEL` - 17 (about 6.5 m between vertices near the camera).
-- `EDITOR_OSM_LIMITS` - the map's gate: `minZoom` 15, the height and
+- `EDITOR_OSM_LIMITS` - the map's gate: `minZoom` 14, the height and
   speed limits open (only an unknown height keeps the map off).
-- `EDITOR_OSM_FADE_M` - 1600 (the map faded out, and how far it is asked
+- `EDITOR_OSM_FADE_M` - 2400 (the map faded out, and how far it is asked
   for).
 - The map's keep of released regions (not exported): 32 on a phone, 64
   on a desktop (`reliefDeviceClass`), passed to `createGlobeOsmOverlay`.
@@ -41,10 +41,31 @@ near the camera under the editor's own gate, and the credits both need.
 - **The gate was measured** on the sample tour's square (start view, top
   view, farthest zoom): with the flight's limits (off above 200 m, a 300 m
   fade) none of those views drew any map; with these, every one did, at
-  23-83 requests a view, never near the 150 a minute ceiling. A mesh
-  coarser than level 17 would need `minZoom` 14; a fade below about
-  1300 m loses the farthest view. The speed limits are open: an orbiting
-  camera jumps across the place, and the map would blank in a turn.
+  23-83 requests a view, never near the 150 a minute ceiling. A fade
+  below about 1300 m loses the farthest view.
+- **The far map reaches 2400 m at z14** (one zoom coarser than the near
+  map's z15; it faded out at 1600 m before). Measured 2026-10-26 with the
+  same script and fakes as the height limit below (150 m hills, a GPU,
+  the sample tour), before and after, over a sweep of camera distances
+  (100, 300, 600, 900 and 1100 m at tilts 0, 30, 60 and 80 degrees, two
+  passes, each view held 6 s), a minute of steady orbiting at several
+  distances, and twenty pans:
+  - **Coverage:** at 1100 m the map covers 0.78-1.00 of the drawn ground
+    on a desktop (0.58-0.87 before), at 900 m 0.82-1.00 (0.65-0.99), and
+    up to 300 m it is full either way.
+  - **Requests:** 236 against 212 for the whole desktop run (+11 %), the
+    worst minute 103 against 84; 400 m hills: 272, worst minute 107. A
+    tablet (820 x 1180) orbiting for a minute asks for 30-41 tiles at 600
+    and 900 m, about the same as before. Never at the 150 a minute
+    ceiling on a desktop or a tablet.
+  - **A phone (390 x 844) reaches the ceiling while orbiting, before and
+    after:** a minute of steady orbiting at 600-900 m and tilts 70-75
+    asks for 146-166 tiles, and the ceiling holds requests for 19-49 s
+    of that minute, with 1600 m and with 2400 m alike. Most are tiles
+    asked again after the phone's keep of 32 released them (274 of 394
+    before, 284 of 417 after). The far map adds about 6-15 % on a phone;
+    the ceiling there comes from the keep, not the reach. The speed limits are open: an orbiting
+    camera jumps across the place, and the map would blank in a turn.
 - **The height limit is open too** (a measurement, 2026-10-25). It was
   off above 1250 m over the ground (on again below 1125 m); the orbit's
   1100 m limit reaches that over a valley, and the whole map then went
@@ -57,7 +78,7 @@ near the camera under the editor's own gate, and the credits both need.
   answering in 150 ms. Over 400 m hills the top view at 1100 m drew no
   map at all in both passes; over 150 m hills it never switched. The
   orbit keeps the camera within 1100 m of its centre and the fade's
-  1600 m reach bounds what is asked for, so the line protected no
+  1600 m reach (then) bounds what is asked for, so the line protected no
   request: 188 tiles over 150 m hills and 206 over 400 m hills with the
   line and without it, and without it the top view over 400 m hills kept
   at least 55 % of the drawn ground under the map. A camera higher over

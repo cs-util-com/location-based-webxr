@@ -30,7 +30,8 @@ keys), and writes only through the page's `edits`.
     a frame before the first one rejects with that error (the switch
     says `error`).
 - `Editor3dView`: `dispose()`; `stats()` (`Editor3dStats`: frames, the
-  last frame's clip planes `near` and `far`, tilt, standing, the stations layer's counts, the map's stats with its `coverage` (the drawn tiles near the camera by their map, for the page's checks), and each
+  last frame's clip planes `near` and `far`, tilt, standing, the stations layer's counts (each code's drawn scale
+  among them), the map's stats with its `coverage` (the drawn tiles near the camera by their map, for the page's checks), and each
   station's drawn height and the drawn ground under it); `setTilt(deg)`
   (the page's checks: the orbit's tilt, its distance and heading kept);
   `setDistance(m)` (the orbit's distance within its limits, its tilt and
@@ -96,7 +97,8 @@ keys), and writes only through the page's `edits`.
   ground samples reuse a scratch vector, and sharing it put the clip
   planes at the target, the near plane at its 0.2 m floor everywhere), the
   ground and the map, the editing (its retries, the gizmo, a gesture's
-  preview), the layer, the render.
+  preview), the layer (handed the camera's position: a code laid flat
+  grows with its distance), the render.
 - **Sizes:** the box is hidden while the view loads (the map stays in
   view), so the window's size stands in until it shows; a ResizeObserver
   follows the box and keeps the billboards' screen size.

@@ -197,6 +197,9 @@ export interface Editor3dStats {
   readonly standing: number;
   readonly stations: number;
   readonly codes: number;
+  /** Each code's drawn size over its printed one (laid flat, it grows
+   *  with the camera's distance). */
+  readonly codeScales: readonly number[];
   readonly shown: readonly string[];
   readonly renders: number;
   readonly osm: Record<string, unknown>;
@@ -644,6 +647,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         selectedStation: selectedStationOf(ui.selected, tourNow),
         stationSelected: ui.selected?.startsWith(STATION) ?? false,
         standing,
+        camera: camera.position,
       });
       renderer.render(scene, camera);
       frames++;

@@ -9,10 +9,12 @@
  * square (2026-10-22): with the flight's limits (off above 200 m over the
  * ground, a 300 m fade) none of those views drew any map; with the map off
  * only above 1250 m (on again below 1125 m; opened since, below), faded
- * out at 1600 m and asked for at z15 and finer, every one did, at 23-83 requests a view, never
- * near the 150 a minute ceiling. A coarser relief (a mesh below level 17)
- * would draw z14 under the target and need `minZoom` 14; a fade below
- * about 1300 m loses the farthest view. The flight's speed limits are
+ * out at 1600 m and asked for at z15 and finer, every one did, at 23-83
+ * requests a view, never near the 150 a minute ceiling. The far map now
+ * reaches 2400 m at z14 (one zoom coarser): over 1100 m views it covers
+ * 0.78-1.00 of the drawn ground instead of 0.58-0.87, for about 11 %
+ * more requests on a desktop (measured 2026-10-26, see the sidecar). A
+ * fade below about 1300 m loses the farthest view. The flight's speed limits are
  * opened: an editor's camera jumps across the place as it orbits, and the
  * map would blank in an ordinary turn. The height limit is opened too
  * (measured 2026-10-25, see the sidecar): the orbit keeps the camera
@@ -53,7 +55,7 @@ export const EDITOR_MESH_LEVEL = 17;
 
 /** The map's gate for the editor (see the module comment). */
 export const EDITOR_OSM_LIMITS: Readonly<OsmGateLimits> = Object.freeze({
-  minZoom: 15,
+  minZoom: 14,
   maxAboveGroundM: Number.POSITIVE_INFINITY,
   onBelowAboveGroundM: Number.POSITIVE_INFINITY,
   maxSpeedMps: Number.POSITIVE_INFINITY,
@@ -61,7 +63,7 @@ export const EDITOR_OSM_LIMITS: Readonly<OsmGateLimits> = Object.freeze({
 });
 
 /** Where the map has faded out, and how far it is asked for (m). */
-export const EDITOR_OSM_FADE_M = 1600;
+export const EDITOR_OSM_FADE_M = 2400;
 
 /**
  * Released map regions kept in memory, by relief device class: about

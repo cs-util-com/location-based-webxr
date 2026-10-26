@@ -1,13 +1,26 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
-import { TextWriter, Uint8ArrayReader, ZipReader } from "@zip.js/zip.js";
+import {
+  TextReader,
+  TextWriter,
+  Uint8ArrayReader,
+  Uint8ArrayWriter,
+  ZipReader,
+  ZipWriter,
+} from "@zip.js/zip.js";
 import { readFileSync } from "node:fs";
+import {
+  createEmptyTourManifest,
+  serializeTourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 
 import {
   SQUARE_GROUND_M,
   afterFrames,
   answerHosts,
   openSample,
+  openZip,
   view3d,
 } from "./editor3d-fixture.js";
 import { save, viewCommand } from "./editor-menus.js";
@@ -24,7 +37,8 @@ import { useWideFont } from "./wide-font.js";
  * (on a flat relief at the square's height), select it, drag it with the
  * mouse and check the saved file; drive every key; cancel a touch drag
  * with a second finger; and measure the gizmo on the screen at four
- * window sizes, in a wide face.
+ * window sizes, in a wide face. A code laid flat in the top view grows
+ * with the camera's distance, at the same four sizes.
  */
 
 // One worker for the file, its tests in order: software-drawn 3D views
@@ -679,4 +693,141 @@ test("a station's position is locked until it is unlocked in the inspector: its 
   );
   const was = before.stations.find((/** @type {any} */ s) => s.id === station);
   expect(moved.geo.lon).toBeGreaterThan(was.geo.lon);
+});
+
+/**
+ * A tour of one station on the square and one 20 cm code on a wall 10 m
+ * east of it, its face to the east. As a zip.
+ */
+async function oneCodeTour() {
+  const lat = 48.13725;
+  const lon = 11.57549;
+  const east = 10 / (111_320 * Math.cos((lat * Math.PI) / 180));
+  const manifest = {
+    ...createEmptyTourManifest(),
+    title: "One code",
+    stations: [
+      {
+        id: "a",
+        title: "Station A",
+        geo: { lat, lon, alt: SQUARE_GROUND_M + N_M, headingDeg: 0 },
+        activateRadiusM: 30,
+        foundRadiusM: 5,
+        hint: "arrow",
+        steps: [],
+        items: [],
+      },
+    ],
+  };
+  const id = await qrCodeId("https://gps.csutil.com/tour/?qr=editor3d&n=1");
+  const writer = new ZipWriter(new Uint8ArrayWriter());
+  await writer.add(
+    "tour.json",
+    new TextReader(serializeTourManifest(/** @type {any} */ (manifest))),
+  );
+  await writer.add(
+    `qr/${id}.json`,
+    new TextReader(
+      JSON.stringify({
+        version: 1,
+        qr: {
+          physicalSizeM: 0.2,
+          geo: {
+            lat,
+            lon: lon + east,
+            alt: SQUARE_GROUND_M + N_M + 1.5,
+            headingDeg: 0,
+          },
+        },
+      }),
+    ),
+  );
+  return { zip: Buffer.from(await writer.close()), id };
+}
+
+// Why: from high above, a 20 cm code is a dot; laid flat in the top view
+// it is drawn larger the farther the camera is (the camera's distance over
+// about 71 m, up to 8 times), and at its printed size near the camera or
+// tilted up. The page must hand the layer the camera it draws with: a
+// stale or missing camera passes every unit test of the layer.
+test("a code laid flat in the top view grows with the camera's distance, at a phone, a tablet and a desktop", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    // @ts-expect-error - absent in this browser for the test.
+    delete window.showOpenFilePicker;
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await page.goto("/edit.html");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  const { zip, id } = await oneCodeTour();
+  await openZip(page, zip, "one-code.zip");
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 60_000,
+  });
+  await expect.poll(async () => (await view3d(page))?.codes).toBe(1);
+  await page.keyboard.press("t");
+  await expect.poll(async () => (await view3d(page))?.top).toBe(true);
+  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
+  await expect.poll(async () => (await view3d(page))?.standing).toBe(0);
+  const code = await page.evaluate(
+    (level) => /** @type {any} */ (window).__tourEditor.view3dPointOf(level),
+    id,
+  );
+  /** The growth the curve gives the camera's distance from the code now. */
+  const expected = async () => {
+    const stats = await view3d(page);
+    const m = Math.hypot(
+      stats.camera[0] - code[0],
+      stats.camera[1] - code[1],
+      stats.camera[2] - code[2],
+    );
+    return {
+      m,
+      k: Math.min(8, Math.max(1, m * 0.014)),
+      now: stats.codeScales[0],
+    };
+  };
+  /**
+   * The camera `m` from the orbit's centre, a screenshot kept for the
+   * eye, and the growth then.
+   * @param {number} m
+   */
+  const at = async (m) => {
+    await page.evaluate(
+      (d) => /** @type {any} */ (window).__tourEditor.view3dDistance(d),
+      m,
+    );
+    await afterFrames(page, 2);
+    const size = page.viewportSize();
+    await page.screenshot({
+      path: test
+        .info()
+        .outputPath(`top-view-code-${size?.width}x${size?.height}-${m}m.png`),
+    });
+    return expected();
+  };
+  for (const size of [
+    { width: 1440, height: 900 },
+    { width: 820, height: 1180 },
+    { width: 844, height: 390 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(size);
+    const near = await at(50);
+    expect(near.m, `${size.width}`).toBeLessThan(71);
+    expect(near.now, `${size.width}`).toBe(1);
+    const mid = await at(300);
+    expect(mid.now, `${size.width}: ${mid.m} m`).toBeCloseTo(mid.k, 3);
+    expect(mid.now).toBeGreaterThan(3);
+    const far = await at(1000);
+    expect(far.now, `${size.width}`).toBe(8);
+  }
+  // Tilted up, the code stands at its printed size, however far.
+  await page.evaluate(() =>
+    /** @type {any} */ (window).__tourEditor.view3dTilt(60),
+  );
+  await expect.poll(async () => (await view3d(page))?.standing).toBe(1);
+  await expect.poll(async () => (await expected()).now).toBe(1);
 });
