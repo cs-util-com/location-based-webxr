@@ -46,7 +46,7 @@ export interface InspectorPosition {
 }
 
 /** A picture a station's card may show. */
-export interface InspectorImage {
+interface InspectorImage {
   /** What the station's `image` names: a photo item's or an image
    *  asset's id. */
   readonly id: string;

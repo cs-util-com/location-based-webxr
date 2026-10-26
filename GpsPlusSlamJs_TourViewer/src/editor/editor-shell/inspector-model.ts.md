@@ -15,7 +15,7 @@ origin?, groundAt? })` ->
   - `StationInspector` - `kind: "station"`, title, `sub` "Station n of
     N", `place` (`{ number, count }`, for Earlier and Later), `name`
     (its own title to edit, empty for an untitled one), description,
-    `imagePath`, `images` (`InspectorImage[]`: the station's photos,
+    `imagePath`, `images` (the station's photos,
     then the tour's image assets, each `{ id, path, label }`) and
     `imageId` (the one its card shows, or null), `foundRadiusM`,
     `activateRadiusM`, `outside` (how many of its items stand outside

@@ -49,7 +49,7 @@ export type InspectorEdit =
   /** A turn about up of `deg` clockwise. */
   | { readonly kind: "turn"; readonly selection: string; readonly deg: number };
 
-export const NOT_A_NUMBER = "Type a number, like 12.5";
+const NOT_A_NUMBER = "Type a number, like 12.5";
 
 const NONE: InspectorEdit = { kind: "none" };
 

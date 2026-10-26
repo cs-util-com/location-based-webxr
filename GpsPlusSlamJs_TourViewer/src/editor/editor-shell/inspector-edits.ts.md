@@ -32,7 +32,7 @@ stationId, edit }` (a `StationEdit` of `tour-document.ts`). A radius
   - A value equal to the tour's, a field the selection has not, a code,
     or a selection the tour lacks: `{ kind: "none" }`.
   - A number field with no number in it (blank, "ten"): `{ kind:
-"invalid", reason: NOT_A_NUMBER }`. A comma is a decimal point
+"invalid", reason }` ("Type a number, like 12.5"). A comma is a decimal point
     ("3,5" is 3.5).
 - `groundEdit({ selected, stations, which, groundAt })` -> `GroundEdit |
 null`:
@@ -45,7 +45,6 @@ null`:
     nothing left: none.
   - Null while the ground under any of them has not loaded: the shell
     waits (`ground-wait.ts`).
-- `NOT_A_NUMBER` - the words said for a number field without a number.
 
 ## Invariants & assumptions
 
