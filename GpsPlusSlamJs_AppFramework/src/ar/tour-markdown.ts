@@ -121,9 +121,10 @@ const MAX_EMPHASIS_DEPTH = 16;
 const PICTURE_TARGET_PREFIX = 'asset:';
 
 /** Iterations of every loop that walks the parser's own stacks, lists and
- *  trees (rather than moving forward through the body), plus one per
- *  inline parse step. A linear reading keeps it proportional to the body's
- *  length; {@link tourMarkdownWalkSteps} reads it. */
+ *  trees (rather than moving forward through the body), of the line scans
+ *  the block parser may repeat on one line, plus one per inline parse
+ *  step. A linear reading keeps it proportional to the body's length;
+ *  {@link __tourMarkdownWalkStepsForTests} reads it. */
 let walkSteps = 0;
 
 // ---------------------------------------------------------------------------
@@ -145,6 +146,7 @@ const C_OPEN_BRACKET = 91;
 const C_BACKSLASH = 92;
 const C_CLOSE_BRACKET = 93;
 const C_UNDERSCORE = 95;
+const C_DELETE = 127;
 
 const ASCII_PUNCTUATION = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
 const UNICODE_SPACE = /^\p{Zs}$/u;
@@ -287,6 +289,7 @@ function findNextNonspace(bp: BlockParser): void {
   let i = bp.offset;
   let cols = bp.column;
   while (i < bp.line.length) {
+    walkSteps++;
     const c = bp.line.charCodeAt(i);
     if (c === C_SPACE) cols++;
     else if (c === C_TAB) cols += 4 - (cols % 4);
@@ -463,6 +466,7 @@ function isThematicBreak(bp: BlockParser): boolean {
   const marker = bp.line.charCodeAt(bp.nextNonspace);
   let count = 0;
   for (let i = bp.nextNonspace; i < bp.line.length; i++) {
+    walkSteps++;
     const c = bp.line.charCodeAt(i);
     if (c === marker) count++;
     else if (!isSpaceOrTab(c)) return false;
@@ -475,7 +479,10 @@ function orderedMarker(
   container: BlockNode
 ): ListMarker | null {
   let at = bp.nextNonspace;
-  while (at < bp.line.length && isDigit(bp.line.charCodeAt(at))) at++;
+  while (at < bp.line.length && isDigit(bp.line.charCodeAt(at))) {
+    walkSteps++;
+    at++;
+  }
   const digits = at - bp.nextNonspace;
   if (digits > 9 || bp.line.charCodeAt(at) !== C_DOT) return null;
   const start = Number(bp.line.slice(bp.nextNonspace, at));
@@ -505,6 +512,7 @@ function listMarker(bp: BlockParser, container: BlockNode): ListMarker | null {
 
 function isBlankFrom(line: string, at: number): boolean {
   for (let i = at; i < line.length; i++) {
+    walkSteps++;
     if (!isSpaceOrTab(line.charCodeAt(i))) return false;
   }
   return true;
@@ -716,7 +724,8 @@ interface DestinationIndex {
   readonly balance: Int32Array;
   /** The first position after `i` whose balance is below `i`'s. */
   readonly nextLower: Int32Array;
-  /** The first whitespace at or after `i`, or the subject's length. */
+  /** The first whitespace or control character at or after `i`, or the
+   *  subject's length. */
   readonly nextSpace: Int32Array;
 }
 
@@ -1071,8 +1080,10 @@ function parseBang(ip: InlineParser): void {
   pushBracket(ip, appendText(ip, '!['), true);
 }
 
-function isDestinationSpace(code: number): boolean {
-  return code === C_SPACE || (code >= C_TAB && code <= 13);
+/** Whitespace or an ASCII control character (U+0000 to U+001F, U+007F):
+ *  a destination holds neither. */
+function endsDestination(code: number): boolean {
+  return code <= C_SPACE || code === C_DELETE;
 }
 
 function buildBalance(s: string): Int32Array {
@@ -1111,7 +1122,7 @@ function buildNextSpace(s: string): Int32Array {
   const nextSpace = new Int32Array(s.length + 1);
   nextSpace[s.length] = s.length;
   for (let i = s.length - 1; i >= 0; i--) {
-    nextSpace[i] = isDestinationSpace(s.charCodeAt(i))
+    nextSpace[i] = endsDestination(s.charCodeAt(i))
       ? i
       : (nextSpace[i + 1] ?? s.length);
   }
@@ -1154,12 +1165,12 @@ function unescapeText(text: string): string {
   return out;
 }
 
-/** Spaces and at most one newline. */
+/** Spaces and tabs, with at most one newline among them. */
 function skipSpacesAndOneNewline(ip: InlineParser): void {
-  while (peekInline(ip) === C_SPACE) ip.pos++;
+  while (isSpaceOrTab(peekInline(ip))) ip.pos++;
   if (peekInline(ip) !== C_NEWLINE) return;
   ip.pos++;
-  while (peekInline(ip) === C_SPACE) ip.pos++;
+  while (isSpaceOrTab(peekInline(ip))) ip.pos++;
 }
 
 /** `(destination)` after a `]`: its unescaped destination, or null with
@@ -1172,11 +1183,13 @@ function parseInlineLinkTail(ip: InlineParser): string | null {
   skipSpacesAndOneNewline(ip);
   const from = ip.pos;
   const end = peekInline(ip) === C_LESS ? -1 : destinationEnd(ip, from);
-  if (end >= 0) {
+  // A destination never ends before it starts; checking that keeps the
+  // parse moving forward whatever the index answers.
+  if (end >= from) {
     ip.pos = end;
     skipSpacesAndOneNewline(ip);
   }
-  if (end < 0 || peekInline(ip) !== C_CLOSE_PAREN) {
+  if (end < from || peekInline(ip) !== C_CLOSE_PAREN) {
     ip.pos = saved;
     return null;
   }
@@ -1365,21 +1378,28 @@ function pictureAsset(node: InlineNode): string | null {
   return TOUR_ID_PATTERN.test(id) ? id : null;
 }
 
-function isPictureLineFiller(node: InlineNode): boolean {
-  if (node.type === 'soft' || node.type === 'hard') return true;
+function isBlankText(node: InlineNode): boolean {
   return node.type === 'text' && trimSpacesAndTabs(node.text) === '';
 }
 
-/** The pictures of a paragraph made only of `asset:` pictures on their
- *  own lines, or null when anything else is in it. */
+/** The pictures of a paragraph whose every line holds one `asset:`
+ *  picture and nothing else but spaces and tabs, or null. */
 function pictureLines(root: InlineNode): InlineNode[] | null {
   const pictures: InlineNode[] = [];
+  let lineHasPicture = false;
   for (let node = root.first; node !== null; node = node.next) {
     walkSteps++;
-    if (pictureAsset(node) !== null) pictures.push(node);
-    else if (!isPictureLineFiller(node)) return null;
+    if (node.type === 'soft' || node.type === 'hard') {
+      if (!lineHasPicture) return null;
+      lineHasPicture = false;
+    } else if (pictureAsset(node) !== null && !lineHasPicture) {
+      pictures.push(node);
+      lineHasPicture = true;
+    } else if (!isBlankText(node)) {
+      return null;
+    }
   }
-  return pictures.length > 0 ? pictures : null;
+  return lineHasPicture ? pictures : null;
 }
 
 interface ConvertContext {
@@ -1456,8 +1476,10 @@ export function parseTourMarkdown(body: string): TourMarkdown {
  * The walk steps (see `walkSteps`) that reading `body` and its `P` takes:
  * a deterministic measure of the parser's work for the linearity test,
  * where timings on a loaded machine are too noisy. Not part of reading.
+ *
+ * @internal testing seam
  */
-export function tourMarkdownWalkSteps(body: string): number {
+export function __tourMarkdownWalkStepsForTests(body: string): number {
   walkSteps = 0;
   plainTextOf(parseTourMarkdown(body));
   return walkSteps;

@@ -153,24 +153,26 @@ function normCmInlines(node: CmNode): Norm[] {
 
 const ASSET_TARGET = /^asset:([A-Za-z0-9_-]{1,64})$/;
 
-/** The reference's paragraph of pictures on their own lines, as picture
- *  blocks (the subset's reading), or null. */
+/** The reference's paragraph whose every line is one `asset:` picture
+ *  (spaces and tabs aside), as picture blocks (the subset's reading), or
+ *  null. */
 function cmPictureLines(node: CmNode): CmNode[] | null {
-  const pictures: CmNode[] = [];
+  const lines: CmNode[][] = [[]];
   for (const child of childrenOf(node)) {
-    if (child.type === 'image' && ASSET_TARGET.test(child.destination ?? '')) {
-      pictures.push(child);
-    } else if (!isBetweenPictureLines(child)) {
-      return null;
+    if (child.type === 'softbreak' || child.type === 'linebreak') {
+      lines.push([]);
+    } else if (child.type !== 'text' || !/^[ \t]*$/.test(child.literal ?? '')) {
+      lines[lines.length - 1]?.push(child);
     }
   }
-  return pictures.length > 0 ? pictures : null;
-}
-
-/** A line break, or spaces and tabs, between picture lines. */
-function isBetweenPictureLines(child: CmNode): boolean {
-  if (child.type === 'softbreak' || child.type === 'linebreak') return true;
-  return child.type === 'text' && /^[ \t]*$/.test(child.literal ?? '');
+  const pictures = lines.map((onLine) => onLine[0]);
+  const allPictureLines = lines.every(
+    (onLine) =>
+      onLine.length === 1 &&
+      onLine[0]?.type === 'image' &&
+      ASSET_TARGET.test(onLine[0].destination ?? '')
+  );
+  return allPictureLines ? (pictures as CmNode[]) : null;
 }
 
 /** A reference paragraph as the subset reads it: picture blocks while the
@@ -300,72 +302,138 @@ function linkInSubset(node: CmNode): boolean {
   }
 }
 
-/** The one place the reference departs from the spec inside the subset:
- *  commonmark.js 0.31.2 classifies the character beside a `*` or `_` run
+// The places where the reference departs from the spec and the parser
+// follows the spec, each pinned by a unit test. The differential skips the
+// bodies that reach them, each by name, so nothing is skipped silently.
+
+/** commonmark.js 0.31.2 classifies the character beside a `*` or `_` run
  *  by one UTF-16 unit, so a punctuation or symbol character outside the
  *  BMP (an emoji) is neither punctuation nor whitespace to it, where the
- *  spec reads code points. A unit test pins the spec's reading; the
- *  differential skips every body with a character outside the BMP right
- *  beside a `*` or `_`. */
+ *  spec reads code points. */
 const ASTRAL_BESIDE_DELIMITER =
   /[*_][\u{10000}-\u{10FFFF}]|[\u{10000}-\u{10FFFF}][*_]/u;
 
+/** The spec lets spaces and tabs stand around a link destination; the
+ *  reference skips spaces only. (Matches more than it must, which only
+ *  skips a few more bodies.) */
+const TAB_AROUND_DESTINATION = /\]\([ \n]*\t|\t[ \t\n]*\)/;
+
+const NBSP = String.fromCharCode(0xa0);
+const IDEOGRAPHIC_SPACE = String.fromCharCode(0x3000);
+const OTHER_SPACE_AT_EDGE = new RegExp(
+  `^[${NBSP}${IDEOGRAPHIC_SPACE}]|[${NBSP}${IDEOGRAPHIC_SPACE}]$`
+);
+
+/** The spec trims a paragraph or heading of spaces and tabs; the
+ *  reference trims it of every Unicode space. Read from this parser's
+ *  tree, which keeps such a space: whether any leaf's inline content
+ *  starts or ends with one. */
+function otherSpaceAtLeafEdge(blocks: readonly TourMdBlock[]): boolean {
+  return blocks.some((block) => {
+    switch (block.kind) {
+      case 'paragraph':
+      case 'heading':
+        return OTHER_SPACE_AT_EDGE.test(edgeText(block.inlines));
+      case 'list':
+        return block.items.some(otherSpaceAtLeafEdge);
+      case 'quote':
+        return otherSpaceAtLeafEdge(block.blocks);
+      default:
+        return false;
+    }
+  });
+}
+
+/** Inline content as text, everything but text standing as an `x`. */
+function edgeText(inlines: readonly TourMdInline[]): string {
+  return inlines
+    .map((inline) => {
+      if (inline.kind === 'text') return inline.text;
+      if ('children' in inline) return `x${edgeText(inline.children)}x`;
+      return 'x';
+    })
+    .join('');
+}
+
 /** Arbitrary strings over pieces the subset reads (and a few it rejects,
- *  which the filter above then drops). */
-function wildBodyOf(maxLength: number): fc.Arbitrary<string> {
+ *  which the filter below then drops). Under fast-check's default size an
+ *  array holds at most about 10 pieces whatever its `maxLength`; `'max'`
+ *  lets it reach `maxLength`. */
+function wildBodyOf(
+  pieces: readonly string[],
+  maxLength: number,
+  size?: fc.SizeForArbitrary
+): fc.Arbitrary<string> {
   return fc
     .array(
-      fc.constantFrom(
-        'a',
-        'b',
-        'xy',
-        ' ',
-        ' ',
-        '  ',
-        '\t',
-        '\n',
-        '\n',
-        '\n\n',
-        '*',
-        '**',
-        '_',
-        '__',
-        '- ',
-        '* ',
-        '1. ',
-        '3. ',
-        '# ',
-        '## ',
-        '### ',
-        '#### ',
-        '> ',
-        '>',
-        '[',
-        ']',
-        '(',
-        ')',
-        '](https://x.org/a)',
-        '](http://x.org)',
-        '![',
-        '](asset:x)',
-        '\\',
-        '\\\n',
-        '  \n',
-        '.',
-        ',',
-        '!',
-        '#',
-        '-',
-        '    ',
-        '😀',
-        'é',
-        '中'
-      ),
-      { maxLength }
+      fc.constantFrom(...pieces),
+      size === undefined ? { maxLength } : { maxLength, size }
     )
-    .map((pieces) => pieces.join(''));
+    .map((chosen) => chosen.join(''));
 }
-const wildBody = wildBodyOf(60);
+
+/** A Unicode space other than a space or tab at a line end: the short run
+ *  only, since a long body nearly always ends a leaf with one and would
+ *  be skipped. */
+const OTHER_SPACE_PIECES = [`${NBSP}\n`, `${IDEOGRAPHIC_SPACE}\n`];
+
+const WILD_PIECES = [
+  'a',
+  'b',
+  'xy',
+  ' ',
+  ' ',
+  '  ',
+  '\t',
+  '\n',
+  '\n',
+  '\n\n',
+  '*',
+  '**',
+  '_',
+  '__',
+  '- ',
+  '* ',
+  '1. ',
+  '3. ',
+  '# ',
+  '## ',
+  '### ',
+  '#### ',
+  '> ',
+  '>',
+  '[',
+  ']',
+  '(',
+  ')',
+  '](https://x.org/a)',
+  '](http://x.org)',
+  '![',
+  '](asset:x)',
+  '\\',
+  '\\\n',
+  '  \n',
+  '.',
+  ',',
+  '!',
+  '#',
+  '-',
+  '    ',
+  '😀',
+  'é',
+  '中',
+];
+
+/** Whether the differential compares `body`: the reference keeps it
+ *  inside the subset and it reaches none of the named departures. */
+function comparable(body: string): boolean {
+  return (
+    referenceStaysInSubset(body) &&
+    !ASTRAL_BESIDE_DELIMITER.test(body) &&
+    !TAB_AROUND_DESTINATION.test(body) &&
+    !otherSpaceAtLeafEdge(parseTourMarkdown(body).blocks)
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Bodies inside the subset, generated as a model and rendered to Markdown
@@ -641,12 +709,26 @@ describe('tour markdown (properties)', () => {
 
   it('reads arbitrary strings the reference keeps inside the subset as the reference does', () => {
     fc.assert(
-      fc.property(wildBody, (body) => {
-        fc.pre(referenceStaysInSubset(body));
-        fc.pre(!ASTRAL_BESIDE_DELIMITER.test(body));
+      fc.property(
+        wildBodyOf([...WILD_PIECES, ...OTHER_SPACE_PIECES], 10),
+        (body) => {
+          fc.pre(comparable(body));
+          expect(ourTree(body)).toEqual(referenceTree(body));
+        }
+      ),
+      { numRuns: 3000, maxSkipsPerRun: 1000 }
+    );
+  });
+
+  it('reads long arbitrary strings the reference keeps inside the subset as the reference does', () => {
+    // Why: short bodies never hold the long runs of lines, lists and
+    // delimiters where a parser's state machine drifts from the reference.
+    fc.assert(
+      fc.property(wildBodyOf(WILD_PIECES, 300, 'max'), (body) => {
+        fc.pre(comparable(body));
         expect(ourTree(body)).toEqual(referenceTree(body));
       }),
-      { numRuns: 3000, maxSkipsPerRun: 1000 }
+      { numRuns: 300, maxSkipsPerRun: 1000 }
     );
   });
 

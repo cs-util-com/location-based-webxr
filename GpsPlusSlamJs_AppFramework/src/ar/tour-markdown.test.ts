@@ -241,6 +241,29 @@ describe('parseTourMarkdown - pictures', () => {
       pic('a', 'x'),
       pic('b', 'y'),
     ]);
+    expect(blocksOf('![a](asset:x)\\\n![b](asset:y)')).toEqual([
+      pic('a', 'x'),
+      pic('b', 'y'),
+    ]);
+  });
+
+  it('shows two pictures on one line as alt text boxes, as inside a paragraph', () => {
+    // Why: a picture block stands on a line of its own; two on one line
+    // are a line of text with pictures in it.
+    expect(blocksOf('![a](asset:x) ![b](asset:y)')).toEqual([
+      p(alt('a'), t(' '), alt('b')),
+    ]);
+    expect(blocksOf('![a](asset:x)![b](asset:y)')).toEqual([
+      p(alt('a'), alt('b')),
+    ]);
+    expect(blocksOf('![a](asset:x)\n![b](asset:y) ![c](asset:z)')).toEqual([
+      p(alt('a'), soft, alt('b'), t(' '), alt('c')),
+    ]);
+    // A line holding no picture (here a lone backslash break) is not a
+    // picture line either.
+    expect(blocksOf('![a](asset:x)\n\\\n![b](asset:y)')).toEqual([
+      p(alt('a'), soft, hard, alt('b')),
+    ]);
   });
 
   it('shows a picture inside a paragraph as its alt text box, which adds nothing to P', () => {
@@ -606,6 +629,15 @@ describe('parseTourMarkdown - edge cases held to CommonMark', () => {
     expect(blocksOf(`a*${FORM_FEED}b*`)).toEqual([p(t(`a*${FORM_FEED}b*`))]);
   });
 
+  it('does not count a form feed as blank, so an item holding one may interrupt a paragraph', () => {
+    // Why: the spec's blank line holds only spaces and tabs; the reference
+    // also counts a form feed, and reads this as one paragraph.
+    expect(blocksOf(`a\n- ${FORM_FEED}`)).toEqual([
+      p(t('a')),
+      ul([p(t(FORM_FEED))]),
+    ]);
+  });
+
   it('classifies an emoji before a delimiter as punctuation', () => {
     expect(blocksOf(`*a${EMOJI}*b`)).toEqual([p(t(`*a${EMOJI}*b`))]);
     expect(blocksOf(`_a${EMOJI}_b`)).toEqual([p(t(`_a${EMOJI}_b`))]);
@@ -681,11 +713,40 @@ describe('parseTourMarkdown - edge cases held to CommonMark', () => {
     expect(blocksOf('[a](https://x.org\tb)')).toEqual([
       p(t('[a](https://x.org\tb)')),
     ]);
-    // A control character other than a tab or line end does not end a
-    // destination; the URL parser percent-encodes it.
-    expect(blocksOf(`[a](https://x.org/${String.fromCharCode(1)}b)`)).toEqual([
-      p(link('https://x.org/%01b', 'x.org', t('a'))),
+    // A destination may hold no ASCII control character (the spec; the
+    // reference lets one through and percent-encodes it), so the brackets
+    // stay text.
+    for (const code of [1, 0x1f, 0x7f]) {
+      const body = `[a](https://x.org/${String.fromCharCode(code)}b)`;
+      expect(blocksOf(body)).toEqual([p(t(body))]);
+    }
+    // Spaces, tabs and up to one line end may stand around the destination.
+    expect(blocksOf('[a](\thttps://x.org\t)')).toEqual([
+      p(link(X, 'x.org', t('a'))),
     ]);
+    expect(blocksOf('[a](https://x.org \t\n\t )')).toEqual([
+      p(link(X, 'x.org', t('a'))),
+    ]);
+  });
+
+  it('keeps reading forward when a destination is unbalanced at a space', () => {
+    // Why: the destination's end is looked up, not scanned; an end before
+    // its start would send the parse back over text it has already read.
+    expect(blocksOf('x)[a](b(c d)')).toEqual([p(t('x)[a](b(c d)'))]);
+  });
+
+  it('trims a leaf of spaces and tabs only, keeping other Unicode spaces', () => {
+    // Why: P is stored data, and the spec trims a paragraph of spaces and
+    // tabs only; the reference trims every Unicode space (a no-break space,
+    // the ideographic space that opens a Japanese paragraph).
+    const NBSP = String.fromCharCode(0xa0);
+    const IDEOGRAPHIC_SPACE = String.fromCharCode(0x3000);
+    expect(blocksOf(`a${NBSP}`)).toEqual([p(t(`a${NBSP}`))]);
+    expect(blocksOf(`_a_${NBSP}`)).toEqual([p(em(t('a')), t(NBSP))]);
+    expect(plain(`${IDEOGRAPHIC_SPACE}Ein Text`)).toBe(
+      `${IDEOGRAPHIC_SPACE}Ein Text`
+    );
+    expect(plain(`# A${NBSP}`)).toBe(`A${NBSP}`);
   });
 
   it('gives a picture its alt text with line breaks as spaces', () => {

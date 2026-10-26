@@ -230,6 +230,18 @@ const GOLDEN: readonly (readonly [string, string, string, string])[] = [
     'sha256:9b669df7eb033514b62faa3f799e8d539b1c6960b1d9030847c1b646c16493b7',
   ],
   [
+    'a combining mark, never normalised',
+    'Cafe\u0301 au lait',
+    'Cafe\u0301 au lait',
+    'sha256:5115efe6f30b1a6a4b510ed44d077697130e474f579db48d74e1c63dd86ead7d',
+  ],
+  [
+    'a leading ideographic space',
+    '\u3000Ein Text',
+    '\u3000Ein Text',
+    'sha256:6a05f783936daf774529cd2d571e2627398c269300adb31e340203bd993a3feb',
+  ],
+  [
     'CRLF line endings',
     'a\r\nb\r\n\r\nc',
     'a b\n\nc',

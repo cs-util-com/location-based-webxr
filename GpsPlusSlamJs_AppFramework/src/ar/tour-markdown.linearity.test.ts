@@ -6,16 +6,17 @@
  * it has already read (unclosed emphasis, brackets, link openings, nested
  * markers, a link closing over a long delimiter stack).
  *
- * The measure is the parser's walk steps (`tourMarkdownWalkSteps`), not
- * time: timed ratios on a loaded machine spread from 0.2 to 6 for the same
- * linear shape, which no bound can tell from a mild quadratic. The steps are
- * exact, so the bound can be tight: per character they must stay the same
- * from 8 k to 128 k characters, where a quadratic walk reads about 16.
+ * The measure is the parser's walk steps
+ * (`__tourMarkdownWalkStepsForTests`), not time: timed ratios on a loaded
+ * machine spread from 0.2 to 6 for the same linear shape, which no bound
+ * can tell from a mild quadratic. The steps are exact, so the bound can be
+ * tight: per character they must stay the same from 8 k to 128 k
+ * characters, where a quadratic walk reads about 16.
  */
 
 import { describe, expect, it } from 'vitest';
 
-import { tourMarkdownWalkSteps } from './tour-markdown';
+import { __tourMarkdownWalkStepsForTests as walkStepsOf } from './tour-markdown';
 
 const SMALL = 8_000;
 const LARGE = 128_000;
@@ -47,6 +48,12 @@ const PATTERNS: Record<string, string> = {
   'hard breaks': 'a  \n',
   'emoji next to stars': '\u{1F600}*',
   'picture lines': '![a](asset:a)\n',
+  // One long line: the block parser scans a line once per block it tries
+  // to open there, which stays linear only while those attempts are few.
+  'one line of list markers': '- ',
+  'one line of digits': '1',
+  'one line of hashes': '#',
+  'one heading with closing hashes': '# a #',
 };
 
 function grow(seed: string, size: number): string {
@@ -56,8 +63,8 @@ function grow(seed: string, size: number): string {
 describe('tour markdown parse work', () => {
   for (const [name, seed] of Object.entries(PATTERNS)) {
     it(`stays linear on ${name}`, () => {
-      const small = tourMarkdownWalkSteps(grow(seed, SMALL)) / SMALL;
-      const large = tourMarkdownWalkSteps(grow(seed, LARGE)) / LARGE;
+      const small = walkStepsOf(grow(seed, SMALL)) / SMALL;
+      const large = walkStepsOf(grow(seed, LARGE)) / LARGE;
       expect(small).toBeGreaterThan(0);
       expect(large / small).toBeLessThan(MAX_SLOPE_RATIO);
     });
@@ -65,6 +72,6 @@ describe('tour markdown parse work', () => {
 
   it('counts the same for the same body, whatever was read before', () => {
     const body = grow(PATTERNS.prose ?? '', 2_000);
-    expect(tourMarkdownWalkSteps(body)).toBe(tourMarkdownWalkSteps(body));
+    expect(walkStepsOf(body)).toBe(walkStepsOf(body));
   });
 });
