@@ -19,13 +19,26 @@
  * height stays the reference's: the fit is horizontal, and a code's stored
  * height is kept rather than replaced by GPS altitude.
  *
+ * THE WALK IT RESTS ON. The gate reads the walk twice: the GPS spread
+ * (the largest distance between two fixes) and the phone's own tracking
+ * (the largest distance between two odometry points of those fixes), each
+ * against the keep-or-replace rule's walk for the accuracy. GPS jumps at a
+ * door make a spread no walk made; the tracking does not jump. Fixes far
+ * worse than the visit's median accuracy (more than
+ * {@link FIT_ACCURACY_OUTLIER_FACTOR} times it, a phone coming back inside)
+ * are left out of the fit: unweighted, they would count as much as the
+ * street's.
+ *
  * THE LOOP CLOSURE. The phone's tracking drifts along a walk, so a code
  * seen at the start and again at the end of it shows up at two odometry
- * spots, apart by the drift. The fit is made over the fixes in between,
- * which carry about half of it on average, so it is read at the midpoint
- * of the two sightings rather than at the last one. Read at the last
- * sighting it would carry the whole drift. It acts on odometry poses and
- * device fixes only: no code's votes enter it.
+ * spots, apart by the drift. A fix carries the drift of its own moment,
+ * and the fit absorbs the drift its fixes carry on average, so the code is
+ * read between its two sightings at that average: the first sighting plus
+ * w times the way to the last, w the mean over the fit's fixes of each
+ * fix's moment in the window between the two looks (clamped to it: a fix
+ * before the first look carries none of the drift, one after the last all
+ * of it). Fixes spread evenly over the window give the midpoint. It acts
+ * on odometry poses and device fixes only: no code's votes enter it.
  *
  * Pure.
  *
@@ -33,6 +46,7 @@
  */
 
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
+import { interpolatingMedian } from "gps-plus-slam-app-framework/utils/median";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import { Matrix4 } from "three";
 
@@ -43,7 +57,11 @@ import {
   pinCode,
   type DisplacementSample,
 } from "./code-displacement.js";
-import { isReliable, type PositionQuality } from "./code-position-rule.js";
+import {
+  isReliable,
+  walkMoreM,
+  type PositionQuality,
+} from "./code-position-rule.js";
 import {
   codeCorrection,
   throughAlignment,
@@ -59,6 +77,50 @@ export interface DeviceFit {
   readonly samples: number;
   /** Their RMS spread about their centroid (m). */
   readonly spreadM: number;
+  /** The fixes it rests on, in the order given. */
+  readonly fixes: readonly DisplacementSample[];
+  /** The phone's own walk over them: the largest horizontal distance
+   *  between two of their odometry points (m). */
+  readonly walkM: number;
+}
+
+/** A fix whose reported accuracy is more than this many times the visit's
+ *  median is left out of the fit. Not swept: it removes fixes several
+ *  times worse than the rest, which the median accuracy the code is
+ *  stamped with does not describe. */
+export const FIT_ACCURACY_OUTLIER_FACTOR = 2;
+
+/**
+ * The fixes a fit uses: all but those reporting an accuracy more than
+ * {@link FIT_ACCURACY_OUTLIER_FACTOR} times the median of the reported
+ * ones. A fix without an accuracy is kept (nothing says it is worse).
+ */
+export function fitSamples(
+  samples: readonly DisplacementSample[],
+): DisplacementSample[] {
+  const accuracies = samples
+    .map((s) => s.accuracyM)
+    .filter((a): a is number => a !== undefined && Number.isFinite(a) && a > 0);
+  if (accuracies.length === 0) return [...samples];
+  const limit = FIT_ACCURACY_OUTLIER_FACTOR * interpolatingMedian(accuracies);
+  return samples.filter(
+    (s) => s.accuracyM === undefined || !(s.accuracyM > limit),
+  );
+}
+
+/** The largest horizontal distance between two odometry points of
+ *  `samples` (m); 0 for fewer than two. */
+function odometryExtentM(samples: readonly DisplacementSample[]): number {
+  let best = 0;
+  for (let i = 0; i < samples.length; i += 1) {
+    const a = samples[i]!.odom;
+    for (let j = i + 1; j < samples.length; j += 1) {
+      const b = samples[j]!.odom;
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      if (d > best) best = d;
+    }
+  }
+  return best;
 }
 
 const ODOMETRY_ORIGIN: NuePose = {
@@ -120,18 +182,25 @@ export function deviceFitAlignment(
   ]);
   const alignment = turn.multiply(new Matrix4().fromArray(base)).toArray();
   if (!alignment.every(Number.isFinite)) return null;
-  return { alignment, samples: est.samples, spreadM: est.spreadM };
+  return {
+    alignment,
+    samples: est.samples,
+    spreadM: est.spreadM,
+    fixes: samples,
+    walkM: odometryExtentM(samples),
+  };
 }
 
 /**
  * The settle's gate on {@link deviceFitAlignment}: the visit's fit only
  * when its walk could measure a code at all - at least the mint's minimum
- * of device fixes (`MIN_ALIGNMENT_SAMPLES`), a walk reliable for its
- * accuracy (`isReliable`, the keep-or-replace rule's own test), and one
+ * of device fixes (`MIN_ALIGNMENT_SAMPLES`) after {@link fitSamples}, a
+ * walk reliable for its accuracy by its GPS spread AND by the phone's own
+ * tracking (`isReliable`, the keep-or-replace rule's own test), and one
  * odometry frame throughout (a tracking restart mixes two frames, so no
  * rigid fit describes the walk).
  *
- * @param quality the visit's device-only walk and accuracy
+ * @param quality the visit's device-only GPS spread and accuracy
  */
 export function codeDeviceFit(input: {
   readonly samples: readonly DisplacementSample[];
@@ -139,14 +208,33 @@ export function codeDeviceFit(input: {
   readonly quality: PositionQuality;
   readonly frameChanged: boolean;
 }): DeviceFit | null {
-  if (
-    input.frameChanged ||
-    input.samples.length < MIN_ALIGNMENT_SAMPLES ||
-    !isReliable(input.quality)
-  ) {
-    return null;
-  }
-  return deviceFitAlignment(input.samples, input.reference);
+  if (input.frameChanged || !isReliable(input.quality)) return null;
+  const fixes = fitSamples(input.samples);
+  if (fixes.length < MIN_ALIGNMENT_SAMPLES) return null;
+  const tracked = {
+    extentM: odometryExtentM(fixes),
+    accuracyM: input.quality.accuracyM,
+  };
+  if (!isReliable(tracked)) return null;
+  return deviceFitAlignment(fixes, input.reference);
+}
+
+/**
+ * How much farther the visit must walk for {@link codeDeviceFit}'s walk
+ * rule (m, 0 when it walked enough): by the shorter of its GPS spread and
+ * its tracking over the fit's fixes - the result line's hint. Null without
+ * a known accuracy.
+ */
+export function deviceWalkMoreM(
+  samples: readonly DisplacementSample[],
+  quality: PositionQuality,
+): number | null {
+  if (quality.accuracyM === null) return null;
+  const tracked = odometryExtentM(fitSamples(samples));
+  return walkMoreM({
+    extentM: Math.min(quality.extentM ?? 0, tracked),
+    accuracyM: quality.accuracyM,
+  });
 }
 
 /** One kept sighting of a code: when, and its raw WebXR odometry pose. */
@@ -156,15 +244,16 @@ export interface FitSighting {
 }
 
 /**
- * The code's odometry pose to read a device fit at: the midpoint of its
- * first and last sightings when they bracket every fix of the fit (seen
- * before the first fix and after the last - the loop is closed), else its
- * latest sighting. The heading is always the latest sighting's. Raw WebXR
- * and odometry-NUE differ by a fixed basis change, so the midpoint is the
- * same in either.
+ * The code's odometry pose to read a device fit at: between its first and
+ * last sightings, at the share of the way the fit's fixes carry on
+ * average (each fix's moment in the window between the two looks, clamped
+ * to it; see the module comment), else its latest sighting - with one
+ * sighting, two at one moment, a moment unknown, or no timed fix. The
+ * heading is always the latest sighting's. Raw WebXR and odometry-NUE
+ * differ by a fixed basis change, so the point is the same in either.
  *
  * @param sightings oldest first
- * @param samples the fixes the fit rests on
+ * @param samples the fixes the fit rests on (`DeviceFit.fixes`)
  * @returns null without a sighting
  */
 export function codeFitPose(
@@ -174,31 +263,48 @@ export function codeFitPose(
   const latest = sightings.at(-1);
   if (latest === undefined) return null;
   const first = sightings[0]!;
-  let firstFix = Number.POSITIVE_INFINITY;
-  let lastFix = Number.NEGATIVE_INFINITY;
+  const plain = { pose: latest.odomPose, loopClosed: false };
+  const span = latest.atMs - first.atMs;
+  if (sightings.length < 2 || !Number.isFinite(span) || !(span > 0)) {
+    return plain;
+  }
+  let sum = 0;
+  let count = 0;
   for (const s of samples) {
     if (!Number.isFinite(s.tMs)) continue;
-    firstFix = Math.min(firstFix, s.tMs);
-    lastFix = Math.max(lastFix, s.tMs);
+    sum += Math.min(1, Math.max(0, (s.tMs - first.atMs) / span));
+    count += 1;
   }
-  const closes =
-    sightings.length >= 2 &&
-    firstFix <= lastFix &&
-    first.atMs <= firstFix &&
-    latest.atMs >= lastFix;
-  if (!closes) return { pose: latest.odomPose, loopClosed: false };
+  if (count === 0) return plain;
+  const w = sum / count;
   const [ax, ay, az] = first.odomPose.position;
   const [bx, by, bz] = latest.odomPose.position;
-  const mid: [number, number, number] = [
-    (ax + bx) / 2,
-    (ay + by) / 2,
-    (az + bz) / 2,
+  const at: [number, number, number] = [
+    ax + w * (bx - ax),
+    ay + w * (by - ay),
+    az + w * (bz - az),
   ];
-  if (!mid.every(Number.isFinite)) {
-    return { pose: latest.odomPose, loopClosed: false };
-  }
+  if (!at.every(Number.isFinite)) return plain;
   return {
-    pose: { position: mid, rotation: latest.odomPose.rotation },
+    pose: { position: at, rotation: latest.odomPose.rotation },
     loopClosed: true,
   };
+}
+
+/**
+ * Code `levelId`'s kept sightings as {@link codeFitPose} reads them, oldest
+ * first: without those solved at a print size the creator has since
+ * replaced (`otherSize`), whose poses are not the code's.
+ */
+export function codeFitSightings(
+  sightings: readonly {
+    readonly atMs: number;
+    readonly sighting: { readonly levelId: string; readonly odomPose: Pose };
+    readonly otherSize?: true;
+  }[],
+  levelId: string,
+): FitSighting[] {
+  return sightings
+    .filter((s) => s.sighting.levelId === levelId && s.otherSize !== true)
+    .map((s) => ({ atMs: s.atMs, odomPose: s.sighting.odomPose }));
 }

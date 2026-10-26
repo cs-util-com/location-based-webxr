@@ -430,41 +430,60 @@ stored error of 10-15 m became permanent.
 
 `settleVisit` therefore builds a device view (`deviceViewOf`) for such a
 visit: the visit's device fixes and their rigid fit
-(`code-device-fit.ts`, `codeDeviceFit`), gated on at least 3 device fixes,
-a walk reliable for their accuracy (`isReliable` of the device-only end
-quality) and no tracking restart.
+(`code-device-fit.ts`, `codeDeviceFit`), gated on at least 3 device fixes
+(after fixes far worse than the median are left out), a walk reliable for
+their accuracy by the GPS spread and by the phone's own tracking, and no
+tracking restart. The view's quality - what a code is judged and stamped
+with through it - is the shorter of the two walks, with the median
+accuracy.
 
 - **With a fit:** every stored code is judged by the keep-or-replace rule
   and the code-spot rule through the fit (`planCodePosition`'s
-  `deviceFit`), read at the pose `codeFitPose` picks - the midpoint of
-  the code's first and last sightings when they bracket the walk's fixes
-  (the loop closure: it removes the AR drift the end sighting carries),
-  else its latest sighting, else the creator's own sighting. A change is
-  re-minted through the fit and stamped with the device-only quality, so
-  the geo and its stamp come from the same fit.
+  `deviceFit`), read at the pose `codeFitPose` picks from the code's
+  sightings (`codeFitSightings`: those solved at a replaced print size
+  left out) - between its first and last look, at the share of the way its
+  fixes carry on average (the loop closure: it removes the AR drift the end
+  look carries) - else at the creator's own sighting. A change is
+  re-minted through the fit and stamped with the fit's quality, so the geo
+  and its stamp come from the same fit. A turn alone (the rule's turned
+  branch) replaces a code stamped by a better walk than the fit's only
+  through a fit at least as good (`code-position-settle.ts`).
+- **The visit's own objects, stations and late photos** settle through the
+  fit too (`throughDevice`: every object's pick, and the end alignment,
+  are the fit), so they move with the codes corrected through it. Objects
+  near a look at a code are still placed relative to that code (the code
+  event rule), at its new spot when it was corrected. A visit whose code
+  stayed (well stamped, or too far for a silent replace) also places
+  objects far from every look through the fit - the rule every visit has
+  for them, its own GPS.
+- **New codes** measured in the visit are minted through the fit and
+  stamped with its quality.
 - **Without a fit:** each stored code is kept as stored
-  (`keep` / `code-placed`), nothing is re-minted or stamped, and the
+  (`keep` / `code-placed`, with `walkMoreM` when a short walk was the
+  cause, for the result line), nothing is re-minted or stamped, and the
   code-spot rule gets no candidate (it judges nothing, as for a walk too
-  short to judge).
+  short to judge). Objects keep the vote-held frame - nothing better
+  exists - and a new code minted through it claims no quality (its stamp
+  has no accuracy and no walk, so later visits may improve it).
 - **The visit log** reads every code through the fit, at the fit's pose,
-  or logs no code at all (the fixes and the odometry are still logged);
-  never through the vote-held alignment.
+  and draws the path through the fit, or logs no code at all (the fixes
+  and the odometry are still logged); never through the vote-held
+  alignment.
 - **A visit without votes** - one that never voted, or one whose votes the
   moved-code check withdrew (a code moved 20 m or more) - has no device
   view and settles exactly as before.
-- **Height** is kept from the vote-held alignment, i.e. the stored code's:
-  the fit is horizontal.
-- **Objects** placed in the visit still settle through their picks (the
-  vote-held alignment): only codes are read through the fit.
-- **Codes measured in the visit** are minted through the vote-held
-  alignment as before; their stamp is the device-only quality block. Not
-  changed here.
+- **Height** is kept from the vote-held alignment: the fit is horizontal.
 
 Tests: `creator-code-votes.test.ts` - a mixed visit (votes, then a walk
 with GPS, then the code seen again) correcting a code stored 10 or 14 m
-off, no stamp and no logged code when the walk cannot judge, an
-indoor-only visit inventing nothing, the loop closure at 3 % drift, a
-vetoed code at 25 m moving as before, and the sweep (walk 24/38/60 m,
+off; no stamp, no logged code and the walk hint when the walk cannot
+judge; the same for a short walk whose fixes jump; an indoor-only visit
+inventing nothing; the loop closure at 3 % drift, also with fixes on the
+way back and at the end look; the visit's pins near a look and far from
+both settling with the corrected code; the path through the fit; a new
+code through the fit, and with no claim of quality without one; a stamped
+code kept; a vetoed code at 25 m moving as before; no automatic
+measurement while the code is out of view; and the sweep (walk 24/38/60 m,
 accuracy 5/8/15 m, stored error 0-25 m, drift 0-3 %): a property that the
-visit's own view of a code does not depend on where it is stored, with
-the full table behind `CREATOR_INDOOR_SWEEP_OUT`.
+visit's own view of a code does not depend on where it is stored, with the
+full table behind `CREATOR_INDOOR_SWEEP_OUT`.

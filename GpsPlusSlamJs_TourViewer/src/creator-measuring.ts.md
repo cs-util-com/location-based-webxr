@@ -73,7 +73,12 @@ M4 replaces its one code in hand with the code book.
   render classifies the code in view (`codeOutcome`), and the same answer
   feeds the line (`authorStatusLine`'s `ready`) and the measurement
   (`maybeMeasure`), so the line never claims a measurement that does not
-  happen:
+  happen. Only a code detected within the last second (`FRESH_DETECTION_MS`)
+  is measured: the render that opens the mint gate can come mid-walk, from
+  a GPS fix, with the code long out of view, and the last stable pose then
+  would be a code event at the wrong moment (the votes test "takes no
+  automatic measurement while the code is out of view"). The next detection
+  measures it:
   - the code in hand, or one measured earlier in this visit (M4c-2):
     `measured`;
   - a measurement in flight, or a code still being read: `measuring`;

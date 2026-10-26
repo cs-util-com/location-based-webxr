@@ -66,6 +66,13 @@ import { readSideM, writeSideM } from "./printed-side.js";
  *  render, so it is tried again. */
 const STEADY_LOST = "the code is not measured steadily";
 
+/** How old the last detection may be for the code to be measured on its
+ *  own (ms): the measurement runs on a render, and a render with the code
+ *  long out of view (a GPS fix opening the mint gate mid-walk) would take
+ *  the last stable pose at the wrong moment - a code event the visit's
+ *  notes nearby would tie to. The next detection measures it instead. */
+const FRESH_DETECTION_MS = 1000;
+
 /** What a measurement became (`measureCode`). */
 type MeasureOutcome =
   | { readonly kind: "measured" | "kept" | "superseded" }
@@ -163,6 +170,8 @@ export function wireCreatorMeasuring(deps: {
   /** The codes measured on their own in this visit, by visit and text:
    *  each once per visit (UI round 1, U3; plan review #1; `maybeMeasure`). */
   const autoMeasured = new Set<string>();
+  /** When the last code was detected (page clock, ms). */
+  let lastDetectionAtMs = Number.NEGATIVE_INFINITY;
 
   /** The confirmation after adopting a size, until the code is stable again. */
   let adoptedNote: string | null = null;
@@ -290,6 +299,7 @@ export function wireCreatorMeasuring(deps: {
     const recordDetection = (event: QrDetectionEvent): void => {
       ctx.authorErrorText = null; // a live detection supersedes a stale error
       ctx.lastDetectedText = event.text;
+      lastDetectionAtMs = Date.now();
       arStore.dispatch(recordQrDetection(event));
       // Step 4's scan-to-open: the code names its tour (plan §9).
       deps.codeTour.onDetection(event.text);
@@ -786,6 +796,8 @@ export function wireCreatorMeasuring(deps: {
     const text = ctx.lastDetectedText;
     if (!canMint || !measure || text === null) return;
     if (ctx.finishing || !deps.sessionLive()) return;
+    // Only a code in view now: see FRESH_DETECTION_MS.
+    if (!(Date.now() - lastDetectionAtMs <= FRESH_DETECTION_MS)) return;
     const key = visitKeyOf(text);
     autoMeasured.add(key);
     void measureCode().then((outcome) => {

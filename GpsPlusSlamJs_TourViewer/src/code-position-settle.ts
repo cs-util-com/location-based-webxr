@@ -67,12 +67,15 @@ export interface CodePositionSettleInput {
    *  for a visit a stored code's votes lined up, whose pick and end
    *  alignment those votes hold. When given, it is the ONE source: the
    *  code is judged through `alignment` at `codeOdomPose`, with
-   *  `endQuality` (device-only) as the candidate's quality, and a change is
-   *  re-minted there through it, stamped with `alignmentInfo`. */
+   *  `quality` (the fit's own walk - the shorter of its GPS spread and the
+   *  phone's tracking - and its accuracy) as the candidate's quality, and a
+   *  change is re-minted there through it, stamped with `alignmentInfo`
+   *  and that walk. */
   readonly deviceFit?: {
     readonly alignment: readonly number[];
     readonly codeOdomPose: Pose;
     readonly alignmentInfo: MintAlignmentInfo;
+    readonly quality: PositionQuality;
   };
 }
 
@@ -123,7 +126,7 @@ export function planCodePosition(
   // The ONE source the rule judges and the re-mint then takes.
   const source =
     input.deviceFit !== undefined
-      ? fitSource(input.deviceFit, input.endQuality, sighting, latest)
+      ? fitSource(input.deviceFit, sighting, latest)
       : pickSource(end, input.endQuality, sighting, latest);
   const { alignment, candidate } = source;
   const offset = sightedCodeOffset({
@@ -135,7 +138,7 @@ export function planCodePosition(
     sighting: source.sighting,
   });
   if (offset === null) return null;
-  const stored = qualityOfLevel(level.json);
+  const stored: PositionQuality = qualityOfLevel(level.json);
   // A silent replace only within what two visits' GPS plausibly disagree
   // by (the code correction's own bound, D10b) and below the move
   // question's 15 m (U3 milestone review #11).
@@ -150,7 +153,16 @@ export function planCodePosition(
   // also past the correction's yaw bound, which otherwise reads a turn
   // that large as a second print.
   const limit = turnLimitDeg(candidate);
-  const turned = !farOff && limit !== null && offset.yawDeg > limit;
+  // Through a device fit, a turn alone never replaces a code stamped by a
+  // better walk than the fit's: the turn is then the fit's error as likely
+  // as the code's. (Through the votes a visit's heading was always the
+  // stored code's, so this branch is new for such a visit.)
+  const turnTrusted =
+    input.deviceFit === undefined ||
+    !isReliable(stored) ||
+    noWeaker(candidate, stored);
+  const turned =
+    !farOff && limit !== null && offset.yawDeg > limit && turnTrusted;
   const far = farOff || (!turned && offset.yawDeg > CORRECTION_MAX_YAW_DEG);
   const decision = decideCodePosition({
     stored,
@@ -182,6 +194,18 @@ export function planCodePosition(
     },
     pick: source.pick,
   };
+}
+
+/** `a` rests on at least the walk of `b`, at no worse an accuracy. */
+function noWeaker(a: PositionQuality, b: PositionQuality): boolean {
+  return (
+    a.extentM !== null &&
+    a.accuracyM !== null &&
+    b.extentM !== null &&
+    b.accuracyM !== null &&
+    a.extentM >= b.extentM &&
+    a.accuracyM <= b.accuracyM
+  );
 }
 
 /** One kept sighting of the code, at its moment. */
@@ -241,27 +265,27 @@ function pickSource(
 }
 
 /** The visit's device-only fit, read at the fit's pose: a change is
- *  re-minted through the fit with its device-only quality block, so the
- *  geo and its stamp come from the same fit. The pick keeps
- *  the latest sighting's moment and walked distance - the code event the
- *  visit's notes tie to - and has neither without a kept sighting. */
+ *  re-minted through the fit with its device-only quality block and the
+ *  fit's own walk, so the geo and its stamp come from the same fit. The
+ *  pick keeps the latest sighting's moment and walked distance - the code
+ *  event the visit's notes tie to - and has neither without a kept
+ *  sighting. */
 function fitSource(
   fit: NonNullable<CodePositionSettleInput["deviceFit"]>,
-  endQuality: PositionQuality,
   sighting: CodeSighting,
   latest: KeptSighting | undefined,
 ): PlanSource {
   return {
     alignment: fit.alignment,
-    candidate: endQuality,
+    candidate: fit.quality,
     sighting: { ...sighting, odomPose: fit.codeOdomPose },
     pick: {
       atMs: latest?.atMs ?? Number.NaN,
       alignment: [...fit.alignment],
       alignmentInfo: fit.alignmentInfo,
-      ...(endQuality.extentM === null
+      ...(fit.quality.extentM === null
         ? {}
-        : { gpsExtentM: endQuality.extentM }),
+        : { gpsExtentM: fit.quality.extentM }),
       ...(latest?.walkedM === undefined ? {} : { walkedM: latest.walkedM }),
     },
   };

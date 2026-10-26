@@ -409,11 +409,14 @@ describe("planCodePosition through a device-only fit", () => {
     return input({
       // The votes hold every other view at the stored spot.
       alignment: yawAlignment(0, [0, 400, 0]),
-      endQuality: { extentM: 40, accuracyM: 5 },
+      // The GPS spread alone: a door's jumps can make it longer than the
+      // walk; the fit's own quality is the shorter of it and the tracking.
+      endQuality: { extentM: 60, accuracyM: 5 },
       deviceFit: {
         alignment: fitAlignment,
         codeOdomPose: AT,
         alignmentInfo: DEVICE_INFO,
+        quality: { extentM: 40, accuracyM: 5 },
       },
       ...overrides,
     });
@@ -441,15 +444,51 @@ describe("planCodePosition through a device-only fit", () => {
     });
   });
 
-  it("keeps a code the fit cannot judge, as any visit does", () => {
-    const short = planCodePosition(
-      fitInput({ endQuality: { extentM: 8, accuracyM: 5 } }),
+  /** The fit seeing the code at its stored spot, turned 80 degrees. */
+  const turnedFit = (quality: { extentM: number; accuracyM: number }) => ({
+    alignment: turnedAtCode(80),
+    codeOdomPose: CODE,
+    alignmentInfo: DEVICE_INFO,
+    quality,
+  });
+
+  // Why: a fit's heading is only as good as its walk. Through the votes a
+  // visit's alignment always had the stored code's heading, so a turn was
+  // never seen in such a visit; through a fit it is, and the turned rule
+  // replaces "whatever the walk or the stored quality". A code stamped by a
+  // good walk must not be turned by a weaker one: the turn is then the
+  // fit's error as likely as the code's.
+  it("never lets a turn replace a stamped code through a fit weaker than the walk that stamped it", () => {
+    const stamped = stored(yawAlignment(0, [0, 400, 0]), 60);
+    const plan = planCodePosition(
+      fitInput({
+        mintedLevel: stamped,
+        deviceFit: turnedFit({ extentM: 40, accuracyM: 5 }),
+      }),
     );
-    expect(short?.decision).toMatchObject({
-      kind: "keep",
-      reason: "not-walked",
+    expect(plan?.offsetM).toBeLessThan(0.01);
+    expect(plan?.decision).toEqual({ kind: "keep", reason: "stored-good" });
+    expect(plan?.measurement).toBeNull();
+  });
+
+  it("lets a turn replace a stamped code through a fit at least as good, and any unstamped code", () => {
+    const stamped = stored(yawAlignment(0, [0, 400, 0]), 60);
+    const strong = planCodePosition(
+      fitInput({
+        mintedLevel: stamped,
+        deviceFit: turnedFit({ extentM: 80, accuracyM: 4 }),
+      }),
+    );
+    expect(strong?.decision.kind).toBe("replace");
+    expect(strong?.decision).toMatchObject({
+      turnedDeg: expect.closeTo(80, 3),
     });
-    expect(short?.measurement).toBeNull();
-    expect(short?.pick).toBeNull();
+    const unstamped = planCodePosition(
+      fitInput({ deviceFit: turnedFit({ extentM: 40, accuracyM: 5 }) }),
+    );
+    expect(unstamped?.decision).toMatchObject({
+      kind: "replace",
+      turnedDeg: expect.closeTo(80, 3),
+    });
   });
 });

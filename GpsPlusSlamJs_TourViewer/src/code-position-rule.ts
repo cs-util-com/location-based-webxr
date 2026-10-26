@@ -51,8 +51,9 @@ export type CodePositionDecision =
   /** The visit was lined up by a stored code's votes, still in its
    *  alignment at the settle, and its own GPS could not judge the code (no
    *  device-only fit: too few fixes, too short a walk, or a tracking
-   *  restart). Never decided here: the settle sets it. */
-  | { kind: "keep"; reason: "code-placed" }
+   *  restart). `walkMoreM`: how much farther the walk had to go, when a
+   *  short walk was the cause. Never decided here: the settle sets it. */
+  | { kind: "keep"; reason: "code-placed"; walkMoreM?: number }
   /** `turnedDeg`: replaced because this visit's GPS turned the code
    *  further than it can be off (field test 3, D-F6a), not for its walk. */
   | { kind: "replace"; turnedDeg?: number }
@@ -64,7 +65,7 @@ export type CodePositionDecision =
 
 /** How much more walking `q` needs to be reliable (m); 5 m accuracy is
  *  assumed when it is unknown, only for this figure. */
-function walkMoreM(q: PositionQuality): number {
+export function walkMoreM(q: PositionQuality): number {
   const needed = Math.max(MIN_RELIABLE_WALK_M, walkNeededM(q.accuracyM ?? 5));
   return Math.max(0, needed - (q.extentM ?? 0));
 }
@@ -226,6 +227,13 @@ function positionLine(outcomes: readonly CodePositionOutcome[]): string {
   }
   if (decision.kind === "keep" && decision.reason === "not-walked") {
     return `The code's saved position was kept: this visit's walk was about ${more(decision.walkMoreM)} m too short for the GPS accuracy to improve it.`;
+  }
+  if (
+    decision.kind === "keep" &&
+    decision.reason === "code-placed" &&
+    decision.walkMoreM !== undefined
+  ) {
+    return `The code's saved position was kept: this visit's walk was about ${more(decision.walkMoreM)} m too short for the GPS accuracy to check it.`;
   }
   return "";
 }

@@ -126,4 +126,8 @@ speaks, because that is where the code now is.
 visit was lined up by a stored code's votes, still in its alignment at
 the settle, and its own GPS could not judge the code (too few device
 fixes, too short a walk for their accuracy, or a tracking restart). The
-code keeps its stored position and stamp; the result line says nothing.
+code keeps its stored position and stamp. When a short walk was the
+cause the settle passes `walkMoreM`, and the result line says how much
+farther to walk ("... about N m too short for the GPS accuracy to check
+it."); otherwise it says nothing. `walkMoreM(q)` is exported for that
+figure.

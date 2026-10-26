@@ -100,10 +100,17 @@ fields only: 96 added lines, nothing changed or removed.
 `deviceFit` (optional) replaces the source above when the settle passes
 it (`creator-settle.ts`, "A visit a stored code's votes still line up"):
 the code is read through `deviceFit.alignment` at `deviceFit.codeOdomPose`
-(the loop-closed pose, `code-device-fit.ts`), judged with `endQuality`
-(device-only), and a change is re-minted at that pose through a pick
-carrying the fit's alignment, the device-only `alignmentInfo` and the
-end extent - so the stamp and the geo come from one fit. The pick keeps
+(the loop-closed pose, `code-device-fit.ts`), judged with
+`deviceFit.quality` (the fit's own walk - the shorter of the GPS spread
+and the phone's tracking - and the device-only accuracy), and a change is
+re-minted at that pose through a pick carrying the fit's alignment, the
+device-only `alignmentInfo` and that walk - so the stamp and the geo come
+from one fit. Through a fit a turn alone (the turned branch) replaces a
+code whose stamp is reliable only when the fit's quality is no weaker
+(at least its walk, at no worse an accuracy): through the votes a visit's
+heading was always the stored code's, so the branch is new for such a
+visit, and a turn seen by a weaker walk is the fit's error as likely as
+the code's. An unstamped code is replaced as before. The pick keeps
 the latest kept sighting's moment and walked distance (NaN moment when
 there is none). Tests: `code-position-settle.test.ts` "planCodePosition
 through a device-only fit".

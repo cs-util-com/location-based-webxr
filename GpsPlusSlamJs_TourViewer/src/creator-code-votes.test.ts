@@ -247,8 +247,13 @@ async function flush(): Promise<void> {
 }
 
 /** A code stored with the tour: its geo is where `alignment` puts its pose
- *  in this visit, i.e. `alignment` is the truth the visit should find. */
-function storedCode(alignment: number[], origin: Matrix4): QrLevel {
+ *  in this visit, i.e. `alignment` is the truth the visit should find;
+ *  `stamp`: the walk and accuracy it was measured with (none: unstamped). */
+function storedCode(
+  alignment: number[],
+  origin: Matrix4,
+  stamp?: { extentM: number; accuracyM: number },
+): QrLevel {
   const world = throughAlignment(
     odomNueFromWebXr(inOrigin(TRUE_CODE, origin)),
     alignment,
@@ -266,6 +271,16 @@ function storedCode(alignment: number[], origin: Matrix4): QrLevel {
         worldNueRotation: [...world.rotation],
         zero: ZERO,
       }),
+      ...(stamp === undefined
+        ? {}
+        : {
+            mintQuality: {
+              mintedAtIso: "2026-10-01T10:00:00.000Z",
+              alignmentSampleCount: 40,
+              gpsAccuracyM: stamp.accuracyM,
+              alignmentGpsExtentM: stamp.extentM,
+            },
+          }),
     },
   };
 }
@@ -293,14 +308,21 @@ async function indoorCreator(
     objects: { basis?: string }[];
     codePositions?: {
       levelId: string;
-      decision: { kind: string; reason?: string };
+      decision: { kind: string; reason?: string; walkMoreM?: number };
       applied: boolean;
+      offsetM?: number;
+      candidate?: { extentM: number | null; accuracyM: number | null };
     }[];
   }[] = [];
+  /** When each measurement of a code was taken (`tourAuthoring/codeMeasured`). */
+  const measuredAt: number[] = [];
   const dispatch = arStore.dispatch;
   arStore.dispatch = ((action: { type: string; payload?: unknown }) => {
     if (action.type === "tourAuthoring/settled") {
       settled.push(action.payload as (typeof settled)[number]);
+    }
+    if (action.type === "tourAuthoring/codeMeasured") {
+      measuredAt.push((action.payload as { atMs: number }).atMs);
     }
     return dispatch(action as never);
   }) as typeof arStore.dispatch;
@@ -575,6 +597,9 @@ async function indoorCreator(
     placePin,
     settledAt,
     settled,
+    measuredAt,
+    /** The page clock now. */
+    nowMs: () => clock.nowMs,
     endVisit: () => {
       setup.endAuthorVisit();
     },
@@ -871,8 +896,10 @@ describe(
         await c.look(origin);
         c.ctx.lastDetectedText = TEXT;
         // The fix lands inside the wait (its clock is the page's timer,
-        // which has not fired): the visit is a GPS visit.
+        // which has not fired): the visit is a GPS visit. It comes
+        // `fixAfterS` after the look (`deviceFix` adds the last second).
         expect(fixAfterS * 1000).toBeLessThan(SCAN_GATE_ESCAPE_MS);
+        c.advance(fixAfterS * 1000 - 1000);
         c.deviceFix(truth, [0, 1.4, 0], 5);
         await c.look(origin, 12, TEXT, 4_000);
         c.graceEnds();
@@ -988,6 +1015,19 @@ interface MixedVisitCase {
   readonly noise?: boolean;
   readonly seed?: number;
   readonly kept?: "hosted" | "draft";
+  /** A pin placed right after the first look, and one at the loop's far
+   *  corner (beyond the reach of either look in walked distance). */
+  readonly pins?: boolean;
+  /** A new code is measured after the end look, 5 m to the side. */
+  readonly newCode?: boolean;
+  /** Fixes keep coming on the way back in and after the end look, as a
+   *  phone coming inside reports them. */
+  readonly fixesIndoors?: boolean;
+  /** Each fix jumps this far east and west in turn (m): the fixes a phone
+   *  reports near a door. */
+  readonly jumpM?: number;
+  /** The stored code's stamp: the walk and accuracy it was measured with. */
+  readonly stamp?: { extentM: number; accuracyM: number };
 }
 
 const MIX_ORIGIN = new Matrix4().makeRotationY(0.4).setPosition(3, 0, -2);
@@ -1019,10 +1059,21 @@ async function mixedVisit(v: MixedVisitCase) {
   const storedAlignment = [...MIX_TRUTH];
   storedAlignment[12] = storedAlignment[12]! + v.storedErrorM * Math.cos(theta);
   storedAlignment[14] = storedAlignment[14]! + v.storedErrorM * Math.sin(theta);
-  const level = storedCode(storedAlignment, MIX_ORIGIN);
+  const level = storedCode(storedAlignment, MIX_ORIGIN, v.stamp);
   const c = await indoorCreator(level, v.kept ?? "hosted");
   await c.look(MIX_ORIGIN);
   const votesAtStart = c.votes();
+  /** Where each pin stands, and where the truth puts it. */
+  const pins: { label: string; truth: Vector3 }[] = [];
+  const nue = (p: [number, number, number]): [number, number, number] => {
+    const n = webxrToNUE([...p]);
+    return [n[0], n[1], n[2]];
+  };
+  if (v.pins === true) {
+    const near = nue(roomToRaw(MIX_ORIGIN, 0.6, 1.0));
+    await c.placePin("Near", near);
+    pins.push({ label: "Near", truth: truthAt(MIX_TRUTH, near) });
+  }
   // Drift: one direction in the room, growing with the distance walked.
   const driftTheta = 2 * Math.PI * r();
   const drift = (walkedM: number): [number, number] => [
@@ -1035,6 +1086,24 @@ async function mixedVisit(v: MixedVisitCase) {
   let eE = sigma * gauss(r);
   let walked = DOOR_M;
   c.advance(DOOR_M * 1000);
+  const walkStartMs = c.nowMs();
+  let jump = 1;
+  /** One fix where the phone truly is (room x, z), recorded against the
+   *  drifted tracking, with the AR(1) error and the door's jumps. */
+  const fixAt = (x: number, z: number): void => {
+    eN = phi * eN + Math.sqrt(1 - phi * phi) * sigma * gauss(r);
+    eE = phi * eE + Math.sqrt(1 - phi * phi) * sigma * gauss(r);
+    jump = -jump;
+    const [dx, dz] = drift(walked);
+    c.deviceFix(
+      MIX_TRUTH,
+      roomToRaw(MIX_ORIGIN, x, z),
+      v.accuracyM,
+      eN,
+      eE + jump * (v.jumpM ?? 0),
+      roomToRaw(MIX_ORIGIN, x + dx, z + dz),
+    );
+  };
   if (v.walkM > 0) {
     const a = v.walkM / Math.SQRT2;
     const z0 = 1.2 + DOOR_M;
@@ -1053,31 +1122,49 @@ async function mixedVisit(v: MixedVisitCase) {
         const x = x1 + ((x2 - x1) * j) / steps;
         const z = z1 + ((z2 - z1) * j) / steps;
         walked += a / steps;
-        eN = phi * eN + Math.sqrt(1 - phi * phi) * sigma * gauss(r);
-        eE = phi * eE + Math.sqrt(1 - phi * phi) * sigma * gauss(r);
-        const [dx, dz] = drift(walked);
-        c.deviceFix(
-          MIX_TRUTH,
-          roomToRaw(MIX_ORIGIN, x, z),
-          v.accuracyM,
-          eN,
-          eE,
-          roomToRaw(MIX_ORIGIN, x + dx, z + dz),
-        );
+        fixAt(x, z);
+        if (v.pins === true && k === 1 && j === steps) {
+          // The loop's far corner: about 64 m walked from either look.
+          const [dx, dz] = drift(walked);
+          await c.placePin("Far", nue(roomToRaw(MIX_ORIGIN, x + dx, z + dz)));
+          pins.push({
+            label: "Far",
+            truth: truthAt(MIX_TRUTH, nue(roomToRaw(MIX_ORIGIN, x, z))),
+          });
+        }
       }
     }
   }
   // The page's async work of the walk lands before the way back, as it
-  // does on a phone within milliseconds (an automatic measurement taken
-  // during the walk among it); this walk is fed synchronously.
+  // does on a phone within milliseconds; this walk is fed synchronously.
   await new Promise((resolve) => setTimeout(resolve, 0));
   await flush();
-  c.advance(DOOR_M * 1000);
-  walked += DOOR_M;
+  const walkEndMs = c.nowMs();
+  if (v.fixesIndoors === true && v.walkM > 0) {
+    // Back in along the room's axis, a fix a second and metre.
+    for (let i = 1; i <= DOOR_M; i += 1) {
+      walked += 1;
+      fixAt(0, 1.2 + DOOR_M - i);
+    }
+  } else {
+    c.advance(DOOR_M * 1000);
+    walked += DOOR_M;
+  }
   const [dxEnd, dzEnd] = drift(walked);
-  await c.look(
-    MIX_ORIGIN.clone().multiply(new Matrix4().makeTranslation(dxEnd, 0, dzEnd)),
+  const endOrigin = MIX_ORIGIN.clone().multiply(
+    new Matrix4().makeTranslation(dxEnd, 0, dzEnd),
   );
+  await c.look(endOrigin);
+  if (v.fixesIndoors === true && v.walkM > 0) {
+    // Still reporting fixes while the creator stands at the code.
+    for (let i = 0; i < 3; i += 1) fixAt(0, 1.2);
+  }
+  const newCodeOrigin = new Matrix4()
+    .makeTranslation(5, 0, 0)
+    .multiply(endOrigin);
+  if (v.newCode === true) {
+    await c.look(newCodeOrigin, 12, OTHER, 2_000);
+  }
   const votesAtEnd = c.votes();
   c.endVisit();
   await flush();
@@ -1090,10 +1177,36 @@ async function mixedVisit(v: MixedVisitCase) {
     .references()
     .find((ref) => ref.levelId === c.levelId)?.geo;
   const saved = c.setup.codes.savedText(c.levelId);
-  const logged = c.visitLog
-    .entries()
+  const entry = c.visitLog.entries().at(-1);
+  const logged = entry?.codes.find((code) => code.levelId === c.levelId);
+  const otherId = await qrCodeId(OTHER);
+  const otherText = c.setup.codes.savedText(otherId);
+  const otherTruth = throughAlignment(
+    odomNueFromWebXr(
+      inOrigin(
+        TRUE_CODE,
+        new Matrix4().makeTranslation(5, 0, 0).multiply(MIX_ORIGIN),
+      ),
+    ),
+    MIX_TRUTH,
+  )!.position;
+  /** The logged path at each logged device fix: the distance to the
+   *  nearest point of the path (m), median. */
+  const fused = entry?.fused ?? [];
+  const pathGaps = (entry?.gps ?? []).map((g) =>
+    Math.min(
+      ...fused.map((p) =>
+        distM(
+          northEast({ lat: p.lat, lon: p.lng, alt: 0 } as never),
+          northEast({ lat: g.lat, lon: g.lng, alt: 0 } as never),
+        ),
+      ),
+    ),
+  );
+  pathGaps.sort((x, y) => x - y);
+  const decision = c.settled
     .at(-1)
-    ?.codes.find((code) => code.levelId === c.levelId);
+    ?.codePositions?.find((d) => d.levelId === c.levelId);
   return {
     c,
     level,
@@ -1105,13 +1218,32 @@ async function mixedVisit(v: MixedVisitCase) {
       saved === null
         ? undefined
         : (JSON.parse(saved) as QrLevel).qr.mintQuality,
-    decision: c.settled
-      .at(-1)
-      ?.codePositions?.find((d) => d.levelId === c.levelId),
+    decision,
     loggedNE: logged === undefined ? null : northEast(logged.geo),
     votesAtStart,
     votesAtEnd,
     loopGapM: Math.hypot(dxEnd, dzEnd),
+    /** Each pin's distance from where the truth puts it (m). */
+    pinErrM: Object.fromEntries(
+      pins.map((p) => [p.label, c.settledAt(p.label).distanceTo(p.truth)]),
+    ),
+    /** The new code's saved level, and how far it is from the truth. */
+    newCode:
+      otherText === null
+        ? null
+        : {
+            mintQuality: (JSON.parse(otherText) as QrLevel).qr.mintQuality,
+            errM: distM(northEast((JSON.parse(otherText) as QrLevel).qr.geo!), [
+              otherTruth[0],
+              otherTruth[2],
+            ]),
+          },
+    /** The logged path's median distance from the logged fixes (m). */
+    pathGapM: pathGaps[Math.floor(pathGaps.length / 2)] ?? null,
+    /** Measurements taken while the code was out of view (the walk). */
+    measuredDuringWalk: c.measuredAt.filter(
+      (t) => t > walkStartMs && t <= walkEndMs,
+    ).length,
   };
 }
 
@@ -1156,10 +1288,13 @@ describe(
         storedErrorM: 10,
       });
       expect(v.votesAtEnd).toBeGreaterThan(0);
-      expect(v.decision?.decision).toEqual({
+      // The result line says how much farther to walk.
+      expect(v.decision?.decision).toMatchObject({
         kind: "keep",
         reason: "code-placed",
+        walkMoreM: expect.any(Number),
       });
+      expect(v.decision?.decision.walkMoreM).toBeGreaterThan(20);
       expect(v.afterNE).toEqual(v.storedNE);
       expect(v.mintQuality).toBeUndefined();
       expect(v.loggedNE).toBeNull();
@@ -1202,6 +1337,125 @@ describe(
       expect(v.votesAtEnd).toBe(0);
       expect(v.decision?.decision).toEqual({ kind: "move" });
       expect(distM(v.afterNE!, v.truthNE)).toBeLessThan(1);
+    });
+
+    // Why: the visit's own pins were placed through the same vote-held
+    // alignment as the code. When the settle corrects the code through the
+    // visit's own GPS, a pin far from both looks at it (where it does not
+    // tie to the code) must be corrected with it - through the same fit -
+    // or a visitor lined up on the corrected code finds it as far off as
+    // the code was.
+    it("settles the visit's pins with the corrected code, near a look and far from both", async () => {
+      const v = await mixedVisit({
+        walkM: 38,
+        accuracyM: 5,
+        storedErrorM: 12,
+        pins: true,
+      });
+      expect(v.decision?.decision).toEqual({ kind: "replace" });
+      expect(distM(v.afterNE!, v.truthNE)).toBeLessThan(0.3);
+      expect(v.pinErrM["Near"]).toBeLessThan(0.3);
+      expect(v.pinErrM["Far"]).toBeLessThan(0.3);
+    });
+
+    // Why: the visit log's path is what the summary map draws the visit's
+    // codes against. Through the votes it sits where the stored code put
+    // the visit, apart from its own fixes by the stored error.
+    it("logs the visit's path through the same fit as its codes", async () => {
+      const v = await mixedVisit({ walkM: 38, accuracyM: 5, storedErrorM: 12 });
+      expect(v.pathGapM).not.toBeNull();
+      expect(v.pathGapM!).toBeLessThan(1.5);
+    });
+
+    // Why: a NEW code measured in such a visit was minted through the
+    // vote-held alignment - carrying the stored code's error - but stamped
+    // with the device fixes' quality, so later visits kept it as good and
+    // it disagreed with the corrected stored code for good.
+    it("measures a new code through the visit's own fit, not through the votes", async () => {
+      const v = await mixedVisit({
+        walkM: 38,
+        accuracyM: 5,
+        storedErrorM: 12,
+        newCode: true,
+      });
+      expect(v.newCode).not.toBeNull();
+      expect(v.newCode!.errM).toBeLessThan(0.5);
+      expect(v.newCode!.mintQuality?.gpsAccuracyM).toBe(5);
+    });
+
+    it("stamps a new code with no claim of quality when the walk cannot judge it", async () => {
+      const v = await mixedVisit({
+        walkM: 24,
+        accuracyM: 15,
+        storedErrorM: 12,
+        newCode: true,
+      });
+      expect(v.newCode).not.toBeNull();
+      expect(v.newCode!.mintQuality?.gpsAccuracyM).toBeUndefined();
+      expect(v.newCode!.mintQuality?.alignmentGpsExtentM).toBeUndefined();
+    });
+
+    // Why: a phone keeps reporting fixes on its way back in and at the
+    // second look; the closure must not switch off at the first of them,
+    // or the code carries the walk's whole drift again.
+    it("keeps closing the loop while fixes keep coming on the way back and at the end look", async () => {
+      const v = await mixedVisit({
+        walkM: 38,
+        accuracyM: 5,
+        storedErrorM: 10,
+        driftPct: 3,
+        fixesIndoors: true,
+      });
+      expect(v.loopGapM).toBeGreaterThan(3);
+      expect(v.decision?.decision).toEqual({ kind: "replace" });
+      expect(distM(v.afterNE!, v.truthNE)).toBeLessThan(v.loopGapM / 4);
+    });
+
+    // Why: near a door a phone's fixes jump 10-20 m while it hardly moves,
+    // so their spread alone passes the walk rule. The fit's heading would
+    // be noise, and the code would be replaced and stamped as good from it.
+    it("keeps a code a short walk with jumping fixes cannot judge, and says how much farther to walk", async () => {
+      const v = await mixedVisit({
+        walkM: 8,
+        accuracyM: 5,
+        storedErrorM: 10,
+        jumpM: 15,
+      });
+      expect(v.decision?.decision).toMatchObject({
+        kind: "keep",
+        reason: "code-placed",
+      });
+      expect(v.decision?.decision.walkMoreM).toBeGreaterThan(10);
+      expect(v.afterNE).toEqual(v.storedNE);
+      expect(v.mintQuality).toBeUndefined();
+      expect(v.loggedNE).toBeNull();
+    });
+
+    // Why: a code stamped by a good walk is not churned by every later
+    // visit, voted or not.
+    it("keeps a code a good walk stamped, whatever a later fit sees", async () => {
+      const v = await mixedVisit({
+        walkM: 38,
+        accuracyM: 5,
+        storedErrorM: 10,
+        stamp: { extentM: 60, accuracyM: 4 },
+      });
+      expect(v.decision?.decision).toEqual({
+        kind: "keep",
+        reason: "stored-good",
+      });
+      expect(v.afterNE).toEqual(v.storedNE);
+    });
+
+    // Why: the automatic measurement runs on the render the mint gate
+    // opens on - here the walk's third fix, with the code long out of
+    // view. Taken then from the last stable pose, it is a code event at
+    // the wrong moment, which the visit's notes nearby tie to.
+    it("takes no automatic measurement while the code is out of view", async () => {
+      const v = await mixedVisit({ walkM: 38, accuracyM: 5, storedErrorM: 10 });
+      expect(v.measuredDuringWalk).toBe(0);
+      // The look at the end still measures it.
+      expect(v.c.measuredAt.length).toBeGreaterThan(0);
     });
 
     it("does the same for a code only this device's code book stores", async () => {
@@ -1321,6 +1575,10 @@ describe(
                       decision: v.decision?.decision ?? null,
                       applied: v.decision?.applied ?? false,
                       votesAtEnd: v.votesAtEnd,
+                      // What a guard on the offset would read: how far the
+                      // visit saw the code, and the accuracy it judged by.
+                      offsetM: v.decision?.offsetM ?? null,
+                      candidate: v.decision?.candidate ?? null,
                       stamped: v.mintQuality !== undefined,
                       finalErrM:
                         v.afterNE === null ? null : distM(v.afterNE, v.truthNE),
