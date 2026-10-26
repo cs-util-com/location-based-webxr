@@ -324,6 +324,26 @@ export function drawFloor(
       ),
     ];
   };
+  /** A point on the circle of radius `r` around (x, z), at height `y`. */
+  const rim = (x: number, z: number, r: number, a: number, y: number): P3 => [
+    x + Math.cos(a) * r,
+    y,
+    z + Math.sin(a) * r,
+  ];
+  /** One face per side of an n-sided round shape: each side's two angles
+   *  and the angle of its middle. */
+  const roundSides = (
+    n: number,
+    side: (a0: number, a1: number, am: number) => Face | null,
+  ): (Face | null)[] => {
+    const out: (Face | null)[] = [];
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * 2 * Math.PI;
+      const a1 = ((i + 1) / n) * 2 * Math.PI;
+      out.push(side(a0, a1, (a0 + a1) / 2));
+    }
+    return out;
+  };
   const prism = (
     x: number,
     z: number,
@@ -334,32 +354,21 @@ export function drawFloor(
     c: string,
     top?: string,
   ) => {
-    const out: (Face | null)[] = [];
-    for (let i = 0; i < n; i++) {
-      const a0 = (i / n) * 2 * Math.PI;
-      const a1 = ((i + 1) / n) * 2 * Math.PI;
-      const am = (a0 + a1) / 2;
-      out.push(
-        face(
-          [
-            [x + Math.cos(a0) * r, y0, z + Math.sin(a0) * r],
-            [x + Math.cos(a1) * r, y0, z + Math.sin(a1) * r],
-            [x + Math.cos(a1) * r, y1, z + Math.sin(a1) * r],
-            [x + Math.cos(a0) * r, y1, z + Math.sin(a0) * r],
-          ],
-          [Math.cos(am), 0, Math.sin(am)],
-          c,
-        ),
-      );
-    }
-    const cap: P3[] = [];
-    for (let i = 0; i < n; i++) {
-      cap.push([
-        x + Math.cos((i / n) * 2 * Math.PI) * r,
-        y1,
-        z + Math.sin((i / n) * 2 * Math.PI) * r,
-      ]);
-    }
+    const out = roundSides(n, (a0, a1, am) =>
+      face(
+        [
+          rim(x, z, r, a0, y0),
+          rim(x, z, r, a1, y0),
+          rim(x, z, r, a1, y1),
+          rim(x, z, r, a0, y1),
+        ],
+        [Math.cos(am), 0, Math.sin(am)],
+        c,
+      ),
+    );
+    const cap = Array.from({ length: n }, (_, i) =>
+      rim(x, z, r, (i / n) * 2 * Math.PI, y1),
+    );
     out.push(face(cap, [0, 1, 0], top ?? c));
     return out;
   };
@@ -371,26 +380,14 @@ export function drawFloor(
     h: number,
     n: number,
     c: string,
-  ) => {
-    const out: (Face | null)[] = [];
-    for (let i = 0; i < n; i++) {
-      const a0 = (i / n) * 2 * Math.PI;
-      const a1 = ((i + 1) / n) * 2 * Math.PI;
-      const am = (a0 + a1) / 2;
-      out.push(
-        face(
-          [
-            [x + Math.cos(a0) * r, y0, z + Math.sin(a0) * r],
-            [x + Math.cos(a1) * r, y0, z + Math.sin(a1) * r],
-            [x, y0 + h, z],
-          ],
-          [Math.cos(am) * h, r, Math.sin(am) * h],
-          c,
-        ),
-      );
-    }
-    return out;
-  };
+  ) =>
+    roundSides(n, (a0, a1, am) =>
+      face(
+        [rim(x, z, r, a0, y0), rim(x, z, r, a1, y0), [x, y0 + h, z]],
+        [Math.cos(am) * h, r, Math.sin(am) * h],
+        c,
+      ),
+    );
   const blob = (
     x: number,
     y: number,

@@ -16,7 +16,7 @@
  *
  * @see film-timeline.ts.md
  */
-import { clamp01 } from "./film-math.js";
+import { clamp01 } from "./clamp01.js";
 
 /** One part of the film: its own length and the views it uses. */
 export interface BeatSpec<V extends string = string> {

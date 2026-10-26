@@ -7,7 +7,7 @@
  *
  * @see film-park.ts.md
  */
-import { clamp01 } from "./film-math.js";
+import { clamp01 } from "./clamp01.js";
 
 export type XZ = readonly [number, number];
 export type XYZ = readonly [number, number, number];
@@ -83,7 +83,7 @@ function catmullRom(p0: XZ, p1: XZ, p2: XZ, p3: XZ, t: number): XZ {
 }
 
 /** A Catmull-Rom spline through `ctrl`, `per` points per span. */
-export function spline(ctrl: readonly XZ[], per: number): XZ[] {
+function spline(ctrl: readonly XZ[], per: number): XZ[] {
   const out: XZ[] = [];
   const at = (i: number) => ctrl[Math.min(ctrl.length - 1, Math.max(0, i))]!;
   for (let i = 0; i < ctrl.length - 1; i++) {
@@ -96,7 +96,7 @@ export function spline(ctrl: readonly XZ[], per: number): XZ[] {
   return out;
 }
 
-export function measured(pts: readonly XZ[]): MeasuredPath {
+function measured(pts: readonly XZ[]): MeasuredPath {
   const cum = [0];
   for (let i = 1; i < pts.length; i++) {
     cum.push(

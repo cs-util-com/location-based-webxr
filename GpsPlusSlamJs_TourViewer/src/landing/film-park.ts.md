@@ -8,8 +8,9 @@ y up, z south (towards the viewer).
 
 ## Public API
 
-- Geometry helpers: `spline(ctrl, per)` (Catmull-Rom), `measured(pts)`
-  (`MeasuredPath`: `pts`, `cum`, `len`, `at(s)`, `nearest(x, z)`).
+- The path type `MeasuredPath` (`pts`, `cum`, `len`, `at(s)`,
+  `nearest(x, z)`), built in the module by a Catmull-Rom spline and an arc
+  length table (module-private helpers).
 - The walk: `ROUTE`, `ROUTE_LEN`, `STATIONS` (five, with their arc length
   `s`), `STREAM`.
 - The people: `SPOT`, `LOOK`, `EYES` (the phone's eye per view), `S_FIG`,

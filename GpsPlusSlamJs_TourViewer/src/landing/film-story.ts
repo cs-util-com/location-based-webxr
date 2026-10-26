@@ -30,7 +30,7 @@ import {
 export type ViewName = "over" | "mill" | "poster";
 export type Pill = "visit" | "make" | "saved" | "scan";
 
-export interface Figure {
+interface Figure {
   readonly who: "maker" | "visitor";
   readonly x: number;
   readonly z: number;
@@ -92,7 +92,7 @@ export interface FilmFrame {
 
 const N_PINS = STATIONS.length;
 
-export function blankScene(): SceneState {
+function blankScene(): SceneState {
   return {
     route: 0,
     pins: new Array<number>(N_PINS).fill(0),

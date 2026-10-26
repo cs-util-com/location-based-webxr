@@ -10,14 +10,7 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
-import {
-  backOut,
-  bump,
-  clamp01,
-  easeOut,
-  seg,
-  smoothEase,
-} from "./film-math.js";
+import { backOut, bump, easeOut, seg, smoothEase } from "./film-math.js";
 
 const sm = (x: number) => x * x * (3 - 2 * x);
 const eo = (x: number) => 1 - (1 - x) ** 3;
@@ -49,7 +42,7 @@ describe("film math: the curves are the prototype's, exactly", () => {
   });
 });
 
-describe("film math: seg, bump, clamp01", () => {
+describe("film math: seg and bump", () => {
   it("seg is the clamped progress through [a, b]", () => {
     expect(seg(0.5, 0, 1)).toBe(0.5);
     expect(seg(-1, 0, 1)).toBe(0);
@@ -64,11 +57,10 @@ describe("film math: seg, bump, clamp01", () => {
     expect(bump(-0.2)).toBe(0);
   });
 
-  it("clamp01 reads non-finite input as 0, the framework's contract", () => {
-    expect(clamp01(Number.NaN)).toBe(0);
-    expect(clamp01(Number.POSITIVE_INFINITY)).toBe(0);
-    expect(clamp01(-0.5)).toBe(0);
-    expect(clamp01(1.5)).toBe(1);
-    expect(clamp01(0.25)).toBe(0.25);
+  // A window ramp over a share read from the browser must not pass a
+  // non-number on: the package's clamp01 reads it as 0.
+  it("seg reads a non-finite progress as 0", () => {
+    expect(seg(Number.NaN, 0, 1)).toBe(0);
+    expect(seg(Number.POSITIVE_INFINITY, 0, 1)).toBe(0);
   });
 });

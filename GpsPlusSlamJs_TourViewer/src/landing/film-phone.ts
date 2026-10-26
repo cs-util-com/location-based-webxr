@@ -77,7 +77,7 @@ export function floorAnchors(
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
-export type AnchorKey =
+type AnchorKey =
   "card" | "pic" | "ret" | "pinf" | "next" | "halo" | "posterf" | "call";
 
 /** Each anchored part's place, and the sizes that follow the board. */
@@ -124,7 +124,7 @@ export function anchorPlacement(
   return { at, pinMarginTop: -(A.ground[1] - pin[1]) - 4, board };
 }
 
-export type PartKey =
+type PartKey =
   | "cover"
   | "chip"
   | "place"

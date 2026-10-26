@@ -24,9 +24,8 @@ with every id, class and keyframe prefixed `lc-`.
   path's edge stones, the tufts) and the code's path, in the prototype's
   order from one seed, so the drawing is the same on every load.
 
-Module-private helpers: `seededRandom(seed)`, a xorshift generator in
-[0, 1), and `fakeCodePath(seed?)`, a code-like pattern as one SVG path (21
-by 21 modules with three finder squares; not a readable code).
+The textures' generator and the code's pattern come from `fake-code.ts`
+(`seededRandom`, `fakeCodePath`), which the film's poster draws from too.
 
 ## Invariants & assumptions
 

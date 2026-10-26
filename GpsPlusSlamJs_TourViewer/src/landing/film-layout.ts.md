@@ -10,7 +10,8 @@ camera angles. Laid out against the film's own stage, not the window.
 
 - `filmLayout(w, h, viewportW): FilmLayout` (`{ W, H, portrait, phone, screen, free, polaroid }`).
 - `closeRect(ly)`, `ndcRect(view, ly)`, `viewParams(view, ly)`.
-- `PHONE_SHARE` (0.47 of the width on an upright phone).
+- The phone takes 0.47 of the width on an upright phone (a
+  module-private constant).
 
 ## Invariants
 

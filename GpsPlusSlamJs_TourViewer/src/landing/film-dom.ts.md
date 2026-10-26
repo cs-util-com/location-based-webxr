@@ -14,8 +14,6 @@ captions list. All classes carry the `lf-` prefix.
   `leadDot`, `polaroid`, `phone`, `screen`, `caption`, `captions`, `debug`,
   and `parts` with the phone's pieces and their anchors).
   - Throws when a part is missing (a template edit that broke a selector).
-- `fakeCodePath()`: the poster's code as an SVG path: a fixed pattern
-  with three finder squares, not a code any scanner reads.
 
 ## Invariants
 

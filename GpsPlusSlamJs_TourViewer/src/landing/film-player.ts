@@ -13,9 +13,9 @@
  */
 import type { FilmPosition, Timeline } from "./film-timeline.js";
 
-export type FilmStatus = "waiting" | "playing" | "paused" | "finished";
+type FilmStatus = "waiting" | "playing" | "paused" | "finished";
 /** Who paused it: a tap or the button, the view, or the AR handoff. */
-export type PauseReason = "user" | "view" | "release";
+type PauseReason = "user" | "view" | "release";
 
 export interface PlayerSnapshot {
   readonly status: FilmStatus;

@@ -13,7 +13,7 @@ import type { PlayerSnapshot } from "./film-player.js";
 
 export type SegmentLook = "seen" | "current" | "upcoming";
 
-export interface BarSegment {
+interface BarSegment {
   readonly index: number;
   readonly look: SegmentLook;
   /** How much of the segment is filled, [0, 1]: seen 1, upcoming 0. */

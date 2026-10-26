@@ -13,9 +13,9 @@ bar title and its caption.
 - `BEAT_TITLES`, `BEAT_CAPTIONS`: one per part.
 - `frameAt(beat, t): FilmFrame` (`{ s, u }`); `t` is clamped to the part;
   an unknown part throws `RangeError`.
-- `blankScene()`, `blankPhone()`, `TYPED_TITLE`.
-- Types: `ViewName` (`over | mill | poster`), `Pill`, `Figure`,
-  `SceneState`, `PhoneState`, `FilmFrame`.
+- `blankPhone()`, `TYPED_TITLE`.
+- Types: `ViewName` (`over | mill | poster`), `Pill`, `SceneState`,
+  `PhoneState`, `FilmFrame` (the figure's shape is module-private).
 
 ## The parts
 

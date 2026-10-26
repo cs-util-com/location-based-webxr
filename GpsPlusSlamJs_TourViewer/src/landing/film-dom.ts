@@ -8,37 +8,7 @@
  *
  * @see film-dom.ts.md
  */
-
-/** The fake code's modules as an SVG path (21 x 21, three finder squares). */
-export function fakeCodePath(): string {
-  const n = 21;
-  let sd = Math.imul(8, 2654435761) >>> 0 || 1;
-  let d = "";
-  const r = () => {
-    sd ^= sd << 13;
-    sd >>>= 0;
-    sd ^= sd >>> 17;
-    sd ^= sd << 5;
-    sd >>>= 0;
-    return sd / 4294967296;
-  };
-  const finder = (x: number, y: number) =>
-    (x < 8 && y < 8) || (x > n - 9 && y < 8) || (x < 8 && y > n - 9);
-  for (let y = 0; y < n; y++) {
-    for (let x = 0; x < n; x++) {
-      if (!finder(x, y) && r() < 0.47)
-        d += `M${String(x)} ${String(y)}h1v1h-1z`;
-    }
-  }
-  for (const [fx, fy] of [
-    [0, 0],
-    [n - 7, 0],
-    [0, n - 7],
-  ] as const) {
-    d += `M${String(fx)} ${String(fy)}h7v7h-7zM${String(fx + 1)} ${String(fy + 1)}v5h5v-5zM${String(fx + 2)} ${String(fy + 2)}h3v3h-3z`;
-  }
-  return d;
-}
+import { fakeCodePath } from "./fake-code.js";
 
 const MILL_PHOTO =
   '<rect width="120" height="90" fill="#d8c19c"/><rect width="120" height="44" fill="#e6d6b8"/><path d="M26 76 V40 L58 20 L90 40 V76 Z" fill="#b59c74"/><path d="M22 42 L58 17 L94 42" fill="none" stroke="#6b5538" stroke-width="3"/><circle cx="22" cy="60" r="14" fill="none" stroke="#5d4a33" stroke-width="2.6"/><path d="M22 46 V74 M8 60 H36 M12 50 L32 70 M32 50 L12 70" stroke="#5d4a33" stroke-width="1.2"/><g fill="#6f5a3c"><rect x="44" y="48" width="7" height="9"/><rect x="70" y="48" width="7" height="9"/><path d="M54 76 V64 A5 5 0 0 1 64 64 V76 Z"/></g><rect y="76" width="120" height="14" fill="#c6ab82"/>';

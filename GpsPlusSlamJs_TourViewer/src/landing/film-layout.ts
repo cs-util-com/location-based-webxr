@@ -11,7 +11,7 @@
 import { AZ, AZ2 } from "./film-park.js";
 import type { ViewName } from "./film-story.js";
 
-export interface Rect {
+interface Rect {
   readonly x: number;
   readonly y: number;
   readonly w: number;
@@ -41,7 +41,7 @@ export interface FilmLayout {
 }
 
 /** The phone's width share on an upright phone (the prototype's `ph`, 0.47). */
-export const PHONE_SHARE = 0.47;
+const PHONE_SHARE = 0.47;
 const PHONE_ASPECT = 1.83;
 /** The soft top and bottom edge of the picture the phone keeps clear of. */
 const EDGE = 52;

@@ -9,18 +9,7 @@
  */
 import { cubicBezierEasing } from "gps-plus-slam-app-framework/utils/cubic-bezier-easing";
 
-/**
- * Clamps into [0, 1]; non-finite input reads as 0. The package's one copy
- * (the repo allows such a one-liner once per package), with the framework's
- * contract: the framework does not build its `utils/clamp01` as a
- * deep-importable file.
- */
-export function clamp01(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  if (value < 0) return 0;
-  if (value > 1) return 1;
-  return value;
-}
+import { clamp01 } from "./clamp01.js";
 
 /** Progress of `t` through `[a, b]`, clamped to [0, 1]. Requires a < b. */
 export function seg(t: number, a: number, b: number): number {
