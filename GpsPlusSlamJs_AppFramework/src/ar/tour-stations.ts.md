@@ -90,7 +90,9 @@ code-only station), its pins and photos as `items` at local poses
   `tourStationRecord(station)` maps back to the file's shape (`TourStepRecord`: `{ id, block, advance }`, in that
   key order; every other station field and its position kept), which
   every writer applies before writing. A file step carrying `action`
-  and no `block` is refused: the file format is unchanged.
+  and no `block` is refused: the file format is unchanged. A step handed
+  to `tourStationRecord` without its `action` (one in the file's shape)
+  throws a `TypeError` naming the in-memory field.
 - **Blocks**:
   - `text { text }`;
   - `image { asset, caption? }` (an image asset);

@@ -293,6 +293,12 @@ function orderOf(value: unknown, lenient: boolean): TourOrder {
     // A newer minor's order: offer every station, which never deadlocks
     // (a stricter guess could leave a station nobody can reach).
     if (lenient) return 'any';
+    // An order earlier apps read: said in words a creator can act on.
+    if (value === 'branch') {
+      fail(
+        'this tour lets answers choose the next station, which this version of the app no longer does; change its order to fixed or any'
+      );
+    }
     fail('"order" must be "fixed" or "any"');
   }
   return value as TourOrder;
@@ -403,7 +409,12 @@ export function tourManifestRecord<M extends Pick<TourManifest, 'stations'>>(
 ): Omit<M, 'stations'> & {
   stations: ReturnType<typeof tourStationRecord<TourStation>>[];
 } {
-  return { ...manifest, stations: manifest.stations.map(tourStationRecord) };
+  // An untyped caller may hand no stations: read as none, as the reader
+  // reads a file without them.
+  return {
+    ...manifest,
+    stations: (manifest.stations ?? []).map(tourStationRecord),
+  };
 }
 
 /**

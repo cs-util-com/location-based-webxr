@@ -885,6 +885,26 @@ describe("a step's action and the file's key", () => {
     ).toThrow(/steps\[0\]\.block/);
   });
 
+  it('tourStationRecord refuses a step without its action, naming the field a step holds in memory', () => {
+    // Why: a caller handing the writer a step in the FILE's shape (its
+    // content under `block`) got a message about the file's key, or a
+    // TypeError, that pointed nowhere near the cause.
+    const parsed = parse([station()])[0]!;
+    const fileShaped = {
+      ...parsed,
+      steps: [
+        {
+          id: 'a',
+          block: { kind: 'text', text: 'Hi' },
+          advance: { mode: 'tap' },
+        },
+      ],
+    } as unknown as typeof parsed;
+    expect(() => tourStationRecord(fileShaped)).toThrow(
+      /steps\[0\] has no "action"/
+    );
+  });
+
   it('tourStationRecord writes the action back under block, in the order id, block, advance, every other key as it was', () => {
     const parsed = parse([station({ title: 'Gate' })])[0]!;
     const record = tourStationRecord(parsed);

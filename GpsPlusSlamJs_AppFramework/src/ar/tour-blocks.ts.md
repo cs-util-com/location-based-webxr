@@ -84,6 +84,10 @@ model | character`.
 
 - **Text kept as written.** Only the count ignores whitespace; a reader
   never trims or rewrites a stored text.
+- **No Unicode normalisation here.** Neither the reader nor the writer
+  normalises a text to NFC; the editor writes NFC as the creator types.
+  A later hash of a long text's plain text depends on that, so it stays
+  the editor's job (or moves here whole), never half of each.
 - **Required vs optional texts.** A required text that is missing, not
   text, blank or over its cap fails the file. An optional one that is
   blank reads as absent; one over its cap or not text is left out and

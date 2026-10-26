@@ -288,11 +288,14 @@ describe('the version policy (tour editor plan W3, D5)', () => {
     // Why: a walk branched by answers left the format (game rules will
     // say where a walk goes); a file asking for it at this minor is one
     // this reader cannot honour, and a quiet "fixed" would send a visitor
-    // somewhere the author never meant. From a newer minor any unknown
-    // order reads as "any", which never deadlocks.
+    // somewhere the author never meant. The refusal says so in words a
+    // creator can act on. From a newer minor any unknown order reads as
+    // "any", which never deadlocks.
     expect(() =>
       parseTourManifest(tour({ order: 'branch', stations: [] }))
-    ).toThrow(/"order" must be "fixed" or "any"/);
+    ).toThrow(
+      /this tour lets answers choose the next station, which this version of the app no longer does; change its order to fixed or any/
+    );
     expect(
       parseTourManifest({ version: 3, minor: 9, order: 'branch', stations: [] })
         .order

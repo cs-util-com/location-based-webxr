@@ -10,7 +10,12 @@
  * writes again unchanged.
  *
  * Re-record the fixture only for a change that is MEANT to change the
- * written bytes, and say so in the change.
+ * written bytes, and say so in the change and in its `recordedWith`.
+ *
+ * What the cases do NOT hold: a station's description or card image
+ * (minor 2), the tour details (description, cover, contact), `tourId` and
+ * `needsNoGps`: neither the golden cases nor the generated round trip
+ * below pin their bytes.
  */
 
 import { createHash } from 'node:crypto';

@@ -44,8 +44,9 @@ Guided-setup plan DEC-N7/N8/N9 for the original pins and photos
   file format, unchanged by the in-memory name.
 - `tourManifestRecord(manifest)` - the manifest in the file's shape:
   every station through `tourStationRecord` (`tour-stations.ts`), every
-  other field and the key order as they are. `tourStationRecord` is
-  re-exported from here.
+  other field and the key order as they are; no `stations` (an untyped
+  caller's) maps as none, as the reader reads a file without them.
+  `tourStationRecord` is re-exported from here.
 - `createEmptyTourManifest(): TourManifest` - `{ version: 3, minor: 0,
 order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - `tourItems(tour): TourItem[]` - every station's items, in station order.
@@ -223,8 +224,11 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - `id`s are path-safe segments (`[A-Za-z0-9_-]{1,64}`); a photo's `image`
   is `content/<its id>.<image ext>`.
 - `title` is optional and non-blank, read trimmed; `order` is
-  `fixed | any`; a `branch` order is refused at minors this reader knows
-  and read as `any` from a newer minor (an unknown order degrades).
+  `fixed | any`; a `branch` order is refused at minors this reader knows,
+  in a sentence a creator can act on ("this tour lets answers choose the
+  next station, which this version of the app no longer does; change its
+  order to fixed or any"), and read as `any` from a newer minor (an
+  unknown order degrades).
 - Defensive at the boundary like `qr-level.ts`: hand-editable data, every
   field checked, the writer re-validates.
 

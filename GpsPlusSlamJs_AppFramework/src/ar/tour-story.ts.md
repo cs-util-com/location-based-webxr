@@ -53,7 +53,8 @@ so both versions read them alike.
   two goes too - repeated until nothing changes, because skipping a choice
   can strand another that jumped to it. A block left free by a skipped
   step must still stand in the world, or it is skipped and reported. A
-  `goto` naming a step that does not exist at all still fails.
+  `goto` naming a step that does not exist at all still fails, named by
+  its step's index in the file (skipped steps counted).
 - Strict at this reader's own minor: every one of these fails.
 
 ## Examples

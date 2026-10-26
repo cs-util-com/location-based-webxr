@@ -146,9 +146,10 @@ describe('the story: show, choice, quiz', () => {
     expect(content.blocks.map((b) => b.id)).toEqual(['sign', 'intro']);
   });
 
-  it('a show step names a block of this station only', () => {
-    // Why: another station's block is not drawn here; naming it is a
-    // broken file, as a choice jumping to another station's step is.
+  it('a show step naming no block of this station fails', () => {
+    // Why: a step showing nothing the station has is a broken file, as a
+    // choice jumping to no step is (another station's block: the
+    // manifest's tests, where block ids are tour-wide).
     expect(() =>
       parse({ blocks: [pin], steps: [show('s1', 'other-station-block')] })
     ).toThrow(/must name a block of this station/);
@@ -242,6 +243,35 @@ describe('free and story blocks', () => {
 });
 
 describe('a file of a newer minor (lenient)', () => {
+  it('a goto naming no step is reported at its step index in the file, past a skipped step', () => {
+    // Why: the message is what an author reads to find the broken step; an
+    // index into the steps left after the skipped ones points at the wrong
+    // one.
+    expect(() =>
+      parse(
+        {
+          blocks: [text],
+          steps: [
+            { id: 'later', action: { kind: 'showTogether', blocks: [] } },
+            {
+              id: 'c',
+              action: {
+                kind: 'choice',
+                prompt: '?',
+                options: [
+                  { id: 'x', label: 'X', goto: 'nowhere' },
+                  { id: 'y', label: 'Y' },
+                ],
+              },
+            },
+            show('s', 'intro'),
+          ],
+        },
+        { lenient: true }
+      )
+    ).toThrow(/steps\[1\]\.action\.options\[0\]\.goto/);
+  });
+
   it('a free long text in an unknown view is skipped and reported', () => {
     const drops: TourBlockDrop[] = [];
     const content = parse(

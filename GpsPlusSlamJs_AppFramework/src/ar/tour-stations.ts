@@ -209,8 +209,15 @@ export interface TourStepRecord {
   readonly advance: TourStepAdvance;
 }
 
-/** A step in the file's shape, keys in the order the file writes them. */
-function tourStepRecord(step: TourStep): TourStepRecord {
+/** A step in the file's shape, keys in the order the file writes them.
+ *  A step without its `action` (one handed over in the file's shape) is a
+ *  caller's bug, named here rather than as the file key it would miss. */
+function tourStepRecord(step: TourStep, index: number): TourStepRecord {
+  if ((step as Partial<TourStep>).action === undefined) {
+    throw new TypeError(
+      `tour-stations: steps[${String(index)}] has no "action": a step holds its content as "action" in memory, and the writer writes it under the file key "block"`
+    );
+  }
   return { id: step.id, block: step.action, advance: step.advance };
 }
 
@@ -220,7 +227,10 @@ function tourStepRecord(step: TourStep): TourStepRecord {
 export function tourStationRecord<
   S extends { readonly steps: readonly TourStep[] },
 >(station: S): Omit<S, 'steps'> & { steps: TourStepRecord[] } {
-  return { ...station, steps: station.steps.map(tourStepRecord) };
+  return {
+    ...station,
+    steps: station.steps.map((step, i) => tourStepRecord(step, i)),
+  };
 }
 
 export interface TourStation {

@@ -203,15 +203,17 @@ function parseStep(
   return { id, step: { id, action, advance } };
 }
 
-/** Every `goto` names a step of the station (the skipped ones included). */
+/** Every `goto` names a step of the station (the skipped ones included).
+ *  `read` holds every step of the file, null where a lenient reader
+ *  skipped one, so a failure names the step by its index in the file. */
 function checkGotos(
-  steps: readonly TourStoryStep[],
+  read: readonly { readonly step: TourStoryStep | null }[],
   stepIds: ReadonlySet<string>,
   at: string,
   fail: Fail
 ): void {
-  steps.forEach((step, i) => {
-    if (step.action.kind !== 'choice') return;
+  read.forEach(({ step }, i) => {
+    if (step?.action.kind !== 'choice') return;
     step.action.options.forEach((option, o) => {
       if (option.goto !== undefined && !stepIds.has(option.goto)) {
         fail(
@@ -264,7 +266,7 @@ function readSteps(
   const ids = read.map((r) => r.id);
   assertUnique(ids, 'step', ctx.fail);
   const steps = read.flatMap((r) => (r.step === null ? [] : [r.step]));
-  checkGotos(steps, new Set(ids), at, ctx.fail);
+  checkGotos(read, new Set(ids), at, ctx.fail);
   return ctx.lenient ? withoutStrandedChoices(steps) : steps;
 }
 

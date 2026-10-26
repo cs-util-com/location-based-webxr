@@ -1,4 +1,5 @@
 {
+  "recordedWith": "the version 3 writer at commit 0c14bca6 (the quiz parser shared by both versions), before a step held its content as action; re-recorded only for a change meant to change the written bytes",
   "cases": [
     {
       "input": {
