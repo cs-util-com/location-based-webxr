@@ -67,12 +67,14 @@ export const EDITOR_OSM_FADE_M = 2400;
 
 /**
  * Released map regions kept in memory, by relief device class: about
- * 512 KiB each outside the relief's budget, so a phone (a quarter of a
- * desktop's relief budget) keeps 32 (about 16 MiB), a desktop the
- * globe's 64 (see the sidecar for the measurement).
+ * 512 KiB each outside the relief's budget, the globe's 64 (about 32 MiB)
+ * on a phone too. A phone has a quarter of a desktop's relief budget, but
+ * with 32 a minute of orbiting filled the request ceiling with regions
+ * asked for again (see the sidecar for the measurement); a measurement on
+ * a phone showing the memory is not there would lower it.
  */
 const EDITOR_OSM_KEEP: Readonly<Record<ReliefDeviceClass, number>> =
-  Object.freeze({ phone: 32, desktop: 64 });
+  Object.freeze({ phone: 64, desktop: 64 });
 
 /** The plain ground's colour where no map is drawn. */
 const GROUND_COLOUR = 0xd9d4c7;

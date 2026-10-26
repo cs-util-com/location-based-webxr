@@ -13,8 +13,9 @@ near the camera under the editor's own gate, and the credits both need.
   speed limits open (only an unknown height keeps the map off).
 - `EDITOR_OSM_FADE_M` - 2400 (the map faded out, and how far it is asked
   for).
-- The map's keep of released regions (not exported): 32 on a phone, 64
-  on a desktop (`reliefDeviceClass`), passed to `createGlobeOsmOverlay`.
+- The map's keep of released regions (not exported), by device class
+  (`reliefDeviceClass`): 64 on a phone and on a desktop (see below),
+  passed to `createGlobeOsmOverlay`.
 - `DESKTOP_MIN_WIDTH_PX` - 768; `reliefDeviceClass(widthPx)` -> `"desktop"`
   wider than 768 px (tablets included), `"phone"` otherwise and for a
   width that is not finite and > 0.
@@ -42,7 +43,9 @@ near the camera under the editor's own gate, and the credits both need.
   view, farthest zoom): with the flight's limits (off above 200 m, a 300 m
   fade) none of those views drew any map; with these, every one did, at
   23-83 requests a view, never near the 150 a minute ceiling. A fade
-  below about 1300 m loses the farthest view.
+  below about 1300 m loses the farthest view. The speed limits are open:
+  an orbiting camera jumps across the place, and the map would blank in a
+  turn.
 - **The far map reaches 2400 m at z14** (one zoom coarser than the near
   map's z15; it faded out at 1600 m before). Measured 2026-10-26 with the
   same script and fakes as the height limit below (150 m hills, a GPU,
@@ -58,14 +61,21 @@ near the camera under the editor's own gate, and the credits both need.
     tablet (820 x 1180) orbiting for a minute asks for 30-41 tiles at 600
     and 900 m, about the same as before. Never at the 150 a minute
     ceiling on a desktop or a tablet.
-  - **A phone (390 x 844) reaches the ceiling while orbiting, before and
-    after:** a minute of steady orbiting at 600-900 m and tilts 70-75
-    asks for 146-166 tiles, and the ceiling holds requests for 19-49 s
-    of that minute, with 1600 m and with 2400 m alike. Most are tiles
-    asked again after the phone's keep of 32 released them (274 of 394
-    before, 284 of 417 after). The far map adds about 6-15 % on a phone;
-    the ceiling there comes from the keep, not the reach. The speed limits are open: an orbiting
-    camera jumps across the place, and the map would blank in a turn.
+  - **A phone (390 x 844) with a keep of 32 reached the ceiling while
+    orbiting, before and after:** a minute of steady orbiting at
+    600-1100 m and tilts 70-75 asked for 146-166 tiles, and the ceiling
+    held requests for 19-50 s of that minute, with 1600 m and with
+    2400 m alike (600 m, tilt 70: 148 against 146 tiles, 19 against
+    22 s; 900 m, tilt 75: 166 against 150, 45 against 43 s; 1100 m, tilt
+    75: 150 against 152, 50 against 49 s); at 1100 m and tilt 60 it
+    asked for 16-42 and never filled it. Whole phone runs: the ceiling
+    full for 49.9 against 49.1 s, and for 64.9 against 65.5 s. Most of
+    the requests were tiles asked again after the keep of 32 released
+    them (317 and 373 re-fetches in one pair of runs; 274 of 394 before
+    and 284 of 417 after in the other). The far map adds about 6-15 %
+    on a phone; the ceiling there came from the keep, not the reach. The
+    tablet and the desktop, keeping 64, never re-fetched. So the phone
+    keeps 64 too (the keep below).
 - **The height limit is open too** (a measurement, 2026-10-25). It was
   off above 1250 m over the ground (on again below 1125 m); the orbit's
   1100 m limit reaches that over a valley, and the whole map then went
@@ -86,19 +96,21 @@ near the camera under the editor's own gate, and the credits both need.
   between 150 and 400 m where the switch-off starts was not swept; the
   verdict does not depend on it, since opening the line cost no request
   at either.
-- **The map's keep is smaller on a phone** (32 regions, about 16 MiB;
-  64, about 32 MiB, on a desktop). A kept region (its texture and the
-  library's lock on its source bitmap, about 512 KiB) is memory outside
-  the relief's budget, and a phone's relief budget is a quarter of a
-  desktop's. The same script at 390 px wide over 150 m hills, keeps of
-  0, 16, 32, 64 and 128: re-fetches 192, 133, 61, 8, 8; worst minute
-  158, 151, 132, 104, 104 (the ceiling 150); ceiling full 11.5, 4.1, 0,
-  0, 0 s. 32 removes what a creator sees (the ceiling never full, so no
-  tile waits on it) at seven times the re-fetches of 64, 18 requests a
-  minute under the ceiling. A wider or longer phone session that brings
-  32 to the ceiling, or a phone measurement showing 32 MiB is harmless,
-  would make 64 the phone's choice too. At 1440 px the relief never
-  unloaded in the run, so the desktop's keep was not exercised.
+- **The map's keep is 64 regions on a phone too** (about 32 MiB), chosen
+  per device class. A kept region (its texture and the library's lock on
+  its source bitmap, about 512 KiB) is memory outside the relief's
+  budget, and a phone's relief budget is a quarter of a desktop's, which
+  is why the phone first kept 32 (about 16 MiB). The same script at
+  390 px wide over 150 m hills, a five-minute camera tour, keeps of 0,
+  16, 32, 64 and 128: re-fetches 192, 133, 61, 8, 8; worst minute 158,
+  151, 132, 104, 104 (the ceiling 150); ceiling full 11.5, 4.1, 0, 0,
+  0 s. That tour left 32 under the ceiling, but the minute of orbiting
+  above did not: 32 filled it for 19-50 s of a minute at 600-1100 m and
+  tilts 70-75, mostly with re-fetches, so map regions waited on the
+  ceiling. 64 is what removes that wait. Memory is the open question: a
+  measurement on a phone showing 32 MiB for kept regions is too much
+  would bring the phone back down. At 1440 px the relief never unloaded in the run, so
+  the desktop's keep was not exercised.
 - **The map is attached before any tile loads:** attached to a relief
   already loaded it asked the library for levels it could not give yet.
 - **The template is a plain standard material** (a light ground colour,
@@ -125,7 +137,7 @@ renderer.setAnimationLoop((now) => {
 
 `editor3d-terrain.test.ts`: the gate's values and the overlay accepting
 them; the map kept on at any height over the ground (off only for an
-unknown one); the map's keep by device class (32 on a phone, 64 on a
+unknown one); the map's keep by device class (64 on a phone and on a
 desktop); the device class at 768, 769 and NaN; the credits (Mapterhorn, its
 elevation data, OpenStreetMap); the map attached at once, enabled, under
 the gate and fade; the group's matrix equal to `worldFromEcefAt`; a frame

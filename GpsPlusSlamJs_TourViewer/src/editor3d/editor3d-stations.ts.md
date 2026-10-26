@@ -26,10 +26,10 @@ ray (`pick`).
 - `DEFAULT_CODE_SIZE_M` - 0.2; `BILLBOARD_LIFT_M` - 4.6 (how much higher a
   billboard stands upright than flat; flat it is 0.6 m over its station);
   `CODE_FLAT_GAP_M` - 0.07 (the gap between a code's anchor and the near
-  edge of the code laid flat); `CODE_READABLE_M` - 1 / 0.014, about
+  edge of the code laid flat); `CODE_GROWTH_FROM_M` - 1 / 0.014, about
   71.4 m, and `CODE_GROWTH_MAX` - 8 (see `codeGrowth`).
 - `codeGrowth(distanceM, standing)` - how many times its printed size a
-  code is drawn: the distance over `CODE_READABLE_M`, between 1 and 8,
+  code is drawn: the distance over `CODE_GROWTH_FROM_M`, between 1 and 8,
   weighted by how flat it lies (`1 - standing`). A distance or morph that
   is not a finite number, or a negative distance, gives 1; a morph past 0
   or 1 is taken at that end.
@@ -80,13 +80,21 @@ ray (`pick`).
   `codeGrowth(distance from the camera to its anchor, standing)` times
   its printed size - the storyboard prototype's curve (the distance times
   0.014, between 1 and 8): identical within about 71 m, 8 times from
-  about 571 m. The square and its gap grow together, so its near edge is
+  about 571 m. So from 71 m to 571 m a code keeps the size on screen it
+  has at 71 m, and shrinks beyond. That size is small: a 20 cm code is
+  about 0.2 x 0.014 x 965 = 2.7 px on a 900 px high view (field of view
+  50 degrees, 965 px per radian), about 2.5 px on a 390 x 844 phone. It
+  shows where a code is from far off; it does not make a 20 cm code
+  readable from high above, and under the cap of 8 no curve can (8 x
+  0.2 m is 16 px only up to about 96 m, 8 px up to about 193 m). The
+  square and its gap grow together, so its near edge is
   the grown gap off the anchor and a code on a wall still lies in front of
   it. Picking reads the drawn square, so a click anywhere on the grown
-  code selects it (up to 1.6 m a side for a 20 cm code). It lies on the
-  ground, so what stands over it (a billboard, a pin, a photo or a model)
-  is hit first from above; what it can take is a click on bare ground
-  beside a code. Codes have no gizmo; their point and the inspector's
+  code selects it (up to 1.6 m a side for a 20 cm code). It lies at its
+  own height (a code on a wall, laid flat, hovers there, over what is
+  lower beneath it), so what stands over it (a billboard, a pin, a photo
+  or a model) is hit first from above; what it can take is a click beside
+  a code. At a few pixels on screen that is little. Codes have no gizmo; their point and the inspector's
   printed size do not change. Tilted up, a code is its printed size. Billboards and poles rise with
   `standing`; models keep their pose, and pins stand. `renderTourStation` skips models, so the layer
   adds them at their pose, scaled to their size by `modelScale`; a model

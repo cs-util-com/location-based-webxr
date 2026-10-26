@@ -12,10 +12,12 @@
  * and codes lie flat face up and stand up again - a code laid in front of
  * its anchor, on the side its face looks to, never under the wall it hangs
  * on - and the billboards and their poles rise. Models keep their pose;
- * pins (the phone's labels) stand. Laid flat, a code grows with the
- * camera's distance (`codeGrowth`: its printed size within about 71 m,
- * up to 8 times it), its gap from the anchor with it, so it reads from
- * high above; it is picked where it is drawn.
+ * pins (the phone's labels) stand. Laid flat, a code is drawn larger the
+ * farther the camera is (`codeGrowth`: its printed size within about
+ * 71 m, up to 8 times it from about 571 m), its gap from the anchor with
+ * it, and it is picked where it is drawn. Between those distances it
+ * keeps the size on screen it has at 71 m, a few pixels for a 20 cm code:
+ * it shows where a code is, it does not make it readable from high above.
  *
  * The layer chips turn the station names (billboards and poles) and the
  * codes off and on (`setShown`); the camera's flights ask where a
@@ -110,16 +112,18 @@ export const CODE_FLAT_GAP_M = 0.07;
 /**
  * The camera distance (m) within which a code laid flat is drawn at its
  * printed size: past it, it grows in proportion to the distance (the
- * storyboard prototype's 0.014 per metre, so about 71 m).
+ * storyboard prototype's 0.014 per metre, so about 71 m), keeping the size
+ * on screen it has here, about 2.7 px for a 20 cm code on a 900 px high
+ * view.
  */
-export const CODE_READABLE_M = 1 / 0.014;
+export const CODE_GROWTH_FROM_M = 1 / 0.014;
 
 /** The most a code laid flat grows (times its printed size). */
 export const CODE_GROWTH_MAX = 8;
 
 /**
  * How many times its printed size a code is drawn: the camera's distance
- * over `CODE_READABLE_M`, between 1 and `CODE_GROWTH_MAX`, as far as the
+ * over `CODE_GROWTH_FROM_M`, between 1 and `CODE_GROWTH_MAX`, as far as the
  * code lies flat (`standing` 0 looking straight down: all of it; 1 tilted
  * up: its printed size). A distance or morph that is not a finite number
  * (or a negative distance) draws it at its printed size; a morph past 0
@@ -131,7 +135,7 @@ export function codeGrowth(distanceM: number, standing: number): number {
   const flat = 1 - Math.min(1, Math.max(0, standing));
   const far = Math.min(
     CODE_GROWTH_MAX,
-    Math.max(1, distanceM / CODE_READABLE_M),
+    Math.max(1, distanceM / CODE_GROWTH_FROM_M),
   );
   return 1 + (far - 1) * flat;
 }

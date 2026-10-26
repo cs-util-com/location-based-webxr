@@ -157,18 +157,21 @@ describe("createEditorTerrain", () => {
 
   // Why: a kept map region (its texture and the library's lock on its
   // source bitmap, about 512 KiB) is memory outside the relief's budget,
-  // and a phone's relief budget is a quarter of a desktop's. Measured
-  // 2026-10-25 (the editor at 390 px over a fake tile server answering in
-  // 300 ms, a five-minute scripted camera tour): a keep of 32 left the
-  // request ceiling never full (worst minute 132 of 150) at 61 re-fetches,
-  // 64 at 8 re-fetches. A phone keeps 32 (about 16 MiB), a desktop 64.
-  it("keeps fewer released map regions on a phone than on a desktop", () => {
+  // and a phone's relief budget is a quarter of a desktop's, so the keep
+  // is chosen per device class. Measured 2026-10-25 (the editor at 390 px
+  // over a fake tile server answering in 300 ms): over a five-minute
+  // scripted camera tour a keep of 32 stayed under the request ceiling at
+  // 61 re-fetches, 64 at 8; a minute of orbiting at 600-1100 m and tilts
+  // 70-75 filled the ceiling with 32 for 19-50 s, most of it re-fetches.
+  // A phone keeps 64 too (about 32 MiB), until a phone shows the memory
+  // is not there.
+  it("keeps as many released map regions on a phone as on a desktop", () => {
     const phone = createEditorTerrain({
       renderer: {} as THREE.WebGLRenderer,
       centre: { lat: 48.137393, lng: 11.575493 },
       device: "phone",
     });
-    expect(phone.osm.stats().keep).toBe(32);
+    expect(phone.osm.stats().keep).toBe(64);
     phone.dispose();
     const desktop = make();
     expect(desktop.osm.stats().keep).toBe(64);

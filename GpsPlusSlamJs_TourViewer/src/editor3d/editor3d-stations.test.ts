@@ -30,7 +30,7 @@ import {
   BILLBOARD_LIFT_M,
   CODE_FLAT_GAP_M,
   CODE_GROWTH_MAX,
-  CODE_READABLE_M,
+  CODE_GROWTH_FROM_M,
   DEFAULT_CODE_SIZE_M,
   codeGrowth,
   codeQuaternionNue,
@@ -503,7 +503,7 @@ describe("createStationsLayer", () => {
     const shiftZ = () => sq.position.z - upright.z;
 
     layer.update(view(0, 0, null, 0, false, above(300)));
-    expect(sq.scale.x).toBeCloseTo(300 * (1 / CODE_READABLE_M), 6);
+    expect(sq.scale.x).toBeCloseTo(300 * (1 / CODE_GROWTH_FROM_M), 6);
     expect(sq.scale.y).toBeCloseTo(sq.scale.x, 9);
     expect(layer.stats().codeScales).toEqual([sq.scale.x]);
     // The whole flat layout grows: the near edge stays the grown gap off
@@ -904,12 +904,14 @@ describe("codeQuaternionNue", () => {
 
 describe("codeGrowth", () => {
   // Why: the storyboard prototype's curve - the distance times 0.014,
-  // between 1 and 8 - so a code reads from high above, and is its true
-  // size wherever its true size already reads (within about 71 m).
-  it("is 1 within the distance a printed code reads at, and grows with the distance looking down, up to 8 times", () => {
-    expect(CODE_READABLE_M).toBeCloseTo(1 / 0.014, 9);
+  // between 1 and 8 - so a code laid flat keeps, from about 71 m to about
+  // 571 m, the size on screen it has at 71 m, and is its printed size
+  // nearer. (That size is small: a 20 cm code is about 2.7 px on a 900 px
+  // high view.)
+  it("is 1 within about 71 m, and grows with the distance looking down, up to 8 times", () => {
+    expect(CODE_GROWTH_FROM_M).toBeCloseTo(1 / 0.014, 9);
     for (const standing of [0, 0.5, 1]) {
-      for (const m of [0, 10, 71, CODE_READABLE_M]) {
+      for (const m of [0, 10, 71, CODE_GROWTH_FROM_M]) {
         expect(codeGrowth(m, standing), `${m} m, ${standing}`).toBeCloseTo(
           1,
           12,
@@ -918,7 +920,7 @@ describe("codeGrowth", () => {
     }
     expect(codeGrowth(100, 0)).toBeCloseTo(1.4, 12);
     expect(codeGrowth(300, 0)).toBeCloseTo(4.2, 12);
-    expect(codeGrowth(8 * CODE_READABLE_M, 0)).toBeCloseTo(8, 12);
+    expect(codeGrowth(8 * CODE_GROWTH_FROM_M, 0)).toBeCloseTo(8, 12);
     expect(codeGrowth(5000, 0)).toBe(CODE_GROWTH_MAX);
     expect(CODE_GROWTH_MAX).toBe(8);
   });
