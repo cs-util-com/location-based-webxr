@@ -148,15 +148,32 @@ const reducedMotion = (): boolean =>
   const film = document.getElementById("landing-film");
   const cards = document.querySelector<HTMLElement>(".landing-cards");
   const uses = document.getElementById("landing-uses");
-  mountLanding({
+  const landing = mountLanding({
     mode,
     dom:
       film === null || cards === null || uses === null
         ? null
         : { film, cards, uses },
     reducedMotion: reducedMotion(),
+    watchReducedMotion: (onChange) => {
+      if (typeof matchMedia !== "function") return () => undefined;
+      const query = matchMedia("(prefers-reduced-motion: reduce)");
+      const changed = (): void => {
+        onChange(query.matches);
+      };
+      query.addEventListener("change", changed);
+      return () => {
+        query.removeEventListener("change", changed);
+      };
+    },
     onArStarting: watchArStarting(document),
   });
+  // A returning device's page was scrolled to the setup before the
+  // parts revealed below (and the landing's pictures) showed: it is kept
+  // there while they settle. Called here, before the rest of the wiring,
+  // so a throw further down cannot skip it; its ResizeObserver sees the
+  // reveals that come later.
+  holdLandingSkip(document, { until: landing.ready });
 }
 // `?debug=1` (the apps' shared reader): the QR readout in the AR overlay
 // (plan §66), the visitor's troubleshooting recording (M1b); the visitor
@@ -1124,8 +1141,3 @@ if (mode === "creator") {
 archive.boot().catch((err: unknown) => {
   errorBox.textContent = describeOpenError(err, undefined, mode);
 });
-
-// A returning device's page was scrolled to the setup before the parts
-// revealed above (and the landing's pictures) showed: it is kept there
-// while they settle, until the reader's first input.
-holdLandingSkip(document);

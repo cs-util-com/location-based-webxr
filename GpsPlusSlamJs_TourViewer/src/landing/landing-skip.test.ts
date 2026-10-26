@@ -16,6 +16,8 @@ import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
+import { HOST_KEY } from "../tour-host.js";
+import { WIZARD_LAST_URL_KEY } from "../wizard.js";
 import {
   holdLandingSkip,
   RETURNING_KEYS,
@@ -84,6 +86,9 @@ describe("the landing-skip script in index.html", () => {
 
   interface Run {
     scrolled: ScrollIntoViewOptions[];
+    /** The stand-in stage, its `tabIndex` as the script left it. */
+    stage: { tabIndex: number };
+    focused: (FocusOptions | undefined)[];
     /** `document.documentElement.dataset` after the script. */
     mark: Record<string, string>;
     /** Fires a page event the script listens for. */
@@ -99,9 +104,14 @@ describe("the landing-skip script in index.html", () => {
     storageThrows?: boolean;
   }): Run {
     const scrolled: ScrollIntoViewOptions[] = [];
+    const focused: (FocusOptions | undefined)[] = [];
     const stage = {
+      tabIndex: 0,
       scrollIntoView: (options: ScrollIntoViewOptions) => {
         scrolled.push(options);
+      },
+      focus: (options?: FocusOptions) => {
+        focused.push(options);
       },
     };
     const mark: Record<string, string> = {};
@@ -138,6 +148,8 @@ describe("the landing-skip script in index.html", () => {
     return {
       scrolled,
       mark,
+      stage,
+      focused,
       fire: (type) => {
         for (const fn of listeners.get(type) ?? []) fn();
       },
@@ -176,6 +188,53 @@ describe("the landing-skip script in index.html", () => {
       navigationType: "navigate",
     });
     expect(first.mark["landingSkip"]).toBeUndefined();
+  });
+
+  // The skip moved the view to the setup; a keyboard reader's first Tab
+  // must continue from there, not from the top of the landing (which
+  // would scroll the page back and undo the skip). Focus moves without a
+  // scroll of its own, and only when the page skipped.
+  it("moves the sequential focus start point to the stage with the skip", () => {
+    const run = runInline({
+      mode: "creator",
+      stored: { "tour-viewer.wizard.host": "dropbox" },
+      hash: "",
+      navigationType: "navigate",
+    });
+    expect(run.stage.tabIndex).toBe(-1);
+    expect(run.focused).toEqual([{ preventScroll: true }]);
+    const first = runInline({
+      mode: "creator",
+      stored: {},
+      hash: "",
+      navigationType: "navigate",
+    });
+    expect(first.focused).toEqual([]);
+    expect(first.stage.tabIndex).toBe(0);
+  });
+
+  // The inline copy types the keys out (a classic script cannot import);
+  // the module takes them from their owners, so a renamed key in either
+  // owner would be caught here instead of silently disabling the skip.
+  it("reads the same keys the setup writes", () => {
+    expect(RETURNING_KEYS).toEqual([HOST_KEY, WIZARD_LAST_URL_KEY]);
+    const listed = /\[\s*("[^"]+"),\s*("[^"]+"),?\s*\]\.some/.exec(
+      match?.[1] ?? "",
+    );
+    expect(listed?.slice(1).map((key) => JSON.parse(key) as string)).toEqual([
+      ...RETURNING_KEYS,
+    ]);
+  });
+
+  // On a document that arrives in several network chunks the browser may
+  // paint the landing before the parser reaches the skip, and the jump
+  // would be seen; the head holds the first paint until the script is
+  // parsed.
+  it("holds the first paint until the skip script is parsed", () => {
+    const head = html.slice(0, html.indexOf("</head>"));
+    expect(head).toMatch(
+      /<link\s+rel="expect"\s+href="#landing-skip"\s+blocking="render"\s*\/?>/,
+    );
   });
 
   it("opens at the top where site data is blocked", () => {
@@ -286,14 +345,50 @@ describe("holdLandingSkip", () => {
     }
   }
 
+  /** The window the hold reads: its scroll position, scroll events and
+   *  one timer, all driven by the test. */
+  function fakeView() {
+    const scrolls: (() => void)[] = [];
+    const timers: { fn: () => void; ms: number }[] = [];
+    const view = {
+      scrollY: 0,
+      addEventListener: (type: string, fn: () => void) => {
+        if (type === "scroll") scrolls.push(fn);
+      },
+      removeEventListener: (type: string, fn: () => void) => {
+        if (type === "scroll") scrolls.splice(scrolls.indexOf(fn), 1);
+      },
+      setTimeout: (fn: () => void, ms: number) => {
+        timers.push({ fn, ms });
+        return timers.length;
+      },
+    };
+    return {
+      view,
+      timers,
+      listening: () => scrolls.length,
+      /** The reader (or the browser) scrolls to `y`. */
+      scrollTo(y: number) {
+        view.scrollY = y;
+        for (const fn of [...scrolls]) fn();
+      },
+    };
+  }
+
+  /** The stage sits 1200 px down the page: putting it back at the top
+   *  scrolls the view there. */
+  const STAGE_Y = 1200;
+
   function page(mark: string | undefined) {
     const scrolled: ScrollIntoViewOptions[] = [];
     const dataset: Record<string, string> =
       mark === undefined ? {} : { landingSkip: mark };
+    const fake = fakeView();
     const node = (id: string) => ({
       id,
       scrollIntoView: (options: ScrollIntoViewOptions) => {
         scrolled.push(options);
+        fake.view.scrollY = STAGE_Y;
       },
     });
     const nodes = new Map(
@@ -306,16 +401,21 @@ describe("holdLandingSkip", () => {
       documentElement: { dataset },
       getElementById: (id: string) => nodes.get(id) ?? null,
     };
-    return { doc: doc as unknown as Document, scrolled, dataset };
+    return { doc: doc as unknown as Document, scrolled, dataset, fake };
   }
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
   // Parts of the setup and the landing appear at their own pace after the
   // page's scripts ran (the AR check, the pictures' chunks): each time the
   // layout around the stage changes, the stage goes back to the top, until
   // the reader's first input.
   it("puts the stage back on every resize while the skip holds, then lets go", () => {
-    const { doc, scrolled, dataset } = page("applied");
-    holdLandingSkip(doc, FakeResize as unknown as typeof ResizeObserver);
+    const { doc, scrolled, dataset, fake } = page("applied");
+    holdLandingSkip(doc, {
+      Observer: FakeResize as unknown as typeof ResizeObserver,
+      view: fake.view,
+    });
     expect(scrolled).toHaveLength(1);
     expect(
       FakeResize.last?.watched.map((n) => (n as { id: string }).id),
@@ -326,13 +426,85 @@ describe("holdLandingSkip", () => {
     FakeResize.last?.resize();
     expect(scrolled).toHaveLength(2);
     expect(FakeResize.last?.disconnected).toBe(true);
+    expect(fake.listening()).toBe(0);
+  });
+
+  // The hold must not outlive the page's settling: a reader who scrolls
+  // without a wheel, touch, key or pointer event (a scrollbar drag in
+  // some browsers, a screen reader's browse mode) would otherwise be
+  // pulled back to the stage by any later resize, without end.
+  it("ends a grace period after the landing's parts settled, also when one failed", async () => {
+    for (const settled of [
+      () => Promise.resolve(),
+      () => Promise.reject(new Error("a chunk did not load")),
+    ]) {
+      const until = settled();
+      const { doc, scrolled, dataset, fake } = page("applied");
+      holdLandingSkip(doc, {
+        Observer: FakeResize as unknown as typeof ResizeObserver,
+        until,
+        graceMs: 1000,
+        view: fake.view,
+      });
+      expect(fake.timers).toEqual([]);
+      await settle();
+      expect(fake.timers.map((t) => t.ms)).toEqual([1000]);
+      FakeResize.last?.resize();
+      expect(scrolled).toHaveLength(2);
+      fake.timers[0]?.fn();
+      expect(dataset["landingSkip"]).toBe("released");
+      FakeResize.last?.resize();
+      expect(scrolled).toHaveLength(2);
+      expect(FakeResize.last?.disconnected).toBe(true);
+      expect(fake.listening()).toBe(0);
+    }
+  });
+
+  // Any scroll the hold did not make is the reader's (or the browser's
+  // on the reader's behalf): the page is theirs from then on. The hold's
+  // own scrolls, and a scroll event that reports the position the hold
+  // set, change nothing.
+  it("lets go on a scroll to a position it did not set", () => {
+    const { doc, scrolled, dataset, fake } = page("applied");
+    holdLandingSkip(doc, {
+      Observer: FakeResize as unknown as typeof ResizeObserver,
+      view: fake.view,
+    });
+    fake.scrollTo(STAGE_Y);
+    expect(dataset["landingSkip"]).toBe("applied");
+    fake.scrollTo(STAGE_Y + 0.5);
+    expect(dataset["landingSkip"]).toBe("applied");
+    fake.scrollTo(STAGE_Y - 300);
+    expect(dataset["landingSkip"]).toBe("moved");
+    FakeResize.last?.resize();
+    expect(scrolled).toHaveLength(1);
+    expect(fake.listening()).toBe(0);
   });
 
   it("watches nothing without a skip", () => {
     FakeResize.last = null;
-    const { doc, scrolled } = page(undefined);
-    holdLandingSkip(doc, FakeResize as unknown as typeof ResizeObserver);
+    const { doc, scrolled, fake } = page(undefined);
+    holdLandingSkip(doc, {
+      Observer: FakeResize as unknown as typeof ResizeObserver,
+      until: Promise.resolve(),
+      view: fake.view,
+    });
     expect(scrolled).toEqual([]);
     expect(FakeResize.last).toBeNull();
+    expect(fake.listening()).toBe(0);
+  });
+
+  it("puts the stage back once without ResizeObserver, and still ends", async () => {
+    const { doc, scrolled, dataset, fake } = page("applied");
+    holdLandingSkip(doc, {
+      Observer: undefined,
+      until: Promise.resolve(),
+      view: fake.view,
+    });
+    expect(scrolled).toHaveLength(1);
+    await settle();
+    fake.timers[0]?.fn();
+    expect(dataset["landingSkip"]).toBe("released");
+    expect(fake.listening()).toBe(0);
   });
 });

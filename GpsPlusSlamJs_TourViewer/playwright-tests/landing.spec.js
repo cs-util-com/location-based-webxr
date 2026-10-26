@@ -149,29 +149,54 @@ for (const viewport of VIEWPORTS) {
           : viewport.height <= 560
             ? (viewport.height - 74) / 2 - 14
             : 214;
+        const desktop = viewport.width >= 900;
+        const sideways = !upright && viewport.height <= 560;
+        // The space after a card is padding inside the card's own box, so
+        // it is measured from what the card shows (its text or its
+        // picture with the caption, whichever ends lower) to what the next
+        // one shows (beside each other, the shorter of the two is centred
+        // on the taller).
+        const afterCard = desktop ? 76 : sideways ? 40 : 52;
+        /** @type {number | null} */
+        let shownEnd = null;
         for (let i = 0; i < 5; i++) {
           const card = cards.nth(i);
+          const cardBox = await box(card);
           const text = await box(card.locator(".landing-card-text"));
           const pic = await box(card.locator(".landing-pic"));
           const caption = await box(card.locator("figcaption"));
+          const fig = await box(card.locator(".landing-fig"));
           near(pic.height, pw * 2 + 28);
           near(gap(pic, caption), 9);
+          // The text indented for the marks on the walk's line.
+          near(text.x - cardBox.x, desktop ? 76 : 50);
           if (upright) {
-            // Stacked: the picture under its text, 20 px below.
+            // Stacked: the picture under its text, 20 px below, at the
+            // text's left edge.
             near(gap(text, pic), 20);
+            near(pic.x, text.x);
           } else {
             // Beside its text, with the column gap between (5 % of the
             // view, at most 72 px, on a desktop).
             near(
               pic.x - (text.x + text.width),
-              viewport.width >= 900 ? Math.min(72, viewport.width * 0.05) : 22,
+              desktop ? Math.min(72, viewport.width * 0.05) : 22,
             );
           }
-          if (i > 0) {
-            const before = await box(cards.nth(i - 1));
-            const here = await box(card);
-            near(here.y, before.y + before.height);
+          // Inside the text: kicker, heading, lines.
+          const kickerBox = await box(card.locator(".landing-card-kicker"));
+          const heading = await box(card.locator("h3"));
+          const says = card.locator(".landing-say");
+          near(gap(kickerBox, heading), 6);
+          near(gap(heading, await box(says.first())), sideways ? 8 : 12);
+          const sayCount = await says.count();
+          for (let k = 1; k < sayCount; k++) {
+            near(gap(await box(says.nth(k - 1)), await box(says.nth(k))), 10);
           }
+          if (shownEnd !== null) {
+            near(Math.min(text.y, fig.y) - shownEnd, afterCard);
+          }
+          shownEnd = Math.max(text.y + text.height, fig.y + fig.height);
         }
         // Desktop pictures are a little wider than a phone's.
         if (viewport.width >= 900) {
@@ -244,10 +269,10 @@ for (const viewport of VIEWPORTS) {
         const usesEnd = await box(page.locator(".uc"));
         near(usesHost.y + usesHost.height - (usesEnd.y + usesEnd.height), 40);
 
-        // The stage follows right below, and nothing runs off the side.
-        const landing = await at("#landing");
+        // The stage follows right below the use cases, 40 px under what
+        // they show, and nothing runs off the side.
         const stage = await at("#setup-stage");
-        near(stage.y, landing.y + landing.height);
+        near(stage.y - (usesEnd.y + usesEnd.height), 40);
         // The drawings' own parts are clipped by their boxes: their svg
         // root is checked, not what it draws.
         const past = await page.evaluate(() =>
@@ -273,6 +298,24 @@ for (const viewport of VIEWPORTS) {
     });
   }
 }
+
+// A laptop's window less its browser bar is often about 1280x600: the
+// film fills its box at a fixed aspect, so the box must stay 16:9 there
+// too, never only capped in height.
+test.describe("the film's box on a short desktop window", () => {
+  test.use({
+    viewport: { width: 1280, height: 600 },
+    storageState: FIRST_VISIT,
+  });
+
+  test("stays 16:9 and fits the view", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await openLanding(page);
+    const film = await box(page.locator("#landing-film"));
+    expect(film.width / film.height).toBeCloseTo(16 / 9, 2);
+    expect(film.height).toBeLessThanOrEqual(600 - 24 + 1);
+  });
+});
 
 test.describe("the cards' pictures", () => {
   test.use({
@@ -319,8 +362,15 @@ test.describe("the cards' pictures", () => {
     await hold.click();
     await expect(dock).toHaveAttribute("data-paused", "false");
 
+    // Each card's buttons say which step they belong to, and "Show again"
+    // is a full tap target.
+    const again = card.getByRole("button", { name: "Show again" });
+    await expect(hold).toHaveAccessibleDescription("Add what you know.");
+    await expect(again).toHaveAccessibleDescription("Add what you know.");
+    expect((await box(again)).height).toBeGreaterThanOrEqual(44);
+
     await hold.click();
-    await card.getByRole("button", { name: "Show again" }).click();
+    await again.click();
     await expect(dock).toHaveAttribute("data-paused", "false");
     await expect(dock).toHaveAttribute("data-phase", "playing");
     await expect(hold).toHaveAttribute("aria-pressed", "false");
@@ -425,9 +475,60 @@ test.describe("a returning device", () => {
       .getByTestId("setup-stage")
       .evaluate((el) => Math.round(el.getBoundingClientRect().top));
 
-  test("opens with the setup stage at the top, and keeps it there as the landing mounts", async ({
+  /**
+   * Holds back the module at `pattern` until `release` is called (the dev
+   * server serves each source module by its own URL).
+   *
+   * @param {import("@playwright/test").Page} page
+   * @param {RegExp} pattern
+   */
+  async function holdModule(page, pattern) {
+    /** @type {() => void} */
+    let release = () => undefined;
+    const gate = new Promise((resolve) => {
+      release = () => {
+        resolve(undefined);
+      };
+    });
+    await page.route(pattern, async (route) => {
+      await gate;
+      await route.continue();
+    });
+    return () => {
+      release();
+    };
+  }
+
+  // Before the app's script has run, the page that opened at the setup
+  // shows the setup's map and says the steps are coming, instead of an
+  // empty card outline on blank paper (a cold load on a slow network can
+  // take seconds here).
+  test("shows the map and a loading line at the stage before the app has run", async ({
     page,
   }) => {
+    const release = await holdModule(page, /\/src\/main\.ts/);
+    // Not "load": the page's load waits for the module held back here.
+    await page.goto("/?nocache=1", { waitUntil: "commit" });
+    await expect(page.getByTestId("setup-map")).toBeVisible();
+    await expect(page.getByTestId("setup-loading")).toBeVisible();
+    await expect(page.getByTestId("setup-loading")).toHaveText(
+      "Loading the setup...",
+    );
+    expect(Math.abs(await stageTop(page))).toBeLessThanOrEqual(1);
+    release();
+    await expect(page.getByTestId("setup-card")).toBeVisible();
+    await expect(page.getByTestId("wizard")).toBeVisible();
+    await expect(page.getByTestId("setup-loading")).toBeHidden();
+  });
+
+  // The landing's parts arrive after the jump (here the use cases, held
+  // back on purpose): each one that grows the page above the stage must
+  // not move it. Then the hold ends by itself, so a reader who scrolls in
+  // a way that sends no input event is never pulled back.
+  test("opens with the setup stage at the top, keeps it there as the landing mounts, then lets go", async ({
+    page,
+  }) => {
+    const release = await holdModule(page, /\/src\/landing\/use-cases\.ts/);
     await page.goto("/?nocache=1");
     await expect(page.locator(".landing-cards")).toHaveAttribute(
       "data-mount",
@@ -435,17 +536,116 @@ test.describe("a returning device", () => {
     );
     await expect(page.getByTestId("setup-card")).toBeVisible();
     expect(Math.abs(await stageTop(page))).toBeLessThanOrEqual(1);
-    // Content that grows above the stage later (here a block added to the
-    // use cases) must not move it: the page holds the stage at the top
-    // until the reader's first input.
-    await page.getByTestId("landing-uses").evaluate((el) => {
-      const more = document.createElement("div");
-      more.style.height = "600px";
-      el.append(more);
-    });
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-landing-skip",
+      "applied",
+    );
+    release();
+    await expect(page.getByTestId("landing-uses")).toHaveAttribute(
+      "data-mount",
+      "ready",
+    );
     await expect
       .poll(() => stageTop(page).then(Math.abs))
       .toBeLessThanOrEqual(1);
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-landing-skip",
+      "released",
+    );
+  });
+
+  // A scroll the hold did not make is the reader's, whatever caused it
+  // (a scrollbar drag, a screen reader's browse mode, a script): the page
+  // is the reader's from then on.
+  test("lets go on any scroll the hold did not make", async ({ page }) => {
+    await holdModule(page, /\/src\/landing\/use-cases\.ts/);
+    await page.goto("/?nocache=1");
+    await expect(page.getByTestId("setup-card")).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-landing-skip",
+      "applied",
+    );
+    await page.evaluate(() => {
+      window.scrollBy({ top: -200, behavior: "instant" });
+    });
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-landing-skip",
+      "moved",
+    );
+  });
+
+  // The skip moved the view; the keyboard follows it. A first Tab from the
+  // top would focus the landing's first link and scroll the page back.
+  test("starts the keyboard at the stage", async ({ page }) => {
+    await page.goto("/?nocache=1");
+    await expect(page.getByTestId("setup-card")).toBeVisible();
+    await expect(page.getByTestId("setup-stage")).toBeFocused();
+    await page.keyboard.press("Tab");
+    const inLanding = await page.evaluate(
+      () => document.activeElement?.closest("#landing") != null,
+    );
+    expect(inLanding).toBe(false);
+    expect(Math.abs(await stageTop(page))).toBeLessThan(844 / 2);
+  });
+
+  // The wizard reloads the page mid-setup on purpose (after an AR session,
+  // after the print dialog), and the browser restores where the creator
+  // was. If the use cases' chunk mounts after that restoration (a slow
+  // network), the section must not grow the page above the stage.
+  test("comes back to the stage after a reload, also when the use cases arrive late", async ({
+    page,
+  }) => {
+    await page.goto("/?nocache=1");
+    await expect(page.getByTestId("landing-uses")).toHaveAttribute(
+      "data-mount",
+      "ready",
+    );
+    await page.mouse.move(195, 400);
+    await page.mouse.wheel(0, 1);
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-landing-skip",
+      "moved",
+    );
+    await page.getByTestId("setup-stage").evaluate((el) => {
+      el.scrollIntoView({ block: "start", behavior: "instant" });
+    });
+    expect(Math.abs(await stageTop(page))).toBeLessThanOrEqual(1);
+    const release = await holdModule(page, /\/src\/landing\/use-cases\.ts/);
+    await page.reload();
+    await expect(page.locator(".landing-cards")).toHaveAttribute(
+      "data-mount",
+      "ready",
+    );
+    await expect(page.getByTestId("setup-card")).toBeVisible();
+    release();
+    await expect(page.getByTestId("landing-uses")).toHaveAttribute(
+      "data-mount",
+      "ready",
+    );
+    // The reserved height is a lower bound of the mounted section's (10 px
+    // under it at this width, index.html.md): without it the page landed
+    // about 1 700 px past the stage.
+    await expect
+      .poll(() => stageTop(page).then(Math.abs))
+      .toBeLessThanOrEqual(24);
+  });
+
+  // A first visit keeps the stage at its own height; only a page that
+  // opened at the stage needs it a view tall.
+  test("is a view tall only on a page that skipped", async ({ page }) => {
+    await page.goto("/?nocache=1");
+    await expect(page.getByTestId("setup-card")).toBeVisible();
+    const minHeight = () =>
+      page
+        .getByTestId("setup-stage")
+        .evaluate((el) => getComputedStyle(el).minHeight);
+    expect(await minHeight()).toBe("844px");
+    await page.evaluate(() => {
+      localStorage.clear();
+    });
+    await page.goto("/?nocache=2");
+    await expect(page.getByTestId("setup-card")).toBeVisible();
+    expect(["0px", "auto"]).toContain(await minHeight());
   });
 
   test("leaves a reload to the browser's own scroll restoration", async ({
@@ -525,12 +725,26 @@ test.describe("a first visit", () => {
   });
 });
 
-test("a visitor's page shows no landing and downloads none of it", async ({
-  page,
-}) => {
+/** What the landing downloads for a creator: its chunks' modules (the dev
+ *  server serves each by its own URL) and the hero's still. */
+const LANDING_DOWNLOADS = /landing-cards|film-placeholder|use-case|hero-still/;
+
+/**
+ * Every URL the page asks for from now on.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+function recordRequests(page) {
   /** @type {string[]} */
   const fetched = [];
   page.on("request", (request) => fetched.push(request.url()));
+  return fetched;
+}
+
+test("a visitor's page shows no landing and downloads none of it", async ({
+  page,
+}) => {
+  const fetched = recordRequests(page);
   await page.goto(
     `/?qr=${encodeURIComponent("http://127.0.0.1:5197/ranges-ok/tour.zip")}`,
   );
@@ -540,9 +754,14 @@ test("a visitor's page shows no landing and downloads none of it", async ({
     "data-ar-state",
     "checking",
   );
-  expect(
-    fetched.filter((url) =>
-      /landing-cards|film-placeholder|use-case|hero-still/.test(url),
-    ),
-  ).toEqual([]);
+  expect(fetched.filter((url) => LANDING_DOWNLOADS.test(url))).toEqual([]);
+
+  // The filter sees the landing's downloads at all: a creator's page, in
+  // the same browser afterwards, fetches them (a renamed module would
+  // otherwise let the check above pass on nothing).
+  const creator = recordRequests(page);
+  await openLanding(page);
+  const seen = creator.filter((url) => LANDING_DOWNLOADS.test(url));
+  expect(seen.some((url) => url.includes("landing-cards"))).toBe(true);
+  expect(seen.some((url) => url.includes("use-case"))).toBe(true);
 });

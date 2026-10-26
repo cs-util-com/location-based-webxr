@@ -210,6 +210,85 @@ describe("mountLanding", () => {
     expect(dom.cards.querySelector(".lc-phone")).toBeNull();
     expect(dom.uses.querySelector(".uc")).toBeNull();
   });
+
+  // A reader may turn reduced motion on while the page is open (the
+  // system setting): the moving parts must follow it then, not only after
+  // a reload. The film and the cards are mounted again with the new value;
+  // the use cases do not move and stay as they are.
+  it("mounts the film and the cards again when the reduced-motion setting changes", async () => {
+    const dom = makeDom();
+    const { loaders, calls, destroyed } = spyLoaders();
+    let notify: (reduced: boolean) => void = () => undefined;
+    let unwatched = 0;
+    const mounted = mountLanding({
+      mode: "creator",
+      dom,
+      reducedMotion: false,
+      watchReducedMotion: (onChange) => {
+        notify = onChange;
+        return () => {
+          unwatched += 1;
+        };
+      },
+      onArStarting: noAr,
+      loaders,
+    });
+    await mounted.ready;
+    expect(calls.map((c) => c.part).sort()).toEqual(["cards", "film", "uses"]);
+    notify(false);
+    expect(destroyed).toEqual([]);
+    notify(true);
+    await vi.waitFor(() => {
+      expect(calls).toHaveLength(5);
+    });
+    expect(destroyed.sort()).toEqual(["cards", "film"]);
+    const again = calls.slice(3);
+    expect(again.map((c) => c.part).sort()).toEqual(["cards", "film"]);
+    for (const call of again) {
+      expect(call.options).toMatchObject({ reducedMotion: true });
+    }
+    expect(dom.film.dataset["mount"]).toBe("ready");
+    mounted.destroy();
+    expect(destroyed.sort()).toEqual([
+      "cards",
+      "cards",
+      "film",
+      "film",
+      "uses",
+    ]);
+    expect(unwatched).toBe(1);
+    notify(false);
+    await Promise.resolve();
+    expect(calls).toHaveLength(5);
+  });
+
+  // A change that arrives while a part is still loading must not leave
+  // two of it mounted: the slower, older one is destroyed when it lands.
+  it("keeps one of each part when the setting changes during a load", async () => {
+    const dom = makeDom();
+    const { loaders, calls, destroyed } = spyLoaders();
+    let notify: (reduced: boolean) => void = () => undefined;
+    const mounted = mountLanding({
+      mode: "creator",
+      dom,
+      reducedMotion: false,
+      watchReducedMotion: (onChange) => {
+        notify = onChange;
+        return () => undefined;
+      },
+      onArStarting: noAr,
+      loaders,
+    });
+    notify(true);
+    await mounted.ready;
+    await vi.waitFor(() => {
+      expect(calls.filter((c) => c.part === "film")).toHaveLength(2);
+    });
+    expect(destroyed.filter((p) => p === "film")).toHaveLength(1);
+    expect(
+      calls.filter((c) => c.part === "film").at(-1)?.options,
+    ).toMatchObject({ reducedMotion: true });
+  });
 });
 
 describe("watchArStarting", () => {

@@ -55,9 +55,12 @@ const LANDING_STATIC = [
   "landing-skip.ts",
 ];
 
-/** The landing's dynamic chunks together, gzipped, unminified (the build
- *  here does not minify, so this is an upper bound of what a creator
- *  downloads; their CSS files are not counted). Measured 2026-10-26 at
+/** The landing's dynamic chunks' JavaScript together, gzipped,
+ *  unminified (the build here does not minify, so this bounds the shipped
+ *  JavaScript from above). JavaScript only: the chunks' CSS is not
+ *  counted, nor the hero's still drawing (public/landing, about 16 kB
+ *  gzip for each of its two layouts, one of which a creator's page
+ *  fetches). Measured 2026-10-26 at
  *  26.3 kB with the cards, the use cases and the film's stand-in; the
  *  budget leaves about a fifth of headroom, and the film sets it anew
  *  (landing-mount.ts.md, "Size"). */

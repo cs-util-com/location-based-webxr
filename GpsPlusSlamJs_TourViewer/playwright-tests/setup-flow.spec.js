@@ -340,7 +340,7 @@ test.describe("step 3 on a phone (the owner's r819 screenshot)", () => {
   });
 });
 
-// The intro's spacing and its phone's animation (r820 feedback R1 and the
-// loop that once stood still) are pinned for the landing that replaced it
-// in landing.spec.js: positions and gaps at three viewports, the cards'
-// pictures playing, pausing and holding still under reduced motion.
+// The intro's spacing (the design system zeroes margins) and its phone's
+// loop are pinned for the landing in landing.spec.js: positions and gaps at
+// three viewports, the cards' pictures playing, pausing and holding still
+// under reduced motion.

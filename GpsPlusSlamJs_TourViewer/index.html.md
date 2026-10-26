@@ -200,7 +200,9 @@ drawing).
   `.lc-dock[data-kind]` and, for cards 2 to 5, a pause button over the
   picture `.landing-hold`, authored `hidden`, and "Show again"
   `.landing-again`, invisible but in the layout until the cards' module
-  marks it `data-ready`), a closing line, "Make your own
+  marks it `data-ready`, a 44 px target whose negative margin keeps the
+  caption's line height; both described by their card's heading,
+  `aria-describedby="landing-step-<n>"`), a closing line, "Make your own
   tour" (`.landing-make`: six reasons in one list, two columns from 600 px;
   a line that the setup's steps open in any order; `#setup-begin`), and the
   use cases' host `#landing-uses` (a short static list until their section,
@@ -209,20 +211,34 @@ drawing).
   outer padding, `.landing-uses > .uc`, and sets its heading and line in
   the landing's own sizes).
 - **Reserved sizes:** the film's box is 4:5 on an upright phone and 16:9
-  otherwise, never taller than the view minus 24 px; it shows the film's
+  otherwise, never taller than the view minus 24 px (its width follows the
+  view's height, so a short desktop window such as 1280x600 keeps 16:9);
+  it shows the film's
   last moment as a drawing (`public/landing/hero-still-{portrait,
 landscape}.svg`, `loading="lazy"`, so a visitor's hidden page never
   fetches it). Each picture box is `2 * --pw + 28px` tall, `--pw` the
   phone's width: 206 px (56vw under 368 px), 214 px from 900 px wide, and
   `(100svh - 74px) / 2 - 14px` on a phone held sideways (at most 560 px
   high), where the picture is `1.6 * --pw` wide beside its text.
+  The use cases' host reserves the mounted section's height (`min-height`
+  per column count, `calc(a + b * vw)`): the wizard reloads mid-setup, and
+  a section that grew after the browser restored the scroll left the
+  creator about 1 700 px past the stage. The values are a lower bound of
+  the measured heights in the system face, so the section never ends in a
+  gap: measured 2026-10-26 the section still grows on mount by 8 to 28 px
+  at most widths (145 px at 320, 83 at 639 and 64 at 640, near the column
+  steps) and by 32 to 282 px in the wide face. A host whose chunk failed
+  drops the reservation.
 - **Gaps** (all set here, the design system zeroes margins): the hero's
   kicker 16 px under the band (34 px from 900 px), the `h1` 8 px, lede 10,
   make-line 12 (20 from 900 px), needs 7, button 14, film 18 (28 from
   900 px); on a phone held sideways 6, 6, 4 and 10. Cards: text then
-  picture 20 px (stacked) or side by side with a 56 px (desktop) or 22 px
-  (sideways phone) column gap; caption 9 px under the picture; 52 px (76 px
-  desktop, 40 px sideways) after each card. "Make your own tour": 14 px
+  picture 20 px (stacked) or side by side with a column gap of 5 % of the
+  view, at most 72 px (desktop, from 1440 px wide), or 22 px (sideways
+  phone); caption 9 px under the picture; 52 px (76 px desktop, 40 px
+  sideways) after each card; inside a card the kicker 6 px above the
+  heading, the heading 12 px above its first line (8 px sideways), lines
+  10 px apart, the text indented 50 px for the marks (76 px desktop). "Make your own tour": 14 px
   between heading, list, line and button. `landing.spec.js` pins them at
   390x844, 844x390 and 1440x900, also in a wide face.
 - **Sizes without `clamp()` or `min()`:** the prototypes' fluid sizes are
@@ -239,13 +255,26 @@ landscape}.svg`, `loading="lazy"`, so a visitor's hidden page never
   after `#setup-stage` (marked by the comment `<!-- /setup-stage -->`),
   scrolls the stage to the top, instantly, for a device with a stored host
   or last link, no hash, and a plain navigation (`src/landing/landing-skip.ts`
-  states the rule; `landing-skip.test.ts` holds the copy to it). The stage
-  is at least `100vh` tall for a creator so its top is reachable at that
-  moment. The script marks `<html data-landing-skip="applied">` (`"moved"`
-  on the reader's first wheel, touch, key or pointer input), and `main.ts`
+  states the rule; `landing-skip.test.ts` holds the copy to it). On a page
+  that skipped (`html[data-landing-skip]`) the stage is at least `100vh`
+  tall so its top is reachable at that moment; a first visit keeps the
+  stage's own height. The head's `<link rel="expect" href="#landing-skip"
+blocking="render">` holds the first paint until the script is parsed, so
+  a document that arrives in several chunks never paints the landing
+  before the jump. The script marks `<html data-landing-skip="applied">`
+  (`"moved"` on the reader's first wheel, touch, key or pointer input) and
+  makes the stage the keyboard's start point (`tabindex="-1"`, focus
+  without a scroll; a first Tab from the top would undo the skip). `main.ts`
   holds the stage at the top while the parts above and in it settle
-  (`holdLandingSkip`): scroll anchoring alone followed the step card and
-  left the stage 218 px off.
+  (`holdLandingSkip`, called right after `mountLanding`): scroll anchoring
+  alone followed the step card and left the stage 218 px off. The hold
+  ends on any scroll it did not make (`"moved"`) and a second after the
+  landing's parts settled (`"released"`).
+- **The stage before `main.ts` has run:** the map and the card's step line
+  are shown by CSS for a creator (only a non-creator page hides them, and
+  `main.ts` hides them for a visitor as every `.creator-only` part); the
+  steps (`#wizard`) need `main.ts`, so a page that opened at the stage
+  shows "Loading the setup..." (`.setup-loading`) while they are hidden.
 
 ## Public API
 
@@ -255,7 +284,7 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`
 `landing-still`, `landing-story`, `landing-cards` with five
 `landing-card`, `landing-make` with `setup-begin`, `landing-uses`),
 `setup-stage`, `setup-map` (owns `setup-map-svg` and the
-drawn `map-station-<step>`), `setup-card` (owns `setup-badge`, `setup-of`,
+drawn `map-station-<step>`), `setup-card` (owns `setup-loading`, `setup-badge`, `setup-of`,
 `setup-dots` with `station-<step>`, `setup-nav`, `setup-back`,
 `setup-next`), `step-link` (owns
 `link-status` and `print-url-out`, the launch link in `#link-launch`),

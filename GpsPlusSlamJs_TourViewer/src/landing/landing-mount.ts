@@ -68,6 +68,12 @@ export interface MountLandingOptions {
   /** null where the page has no landing (nothing is loaded then). */
   readonly dom: LandingDom | null;
   readonly reducedMotion: boolean;
+  /** Calls `onChange` with the new value whenever the reader's
+   *  reduced-motion setting changes while the page is open; returns the
+   *  unregistration. The film and the cards are mounted again with it. */
+  readonly watchReducedMotion?: (
+    onChange: (reduced: boolean) => void,
+  ) => () => void;
   readonly onArStarting: (stop: () => void) => () => void;
   readonly loaders?: LandingLoaders;
 }
@@ -92,49 +98,78 @@ export function mountLanding(options: MountLandingOptions): MountedLanding {
     return { ready: Promise.resolve(), destroy: () => undefined };
   }
   const loaders = options.loaders ?? LANDING_LOADERS;
-  const parts: LandingPart[] = [];
+  /** The part mounted in each host, and the latest mount asked of it: a
+   *  mount that lands after a newer one was asked for is destroyed. */
+  const parts = new Map<HTMLElement, LandingPart>();
+  const asked = new Map<HTMLElement, number>();
+  let reduced = options.reducedMotion;
   let destroyed = false;
 
   const mount = async (
     host: HTMLElement,
     load: () => Promise<LandingPart>,
   ): Promise<void> => {
+    const turn = (asked.get(host) ?? 0) + 1;
+    asked.set(host, turn);
     try {
       const mounted = await load();
-      if (destroyed) {
+      if (destroyed || asked.get(host) !== turn) {
         mounted.destroy();
         return;
       }
-      parts.push(mounted);
+      parts.set(host, mounted);
       host.dataset["mount"] = "ready";
     } catch {
       // A chunk that did not load (no network, a stale chunk after a
       // deploy): the static content stays, which is the whole fallback.
-      if (!destroyed) host.dataset["mount"] = "failed";
+      if (!destroyed && asked.get(host) === turn) {
+        host.dataset["mount"] = "failed";
+      }
     }
   };
+  const unmount = (host: HTMLElement): void => {
+    parts.get(host)?.destroy();
+    parts.delete(host);
+  };
 
-  const ready = Promise.all([
+  const mountFilm = () =>
     mount(dom.film, async () =>
       (await loaders.film()).mountLandingFilm(dom.film, {
-        reducedMotion: options.reducedMotion,
+        reducedMotion: reduced,
         onArStarting: options.onArStarting,
       }),
-    ),
+    );
+  const mountCards = () =>
     mount(dom.cards, async () =>
       (await loaders.cards()).mountLandingCards(dom.cards, {
-        reducedMotion: options.reducedMotion,
+        reducedMotion: reduced,
         filmHost: dom.film,
       }),
-    ),
+    );
+
+  const ready = Promise.all([
+    mountFilm(),
+    mountCards(),
     mount(dom.uses, async () => (await loaders.uses()).mountUseCases(dom.uses)),
   ]).then(() => undefined);
+
+  // The parts that move follow the reader's setting while the page is
+  // open: mounted again with it (the use cases do not move).
+  const unwatch = options.watchReducedMotion?.((next) => {
+    if (destroyed || next === reduced) return;
+    reduced = next;
+    unmount(dom.film);
+    unmount(dom.cards);
+    void mountFilm();
+    void mountCards();
+  });
 
   return {
     ready,
     destroy() {
       destroyed = true;
-      for (const part of parts.splice(0)) part.destroy();
+      unwatch?.();
+      for (const host of [...parts.keys()]) unmount(host);
       for (const host of [dom.film, dom.cards, dom.uses]) {
         delete host.dataset["mount"];
       }

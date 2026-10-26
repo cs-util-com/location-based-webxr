@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tour Viewer</title>
+    <!-- A returning device's page is scrolled to the setup by #landing-skip
+         (right below the stage): on a document that arrives in several
+         network chunks the first paint waits until that script is parsed,
+         so the landing is never painted before the jump. -->
+    <link rel="expect" href="#landing-skip" blocking="render" />
     <!--
       design.css is a VERBATIM copy of GpsPlusSlamJs_DesignSystem/design.css,
       written by `pnpm run vendor` there and held byte-identical by
@@ -1006,11 +1011,14 @@
         color: var(--ink);
         font-weight: 600;
       }
+      /* A 44 px tap target (the page's --tap) that takes no more of the
+         caption's line than its text: the negative margin gives back the
+         height beyond the line. */
       .landing-again {
         flex: none;
-        min-height: 32px;
+        min-height: 44px;
         padding: 6px 2px;
-        margin: -6px 0;
+        margin: -12px 0;
         border: 0;
         background: none;
         font: 600 14px/1 var(--font-ui);
@@ -1092,6 +1100,18 @@
       .landing-uses {
         padding-top: 56px;
         padding-bottom: 40px;
+        /* The mounted section's height, reserved before its chunk arrives:
+           the wizard reloads the page mid-setup on purpose, and a section
+           that grew by about 1 500 px after the browser restored the
+           scroll would leave the creator that far past the stage. A lower
+           bound of the measured heights (system face; the wide face is
+           taller) per column count (use-cases.css), so it never leaves a
+           gap below the section; index.html.md lists the measurements. */
+        min-height: calc(1259px + 210.5vw);
+      }
+      /* A section that failed to load keeps its short list, unpadded. */
+      .landing-uses[data-mount="failed"] {
+        min-height: 0;
       }
       .landing-uses > .uc {
         max-width: none;
@@ -1120,6 +1140,30 @@
       .landing-uses-list b {
         color: var(--ink);
         font-weight: 600;
+      }
+
+      @media (width >= 640px) {
+        .landing-uses:not([data-mount="failed"]) {
+          min-height: calc(764px + 51.4vw);
+        }
+      }
+
+      @media (width >= 900px) {
+        .landing-uses:not([data-mount="failed"]) {
+          min-height: calc(937px + 38vw);
+        }
+      }
+
+      @media (width >= 1040px) {
+        .landing-uses:not([data-mount="failed"]) {
+          min-height: calc(699px + 16.25vw);
+        }
+      }
+
+      @media (width >= 1160px) {
+        .landing-uses:not([data-mount="failed"]) {
+          min-height: 907px;
+        }
       }
 
       @media (width < 368px) {
@@ -1151,11 +1195,14 @@
         }
       }
 
-      /* Not upright: the film is 16:9, never taller than the view. */
+      /* Not upright: the film is 16:9, never taller than the view (its
+         width follows the view's height, so a short window keeps the
+         aspect instead of capping the height alone). */
       @media (orientation: landscape), (width >= 900px) {
         .landing-film {
           aspect-ratio: 16 / 9;
-          width: 100%;
+          width: calc((100svh - 24px) * 16 / 9);
+          max-width: 100%;
           max-height: calc(100svh - 24px);
           margin-inline: auto;
         }
@@ -1306,11 +1353,6 @@
           margin-top: 10px;
         }
 
-        .landing-film {
-          width: calc((100svh - 24px) * 16 / 9);
-          max-width: 100%;
-        }
-
         .landing-card {
           grid-template-columns: minmax(0, 1fr) auto;
           column-gap: 22px;
@@ -1341,14 +1383,33 @@
       }
 
       /* The stage: the map beside the card (wide) or above it (phone). */
-      /* At least a view tall: a returning device's page is scrolled to
-         the stage's top before the rest of the page is parsed
-         (#landing-skip, below the stage), and the top must be reachable
-         then. */
       body[data-mode="creator"] .setup-stage {
         max-width: 90rem;
         margin: 0 auto;
+      }
+      /* At least a view tall on a page that skipped the landing: it is
+         scrolled to the stage's top before the rest of the page is parsed
+         (#landing-skip, below the stage), and the top must be reachable
+         then. A first visit keeps the stage's own height. */
+      html[data-landing-skip] body[data-mode="creator"] .setup-stage {
         min-height: 100vh;
+      }
+      /* The skip makes the stage the keyboard's start point (focus, no
+         scroll); it is not a control, so it draws no focus ring. */
+      #setup-stage:focus {
+        outline: none;
+      }
+      /* The steps need main.ts; until it has revealed them, a page that
+         opened at the stage says so instead of showing an empty card. */
+      .setup-loading {
+        display: none;
+      }
+      html[data-landing-skip]
+        body[data-mode="creator"]
+        #setup-card:has(> #wizard[hidden])
+        > .setup-loading {
+        display: block;
+        color: var(--ink-dim);
       }
       .setup-map {
         padding: var(--space-3) var(--space-2) var(--space-2);
@@ -1522,6 +1583,14 @@
         align-items: center;
         gap: var(--space-2);
         margin-bottom: var(--space-2);
+      }
+      /* The map and the card's step line are static markup: shown by CSS
+         for a creator from the first paint, so a page that opens at the
+         stage shows them before main.ts has run (main.ts hides them for a
+         visitor, as every .creator-only part). */
+      body:not([data-mode="creator"]) .setup-map,
+      body:not([data-mode="creator"]) .setup-card-top {
+        display: none;
       }
       .setup-badge {
         width: 28px;
@@ -3864,7 +3933,7 @@
                     <path d="M12 6.3v13" /></svg
                 ></span>
                 <p class="landing-card-kicker">A story you know</p>
-                <h3>It starts with something you know.</h3>
+                <h3 id="landing-step-1">It starts with something you know.</h3>
                 <p class="landing-say">
                   The old mill at the edge of the park turned for a hundred
                   years. You know when it was built and what the stream drove,
@@ -3901,7 +3970,7 @@
                     /></svg
                 ></span>
                 <p class="landing-card-kicker">On site</p>
-                <h3>Walk there with your phone.</h3>
+                <h3 id="landing-step-2">Walk there with your phone.</h3>
                 <p class="landing-say">
                   Open the page on your phone and go to the mill. Stand where
                   the story happened and hold the phone up. A ring on the ground
@@ -3924,6 +3993,7 @@
                   <button
                     type="button"
                     class="landing-hold"
+                    aria-describedby="landing-step-2"
                     aria-pressed="false"
                     aria-label="Pause the picture"
                     hidden
@@ -3935,7 +4005,11 @@
                   <span
                     ><b>On your phone:</b> the ring finds the ground, the
                     station drops onto it.</span
-                  ><button type="button" class="landing-again">
+                  ><button
+                    type="button"
+                    class="landing-again"
+                    aria-describedby="landing-step-2"
+                  >
                     Show again
                   </button>
                 </figcaption>
@@ -3949,7 +4023,7 @@
                     <path d="M13.5 6.5l4 4" /></svg
                 ></span>
                 <p class="landing-card-kicker">Words and pictures</p>
-                <h3>Add what you know.</h3>
+                <h3 id="landing-step-3">Add what you know.</h3>
                 <p class="landing-say">
                   Type a title and a few lines. Add the old photo. They stay on
                   that spot, standing in the air above the station, the way a
@@ -3971,6 +4045,7 @@
                   <button
                     type="button"
                     class="landing-hold"
+                    aria-describedby="landing-step-3"
                     aria-pressed="false"
                     aria-label="Pause the picture"
                     hidden
@@ -3982,7 +4057,11 @@
                   <span
                     ><b>On your phone:</b> a few lines and a photo, fixed to the
                     spot.</span
-                  ><button type="button" class="landing-again">
+                  ><button
+                    type="button"
+                    class="landing-again"
+                    aria-describedby="landing-step-3"
+                  >
                     Show again
                   </button>
                 </figcaption>
@@ -4000,7 +4079,7 @@
                     /></svg
                 ></span>
                 <p class="landing-card-kicker">When it is ready</p>
-                <h3>Hang a code where the walk begins.</h3>
+                <h3 id="landing-step-4">Hang a code where the walk begins.</h3>
                 <p class="landing-say">
                   At the end of your walk the tour is saved. Print its code on a
                   sheet of paper, whenever the tour is ready, and hang it where
@@ -4021,6 +4100,7 @@
                   <button
                     type="button"
                     class="landing-hold"
+                    aria-describedby="landing-step-4"
                     aria-pressed="false"
                     aria-label="Pause the picture"
                     hidden
@@ -4032,7 +4112,11 @@
                   <span
                     ><b>On your phone:</b> the tour is ready, and its code goes
                     up on the noticeboard.</span
-                  ><button type="button" class="landing-again">
+                  ><button
+                    type="button"
+                    class="landing-again"
+                    aria-describedby="landing-step-4"
+                  >
                     Show again
                   </button>
                 </figcaption>
@@ -4048,7 +4132,9 @@
                     <circle cx="12" cy="12" r="3" /></svg
                 ></span>
                 <p class="landing-card-kicker">Your visitors</p>
-                <h3>They scan it, and your stations appear.</h3>
+                <h3 id="landing-step-5">
+                  They scan it, and your stations appear.
+                </h3>
                 <p class="landing-say">
                   Someone stops at the noticeboard and points their phone at the
                   code. The tour opens in the browser. There is nothing to
@@ -4071,6 +4157,7 @@
                   <button
                     type="button"
                     class="landing-hold"
+                    aria-describedby="landing-step-5"
                     aria-pressed="false"
                     aria-label="Pause the picture"
                     hidden
@@ -4082,7 +4169,11 @@
                   <span
                     ><b>On their phone:</b> the code is found, and station 1
                     appears on the path.</span
-                  ><button type="button" class="landing-again">
+                  ><button
+                    type="button"
+                    class="landing-again"
+                    aria-describedby="landing-step-5"
+                  >
                     Show again
                   </button>
                 </figcaption>
@@ -4167,7 +4258,6 @@
           id="setup-map"
           class="creator-only setup-map"
           data-testid="setup-map"
-          hidden
         >
           <div class="setup-map-head">
             <span class="setup-map-title"
@@ -4714,7 +4804,7 @@
           </div>
         </div>
         <div id="setup-card" class="setup-card" data-testid="setup-card">
-          <div class="creator-only setup-card-top" hidden>
+          <div class="creator-only setup-card-top">
             <span class="setup-badge" id="setup-badge" data-testid="setup-badge"
               >1</span
             >
@@ -4728,6 +4818,9 @@
               aria-label="Steps"
             ></nav>
           </div>
+          <p class="setup-loading" data-testid="setup-loading">
+            Loading the setup...
+          </p>
           <ol id="wizard" class="creator-only" data-testid="wizard" hidden>
             <li>
               <!-- Step 1: where the tour lives (polish round M2, A6/A7). The
@@ -6484,9 +6577,9 @@
             navigation !== undefined &&
             navigation.type === "navigate"
           ) {
-            // main.ts puts the stage back at the top once it has revealed
-            // the stage's parts (reassertLandingSkip), until the reader's
-            // first input makes the page theirs.
+            // main.ts keeps the stage at the top while the page settles
+            // (holdLandingSkip), until the reader moves the page or a
+            // moment after the landing's parts have mounted.
             const mark = document.documentElement.dataset;
             mark.landingSkip = "applied";
             for (const input of [
@@ -6503,9 +6596,12 @@
                 { capture: true, once: true, passive: true },
               );
             }
-            document
-              .getElementById("setup-stage")
-              .scrollIntoView({ block: "start", behavior: "instant" });
+            const stage = document.getElementById("setup-stage");
+            stage.scrollIntoView({ block: "start", behavior: "instant" });
+            // The keyboard starts where the view is: a first Tab from the
+            // top would scroll the page back and undo the skip.
+            stage.tabIndex = -1;
+            stage.focus({ preventScroll: true });
           }
         } catch {
           // Site data blocked: a first visit's view, at the top.
