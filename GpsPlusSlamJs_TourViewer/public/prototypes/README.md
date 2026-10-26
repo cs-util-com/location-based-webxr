@@ -46,6 +46,11 @@ wired into its logic: every interaction is faked.
   an any-order tour, and its own answer to what the skip names when
   nothing vouches for the position. They load three.js from unpkg by an
   import map; `window.__visitorWalk` drives them in checks.
+- `use-cases-true-colour/` - the start page's use-case pictures in the
+  look the page does not use (the place dimmed, the tour's pictures in
+  their own colours), with a switch to the shipped route-light look;
+  rendered from `src/landing/use-case-markup.ts`, no script beyond the
+  switch.
 
 **Kept, the chosen and the unchosen** (owner, 2026-10-11 evening): another
 developer may prefer a variant the owner did not choose and ask their own
