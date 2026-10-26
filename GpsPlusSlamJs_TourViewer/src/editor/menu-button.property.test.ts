@@ -76,5 +76,10 @@ describe("menu button: properties over generated menus and keys", () => {
       ),
       { numRuns: 300 },
     );
-  });
+    // 300 generated menus of up to 30 keys each, in jsdom (its
+    // getComputedStyle, focus and innerHTML are most of it): about 2 s
+    // alone, 2.9-4.7 s beside another package's unit tests, and 5.0 and
+    // 8.8 s in the two loaded gate runs it failed (2026-10-25/26), past the
+    // default 5 s. The time out is for a hang, not for a slow machine.
+  }, 30_000);
 });
