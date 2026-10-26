@@ -1,6 +1,6 @@
 /**
- * The landing's step cards in the page: builds R3-4's drawn phone into
- * each card's dock, frames each phone's screen on its part of the drawn
+ * The landing's step cards in the page: builds the maker's-story
+ * prototype's drawn phone into each card's dock, frames each phone's screen on its part of the drawn
  * place, and lets `card-play.ts` decide which picture moves. Loaded by
  * `landing-mount.ts` with `import()`, for a creator only: a visitor never
  * downloads the drawing, its CSS or this module.
@@ -21,8 +21,8 @@ import { LC_DEFS, LC_PHONE, paintTextures } from "./landing-cards-drawing.js";
 
 const NS = "http://www.w3.org/2000/svg";
 
-/** The animated pictures and how long each one's sequence runs (R3-4's
- *  timings: the last entry ends at about these times). */
+/** The animated pictures and how long each one's sequence runs (the
+ *  prototype's timings: the last entry ends at about these times). */
 export const CARD_DURATIONS_MS = {
   place: 2000,
   add: 3300,
@@ -51,7 +51,7 @@ export function shareInView(
 }
 
 /** The world units a phone's screen shows across, and the band of the
- *  drawn place it keeps in view (from R3-4). */
+ *  drawn place it keeps in view (from the prototype). */
 const FOCUS = { w: 440, y0: 250, y1: 760 };
 
 /** The intersection steps the cards are watched at. */
@@ -105,7 +105,7 @@ function buildDock(doc: Document, dock: HTMLElement): Dock | null {
 }
 
 /** Frames a phone's screen on its look point, the place behind it to
- *  match, and pins the AR content to its spots (R3-4's `layout`). */
+ *  match, and pins the AR content to its spots (the prototype's `layout`). */
 function frame(d: Dock): void {
   const sw = d.screen.clientWidth;
   const sh = d.screen.clientHeight;

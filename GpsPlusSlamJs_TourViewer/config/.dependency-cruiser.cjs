@@ -47,6 +47,18 @@ module.exports = {
       to: { path: "^src/editor3d/" },
     },
 
+    // The creator's landing (`src/landing/`) is the start page's first
+    // screen: its parts load on every creator's first visit, so they must
+    // never reach either editor (Leaflet, the globe, the 3D tiles). The two
+    // rules above read only the top level of `src/`, which leaves this
+    // folder out.
+    {
+      name: "landing-not-to-editor",
+      severity: "error",
+      from: { path: "^src/landing/", pathNot: "\\.test\\.ts$" },
+      to: { path: "^src/(editor|editor3d)/" },
+    },
+
     // The walk's camera captures are debug data, shown only in the desktop
     // editor's debug layer (`src/editor/debug-capture-layer.ts`, M1 of the
     // debug-captures plan): no phone or visitor module places them, so

@@ -749,8 +749,8 @@
         color: var(--landing-route-dark);
       }
       .landing h1,
-      .landing h2,
-      .landing h3 {
+      .landing-h2,
+      .landing-card h3 {
         font-family: var(--map-serif);
         font-weight: 600;
         text-transform: none;
@@ -758,7 +758,7 @@
         color: var(--ink);
       }
       .landing h1 em,
-      .landing h2 em {
+      .landing .landing-h2 em {
         font-style: italic;
         color: var(--map-route);
       }
@@ -844,7 +844,7 @@
         max-width: 36em;
         margin-bottom: 26px;
       }
-      .landing h2 {
+      .landing-h2 {
         font-size: 28px;
         line-height: 1.08;
         margin-top: 6px;
@@ -911,7 +911,7 @@
         color: var(--ink-dim);
         padding-top: 9px;
       }
-      .landing h3 {
+      .landing-card h3 {
         font-size: 25px;
         line-height: 1.14;
         margin-top: 6px;
@@ -1086,10 +1086,25 @@
         color: var(--ink-dim);
       }
 
-      /* The use cases' host (their own section replaces this list). */
+      /* The use cases' host: a short list until their section replaces
+         it. The host keeps the landing's rhythm and gutters, so the
+         section's own outer padding is dropped here. */
       .landing-uses {
         padding-top: 56px;
         padding-bottom: 40px;
+      }
+      .landing-uses > .uc {
+        max-width: none;
+        padding: 0;
+      }
+      /* Its heading and line read as the landing's other sections do. */
+      .landing-uses .uc-heading {
+        font-size: 28px;
+        line-height: 1.08;
+        letter-spacing: -0.01em;
+      }
+      .landing-uses .uc-sub {
+        font-size: 17px;
       }
       .landing-uses-list {
         list-style: none;
@@ -1118,11 +1133,12 @@
           font-size: 44px;
         }
 
-        .landing h2 {
+        .landing-h2,
+        .landing-uses .uc-heading {
           font-size: 40px;
         }
 
-        .landing h3 {
+        .landing-card h3 {
           font-size: 32px;
         }
 
@@ -1150,7 +1166,8 @@
           font-size: 56px;
         }
 
-        .landing h2 {
+        .landing-h2,
+        .landing-uses .uc-heading {
           font-size: 44px;
         }
 
@@ -1182,7 +1199,8 @@
           padding-top: 80px;
         }
 
-        .landing-sub {
+        .landing-sub,
+        .landing-uses .uc-sub {
           font-size: 19px;
         }
 
@@ -1196,7 +1214,8 @@
 
         .landing-card {
           grid-template-columns: minmax(0, 1fr) minmax(0, 440px);
-          column-gap: 56px;
+          /* 5 % of the view, at most 72 px (from 1440 px). */
+          column-gap: 5vw;
           padding: 0 0 76px 76px;
           align-items: center;
         }
@@ -1217,7 +1236,7 @@
           padding-top: 6px;
         }
 
-        .landing h3 {
+        .landing-card h3 {
           font-size: 34px;
         }
 
@@ -1245,6 +1264,12 @@
         }
       }
 
+      @media (width >= 1440px) {
+        .landing-card {
+          column-gap: 72px;
+        }
+      }
+
       @media (width >= 1160px) {
         .landing-way {
           padding-inline: calc((100% - var(--landing-wide)) / 2);
@@ -1254,7 +1279,7 @@
           font-size: 60px;
         }
 
-        .landing h3 {
+        .landing-card h3 {
           font-size: 38px;
         }
       }
@@ -1293,7 +1318,7 @@
           align-items: center;
         }
 
-        .landing h3 {
+        .landing-card h3 {
           font-size: 24px;
         }
 
@@ -3819,7 +3844,7 @@
         >
           <div class="landing-head">
             <p class="landing-kicker">How it goes</p>
-            <h2 id="landing-story-title">
+            <h2 id="landing-story-title" class="landing-h2">
               Your story, <em>told in one walk.</em>
             </h2>
             <p class="landing-sub">
@@ -4080,7 +4105,7 @@
           aria-labelledby="landing-make-title"
           data-testid="landing-make"
         >
-          <h2 id="landing-make-title">Make your own tour</h2>
+          <h2 id="landing-make-title" class="landing-h2">Make your own tour</h2>
           <ul class="landing-why" aria-label="Why it works this way">
             <li class="landing-reason">Nothing to install</li>
             <li class="landing-reason">It all runs in the browser</li>
@@ -4110,9 +4135,9 @@
         </section>
 
         <!-- The use cases' host: a short list until their section mounts
-             (it replaces this content). -->
+             (it replaces this content, its heading with it). -->
         <div id="landing-uses" class="landing-uses" data-testid="landing-uses">
-          <h2>What people make with it</h2>
+          <h2 class="landing-h2">What people make with it</h2>
           <ul class="landing-uses-list">
             <li>
               <b>A walk through the town's history.</b> A local history group

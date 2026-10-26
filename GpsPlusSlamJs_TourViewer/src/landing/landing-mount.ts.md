@@ -26,8 +26,9 @@ film's still are static in `index.html` and show without this module.
   - `destroy()` destroys every mounted part and removes the marks; a part
     whose load settles after `destroy()` is destroyed at once.
 - `LANDING_LOADERS` - the default loaders: `./landing-cards.js`,
-  `./film-placeholder.js` and `./use-cases-placeholder.js` until the film
-  and the use cases land (each a one-line change here).
+  `./use-cases.js` (the section replaces the host's static list, its
+  heading with it) and `./film-placeholder.js` until the film lands (a
+  one-line change here).
 - `watchArStarting(document)` - the page's "AR is starting" signal in the
   film's shape, `(stop) => unregister`: a capture-phase click on or inside
   `#enter-ar`, and `body[data-ar-active="true"]` (written by `ar-entry.ts`)
@@ -41,13 +42,24 @@ film's still are static in `index.html` and show without this module.
 ## Invariants & assumptions
 
 - The only `src/landing/` modules in the main page's static graph are this
-  one, `card-play.ts` and `clamp01.ts`; `editor3d-lazy.test.ts` asserts it
-  on the built bundle, and the landing's chunks stay under a size budget
-  there.
+  one and `landing-skip.ts` (`card-play.ts` and `clamp01.ts` are allowed
+  there too, and today ride in the cards' chunk); `editor3d-lazy.test.ts`
+  asserts it on the built bundle.
 - `src/landing/` must not import the editor (`landing-not-to-editor` in
   `config/.dependency-cruiser.cjs`).
 - The film's chunk loads in parallel with the cards' chunk; the cards read
   the film's `data-playing` as it changes, so the order does not matter.
+
+## Size
+
+- The landing's dynamic chunks together (the cards' pictures, the use
+  cases, the film's stand-in), gzipped as the unminified test build writes
+  them, measured 26.3 kB on 2026-10-26; the budget in
+  `editor3d-lazy.test.ts` is 32 kB (about a fifth of headroom). It is an
+  upper bound: the shipped build is minified, and the chunks' CSS files are
+  not counted. The film sets it anew when it lands, under the start page's
+  ceiling of 250 kB gzip for the landing's own code (three.js, already on
+  the page, excluded).
 
 ## Examples
 

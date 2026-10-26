@@ -203,8 +203,11 @@ drawing).
   marks it `data-ready`), a closing line, "Make your own
   tour" (`.landing-make`: six reasons in one list, two columns from 600 px;
   a line that the setup's steps open in any order; `#setup-begin`), and the
-  use cases' host `#landing-uses` (a short static list until their section
-  mounts).
+  use cases' host `#landing-uses` (a short static list until their section,
+  `src/landing/use-cases.ts`, replaces it, its heading with it; the host
+  keeps the landing's section gap and gutters and drops the section's own
+  outer padding, `.landing-uses > .uc`, and sets its heading and line in
+  the landing's own sizes).
 - **Reserved sizes:** the film's box is 4:5 on an upright phone and 16:9
   otherwise, never taller than the view minus 24 px; it shows the film's
   last moment as a drawing (`public/landing/hero-still-{portrait,
@@ -228,8 +231,9 @@ landscape}.svg`, `loading="lazy"`, so a visitor's hidden page never
   `max()` here.
 - **Its moving parts** are mounted by `src/landing/landing-mount.ts`
   (dynamic imports, a creator only; see its sidecar): the cards' pictures
-  (`landing-cards.ts`, which play by `card-play.ts`), the film and the use
-  cases (stand-ins until they land). Each host says `data-mount="ready"`
+  (`landing-cards.ts`, which play by `card-play.ts`), the use cases
+  (`use-cases.ts`) and the film (a stand-in that keeps the still until it
+  lands). Each host says `data-mount="ready"`
   or `"failed"`; a failed one keeps its static content.
 - **The returning-device skip:** `#landing-skip`, a classic script right
   after `#setup-stage` (marked by the comment `<!-- /setup-stage -->`),

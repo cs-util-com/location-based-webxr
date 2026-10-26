@@ -1,6 +1,6 @@
 /*
- * The landing cards' drawn phones (from R3-4), loaded with landing-cards.ts
- * for a creator only. Every class, id and keyframe is prefixed lc- so
+ * The landing cards' drawn phones (from the maker's-story prototype),
+ * loaded with landing-cards.ts for a creator only. Every class, id and keyframe is prefixed lc- so
  * nothing here reaches the rest of the page. The page's own CSS
  * (index.html, "The landing") sets each dock's phone width --pw and
  * reserves the dock's height before this file arrives.
@@ -839,9 +839,11 @@
   }
 }
 
-/* a paused picture freezes where it is */
+/* a paused picture freezes where it is: important, because each
+   sequence's own rule sets the animation shorthand (which resets the play
+   state) with a longer selector than this one */
 .lc-dock[data-paused="true"] * {
-  animation-play-state: paused;
+  animation-play-state: paused !important;
 }
 
 /* the first card is a place, not a phone: drawn at full colour, with the

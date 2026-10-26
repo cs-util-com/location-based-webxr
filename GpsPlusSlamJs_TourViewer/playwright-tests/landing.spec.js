@@ -10,8 +10,8 @@ import { useWideFont } from "./wide-font.js";
  *
  * Why these tests matter: the design system zeroes every margin, so a
  * gap that is not set explicitly is simply gone, and the intro this
- * replaces reached its first reader with its spacing lost while every
- * presence test passed (r820 feedback R1). These pin positions and gaps
+ * replaces once reached its readers with its spacing lost while every
+ * presence test passed. These pin positions and gaps
  * at a phone, a phone held across and a desktop, also in a wide face. The
  * cards' pictures must play only in view, pause on a tap until the next,
  * and hold still under reduced motion. A device that used the setup
@@ -50,6 +50,10 @@ const gap = (
 async function openLanding(page) {
   await page.goto("/?nocache=1");
   await expect(page.locator(".landing-cards")).toHaveAttribute(
+    "data-mount",
+    "ready",
+  );
+  await expect(page.getByTestId("landing-uses")).toHaveAttribute(
     "data-mount",
     "ready",
   );
@@ -156,9 +160,11 @@ for (const viewport of VIEWPORTS) {
             // Stacked: the picture under its text, 20 px below.
             near(gap(text, pic), 20);
           } else {
-            // Beside its text, with the column gap between.
-            expect(pic.x - (text.x + text.width)).toBeGreaterThanOrEqual(
-              viewport.width >= 900 ? 56 - 1 : 22 - 1,
+            // Beside its text, with the column gap between (5 % of the
+            // view, at most 72 px, on a desktop).
+            near(
+              pic.x - (text.x + text.width),
+              viewport.width >= 900 ? Math.min(72, viewport.width * 0.05) : 22,
             );
           }
           if (i > 0) {
@@ -192,17 +198,69 @@ for (const viewport of VIEWPORTS) {
           );
         expect(columns).toBe(viewport.width >= 600 ? 2 : 1);
 
+        // The use cases: their heading the landing's section gap below
+        // "Make your own tour", their grid one, two or three columns wide,
+        // and every gap the section sets (use-cases.ts.md).
+        const usesHost = await at("#landing-uses");
+        const usesTitle = await at(".uc-heading");
+        const usesSub = await at(".uc-sub");
+        near(usesTitle.y - usesHost.y, viewport.width >= 900 ? 80 : 56);
+        near(usesTitle.x, kicker.x);
+        near(gap(usesTitle, usesSub), 8);
+        // Its heading and line in the landing's own sizes.
+        const size = (/** @type {string} */ selector) =>
+          page
+            .locator(selector)
+            .first()
+            .evaluate((el) => getComputedStyle(el).fontSize);
+        expect(await size(".uc-heading")).toBe(
+          await size("#landing-make-title"),
+        );
+        expect(await size(".uc-sub")).toBe(
+          await size(".landing-story .landing-sub"),
+        );
+        const shownGrid = page.locator(".uc > .uc-grid");
+        near(gap(usesSub, await box(shownGrid)), 22);
+        const shown = shownGrid.locator(".uc-item");
+        await expect(shown).toHaveCount(6);
+        const usesColumns =
+          viewport.width >= 1040 ? 3 : viewport.width >= 640 ? 2 : 1;
+        const first = await box(shown.nth(0));
+        const below = await box(shown.nth(usesColumns));
+        near(gap(first, below), 26);
+        if (usesColumns > 1) {
+          const beside = await box(shown.nth(1));
+          near(beside.y, first.y);
+          near(beside.x - (first.x + first.width), 22);
+        }
+        const phone = await box(shown.nth(0).locator(".uc-phone"));
+        const title = await box(shown.nth(0).locator(".uc-title"));
+        const sentence = await box(shown.nth(0).locator(".uc-sentence"));
+        near(gap(phone, title), 12);
+        near(gap(title, sentence), 5);
+        const toggle = await at(".uc-more-toggle");
+        near(gap(await box(shownGrid), toggle), 28);
+        expect(toggle.height).toBeGreaterThanOrEqual(44);
+        const usesEnd = await box(page.locator(".uc"));
+        near(usesHost.y + usesHost.height - (usesEnd.y + usesEnd.height), 40);
+
         // The stage follows right below, and nothing runs off the side.
         const landing = await at("#landing");
         const stage = await at("#setup-stage");
         near(stage.y, landing.y + landing.height);
+        // The drawings' own parts are clipped by their boxes: their svg
+        // root is checked, not what it draws.
         const past = await page.evaluate(() =>
           [...document.querySelectorAll("#landing *")]
+            .filter((el) => el.parentElement?.closest("svg") == null)
             .filter((el) => {
               const r = el.getBoundingClientRect();
               return r.width > 0 && r.right > window.innerWidth + 0.5;
             })
-            .map((el) => `${el.tagName.toLowerCase()}.${el.className}`)
+            .map(
+              (el) =>
+                `${el.tagName.toLowerCase()}.${el.getAttribute("class") ?? ""}`,
+            )
             .filter((what) => !what.includes("lc-")),
         );
         expect(past).toEqual([]);
@@ -289,6 +347,72 @@ test.describe("the cards' pictures", () => {
   });
 });
 
+test.describe("the use cases", () => {
+  test.use({
+    viewport: { width: 390, height: 844 },
+    storageState: FIRST_VISIT,
+  });
+
+  // Why: twenty examples would outweigh the page, so six show and the
+  // rest wait behind "More ideas", a native disclosure that must open from
+  // the keyboard as well as by a tap, and every picture must say what it
+  // shows to a screen reader.
+  test("show six, open the other fourteen by Enter or Space, and describe every picture", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await openLanding(page);
+    const section = page.getByRole("region", {
+      name: "What people make with it",
+    });
+    await expect(section).toBeVisible();
+    await expect(section.getByRole("heading", { level: 2 })).toHaveCount(1);
+    const items = section.locator(".uc-item");
+    await expect(items).toHaveCount(20);
+    const visible = () =>
+      // A closed details element keeps its content laid out but hidden
+      // (content-visibility), so its size says nothing; this does.
+      items.evaluateAll(
+        (els) => els.filter((el) => el.checkVisibility()).length,
+      );
+    expect(await visible()).toBe(6);
+    const more = section.locator("details.uc-more");
+    const toggle = more.locator("summary");
+    await expect(more).not.toHaveAttribute("open");
+    await expect(toggle).toHaveText("More ideas (14)");
+
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(more).toHaveAttribute("open", "");
+    await expect(toggle).toHaveText("Fewer ideas");
+    expect(await visible()).toBe(20);
+    // The folded grid sits 26 px below the toggle.
+    const toggleBox = await box(toggle);
+    const folded = await box(more.locator(".uc-grid"));
+    expect(
+      Math.abs(folded.y - (toggleBox.y + toggleBox.height) - 26),
+    ).toBeLessThanOrEqual(1);
+
+    await page.keyboard.press("Enter");
+    await expect(more).not.toHaveAttribute("open");
+    await page.keyboard.press("Space");
+    await expect(more).toHaveAttribute("open", "");
+    expect(await visible()).toBe(20);
+
+    const screens = section.getByRole("img");
+    await expect(screens).toHaveCount(20);
+    const labels = await screens.evaluateAll((els) =>
+      els.map((el) => el.getAttribute("aria-label") ?? ""),
+    );
+    expect(labels.filter((label) => label.trim().length < 10)).toEqual([]);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth - window.innerWidth,
+      ),
+    ).toBeLessThanOrEqual(0);
+  });
+});
+
 test.describe("a returning device", () => {
   // The suite's default storage holds a chosen host: a returning device.
   test.use({ viewport: { width: 390, height: 844 } });
@@ -308,9 +432,9 @@ test.describe("a returning device", () => {
     );
     await expect(page.getByTestId("setup-card")).toBeVisible();
     expect(Math.abs(await stageTop(page))).toBeLessThanOrEqual(1);
-    // Content that arrives above the stage later (the use cases' section
-    // is taller than its stand-in) must not move it: the page holds the
-    // stage at the top until the reader's first input.
+    // Content that grows above the stage later (here a block added to the
+    // use cases) must not move it: the page holds the stage at the top
+    // until the reader's first input.
     await page.getByTestId("landing-uses").evaluate((el) => {
       const more = document.createElement("div");
       more.style.height = "600px";
@@ -347,9 +471,9 @@ test.describe("a returning device", () => {
       .poll(() =>
         page
           .locator("#landing-make-title")
-          .evaluate((el) => Math.round(el.getBoundingClientRect().top)),
+          .evaluate((el) => Math.abs(el.getBoundingClientRect().top)),
       )
-      .toBe(0);
+      .toBeLessThanOrEqual(1);
     expect(await stageTop(page)).toBeGreaterThan(0);
   });
 });
@@ -402,9 +526,7 @@ test("a visitor's page shows no landing and downloads none of it", async ({
   );
   expect(
     fetched.filter((url) =>
-      /landing-cards|film-placeholder|use-cases-placeholder|hero-still/.test(
-        url,
-      ),
+      /landing-cards|film-placeholder|use-case|hero-still/.test(url),
     ),
   ).toEqual([]);
 });

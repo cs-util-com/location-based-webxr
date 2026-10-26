@@ -1,6 +1,6 @@
 /**
- * The landing cards' drawing: R3-4's drawn place (one scene, shown in every
- * phone and behind it) and its drawn phone, as markup strings, with ids,
+ * The landing cards' drawing: the maker's-story prototype's drawn place
+ * (one scene, shown in every phone and behind it) and its drawn phone, as markup strings, with ids,
  * classes and keyframes prefixed `lc-` so nothing collides with the page.
  * Generated once from the prototype and kept by hand since; the scene's
  * texture (foliage, stones, grass, the fake code's pattern) is drawn into
@@ -292,7 +292,7 @@ function tuftPath(x: number, y: number, h: number, w: number): string {
 const LEAF = ["#3c522d", "#4d6636", "#61793f", "#7a934e", "#97ad63", "#b5c47e"];
 const FAR_LEAF = ["#8c9e84", "#9aab90", "#a9b89e", "#b6c3aa"];
 
-/** The path's edges at a height of the drawn place (from R3-4). */
+/** The path's edges at a height of the drawn place (from the prototype). */
 const leftEdge = (y: number): number => 485 - (297 * (y - 472)) / 628;
 const rightEdge = (y: number): number => 535 + (298 * (y - 472)) / 628;
 

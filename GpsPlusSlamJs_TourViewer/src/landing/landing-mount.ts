@@ -51,7 +51,7 @@ export interface LandingLoaders {
 export const LANDING_LOADERS: LandingLoaders = {
   cards: () => import("./landing-cards.js"),
   film: () => import("./film-placeholder.js"),
-  uses: () => import("./use-cases-placeholder.js"),
+  uses: () => import("./use-cases.js"),
 };
 
 export interface LandingDom {

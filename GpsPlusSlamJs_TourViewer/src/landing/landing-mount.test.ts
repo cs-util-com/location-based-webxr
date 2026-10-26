@@ -179,7 +179,7 @@ describe("mountLanding", () => {
     expect(late.destroyed.sort()).toEqual(["cards", "film", "uses"]);
   });
 
-  it("mounts the real chunks: the cards' pictures, the film's and the use cases' stand-ins", async () => {
+  it("mounts the real chunks: the cards' pictures, the use cases, the film's stand-in", async () => {
     const dom = makeDom();
     const registered: (() => void)[] = [];
     const onArStarting = (stop: () => void) => {
@@ -195,7 +195,10 @@ describe("mountLanding", () => {
     await mounted.ready;
     expect(dom.film.dataset["film"]).toBe("still");
     expect(registered).toHaveLength(1);
-    expect(dom.uses.dataset["uses"]).toBe("static");
+    // The use cases' section replaces the host's static list, its own
+    // heading with it: one "What people make with it", never two.
+    expect(dom.uses.querySelectorAll("section.uc")).toHaveLength(1);
+    expect(dom.uses.querySelectorAll("h2")).toHaveLength(1);
     expect(
       dom.cards.querySelector('[data-kind="place"] .lc-phone'),
     ).not.toBeNull();
@@ -205,6 +208,7 @@ describe("mountLanding", () => {
     mounted.destroy();
     expect(dom.film.dataset["film"]).toBeUndefined();
     expect(dom.cards.querySelector(".lc-phone")).toBeNull();
+    expect(dom.uses.querySelector(".uc")).toBeNull();
   });
 });
 
