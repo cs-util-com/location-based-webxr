@@ -6,15 +6,14 @@
  * tour's north-up-east axes turned into east-up-south. A swapped axis or a
  * sign puts a tour mirrored or tens of metres under the ground, and still
  * draws something plausible. These check the matrix against points
- * computed by hand and against the ellipsoid itself, and the model size
- * rule against boxes of known size.
+ * computed by hand and against the ellipsoid itself.
  */
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { worldFromEcefAt } from "gps-plus-slam-globe/editor";
 
-import { modelScale, pointRootMatrix } from "./editor3d-tour-root.js";
+import { pointRootMatrix } from "./editor3d-tour-root.js";
 
 const FRAME = { lat: 48.137393, lng: 11.575493 };
 const DEG = Math.PI / 180;
@@ -128,36 +127,5 @@ describe("pointRootMatrix", () => {
         new THREE.Matrix4(),
       ),
     ).toThrow(RangeError);
-  });
-});
-
-describe("modelScale", () => {
-  // Why: a placed model's `sizeM` is its LARGEST side after scaling (the
-  // format's one rule): a box 2 x 4 x 1 m asked to be 8 m is scaled by 2,
-  // whatever its own node transforms are.
-  it("scales the largest side of the model's box to the size", () => {
-    const model = new THREE.Group();
-    const box = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 1));
-    model.add(box);
-    expect(modelScale(model, 8)).toBeCloseTo(2, 9);
-    // A node transform counts: the same box scaled by 3 inside the model.
-    box.scale.setScalar(3);
-    expect(modelScale(model, 6)).toBeCloseTo(0.5, 9);
-  });
-
-  // Why: a model with nothing to measure (an empty scene, a point) must
-  // not be blown up to infinity; it is drawn at its own size.
-  it("keeps a model with no extent at its own size", () => {
-    expect(modelScale(new THREE.Group(), 5)).toBe(1);
-    const flat = new THREE.Group();
-    flat.add(new THREE.Mesh(new THREE.PlaneGeometry(0, 0)));
-    expect(modelScale(flat, 5)).toBe(1);
-  });
-
-  it("refuses a size that is not finite and > 0", () => {
-    const model = new THREE.Group();
-    model.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)));
-    expect(() => modelScale(model, 0)).toThrow(RangeError);
-    expect(() => modelScale(model, Number.NaN)).toThrow(RangeError);
   });
 });

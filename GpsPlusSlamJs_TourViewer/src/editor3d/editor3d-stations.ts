@@ -54,11 +54,8 @@ import {
   renderTourStation,
   type RenderedTourObjects,
 } from "../content-placement.js";
-import {
-  modelScale,
-  pointRootMatrix,
-  type GlobeEllipsoid,
-} from "./editor3d-tour-root.js";
+import { modelScale } from "../model-scale.js";
+import { pointRootMatrix, type GlobeEllipsoid } from "./editor3d-tour-root.js";
 import { NEAR_STATIONS, nearStations } from "./editor3d-visibility.js";
 
 /** What the layer needs from the page (the drawing is the page's: Node,
