@@ -123,6 +123,42 @@ const EXEMPT = new Map([
     'design prototype in the inspiration gallery, wired to nothing',
   ],
   [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2g-ground-laid-ribbon/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2h-ground-chevron-vanes/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2i-ground-chevron-track/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2j-ground-footprints/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2k-ground-guide-lights/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2l-ground-floor-arrow/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2m-ground-stakes/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2n-ground-runner/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2o-ground-arc/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
     'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-3-pictures/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],

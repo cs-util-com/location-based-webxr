@@ -133,6 +133,37 @@ wired into its logic: every interaction is faked.
   error" button that draws every block and its target 1 m off; made
   2026-10-25. Section 0 of each page's notes says what it costs and where
   it fails.
+- `station-blocks-2g-ground-laid-ribbon/` ... `station-blocks-2o-ground-arc/` -
+  nine more ground views for the short-text block, each a copy of
+  `station-blocks-2c-ground-chevron-ribbon/` with only that view replaced.
+  Everything on the ground is laid out once from the record (the block's
+  pose and `pointsTo`) and never moves or changes shape while the visitor
+  walks around it; only the small caption plate may turn. A Sun button
+  joins the 1 m error button. `window.__stationBlock.groundInfo()` returns a
+  signature of the ground marks in world space (every vertex to 1 mm), so a
+  check can prove they stay put; made 2026-10-25.
+  - `station-blocks-2g-ground-laid-ribbon/` - the knee ribbon laid once
+    along the block's turn, with a light running toward the target.
+  - `station-blocks-2h-ground-chevron-vanes/` - a row of separate chevrons
+    at knee height, pitched nose-up. Weakness: from the target side they
+    seem to point away.
+  - `station-blocks-2i-ground-chevron-track/` - a flat track on the paving
+    with raised chevrons. Weakness: with the error toward the wall the head
+    runs into the step.
+  - `station-blocks-2j-ground-footprints/` - footprints from a pair to stand
+    on to a pair facing the target. Weakness: from 12 m behind, a speck.
+  - `station-blocks-2k-ground-guide-lights/` - lights set into the paving,
+    ending in a V. Weakness: in sun only the dark rings read.
+  - `station-blocks-2l-ground-floor-arrow/` - one short solid arrow at the
+    block's spot. Weakness: it says "that way" and does not lead there.
+  - `station-blocks-2m-ground-stakes/` - a funnel of stakes with pennants.
+    Weakness: the most clutter and the most expensive rebuild.
+  - `station-blocks-2n-ground-runner/` - a woven runner with the caption
+    woven in at its start. Weakness: the woven caption reads only from
+    behind the start and close by.
+  - `station-blocks-2o-ground-arc/` - a rail in one arc to a ring before the
+    target. Weakness: it passes through head and chest height near both
+    ends.
 
 **Kept, the chosen and the unchosen** (decided 2026-10-11 evening): another
 developer may prefer a variant that was not chosen and ask their own
