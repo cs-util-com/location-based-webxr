@@ -538,11 +538,23 @@ export const PROJECTS = [
   // editor imports gps-plus-slam-osm through `exports` -> dist (the geoid,
   // the relief's constants), so the OSM build runs FIRST, before the first
   // stage that reads a dist, for the reason OsmDemo's does (see there).
+  // Its lint:css also reads the landing's own sheets (src/landing/*.css,
+  // imported by its dynamic chunks), which the HTML glob never reached; the
+  // editor's sheets under src/editor are not linted yet.
   {
     ...demoAppProject("GpsPlusSlamJs_TourViewer"),
     stages: [
       BUILD_OSM_STAGE,
-      ...demoAppStages(["./src/workers/occlusion-mesher.worker.ts"]),
+      ...demoAppStages(["./src/workers/occlusion-mesher.worker.ts"]).map(
+        (stage) =>
+          stage.name === "lint:css"
+            ? {
+                ...stage,
+                command:
+                  'stylelint "src/landing/**/*.css" "**/*.html" --config config/stylelint.config.mjs --allow-empty-input',
+              }
+            : stage,
+      ),
     ],
   },
   {
