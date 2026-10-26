@@ -81,6 +81,9 @@ const entryFiles = [
   'src/ar/tour-story.ts',
   'src/ar/tour-signed-manifest.ts',
   'src/ar/tour-signature.ts',
+  // The station text's Markdown subset, its plain text and that text's
+  // hash, deep-imported by the Tour Viewer the same way.
+  'src/ar/tour-markdown.ts',
   'src/ar/frame-loop.ts',
   // Shared hit-test reticle driver (2026-07-18 promotion of the three
   // app-local copies) — deep-imported by consumer apps via the `./ar/*`

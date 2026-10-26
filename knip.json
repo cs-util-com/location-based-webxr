@@ -60,6 +60,7 @@
         "src/ar/qr/qr-anchor-mint.ts",
         "src/ar/tour-blocks.ts",
         "src/ar/tour-story.ts",
+        "src/ar/tour-markdown.ts",
         "config/eslint.config.mjs"
       ],
       "project": ["src/**/*.ts"],
