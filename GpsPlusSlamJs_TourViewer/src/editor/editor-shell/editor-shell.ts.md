@@ -150,7 +150,8 @@ items on the ground, the card's picture and Add pin.
     mark shown) in a wide platform face (Verdana, with DejaVu Sans'
     metrics), would no longer hold every control with the name at its
     floor; measured, every state fits from 320 px up.
-- **A typed field commits on leaving it** (blur) **and on Enter**, only
+- **A typed field commits on leaving it** (blur) **and, a line, on
+  Enter** (in the description's text area Enter starts a new line), only
   when its text differs from the tour's (`defaultValue`): one edit, one
   undo step per field. The field is set back to the tour's value before
   the edit is written, so the redraw shows what the tour now holds (a
@@ -168,6 +169,13 @@ items on the ground, the card's picture and Add pin.
   committed the half-typed text as its own undo step and, through the
   store change, drew the inspector again inside the draw and left it
   stale.
+- **Leaving a field keeps the focus moving.** The commit draws the
+  inspector at once, inside the `focusout`, which takes the control the
+  focus is moving to (`relatedTarget`) out of the page too, and Chromium
+  then drops the focus to the page: Tab lost the creator's place, and the
+  next plain key was the page's (T toggled the top view). The handler
+  finds that control by its name before the commit (`controlName`) and
+  focuses the one drawn again under it after (`focusControl`).
 - **A typed height is the item's altitude alone** (`groundItems` with one
   item): its place and turn stay bit for bit, so a height never moves an
   item sideways (a pose through the station's frame and back would, by
@@ -247,8 +255,11 @@ and not committed goes to the selection it was typed for on a selection
 change and on `hide()`; a draw while typing (a store change, the ground
 arriving on the readout's tick) commits nothing and keeps the text and
 the focus (Chromium's synchronous `focusout` on a removed field is
-reproduced there, jsdom lacks it); Escape puts the value back; a pin text
-of several lines focused and left writes nothing; a ground command
+reproduced there, jsdom lacks it); the commit's own draw hands the focus
+on to the control it was moving to, drawn again; Escape puts the value
+back; Enter in the description is a new line and leaving it writes the
+lines; a description and a pin text of several lines focused and left
+write nothing; a ground command
 waiting is called off by a selection change (later ground writes
 nothing), and writes once the ground arrives when the selection stays;
 the readout's tick builds no tour with nothing selected.
@@ -257,10 +268,12 @@ The lock's click in the page: `editor3d-edit.spec.js`.
 
 The inspector's editing in the page:
 `playwright-tests/editor3d-inspector.spec.js` (a name by Enter, Escape
-putting it back, a description by leaving it, a radius under its pin
+putting it back, a description of two lines by Tab, the focus then on
+the next field (and on the Position button after the radius), a radius under its pin
 with the warning, a value that is no number, one undo per field, saved
 and opened again; a name typed while a change made elsewhere draws the
-inspector again stays one step, with the text kept; Put items on the ground as one step, a locked
+inspector again stays one step, with the text kept, and Tab then hands
+the focus on; Put items on the ground as one step, a locked
 station's place read-only, Put on the ground and a typed place and
 heading once unlocked, Add pin and its text; the fields' layout at the
 four sizes). Its parts' own tests: `inspector-edits.test.ts`,

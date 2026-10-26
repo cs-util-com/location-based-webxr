@@ -41,8 +41,11 @@ stationId, edit }` (a `StationEdit` of `tour-document.ts`). A radius
 "invalid", reason }` ("Type a number, like 12.5"). Only a plain decimal
     is a number: a sign, digits, and one decimal point or one comma
     ("3,5" is 3.5). Hex ("0x10"), binary, octal, an exponent ("1e3"),
-    "Infinity", a thousands separator ("1,000,5", "1.000,5", "1 000") are
-    no number.
+    "Infinity", a thousands separator beside a decimal point or comma
+    ("1,000,5", "1.000,5", "1 000") are no number. One comma is always
+    a decimal point, by design: "1,000" is 1, not a thousand (a lone
+    thousands separator cannot be told from a decimal comma, and a
+    comma typed as a decimal point is the commoner case).
 - `groundEdit({ selected, stations, which, groundAt })` -> `GroundEdit |
 null`:
   - `which: "ground"` on a station: its anchor at the ground under it, as

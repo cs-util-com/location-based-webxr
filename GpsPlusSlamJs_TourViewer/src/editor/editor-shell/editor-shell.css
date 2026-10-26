@@ -940,6 +940,19 @@ body[data-view="3d"] #view3d {
   border-color: var(--s-focus);
 }
 
+/* Prose (the description): one line high like a line field, growing with
+ * its text up to six lines, then scrolling. */
+textarea.tfield {
+  display: block;
+  height: auto;
+  min-height: 24px;
+  max-height: 92px;
+  padding: 4px 7px;
+  line-height: 14px;
+  field-sizing: content;
+  resize: none;
+}
+
 .num:not(.ro) {
   border-color: var(--s-line2);
   background: var(--s-bg2);
@@ -1377,7 +1390,7 @@ body[data-view="3d"] .view3d-credits {
   cursor: pointer;
 }
 
-.act:hover:not(:disabled) {
+.act:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--s-bg3);
 }
 
@@ -1387,12 +1400,14 @@ body[data-view="3d"] .view3d-credits {
   font-size: 11px;
 }
 
-.act:disabled {
+/* Off, or waiting (aria-disabled: it keeps the keyboard's focus), as the
+ * menus do. */
+.act:is(:disabled, [aria-disabled="true"]) {
   color: var(--s-dim);
   cursor: default;
 }
 
-.act:disabled svg.i {
+.act:is(:disabled, [aria-disabled="true"]) svg.i {
   color: var(--s-dim);
 }
 

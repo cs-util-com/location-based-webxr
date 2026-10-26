@@ -128,14 +128,15 @@ function draw(
  *  value's own `labels` (so an untied label reads as missing). */
 function fields(): [string, string][] {
   return [
-    ...dock.body.querySelectorAll<HTMLOutputElement | HTMLInputElement>(
-      "output, input",
-    ),
+    ...dock.body.querySelectorAll<
+      HTMLOutputElement | HTMLInputElement | HTMLTextAreaElement
+    >("output, input, textarea"),
   ].map((out) => {
     const label =
       out.labels?.[0]?.textContent ?? out.getAttribute("aria-label") ?? "?";
     const unit = out.parentElement?.querySelector(".unit")?.textContent;
-    const value = out instanceof HTMLInputElement ? out.value : out.textContent;
+    const value =
+      out instanceof HTMLOutputElement ? out.textContent : out.value;
     return [label, `${value}${unit ? ` ${unit}` : ""}`];
   });
 }
@@ -574,7 +575,9 @@ describe("drawInspector", () => {
   // Why: a text input drops line breaks, so a pin text of several lines
   // (the 2D card's textarea writes them) read back as one glued line, and
   // focusing and leaving the field wrote that flattened text as an edit.
-  it("shows a text of several lines on one line, read-only, so leaving it writes nothing", () => {
+  // It is read-only here, and the dock says why in words (a title never
+  // shows on a touch screen, nor to a sighted keyboard user).
+  it("shows a pin text of several lines on one line, read-only, its reason in words, so leaving it writes nothing", () => {
     const withPin = STATIONS.map((s) =>
       s.id === "steps"
         ? {
@@ -608,9 +611,52 @@ describe("drawInspector", () => {
     // Its value as shown is its default: nothing reads as typed.
     expect(title?.defaultValue).toBe(title?.value);
     expect(title?.title).toContain("2D map");
-    // A one-line text stays a field to type in.
+    expect(dock.body.textContent).toContain(
+      "edit it in the pin's card on the 2D map",
+    );
+    // A one-line text stays a field to type in, with no such line.
     draw("station:steps");
     expect(input("title")?.readOnly).toBe(false);
+    expect(dock.body.textContent).not.toContain("2D map");
+  });
+
+  // Why: the 3D inspector is the only place that edits a station's name
+  // and description, so neither may become read-only when the tour holds
+  // a line break (a tour written elsewhere): the description is prose, a
+  // text area that keeps its lines; the name is shown on one line and
+  // stays editable, an unchanged one reading as untyped (its default is
+  // what it shows), so leaving it writes nothing.
+  it("keeps a station's name and description of several lines editable, the description in a text area with its lines", () => {
+    const lines: TourStation[] = STATIONS.map((s) =>
+      s.id === "steps"
+        ? { ...s, title: "Upper\ngate", description: "line one\r\nline two" }
+        : s,
+    );
+    drawInspector(
+      dock,
+      buildInspector({
+        selected: "station:steps",
+        stations: lines,
+        assets: [],
+        codes: CODES,
+      }),
+      { folded: false, positionOpen: false },
+      pictures,
+    );
+    const title = input("title");
+    expect(title?.readOnly).toBe(false);
+    expect(title?.value).toBe("Upper gate");
+    expect(title?.defaultValue).toBe(title?.value);
+    const description = dock.root.querySelector('[data-field="description"]');
+    expect(description).toBeInstanceOf(HTMLTextAreaElement);
+    const area = description as HTMLTextAreaElement;
+    expect(area.readOnly).toBe(false);
+    expect(area.value).toBe("line one\nline two");
+    // A text area reads its line ends as one character: its default is
+    // the same, so an untouched one reads as untyped.
+    expect(area.defaultValue).toBe(area.value);
+    expect(area.labels?.[0]?.textContent).toBe("Description");
+    expect(dock.body.textContent).not.toContain("several lines");
   });
 
   it("folds to its head", () => {

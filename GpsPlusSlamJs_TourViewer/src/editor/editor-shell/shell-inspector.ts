@@ -96,16 +96,24 @@ function readOnlyNumber(label: string, value: string, unit = ""): HTMLElement {
   return labelled(label, out, box);
 }
 
-/** What a text of several lines says on a one-line field, which cannot
- *  keep its line breaks. */
-const SEVERAL_LINES =
-  "This text has several lines, which this one-line field cannot keep: it is read-only here";
+/** Whether `value` holds a line break. */
+function severalLines(value: string): boolean {
+  return /[\r\n]/.test(value);
+}
+
+/** Why a pin's text of several lines is read-only in the head, said on a
+ *  line of the dock (a title never shows on a touch screen). */
+const PIN_LINES =
+  "This text has several lines, which this one-line field cannot keep: edit it in the pin's card on the 2D map.";
+
+/** The id of that line, which the head's field is described by. */
+const PIN_LINES_ID = "inspector-pin-lines";
 
 /** A field to type in, named `field` (`data-field`), the tour's value
  *  `value` its default, so text that differs from it is typed. A text
- *  input drops line breaks (its value would never equal a default of
- *  several lines): such a value is shown on one line and read-only, so
- *  leaving the field can never write it back flattened. */
+ *  input drops line breaks: a value of several lines is shown, and taken
+ *  as its default, on one line, so a field left untouched reads as
+ *  untyped and is never written back flattened. */
 function typed(
   field: string,
   value: string,
@@ -116,12 +124,9 @@ function typed(
   input.spellcheck = false;
   input.autocomplete = "off";
   input.dataset["field"] = field;
-  const lines = /[\r\n]/.test(value);
-  input.defaultValue = lines ? value.replace(/\s*[\r\n]+\s*/g, " ") : value;
-  if (lines) {
-    input.readOnly = true;
-    input.title = SEVERAL_LINES;
-  }
+  input.defaultValue = severalLines(value)
+    ? value.replace(/\s*[\r\n]+\s*/g, " ")
+    : value;
   return input;
 }
 
@@ -160,15 +165,27 @@ function numberField(
   return labelled(label, input, box);
 }
 
-function textField(
+/** Prose to type, named `field`: a text area, which keeps line breaks
+ *  (Enter starts a new line there; the shell writes it when it is left).
+ *  Its default is the tour's value with its line ends as a text area
+ *  reads them (one character each), so an untouched one reads as
+ *  untyped. */
+function proseField(
   label: string,
   field: string,
   value: string,
   placeholder: string,
 ): HTMLElement {
-  const input = typed(field, value, "tfield");
-  input.placeholder = placeholder;
-  return labelled(label, input);
+  const area = el("textarea", "tfield");
+  area.rows = 1;
+  area.spellcheck = false;
+  area.autocomplete = "off";
+  area.dataset["field"] = field;
+  area.placeholder = placeholder;
+  area.defaultValue = value.replace(/\r\n?/g, "\n");
+  const row = labelled(label, area);
+  row.classList.add("top");
+  return row;
 }
 
 function readOnlyText(label: string, value: string): HTMLElement {
@@ -439,11 +456,11 @@ function stationParts(
   const off = model.offGround;
   const section = el("div", "isec");
   section.append(
-    textField(
+    proseField(
       "Description",
       "description",
       model.description ?? "",
-      "Optional, one line",
+      "Optional",
     ),
     imagePicker(model, pictures),
     numberField("Radius", "radius", fixed(model.foundRadiusM, 1), "m"),
@@ -484,7 +501,13 @@ function stationParts(
 }
 
 function itemParts(model: ItemModel, state: InspectorState): HTMLElement[] {
-  const parts: HTMLElement[] = [
+  const parts: HTMLElement[] = [];
+  if (model.text !== null && severalLines(model.text)) {
+    const why = el("div", "note pad", PIN_LINES);
+    why.id = PIN_LINES_ID;
+    parts.push(why);
+  }
+  parts.push(
     actions([
       action("split", "split", "Move to a new station"),
       action("ground", "ground", "Put on the ground", {
@@ -496,7 +519,7 @@ function itemParts(model: ItemModel, state: InspectorState): HTMLElement[] {
         key: DELETE_KEY,
       }),
     ]),
-  ];
+  );
   if (model.sizeM !== null) {
     const section = el("div", "isec");
     section.append(
@@ -600,18 +623,46 @@ function quoted(value: string): string {
   return `"${value.replace(/["\\]/g, "\\$&")}"`;
 }
 
+/** The name `target` is drawn under in the dock at `root` (a selector
+ *  by its `data-act` or `data-field`), so the control drawn again in
+ *  its place is found by it; null for anything else. */
+export function controlName(
+  root: HTMLElement,
+  target: EventTarget | null,
+): string | null {
+  if (!(target instanceof HTMLElement) || !root.contains(target)) return null;
+  const act = target.dataset["act"];
+  const name = target.dataset["field"];
+  return act !== undefined
+    ? `[data-act=${quoted(act)}]`
+    : name !== undefined
+      ? `[data-field=${quoted(name)}]`
+      : null;
+}
+
+/** The control drawn under `name` in `root`, unless it is disabled
+ *  (Earlier at the first place) or there is none. */
+function controlNamed(root: HTMLElement, name: string): HTMLElement | null {
+  const control = root.querySelector<HTMLElement>(name);
+  return control === null || (control as HTMLButtonElement).disabled === true
+    ? null
+    : control;
+}
+
+/** The focus put on the control drawn under `name` (`controlName`) in
+ *  the dock at `root`: where the focus was going when a draw took that
+ *  control out of the page (Chromium then drops the focus to the page).
+ *  None, or a disabled one, leaves the focus where it is. */
+export function focusControl(root: HTMLElement, name: string | null): void {
+  if (name === null) return;
+  const control = controlNamed(root, name);
+  if (control !== null && control !== document.activeElement) control.focus();
+}
+
 function focusIn(root: HTMLElement): FocusKept | null {
   const active = document.activeElement;
-  if (!(active instanceof HTMLElement) || !root.contains(active)) return null;
-  const act = active.dataset["act"];
-  const name = active.dataset["field"];
-  const selector =
-    act !== undefined
-      ? `[data-act=${quoted(act)}]`
-      : name !== undefined
-        ? `[data-field=${quoted(name)}]`
-        : null;
-  if (selector === null) return null;
+  const selector = controlName(root, active);
+  if (selector === null || !(active instanceof HTMLElement)) return null;
   const typedIn =
     active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
       ? active
@@ -634,8 +685,8 @@ function focusIn(root: HTMLElement): FocusKept | null {
  *  disabled one (Earlier at the first place) leaves it where it fell. */
 function focusAgain(root: HTMLElement, kept: FocusKept | null): void {
   if (kept === null) return;
-  const again = root.querySelector<HTMLElement>(kept.selector);
-  if (again === null || (again as HTMLButtonElement).disabled === true) return;
+  const again = controlNamed(root, kept.selector);
+  if (again === null) return;
   if (
     kept.typed !== null &&
     (again instanceof HTMLInputElement || again instanceof HTMLTextAreaElement)
@@ -694,15 +745,21 @@ function headTitle(model: InspectorModel): HTMLElement {
     const input = typed("title", model.name, "ttlin");
     input.placeholder = `Station ${String(model.place.number)}`;
     input.setAttribute("aria-label", "Station name");
-    if (!input.readOnly) input.title = "The station's name (Enter keeps it)";
+    input.title = "The station's name (Enter keeps it)";
     return input;
   }
   if (model.kind === "item" && model.text !== null) {
     const input = typed("title", model.text, "ttlin");
     input.setAttribute("aria-label", "Pin text");
-    input.title = input.readOnly
-      ? "This text has several lines: edit it in the pin's card on the 2D map"
-      : "The pin's text (Enter keeps it)";
+    if (severalLines(model.text)) {
+      // Read-only, so leaving it never writes the text back on one line;
+      // the line in the dock says why (`PIN_LINES`).
+      input.readOnly = true;
+      input.title = PIN_LINES;
+      input.setAttribute("aria-describedby", PIN_LINES_ID);
+    } else {
+      input.title = "The pin's text (Enter keeps it)";
+    }
     return input;
   }
   const title = el("span", "ttl", model.title);

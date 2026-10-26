@@ -72,7 +72,12 @@ import {
   type InspectorModel,
 } from "./inspector-model.js";
 import { createSceneMenu, type GroundPlace } from "./scene-menu.js";
-import { drawInspector, inspectorDrawing } from "./shell-inspector.js";
+import {
+  controlName,
+  drawInspector,
+  focusControl,
+  inspectorDrawing,
+} from "./shell-inspector.js";
 import { placeShellIcons, shellIcon, type ShellIcon } from "./shell-icons.js";
 import { createShellPictures } from "./shell-pictures.js";
 import { drawTree } from "./shell-tree.js";
@@ -180,6 +185,16 @@ const BAR_ICON: Readonly<Record<BarAction, ShellIcon>> = {
   align: "align",
   copy: "copy",
 };
+
+/** An inspector field to type in: a line (an input) or prose (a text
+ *  area). */
+type TypedField = HTMLInputElement | HTMLTextAreaElement;
+
+function isTyped(target: EventTarget | null): target is TypedField {
+  return (
+    target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
+  );
+}
 
 /** `deg` as a turn of -180 to 180 degrees. */
 function signedDeg(deg: number): number {
@@ -437,9 +452,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
 
   /** The inspector's field that has the focus, with text typed and not
    *  yet committed; null for none. */
-  const typedField = (): HTMLInputElement | null => {
+  const typedField = (): TypedField | null => {
     const active = document.activeElement;
-    return active instanceof HTMLInputElement &&
+    return isTyped(active) &&
       active.dataset["field"] !== undefined &&
       inspector.root.contains(active) &&
       !active.readOnly &&
@@ -452,7 +467,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
    *  undo step. The field shows the tour's value again first, so a draw
    *  the edit causes carries nothing over, and a refused edit leaves the
    *  tour's value showing. */
-  const commitField = (input: HTMLInputElement, selected: string | null) => {
+  const commitField = (input: TypedField, selected: string | null) => {
     const value = input.value;
     if (selected === null || value === input.defaultValue || input.readOnly) {
       return;
@@ -836,28 +851,34 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
   });
 
-  // A field is committed when it is left (and on Enter). One a draw takes
-  // out of the page is not "left": the browser fires its focusout during
-  // the draw, which carries the typed text over to the field drawn again.
+  // A field is committed when it is left (and a line on Enter). One a
+  // draw takes out of the page is not "left": the browser fires its
+  // focusout during the draw, which carries the typed text over to the
+  // field drawn again. The commit draws the inspector at once, which takes
+  // the control the focus is moving to out of the page too, and Chromium
+  // then drops the focus to the page: it goes to that control as drawn
+  // again, found by its name.
   inspector.root.addEventListener("focusout", (event) => {
     const input = event.target;
     if (
-      input instanceof HTMLInputElement &&
+      isTyped(input) &&
       inspector.root.contains(input) &&
       !inspectorDrawing(inspector.root)
     ) {
+      const next = controlName(inspector.root, event.relatedTarget);
       commitField(input, state().editorView.selected);
+      focusControl(inspector.root, next);
     }
   });
   inspector.root.addEventListener("keydown", (event) => {
     const input = event.target;
+    if (!isTyped(input) || input.dataset["field"] === undefined) return;
+    // Enter keeps a line; in prose (a text area) it starts a new line.
     if (
-      !(input instanceof HTMLInputElement) ||
-      input.dataset["field"] === undefined
+      event.key === "Enter" &&
+      !event.isComposing &&
+      input instanceof HTMLInputElement
     ) {
-      return;
-    }
-    if (event.key === "Enter" && !event.isComposing) {
       event.preventDefault();
       commitField(input, state().editorView.selected);
     } else if (event.key === "Escape" && input.value !== input.defaultValue) {

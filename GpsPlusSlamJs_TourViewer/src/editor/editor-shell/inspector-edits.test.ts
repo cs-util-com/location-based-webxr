@@ -205,6 +205,9 @@ describe("inspectorEdit", () => {
       ["+3", 3],
       [",5", 0.5],
       ["7.", 7],
+      // One comma is always the decimal point, by design: a lone
+      // thousands separator cannot be told from it.
+      ["1,000", 1],
     ] as const) {
       expect(edit("station:a", "radius", typed)).toMatchObject({
         edit: { foundRadiusM: radius },

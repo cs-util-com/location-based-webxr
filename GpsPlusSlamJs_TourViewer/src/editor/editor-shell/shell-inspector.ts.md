@@ -25,10 +25,18 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
   drawn: the shell's focusout handler commits nothing then, because
   Chromium fires `focusout` on the focused field a draw removes, in the
   middle of the draw, and the draw carries the typed text over.
+- `controlName(root, target)` - the name `target` is drawn under in the
+  dock (an attribute selector by its `data-act` or `data-field`), null
+  for anything else or outside `root`. `focusControl(root, name)` puts
+  the focus on the control drawn under `name` (none, a disabled one or
+  a null name leaves it). The shell uses the two for the control the
+  focus was moving to when a commit drew the dock again: Chromium drops
+  a focus whose target a draw removed during `focusout` to the page.
   - A station: its name to type in the head (`input.ttlin`,
     `data-field="title"`, "Station name", the placeholder "Station n");
-    "Station n of N"; its commands; its Description to type
-    (`input.tfield`); its Card image as a group of picture buttons
+    "Station n of N"; its commands; its Description to type, prose in a
+    text area (`textarea.tfield`, one line high and growing with its
+    text, the placeholder "Optional"); its Card image as a group of picture buttons
     (`data-act="image:<id>"`, `aria-pressed` on the one shown), or a
     line saying none can be chosen; its Radius to type, with what it does
     (and how far out it starts loading) and, when items stand outside the
@@ -43,15 +51,21 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
     head, "Pin text"), its commands, a model's Size to type, and under
     "Position" its Offset east and north, Height (up from the anchor)
     and Heading to type, in its station's frame.
-  - Typed fields are `<input>`s carrying `data-field` (`title`,
-    `description`, `radius`, `east`, `north`, `height`, `heading`,
-    `size`) and the tour's value as `defaultValue`: the shell commits a
-    field whose text differs from it. A value with a line break (a pin
-    text the 2D card wrote, a description from another writer) is shown
-    on one line, read-only, with a title saying why (for a pin: edit it
-    in its card on the 2D map): a text input drops line breaks, so its
-    value would never equal the default and leaving it would write the
-    flattened text.
+  - Typed fields carry `data-field` (`title`, `description`,
+    `radius`, `east`, `north`, `height`, `heading`, `size`) and the
+    tour's value as `defaultValue`: the shell commits a field whose text
+    differs from it. The description is a `<textarea>`, which keeps line
+    breaks (its default has the line ends as a text area reads them, one
+    character each, so an untouched one reads as untyped); the rest are
+    `<input>`s, which drop them: a value with a line break is shown, and
+    taken as the default, on one line, so a field left untouched writes
+    nothing. A station's name of several lines (from another writer)
+    stays editable that way, and a changed one is one line. A pin's text
+    of several lines (the 2D card's text area writes them) is read-only
+    in the head, since typing would lose its lines, and a line at the
+    top of the dock (`#inspector-pin-lines`, which the field is
+    described by, also its title) says why: edit it in the pin's card on
+    the 2D map.
   - A code: its line, its print size, and its position, or that none is
     stored.
 - Every field's label is tied to its value: a `<label for>` on its
@@ -112,4 +126,6 @@ It also keeps the focus on Earlier through an autosave's status change,
 and gives the focus back to the control that had it when the inspector
 is drawn again; a draw asked for inside a draw is not run, and
 `inspectorDrawing` is true only during one; a pin text of several lines
-shows on one line, read-only.
+shows on one line, read-only, its reason a line in the dock; a station's
+name and description of several lines stay editable, the description a
+text area holding its lines.

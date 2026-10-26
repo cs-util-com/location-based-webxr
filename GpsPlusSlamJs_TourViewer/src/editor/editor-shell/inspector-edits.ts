@@ -61,8 +61,9 @@ const NONE: InspectorEdit = { kind: "none" };
 /** A plain decimal: a sign, digits and one decimal point or comma. */
 const DECIMAL = /^[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)$/;
 
-/** A typed number: a plain decimal, a comma as its decimal point; blank,
- *  or anything else (hex, an exponent, a thousands separator), is none. */
+/** A typed number: a plain decimal, a comma as its decimal point (one
+ *  comma always is: "1,000" is 1); blank, or anything else (hex, an
+ *  exponent, a second comma or point), is none. */
 function typedNumber(value: string): number | null {
   const text = value.trim();
   if (!DECIMAL.test(text)) return null;

@@ -150,9 +150,10 @@ function setUp() {
   return { store, select, edits, deps, shell };
 }
 
-/** The inspector's field `name`. */
-function field(name: string): HTMLInputElement {
-  const found = document.querySelector<HTMLInputElement>(
+/** The inspector's field `name`: a line (an input) or prose (a text
+ *  area). */
+function field(name: string): HTMLInputElement | HTMLTextAreaElement {
+  const found = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(
     `#shell-inspector [data-field="${name}"]`,
   );
   if (found === null) throw new Error(`no field ${name}`);
@@ -160,7 +161,10 @@ function field(name: string): HTMLInputElement {
 }
 
 /** Text typed into `name`, its focus kept, nothing committed. */
-function typeInto(name: string, text: string): HTMLInputElement {
+function typeInto(
+  name: string,
+  text: string,
+): HTMLInputElement | HTMLTextAreaElement {
   const input = field(name);
   input.focus();
   input.value = text;
@@ -263,6 +267,36 @@ describe("the inspector's typed fields", () => {
     expect(field("description").value).toBe("By the foun");
     shell.hide();
   });
+
+  // Why: Chromium fires focusout before the focus moves on, and the
+  // commit draws the inspector again at once: that takes the control the
+  // focus was moving to out of the page, and Chromium then drops the
+  // focus to the page (Tab lost the creator's place, and the next plain
+  // key was the page's: T toggled the top view). The shell hands the
+  // focus on to that control as drawn again, found by its name.
+  it("hand the focus on to the control it was moving to when the commit draws the inspector again", () => {
+    const { store, select, edits, shell } = setUp();
+    edits.station.mockImplementation((...args: unknown[]) => {
+      store.dispatch(
+        tourDocumentActions.stationEdited({
+          stationId: args[0] as string,
+          edit: args[1] as { description: string },
+          what: "description",
+        }),
+      );
+    });
+    select("station:a");
+    const typed = typeInto("description", "By the fountain");
+    const radius = field("radius");
+    typed.dispatchEvent(
+      new FocusEvent("focusout", { bubbles: true, relatedTarget: radius }),
+    );
+    expect(edits.station).toHaveBeenCalledTimes(1);
+    // Drawn again: a new field under the same name, and it has the focus.
+    expect(field("radius")).not.toBe(radius);
+    expect(document.activeElement).toBe(field("radius"));
+    shell.hide();
+  });
 });
 
 describe("the inspector's Escape and its text of several lines", () => {
@@ -277,6 +311,52 @@ describe("the inspector's Escape and its text of several lines", () => {
     input.blur();
     expect(edits.station).not.toHaveBeenCalled();
     shell.hide();
+  });
+
+  // Why: a description is prose, so Enter starts a new line there and
+  // must not write the field (it did while the description was a one-line
+  // input); leaving it writes the lines.
+  it("takes Enter in a description as a new line, and writes the lines when it is left", () => {
+    const { select, edits, shell } = setUp();
+    select("station:a");
+    const area = typeInto("description", "line one");
+    expect(area).toBeInstanceOf(HTMLTextAreaElement);
+    const enter = new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true,
+    });
+    area.dispatchEvent(enter);
+    expect(enter.defaultPrevented).toBe(false);
+    expect(edits.station).not.toHaveBeenCalled();
+    area.value = "line one\nline two";
+    area.blur();
+    expect(edits.station).toHaveBeenCalledWith("a", {
+      description: "line one\nline two",
+    });
+    shell.hide();
+  });
+
+  // Why: a description of several lines from a tour written elsewhere
+  // stays editable here, and an untouched one is not written back (its
+  // line ends read as typed text would make every focus an edit).
+  it("writes nothing for a description of several lines that is focused and left", () => {
+    const { store, select, edits, shell } = setUp();
+    store.dispatch(
+      tourDocumentActions.stationEdited({
+        stationId: "a",
+        edit: { description: "one\r\ntwo" },
+        what: "description",
+      }),
+    );
+    select("station:a");
+    const area = field("description");
+    expect(area.readOnly).toBe(false);
+    area.focus();
+    area.blur();
+    select("station:b");
+    shell.hide();
+    expect(edits.station).not.toHaveBeenCalled();
   });
 
   it("writes nothing for a pin text of several lines that is focused and left", () => {

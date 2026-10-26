@@ -213,13 +213,20 @@ test("a station's name, description and radius typed in the inspector are one st
   expect(await revision(page)).toBe(start + 1);
   expect(await selected(page)).toBe("station:a");
 
-  // The description: leaving the field keeps it.
-  await field(page, "description").fill("Where the market meets");
-  await field(page, "radius").focus();
+  // The description is prose: Enter starts a new line and writes nothing.
+  // Tab leaves it, which keeps it, and the focus lands on the next field
+  // although the edit draws the inspector again (Chromium drops a focus
+  // whose target a draw took out of the page).
+  await field(page, "description").fill("Where the market");
+  await field(page, "description").press("Enter");
+  await field(page, "description").pressSequentially("meets");
+  expect(await revision(page)).toBe(start + 1);
+  await field(page, "description").press("Tab");
   await expect
     .poll(async () => (await stationNow(page, "a")).description)
-    .toBe("Where the market meets");
+    .toBe("Where the market\nmeets");
   expect(await revision(page)).toBe(start + 2);
+  await expect(field(page, "radius")).toBeFocused();
 
   // The radius, typed with a comma, lowered under the pin: the pin stays
   // in the station, and a line says it stands outside the circle.
@@ -229,6 +236,8 @@ test("a station's name, description and radius typed in the inspector are one st
     .poll(async () => (await stationNow(page, "a")).foundRadiusM)
     .toBe(3.5);
   expect(await revision(page)).toBe(start + 3);
+  // A button is handed the focus too: the Position disclosure is next.
+  await expect(act(page, "position")).toBeFocused();
   await expect(page.locator("#shell-inspector .warn")).toHaveText(
     "1 item stands outside the circle: visitors see it only from inside the circle.",
   );
@@ -251,7 +260,7 @@ test("a station's name, description and radius typed in the inspector are one st
     .poll(async () => (await stationNow(page, "a")).foundRadiusM)
     .toBe(25);
   expect((await stationNow(page, "a")).description).toBe(
-    "Where the market meets",
+    "Where the market\nmeets",
   );
   await page.locator("#studio-redo").click();
   await expect
@@ -268,7 +277,7 @@ test("a station's name, description and radius typed in the inspector are one st
   expect(written).toMatchObject({
     id: "a",
     title: "Market gate",
-    description: "Where the market meets",
+    description: "Where the market\nmeets",
     foundRadiusM: 3.5,
   });
   const next = await context.newPage();
@@ -276,7 +285,7 @@ test("a station's name, description and radius typed in the inspector are one st
   await selectStation(next, "a");
   await expect(field(next, "title")).toHaveValue("Market gate");
   await expect(field(next, "description")).toHaveValue(
-    "Where the market meets",
+    "Where the market\nmeets",
   );
   await expect(field(next, "radius")).toHaveValue("3.5");
 });
@@ -384,8 +393,9 @@ test("Put items on the ground, Put on the ground, Add pin, a pin's text and a ty
   // A draw while typing: a change made elsewhere (the radius, through the
   // session) draws the inspector again under the cursor. Chromium fires
   // the field's focusout during that draw; the half-typed words are not
-  // written, and stay, focused. Finished, they are one step, and one undo
-  // takes them back alone.
+  // written, and stay, focused. Finished and left by Tab, they are one
+  // step, the next field has the focus, and one undo takes them back
+  // alone.
   await selectStation(page, "a");
   const typedFrom = await revision(page);
   await field(page, "description").fill("By the foun");
@@ -400,11 +410,12 @@ test("Put items on the ground, Put on the ground, Add pin, a pin's text and a ty
   await expect(field(page, "description")).toHaveValue("By the foun");
   await field(page, "description").press("End");
   await field(page, "description").pressSequentially("tain");
-  await field(page, "description").press("Enter");
+  await field(page, "description").press("Tab");
   await expect
     .poll(async () => (await stationNow(page, "a")).description)
     .toBe("By the fountain");
   expect(await revision(page)).toBe(typedFrom + 2);
+  await expect(field(page, "radius")).toBeFocused();
   await page.locator("#studio-undo").click();
   await expect
     .poll(async () => (await stationNow(page, "a")).description ?? "")
