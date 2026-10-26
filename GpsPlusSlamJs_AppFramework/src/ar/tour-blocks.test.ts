@@ -539,3 +539,78 @@ describe('a file of a newer minor (lenient)', () => {
     expect(() => parse(odd, { lenient: true })).not.toThrow();
   });
 });
+
+describe('the exact words a tour author reads, and shapes coerced into valid ones', () => {
+  // Why this test matters: the messages name the field path and the rule
+  // broken, which is all a hand-editing author has to go on; the tests
+  // above match only a fragment, so a message that lost its path, its
+  // unit or its article still passed. And a number or an array where a
+  // string belongs can coerce into a valid id, kind or timestamp
+  // (`String(['shortText'])`, `Date.parse(123)`, a regex test on 123),
+  // which the reader must refuse rather than accept by accident.
+  it('says which field broke which rule, in words', () => {
+    expect(() => one('shortText', { caption: 'x'.repeat(41) })).toThrow(
+      '"blocks[0].caption" is longer than 40 characters'
+    );
+    expect(
+      checkTourBlockText(
+        TOUR_BLOCK_TEXT_RULES.longText.body,
+        'x'.repeat(32_001)
+      )
+    ).toEqual({ ok: false, reason: 'is longer than 32000 UTF-16 units' });
+    expect(() => one('picture', { image: 'voice' })).toThrow(
+      '"blocks[0].image" must name an image asset'
+    );
+    expect(() => one('audio', { audio: 'clip' })).toThrow(
+      '"blocks[0].audio" must name an audio asset'
+    );
+    expect(() => one('video', { video: 'gate' })).toThrow(
+      '"blocks[0].video" must name a video asset'
+    );
+    expect(() => one('model', { asset: 'gate' })).toThrow(
+      '"blocks[0].asset" must name a model asset'
+    );
+    expect(() => one('picture', { widthM: 60 })).toThrow(
+      '"blocks[0].widthM" must be a number of metres from 0.05 to 50'
+    );
+    expect(() => one('shortText', { view: 'plane' })).toThrow(
+      '"blocks[0].view" must be pin, card for a shortText'
+    );
+    expect(() => one('shortText', { createdAtIso: 'yesterday' })).toThrow(
+      '"blocks[0].createdAtIso" must be an ISO-8601 timestamp'
+    );
+    expect(() => one('shortText', { id: 'a b' })).toThrow(
+      '"blocks[0].id" must be a short path-safe id'
+    );
+    expect(() => parse([VALID.shortText, 42])).toThrow(
+      '"blocks[1]" must be an object'
+    );
+    expect(() => parse([null])).toThrow('"blocks[0]" must be an object');
+  });
+
+  it('refuses a number or an array that would coerce into a valid id, kind or timestamp', () => {
+    expect(() => one('shortText', { id: 123 })).toThrow(Invalid);
+    expect(() => one('shortText', { kind: ['shortText'] })).toThrow(Invalid);
+    expect(() => one('shortText', { createdAtIso: 123 })).toThrow(Invalid);
+  });
+
+  it('a size that is not positive is malformed even for a newer minor; one out of range only skips the block', () => {
+    for (const widthM of [0, -1]) {
+      expect(() => one('picture', { widthM }, { lenient: true })).toThrow(
+        Invalid
+      );
+    }
+    expect(one('picture', { widthM: 60 }, { lenient: true })).toBeUndefined();
+  });
+
+  it('an optional text over its cap is left out without a listener too', () => {
+    const read = readTourBlocks(
+      [{ ...VALID.shortText, description: 'x'.repeat(10_000) }],
+      'blocks',
+      { assets: ASSETS, fail }
+    );
+    expect(read.map((r) => r.block)).toEqual([
+      expect.not.objectContaining({ description: expect.anything() }),
+    ]);
+  });
+});

@@ -99,7 +99,7 @@ import {
   type TourStationDrop,
 } from './tour-stations.js';
 
-export { tourStationRecord, tourStepRecord } from './tour-stations.js';
+export { tourStationRecord } from './tour-stations.js';
 export type {
   TourAsset,
   TourAssetKind,

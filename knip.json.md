@@ -52,7 +52,11 @@ entirely after confirming they were only transitively pulled in.
   (`src/state/position-precision.ts`, `src/utils/format-distance.ts` and the
   like) are deep-import public modules: apps import them through the
   package's `exports` map, which points at `dist/`, so knip never sees that
-  use and would report their public exports as unused. `dpdm` is in `ignoreDependencies` because the framework's
+  use and would report their public exports as unused. The version 4
+  block and story readers (`src/ar/tour-blocks.ts`, `src/ar/tour-story.ts`)
+  are such entries before any app imports them: their member types
+  (`TourPictureBlock`, `TourStoryStep` and the like) are the public API a
+  renderer narrows to. `dpdm` is in `ignoreDependencies` because the framework's
   `check:cycles` command moved from an inline package.json script into
   `scripts/test-timing/projects.mjs` (2026-07-21 gate wiring), where
   knip's package.json-script analysis cannot see it — the standard

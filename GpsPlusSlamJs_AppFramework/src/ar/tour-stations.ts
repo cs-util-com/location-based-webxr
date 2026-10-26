@@ -195,7 +195,7 @@ export type TourStepAction =
     };
 
 /** A step as the reader holds it: what it does is its `action`, which
- *  the file stores under the key `block` ({@link tourStepRecord}). */
+ *  the file stores under the key `block` ({@link tourStationRecord}). */
 export interface TourStep {
   readonly id: string;
   readonly action: TourStepAction;
@@ -210,7 +210,7 @@ export interface TourStepRecord {
 }
 
 /** A step in the file's shape, keys in the order the file writes them. */
-export function tourStepRecord(step: TourStep): TourStepRecord {
+function tourStepRecord(step: TourStep): TourStepRecord {
   return { id: step.id, block: step.action, advance: step.advance };
 }
 

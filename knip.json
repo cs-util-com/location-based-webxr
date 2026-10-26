@@ -58,6 +58,8 @@
         "src/ar/qr/qr-mint-level.ts",
         "src/ar/qr/qr-sighting-accumulator.ts",
         "src/ar/qr/qr-anchor-mint.ts",
+        "src/ar/tour-blocks.ts",
+        "src/ar/tour-story.ts",
         "config/eslint.config.mjs"
       ],
       "project": ["src/**/*.ts"],

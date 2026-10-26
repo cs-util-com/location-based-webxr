@@ -87,8 +87,7 @@ code-only station), its pins and photos as `items` at local poses
   by default, or `{ mode: "auto", afterS > 0 }`). The default is written
   out on parse, so a renderer never guesses. The reader holds the file's
   `block` as the step's `action` (`TourStep`: `{ id, action, advance }`);
-  `tourStepRecord(step)` and `tourStationRecord(station)` map back to
-  the file's shape (`TourStepRecord`: `{ id, block, advance }`, in that
+  `tourStationRecord(station)` maps back to the file's shape (`TourStepRecord`: `{ id, block, advance }`, in that
   key order; every other station field and its position kept), which
   every writer applies before writing. A file step carrying `action`
   and no `block` is refused: the file format is unchanged.

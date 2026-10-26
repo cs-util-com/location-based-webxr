@@ -132,7 +132,14 @@ tourTextCount('\u{1F600}', 'utf16'); // 2
   over); media references of the wrong kind or missing; `widthM` and
   `sizeM` by view; ids at 64 characters, colliding with asset ids,
   duplicated; views per kind; the free-block rule; floor views; lenient
-  fallbacks and skips, and a lenient read never throwing.
+  fallbacks and skips, and a lenient read never throwing; the exact
+  messages an author reads (path, unit, article, bounds), a number or an
+  array that would coerce into a valid id, kind or timestamp refused, a
+  non-positive size malformed even for a newer minor, and an optional
+  over-cap text dropped with no listener. A scoped mutation run over this
+  file left two survivors, both equivalent: the `typeof value ===
+'string'` guard before a `Map.get` and an `Array.includes` that only
+  match strings.
 - `tour-story.property.test.ts` - generated stations (shared generators,
   `test-utils/tour-arbitraries.ts`) read exactly and round-trip; newer
   minor values anywhere never fail a lenient read; over-cap texts fail or

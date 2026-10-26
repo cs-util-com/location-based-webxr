@@ -44,8 +44,8 @@ Guided-setup plan DEC-N7/N8/N9 for the original pins and photos
   file format, unchanged by the in-memory name.
 - `tourManifestRecord(manifest)` - the manifest in the file's shape:
   every station through `tourStationRecord` (`tour-stations.ts`), every
-  other field and the key order as they are. `tourStationRecord` and
-  `tourStepRecord` are re-exported from here.
+  other field and the key order as they are. `tourStationRecord` is
+  re-exported from here.
 - `createEmptyTourManifest(): TourManifest` - `{ version: 3, minor: 0,
 order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - `tourItems(tour): TourItem[]` - every station's items, in station order.
