@@ -343,7 +343,7 @@ test.describe("the cards' pictures", () => {
         const style = getComputedStyle(el);
         return `${style.animationName} ${style.animationPlayState}`;
       });
-    expect(await motion()).toBe("lc-cardIn running");
+    expect(await motion()).toBe("lc-card-in running");
     // It loops: its last frame held, then played again.
     await expect(dock).toHaveAttribute("data-phase", "holding");
     await expect(dock).toHaveAttribute("data-phase", "playing");
@@ -351,7 +351,7 @@ test.describe("the cards' pictures", () => {
     await hold.click();
     await expect(hold).toHaveAttribute("aria-pressed", "true");
     await expect(dock).toHaveAttribute("data-paused", "true");
-    expect(await motion()).toBe("lc-cardIn paused");
+    expect(await motion()).toBe("lc-card-in paused");
     await expect
       .poll(() =>
         hold
