@@ -69,6 +69,13 @@ export interface FilmScene {
   draw(frame: FilmFrame, cam: CameraAt<ViewName>, t: number): boolean;
   /** Where the eye's spots sit on its screen, screen px. */
   anchors(eye: EyeName, sw: number, sh: number): ScreenAnchors;
+  /**
+   * Compiles the scene's shaders ahead of its first draw, in parallel where
+   * the browser offers `KHR_parallel_shader_compile`, so that draw does
+   * not stall the page. Resolves when they are ready; on a browser without
+   * the extension the first draw finishes what is left.
+   */
+  prepare(): Promise<void>;
   /** Shows the canvas (fades in). */
   show(): void;
   /** Frees the renderer and its WebGL context on purpose. */
@@ -1198,6 +1205,11 @@ export function createFilmScene(
           Math.max(a[1], b[1]),
         ],
       };
+    },
+    async prepare() {
+      if (released) return;
+      await renderer.compileAsync(scene, cam);
+      if (quality.eyePass && !released) await renderer.compileAsync(scene, eye);
     },
     show() {
       canvas.classList.add("lf-on");

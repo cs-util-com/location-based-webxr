@@ -19,8 +19,14 @@ at eye height in a second pass.
   - `onContextLost`: called for the live renderer's lost context only.
   - Throws when the renderer cannot start (the caller falls back).
 - `FilmScene`: `canvas`, `layout(ly)`, `draw(frame, camera, t)` (true when
-  it rendered), `anchors(eye, sw, sh)`, `show()`, `release()`, `bench(n)`,
-  `info()`.
+  it rendered), `anchors(eye, sw, sh)`, `prepare()`, `show()`, `release()`,
+  `bench(n)`, `info()`.
+- `prepare(): Promise<void>`: compiles the shaders for the model camera
+  (and the eye's, with `eyePass`) through three.js `compileAsync`, which
+  uses `KHR_parallel_shader_compile` where the browser has it. Resolves
+  when the first draw will not wait on a compile; without the extension it
+  resolves after a short wait and the first draw finishes what is left.
+  A released scene resolves at once.
 
 ## Invariants
 
@@ -33,6 +39,9 @@ at eye height in a second pass.
   mid-move shows the right in-between.
 - The walking person's bob is a function of `t` (none with reduced motion).
 - The shadow map is drawn once, on the first frame (as the prototype's).
+- The first draw after `prepare` is about a third of a first draw
+  without it (production build, 390x844, the CPU slowed 4x: about 150 ms
+  against 400); the shadow pass's own shaders still compile then.
 - `release()` removes the lost-context listener first, frees geometries,
   materials and the renderer, forces the context loss (AR needs it), and
   removes the canvas and the labels. A released scene is never reused.

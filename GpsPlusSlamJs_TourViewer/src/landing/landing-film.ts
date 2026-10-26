@@ -25,6 +25,7 @@ import { debugUiEnabledFromSearch } from "gps-plus-slam-app-framework/utils/debu
 
 import { barModel } from "./film-bar.js";
 import { createFilmBarView } from "./film-bar-view.js";
+import { createRunCounts, debugQuality, filmReadout } from "./film-debug.js";
 import { buildFilmDom, type FilmDom } from "./film-dom.js";
 import { drawFloor, floorSignature } from "./film-floor.js";
 import { createGpuLifecycle, type FallbackReason } from "./film-gpu.js";
@@ -102,7 +103,10 @@ export interface FilmEnv {
   readonly now: () => number;
   /** The stage's size, CSS px. */
   readonly size: (el: HTMLElement) => { w: number; h: number };
+  /** `?debug=1`: the frame readout over the picture. */
   readonly debug: boolean;
+  /** The scene's quality from the tuning's (`?debug=1` with the address's knobs; film-debug.ts). */
+  readonly quality: (base: SceneQuality) => SceneQuality;
 }
 
 /** What a harness can see and do; the page uses only `destroy`. */
@@ -138,6 +142,8 @@ function hasWebGL(doc: Document): boolean {
 
 function browserEnv(doc: Document): FilmEnv {
   const win = doc.defaultView;
+  const search = win ? win.location.search : "";
+  const debug = debugUiEnabledFromSearch(search);
   return {
     webgl: () => hasWebGL(doc),
     createScene: createFilmScene,
@@ -172,7 +178,8 @@ function browserEnv(doc: Document): FilmEnv {
     }),
     now: () => (win ? win.performance.now() : Date.now()),
     size: (el) => ({ w: el.clientWidth, h: el.clientHeight }),
-    debug: win ? debugUiEnabledFromSearch(win.location.search) : false,
+    debug,
+    quality: (base) => (debug ? debugQuality(search, base) : base),
   };
 }
 
@@ -256,8 +263,15 @@ export function createLandingFilm(
   const dom = buildFilmDom(doc);
   const phone = createPhoneView(dom);
   const frames = createFrameTimes(600);
+  // the whole run's slow frames, for the readout only
+  const run = env.debug ? createRunCounts() : null;
+  const quality = env.quality(tuning.quality);
+  let sceneDpr = 1;
   const gpu = createGpuLifecycle({ webgl: env.webgl() });
+  /** The scene being drawn; null while drawing flat or while `owned` compiles. */
   let scene: FilmScene | null = null;
+  /** The scene that exists (shown or still compiling): the one to free. */
+  let owned: FilmScene | null = null;
   let ly: FilmLayout | null = null;
   let layoutKey = 0;
   let floorSig = "";
@@ -346,14 +360,19 @@ export function createLandingFilm(
         }),
       );
     }
-    if (env.debug) {
-      const s = frames.summary();
+    if (run) {
       dom.debug.hidden = false;
-      dom.debug.textContent =
-        `${scene ? "3d" : "floor"} ${snap.status} t ${snap.t.toFixed(1)}/${timeline.totalS.toFixed(1)}` +
-        (s
-          ? ` p50 ${s.p50.toFixed(1)} p95 ${s.p95.toFixed(1)} max ${s.max.toFixed(1)} ms`
-          : "");
+      dom.debug.textContent = filmReadout({
+        renderer: scene ? "3d" : "floor",
+        quality,
+        dpr: sceneDpr,
+        status: snap.status,
+        t: snap.t,
+        totalS: timeline.totalS,
+        live: frames.summary(),
+        run: run.counts(),
+        buildMs,
+      });
     }
   };
 
@@ -365,7 +384,10 @@ export function createLandingFilm(
     requestFrame(cb) {
       const id = rf((now) => {
         if (cancelled.delete(id)) return;
-        if (lastFrameNow !== null) frames.push(now - lastFrameNow);
+        if (lastFrameNow !== null) {
+          frames.push(now - lastFrameNow);
+          run?.push(now - lastFrameNow);
+        }
         lastFrameNow = now;
         cb(now);
       });
@@ -395,6 +417,7 @@ export function createLandingFilm(
 
   const toFloor = () => {
     scene = null;
+    owned = null;
     dom.root.classList.remove("lf-3d");
     floorSig = "";
     anchorKey = "";
@@ -418,7 +441,7 @@ export function createLandingFilm(
           leadLine: dom.leadLine,
           leadDot: dom.leadDot,
         },
-        tuning.quality,
+        quality,
         {
           reducedMotion: options.reducedMotion,
           devicePixelRatio: vp.dpr,
@@ -427,11 +450,19 @@ export function createLandingFilm(
         () => onLost(token),
       );
       token = gpu.created();
-      scene = s;
+      owned = s;
+      sceneDpr = Math.min(vp.dpr || 1, quality.pixelRatioCap);
       s.layout(ly);
-      dom.root.classList.add("lf-3d");
-      anchorKey = "";
-      s.show();
+      // the drawing stays until the shaders are compiled (film-scene.ts prepare)
+      const adopt = () => {
+        if (destroyed || owned !== s) return;
+        scene = s;
+        dom.root.classList.add("lf-3d");
+        anchorKey = "";
+        s.show();
+        player.redraw();
+      };
+      s.prepare().then(adopt, adopt);
     } catch {
       toFloor();
       report(gpu.createFailed());
@@ -444,7 +475,7 @@ export function createLandingFilm(
     if (destroyed) return;
     const r = gpu.contextLost(token);
     if (!r) return;
-    const dead = scene;
+    const dead = owned;
     toFloor();
     try {
       dead?.release();
@@ -458,8 +489,8 @@ export function createLandingFilm(
   const stop = () => {
     if (destroyed) return;
     player.release();
-    if (scene) {
-      const s = scene;
+    if (owned) {
+      const s = owned;
       toFloor();
       gpu.released();
       s.release();
@@ -552,9 +583,10 @@ export function createLandingFilm(
       unobserveView();
       unobserveSize();
       dom.stage.removeEventListener("click", onStageClick);
-      if (scene) {
-        const s = scene;
+      if (owned) {
+        const s = owned;
         scene = null;
+        owned = null;
         gpu.released();
         s.release();
       }

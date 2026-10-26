@@ -45,6 +45,13 @@ timeline.
 - Animation frames are requested only while playing.
 - The 3D scene is built the first time the film is in view (or played),
   never at mount, so a page that never shows it never creates WebGL.
+- A new scene is shown only once its shaders are compiled
+  (`FilmScene.prepare`); the flat drawing plays meanwhile (about 0.1 s on
+  a desktop, 0.2 to 0.3 s with the CPU slowed 4x). This split the film's
+  longest task (build plus first draw, about 550 ms at 4x) into a build of
+  about 300 ms and a first draw of about 150 ms. A scene released (AR),
+  lost or destroyed while it compiles is freed and never shown; a failed
+  `prepare` still shows it (its first draw compiles).
 - `stop` (AR): pause, free the renderer (not a fallback), show the flat
   still; a new scene is built the next time the film comes into view or is
   played. It does not restart by itself while still in view.
@@ -53,8 +60,13 @@ timeline.
 - Reduced motion: opens on the last picture with every caption as a list
   and a play button; the film then grows below its box (the stage keeps
   its height) instead of shrinking the picture.
-- `?debug=1`: a readout of the renderer, the state and the frame times
-  (`utils/frame-times`).
+- `?debug=1`: a readout over the picture (`film-debug.ts`): the renderer,
+  its pixel ratio and quality, the scene's build time, the film's time,
+  the last frames' percentiles (`utils/frame-times`) and the whole run's
+  frames over 50 and 100 ms. With it the address's knobs `film-dpr`,
+  `film-shadows`, `film-eye` and `film-aa` change the scene's quality,
+  so one phone can compare settings (for example
+  `/?debug=1&film-shadows=0`). Without `?debug=1` the knobs do nothing.
 
 ## Page variables it reads
 
@@ -84,7 +96,9 @@ const film = mountLandingFilm(hostEl, {
 
 `landing-film.test.ts` (jsdom, a fake frame queue and a fake scene): no
 frames while idle, plays once, reduced motion, the AR handoff, the
-fallbacks, the host attributes and event, `data-playing`, destroy.
+fallbacks, the host attributes and event, `data-playing`, destroy, the
+drawing kept while the scene compiles (and a scene ended meanwhile never
+shown), and the debug readout built with the knobs' quality.
 
 `playwright-tests/landing-film.spec.js` (the real page): waits below the
 fold and plays in view, the bar's eight named parts with one current, a

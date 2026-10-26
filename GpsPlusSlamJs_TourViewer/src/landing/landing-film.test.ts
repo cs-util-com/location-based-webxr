@@ -16,6 +16,10 @@
  *    picture with every caption as a list.
  * The page also reads the host's data attributes and one change event to
  * coordinate the cards around the film; those are pinned too.
+ *
+ * A new scene is shown only once its shaders are compiled (`prepare`), so
+ * the fake scene's `prepare` resolves at once and the tests that look at
+ * the shown scene wait one turn (`flush`) after the view that built it.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -55,12 +59,26 @@ function frameQueue() {
   };
 }
 
-function fakeScene(): FilmScene & {
+/** Lets the film's pending promise callbacks run. */
+const flush = () => new Promise<void>((r) => setTimeout(r, 0));
+
+function deferred() {
+  let resolve: () => void = () => undefined;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+function fakeScene(
+  prepare: () => Promise<void> = () => Promise.resolve(),
+): FilmScene & {
   onLost: () => void;
   release: ReturnType<typeof vi.fn>;
 } {
   const s = {
     canvas: document.createElement("canvas"),
+    prepare: vi.fn(prepare),
     layout: vi.fn(),
     draw: vi.fn(() => true),
     anchors: vi.fn(() => ({
@@ -78,7 +96,12 @@ function fakeScene(): FilmScene & {
 }
 
 function setup(
-  o: { reducedMotion?: boolean; webgl?: boolean; sceneThrows?: boolean } = {},
+  o: {
+    reducedMotion?: boolean;
+    webgl?: boolean;
+    sceneThrows?: boolean;
+    prepare?: () => Promise<void>;
+  } = {},
 ) {
   const host = document.createElement("div");
   host.innerHTML = '<p class="placeholder">A still of the film</p>';
@@ -90,7 +113,7 @@ function setup(
     webgl: () => o.webgl ?? false,
     createScene: (_doc, _parts, _q, _opts, onContextLost) => {
       if (o.sceneThrows) throw new Error("no context");
-      const s = fakeScene();
+      const s = fakeScene(o.prepare);
       s.onLost = onContextLost;
       scenes.push(s);
       return s;
@@ -152,10 +175,11 @@ describe("landing film: frames", () => {
     expect(t.film.snapshot().t).toBeGreaterThan(0);
   });
 
-  it("stops asking once it is paused, out of view, or finished", () => {
-    // a cheap renderer, so the whole film runs in a moment
+  it("stops asking once it is paused, out of view, or finished", async () => {
+    // a cheap renderer, so the whole film runs in a moment (once it is shown)
     const t = setup({ webgl: true });
     t.view(0.6);
+    await flush();
     t.frames.step();
     t.host.querySelector<HTMLElement>(".lf-stage")!.click();
     expect(t.film.snapshot().pausedBy).toBe("user");
@@ -178,9 +202,11 @@ describe("landing film: frames", () => {
     expect(t.frames.requestFrame.mock.calls.length).toBe(done);
   });
 
-  it("plays once: the end is the end until asked again", () => {
+  it("plays once: the end is the end until asked again", async () => {
+    // the fake scene, shown, keeps the run cheap
     const t = setup({ webgl: true });
     t.view(1);
+    await flush();
     t.frames.runOut();
     expect(t.film.snapshot().t).toBeCloseTo(t.film.totalS, 6);
     expect(t.host.querySelector(".lf-play")?.getAttribute("aria-label")).toBe(
@@ -245,12 +271,13 @@ describe("landing film: renderer and fallback", () => {
     expect(t.onFallback).toHaveBeenCalledTimes(1);
   });
 
-  it("builds the 3D scene on first view, not at mount", () => {
+  it("builds the 3D scene on first view, not at mount", async () => {
     const t = setup({ webgl: true });
     expect(t.scenes).toHaveLength(0);
     t.view(0.05);
     expect(t.scenes).toHaveLength(1);
     expect(t.scenes[0]!.layout).toHaveBeenCalled();
+    await flush();
     expect(t.host.querySelector(".lf-film")?.classList.contains("lf-3d")).toBe(
       true,
     );
@@ -261,7 +288,7 @@ describe("landing film: renderer and fallback", () => {
     expect(t.onFallback).not.toHaveBeenCalled();
   });
 
-  it("hands the GPU to AR without calling it a loss, and rebuilds on the next view", () => {
+  it("hands the GPU to AR without calling it a loss, and rebuilds on the next view", async () => {
     const t = setup({ webgl: true });
     t.view(0.6);
     t.frames.step();
@@ -285,6 +312,7 @@ describe("landing film: renderer and fallback", () => {
     t.view(0);
     t.view(0.6);
     expect(t.scenes).toHaveLength(2);
+    await flush();
     expect(t.film.renderer()).toBe("3d");
     expect(t.film.snapshot().status).toBe("playing");
     expect(t.onFallback).not.toHaveBeenCalled();
@@ -312,6 +340,79 @@ describe("landing film: renderer and fallback", () => {
     t.view(0.6);
     expect(t.scenes).toHaveLength(1);
     expect(t.film.snapshot().status).toBe("playing");
+  });
+
+  // The first draw of a new scene compiles every shader on the main
+  // thread: measured in a production build at a 4x slowed CPU, about 400
+  // of the film's 550 ms longest task. The scene compiles them in parallel
+  // first (`prepare`) while the drawing stays, which halved that task.
+  // A scene released, lost or destroyed while it compiles must still be
+  // freed and never shown, or AR would start beside a second live renderer.
+  it("keeps the drawing while the scene compiles, then shows the scene", async () => {
+    const gate = deferred();
+    const t = setup({ webgl: true, prepare: () => gate.promise });
+    t.view(0.6);
+    expect(t.scenes).toHaveLength(1);
+    expect(t.scenes[0]!.prepare).toHaveBeenCalledTimes(1);
+    expect(t.film.renderer()).toBe("floor");
+    t.frames.step();
+    expect(t.scenes[0]!.show).not.toHaveBeenCalled();
+    expect(t.scenes[0]!.draw).not.toHaveBeenCalled();
+    expect(
+      t.host.querySelector(".lf-floor")?.getAttribute("viewBox"),
+    ).toBeTruthy();
+    gate.resolve();
+    await flush();
+    expect(t.film.renderer()).toBe("3d");
+    expect(t.scenes[0]!.show).toHaveBeenCalledTimes(1);
+    expect(t.scenes[0]!.draw).toHaveBeenCalled();
+    expect(t.host.querySelector(".lf-film")?.classList.contains("lf-3d")).toBe(
+      true,
+    );
+  });
+
+  it("shows the scene when compiling ahead fails (its first draw compiles)", async () => {
+    const t = setup({
+      webgl: true,
+      prepare: () => Promise.reject(new Error("no parallel compile")),
+    });
+    t.view(0.6);
+    await flush();
+    expect(t.film.renderer()).toBe("3d");
+    expect(t.onFallback).not.toHaveBeenCalled();
+  });
+
+  /** A scene still compiling, ended by `end`; then the compile finishes. */
+  async function endWhileCompiling(end: (t: ReturnType<typeof setup>) => void) {
+    const gate = deferred();
+    const t = setup({ webgl: true, prepare: () => gate.promise });
+    t.view(0.6);
+    end(t);
+    gate.resolve();
+    await flush();
+    expect(t.scenes[0]!.release).toHaveBeenCalledTimes(1);
+    expect(t.scenes[0]!.show).not.toHaveBeenCalled();
+    expect(t.film.renderer()).toBe("floor");
+    return t;
+  }
+
+  it("frees and never shows a scene handed to AR while it compiles, and builds again", async () => {
+    const t = await endWhileCompiling((x) => x.ar());
+    // AR's release is no loss: the next view builds again
+    t.view(0);
+    t.view(0.6);
+    expect(t.scenes).toHaveLength(2);
+    expect(t.onFallback).not.toHaveBeenCalled();
+  });
+
+  it("frees and never shows a scene that loses its context while it compiles", async () => {
+    const t = await endWhileCompiling((x) => x.scenes[0]!.onLost());
+    expect(t.onFallback.mock.calls).toEqual([["context-lost"]]);
+  });
+
+  it("frees and never shows a scene whose film is destroyed while it compiles", async () => {
+    const t = await endWhileCompiling((x) => x.film.destroy());
+    expect(t.host.querySelector(".lf-film")).toBeNull();
   });
 
   it("falls back when the renderer will not start", () => {
@@ -355,11 +456,12 @@ describe("landing film: the page's side", () => {
   // read `data-playing`): two things moving at once split the reader's
   // eye. It must turn false whenever the film stops moving for any reason,
   // or the cards would stay frozen under a paused or finished film.
-  it("says on the host whether it plays, for the cards", () => {
-    // the fake scene: running the whole film out stays cheap
+  it("says on the host whether it plays, for the cards", async () => {
+    // the fake scene: running the whole film out stays cheap (once it is shown)
     const t = setup({ webgl: true });
     expect(t.host.dataset.playing).toBe("false");
     t.view(0.6);
+    await flush();
     expect(t.host.dataset.playing).toBe("true");
     t.film.toggle();
     expect(t.host.dataset.playing).toBe("false");
@@ -407,5 +509,67 @@ describe("landing film: the page's side", () => {
     expect(current[0]?.getAttribute("aria-label")).toBe(
       "Part 4 of 8: Walk there",
     );
+  });
+});
+
+describe("landing film: the debug readout", () => {
+  // `?debug=1` is how the frame budget is checked on a phone: the readout
+  // must show the whole run's slow frames and the settings the scene was
+  // really built with, and the address's quality knobs must reach the
+  // scene (film-debug.test.ts pins the text and the knobs themselves).
+  it("shows the renderer, its settings and the run's slow frames, built with the knobs' quality", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const frames = frameQueue();
+    let shareCb: (v: number) => void = () => undefined;
+    const built: { quality: unknown; dpr: number }[] = [];
+    const film = createLandingFilm(
+      host,
+      {
+        reducedMotion: false,
+        onArStarting: () => () => undefined,
+        requestFrame: frames.requestFrame,
+      },
+      DEFAULT_TUNING,
+      {
+        webgl: () => true,
+        createScene: (_doc, _parts, quality, opts) => {
+          built.push({ quality, dpr: opts.devicePixelRatio });
+          return fakeScene();
+        },
+        observeView: (_el, cb) => {
+          shareCb = cb;
+          return () => undefined;
+        },
+        observeSize: () => () => undefined,
+        size: () => ({ w: 400, h: 500 }),
+        viewport: () => ({ w: 390, h: 844, dpr: 3 }),
+        now: () => 0,
+        debug: true,
+        quality: (base) => ({ ...base, shadows: false, pixelRatioCap: 1.5 }),
+      },
+    );
+    shareCb(0.6);
+    await flush();
+    frames.step(16);
+    frames.step(16);
+    frames.step(70);
+    frames.step(120);
+    expect(built).toEqual([
+      {
+        quality: {
+          ...DEFAULT_TUNING.quality,
+          shadows: false,
+          pixelRatioCap: 1.5,
+        },
+        dpr: 3,
+      },
+    ]);
+    const readout = host.querySelector(".lf-debug");
+    expect(readout?.hasAttribute("hidden")).toBe(false);
+    const lines = (readout?.textContent ?? "").split("\n");
+    expect(lines[0]).toBe("3d, dpr 1.5, eye aa");
+    expect(lines.at(-1)).toBe("3 frames: 2 over 50 ms, 1 over 100");
+    film.destroy();
   });
 });
