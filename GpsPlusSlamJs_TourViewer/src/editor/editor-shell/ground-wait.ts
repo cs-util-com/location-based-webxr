@@ -1,7 +1,10 @@
 /**
  * A wait for the 3D view's ground: "Put on the ground" on ground that has
- * not loaded yet reads it again until it has, rather than put something
- * at a wrong height; it gives up after a while, and stops when called off.
+ * not loaded at all yet reads it again until some has, rather than put
+ * something at no known height; it gives up after a while, and stops when
+ * called off. It stops at the first ground that loads, a coarse level
+ * included: on a slope that height can still change by a little once
+ * finer tiles arrive (the inspector then shows how far off it stands).
  *
  * @see ground-wait.ts.md
  */

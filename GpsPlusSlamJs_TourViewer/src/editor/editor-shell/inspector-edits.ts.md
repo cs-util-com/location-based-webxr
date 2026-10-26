@@ -22,9 +22,15 @@ stationId, edit }` (a `StationEdit` of `tour-document.ts`). A radius
   - A station's `east` / `north`: `{ kind: "scene", edit: station-pose }`,
     its anchor at the place those metres name from `origin`
     (`placeAtEastNorth`), its height and turn kept.
-  - An item's `east` / `north` / `height`: an item-pose scene edit, its
-    offset in its station's frame ([north, up, east]) with that one axis
-    changed.
+  - An item's `east` / `north`: an item-pose scene edit, its offset in
+    its station's frame ([north, up, east]) with that one axis changed.
+  - An item's `height`: `{ kind: "height", id, alt }`, the altitude the
+    typed up-offset gives in its station's frame; the shell writes it as
+    the item's altitude alone (`groundItems`), its latitude, longitude
+    and turn untouched. A pose through the station's frame and back moves
+    an item sideways by up to about a micrometre (float32), and for an
+    item outside a lowered circle that could read as a move outward and
+    re-seat it.
   - A `heading`, of a station or an item: `{ kind: "turn", selection, deg
 }`, the short way round from the heading it has now (the page turns it
     as the 3D view's turn does).
@@ -32,8 +38,11 @@ stationId, edit }` (a `StationEdit` of `tour-document.ts`). A radius
   - A value equal to the tour's, a field the selection has not, a code,
     or a selection the tour lacks: `{ kind: "none" }`.
   - A number field with no number in it (blank, "ten"): `{ kind:
-"invalid", reason }` ("Type a number, like 12.5"). A comma is a decimal point
-    ("3,5" is 3.5).
+"invalid", reason }` ("Type a number, like 12.5"). Only a plain decimal
+    is a number: a sign, digits, and one decimal point or one comma
+    ("3,5" is 3.5). Hex ("0x10"), binary, octal, an exponent ("1e3"),
+    "Infinity", a thousands separator ("1,000,5", "1.000,5", "1 000") are
+    no number.
 - `groundEdit({ selected, stations, which, groundAt })` -> `GroundEdit |
 null`:
   - `which: "ground"` on a station: its anchor at the ground under it, as
@@ -79,5 +88,7 @@ groundEdit({
 
 ## Tests
 
-`inspector-edits.test.ts`: a station's title, description and radius; a pin's text and no model caption; a station moved to the typed east and north, height and heading kept; the turn to a typed heading; an item's typed offset and height; a model's size; a value that is no number, an unchanged one; a selection the tour lacks, a code, an unknown field. `groundEdit`: an item once its ground has loaded, a station's items as one edit, a station's anchor with its turn kept, nothing for what stands on the ground already. End to end:
-`playwright-tests/editor3d-inspector.spec.js`.
+`inspector-edits.test.ts`: a station's title, description and radius; a pin's text and no model caption; a station moved to the typed east and north, height and heading kept; the turn to a typed heading; an item's typed offset; a typed height as the altitude alone; a model's size; a value that is no number (hex, exponents, thousands separators among them) and the plain decimals that are, an unchanged one; a selection the tour lacks, a code, an unknown field. `groundEdit`: an item once its ground has loaded, a station's items as one edit, a station's anchor with its turn kept, nothing for what stands on the ground already. End to end:
+`playwright-tests/editor3d-inspector.spec.js`. A typed height of items
+outside a lowered circle keeping their station and place, through the
+reducer: `keeps-home.property.test.ts`.

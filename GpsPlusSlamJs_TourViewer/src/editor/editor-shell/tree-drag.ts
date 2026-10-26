@@ -9,7 +9,8 @@
  * bottom edge, the drag scrolls the dock, and the slot follows the cards
  * as they move. A redraw of the tree mid-drag (any store change) carries
  * the drag over to the new cards when they are the same stations, and
- * ends it with nothing written when they are not. The slot maths is
+ * ends it with nothing written when they are not, at a move or at the
+ * release. The slot maths is
  * `tree-reorder.ts`'s. The keyboard's way to reorder is the inspector's
  * Earlier and Later.
  *
@@ -165,6 +166,8 @@ export function createTreeDrag(deps: {
 
   function onUp(event: PointerEvent): void {
     if (drag === null || event.pointerId !== drag.pointerId) return;
+    // Stations changed since the last move: the drag ended unwritten.
+    if (!current(drag)) return;
     end(true);
   }
 

@@ -72,7 +72,7 @@ import {
   type InspectorModel,
 } from "./inspector-model.js";
 import { createSceneMenu, type GroundPlace } from "./scene-menu.js";
-import { drawInspector } from "./shell-inspector.js";
+import { drawInspector, inspectorDrawing } from "./shell-inspector.js";
 import { placeShellIcons, shellIcon, type ShellIcon } from "./shell-icons.js";
 import { createShellPictures } from "./shell-pictures.js";
 import { drawTree } from "./shell-tree.js";
@@ -127,7 +127,8 @@ interface ShellEditCommands {
   text(itemId: string, text: string): void;
   /** A pose or a size, as the 3D view's gestures write them. */
   scene(edit: GestureEdit): void;
-  /** Items' heights (the ground under each), as one step. */
+  /** Items' heights (the ground under each, or a typed height), as one
+   *  step; their places and turns kept. */
   groundItems(
     items: readonly { readonly id: string; readonly alt: number }[],
   ): void;
@@ -287,6 +288,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     view?.groundAt(place) ?? null;
 
   const inspectorModel = (ui: EditorViewState) => {
+    // Nothing to show: no tour built for it (the readout asks 5 times a
+    // second).
+    if (ui.selected === null) return null;
     const tour = manifest();
     return buildInspector({
       selected: ui.selected,
@@ -467,6 +471,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     else if (edit.kind === "text") deps.edits.text(edit.id, edit.text);
     else if (edit.kind === "scene") deps.edits.scene(edit.edit);
     else if (edit.kind === "turn") view?.turn(edit.selection, edit.deg);
+    else if (edit.kind === "height") {
+      deps.edits.groundItems([{ id: edit.id, alt: edit.alt }]);
+    }
   };
 
   /** A ground command on the selection: run at once with the ground
@@ -829,11 +836,16 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
   });
 
-  // A field is committed when it is left (and the title on Enter); one
-  // taken out of the page by a draw is not "left".
+  // A field is committed when it is left (and on Enter). One a draw takes
+  // out of the page is not "left": the browser fires its focusout during
+  // the draw, which carries the typed text over to the field drawn again.
   inspector.root.addEventListener("focusout", (event) => {
     const input = event.target;
-    if (input instanceof HTMLInputElement && inspector.root.contains(input)) {
+    if (
+      input instanceof HTMLInputElement &&
+      inspector.root.contains(input) &&
+      !inspectorDrawing(inspector.root)
+    ) {
       commitField(input, state().editorView.selected);
     }
   });

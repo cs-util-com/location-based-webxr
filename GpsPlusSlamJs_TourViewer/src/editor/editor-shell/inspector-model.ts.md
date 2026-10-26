@@ -21,14 +21,16 @@ origin?, groundAt? })` ->
     `activateRadiusM`, `outside` (how many of its items stand outside
     the found circle), `offGround` (how many items stand more than
     `ON_GROUND_M` off the ground; null while the ground under any has not
-    loaded), `groundOffM` (the anchor's height over the ground, null while
-    unknown), `position` (`InspectorPosition`), or null when the
+    loaded), `groundOffM` (the anchor's height over the ground as shown:
+    in tenths of a metre, 0 within `ON_GROUND_M`; null while unknown),
+    `position` (`InspectorPosition`), or null when the
     station's point or the origin cannot be read;
   - `ItemInspector` - `kind: "item"`, `itemKind`, title, `sub` naming
     its station, `stationId`, `text` (a pin's label to edit; null for a
     photo or a model), `sizeM` (a model's, else null), `offset`
     (`northM`, `upM`, `eastM` in the station's frame), `headingDeg`,
-    `groundOffM` (its height over the ground, null while unknown);
+    `groundOffM` (its height over the ground, rounded as the station's;
+    null while unknown);
   - `CodeInspector` - `kind: "code"`, title, `sub` (its line),
     `printSizeM`, `position` or null when it has none;
   - `InspectorPosition` - `eastM` and `northM` from `origin` when it
@@ -86,4 +88,9 @@ the values the inspector edits: a station's own name, the card's
 choices with the one shown marked, the items outside the circle, a
 position from a given origin, how far a station and its items stand off
 the ground (null before it has loaded), and a pin's text (none for a
-photo or a model).
+photo or a model). A property pins the heights off the ground as shown
+(tenths, 0 within `ON_GROUND_M`, within 5 cm of the true value) and that
+ground changing by a few millimetres without crossing a shown tenth
+leaves the model unchanged: the shell's readout draws the inspector again
+whenever its model changes, so a model carrying raw heights was drawn
+again under the creator's typing on every tile of finer ground.

@@ -17,8 +17,14 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
   inspector's - an autosave's status - leaves its controls alone. When it
   is drawn again, the control that had the focus (by its `data-act` or
   `data-field`) has it again, with any text typed and not yet committed;
-  a control drawn disabled leaves the focus where it fell. The shell
+  a control drawn disabled leaves the focus where it fell. A call made
+  while a draw of the same dock runs (from a `focusout` the draw itself
+  caused) is not run: the draw in progress finishes alone. The shell
   draws a null model when it is hidden, before it lets the pictures go.
+- `inspectorDrawing(root)` - true while the dock at `root` is being
+  drawn: the shell's focusout handler commits nothing then, because
+  Chromium fires `focusout` on the focused field a draw removes, in the
+  middle of the draw, and the draw carries the typed text over.
   - A station: its name to type in the head (`input.ttlin`,
     `data-field="title"`, "Station name", the placeholder "Station n");
     "Station n of N"; its commands; its Description to type
@@ -40,7 +46,12 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
   - Typed fields are `<input>`s carrying `data-field` (`title`,
     `description`, `radius`, `east`, `north`, `height`, `heading`,
     `size`) and the tour's value as `defaultValue`: the shell commits a
-    field whose text differs from it.
+    field whose text differs from it. A value with a line break (a pin
+    text the 2D card wrote, a description from another writer) is shown
+    on one line, read-only, with a title saying why (for a pin: edit it
+    in its card on the 2D map): a text input drops line breaks, so its
+    value would never equal the default and leaving it would write the
+    flattened text.
   - A code: its line, its print size, and its position, or that none is
     stored.
 - Every field's label is tied to its value: a `<label for>` on its
@@ -59,7 +70,8 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
   station"; an item's "Move to a new station" (`split`), "Put on the
   ground" (`ground`, its note "x.x m up/down", off when on it) and
   "Delete pin" / "Delete photo" / "Delete 3D model". The command `busy`
-  names says "Waiting for the ground...", is disabled and `aria-busy`. Each
+  names says "Waiting for the ground...", is `aria-disabled` (not
+  `disabled`, so it keeps the keyboard's focus) and `aria-busy`. Each
   `.act` is a button with an icon and its words in `.lbl`; Delete is
   `.danger`, shows its key in a `<kbd>` hidden from screen readers and
   announces it by `aria-keyshortcuts="Delete"`. A code has none
@@ -95,4 +107,9 @@ opened again, and the fields' layout at four window sizes).
 It also covers the fields to type per kind, a locked station's place
 and heading read-only with its Put on the ground off, a pin's text in
 the head, the outside-the-circle warning, and a command waiting for the
-ground. It also keeps the focus on Earlier through an autosave's status change, and gives the focus back to the control that had it when the inspector is drawn again.
+ground (not `disabled`), with the focus kept on it as it starts waiting.
+It also keeps the focus on Earlier through an autosave's status change,
+and gives the focus back to the control that had it when the inspector
+is drawn again; a draw asked for inside a draw is not run, and
+`inspectorDrawing` is true only during one; a pin text of several lines
+shows on one line, read-only.

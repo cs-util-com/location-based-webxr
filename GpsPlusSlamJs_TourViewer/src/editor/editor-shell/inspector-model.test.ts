@@ -9,6 +9,7 @@
  * or a code stands is said as the 3D view frames it: metres east and
  * north of the tour's centre, its height and its heading.
  */
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 // Activates the licence an item's place in the world needs.
@@ -20,6 +21,7 @@ import {
   buildInspector,
   headingOfRotation,
   inspectorHint,
+  ON_GROUND_M,
 } from "./inspector-model.js";
 
 const AT = "2026-10-22T10:00:00Z";
@@ -420,6 +422,41 @@ describe("buildInspector: the values the inspector edits", () => {
     expect(at("pin-far", { groundAt: flat(560) })).toMatchObject({
       groundOffM: expect.closeTo(0, 3),
     });
+  });
+
+  // Why: the readout draws the inspector again whenever its model
+  // changes, and the ground under a station changes by centimetres while
+  // finer tiles stream in. A model carrying the raw heights changed on
+  // every tile, so the inspector was drawn again under a creator's
+  // typing for differences it never shows: it shows tenths of a metre,
+  // and "on the ground" within ON_GROUND_M.
+  it("gives the heights off the ground as shown, so ground that changes by centimetres changes nothing (property)", () => {
+    const tenth = (m: number) =>
+      Math.abs(m) <= ON_GROUND_M ? 0 : Math.round(m * 10);
+    // The height off the ground as the model computes it from `m`.
+    const raw = (m: number) => 560 - (560 - m);
+    fc.assert(
+      fc.property(
+        fc.double({ min: -40, max: 40, noNaN: true }),
+        fc.double({ min: -0.004, max: 0.004, noNaN: true }),
+        (offM, jitterM) => {
+          const ground = (m: number) => () => 560 - m;
+          const shown = at("station:p", { groundAt: ground(offM) });
+          if (shown?.kind !== "station" || shown.groundOffM === null) {
+            throw new Error("no ground");
+          }
+          const off = shown.groundOffM;
+          expect(off).toBe(tenth(raw(offM)) / 10);
+          expect(Math.abs(off - offM)).toBeLessThanOrEqual(0.05 + 1e-9);
+          // A jitter that does not cross a shown tenth changes nothing;
+          // one that does changes the model.
+          const near = at("station:p", { groundAt: ground(offM + jitterM) });
+          const crosses = tenth(raw(offM)) !== tenth(raw(offM + jitterM));
+          expect(JSON.stringify(near) === JSON.stringify(shown)).toBe(!crosses);
+        },
+      ),
+      { numRuns: 300 },
+    );
   });
 
   // Why: a pin's text is its label and edited here; a photo's or a

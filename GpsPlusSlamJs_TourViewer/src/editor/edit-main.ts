@@ -44,6 +44,7 @@ import {
   manifestToWrite,
   selectTourDocument,
   tourDocumentActions,
+  type TourDocumentState,
   type TourSaveHolder,
   type TourSaveStatus,
 } from "../tour-document.js";
@@ -147,6 +148,7 @@ import {
 import { inField, inMenu } from "./key-target.js";
 import { createEditorShell } from "./editor-shell/editor-shell.js";
 import { newPin } from "./new-pin.js";
+import { reseatOf, type Reseat } from "./reseat-note.js";
 import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
 import type { GroundPlace } from "./editor-shell/scene-menu.js";
@@ -995,10 +997,18 @@ function finishMove(): void {
   store.dispatch(editorViewActions.moveEnded());
   if (done.drop !== null) {
     try {
+      const before = store.getState().tourDocument;
       const outcome = editor.move(done.id, done.drop.lat, done.drop.lng);
       if (outcome.kind === "moved") {
         moved.add(done.id);
-        say({ id: done.id, text: "Moved - not saved yet." });
+        const reseat = announceReseat(before, done.id);
+        say({
+          id: done.id,
+          text:
+            reseat === null
+              ? "Moved - not saved yet."
+              : `${reseat.said} - not saved yet.`,
+        });
         endUndo();
         autosave.changed();
       } else {
@@ -1206,6 +1216,7 @@ async function duplicateSelection(id: string): Promise<void> {
 function commitSceneEdit(edit: GestureEdit): void {
   if (editor === null) return;
   endUndo();
+  const before = store.getState().tourDocument;
   const outcome = applySceneEdit(editor, edit);
   say(null);
   refresh();
@@ -1213,7 +1224,20 @@ function commitSceneEdit(edit: GestureEdit): void {
     toast(outcome.reason);
     return;
   }
+  if (edit.kind === "item-pose") {
+    const reseat = announceReseat(before, edit.id);
+    if (reseat !== null) toast(reseat.said);
+  }
   autosave.changed();
+}
+
+/** An item a write gave another station (`reseat-note.ts`): a station
+ *  the rule made for it starts unlocked, as every station made in this
+ *  session; the line saying so is the caller's to show. */
+function announceReseat(before: TourDocumentState, id: string): Reseat | null {
+  const reseat = reseatOf(before, store.getState().tourDocument, id);
+  if (reseat?.made === true) unlockMade(reseat.stationId);
+  return reseat;
 }
 
 /** An edit the 3D inspector typed or pressed, written through `write`:

@@ -380,6 +380,66 @@ test("Put items on the ground, Put on the ground, Add pin, a pin's text and a ty
     )
     .toBe("Look up");
   expect(await revision(page)).toBe(before + 5);
+
+  // A draw while typing: a change made elsewhere (the radius, through the
+  // session) draws the inspector again under the cursor. Chromium fires
+  // the field's focusout during that draw; the half-typed words are not
+  // written, and stay, focused. Finished, they are one step, and one undo
+  // takes them back alone.
+  await selectStation(page, "a");
+  const typedFrom = await revision(page);
+  await field(page, "description").fill("By the foun");
+  await page.evaluate(() =>
+    /** @type {any} */ (window).__tourEditor
+      .editor()
+      .editStation("a", { foundRadiusM: 24 }),
+  );
+  await expect(field(page, "radius")).toHaveValue("24.0");
+  expect(await revision(page)).toBe(typedFrom + 1);
+  await expect(field(page, "description")).toBeFocused();
+  await expect(field(page, "description")).toHaveValue("By the foun");
+  await field(page, "description").press("End");
+  await field(page, "description").pressSequentially("tain");
+  await field(page, "description").press("Enter");
+  await expect
+    .poll(async () => (await stationNow(page, "a")).description)
+    .toBe("By the fountain");
+  expect(await revision(page)).toBe(typedFrom + 2);
+  await page.locator("#studio-undo").click();
+  await expect
+    .poll(async () => (await stationNow(page, "a")).description ?? "")
+    .toBe("");
+  expect((await stationNow(page, "a")).foundRadiusM).toBe(24);
+
+  // An item typed out of its station's circle is seated again, said in a
+  // toast naming it and its new station: into the circle it lands in, or,
+  // out of every circle, into a station of its own, which, made here,
+  // starts unlocked.
+  await page
+    .locator('#tree-body .card[data-station="a"] [data-select="pa"]')
+    .click();
+  await expect.poll(() => selected(page)).toBe("pa");
+  await act(page, "position").click();
+  // 60 m north of a: inside b's circle (b is 44 m north, its radius 25).
+  await field(page, "north").fill("60");
+  await field(page, "north").press("Enter");
+  await expect(
+    page.locator(".toast", { hasText: `"Pin a" is now in Station B` }),
+  ).toBeVisible();
+  // 100 m south of b: out of a's circle too.
+  await field(page, "north").fill("-100");
+  await field(page, "north").press("Enter");
+  await expect(
+    page.locator(".toast", {
+      hasText: `"Pin a" left its station's circle: it is now in a station of its own`,
+    }),
+  ).toBeVisible();
+  const home = (await tourNow(page)).stations.find((/** @type {any} */ s) =>
+    s.items.some((/** @type {any} */ i) => i.id === "pa"),
+  );
+  expect(home.id).not.toBe("a");
+  await selectStation(page, home.id);
+  await expect(act(page, "lock")).toHaveAttribute("aria-pressed", "false");
 });
 
 /**

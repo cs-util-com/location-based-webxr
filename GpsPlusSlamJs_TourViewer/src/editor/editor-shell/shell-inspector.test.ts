@@ -20,7 +20,7 @@ import { tourDocumentActions, manifestToWrite } from "../../tour-document.js";
 import { createTourViewerStore } from "../../tour-viewer-session.js";
 import { editorViewActions, editorViewReducer } from "../editor-view.js";
 import { buildInspector, type InspectorCode } from "./inspector-model.js";
-import { drawInspector } from "./shell-inspector.js";
+import { drawInspector, inspectorDrawing } from "./shell-inspector.js";
 import type { ShellPictures } from "./shell-pictures.js";
 
 const AT = "2026-10-22T10:00:00Z";
@@ -354,11 +354,27 @@ describe("drawInspector", () => {
     const button = dock.body.querySelector<HTMLButtonElement>(
       '[data-act="ground-items"]',
     );
-    expect(button?.disabled).toBe(true);
+    // Waiting, it takes no press, but keeps the keyboard's focus: a
+    // `disabled` button would drop it to the page for up to 20 s.
+    expect(button?.disabled).toBe(false);
+    expect(button?.getAttribute("aria-disabled")).toBe("true");
     expect(button?.getAttribute("aria-busy")).toBe("true");
     expect(button?.querySelector(".lbl")?.textContent).toBe(
       "Waiting for the ground...",
     );
+  });
+
+  // Why: pressed from the keyboard, "Put items on the ground" redraws
+  // itself as waiting; the focus must stay on it, not fall to the page.
+  it("keeps the keyboard's focus on a command that starts waiting", () => {
+    draw("station:gate");
+    dock.body
+      .querySelector<HTMLButtonElement>('[data-act="ground-items"]')
+      ?.focus();
+    draw("station:gate", false, [], "ground-items");
+    const waiting = dock.body.querySelector('[data-act="ground-items"]');
+    expect(waiting?.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(waiting);
   });
 
   it("says a code has no position stored", () => {
@@ -515,6 +531,86 @@ describe("drawInspector", () => {
     // What the tour holds stays the field's own value: leaving it now
     // commits the typed text.
     expect(input("description")?.defaultValue).toBe("");
+  });
+
+  // Why: a draw takes the focused field out of the page, and Chromium
+  // fires its focusout in the middle of the draw; the shell's commit then
+  // dispatched, and the store's change drew the inspector again INSIDE the
+  // first draw, which then finished over it and left a stale dock. A draw
+  // must say it is running, and must never run inside another.
+  it("is never drawn from inside a draw, and says while it draws", () => {
+    const seen: boolean[] = [];
+    const nested: ShellPictures = {
+      show: () => {
+        seen.push(inspectorDrawing(dock.root));
+        drawInspector(
+          dock,
+          buildInspector({
+            selected: "station:steps",
+            stations: STATIONS,
+            assets: [],
+            codes: CODES,
+          }),
+          { folded: false, positionOpen: false },
+          pictures,
+        );
+      },
+      sweep: vi.fn(),
+      clear: vi.fn(),
+    };
+    // The gate's card picture is drawn during the draw (`show`).
+    const gate = buildInspector({
+      selected: "station:gate",
+      stations: STATIONS,
+      assets: [],
+      codes: CODES,
+    });
+    drawInspector(dock, gate, { folded: false, positionOpen: false }, nested);
+    expect(seen).toEqual([true]);
+    expect(inspectorDrawing(dock.root)).toBe(false);
+    expect(input("title")?.value).toBe("The old gate");
+  });
+
+  // Why: a text input drops line breaks, so a pin text of several lines
+  // (the 2D card's textarea writes them) read back as one glued line, and
+  // focusing and leaving the field wrote that flattened text as an edit.
+  it("shows a text of several lines on one line, read-only, so leaving it writes nothing", () => {
+    const withPin = STATIONS.map((s) =>
+      s.id === "steps"
+        ? {
+            ...s,
+            items: [
+              {
+                id: "lines",
+                kind: "pin",
+                label: "line one\nline two",
+                createdAtIso: AT,
+                pose: { position: [1, 0, 1], rotation: [0, 0, 0, 1] },
+              },
+            ],
+          }
+        : s,
+    ) as unknown as TourStation[];
+    drawInspector(
+      dock,
+      buildInspector({
+        selected: "lines",
+        stations: withPin,
+        assets: [],
+        codes: CODES,
+      }),
+      { folded: false, positionOpen: false },
+      pictures,
+    );
+    const title = input("title");
+    expect(title?.readOnly).toBe(true);
+    expect(title?.value).toBe("line one line two");
+    // Its value as shown is its default: nothing reads as typed.
+    expect(title?.defaultValue).toBe(title?.value);
+    expect(title?.title).toContain("2D map");
+    // A one-line text stays a field to type in.
+    draw("station:steps");
+    expect(input("title")?.readOnly).toBe(false);
   });
 
   it("folds to its head", () => {

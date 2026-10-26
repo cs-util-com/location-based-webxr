@@ -19,13 +19,19 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
 
-import { KEEPS_HOME_TOLERANCE_M, keepsHomeDistance } from "./keeps-home.js";
+import { inspectorEdit } from "./editor/editor-shell/inspector-edits.js";
+import {
+  KEEPS_HOME_START_SLACK_M,
+  KEEPS_HOME_TOLERANCE_M,
+  keepsHomeDistance,
+} from "./keeps-home.js";
 import { horizontalM } from "./move-with-code.js";
 // Activates the licence the geodesy below needs (as every v3 tour test).
 import "./test-support/v3-tour.js";
 import {
   documentObjects,
   initialTourDocumentState,
+  manifestToWrite,
   tourDocumentActions as act,
   tourDocumentReducer as reduce,
   type TourDocumentState,
@@ -52,8 +58,8 @@ function station(id: string, north: number): TourStation {
   };
 }
 
-/** A tour with station s, and a pin p of s at `north` m. */
-function withPin(north: number): TourDocumentState {
+/** A tour with station s, and a pin p of s at `north` m (and `east`). */
+function withPin(north: number, east = 0): TourDocumentState {
   const opened = reduce(
     initialTourDocumentState,
     act.opened({
@@ -74,7 +80,7 @@ function withPin(north: number): TourDocumentState {
         kind: "pin",
         label: "p",
         createdAtIso: "2026-10-25T00:00:00.000Z",
-        geo: spot(north),
+        geo: spot(north, east),
         station: "s",
       },
       what: "p",
@@ -112,7 +118,11 @@ describe("keepsHomeDistance", () => {
             maxLength: 200,
           }),
           (startM, nudges) => {
-            const bound = Math.max(startM, RADIUS_M + toleranceM);
+            // Outside the circle, each move may end its slack farther out
+            // than it started: never more than that a move.
+            const bound =
+              Math.max(startM, RADIUS_M + toleranceM) +
+              nudges.length * KEEPS_HOME_START_SLACK_M;
             let at = startM;
             for (const nudge of nudges) {
               const next = Math.max(0, at + nudge);
@@ -139,7 +149,12 @@ describe("keepsHomeDistance", () => {
     expect(at(24, 25.51)).toBe(false);
     expect(at(40, 39)).toBe(true);
     expect(at(40, 40)).toBe(true);
+    // A millimetre past the start is rounding (a pose through the
+    // station's frame and back), not a move outward.
+    expect(at(40, 40.0009)).toBe(true);
+    expect(at(40, 40.0011)).toBe(false);
     expect(at(40, 40.01)).toBe(false);
+    expect(KEEPS_HOME_START_SLACK_M).toBe(0.001);
     expect(keepsHomeDistance({ radiusM: RADIUS_M, wasM: 0, nowM: 25.4 })).toBe(
       true,
     );
@@ -230,5 +245,70 @@ describe("stationEdited: a radius lowered under its items", () => {
     );
     expect(pinOf(moveTo(lowered, spot(19))).station).toBe("s");
     expect(pinOf(moveTo(lowered, spot(20, 1))).station).not.toBe("s");
+  });
+});
+
+describe("a typed height of an item outside a lowered circle", () => {
+  // Why: a typed Height used to be written as a whole new pose, through
+  // the station's frame and back; its float32 maths moved the item
+  // sideways by up to a micrometre, outward about half the time, and an
+  // item outside a lowered circle then got a station of its own with
+  // nothing said. A height changes the altitude, and the item stays.
+  it("keeps the item in its station, where it stands (property)", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 8, max: 20, noNaN: true }),
+        fc.double({ min: 0, max: 2 * Math.PI, noNaN: true }),
+        fc.double({ min: -3, max: 3, noNaN: true }),
+        (distanceM, bearing, heightM) => {
+          const lowered = reduce(
+            withPin(
+              distanceM * Math.cos(bearing),
+              distanceM * Math.sin(bearing),
+            ),
+            act.stationEdited({
+              stationId: "s",
+              edit: { foundRadiusM: 5 },
+              what: "radius",
+            }),
+          );
+          const before = pinOf(lowered);
+          const typed = inspectorEdit({
+            selected: "p",
+            stations: manifestToWrite(lowered)?.stations ?? [],
+            origin: null,
+            field: "height",
+            value: heightM.toFixed(2),
+          });
+          // Written as the page writes each kind of edit.
+          const after =
+            typed.kind === "height"
+              ? reduce(
+                  lowered,
+                  act.itemsGrounded({
+                    items: [{ id: typed.id, alt: typed.alt }],
+                    what: "h",
+                  }),
+                )
+              : typed.kind === "scene" && typed.edit.kind === "item-pose"
+                ? reduce(
+                    lowered,
+                    act.moved({
+                      object: { ...before, geo: typed.edit.geo },
+                      what: "h",
+                      newStationId: "made",
+                    }),
+                  )
+                : lowered;
+          const pin = pinOf(after);
+          expect(pin.station).toBe("s");
+          expect([pin.geo.lat, pin.geo.lon]).toEqual([
+            before.geo.lat,
+            before.geo.lon,
+          ]);
+        },
+      ),
+      { numRuns: 200 },
+    );
   });
 });

@@ -159,14 +159,33 @@ items on the ground, the card's picture and Add pin.
   no further (the page's Escape would deselect). Text still typed when
   the selection changes or the view hides is committed to the selection
   it was typed for.
+- **A draw is not "leaving" a field.** Chromium fires `focusout` on a
+  focused field a draw takes out of the page, synchronously, in the
+  middle of the draw; the focusout handler commits only while no draw
+  runs (`inspectorDrawing`), and the draw carries the typed text and the
+  focus over to the field drawn again. Without that, a draw while typing
+  (the readout's tick as the ground loads, a change made elsewhere)
+  committed the half-typed text as its own undo step and, through the
+  store change, drew the inspector again inside the draw and left it
+  stale.
+- **A typed height is the item's altitude alone** (`groundItems` with one
+  item): its place and turn stay bit for bit, so a height never moves an
+  item sideways (a pose through the station's frame and back would, by
+  its float32 rounding, and could re-seat an item outside a lowered
+  circle).
+- With nothing selected the inspector's model is not built (no tour is
+  built for it on the readout's tick, five times a second).
 - **Put on the ground waits for the ground:** where the ground under
   what it moves has not loaded, the command shows "Waiting for the
-  ground..." (disabled, `aria-busy`) and reads it again
+  ground..." (`aria-disabled` and `aria-busy`: it keeps the keyboard's
+  focus, and a press while it waits does nothing) and reads it again
   (`ground-wait.ts`) until it has, then writes; after 20 s it says the
   ground has not loaded. A selection change or hiding the view calls
   the wait off. What already stands on the ground is said, not written.
   The inspector is drawn again with the camera readout, so the "N off"
-  and "x m up" notes follow the ground as it loads.
+  and "x m up" notes follow the ground as it loads (in the tenths of a
+  metre they show: `inspector-model.ts` rounds them, so ground that
+  changes by centimetres does not draw it again).
 - The inspector's lock (`data-act="lock"`) toggles the selected station's lock in `editorView` (`stationLocked`); both inspector builds pass `unlockedStations`.
 
 ## Examples
@@ -222,13 +241,26 @@ map, Top view from View and by T, the zoom steps and the debug readout,
 and on a phone the folded tree's "Stations" header unfolding the dock
 with its stations shown.
 
+The shell itself under jsdom, on `edit.html`'s markup and a real store
+with the page's commands as spies (`editor-shell.test.ts`): text typed
+and not committed goes to the selection it was typed for on a selection
+change and on `hide()`; a draw while typing (a store change, the ground
+arriving on the readout's tick) commits nothing and keeps the text and
+the focus (Chromium's synchronous `focusout` on a removed field is
+reproduced there, jsdom lacks it); Escape puts the value back; a pin text
+of several lines focused and left writes nothing; a ground command
+waiting is called off by a selection change (later ground writes
+nothing), and writes once the ground arrives when the selection stays;
+the readout's tick builds no tour with nothing selected.
+
 The lock's click in the page: `editor3d-edit.spec.js`.
 
 The inspector's editing in the page:
 `playwright-tests/editor3d-inspector.spec.js` (a name by Enter, Escape
 putting it back, a description by leaving it, a radius under its pin
 with the warning, a value that is no number, one undo per field, saved
-and opened again; Put items on the ground as one step, a locked
+and opened again; a name typed while a change made elsewhere draws the
+inspector again stays one step, with the text kept; Put items on the ground as one step, a locked
 station's place read-only, Put on the ground and a typed place and
 heading once unlocked, Add pin and its text; the fields' layout at the
 four sizes). Its parts' own tests: `inspector-edits.test.ts`,

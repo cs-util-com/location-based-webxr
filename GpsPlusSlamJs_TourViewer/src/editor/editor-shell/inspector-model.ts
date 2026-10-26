@@ -239,13 +239,25 @@ function cardImages(
   };
 }
 
-/** `geo`'s height over the ground (m), or null where none has loaded. */
+/** A height off the ground as the inspector shows it: in tenths of a
+ *  metre, 0 within `ON_GROUND_M`. The ground changes by centimetres while
+ *  finer tiles arrive; a model that carried the raw height would change
+ *  with each of them, and the inspector would be drawn again for nothing
+ *  it shows. */
+function shownOff(m: number): number {
+  return Math.abs(m) <= ON_GROUND_M ? 0 : Math.round(m * 10) / 10;
+}
+
+/** `geo`'s height over the ground (m, as shown: `shownOff`), or null
+ *  where none has loaded. */
 function offGroundOf(
   geo: { readonly lat: number; readonly lon: number; readonly alt: number },
   groundAt: InspectorGround | undefined,
 ): number | null {
   const ground = groundAt?.({ lat: geo.lat, lon: geo.lon }) ?? null;
-  return ground === null || !Number.isFinite(ground) ? null : geo.alt - ground;
+  return ground === null || !Number.isFinite(ground)
+    ? null
+    : shownOff(geo.alt - ground);
 }
 
 /** `item`'s height over the ground; null for one that cannot be placed

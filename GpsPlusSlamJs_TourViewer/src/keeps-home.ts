@@ -14,6 +14,13 @@
  *  circle where visitors see it. */
 export const KEEPS_HOME_TOLERANCE_M = 0.5;
 
+/** How far past where a move started an item outside its circle may end
+ *  and still count as no farther out (m): a pose taken through its
+ *  station's frame and back moves by up to about a micrometre, and that
+ *  rounding is no move outward. A run of moves can gain at most this
+ *  much each, a metre over a thousand of them. */
+export const KEEPS_HOME_START_SLACK_M = 0.001;
+
 function isDistance(m: number): boolean {
   return Number.isFinite(m) && m >= 0;
 }
@@ -22,10 +29,11 @@ function isDistance(m: number): boolean {
  * True when an item that stood `wasM` from its station's anchor before
  * the move (the gesture's start) and stands `nowM` from it after keeps
  * the station of found radius `radiusM`: within the radius and
- * `toleranceM`, or no farther out than it stood before (an item left
- * outside by a radius lowered under it may move about out there, and
- * back in). The bound is the circle, never the previous place, so no run
- * of small moves carries an item outward without limit. False for a
+ * `toleranceM`, or no farther out than it stood before, give or take
+ * `KEEPS_HOME_START_SLACK_M` of rounding (an item left outside by a
+ * radius lowered under it may move about out there, and back in). The
+ * bound is the circle, never the previous place, so no run of small
+ * moves carries an item outward by more than that rounding each. False for a
  * distance or a radius that is not a finite, non-negative number.
  */
 export function keepsHomeDistance(
@@ -41,5 +49,5 @@ export function keepsHomeDistance(
     return false;
   }
   if (nowM <= radiusM + toleranceM) return true;
-  return isDistance(wasM) && nowM <= wasM;
+  return isDistance(wasM) && nowM <= wasM + KEEPS_HOME_START_SLACK_M;
 }

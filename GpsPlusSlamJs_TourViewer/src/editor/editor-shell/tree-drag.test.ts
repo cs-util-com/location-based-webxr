@@ -207,6 +207,28 @@ describe("createTreeDrag", () => {
     );
   });
 
+  // Why: the release checks the tree too. Stations changed between the
+  // last move and the release (an undo, a draft restored mid-drag) left
+  // the drop to write an order from the ids the drag started with: a
+  // different set was refused with a toast, the same set in another
+  // order quietly put the old order back.
+  it("writes nothing on a release after a redraw that changed the stations", () => {
+    for (const after of [
+      ["a", "c"],
+      ["c", "b", "a"],
+    ]) {
+      const { grip, reorder, body } = setUp();
+      pointer(grip("a"), "pointerdown", 120);
+      pointer(window, "pointermove", 175);
+      redraw(body, after);
+      pointer(window, "pointerup", 175);
+      expect(reorder, after.join()).not.toHaveBeenCalled();
+      expect(body.querySelector(".dragging, .drop-before, .drop-after")).toBe(
+        null,
+      );
+    }
+  });
+
   // Why: a tour longer than the dock could only be reordered within what
   // the dock showed. Held near the dock's edge, the drag scrolls it, and
   // the slot follows the cards as they move under the still pointer.

@@ -96,8 +96,16 @@ function readOnlyNumber(label: string, value: string, unit = ""): HTMLElement {
   return labelled(label, out, box);
 }
 
+/** What a text of several lines says on a one-line field, which cannot
+ *  keep its line breaks. */
+const SEVERAL_LINES =
+  "This text has several lines, which this one-line field cannot keep: it is read-only here";
+
 /** A field to type in, named `field` (`data-field`), the tour's value
- *  `value` its default. */
+ *  `value` its default, so text that differs from it is typed. A text
+ *  input drops line breaks (its value would never equal a default of
+ *  several lines): such a value is shown on one line and read-only, so
+ *  leaving the field can never write it back flattened. */
 function typed(
   field: string,
   value: string,
@@ -108,7 +116,12 @@ function typed(
   input.spellcheck = false;
   input.autocomplete = "off";
   input.dataset["field"] = field;
-  input.defaultValue = value;
+  const lines = /[\r\n]/.test(value);
+  input.defaultValue = lines ? value.replace(/\s*[\r\n]+\s*/g, " ") : value;
+  if (lines) {
+    input.readOnly = true;
+    input.title = SEVERAL_LINES;
+  }
   return input;
 }
 
@@ -252,7 +265,9 @@ const WAITING = "Waiting for the ground...";
 
 /** A command of the selection in words (`data-act` names it), its key
  *  shown and announced when it has one, a short note beside it; while
- *  `busy` names it, it waits and takes no press. */
+ *  `busy` names it, it waits and takes no press (`aria-disabled`, not
+ *  `disabled`: the button keeps the keyboard's focus while it waits, and
+ *  the shell ignores its presses). */
 function action(
   act: string,
   icon: ShellIcon,
@@ -278,8 +293,11 @@ function action(
     b.append(kbd);
     b.setAttribute("aria-keyshortcuts", options.key.aria);
   }
-  b.disabled = waiting || options.disabled === true;
-  if (waiting) b.setAttribute("aria-busy", "true");
+  b.disabled = !waiting && options.disabled === true;
+  if (waiting) {
+    b.setAttribute("aria-disabled", "true");
+    b.setAttribute("aria-busy", "true");
+  }
   return b;
 }
 
@@ -554,6 +572,18 @@ function codeParts(model: CodeModel, state: InspectorState): HTMLElement[] {
  *  being typed in alone. */
 const lastDrawn = new WeakMap<HTMLElement, string>();
 
+/** The docks being drawn now. A draw takes the focused field out of the
+ *  page, and the browser fires its `focusout` at once, in the middle of
+ *  the draw: `inspectorDrawing` lets the shell tell that from a field the
+ *  creator left, and a draw asked for meanwhile is not run inside the one
+ *  running. */
+const drawing = new WeakSet<HTMLElement>();
+
+/** Whether the inspector at `root` is being drawn right now. */
+export function inspectorDrawing(root: HTMLElement): boolean {
+  return drawing.has(root);
+}
+
 /** The control that has the focus in `root`, by the name it is drawn
  *  under again (`data-act` or `data-field`), with a field's text. */
 interface FocusKept {
@@ -629,8 +659,9 @@ export interface InspectorState {
 /**
  * The dock drawn from `model` (null: hidden), folded to its head or not,
  * its position disclosure open or not. Drawn again only when one of them
- * changed; the control that had the focus has it again after a draw, with
- * text typed in it and not yet committed.
+ * changed, and never from inside a draw (`inspectorDrawing`); the
+ * control that had the focus has it again after a draw, with text typed
+ * in it and not yet committed.
  */
 export function drawInspector(
   dock: {
@@ -642,12 +673,18 @@ export function drawInspector(
   state: InspectorState,
   pictures: ShellPictures,
 ): void {
+  if (drawing.has(dock.root)) return;
   const key = JSON.stringify([model, state]);
   if (lastDrawn.get(dock.root) === key) return;
-  lastDrawn.set(dock.root, key);
-  const kept = focusIn(dock.root);
-  drawDock(dock, model, state, pictures);
-  focusAgain(dock.root, kept);
+  drawing.add(dock.root);
+  try {
+    lastDrawn.set(dock.root, key);
+    const kept = focusIn(dock.root);
+    drawDock(dock, model, state, pictures);
+    focusAgain(dock.root, kept);
+  } finally {
+    drawing.delete(dock.root);
+  }
 }
 
 /** The head's title: a station's name or a pin's text to type, else the
@@ -657,13 +694,15 @@ function headTitle(model: InspectorModel): HTMLElement {
     const input = typed("title", model.name, "ttlin");
     input.placeholder = `Station ${String(model.place.number)}`;
     input.setAttribute("aria-label", "Station name");
-    input.title = "The station's name (Enter keeps it)";
+    if (!input.readOnly) input.title = "The station's name (Enter keeps it)";
     return input;
   }
   if (model.kind === "item" && model.text !== null) {
     const input = typed("title", model.text, "ttlin");
     input.setAttribute("aria-label", "Pin text");
-    input.title = "The pin's text (Enter keeps it)";
+    input.title = input.readOnly
+      ? "This text has several lines: edit it in the pin's card on the 2D map"
+      : "The pin's text (Enter keeps it)";
     return input;
   }
   const title = el("span", "ttl", model.title);

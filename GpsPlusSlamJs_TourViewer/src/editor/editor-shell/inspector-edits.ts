@@ -8,8 +8,11 @@
  *   caption is not edited here.
  * - A station's east and north: its anchor at the place those metres name
  *   from the 3D view's origin (`placeAtEastNorth`), height and turn kept.
- * - An item's east, north and height: its offset in its station's frame,
- *   the other two and its turn kept.
+ * - An item's east and north: its offset in its station's frame, the
+ *   other two and its turn kept.
+ * - An item's height: its altitude alone (`height`), its place and turn
+ *   exactly as they are; a pose through the station's frame and back
+ *   would move it sideways by its rounding.
  * - A heading, of a station or an item: the turn from the heading it has
  *   now, the short way round.
  * - A model's size.
@@ -47,18 +50,23 @@ export type InspectorEdit =
   /** A pose or a size, written as the 3D view's gestures write them. */
   | { readonly kind: "scene"; readonly edit: GestureEdit }
   /** A turn about up of `deg` clockwise. */
-  | { readonly kind: "turn"; readonly selection: string; readonly deg: number };
+  | { readonly kind: "turn"; readonly selection: string; readonly deg: number }
+  /** An item's altitude (ellipsoidal m), its place and turn kept. */
+  | { readonly kind: "height"; readonly id: string; readonly alt: number };
 
 const NOT_A_NUMBER = "Type a number, like 12.5";
 
 const NONE: InspectorEdit = { kind: "none" };
 
-/** A typed number: a comma is a decimal point; blank, or anything that
- *  is not a finite number, is none. */
+/** A plain decimal: a sign, digits and one decimal point or comma. */
+const DECIMAL = /^[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)$/;
+
+/** A typed number: a plain decimal, a comma as its decimal point; blank,
+ *  or anything else (hex, an exponent, a thousands separator), is none. */
 function typedNumber(value: string): number | null {
-  const text = value.trim().replace(",", ".");
-  if (text === "") return null;
-  const n = Number(text);
+  const text = value.trim();
+  if (!DECIMAL.test(text)) return null;
+  const n = Number(text.replace(",", "."));
   return Number.isFinite(n) ? n : null;
 }
 
@@ -170,6 +178,13 @@ function itemEdit(
   if (Math.abs(item.pose.position[axis] - typed) < SAME) return NONE;
   const position: [number, number, number] = [...item.pose.position];
   position[axis] = typed;
+  if (field === "height") {
+    return {
+      kind: "height",
+      id: item.id,
+      alt: itemGeoPose({ ...item.pose, position }, station.geo).alt,
+    };
+  }
   return {
     kind: "scene",
     edit: {

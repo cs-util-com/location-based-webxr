@@ -2,10 +2,10 @@
 
 ## Purpose
 
-A wait for the 3D view's ground: "Put on the ground" pressed while the
-ground under the selection has not loaded reads it again until it has,
-rather than put something at a wrong height. It gives up after a while
-and stops when called off.
+A wait for the 3D view's ground: "Put on the ground" pressed while no
+ground under the selection has loaded at all reads it again until some
+has, rather than put something at no known height. It gives up after a
+while and stops when called off.
 
 ## Public API
 
@@ -25,6 +25,12 @@ and stops when called off.
   so a stopped or finished wait leaves nothing running.
 - `read` decides what "loaded" means (here `groundEdit`, null while any
   ground it needs is missing).
+- It stops at the first ground that loads, a coarse level included: the
+  relief does not say which level a height comes from. On a slope the
+  height put can therefore differ by a little from the finest ground,
+  and the inspector's "x m up / down" note shows that once the finer
+  tiles arrive (press again to settle it). It does not wait for the
+  finest level.
 
 ## Examples
 

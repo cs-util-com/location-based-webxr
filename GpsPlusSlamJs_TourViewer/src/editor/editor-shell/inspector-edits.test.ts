@@ -133,7 +133,6 @@ describe("inspectorEdit", () => {
     for (const [field, value, want] of [
       ["east", "3", [4, 1.5, 3]],
       ["north", "-6", [-6, 1.5, -2]],
-      ["height", "0", [4, 0, -2]],
     ] as const) {
       const moved = edit("pin-1", field, value);
       if (moved.kind !== "scene" || moved.edit.kind !== "item-pose") {
@@ -146,6 +145,25 @@ describe("inspectorEdit", () => {
     }
   });
 
+  // Why: a height written as a whole new pose went through the station
+  // frame and back, whose float32 maths moved the item sideways by up to
+  // a micrometre; for an item outside a lowered circle that was a move
+  // outward, and the station rule gave it a station of its own. A typed
+  // height changes the item's altitude, and nothing else.
+  it("writes a typed height as the item's altitude alone", () => {
+    const lifted = edit("pin-1", "height", "0");
+    expect(lifted).toEqual({
+      kind: "height",
+      id: "pin-1",
+      alt: STATIONS[0]!.geo.alt + 0,
+    });
+    expect(edit("pin-1", "height", "3,25")).toEqual({
+      kind: "height",
+      id: "pin-1",
+      alt: STATIONS[0]!.geo.alt + 3.25,
+    });
+  });
+
   it("writes a model's size, and refuses a size for anything else", () => {
     expect(edit("model-1", "size", "3")).toEqual({
       kind: "scene",
@@ -155,12 +173,46 @@ describe("inspectorEdit", () => {
   });
 
   it("says a value that is no number in words, and does nothing for an unchanged one", () => {
-    for (const bad of ["", "  ", "ten", "1e999", "NaN", "1,2,3"]) {
+    // Only plain decimals, with a point or one comma: no hex, binary or
+    // octal, no exponent, no thousands separators.
+    for (const bad of [
+      "",
+      "  ",
+      "ten",
+      "1e999",
+      "1e3",
+      "0x10",
+      "0b11",
+      "0o7",
+      "Infinity",
+      "NaN",
+      "1,2,3",
+      "1,000,5",
+      "1.000,5",
+      "1 000",
+      "--1",
+      ".",
+      ",",
+    ]) {
       expect(edit("station:a", "radius", bad)).toEqual({
         kind: "invalid",
         reason: "Type a number, like 12.5",
       });
     }
+    for (const [typed, radius] of [
+      ["12,5", 12.5],
+      [" 12.5 ", 12.5],
+      ["+3", 3],
+      [",5", 0.5],
+      ["7.", 7],
+    ] as const) {
+      expect(edit("station:a", "radius", typed)).toMatchObject({
+        edit: { foundRadiusM: radius },
+      });
+    }
+    expect(edit("station:a", "heading", "-0,5")).toMatchObject({
+      kind: "turn",
+    });
     expect(edit("station:a", "radius", "25")).toEqual({ kind: "none" });
     expect(edit("station:a", "heading", "30")).toEqual({ kind: "none" });
     expect(edit("pin-1", "height", "1.5")).toEqual({ kind: "none" });

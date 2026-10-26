@@ -33,7 +33,8 @@ Later (`editor-shell.ts`).
   in the page, the cards are read again: the same stations in the same
   order carry the drag on (the carried card marked again), anything else
   ends it with nothing written - a drop on a list that changed under it
-  could reorder stations the creator never saw.
+  could reorder stations the creator never saw. The release checks this
+  too, so a redraw between the last move and the release writes nothing.
 - Held within 32 px of the dock's top or bottom edge, the drag scrolls
   the dock each frame (up to 12 px a frame, less farther from the edge),
   and stops at the end of the list or when the pointer leaves the edge.
@@ -63,6 +64,6 @@ reorder; the marks while moving and past the last card; a drop in place
 writes nothing; Escape and a cancelled pointer write nothing; only a grip
 and the main button start it; the press is the drag's; nothing after
 `dispose`; a redraw of the same stations carries the drag on and one of
-other stations ends it unwritten; held near the bottom edge it scrolls
+other stations ends it unwritten, at a move or at the release; held near the bottom edge it scrolls
 the dock and lands by where the cards are then; away from the edges it
 does not scroll. End to end: `playwright-tests/editor3d-tree.spec.js`.

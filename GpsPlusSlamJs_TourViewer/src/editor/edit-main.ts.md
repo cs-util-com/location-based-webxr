@@ -90,7 +90,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   copy stay open while locked. The map's Move moves pins and photos only,
   never a station.
   A station made in this session - added by "+" or "New station here",
-  split off by "Move to a new station", or copied - starts UNLOCKED
+  split off by "Move to a new station", copied, or started by the station
+  rule for an item moved out of every circle - starts UNLOCKED
   (`unlockMade`): it was placed nowhere on site yet, so placing it is the
   next thing its creator does. Undoing and redoing its add keeps it
   unlocked; the lock is still view state only.
@@ -574,6 +575,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   - `commit` (`commitSceneEdit`) writes a finished gesture as one undo
     step (`applySceneEdit` of `scene-edits.ts`): it ends a delete's Undo
     offer, refreshes the views and tells autosave, or toasts a refusal;
+    an item pose that gave the item another station is said in a toast
+    (`announceReseat`, `reseat-note.ts`), and a station the rule made
+    for it starts unlocked. The 2D map's drag (`finishMove`) says the
+    same on the card ("... - not saved yet.");
   - `remove` (`deleteSelection`, the card's Delete too) deletes an item
     with the toast's Undo, or a station (`deleteStation`);
   - `duplicate` (`duplicateSelection`, Ctrl+D) copies an item or a
@@ -609,7 +614,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     radius, card picture) and `editor.editText` (a pin's text);
   - `scene` - `commitSceneEdit`, as a gesture's (a typed place, a size,
     a station put on the ground);
-  - `groundItems` - `editor.groundItems`, items' heights in one step;
+  - `groundItems` - `editor.groundItems`, items' heights in one step
+    (the ground under each, or a typed Height: their places untouched);
   - `addPin` (`addPinTo`) - a new pin in the station (`new-pin.ts`:
     clear of its items, inside its circle, on the ground the 3D view
     has loaded), placed by `editor.place`, selected and said (`Added a
