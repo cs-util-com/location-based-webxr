@@ -17,8 +17,8 @@ target, with the focus rule `walkFocus` every view reads.
   Immer draft): the transitions build new progress themselves.
 - `type VisitorWalkState`:
   - `progress: WalkProgress | null` - `station-run.ts`'s plain data (the
-    order, every station's state, skip flag and skip clock, the branch
-    path); null without a tour;
+    order, every station's state, skip flag and skip clock); null
+    without a tour;
   - `lastSkip: { id, atMs, settled } | null` - the last skip; `settled` once its undo's moment passed or the tour moved on;
   - `note: { kind: "skipped" | "brought-back", id, atMs } | null` - the
     station line's lead ("Skipped X.", "Brought back X.");
@@ -74,7 +74,7 @@ target, with the focus rule `walkFocus` every view reads.
   and the sheet, for `visitor-stations.ts`.
 - `walkFocus(walk, distances)` - the station the walk points
   at, among the unfound offered ones (null with none): the first under
-  fixed or branch order, or when only one is left; under any order the
+  fixed order, or when only one is left; under any order the
   chosen target, else null while `noGuess` holds, else the nearest by
   `distances` (ties and missing distances by list order).
 - `walkNoGuess(walk)` - `noGuess`, any order, two or more
@@ -124,8 +124,8 @@ target, with the focus rule `walkFocus` every view reads.
   leaves the last skip's undo in place.
 - Plain, serializable data only; no three.js handles, no DOM, no timers.
 - **Defensive:** a step for an id the tour does not have, or before a walk
-  started, changes nothing; `startWalk` reads only ids, `next` links that
-  name a station of the tour, and whether a station has steps.
+  started, changes nothing; `startWalk` reads only ids and whether a
+  station has steps.
 
 ## Examples
 

@@ -15,8 +15,8 @@ import { walkSheetModel } from "./walk-sheet-model";
 /**
  * Why these tests matter: the sheet's model says what the list shows, but
  * what the visitor sees is what the view writes into the page's own
- * markup. The order chip shows only for "Any order"; for a fixed or a
- * branching order the view must hide the element itself - a model that
+ * markup. The order chip shows only for "Any order"; for a fixed order
+ * the view must hide the element itself - a model that
  * says null over a view that keeps the last text (or the markup's
  * default) would still show "In order". Driven on the real `index.html`.
  */
@@ -123,7 +123,6 @@ describe("the walk sheet's view on the page's markup", () => {
   it.each<[TourOrder, string | null, string]>([
     ["any", "Any order", "shown"],
     ["fixed", null, "hidden"],
-    ["branch", null, "hidden"],
   ])(
     "with the list open, %s order: the order chip reads %s (%s)",
     (order, chip) => {
@@ -157,7 +156,7 @@ describe("the walk sheet's view on the page's markup", () => {
       render("any");
       render(order);
       const el = byId("walk-chip");
-      // Hidden for fixed and branching order; any order reads its label.
+      // Hidden for a fixed order; any order reads its label.
       expect({
         hidden: el.hidden,
         text: chip === null ? null : el.textContent,

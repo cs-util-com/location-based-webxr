@@ -5,8 +5,7 @@
  * duplicated, put on the ground or resized, an item moved into a station
  * of its own. Each is ONE undo step, each must count as a change (or
  * autosave and Save would never write it), and each must leave a tour the
- * format accepts: a route to a deleted station, a radius out of bounds or
- * a model size out of bounds would make every later save fail. Each guard
+ * format accepts: a radius out of bounds or a model size out of bounds would make every later save fail. Each guard
  * is tested at its edges and just outside them.
  */
 
@@ -20,7 +19,6 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { horizontalM } from "./move-with-code.js";
-import { routedTo } from "./tour-content.js";
 import {
   changeCount,
   documentObjects,
@@ -71,8 +69,8 @@ function model(id: string, lat: number, sizeM = 2): TourObject {
 }
 
 /** Stations a (pin), b (pin), f (photo), m (model), and a story station
- *  "story" whose `next` and quiz route name st-b and st-a, and whose
- *  image step names the image asset img1. Read through the format's own
+ *  "story" with a quiz, and whose image step names the image asset
+ *  img1. Read through the format's own
  *  parser, so the fixture is a tour the format accepts. */
 const OPENED: TourManifest = parseTourManifest(
   JSON.parse(
@@ -99,7 +97,6 @@ const OPENED: TourManifest = parseTourManifest(
               activateRadiusM: 50,
               foundRadiusM: 25,
               hint: "arrow",
-              next: stationIdOf("b"),
               steps: [
                 {
                   id: "s1",
@@ -119,11 +116,6 @@ const OPENED: TourManifest = parseTourManifest(
                         { id: "o2", label: "Right" },
                       ],
                       correct: "o1",
-                    },
-                    route: {
-                      correct: stationIdOf("b"),
-                      wrong: stationIdOf("a"),
-                      byOption: { o1: stationIdOf("b"), o2: stationIdOf("a") },
                     },
                   },
                   advance: { mode: "tap" },
@@ -450,7 +442,7 @@ describe("stationAdded", () => {
 });
 
 describe("stationDeleted", () => {
-  it("deletes a station with its items and prunes every route that named it, as one step", () => {
+  it("deletes a station with its items, as one step", () => {
     const before = open();
     const after = reduce(
       before,
@@ -458,17 +450,7 @@ describe("stationDeleted", () => {
     );
     expect(after.stations.some((s) => s.id === stationIdOf("b"))).toBe(false);
     expect(documentObjects(after).some((o) => o.object.id === "b")).toBe(false);
-    for (const frame of after.stations) {
-      expect(routedTo(frame)).not.toContain(stationIdOf("b"));
-    }
-    const story = frameOf(after, "story");
-    expect(story.next).toBeUndefined();
-    const quiz = story.steps.find((s) => s.id === "q1")?.action;
-    expect(quiz?.kind === "quiz" ? quiz.route : null).toEqual({
-      wrong: stationIdOf("a"),
-      byOption: { o2: stationIdOf("a") },
-    });
-    // The write reads back: no route names a missing station.
+    // The write reads back.
     readBack(after);
     expect(changeCount(after)).toBeGreaterThan(0);
     expectOneStep(before, after);
@@ -505,20 +487,7 @@ describe("stationDeleted", () => {
     readBack(state);
   });
 
-  it("an empty station deleted counts as one change; a route left with no target goes whole", () => {
-    let state = open();
-    state = reduce(
-      state,
-      act.stationDeleted({ stationId: stationIdOf("a"), what: "delete" }),
-    );
-    state = reduce(
-      state,
-      act.stationDeleted({ stationId: stationIdOf("b"), what: "delete" }),
-    );
-    const quiz = frameOf(state, "story").steps.find(
-      (s) => s.id === "q1",
-    )?.action;
-    expect(quiz?.kind === "quiz" ? quiz.route : "none").toBeUndefined();
+  it("an empty station deleted counts as one change", () => {
     const empty = reduce(
       open(),
       act.stationAdded({ at: AT, stationId: "e1", what: "add" }),
@@ -617,7 +586,7 @@ describe("stationDuplicated", () => {
     expectOneStep(before, after);
   });
 
-  it("copies a story station's steps and routes, and refuses a taken id or an item left without one", () => {
+  it("copies a story station's steps, and refuses a taken id or an item left without one", () => {
     const state = open();
     const after = reduce(
       state,
@@ -632,7 +601,6 @@ describe("stationDuplicated", () => {
     expect(frameOf(after, "story2")).toMatchObject({
       title: "The story copy",
       steps: frameOf(state, "story").steps,
-      next: stationIdOf("b"),
     });
     readBack(after);
     for (const bad of [
@@ -815,24 +783,16 @@ describe("changeCount, the stations", () => {
 });
 
 describe("stationDeleted (property)", () => {
-  it("any order of station deletes leaves no route to a missing station, and a tour the format reads", () => {
-    // Why: the format refuses a route to a station the tour lacks, so a
-    // single dangling `next` or quiz target would make every later save
-    // fail. Every station of the fixture is routed to by the story.
+  it("any order of station deletes leaves a tour the format reads", () => {
+    // Why: a delete that left the tour unreadable (a station gone that
+    // something still needs, the last station removed) would make every
+    // later save fail.
     const ids = OPENED.stations.map((s) => s.id);
     fc.assert(
       fc.property(fc.shuffledSubarray(ids), (order) => {
         let state = open();
         for (const stationId of order) {
           state = reduce(state, act.stationDeleted({ stationId, what: "d" }));
-          const carried = new Set(
-            (manifestNow(state)?.stations ?? []).map((s) => s.id),
-          );
-          for (const frame of manifestNow(state)?.stations ?? []) {
-            for (const target of routedTo(frame)) {
-              expect(carried.has(target)).toBe(true);
-            }
-          }
           readBack(state);
         }
         // The last station always stays.

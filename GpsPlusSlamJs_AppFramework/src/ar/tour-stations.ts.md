@@ -3,8 +3,8 @@
 **Purpose:** the game content of `tour.json` (version 2, and version 3's
 stations as parents of the tour's items) - media assets with
 their own ids, stations, their steps (text, image, cut-out character,
-audio, video, 3D model, scene choice, quiz), how a step advances, and the
-answer routes of `branch` order. Tour kit plan K1 and §8 D7 ("the full v2
+audio, video, 3D model, scene choice, quiz) and how a step advances.
+Tour kit plan K1 and §8 D7 ("the full v2
 schema in one step"), G5 (media ids per asset), K-D3 (game scope v1),
 K-D6 (arrow hints):
 `GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`.
@@ -29,17 +29,16 @@ code-only station), its pins and photos as `items` at local poses
   is `"station-image-gone"` for an image whose picture went and absent for
   a malformed value; minor 2, below).
 - `parseTourQuiz(value, at, { fail, lenient? }): TourQuiz | null` - a
-  quiz's `question`, `points` and `answer` (its route is read by the
-  step, not here). `null` when a lenient reader meets an answer type it
+  quiz's `question`, `points` and `answer`. `null` when a lenient reader meets an answer type it
   does not know; the caller skips the step. Shared with version 4's story
   (`tour-story.ts`), so both versions read a quiz alike.
 - `parseTourStepAdvance(value, at, { fail, lenient? }): TourStepAdvance` -
   how a step advances (`tap` when absent; an unknown mode reads as `tap`
   when lenient). Shared with version 4's story the same way.
-- Types: `TourAsset`, `TourAssetKind`, `TourStationDrop`, `TourQuiz`, `TourOrder` (`fixed | any |
-branch`), `TourStation`, `TourStep`,
+- Types: `TourAsset`, `TourAssetKind`, `TourStationDrop`, `TourQuiz`, `TourOrder` (`fixed | any`),
+  `TourStation`, `TourStep`,
   `TourStepAdvance`, `TourStepAction`, `TourStepRecord`, `TourChoiceOption`, `TourQuizOption`,
-  `TourQuizAnswer`, `TourQuizRoute`.
+  `TourQuizAnswer`.
 - `fail` is the caller's: `tour-manifest.ts` passes one that throws
   `TourManifestValidationError`, so both modules raise the same error and
   this one never imports its parent (`check:cycles`).
@@ -57,9 +56,9 @@ branch`), `TourStation`, `TourStep`,
   photos and placed models at local poses, ids unique per station;
   `tour-items.ts`; a placed model's `asset` must name a MODEL asset,
   resolved here because only this module sees the assets),
-  optional `next` (the default next station for `branch` order),
   optional `description` and `image` (minor 2, below). An old
-  `anchor` field is ignored as an unknown field.
+  `anchor` field is ignored as an unknown field, and so is a `next` (a
+  default next station of the former `branch` order).
 - **A station's description and card image (minor 2;** G2 build plan
   `GpsPlusSlamJs_Docs/docs/2026-10-21-2247-g2-3d-editor-build-plan.md`,
   §4.2.4, Q14**):**
@@ -103,15 +102,14 @@ branch`), `TourStation`, `TourStep`,
   - `model { asset, caption? }` (a `.glb` asset);
   - `choice { prompt, options: [{ id, label, goto }] }` - a scene choice:
     at least 2 options, each `goto` a step of the SAME station;
-  - `quiz { question, points (integer >= 0), answer, route? }`.
+  - `quiz { question, points (integer >= 0), answer }`; a former
+    `route` (answer routes of `branch` order) is ignored as an unknown
+    field, whatever it names.
 - **Quiz answers**: `single { options, correct }`, `multiple { options,
 correct[] }` (at least 2 options, unique ids, correct among them),
   `text`/`code { salt, sha256[] }` (salted SHA-256 hex of the accepted
   answers after K5's normalisation - a deterrent only), `number { value,
 tolerance >= 0, unit? }`.
-- **Routes** (`branch` order): `route { byOption?, correct?, wrong? }`;
-  `byOption` only on a choice quiz and only for its own options; every
-  target a station id.
 
 ## Invariants & assumptions
 
@@ -128,12 +126,11 @@ tolerance >= 0, unit? }`.
   only options whose target step is still there, and is skipped itself
   below two (repeated until nothing changes); an unknown advance mode is
   `tap`, an unknown hint `arrow`. A station whose every step was skipped
-  stays, with no steps (routes may name it; finding it completes it).
+  stays, with no steps (finding it completes it).
   Without `lenient` every one of these fails, as before. Never lenient:
   a malformed value of a KNOWN kind (a quiz without options, a bad id).
-- Not checked here, by design: whether every station is reachable under
-  `branch` order (K5's reachability check), and whether radii fit the
-  measured accuracy (K4, §8 D9).
+- Not checked here, by design: whether radii fit the measured accuracy
+  (K4, §8 D9).
 - No list or length caps: the whole document is read under the text cap of
   `archive-limits.ts` (16 MiB), which already bounds the work; a cap per
   list would be a second, arbitrary limit with nothing measured behind it.
@@ -161,7 +158,8 @@ parseTourStations(json.stations, {
 ## Tests
 
 - `tour-stations.test.ts` - a castle station (character scene, choice,
-  model, quiz), every quiz answer type, routes, the defaults, one
+  model, quiz), every quiz answer type, a station `next` and a quiz
+  `route` ignored even naming no station, the defaults, one
   rejection per rule, and the version 3 station (empty steps, items read,
   a placed model naming a model asset, refused for a missing, image or
   audio asset, left out by a lenient read whose asset it lacks, an old

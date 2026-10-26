@@ -559,7 +559,7 @@ export function wireVisitorStations(deps: {
       sheet,
       directions,
     });
-    // The radar draws the list's stations (its branch rule too).
+    // The radar draws the list's stations.
     if (radarView !== null) sampleFrames();
     radarView?.render({
       stations: model.list.rows,

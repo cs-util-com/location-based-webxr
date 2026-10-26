@@ -204,11 +204,14 @@ describe('parseTourStations', () => {
     ).toEqual(['single', 'multiple', 'text', 'number', 'code']);
   });
 
-  it('accepts answer routes and a default next station that name real stations', () => {
+  it('ignores a station next and a quiz route, even naming no station: routing is not part of the format', () => {
+    // Why: both were the walk's answer-routing, which left the format;
+    // they are unknown fields now, ignored like any other, never checked
+    // and never kept, so no writer writes them back.
     const stations = parse([
       station({
         id: 's1',
-        next: 's2',
+        next: 'nowhere',
         steps: [
           {
             id: 'q',
@@ -224,20 +227,15 @@ describe('parseTourStations', () => {
                 ],
                 correct: 'l',
               },
-              route: { byOption: { l: 's2', r: 's3' }, wrong: 's3' },
+              route: { byOption: { l: 'nowhere', z: 's3' }, wrong: 9 },
             },
           },
         ],
       }),
-      station({ id: 's2' }),
       station({ id: 's3' }),
     ]);
-    expect(stations[0]?.next).toBe('s2');
-    const block = stations[0]?.steps[0]?.action;
-    expect(block?.kind === 'quiz' ? block.route : null).toEqual({
-      byOption: { l: 's2', r: 's3' },
-      wrong: 's3',
-    });
+    expect(stations[0]).not.toHaveProperty('next');
+    expect(stations[0]?.steps[0]?.action).not.toHaveProperty('route');
   });
 
   const step = (block: Record<string, unknown>, extra = {}) => ({
@@ -605,62 +603,6 @@ describe('parseTourStations', () => {
         }),
       ],
       /block\.answer\.tolerance/,
-    ],
-    [
-      'a default next station that does not exist',
-      [station({ next: 'nowhere' })],
-      /stations\[0\]\.next" must name a station/,
-    ],
-    [
-      'a route to a missing station',
-      [
-        station({
-          steps: [
-            step({
-              kind: 'quiz',
-              question: 'Q',
-              points: 1,
-              answer: single,
-              route: { correct: 'nowhere' },
-            }),
-          ],
-        }),
-      ],
-      /block\.route\.correct" must name a station/,
-    ],
-    [
-      'a route by an option the quiz does not have',
-      [
-        station({
-          steps: [
-            step({
-              kind: 'quiz',
-              question: 'Q',
-              points: 1,
-              answer: single,
-              route: { byOption: { z: 's1' } },
-            }),
-          ],
-        }),
-      ],
-      /block\.route\.byOption" names "z", which is not one of its options/,
-    ],
-    [
-      'a route by option on a quiz without options',
-      [
-        station({
-          steps: [
-            step({
-              kind: 'quiz',
-              question: 'Q',
-              points: 1,
-              answer: { type: 'number', value: 1, tolerance: 0 },
-              route: { byOption: { x: 's1' } },
-            }),
-          ],
-        }),
-      ],
-      /block\.route\.byOption" is only for a choice quiz/,
     ],
   ])('rejects %s', (_label, data, message) => {
     expect(() => parse(data)).toThrow(Invalid);

@@ -1,24 +1,24 @@
 /**
  * Why these properties matter: the settings record keeps the whole frames
  * of the stations a page created, and a reload puts them back before the
- * objects. A frame may route to a sibling (its `next`), and any frame may
- * be stored broken (a hand-edited record, a frame of a newer build). Over
- * random route graphs with random broken frames, the frames that come
- * back must never route to a created station the record lost - such a
- * route would reach the written tour.json - and every frame whose routes
- * lead only through readable frames must come back: dropping a good frame
- * would lose its title and steps for nothing.
+ * objects. Any frame may be stored broken (a hand-edited record, a frame
+ * of a newer build), and a frame stored by an older build may still name
+ * a sibling as its `next`. Over random broken frames with random such
+ * names, exactly the readable frames must come back, in their stored
+ * order: dropping a good frame would lose its title and steps for
+ * nothing, and a name no station field holds any more must neither cost
+ * a frame nor reach the written tour.json.
  */
 
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { parseSettingsRecord } from "./tour-document-draft.js";
-import { automaticStationFrame, routedTo } from "./tour-content.js";
+import { automaticStationFrame } from "./tour-content.js";
 
 const AT = { lat: 48.52, lon: 9.05, alt: 400 };
 
-/** Frames `s0..s(n-1)`: each may route to one other, and may be broken. */
-const graphs = fc.integer({ min: 1, max: 7 }).chain((n) =>
+/** Frames `s0..s(n-1)`: each may name one other as `next`, and may be broken. */
+const records = fc.integer({ min: 1, max: 7 }).chain((n) =>
   fc.record({
     next: fc.array(fc.option(fc.integer({ min: 0, max: n - 1 })), {
       minLength: n,
@@ -28,10 +28,10 @@ const graphs = fc.integer({ min: 1, max: 7 }).chain((n) =>
   }),
 );
 
-describe("parseSettingsRecord, created frames over random route graphs", () => {
-  it("keeps exactly the frames whose routes lead only through readable frames", () => {
+describe("parseSettingsRecord, created frames, some broken, some naming a sibling", () => {
+  it("keeps exactly the readable frames, in order, none carrying a next", () => {
     fc.assert(
-      fc.property(graphs, ({ next, broken }) => {
+      fc.property(records, ({ next, broken }) => {
         const id = (i: number) => `s${String(i)}`;
         const stored = next.map((to, i) => {
           const frame = automaticStationFrame(id(i), AT);
@@ -45,28 +45,14 @@ describe("parseSettingsRecord, created frames over random route graphs", () => {
         const parsed = parseSettingsRecord(
           JSON.stringify({ needsNoGps: false, createdStations: stored }),
         );
-        const kept = new Set(
-          (parsed?.createdStations ?? []).map((frame) => frame.id),
+        const frames = parsed?.createdStations ?? [];
+        expect(frames.map((frame) => frame.id)).toEqual(
+          next
+            .map((_, i) => i)
+            .filter((i) => broken[i] !== true)
+            .map(id),
         );
-        for (const frame of parsed?.createdStations ?? []) {
-          for (const target of routedTo(frame)) {
-            expect(kept.has(target)).toBe(true);
-          }
-        }
-        // The model: a frame comes back when it is readable and every frame
-        // its route reaches comes back (a route of one link per frame, so
-        // following it ends in a cycle, a broken frame or none).
-        const survives = (i: number, seen: Set<number>): boolean => {
-          if (broken[i] === true) return false;
-          const to = next[i];
-          if (to === null || to === undefined || seen.has(to)) return true;
-          return survives(to, new Set([...seen, i]));
-        };
-        const expected = next
-          .map((_, i) => i)
-          .filter((i) => survives(i, new Set([i])))
-          .map(id);
-        expect([...kept]).toEqual(expected);
+        expect(frames.filter((frame) => "next" in frame)).toEqual([]);
       }),
     );
   });

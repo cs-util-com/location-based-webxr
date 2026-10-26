@@ -163,7 +163,7 @@ describe("walkRadarModel - properties", () => {
       fc.property(
         stationsArb,
         fc.constantFrom(...KINDS),
-        fc.constantFrom<"any" | "fixed" | "branch">("any", "fixed", "branch"),
+        fc.constantFrom<"any" | "fixed">("any", "fixed"),
         (list, kind, order) => {
           const m = walkRadarModel(
             inputOf(list, { kind, order, accuracyM: 30 }),

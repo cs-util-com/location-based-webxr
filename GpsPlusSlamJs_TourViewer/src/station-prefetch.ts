@@ -7,7 +7,7 @@
  *
  * Two triggers: `approach` (an offered station within its activation
  * radius plus `PREFETCH_LEAD_M`) and `ahead` (K4 review R5: the station
- * that comes next in a fixed or branch order, from the moment the current
+ * that comes next in a fixed order, from the moment the current
  * station is found, so its story is read while the current one plays).
  *
  * Bounded, because a long tour must not fill a phone's memory:
@@ -117,7 +117,7 @@ export interface StationPrefetch {
   /** The visitor is `distanceM` from this offered station; prefetch it when
    *  inside its prefetch radius (`activateM + PREFETCH_LEAD_M`). */
   approach(station: TourStation, distanceM: number, activateM: number): void;
-  /** The station that comes next in a fixed or branch order, while the
+  /** The station that comes next in a fixed order, while the
    *  current story plays: prefetch it from any distance (K4 review R5). */
   ahead(station: TourStation): void;
   /** A station is done: the media only it needed may be released. */

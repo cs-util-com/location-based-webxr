@@ -4,6 +4,18 @@
 
 ### ⚠️ Breaking changes
 
+- **No more routing: `order: "branch"`, a station's `next` and a quiz's
+  `route` are gone** (`ar/tour-stations`, `ar/tour-manifest`). `TourOrder`
+  is `'fixed' | 'any'`; `TourStation.next`, `TourQuiz.route` and the
+  `TourQuizRoute` type are removed. A file of a minor this reader knows
+  that carries `"order": "branch"` is refused (`"order" must be "fixed"
+or "any"`); from a newer minor an unknown order still reads as `any`.
+  A station's `next` and a quiz's `route` are unknown fields now: ignored
+  whatever they name, and never written. Until a later version brings
+  rules that decide where a walk goes, no tour can branch its walk by an
+  answer. This breaks the API and the format and still ships in a minor
+  release, by decision, because no editor ever wrote these fields and no
+  tours carry them.
 - **A step's content is `TourStep.action`, typed `TourStepAction`**
   (`ar/tour-stations`, `ar/tour-manifest`): it was `TourStep.block`, typed
   `TourBlock`. Only the reader's in-memory names change: the file still

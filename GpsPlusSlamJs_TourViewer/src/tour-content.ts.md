@@ -24,14 +24,6 @@ camera captures are debug data, never in a station (an earlier file's
   saved file compares this one (the authoring draft's `hostedObjects`).
 - `automaticStationFrame(id, at)`: a new automatic station's frame
   (below), the one the tour document's station rule starts.
-- `routedTo(station)`: the stations `station` routes to (its `next` and
-  its quizzes' routes): what keeps an emptied station from being dropped.
-- `withoutRoutesTo(station, gone)`: `station` without a route to any
-  station of `gone` (deleted stations): its `next` goes, each quiz route
-  loses those targets, a `byOption` left empty goes, and a route left
-  with no target goes whole. The same object when it names none of them,
-  so a caller can tell an untouched frame by identity. The format refuses
-  a dangling route, so a station's delete and a restore prune with it.
 - `withTourContent(manifest, { objects }) -> TourManifest`: the manifest
   with `objects` as its pins and photos, each in the station it names (or,
   naming none, the one the manifest holds it in), the stations kept as
@@ -92,8 +84,9 @@ camera captures are debug data, never in a station (an earlier file's
 - An object missing from `objects` leaves its station. A station this
   write EMPTIED (it held items and holds none now) goes when nothing else
   keeps it: nothing of its own (`keepsItself`: no title, no steps, no non-blank
-  description, no card image naming an image asset), and no other station
-  routing to it (`next`, a quiz route). It existed for its
+  description, no card image naming an image asset). A station names no
+  other (a station's `next` and a quiz's routes left the format), so no
+  other station keeps it either. It existed for its
   elements (D20); left behind, it was an untitled spot the visitor's
   guide still led to. A titled, storied, described or pictured station
   stays, and so does an
@@ -142,8 +135,8 @@ const written = withTourContent(opened, {
   pose; a move is re-expressed in its own station; each object written
   into the station it names however far from it, and one naming none kept
   in its own; an object in no station of the tour refused in words; the
-  stations' order kept; removal; an emptied station dropped unless titled,
-  storied or routed to; kept by a description or an image asset, not by a
+  stations' order kept; removal; an emptied station dropped unless titled
+  or storied; kept by a description or an image asset, not by a
   blank description (`keepsItself` asked directly) nor by an
   image of its own deleted photo; and the `asStored`
   property (it is what a written tour holds, by content key);
@@ -160,8 +153,6 @@ const written = withTourContent(opened, {
   `tour-document.test.ts` and `tour-document.property.test.ts` (the open
   dropping a file's captures, and no write carrying them),
   `authoring-draft.test.ts` and `creator-finish.test.ts`.
-- `withoutRoutesTo` through `tour-document-stations.test.ts` (a delete
-  pruning a `next` and quiz targets, a route left with no target going
-  whole, and the property that any order of station deletes leaves no
-  route to a missing station) and `tour-document-stations-draft.test.ts`
-  (a restore pruning a route to a station gone).
+- A station's delete through `tour-document-stations.test.ts` (the
+  property that any order of station deletes leaves a tour the format
+  reads).

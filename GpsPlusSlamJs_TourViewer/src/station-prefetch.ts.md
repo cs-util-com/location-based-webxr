@@ -18,7 +18,7 @@ far the visitor is from each offered station. Plan:
   the cache)
   - `approach(station, distanceM, activateM)` - inside
     `activateM + PREFETCH_LEAD_M`, queue the station's assets;
-  - `ahead(station)` - the station that comes next in a fixed or branch
+  - `ahead(station)` - the station that comes next in a fixed
     order, while the current story plays: queue its assets from any
     distance (K4 review R5; the guide's `onUpcoming`);
   - `done(stationId)` - the media only done stations need may be

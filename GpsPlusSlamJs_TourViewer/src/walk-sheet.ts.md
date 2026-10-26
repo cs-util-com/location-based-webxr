@@ -82,8 +82,7 @@ view.render(model, { sheet: "peek", quick, position: "distance", story: null });
   and that the only rule hiding `#station-skip` with the list open spares
   "Finish the tour".
 - `walk-sheet.dom.test.ts` (jsdom, on the real `index.html` markup) -
-  the view hides the order chip's element for a fixed and a branching
-  order after an any-order render, and shows "Any order".
+  the view hides the order chip's element for a fixed order after an any-order render, and shows "Any order".
 - The DOM half is driven end to end by
   `playwright-tests/visitor-walk.spec.js` (open and close by tap and
   drag, the story card, the completion, the away block) and

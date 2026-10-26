@@ -99,9 +99,7 @@ import {
   imageAssetIds,
   keepsItself,
   objectAssetIds,
-  routedTo,
   stepAssetIds,
-  withoutRoutesTo,
 } from "./tour-content.js";
 import { sameJson } from "./same-json.js";
 import type { CodeMeasurement } from "./visit-settle.js";
@@ -1076,8 +1074,8 @@ function seatByRule(
  * `state`'s frames without those of `candidates` that are now EMPTY
  * AUTOMATIC stations: no object of the document names them, and nothing
  * else keeps them - nothing of their own (a title, story steps, a
- * description, a card image naming an image asset: `keepsItself`), no
- * route from another station. Such a station existed only for its
+ * description, a card image naming an image asset: `keepsItself`). Such a
+ * station existed only for its
  * elements; left behind, a visitor's guide would still lead to it.
  * The same array when nothing goes.
  */
@@ -1088,13 +1086,11 @@ function withoutEmptied(
   const ids = new Set([...candidates].filter((id) => id !== undefined));
   if (ids.size === 0) return state.stations;
   const named = new Set(documentObjects(state).map((o) => o.object.station));
-  const routed = new Set(state.stations.flatMap(routedTo));
   const imageAssets = imageAssetIds(state.written?.assets ?? []);
   const gone = (frame: StationFrame): boolean =>
     ids.has(frame.id) &&
     !named.has(frame.id) &&
-    !keepsItself(frame, imageAssets) &&
-    !routed.has(frame.id);
+    !keepsItself(frame, imageAssets);
   return state.stations.some(gone)
     ? state.stations.filter((f) => !gone(f))
     : state.stations;
@@ -1527,9 +1523,7 @@ interface TourRestore {
 
 /**
  * A restore's station deletions and order (`restored`, after the objects
- * are back): each deleted station no object names goes, every route to a
- * station the tour no longer
- * carries is pruned (the format refuses a dangling one), and the stations
+ * are back): each deleted station no object names goes, and the stations
  * follow the recorded order, the others after them.
  */
 function restoredStations(
@@ -1537,7 +1531,7 @@ function restoredStations(
   work: Pick<TourRestore, "frames" | "order" | "deletedStations">,
 ): TourDocumentState {
   if (state.written === null) return state;
-  if (!recordsStations(work)) return withoutDanglingRoutes(state);
+  if (!recordsStations(work)) return state;
   const named = new Set(documentObjects(state).map((o) => o.object.station));
   const gone = new Set(
     (work.deletedStations ?? []).filter((id) => !named.has(id)),
@@ -1550,11 +1544,6 @@ function restoredStations(
       (id) => writtenIds.has(id) && !state.deletedStations.includes(id),
     ),
   ];
-  const ids = new Set(frames.map((f) => f.id));
-  const missing = new Set(
-    frames.flatMap(routedTo).filter((id) => !ids.has(id)),
-  );
-  if (missing.size > 0) frames = frames.map((f) => withoutRoutesTo(f, missing));
   if (work.order !== undefined) {
     const order = new Map(work.order.map((id, i) => [id, i]));
     const rank = (f: StationFrame): number =>
@@ -1578,24 +1567,6 @@ function recordsStations(
     work.order !== undefined ||
     work.deletedStations !== undefined
   );
-}
-
-/** `state` without a route of its frames to a station the tour does not
- *  carry (a created station restored from a draft written against
- *  another tour); the same state when there is none. */
-function withoutDanglingRoutes(state: TourDocumentState): TourDocumentState {
-  const carried = new Set([
-    ...state.stations.map((f) => f.id),
-    ...(manifestNow(state)?.stations ?? []).map((s) => s.id),
-  ]);
-  const missing = new Set(
-    state.stations.flatMap(routedTo).filter((id) => !carried.has(id)),
-  );
-  if (missing.size === 0) return state;
-  return {
-    ...state,
-    stations: state.stations.map((f) => withoutRoutesTo(f, missing)),
-  };
 }
 
 /** `TourRestore` as the reducer reads it: with one minted id per object,
@@ -2077,8 +2048,7 @@ function stationAdd(
   );
 }
 
-/** A station deleted with its items (`stationDeleted`), every route to it
- *  pruned, as one step. */
+/** A station deleted with its items (`stationDeleted`), as one step. */
 function stationDelete(
   before: TourDocumentState,
   payload: { stationId: string; what: string },
@@ -2092,16 +2062,13 @@ function stationDelete(
     const gone = deleteObject(next, found);
     next = { ...next, placed: gone.placed, deleted: gone.deleted };
   }
-  const gone = new Set([stationId]);
   const written = before.written.stations.some((s) => s.id === stationId);
   return edited(
     before,
     {
       placed: next.placed,
       deleted: next.deleted,
-      stations: framesToList(before)
-        .filter((f) => f.id !== stationId)
-        .map((f) => withoutRoutesTo(f, gone)),
+      stations: framesToList(before).filter((f) => f.id !== stationId),
       ...(written
         ? { deletedStations: [...before.deletedStations, stationId] }
         : {}),
@@ -2514,9 +2481,8 @@ const tourDocumentSlice = createSlice({
         };
       },
     },
-    /** A station deleted with its items, and every route to it pruned (a
-     *  `next`, a quiz's targets): one step. Not the tour's last station,
-     *  nor one it lacks (`stationDeleteRefusal`). */
+    /** A station deleted with its items: one step. Not the tour's last
+     *  station, nor one it lacks (`stationDeleteRefusal`). */
     stationDeleted(
       state,
       action: PayloadAction<{ stationId: string; what: string }>,
@@ -2533,8 +2499,8 @@ const tourDocumentSlice = createSlice({
     },
     /** A station copied beside itself (`duplicateStationGeo`) right after
      *  it, titled "... copy" (shortened to fit), a card image of its own
-     *  photo dropped (one of an image asset kept), its steps and routes
-     *  kept and its items copied rigidly under the new ids the page gives:
+     *  photo dropped (one of an image asset kept), its steps kept and
+     *  its items copied rigidly under the new ids the page gives:
      *  one step. A taken id, or an item without a new id, changes nothing. */
     stationDuplicated: {
       reducer(state, action: PayloadAction<StationDuplicatePayload>) {

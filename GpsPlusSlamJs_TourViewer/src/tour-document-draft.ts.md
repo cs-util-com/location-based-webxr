@@ -51,16 +51,15 @@ createdStations?, frames?, order?, deletedStations? }` (`stations`: `StationPose
 - `parseSettingsRecord(text, against?)` - a stored record, or undefined
   when it does not read (a bad station pose or detail costs the record,
   never the objects beside it). `against` is the opened tour: its
-  stations count as siblings a route may name, and its assets as what a
-  story step may name (without it, a frame whose step names an asset is
-  lost). The created frames and the `frames` are read one by one as the
-  format reads a station (`parseTourManifest`, without items, with a
-  stand-in for each sibling that reads, so a route between them
-  resolves); of two under one id the first is kept. A frame that does not
-  read is lost - the objects naming it are seated by the station rule as
-  they come back - and so is every frame whose route names a lost one:
-  the frames are read again against the ones that read until none more
-  drops, so no kept frame routes to a created station the record lost.
+  assets are what a story step may name (without it, a frame whose step
+  names an asset is lost). The created frames and the `frames` are read
+  one by one, in one pass, as the format reads a station
+  (`parseTourManifest`, without items, alone: a station names no other,
+  so no frame depends on a sibling); of two under one id the first is
+  kept. A frame that does not read is lost, and only it - the objects
+  naming it are seated by the station rule as they come back. A `next`
+  or a quiz `route` an older build stored is ignored by that reader, so
+  it neither costs the frame nor survives the read.
   The format's reader drops a card image naming a photo (the probe holds
   no items), so a well-formed `image` id of the record is put back on the
   frame it read from: a copied station's card showing its own copied
@@ -138,9 +137,9 @@ const stop = store.listenToDocument({
   or across an open; the created stations' frames written by a placement
   that starts one (none for one that joins), read back as they were, and
   a record whose frames do not read keeping the rest, and one broken frame
-  among good ones costing only itself; a frame routing to a broken
-  sibling lost with it, and one routing to that frame too, so no kept
-  frame routes to a lost station; the codes record written when a code's
+  among good ones costing only itself; a frame naming a broken sibling
+  (a stored `next`, a quiz route) kept and read without the name; the
+  codes record written when a code's
   text or the hand changes, not for the same codes, and never for a
   draft without `saveCodes`.
 - `tour-document-stations-draft.test.ts` - the stations through the
@@ -152,6 +151,9 @@ const stop = store.listenToDocument({
   step read against the opened tour's assets and lost without them; a
   deleted station an object still names kept; a record of the earlier
   format restoring its poses.
+- `tour-document-draft.property.test.ts` - over random broken frames,
+  some naming a sibling as `next`: exactly the readable frames come
+  back, in order, none carrying a `next`.
 - `tour-document.property.test.ts` - any sequence of edits written to the
   records and restored over the opened tour gives back the same write.
 - The record's reading and comparing, through both drafts:

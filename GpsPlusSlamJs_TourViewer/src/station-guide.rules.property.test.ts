@@ -178,7 +178,7 @@ const tourArb = fc.integer({ min: 2, max: 5 }).chain((n) =>
       ),
       { minLength: n, maxLength: n },
     ),
-    order: fc.constantFrom<TourOrder>("any", "fixed", "branch"),
+    order: fc.constantFrom<TourOrder>("any", "fixed"),
   }),
 );
 

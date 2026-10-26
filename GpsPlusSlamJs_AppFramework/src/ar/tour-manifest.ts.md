@@ -65,7 +65,7 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
   `tour-stations.ts`: `TourAsset`, `TourAssetKind`, `TourOrder`,
   `TourStation`, `TourStep`, `TourStepAction`, `TourStepRecord`,
   `TourStepAdvance`,
-  `TourChoiceOption`, `TourQuizOption`, `TourQuizAnswer`, `TourQuizRoute`.
+  `TourChoiceOption`, `TourQuizOption`, `TourQuizAnswer`.
 
 ## Version 3 (W3; a major)
 
@@ -223,7 +223,8 @@ order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - `id`s are path-safe segments (`[A-Za-z0-9_-]{1,64}`); a photo's `image`
   is `content/<its id>.<image ext>`.
 - `title` is optional and non-blank, read trimmed; `order` is
-  `fixed | any | branch`.
+  `fixed | any`; a `branch` order is refused at minors this reader knows
+  and read as `any` from a newer minor (an unknown order degrades).
 - Defensive at the boundary like `qr-level.ts`: hand-editable data, every
   field checked, the writer re-validates.
 

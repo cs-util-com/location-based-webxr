@@ -147,7 +147,7 @@ export interface WalkSheetModel {
   readonly grabLabel: string;
   readonly list: {
     readonly title: string;
-    /** "Any order", or null (fixed and branch show no chip). */
+    /** "Any order", or null (a fixed order shows no chip). */
     readonly chip: string | null;
     /** "N of M found" (bold), then the other parts, zero ones left out. */
     readonly progress: { readonly lead: string; readonly rest: string[] };
@@ -182,24 +182,11 @@ export function walkHasProgress(progress: WalkProgress | null): boolean {
   );
 }
 
-/** The stations the list shows, in tour order: all of them, except under
- *  branch order, where the path decides (the stations offered so far and
- *  the current one; a station the path may never reach is not promised). */
+/** The stations the list shows, in tour order: all of them. */
 function listed(
   stations: readonly TourStation[],
-  progress: WalkProgress,
 ): { station: TourStation; number: number }[] {
-  const offered = new Set(walkOffered(progress));
-  return stations
-    .map((station, i) => ({ station, number: i + 1 }))
-    .filter(({ station }) => {
-      if (progress.order !== "branch") return true;
-      const status = walkStatus(progress, station.id);
-      return (
-        offered.has(station.id) ||
-        (status !== undefined && (status.state !== "waiting" || status.skipped))
-      );
-    });
+  return stations.map((station, i) => ({ station, number: i + 1 }));
 }
 
 /** A station's look: the walk's state, and the focus among the offered. */
@@ -382,11 +369,7 @@ function peekOf(
       arrowDeg: null,
       nextArrowDeg: null,
       tail:
-        skipped > 0
-          ? `${String(skipped)} skipped.`
-          : input.order === "branch"
-            ? "You reached the end of your path."
-            : "Every station visited.",
+        skipped > 0 ? `${String(skipped)} skipped.` : "Every station visited.",
     };
   }
   if (there !== undefined && view.there !== null) {
@@ -484,48 +467,37 @@ function peekOf(
   };
 }
 
-function progressLine(
-  order: TourOrder,
-  progress: WalkProgress,
-): { lead: string; rest: string[] } {
+function progressLine(progress: WalkProgress): {
+  lead: string;
+  rest: string[];
+} {
   const { found, skipped, total } = counts(progress);
   const left = total - found - skipped;
   const skippedPart = skipped > 0 ? [`${String(skipped)} skipped`] : [];
-  // Under branch order the path decides how many there are.
-  if (order === "branch") {
-    return { lead: `${String(found)} found`, rest: skippedPart };
-  }
   return {
     lead: `${String(found)} of ${String(total)} found`,
     rest: [...skippedPart, ...(left > 0 ? [`${String(left)} to find`] : [])],
   };
 }
 
-function completionOf(
-  order: TourOrder,
-  progress: WalkProgress,
-): { title: string; text: string } {
+function completionOf(progress: WalkProgress): { title: string; text: string } {
   const { found, skipped, total } = counts(progress);
-  // A skipped station comes back at any time; under branch
-  // order the path decides how many there are, so no count.
+  // A skipped station comes back at any time.
   const again = "A skipped station can still be brought back.";
   return {
-    title: completionLine(order, skipped),
+    title: completionLine(skipped),
     text:
       skipped === 0
         ? "Thank you for walking with us."
-        : order === "branch"
-          ? again
-          : `${String(found)} of ${String(total)} found. ${again}`,
+        : `${String(found)} of ${String(total)} found. ${again}`,
   };
 }
 
 /** The order chip: only "Any order" tells the visitor something they act
- *  on (they may choose); a fixed order and a branching path show none. */
+ *  on (they may choose); a fixed order shows none. */
 const CHIPS: Record<TourOrder, string | null> = {
   any: "Any order",
   fixed: null,
-  branch: null,
 };
 
 /** The list's hint while no station is guessed: what the
@@ -563,7 +535,7 @@ export function walkSheetModel(input: WalkSheetInput): WalkSheetModel {
   const offeredList = walkOffered(progress);
   const offered = new Set(offeredList);
   const byId = new Map(input.stations.map((s) => [s.id, s]));
-  const shown = listed(input.stations, progress);
+  const shown = listed(input.stations);
   const rows = shown.map(({ station, number }): WalkRow => {
     const state = rowState(progress, station.id, view.focusId, offered);
     const title = stationTitle(station, number);
@@ -603,13 +575,11 @@ export function walkSheetModel(input: WalkSheetInput): WalkSheetModel {
     list: {
       title: input.tourTitle,
       chip: CHIPS[input.order],
-      progress: progressLine(input.order, progress),
+      progress: progressLine(progress),
       // The card waits for the finish: a tour completed by its last
       // station's end waits until the visitor leaves it or taps "Finish
       // the tour".
-      completion: progress.finished
-        ? completionOf(input.order, progress)
-        : null,
+      completion: progress.finished ? completionOf(progress) : null,
       hint: offeredList.length === 0 ? null : hintOf(view),
       rows,
     },
@@ -633,7 +603,7 @@ export function awayModel(input: {
   readonly progress: WalkProgress;
 }): AwayModel {
   const offered = new Set(walkOffered(input.progress));
-  const shown = listed(input.stations, input.progress);
+  const shown = listed(input.stations);
   const states = shown.map(({ station }) =>
     rowState(input.progress, station.id, null, offered),
   );

@@ -20,8 +20,8 @@
  *   reader, which ignores it).
  * - A station this write EMPTIED (it held items, it holds none) goes when
  *   nothing else keeps it: no title, no story steps, no description, no
- *   card image that still names a picture (`keepsItself`), and no other
- *   station routing to it. It existed for its elements
+ *   card image that still names a picture (`keepsItself`). It existed
+ *   for its elements
  *   (D20); left behind, the visitor's guide would still lead to it. An
  *   empty station the tour already had is left alone.
  * - An asset nothing names any more is dropped (`withReferencedAssets`):
@@ -40,7 +40,6 @@ import type {
   TourItem,
   TourManifest,
   TourObject,
-  TourQuizRoute,
   TourStation,
   TourStepAction,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -168,30 +167,26 @@ export function withTourContent(
     ...station,
     items: items.get(station.id) ?? [],
   }));
-  const kept = new Set(filled.flatMap(routedTo));
   const imageAssets = imageAssetIds(manifest.assets);
   return {
     ...manifest,
     stations: filled.filter(
-      (s) => !emptiedAndBare(s, stationById.get(s.id), kept, imageAssets),
+      (s) => !emptiedAndBare(s, stationById.get(s.id), imageAssets),
     ),
   };
 }
 
-/** Whether this write emptied `station` (`before` held items) and
- *  nothing else keeps it: nothing of its own (`keepsItself`), not in
- *  `kept`. */
+/** Whether this write emptied `station` (`before` held items) and it
+ *  keeps nothing of its own (`keepsItself`). */
 function emptiedAndBare(
   station: TourStation,
   before: TourStation | undefined,
-  kept: ReadonlySet<string>,
   imageAssets: ReadonlySet<string>,
 ): boolean {
   return (
     station.items.length === 0 &&
     (before?.items.length ?? 0) > 0 &&
-    !keepsItself(station, imageAssets) &&
-    !kept.has(station.id)
+    !keepsItself(station, imageAssets)
   );
 }
 
@@ -222,69 +217,6 @@ export function keepsItself(
     (station.description ?? "").trim() !== "" ||
     (station.image !== undefined && imageAssets.has(station.image))
   );
-}
-
-/** The stations `station` routes to: its `next` and its quizzes' routes. */
-export function routedTo(station: Omit<TourStation, "items">): string[] {
-  const ids = station.next === undefined ? [] : [station.next];
-  for (const { action: block } of station.steps) {
-    if (block.kind !== "quiz" || block.route === undefined) continue;
-    const { correct, wrong, byOption } = block.route;
-    if (correct !== undefined) ids.push(correct);
-    if (wrong !== undefined) ids.push(wrong);
-    ids.push(...Object.values(byOption ?? {}));
-  }
-  return ids;
-}
-
-/** `route` without the targets in `gone`: a byOption left empty goes, and
- *  so does a route left with no target at all (undefined). */
-function routeWithout(
-  route: TourQuizRoute,
-  gone: ReadonlySet<string>,
-): TourQuizRoute | undefined {
-  const byOption = Object.fromEntries(
-    Object.entries(route.byOption ?? {}).filter(([, to]) => !gone.has(to)),
-  );
-  const kept: TourQuizRoute = {
-    ...(route.correct === undefined || gone.has(route.correct)
-      ? {}
-      : { correct: route.correct }),
-    ...(route.wrong === undefined || gone.has(route.wrong)
-      ? {}
-      : { wrong: route.wrong }),
-    ...(Object.keys(byOption).length === 0 ? {} : { byOption }),
-  };
-  return Object.keys(kept).length === 0 ? undefined : kept;
-}
-
-/**
- * `station` without a route to any station of `gone` (deleted stations):
- * its `next` goes, and each quiz route loses those targets (a route left
- * with none goes whole). The same object when it names none of them, so a
- * caller can tell an untouched frame by identity.
- */
-export function withoutRoutesTo(
-  station: Omit<TourStation, "items">,
-  gone: ReadonlySet<string>,
-): Omit<TourStation, "items"> {
-  if (!routedTo(station).some((id) => gone.has(id))) return station;
-  const steps = station.steps.map((step) => {
-    const { action: block } = step;
-    if (block.kind !== "quiz" || block.route === undefined) return step;
-    const route = routeWithout(block.route, gone);
-    const { route: _old, ...rest } = block;
-    return {
-      ...step,
-      action: route === undefined ? rest : { ...rest, route },
-    };
-  });
-  const { next, ...rest } = station;
-  return {
-    ...rest,
-    ...(next === undefined || gone.has(next) ? {} : { next }),
-    steps,
-  };
 }
 
 /** The assets `block` names: its media, a character's image and voice. */

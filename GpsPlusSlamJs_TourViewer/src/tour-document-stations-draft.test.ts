@@ -4,9 +4,7 @@
  * a closed tab or a crash. Every station action must survive the round
  * trip "record, reload, read against the opened tour, restore" unchanged:
  * a title lost, a station added and not back, a deleted station back
- * again, a route left naming a station that is gone (which the format
- * refuses, so every later save would fail), or a copied station's card
- * image dropped because the record was read without its photos. A record
+ * again, or a copied station's card image dropped because the record was read without its photos. A record
  * written before stations were recorded whole must still restore.
  */
 
@@ -56,8 +54,8 @@ function photo(id: string, lat: number): TourObject {
   };
 }
 
-/** Pins a and b, photo f, and a story station routing to st-b, with an
- *  image step naming the image asset img1. */
+/** Pins a and b, photo f, and a story station with an image step naming
+ *  the image asset img1. */
 const OPENED: TourManifest = parseTourManifest(
   JSON.parse(
     serializeTourManifest(
@@ -78,7 +76,6 @@ const OPENED: TourManifest = parseTourManifest(
             activateRadiusM: 50,
             foundRadiusM: 25,
             hint: "arrow",
-            next: stationIdOf("b"),
             steps: [
               {
                 id: "s1",
@@ -154,7 +151,7 @@ describe("the draft keeps the stations whole", () => {
     expectSameDocument(reloaded(state), state);
   });
 
-  it("a station added, one deleted (its route pruned), the order changed and an item copied all come back", () => {
+  it("a station added, one deleted, the order changed and an item copied all come back", () => {
     let state = open();
     state = reduce(
       state,
@@ -354,7 +351,7 @@ describe("the draft keeps the stations whole", () => {
     ).toBe(false);
   });
 
-  it("a deleted station an object still names stays, and a route to a station gone is pruned", () => {
+  it("a deleted station an object still names stays, and the tour without a deleted one writes", () => {
     const state = open();
     const restored = reduce(
       state,
@@ -377,8 +374,6 @@ describe("the draft keeps the stations whole", () => {
         what: "restore",
       }),
     );
-    const story = withoutB.stations.find((s) => s.id === "story");
-    expect(story?.next).toBeUndefined();
     // The tour the next save writes reads back.
     const written = manifestToWrite(withoutB);
     expect(written).not.toBeNull();
@@ -388,12 +383,10 @@ describe("the draft keeps the stations whole", () => {
 
   // Why: a created station reaches `restored` from a draft written by any
   // page, read against whichever tour was opened then. One whose story
-  // names an asset this tour lacks, or that routes to a station this tour
-  // lacks, would make every later save fail (the format refuses both), so
-  // the reducer checks it against the stations and assets it merges into:
-  // the first is left out (its pin is seated by the station rule), the
-  // second keeps its frame without the dangling route.
-  it("a created station is checked against the tour it is restored into: a missing asset leaves it out, a missing route target is pruned", () => {
+  // names an asset this tour lacks would make every later save fail (the
+  // format refuses it), so the reducer checks it against the assets it
+  // merges into: it is left out (its pin is seated by the station rule).
+  it("a created station is checked against the tour it is restored into: a missing asset leaves it out", () => {
     const at: StationFrame["geo"] = {
       lat: 48.6,
       lon: 9.05,
@@ -428,7 +421,7 @@ describe("the draft keeps the stations whole", () => {
               },
             ],
           },
-          { ...frame, next: "nowhere" },
+          frame,
         ],
         what: "restore",
       }),
@@ -436,9 +429,6 @@ describe("the draft keeps the stations whole", () => {
     const ids = restored.stations.map((s) => s.id);
     expect(ids).not.toContain("noAsset");
     expect(ids).toContain("made");
-    expect(
-      restored.stations.find((s) => s.id === "made")?.next,
-    ).toBeUndefined();
     const p = documentObjects(restored).find((o) => o.object.id === "p");
     expect(p).toBeDefined();
     expect(ids).toContain(p?.object.station);

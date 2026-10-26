@@ -238,47 +238,7 @@ describe("createStationRun: offering", () => {
     expect(run.offered()).toEqual(["a", "c"]);
   });
 
-  it("branch: follows each station's default next, else the list order; a done target falls through", () => {
-    const run = createStationRun({
-      stations: [
-        station("a", { next: "c" }),
-        station("b"),
-        station("c", { next: "a" }),
-        station("d"),
-      ],
-      order: "branch",
-      nowMs: 0,
-    });
-    expect(run.offered()).toEqual(["a"]);
-    run.skip("a", 1);
-    expect(run.offered()).toEqual(["c"]);
-    // c points back at a, which is done: the first undone after it in
-    // list order is b.
-    run.skip("c", 2);
-    expect(run.offered()).toEqual(["b"]);
-    run.skip("b", 3);
-    expect(run.offered()).toEqual(["d"]);
-    run.skip("d", 4);
-    expect(run.isComplete()).toBe(true);
-  });
-
-  it("branch: a station whose next is itself, skipped, hands on to the next undone station; the tour goes on", () => {
-    // Why this test matters: the branch's next is read after the station
-    // is done. Read before, a station pointing at itself points at a
-    // station still undone - itself - which is done a moment later, and
-    // the tour reads complete with b never offered.
-    const run = createStationRun({
-      stations: [station("a", { next: "a" }), station("b")],
-      order: "branch",
-      nowMs: 0,
-    });
-    expect(run.offered()).toEqual(["a"]);
-    run.skip("a", 1);
-    expect(run.offered()).toEqual(["b"]);
-    expect(run.isComplete()).toBe(false);
-  });
-
-  it("names the station that comes next while the current one's story plays (fixed and branch; R5)", () => {
+  it("names the station that comes next while the current one's story plays (R5)", () => {
     // Why this test matters (K4 review R5): under a fixed order the next
     // station is offered only once the current is done, so a prefetch keyed
     // on the offer started it with the visitor already on the way; the run
@@ -293,13 +253,6 @@ describe("createStationRun: offering", () => {
     expect(fixed.upcoming()).toBe("b");
     fixed.finish("a", 2);
     expect(fixed.upcoming()).toBeNull();
-    const branch = createStationRun({
-      stations: [station("a", { next: "c" }), station("b"), station("c")],
-      order: "branch",
-      nowMs: 0,
-    });
-    branch.observe({ distances: at({ a: 1 }), nowMs: 1 });
-    expect(branch.upcoming()).toBe("c");
     // Under "any" every station not done is offered already.
     const any = createStationRun({
       stations: [station("a"), station("b")],
@@ -350,9 +303,9 @@ describe("skip suggestion clock", () => {
   });
 
   it("a skip can be undone: the station is offered again, unskipped, with a fresh clock (R14)", () => {
-    for (const order of ["fixed", "any", "branch"] as const) {
+    for (const order of ["fixed", "any"] as const) {
       const run = createStationRun({
-        stations: [station("a", { next: "b" }), station("b"), station("c")],
+        stations: [station("a"), station("b"), station("c")],
         order,
         nowMs: 0,
       });
@@ -370,59 +323,6 @@ describe("skip suggestion clock", () => {
       // Only a skipped station comes back.
       expect(run.unskip("b", 3)).toEqual([]);
     }
-  });
-
-  // Why this test matters: under
-  // branch order bringing a station back used to set the path to it and
-  // forget the station the path was on, so the walk went on at the
-  // brought-back station's `next` and the abandoned one was never offered
-  // again. The path now returns to where it was.
-  it("branch: a station brought back is offered, then the path resumes at the station it left", () => {
-    const run = createStationRun({
-      stations: [
-        station("a", { next: "c" }),
-        station("b", { next: "d" }),
-        station("c", { next: "e" }),
-        station("d"),
-        station("e"),
-      ],
-      order: "branch",
-      nowMs: 0,
-    });
-    run.skip("a", 1);
-    expect(run.offered()).toEqual(["c"]);
-    run.unskip("a", 2);
-    expect(run.offered()).toEqual(["a"]);
-    run.skip("a", 3);
-    expect(run.offered()).toEqual(["c"]);
-    run.skip("c", 4);
-    expect(run.offered()).toEqual(["e"]);
-    // Two brought back in a row return in turn: c, then a, then e - never
-    // c's next (e) straight after c, nor a's list successor b.
-    run.unskip("a", 5);
-    run.unskip("c", 6);
-    expect(run.offered()).toEqual(["c"]);
-    run.observe({ distances: at({ c: 1 }), nowMs: 7 });
-    run.finish("c", 8);
-    expect(run.offered()).toEqual(["a"]);
-    run.skip("a", 9);
-    expect(run.offered()).toEqual(["e"]);
-  });
-
-  it("branch: a station brought back after the path ended ends it again once done", () => {
-    const run = createStationRun({
-      stations: [station("a", { next: "c" }), station("b"), station("c")],
-      order: "branch",
-      nowMs: 0,
-    });
-    run.skip("a", 1);
-    run.skip("c", 2);
-    expect(run.isComplete()).toBe(true);
-    run.unskip("a", 3);
-    expect(run.offered()).toEqual(["a"]);
-    // Not on to a's next (c, done) and its successor b: the path had ended.
-    expect(run.skip("a", 4)).toContainEqual({ kind: "complete" });
-    expect(run.offered()).toEqual([]);
   });
 
   it("scales with the distance at the offer: a slow walker's time plus a fixed allowance", () => {
@@ -465,19 +365,15 @@ describe("skip suggestion clock", () => {
   });
 });
 
-const ORDERS: readonly TourOrder[] = ["fixed", "any", "branch"];
+const ORDERS: readonly TourOrder[] = ["fixed", "any"];
 
-/** Generated tours: 1-8 stations with random default-next links (cycles included). */
+/** Generated tours: 1-8 stations under either order, with arbitrary actions. */
+const stationsOf = (n: number): TourStation[] =>
+  Array.from({ length: n }, (_, i) => station(`s${i}`));
+
 const tourArb = fc.integer({ min: 1, max: 8 }).chain((n) =>
   fc.tuple(
     fc.constant(n),
-    fc.array(
-      fc.option(fc.integer({ min: 0, max: n - 1 }), { nil: undefined }),
-      {
-        minLength: n,
-        maxLength: n,
-      },
-    ),
     fc.constantFrom(...ORDERS),
     fc.array(fc.tuple(fc.nat(), fc.constantFrom("skip", "find")), {
       maxLength: 40,
@@ -488,10 +384,8 @@ const tourArb = fc.integer({ min: 1, max: 8 }).chain((n) =>
 describe("createStationRun: properties", () => {
   it("never deadlocks: always offering something until complete, and completing within one action per station", () => {
     fc.assert(
-      fc.property(tourArb, ([n, nexts, order, actions]) => {
-        const stations = nexts.map((next, i) =>
-          station(`s${i}`, next === undefined ? {} : { next: `s${next}` }),
-        );
+      fc.property(tourArb, ([n, order, actions]) => {
+        const stations = stationsOf(n);
         const run = createStationRun({ stations, order, nowMs: 0 });
         let t = 1;
         let completions = 0;
@@ -516,20 +410,17 @@ describe("createStationRun: properties", () => {
         expect(run.isComplete()).toBe(true);
         expect(completions).toBeLessThanOrEqual(n);
         expect(run.offered()).toEqual([]);
-        // fixed and any visit every station; branch may leave stations off
-        // its path, but never one that is still offered.
+        // Both orders visit every station.
         const undone = run.statuses().filter((s) => s.state !== "done");
-        expect(order === "branch" || undone.length === 0).toBe(true);
+        expect(undone).toEqual([]);
       }),
     );
   });
 
   it("never offers a done station, and a done station never changes again", () => {
     fc.assert(
-      fc.property(tourArb, ([, nexts, order, actions]) => {
-        const stations = nexts.map((next, i) =>
-          station(`s${i}`, next === undefined ? {} : { next: `s${next}` }),
-        );
+      fc.property(tourArb, ([n, order, actions]) => {
+        const stations = stationsOf(n);
         const run = createStationRun({ stations, order, nowMs: 0 });
         let t = 1;
         for (const [pick, how] of actions) {
@@ -668,44 +559,38 @@ describe("finishing the tour: done is progress, finished is the visitor's", () =
 
   it("every tour finishes within one action more than it takes to complete, whatever the order and the actions", () => {
     fc.assert(
-      fc.property(
-        tourArb,
-        fc.boolean(),
-        ([n, nexts, order, actions], leave) => {
-          const stations = nexts.map((next, i) =>
-            station(`s${i}`, next === undefined ? {} : { next: `s${next}` }),
-          );
-          const run = createStationRun({ stations, order, nowMs: 0 });
-          let t = 1;
-          let lastSkipped = false;
-          for (const [pick, how] of actions) {
-            const offered = run.offered();
-            if (offered.length === 0) break;
-            const id = offered[pick % offered.length]!;
-            if (how === "skip") run.skip(id, t++);
-            else {
-              run.observe({ distances: new Map([[id, 0]]), nowMs: t++ });
-              run.finish(id, t++);
-            }
-            lastSkipped = how === "skip";
-            // Never finished before complete.
-            expect(run.isFinished() && !run.isComplete()).toBe(false);
+      fc.property(tourArb, fc.boolean(), ([n, order, actions], leave) => {
+        const stations = stationsOf(n);
+        const run = createStationRun({ stations, order, nowMs: 0 });
+        let t = 1;
+        let lastSkipped = false;
+        for (const [pick, how] of actions) {
+          const offered = run.offered();
+          if (offered.length === 0) break;
+          const id = offered[pick % offered.length]!;
+          if (how === "skip") run.skip(id, t++);
+          else {
+            run.observe({ distances: new Map([[id, 0]]), nowMs: t++ });
+            run.finish(id, t++);
           }
-          for (let guard = 0; guard < n + 1 && !run.isComplete(); guard += 1) {
-            run.skip(run.offered()[0]!, t++);
-            lastSkipped = true;
-          }
-          expect(run.isComplete()).toBe(true);
-          // A skip that completed it finished it; otherwise one action does.
-          expect(run.isFinished()).toBe(lastSkipped);
-          const wait = run.finishWait();
-          expect(wait === null).toBe(lastSkipped);
-          if (wait !== null && leave) run.left(wait);
-          if (wait !== null && !leave) run.finishTour();
-          expect(run.isFinished()).toBe(true);
-          expect(run.finishWait()).toBeNull();
-        },
-      ),
+          lastSkipped = how === "skip";
+          // Never finished before complete.
+          expect(run.isFinished() && !run.isComplete()).toBe(false);
+        }
+        for (let guard = 0; guard < n + 1 && !run.isComplete(); guard += 1) {
+          run.skip(run.offered()[0]!, t++);
+          lastSkipped = true;
+        }
+        expect(run.isComplete()).toBe(true);
+        // A skip that completed it finished it; otherwise one action does.
+        expect(run.isFinished()).toBe(lastSkipped);
+        const wait = run.finishWait();
+        expect(wait === null).toBe(lastSkipped);
+        if (wait !== null && leave) run.left(wait);
+        if (wait !== null && !leave) run.finishTour();
+        expect(run.isFinished()).toBe(true);
+        expect(run.finishWait()).toBeNull();
+      }),
     );
   });
 });

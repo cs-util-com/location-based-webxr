@@ -197,8 +197,7 @@ describe("withTourContent", () => {
     // exists for the elements it holds. Deleting its last pin used to
     // leave an untitled, empty station behind, which the visitor's guide
     // still offered ("Next: Station 2, 30 m") - a walk to nothing. A
-    // station with its own title or story steps is the creator's, one
-    // another station routes to stays so the route still resolves, and an
+    // station with its own title or story steps is the creator's, and an
     // empty station the tour already had is left alone. (A "photographed"
     // station, kept by the walk's recorded photos, stood here too: those
     // are debug camera captures now, which keep no station.)
@@ -212,21 +211,18 @@ describe("withTourContent", () => {
           advance: { mode: "tap" },
         },
       ],
-      next: "routed",
     };
     const stations = [
       station("auto", 0, 0),
       titled,
       storied,
       station("was-empty", 400, 0),
-      station("routed", 500, 0),
     ];
     const base = withTourContent(tour(stations), {
       objects: [
         inStation(pin("a", 1, 0), "auto"),
         inStation(pin("b", 101, 0), "titled"),
         inStation(pin("c", 201, 0), "storied"),
-        inStation(pin("e", 501, 0), "routed"),
       ],
     });
     const next = withTourContent(base, { objects: [] });
@@ -234,7 +230,6 @@ describe("withTourContent", () => {
       "titled",
       "storied",
       "was-empty",
-      "routed",
     ]);
   });
 

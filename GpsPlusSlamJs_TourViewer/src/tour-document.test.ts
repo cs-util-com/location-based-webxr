@@ -833,7 +833,7 @@ describe("tour document: every object belongs to a station", () => {
   // (A fourth case, a station kept by a recorded photo, stood here: the
   // walk's frames are debug camera captures now, which keep no station,
   // and the document drops them at the open - "tour document: the open".)
-  it("a station with a title, a step or a route to it stays when its last object goes", () => {
+  it("a station with a title or a step stays when its last object goes", () => {
     const keeps: [string, TourDocumentState][] = [
       ["a title", tourWith(stationAt("k", 0, 25, { title: "Gate" }))],
       [
@@ -849,10 +849,6 @@ describe("tour document: every object belongs to a station", () => {
             ],
           }),
         ),
-      ],
-      [
-        "a route to it",
-        tourWith(stationAt("k", 0), stationAt("r", 500, 25, { next: "k" })),
       ],
     ];
     for (const [why, opened] of keeps) {

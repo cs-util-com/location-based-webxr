@@ -154,8 +154,8 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
     strict, so a move a centimetre farther out runs the rule. The station it left goes in the same step when that leaves
     it an EMPTY AUTOMATIC station: no object names it, and nothing of its
     own (`keepsItself` of `tour-content.ts`: a title, a story step, a
-    non-blank description, a card image naming an image asset) and no
-    route to it (`next`, a quiz's routes) keeps it. An unknown id changes nothing.
+    non-blank description, a card image naming an image asset) keeps it.
+    An unknown id changes nothing.
   - One step each: an undo gives the stations back exactly as they were.
 - `deleted({ id, what })` - `deleteObject`: the entry goes, a written
   object gets a tombstone, and its station goes too when that leaves it an
@@ -226,8 +226,7 @@ newStationIds? })` - a draft's work,
   recorded for an edit beyond its pose, so a file moved on another device
   keeps its move) or is added whole (one whose story steps name an asset
   the written tour lacks is skipped); each deleted station no restored
-  object names goes (a written one joins `deletedStations`); every route
-  to a station the tour no longer carries is pruned; and the stations
+  object names goes (a written one joins `deletedStations`); and the stations
   follow the recorded `order`, those it does not name after them (no
   order: the opened file's, then the added ones). Stations the record does
   not name keep the opened file's version, title and all.
@@ -235,8 +234,8 @@ newStationIds? })` - a draft's work,
   whole) restores as before. Every frame a restore brings - recorded or
   created - is checked against the tour it is restored into: one whose
   story names an asset the tour lacks is left out (its objects are seated
-  by the rule), and a route to a station the tour does not carry is
-  pruned, since the format refuses both and every later save would fail.
+  by the rule), since the format refuses it and every later save would
+  fail.
 - `saveStarted({ generation })`, `saved({ generation, written,
 appliedDeletions, stationsAtStart, inPlaceAt? })`, `saveEnded({ generation, error? })`
   - a rebuild queued, landed (the written file replaced; `pendingAfterRebuild` keeps what the
@@ -277,9 +276,7 @@ largeTour?, cannotSave? })`.
     `Station N` after the stations it follows; `prepare` mints the id, a
     taken or malformed one changes nothing.
   - `stationDeleted({ stationId, what })` - the station with its items
-    (each deleted as `deleted` does) and every route to it pruned
-    (`withoutRoutesTo`: a `next`, each quiz target, a route left with no
-    target); a written station joins `deletedStations`. The tour's last
+    (each deleted as `deleted` does); a written station joins `deletedStations`. The tour's last
     station is refused (`stationDeleteRefusal`: `missing` or `last`). The
     other stations stay listed as for a reorder (`framesToList`).
   - `stationsReordered({ order, what })` - a permutation of the stations
@@ -643,7 +640,7 @@ store.dispatch(tourDocumentActions.undone());
   the station it left dropped, a delete dropping an emptied automatic
   station and its undo bringing it back exactly, the stations a title, a
   description, a card image asset (not an image of its own deleted photo), a
-  step or a route keeps, a placement during a save, a
+  step keeps, a placement during a save, a
   restore re-creating its created frames and seating a dangling object,
   carried work re-seated; a card image asset only an earlier view names
   among `historyAssetIds`.
@@ -690,11 +687,11 @@ store.dispatch(tourDocumentActions.undone());
   unknown station, the shown photo's delete dropping the card image from
   the write and its undo bringing it back; an add (numbered title, kept
   though empty; a taken id and an undrawable point refused); a delete
-  with its items and every route to it pruned as one step, an empty
+  with its items as one step, an empty
   station's delete counting as one change (seen red with the
   `deletedStations` exclusion off), the last station refused; a reorder
   (anything but a permutation refused); a copy of a station (new ids,
-  items rigidly, a photo under its own file; a story's steps and routes;
+  items rigidly, a photo under its own file; a story's steps;
   a long title shortened so the copy's fits 80 characters, counted in
   code points, and an image asset's card kept - seen red at 84) and of an
   item (1.5 m east, label marked); a written station no frame names
@@ -703,21 +700,19 @@ store.dispatch(tourDocumentActions.undone());
   grounded as ONE step;
   a model's size at 0.05 m and 500 m and just outside; an item into a
   station of its own; a station the rule started counted once; and as a
-  property: any order of station deletes leaves no route to a missing
-  station, and a tour the format reads.
+  property: any order of station deletes leaves a tour the format reads.
 - `tour-document-stations-draft.test.ts` - the settings record carries
   the stations edited here and a restore brings each edit back: a rename,
-  an add, a delete (its route pruned), a reorder and a copy; only the
+  an add, a delete, a reorder and a copy; only the
   edited frames, and an order only for a reorder or a copy inserted
   mid-tour; a recorded frame restored at the document's pose; a station
   deleted recorded, an automatic one a save dropped once emptied not
   (seen red with the exclusion off); a copied
   station's card image kept through the record (seen red with the
   record's image re-attach off); a frame whose step names an asset parses
-  only against the tour; a deleted station an object still names stays
-  (seen red with the route pruning off); a created station checked
-  against the tour it is restored into (a missing asset leaves it out, a
-  missing route target is pruned; each seen red); a record of the earlier
+  only against the tour; a deleted station an object still names stays;
+  a created station checked against the tour it is restored into (a
+  missing asset leaves it out; seen red); a record of the earlier
   format restores the poses as before.
 - `tour-document.property.test.ts` also mixes the station edits (rename,
   radius, add, delete, reorder, copy of a station and of an item, ground,

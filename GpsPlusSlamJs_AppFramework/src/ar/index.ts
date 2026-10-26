@@ -266,7 +266,6 @@ export {
   type TourOrder,
   type TourQuizAnswer,
   type TourQuizOption,
-  type TourQuizRoute,
   type TourStation,
   type TourStep,
   type TourStepAction,

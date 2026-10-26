@@ -177,7 +177,7 @@ hooks.tickStations = stations.tick;
 - `walk.radar?: WalkRadarDom` - the radar and the chip
   (`walk-radar.ts`), rendered with the sheet from the guide's view and
   the store's chip kind (`selectWalkChipKind`); hidden when the sheet is.
-  Its stations are the list's rows (the branch rule stays one). A tap
+  Its stations are the list's rows. A tap
   steps its range (`walk-radar.ts`); it opens no list. Its live geometry carries the
   guide's `radarHeadingDeg` and `headingConfirmed`, not `headingDeg`: north
   shows from the content's first frame, provisional until confirmed, while

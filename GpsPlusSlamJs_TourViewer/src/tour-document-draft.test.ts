@@ -28,7 +28,6 @@ import {
   tourDocumentReducer as reduce,
   type TourDocumentState,
 } from "./tour-document.js";
-import { routedTo } from "./tour-content.js";
 import { tourOf } from "./test-support/v3-tour.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 
@@ -380,7 +379,7 @@ describe("followDocument, the stations this page created", () => {
       act.placed({ object: far, what: "p", newStationId: "made" }),
     );
     const frame = settingsRecord(started.after).createdStations![0]!;
-    const other = { ...frame, id: "made2", next: "made" };
+    const other = { ...frame, id: "made2" };
     const record = {
       needsNoGps: false,
       createdStations: [
@@ -396,15 +395,12 @@ describe("followDocument, the stations this page created", () => {
     });
   });
 
-  // Why: each frame's routes were read against stand-ins for EVERY stored
-  // id, the frames that then failed to read among them. A frame routing
-  // to a sibling that does not read therefore read fine, the sibling was
-  // dropped, and the document kept a route to a station it no longer
-  // carried, which reached the written tour.json. A frame whose route
-  // names a lost sibling is lost with it (its objects are seated by the
-  // station rule as they come back), and so is one routing to that frame:
-  // no surviving frame routes to a station the record lost.
-  it("a frame routing to a created sibling that does not read is lost with it, and so is a frame routing to it", () => {
+  // Why: a frame stored by an older build may name a sibling - its `next`,
+  // a quiz answer sending the visitor on. Such names are not part of a
+  // station any more, so they neither cost the frame nor survive the
+  // read: a frame naming a sibling that does not read comes back, and
+  // carries neither name into the written tour.json.
+  it("a frame naming a created sibling that does not read is kept, read without the name", () => {
     const started = writesFor(
       opened,
       act.placed({ object: far, what: "p", newStationId: "made" }),
@@ -412,6 +408,12 @@ describe("followDocument, the stations this page created", () => {
     const frame = settingsRecord(started.after).createdStations![0]!;
     // B's latitude is stored as a string: B does not read.
     const b = { ...frame, id: "b", geo: { ...frame.geo, lat: "48.53" } };
+    const quiz = {
+      kind: "quiz",
+      question: "Which way?",
+      points: 1,
+      answer: { type: "number", value: 1, tolerance: 0 },
+    } as const;
     // A's quiz sends a right answer to B.
     const a = {
       ...frame,
@@ -419,27 +421,28 @@ describe("followDocument, the stations this page created", () => {
       steps: [
         {
           id: "q",
-          block: {
-            kind: "quiz",
-            question: "Which way?",
-            points: 1,
-            answer: { type: "number", value: 1, tolerance: 0 },
-            route: { correct: "b" },
-          },
+          block: { ...quiz, route: { correct: "b" } },
           advance: { mode: "tap" },
         },
       ],
     };
-    // C goes on to A.
-    const c = { ...frame, id: "c", next: "a" };
+    // C goes on to B.
+    const c = { ...frame, id: "c", next: "b" };
     const parsed = parseSettingsRecord(
       JSON.stringify({ needsNoGps: false, createdStations: [frame, a, b, c] }),
     );
-    expect(parsed).toEqual({ needsNoGps: false, createdStations: [frame] });
-    const kept = new Set(parsed?.createdStations?.map((f) => f.id));
-    for (const f of parsed?.createdStations ?? []) {
-      for (const target of routedTo(f)) expect(kept.has(target)).toBe(true);
-    }
+    expect(parsed).toEqual({
+      needsNoGps: false,
+      createdStations: [
+        frame,
+        {
+          ...frame,
+          id: "a",
+          steps: [{ id: "q", action: quiz, advance: { mode: "tap" } }],
+        },
+        { ...frame, id: "c" },
+      ],
+    });
   });
 
   it("a record whose created frames do not read keeps the rest", () => {

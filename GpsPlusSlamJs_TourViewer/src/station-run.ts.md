@@ -15,18 +15,14 @@ by the radius alone).
 - **The rules as pure transitions:** the page's store
   applies them in its `visitorWalk` reducer (`visitor-walk-slice.ts`), so
   the walk's state lives in the store and the rule once, here.
-  - `type WalkProgress` - `{ order, stations, branchCurrent,
-branchReturns }`: per
-    station in list order its status (`id`, `state`, `skipped`,
-    `focusedAtMs`, `focusDistanceM`) and the two tour facts the rules
-    read (`next`, a station of this tour or null; `stepless`); under
-    `branch` order the return points of stations brought back
-    (the bring-back rule, below); the offer is derived, never stored. Plain, serializable
+  - `type WalkProgress` - `{ order, stations, finished, finishWaitId }`:
+    per station in list order its status (`id`, `state`, `skipped`,
+    `focusedAtMs`, `focusDistanceM`) and the one tour fact the rules read
+    (`stepless`); the offer is derived, never stored. Plain, serializable
     data.
-  - `walkRoute(stations)` - those tour facts (`type WalkRoute`); a `next`
-    naming no station of the tour is null (the list successor then).
-  - `startWalk(route, order)` - every station waiting, `branch` at the
-    first.
+  - `walkRoute(stations)` - that tour fact per station (`type WalkRoute`,
+    `{ id, stepless }`).
+  - `startWalk(route, order)` - every station waiting.
   - `applyWalkStep(progress, step): { progress, events }` - one
     `type WalkStep`: `found` (an offered waiting station; the caller
     judged the radius), `focus-distance` (the first distance of a clock
@@ -86,10 +82,8 @@ focusDistanceM }`.
     first observed after) - K4 review R14, the clock used to start at the
     offer, which under `any` order is the tour's start;
   - `unskip(id, nowMs)` - bring a skipped station back, at any time: it waits again, unskipped, with a fresh clock, offered as
-    before the skip; under branch order the path goes to it and the
-    station the path was on is kept as a return point; a station not
-    skipped: nothing;
-  - `upcoming()` - under `fixed` or `branch` order, while the one offered
+    before the skip; a station not skipped: nothing;
+  - `upcoming()` - under `fixed` order, while the one offered
     station is found: the station offered once it is done (the prefetch
     reads it ahead, K4 review R5); null otherwise and always under `any`.
 - `StationEvent`: `found`, `done` (`skipped`), `offered` (the full new set), `complete`, `finished`.
@@ -117,23 +111,15 @@ focusDistanceM }`.
   not found by walking past it.
 - **Order presets:**
   - `fixed` - the first station not done, in list order;
-  - `any` - every station not done;
-  - `branch` - one station at a time, starting with the first: after a
-    station is done, its `next`, else its list successor; a target already
-    done falls through to the first undone station after it in list order;
-    the path ends when nothing follows. Stations off the path stay unvisited
-    (plan §7's open question; answer routes are K5's). A station brought
-    back (`unskip`) takes the path to it; the station the path was on (or
-    null, the path had ended) is pushed on `branchReturns`, and once the
-    brought-back station is done the path pops it: back to that station,
-    not on to the brought-back one's `next` (the bring-back rule: before it the
-    abandoned station was never offered again). A popped station already
-    done hands on by its own `next`; a popped null ends the path again.
-    A stack, so stations brought back in a row return in turn.
+  - `any` - every station not done.
+  - A tour file's `"branch"` order and a station's `next` are no longer
+    part of the format: the framework's reader refuses the first at its
+    own minor (reads it as `any` from a newer one) and ignores the
+    second, so the walk has no path to follow.
 - **No deadlock (§8 D5):** each completion reduces the undone stations by
   one, every offered station can be skipped, and the next offer is computed
-  from the list, never from a cycle; property-tested over generated tours
-  with cyclic `next` links.
+  from the list; property-tested over generated tours under both
+  orders.
 - **A station with no steps** (all left out for a newer minor, K1 review R4)
   is done the moment it is found (under fixed order too: done is
   progress, and holding it would hold back the next offer).
@@ -149,7 +135,7 @@ focusDistanceM }`.
   rules. A finished tour is never finished again.
 - **The skip clock** starts when the station becomes the guide's focus
   (`focus`; K4 review R14) and scales with the distance then: 2 minutes
-  plus 1 s per 0.5 m. Under `fixed` and `branch` order the focus is the
+  plus 1 s per 0.5 m. Under `fixed` order the focus is the
   offered station, so the clock starts with the offer as before.
   The skip itself is offered on demand from the start; the clock only
   decides when it is suggested (`station-run.sweep.test.ts`).
@@ -168,11 +154,9 @@ run.finish("gate", nowMs); // done, the next station offered
 - `visitor-walk-slice.test.ts` - each step's guard through the reducer.
 
 - `station-run.test.ts` - each transition, the radius alone (at the radius
-  yes, a centimetre beyond no), non-finite distances, the empty station, each order preset (a branch
-  station whose next is itself, skipped, hands on: its next is read after it is done), the skip,
-  the suggestion clock, a station brought back under branch order and the
-  path's return (seen red against the old `unskip`), after the path
-  ended too; finishing (completing on the last end and waiting there,
+  yes, a centimetre beyond no), non-finite distances, the empty station, each order preset, the skip,
+  the suggestion clock, a station brought back under both orders;
+  finishing (completing on the last end and waiting there,
   leaving that station and not another, the tap and never before
   complete, the completing skip, a bring back, a stepless last station,
   the pure reads), and a property: every tour finishes within one
@@ -185,4 +169,4 @@ run.finish("gate", nowMs); // done, the next station offered
 - `station-run.store.property.test.ts` - the run held in its closure
   (`createStationRun`) against the run over a store of the walk's slice
   (`stationRunOver` with the reducer): the same events and the same view
-  after every call over random tours, sequences and all three orders.
+  after every call over random tours, sequences and both orders.

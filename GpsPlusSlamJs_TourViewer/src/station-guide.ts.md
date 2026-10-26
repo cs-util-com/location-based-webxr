@@ -61,7 +61,7 @@ activateM)` (each tick, each offered station with a distance: the
   the window, which the prefetch never heard of), `storyPlaying?()` (M4:
   the station whose story the panel plays, the one "End this story?"
   names), `onUpcoming?(station)` (every render while the current
-  station is found under a fixed or branch order: the station that comes
+  station is found under a fixed order: the station that comes
   next, which the prefetch reads ahead, K4 review R5), `onGuide?(visitor, target)` (every render: the breadcrumbs'
   target, the station in focus with its arrival band as `stopM`; null when
   there is none, at a session end and with no run; the visitor is null
@@ -139,7 +139,7 @@ activateM)` (each tick, each offered station with a distance: the
       fetched assets, resources the store must not hold - and a store
       subscriber would fire again on every re-entered dispatch.
     - `onUpcoming` fires on every render while a story plays under a fixed
-      or branch order, not once: the prefetch joins a request it has made
+      order, not once: the prefetch joins a request it has made
       already (`request`), so a repeat costs nothing, and the station it
       names is derived from the walk, no state of its own.
     - `onApproach` fires every tick with each offered station's distance:
@@ -159,8 +159,8 @@ activateM)` (each tick, each offered station with a distance: the
       from the walk and the measurement.
   - **Timing under the page's subscription:** the walk's own batch wakes
     `ar-entry.ts`'s subscriber, which ticks the guide at once, so a
-    station a find, skip or story's end newly offers (the next under fixed
-    or branch order) is judged in the same frame rather than the next. The
+    station a find, skip or story's end newly offers (the next under a fixed
+    order) is judged in the same frame rather than the next. The
     visitor sees the same; M1's guide-level differential compared the
     settled page under the subscription and every single call without it
     (deleted with the frozen copies at their end of life).
@@ -443,9 +443,7 @@ activateM)` (each tick, each offered station with a distance: the
   ("nearest" is a distance's ranking, never said without one),
   "Station found - its story is
   playing.", "At station N - take your time: ..." (above), "Tour
-  complete - every station visited." or "- N skipped." once finished;
-  under branch order "Tour complete - you reached the end of your path."
-  (with ", N skipped."), since the other branches were never offered.
+  complete - every station visited." or "- N skipped." once finished.
   The line and the skip are written only when their text changes (the
   line is a polite live region: a rewrite is announced again).
 - **Measured once per tick (K4 review R13):** each tick reads the visitor
@@ -491,7 +489,7 @@ store.subscribe(() => guide.tick());
   before the walk moved into the store) proved the move behaviour-neutral
   and was deleted in M2's first commit, because M2 changes the guide's
   writes by design. The run-level differential's
-  frozen run went in M4, whose bring back and branch return change the
+  frozen run went in M4, whose bring back changed the
   run by design; its closure-against-store comparison is kept in
   `station-run.store.property.test.ts`.
 - `station-guide.rules.test.ts` - the no-distance rule and the no-guess rule per no-distance state
@@ -540,7 +538,7 @@ store.subscribe(() => guide.tick());
   rules to their field-level exception (below).
 
 - `station-guide.property.test.ts` - stories that never end, stations
-  nobody reaches, random orders and `next` links (cycles included): the
+  nobody reaches, both orders: the
   tour completes within two taps per station (R9); and a raw fix finds a
   station only without an alignment, only while fresh, only inside the
   radius (M3).
@@ -634,7 +632,7 @@ undo, note }`: the line's station, how the position stands
   button is hidden meanwhile; absent, the skip button carries them as
   before.
 - `cancelAsk()` - "Keep listening": the ask is disarmed.
-- `completionLine(order, skipped)` exported: the completion card reuses
+- `completionLine(skipped)` exported: the completion card reuses
   the line's words.
 - **No stale line while the scan gate is shut** (plan §10 follow-up):
   `render()` hides the line, the skip button and the end control whenever

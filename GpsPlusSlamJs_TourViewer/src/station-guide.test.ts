@@ -469,31 +469,6 @@ describe("wireStationGuide", () => {
     expect(h.dom.line.textContent).toBe("Next: GATE, 100 m");
   });
 
-  it("under branch order the completion line says the path was completed, not that every station was visited", () => {
-    // Why this test matters (K4 review R16): a branch tour ends when the
-    // visitor's path ends, with stations of the other branches never
-    // offered; "every station visited" would be a false claim.
-    const h = harness({
-      stations: [
-        station("gate", 0, 0, { next: "tower" }),
-        station("well", 0, 80),
-        station("tower", 0, 0),
-      ],
-      order: "branch",
-    });
-    h.at(0, 0);
-    h.guide.storyEnded("gate");
-    h.at(0, 0);
-    h.guide.storyEnded("tower");
-    // Complete, the tour waits on its last station; the visitor finishes
-    // the tour by the tap (the visitor still stands at it).
-    expect(h.dom.skip.textContent).toBe("Finish the tour");
-    h.guide.skipTapped();
-    expect(h.dom.line.textContent).toBe(
-      "Tour complete - you reached the end of your path.",
-    );
-  });
-
   it("a found station's story can be ended in two taps, so a story that never ends cannot block the tour (R9)", () => {
     // Why this test matters (K4 review R9): a found station could not be
     // skipped, and a story whose choices all loop back never ends - under

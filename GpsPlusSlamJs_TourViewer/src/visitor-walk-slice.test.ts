@@ -68,7 +68,7 @@ function station(id: string, extra: Partial<TourStation> = {}): TourStation {
   };
 }
 
-const TOUR = [station("a"), station("b", { next: "a" }), station("c")];
+const TOUR = [station("a"), station("b"), station("c")];
 
 function started(order: TourOrder, stations = TOUR): VisitorWalkState {
   return visitorWalkReducer(
@@ -100,7 +100,6 @@ describe("visitorWalkReducer", () => {
     });
     expect(walkOffered(progress(started("any")))).toEqual(["a", "b", "c"]);
     expect(walkOffered(progress(started("fixed")))).toEqual(["a"]);
-    expect(walkOffered(progress(started("branch")))).toEqual(["a"]);
     expect(walkStatus(progress(started("any")), "b")).toEqual({
       id: "b",
       state: "waiting",
@@ -425,7 +424,7 @@ describe("the sheet", () => {
     );
     fc.assert(
       fc.property(
-        fc.constantFrom<TourOrder>("any", "fixed", "branch"),
+        fc.constantFrom<TourOrder>("any", "fixed"),
         fc.array(steps, { maxLength: 14 }),
         (order, actions) => {
           let state = started(order);
@@ -594,7 +593,6 @@ describe("the walk's rules: the focus, no guess, the arms, the choice", () => {
   it("walkFocus: the order's station, the chosen one, else the nearest - none while no distance is guessed", () => {
     const d = near({ a: 30, b: 10, c: 50 });
     expect(walkFocus(started("fixed"), d)).toBe("a");
-    expect(walkFocus(started("branch"), d)).toBe("a");
     expect(walkFocus(started("any"), d)).toBe("b");
     // No distance shown: no guess in an any-order tour ...
     const blind = visitorWalkReducer(started("any"), noGuessSet(true));

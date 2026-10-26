@@ -107,7 +107,6 @@ export type {
   TourOrder,
   TourQuizAnswer,
   TourQuizOption,
-  TourQuizRoute,
   TourStation,
   TourStationDrop,
   TourStep,
@@ -190,7 +189,7 @@ export interface TourManifestReadOptions {
   readonly onDropped?: (drop: TourManifestDrop) => void;
 }
 
-const ORDERS: ReadonlySet<string> = new Set(['fixed', 'any', 'branch']);
+const ORDERS: ReadonlySet<string> = new Set(['fixed', 'any']);
 
 /** Thrown when a manifest fails validation. */
 export class TourManifestValidationError extends Error {
@@ -294,7 +293,7 @@ function orderOf(value: unknown, lenient: boolean): TourOrder {
     // A newer minor's order: offer every station, which never deadlocks
     // (a stricter guess could leave a station nobody can reach).
     if (lenient) return 'any';
-    fail('"order" must be "fixed", "any" or "branch"');
+    fail('"order" must be "fixed" or "any"');
   }
   return value as TourOrder;
 }

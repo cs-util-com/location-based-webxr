@@ -156,8 +156,8 @@ imperative resources only - that handle and the pictures' side table
     - `addStation({ lat, lon, alt })` - an empty automatic station there,
       `Station N` by its place: `added` with its new id; `NOT_ON_MAP` for
       a point nobody can draw.
-    - `deleteStation(stationId)` - the station with its items and every
-      route to it; the tour's last station is refused (`LAST_STATION`).
+    - `deleteStation(stationId)` - the station with its items; the tour's
+      last station is refused (`LAST_STATION`).
       Its photos' pictures are kept for the undo, as `remove` keeps one.
     - `reorderStations(order)` - every station once (`NOT_AN_ORDER`
       otherwise): `reordered` or `unchanged`.

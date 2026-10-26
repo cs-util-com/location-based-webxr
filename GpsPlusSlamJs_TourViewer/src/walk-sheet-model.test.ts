@@ -149,13 +149,6 @@ describe("the peek", () => {
     expect(m.peek.title).toBe("The garden");
   });
 
-  it("branch order: 'Next', its one station", () => {
-    const m = walkSheetModel(
-      input({ order: "branch", progress: walk("branch", done("gate")) }),
-    );
-    expect(m.peek.eyebrow).toBe("Next");
-  });
-
   it("no distance: the tail says why, today's words, and no distance shows", () => {
     expect(
       walkSheetModel(input({ view: view({ position: "pending" }) })).peek,
@@ -408,14 +401,6 @@ describe("the segments and the rows", () => {
     );
   });
 
-  it("branch order lists the stations offered so far and the current one only", () => {
-    const m = walkSheetModel(
-      input({ order: "branch", progress: walk("branch", done("gate")) }),
-    );
-    expect(m.list.rows.map((r) => r.id)).toEqual(["gate", "well"]);
-    expect(m.segments).toEqual({ kind: "each", states: ["found", "next"] });
-  });
-
   it(`above ${String(WALK_SEGMENT_LIMIT)} stations one continuous bar with the counts`, () => {
     const many = Array.from({ length: WALK_SEGMENT_LIMIT + 1 }, (_, i) =>
       station(`s${String(i)}`, `S ${String(i)}`),
@@ -514,13 +499,12 @@ describe("the list's header and progress line", () => {
 
   // Why this test matters: the order chip is only worth its space when it
   // tells the visitor something they act on. "Any order" does (they may
-  // choose); "In order" and "Your path" told them nothing to do, and every
+  // choose); "In order" told them nothing to do, and every
   // tour the editor makes reads as fixed, so the chip read "In order" on
   // every walk.
-  it("the order chip only for 'any' order: none for fixed and branch", () => {
+  it("the order chip only for 'any' order: none for fixed", () => {
     expect(walkSheetModel(input({ order: "any" })).list.chip).toBe("Any order");
     expect(walkSheetModel(input({ order: "fixed" })).list.chip).toBeNull();
-    expect(walkSheetModel(input({ order: "branch" })).list.chip).toBeNull();
   });
 
   it("'N of M found - K skipped - L to find', the zero parts left out", () => {
@@ -539,14 +523,6 @@ describe("the list's header and progress line", () => {
     expect(
       walkSheetModel(input({ progress: walk("any") })).list.progress,
     ).toEqual({ lead: "0 of 4 found", rest: ["4 to find"] });
-  });
-
-  it("branch order counts no 'of M' and no 'to find': the path decides how many", () => {
-    expect(
-      walkSheetModel(
-        input({ order: "branch", progress: walk("branch", done("gate")) }),
-      ).list.progress,
-    ).toEqual({ lead: "1 found", rest: [] });
   });
 });
 
@@ -591,25 +567,6 @@ describe("the completion card", () => {
     ).toEqual({
       title: "Tour complete - 1 skipped.",
       text: "3 of 4 found. A skipped station can still be brought back.",
-    });
-  });
-
-  it("branch order: the path's line, and no count", () => {
-    const branch = walk("branch", [
-      ...done("gate"),
-      { kind: "skip", id: "well" },
-    ]);
-    const last = [
-      ...done("tower"),
-      ...done("garden"),
-      { kind: "finish-tour" } as const,
-    ].reduce((p, s) => applyWalkStep(p, s).progress, branch);
-    const m = walkSheetModel(
-      input({ order: "branch", progress: last, view: view({ focusId: null }) }),
-    );
-    expect(m.list.completion).toEqual({
-      title: "Tour complete - you reached the end of your path, 1 skipped.",
-      text: "A skipped station can still be brought back.",
     });
   });
 });

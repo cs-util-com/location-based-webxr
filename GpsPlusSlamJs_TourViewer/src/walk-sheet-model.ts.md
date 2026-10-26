@@ -19,7 +19,7 @@ the station guide's `view()` and the tour; the DOM writer is
     `view` (`GuideView`), `story: { stationId } | null` (the story
     playing), `sheet: "peek" | "list"`.
   - `peek: { kind, eyebrow, title, distance, arrowDeg, nextArrowDeg, tail }`:
-    - `walk`: eyebrow "Next - station N of M" (fixed and branch), "N
+    - `walk`: eyebrow "Next - station N of M" (fixed), "N
       stations to find - nearest" (several offered and a distance shown;
       "- your choice" for the visitor's chosen target, the chosen-target rule, in any
       state) or "Next" (one offered, or no distance to rank by: the one
@@ -47,19 +47,18 @@ the station guide's `view()` and the tour; the DOM writer is
       turns the arrow beside the tail to it;
     - `complete`: once the tour finished (or, never expected, complete
       with no `there`): the tour's title / "Tour complete" / "K skipped." or
-      "Every station visited." (branch: "You reached the end of your
-      path.").
+      "Every station visited."
   - `storyCard: { title } | null` - the card in the peek's place while a
     story plays and the list is closed.
   - `segments` - `each` (one state per listed station) up to
     `WALK_SEGMENT_LIMIT`, else `bar` (found, skipped, to find, by count).
   - `grabLabel` - "Show all stations" / "Hide the list".
   - `list: { title, chip, progress: { lead, rest }, completion, hint, rows }`:
-    chip "Any order" for any order and null for fixed and branch (it
+    chip "Any order" for any order and null for fixed (it
     told the visitor nothing they act on; the list hides it); progress "N of M found"
-    then "K skipped", "L to find" (branch: "N found"); `completion`
+    then "K skipped", "L to find"; `completion`
     (`completionLine` plus "M of N found. A skipped station can still be
-    brought back." - under branch order that sentence alone - or "Thank
+    brought back." or "Thank
     you for walking with us.") once FINISHED (not merely complete: the
     card waits while the visitor is still at the last station); `hint` while no
     station is guessed: why, by the position, and "Which one can't you
@@ -134,8 +133,8 @@ model.peek; // { kind: "walk", eyebrow: "3 stations to find - nearest", ... }
   none without a distance shown or a next station.
 - `walk-sheet-model.test.ts` - every peek kind and tail, the eyebrow per
   order, segments and the bar above the limit, rows and their subs, the
-  chip, the progress line, the completion card, the story card, branch
-  listing, the away model; the peek with no station guessed per
+  chip, the progress line, the completion card, the story card, the
+  away model; the peek with no station guessed per
   no-distance state and the hold, the hint per position and chooser, the
   rows' actions (Skip, confirm, undo with its time, Bring back) and,
   under tracking lost, no Skip and no confirm with the undo and Bring

@@ -169,7 +169,7 @@ describe("the sheet against the hidden line and the run", () => {
   it("the peek and the line name the same station and say the same; nothing named is not offered", () => {
     fc.assert(
       fc.property(
-        fc.constantFrom<TourOrder>("any", "fixed", "branch"),
+        fc.constantFrom<TourOrder>("any", "fixed"),
         fc.array(stepArb, { maxLength: 10 }),
         measurementArb,
         (order, steps, m) => {

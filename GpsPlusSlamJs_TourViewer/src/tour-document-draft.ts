@@ -22,7 +22,6 @@ import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { objectContentKey } from "./authoring-draft.js";
 import type { DraftObjectWrites } from "./draft-actions.js";
 import type { EditEntry } from "./object-edits.js";
-import { automaticStationFrame } from "./tour-content.js";
 import { DETAIL_FIELDS, type TourDetailFields } from "./tour-details-form.js";
 import {
   createdStationFrames,
@@ -120,41 +119,22 @@ function parseStations(value: unknown): StationPose[] | undefined | null {
  * each read on its own as the format reads a station
  * (`parseTourManifest`, without items): undefined when absent; of two
  * under one id the first is kept. A frame that does not read is lost (the
- * objects naming it are seated by the station rule as they come back), and
- * so is every frame whose route names a lost one: the siblings a frame's
- * routes are read against are only the frames that read - and the
- * stations of `against`, the tour the record is read for - so the frames
- * are read again against those until no more drop. No kept frame routes to
- * a station the record lost. A step naming an asset reads only against
- * `against`'s assets; without `against`, a frame with such a step is
- * lost. */
+ * objects naming it are seated by the station rule as they come back). A
+ * step naming an asset reads only against `against`'s assets; without
+ * `against`, a frame with such a step is lost. */
 function parseFrames(
   value: unknown,
   against: TourManifest | undefined,
 ): StationFrame[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  const entries = value as unknown[];
-  const known = (against?.stations ?? []).map((s) => s.id);
-  let ids = new Set(
-    entries
-      .map((entry) => idOf(entry))
-      .filter((id): id is string => id !== undefined),
-  );
-  // Fewer siblings never make a frame read that did not, so each pass
-  // keeps a subset of the last one's ids: this ends within one pass per
-  // entry, at the first pass that drops none.
-  for (;;) {
-    const frames: StationFrame[] = [];
-    const siblings = new Set([...ids, ...known]);
-    for (const entry of entries) {
-      const frame = parseFrame(entry, siblings, against?.assets ?? []);
-      if (frame !== undefined && !frames.some((f) => f.id === frame.id)) {
-        frames.push(frame);
-      }
+  const frames: StationFrame[] = [];
+  for (const entry of value as unknown[]) {
+    const frame = parseFrame(entry, against?.assets ?? []);
+    if (frame !== undefined && !frames.some((f) => f.id === frame.id)) {
+      frames.push(frame);
     }
-    if (frames.length === ids.size) return frames;
-    ids = new Set(frames.map((f) => f.id));
   }
+  return frames;
 }
 
 /** A stored frame's id, when it is one a station may carry. */
@@ -164,34 +144,22 @@ function idOf(entry: unknown): string | undefined {
   return typeof id === "string" && TOUR_ID_PATTERN.test(id) ? id : undefined;
 }
 
-/** Where the stand-ins for a frame's siblings stand: only their ids are
- *  read (a route from the frame to a sibling). */
-const SIBLING_STAND_IN_AT = { lat: 0, lon: 0, alt: 0 };
-
-/** One frame, read with a stand-in for each sibling id so that a route
- *  between stations still resolves, and with `assets` for its steps;
- *  undefined when it does not read. Its card image is read apart: the
- *  probe holds no items, so a photo of the station would read as gone -
- *  a well-formed id is kept, and the document shows and writes it only
- *  while it names a picture (its effective image). */
+/** One frame, read with `assets` for its steps; undefined when it does
+ *  not read. Its card image is read apart: the probe holds no items, so a
+ *  photo of the station would read as gone - a well-formed id is kept,
+ *  and the document shows and writes it only while it names a picture
+ *  (its effective image). */
 function parseFrame(
   entry: unknown,
-  siblingIds: ReadonlySet<string>,
   assets: TourManifest["assets"],
 ): StationFrame | undefined {
   const id = idOf(entry);
   if (id === undefined) return undefined;
-  const standIns = [...siblingIds]
-    .filter((sibling) => sibling !== id)
-    .map((sibling) => ({
-      ...automaticStationFrame(sibling, SIBLING_STAND_IN_AT),
-      items: [],
-    }));
   try {
     const probe = parseTourManifest({
       ...createEmptyTourManifest(),
       assets,
-      stations: [{ ...(entry as object), items: [] }, ...standIns],
+      stations: [{ ...(entry as object), items: [] }],
     });
     const frame = framesOf(probe).find((f) => f.id === id);
     const image = (entry as { image?: unknown }).image;
@@ -242,8 +210,8 @@ function parseDetails(value: unknown): TourDetailFields | undefined | null {
 /** A stored settings record (`SETTINGS_KEY`'s text); undefined for
  *  anything that does not read (a record that does not read costs
  *  itself, never the objects beside it). `against`: the tour it is read
- *  for (the one opened), whose stations a recorded frame may route to and
- *  whose assets its steps may name (`parseFrames`). A frame list or a
+ *  for (the one opened), whose assets a recorded frame's steps may name
+ *  (`parseFrames`). A frame list or a
  *  deleted list that does not read costs only itself. */
 export function parseSettingsRecord(
   text: string | undefined,

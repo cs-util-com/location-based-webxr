@@ -1049,14 +1049,10 @@ function stationRun(
 }
 
 /** The ids of `state`'s EMPTY AUTOMATIC stations: no object names them,
- *  and nothing else keeps them (no title, no steps, no route to them, no
- *  description, no card image naming an image asset - an empty station
+ *  and nothing else keeps them (no title, no steps, no description, no card image naming an image asset - an empty station
  *  holds no photo for one to name). */
 function emptyAutomatic(state: TourDocumentState): string[] {
   const named = new Set(documentObjects(state).map((o) => o.object.station));
-  const routed = new Set(
-    state.stations.flatMap((s) => (s.next === undefined ? [] : [s.next])),
-  );
   const imageAssets = new Set(
     (state.written?.assets ?? [])
       .filter((a) => a.kind === "image")
@@ -1066,7 +1062,6 @@ function emptyAutomatic(state: TourDocumentState): string[] {
     .filter(
       (s) =>
         !named.has(s.id) &&
-        !routed.has(s.id) &&
         (s.title ?? "").trim() === "" &&
         s.steps.length === 0 &&
         (s.description ?? "").trim() === "" &&

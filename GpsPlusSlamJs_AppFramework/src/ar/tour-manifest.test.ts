@@ -258,7 +258,7 @@ describe('the version policy (tour editor plan W3, D5)', () => {
     const manifest = parseTourManifest(
       tour({
         title: 'Castle walk',
-        order: 'branch',
+        order: 'any',
         assets: [{ id: 'knight', path: 'content/knight.png' }],
         stations: [
           station([pin], {
@@ -278,10 +278,25 @@ describe('the version policy (tour editor plan W3, D5)', () => {
       })
     );
     expect(manifest.title).toBe('Castle walk');
-    expect(manifest.order).toBe('branch');
+    expect(manifest.order).toBe('any');
     expect(manifest.assets[0]?.kind).toBe('image');
     expect(manifest.stations[0]?.steps[0]?.action.kind).toBe('character');
     expect(manifest.stations[0]?.items.map((i) => i.id)).toEqual(['p1']);
+  });
+
+  it('refuses a branching order at its own minor, and reads one of a newer minor as any order', () => {
+    // Why: a walk branched by answers left the format (game rules will
+    // say where a walk goes); a file asking for it at this minor is one
+    // this reader cannot honour, and a quiet "fixed" would send a visitor
+    // somewhere the author never meant. From a newer minor any unknown
+    // order reads as "any", which never deadlocks.
+    expect(() =>
+      parseTourManifest(tour({ order: 'branch', stations: [] }))
+    ).toThrow(/"order" must be "fixed" or "any"/);
+    expect(
+      parseTourManifest({ version: 3, minor: 9, order: 'branch', stations: [] })
+        .order
+    ).toBe('any');
   });
 
   it('opens a tour of a NEWER minor, ignoring the fields it does not know', () => {

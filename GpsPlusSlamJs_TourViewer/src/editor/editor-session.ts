@@ -347,7 +347,7 @@ export interface EditorSession {
     readonly lon: number;
     readonly alt: number;
   }): { kind: "added"; stationId: string } | EditorRefusal;
-  /** Delete a station with its items, and every route to it: one step.
+  /** Delete a station with its items: one step.
    *  Refused for the tour's last station. */
   deleteStation(stationId: string): { kind: "deleted" } | EditorRefusal;
   /** Put the stations in `order` (every station once): one step. */

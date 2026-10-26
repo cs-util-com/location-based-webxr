@@ -206,7 +206,7 @@ describe("the station guide on the page's store", () => {
           ),
           { minLength: 1, maxLength: 200 },
         ),
-        fc.constantFrom<TourOrder>("any", "fixed", "branch"),
+        fc.constantFrom<TourOrder>("any", "fixed"),
         (frames, order) => {
           const page = onThePage(
             [station("a", 60, 0), station("b", -120, 0)],
@@ -399,7 +399,7 @@ describe("the station guide on the page's store", () => {
     };
     fc.assert(
       fc.property(
-        fc.constantFrom<TourOrder>("any", "fixed", "branch"),
+        fc.constantFrom<TourOrder>("any", "fixed"),
         fc.array(callArb, { minLength: 1, maxLength: 60 }),
         (order, calls) => {
           const spots = [
@@ -460,11 +460,10 @@ describe("the station guide on the page's store", () => {
             fc.tuple(
               fc.integer({ min: -150, max: 150 }),
               fc.integer({ min: -150, max: 150 }),
-              fc.option(fc.integer({ min: 0, max: n - 1 }), { nil: undefined }),
             ),
             { minLength: n, maxLength: n },
           ),
-          fc.constantFrom<TourOrder>("fixed", "any", "branch"),
+          fc.constantFrom<TourOrder>("fixed", "any"),
           fc.array(
             fc.tuple(
               fc.integer({ min: -150, max: 150 }),
@@ -477,9 +476,8 @@ describe("the station guide on the page's store", () => {
       );
     fc.assert(
       fc.property(tourArb, ([n, specs, order, wander]) => {
-        const stations = specs.map(([north, east, next], i) =>
+        const stations = specs.map(([north, east], i) =>
           station(`s${String(i)}`, north, east, {
-            ...(next === undefined ? {} : { next: `s${String(next)}` }),
             // One choice whose only option loops back to itself: it never
             // ends on its own.
             steps: [

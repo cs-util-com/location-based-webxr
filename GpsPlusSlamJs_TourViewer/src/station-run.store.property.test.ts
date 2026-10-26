@@ -2,8 +2,8 @@
  * The station run held in its closure against the same run with its
  * progress in a store of the walk's slice: random sequences of observe,
  * finish, skip, unskip, focus, leaving a station, finishing the tour and
- * waits over generated tours (`next` links with cycles, stations without
- * steps) and the three orders give the same events, statuses, offers,
+ * waits over generated tours (stations without steps) and both orders
+ * give the same events, statuses, offers,
  * completion, finish, upcoming station and skip suggestion after every
  * call.
  *
@@ -129,20 +129,18 @@ const caseArb = fc.integer({ min: 1, max: 6 }).chain((n) =>
   fc.record({
     stations: fc.array(
       fc.record({
-        next: fc.option(fc.integer({ min: 0, max: n }), { nil: undefined }),
         steps: fc.integer({ min: 0, max: 3 }).map((k) => k > 0),
         foundRadiusM: fc.constantFrom(3, 5, 10),
       }),
       { minLength: n, maxLength: n },
     ),
-    order: fc.constantFrom<TourOrder>("fixed", "any", "branch"),
+    order: fc.constantFrom<TourOrder>("fixed", "any"),
     calls: fc.array(callArb(n), { minLength: 1, maxLength: 80, size: "max" }),
   }),
 );
 
 function tourOf(
   specs: readonly {
-    next: number | undefined;
     steps: boolean;
     foundRadiusM: number;
   }[],
@@ -155,8 +153,6 @@ function tourOf(
     activateRadiusM: s.foundRadiusM * 4,
     foundRadiusM: s.foundRadiusM,
     hint: "arrow",
-    // A `next` past the last station names one the tour does not have.
-    ...(s.next === undefined ? {} : { next: `s${String(s.next)}` }),
     steps: s.steps
       ? [
           {

@@ -23,8 +23,7 @@ import type { VisitorPosition } from "./visitor-position";
  * back never ends. Here the stories NEVER end by themselves, the visitor
  * wanders (finding some stations by GPS, never reaching others), and then
  * only taps the one skip button, waiting a little between taps: every
- * order preset, with any `next` links (cycles included), completes within
- * two taps per station.
+ * order preset completes within two taps per station.
  */
 
 /** The store's GPS readings as the shared precision rule reads them: one
@@ -47,11 +46,10 @@ const tourArb = fc
         fc.tuple(
           fc.integer({ min: -150, max: 150 }),
           fc.integer({ min: -150, max: 150 }),
-          fc.option(fc.integer({ min: 0, max: n - 1 }), { nil: undefined }),
         ),
         { minLength: n, maxLength: n },
       ),
-      fc.constantFrom<TourOrder>("fixed", "any", "branch"),
+      fc.constantFrom<TourOrder>("fixed", "any"),
       fc.array(
         fc.tuple(
           fc.integer({ min: -150, max: 150 }),
@@ -67,7 +65,7 @@ describe("wireStationGuide (properties)", () => {
   it("never deadlocks: stories that never end and stations nobody reaches still complete within two skip taps per station", () => {
     fc.assert(
       fc.property(tourArb, ([n, specs, order, wander]) => {
-        const stations: TourStation[] = specs.map(([north, east, next], i) => {
+        const stations: TourStation[] = specs.map(([north, east], i) => {
           const geo = calcGpsCoords(zero, [north, 0, east]);
           return {
             id: `s${String(i)}`,
@@ -77,7 +75,6 @@ describe("wireStationGuide (properties)", () => {
             activateRadiusM: 20,
             foundRadiusM: 5,
             hint: "arrow",
-            ...(next === undefined ? {} : { next: `s${String(next)}` }),
             // One choice whose only option loops back to itself: it never
             // ends on its own.
             steps: [

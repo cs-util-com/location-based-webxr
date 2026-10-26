@@ -159,12 +159,11 @@ export interface StationRun {
   focus(id: string, nowMs: number, distanceM: number | null): void;
   /** Bring a skipped station back, at any time (R14):
    *  it waits again, unskipped, with a fresh clock, and the order
-   *  offers it as before the skip; under branch order the path returns to
-   *  the station it was on once this one is done (`branchReturns`). A
-   *  station that was not skipped: nothing. */
+   *  offers it as before the skip. A station that was not skipped:
+   *  nothing. */
   unskip(id: string, nowMs: number): StationEvent[];
   /**
-   * Under `fixed` or `branch` order, while the one offered station is found
+   * Under `fixed` order, while the one offered station is found
    * (its story plays): the station offered once it is done, else null (K4
    * review R5: its media are read while the current story plays). Under
    * `any` order always null - every station not done is offered already.
@@ -172,35 +171,23 @@ export interface StationRun {
   upcoming(): string | null;
 }
 
-/** One station of a walk: its status, and the two facts of the tour the
+/** One station of a walk: its status, and the fact of the tour the
  *  transitions read, fixed when the walk starts. */
 interface WalkStation extends StationStatus {
-  /** `branch` order's default next: a station of this tour (itself
-   *  included), else null - the list successor then. */
-  readonly next: string | null;
   /** No steps (a newer minor's steps all left out, K1 review R4): done the
    *  moment it is found. */
   readonly stepless: boolean;
 }
 
 /**
- * The visitor's walk through one tour as plain data: the order preset, every
- * station in list order, and `branch` order's one offered station (null once
- * its path ended). The offer is derived (`walkOffered`), never stored.
+ * The visitor's walk through one tour as plain data: the order preset and
+ * every station in list order. The offer is derived (`walkOffered`), never
+ * stored.
  * Station ids are unique (the tour's parser refuses duplicates).
  */
 export interface WalkProgress {
   readonly order: TourOrder;
   readonly stations: readonly WalkStation[];
-  readonly branchCurrent: string | null;
-  /**
-   * `branch` order's return points: a
-   * station brought back takes the path to it, and the station the path
-   * was on (null: the path had ended) waits here; once the brought-back
-   * station is done the path returns to it. A stack, so two stations
-   * brought back in a row return in turn. Empty under the other orders.
-   */
-  readonly branchReturns: readonly (string | null)[];
   /** Complete, and finished by the visitor (`walkFinished`). */
   readonly finished: boolean;
   /** Complete but not finished: the last station done, whose leaving
@@ -211,7 +198,6 @@ export interface WalkProgress {
 /** The tour facts a walk starts from: per station, in list order. */
 export type WalkRoute = readonly {
   readonly id: string;
-  readonly next: string | null;
   readonly stepless: boolean;
 }[];
 
@@ -256,29 +242,24 @@ interface WalkTransition {
 
 /** The tour facts of these stations, for `startWalk`. */
 export function walkRoute(stations: readonly TourStation[]): WalkRoute {
-  const ids = new Set(stations.map((s) => s.id));
   return stations.map((s) => ({
     id: s.id,
-    next: s.next !== undefined && ids.has(s.next) ? s.next : null,
     stepless: s.steps.length === 0,
   }));
 }
 
-/** A walk at its start: every station waiting, `branch` at the first. */
+/** A walk at its start: every station waiting. */
 export function startWalk(route: WalkRoute, order: TourOrder): WalkProgress {
   return {
     order,
     stations: route.map((r) => ({
       id: r.id,
-      next: r.next,
       stepless: r.stepless,
       state: "waiting",
       skipped: false,
       focusedAtMs: null,
       focusDistanceM: null,
     })),
-    branchCurrent: route[0]?.id ?? null,
-    branchReturns: [],
     finished: false,
     finishWaitId: null,
   };
@@ -317,10 +298,6 @@ function stationOf(p: WalkProgress, id: string): WalkStation | undefined {
   return derivedOf(p).byId.get(id);
 }
 
-function isDone(p: WalkProgress, id: string): boolean {
-  return stationOf(p, id)?.state === "done";
-}
-
 /** The stations offered now, in list order; empty once complete. */
 export function walkOffered(p: WalkProgress): readonly string[] {
   const d = derivedOf(p);
@@ -335,10 +312,6 @@ function offeredOf(p: WalkProgress): readonly string[] {
       return undone;
     case "fixed":
       return undone.slice(0, 1);
-    case "branch":
-      return p.branchCurrent === null || isDone(p, p.branchCurrent)
-        ? []
-        : [p.branchCurrent];
   }
 }
 
@@ -365,30 +338,7 @@ function statusOf(s: WalkStation): StationStatus {
   };
 }
 
-/** The station after `position` in list order that is not done, if any. */
-function undoneAfter(p: WalkProgress, position: number): string | null {
-  for (let i = position + 1; i < p.stations.length; i += 1) {
-    const s = p.stations[i]!;
-    if (s.state !== "done") return s.id;
-  }
-  return null;
-}
-
-function indexOf(p: WalkProgress, id: string): number {
-  return p.stations.findIndex((s) => s.id === id);
-}
-
-/** `branch`: the station's default next, else its list successor; a
- *  done target falls through to the first undone station after it. */
-function branchNextAfter(p: WalkProgress, id: string): string | null {
-  const target = stationOf(p, id)?.next ?? null;
-  if (target !== null) {
-    return isDone(p, target) ? undoneAfter(p, indexOf(p, target)) : target;
-  }
-  return undoneAfter(p, indexOf(p, id));
-}
-
-/** Under `fixed` or `branch` order, while the one offered station is found:
+/** Under `fixed` order, while the one offered station is found:
  *  the station offered once it is done, else null; always null under
  *  `any`. */
 function walkUpcoming(p: WalkProgress): string | null {
@@ -396,7 +346,6 @@ function walkUpcoming(p: WalkProgress): string | null {
   if (p.order === "any" || offered.length !== 1) return null;
   const current = offered[0]!;
   if (stationOf(p, current)?.state !== "found") return null;
-  if (p.order === "branch") return branchNextAfter(p, current);
   return (
     p.stations.find((s) => s.id !== current && s.state !== "done")?.id ?? null
   );
@@ -428,22 +377,6 @@ function withStation(
   };
 }
 
-/** `branch`: where the path goes once its current station `id` is done:
- *  back to the last return point (a station brought back took it away
- *  from there; a done one hands on by its own next), else on. */
-function branchAfterDone(p: WalkProgress, id: string): WalkProgress {
-  const back = p.branchReturns.at(-1);
-  if (back === undefined) {
-    return { ...p, branchCurrent: branchNextAfter(p, id) };
-  }
-  return {
-    ...p,
-    branchReturns: p.branchReturns.slice(0, -1),
-    branchCurrent:
-      back === null ? null : isDone(p, back) ? branchNextAfter(p, back) : back,
-  };
-}
-
 /** Done: record it, move the order on, report the new offer. */
 function complete(
   p: WalkProgress,
@@ -452,9 +385,6 @@ function complete(
 ): WalkTransition {
   let next = withStation(p, id, { state: "done", skipped });
   const events: StationEvent[] = [{ kind: "done", id, skipped }];
-  if (next.order === "branch" && next.branchCurrent === id) {
-    next = branchAfterDone(next, id);
-  }
   const offered = walkOffered(next);
   events.push({ kind: "offered", ids: [...offered] });
   if (offered.length === 0) {
@@ -520,7 +450,7 @@ export function applyWalkStep(p: WalkProgress, step: WalkStep): WalkTransition {
     case "unskip": {
       if (s.state !== "done" || !s.skipped) return unchanged;
       // Brought back, the tour is no longer complete, nor finished.
-      let next: WalkProgress = {
+      const next: WalkProgress = {
         ...withStation(p, step.id, {
           state: "waiting",
           skipped: false,
@@ -530,19 +460,6 @@ export function applyWalkStep(p: WalkProgress, step: WalkStep): WalkTransition {
         finished: false,
         finishWaitId: null,
       };
-      // Under branch order the path goes to it, and returns to the station
-      // it was on once it is done (the bring-back rule; null: the path had ended).
-      if (next.order === "branch") {
-        const was = p.branchCurrent;
-        next = {
-          ...next,
-          branchCurrent: step.id,
-          branchReturns: [
-            ...p.branchReturns,
-            was === null || isDone(p, was) ? null : was,
-          ],
-        };
-      }
       return {
         progress: next,
         events: [{ kind: "offered", ids: walkOffered(next) }],

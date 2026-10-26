@@ -394,7 +394,7 @@ export interface StationGuideDeps {
    *  the guide marks the station done itself. */
   onEndStory?(stationId: string): void;
   /** Every render while the current station's story plays under a fixed
-   *  or branch order: the station that comes next (the prefetch reads it
+   *  order: the station that comes next (the prefetch reads it
    *  ahead, K4 review R5). */
   onUpcoming?(station: TourStation): void;
   /** Every tick with a camera position, once this AR entry's alignment was
@@ -552,18 +552,9 @@ export function nearestOf<T>(
   return items.filter((_, index) => keep.has(index));
 }
 
-/**
- * The line once the tour is complete (the sheet's completion card names it
- * too). A branch tour ends with its path; the other
- * branches' stations were never offered, so "every station" would be false
- * (R16).
- */
-export function completionLine(order: TourOrder, skipped: number): string {
-  if (order === "branch") {
-    return skipped === 0
-      ? "Tour complete - you reached the end of your path."
-      : `Tour complete - you reached the end of your path, ${String(skipped)} skipped.`;
-  }
+/** The line once the tour is complete (the sheet's completion card names
+ *  it too). */
+export function completionLine(skipped: number): string {
   return skipped === 0
     ? "Tour complete - every station visited."
     : `Tour complete - ${String(skipped)} skipped.`;
@@ -1211,7 +1202,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (run === null) return "";
     if (run.isFinished()) {
       const skipped = run.statuses().filter((s) => s.skipped).length;
-      return completionLine(deps.tour()?.order ?? "any", skipped);
+      return completionLine(skipped);
     }
     const note = noteText();
     const lead = note === null ? "" : `${note} `;

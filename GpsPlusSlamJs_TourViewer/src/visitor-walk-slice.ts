@@ -1,6 +1,6 @@
 /**
  * The visitor's walk in the page's store (root CLAUDE.md, the Redux rule): the run's
- * progress (every station's state, its skip clock, the branch path), the
+ * progress (every station's state, its skip clock), the
  * last skip while it can still be undone (`lastSkip`, settled by
  * `skipSettled`), the one-line note of what just happened (`note`), and
  * the quick action's arm (`quickArmedId`, "Can't get there?" asked for one
@@ -396,7 +396,7 @@ export function selectUndoableSkip(
 /**
  * The station the walk is about: the peek,
  * the radar's orange, the breadcrumbs and the skip clock read it.
- * - fixed and branch order: the one offered station not yet found;
+ * - fixed order: the one offered station not yet found;
  * - any order with one station to find: that one;
  * - any order with several: the chosen target (the chosen-target rule, whatever the
  *   precision: the visitor's own pick is no guess), else none while no

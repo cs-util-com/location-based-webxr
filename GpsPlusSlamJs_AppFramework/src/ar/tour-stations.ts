@@ -2,8 +2,10 @@
  * The game content of `tour.json` (tour kit plan K1, §8 D7: the full
  * schema in one step): media ASSETS with their own ids, STATIONS with a geo
  * pose and two radii, each station's STEPS (text, image, cut-out
- * character, audio, video, 3D model, a scene choice, a quiz), how a step
- * advances, and for answer-routed order the next station per answer.
+ * character, audio, video, 3D model, a scene choice, a quiz) and how a
+ * step advances. The walk is never branched by answers here: a station's
+ * `next` and a quiz's `route` are not part of the format (unknown fields,
+ * ignored); where a walk goes will be the game rules' to say.
  *
  * VERSION 3 (tour editor plan 2026-10-17-1816, W3): a station is the
  * parent of what was placed around it - its geo pose (position and a
@@ -21,8 +23,8 @@
  *
  * Defensive by the rule of `tour-manifest.ts`: hand-editable external data,
  * every field checked at the boundary, every cross-reference resolved here
- * (an asset of the right kind, a choice's target step, a route's target
- * station, a correct answer among the options), so a renderer never meets
+ * (an asset of the right kind, a choice's target step, a correct answer
+ * among the options), so a renderer never meets
  * a dangling id in the middle of a walk. Unknown fields are ignored, which
  * is the version policy of `tour-manifest.ts`. The caller's `fail` throws
  * its own validation error (the manifest's), so this module needs no error
@@ -100,7 +102,7 @@ export interface TourAsset {
   readonly height?: number;
 }
 
-export type TourOrder = 'fixed' | 'any' | 'branch';
+export type TourOrder = 'fixed' | 'any';
 
 export type TourStepAdvance =
   { readonly mode: 'tap' } | { readonly mode: 'auto'; readonly afterS: number };
@@ -151,13 +153,6 @@ export interface TourQuiz {
   readonly answer: TourQuizAnswer;
 }
 
-/** For `branch` order: the next station by answer. */
-export interface TourQuizRoute {
-  readonly byOption?: Readonly<Record<string, string>>;
-  readonly correct?: string;
-  readonly wrong?: string;
-}
-
 /** What a version 3 step does: its content shown, a scene choice, or a
  *  quiz. Stored in the file under the step's key `block`. */
 export type TourStepAction =
@@ -197,7 +192,6 @@ export type TourStepAction =
       readonly question: string;
       readonly points: number;
       readonly answer: TourQuizAnswer;
-      readonly route?: TourQuizRoute;
     };
 
 /** A step as the reader holds it: what it does is its `action`, which
@@ -248,8 +242,6 @@ export interface TourStation {
   /** v1 hint mode (K-D6): the HUD's exact arrow plus distance. */
   readonly hint: 'arrow';
   readonly steps: readonly TourStep[];
-  /** For `branch` order: the default next station. */
-  readonly next?: string;
   /** The items placed at this station (pins, photos, models), at local
    *  poses. */
   readonly items: readonly TourItem[];
@@ -637,55 +629,6 @@ function parseAnswer(
   }
 }
 
-function parseRoute(
-  value: unknown,
-  answer: TourQuizAnswer,
-  at: string,
-  fail: Fail
-): TourQuizRoute {
-  if (!isRecord(value)) fail(`"${at}" must be an object`);
-  const route: {
-    byOption?: Record<string, string>;
-    correct?: string;
-    wrong?: string;
-  } = {};
-  for (const key of ['correct', 'wrong'] as const) {
-    if (value[key] !== undefined)
-      route[key] = requireId(value[key], `${at}.${key}`, fail);
-  }
-  if (value.byOption !== undefined) {
-    route.byOption = parseByOption(
-      value.byOption,
-      answer,
-      `${at}.byOption`,
-      fail
-    );
-  }
-  return route;
-}
-
-function parseByOption(
-  value: unknown,
-  answer: TourQuizAnswer,
-  at: string,
-  fail: Fail
-): Record<string, string> {
-  if (answer.type !== 'single' && answer.type !== 'multiple') {
-    fail(`"${at}" is only for a choice quiz`);
-  }
-  if (!isRecord(value) || Array.isArray(value))
-    fail(`"${at}" must be an object`);
-  const ids = new Set(answer.options.map((o) => o.id));
-  const out: Record<string, string> = {};
-  for (const [option, station] of Object.entries(value)) {
-    if (!ids.has(option)) {
-      fail(`"${at}" names "${option}", which is not one of its options`);
-    }
-    out[option] = requireId(station, `${at}.${option}`, fail);
-  }
-  return out;
-}
-
 /**
  * A quiz's question, points and answer: one rule for both versions of the
  * format (`tour-story.ts` reads version 4's quiz with it). Null when a
@@ -723,11 +666,7 @@ function parseQuiz(
 ): TourStepAction {
   const quiz = parseTourQuiz(v, at, ctx);
   if (quiz === null) throw new SkippedStep();
-  const route =
-    v.route === undefined
-      ? {}
-      : { route: parseRoute(v.route, quiz.answer, `${at}.route`, ctx.fail) };
-  return { kind: 'quiz', ...quiz, ...route };
+  return { kind: 'quiz', ...quiz };
 }
 
 // --- steps and stations ------------------------------------------------
@@ -859,11 +798,8 @@ function parseStation(
     ...parseRadii(value, at, fail),
     hint: 'arrow',
     // Lenient: a station whose every step was skipped keeps no steps, so
-    // finding it completes it; it stays, because routes may name it.
+    // finding it completes it.
     steps: ctx.lenient ? withoutStrandedChoices(parsed) : parsed,
-    ...(value.next === undefined
-      ? {}
-      : { next: requireId(value.next, `${at}.next`, fail) }),
     items,
   };
 }
@@ -960,16 +896,10 @@ function withResolvedModels(
   });
 }
 
-/** Every reference between steps and stations resolves. */
+/** Every reference within a station resolves, and its ids are unique. */
 function checkReferences(stations: readonly TourStation[], fail: Fail): void {
-  const stationIds = new Set(stations.map((s) => s.id));
-  const requireStation = (id: string | undefined, at: string): void => {
-    if (id !== undefined && !stationIds.has(id))
-      fail(`"${at}" must name a station`);
-  };
   stations.forEach((station, si) => {
     const at = `stations[${String(si)}]`;
-    requireStation(station.next, `${at}.next`);
     assertUnique(
       station.items.map((item) => item.id),
       'item',
@@ -988,7 +918,6 @@ function checkReferences(stations: readonly TourStation[], fail: Fail): void {
         step,
         `${at}.steps[${String(i)}].block`,
         stepIds,
-        requireStation,
         fail
       );
     });
@@ -999,7 +928,6 @@ function checkStepReferences(
   step: TourStep,
   at: string,
   stepIds: ReadonlySet<string>,
-  requireStation: (id: string | undefined, at: string) => void,
   fail: Fail
 ): void {
   const block = step.action;
@@ -1012,19 +940,13 @@ function checkStepReferences(
       }
     });
   }
-  if (block.kind !== 'quiz' || block.route === undefined) return;
-  requireStation(block.route.correct, `${at}.route.correct`);
-  requireStation(block.route.wrong, `${at}.route.wrong`);
-  for (const [option, station] of Object.entries(block.route.byOption ?? {})) {
-    requireStation(station, `${at}.route.byOption.${option}`);
-  }
 }
 
 /**
  * Validate the tour's stations against its (already validated) assets.
  * Station ids are unique; step ids are unique per station; every asset a
- * block names exists and is of the block's kind; every choice target, next
- * station and route target resolves. `lenient` (a newer minor) skips what
+ * block names exists and is of the block's kind; every choice target
+ * resolves. `lenient` (a newer minor) skips what
  * this reader cannot show instead of failing (see the module comment).
  * `onDropped` hears each station description or card image left out
  * (minor 2, {@link TourStationDrop}): malformed, or an image whose picture
