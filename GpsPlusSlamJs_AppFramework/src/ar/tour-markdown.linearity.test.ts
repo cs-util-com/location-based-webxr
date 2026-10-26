@@ -28,6 +28,10 @@ const PATTERNS: Record<string, string> = {
   'links after open emphasis': '[a](https://x.org) *b ',
   'unclosed emphasis': '*a ',
   'unclosed strong': '**a ',
+  // Closers that no opener of their kind precedes: without the openers'
+  // bottom, each would walk back over every opener of the other kind.
+  'closers of the other kind': '*a b_ ',
+  'closers of the other kind, reversed': '_a b* ',
   'intraword underscores': '_a_b',
   'open brackets': '[',
   'open picture brackets': '![',

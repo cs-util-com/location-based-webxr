@@ -19,6 +19,7 @@ import {
   plainTextOf,
   textHashOf,
   TOUR_MARKDOWN_MAX_PICTURES,
+  type TourMarkdown,
   type TourMdBlock,
   type TourMdInline,
 } from './tour-markdown';
@@ -550,5 +551,183 @@ describe('textHashOf', () => {
     await expect(textHashOf('a b\n\nc')).resolves.toBe(
       'sha256:6fd15da2b2c1db77735710a989b9c9310603496a6cc0bcf14031319265390e3a'
     );
+  });
+});
+
+// Why these tests matter: each pins a CommonMark edge case that a scoped
+// mutation pass showed no other test could tell apart from a broken rule
+// (tab columns, the optional space after `>`, list padding, flanking
+// beside a line end, the rule of three, links inside links, destinations).
+// Every expected tree is what commonmark 0.31.2 reads, except the emoji
+// cases, which follow the spec's code point reading (see the emphasis
+// tests above).
+describe('parseTourMarkdown - edge cases held to CommonMark', () => {
+  const EMOJI = String.fromCodePoint(0x1f600);
+  const FORM_FEED = String.fromCharCode(12);
+  const X = 'https://x.org/';
+
+  it('reads tab stops at four columns, and a partly used tab as the rest', () => {
+    expect(blocksOf('\t# A')).toEqual([p(t('# A'))]);
+    expect(blocksOf('- a\n\tb')).toEqual([ul([p(t('a'), soft, t('b'))])]);
+    expect(blocksOf('-\t\ta')).toEqual([ul([p(t('a'))])]);
+    expect(blocksOf('1.\ta')).toEqual([ol(1, [p(t('a'))])]);
+    expect(blocksOf('  - a\n\t- b')).toEqual([
+      ul([p(t('a')), ul([p(t('b'))])]),
+    ]);
+    expect(blocksOf('>\t  - a')).toEqual([q(p(t('- a')))]);
+    // A tab after one column of indentation reaches column 4, the content
+    // column of `10. `, so the next line's list nests inside the item.
+    expect(blocksOf('10. a\n\n \t- b')).toEqual([
+      ol(10, [p(t('a')), ul([p(t('b'))])]),
+    ]);
+  });
+
+  it('continues a quote only from a marker indented less than four columns', () => {
+    expect(blocksOf('> a\n    > b')).toEqual([q(p(t('a'), soft, t('> b')))]);
+    expect(blocksOf('> a\n  > b')).toEqual([q(p(t('a'), soft, t('b')))]);
+    expect(blocksOf('> a\n>b')).toEqual([q(p(t('a'), soft, t('b')))]);
+    expect(blocksOf('>    - a')).toEqual([q(ul([p(t('a'))]))]);
+    // The one optional space after a continuing `>` (a tab counts one
+    // column of it) decides whether the rest is indented four columns.
+    expect(blocksOf('> a\n>    - b')).toEqual([q(p(t('a')), ul([p(t('b'))]))]);
+    expect(blocksOf('> a\n>\t  - b')).toEqual([q(p(t('a'), soft, t('- b')))]);
+  });
+
+  it('pads list items as CommonMark does, empty items included', () => {
+    expect(blocksOf('-\n\n  a')).toEqual([ul([]), p(t('a'))]);
+    expect(blocksOf('-\n  a')).toEqual([ul([p(t('a'))])]);
+    expect(blocksOf('-  \n  a')).toEqual([ul([p(t('a'))])]);
+    expect(blocksOf('-   a\n\n  b')).toEqual([ul([p(t('a'))]), p(t('b'))]);
+    expect(blocksOf('-     a\n\n  b')).toEqual([ul([p(t('a')), p(t('b'))])]);
+  });
+
+  it('classifies a delimiter beside a line end or form feed as beside whitespace', () => {
+    expect(blocksOf('a*\nb*')).toEqual([p(t('a*'), soft, t('b*'))]);
+    expect(blocksOf(`a*${FORM_FEED}b*`)).toEqual([p(t(`a*${FORM_FEED}b*`))]);
+  });
+
+  it('classifies an emoji before a delimiter as punctuation', () => {
+    expect(blocksOf(`*a${EMOJI}*b`)).toEqual([p(t(`*a${EMOJI}*b`))]);
+    expect(blocksOf(`_a${EMOJI}_b`)).toEqual([p(t(`_a${EMOJI}_b`))]);
+    // Symbols and punctuation at the edges of the surrogate ranges (an
+    // Aegean word separator, a mahjong tile, a skin tone modifier), also
+    // as the body's first character.
+    for (const cp of [0x10100, 0x1f000, 0x1f3ff, 0x1f600]) {
+      const c = String.fromCodePoint(cp);
+      expect(blocksOf(`*a${c}*b`)).toEqual([p(t(`*a${c}*b`))]);
+      expect(blocksOf(`${c}_a_`)).toEqual([p(t(c), em(t('a')))]);
+    }
+  });
+
+  it('follows the underscore, rule-of-three and used-up delimiter rules', () => {
+    expect(blocksOf('a_b c_')).toEqual([p(t('a_b c_'))]);
+    // An opener left open inside link text is gone once the link closes.
+    expect(blocksOf('[*a](https://x.org) b*')).toEqual([
+      p(link(X, 'x.org', t('*a')), t(' b*')),
+    ]);
+    expect(blocksOf('a***b***c')).toEqual([
+      p(t('a'), em(strong(t('b'))), t('c')),
+    ]);
+    expect(blocksOf('*a _b* c_')).toEqual([p(em(t('a _b')), t(' c_'))]);
+    expect(blocksOf('a*b*c*d')).toEqual([p(t('a'), em(t('b')), t('c*d'))]);
+    expect(blocksOf('**a*')).toEqual([p(t('*'), em(t('a')))]);
+    expect(blocksOf('*a**')).toEqual([p(em(t('a')), t('*'))]);
+    expect(blocksOf('***a*')).toEqual([p(t('**'), em(t('a')))]);
+    expect(blocksOf('a*b**c**')).toEqual([p(t('a*b'), strong(t('c')))]);
+    expect(blocksOf('*a**b*')).toEqual([p(em(t('a**b')))]);
+    expect(blocksOf('**a *b** c*')).toEqual([
+      p(em(em(t('a '), em(t('b'))), t(' c'))),
+    ]);
+  });
+
+  it('keeps links out of links, but lets a picture sit inside one', () => {
+    expect(blocksOf('[[a](https://x.org)](https://y.org)')).toEqual([
+      p(t('['), link(X, 'x.org', t('a')), t('](https://y.org)')),
+    ]);
+    expect(blocksOf('[a [b](https://x.org) c](https://y.org)')).toEqual([
+      p(t('[a '), link(X, 'x.org', t('b')), t(' c](https://y.org)')),
+    ]);
+    expect(blocksOf('[a ![b](asset:x)](https://x.org)')).toEqual([
+      p(link(X, 'x.org', t('a '), alt('b'))),
+    ]);
+    expect(blocksOf('![[a](https://x.org)](asset:x)')).toEqual([pic('a', 'x')]);
+  });
+
+  it('reads destinations with spaces, line ends, escapes and parentheses around them', () => {
+    expect(blocksOf('[a]( https://x.org )')).toEqual([
+      p(link(X, 'x.org', t('a'))),
+    ]);
+    expect(blocksOf('[a](\nhttps://x.org)')).toEqual([
+      p(link(X, 'x.org', t('a'))),
+    ]);
+    expect(blocksOf('[a](https://x.org\n)')).toEqual([
+      p(link(X, 'x.org', t('a'))),
+    ]);
+    expect(blocksOf('[a](https://x.org/\\(b)')).toEqual([
+      p(link('https://x.org/(b', 'x.org', t('a'))),
+    ]);
+    expect(blocksOf('[a](https://x.org/(b\\)c))')).toEqual([
+      p(link('https://x.org/(b)c)', 'x.org', t('a'))),
+    ]);
+    expect(blocksOf('[a](https://x.org/\\)')).toEqual([
+      p(t('[a](https://x.org/)')),
+    ]);
+    expect(blocksOf('[a](https://x.org/(a b))')).toEqual([
+      p(t('[a](https://x.org/(a b))')),
+    ]);
+    expect(blocksOf('[a](https://x.org/(a )')).toEqual([
+      p(t('[a](https://x.org/(a )')),
+    ]);
+    expect(blocksOf('[a](https://x.org\tb)')).toEqual([
+      p(t('[a](https://x.org\tb)')),
+    ]);
+    // A control character other than a tab or line end does not end a
+    // destination; the URL parser percent-encodes it.
+    expect(blocksOf(`[a](https://x.org/${String.fromCharCode(1)}b)`)).toEqual([
+      p(link('https://x.org/%01b', 'x.org', t('a'))),
+    ]);
+  });
+
+  it('gives a picture its alt text with line breaks as spaces', () => {
+    expect(blocksOf('![a\nb](https://x.org/p.png)')).toEqual([p(alt('a b'))]);
+    expect(blocksOf('![a  \nb](https://x.org/p.png)')).toEqual([p(alt('a b'))]);
+  });
+});
+
+describe('plainTextOf - leaf edges', () => {
+  // Why: a leaf whose text starts or ends next to a picture's alt box would
+  // otherwise carry that space or line break into P and shift every offset.
+  it('trims what a picture leaves at the ends of a leaf', () => {
+    expect(plain('![x](https://x.org/p.png)  \nb')).toBe('b');
+    expect(plain('![a](https://x.org/p.png) d')).toBe('d');
+    expect(plain('d ![a](https://x.org/p.png)')).toBe('d');
+    expect(plain('![a](https://x.org/p.png)\td')).toBe('d');
+    expect(plain('![a](https://x.org/p.png) dd')).toBe('dd');
+  });
+
+  it('reads a value without a block list as no text', () => {
+    expect(plainTextOf({} as TourMarkdown).text).toBe('');
+  });
+});
+
+describe('defensive input - links, escapes and hashes', () => {
+  // Why: these are module boundaries that take values from files anyone
+  // can edit, so a value that only looks like a string must be refused.
+  it('refuses a link target that is not a string, whatever it prints as', () => {
+    const lookalike = { toString: () => 'https://x.org' };
+    expect(checkTourLink(lookalike as unknown as string)).toEqual({
+      ok: false,
+    });
+  });
+
+  it('rejects a plain text that is not a string', async () => {
+    await expect(textHashOf(42 as unknown as string)).rejects.toThrow(
+      /textHashOf/
+    );
+  });
+
+  it('ends the escaped body at its last paragraph', () => {
+    expect(escapeTourMarkdown('a\n\n')).toBe('a');
+    expect(escapeTourMarkdown('a\n\n\nb')).toBe('a\n\nb');
   });
 });

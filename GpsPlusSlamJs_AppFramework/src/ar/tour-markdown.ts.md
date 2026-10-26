@@ -123,7 +123,14 @@ const hash = await textHashOf(text); // 'sha256:...'
 
 - `tour-markdown.test.ts` - every accepted construct, the "as typed"
   table, pictures and their cap, links and their refusals, the escaper,
-  hash vectors computed with Node's crypto, defensive input.
+  hash vectors computed with Node's crypto, defensive input, and the
+  CommonMark edge cases (tab columns, list padding, flanking, the rule of
+  three, links in links, destinations) that a scoped mutation pass showed
+  were otherwise unpinned. The surviving mutants are equivalent: they
+  differ only on lone surrogates, on characters the block parser never
+  passes on (a carriage return, spaces after a line break), on unreachable
+  defensive defaults, in the walk-step counter, or in work rather than
+  result (merging literal text, dropping closers that cannot open).
 - `tour-markdown.property.test.ts` - the differential against `commonmark`
   (a devDependency only) on generated subset bodies and on filtered
   arbitrary strings; totality up to 1 MB; `P` invariants under removed
