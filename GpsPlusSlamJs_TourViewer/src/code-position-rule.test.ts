@@ -370,6 +370,29 @@ describe("codePositionSentence - the result screen's line (U3)", () => {
     );
   });
 
+  // Why: a code that lined the visit up is kept when the visit's own GPS
+  // cannot judge it. When the cause is a short walk, the creator can fix
+  // it by walking further, so the line says how much further, as it does
+  // for any other short walk; another cause (too few fixes, a tracking
+  // restart) has nothing the creator could do, and the line says nothing.
+  it("says how much more walking a code that placed the visit needed, and nothing for another cause", () => {
+    expect(
+      codePositionSentence([
+        outcome(
+          { kind: "keep", reason: "code-placed", walkMoreM: 13.6 },
+          false,
+        ),
+      ]),
+    ).toBe(
+      "The code's saved position was kept: this visit's walk was about 14 m too short for the GPS accuracy to check it.",
+    );
+    expect(
+      codePositionSentence([
+        outcome({ kind: "keep", reason: "code-placed" }, false),
+      ]),
+    ).toBe("");
+  });
+
   // Why (M6 milestone review #3): the system decides by itself, but a visit
   // too short to decide must say so, or a poster that really moved goes
   // unmentioned while the visit keeps correcting through the old spot.
