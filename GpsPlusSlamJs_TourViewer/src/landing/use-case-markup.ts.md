@@ -25,7 +25,8 @@ landscape phone screens, and the rest under "More ideas" in a native
     and `<p class="uc-sub">`;
   - `<ul class="uc-grid">` of `<li class="uc-item" data-testid="use-case-<id>">`,
     each `<div class="uc-phone"><svg class="uc-screen" viewBox="0 0 210 100"
-role="img" aria-label="<alt>">`, `<h3 class="uc-title">`,
+role="img" aria-label="<alt>">` around a `<g aria-hidden="true">` with
+    the drawing (the label speaks for it), `<h3 class="uc-title">`,
     `<p class="uc-sentence">`;
   - when anything is folded: `<details class="uc-more">` with
     `<summary class="uc-more-toggle">` (visible text "More ideas (n)",

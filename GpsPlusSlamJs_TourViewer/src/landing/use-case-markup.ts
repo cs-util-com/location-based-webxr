@@ -42,8 +42,11 @@ function item(u: UseCase, t: UseCaseTreatment): string {
     `<li class="uc-item" data-testid="use-case-${escapeHtml(u.id)}">` +
     `<div class="uc-phone">` +
     `<svg class="uc-screen" viewBox="0 0 ${SCREEN_W} ${SCREEN_H}" role="img" aria-label="${escapeHtml(u.alt)}" focusable="false">` +
+    // The label speaks for the picture: its drawing (nested svgs, a
+    // card's words) stays out of the accessibility tree.
+    `<g aria-hidden="true">` +
     screenLayers(t, u.scene, u.overlay(t)) +
-    `</svg></div>` +
+    `</g></svg></div>` +
     `<h3 class="uc-title">${escapeHtml(u.title)}</h3>` +
     `<p class="uc-sentence">${escapeHtml(u.sentence)}</p>` +
     `</li>`

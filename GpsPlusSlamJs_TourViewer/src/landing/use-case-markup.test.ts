@@ -33,6 +33,23 @@ function entry(text: string): UseCase {
 describe("renderUseCases", () => {
   const markup = renderUseCases(USE_CASES);
 
+  // Why: a picture's drawing holds nested svg elements and text (a card's
+  // title, a label), which a screen reader would announce as further
+  // images and words after the picture's own description. The label
+  // speaks for the picture, so its drawing is hidden.
+  it("hides every picture's drawing behind its label", () => {
+    for (const t of USE_CASE_TREATMENTS) {
+      const html = renderUseCases(USE_CASES, { treatment: t });
+      const screens = [
+        ...html.matchAll(/<svg class="uc-screen"[^>]*>(.{0,40})/g),
+      ];
+      expect(screens).toHaveLength(USE_CASES.length);
+      for (const [, after] of screens) {
+        expect((after ?? "").startsWith('<g aria-hidden="true">')).toBe(true);
+      }
+    }
+  });
+
   // Why: the swept choice - six fill whole rows at two and three columns,
   // eight leave a ragged last row at three (the sidecar has the sweep).
   it("shows the first six and folds the rest under More ideas", () => {
