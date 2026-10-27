@@ -26,10 +26,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
-import {
-  applyObjectChanges,
-  hostedObjects,
-} from "./authoring-draft.js";
+import { applyObjectChanges, hostedObjects } from "./authoring-draft.js";
 import type { LevelText } from "./code-book.js";
 import { finishEntries, type FinishEntry } from "./finish-entries.js";
 import { scanEntryNames } from "./tour-read-set.js";

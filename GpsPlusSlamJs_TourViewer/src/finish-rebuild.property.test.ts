@@ -193,9 +193,10 @@ describe("rebuildFinishedTour (property)", () => {
             // unlisted asset is refused here.
             const carried = parseTourManifest(JSON.parse(text));
             const listed = new Set(carried.assets.map((a) => a.id));
-            for (const o of withWorldObjects(carried).objects) {
-              if (o.kind === "picture") expect(listed.has(o.image)).toBe(true);
-            }
+            const unlisted = withWorldObjects(carried).objects.filter(
+              (o) => o.kind === "picture" && !listed.has(o.image),
+            );
+            expect(unlisted).toEqual([]);
             const names = new Set(
               readStoredCentralDirectory(bytes).map((e) => e.name),
             );
