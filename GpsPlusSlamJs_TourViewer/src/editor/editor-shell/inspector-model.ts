@@ -117,7 +117,7 @@ interface StationInspector {
 }
 
 /** A block a station's story shows, as its inspector lists it. */
-export interface InspectorStoryBlock {
+interface InspectorStoryBlock {
   readonly id: string;
   /** Its kind in the block model's words ("Long text"). */
   readonly kind: string;
