@@ -161,7 +161,11 @@ test("the editor opens a tour of every free block, edits its pin, saves it whole
   const field = page.locator("#card textarea");
   await field.fill("Gate sign, renamed");
   await field.blur();
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  // Opened through the chooser, so there is no file to save into by
+  // itself: the line says the browser's draft keeps the change (E2c).
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
   const saved = await savedTour(page);
 
   expect(saved.json).toMatchObject({ version: 4, minor: 0 });
