@@ -420,7 +420,7 @@ describe("buildInspector: the values the inspector edits", () => {
         { id: "img-2", path: "content/img-2.png", label: "Old map" },
       ],
     });
-    expect((built as { images: unknown[] }).images).toHaveLength(2);
+    expect((built as unknown as { images: unknown[] }).images).toHaveLength(2);
   });
 
   // Why: a radius lowered under its items leaves them where they are; the
