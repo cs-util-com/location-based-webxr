@@ -72,22 +72,29 @@ build plan, re-cut" and its cold review
 - `InPlaceRefusal`, `EditorLock`, `WritableFileHandle`, `PickerWindow`, `PickOutcome`,
   `SaveTarget`.
 
-- `adoptsSavedFile(win, nav): boolean` - whether the first Save of a
-  tour without a file asks for one with the save dialog and then keeps
-  saving into it (the page's `askSaveFile`): both file dialogs exist
-  and the browser is not on Android. Android is told by its client hints
-  (`userAgentData.platform`) where it gives them, else by its user agent.
-  No feature check can tell what decides it there: a picked file is a
-  content URI with no replace in one step, so whether a rewrite can be
-  cut short by a closed tab, and whether access survives a reload, needs
-  a check on a phone; until then Android keeps the copy.
-- `saveFinePrint(win, nav = {})` (W2 of the tour editor plan 2026-10-17-1816) - the
+- `adoptsSavedFile(win): boolean` - whether a tour without a file asks
+  for one with the save dialog (as it opens from a link or the sample, the
+  page's `askOpenSaveFile`; else at its first Save, `askSaveFile`) and
+  then keeps saving into it: wherever both file dialogs exist, Android
+  included. Android was held back (a picked file there is a content URI,
+  with no replace in one step) until a check on a phone (Chrome 155,
+  Android 10, the file-access check page) measured it: a file saved under a
+  new name, the handle kept across a reload (the permission then reads
+  "prompt" and one tap grants it again), and a 200 MiB rewrite cut at
+  185 MiB by closing the tab leaving the old file whole, byte for byte
+  (Chrome writes a temporary copy and swaps it in only when the write
+  closes, as on a desktop). Not measured: a browser killed in the middle of
+  a write (the kill run's write finished first). So the platform decides
+  nothing; the measurement also found that with "Desktop site" on, neither
+  the user agent nor the client hints name Android (platform Linux, not
+  mobile), which no longer matters.
+- `saveFinePrint(win)` (W2 of the tour editor plan 2026-10-17-1816) - the
   open dialog's fine print about Save, true for this browser: where
   `showOpenFilePicker` exists (`../file-picker.ts`, the check the setup
   page's line about the editor uses too), a chosen file is saved into itself (and by
-  itself after a change) while a tour from a link or the sample is saved
-  into the file its first Save asks for where `adoptsSavedFile`, else as
-  a new copy; elsewhere Save gives a new copy. It opens with what leaves
+  itself after a change) while a tour from a link or the sample asks for
+  its file as it opens (or at its first Save) and is saved into it where
+  `adoptsSavedFile`, else as a new copy; elsewhere Save gives a new copy. It opens with what leaves
   the computer (W6): the tour file stays, the map comes from
   OpenStreetMap (it said "nothing is uploaded", which hid the tiles).
 
@@ -125,7 +132,6 @@ without Web Locks); the save dialog opened before `pickSaveFile` returns,
 cancelled only by a dismissal, unavailable without one or on any other
 refusal; `isSame` by the browser's answer, else by the name; `isSameFile`
 by the handle's answer, and by the name without a handle or with one that
-cannot tell; `adoptsSavedFile` on a desktop, on Android by its user agent
-and by its client hints, and without either dialog, and the fine print's
-words for each. The page's e2e (`playwright-tests/editor.spec.js`)
+cannot tell; `adoptsSavedFile` with both dialogs and without either,
+and the fine print's words for each. The page's e2e (`playwright-tests/editor.spec.js`)
 writes a real origin-private file through it.

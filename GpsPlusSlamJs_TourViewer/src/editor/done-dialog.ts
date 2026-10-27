@@ -31,13 +31,15 @@ export const DRIVE_MOUNT_TIP_SHOWN = false;
 
 /** Where the changes went: written into the opened file (or, with
  *  `chosenAtSave`, into the file the first Save of a tour without one
- *  asked for), downloaded as a copy, or nothing was saved because nothing
- *  changed. */
+ *  asked for; with `chosenAtOpen`, into the file a tour from a link or
+ *  the sample asked for as it opened), downloaded as a copy, or nothing
+ *  was saved because nothing changed. */
 export type DoneSaved =
   | {
       readonly kind: "in-place";
       readonly name: string;
       readonly chosenAtSave?: boolean;
+      readonly chosenAtOpen?: boolean;
     }
   | { readonly kind: "downloaded"; readonly name: string }
   | { readonly kind: "unchanged"; readonly name: string };
@@ -82,9 +84,13 @@ function whereLine(saved: DoneSaved): string {
     case "in-place":
       // A file the first Save asked for was never opened, and may carry
       // another name than the one the tour came under.
-      return saved.chosenAtSave === true
-        ? `Your changes are saved in ${saved.name}, the file you chose when you first saved.`
-        : `Your changes are saved in ${saved.name}, the file you opened on this computer.`;
+      if (saved.chosenAtSave === true) {
+        return `Your changes are saved in ${saved.name}, the file you chose when you first saved.`;
+      }
+      if (saved.chosenAtOpen === true) {
+        return `Your changes are saved in ${saved.name}, the file you chose when you opened the tour.`;
+      }
+      return `Your changes are saved in ${saved.name}, the file you opened on this computer.`;
     case "downloaded":
       return `Your changes were downloaded as ${saved.name}. That copy is the tour now: the file you opened does not have them.`;
     case "unchanged":

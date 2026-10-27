@@ -24,7 +24,9 @@ the move (`edit-main.ts`, `EditorSession.moveWalkOut`).
   `chosenAtSave: true` when that file is the one the first Save of a tour
   without a file asked for - said as "the file you chose when you first
   saved", since it was never opened and may carry another name than the
-  one the tour came under), the host, whether
+  one the tour came under; `chosenAtOpen: true` when it is the file a
+  tour from a link or the sample asked for as it opened - said as "the
+  file you chose when you opened the tour"), the host, whether
   the newest bytes carry the walk (`true`, `false`, or `"unknown"` when
   the check failed: said as "may carry", never as none - the M4b milestone
   review #9), and the tip's switch.

@@ -1060,7 +1060,9 @@ test("edits a pin's text and saves a tour that carries it", async ({
   const field = page.locator("#card textarea");
   await field.fill("The new text");
   await field.blur();
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
   await expect(page.locator("#card")).toContainText("Changed - not saved yet.");
   const saved = await saveAndRead(page);
   expect(saved.name).toBe("editor-fixture.zip");
@@ -1088,7 +1090,9 @@ test("Save a copy writes the edits to a new file and leaves the tour's own unsav
   const field = page.locator("#card textarea");
   await field.fill("The copied text");
   await field.blur();
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
   await expect(page.locator("#unsaved-mark")).toBeVisible();
   const copy = await saveAndRead(page, (p) => fileCommand(p, "saveCopy"));
   expect(copy.name).toBe("editor-fixture copy.zip");
@@ -1102,7 +1106,9 @@ test("Save a copy writes the edits to a new file and leaves the tour's own unsav
     }),
   ).toBeVisible();
   // The tour's own file is still due the change.
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
   await expect(page.locator("#unsaved-mark")).toBeVisible();
   const saved = await saveAndRead(page);
   expect(saved.name).toBe("editor-fixture.zip");
@@ -1239,7 +1245,9 @@ test("a click right after typing lands: on another row, and on Save", async ({
   await expect(
     page.locator("#rail .row", { hasText: "Fountain" }),
   ).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
   await page.locator("#rail .row", { hasText: "Typed, then a row" }).click();
   await page.locator("#card textarea").fill("Typed, then Save");
   const saved = await saveAndRead(page);
@@ -1256,7 +1264,9 @@ test("Ctrl+Enter commits the text, Esc cancels a move", async ({ page }) => {
   await page.locator("#rail .row", { hasText: "Town hall" }).click();
   await page.locator("#card textarea").fill("By keyboard");
   await page.keyboard.press("Control+Enter");
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
   await page.locator("#card button", { hasText: "Move" }).click();
   const marker = await box(page.locator(".mk-wrap.sel"));
   await page.mouse.move(marker.x + marker.width / 2, marker.y + 10);
@@ -1268,7 +1278,9 @@ test("Ctrl+Enter commits the text, Esc cancels a move", async ({ page }) => {
     "Drag the marker to its new place.",
   );
   // Only the text edit is pending: the cancelled move changed nothing.
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
 });
 
 test("a dismissed save picker keeps the file, and Save again delivers it", async ({
@@ -2082,7 +2094,9 @@ test("edits survive a closed tab: the same file reopened offers them, and Restor
   await editTownHall(page, "Kept in the browser");
   await page.locator("#rail .row", { hasText: "Fountain" }).click();
   await page.locator("#card button", { hasText: "Delete" }).click();
-  await expect(page.locator("#save-status")).toHaveText("2 changes not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "2 changes not saved - kept in this browser until you save",
+  );
   await backedUp(page);
   await page.close();
   const next = await newEditorPage(context);
@@ -2101,7 +2115,9 @@ test("edits survive a closed tab: the same file reopened offers them, and Restor
   await expect(next.locator("#rail .row", { hasText: "Fountain" })).toHaveCount(
     0,
   );
-  await expect(next.locator("#save-status")).toHaveText("2 changes not saved");
+  await expect(next.locator("#save-status")).toHaveText(
+    "2 changes not saved - kept in this browser until you save",
+  );
 });
 
 test("a station renamed through the editor session survives a closed tab: the draft offers it, and Restore brings it back", async ({
@@ -2126,7 +2142,9 @@ test("a station renamed through the editor session survives a closed tab: the dr
     return result.kind;
   });
   expect(outcome).toBe("edited");
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
   await backedUp(page);
   await page.close();
   const next = await newEditorPage(context);
@@ -2135,7 +2153,9 @@ test("a station renamed through the editor session survives a closed tab: the dr
   await expect(offer).toContainText("a station");
   await offer.locator("button", { hasText: "Restore" }).click();
   await expect(offer).toHaveCount(0);
-  await expect(next.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(next.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
   const title = await next.evaluate(
     () =>
       // @ts-expect-error - the editor's dev-only test hook.
@@ -2621,7 +2641,9 @@ test("a moved photo note survives a closed tab", async ({ page, context }) => {
   });
   await page.mouse.up();
   await page.locator("#card button", { hasText: "Done" }).click();
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
   await backedUp(page);
   await page.close();
   const next = await newEditorPage(context);
@@ -2629,7 +2651,9 @@ test("a moved photo note survives a closed tab", async ({ page, context }) => {
   const offer = next.locator(".toast.draft-offer");
   await expect(offer).toContainText("1 change");
   await offer.locator("button", { hasText: "Restore" }).click();
-  await expect(next.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(next.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
 });
 
 test("an edit after a download, with the downloaded copy put in place, is offered by that copy", async ({
@@ -2667,7 +2691,9 @@ test("an edit after a download, with the downloaded copy put in place, is offere
   await page.locator("#rail .row", { hasText: "In the download" }).click();
   await page.locator("#card textarea").fill("After the download");
   await page.locator("#card textarea").blur();
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
   await backedUp(page);
   await page.close();
   const next = await newEditorPage(context);
@@ -3217,7 +3243,9 @@ test("Ctrl+Z undoes, Ctrl+Shift+Z and Ctrl+Y redo, each said; in a field Ctrl+Z 
   await editPin(page, "Town hall", "First");
   await page.locator("#rail .row", { hasText: "Fountain" }).click();
   await page.locator("#card button", { hasText: "Delete" }).click();
-  await expect(page.locator("#save-status")).toHaveText("2 changes not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "2 changes not saved - kept in this browser until you save",
+  );
   const last = page.locator(".toast").last();
   await page.keyboard.press("Control+z");
   await expect(last).toHaveText('Undone: the delete of "Fountain".');
@@ -3236,7 +3264,9 @@ test("Ctrl+Z undoes, Ctrl+Shift+Z and Ctrl+Y redo, each said; in a field Ctrl+Z 
   await expect(last).toHaveText('Redone: the text of "First".');
   await page.keyboard.press("Control+y");
   await expect(last).toHaveText('Redone: the delete of "Fountain".');
-  await expect(page.locator("#save-status")).toHaveText("2 changes not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "2 changes not saved - kept in this browser until you save",
+  );
   await page.keyboard.press("Control+y");
   await expect(last).toHaveText("Nothing to redo.");
   // Typing in the card: Ctrl+Z is the field's.
@@ -3245,7 +3275,9 @@ test("Ctrl+Z undoes, Ctrl+Shift+Z and Ctrl+Y redo, each said; in a field Ctrl+Z 
   await field.focus();
   const said = await page.locator(".toast").count();
   await page.keyboard.press("Control+z");
-  await expect(page.locator("#save-status")).toHaveText("2 changes not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "2 changes not saved - kept in this browser until you save",
+  );
   expect(await page.locator(".toast").count()).toBe(said);
 });
 
@@ -3640,7 +3672,9 @@ test("a changed needs-no-GPS setting survives a closed tab, and Restore brings i
   await page.goto("/edit.html");
   await openThroughChooser(page, buffer, "editor-fixture.zip");
   await page.locator("#no-gps-input").check();
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
   await backedUp(page);
   await page.close();
   const next = await newEditorPage(context);
@@ -3651,7 +3685,9 @@ test("a changed needs-no-GPS setting survives a closed tab, and Restore brings i
   await expect(next.locator("#no-gps-input")).not.toBeChecked();
   await offer.locator("button", { hasText: "Restore" }).click();
   await expect(next.locator("#no-gps-input")).toBeChecked();
-  await expect(next.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(next.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
 });
 
 /**
@@ -3698,7 +3734,9 @@ test("the tour's name opens its details: applied, saved into tour.json, and an e
   await expect(page.locator("#tour-name")).toHaveText("Castle walk");
   await expect(page.locator("#tour-name")).toBeFocused();
   await expect(page).toHaveTitle("Castle walk - Tour editor");
-  await expect(page.locator("#save-status")).toHaveText("4 changes not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "4 changes not saved - kept in this browser until you save",
+  );
   const saved = await saveAndRead(page);
   expect(saved.manifest).toMatchObject({
     version: 4,
@@ -3721,7 +3759,9 @@ test("the tour's name opens its details: applied, saved into tour.json, and an e
   await name.fill("");
   await page.locator("#details-apply").click();
   await expect(page.locator("#tour-name")).toHaveText("editor-fixture.zip");
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
   const untitled = await saveAndRead(page);
   expect(untitled.manifest).not.toHaveProperty("title");
   expect(untitled.manifest).toMatchObject({ cover: "photo-ok" });
@@ -4447,7 +4487,7 @@ test("a tour without a file is saved into the file its first Save asks for, and 
   await page.clock.install();
   await page.goto("/edit.html");
   await expect(page.locator("#open-fineprint")).toContainText(
-    "asks where to save it at its first Save",
+    "asks where to save it as it opens (or at its first Save)",
   );
   await dropOnDropBox(page, await editorTour(), "editor-fixture.zip");
   await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
@@ -4720,3 +4760,261 @@ async function dropOnDropBox(page, buffer, name) {
     { bytes: [...buffer], fileName: name },
   );
 }
+
+/**
+ * A saved tour's manifest text, whether the zip holds it at its root or in
+ * a folder.
+ * @param {Record<string, string>} texts
+ */
+function tourJsonOf(texts) {
+  const key = Object.keys(texts).find(
+    (name) => name === "tour.json" || name.endsWith("/tour.json"),
+  );
+  return key === undefined ? "" : texts[key];
+}
+
+/** The link a tour is opened from in the open-from-a-link tests. */
+const LINKED_TOUR = "http://127.0.0.1:5197/ranges-ok/sample-tour.zip";
+
+/**
+ * A stand-in save dialog (as `clickBoundSavePicker`, bound to the click)
+ * whose file's write is held until `window.__releaseWrite()`: the page's
+ * state while it writes can be seen. The names it was asked to suggest are
+ * kept in `window.__savePickNames`.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} name
+ */
+async function heldWriteSavePicker(page, name) {
+  await page.evaluate(async (fileName) => {
+    const root = await navigator.storage.getDirectory();
+    const real = await root.getFileHandle(fileName, { create: true });
+    /** @type {() => void} */
+    let release = () => undefined;
+    const held = new Promise((resolve) => {
+      release = () => resolve(undefined);
+    });
+    // @ts-expect-error - called by the test.
+    window.__releaseWrite = release;
+    const handle = {
+      kind: "file",
+      name: real.name,
+      createWritable: async () => {
+        const writable = await real.createWritable();
+        return {
+          write: (/** @type {Blob} */ data) => writable.write(data),
+          close: async () => {
+            await held;
+            await writable.close();
+          },
+          abort: () => writable.abort(),
+        };
+      },
+      getFile: () => real.getFile(),
+      isSameEntry: (/** @type {FileSystemHandle} */ other) =>
+        real.isSameEntry(other),
+    };
+    let inClick = false;
+    for (const type of ["click", "keydown"]) {
+      document.addEventListener(
+        type,
+        () => {
+          inClick = true;
+          setTimeout(() => {
+            inClick = false;
+          }, 0);
+        },
+        true,
+      );
+    }
+    // @ts-expect-error - read by the test.
+    window.__savePickNames = [];
+    // @ts-expect-error - the e2e's own save dialog.
+    window.showSaveFilePicker = (/** @type {any} */ options) => {
+      // @ts-expect-error - kept for the test.
+      window.__savePickNames.push(options?.suggestedName);
+      if (!inClick) {
+        return Promise.reject(
+          new DOMException("Must be handling a user gesture", "SecurityError"),
+        );
+      }
+      return Promise.resolve(handle);
+    };
+  }, name);
+}
+
+/**
+ * The size (bytes) of a file of the page's origin-private file system.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} name
+ */
+function opfsSize(page, name) {
+  return page.evaluate(async (fileName) => {
+    const root = await navigator.storage.getDirectory();
+    return (await (await root.getFileHandle(fileName)).getFile()).size;
+  }, name);
+}
+
+test("a tour opened from its link asks where to save it in the click, and is that file from its first edit", async ({
+  page,
+}) => {
+  // Why: a tour opened from a link had no file: it was kept only in this
+  // browser, never saved by itself, and its first Save asked where to put
+  // it. Where the browser adopts a saved file, the open's own click now
+  // asks (Chromium opens the dialog only within a few seconds of a click,
+  // and the fetch can take longer - the stand-in refuses a later call),
+  // writes the fetched tour there once it has opened, says so while it
+  // writes, and saves every later edit into it by itself.
+  await withBothDialogs(page);
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await expect(page.locator("#open-fineprint")).toContainText(
+    "asks where to save it as it opens",
+  );
+  await heldWriteSavePicker(page, "linked.zip");
+  let downloads = 0;
+  page.on("download", () => {
+    downloads += 1;
+  });
+  await page.locator("#link-input").fill(LINKED_TOUR);
+  await page.locator("#link-btn").click();
+  await expect(page.locator("#topbar")).toBeVisible({ timeout: 15000 });
+  // Asked once, in the click, under the name the link's file carries.
+  expect(
+    await page.evaluate(() => Reflect.get(window, "__savePickNames")),
+  ).toEqual(["sample-tour.zip"]);
+  // While the tour is written into the chosen file, the status says so.
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saving into linked.zip…",
+  );
+  await page.evaluate(() => Reflect.get(window, "__releaseWrite")());
+  await expect(
+    page.locator(".toast", {
+      hasText:
+        "Saved to linked.zip. Your changes are saved into it by themselves.",
+    }),
+  ).toBeVisible();
+  await expect(page.locator("#tour-file")).toHaveText("linked.zip");
+  await expect(page.locator("#save-status")).toHaveText("No changes");
+  const written = await readOpfsTour(page, "linked.zip");
+  expect(tourJsonOf(written)).toContain('"version"');
+  // The first edit is saved into it by itself, with no dialog.
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  await page.locator("#no-gps-input").check();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-autosave",
+    "waiting",
+  );
+  await page.clock.runFor(3_500);
+  await expect(page.locator("#save-status")).toHaveText("Saved to linked.zip");
+  expect(tourJsonOf(await readOpfsTour(page, "linked.zip"))).toContain(
+    '"needsNoGps": true',
+  );
+  expect(
+    await page.evaluate(() => Reflect.get(window, "__savePickNames")),
+  ).toHaveLength(1);
+  expect(downloads).toBe(0);
+  // Done names the file as the one chosen when the tour opened.
+  await publish(page);
+  await expect(page.locator("#done-where")).toHaveText(
+    "Your changes are saved in linked.zip, the file you chose when you opened the tour.",
+  );
+});
+
+test("the sample asks where to save it in its click, and the chosen file holds it", async ({
+  page,
+}) => {
+  // Why: the sample is the other tour without a file of its own; it must
+  // ask in its own click as a link does, and the file must hold the tour.
+  await withBothDialogs(page);
+  await page.goto("/edit.html");
+  await clickBoundSavePicker(page, "my-sample.zip");
+  await page.locator("#sample-btn").click();
+  await expect(page.locator("#tour-file")).toHaveText("my-sample.zip", {
+    timeout: 15000,
+  });
+  expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
+  const title = await page.locator("#tour-name").textContent();
+  expect(tourJsonOf(await readOpfsTour(page, "my-sample.zip"))).toContain(
+    `"title": ${JSON.stringify(title)}`,
+  );
+});
+
+test("a link that fails after a file was picked writes nothing into it, and says why as before", async ({
+  page,
+}) => {
+  // Why: the dialog is asked for before the fetch, so the fetch can fail
+  // after the creator picked a file. Nothing may be written there until
+  // the tour's bytes are in hand and the tour opened: the picked file is
+  // left as it was, and the open says what went wrong as it always did.
+  await withBothDialogs(page);
+  await page.goto("/edit.html");
+  await clickBoundSavePicker(page, "never-written.zip");
+  await page
+    .locator("#link-input")
+    .fill("http://127.0.0.1:5197/no-cors/tour.zip");
+  await page.locator("#link-btn").click();
+  await expect(page.locator("#open-error")).toContainText(
+    "Download the file to this computer, then choose it above.",
+    { timeout: 15000 },
+  );
+  expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
+  expect(await opfsSize(page, "never-written.zip")).toBe(0);
+  await expect(page.locator("#topbar")).toBeHidden();
+  await expect(page.locator("#link-btn")).toBeEnabled();
+});
+
+test("a dismissed dialog at the open leaves the tour in this browser, said in the status, and the first Save asks again", async ({
+  page,
+}) => {
+  // Why: dismissing the dialog must not stop the tour from opening, nor
+  // download anything; the tour is then kept only in this browser, which
+  // the status line says beside the unsaved changes, and the first Save
+  // asks for a file as it did before.
+  await withBothDialogs(page);
+  await page.goto("/edit.html");
+  await clickBoundSavePicker(page, "never-written.zip", { dismiss: true });
+  await page.locator("#sample-btn").click();
+  await expect(page.locator("#topbar")).toBeVisible({ timeout: 15000 });
+  expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
+  expect(await opfsSize(page, "never-written.zip")).toBe(0);
+  await page.locator("#no-gps-input").check();
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
+  await save(page);
+  expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(2);
+});
+
+test("on Android a tour from the sample asks for its file as on a desktop, and saves into it by itself", async ({
+  page,
+}) => {
+  // Why: Android was held back from adopting a picked file (a content URI,
+  // with no replace in one step) until a check on a phone showed that a
+  // rewrite cut short by closing the tab leaves the old file whole. Now an
+  // Android browser (told here by its client hints, as Chrome reports it)
+  // asks in the click and saves into the chosen file as a desktop does.
+  await page.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, "userAgentData", {
+      configurable: true,
+      get: () => ({ platform: "Android", mobile: true }),
+    });
+  });
+  await withBothDialogs(page);
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await clickBoundSavePicker(page, "phone-sample.zip");
+  await page.locator("#sample-btn").click();
+  await expect(page.locator("#tour-file")).toHaveText("phone-sample.zip", {
+    timeout: 15000,
+  });
+  expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  await page.locator("#no-gps-input").check();
+  await page.clock.runFor(3_500);
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to phone-sample.zip",
+  );
+  expect(tourJsonOf(await readOpfsTour(page, "phone-sample.zip"))).toContain(
+    '"needsNoGps": true',
+  );
+});

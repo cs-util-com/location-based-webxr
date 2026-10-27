@@ -490,11 +490,14 @@ describe("pickSaveFile", () => {
  * Why: a tour opened from a link or the sample used to be saved as a new
  * copy at every Save, which the creator then had to put in place by hand
  * - and nothing saved by itself. Where the browser has both file dialogs,
- * the first Save now asks for a file and keeps saving into it. Android's
- * picked files cannot be rewritten in one step (no feature check can tell
- * this), so Android keeps the copy until a check on a phone says
- * otherwise; these tests pin which browsers adopt and that the fine print
- * says what each does.
+ * it asks for a file (as it opens, or at its first Save) and keeps saving
+ * into it. Android was held back until a check on a phone (Chrome 155,
+ * Android 10, the file-access check page) showed its picked files behave
+ * as a desktop's: saved under a new name, kept across a reload with one tap
+ * to grant the permission again, and a rewrite cut short by closing the tab
+ * leaves the old file whole (the new bytes are swapped in only when the
+ * write closes). So the platform decides nothing any more; these tests pin
+ * that, and that the fine print says what each browser does.
  */
 describe("adoptsSavedFile", () => {
   // Never called: the check reads only whether the dialogs exist.
@@ -502,59 +505,36 @@ describe("adoptsSavedFile", () => {
     showOpenFilePicker: () => Promise.resolve([]),
     showSaveFilePicker: () => Promise.reject(new Error("not opened")),
   };
-  const desktop =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
-  const android =
-    "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36";
 
-  it("adopts on a desktop browser with both file dialogs", () => {
-    expect(adoptsSavedFile(pickers, { userAgent: desktop })).toBe(true);
-    expect(
-      adoptsSavedFile(pickers, {
-        userAgent: desktop,
-        userAgentData: { platform: "Windows" },
-      }),
-    ).toBe(true);
-  });
-
-  it("does not adopt on Android, by its client hints or its user agent", () => {
-    expect(adoptsSavedFile(pickers, { userAgent: android })).toBe(false);
-    expect(
-      adoptsSavedFile(pickers, {
-        // ASSUMPTION, not yet measured on a device: a desktop-site request
-        // hides Android in the user agent while the client hints still
-        // name it. The file-access check page (step 8, a reload with
-        // Desktop site on) logs both to confirm or refute this; until then
-        // this row pins the code's behaviour for that case, not the
-        // browser's.
-        userAgent: desktop,
-        userAgentData: { platform: "Android" },
-      }),
-    ).toBe(false);
+  it("adopts wherever the browser has both file dialogs, Android included", () => {
+    expect(adoptsSavedFile(pickers)).toBe(true);
   });
 
   it("does not adopt without either file dialog", () => {
     expect(
-      adoptsSavedFile(
-        { showOpenFilePicker: () => Promise.resolve([]) },
-        { userAgent: desktop },
-      ),
+      adoptsSavedFile({ showOpenFilePicker: () => Promise.resolve([]) }),
     ).toBe(false);
     expect(
-      adoptsSavedFile(
-        { showSaveFilePicker: () => Promise.reject(new Error("not opened")) },
-        { userAgent: desktop },
-      ),
+      adoptsSavedFile({
+        showSaveFilePicker: () => Promise.reject(new Error("not opened")),
+      }),
     ).toBe(false);
-    expect(adoptsSavedFile({}, {})).toBe(false);
+    expect(adoptsSavedFile({})).toBe(false);
   });
 
-  it("the fine print says a link's tour is saved into the file its first Save asks for, only where it is", () => {
-    const adopting = saveFinePrint(pickers, { userAgent: desktop });
-    expect(adopting).toContain("asks where to save it at its first Save");
+  // Why: a tour from a link or the sample asks where to save it as it
+  // opens (and a dismissed dialog leaves the first Save to ask), so the
+  // fine print says so where the browser adopts the file, and nowhere else.
+  it("the fine print says a link's tour asks for its file as it opens, only where it is", () => {
+    const adopting = saveFinePrint(pickers);
+    expect(adopting).toContain(
+      "asks where to save it as it opens (or at its first Save)",
+    );
     expect(adopting).not.toContain("new copy");
-    const phone = saveFinePrint(pickers, { userAgent: android });
-    expect(phone).toContain("saved as a new copy");
-    expect(phone).not.toContain("asks where to save it");
+    const openOnly = saveFinePrint({
+      showOpenFilePicker: () => Promise.resolve([]),
+    });
+    expect(openOnly).toContain("saved as a new copy");
+    expect(openOnly).not.toContain("asks where to save it");
   });
 });

@@ -29,10 +29,10 @@ import fc from "fast-check";
 import {
   BILLBOARD_LIFT_M,
   CODE_FLAT_GAP_M,
-  CODE_GROWTH_MAX,
-  CODE_GROWTH_FROM_M,
+  CODE_SCREEN_PX,
   DEFAULT_CODE_SIZE_M,
   codeGrowth,
+  focalPxOf,
   codeQuaternionNue,
   createStationsLayer,
   type StationsLayerDeps,
@@ -192,6 +192,9 @@ const view = (
   stationSelected,
   standing,
   camera,
+  // A 900 px high view through the editor's 50 degree lens.
+  viewportPx: 900,
+  fovDeg: 50,
 });
 
 describe("createStationsLayer", () => {
@@ -477,13 +480,13 @@ describe("createStationsLayer", () => {
     expect(square!.position.distanceTo(at)).toBeCloseTo(0, 9);
   });
 
-  // Why: from high above, a 20 cm code laid flat is a dot or nothing; the
-  // editor draws it larger the farther the camera is (up to 8 times its
-  // printed size), still beside its anchor - the gap grows with it, so a
-  // grown code never covers the wall it hangs on - and a click lands on
-  // the code where it is drawn, not only on its printed square. Near the
-  // camera, or tilted up, it is its printed size.
-  it("grows a code laid flat with the camera's distance, beside its anchor, and picks it where it is drawn", () => {
+  // Why: from high above, a 20 cm code at its printed size is a dot. Laid
+  // flat, it is drawn at least CODE_SCREEN_PX on screen: grown with the
+  // camera's distance, still beside its anchor - the gap grows with it, so
+  // a grown code never covers the wall it hangs on - and picked where it
+  // is drawn; at its printed size where that is larger on screen, and
+  // tilted up. No cap: a cap of 8 times left a 20 cm code about 3 px wide.
+  it("draws a code laid flat at least its size on screen, beside its anchor, and picks it where it is drawn", () => {
     const { d, parent } = deps();
     const layer = createStationsLayer(d);
     const sizeM = 0.2;
@@ -517,9 +520,12 @@ describe("createStationsLayer", () => {
     layer.update(view(0, 0, null, 1));
     const upright = sq.position.clone();
     const shiftZ = () => sq.position.z - upright.z;
+    const focal = focalPxOf(900, 50);
+    /** The square's side on screen (px) from `m` straight above. */
+    const px = (m: number) => (sizeM * sq.scale.x * focal) / m;
 
     layer.update(view(0, 0, null, 0, false, above(300)));
-    expect(sq.scale.x).toBeCloseTo(300 * (1 / CODE_GROWTH_FROM_M), 6);
+    expect(px(300)).toBeCloseTo(CODE_SCREEN_PX, 6);
     expect(sq.scale.y).toBeCloseTo(sq.scale.x, 9);
     expect(layer.stats().codeScales).toEqual([sq.scale.x]);
     // The whole flat layout grows: the near edge stays the grown gap off
@@ -527,7 +533,7 @@ describe("createStationsLayer", () => {
     expect(shiftZ()).toBeCloseTo((sizeM / 2 + CODE_FLAT_GAP_M) * sq.scale.x, 6);
 
     // A ray straight down 0.3 m off the drawn middle meets the grown code
-    // (half its side 0.42 m) but not one at its printed size (0.1 m).
+    // (half its side about 1.9 m) but not one at its printed size (0.1 m).
     const middle = sq.getWorldPosition(new THREE.Vector3());
     const down = (from: THREE.Vector3) => {
       const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
@@ -541,22 +547,83 @@ describe("createStationsLayer", () => {
     };
     expect(layer.pick(down(middle))).toBe("c1");
 
-    // Within the distance its printed size reads at: its printed size.
-    layer.update(view(0, 0, null, 0, false, above(50)));
+    // Near enough that its printed size is larger on screen: that size.
+    layer.update(view(0, 0, null, 0, false, above(10)));
     expect(sq.scale.x).toBe(1);
+    expect(px(10)).toBeGreaterThan(CODE_SCREEN_PX);
     expect(shiftZ()).toBeCloseTo(sizeM / 2 + CODE_FLAT_GAP_M, 6);
     expect(
       layer.pick(down(sq.getWorldPosition(new THREE.Vector3()))),
     ).toBeNull();
 
-    // Far off, at most 8 times; tilted up, its printed size wherever.
+    // Far off, still its size on screen (no cap); tilted up, its printed
+    // size wherever.
     layer.update(view(0, 0, null, 0, false, above(5000)));
-    expect(sq.scale.x).toBe(CODE_GROWTH_MAX);
+    expect(px(5000)).toBeCloseTo(CODE_SCREEN_PX, 6);
+    expect(sq.scale.x).toBeGreaterThan(100);
     layer.update(view(0, 0, null, 1, false, above(5000)));
     expect(sq.scale.x).toBe(1);
     expect(sq.position.distanceTo(upright)).toBeCloseTo(0, 9);
     // Its point (what a click on its row flies to) never moves.
     expect(layer.codePointOf("c1")!.distanceTo(point)).toBe(0);
+
+    // The drawn square's corners in the world (what the page projects to
+    // measure the code on screen): its printed side times its growth.
+    layer.update(view(0, 0, null, 0, false, above(300)));
+    const corners = layer.codeCorners();
+    expect(corners).toHaveLength(1);
+    const [c0, c1, c2, c3] = corners[0]!;
+    for (const [a, b] of [
+      [c0, c1],
+      [c1, c2],
+      [c2, c3],
+      [c3, c0],
+    ] as const) {
+      expect(a!.distanceTo(b!)).toBeCloseTo(sizeM * sq.scale.x, 6);
+    }
+    // Laid flat: all four at one height, the code's middle among them.
+    for (const c of corners[0]!) expect(c.y).toBeCloseTo(c0!.y, 6);
+    const mid = sq.getWorldPosition(new THREE.Vector3());
+    expect(
+      c0!.clone().add(c2!).multiplyScalar(0.5).distanceTo(mid),
+    ).toBeLessThan(0.05);
+  });
+
+  // Why: the same size on screen in a smaller view. The layer reads the
+  // view's height each frame (a phone turned, a window resized), so a
+  // code is not drawn at the desktop's size in a landscape phone's 390 px.
+  it("grows a code for the view's own height", () => {
+    const { d, parent } = deps();
+    const layer = createStationsLayer(d);
+    layer.setTour(
+      manifest([station("a", 0, 50)]),
+      new Map([
+        [
+          "c1",
+          {
+            qr: {
+              geo: {
+                lat: ZERO.lat,
+                lon: ZERO.lng,
+                alt: 516 + N,
+                headingDeg: 0,
+              },
+              physicalSizeM: 0.2,
+            },
+          } as QrLevel,
+        ],
+      ]),
+    );
+    let sq: THREE.Object3D | undefined;
+    parent.traverse((o) => {
+      if (o.userData["pick"] === "c1") sq = o;
+    });
+    const camera = layer.codePointOf("c1")!.add(new THREE.Vector3(0, 300, 0));
+    layer.update({ ...view(0, 0, null, 0, false, camera), viewportPx: 390 });
+    expect((0.2 * sq!.scale.x * focalPxOf(390, 50)) / 300).toBeCloseTo(
+      CODE_SCREEN_PX,
+      6,
+    );
   });
 
   // Why: a click on an item's row or a code's row flies the camera there,
@@ -918,73 +985,112 @@ describe("codeQuaternionNue", () => {
   });
 });
 
+describe("focalPxOf", () => {
+  // Why: a code's size on screen is worked out from the view's height and
+  // lens as a billboard's is: a 900 px high view through 50 degrees is
+  // about 965 px per radian straight ahead.
+  it("is the view's half height over the tangent of half the lens", () => {
+    expect(focalPxOf(900, 50)).toBeCloseTo(
+      450 / Math.tan((25 * Math.PI) / 180),
+      9,
+    );
+    expect(focalPxOf(900, 50)).toBeCloseTo(965, 0);
+    expect(focalPxOf(390, 50)).toBeCloseTo(418, 0);
+  });
+});
+
 describe("codeGrowth", () => {
-  // Why: the storyboard prototype's curve - the distance times 0.014,
-  // between 1 and 8 - so a code laid flat keeps, from about 71 m to about
-  // 571 m, the size on screen it has at 71 m, and is its printed size
-  // nearer. (That size is small: a 20 cm code is about 2.7 px on a 900 px
-  // high view.)
-  it("is 1 within about 71 m, and grows with the distance looking down, up to 8 times", () => {
-    expect(CODE_GROWTH_FROM_M).toBeCloseTo(1 / 0.014, 9);
-    for (const standing of [0, 0.5, 1]) {
-      for (const m of [0, 10, 71, CODE_GROWTH_FROM_M]) {
-        expect(codeGrowth(m, standing), `${m} m, ${standing}`).toBeCloseTo(
-          1,
-          12,
-        );
-      }
+  const F = focalPxOf(900, 50);
+  /** The code's side on screen (px) for a growth `k`. */
+  const px = (k: number, m: number, sizeM = 0.2) => (sizeM * k * F) / m;
+
+  // Why: laid flat, a code is drawn CODE_SCREEN_PX on screen wherever its
+  // printed size would be smaller - for a 20 cm code from about 16 m up on
+  // a 900 px high view - and at its printed size nearer, where that is
+  // larger. No cap: under a cap of 8 a 20 cm code stayed about 3 px.
+  it("draws a code its size on screen from where its printed size is smaller, and its printed size nearer", () => {
+    expect(CODE_SCREEN_PX).toBe(12);
+    for (const m of [17, 50, 100, 300, 1100, 5000]) {
+      expect(px(codeGrowth(m, 0, 0.2, F), m), `${m} m`).toBeCloseTo(
+        CODE_SCREEN_PX,
+        9,
+      );
     }
-    expect(codeGrowth(100, 0)).toBeCloseTo(1.4, 12);
-    expect(codeGrowth(300, 0)).toBeCloseTo(4.2, 12);
-    expect(codeGrowth(8 * CODE_GROWTH_FROM_M, 0)).toBeCloseTo(8, 12);
-    expect(codeGrowth(5000, 0)).toBe(CODE_GROWTH_MAX);
-    expect(CODE_GROWTH_MAX).toBe(8);
+    for (const m of [0, 2.5, 10, 16]) {
+      expect(codeGrowth(m, 0, 0.2, F), `${m} m`).toBe(1);
+    }
+    // A larger code starts growing farther off: a 66 cm poster from 53 m.
+    expect(codeGrowth(50, 0, 0.66, F)).toBe(1);
+    expect(px(codeGrowth(100, 0, 0.66, F), 100, 0.66)).toBeCloseTo(
+      CODE_SCREEN_PX,
+      9,
+    );
   });
 
   // Why: the code grows only as far as it lies flat: tilted up it stands
   // at its printed size where it was measured, and halfway it is halfway.
   it("grows only as far as the code lies flat", () => {
-    expect(codeGrowth(5000, 1)).toBe(1);
-    expect(codeGrowth(5000, 0.5)).toBeCloseTo(4.5, 12);
-    expect(codeGrowth(300, 0.25)).toBeCloseTo(1 + 3.2 * 0.75, 12);
+    const far = codeGrowth(300, 0, 0.2, F);
+    expect(far).toBeGreaterThan(10);
+    expect(codeGrowth(300, 1, 0.2, F)).toBe(1);
+    expect(codeGrowth(300, 0.5, 0.2, F)).toBeCloseTo(1 + (far - 1) * 0.5, 12);
+    expect(codeGrowth(300, 0.25, 0.2, F)).toBeCloseTo(1 + (far - 1) * 0.75, 12);
   });
 
-  // Why: a camera or a morph that is not a number (a view not set up yet)
-  // draws the code at its printed size, never at no size or a NaN one.
-  it("is 1 for a distance or a morph that is not a number", () => {
-    for (const [m, s] of [
-      [Number.NaN, 0],
-      [Number.POSITIVE_INFINITY, 0],
-      [-5, 0],
-      [300, Number.NaN],
+  // Why: a camera, a morph, a size or a view that is not a usable number
+  // (a view not set up yet, a code without a size) draws the code at its
+  // printed size, never at no size, an endless one or a NaN one.
+  it("is 1 for a distance, morph, size or view that is not a usable number", () => {
+    for (const [m, s, size, f] of [
+      [Number.NaN, 0, 0.2, F],
+      [Number.POSITIVE_INFINITY, 0, 0.2, F],
+      [-5, 0, 0.2, F],
+      [300, Number.NaN, 0.2, F],
+      [300, 0, 0, F],
+      [300, 0, -0.2, F],
+      [300, 0, Number.NaN, F],
+      [300, 0, 0.2, 0],
+      [300, 0, 0.2, Number.NaN],
+      [300, 0, 0.2, Number.POSITIVE_INFINITY],
     ] as const) {
-      expect(codeGrowth(m, s), `${m}, ${s}`).toBe(1);
+      expect(codeGrowth(m, s, size, f), `${m}, ${s}, ${size}, ${f}`).toBe(1);
     }
     // A morph past either end is taken at that end.
-    expect(codeGrowth(300, -1)).toBeCloseTo(4.2, 12);
-    expect(codeGrowth(300, 2)).toBe(1);
+    expect(codeGrowth(300, -1, 0.2, F)).toBeCloseTo(
+      codeGrowth(300, 0, 0.2, F),
+      12,
+    );
+    expect(codeGrowth(300, 2, 0.2, F)).toBe(1);
   });
 
-  // Why: whatever the camera does, the code is never drawn smaller than
-  // printed nor past 8 times, grows (or stays) as the camera goes farther,
-  // and shrinks (or stays) as the view tilts up - no jump the eye catches.
-  it("stays within 1 to 8 times, grows with distance, shrinks as the view tilts up", () => {
+  // Why: whatever the camera does, a code is never drawn smaller than
+  // printed, and laid flat it is exactly the larger of its printed size
+  // on screen and CODE_SCREEN_PX; it grows (or stays) as the camera goes
+  // farther and shrinks (or stays) as the view tilts up - no jump the eye
+  // catches.
+  it("is at least 1, the larger of its printed and its screen size laid flat, grows with distance, shrinks as the view tilts up", () => {
     fc.assert(
       fc.property(
-        fc.double({ min: 0, max: 20_000, noNaN: true }),
-        fc.double({ min: 0, max: 20_000, noNaN: true }),
+        fc.double({ min: 0.5, max: 20_000, noNaN: true }),
+        fc.double({ min: 0.5, max: 20_000, noNaN: true }),
         fc.double({ min: 0, max: 1, noNaN: true }),
         fc.double({ min: 0, max: 1, noNaN: true }),
-        (m1, m2, s1, s2) => {
-          const k = codeGrowth(m1, s1);
+        fc.double({ min: 0.02, max: 2, noNaN: true }),
+        fc.double({ min: 100, max: 3000, noNaN: true }),
+        (m1, m2, s1, s2, size, f) => {
+          const k = codeGrowth(m1, s1, size, f);
           expect(k).toBeGreaterThanOrEqual(1);
-          expect(k).toBeLessThanOrEqual(CODE_GROWTH_MAX);
+          const printedPx = (size * f) / m1;
+          const flatPx = (size * codeGrowth(m1, 0, size, f) * f) / m1;
+          expect(flatPx).toBeCloseTo(Math.max(printedPx, CODE_SCREEN_PX), 6);
           const [near, far] = m1 <= m2 ? [m1, m2] : [m2, m1];
-          expect(codeGrowth(far, s1)).toBeGreaterThanOrEqual(
-            codeGrowth(near, s1),
+          expect(codeGrowth(far, s1, size, f)).toBeGreaterThanOrEqual(
+            codeGrowth(near, s1, size, f),
           );
           const [low, high] = s1 <= s2 ? [s1, s2] : [s2, s1];
-          expect(codeGrowth(m1, high)).toBeLessThanOrEqual(codeGrowth(m1, low));
+          expect(codeGrowth(m1, high, size, f)).toBeLessThanOrEqual(
+            codeGrowth(m1, low, size, f),
+          );
         },
       ),
     );

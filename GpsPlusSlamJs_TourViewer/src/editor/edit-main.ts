@@ -85,7 +85,11 @@ import {
   openTourForEditing,
 } from "./editor-open.js";
 import { holdPageInert } from "./page-inert.js";
-import { fetchTourFile, linkOpenErrorText } from "./editor-link.js";
+import {
+  fetchTourFile,
+  linkFileName,
+  linkOpenErrorText,
+} from "./editor-link.js";
 import { driveProxyBaseUrl } from "../drive-proxy-url.js";
 import {
   createEditorDraft,
@@ -838,6 +842,13 @@ function pendingSuffix(): string {
     return draft.backsUp()
       ? " - large tour: saved when you press Save; your changes are kept in this browser meanwhile"
       : " - large tour: saved when you press Save";
+  }
+  // No file saved into by itself (a browser without the save dialog, a
+  // phone, a dismissed dialog): the browser's draft is all there is until
+  // Save, so the line says so - the one warning against losing work on
+  // such a browser. "Kept" only when the draft does keep them.
+  if (target === null && draft.backsUp()) {
+    return " - kept in this browser until you save";
   }
   return "";
 }
@@ -1983,6 +1994,7 @@ async function openFile(
   leaveFile();
   openedFile = { name: outcome.fileName, handle: picked };
   savedIntoChosen = false;
+  chosenAtOpen = false;
   fileKey = outcome.session.archive.url;
   const writes = draft.writes();
   tourDraft = writes;
@@ -2391,8 +2403,8 @@ async function adoptChosen(
  * a click, and the build can take longer (the walk's move's rule). Null
  * where there is nothing to ask: no tour, a file to save into (or one the
  * page may not write: that stays a download), nothing to save, a save
- * running, or a browser that does not adopt (`adoptsSavedFile`: none on
- * Android until a phone check).
+ * running, or a browser that does not adopt (`adoptsSavedFile`: one
+ * without both file dialogs).
  */
 function askSaveFile(): Promise<SaveFilePick> | null {
   const mine = editor;
@@ -2402,10 +2414,7 @@ function askSaveFile(): Promise<SaveFilePick> | null {
     (openedFile?.handle ?? null) !== null ||
     saving() ||
     !unsavedWork() ||
-    !adoptsSavedFile(
-      window as unknown as PickerWindow & SavePickerWindow,
-      navigator,
-    )
+    !adoptsSavedFile(window as unknown as PickerWindow & SavePickerWindow)
   ) {
     return null;
   }
@@ -2416,6 +2425,92 @@ function askSaveFile(): Promise<SaveFilePick> | null {
  *  asked for (`askSaveFile`), not into one opened: Done names it as the
  *  file chosen then. Reset by every open. */
 let savedIntoChosen = false;
+
+/** The open tour from a link or the sample was written into the file its
+ *  open asked for (`keepInChosenFile`): Done names it as the file chosen
+ *  then. Reset by every open. */
+let chosenAtOpen = false;
+
+/**
+ * A tour from a link or the sample asks where to save it IN the open's
+ * click, before any await (Chromium opens the dialog only within a few
+ * seconds of a click, and the fetch can take longer), so it is a file from
+ * its first edit. Only where the browser adopts a saved file
+ * (`adoptsSavedFile`): without the save dialog the tour stays in this
+ * browser's draft until Save, as before. Null there, and for text that is
+ * not a link (`name` null: the open refuses it).
+ */
+function askOpenSaveFile(name: string | null): Promise<SaveFilePick> | null {
+  if (
+    name === null ||
+    !adoptsSavedFile(window as unknown as PickerWindow & SavePickerWindow)
+  ) {
+    return null;
+  }
+  return pickSaveFile(window as unknown as SavePickerWindow, name);
+}
+
+/** The file picked at the open of `mine`, while it is still the open tour
+ *  and saves into no file yet (a Save may have asked meanwhile); null once
+ *  the dialog was dismissed or refused, or the tour changed. */
+async function stillToChoose(
+  mine: EditorSession,
+  pick: Promise<SaveFilePick>,
+): Promise<FileSystemFileHandle | null> {
+  const picked = await pick;
+  if (picked.kind !== "picked" || editor !== mine) return null;
+  if (target !== null || (openedFile?.handle ?? null) !== null) return null;
+  return picked.handle;
+}
+
+/** The file picked at the open could not be written: the line shows the
+ *  tour unsaved again, and a toast that stays says why and what follows. */
+function chosenFileUnwritten(name: string, err: unknown): void {
+  renderSaveState();
+  fileToasts.push(
+    toast(
+      `The tour is open, but ${name} could not be written (${err instanceof Error ? err.message : String(err)}). Your changes are kept in this browser until you save, and Save asks for a file again.`,
+      undefined,
+      null,
+    ),
+  );
+}
+
+/**
+ * The tour `mine`, just opened from `fetched` (a link's or the sample's
+ * bytes), becomes the file its open asked for (`askOpenSaveFile`): once
+ * the creator picked one, the fetched bytes are written there unchanged and
+ * the file is adopted - saved into in place from then on, and by itself,
+ * as a chosen file is (`adoptChosen`). Called only once the tour opened:
+ * a failed fetch or a refused file writes nothing into the picked file. A
+ * dismissed dialog writes nothing either; the first Save asks again. The
+ * write says itself in the status line while it runs, and its outcome in a
+ * toast.
+ */
+async function keepInChosenFile(
+  mine: EditorSession,
+  fetched: File,
+  pick: Promise<SaveFilePick>,
+): Promise<void> {
+  const handle = await stillToChoose(mine, pick);
+  if (handle === null) return;
+  showSaveStatus("saving", `Saving into ${handle.name}…`, false);
+  try {
+    await writeFileOrAbort(handle, fetched);
+  } catch (err) {
+    if (editor === mine) chosenFileUnwritten(handle.name, err);
+    return;
+  }
+  if (editor !== mine) return;
+  chosenAtOpen = true;
+  renderSaveState();
+  await adoptChosen(mine, handle);
+  if (editor === mine && openedFile?.handle === handle) {
+    toast(
+      `Saved to ${handle.name}. Your changes are saved into it by themselves.`,
+    );
+  }
+}
 
 /** Whether the browser was asked to keep this site's storage (once). */
 let storageAsked = false;
@@ -2837,6 +2932,8 @@ drop.addEventListener("drop", (event) => {
 });
 sampleButton.addEventListener("click", () => {
   if (ui().busy) return;
+  // First, in the click: where to save it (`askOpenSaveFile`).
+  const pick = askOpenSaveFile(SAMPLE_NAME);
   openError.hidden = true;
   setBusy(true, "Fetching the sample tour…");
   fetch(SAMPLE_URL)
@@ -2846,9 +2943,10 @@ sampleButton.addEventListener("click", () => {
       }
       const blob = await response.blob();
       setBusy(false, "");
-      await openFile(
-        new File([blob], SAMPLE_NAME, { type: "application/zip" }),
-      );
+      const file = new File([blob], SAMPLE_NAME, { type: "application/zip" });
+      if ((await openFile(file)) && pick !== null && editor !== null) {
+        void keepInChosenFile(editor, file, pick);
+      }
     })
     .catch((err: unknown) => {
       setBusy(false, "");
@@ -2865,6 +2963,8 @@ linkForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (ui().busy) return;
   const link = linkInput.value;
+  // First, in the submit: where to save it (`askOpenSaveFile`).
+  const pick = askOpenSaveFile(linkFileName(link));
   openError.hidden = true;
   setBusy(true, "Fetching the tour from its link…");
   fetchTourFile(link, {
@@ -2872,8 +2972,12 @@ linkForm.addEventListener("submit", (event) => {
   })
     .then(async (file) => {
       setBusy(false, "");
+      if (!(await openFile(file))) return;
       // Done names the host the tour was fetched from (W2).
-      if (await openFile(file)) linkHost = hostOfLink(link);
+      linkHost = hostOfLink(link);
+      if (pick !== null && editor !== null) {
+        void keepInChosenFile(editor, file, pick);
+      }
     })
     .catch((err: unknown) => {
       setBusy(false, "");
@@ -2926,7 +3030,11 @@ function doneSaved(): DoneSaved {
       ? {
           kind: "in-place",
           name: delivered.name,
-          ...(savedIntoChosen ? { chosenAtSave: true } : {}),
+          ...(savedIntoChosen
+            ? { chosenAtSave: true }
+            : chosenAtOpen
+              ? { chosenAtOpen: true }
+              : {}),
         }
       : { kind: "downloaded", name: delivered.name };
   }
@@ -3324,7 +3432,6 @@ doneButton.addEventListener("click", () => {
 // only where the file picker exists.
 element("open-fineprint").textContent = saveFinePrint(
   window as unknown as PickerWindow & SavePickerWindow,
-  navigator,
 );
 
 /**

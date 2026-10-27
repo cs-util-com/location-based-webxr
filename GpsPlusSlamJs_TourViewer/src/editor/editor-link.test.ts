@@ -14,7 +14,12 @@ import { OpenRemoteArchiveError } from "gps-plus-slam-app-framework/storage";
 import { describe, expect, it, vi } from "vitest";
 
 import { HOST_REFUSED_TEXT, describeOpenError } from "../open-errors.js";
-import { NOT_A_LINK, fetchTourFile, linkOpenErrorText } from "./editor-link.js";
+import {
+  NOT_A_LINK,
+  fetchTourFile,
+  linkFileName,
+  linkOpenErrorText,
+} from "./editor-link.js";
 
 function fakeArchive(bytes: Uint8Array, url: string) {
   return {
@@ -79,6 +84,30 @@ describe("fetchTourFile", () => {
       await expect(fetchTourFile(text, { open })).rejects.toThrow(NOT_A_LINK);
     }
     expect(open).not.toHaveBeenCalled();
+  });
+});
+
+// Why: a tour opened from its link asks where to save it in the click,
+// before the fetch - so the save dialog's suggested name must be the name
+// the fetched file will carry, worked out from the link alone; and text
+// that is not a link opens no dialog at all (the open refuses it).
+describe("linkFileName", () => {
+  it("is the name the fetched file carries, before any request", async () => {
+    expect(linkFileName(LINK)).toBe("Castle walk.zip");
+    expect(linkFileName(`  ${LINK}  `)).toBe("Castle walk.zip");
+    expect(linkFileName("https://drive.example.test/file/d/abc/view")).toBe(
+      "tour.zip",
+    );
+    const file = await fetchTourFile(LINK, {
+      open: () => Promise.resolve(fakeArchive(new Uint8Array([1, 2]), LINK)),
+    });
+    expect(file.name).toBe(linkFileName(LINK));
+  });
+
+  it("is null for what is not a web link", () => {
+    for (const text of ["", "   ", "castle.zip", "ftp://example.test/a.zip"]) {
+      expect(linkFileName(text)).toBeNull();
+    }
   });
 });
 
