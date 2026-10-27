@@ -3642,7 +3642,9 @@ test("a changed needs-no-GPS setting survives a closed tab, and Restore brings i
   await page.goto("/edit.html");
   await openThroughChooser(page, buffer, "editor-fixture.zip");
   await page.locator("#no-gps-input").check();
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
   await backedUp(page);
   await page.close();
   const next = await newEditorPage(context);
@@ -3653,7 +3655,9 @@ test("a changed needs-no-GPS setting survives a closed tab, and Restore brings i
   await expect(next.locator("#no-gps-input")).not.toBeChecked();
   await offer.locator("button", { hasText: "Restore" }).click();
   await expect(next.locator("#no-gps-input")).toBeChecked();
-  await expect(next.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(next.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
 });
 
 /**
@@ -3700,7 +3704,9 @@ test("the tour's name opens its details: applied, saved into tour.json, and an e
   await expect(page.locator("#tour-name")).toHaveText("Castle walk");
   await expect(page.locator("#tour-name")).toBeFocused();
   await expect(page).toHaveTitle("Castle walk - Tour editor");
-  await expect(page.locator("#save-status")).toHaveText("4 changes not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "4 changes not saved - kept in this browser until you save",
+  );
   const saved = await saveAndRead(page);
   expect(saved.manifest).toMatchObject({
     version: 3,
@@ -3723,7 +3729,9 @@ test("the tour's name opens its details: applied, saved into tour.json, and an e
   await name.fill("");
   await page.locator("#details-apply").click();
   await expect(page.locator("#tour-name")).toHaveText("editor-fixture.zip");
-  await expect(page.locator("#save-status")).toHaveText("1 change not saved");
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
   const untitled = await saveAndRead(page);
   expect(untitled.manifest).not.toHaveProperty("title");
   expect(untitled.manifest).toMatchObject({ cover: "photo-ok" });
