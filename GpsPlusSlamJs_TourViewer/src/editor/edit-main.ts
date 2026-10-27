@@ -51,6 +51,7 @@ import {
 import { describeIntegrityError, olderFormatRefusal } from "../open-errors.js";
 import { debugCapturesOf } from "../debug-captures.js";
 import { pictureProblem } from "../image-cap.js";
+import { objectLook } from "../object-describe.js";
 import { scanEntryNames } from "../tour-read-set.js";
 import { openDraftStore } from "../draft-store-root.js";
 import {
@@ -1365,7 +1366,13 @@ function splitItem(id: string): void {
     toast(outcome.reason);
     return;
   }
-  const word = kind === "model" ? "3D model" : (kind ?? "item");
+  // The pages' word (a pin, a photo), never the file's block kind.
+  const word =
+    kind === "model"
+      ? "3D model"
+      : kind === "shortText" || kind === "picture"
+        ? objectLook(kind)
+        : "item";
   showNewStation(
     outcome.stationId,
     (title) => `New station "${title}" with the ${word} in it`,
