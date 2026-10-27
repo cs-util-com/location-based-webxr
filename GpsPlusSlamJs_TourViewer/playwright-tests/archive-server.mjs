@@ -369,6 +369,9 @@ async function buildStationsZip({
           {
             id: "gate",
             title: "The gate",
+            ...(storyBlocks
+              ? { description: "The castle's main gate, built in 1400." }
+              : {}),
             geo: geo(2, 1),
             activateRadiusM: 30,
             foundRadiusM: 5,

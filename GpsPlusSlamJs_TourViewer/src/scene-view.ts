@@ -39,6 +39,9 @@ import { stationTitle } from "./station-run.js";
 export interface SceneViewDom {
   readonly panel: Pick<HTMLElement, "hidden">;
   readonly title: Pick<HTMLElement, "textContent">;
+  /** The station's description under its name (B2b step 6); hidden for a
+   *  station without one. */
+  readonly description: Pick<HTMLElement, "textContent" | "hidden">;
   /** A character's name; hidden for other steps. */
   readonly speaker: Pick<HTMLElement, "textContent" | "hidden">;
   /** Text, caption or transcript: every step has words (captions always). */
@@ -56,7 +59,7 @@ export interface SceneViewDom {
 
 /** The sound of a step (one channel: a new clip stops the previous). */
 /** What the story card uses of its `<video>` element. */
-export type SceneVideo = Pick<
+type SceneVideo = Pick<
   HTMLVideoElement,
   "src" | "poster" | "hidden" | "pause" | "removeAttribute" | "load"
 >;
@@ -439,8 +442,15 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     };
     dom.panel.hidden = false;
     dom.title.textContent = stationTitle(station);
+    showDescription(station.description ?? "");
     renderQueue();
     render(story.player.current());
+  }
+
+  /** The station's description under its name; none hides the line. */
+  function showDescription(text: string): void {
+    dom.description.textContent = text;
+    dom.description.hidden = text === "";
   }
 
   function endStory(): void {
@@ -449,6 +459,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     releaseStep();
     deps.stage.clear();
     dom.panel.hidden = true;
+    showDescription("");
     if (ended !== null) deps.onStoryEnd(ended.station.id);
     const next = queue.shift();
     if (next !== undefined) start(next);

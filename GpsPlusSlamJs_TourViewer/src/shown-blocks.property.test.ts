@@ -167,6 +167,7 @@ describe("a story's world (property)", () => {
         const dom: SceneViewDom = {
           panel: { hidden: true },
           title: { textContent: "" },
+          description: { textContent: "", hidden: true },
           speaker: { textContent: "", hidden: true },
           text: { textContent: "" },
           status: { textContent: "" },

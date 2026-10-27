@@ -154,3 +154,14 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
 - Tests: `scene-view.test.ts` "a story's world blocks (B2b)";
   `shown-blocks.property.test.ts` drives this view under any action
   sequence.
+
+## The station's name and description (B2b step 6)
+
+- `dom.description`: the station's `description` (plain text, set with
+  `textContent`, line breaks kept by `white-space: pre-line`) under its
+  name while its story plays; hidden for a station without one and when
+  the story ends, so a queued station's card never keeps the last one's.
+- A station with no playable step shows no card, so neither its name nor
+  its description (as before: the walk's sheet names it).
+- Tests: `scene-view.test.ts` "the station's name and description";
+  the e2e `story-blocks.spec.js` at the gate.

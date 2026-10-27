@@ -936,6 +936,7 @@ const stations = wireVisitorStations({
     scene: {
       panel: element("scene-panel"),
       title: element("scene-title"),
+      description: element("scene-description"),
       speaker: element("scene-speaker"),
       text: element("scene-text"),
       status: element("scene-status"),

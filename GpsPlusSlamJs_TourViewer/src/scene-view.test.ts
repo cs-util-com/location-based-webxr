@@ -39,6 +39,7 @@ function fakeDom() {
   const dom: SceneViewDom & { video: typeof video } = {
     panel: { hidden: true },
     title: { textContent: "" },
+    description: { textContent: "", hidden: true },
     speaker: { textContent: "", hidden: true },
     text: { textContent: "" },
     status: { textContent: "" },
@@ -725,6 +726,32 @@ describe("createSceneView", () => {
     expect(h.stage.clear).toHaveBeenCalled();
     h.view.continueTapped();
     expect(h.ended).toEqual([]);
+  });
+});
+
+describe("the station's name and description (B2b step 6)", () => {
+  // Why: at the station the visitor reads where they are - its name over
+  // the story card, and the creator's description of the place below it
+  // (the format's `station.description`). A station without one shows no
+  // empty line, and the next station's card never keeps the last one's.
+  it("shows the station's name and description over its story, none for a station without one, and hides it at the end", () => {
+    const h = harness();
+    h.view.offer({
+      ...station("gate", [tap("a", "Hello")], "The gate"),
+      description: "The castle's main gate,\nbuilt in 1400.",
+    });
+    h.view.offer(station("well", [tap("b", "Water")], "The well"));
+    expect(h.dom.title.textContent).toBe("The gate");
+    expect(h.dom.description).toEqual({
+      textContent: "The castle's main gate,\nbuilt in 1400.",
+      hidden: false,
+    });
+    h.view.continueTapped(); // the gate's end; the well's story starts
+    expect(h.dom.title.textContent).toBe("The well");
+    expect(h.dom.description).toEqual({ textContent: "", hidden: true });
+    h.view.continueTapped();
+    expect(h.dom.panel.hidden).toBe(true);
+    expect(h.dom.description.hidden).toBe(true);
   });
 });
 

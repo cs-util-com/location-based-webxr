@@ -2500,6 +2500,12 @@
       #scene-video[hidden] {
         display: none;
       }
+      /* The station's description under its name (B2b step 6). */
+      #scene-description {
+        color: var(--walk-muted);
+        font-size: 14px;
+        white-space: pre-line;
+      }
       /* A long text's paragraphs (B2b): P keeps them a blank line apart. */
       #scene-text {
         white-space: pre-line;
@@ -6180,6 +6186,11 @@
                     hidden
                   >
                     <h3 id="scene-title" data-testid="scene-title"></h3>
+                    <p
+                      id="scene-description"
+                      data-testid="scene-description"
+                      hidden
+                    ></p>
                     <p
                       id="scene-speaker"
                       data-testid="scene-speaker"

@@ -139,6 +139,20 @@ async function continueTo(page, text) {
   await expect(page.getByTestId("scene-text")).toHaveText(text);
 }
 
+test("at the station the visitor reads its name and description over its story", async ({
+  page,
+}) => {
+  // Why this test matters (B2b step 6): the format carries a station's
+  // description, and the visitor never saw it. At the station it now
+  // stands under the station's name, over the story card.
+  await atTheGate(page);
+  await expect(page.getByTestId("scene-title")).toHaveText("The gate");
+  await expect(page.getByTestId("scene-description")).toHaveText(
+    "The castle's main gate, built in 1400.",
+  );
+  await expect(page.getByTestId("scene-description")).toBeVisible();
+});
+
 test("the video card plays its clip with the browser's controls, the transcript below", async ({
   page,
 }) => {
