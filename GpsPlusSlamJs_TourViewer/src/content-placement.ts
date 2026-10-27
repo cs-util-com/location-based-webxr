@@ -28,8 +28,9 @@
  * stay rigid while GPS re-solves (authoring plan 2026-09-28-0953 §3.2, M2c).
  *
  * A tour is played one station at a time by `renderTourStation`: a group
- * at the station's geo pose, its FREE blocks (pins, pictures' planes)
- * children at their LOCAL poses, so a station moves them all. A block a
+ * at the station's geo pose, its FREE blocks (pins, pictures' planes,
+ * placed models when the caller can load one) children at their LOCAL
+ * poses, so a station moves them all. A block a
  * story step shows is the story's, never drawn here. The visitor's page
  * renders a station only while its content shows (visitor plan
  * 2026-10-18-2349 M2, `station-content.ts`).
@@ -55,9 +56,11 @@ import type {
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
+import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
 import { Group, type Object3D, type Texture } from "three";
 
 import { placeCapturedImagePlanes } from "./image-planes.js";
+import { modelScale } from "./model-scale.js";
 
 /** Ids are file stems (`content/<id>.jpg`) and must be unique in the
  *  manifest: 12 base-36 characters of randomness, path-safe by construction. */
@@ -252,6 +255,13 @@ export function renderTourObjects(
 export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
   readonly assets: readonly TourAsset[];
   readonly alive?: () => boolean;
+  /**
+   * A placed model's `.glb` by its archive entry, as a three scene (the
+   * visitor: the open tour's read and `loadGlbModel`, station blocks plan
+   * B2b). Absent: a placed model is left out quietly, as before (the 3D
+   * editor draws its own models on the group).
+   */
+  readonly loadModel?: (entryName: string) => Promise<Object3D | null>;
 };
 
 /**
@@ -299,11 +309,17 @@ export async function renderTourStation(
 }
 
 /** What the renderer draws of one free block: a label with its text, a
- *  plane with its picture's archive entry (null: the tour lacks its
- *  asset), or nothing (a placed model: no renderer draws one yet). */
+ *  plane with its picture's archive entry, a placed model with its file's
+ *  entry and its size (null entry: the tour lacks its asset), or nothing. */
 type Drawn =
   | { readonly id: string; readonly as: "label"; readonly text: string }
   | { readonly id: string; readonly as: "plane"; readonly entry: string | null }
+  | {
+      readonly id: string;
+      readonly as: "model";
+      readonly entry: string | null;
+      readonly sizeM: number;
+    }
   | { readonly id: string; readonly as: "none" };
 
 /** A world-view object as drawn: a picture's file is its inline asset. */
@@ -330,18 +346,33 @@ function drawnBlock(
   if (block.kind === "picture" && block.view === "plane") {
     return { id: block.id, as: "plane", entry: paths.get(block.image) ?? null };
   }
+  if (
+    block.kind === "model" &&
+    block.view === "placed" &&
+    block.sizeM !== undefined
+  ) {
+    return {
+      id: block.id,
+      as: "model",
+      entry: paths.get(block.asset) ?? null,
+      sizeM: block.sizeM,
+    };
+  }
   return { id: block.id, as: "none" };
 }
 
-/** The one renderer: pins as labels, pictures as planes, each at its pose
- *  in `scene`'s frame, under one group added once everything decoded. */
+/** The one renderer: pins as labels, pictures as planes, placed models at
+ *  their size (`modelScale`), each at its pose in `scene`'s frame, under
+ *  one group added once everything decoded. */
 async function renderContent(
   objects: readonly { readonly drawn: Drawn; readonly pose: ObjectPoseNue }[],
   deps: Omit<TourObjectRendererDeps, "poseOf"> & {
     alive?: () => boolean;
+    loadModel?: TourStationRendererDeps["loadModel"];
   },
 ): Promise<RenderedTourObjects> {
   const labels: { object: Object3D; dispose(): void }[] = [];
+  const models: Object3D[] = [];
   const photoPoses: ObjectPoseNue[] = [];
   const photoIds: string[] = [];
   const textures: Texture[] = [];
@@ -367,10 +398,30 @@ async function renderContent(
         labels.push(label);
         continue;
       }
-      if (drawn.as === "none") {
-        // No renderer draws a placed model yet: left out quietly, as a
-        // lenient read leaves out what it cannot show. Not in `skipped`:
-        // "could not load" would claim a download failed.
+      if (drawn.as === "none" || (drawn.as === "model" && !deps.loadModel)) {
+        // Nothing this renderer draws (or a model with no loader: the 3D
+        // editor draws its own): left out quietly, as a lenient read
+        // leaves out what it cannot show. Not in `skipped`: "could not
+        // load" would claim a download failed.
+        continue;
+      }
+      if (drawn.as === "model") {
+        const model =
+          drawn.entry === null
+            ? null
+            : await deps
+                .loadModel?.(drawn.entry)
+                .catch((): Object3D | null => null);
+        if (model === null || model === undefined) {
+          skipped.push(drawn.id);
+          continue;
+        }
+        // The size the tour names, by the one rule every page shares.
+        model.scale.setScalar(modelScale(model, drawn.sizeM));
+        model.position.set(...pose.positionNue);
+        model.quaternion.set(...pose.rotationNue);
+        model.userData["objectId"] = drawn.id;
+        models.push(model);
         continue;
       }
       const texture =
@@ -397,17 +448,20 @@ async function renderContent(
       const id = photoIds[i];
       if (id !== undefined) plane.userData["objectId"] = id;
     });
+    // The models after the planes, so the planes' order above holds.
+    for (const model of models) group.add(model);
   } catch (error) {
     // A constructor that throws half way (a label without a canvas) must
     // not strand what was made before it: a station is drawn and freed
     // again as the visitor walks.
     for (const label of labels) label.dispose();
     for (const texture of textures) texture.dispose();
+    for (const model of models) disposeObject3D(model);
     throw error;
   }
   deps.scene.add(group);
   return {
-    count: labels.length + planes.count,
+    count: labels.length + planes.count + models.length,
     root: group,
     skipped,
     dispose: () => {
@@ -418,6 +472,7 @@ async function renderContent(
       deps.scene.remove(group);
       for (const label of labels) label.dispose();
       planes.dispose();
+      for (const model of models) disposeObject3D(model);
     },
   };
 }

@@ -23,7 +23,7 @@ import { save, startOnMap } from "./editor-menus.js";
  * archive server's `/ranges-ok/blocks-tour.zip`: the stations tour, its
  * gate also holding a captured photo with its own image asset, a picture
  * of the tour's knight image and a placed arch), end to end: the visitor
- * draws the pin and both pictures (a placed model is not drawn yet), and
+ * draws the pin, both pictures and the placed model (B2b), and
  * the desktop editor opens it, edits the pin, saves, and the saved file
  * opens again with every block, its story and its assets.
  */
@@ -49,15 +49,15 @@ function drawnIdsIn(page, group) {
   }, group);
 }
 
-test("the visitor sees a station's pin, its captured photo and its picture in the world; its placed model is not drawn yet", async ({
+test("the visitor sees a station's pin, its captured photo, its picture and its placed model in the world", async ({
   page,
 }) => {
   // Why this test matters: a free block is drawn by its view - a pin as a
   // label, a picture as a plane whose file is the tour's asset of its
   // image, whether the picture's own (a captured photo) or another of the
   // tour's images. A picture read through the wrong path would be skipped
-  // without a word in the scene, and a placed model must stay undrawn
-  // until a renderer draws it.
+  // without a word in the scene. A placed model is drawn since B2b (it
+  // was left out before): at its size, under its station's group.
   await installTourViewerArFakes(page);
   await page.goto(`/?qr=${encodeURIComponent(BLOCKS_ARCHIVE)}`);
   await expect(page.locator("body")).toHaveAttribute(
@@ -81,7 +81,7 @@ test("the visitor sees a station's pin, its captured photo and its picture in th
       },
       { timeout: 20000 },
     )
-    .toEqual(["gate-knight", "gate-photo", "gate-pin"]);
+    .toEqual(["gate-arch", "gate-knight", "gate-photo", "gate-pin"]);
 });
 
 /**

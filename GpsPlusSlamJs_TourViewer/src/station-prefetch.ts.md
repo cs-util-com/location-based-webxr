@@ -33,8 +33,9 @@ far the visitor is from each offered station. Plan:
 - `stationAssetIds(station)` - the asset ids a story reads: the blocks
   its `show` steps name, in step order, once each (pictures, sounds,
   voices; a figure or a model only in its `stage` view, the one the story
-  draws; never a video nor its poster, K4 review R3). A station's free
-  blocks are the world's, never read here.
+  draws; never a video nor its poster, K4 review R3), then the files of
+  the station's free PLACED models (B2b, G2 follow-up 9: drawn with the
+  station, so read ahead with it). Free pictures are read on their own.
 - `decodeDivisor(size)` - the divisor that brings a figure of this size
   within `MAX_DECODE_SIDE_PX` (a size is required: K4 review R17 removed
   the "no size: 1" case).

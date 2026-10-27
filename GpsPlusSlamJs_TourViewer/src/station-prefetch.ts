@@ -34,6 +34,7 @@ import type {
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
+import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { imageInfoOfBlob } from "gps-plus-slam-app-framework/utils/image-header";
 
 /**
@@ -96,8 +97,10 @@ export async function decodeFigure<T>(
  *  (`scene-view.ts`): a figure or a model only in its stage view, a
  *  character's voice in either. Never a video (K4 review R3): a video
  *  block shows its transcript, and a video may be as large as the tour's
- *  entry cap allows; nor its poster, which nothing draws yet. A station's
- *  free blocks are the world's, read on their own. */
+ *  entry cap allows; nor its poster, which nothing draws yet. Then the
+ *  files of the station's free PLACED models (station blocks plan B2b,
+ *  G2 follow-up 9): drawn with the station, they would otherwise be read
+ *  from the archive on arrival. Free pictures are read on their own. */
 export function stationAssetIds(
   station: Pick<TourStation, "blocks" | "steps">,
 ): string[] {
@@ -107,7 +110,10 @@ export function stationAssetIds(
     const block = blocks.get(step.action.block);
     return block === undefined ? [] : storyAssetIds(block);
   });
-  return [...new Set(ids)];
+  const models = tourFreeBlocks(station).flatMap((b) =>
+    b.kind === "model" && b.view === "placed" ? [b.asset] : [],
+  );
+  return [...new Set([...ids, ...models])];
 }
 
 /** The assets the story reads to show `block`. */

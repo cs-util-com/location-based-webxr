@@ -1037,6 +1037,10 @@ export function createViewerPlacement(deps: {
             zero,
             alive,
             makeLabel: (text) => seams.createLabel(text),
+            // A placed model at its size (station blocks plan B2b),
+            // read through the same cache as the station's story.
+            loadModel: async (entryName) =>
+              seams.loadGlbModel(await loadContent(entryName)),
             loadPhotoTexture: async (entryName) =>
               // Measured before it is decoded (tour kit K4 review R2).
               decodeFrameTexture(
