@@ -49,6 +49,7 @@ import {
   type GizmoLayout,
   type ScreenPoint,
   type WorldPoint,
+  viewHeightAtOneM,
 } from "./gizmo-maths.js";
 import { headingOfGeo, turnedGeo } from "./pose-edits.js";
 import { mapGestureOf, tiltedPolarRad } from "./two-finger.js";
@@ -201,7 +202,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
   let layout: GizmoLayout | null = null;
 
   const spritePerPx = () =>
-    (2 * Math.tan((EDITOR_CAMERA.fovDeg * DEG) / 2)) /
+    viewHeightAtOneM(EDITOR_CAMERA.fovDeg) /
     Math.max(1, canvas.getBoundingClientRect().height);
 
   /** The gizmo's layout for the selection now: its target, or the

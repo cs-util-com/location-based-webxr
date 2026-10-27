@@ -32,7 +32,7 @@ ray (`pick`).
   CSS px a code laid flat is drawn on screen (see `codeGrowth` and the
   sweep below).
 - `focalPxOf(viewportPx, fovDeg)` - the view's pixels per radian straight
-  ahead (half its height over the tangent of half the lens): about 965
+  ahead (its height over `viewHeightAtOneM`, `gizmo-maths.ts`): about 965
   for a 900 px high view through 50 degrees, 418 for 390 px.
 - `codeGrowth(distanceM, standing, sizeM, focalPx)` - how many times its
   printed size a code is drawn: laid flat, `CODE_SCREEN_PX * distanceM /
@@ -113,10 +113,15 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
 - **The size on screen, swept** (an earlier build grew codes by the
   storyboard prototype's curve, up to 8 times: a 20 cm code stayed about
   2.7 px from 71 m to 571 m). Swept over 9, 12 and 15 px, from 10 m to the
-  camera's 1100 m, at 1440 x 900, 820 x 1180, 844 x 390 and 390 x 844
+  camera's 1100 m, at three windows, 1440 x 900, 844 x 390 and 390 x 844
   (arithmetic; and in the browser, a one-code tour's top view at 10, 30,
   100, 300 and 1100 m, the code measured on the canvas and a screenshot
-  of the middle of the view at each):
+  of the middle of the view at each); 12 px alone is also measured at a
+  fourth, 820 x 1180, by the e2e. **Which height:** the arithmetic below
+  takes the window's height as the view's (a "900 px view" is the
+  1440 x 900 window); the canvas is the window less the top and bottom
+  bars, a little shorter, so its distances are a little smaller. What
+  was measured on the canvas is marked so:
   - Where growth starts (a 20 cm code): 21 / 16 / 13 m at 9 / 12 / 15 px on
     a 900 px view; 9 / 7 / 6 m on a phone held sideways. Below it the
     printed size is larger and is kept.
@@ -141,13 +146,14 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
     above makes it 15 px (and codes cover their surroundings from about
     310 m on a phone held sideways); nothing measured argues for 9 px,
     which reads as a dot.
-    Codes have no gizmo; their point and the inspector's
-    printed size do not change. Tilted up, a code is its printed size. Billboards and poles rise with
-    `standing`; models keep their pose, and pins stand. `renderTourStation` skips placed models (and draws each
-    picture from the tour's assets, passed to it), so the layer adds the
-    free blocks in their `placed` view at their pose, scaled to their size
-    by `modelScale`; a model whose file cannot be read, or one without a
-    size, is left out.
+- **Codes have no gizmo;** their point and the inspector's printed size do
+  not change. Tilted up, a code is its printed size.
+- **Billboards and poles rise with `standing`;** models keep their pose,
+  and pins stand. `renderTourStation` skips placed models (and draws each
+  picture from the tour's assets, passed to it), so the layer adds the
+  free blocks in their `placed` view at their pose, scaled to their size
+  by `modelScale`; a model whose file cannot be read, or one without a
+  size, is left out.
 - **The found-radius circle** is the selected station's ring: amber (the
   gizmo's colour, its radius dots sit on it) while the station itself is
   selected, a lighter blue while an item in it is, else blue.
@@ -198,4 +204,5 @@ flat weighting, bad input, and a property (at least 1, laid flat exactly
 the larger of its printed size and `CODE_SCREEN_PX` on screen, growing
 with distance, shrinking as the view tilts up). Real drawing and real
 ground: `playwright-tests/editor3d.spec.js`; the code measured on the
-canvas at four view sizes: `playwright-tests/editor3d-edit.spec.js`.
+canvas at four window sizes (12 px; the sweep's three sizes are
+above): `playwright-tests/editor3d-edit.spec.js`.

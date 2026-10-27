@@ -779,6 +779,8 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       },
       stats() {
         const now = tourNow;
+        // One layout read for every code (PR bot finding 13).
+        const { w, h } = size();
         return {
           frames,
           near: camera.near,
@@ -787,7 +789,6 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
           standing,
           ...layer.stats(),
           codePx: layer.codeCorners().map((corners) => {
-            const { w, h } = size();
             const onScreen = corners.map((c) => {
               const v = c.clone().project(camera);
               return new THREE.Vector2(

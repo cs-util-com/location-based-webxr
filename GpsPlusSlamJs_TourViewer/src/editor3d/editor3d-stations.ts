@@ -59,6 +59,7 @@ import {
 import { modelScale } from "../model-scale.js";
 import { pointRootMatrix, type GlobeEllipsoid } from "./editor3d-tour-root.js";
 import { NEAR_STATIONS, nearStations } from "./editor3d-visibility.js";
+import { viewHeightAtOneM } from "./gizmo-maths.js";
 
 /** What the layer needs from the page (the drawing is the page's: Node,
  *  where the tests run, has no canvas). */
@@ -116,7 +117,7 @@ export const CODE_FLAT_GAP_M = 0.07;
  * The least side (CSS px) a code laid flat is drawn on screen. 12 px shows
  * its three finder squares at about 3.4 px each; the storyboard prototype's
  * code read at about 9 to 15 px. The sweep behind the choice (9, 12 and
- * 15 px, from 10 m to the camera's 1100 m, at four view sizes) is in the
+ * 15 px, from 10 m to the camera's 1100 m, at three window sizes) is in the
  * sidecar.
  */
 export const CODE_SCREEN_PX = 12;
@@ -127,7 +128,7 @@ export const CODE_SCREEN_PX = 12;
  * `s` m across at `d` m is about `s * focalPxOf(...) / d` px on screen.
  */
 export function focalPxOf(viewportPx: number, fovDeg: number): number {
-  return viewportPx / 2 / Math.tan((fovDeg * Math.PI) / 360);
+  return viewportPx / viewHeightAtOneM(fovDeg);
 }
 
 /**

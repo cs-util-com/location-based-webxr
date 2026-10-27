@@ -838,14 +838,22 @@ test("a code laid flat in the top view is drawn 12 px on screen from high above,
     for (const m of [12, 300, 1000]) {
       const now = await at(m);
       const label = `${size.width}x${size.height} at ${m} m`;
-      expect(now.px, label).toBeGreaterThan(SCREEN_PX - 0.1);
-      expect(Math.abs(now.px - now.wantPx), label).toBeLessThan(0.3);
+      // Relative tolerances (r955 review #5): the canvas's height can be
+      // a half pixel off the box read here, an error that grows with the
+      // code's size on screen. At 12 px they are the 0.1 / 0.3 / 0.2 px
+      // this test first allowed.
+      expect(now.px, label).toBeGreaterThan(SCREEN_PX * (1 - 0.1 / 12));
+      expect(Math.abs(now.px - now.wantPx) / now.wantPx, label).toBeLessThan(
+        0.3 / 12,
+      );
       if (now.printedPx >= SCREEN_PX) {
         expect(now.scale, label).toBe(1);
       } else {
         expect(now.scale, label).toBeCloseTo(SCREEN_PX / now.printedPx, 3);
       }
-      if (m >= 300) expect(now.px, label).toBeLessThan(SCREEN_PX + 0.2);
+      if (m >= 300) {
+        expect(now.px, label).toBeLessThan(SCREEN_PX * (1 + 0.2 / 12));
+      }
     }
   }
   // Near, on the desktop, the printed size is the larger: the code is

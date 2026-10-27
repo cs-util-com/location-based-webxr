@@ -9,6 +9,12 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
 
 ## Public API
 
+- `viewHeightAtOneM(fovDeg)` - how tall (m) the view of a vertical lens
+  is at 1 m from the camera, 2 tan(fov / 2): the one copy of the 3D
+  editor's lens arithmetic (PR bot finding 14, DEC-H3), read by the
+  gizmo's sprite scale (`editor3d-editing.ts`), the billboards'
+  `resizeBillboard` (`editor3d-marks.ts`) and `focalPxOf`
+  (`editor3d-stations.ts`).
 - `GIZMO` - the design's sizes: the ring's inner edge (0.88 of its
   radius); an item's ring at least 32 px and 1.25 m (a model's 0.625 m per
   metre of its size); a station's move disc at least 26 px and 2.2 m; the
@@ -73,7 +79,7 @@ sceneKey({
 
 ## Tests
 
-`gizmo-maths.test.ts`: the layout for a station, a pin and a model; the
+`gizmo-maths.test.ts`: `viewHeightAtOneM` at 50, 60 and 90 degrees; the layout for a station, a pin and a model; the
 minimum sizes; the hit order (the sprites first, the nearest wins; an
 object under the pointer; the disc); the turn, radius and size rules with
 their bounds; every key of the design and the keys left to others; and a

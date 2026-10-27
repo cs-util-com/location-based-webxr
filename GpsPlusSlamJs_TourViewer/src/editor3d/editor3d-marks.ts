@@ -13,6 +13,8 @@
  */
 import * as THREE from "three";
 
+import { viewHeightAtOneM } from "./gizmo-maths.js";
+
 /** The billboard's canvas (px) and its height on screen (px). */
 const BILLBOARD_W = 512;
 const BILLBOARD_H = 128;
@@ -108,7 +110,7 @@ export function resizeBillboard(
 ): void {
   // With sizeAttenuation off a sprite's scale is its size at 1 m: the view
   // at 1 m is 2 tan(fov / 2) tall.
-  const atOneM = 2 * Math.tan((view.fovDeg * Math.PI) / 360);
+  const atOneM = viewHeightAtOneM(view.fovDeg);
   const h = (BILLBOARD_SCREEN_PX / Math.max(1, view.viewportPx)) * atOneM;
   sprite.scale.set((h * BILLBOARD_W) / BILLBOARD_H, h, 1);
 }

@@ -16,6 +16,17 @@
  * @see gizmo-maths.ts.md
  */
 
+/**
+ * How tall (m) the view of a vertical lens of `fovDeg` is at 1 m from the
+ * camera: 2 tan(fov / 2). Over a view's height in px it gives the metres a
+ * pixel covers at 1 m (a sprite's scale per px); a view's height over it
+ * gives the focal length in px. The one copy of the lens arithmetic for the
+ * 3D editor (PR bot finding 14, DEC-H3).
+ */
+export function viewHeightAtOneM(fovDeg: number): number {
+  return 2 * Math.tan((fovDeg * Math.PI) / 360);
+}
+
 /** The gizmo's sizes (the design's). */
 export const GIZMO = Object.freeze({
   /** The ring's inner edge, as a fraction of its radius. */

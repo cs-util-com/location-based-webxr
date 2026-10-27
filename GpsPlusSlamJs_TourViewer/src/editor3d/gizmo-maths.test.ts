@@ -23,6 +23,7 @@ import {
   handleAt,
   sceneKey,
   turnedHeadingDeg,
+  viewHeightAtOneM,
 } from "./gizmo-maths.js";
 
 const CENTRE = { x: 10, y: 3, z: -4 };
@@ -422,5 +423,17 @@ describe("the scene's keys", () => {
       liftM: 0.1,
       liftShiftM: 1,
     });
+  });
+});
+
+// Why: the lens arithmetic (the view's height at 1 m, 2 tan(fov / 2)) was
+// written out in three 3D-editor modules (PR bot finding 14, DEC-H3: one
+// rule, one implementation); the gizmo's sprites, the billboards and a
+// code's size on screen must agree on it.
+describe("viewHeightAtOneM", () => {
+  it("is 2 tan(fov / 2): 2 m at 90 degrees, about 0.9326 m at 50", () => {
+    expect(viewHeightAtOneM(90)).toBeCloseTo(2, 12);
+    expect(viewHeightAtOneM(50)).toBeCloseTo(0.932615, 6);
+    expect(viewHeightAtOneM(60)).toBeCloseTo(2 / Math.sqrt(3), 12);
   });
 });
