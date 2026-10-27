@@ -1194,6 +1194,22 @@ describe("a placement reaches the draft", () => {
     expect(dom.pinLabelCount.hidden, "hidden with the field").toBe(true);
   });
 
+  // Why (B2a review finding 6, design §3): the phone's pin field is a
+  // text input, where text becomes NFC; a decomposed accent typed there
+  // was stored as typed and counted twice toward the 40.
+  it("places a pin with its text in NFC", async () => {
+    const { store } = memoryStore();
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.pinLabel.value = `Caf${"e"}${String.fromCodePoint(0x301)}`;
+    dom.pinSave.click();
+    await settle();
+    expect(ctx.tourDocument.entries()[0]?.object).toMatchObject({
+      caption: "Caf\u00e9",
+    });
+  });
+
   it("tells the creator when the store refuses the write", async () => {
     // The failure half. A refused write is silent by design - the tap
     // already worked in memory and must not fail - so the ONLY signal a

@@ -90,6 +90,20 @@ describe("pinTextEdit", () => {
     });
   });
 
+  // Why (B2a review finding 6, design §3): text is stored in NFC. A
+  // caption typed decomposed (an "e" and a combining accent, as some
+  // keyboards and pastes give it) counted twice toward the 40 and was
+  // stored as typed, so the same word could be refused on one device and
+  // fit on another, and the B3b hash would differ for the same text.
+  it("stores a pin's text in NFC and counts it so", () => {
+    const decomposed = `e${String.fromCodePoint(0x301)}`.repeat(40);
+    expect(decomposed.length).toBe(80);
+    expect(pinTextEdit(pin("a", "Old"), decomposed)).toEqual({
+      kind: "edited",
+      after: { ...pin("a"), caption: "\u00e9".repeat(40) },
+    });
+  });
+
   it("does not edit a photo's caption (owner question Q-E2-1)", () => {
     expect(pinTextEdit(photo("p"), "A caption")).toEqual({
       kind: "unchanged",

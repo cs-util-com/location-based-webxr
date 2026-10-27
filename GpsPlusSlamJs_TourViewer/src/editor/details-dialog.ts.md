@@ -33,6 +33,8 @@ a pending change, saved by Save or autosave like any other edit.
 
 ## Invariants & assumptions
 
+- The typed name, description and contact are handed on in NFC
+  (`inputText`, B2a review 6).
 - A refusal keeps the dialog open, with what was typed and the session's
   reason in the error line (`role="alert"`): nothing typed is lost to a
   refusal.

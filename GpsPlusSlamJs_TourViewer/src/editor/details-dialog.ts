@@ -11,6 +11,7 @@
  */
 
 import type { DetailsForm } from "../tour-details-form.js";
+import { inputText } from "../input-text.js";
 
 export type DetailsOutcome =
   | { readonly kind: "changed" | "unchanged" }
@@ -78,10 +79,11 @@ export function wireDetailsDialog(deps: DetailsDialogDeps): DetailsDialog {
     event.preventDefault();
     if (dom.backdrop.hidden) return;
     const outcome = deps.apply({
-      name: dom.name.value,
-      description: dom.description.value,
+      // Typed text in NFC (B2a review 6).
+      name: inputText(dom.name.value),
+      description: inputText(dom.description.value),
       cover: deps.chosenCover(),
-      contact: dom.contact.value,
+      contact: inputText(dom.contact.value),
     });
     if (outcome.kind === "refused") {
       // Stays open with what was typed: nothing is lost to a refusal.

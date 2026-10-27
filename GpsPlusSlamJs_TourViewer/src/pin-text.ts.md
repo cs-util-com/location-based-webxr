@@ -25,6 +25,8 @@ counter beside the field.
 
 ## Invariants & assumptions
 
+- The count is of the text in NFC (`inputText`, `input-text.ts`), as it
+  is stored: a decomposed accent counts once (B2a review 6).
 - **One count everywhere.** The counter, the refusal and the file's reader
   use the framework's `tourTextCount`, so a text the counter shows as 40
   is one the writer accepts.

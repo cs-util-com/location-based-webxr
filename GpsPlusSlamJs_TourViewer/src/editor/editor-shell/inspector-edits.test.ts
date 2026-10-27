@@ -63,6 +63,18 @@ function edit(selected: string, field: string, value: string) {
 }
 
 describe("inspectorEdit", () => {
+  // Why (B2a review finding 6, design §3): the editor's text input is
+  // where text becomes NFC; a decomposed title would be stored as typed.
+  it("writes typed text in NFC", () => {
+    const typed = `Caf${"e"}${String.fromCodePoint(0x301)}`;
+    expect(edit("station:a", "title", typed)).toMatchObject({
+      edit: { title: "Caf\u00e9" },
+    });
+    expect(edit("station:a", "description", typed)).toMatchObject({
+      edit: { description: "Caf\u00e9" },
+    });
+  });
+
   it("writes a station's title, description and radius as a station edit", () => {
     expect(edit("station:a", "title", "  The gate ")).toEqual({
       kind: "station",

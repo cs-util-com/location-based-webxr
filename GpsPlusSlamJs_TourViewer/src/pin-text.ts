@@ -5,7 +5,8 @@
  * (`tourTextCount`: code points after trimming and collapsing each
  * whitespace run), so the counter beside the field, the page's refusal and
  * the file's reader never disagree. No `maxlength` on the field: it counts
- * UTF-16 units, so an emoji would end a pin early.
+ * UTF-16 units, so an emoji would end a pin early. The count is of the
+ * text in NFC (`inputText`), as it is stored (B2a review 6).
  *
  * @see pin-text.ts.md
  */
@@ -15,6 +16,8 @@ import {
   tourTextCount,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
+import { inputText } from "./input-text.js";
+
 /** The most characters a pin's text takes. */
 export const PIN_TEXT_MAX_CHARS = TOUR_BLOCK_TEXT_RULES.shortText.caption.max;
 
@@ -23,7 +26,7 @@ export const PIN_TEXT_TOO_LONG = `A pin's text takes at most ${String(PIN_TEXT_M
 
 /** How many characters of a pin's text count. */
 export function pinTextCount(text: string): number {
-  return tourTextCount(text);
+  return tourTextCount(inputText(text));
 }
 
 /** Whether `text` is longer than a pin takes. */

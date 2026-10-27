@@ -41,6 +41,7 @@ import type {
   TourViewerStore,
 } from "./tour-viewer-session.js";
 import { odomNueFromWebXr } from "./visit-anchoring.js";
+import { inputText } from "./input-text.js";
 
 /** What the creator is told when the document refuses a placement, by
  *  its reason (`placeRefusal`). */
@@ -331,7 +332,7 @@ export function wireCreatorPlacement(deps: {
   });
 
   dom.pinSave.addEventListener("click", () => {
-    const label = dom.pinLabel.value.trim();
+    const label = inputText(dom.pinLabel.value).trim();
     const reticle = ctx.reticle;
     if (!placementAllowed()) {
       hideLabelInput();

@@ -60,6 +60,8 @@ null`:
 
 ## Invariants & assumptions
 
+- `inspectorEdit` takes the typed value in NFC (`inputText`) for every
+  field: text is stored composed, a number is unchanged (B2a review 6).
 - Pure; heights are ellipsoidal, as the file writes them, and `groundAt`
   answers ellipsoidal heights (the 3D view's `groundAt`).
 - Nothing here checks the station's lock: the shell types a locked

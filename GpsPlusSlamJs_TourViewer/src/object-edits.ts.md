@@ -37,6 +37,8 @@ page keeps with it - a photo's bytes, a visit's frame).
 
 ## Invariants & assumptions
 
+- `pinTextEdit` takes the text in NFC (`inputText`) before trimming and
+  counting, so the stored caption is NFC on both pages (B2a review 6).
 - Every function returns new arrays; nothing is mutated.
 - A delete takes exactly its entry, keeps the others' order and the
   earlier deletions, and tombstones only a hosted object (the property
