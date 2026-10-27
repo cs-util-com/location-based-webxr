@@ -32,11 +32,19 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
   a null name leaves it). The shell uses the two for the control the
   focus was moving to when a commit drew the dock again: Chromium drops
   a focus whose target a draw removed during `focusout` to the page.
-  - A station: its name to type in the head (`input.ttlin`,
-    `data-field="title"`, "Station name", the placeholder "Station n");
-    "Station n of N"; its commands; its Description to type, prose in a
-    text area (`textarea.tfield`, one line high and growing with its
-    text, the placeholder "Optional"); its Card image as a group of picture buttons
+  - A station: its name as text in the head (`span.ttl`); "Station n
+    of N"; its commands; then, first in its section, its **Name** to type
+    (`input.tfield`, `data-field="title"`, its label "Name", the
+    placeholder "Station n") and its **Description** to type, prose in a
+    text area (`textarea.tfield`, `rows` 3: three lines high to start
+    with, growing with its text up to twelve lines by `field-sizing:
+content` (Chromium, the editor's browser; elsewhere it stays three
+    lines and scrolls), the placeholder "Optional"). AU-2 (the owner's
+    audit of 2026-10-27): the name had been a borderless field doubling as
+    the head's title, with no label and its border shown only on hover,
+    so it read as a heading; and a one-line description read as a line.
+    This departs from the Studio 3 prototype, which types the name in the
+    head. Then its Card image as a group of picture buttons
     (`data-act="image:<id>"`, `aria-pressed` on the one shown), or a
     line saying none can be chosen; its Radius to type, with what it does
     (and how far out it starts loading) and, when items stand outside the
@@ -124,7 +132,8 @@ opened again, and the fields' layout at four window sizes).
 It also covers the fields to type per kind, a locked station's place
 and heading read-only with its Put on the ground off, a pin's text in
 the head with its count as it is typed (none for a read-only one or a
-station's name), the outside-the-circle warning, and a command waiting for the
+station's name, which is typed in its labelled Name field in the body,
+the head showing it as text; the description three rows high), the outside-the-circle warning, and a command waiting for the
 ground (not `disabled`), with the focus kept on it as it starts waiting.
 It also keeps the focus on Earlier through an autosave's status change,
 and gives the focus back to the control that had it when the inspector

@@ -291,6 +291,121 @@ test("a station's name, description and radius typed in the inspector are one st
   await expect(field(next, "radius")).toHaveValue("3.5");
 });
 
+test("a station's Name and Description are labelled fields: the description grows, each is its own undo step and change, kept over a reload by the draft, saved and opened again", async ({
+  page,
+  context,
+}) => {
+  // Why (AU-2, the owner's audit of 2026-10-27): the owner could not see
+  // how to correct a station's name and description in the desktop
+  // editor: the name was an unlabelled borderless title, the description
+  // one row high. Both are now labelled fields, found by their labels as
+  // a screen reader finds them; the description grows with its text; and
+  // every edit goes through the shared tour document: one undo step per
+  // field, counted as a change, backed up by the draft, saved.
+  test.slow();
+  const zip = await twoPinTour();
+  await openTour(page, zip);
+  await selectStation(page, "a");
+  const inspector = page.locator("#shell-inspector");
+  const name = inspector.getByLabel("Name", { exact: true });
+  const description = inspector.getByLabel("Description", { exact: true });
+  await expect(name).toHaveValue("Station A");
+  await expect(name).toHaveAttribute("data-field", "title");
+  await expect(description).toHaveAttribute("data-field", "description");
+  await expect(inspector.locator("label", { hasText: "Name" })).toBeVisible();
+  await expect(
+    inspector.locator("label", { hasText: "Description" }),
+  ).toBeVisible();
+  const start = await revision(page);
+
+  await name.fill("Market gate");
+  await name.press("Enter");
+  await expect
+    .poll(async () => (await stationNow(page, "a")).title)
+    .toBe("Market gate");
+  // The head shows the name it now has.
+  await expect(page.locator("#inspector-head .ttl")).toHaveText("Market gate");
+
+  // The description grows with its text, line by line.
+  const empty = (await description.boundingBox())?.height ?? 0;
+  const text = [
+    "Where the market",
+    "meets the old wall,",
+    "the gate stood",
+    "until 1870:",
+    "look for the stones",
+    "set in the road.",
+  ].join("\n");
+  await description.fill(text);
+  const grown = (await description.boundingBox())?.height ?? 0;
+  expect(grown).toBeGreaterThan(empty + 20);
+  await description.press("Tab");
+  await expect
+    .poll(async () => (await stationNow(page, "a")).description)
+    .toBe(text);
+  // Two steps on the history, one changed station on the status line
+  // (the line counts what changed, not the keystrokes).
+  expect(await revision(page)).toBe(start + 2);
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
+
+  // One undo per field: the description first, then the name.
+  await page.locator("#studio-undo").click();
+  await expect
+    .poll(async () => (await stationNow(page, "a")).description ?? "")
+    .toBe("");
+  expect((await stationNow(page, "a")).title).toBe("Market gate");
+  await page.locator("#studio-undo").click();
+  await expect
+    .poll(async () => (await stationNow(page, "a")).title)
+    .toBe("Station A");
+  await page.locator("#studio-redo").click();
+  await page.locator("#studio-redo").click();
+  await expect
+    .poll(async () => (await stationNow(page, "a")).description)
+    .toBe(text);
+  await expect(name).toHaveValue("Market gate");
+  await expect(description).toHaveValue(text);
+
+  // A reload: the draft offers both, and Restore brings them back.
+  await expect(page.locator("body")).toHaveAttribute("data-draft", "saved");
+  await page.reload();
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  await openZip(page, zip, "two-pins.zip");
+  const offer = page.locator(".toast.draft-offer");
+  await offer.locator("button", { hasText: "Restore" }).click();
+  await expect(offer).toHaveCount(0);
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 60_000,
+  });
+  await selectStation(page, "a");
+  await expect(name).toHaveValue("Market gate");
+  await expect(description).toHaveValue(text);
+
+  // Saved, and opened again in a new page: both as typed.
+  const download = page.waitForEvent("download");
+  await save(page);
+  const saved = await (await download).path();
+  const { readFileSync } = await import("node:fs");
+  const written = readFileSync(saved);
+  expect((await savedTour(written)).stations[0]).toMatchObject({
+    id: "a",
+    title: "Market gate",
+    description: text,
+  });
+  const next = await context.newPage();
+  await openTour(next, written);
+  await selectStation(next, "a");
+  const again = next.locator("#shell-inspector");
+  await expect(again.getByLabel("Name", { exact: true })).toHaveValue(
+    "Market gate",
+  );
+  await expect(again.getByLabel("Description", { exact: true })).toHaveValue(
+    text,
+  );
+});
+
 test("Put items on the ground, Put on the ground, Add pin, a pin's text and a typed place are one step each", async ({
   page,
 }) => {
@@ -471,10 +586,10 @@ async function expectInspectorLayout(page, size) {
   const dock = await box(page.locator("#shell-inspector"));
   expect(dock.x, at).toBeGreaterThanOrEqual(0);
   expect(dock.x + dock.width, at).toBeLessThanOrEqual(size.width);
-  // The name: a 26 px box in the head, 6 px after the kind's icon.
+  // The head: the station's name as text, 6 px after the kind's icon
+  // (AU-2: the name is typed in its labelled field below).
   const icon = await box(page.locator("#inspector-head .hic"));
-  const title = await box(field(page, "title"));
-  expect(title.height, at).toBe(26);
+  const title = await box(page.locator("#inspector-head .ttl"));
   expect(title.x - (icon.x + icon.width), at).toBe(6);
   // The commands: 28 px rows, 6 px in from the dock's 1 px border, one
   // under another.
@@ -488,10 +603,22 @@ async function expectInspectorLayout(page, size) {
     if (last !== null) expect(b.y, at).toBe(last.y + last.height);
     last = b;
   }
-  // A field: its label 74 px, its box 6 px after, 24 px high, inside the
-  // dock's 12 px padding (and its left border: the dock is flush with the
-  // window's right edge).
-  for (const name of ["description", "radius"]) {
+  // A field: its label 74 px, its box 6 px after, 24 px high (the
+  // description three lines, 52 px, AU-2), inside the dock's 12 px
+  // padding (and its left border: the dock is flush with the window's
+  // right edge). The name first, the description under it.
+  const nameRow = await box(
+    field(page, "title").locator(
+      "xpath=ancestor::div[contains(@class,'f')][1]",
+    ),
+  );
+  const descriptionRow = await box(
+    field(page, "description").locator(
+      "xpath=ancestor::div[contains(@class,'f')][1]",
+    ),
+  );
+  expect(descriptionRow.y, at).toBeGreaterThan(nameRow.y);
+  for (const name of ["title", "description", "radius"]) {
     const input = field(page, name);
     const row = input.locator("xpath=ancestor::div[contains(@class,'f')][1]");
     const r = await box(row);
@@ -501,7 +628,9 @@ async function expectInspectorLayout(page, size) {
     );
     expect(label.width, `${name} ${at}`).toBe(74);
     expect(shown.x - (label.x + label.width), `${name} ${at}`).toBe(6);
-    expect(shown.height, `${name} ${at}`).toBe(24);
+    expect(shown.height, `${name} ${at}`).toBe(
+      name === "description" ? 52 : 24,
+    );
     expect(r.x - dock.x, `${name} ${at}`).toBe(13);
     expect(shown.x + shown.width, `${name} ${at}`).toBeLessThanOrEqual(
       dock.x + dock.width - 12 + 0.5,

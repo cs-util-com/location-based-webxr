@@ -280,7 +280,7 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   await expect(gate).toHaveClass(/\bsel\b/);
   await expect(gate.locator(".kids")).toBeVisible();
   await expect(
-    page.locator('#inspector-head [data-field="title"]'),
+    page.locator('#shell-inspector [data-field="title"]'),
   ).toHaveValue("The old gate");
   await expect(page.locator("#inspector-body .sub")).toHaveText(
     "Station 2 of 3",
@@ -636,7 +636,7 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   const gate = card(page, "The old gate");
   await expect(gate).toHaveClass(/\bsel\b/);
   await expect(
-    page.locator('#inspector-head [data-field="title"]'),
+    page.locator('#shell-inspector [data-field="title"]'),
   ).toHaveValue("The old gate");
   await expect(gate.locator(".pick")).toBeFocused();
   await expect(gate.locator(".kids")).toBeVisible();

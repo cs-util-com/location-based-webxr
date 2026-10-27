@@ -4,8 +4,10 @@
  * and the position folded away under a disclosure. Text only, never
  * markup.
  *
- * The fields a creator types carry `data-field` (a station's `title`,
- * `description`, `radius`, `east`, `north` and `heading`; a pin's `title`
+ * The fields a creator types carry `data-field` (a station's `title` and
+ * `description`, labelled Name and Description at the top of the body, the
+ * head showing the name as text (AU-2: a borderless name in the head read
+ * as a heading); its `radius`, `east`, `north` and `heading`; a pin's `title`
  * (its text); an item's `east`, `north`, `height`, `heading` and a
  * model's `size`), each drawn with the tour's value as its default, so
  * the shell commits a field only when its text differs; a locked
@@ -181,7 +183,9 @@ function proseField(
   placeholder: string,
 ): HTMLElement {
   const area = el("textarea", "tfield");
-  area.rows = 1;
+  // Three lines to start with, a box to write in (AU-2); it grows with
+  // its text (`field-sizing` in the stylesheet).
+  area.rows = 3;
   area.spellcheck = false;
   area.autocomplete = "off";
   area.dataset["field"] = field;
@@ -190,6 +194,18 @@ function proseField(
   const row = labelled(label, area);
   row.classList.add("top");
   return row;
+}
+
+/** A line to type, named `field`, under its label. */
+function lineField(
+  label: string,
+  field: string,
+  value: string,
+  placeholder: string,
+): HTMLElement {
+  const input = typed(field, value, "tfield");
+  input.placeholder = placeholder;
+  return labelled(label, input);
 }
 
 function readOnlyText(label: string, value: string): HTMLElement {
@@ -460,6 +476,7 @@ function stationParts(
   const off = model.offGround;
   const section = el("div", "isec");
   section.append(
+    lineField("Name", "title", model.name, `Station ${String(number)}`),
     proseField(
       "Description",
       "description",
@@ -742,16 +759,9 @@ export function drawInspector(
   }
 }
 
-/** The head's title: a station's name or a pin's text to type, else the
- *  title in words. */
+/** The head's title: a pin's text to type, else the title in words (a
+ *  station's name is typed in its labelled field, AU-2). */
 function headTitle(model: InspectorModel): HTMLElement {
-  if (model.kind === "station") {
-    const input = typed("title", model.name, "ttlin");
-    input.placeholder = `Station ${String(model.place.number)}`;
-    input.setAttribute("aria-label", "Station name");
-    input.title = "The station's name (Enter keeps it)";
-    return input;
-  }
   if (model.kind === "item" && model.text !== null) {
     const input = typed("title", model.text, "ttlin");
     input.setAttribute("aria-label", "Pin text");

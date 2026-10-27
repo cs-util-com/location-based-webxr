@@ -940,13 +940,13 @@ body[data-view="3d"] #view3d {
   border-color: var(--s-focus);
 }
 
-/* Prose (the description): one line high like a line field, growing with
- * its text up to six lines, then scrolling. */
+/* Prose (the description): three lines high to start with, a box to write
+ * in (AU-2), growing with its text up to twelve lines, then scrolling. */
 textarea.tfield {
   display: block;
   height: auto;
-  min-height: 24px;
-  max-height: 92px;
+  min-height: 52px;
+  max-height: 178px;
   padding: 4px 7px;
   line-height: 14px;
   field-sizing: content;

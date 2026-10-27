@@ -220,18 +220,32 @@ describe("drawInspector", () => {
     expect(dock.body.childElementCount).toBe(0);
   });
 
-  it("shows a station's fields to type, each tied to its label, the position folded", () => {
+  // Why (AU-2, the owner's audit of 2026-10-27): the name was a
+  // borderless field doubling as the dock's title, with no label, its
+  // border shown only on hover (never on a touch screen), so it read as a
+  // heading and the owner could not see how to correct it. The name and
+  // the description are now labelled fields in the body, "Name" first;
+  // the head shows the name as plain text.
+  it("shows a station's fields to type, each tied to its label, Name and Description first, the position folded", () => {
     draw("station:gate");
     expect(dock.root.hidden).toBe(false);
-    // The name is typed in the head, its stand-in the placeholder.
+    expect(dock.head.querySelector("input, textarea")).toBeNull();
+    expect(dock.head.querySelector(".ttl")?.textContent).toBe("The old gate");
     expect(input("title")?.value).toBe("The old gate");
-    expect(input("title")?.getAttribute("aria-label")).toBe("Station name");
     expect(input("title")?.placeholder).toBe("Station 1");
+    expect(dock.body.contains(input("title"))).toBe(true);
     expect(dock.body.querySelector(".sub")?.textContent).toBe("Station 1 of 2");
     expect(fields()).toEqual([
+      ["Name", "The old gate"],
       ["Description", "Where the wall stood"],
       ["Radius", "25.0 m"],
     ]);
+    // The description starts three lines high: a box to write in, not a
+    // line (it grows with its text, `field-sizing`, in the stylesheet).
+    const area = dock.body.querySelector<HTMLTextAreaElement>(
+      '[data-field="description"]',
+    );
+    expect(area?.rows).toBe(3);
     // The card's pictures to pick from: the station's photo, shown.
     const picks = [
       ...dock.body.querySelectorAll<HTMLButtonElement>(
@@ -252,7 +266,7 @@ describe("drawInspector", () => {
 
   it("shows where a station stands in metres of the tour's centre, once unfolded", () => {
     draw("station:gate", true);
-    const position = fields().slice(2);
+    const position = fields().slice(3);
     expect(position.map(([label]) => label)).toEqual([
       "Anchor east",
       "Anchor north",
