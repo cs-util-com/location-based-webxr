@@ -33,6 +33,7 @@ import {
 } from "../../tour-document.js";
 import { STATION_PREFIX } from "../editor-model.js";
 import { eastNorthOf, placeAtEastNorth } from "../tour-origin.js";
+import { blockFields } from "../block-fields.js";
 import { headingOfRotation, ON_GROUND_M } from "./inspector-model.js";
 
 /** What a typed value writes. */
@@ -48,6 +49,13 @@ export type InspectorEdit =
       readonly edit: StationEdit;
     }
   | { readonly kind: "text"; readonly id: string; readonly text: string }
+  /** One of a free block's other text fields (`block-fields.ts`). */
+  | {
+      readonly kind: "block";
+      readonly id: string;
+      readonly field: string;
+      readonly value: string;
+    }
   /** A pose or a size, written as the 3D view's gestures write them. */
   | { readonly kind: "scene"; readonly edit: GestureEdit }
   /** A turn about up of `deg` clockwise. */
@@ -155,11 +163,13 @@ function itemEdit(
   field: string,
   value: string,
 ): InspectorEdit {
-  if (field === "title") {
-    return item.kind === "shortText"
-      ? { kind: "text", id: item.id, text: value }
-      : NONE;
+  if (field === "title" && item.kind === "shortText") {
+    return { kind: "text", id: item.id, text: value };
   }
+  if (blockFields(item).some((f) => f.name === field)) {
+    return { kind: "block", id: item.id, field, value };
+  }
+  if (field === "title") return NONE;
   const axis = AXIS[field];
   const known =
     axis !== undefined ||

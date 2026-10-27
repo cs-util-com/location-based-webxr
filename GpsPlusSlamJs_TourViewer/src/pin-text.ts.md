@@ -22,6 +22,10 @@ counter beside the field.
 - `wirePinTextCounter(field, out): { update() }` - shows the count in
   `out` at once and on every `input`, with a `data-over` attribute while
   the text is too long; `update()` after the page sets the value itself.
+- `textCounterLine(text, max)` / `wireTextCounter(field, out, max)` -
+  the same for any text against its cap `max`, by the same count (the
+  editor inspector's block fields, `editor/block-fields.ts`, B2c); the
+  pin's two are these with `PIN_TEXT_MAX_CHARS`.
 
 ## Invariants & assumptions
 

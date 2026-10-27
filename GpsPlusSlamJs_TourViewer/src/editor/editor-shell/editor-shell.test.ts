@@ -124,6 +124,7 @@ function setUp() {
   const edits = {
     station: vi.fn(),
     text: vi.fn(),
+    block: vi.fn(),
     scene: vi.fn(),
     groundItems: vi.fn(),
     addPin: vi.fn(),
@@ -219,6 +220,24 @@ describe("the inspector's typed fields", () => {
     expect(edits.station).toHaveBeenCalledWith("a", {
       description: "By the fountain",
     });
+    shell.hide();
+  });
+
+  // Why (B2c): a block's other text fields reach the page as block field
+  // edits for the block they were typed for, never as a station's or a
+  // pin text's.
+  it("write a short text's description as a block field of that block", () => {
+    const { select, edits, shell } = setUp();
+    select("pa");
+    typeInto("description", "Under the arch");
+    select("station:b");
+    expect(edits.block).toHaveBeenCalledWith(
+      "pa",
+      "description",
+      "Under the arch",
+    );
+    expect(edits.station).not.toHaveBeenCalled();
+    expect(edits.text).not.toHaveBeenCalled();
     shell.hide();
   });
 

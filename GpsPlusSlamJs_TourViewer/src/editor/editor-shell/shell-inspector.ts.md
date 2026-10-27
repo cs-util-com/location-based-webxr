@@ -90,7 +90,7 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   tour" and "Later in the tour", disabled at the tour's ends): the
   keyboard's way to reorder.
 - The selection's commands in words (`.acts`, the prototype's): a
-  station's "Add pin" (`add-pin`), "Put items on the ground"
+  station's "Add short text" (`add-pin`), "Put items on the ground"
   (`ground-items`, its note "N off", off when none is) and "Delete
   station"; an item's "Move to a new station" (`split`), "Put on the
   ground" (`ground`, its note "x.x m up/down", off when on it) and

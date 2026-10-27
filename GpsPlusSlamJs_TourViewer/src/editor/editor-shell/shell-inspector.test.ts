@@ -145,7 +145,7 @@ function fields(): [string, string][] {
   return [
     ...dock.body.querySelectorAll<
       HTMLOutputElement | HTMLInputElement | HTMLTextAreaElement
-    >("output, input, textarea"),
+    >("output:not(.count), input, textarea"),
   ].map((out) => {
     const label =
       out.labels?.[0]?.textContent ?? out.getAttribute("aria-label") ?? "?";
@@ -289,18 +289,33 @@ describe("drawInspector", () => {
 
   it("shows an item's offset in its station's frame, its height and heading to type", () => {
     draw("photo-1", true);
+    // B2c: a picture in the block model's words, its text fields first.
     expect(dock.body.querySelector(".sub")?.textContent).toBe(
-      "Photo in The old gate",
+      "Picture in The old gate",
     );
     expect(fields()).toEqual([
+      ["Title", ""],
+      ["Caption", ""],
+      ["Alt text", ""],
       ["Offset east", "-2.00 m"],
       ["Offset north", "4.00 m"],
       ["Height", "1.50 m"],
       ["Heading", "0.0 deg"],
     ]);
-    // A photo's caption is not typed here: its title is words.
-    expect(input("title")).toBeNull();
-    expect(dock.head.querySelector(".ttl")?.textContent).toBe("Photo");
+    // A picture's head is words; its title, caption and alt text are
+    // typed in the body (B2c), each with its count against its cap.
+    expect(dock.head.querySelector("input")).toBeNull();
+    expect(dock.head.querySelector(".ttl")?.textContent).toBe("Picture");
+    expect(dock.body.contains(input("title"))).toBe(true);
+    const counts = [...dock.body.querySelectorAll("output.count")].map(
+      (o) => o.textContent,
+    );
+    expect(counts).toEqual(["0 / 40", "0 / 1200", "0 / 300"]);
+    const alt = input("alt") as unknown as HTMLTextAreaElement | null;
+    expect(alt?.tagName).toBe("TEXTAREA");
+    expect(alt?.getAttribute("aria-describedby")).toBe(
+      dock.body.querySelectorAll("output.count")[2]?.id,
+    );
   });
 
   // Why: the position and the heading of a locked station are refused by
@@ -498,7 +513,7 @@ describe("drawInspector", () => {
       );
     draw("station:gate");
     expect(acts()).toEqual([
-      ["add-pin", "Add pin"],
+      ["add-pin", "Add short text"],
       ["ground-items", "Put items on the ground"],
       ["delete", "Delete station"],
     ]);
@@ -510,7 +525,7 @@ describe("drawInspector", () => {
     expect(acts()).toEqual([
       ["split", "Move to a new station"],
       ["ground", "Put on the ground"],
-      ["delete", "Delete photo"],
+      ["delete", "Delete picture"],
     ]);
     // A code is read-only here: no actions.
     draw("level-1");
@@ -689,8 +704,8 @@ describe("drawInspector", () => {
     expect(dock.body.textContent).toContain(
       "edit it in the pin's card on the 2D map",
     );
-    // Read-only, it is not typed here: no count.
-    expect(dock.body.querySelector("output")).toBeNull();
+    // Read-only, it is not typed here: no count of its text.
+    expect(dock.body.querySelector("#inspector-pin-count")).toBeNull();
     // A one-line text stays a field to type in, with no such line.
     draw("station:steps");
     expect(input("title")?.readOnly).toBe(false);

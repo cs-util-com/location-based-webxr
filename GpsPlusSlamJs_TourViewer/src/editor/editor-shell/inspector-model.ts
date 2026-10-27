@@ -34,6 +34,7 @@ import {
   worldBlocks,
   type WorldBlock,
 } from "../../tour-document.js";
+import { blockFields, type BlockField } from "../block-fields.js";
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
 import { stationImagePath } from "./tree-model.js";
 
@@ -118,6 +119,10 @@ interface ItemInspector {
   readonly text: string | null;
   /** A model's largest side (m); null for a pin or a photo. */
   readonly sizeM: number | null;
+  /** Its other text fields to type, per kind (`block-fields.ts`, B2c): a
+   *  short text's description, a picture's title, caption and alt text, a
+   *  model's title. */
+  readonly fields: readonly BlockField[];
   /** In the station's frame (m). */
   readonly offset: {
     readonly northM: number;
@@ -176,9 +181,11 @@ export interface InspectorCode {
   readonly printSizeM: number | null;
 }
 
+/** Each kind in the block model's words (B2c: a pin is a short text, a
+ *  photo a picture). */
 const KIND_LABEL: Readonly<Record<ObjectLook, string>> = {
-  pin: "Pin",
-  photo: "Photo",
+  pin: "Short text",
+  photo: "Picture",
   model: "3D model",
 };
 
@@ -363,6 +370,7 @@ export function buildInspector(input: {
       stationId: station.id,
       text: item.kind === "shortText" ? item.caption : null,
       sizeM: item.kind === "model" ? (item.sizeM ?? null) : null,
+      fields: blockFields(item),
       offset: { northM, upM, eastM },
       headingDeg: headingOfRotation(item.pose.rotation),
       groundOffM: itemOffGround(item, station, groundAt),

@@ -27,8 +27,12 @@ origin?, groundAt? })` ->
     `position` (`InspectorPosition`), or null when the
     station's point or the origin cannot be read;
   - `ItemInspector` - `kind: "item"`, `itemKind`, title, `sub` naming
-    its station, `stationId`, `text` (a pin's caption to edit; null for a
-    photo or a model), `sizeM` (a model's, else null), `offset`
+    its kind in the block model's words and its station ("Short text in
+    Market Square", "Picture in ...", "3D model in ...", B2c), `stationId`, `text` (a pin's caption to edit; null for a
+    photo or a model), `sizeM` (a model's, else null), `fields` (its
+    other text fields to type, `blockFields` of `../block-fields.ts`:
+    a short text's description, a picture's title, caption and alt text,
+    a model's title), `offset`
     (`northM`, `upM`, `eastM` in the station's frame), `headingDeg`,
     `groundOffM` (its height over the ground, rounded as the station's;
     null while unknown);

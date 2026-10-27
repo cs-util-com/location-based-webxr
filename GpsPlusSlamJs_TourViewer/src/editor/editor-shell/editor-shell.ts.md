@@ -45,7 +45,8 @@ items on the ground, the card's picture and Add pin.
     `add(place, "centre" | "here")`, `reorder(order)`, `split(itemId)`,
     `duplicate(selection)`, `remove(selection)`;
   - `deps.edits` (`ShellEditCommands`) - the inspector's edits:
-    `station(stationId, edit)`, `text(id, text)`, `scene(edit)` (a pose
+    `station(stationId, edit)`, `text(id, text)`, `block(id, field,
+value)` (a block's other text field, B2c), `scene(edit)` (a pose
     or a size, as the gestures write it), `groundItems(items)` (heights,
     one step), `addPin(stationId)`;
   - `deps.say(text)` - a passing line (the page's toast).

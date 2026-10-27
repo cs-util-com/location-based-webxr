@@ -82,13 +82,29 @@ describe("inspectorEdit", () => {
     });
   });
 
-  it("writes a pin's text as its text, and no caption of a model", () => {
+  // Why (B2c): the head's title of a short text is its caption (its
+  // text); every other text field of a block is a block field edit,
+  // checked against the format's caps by the session; a field the kind
+  // does not have writes nothing.
+  it("writes a pin's text as its text, and a block's other fields as block fields", () => {
     expect(edit("pin-1", "title", "Old fountain")).toEqual({
       kind: "text",
       id: "pin-1",
       text: "Old fountain",
     });
-    expect(edit("model-1", "title", "Horse")).toEqual({ kind: "none" });
+    expect(edit("pin-1", "description", "Under the arch")).toEqual({
+      kind: "block",
+      id: "pin-1",
+      field: "description",
+      value: "Under the arch",
+    });
+    expect(edit("model-1", "title", "Horse")).toEqual({
+      kind: "block",
+      id: "model-1",
+      field: "title",
+      value: "Horse",
+    });
+    expect(edit("model-1", "caption", "x")).toEqual({ kind: "none" });
   });
 
   // Why: the typed metres must be where the 3D view then draws the

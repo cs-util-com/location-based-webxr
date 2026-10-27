@@ -31,9 +31,15 @@ export function pinTextTooLong(text: string): boolean {
   return pinTextCount(text) > PIN_TEXT_MAX_CHARS;
 }
 
+/** A counter's line for `text` against `max`, by the format's count:
+ *  "12 / 160" (every text counter of the creator pages, B2a review #4). */
+export function textCounterLine(text: string, max: number): string {
+  return `${String(tourTextCount(text))} / ${String(max)}`;
+}
+
 /** The counter's line for `text`: "12 / 40". */
 export function pinTextCounterLine(text: string): string {
-  return `${String(pinTextCount(text))} / ${String(PIN_TEXT_MAX_CHARS)}`;
+  return textCounterLine(text, PIN_TEXT_MAX_CHARS);
 }
 
 /** The field and its counter (structural, so the unit tests run in
@@ -56,9 +62,19 @@ export function wirePinTextCounter(
   field: PinTextField,
   out: PinTextCounterOutput,
 ): { update(): void } {
+  return wireTextCounter(field, out, PIN_TEXT_MAX_CHARS);
+}
+
+/** `wirePinTextCounter` for any text and its cap `max` (a block's
+ *  fields, `editor/block-fields.ts`). */
+export function wireTextCounter(
+  field: PinTextField,
+  out: PinTextCounterOutput,
+  max: number,
+): { update(): void } {
   const update = (): void => {
-    out.textContent = pinTextCounterLine(field.value);
-    out.toggleAttribute("data-over", pinTextTooLong(field.value));
+    out.textContent = textCounterLine(field.value, max);
+    out.toggleAttribute("data-over", tourTextCount(field.value) > max);
   };
   field.addEventListener("input", update);
   update();

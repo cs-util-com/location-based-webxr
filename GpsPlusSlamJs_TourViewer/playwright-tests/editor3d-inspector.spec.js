@@ -406,7 +406,90 @@ test("a station's Name and Description are labelled fields: the description grow
   );
 });
 
-test("Put items on the ground, Put on the ground, Add pin, a pin's text and a typed place are one step each", async ({
+test("a short text's Description is a labelled field with its count: one step, refused over its cap, saved and opened again", async ({
+  page,
+  context,
+}) => {
+  // Why (B2c): a block's other text fields are typed in the inspector by
+  // the format's caps (block-fields.ts). The field is found by its label,
+  // its count is the format's and is read with it (aria-describedby), an
+  // edit is one undo step through the shared tour document, a text over
+  // the cap changes nothing, and what was typed is saved.
+  test.slow();
+  await openTour(page, await twoPinTour());
+  await selectStation(page, "a");
+  await page
+    .locator('#tree-body .card[data-station="a"] [data-select="pa"]')
+    .click();
+  await expect.poll(() => selected(page)).toBe("pa");
+  const inspector = page.locator("#shell-inspector");
+  await expect(inspector.locator(".sub")).toHaveText("Short text in Station A");
+  const description = inspector.getByLabel("Description", { exact: true });
+  await expect(description).toHaveAttribute("data-field", "description");
+  // The count the field names (its ids are drawn afresh with the
+  // inspector, so read the name each time).
+  const countOf = async () =>
+    inspector.locator(`#${await description.getAttribute("aria-describedby")}`);
+  await expect(await countOf()).toHaveText("0 / 160");
+  const start = await revision(page);
+  const blockNow = async () =>
+    (await stationNow(page, "a")).blocks.find(
+      (/** @type {any} */ b) => b.id === "pa",
+    );
+
+  await description.fill("Under the arch");
+  await expect(await countOf()).toHaveText("14 / 160");
+  await description.press("Tab");
+  await expect
+    .poll(async () => (await blockNow())?.description)
+    .toBe("Under the arch");
+  expect(await revision(page)).toBe(start + 1);
+  await page.locator("#studio-undo").click();
+  await expect.poll(async () => (await blockNow())?.description ?? "").toBe("");
+  await page.locator("#studio-redo").click();
+  await expect
+    .poll(async () => (await blockNow())?.description)
+    .toBe("Under the arch");
+
+  // Over the cap: marked as it is typed, and nothing written (undo and
+  // redo moved the revision too: compare with it as it stands now).
+  const beforeOver = await revision(page);
+  await description.fill("x".repeat(161));
+  const over = await countOf();
+  await expect(over).toHaveText("161 / 160");
+  await expect(over).toHaveAttribute("data-over", "");
+  await description.press("Tab");
+  await expect(
+    page.locator(".toast", {
+      hasText: "A description takes at most 160 characters.",
+    }),
+  ).toBeVisible();
+  expect(await revision(page)).toBe(beforeOver);
+  expect((await blockNow())?.description).toBe("Under the arch");
+
+  // Saved, and opened again in a new page: as typed.
+  const download = page.waitForEvent("download");
+  await save(page);
+  const saved = await (await download).path();
+  const { readFileSync } = await import("node:fs");
+  const written = readFileSync(saved);
+  expect((await savedTour(written)).stations[0].blocks[0]).toMatchObject({
+    id: "pa",
+    caption: "Pin a",
+    description: "Under the arch",
+  });
+  const next = await context.newPage();
+  await openTour(next, written);
+  await selectStation(next, "a");
+  await next
+    .locator('#tree-body .card[data-station="a"] [data-select="pa"]')
+    .click();
+  await expect(
+    next.locator("#shell-inspector").getByLabel("Description", { exact: true }),
+  ).toHaveValue("Under the arch");
+});
+
+test("Put items on the ground, Put on the ground, Add short text, a pin's text and a typed place are one step each", async ({
   page,
 }) => {
   test.slow();
@@ -482,7 +565,7 @@ test("Put items on the ground, Put on the ground, Add pin, a pin's text and a ty
   await expect.poll(() => revision(page)).toBe(before + 3);
   await expect(field(page, "heading")).toHaveValue("90.0");
 
-  // Add pin: a new pin in b, selected and said; its words typed in the
+  // Add short text: a new pin in b, selected and said; its words typed in the
   // head.
   await act(page, "add-pin").click();
   await expect(

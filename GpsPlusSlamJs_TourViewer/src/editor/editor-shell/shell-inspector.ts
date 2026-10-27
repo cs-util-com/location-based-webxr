@@ -34,7 +34,8 @@ import {
   type InspectorModel,
   type InspectorPosition,
 } from "./inspector-model.js";
-import { wirePinTextCounter } from "../../pin-text.js";
+import { wirePinTextCounter, wireTextCounter } from "../../pin-text.js";
+import type { BlockField } from "../block-fields.js";
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -287,12 +288,30 @@ function lockButton(locked: boolean): HTMLButtonElement {
   return b;
 }
 
-/** An item's kind in a command's words. */
+/** An item's kind in a command's words (the block model's, B2c). */
 const ITEM_WORD: Readonly<Record<string, string>> = {
-  pin: "pin",
-  photo: "photo",
+  pin: "short text",
+  photo: "picture",
   model: "3D model",
 };
+
+/** A block's text field to type (`block-fields.ts`), its count against
+ *  the format's cap under it as it is typed. */
+function blockTextField(field: BlockField): HTMLElement[] {
+  const row = field.prose
+    ? proseField(field.label, field.name, field.value, "Optional")
+    : lineField(field.label, field.name, field.value, "Optional");
+  const input = row.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+    "input, textarea",
+  );
+  const count = el("output", "note count");
+  if (input !== null) {
+    count.id = `${input.id}-count`;
+    input.setAttribute("aria-describedby", count.id);
+    wireTextCounter(input, count, field.max);
+  }
+  return [row, count];
+}
 
 /** The page's Delete key, as the command shows and announces it. */
 const DELETE_KEY = { shown: "Del", aria: "Delete" } as const;
@@ -489,7 +508,7 @@ function stationParts(
   );
   const parts: HTMLElement[] = [
     actions([
-      action("add-pin", "pin", "Add pin"),
+      action("add-pin", "pin", "Add short text"),
       action("ground-items", "ground", "Put items on the ground", {
         disabled: off === 0,
         note: off === null || off === 0 ? "" : `${String(off)} off`,
@@ -541,6 +560,11 @@ function itemParts(model: ItemModel, state: InspectorState): HTMLElement[] {
       }),
     ]),
   );
+  if (model.fields.length > 0) {
+    const section = el("div", "isec");
+    section.append(...model.fields.flatMap(blockTextField));
+    parts.push(section);
+  }
   if (model.sizeM !== null) {
     const section = el("div", "isec");
     section.append(

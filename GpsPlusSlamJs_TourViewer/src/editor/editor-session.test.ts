@@ -168,6 +168,39 @@ describe("createEditorSession", () => {
     await session.close();
   });
 
+  // Why (B2c): a block's other text fields (a short text's description
+  // here) are edited through the same tour document as its caption: one
+  // undo step each, counted as a change, written by the save; a text
+  // over its cap is refused in words and changes nothing.
+  it("edits a short text's description as one step, saved, undone, and refuses one over its cap", async () => {
+    const { session, manifest } = await opened([pin("a", "Old")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.editBlockField("a", "description", "Under the arch")).toEqual(
+      { kind: "edited" },
+    );
+    expect(editor.changeCount()).toBe(1);
+    expect(editor.editBlockField("a", "description", "x".repeat(161))).toEqual({
+      kind: "refused",
+      reason: "A description takes at most 160 characters.",
+    });
+    expect(editor.editBlockField("nope", "description", "x")).toMatchObject({
+      kind: "refused",
+    });
+    const saved = await editor.save({ keepScan: false });
+    expect((await carried(saved.blob)).objects[0]).toMatchObject({
+      caption: "Old",
+      description: "Under the arch",
+    });
+    editor.editBlockField("a", "description", "Changed");
+    editor.undo();
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
   it("refuses an empty pin with the phone's sentence and changes nothing", async () => {
     const { session, manifest } = await opened([pin("a", "Old")]);
     const editor = createEditorSession({

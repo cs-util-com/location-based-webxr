@@ -655,8 +655,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   undo step that ends a delete's Undo offer, refreshes the views and
   tells autosave unless nothing changed; a refusal is said
   (`writeInspectorEdit`):
-  - `station` and `text` - `editor.editStation` (name, description,
-    radius, card picture) and `editor.editText` (a pin's text);
+  - `station`, `text` and `block` - `editor.editStation` (name, description,
+    radius, card picture), `editor.editText` (a pin's text) and `editor.editBlockField` (a block's other text fields, B2c);
   - `scene` - `commitSceneEdit`, as a gesture's (a typed place, a size,
     a station put on the ground);
   - `groundItems` - `editor.groundItems`, items' heights in one step

@@ -130,6 +130,8 @@ interface ShellEditCommands {
   station(stationId: string, edit: StationEdit): void;
   /** A pin's text. */
   text(itemId: string, text: string): void;
+  /** One of a free block's other text fields (`block-fields.ts`). */
+  block(itemId: string, field: string, value: string): void;
   /** A pose or a size, as the 3D view's gestures write them. */
   scene(edit: GestureEdit): void;
   /** Items' heights (the ground under each, or a typed height), as one
@@ -484,7 +486,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     else if (edit.kind === "station")
       deps.edits.station(edit.stationId, edit.edit);
     else if (edit.kind === "text") deps.edits.text(edit.id, edit.text);
-    else if (edit.kind === "scene") deps.edits.scene(edit.edit);
+    else if (edit.kind === "block") {
+      deps.edits.block(edit.id, edit.field, edit.value);
+    } else if (edit.kind === "scene") deps.edits.scene(edit.edit);
     else if (edit.kind === "turn") view?.turn(edit.selection, edit.deg);
     else if (edit.kind === "height") {
       deps.edits.groundItems([{ id: edit.id, alt: edit.alt }]);

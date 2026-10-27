@@ -83,6 +83,7 @@ import {
 } from "../tour-viewer-session.js";
 import type { DetailsOutcome } from "./details-dialog.js";
 import type { EditorTourSettings } from "./editor-draft.js";
+import { blockFieldEdit, blockFields } from "./block-fields.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { STATION_LOCKED } from "./editor-view.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
@@ -312,6 +313,16 @@ export interface EditorSession {
   editText(
     id: string,
     text: string,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** Set one of a free block's other text fields (`block-fields.ts`: a
+   *  short text's description, a picture's title, caption or alt text, a
+   *  model's title): one step; a blank text removes the field; refused in
+   *  words, changing nothing, over its cap or for an id the tour does not
+   *  carry (B2c). */
+  editBlockField(
+    id: string,
+    field: string,
+    value: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
   /** Move a note on the map (its height and facing kept): beyond its
    *  station's found radius the station rule seats it anew - the station
@@ -780,6 +791,21 @@ export function createEditorSession(input: {
         tourDocumentActions.edited({
           object: edit.after,
           what: `the text of ${objectName(edit.after)}`,
+        }),
+      );
+      return { kind: "edited" };
+    },
+    editBlockField(id, field, value) {
+      const found = find(id);
+      if (found === undefined) return notInTour;
+      const edit = blockFieldEdit(found.object, field, value);
+      if (edit.kind !== "edited") return edit;
+      const label =
+        blockFields(found.object).find((f) => f.name === field)?.label ?? field;
+      store.dispatch(
+        tourDocumentActions.edited({
+          object: edit.after,
+          what: `the ${label.toLowerCase()} of ${objectName(edit.after)}`,
         }),
       );
       return { kind: "edited" };

@@ -166,10 +166,20 @@ describe("buildInspector", () => {
       kind: "item",
       itemKind: "pin",
       title: "Fountain, 1612",
-      sub: "Pin in Market Square",
+      sub: "Short text in Market Square",
       stationId: "a",
       text: "Fountain, 1612",
       sizeM: null,
+      // B2c: its other text fields, by the format's caps.
+      fields: [
+        {
+          name: "description",
+          label: "Description",
+          value: "",
+          max: 160,
+          prose: true,
+        },
+      ],
       offset: { northM: 4, upM: 1.5, eastM: -2 },
       headingDeg: 0,
       groundOffM: null,
@@ -179,6 +189,7 @@ describe("buildInspector", () => {
       title: "3D model",
       sub: "3D model in Market Square",
       sizeM: 2.4,
+      fields: [{ name: "title", label: "Title", max: 80, prose: false }],
       headingDeg: 90,
     });
   });

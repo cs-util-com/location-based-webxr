@@ -17,8 +17,11 @@ editor session as one undo step.
   - A station's `title`, `description` and `radius`: `{ kind: "station",
 stationId, edit }` (a `StationEdit` of `tour-document.ts`). A radius
     lower than its items is allowed: they stay where they are.
-  - A pin's `title` (the head's text box): `{ kind: "text", id, text }`. A
-    photo's or a model's caption is not edited here (none).
+  - A pin's `title` (the head's text box): `{ kind: "text", id, text }`.
+  - A block's other text field (any of `blockFields(item)`, B2c: a short
+    text's `description`, a picture's `title` / `caption` / `alt`, a
+    model's `title`): `{ kind: "block", id, field, value }`, its cap
+    checked by the session. A field the kind does not have: none.
   - A station's `east` / `north`: `{ kind: "scene", edit: station-pose }`,
     its anchor at the place those metres name from `origin`
     (`placeAtEastNorth`), its height and turn kept.

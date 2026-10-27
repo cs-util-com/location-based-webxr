@@ -3572,6 +3572,9 @@ const shell = createEditorShell({
     text: (id, text) => {
       writeInspectorEdit((e) => e.editText(id, text));
     },
+    block: (id, field, value) => {
+      writeInspectorEdit((e) => e.editBlockField(id, field, value));
+    },
     scene: commitSceneEdit,
     groundItems: (items) => {
       writeInspectorEdit((e) => e.groundItems(items));
