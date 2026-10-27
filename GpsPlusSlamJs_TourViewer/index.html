@@ -715,6 +715,9 @@
         --landing-route-dark: #b43a21;
         --landing-band: #ebe4d4;
         --landing-place: #dfe2d4;
+      }
+      /* The landing's column, shared with the setup stage below it. */
+      body {
         --landing-wide: 1128px;
       }
       body[data-mode="creator"] .landing {
@@ -1372,10 +1375,6 @@
           padding-inline: calc((100% - var(--landing-wide)) / 2);
         }
 
-        .landing h1 {
-          font-size: 60px;
-        }
-
         .landing-card h3 {
           font-size: 38px;
         }
@@ -1459,6 +1458,21 @@
 
         .landing h1 {
           font-size: 48px;
+        }
+      }
+
+      /* Beside the film the headline is 40 px where its column is narrow
+         (under 1160 px wide, about 386 to 453 px) or the window short
+         (under 680 px high). At 48 px a wide face (the CI's Linux face)
+         wraps it to five lines there, or four, and the hero's button ended
+         below a 700 or 600 px high window; from 1160 px wide it ends at
+         about 653 px. Swept 36 to 48 px in both faces at seven desktop
+         sizes: 42 px still pushed it under a 1100x600 window (index.html.md,
+         "On a wide screen"). */
+      @media (width >= 1000px) and (width < 1160px),
+        (width >= 1000px) and (height < 680px) {
+        .landing h1 {
+          font-size: 40px;
         }
       }
 
@@ -1717,7 +1731,7 @@
          lives inside the card). */
       @media (width >= 900px) and (height > 560px) {
         body[data-mode="creator"] .setup-stage {
-          max-width: calc(1128px + 32px);
+          max-width: calc(var(--landing-wide) + 32px);
           padding-inline: 16px;
         }
 

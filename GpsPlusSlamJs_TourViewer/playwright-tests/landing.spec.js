@@ -364,18 +364,23 @@ test.describe("the film's box on a short desktop window", () => {
 // the landing's own column with its card in view beside the map, and each
 // step's picture starting at its kicker's line. Positions and gaps, not
 // presence: a layout that merely shows everything passes a presence test.
-for (const viewport of [
+// Also in a wide face: the headline beside the film wraps by its face's
+// widths, and a button that fits this machine's face by a few lines can
+// end below the first screen in the CI's.
+for (const { viewport, wide } of [
+  { width: 1100, height: 700 },
   { width: 1280, height: 720 },
   { width: 1440, height: 900 },
   { width: 1920, height: 1080 },
-]) {
-  test.describe(`the landing on a wide screen, ${String(viewport.width)}x${String(viewport.height)}`, () => {
+].flatMap((vp) => [false, true].map((w) => ({ viewport: vp, wide: w })))) {
+  test.describe(`the landing on a wide screen, ${String(viewport.width)}x${String(viewport.height)}${wide ? ", in a wide face" : ""}`, () => {
     test.use({ viewport, storageState: FIRST_VISIT });
 
     test("sets the hero side by side, the text larger, the reasons in three columns, the stage on the column and its card beside the map", async ({
       page,
     }) => {
       await page.emulateMedia({ reducedMotion: "reduce" });
+      if (wide) await useWideFont(page);
       await openLanding(page);
       await expect(page.getByTestId("landing-film")).toHaveAttribute(
         "data-mount",
@@ -490,26 +495,32 @@ for (const viewport of [
       // ends about where the stage does, so room is added below it first
       // (a longer step, or a page that opened at the stage, has it).
       // The card can travel as far as the map runs on below it (the
-      // stage ends with the map); half of that is scrolled, so the card,
-      // left alone, would sit half a travel above the view's top + 16.
-      const travel = await page.getByTestId("setup-stage").evaluate((el) => {
-        const room = document.createElement("div");
-        room.style.height = "2000px";
-        document.body.append(room);
-        el.scrollIntoView({ block: "start", behavior: "instant" });
-        const cardEl = /** @type {HTMLElement} */ (
-          document.getElementById("setup-card")
-        );
-        const mapEl = /** @type {HTMLElement} */ (
-          document.querySelector(".setup-map-frame")
-        );
-        const below =
-          mapEl.getBoundingClientRect().bottom -
-          cardEl.getBoundingClientRect().bottom;
-        window.scrollBy({ top: below / 2, behavior: "instant" });
-        return below;
-      });
+      // stage ends with the map); half of that is scrolled, or, where the
+      // travel is short (a wide face makes the card taller), just enough
+      // to take the map's top out of view, and never past the travel. The
+      // card, left alone, would sit that far above the view's top + 16.
+      const { travel, scrolled } = await page
+        .getByTestId("setup-stage")
+        .evaluate((el) => {
+          const room = document.createElement("div");
+          room.style.height = "2000px";
+          document.body.append(room);
+          el.scrollIntoView({ block: "start", behavior: "instant" });
+          const cardEl = /** @type {HTMLElement} */ (
+            document.getElementById("setup-card")
+          );
+          const mapEl = /** @type {HTMLElement} */ (
+            document.querySelector(".setup-map-frame")
+          );
+          const below =
+            mapEl.getBoundingClientRect().bottom -
+            cardEl.getBoundingClientRect().bottom;
+          const by = Math.max(below / 2, mapEl.getBoundingClientRect().top + 4);
+          window.scrollBy({ top: by, behavior: "instant" });
+          return { travel: below, scrolled: by };
+        });
       expect(travel).toBeGreaterThan(40);
+      expect(scrolled).toBeLessThan(travel);
       const mapNow = await at(".setup-map-frame");
       const cardNow = await at("#setup-card");
       expect(mapNow.y).toBeLessThan(0);
@@ -547,6 +558,75 @@ test.describe("the hero film on a wide screen", () => {
     expect(filmBox.x).toBeGreaterThan(text.x + text.width);
   });
 });
+
+// The hero's button and the film's picture and bar end on the first
+// screen at seven desktop sizes, short windows included, in this
+// machine's face and in a wide one. Beside the film, a 48 px headline
+// wraps to four or five lines in a wide face and pushed the button below
+// a 600 or 700 px high window, so the headline is 40 px where the text
+// column is narrow (under 1160 px wide) or the window short (under
+// 680 px high), and 48 px elsewhere; both are pinned here.
+for (const wide of [false, true]) {
+  test.describe(`the hero on the first screen${wide ? ", in a wide face" : ""}`, () => {
+    test.use({
+      viewport: { width: 1000, height: 700 },
+      storageState: FIRST_VISIT,
+    });
+
+    test("keeps the button and the film's picture and bar in view at seven desktop sizes", async ({
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      if (wide) await useWideFont(page);
+      await openLanding(page);
+      await expect(page.getByTestId("landing-film")).toHaveAttribute(
+        "data-mount",
+        "ready",
+      );
+      /** @type {[number, number, string][]} */
+      const sizes = [
+        [1000, 700, "40px"],
+        [1100, 600, "40px"],
+        [1100, 700, "40px"],
+        [1280, 600, "40px"],
+        [1280, 720, "48px"],
+        [1440, 900, "48px"],
+        [1920, 1080, "48px"],
+      ];
+      for (const [width, height, headline] of sizes) {
+        const where = `${String(width)}x${String(height)}`;
+        await page.setViewportSize({ width, height });
+        await page.waitForFunction(
+          ([w, h]) => innerWidth === w && innerHeight === h,
+          [width, height],
+        );
+        // two frames, so the film's own resize handling has run
+        await page.evaluate(
+          () =>
+            new Promise((done) => {
+              requestAnimationFrame(() => requestAnimationFrame(done));
+            }),
+        );
+        const cta = await box(page.locator(".landing-hero .landing-cta"));
+        expect(cta.y + cta.height, `${where}: the button`).toBeLessThanOrEqual(
+          height,
+        );
+        const stage = await box(page.locator("#landing-film .lf-stage"));
+        const bar = await box(page.locator("#landing-film .lf-controls"));
+        expect(stage.y, `${where}: the picture`).toBeGreaterThanOrEqual(0);
+        expect(bar.y + bar.height, `${where}: the bar`).toBeLessThanOrEqual(
+          height,
+        );
+        expect(
+          await page
+            .locator(".landing h1")
+            .evaluate((el) => getComputedStyle(el).fontSize),
+          `${where}: the headline`,
+        ).toBe(headline);
+      }
+    });
+  });
+}
 
 test.describe("the cards' pictures", () => {
   test.use({

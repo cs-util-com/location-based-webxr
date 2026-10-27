@@ -265,20 +265,49 @@ its chunk fails, the hero shows its last moment as a drawing).
   heading, the heading 12 px above its first line (8 px sideways), lines
   10 px apart, the text indented 50 px for the marks (76 px desktop). "Make your own tour": 14 px
   between heading, list, line and button. `landing.spec.js` pins them at
-  390x844, 844x390 and 1440x900, also in a wide face, and the wide-screen
-  layout below at 1280x720, 1440x900 and 1920x1080.
+  390x844, 844x390 and 1440x900, also in a wide face, the wide-screen
+  layout below at 1100x700, 1280x720, 1440x900 and 1920x1080, each also in a
+  wide face, and the hero on the first screen at seven desktop sizes
+  (1000x700 to 1920x1080, short windows included) in both faces.
 - **Sizes without `clamp()` or `min()`:** the prototypes' fluid sizes are
-  steps at 600, 900 and 1160 px (`h1` 29, 44, 56, 60 px; 25 px on a phone
-  held sideways; 48 px from 1000 px, where it shares the row with the
-  film); the csstree validator rejects `clamp()`, `min()` and
-  `max()` here.
+  steps at fixed widths; the csstree validator rejects `clamp()`, `min()`
+  and `max()` here. The `h1`: 29 px, 44 px from 600 px wide, 56 px from
+  900 px, and beside the film from 1000 px 48 px, or 40 px where its
+  column is narrow (under 1160 px wide) or the window short (under 680 px
+  high); 25 px on a phone held sideways (landscape, at most 560 px high).
+  The prototypes' 60 px from 1160 px is not used: beside the film the
+  text column is at most about 454 px wide, where 56 and 60 px gave four
+  lines in the system face.
 - **On a wide screen** (every rule has a height guard or a width no phone
   has, so a phone, upright or held sideways, keeps its layout; measured
-  2026-10-27 at 390x844 and 844x390, no element moved or changed size):
+  2026-10-27 at 390x844 and 844x390, also in a wide face, no element moved
+  or changed size):
   - From 768 px wide and taller than 560 px the reading text is larger
-    (`.landing-way` and the film's caption 16 px, the reasons and the
-    numbered order 17.5 px, the use cases' sentences 17 px) and so are the
-    main buttons (`.landing-begin`: 17 px, at least 52 px high).
+    (`.landing-way` and the step cards' captions `.landing-caption` 16 px,
+    the reasons and the numbered order 17.5 px, the use cases' sentences
+    17 px) and so are the main buttons (`.landing-begin`: 17 px, at least
+    52 px high). The film's own caption keeps its size
+    (`src/landing/landing-film.css`). Each value was judged by geometry
+    (line counts in the system face and the wide face, 2026-10-27), none
+    yet by eye on a real screen:
+    - The way-in line and the cards' captions 16 px (considered 15 to
+      18): secondary lines, a step under the 17.5 px reading text and so
+      under the 17 to 18 px asked for body text. 17 px still keeps the
+      way-in line on one line from 768 px in both faces; 18 px wraps it to
+      two at 768 px in the wide face. Reversing: if they read too small
+      beside the reading text, 17 px.
+    - The reasons and the numbered order 17.5 px (considered 16.5 to
+      18.5): at 18.5 px a reason takes a third line in the three-column
+      list at 900 px in the wide face (273 px columns). Reversing: 18.5 px
+      if 17.5 reads too small and three-line reasons are accepted.
+    - The use cases' sentences 17 px (considered 16 to 18): at 18 px a
+      sentence runs to five lines in the wide face at 768 and 1280 px (four
+      at 17). Reversing: 16 px if the use-case cards read too long.
+    - The breakpoint 768 px (considered 600 to 900): with the larger text
+      from 600 or 640 px the way-in line wraps to two lines and the use
+      cases' sentences run to five lines in their 293 px columns in the
+      wide face; 700 px would also keep both. Reversing: 700 px if
+      tablets from 700 px wide should get the larger text.
   - From 1000 px wide the hero's text and film stand side by side
     (`.landing-hero` a two-column grid, 48 px apart, the film's top on the
     kicker's). The film's box is 58 % of the row less the gap, at 16:9 plus
@@ -294,11 +323,42 @@ its chunk fails, the hero shows its last moment as a drawing).
     run past a 500 px high window). Reversing: if the film's small text
     reads too small at about 534 px wide, or the text column too narrow,
     the breakpoint goes to 1100.
+  - The headline beside the film is 48 px, and 40 px where its column is
+    narrow (1000 to 1159 px wide: about 386 to 453 px) or the window short
+    (under 680 px high). In a wide face (Verdana; the CI's Linux face,
+    DejaVu Sans, has the same widths) 48 px wrapped it to five lines in
+    the narrow column and four in the 454 px one, so the hero's button
+    ended at 705 px at 1000x700, 1100x600 and 1100x700 and at 653 px at
+    1280x600; with 40 px it ends at 619 px at 1000x700 and 575 px at the
+    other three (519 to 548 px in the system face). From 1160 px wide and
+    680 px high, 48 px ends it at 653 px in the wide face (545 in the
+    system face), at least 27 px clear. Swept 2026-10-27 in both faces at
+    1000x700, 1100x600, 1100x700, 1280x600, 1280x720, 1440x900 and
+    1920x1080: the headline at 36, 38, 40, 42, 44, 46 and 48 px; the
+    film's share at 0.5, 0.52 and 0.55 against 44 and 48 px; and the
+    1100 px breakpoint. Only 40 px and under keep the button on all seven
+    screens at the 0.58 share (42 px ends it at 627 px at 1100x600). The
+    share 0.5 with 48 px fits too, but by 3 px at 1100x600 in the wide
+    face, and narrows the film on every desktop (626 to 540 px); 0.52 with
+    44 px fits by 12 px there. The 1100 px breakpoint alone leaves
+    1100x600, 1100x700 and 1280x600 over. Not fitting, named: in the wide
+    face a window 1000 to about 1090 px wide and under 620 px high (four
+    lines, the button at 619 px); 36 px would fit it. Judged by geometry,
+    not yet by eye; 40 px is under the 44 px section titles.
+    Reversing: if 40 px reads too small, the share 0.5 with 48 px
+    (accepting the 3 px margin at 1100x600 and the smaller film).
   - From 900 px wide and taller than 560 px the step cards' pictures start
     at their kicker's line (`align-items: start`, the picture 6 px down,
-    the kicker's own top padding), and the cards are 56 px apart.
+    the kicker's own top padding), and the cards are 56 px apart
+    (considered 48 to 76, the earlier desktop value; judged by geometry,
+    not yet by eye). The largest gap between lines inside a card is 12 px (its heading
+    to its first line), so 56 px keeps the cards apart by more than four
+    times it; every value in the range keeps a whole card (about 500 to
+    516 px) on a 600 px high first screen, so geometry does not decide it. Reversing: 64 to 76 px if the
+    cards read as running together.
   - From 900 px wide and taller than 560 px the setup stage stands on the
-    landing's column (1128 px and its 16 px gutters): the map's title and
+    landing's column (`--landing-wide`, 1128 px, set on `body` so both the
+    landing and the stage read it, and its 16 px gutters): the map's title and
     its frame's outer line on the column's left edge, the step card's right
     edge on its right. The card is sticky (16 px from the top) beside the
     map while the map is in view, except during AR, whose panel lives in
