@@ -358,7 +358,6 @@ export function createLandingFilm(
       lastEmit = key;
       host.dataset.filmState = snap.status;
       host.dataset.filmBeat = String(snap.position.beat);
-      host.dataset.filmMoving = String(snap.moving);
       // the cards below hold still while this is "true" (landing-cards.ts):
       // while the film moves with its start share in view, not while it
       // plays on mostly scrolled away
@@ -625,7 +624,6 @@ export function createLandingFilm(
       host.replaceChildren(...before);
       delete host.dataset.filmState;
       delete host.dataset.filmBeat;
-      delete host.dataset.filmMoving;
       delete host.dataset.playing;
     },
   };

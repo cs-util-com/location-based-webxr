@@ -44,11 +44,10 @@ timeline.
 ## What the page sees
 
 - On the host: `data-film-state` (waiting, playing, paused, finished),
-  `data-film-beat` (0 to 7), `data-film-moving` ("true" while it plays
-  with its start share in view), `data-playing` (the same as
-  `data-film-moving`: the cards hold still while it is "true",
+  `data-film-beat` (0 to 7), `data-playing` ("true" while it plays with
+  its start share in view: the cards hold still while it is "true",
   `landing-cards.ts`; a film that plays on with under half of it in view
-  does not hold them). All four are removed on `destroy`.
+  does not hold them). All three are removed on `destroy`.
 - A `landing-film-change` event on the host, `detail: { status, beat, moving, pausedBy }`,
   only when one of these changes (not every frame). The cards wait while
   `moving` is true.

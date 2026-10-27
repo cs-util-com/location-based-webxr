@@ -93,6 +93,50 @@ describe("keepUsesHeight", () => {
     unwatch();
   });
 
+  // The observer reports every resize of the section, most of them (the
+  // window scrolled, a sibling moved) without a change of its height:
+  // session storage is written only when the kept value would change.
+  it("writes storage again only when the height or width changes", () => {
+    const writes: string[] = [];
+    let height = 2391;
+    let width = 390;
+    const host = hostOf(0);
+    host.getBoundingClientRect = () => ({ height }) as unknown as DOMRect;
+    const observed: (() => void)[] = [];
+    const Real = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(cb: () => void) {
+        observed.push(cb);
+      }
+      observe() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      const unwatch = keepUsesHeight(host, {
+        storage: { setItem: (_k, v) => writes.push(v) },
+        width: () => width,
+      });
+      const report = () => {
+        for (const cb of observed) cb();
+      };
+      report();
+      report();
+      expect(writes).toHaveLength(1);
+      height = 2400;
+      report();
+      report();
+      width = 391;
+      report();
+      expect(
+        writes.map((v) => keptUsesHeight(v, width) ?? keptUsesHeight(v, 390)),
+      ).toEqual([2391, 2400, 2400]);
+      expect(writes).toHaveLength(3);
+      unwatch();
+    } finally {
+      globalThis.ResizeObserver = Real;
+    }
+  });
+
   it("keeps nothing for a host with no height, and survives storage that throws", () => {
     const stored = new Map<string, string>();
     keepUsesHeight(hostOf(0), {

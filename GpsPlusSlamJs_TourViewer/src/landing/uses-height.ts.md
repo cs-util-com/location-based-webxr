@@ -35,8 +35,9 @@ width, is exact in whatever face the page is set in.
   `min-height` the page's script set (the mounted section now holds its
   own place), stores the host's border-box height at `width()`, and stores
   it again whenever the host resizes (a `ResizeObserver`, where there is
-  one). Returns the unwatch. A height of 0 is not stored; storage that is
-  null or throws stores nothing.
+  one), writing storage only when the kept value would change. Returns
+  the unwatch. A height of 0 is not stored; storage that is null or
+  throws stores nothing.
 
 ## Invariants
 

@@ -250,13 +250,16 @@ export function watchArStarting(
       }
     };
     doc.addEventListener("click", onTap, { capture: true });
+    const live = (): boolean => doc.body.dataset["arActive"] === "true";
     const watch = new MutationObserver(() => {
-      if (doc.body.dataset["arActive"] === "true") stop();
+      if (live()) stop();
     });
     watch.observe(doc.body, {
       attributes: true,
       attributeFilter: ["data-ar-active"],
     });
+    // a part registered during a live session never sees the change
+    if (live()) stop();
     return () => {
       doc.removeEventListener("click", onTap, { capture: true });
       watch.disconnect();

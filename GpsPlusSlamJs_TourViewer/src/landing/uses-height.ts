@@ -54,22 +54,24 @@ export interface UsesHeightEnv {
 /**
  * Drops the reservation the inline script set on the mounted section's
  * host (its own height holds the place now) and keeps the host's height
- * for the next load, again whenever it changes. Returns the unwatch.
- * Storage that throws (site data blocked, full) keeps nothing.
+ * for the next load, again whenever it changes (storage is written only
+ * when the kept value would change). Returns the unwatch. Storage that
+ * throws (site data blocked, full) keeps nothing.
  */
 export function keepUsesHeight(
   host: HTMLElement,
   env: UsesHeightEnv,
 ): () => void {
   host.style.removeProperty("min-height");
+  let written: string | null = null;
   const keep = (): void => {
     const height = host.getBoundingClientRect().height;
     if (!(height > 0)) return;
+    const value = encodeUsesHeight(env.width(), height);
+    if (value === written) return;
     try {
-      env.storage?.setItem(
-        USES_HEIGHT_KEY,
-        encodeUsesHeight(env.width(), height),
-      );
+      env.storage?.setItem(USES_HEIGHT_KEY, value);
+      written = value;
     } catch {
       // nothing kept: the next load reserves the page's lower bound
     }

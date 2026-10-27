@@ -371,6 +371,17 @@ describe("watchArStarting", () => {
     expect(stop).toHaveBeenCalledTimes(2);
   });
 
+  // A part registered while a session is already live (a reduced-motion
+  // remount during AR) never sees the attribute change: it must be told at
+  // once, or it could build its renderer behind the session.
+  it("calls stop at once when a session is already live", () => {
+    makeDom();
+    document.body.dataset["arActive"] = "true";
+    const stop = vi.fn();
+    watchArStarting(document)(stop);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
   it("ignores taps elsewhere", () => {
     makeDom();
     const stop = vi.fn();

@@ -589,7 +589,7 @@ describe("landing film: the page's side", () => {
     expect(t.host.dataset).toMatchObject({
       filmState: "playing",
       filmBeat: "0",
-      filmMoving: "true",
+      playing: "true",
     });
     t.frames.step();
     t.frames.step();

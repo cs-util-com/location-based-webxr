@@ -48,7 +48,9 @@ film's still are static in `index.html` and show without this module.
 - `watchArStarting(document)` - the page's "AR is starting" signal in the
   film's shape, `(stop) => unregister`: a capture-phase click on or inside
   `#enter-ar`, and `body[data-ar-active="true"]` (written by `ar-entry.ts`)
-  for a session started another way.
+  for a session started another way. A `stop` registered while the page
+  already marks a live session is called at once (a part mounted afresh
+  during AR never sees the attribute change).
 - Types: `LandingPart`, `LandingFilmOptions`, `LandingCardsOptions`,
   `LandingLoaders`, `LandingDom`, `MountLandingOptions`, `MountedLanding`.
   The film's and the use cases' modules implement `LandingFilmOptions` and
