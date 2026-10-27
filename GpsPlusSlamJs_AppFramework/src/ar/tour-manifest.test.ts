@@ -148,6 +148,11 @@ describe('parseTourManifest', () => {
       /"minor" must be an integer >= 0/,
     ],
     [
+      'a negative minor',
+      { version: 4, minor: -1, stations: [] },
+      /"minor" must be an integer >= 0/,
+    ],
+    [
       'an unknown order',
       { version: 4, order: 'random', stations: [] },
       /"order"/,
@@ -204,6 +209,22 @@ describe('parseTourManifest', () => {
       'an asset whose path is not its own content entry',
       tour({ assets: [{ ...photoAsset, path: '../../session.json' }] }),
       /assets\[0\]\.path" must be content\/f1\.<ext>/,
+    ],
+    [
+      // The file's stem is the asset's id: another id's entry is not its own.
+      'an asset whose path is the content entry of another id',
+      tour({ assets: [{ ...photoAsset, path: 'content/f2.jpg' }] }),
+      /assets\[0\]\.path" must be content\/f1\.<ext>/,
+    ],
+    [
+      'a pixel size on an asset that is not an image',
+      tour({
+        assets: [
+          photoAsset,
+          { id: 's1', path: 'content/s1.mp3', width: 10, height: 10 },
+        ],
+      }),
+      /assets\[1\]\.width"\/"height" are only for an image/,
     ],
     [
       // SVG can carry script; an image asset is a raster type only.
@@ -713,6 +734,13 @@ describe('parseTourObject and tourObjectRecord (the world view a draft keeps)', 
         asset: { id: 'f2', path: 'content/f2.jpg' },
       },
       /object\.asset" must be the image asset its picture names/,
+    ],
+    [
+      // A draft never holds what a save would refuse: the reader would
+      // leave this text out of a tour, so the record fails instead.
+      'an optional text its reader would drop',
+      { ...record, block: { ...record.block, description: 'x'.repeat(161) } },
+      /description/,
     ],
     [
       'an asset entry on a pin',
