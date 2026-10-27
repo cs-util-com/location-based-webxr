@@ -3,8 +3,8 @@
 **Purpose:** the schema, reader and writer of `tour.json` - what a creator
 placed in a tour. Since format version 4 (station blocks, design
 `GpsPlusSlamJs_Docs/docs/2026-10-25-0845-station-blocks-model-proposal-design.md`,
-build plan `GpsPlusSlamJs_Docs/docs/2026-10-25-2052-station-blocks-build-plan.md`
-B2a) a tour is media ASSETS (`tour-assets.ts`) and STATIONS
+build plan `GpsPlusSlamJs_Docs/docs/2026-10-25-2052-station-blocks-build-plan.md`)
+a tour is media ASSETS (`tour-assets.ts`) and STATIONS
 (`tour-stations.ts`). A station carries the exact geo pose (lat, lon,
 absolute altitude, rotation against north) and its BLOCKS
 (`tour-blocks.ts`) carry LOCAL poses relative to it (`tour-items.ts`,

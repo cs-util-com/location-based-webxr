@@ -6,9 +6,9 @@
  * the tap and the timer of an auto step).
  *
  * It plays `show` steps (the block each names, rendered by the view) and
- * scene choices. A QUIZ step is K5's: it is skipped here, as a lenient
- * reader skips what it cannot show (K1 review R4), so a visitor meets the
- * rest of the scene instead of a dead end.
+ * scene choices. A QUIZ step is not played yet: it is skipped here, as a
+ * lenient reader skips what it cannot show, so a visitor meets the rest
+ * of the scene instead of a dead end.
  */
 
 import type { TourStep } from "gps-plus-slam-app-framework/ar/tour-story";
