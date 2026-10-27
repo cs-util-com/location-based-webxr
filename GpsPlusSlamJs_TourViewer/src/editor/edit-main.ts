@@ -1885,12 +1885,14 @@ function dropTour(reason: string): void {
 /**
  * The page's own save target for a file picked with write permission: one
  * tab per file name, and a second tab may still choose to edit here.
+ * Resolves to whether the target is attached now (false while another tab
+ * holds the name, or when the file cannot be saved in place).
  */
 async function attachTarget(
   mine: EditorSession,
   handle: WritableFileHandle,
   file: File,
-): Promise<void> {
+): Promise<boolean> {
   // A file opened to be written keeps its walk from the start, before the
   // lock's answer: a download saved before "Edit here anyway" must not
   // drop the walk the later in-place write would then carry over the
@@ -1901,12 +1903,12 @@ async function attachTarget(
   const held = await holdEditorLock(navigator.locks, file.name);
   if (editor !== mine) {
     held.release();
-    return;
+    return false;
   }
-  const take = async (): Promise<void> => {
+  const take = async (): Promise<boolean> => {
     try {
       const made = await createSaveTarget(handle, file);
-      if (editor !== mine) return;
+      if (editor !== mine) return false;
       target = made;
       // Written in place from now on, so it saves by itself too (edits made
       // before the target came are saved once the delay has passed) -
@@ -1916,19 +1918,20 @@ async function attachTarget(
       store.dispatch(tourDocumentActions.saveLimited({ largeTour }));
       autosave.enable(!largeTour);
       renderSaveState();
+      return true;
     } catch (err) {
-      if (editor !== mine) return;
+      if (editor !== mine) return false;
       fileToasts.push(
         toast(
           `This file cannot be saved in place (${err instanceof Error ? err.message : String(err)}), so Save downloads a copy.`,
         ),
       );
+      return false;
     }
   };
   if (held.granted) {
     lock = held;
-    await take();
-    return;
+    return take();
   }
   const told = toast(
     `Another tab is editing a file named ${file.name}. Saving here downloads a copy.`,
@@ -1942,6 +1945,7 @@ async function attachTarget(
     null,
   );
   fileToasts.push(told);
+  return false;
 }
 
 /** Open `file`; whether it became the open tour. */
@@ -2387,7 +2391,7 @@ async function writeChosen(
 async function adoptChosen(
   mine: EditorSession,
   handle: FileSystemFileHandle,
-): Promise<void> {
+): Promise<boolean> {
   let file: File;
   try {
     file = await handle.getFile();
@@ -2403,12 +2407,12 @@ async function adoptChosen(
         ),
       );
     }
-    return;
+    return false;
   }
-  if (editor !== mine) return;
+  if (editor !== mine) return false;
   openedFile = { name: handle.name, handle };
   element("tour-file").textContent = handle.name;
-  await attachTarget(mine, handle, file);
+  return attachTarget(mine, handle, file);
 }
 
 /**
@@ -2540,13 +2544,17 @@ async function keepInChosenFile(
   pick: Promise<SaveFilePick>,
 ): Promise<void> {
   // A save the creator started meanwhile runs out first; the slot is then
-  // this write's, taken with no await between the check and the claim,
-  // until the file is adopted (r955 review #3: Save, Ctrl+S and Done
-  // stayed enabled during the write, and a save in between could adopt
-  // another file).
+  // this write's until the file is adopted (Save, Ctrl+S and Done stay
+  // unavailable during the write, and a save in between could adopt
+  // another file). `saving()` is checked again after the last await,
+  // with none between that check and the claim: a save that started
+  // while `stillToChoose` awaited is waited for too.
   let handle = await stillToChoose(mine, pick);
-  if (handle !== null) {
+  while (handle !== null && saving()) {
+    const end = saveEnd;
     await savesSettled();
+    // A claim left on an ended save is a bug, not a wait: never spin.
+    if (saving() && saveEnd === end) break;
     handle = await stillToChoose(mine, pick);
   }
   if (handle === null) {
@@ -2561,11 +2569,12 @@ async function keepInChosenFile(
   const ended = claimSave("open");
   renderSaveState();
   let adopted = false;
+  let attached = false;
   try {
     await writeFileOrAbort(handle, fetched);
     if (editor !== mine) return;
     chosenAtOpen = true;
-    await adoptChosen(mine, handle);
+    attached = await adoptChosen(mine, handle);
     adopted = editor === mine && openedFile?.handle === handle;
   } catch (err) {
     if (editor === mine) {
@@ -2579,14 +2588,26 @@ async function keepInChosenFile(
     if (editor === mine) releaseSave();
     ended();
     renderSaveState();
+    // A Save asked for (Ctrl+S) during the write runs now, into the
+    // adopted file, as one waiting behind an autosave does.
+    if (saveState().queued && editor === mine && !saving()) {
+      store.dispatch(tourDocumentActions.saveQueued({ queued: false }));
+      void runSave();
+    }
     // An autosave held back during the write runs now, into the adopted
     // file, and so does a resave that fell due meanwhile.
     autosave.poke();
     if (editor === mine) void resaveIfDue();
   }
   if (adopted) {
+    // "By themselves" only when the file is saved into in place and the
+    // autosave runs for it: not while another tab holds its name, nor when
+    // it cannot be saved in place (their toasts say why), nor for a tour
+    // too large to be saved after every change.
     toast(
-      `Saved to ${handle.name}. Your changes are saved into it by themselves.`,
+      attached && !saveState().largeTour
+        ? `Saved to ${handle.name}. Your changes are saved into it by themselves.`
+        : `Saved to ${handle.name}.`,
     );
   }
 }
@@ -2625,8 +2646,10 @@ async function runSave(
 ): Promise<void> {
   if (editor === null) return;
   if (saving()) {
-    if (saveState().by === "auto") {
-      // Committed now, saved right after the autosave that runs.
+    const by = saveState().by;
+    if (by === "auto" || by === "open") {
+      // Committed now, saved right after the autosave, or the write at
+      // the open, that runs.
       card.commit();
       if (ui().moving !== null) finishMove();
       store.dispatch(tourDocumentActions.saveQueued({ queued: true }));

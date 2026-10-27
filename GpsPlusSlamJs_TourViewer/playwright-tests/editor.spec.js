@@ -5112,13 +5112,18 @@ test("a write refused at the open says so in a toast that stays, keeps the file,
   expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(2);
 });
 
-test("while the write at the open runs, it holds the save slot: Save waits", async ({
+test("while the write at the open runs, it holds the save slot: Save waits, and Ctrl+S saves right after", async ({
   page,
 }) => {
-  // Why: the write at the open did not hold the page's save slot, so Save,
-  // Ctrl+S and Done stayed enabled during it; an edit plus Ctrl+S then
-  // could adopt the wrong file and leak a name lock (r955 review #3).
+  // Why: the write at the open holds the page's save slot, so Save shows
+  // as unavailable during it and a click on it runs nothing. Ctrl+S
+  // pressed then must not be dropped in silence: it waits, as it does
+  // behind an autosave, and saves the edit made meanwhile into the
+  // adopted file once the write has landed. The page's clock is paused
+  // once the write holds, so the autosave's delay never passes and only
+  // the waiting Ctrl+S can save.
   await withBothDialogs(page);
+  await page.clock.install({ time: new Date(2026, 9, 7, 9, 0) });
   await page.goto("/edit.html");
   await heldWriteSavePicker(page, "slow.zip");
   await page.locator("#link-input").fill(LINKED_TOUR);
@@ -5131,11 +5136,63 @@ test("while the write at the open runs, it holds the save slot: Save waits", asy
     "aria-disabled",
     "true",
   );
+  await page.clock.pauseAt(new Date(2026, 9, 7, 10, 0));
+  await page.locator("#no-gps-input").check();
+  // Save, pressed through its menu: unavailable, so nothing runs and the
+  // write at the open still holds the slot.
+  await page.locator("#file-menu-btn").click();
+  await fileItem(page, "save").click({ force: true });
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saving into slow.zip…",
+  );
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Control+s");
   await page.evaluate(() => Reflect.get(window, "__releaseWrite")());
   await expect(page.locator("#tour-file")).toHaveText("slow.zip");
+  await expect(page.locator("#save-status")).toHaveText("Saved to slow.zip");
+  expect(tourJsonOf(await readOpfsTour(page, "slow.zip"))).toContain(
+    '"needsNoGps": true',
+  );
   await expect(page.locator("#file-save")).not.toHaveAttribute(
     "aria-disabled",
     "true",
+  );
+  // One dialog only: the one in the open's click.
+  expect(
+    await page.evaluate(() => Reflect.get(window, "__savePickNames")),
+  ).toHaveLength(1);
+});
+
+test("a file chosen at the open that another tab is editing is not said to save by itself", async ({
+  page,
+}) => {
+  // Why: the tour is written into the chosen file, but when another tab
+  // holds that file's name the editor attaches no in-place save (Save
+  // downloads a copy until "Edit here anyway"), so the toast must not
+  // promise that changes are saved into it by themselves.
+  await withBothDialogs(page);
+  await page.goto("/edit.html");
+  await page.evaluate(() => {
+    void navigator.locks.request(
+      "gps-plus-slam/tour-viewer-editor/locked.zip",
+      () => new Promise(() => undefined),
+    );
+  });
+  await clickBoundSavePicker(page, "locked.zip");
+  await page.locator("#sample-btn").click();
+  await expect(
+    page.locator(".toast", {
+      hasText: "Another tab is editing a file named locked.zip.",
+    }),
+  ).toBeVisible({ timeout: 15000 });
+  await expect(
+    page.locator(".toast", { hasText: "Saved to locked.zip." }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".toast", { hasText: "saved into it by themselves" }),
+  ).toHaveCount(0);
+  expect(tourJsonOf(await readOpfsTour(page, "locked.zip"))).toContain(
+    '"version"',
   );
 });
 

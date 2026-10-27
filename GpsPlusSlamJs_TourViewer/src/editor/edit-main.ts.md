@@ -254,10 +254,17 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   `keepInChosenFile` take the pick: a picked file is written with the
   fetched bytes unchanged (the status line says "Saving into <name>…"
   while it writes, and the write holds the page's save slot as an
-  `"open"` claim until the file is adopted, so Save, Ctrl+S and Done wait
-  for it, r955 review #3) and ADOPTED (`adoptChosen`, so saves go there in
+  `"open"` claim until the file is adopted, so Save and Done are
+  unavailable meanwhile and Ctrl+S waits for it, queued as behind an
+  autosave and run once the write ends; the claim is taken right after a
+  synchronous `saving()` check, a save started during the last await
+  waited for first) and ADOPTED (`adoptChosen`, so saves go there in
   place and by themselves from the first edit), a toast says "Saved to
-  <name>. Your changes are saved into it by themselves.", and Share and
+  <name>. Your changes are saved into it by themselves." - or only
+  "Saved to <name>." when no in-place save got attached (another tab
+  holds the name, the file cannot be saved in place: their own toasts
+  say so) or the tour is too large to be saved after every change
+  (`adoptChosen` / `attachTarget` resolve to whether it attached), and Share and
   publish names it as "the file you chose when you opened the tour"
   (`DoneSaved.chosenAtOpen`, reset by every open and by `dropTour`).
   Nothing is written into the picked file before the tour opened: a
@@ -321,8 +328,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     the status adds "not saved by itself until you Save" - until an
     explicit Save or a download lands (no write loop).
   - **Ctrl+S during an autosave** commits the card and runs right after
-    it; the Save button is disabled while any save runs, so only the key
-    queues (E2b-2 milestone review #10). A queued Ctrl+S belongs to its tour:
+    it, and so does Ctrl+S during the write at a link's or the sample's
+    open (the `"open"` claim); the Save button is disabled while any save
+    runs, so only the key queues (E2b-2 milestone review #10). A queued Ctrl+S belongs to its tour:
     a save whose tour closed meanwhile drops it (`abandon`, milestone review
     #7). A restored draft's work is saved by itself like any edit.
   - `body[data-autosave]` is the scheduler's state (`off`, `idle`,
@@ -580,7 +588,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   workflow state is its `save` status, not module variables - who holds
   the one save slot (`saveClaimed` / `saveReleased`; `saving()`,
   `walkMoving()`, the autosave's `by === "auto"`), a Save queued behind
-  an autosave (`saveQueued`), a save built (`saveBuilt`), where the last
+  an autosave or the write at the open (`saveQueued`), a save built (`saveBuilt`), where the last
   one arrived (`saveDelivered`, read by Share and publish and by the status line's
   "Saved to …" / "Saved as …", `savedLine()`; `#save-status[data-saved]`
   is only a view of it, for the e2e, never read back; every write of the
@@ -752,7 +760,10 @@ pick writing nothing, the file kept and the sentence said, and an existing
 (seeded) file picked neither written nor deleted; a write refused at the open (a
 lasting toast, the status line back, the name the open's, the file
 kept, the first Save of a change asking again); the save slot held
-while the write at the open runs; a dismissed dialog
+while the write at the open runs, Save unavailable then and a Ctrl+S
+pressed then saving the edit made meanwhile once the write landed (the
+page's clock paused, so no autosave could); a file another tab is
+editing not said to save by itself; a dismissed dialog
 leaving the tour in the browser (the status line says so) and the first
 Save asking again; and on Android (its client hints) the same dialog as
 on a desktop.
