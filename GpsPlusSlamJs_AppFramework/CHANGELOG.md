@@ -120,6 +120,12 @@
 
 ### Fixed
 
+- **`fast-check` and `vitest` are declared optional peer dependencies**:
+  the published `test-utils/tour-arbitraries` imports fast-check and
+  `test-utils/browser-mocks` imports vitest, both declared only as dev
+  dependencies, so a consumer importing those helpers without them
+  installed failed at import. An app that never imports `test-utils/*`
+  needs neither.
 - **The NOTICE links the public repository**: it pointed at a repository a
   public reader cannot open; it now names
   https://github.com/cs-util-com/location-based-webxr, the repository the

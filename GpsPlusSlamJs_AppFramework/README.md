@@ -117,6 +117,7 @@ Optional:
 
 - `leaflet` (>= 1.9.0) — only needed if you use `LeafletMapOverlay`
 - `@sentry/browser` (>= 10.0.0) — only needed if you wire Sentry error reporting
+- `fast-check` (>= 4.0.0) and `vitest` (>= 3.0.0) — only needed if your tests import the `test-utils/*` helpers (`tour-arbitraries` uses fast-check, `browser-mocks` uses vitest)
 
 ### Licensing
 

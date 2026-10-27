@@ -65,11 +65,19 @@
   "peerDependencies": {
     "@sentry/browser": ">=10.0.0",
     "@zip.js/zip.js": ">=2.7.0",
+    "fast-check": ">=4.0.0",
     "h3-js": ">=4.0.0",
     "leaflet": ">=1.9.0",
-    "three": ">=0.170.0"
+    "three": ">=0.170.0",
+    "vitest": ">=3.0.0"
   },
   "peerDependenciesMeta": {
+    "fast-check": {
+      "optional": true
+    },
+    "vitest": {
+      "optional": true
+    },
     "leaflet": {
       "optional": true
     },
