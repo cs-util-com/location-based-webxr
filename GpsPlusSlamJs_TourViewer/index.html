@@ -1465,18 +1465,26 @@
         }
       }
 
-      /* Beside the film the headline is 40 px where its column is narrow
-         (under 1160 px wide, about 386 to 453 px) or the window short
-         (under 680 px high). At 48 px a wide face (the CI's Linux face)
-         wraps it to five lines there, or four, and the hero's button ended
-         below a 700 or 600 px high window; from 1160 px wide it ends at
-         about 653 px. Swept 36 to 48 px in both faces at seven desktop
-         sizes: 42 px still pushed it under a 1100x600 window (index.html.md,
-         "On a wide screen"). */
+      /* Beside the film the headline is 40 px, and the film takes half the
+         row instead of 58 %, where the text column is narrow (under
+         1160 px wide) or the window short (under 680 px high). At 48 px a
+         wide face (the CI's Linux face) wraps it to five lines there, or
+         four, and the hero's button ended below a 700 or 600 px high
+         window; at 40 px beside a 58 % film DejaVu Sans still wrapped it to
+         four lines in the 428 px column and ended the button 19 px below a
+         1100x600 window. With half the row the column is 466 to 540 px and
+         the button stays at least 25 px clear in every face tried (the
+         system face, Verdana, DejaVu Sans, each spaced up to 0.06em
+         wider); a 36 px headline at 58 % or a 0.52 share did not
+         (index.html.md, "On a wide screen"). */
       @media (width >= 1000px) and (width < 1160px),
         (width >= 1000px) and (height < 680px) {
         .landing h1 {
           font-size: 40px;
+        }
+
+        .landing-film {
+          --hero-film-w: calc((100cqw - 48px) * 0.5);
         }
       }
 

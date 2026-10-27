@@ -320,7 +320,8 @@ its chunk fails, the hero shows its last moment as a drawing).
       tablets from 700 px wide should get the larger text.
   - From 1000 px wide the hero's text and film stand side by side
     (`.landing-hero` a two-column grid, 48 px apart, the film's top on the
-    kicker's). The film's box is 58 % of the row less the gap, at 16:9 plus
+    kicker's). The film's box is 58 % of the row less the gap (half of it
+    where the headline is 40 px, below), at 16:9 plus
     its chrome, its height capped at `100svh - 96px` (and its width with
     it), so the whole film, bar and caption included, is on the first
     screen: it starts about 73 px down, which leaves about 23 px below it.
@@ -336,7 +337,8 @@ its chunk fails, the hero shows its last moment as a drawing).
   - The headline beside the film is 48 px, and 40 px where its column is
     narrow (1000 to 1159 px wide: about 386 to 453 px) or the window short
     (under 680 px high). In a wide face (Verdana; the CI's Linux face,
-    DejaVu Sans, has the same widths) 48 px wrapped it to five lines in
+    DejaVu Sans, is wider still in the headline, see the correction below)
+    48 px wrapped it to five lines in
     the narrow column and four in the 454 px one, so the hero's button
     ended at 705 px at 1000x700, 1100x600 and 1100x700 and at 653 px at
     1280x600; with 40 px it ends at 619 px at 1000x700 and 575 px at the
@@ -357,6 +359,34 @@ its chunk fails, the hero shows its last moment as a drawing).
     not yet by eye; 40 px is under the 44 px section titles.
     Reversing: if 40 px reads too small, the share 0.5 with 48 px
     (accepting the 3 px margin at 1100x600 and the smaller film).
+  - **Corrected 2026-10-27: DejaVu Sans does not have Verdana's widths in
+    the headline.** Measured with the real DejaVu Sans files, the 40 px
+    headline beside a 58 % film takes four lines in the 428 px column at
+    1100x600 where Verdana takes three, and the button ended at 618.6 px,
+    exactly what the CI's run saw. So under the same condition as the
+    40 px headline (under 1160 px wide or under 680 px high) the film
+    takes half the row (0.5) instead of 58 %: the text column is then
+    about 466 px at 1000 px, 510 px at 1100 px and 540 px at 1280 px, and
+    the film's picture 458, 508 and 538 px wide (532, 590 and 624 before).
+    From 1160 px wide and 680 px high the share stays 0.58. Swept at the
+    seven desktop sizes in the system face, Verdana, Verdana spaced 0.02em
+    wider, and DejaVu Sans spaced 0, 0.02, 0.04 and 0.06em wider; the
+    button's least room below it at the four sizes under the condition:
+    - the share 0.5: 25 px (every face fits; 81 px or more in Verdana and
+      unspaced DejaVu);
+    - the share 0.52: -19 px in DejaVu spaced 0.06em (1100x600);
+    - a 36 px headline at 0.58: -1 px there;
+    - unchanged (40 px at 0.58): -19 px in unspaced DejaVu at 1100x600 and
+      -18 px at 1000x700 spaced 0.06em.
+    - Outside the condition (1280x720, 48 px at 0.58) a five-line headline
+      leaves 15 px in DejaVu and in spaced Verdana: the thinnest margin
+      left, unchanged here.
+    - The e2e "the hero on the first screen, in a wide face" spaces
+      Verdana 0.02em wider (`playwright-tests/wide-font.js`), which set
+      every hero line at least as long as real DejaVu did at all seven
+      sizes, so this machine sees the CI's red; it pins the share at each
+      size. Reversing: if the film reads too small at 458 px (1000 px
+      wide), a 1000 to 1099 px window could stack the hero instead.
   - From 900 px wide and taller than 560 px the step cards' pictures start
     at their kicker's line (`align-items: start`, the picture 6 px down,
     the kicker's own top padding), and the cards are 56 px apart
