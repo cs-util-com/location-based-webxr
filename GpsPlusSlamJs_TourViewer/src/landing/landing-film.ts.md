@@ -69,7 +69,10 @@ timeline.
   reported as a missing WebGL and is freed like any other scene.
 - `stop` (AR): pause, free the renderer (not a fallback), show the flat
   still; a new scene is built the next time the film comes into view or is
-  played. It does not restart by itself while still in view.
+  played. It does not restart by itself while still in view. "Comes into
+  view" means after it left the view by the player's own rule
+  (`hasLeftView`, under the leave share), so the player can never resume
+  it on the flat drawing while the renderer waits for a share of 0.
 - No renderer is built while the page marks a live AR session
   (`body[data-ar-active="true"]`), whatever the film's own state: a film
   that re-enters the view during the session, or one mounted afresh then
@@ -84,6 +87,10 @@ timeline.
   its height) instead of shrinking the picture. A measurement of that
   height under 2 px (taken mid-resize) keeps the last good one, so the
   stage is never left 0 px tall.
+- The layout follows the stage, which is what it measures: both the stage
+  and the host are observed for size (a caption that wraps past its
+  reserved room resizes the stage while the host keeps its size; the
+  list's stage height follows the host).
 - `?debug=1`: a readout over the picture (`film-debug.ts`): the renderer,
   its pixel ratio and quality, the scene's build time, the film's time,
   the last frames' percentiles (`utils/frame-times`) and the whole run's

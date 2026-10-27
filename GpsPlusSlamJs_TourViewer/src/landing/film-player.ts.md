@@ -18,6 +18,9 @@ frames only while it plays.
   `jumpTo(beat)` (`RangeError` for no such part), `release()`, `redraw()`,
   `destroy()`.
 - `PlayerSnapshot`: `{ status, pausedBy, t, position, opening, moving }`.
+- `hasLeftView(share, leaveShare): boolean`: under `leaveShare` in view.
+  The one rule for leaving the view: the player pauses and re-arms there,
+  and `landing-film.ts` rebuilds a renderer handed to AR only after it.
 
 ## Invariants
 

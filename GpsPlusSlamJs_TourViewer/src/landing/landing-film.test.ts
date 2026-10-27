@@ -108,7 +108,7 @@ function setup(
   document.body.append(host);
   const frames = frameQueue();
   let shareCb: (v: number) => void = () => undefined;
-  let sizeCb: () => void = () => undefined;
+  const sizeCbs = new Map<Element, () => void>();
   const scenes: ReturnType<typeof fakeScene>[] = [];
   const env: Partial<FilmEnv> = {
     webgl: () => o.webgl ?? false,
@@ -123,8 +123,8 @@ function setup(
       shareCb = cb;
       return () => undefined;
     },
-    observeSize: (_el, cb) => {
-      sizeCb = cb;
+    observeSize: (el, cb) => {
+      sizeCbs.set(el, cb);
       return () => undefined;
     },
     size: o.size ?? (() => ({ w: 400, h: 500 })),
@@ -157,7 +157,15 @@ function setup(
     onFallback,
     unregister,
     view: (v: number) => shareCb(v),
-    resized: () => sizeCb(),
+    resized: () => {
+      for (const cb of sizeCbs.values()) cb();
+    },
+    /** Only the observer on `el` reports a new size. */
+    resizedAt: (el: Element) => {
+      const cb = sizeCbs.get(el);
+      if (cb === undefined) throw new Error("nothing observes this element");
+      cb();
+    },
     ar: () => arStop?.(),
   };
 }
@@ -250,6 +258,30 @@ describe("landing film: reduced motion", () => {
   // (almost) nothing, as one taken in the middle of a resize can, must
   // not leave the stage with no height: it was seen drawn 0 px tall in
   // about 1 of 8 full-page screenshots of a phone-sized window.
+  // layout() measures the stage, so the stage is what must be observed: a
+  // caption that wraps past the room reserved for it shrinks the stage
+  // while the host keeps its size, and a film that watched only the host
+  // kept laying out the picture for the old stage. The host stays
+  // observed too (the list's stage height follows the host).
+  it("lays out again when only the stage changes size", async () => {
+    let size = { w: 400, h: 500 };
+    const t = setup({ webgl: true, size: () => size });
+    t.view(0.6);
+    await flush();
+    const scene = t.scenes[0]!;
+    const stage = t.host.querySelector<HTMLElement>(".lf-stage")!;
+    size = { w: 400, h: 420 };
+    t.resizedAt(stage);
+    expect(scene.layout).toHaveBeenLastCalledWith(
+      expect.objectContaining({ W: 400, H: 420 }),
+    );
+    size = { w: 380, h: 420 };
+    t.resizedAt(t.host);
+    expect(scene.layout).toHaveBeenLastCalledWith(
+      expect.objectContaining({ W: 380, H: 420 }),
+    );
+  });
+
   it("keeps the stage's last good height when a measurement reads nothing", () => {
     let size = { w: 400, h: 500 };
     const t = setup({ reducedMotion: true, size: () => size });
@@ -390,6 +422,25 @@ describe("landing film: renderer and fallback", () => {
     t.frames.runOut();
     expect(t.frames.requestFrame.mock.calls.length).toBe(asked);
     expect(t.scenes).toHaveLength(1);
+  });
+
+  // The film counts as having left the view below its leave share, and
+  // the player re-arms its start there. The renderer must follow the same
+  // rule: one that waited for a share of exactly 0 let a film that only
+  // dipped under a tenth (scrolled almost out after AR) play again on its
+  // flat drawing, never rebuilding the scene.
+  it("rebuilds after AR once the film dipped below its leave share, not only at 0", async () => {
+    const t = setup({ webgl: true });
+    t.view(0.6);
+    t.frames.step();
+    t.ar();
+    expect(t.film.renderer()).toBe("floor");
+    t.view(DEFAULT_TUNING.leaveShare / 2);
+    t.view(0.6);
+    expect(t.scenes).toHaveLength(2);
+    await flush();
+    expect(t.film.renderer()).toBe("3d");
+    expect(t.film.snapshot().status).toBe("playing");
   });
 
   it("rebuilds on a tap after AR, even with no change of view", () => {
