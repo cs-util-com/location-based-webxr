@@ -1120,6 +1120,30 @@ test("refuses to empty a pin, in the card's words", async ({ page }) => {
   await expect(page.locator("#save-status")).toHaveText("No changes");
 });
 
+test("counts a pin's text in the card and refuses one past 40 characters", async ({
+  page,
+}) => {
+  // Why: a pin's text is a short text's caption, which the tour file caps
+  // at 40 characters, so the card counts it while it is typed and the edit
+  // refuses a longer one in the card's words instead of saving a file
+  // nothing could read.
+  await page.goto("/edit.html");
+  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+  await page.locator("#rail .row", { hasText: "Town hall" }).click();
+  const field = page.locator("#card textarea");
+  const count = page.locator("#card-text-count");
+  await expect(count).toHaveText("38 / 40");
+  await expect(field).toHaveAttribute("aria-describedby", "card-text-count");
+  await field.fill("x".repeat(41));
+  await expect(count).toHaveText("41 / 40");
+  await expect(count).toHaveAttribute("data-over", "");
+  await field.blur();
+  await expect(page.locator("#card")).toContainText(
+    "A pin's text takes at most 40 characters.",
+  );
+  await expect(page.locator("#save-status")).toHaveText("No changes");
+});
+
 test("deletes a note with Undo, and a saved delete takes the photo's file", async ({
   page,
 }) => {

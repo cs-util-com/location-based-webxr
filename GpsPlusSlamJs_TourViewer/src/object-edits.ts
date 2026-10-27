@@ -11,6 +11,7 @@
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { applyObjectChanges } from "./authoring-draft.js";
 import type { ObjectListEntry } from "./object-list.js";
+import { PIN_TEXT_TOO_LONG, pinTextTooLong } from "./pin-text.js";
 
 /** A page's entry for an object it placed, edited or moved. */
 export interface EditEntry {
@@ -79,7 +80,8 @@ const EMPTY_PIN = "A pin needs some text - it was left as it was.";
 /**
  * A pin's new text, trimmed: the edited object, or `unchanged` (the same
  * text; a photo, whose caption visitors never see - owner question
- * Q-E2-1), or `refused` with the sentence to show (an empty pin).
+ * Q-E2-1), or `refused` with the sentence to show (an empty pin, or a
+ * text past a pin's 40 characters, `pin-text.ts`).
  */
 export function pinTextEdit(
   object: TourObject,
@@ -92,6 +94,9 @@ export function pinTextEdit(
   const caption = text.trim();
   if (caption === "") return { kind: "refused", reason: EMPTY_PIN };
   if (caption === object.caption) return { kind: "unchanged" };
+  if (pinTextTooLong(caption)) {
+    return { kind: "refused", reason: PIN_TEXT_TOO_LONG };
+  }
   return { kind: "edited", after: { ...object, caption } };
 }
 

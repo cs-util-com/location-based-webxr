@@ -177,6 +177,9 @@ export interface CreatorSetupDom {
    *  with a label, a photo of the current camera frame. */
   pinButton: HTMLButtonElement;
   pinLabel: HTMLInputElement;
+  /** The pin text's "12 / 40" beside the field (`pin-text.ts`). Absent in
+   *  the node tests that do not need it. */
+  pinLabelCount?: HTMLElement;
   pinSave: HTMLButtonElement;
   pinCancel: HTMLButtonElement;
   photoButton: HTMLButtonElement;

@@ -3171,6 +3171,18 @@
         min-height: 48px;
         border-radius: 999px;
       }
+      /* The pin text's count ("12 / 40"), marked past the limit. */
+      body[data-mode="creator"][data-ar-active="true"] #pin-label-count {
+        flex: none;
+        align-self: center;
+        color: #fff;
+        font-variant-numeric: tabular-nums;
+        text-shadow: 0 1px 2px rgb(0 0 0 / 70%);
+      }
+      #pin-label-count[data-over] {
+        color: #ffb4a8;
+        font-weight: 600;
+      }
       /* The selected object's line, and the code's size offer: cards over
          the camera, above the strip. */
       body[data-mode="creator"][data-ar-active="true"]
@@ -5503,8 +5515,15 @@
                       type="text"
                       autocomplete="off"
                       placeholder="The pin's text"
+                      aria-describedby="pin-label-count"
                       hidden
                     />
+                    <output
+                      id="pin-label-count"
+                      data-testid="pin-label-count"
+                      for="pin-label"
+                      hidden
+                    ></output>
                     <button
                       type="button"
                       class="btn btn--prose"

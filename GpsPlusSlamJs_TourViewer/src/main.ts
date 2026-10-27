@@ -660,6 +660,7 @@ const setup = wireCreatorSetup({
     debugSaveStatus: element("debug-save-status"),
     pinButton: element("setup-pin"),
     pinLabel: element("pin-label"),
+    pinLabelCount: element("pin-label-count"),
     pinSave: element("pin-save"),
     pinCancel: element("pin-cancel"),
     photoButton: element("setup-photo"),

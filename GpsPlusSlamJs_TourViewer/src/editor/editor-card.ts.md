@@ -31,7 +31,11 @@ view" chip.
     `commit()` - commits the field's typing (a Save and a new selection
     do it first); `dirty()` - typing not yet committed (the leave guard).
   - The pin's text field is kept across re-renders of the same item, its
-    typing too (a save ending mid-typing).
+    typing too (a save ending mid-typing). Its count follows it
+    (`#card-text-count`, an `<output>` the field is described by,
+    `pin-text.ts`): "12 / 40" as it is typed, marked `data-over` past
+    the 40 characters the edit refuses (`object-edits.ts`, the refusal
+    shown as the card's message).
 - `CARD_RESIZED` - the event the card fires when its content changed
   size (a photo landed, its error line), so the page places it again.
 - `CardView`.

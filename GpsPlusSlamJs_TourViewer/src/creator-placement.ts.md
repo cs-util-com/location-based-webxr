@@ -15,7 +15,10 @@ troubleshooting recording's record of each placement. Split out of
     in this visit (`creator-setup.ts`: `ctx.viewerVotedLocks > 0`).
   - `dom` (`CreatorPlacementDom`): `pinButton`, `pinLabel`, `pinSave`,
     `pinCancel`, `photoButton`, `newStationButton?` ("New station
-    here", D8, below), whose clicks this module handles.
+    here", D8, below), whose clicks this module handles; `pinLabelCount?`,
+    the pin text's "12 / 40" beside the field (`pin-text.ts`), counted as
+    it is typed, marked `data-over` past the limit, shown and hidden with
+    the field and recounted when the page clears it.
   - `seams`: `getArWorldGroup` (the odometry frame a placement is kept
     in), `encodeFrameJpeg` (the photo's bytes).
   - `settledVisit(visit)` - the settle record of a visit that already
@@ -66,6 +69,8 @@ troubleshooting recording's record of each placement. Split out of
   visit's own alignment (`visit-settle.ts`, basis `visit-alignment`). "Place a pin
   here" reads the hit-test reticle (a surface must be under it, else the
   panel says so), opens the overlay label input (with a Cancel), and Save
+  (refused with the field kept while the text is past a pin's 40
+  characters, `pin-text.ts`: the tour file would refuse it at the Finish)
   mints a pin (a short text in its `pin` view) from the reticle's GPS-world position
   (`content-placement.ts`; the reticle rides the lerped visual alignment,
   which converges within ~0.3 s of a correction - the one frame difference
@@ -128,7 +133,7 @@ troubleshooting recording's record of each placement. Split out of
     can try again: a failed encode, no usable alignment, or a refusal by
     the document's guard - but only into the visit it was taken in (a
     visit that ended disarmed it for good). Checks that fail before the
-    commit never take it: no text typed, the label input cancelled, no
+    commit never take it: no text typed, a text too long, the label input cancelled, no
     surface under the ring, no GPS fix, no camera frame. A refusal by the
     document's guard is named by its reason (`placeRefusal`): an id the
     tour deleted, one it carries already, or a spot too far from its

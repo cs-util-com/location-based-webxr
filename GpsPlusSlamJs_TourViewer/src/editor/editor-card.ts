@@ -12,6 +12,7 @@
  */
 
 import { pictureProblem } from "../image-cap.js";
+import { wirePinTextCounter } from "../pin-text.js";
 import type { EditorItem } from "./editor-model.js";
 import { placePopover, type Box } from "./popover-place.js";
 
@@ -119,6 +120,9 @@ export function createEditorCard(
   let field: {
     readonly el: HTMLTextAreaElement;
     readonly label: HTMLLabelElement;
+    /** The text's "12 / 40" (`pin-text.ts`), which the field names. */
+    readonly count: HTMLOutputElement;
+    readonly counter: { update(): void };
     readonly id: string;
     committed: string;
   } | null = null;
@@ -134,9 +138,12 @@ export function createEditorCard(
   function textField(item: EditorItem): HTMLElement[] {
     if (field !== null && field.id === item.id) {
       // The same pin again (a refresh): the field and its typing stay.
-      if (field.el.value === field.committed) field.el.value = item.title;
+      if (field.el.value === field.committed) {
+        field.el.value = item.title;
+        field.counter.update();
+      }
       field.committed = item.title;
-      return [field.label, field.el];
+      return [field.label, field.el, field.count];
     }
     const label = document.createElement("label");
     label.className = "field-label";
@@ -153,8 +160,14 @@ export function createEditorCard(
         commitField();
       }
     });
-    field = { el, label, id: item.id, committed: item.title };
-    return [label, el];
+    const count = document.createElement("output");
+    count.id = "card-text-count";
+    count.className = "note-line text-count";
+    count.htmlFor.add(el.id);
+    el.setAttribute("aria-describedby", count.id);
+    const counter = wirePinTextCounter(el, count);
+    field = { el, label, count, counter, id: item.id, committed: item.title };
+    return [label, el, count];
   }
 
   /** Tell the page the card changed size, so it is placed again. */

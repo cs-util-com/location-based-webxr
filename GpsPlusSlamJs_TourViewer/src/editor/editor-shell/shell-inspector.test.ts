@@ -340,6 +340,50 @@ describe("drawInspector", () => {
     expect(input("title")?.getAttribute("aria-label")).toBe("Pin text");
   });
 
+  // Why: a pin's text is a short text's caption, which the tour file caps
+  // at 40 characters; the inspector refuses a longer one at Enter, so the
+  // count is shown while typing, tied to the field for a screen reader.
+  it("counts a pin's text as it is typed, marked past 40 characters", () => {
+    drawInspector(
+      dock,
+      buildInspector({
+        selected: "pin-x",
+        stations: [
+          {
+            ...STATIONS[1],
+            blocks: [
+              {
+                id: "pin-x",
+                kind: "shortText",
+                view: "pin",
+                caption: "Look up",
+                createdAtIso: AT,
+                pose: { position: [1, 0, 1], rotation: [0, 0, 0, 1] },
+              },
+            ],
+          } as unknown as TourStation,
+        ],
+        assets: [],
+        codes: [],
+      }),
+      { folded: false, positionOpen: false },
+      pictures,
+    );
+    const title = input("title");
+    const count = dock.body.querySelector("output.pad");
+    expect(count?.textContent).toBe("7 / 40");
+    expect(count?.id).not.toBe("");
+    expect(title?.getAttribute("aria-describedby")).toBe(count?.id);
+    if (title === null || title === undefined) throw new Error("no field");
+    title.value = "y".repeat(41);
+    title.dispatchEvent(new Event("input"));
+    expect(count?.textContent).toBe("41 / 40");
+    expect(count?.hasAttribute("data-over")).toBe(true);
+    // A station's name is not a pin's text: no count.
+    draw("station:steps");
+    expect(dock.body.querySelector("output.pad")).toBeNull();
+  });
+
   // Why: lowering a radius under its items leaves them where they are;
   // this line is how the creator learns about it.
   it("warns of items outside the circle", () => {
@@ -631,6 +675,8 @@ describe("drawInspector", () => {
     expect(dock.body.textContent).toContain(
       "edit it in the pin's card on the 2D map",
     );
+    // Read-only, it is not typed here: no count.
+    expect(dock.body.querySelector("output")).toBeNull();
     // A one-line text stays a field to type in, with no such line.
     draw("station:steps");
     expect(input("title")?.readOnly).toBe(false);

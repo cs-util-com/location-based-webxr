@@ -74,6 +74,22 @@ describe("pinTextEdit", () => {
     });
   });
 
+  // Why: a pin's text is a short text's caption, which the tour file caps
+  // at 40 characters; a longer one would make every later save throw. The
+  // count is the format's own, so 40 emoji fit (80 UTF-16 units) and a
+  // 41st character of any kind does not.
+  it("refuses a pin's text past 40 characters, counted as the file counts them", () => {
+    expect(pinTextEdit(pin("a", "Old"), "x".repeat(41))).toEqual({
+      kind: "refused",
+      reason: "A pin's text takes at most 40 characters.",
+    });
+    const emoji = "😀".repeat(40);
+    expect(pinTextEdit(pin("a", "Old"), emoji)).toEqual({
+      kind: "edited",
+      after: { ...pin("a"), caption: emoji },
+    });
+  });
+
   it("does not edit a photo's caption (owner question Q-E2-1)", () => {
     expect(pinTextEdit(photo("p"), "A caption")).toEqual({
       kind: "unchanged",

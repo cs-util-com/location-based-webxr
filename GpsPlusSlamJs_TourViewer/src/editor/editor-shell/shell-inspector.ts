@@ -32,6 +32,7 @@ import {
   type InspectorModel,
   type InspectorPosition,
 } from "./inspector-model.js";
+import { wirePinTextCounter } from "../../pin-text.js";
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -108,6 +109,9 @@ const PIN_LINES =
 
 /** The id of that line, which the head's field is described by. */
 const PIN_LINES_ID = "inspector-pin-lines";
+
+/** The id of a typed pin text's count, which the field names. */
+const PIN_COUNT_ID = "inspector-pin-count";
 
 /** A field to type in, named `field` (`data-field`), the tour's value
  *  `value` its default, so text that differs from it is typed. A text
@@ -767,6 +771,22 @@ function headTitle(model: InspectorModel): HTMLElement {
   return title;
 }
 
+/** A typed pin text's "12 / 40" (`pin-text.ts`), counted as it is typed
+ *  (the edit refuses a longer text, `object-edits.ts`), or null when the
+ *  head offers no pin text to type. */
+function pinCount(
+  model: InspectorModel,
+  head: HTMLElement,
+): HTMLElement | null {
+  if (model.kind !== "item" || model.text === null) return null;
+  if (!(head instanceof HTMLInputElement) || head.readOnly) return null;
+  const out = el("output", "note pad");
+  out.id = PIN_COUNT_ID;
+  head.setAttribute("aria-describedby", PIN_COUNT_ID);
+  wirePinTextCounter(head, out);
+  return out;
+}
+
 function drawDock(
   dock: {
     readonly root: HTMLElement;
@@ -787,9 +807,11 @@ function drawDock(
   const kind = model.kind === "item" ? model.itemKind : model.kind;
   const icon = el("span", `hic ic ${kind}`);
   icon.append(shellIcon(KIND_ICON[kind] ?? "station"));
+  const head = headTitle(model);
+  const count = pinCount(model, head);
   dock.head.replaceChildren(
     icon,
-    headTitle(model),
+    head,
     iconButton(
       state.folded ? "down" : "up",
       state.folded ? "Show the details" : "Collapse the details",
@@ -805,5 +827,5 @@ function drawDock(
       : model.kind === "item"
         ? itemParts(model, state)
         : codeParts(model, state);
-  dock.body.replaceChildren(sub, ...parts);
+  dock.body.replaceChildren(sub, ...(count === null ? [] : [count]), ...parts);
 }

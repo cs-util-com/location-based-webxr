@@ -27,6 +27,11 @@ import type { CreatorAlignmentPicks } from "./creator-alignment-picks.js";
 import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorPreviews } from "./creator-previews.js";
 import { usablePhotoFrame } from "./photo-frame.js";
+import {
+  PIN_TEXT_TOO_LONG,
+  pinTextTooLong,
+  wirePinTextCounter,
+} from "./pin-text.js";
 import type { TourViewerSeams } from "./seams.js";
 import { objectPlaced } from "./tour-authoring-actions.js";
 import { placeRefusal } from "./tour-document.js";
@@ -51,6 +56,10 @@ const PLACE_REFUSED: Readonly<
 export interface CreatorPlacementDom {
   pinButton: HTMLButtonElement;
   pinLabel: HTMLInputElement;
+  /** The pin text's count beside the field ("12 / 40", `pin-text.ts`),
+   *  shown and hidden with it. Absent in the node tests that do not need
+   *  it. */
+  pinLabelCount?: HTMLElement;
   pinSave: HTMLButtonElement;
   pinCancel: HTMLButtonElement;
   photoButton: HTMLButtonElement;
@@ -107,6 +116,9 @@ export function wireCreatorPlacement(deps: {
   render: () => void;
 }): CreatorPlacement {
   const { ctx, arStore, arController, seams, dom } = deps;
+  const pinCount = dom.pinLabelCount;
+  const counter =
+    pinCount === undefined ? null : wirePinTextCounter(dom.pinLabel, pinCount);
   /** A photo is being encoded: its button stays disabled until the encode
    *  lands or fails, through every render meanwhile (one photo in flight). */
   let capturing = false;
@@ -156,6 +168,7 @@ export function wireCreatorPlacement(deps: {
 
   function hideLabelInput(): void {
     dom.pinLabel.hidden = true;
+    if (pinCount !== undefined) pinCount.hidden = true;
     dom.pinSave.hidden = true;
     dom.pinCancel.hidden = true;
   }
@@ -302,6 +315,7 @@ export function wireCreatorPlacement(deps: {
     // an XR session). The position is read at SAVE, not now - the creator
     // may still move the phone while typing.
     dom.pinLabel.hidden = false;
+    if (pinCount !== undefined) pinCount.hidden = false;
     dom.pinSave.hidden = false;
     dom.pinCancel.hidden = false;
     dom.pinLabel.focus();
@@ -310,6 +324,7 @@ export function wireCreatorPlacement(deps: {
 
   dom.pinCancel.addEventListener("click", () => {
     dom.pinLabel.value = "";
+    counter?.update();
     hideLabelInput();
     ctx.placementNote = null;
     deps.render();
@@ -325,6 +340,10 @@ export function wireCreatorPlacement(deps: {
     }
     if (label === "") {
       note("Type the pin's text first.");
+      return;
+    }
+    if (pinTextTooLong(label)) {
+      note(PIN_TEXT_TOO_LONG);
       return;
     }
     if (reticle === null || !reticle.isVisible()) {
@@ -373,6 +392,7 @@ export function wireCreatorPlacement(deps: {
     if (local !== null) deps.alignmentPicks.notePlaced(pin.id);
     logPlacement(placedPin.object, { reticleWorld: position });
     dom.pinLabel.value = "";
+    counter?.update();
     hideLabelInput();
     deps.previews.sync();
     note(

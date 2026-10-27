@@ -19,8 +19,10 @@ page keeps with it - a photo's bytes, a visit's frame).
 - `pinTextEdit(object, text)` - `{ kind: "edited", after }` for a pin's new
   trimmed text; `{ kind: "unchanged" }` for the same text or a photo (its
   caption is creator-facing only today, owner question Q-E2-1);
-  `{ kind: "refused", reason }` for an empty pin - the manifest serializer
-  rejects an empty caption, so a save would throw.
+  `{ kind: "refused", reason }` for an empty pin, or for a text past a
+  pin's 40 characters counted as the file counts them (`pin-text.ts`) -
+  the manifest serializer rejects either caption, so a save would throw.
+  The same text is `unchanged` even past the cap: nothing is written.
 - `deleteObject(lists, found)` - the page's entry goes; a hosted object
   gets a tombstone in `deleted`, a local one none; returns the lists. An
   undo is the tour document's (`tour-document.ts`: it goes back to the

@@ -65,7 +65,10 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
     in the head, since typing would lose its lines, and a line at the
     top of the dock (`#inspector-pin-lines`, which the field is
     described by, also its title) says why: edit it in the pin's card on
-    the 2D map.
+    the 2D map. A pin's text typed in the head has its count at the
+    top of the dock (`#inspector-pin-count`, an `<output>` the field is
+    described by, `pin-text.ts`): "12 / 40", marked `data-over` past
+    the 40 characters the edit refuses.
   - A code: its line, its print size, and its position, or that none is
     stored.
 - Every field's label is tied to its value: a `<label for>` on its
@@ -120,7 +123,8 @@ opened again, and the fields' layout at four window sizes).
 
 It also covers the fields to type per kind, a locked station's place
 and heading read-only with its Put on the ground off, a pin's text in
-the head, the outside-the-circle warning, and a command waiting for the
+the head with its count as it is typed (none for a read-only one or a
+station's name), the outside-the-circle warning, and a command waiting for the
 ground (not `disabled`), with the focus kept on it as it starts waiting.
 It also keeps the focus on Earlier through an autosave's status change,
 and gives the focus back to the control that had it when the inspector

@@ -72,6 +72,9 @@ interface FakeEl {
   /** Attributes set (`aria-pressed` on "New station here"). */
   attributes: Record<string, string>;
   setAttribute: (name: string, value: string) => void;
+  /** A boolean attribute set or removed (the pin text counter's
+   *  `data-over`), kept in `attributes` as "". */
+  toggleAttribute: (name: string, force: boolean) => boolean;
   focus: () => void;
   addEventListener: (type: string, handler: () => void) => void;
   click: () => void;
@@ -101,6 +104,11 @@ function el(): FakeEl {
     focus: () => undefined,
     setAttribute(name, value) {
       this.attributes[name] = value;
+    },
+    toggleAttribute(name, force) {
+      if (force) this.attributes[name] = "";
+      else delete this.attributes[name];
+      return force;
     },
     addEventListener: (type, handler) => handlers.set(type, handler),
     click: () => handlers.get("click")?.(),
@@ -134,6 +142,7 @@ const DOM_KEYS = [
   "downloadButton",
   "pinButton",
   "pinLabel",
+  "pinLabelCount",
   "pinSave",
   "pinCancel",
   "photoButton",
@@ -1096,6 +1105,42 @@ describe("a placement reaches the draft", () => {
       files.has(objectKey(String(placed?.id))),
       "the placed pin must be on disk, not only in the page's document",
     ).toBe(true);
+  });
+
+  it("counts the pin's text as it is typed and refuses a text past 40 characters", async () => {
+    // Why this test matters: a pin's text is a short text's caption, which
+    // the tour file caps at 40 characters. Placed longer, the pin would
+    // make the Finish throw long after the creator left the spot, so the
+    // counter shows the limit while typing and the Save refuses past it.
+    const { store } = memoryStore();
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.pinLabelCount.textContent).toBe("0 / 40");
+
+    dom.pinButton.click();
+    expect(dom.pinLabelCount.hidden, "shown with the field").toBe(false);
+    dom.pinLabel.value = "x".repeat(41);
+    dom.pinLabel.handlers.get("input")?.();
+    expect(dom.pinLabelCount.textContent).toBe("41 / 40");
+    expect(dom.pinLabelCount.attributes["data-over"]).toBe("");
+    dom.pinSave.click();
+    await settle();
+    expect(ctx.placementNote).toBe("A pin's text takes at most 40 characters.");
+    expect(ctx.tourDocument.entries(), "nothing placed").toEqual([]);
+    expect(dom.pinLabel.value, "the text stays to be shortened").toBe(
+      "x".repeat(41),
+    );
+
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    expect(ctx.tourDocument.entries()).toHaveLength(1);
+    expect(dom.pinLabelCount.textContent, "counts the cleared field").toBe(
+      "0 / 40",
+    );
+    expect(dom.pinLabelCount.attributes["data-over"]).toBeUndefined();
+    expect(dom.pinLabelCount.hidden, "hidden with the field").toBe(true);
   });
 
   it("tells the creator when the store refuses the write", async () => {

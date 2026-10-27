@@ -733,6 +733,19 @@ body:not([data-view="3d"]) .leaflet-bottom {
   color: var(--danger);
 }
 
+/* A pin text's count under its field: marked past the limit. */
+.note-line.text-count {
+  display: block;
+  margin-top: 4px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.note-line.text-count[data-over] {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .card-foot {
   margin-top: 10px;
   padding-top: 8px;

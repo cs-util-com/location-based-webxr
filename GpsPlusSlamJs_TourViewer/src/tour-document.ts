@@ -1963,7 +1963,7 @@ function freeStationId(state: TourDocumentState, id: string): boolean {
 
 /** Whether `id` may name a new item: a well-formed id that no object of
  *  the document, no deleted one, no written item, no story block and no
- *  asset carries (blocks and assets share one namespace). */
+ *  asset carries (a new captured photo's own asset takes its id). */
 function freeObjectId(state: TourDocumentState, id: string): boolean {
   if (!TOUR_ID_PATTERN.test(id) || state.deleted.includes(id)) return false;
   const written = state.written;
