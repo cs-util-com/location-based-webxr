@@ -22,7 +22,12 @@ import type {
   TourPin,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  parseTourManifest,
+  serializeTourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { tourManifestArbitrary } from "gps-plus-slam-app-framework/test-utils/tour-arbitraries";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import fc from "fast-check";
@@ -496,6 +501,46 @@ describe("withReferencedAssets", () => {
     expect(
       kept({ ...manifest, stations: [...manifest.stations, second] }),
     ).toEqual(["picture", "statue"]);
+  });
+
+  // Why: a dropped asset that a block, the cover or a card image still
+  // names is a tour the reader refuses (or a picture that never loads).
+  // Over every generated 4.0 tour (blocks of every kind, free and in
+  // stories) with unused assets added: the unused ones go, every other
+  // stays in its order, and the strict reader takes the result.
+  it("never drops an asset something names, and drops every one nothing names (property)", () => {
+    fc.assert(
+      fc.property(
+        tourManifestArbitrary(),
+        fc.integer({ min: 0, max: 3 }),
+        (record, extraCount) => {
+          const tour = parseTourManifest(record);
+          const extras: TourAsset[] = Array.from(
+            { length: extraCount },
+            (_, i) => ({
+              id: "unused" + String(i),
+              path: "content/unused" + String(i) + ".png",
+              kind: "image",
+            }),
+          );
+          const pruned = withReferencedAssets({
+            ...tour,
+            assets: [...tour.assets, ...extras],
+          });
+          const ids = pruned.assets.map((a) => a.id);
+          for (const extra of extras) expect(ids).not.toContain(extra.id);
+          const kept = tour.assets
+            .map((a) => a.id)
+            .filter((id) => ids.includes(id));
+          expect(ids).toEqual(kept);
+          // Every reference resolves: the strict reader takes it.
+          expect(() =>
+            parseTourManifest(JSON.parse(serializeTourManifest(pruned))),
+          ).not.toThrow();
+        },
+      ),
+      { numRuns: 300 },
+    );
   });
 
   it("returns the tour itself when every asset is in use", () => {

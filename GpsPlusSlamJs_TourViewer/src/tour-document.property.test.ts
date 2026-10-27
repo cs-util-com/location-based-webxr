@@ -15,6 +15,7 @@ import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
 import {
   parseTourManifest,
   serializeTourManifest,
+  tourObjectRecord,
   type TourManifest,
   type TourObject,
   type TourPicture,
@@ -22,6 +23,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { parseDraftObject } from "./draft-persistence.js";
 import { rebuildFinishedTour } from "./finish-rebuild.js";
 import { stationIdOf, tourOf } from "./test-support/tour-of.js";
 import { openTourFile } from "./tour-session.js";
@@ -121,6 +123,7 @@ type Op =
   | { kind: "move"; id: string; dLat: number }
   | { kind: "delete"; id: string }
   | { kind: "place"; id: string }
+  | { kind: "placePhoto"; id: string }
   | { kind: "station"; id: string; dLat: number }
   | { kind: "setting"; on: boolean }
   | { kind: "details"; title: string }
@@ -239,6 +242,13 @@ function apply(state: TourDocumentState, op: Op): TourDocumentState {
         ? reduce(
             state,
             act.placed({ object: pin(op.id, 48.521), what: "place" }),
+          )
+        : state;
+    case "placePhoto":
+      return current(op.id) === undefined
+        ? reduce(
+            state,
+            act.placed({ object: photo(op.id, 48.5211), what: "place" }),
           )
         : state;
     case "station": {
@@ -431,6 +441,16 @@ const opened = reduce(
 /** What a reload brings back from the draft `state` wrote: its settings
  *  record as stored, read against the opened tour, and its objects'
  *  records, restored into a fresh open. */
+/** The object written as a draft writes it (tourObjectRecord, format 4,
+ *  a minted picture with its asset entry) and read back as a reload reads
+ *  it (parseDraftObject). */
+function throughRecord(object: TourObject): TourObject {
+  const read = parseDraftObject(JSON.stringify(tourObjectRecord(object)));
+  if (read === null)
+    throw new Error("the record of " + object.id + " did not read");
+  return read;
+}
+
 function reloadedFromDraft(state: TourDocumentState): TourDocumentState {
   const record = parseSettingsRecord(
     settingsRecordText(settingsRecord(state)),
@@ -440,7 +460,7 @@ function reloadedFromDraft(state: TourDocumentState): TourDocumentState {
   return reduce(
     opened,
     act.restored({
-      objects: state.placed.map((p) => p.object),
+      objects: state.placed.map((p) => throughRecord(p.object)),
       deleted: [...state.deleted],
       needsNoGps: record.needsNoGps,
       ...(record.details === undefined ? {} : { details: record.details }),
@@ -492,8 +512,16 @@ describe("tour document (properties)", () => {
     // stations whole) must bring back exactly the document they were
     // written from, whatever mix of object and station edits made it.
     // `size: "max"`: without it fast-check generates at most 10 edits
-    // whatever `maxLength` says, and the drift below needed more.
-    const noSave = opArb.filter((op) => op.kind !== "save");
+    // whatever `maxLength` says, and the drift below needed more. Each
+    // object goes through the record a draft writes (format 4), and the
+    // edits include minted photos (a picture with its asset entry).
+    const noSave = fc.oneof(
+      opArb.filter((op) => op.kind !== "save"),
+      fc.record({
+        kind: fc.constant("placePhoto" as const),
+        id: fc.constantFrom("p1", "p2"),
+      }),
+    );
     fc.assert(
       fc.property(fc.array(noSave, { maxLength: 40, size: "max" }), (ops) => {
         const state = ops.reduce(apply, opened);
