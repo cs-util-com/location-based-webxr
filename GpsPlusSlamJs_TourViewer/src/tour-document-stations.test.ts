@@ -16,6 +16,8 @@ import {
   serializeTourManifest,
   type TourManifest,
   type TourObject,
+  type TourPicture,
+  type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { horizontalM } from "./move-with-code.js";
@@ -31,27 +33,35 @@ import {
   tourDocumentReducer as reduce,
   type TourDocumentState,
 } from "./tour-document.js";
-import { stationIdOf, tourOf } from "./test-support/v3-tour.js";
+import { stationIdOf, tourOf } from "./test-support/tour-of.js";
 
 const AT = { lat: 48.52, lon: 9.05, alt: 400 };
 
-function pin(id: string, lat = 48.52): TourObject {
+function pin(id: string, lat = 48.52): TourPin {
   return {
     id,
-    kind: "pin",
-    label: `pin ${id}`,
+    kind: "shortText",
+    view: "pin",
+    caption: `pin ${id}`,
     createdAtIso: "2026-10-18T00:00:00.000Z",
     geo: { lat, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
   };
 }
 
-function photo(id: string, lat: number): TourObject {
+function photo(id: string, lat: number): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-10-18T00:00:00.000Z",
     geo: { lat, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
   };
@@ -61,6 +71,7 @@ function model(id: string, lat: number, sizeM = 2): TourObject {
   return {
     id,
     kind: "model",
+    view: "placed",
     asset: "m1",
     sizeM,
     createdAtIso: "2026-10-18T00:00:00.000Z",
@@ -78,7 +89,6 @@ const OPENED: TourManifest = parseTourManifest(
       tourOf(
         [pin("a"), pin("b", 48.5202), photo("f", 48.5204), model("m", 48.5206)],
         {
-          minor: 1,
           assets: [
             {
               id: "img1",
@@ -100,7 +110,7 @@ const OPENED: TourManifest = parseTourManifest(
               steps: [
                 {
                   id: "s1",
-                  action: { kind: "image", asset: "img1" },
+                  action: { kind: "show", block: "look" },
                   advance: { mode: "tap" },
                 },
                 {
@@ -121,7 +131,16 @@ const OPENED: TourManifest = parseTourManifest(
                   advance: { mode: "tap" },
                 },
               ],
-              items: [],
+              blocks: [
+                {
+                  id: "look",
+                  kind: "picture",
+                  view: "card",
+                  image: "img1",
+                  widthM: 1,
+                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                },
+              ],
             },
           ],
         },
@@ -279,7 +298,7 @@ describe("stationEdited: a station's title, radius, description and card image",
       }),
     );
     expect(frameOf(after, "story").description).toBe("A walk.\nSecond line.");
-    expect(readBack(after).minor).toBe(2);
+    expect(readBack(after).minor).toBe(0);
     expect(
       stationEditChange(state, "story", { description: "x".repeat(2000) }).kind,
     ).toBe("edited");
@@ -597,8 +616,9 @@ describe("stationDuplicated", () => {
     const item = objectOf(after, "f2");
     expect(item).toMatchObject({
       station: "fcopy",
-      kind: "photo",
-      image: "content/f2.jpg",
+      kind: "picture",
+      image: "f2",
+      imageAsset: { id: "f2", path: "content/f2.jpg" },
       createdAtIso: "2026-10-22T00:00:00.000Z",
     });
     const was = localPoseOf(objectOf(after, "f").geo, original.geo).position;
@@ -611,23 +631,49 @@ describe("stationDuplicated", () => {
     expectOneStep(before, after);
   });
 
-  it("copies a story station's steps, and refuses a taken id or an item left without one", () => {
+  // Why: block ids are unique across the tour (format 4), so a copied
+  // story carries its blocks under new ids and its steps show those; a copy
+  // under the old ids is a tour the format refuses.
+  it("copies a story station's steps and blocks under new block ids, and refuses a taken id or a block left without one", () => {
     const state = open();
     const after = reduce(
       state,
       act.stationDuplicated({
         stationId: "story",
         newStationId: "story2",
-        newItemIds: {},
+        newItemIds: { look: "look2" },
         createdAtIso: "2026-10-22T00:00:00.000Z",
         what: "duplicate",
       }),
     );
     expect(frameOf(after, "story2")).toMatchObject({
       title: "The story copy",
-      steps: frameOf(state, "story").steps,
+      steps: frameOf(state, "story").steps.map((step) =>
+        step.action.kind === "show"
+          ? { ...step, action: { kind: "show", block: "look2" } }
+          : step,
+      ),
+      blocks: [{ ...frameOf(state, "story").blocks[0], id: "look2" }],
     });
+    expect(frameOf(after, "story").blocks.map((b) => b.id)).toEqual(["look"]);
     readBack(after);
+    for (const bad of [
+      { newStationId: "story3", newItemIds: {} },
+      { newStationId: "story4", newItemIds: { look: "a" } },
+      { newStationId: "story5", newItemIds: { look: "img1" } },
+    ]) {
+      expect(
+        reduce(
+          state,
+          act.stationDuplicated({
+            stationId: "story",
+            ...bad,
+            createdAtIso: "2026-10-22T00:00:00.000Z",
+            what: "duplicate",
+          }),
+        ),
+      ).toBe(state);
+    }
     for (const bad of [
       { newStationId: "story", newItemIds: {} },
       { newStationId: "ok1", newItemIds: {} },
@@ -663,8 +709,8 @@ describe("objectDuplicated", () => {
     );
     const copy = objectOf(after, "a2");
     expect(copy).toMatchObject({
-      kind: "pin",
-      label: "pin a copy",
+      kind: "shortText",
+      caption: "pin a copy",
       station: stationIdOf("a"),
     });
     expect(horizontalM(objectOf(after, "a").geo, copy.geo)).toBeCloseTo(1.5, 3);
@@ -939,7 +985,7 @@ describe("stationDuplicated, the copy's title and card image", () => {
       act.stationDuplicated({
         stationId: "story",
         newStationId: "story2",
-        newItemIds: {},
+        newItemIds: { look: "look2" },
         createdAtIso: "2026-10-22T00:00:00.000Z",
         what: "duplicate",
       }),
@@ -967,7 +1013,7 @@ describe("a bare empty station of the opened file", () => {
       foundRadiusM: 25,
       hint: "arrow" as const,
       steps: [],
-      items: [],
+      blocks: [],
     };
     const withBare: TourManifest = parseTourManifest(
       JSON.parse(

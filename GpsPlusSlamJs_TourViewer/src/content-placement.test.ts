@@ -11,6 +11,7 @@ import {
   mintQrGeoPose,
 } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 import type {
+  TourAsset,
   TourObject,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -116,7 +117,8 @@ describe("mintPhoto", () => {
       bearingDeg(expected.x, expected.z),
       0,
     );
-    expect(photo!.image).toBe("content/f.jpg");
+    expect(photo!.image).toBe("f");
+    expect(photo!.imageAsset.path).toBe("content/f.jpg");
     expect(photo!.geo.rotation).toHaveLength(4);
   });
 
@@ -250,7 +252,12 @@ describe("renderTourObjects", () => {
       imageHeight: 3,
       nowIso: NOW,
     })!;
-    const bad = { ...good, id: "b", image: "content/b.jpg" };
+    const bad = {
+      ...good,
+      id: "b",
+      image: "b",
+      imageAsset: { ...good.imageAsset, id: "b", path: "content/b.jpg" },
+    };
     const rendered = await renderTourObjects([pin, good, bad], {
       scene,
       zero: ZERO,
@@ -299,6 +306,7 @@ describe("renderTourObjects", () => {
     const model: TourObject = {
       id: "m",
       kind: "model",
+      view: "placed",
       asset: "statue",
       sizeM: 3,
       createdAtIso: NOW,
@@ -360,7 +368,7 @@ describe("renderTourObjects", () => {
       scene,
       zero: ZERO,
       poseOf: (object) =>
-        object.kind === "pin"
+        object.kind === "shortText"
           ? { positionNue: [2, 0, -1], rotationNue: [0, 0, 0, 1] }
           : { positionNue: [0.5, 1.4, 3], rotationNue: turned },
       makeLabel: (text) => {
@@ -420,7 +428,7 @@ describe("renderTourStation", () => {
   function stationAt(
     id: string,
     geo: TourStation["geo"],
-    items: TourStation["items"],
+    items: TourStation["blocks"],
   ): TourStation {
     return {
       id,
@@ -429,8 +437,20 @@ describe("renderTourStation", () => {
       foundRadiusM: 25,
       hint: "arrow",
       steps: [],
-      items,
+      blocks: items,
     };
+  }
+
+  /** The image assets of captured photos with these ids, as a tour lists
+   *  them (`content/<id>.jpg`). */
+  function photoAssets(...ids: string[]): TourAsset[] {
+    return ids.map((id) => ({
+      id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    }));
   }
 
   it("places each station as a group at its pose, with its pins and photos as children at their local poses", async () => {
@@ -445,6 +465,7 @@ describe("renderTourStation", () => {
       rotation: yaw(45),
     };
     const deps = {
+      assets: photoAssets("g"),
       scene,
       zero: ZERO,
       makeLabel: labelStub,
@@ -461,17 +482,18 @@ describe("renderTourStation", () => {
       stationAt("gate", stationGeo, [
         {
           id: "p",
-          kind: "pin",
-          label: "Gate",
+          kind: "shortText",
+          view: "pin",
+          caption: "Gate",
           createdAtIso: NOW,
           pose: pinPose,
         },
         {
           id: "g",
-          kind: "photo",
-          image: "content/g.jpg",
-          imageWidth: 4,
-          imageHeight: 3,
+          kind: "picture",
+          view: "plane",
+          image: "g",
+          widthM: 1,
           createdAtIso: NOW,
           pose: photoPose,
         },
@@ -542,15 +564,16 @@ describe("renderTourStation", () => {
             stationAt("s", stationGeo, [
               {
                 id: "g",
-                kind: "photo",
-                image: "content/g.jpg",
-                imageWidth: 4,
-                imageHeight: 3,
+                kind: "picture",
+                view: "plane",
+                image: "g",
+                widthM: 1,
                 createdAtIso: NOW,
                 pose: localPoseOf(settled, stationGeo),
               },
             ]),
             {
+              assets: photoAssets("g"),
               scene,
               zero: ZERO,
               makeLabel: labelStub,
@@ -585,10 +608,10 @@ describe("renderTourStation", () => {
     // station's photos decode must not pay for the rest of them.
     const photo = (id: string) => ({
       id,
-      kind: "photo" as const,
-      image: `content/${id}.jpg`,
-      imageWidth: 4,
-      imageHeight: 3,
+      kind: "picture" as const,
+      view: "plane" as const,
+      image: id,
+      widthM: 1,
       createdAtIso: NOW,
       pose: {
         position: [0, 1.4, 3] as [number, number, number],
@@ -601,6 +624,7 @@ describe("renderTourStation", () => {
     const rendered = await renderTourStation(
       stationAt("s", geo, [photo("a"), photo("b"), photo("c")]),
       {
+        assets: photoAssets("a", "b", "c"),
         scene: new Group(),
         zero: ZERO,
         makeLabel: labelStub,
@@ -629,8 +653,9 @@ describe("renderTourStation", () => {
     let labels = 0;
     const pin = (id: string) => ({
       id,
-      kind: "pin" as const,
-      label: id,
+      kind: "shortText" as const,
+      view: "pin" as const,
+      caption: id,
       createdAtIso: NOW,
       pose: {
         position: [0, 1.5, 0] as [number, number, number],
@@ -639,10 +664,10 @@ describe("renderTourStation", () => {
     });
     const photo = {
       id: "f",
-      kind: "photo" as const,
-      image: "content/f.jpg",
-      imageWidth: 4,
-      imageHeight: 3,
+      kind: "picture" as const,
+      view: "plane" as const,
+      image: "f",
+      widthM: 1,
       createdAtIso: NOW,
       pose: {
         position: [0, 1.4, 3] as [number, number, number],
@@ -652,6 +677,7 @@ describe("renderTourStation", () => {
     const scene = new Group();
     await expect(
       renderTourStation(stationAt("s", geo, [pin("p1"), photo, pin("p2")]), {
+        assets: photoAssets("f"),
         scene,
         zero: ZERO,
         makeLabel: (text) => {

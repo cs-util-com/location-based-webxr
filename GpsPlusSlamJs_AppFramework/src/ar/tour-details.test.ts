@@ -250,11 +250,17 @@ describe('a mailto: link escapes what would start a query', () => {
 describe('tourImageIds and tourCoverEntry', () => {
   // Why: which ids a cover may name, and which archive entry it shows, is
   // one rule for the reader, the editor's cover choices and the visitor's
-  // start page. A pin, an audio or a model asset is never a cover.
+  // start page. A block, an audio or a model asset is never a cover; a
+  // picture a page holds before any tour lists its asset carries the asset.
   const tour = {
     objects: [
-      { id: 'p1', kind: 'pin' as const },
-      { id: 'f1', kind: 'photo' as const, image: 'content/f1.jpg' },
+      { id: 'p1', kind: 'shortText' as const },
+      {
+        id: 'f1',
+        kind: 'picture' as const,
+        image: 'f1',
+        imageAsset: { id: 'f1', path: 'content/f1.jpg' },
+      },
     ],
     assets: [
       { id: 'art', kind: 'image' as const, path: 'content/art.png' },
@@ -262,7 +268,7 @@ describe('tourImageIds and tourCoverEntry', () => {
     ],
   };
 
-  it("names the placed photos' and the image assets' ids, nothing else", () => {
+  it("names the image assets' ids and the pictures' own, nothing else", () => {
     expect([...tourImageIds(tour)].sort()).toEqual(['art', 'f1']);
   });
 

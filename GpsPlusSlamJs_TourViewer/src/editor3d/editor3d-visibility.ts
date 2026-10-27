@@ -119,7 +119,7 @@ export function selectedStationOf(
   manifest: {
     readonly stations: readonly {
       readonly id: string;
-      readonly items: readonly { readonly id: string }[];
+      readonly blocks: readonly { readonly id: string }[];
     }[];
   } | null,
 ): string | null {
@@ -129,7 +129,7 @@ export function selectedStationOf(
     return manifest.stations.some((s) => s.id === id) ? id : null;
   }
   return (
-    manifest.stations.find((s) => s.items.some((i) => i.id === selected))?.id ??
-    null
+    manifest.stations.find((s) => s.blocks.some((i) => i.id === selected))
+      ?.id ?? null
   );
 }

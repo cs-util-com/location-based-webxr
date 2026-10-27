@@ -26,6 +26,7 @@ import {
   rebuildFinishedTour,
   type FinishedTour,
 } from "./finish-rebuild.js";
+import { isCapturedPhoto } from "./tour-content.js";
 import {
   historyAssetIds,
   manifestNow,
@@ -175,7 +176,7 @@ export function createTourSaves(input: {
     return {
       placed: state.placed.map(({ object }) => {
         const blob =
-          object.kind === "photo" && hosted.key(object.id) === undefined
+          isCapturedPhoto(object) && hosted.key(object.id) === undefined
             ? input.pictureOf(object.id)
             : undefined;
         return blob === undefined ? { object } : { object, blob };

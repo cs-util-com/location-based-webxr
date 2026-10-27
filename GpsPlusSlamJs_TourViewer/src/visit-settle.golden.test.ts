@@ -329,6 +329,44 @@ function rounded(value: unknown): unknown {
   return value;
 }
 
+/**
+ * The oracle was frozen in format 3, where a world object was a "pin" with
+ * a `label` or a "photo" naming its file. Format 4 holds the same object
+ * as a free block (a "shortText" pin with a `caption`, a "picture" plane
+ * carrying its image asset), so the outputs are compared in the shape they
+ * were frozen in: a mechanical adapter, every number untouched.
+ */
+function inFrozenShape(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(inFrozenShape);
+  if (value === null || typeof value !== "object") return value;
+  const record: Record<string, unknown> = Object.fromEntries(
+    Object.entries(value).map(([k, v]) => [k, inFrozenShape(v)]),
+  );
+  if (!("geo" in record)) return record;
+  if (record["kind"] === "shortText") {
+    const { view: _view, caption, ...rest } = record;
+    return { ...rest, kind: "pin", label: caption };
+  }
+  if (record["kind"] === "picture") {
+    const {
+      view: _view,
+      widthM: _widthM,
+      image: _image,
+      imageAsset,
+      ...rest
+    } = record;
+    const asset = imageAsset as { path: string; width: number; height: number };
+    return {
+      ...rest,
+      kind: "photo",
+      image: asset.path,
+      imageWidth: asset.width,
+      imageHeight: asset.height,
+    };
+  }
+  return record;
+}
+
 interface Output {
   kind: Kind;
   answer: Answer;
@@ -459,12 +497,17 @@ describe("the one-code settle oracle (frozen before M4)", () => {
       if (process.env["CI"]) {
         throw new Error("GOLDEN_UPDATE is refused in CI.");
       }
-      writeFileSync(GOLDEN, `${JSON.stringify(now, null, 1)}\n`);
+      writeFileSync(
+        GOLDEN,
+        `${JSON.stringify(now.map(inFrozenShape), null, 1)}\n`,
+      );
     }
     const frozen = JSON.parse(readFileSync(GOLDEN, "utf8")) as unknown[];
     expect(frozen).toHaveLength(SCENARIOS);
     for (let seed = 0; seed < SCENARIOS; seed += 1) {
-      expect(now[seed], `seed ${String(seed)}`).toEqual(frozen[seed]);
+      expect(inFrozenShape(now[seed]), `seed ${String(seed)}`).toEqual(
+        frozen[seed],
+      );
     }
   });
 
@@ -491,8 +534,8 @@ describe("the one-code settle oracle (frozen before M4)", () => {
     expect(
       objects.some((o) => o.refused !== null && o.basis === "measured-here"),
     ).toBe(true);
-    expect(objects.some((o) => o.object.kind === "photo")).toBe(true);
-    expect(objects.some((o) => o.object.kind === "pin")).toBe(true);
+    expect(objects.some((o) => o.object.kind === "picture")).toBe(true);
+    expect(objects.some((o) => o.object.kind === "shortText")).toBe(true);
     const decisions = new Set(
       now.flatMap((o) =>
         o.planCodePosition === null

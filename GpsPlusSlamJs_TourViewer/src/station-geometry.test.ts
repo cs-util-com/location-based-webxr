@@ -16,7 +16,7 @@ import {
   itemGeoPose,
   localPoseOf,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
-import "./test-support/v3-tour.js";
+import "./test-support/tour-of.js";
 import { horizontalM } from "./move-with-code.js";
 import {
   altKeepingHeight,

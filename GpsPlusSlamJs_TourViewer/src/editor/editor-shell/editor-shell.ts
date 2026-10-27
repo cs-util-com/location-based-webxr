@@ -621,7 +621,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const stations = manifest()?.stations ?? [];
     const stationId = selected.startsWith(STATION_PREFIX)
       ? selected.slice(STATION_PREFIX.length)
-      : (stations.find((s) => s.items.some((i) => i.id === selected))?.id ??
+      : (stations.find((s) => s.blocks.some((i) => i.id === selected))?.id ??
         null);
     const index = stations.findIndex((s) => s.id === stationId);
     deps.stations.remove(selected);

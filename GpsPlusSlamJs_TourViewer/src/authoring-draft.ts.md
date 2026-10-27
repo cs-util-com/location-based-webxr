@@ -41,7 +41,7 @@ where)`, owner question Q-E2-2's default; `where` is the phone's "on this
   the whole state machine in one function; see the invariants. Compares
   CONTENT (`objectContentKey`), not ids, through `hostedObjects`.
 - `hostedObjects(manifest | null) -> HostedObjects` - the hosted tour's
-  pins and photos in the world (`tourObjects`, version 3) with
+  pins and photos in the world (`tourObjects`) with
   `key(id)` (the hosted content key) and `holds(object)`: the hosted
   copy has this object's content, either exactly or as its station
   stores it (`asStored` of `tour-content.ts`). A placement saved into a

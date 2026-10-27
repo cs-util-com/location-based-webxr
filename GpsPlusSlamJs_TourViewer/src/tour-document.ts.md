@@ -21,8 +21,8 @@ reducers' building blocks, so a page cannot apply them differently.
   meanwhile) names the generation it began on and is ignored for another.
 - `opened`, `written` - the tour as opened, and as last written (the
   opened one until a save landed); null before an open.
-- `stations: StationFrame[]` - every station without its items (`geo`,
-  radii, title, steps): the frames as they stand, moved by `stationMoved`,
+- `stations: StationFrame[]` - every station without its free blocks (`geo`,
+  radii, title, its story: the steps and the blocks they show): the frames as they stand, moved by `stationMoved`,
   started by the station rule (below) and dropped with the last object of
   an automatic one, in the order they were made.
 - `placed: EditEntry[]` - objects placed, edited or moved, in the world,
@@ -317,9 +317,11 @@ geo?, what })` - a copy inserted after the original (any station the
     at `duplicateStationGeo` (twice the found radius plus 5 m
     east, so the two preload rings never overlap) or `geo`; each item is
     copied under its new id at the same local pose (`rigidlyMoved`), a
-    photo naming `content/<new id>.<ext>`. `prepare` mints the station id
-    and the time; the page mints the items' ids (it copies their pictures
-    first). An original the frames do not list back (`framesToList`: an
+    photo naming `content/<new id>.<ext>`, and the story's blocks under
+    their new ids, the copied `show` steps naming those (block ids are
+    unique across the tour); a block of the station without a fresh new
+    id refuses the copy. `prepare` mints the station id and the time; the
+    page mints the blocks' ids (it copies their pictures first). An original the frames do not list back (`framesToList`: an
     emptied automatic station, which the next write leaves out) stays
     unlisted, and the copy takes its place in the shown order. It once
     listed the original back so the copy could stand after it; a later
@@ -378,6 +380,11 @@ written, hand })` (the hosted texts enter the book);
 ## Selectors and pure rules
 
 - `selectTourDocument(root)` - the slice in a store's state.
+- Re-exported from `tour-content.ts` for the pages, read-only: `worldBlocks`
+  and `WorldBlock` (a station's free blocks), `isCapturedPhoto` and
+  `ownedAssetIds` (the pictures that own their image asset). A page reads
+  them here, never from `tour-content.ts` (the boundary rule
+  `document-rules-through-tour-document`).
 - The codes: `documentCodes(state)` (the book, in order),
   `codeSavedText(state, id)`, `codeLiveText(state, id)` (`liveText`
   against the hosted texts as they stand), `levelsToWrite(state)` and
@@ -466,7 +473,9 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   change.
 - `effectiveDetails(state)` - the cover only while its image is in the tour.
 - `coverImageIds(state)` - the images the tour may show as its cover (its
-  photos as they stand, its image assets).
+  photos as they stand, its image assets that are no captured photo's own:
+  a deleted photo's asset, still listed in the file written last, keeps
+  no cover; `creator-document.test.ts`, "only the tombstones change").
 - `detailsChange(state, form)` - a details form checked by the format's
   rules (`checkDetailsForm`), as both pages check it: `changed` with the
   details to dispatch, `unchanged`, or `refused` with the reason in words.
@@ -622,7 +631,7 @@ const store = createTourViewerStore();
 store.dispatch(tourDocumentActions.opened({ manifest }));
 store.dispatch(
   tourDocumentActions.edited({
-    object: { ...pin, label: "New" },
+    object: { ...pin, caption: "New" },
     what: "the text",
   }),
 );
@@ -718,7 +727,7 @@ store.dispatch(tourDocumentActions.undone());
   items rigidly, a photo under its own file; a story's steps;
   a long title shortened so the copy's fits 80 characters, counted in
   code points, and an image asset's card kept - seen red at 84) and of an
-  item (1.5 m east, label marked); a written station no frame names
+  item (1.5 m east, caption marked); a written station no frame names
   edited and copied (seen red: `missing`); a bare empty station of the
   opened file deleted, saved and undone comes back (seen red); items
   grounded as ONE step;

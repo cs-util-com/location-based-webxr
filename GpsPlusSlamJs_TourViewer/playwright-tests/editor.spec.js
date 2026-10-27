@@ -26,7 +26,14 @@ import {
   viewCommand,
   viewItem,
 } from "./editor-menus.js";
-import { inOwnStation } from "./v3-fixture.mjs";
+import {
+  capturedPhoto,
+  imageAsset,
+  inOwnStation,
+  pinBlock,
+  showStep,
+  textCard,
+} from "./tour-fixture.mjs";
 import { useWideFont } from "./wide-font.js";
 
 /**
@@ -59,7 +66,8 @@ function oversizedPng() {
 }
 
 const AT = { lat: 48.5203, lon: 9.0536, alt: 340 };
-const MARKUP = '<img src=x onerror="window.__xss=1">Town hall';
+// Within a pin text's 40 characters, so the file opens.
+const MARKUP = '<img src=x onerror="__xss=1">Town hall';
 
 /** @param {number} north @param {number} east */
 function geo(north, east) {
@@ -102,11 +110,15 @@ async function editorTour({ station = false, farStation = false } = {}) {
       }),
     });
   }
-  // Through the serializer (version 3: stations at geo poses, the pins
-  // and photos as their items, tour editor plan W3).
+  // Through the serializer (version 4: stations at geo poses, the pins
+  // and photos as their free blocks).
   const manifest = {
     ...createEmptyTourManifest(),
     title: "Editor fixture",
+    assets: [
+      imageAsset("photo-ok", "content/photo-ok.png", 1, 1),
+      imageAsset("photo-big", "content/photo-big.png", 1, 1),
+    ],
     // A story station at the first code's point (PR #609 review).
     stations: [
       ...(station
@@ -114,14 +126,13 @@ async function editorTour({ station = false, farStation = false } = {}) {
             {
               id: "gate",
               title: "At the gate",
-              // At the first code's point (version 3 has no code link,
-              // tour editor plan D9).
+              // At the first code's point (a station names no code).
               geo: { ...geo(0, 0), headingDeg: 0 },
               activateRadiusM: 30,
               foundRadiusM: 5,
               hint: "arrow",
-              steps: [{ id: "hi", action: { kind: "text", text: "Hello" } }],
-              items: [],
+              blocks: [textCard("hello", "At the gate", "Hello")],
+              steps: [showStep("hi", "hello")],
             },
           ]
         : []),
@@ -137,8 +148,8 @@ async function editorTour({ station = false, farStation = false } = {}) {
               activateRadiusM: 30,
               foundRadiusM: 5,
               hint: "arrow",
-              steps: [{ id: "w", action: { kind: "text", text: "A well" } }],
-              items: [],
+              blocks: [textCard("a-well", "Old well", "A well")],
+              steps: [showStep("w", "a-well")],
             },
             {
               id: "bench",
@@ -146,37 +157,30 @@ async function editorTour({ station = false, farStation = false } = {}) {
               activateRadiusM: 30,
               foundRadiusM: 5,
               hint: "arrow",
-              steps: [{ id: "b", action: { kind: "text", text: "A bench" } }],
-              items: [],
+              blocks: [textCard("a-bench", "A bench", "A bench")],
+              steps: [showStep("b", "a-bench")],
             },
           ]
         : []),
       ...[
         {
-          id: "pin-markup",
-          kind: "pin",
-          label: MARKUP,
-          createdAtIso: "2026-10-13T00:00:00.000Z",
+          ...pinBlock("pin-markup", MARKUP, {
+            createdAtIso: "2026-10-13T00:00:00.000Z",
+          }),
           geo: { ...geo(10, 10), headingDeg: 0 },
         },
         {
-          id: "photo-ok",
-          kind: "photo",
-          label: "Fountain",
-          image: "content/photo-ok.png",
-          imageWidth: 1,
-          imageHeight: 1,
-          createdAtIso: "2026-10-13T00:00:00.000Z",
+          ...capturedPhoto("photo-ok", {
+            caption: "Fountain",
+            createdAtIso: "2026-10-13T00:00:00.000Z",
+          }),
           geo: { ...geo(-10, 20), rotation: [0, 0, 0, 1] },
         },
         {
-          id: "photo-big",
-          kind: "photo",
-          label: "Too big",
-          image: "content/photo-big.png",
-          imageWidth: 1,
-          imageHeight: 1,
-          createdAtIso: "2026-10-13T00:00:00.000Z",
+          ...capturedPhoto("photo-big", {
+            caption: "Too big",
+            createdAtIso: "2026-10-13T00:00:00.000Z",
+          }),
           geo: { ...geo(20, -20), rotation: [0, 0, 0, 1] },
         },
       ].map(inOwnStation),
@@ -243,7 +247,7 @@ test("opens a tour through the file chooser and lists every code and note, label
   await page.goto("/edit.html");
   await expect(page.locator("#open-modal")).toBeVisible();
   await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
-  // Version 3 has no loose pins (tour editor plan W3): the fixture's three
+  // A tour has no loose pins: the fixture's three
   // notes each sit in a station of their own, and the count, the rail and
   // the map say so (every station is listed, the automatic ones included).
   await expect(page.locator(".toast")).toHaveText(
@@ -528,19 +532,17 @@ async function wrappedTour(options = { pin: false }) {
       ...(options.pin
         ? [
             {
-              id: "pin-wrapped",
-              kind: "pin",
-              label: "Wrapped pin",
-              createdAtIso: "2026-10-13T00:00:00.000Z",
+              ...pinBlock("pin-wrapped", "Wrapped pin", {
+                createdAtIso: "2026-10-13T00:00:00.000Z",
+              }),
               geo: { ...geo(6, 6), headingDeg: 0 },
             },
             ...(options.extra === true
               ? [
                   {
-                    id: "pin-elsewhere",
-                    kind: "pin",
-                    label: "Added elsewhere",
-                    createdAtIso: "2026-10-14T00:00:00.000Z",
+                    ...pinBlock("pin-elsewhere", "Added elsewhere", {
+                      createdAtIso: "2026-10-14T00:00:00.000Z",
+                    }),
                     geo: { ...geo(-6, 6), headingDeg: 0 },
                   },
                 ]
@@ -1065,7 +1067,7 @@ test("edits a pin's text and saves a tour that carries it", async ({
   const pinSaved = saved.manifest.objects.find(
     (/** @type {{ id: string }} */ o) => o.id === "pin-markup",
   );
-  expect(pinSaved.label).toBe("The new text");
+  expect(pinSaved.caption).toBe("The new text");
   await expect(page.locator("#save-status")).toHaveText(
     "Saved as editor-fixture.zip",
   );
@@ -1093,7 +1095,7 @@ test("Save a copy writes the edits to a new file and leaves the tour's own unsav
   const pinCopied = copy.manifest.objects.find(
     (/** @type {{ id: string }} */ o) => o.id === "pin-markup",
   );
-  expect(pinCopied.label).toBe("The copied text");
+  expect(pinCopied.caption).toBe("The copied text");
   await expect(
     page.locator(".toast", {
       hasText: "Saved a copy as editor-fixture copy.zip",
@@ -1220,7 +1222,7 @@ test("a click right after typing lands: on another row, and on Save", async ({
   const pinSaved = saved.manifest.objects.find(
     (/** @type {{ id: string }} */ o) => o.id === "pin-markup",
   );
-  expect(pinSaved.label).toBe("Typed, then Save");
+  expect(pinSaved.caption).toBe("Typed, then Save");
 });
 
 test("Ctrl+Enter commits the text, Esc cancels a move", async ({ page }) => {
@@ -1303,7 +1305,7 @@ test("a station at its code's point and the code are both reachable on the map",
     "editor-fixture.zip",
   );
   // The gate is the first station; the fixture's notes each sit in a
-  // station of their own (version 3 has no loose pins, plan W3).
+  // station of their own (a block always stands in a station).
   await page.locator(".mk-station", { hasText: /^1$/ }).click();
   await expect(page.locator("#card")).toContainText("At the gate");
   await page.keyboard.press("Escape");
@@ -2440,10 +2442,14 @@ test("a phone's draft and the editor's for one tour file stay apart", async ({
     await put(
       "object:pin-markup",
       JSON.stringify({
-        id: "pin-markup",
-        kind: "pin",
-        label: "The phone's text",
-        createdAtIso: "2026-10-13T00:00:00.000Z",
+        format: 4,
+        block: {
+          id: "pin-markup",
+          kind: "shortText",
+          view: "pin",
+          caption: "The phone's text",
+          createdAtIso: "2026-10-13T00:00:00.000Z",
+        },
         geo: { lat: 48.5204, lon: 9.0537, alt: 340, headingDeg: 0 },
       }),
     );
@@ -3572,7 +3578,7 @@ test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left
   // reader does not announce the warning again.
   expect(await line?.evaluate((node) => node.isConnected)).toBe(true);
   expect(await savedManifest(page, "nogps.zip")).toMatchObject({
-    version: 3,
+    version: 4,
     minor: 0,
     needsNoGps: true,
   });
@@ -3597,7 +3603,7 @@ test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left
   await expect(next.locator("#save-status")).toHaveText("Saved to nogps.zip");
   const off = await savedManifest(next, "nogps.zip");
   expect(off).not.toHaveProperty("needsNoGps");
-  expect(off).toMatchObject({ version: 3, minor: 0 });
+  expect(off).toMatchObject({ version: 4, minor: 0 });
 });
 
 test("a changed needs-no-GPS setting survives a closed tab, and Restore brings it back", async ({
@@ -3671,7 +3677,7 @@ test("the tour's name opens its details: applied, saved into tour.json, and an e
   await expect(page.locator("#save-status")).toHaveText("4 changes not saved");
   const saved = await saveAndRead(page);
   expect(saved.manifest).toMatchObject({
-    version: 3,
+    version: 4,
     minor: 0,
     title: "Castle walk",
     description: "Up to the castle and back.",

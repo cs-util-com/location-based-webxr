@@ -16,9 +16,10 @@
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type {
   TourAsset,
-  TourStepAction,
+  TourBlock,
   TourManifest,
   TourObject,
+  TourPin,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
@@ -34,6 +35,7 @@ import {
   withReferencedAssets,
   withTourContent,
 } from "./tour-content.js";
+import { withCaption } from "./test-support/tour-of.js";
 
 // The core's geodesy runs only under an activated licence.
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -66,22 +68,23 @@ function station(id: string, n: number, e: number): TourStation {
     foundRadiusM: 10,
     hint: "arrow",
     steps: [],
-    items: [],
+    blocks: [],
   };
 }
 
-function pin(id: string, n: number, e: number, label = id): TourObject {
+function pin(id: string, n: number, e: number, label = id): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-10-18T06:00:00.000Z",
     geo: geo(n, e, 521.5),
   };
 }
 
 function tour(stations: TourStation[]): TourManifest {
-  return { version: 3, minor: 0, order: "fixed", assets: [], stations };
+  return { version: 4, minor: 0, order: "fixed", assets: [], stations };
 }
 
 /** `object` naming the station `id`, as the tour document seats it. */
@@ -111,11 +114,11 @@ describe("withTourContent", () => {
     const [a, b] = tourObjects(base);
     const moved = { ...b!, geo: geo(5, 5, 521.5) };
     const next = withTourContent(base, {
-      objects: [{ ...a!, label: "renamed" }, moved],
+      objects: [withCaption(a!, "renamed"), moved],
     });
-    const items = next.stations[0]!.items;
-    expect(items[0]).toMatchObject({ label: "renamed" });
-    expect(items[0]!.pose).toBe(base.stations[0]!.items[0]!.pose);
+    const items = next.stations[0]!.blocks;
+    expect(items[0]).toMatchObject({ caption: "renamed" });
+    expect(items[0]!.pose).toBe(base.stations[0]!.blocks[0]!.pose);
     expect(items[1]!.pose).toEqual(
       localPoseOf(moved.geo, base.stations[0]!.geo),
     );
@@ -137,10 +140,12 @@ describe("withTourContent", () => {
         ],
       },
     );
-    expect(next.stations.map((s) => [s.id, s.items.map((i) => i.id)])).toEqual([
-      ["gate", ["near-well"]],
-      ["well", ["lone"]],
-    ]);
+    expect(next.stations.map((s) => [s.id, s.blocks.map((i) => i.id)])).toEqual(
+      [
+        ["gate", ["near-well"]],
+        ["well", ["lone"]],
+      ],
+    );
   });
 
   it("an object keeps the station the tour holds it in when it names none", () => {
@@ -149,7 +154,7 @@ describe("withTourContent", () => {
     });
     const { station: _station, ...unnamed } = tourObjects(base)[0]!;
     const next = withTourContent(base, { objects: [unnamed] });
-    expect(next.stations[0]!.items.map((i) => i.id)).toEqual(["a"]);
+    expect(next.stations[0]!.blocks.map((i) => i.id)).toEqual(["a"]);
   });
 
   // Why this test matters: an object that reaches the writer in no station
@@ -189,7 +194,9 @@ describe("withTourContent", () => {
     const next = withTourContent(base, {
       objects: tourObjects(base).filter((o) => o.id !== "a"),
     });
-    expect(next.stations.map((s) => s.items.map((i) => i.id))).toEqual([["b"]]);
+    expect(next.stations.map((s) => s.blocks.map((i) => i.id))).toEqual([
+      ["b"],
+    ]);
   });
 
   it("a station emptied by this write goes when it carries nothing else; a titled or storied one stays", () => {
@@ -204,10 +211,22 @@ describe("withTourContent", () => {
     const titled = { ...station("titled", 100, 0), title: "Old well" };
     const storied: TourStation = {
       ...station("storied", 200, 0),
+      blocks: [
+        {
+          id: "hi",
+          kind: "shortText",
+          view: "card",
+          caption: "Hi",
+          pose: {
+            position: [0, 0, 0] as [number, number, number],
+            rotation: [0, 0, 0, 1] as [number, number, number, number],
+          },
+        },
+      ],
       steps: [
         {
           id: "t",
-          action: { kind: "text", text: "Hi" },
+          action: { kind: "show", block: "hi" },
           advance: { mode: "tap" },
         },
       ],
@@ -251,10 +270,17 @@ describe("withTourContent", () => {
     };
     const shot: TourObject = {
       id: "shot",
-      kind: "photo",
-      image: "content/shot.jpg",
-      imageWidth: 4,
-      imageHeight: 3,
+      kind: "picture",
+      view: "plane",
+      image: "shot",
+      widthM: 1,
+      imageAsset: {
+        id: "shot",
+        path: "content/shot.jpg",
+        kind: "image",
+        width: 4,
+        height: 3,
+      },
       createdAtIso: "2026-10-21T06:00:00.000Z",
       geo: geo(301, 0, 521.5),
     };
@@ -339,30 +365,57 @@ describe("withReferencedAssets", () => {
     asset("cover-art", "image"),
     asset("stray", "image"),
   ];
-  /** A tour with every asset and one station telling `blocks`. */
-  function telling(
-    blocks: readonly TourStepAction[],
-    extra: Partial<TourManifest> = {},
-  ): TourManifest {
-    const told = {
-      ...station("told", 0, 0),
-      steps: blocks.map((block, i) => ({
-        id: `step-${String(i)}`,
-        action: block,
-        advance: { mode: "tap" as const },
+  /** A block's own fields, as `telling` takes them. */
+  type BlockFields = TourBlock extends infer B
+    ? B extends TourBlock
+      ? Omit<B, "id" | "pose">
+      : never
+    : never;
+  /** A station whose story shows blocks of `fields`, one step each. */
+  function storyStation(
+    id: string,
+    fields: readonly BlockFields[],
+    north: number,
+  ): TourStation {
+    return {
+      ...station(id, north, 0),
+      blocks: fields.map((f, i) => ({
+        ...f,
+        id: `${id}-b${String(i)}`,
+        pose: {
+          position: [0, 0, 0] as [number, number, number],
+          rotation: [0, 0, 0, 1] as [number, number, number, number],
+        },
+      })),
+      steps: fields.map((_f, i) => ({
+        id: `${id}-s${String(i)}`,
+        action: { kind: "show", block: `${id}-b${String(i)}` },
+        advance: { mode: "tap" },
       })),
     };
+  }
+  /** A tour with every asset and one station telling `blocks`. */
+  function telling(
+    blocks: readonly BlockFields[],
+    extra: Partial<TourManifest> = {},
+  ): TourManifest {
+    const told = storyStation("told", blocks, 0);
     return { ...tour([told]), assets: [...ASSETS], ...extra };
   }
   const kept = (manifest: TourManifest) =>
     withReferencedAssets(manifest).assets.map((a) => a.id);
 
-  const cases: readonly [string, TourStepAction, readonly string[]][] = [
-    ["an image", { kind: "image", asset: "picture" }, ["picture"]],
+  const cases: readonly [string, BlockFields, readonly string[]][] = [
+    [
+      "a picture",
+      { kind: "picture", view: "card", image: "picture", widthM: 1 },
+      ["picture"],
+    ],
     [
       "a character's image and voice",
       {
         kind: "character",
+        view: "stage",
         name: "Guide",
         image: "guide",
         caption: "Hello",
@@ -372,13 +425,43 @@ describe("withReferencedAssets", () => {
     ],
     [
       "a character without a voice",
-      { kind: "character", name: "Guide", image: "guide", caption: "Hello" },
+      {
+        kind: "character",
+        view: "card",
+        name: "Guide",
+        image: "guide",
+        caption: "Hello",
+      },
       ["guide"],
     ],
-    ["an audio", { kind: "audio", asset: "song", transcript: "La" }, ["song"]],
-    ["a video", { kind: "video", asset: "clip", transcript: "Look" }, ["clip"]],
-    ["a model", { kind: "model", asset: "statue" }, ["statue"]],
-    ["a text", { kind: "text", text: "Read me" }, []],
+    [
+      "an audio",
+      { kind: "audio", view: "card", audio: "song", transcript: "La" },
+      ["song"],
+    ],
+    [
+      "a video",
+      { kind: "video", view: "card", video: "clip", transcript: "Look" },
+      ["clip"],
+    ],
+    [
+      "a video's poster",
+      {
+        kind: "video",
+        view: "card",
+        video: "clip",
+        poster: "picture",
+        transcript: "Look",
+      },
+      ["picture", "clip"],
+    ],
+    ["a model", { kind: "model", view: "stage", asset: "statue" }, ["statue"]],
+    [
+      "a long text",
+      { kind: "longText", view: "card", title: "Note", body: "Read me" },
+      [],
+    ],
+    ["a short text", { kind: "shortText", view: "card", caption: "Hi" }, []],
   ];
   for (const [name, block, ids] of cases) {
     it(`keeps what ${name} block names, and drops every other asset`, () => {
@@ -402,17 +485,14 @@ describe("withReferencedAssets", () => {
   });
 
   it("counts a block in any station, in the tour's asset order", () => {
-    const second = {
-      ...station("second", 100, 0),
-      steps: [
-        {
-          id: "s",
-          action: { kind: "image", asset: "picture" } as const,
-          advance: { mode: "tap" } as const,
-        },
-      ],
-    };
-    const manifest = telling([{ kind: "model", asset: "statue" }]);
+    const second = storyStation(
+      "second",
+      [{ kind: "picture", view: "card", image: "picture", widthM: 1 }],
+      100,
+    );
+    const manifest = telling([
+      { kind: "model", view: "stage", asset: "statue" },
+    ]);
     expect(
       kept({ ...manifest, stations: [...manifest.stations, second] }),
     ).toEqual(["picture", "statue"]);
@@ -420,7 +500,9 @@ describe("withReferencedAssets", () => {
 
   it("returns the tour itself when every asset is in use", () => {
     const manifest = {
-      ...telling([{ kind: "image", asset: "picture" }]),
+      ...telling([
+        { kind: "picture", view: "card", image: "picture", widthM: 1 },
+      ]),
       assets: [ASSETS[0]!],
     };
     expect(withReferencedAssets(manifest)).toBe(manifest);

@@ -35,7 +35,7 @@ import {
   objectEdited,
   objectMoved,
 } from "./tour-authoring-actions.js";
-import { pinTextChange } from "./tour-document.js";
+import { isCapturedPhoto, pinTextChange } from "./tour-document.js";
 import type {
   TourViewerSession,
   TourViewerStore,
@@ -268,7 +268,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     const found = find(id);
     if (found === undefined) return;
     const before = found.object;
-    if (before.kind !== "pin") return;
+    if (before.kind !== "shortText") return;
     // The shared rule, through the document (`pinTextChange`), as the
     // desktop editor uses it.
     const edit = pinTextChange(tour.state(), id, text);
@@ -282,7 +282,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
       return;
     }
     const after = edit.after;
-    const label = after.kind === "pin" ? after.label : "";
+    const label = after.kind === "shortText" ? after.caption : "";
     const changed = tour.edit(after, `the text of "${label}"`);
     if (changed === null) {
       say(`"${label}" could not be changed here.`);
@@ -326,7 +326,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
   function movablePin(id: string): AuthoringObject | null {
     if (refusedDuringFinish()) return null;
     const found = find(id);
-    if (found === undefined || found.object.kind !== "pin") return null;
+    if (found === undefined || found.object.kind !== "shortText") return null;
     if (deps.sessionLive() && deps.placementAllowed()) return found;
     say(
       "Moving needs the AR setup running with the code measured and GPS aligned.",
@@ -363,7 +363,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     }
     const before = found.object;
     const after = planned.object;
-    const label = before.kind === "pin" ? before.label : "the pin";
+    const label = before.kind === "shortText" ? before.caption : "the pin";
     // The odometry pose is kept, so the visit's own settle recomputes it
     // with the rest of the visit at its end - and the preview is rigid in
     // AR meanwhile, like a newly placed pin.
@@ -408,7 +408,8 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     const found = find(id);
     if (found === undefined) return;
     const object = found.object;
-    const name = object.kind === "pin" ? `"${object.label}"` : "the photo";
+    const name =
+      object.kind === "shortText" ? `"${object.caption}"` : "the photo";
     keepPicture(found);
     const gone = tour.remove(id, `the delete of ${name}`);
     if (gone === null) return;
@@ -478,10 +479,10 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
   function keepPicture(found: AuthoringObject): void {
     const { object } = found;
     const load = deps.loadPicture;
-    if (object.kind !== "photo" || !found.hosted || load === undefined) return;
+    if (!isCapturedPhoto(object) || !found.hosted || load === undefined) return;
     if (tour.pictureOf(object.id) !== undefined) return;
     const generation = tour.state().generation;
-    void load(object.image).then(
+    void load(object.imageAsset.path).then(
       (blob) => {
         // Not into another tour's table: the side table is the open one's.
         if (tour.state().generation === generation) {

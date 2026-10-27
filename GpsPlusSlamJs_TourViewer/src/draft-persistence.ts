@@ -12,14 +12,17 @@
  *
  * VALIDATION IS THE MANIFEST'S OWN. A draft object is checked by the
  * framework's `parseTourObject`, which shares its field rules with the
- * manifest's station items (tour editor plan W3) - so a draft can never
- * hold something the finish would later reject. Writing a second
+ * manifest's blocks - so a draft can never hold something the finish
+ * would later reject. A record is written by the framework's
+ * `tourObjectRecord` (format 4: the block, a picture's asset entry, the
+ * geo pose and the station), never as the in-memory object. Writing a second
  * validator here is how the two would come to disagree about what a tour
  * object is.
  */
 
 import {
   parseTourObject,
+  tourObjectRecord,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { isWritableQrLevelId } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
@@ -394,7 +397,7 @@ export async function writeDraftObject(
 ): Promise<boolean> {
   const wroteObject = await store.put(
     objectKey(object.id),
-    JSON.stringify(object),
+    JSON.stringify(tourObjectRecord(object)),
   );
   if (blob === undefined) return wroteObject;
   const wrotePhoto = await store.put(photoKey(object.id), blob);
@@ -555,7 +558,9 @@ export async function readDraft(
     // has its own file.
     if (object === null) continue;
     objects.push(object);
-    if (object.kind !== "photo") continue;
+    // A captured photo's bytes are its picture's own file; a picture
+    // naming an asset of the tour has none here.
+    if (object.kind !== "picture" || object.image !== object.id) continue;
     const blob = await store.getBlob(photoKey(object.id));
     // A photo record whose bytes are gone would name a content entry the
     // rebuilt zip does not contain, which is the failure mode PR #435 was
@@ -572,7 +577,8 @@ export async function readDraft(
   // and a tour's objects should not shuffle between restores.
   objects.sort(
     (a, b) =>
-      a.createdAtIso.localeCompare(b.createdAtIso) || a.id.localeCompare(b.id),
+      (a.createdAtIso ?? "").localeCompare(b.createdAtIso ?? "") ||
+      a.id.localeCompare(b.id),
   );
   // The bases (M6 E2p), unless rejected; none at all in an older draft.
   const bases = new Map<string, DraftBase>();

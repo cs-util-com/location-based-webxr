@@ -35,7 +35,7 @@ function geoStation(
   return {
     id,
     geo: { lat, lon, alt, headingDeg: 90 },
-    items: [],
+    blocks: [],
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",

@@ -21,6 +21,8 @@ import {
   serializeTourManifest,
   type TourManifest,
   type TourObject,
+  type TourPicture,
+  type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   openTourFile,
@@ -48,11 +50,12 @@ import { TOUR_TITLE_MAX_CHARS } from "gps-plus-slam-app-framework/ar/tour-detail
 import { createEditorDraft, type EditorTourSettings } from "./editor-draft.js";
 import type { EditorLock } from "./save-target.js";
 import {
+  captionOf,
   inOwnStation,
   stationIdOf,
   tourOf,
   withWorldObjects,
-} from "../test-support/v3-tour.js";
+} from "../test-support/tour-of.js";
 import type { EditorModel } from "./editor-model.js";
 import { openTourForEditing } from "./editor-open.js";
 import { bundleMatchesTour, readDebugBundle } from "../debug-bundle.js";
@@ -61,23 +64,31 @@ beforeAll(() => {
   createTourViewerStore();
 });
 
-function pin(id: string, label = `pin ${id}`): TourObject {
+function pin(id: string, label = `pin ${id}`): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-10-13T00:00:00.000Z",
     geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 },
   };
 }
 
-function photo(id: string): TourObject {
+function photo(id: string): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-10-13T00:00:00.000Z",
     geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
   };
@@ -100,7 +111,7 @@ async function opened(
   const zip = await packFilesAsZip([
     { path: "tour.json", data: serializeTourManifest(manifest) },
     ...objects
-      .filter((o) => o.kind === "photo")
+      .filter((o) => o.kind === "picture")
       .map((o) => ({ path: `content/${o.id}.jpg`, data: o.id })),
   ]);
   const session = await openTourFile(
@@ -149,7 +160,7 @@ describe("createEditorSession", () => {
     const saved = await editor.save({ keepScan: false });
     const tour = await carried(saved.blob);
     expect(tour.objects.map((o) => o.id)).toEqual(["a", "b"]);
-    expect(tour.objects[0]).toMatchObject({ label: "New" });
+    expect(tour.objects[0]).toMatchObject({ caption: "New" });
     // Re-expressed in its station's frame and read back: float32 geodesy.
     expect(tour.objects[1]?.geo.lat).toBeCloseTo(48.53, 7);
     expect(tour.objects[1]?.geo.lon).toBeCloseTo(9.06, 7);
@@ -199,12 +210,12 @@ describe("createEditorSession", () => {
     editor.editText("b", "During the save");
     const first = await running;
     expect((await carried(first.blob)).objects[1]).toMatchObject({
-      label: "pin b",
+      caption: "pin b",
     });
     expect(editor.changeCount()).toBe(1);
     const second = await editor.save({ keepScan: false });
     const tour = await carried(second.blob);
-    expect(tour.objects.map((o) => (o as { label: string }).label)).toEqual([
+    expect(tour.objects.map((o) => captionOf(o))).toEqual([
       "First",
       "During the save",
     ]);
@@ -251,7 +262,7 @@ describe("createEditorSession, Save a copy", () => {
     expect(copy.filename).toBe("tour copy.zip");
     const tour = await carried(copy.blob);
     expect(tour.objects.map((o) => o.id)).toEqual(["a"]);
-    expect(tour.objects[0]).toMatchObject({ label: "New" });
+    expect(tour.objects[0]).toMatchObject({ caption: "New" });
     expect(editor.changeCount()).toBe(2);
     expect(editor.undo()).toMatchObject({ kind: "undone" });
     const saved = await editor.save({ keepScan: false });
@@ -283,8 +294,8 @@ describe("createEditorSession, Save a copy", () => {
     editor.editText("b", "Only in the copy");
     const copy = editor.saveCopy({ keepScan: false });
     await running;
-    const labels = (await carried((await copy).blob)).objects.map(
-      (o) => (o as { label: string }).label,
+    const labels = (await carried((await copy).blob)).objects.map((o) =>
+      captionOf(o),
     );
     expect(labels).toEqual(["Saved", "Only in the copy"]);
     // The save's landing stands; the edit made after it still waits.
@@ -321,10 +332,7 @@ describe("createEditorSession, the review's cases (E0c + E2a review #9, #10, #12
     const second = editor.save({ keepScan: false });
     await first;
     const tour = await carried((await second).blob);
-    expect(tour.objects.map((o) => (o as { label: string }).label)).toEqual([
-      "One",
-      "Two",
-    ]);
+    expect(tour.objects.map((o) => captionOf(o))).toEqual(["One", "Two"]);
     expect(editor.changeCount()).toBe(0);
     await session.close();
   });
@@ -426,7 +434,7 @@ function loggedDraft(): EditorSessionDraft & { calls: string[] } {
     },
     saveObject: (object) => {
       calls.push(
-        `save ${object.id}${object.kind === "pin" ? ` ${object.label}` : ""}`,
+        `save ${object.id}${object.kind === "shortText" ? ` ${object.caption}` : ""}`,
       );
       return Promise.resolve(true);
     },
@@ -709,7 +717,7 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     const saved = await carried((await editor.save({ keepScan: false })).blob);
     expect(
       saved.objects
-        .map((o) => [o.id, "label" in o ? o.label : "", o.station])
+        .map((o) => [o.id, "caption" in o ? o.caption : "", o.station])
         .sort(),
     ).toEqual([
       ["a", "far", expect.not.stringMatching(`^${stationIdOf("a")}$`)],
@@ -742,7 +750,7 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
     expect(editor.changeCount()).toBe(1);
     const on = await editor.save({ keepScan: false });
     expect(await writtenJson(on.blob)).toMatchObject({
-      version: 3,
+      version: 4,
       minor: 0,
       needsNoGps: true,
     });
@@ -753,7 +761,7 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
     const off = await editor.save({ keepScan: false });
     const json = await writtenJson(off.blob);
     expect(json).not.toHaveProperty("needsNoGps");
-    expect(json).toMatchObject({ version: 3, minor: 0 });
+    expect(json).toMatchObject({ version: 4, minor: 0 });
     expect(editor.changeCount()).toBe(0);
     await session.close();
   });
@@ -785,7 +793,7 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
     editor.editText("a", "edited");
     const saved = await editor.save({ keepScan: false });
     expect(await writtenJson(saved.blob)).toMatchObject({
-      version: 3,
+      version: 4,
       minor: 0,
       needsNoGps: true,
     });
@@ -877,14 +885,22 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
           id: "s1",
           title: "The column",
           geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 },
-          items: [],
+          blocks: [
+            {
+              id: "hi-text",
+              kind: "shortText",
+              view: "card",
+              caption: "Hello",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+          ],
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
           steps: [
             {
               id: "hi",
-              action: { kind: "text", text: "Hello" },
+              action: { kind: "show", block: "hi-text" },
               advance: { mode: "tap" },
             },
           ],
@@ -960,7 +976,7 @@ describe("createEditorSession, the tour details (W2)", () => {
     });
     const saved = await editor.save({ keepScan: false });
     expect(await writtenJson(saved.blob)).toMatchObject({
-      version: 3,
+      version: 4,
       minor: 0,
       title: "The castle",
       description: "Up and back.",
@@ -1119,6 +1135,7 @@ describe("createEditorSession, the tour details (W2)", () => {
     const statue: TourObject = {
       id: "m1",
       kind: "model",
+      view: "placed",
       asset: "statue",
       sizeM: 4,
       createdAtIso: "2026-10-20T00:00:00.000Z",
@@ -1406,7 +1423,7 @@ describe("createEditorSession, undo and redo (W2)", () => {
     expect(editor.undo().kind).toBe("undone");
     expect(editor.changeCount()).toBe(1);
     const saved = await carried((await editor.save({ keepScan: false })).blob);
-    expect(saved.objects[0]).toMatchObject({ label: "Old" });
+    expect(saved.objects[0]).toMatchObject({ caption: "Old" });
     expect(editor.changeCount()).toBe(0);
     await session.close();
   });
@@ -1439,8 +1456,8 @@ describe("createEditorSession, undo and redo (W2)", () => {
       (await editor.save({ keepScan: false })).blob,
     );
     expect(
-      (second.stations as { id: string; items: { id: string }[] }[]).map(
-        (s) => [s.id, s.items.map((i) => i.id)],
+      (second.stations as { id: string; blocks: { id: string }[] }[]).map(
+        (s) => [s.id, s.blocks.map((i) => i.id)],
       ),
     ).toEqual([
       [stationIdOf("a"), ["a"]],
@@ -1820,7 +1837,7 @@ describe("moving the walk out (W2, D19)", () => {
     expect("captureSpots" in (await carried(move.save.blob))).toBe(false);
     // The pending edit rides along, as in any save.
     expect((await carried(move.save.blob)).objects[0]).toMatchObject({
-      label: "Moved with the walk",
+      caption: "Moved with the walk",
     });
     move.commit();
     expect(editor.changeCount()).toBe(0);
@@ -1832,7 +1849,7 @@ describe("moving the walk out (W2, D19)", () => {
     const nextNames = await namesIn(next.blob);
     for (const name of walkNames) expect(nextNames).not.toContain(name);
     expect((await carried(next.blob)).objects[0]).toMatchObject({
-      label: "After the move",
+      caption: "After the move",
     });
     await session.close();
   });
@@ -2205,7 +2222,7 @@ describe("createEditorSession, the tour document (D29-D31)", () => {
     // manifest alike, and it lands nowhere.
     expect(noteIds(old.model())).toEqual(["a"]);
     expect((await carried((await late).blob)).objects).toMatchObject([
-      { id: "a", label: "pending" },
+      { id: "a", caption: "pending" },
     ]);
     await expect(old.save({ keepScan: false })).rejects.toThrow(
       /another tour was opened/i,
@@ -2348,11 +2365,11 @@ describe("createEditorSession, the tour document (D29-D31)", () => {
       (await editor.save({ keepScan: false })).blob,
     );
     const written = (
-      json.stations as { id: string; geo: { lat: number }; items: unknown[] }[]
+      json.stations as { id: string; geo: { lat: number }; blocks: unknown[] }[]
     ).find((s) => s.id === station.id)!;
     expect(written.geo.lat).toBeCloseTo(geo.lat, 12);
-    expect(written.items).toEqual(
-      JSON.parse(JSON.stringify(station.items)) as unknown[],
+    expect(written.blocks).toEqual(
+      JSON.parse(JSON.stringify(station.blocks)) as unknown[],
     );
     expect(editor.undo()).toMatchObject({ kind: "undone" });
     const back = await writtenJson(

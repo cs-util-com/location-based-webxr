@@ -65,7 +65,7 @@ export const STATION_PREFIX = "station:";
 
 function noteMeta(object: TourObject, codes: readonly QrGeoPose[]): string {
   const distance = codeDistanceLine(object, codes);
-  const kind = object.kind === "pin" ? "Text note" : "Photo note";
+  const kind = object.kind === "shortText" ? "Text note" : "Photo note";
   return distance === "" ? kind : `${kind} · ${distance}`;
 }
 
@@ -77,7 +77,7 @@ function noteMeta(object: TourObject, codes: readonly QrGeoPose[]): string {
 export function buildEditorModel(input: {
   readonly manifest: TourManifest;
   /** The tour's pins and photos in the world, with the page's edits
-   *  (version 3 keeps them in stations; `tour-content.ts`). */
+   *  (the stations keep them as free blocks; `tour-content.ts`). */
   readonly objects: readonly TourObject[];
   readonly levels: ReadonlyMap<string, QrLevel>;
   readonly fileName: string;
@@ -119,14 +119,14 @@ export function buildEditorModel(input: {
     return [
       {
         id: object.id,
-        kind: object.kind,
+        kind: object.kind === "shortText" ? "pin" : "photo",
         title: objectTitle(object),
         meta:
           mark === undefined
-            ? `${object.kind === "pin" ? "Text note" : "Photo note"} · no position`
+            ? `${object.kind === "shortText" ? "Text note" : "Photo note"} · no position`
             : noteMeta(object, stored),
         at: mark === undefined ? null : { lat: mark.lat, lng: mark.lng },
-        ...(object.kind === "photo" ? { image: object.image } : {}),
+        ...(object.kind === "picture" ? { image: object.imageAsset.path } : {}),
       },
     ];
   });

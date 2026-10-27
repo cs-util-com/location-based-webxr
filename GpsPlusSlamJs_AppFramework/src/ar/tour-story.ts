@@ -7,18 +7,16 @@
  * other: a `show` step must name a block of this station, and a block no
  * step shows is free and must stand in the world.
  *
- * Not wired yet: the manifest still reads and writes version 3 (whose
- * steps carry their content inline, `tour-stations.ts`). The quiz and the
- * advance rule are that module's, so both versions read them alike.
- *
  * - `show`: names a block of THIS station. Naming another station's block,
  *   or none, fails the file. Two steps may show one block.
  * - `choice`: a prompt and at least two options; an option's `goto` names
  *   a step of this station, or is absent - then the scene continues at the
  *   next step. A `goto` naming no step fails the file.
- * - `quiz`: question, points and answer as in version 3. There is no
- *   `route` (the walk is not branched by answers in version 4); a `route`
- *   field is an unknown field and ignored.
+ * - `quiz`: question, points and answer. There is no `route` (the walk is
+ *   not branched by answers); a `route` field is an unknown field and
+ *   ignored.
+ * - `advance`: how a step moves on - a tap (also when absent), or by
+ *   itself after some seconds.
  *
  * LENIENT for a NEWER MINOR (as `tour-blocks.ts`): a step of an unknown
  * kind, a quiz of an unknown answer type, and a `show` naming a block this
@@ -27,13 +25,12 @@
  * left with fewer than two goes too - repeated, since that can strand
  * another. A block left free by a skipped step must still stand in the
  * world, or it is skipped and reported. So no `show` ever names a block the
- * reader left out.
+ * reader left out. An unknown advance mode is a tap.
  *
  * @see tour-story.ts.md
  */
 
-import { isRecord } from '../utils/json-guards.js';
-import { TOUR_ID_PATTERN } from './tour-archive.js';
+import { isFiniteNumber, isRecord } from '../utils/json-guards.js';
 import {
   placeTourBlocks,
   readTourBlocks,
@@ -41,50 +38,94 @@ import {
   type TourBlocksReadOptions,
 } from './tour-blocks.js';
 import {
-  parseTourQuiz,
-  parseTourStepAdvance,
-  type TourQuiz,
-  type TourStepAdvance,
-} from './tour-stations.js';
+  assertUniqueTourIds,
+  requireTourArray,
+  requireTourId,
+  requireTourText,
+  tourTextOf,
+  type TourFail,
+} from './tour-fields.js';
 
-type Fail = (message: string) => never;
+export type TourStepAdvance =
+  { readonly mode: 'tap' } | { readonly mode: 'auto'; readonly afterS: number };
 
 /** One way on from a choice. */
-export interface TourStoryOption {
+export interface TourChoiceOption {
   readonly id: string;
   readonly label: string;
   /** A step of this station; absent: the next step. */
   readonly goto?: string;
 }
 
+export interface TourQuizOption {
+  readonly id: string;
+  readonly label: string;
+}
+
+/** Text and code answers are salted SHA-256 hex digests of the accepted
+ *  answers after normalisation (a deterrent only); choice and number
+ *  answers are in clear, since points stay on the phone. */
+export type TourQuizAnswer =
+  | {
+      readonly type: 'single';
+      readonly options: readonly TourQuizOption[];
+      readonly correct: string;
+    }
+  | {
+      readonly type: 'multiple';
+      readonly options: readonly TourQuizOption[];
+      readonly correct: readonly string[];
+    }
+  | {
+      readonly type: 'text' | 'code';
+      readonly salt: string;
+      readonly sha256: readonly string[];
+    }
+  | {
+      readonly type: 'number';
+      readonly value: number;
+      readonly tolerance: number;
+      readonly unit?: string;
+    };
+
+/** A quiz: the question, its points and the accepted answer. */
+export interface TourQuiz {
+  readonly question: string;
+  readonly points: number;
+  readonly answer: TourQuizAnswer;
+}
+
 /** What a story step does. */
-export type TourStoryAction =
+export type TourStepAction =
   | { readonly kind: 'show'; readonly block: string }
   | {
       readonly kind: 'choice';
       readonly prompt: string;
-      readonly options: readonly TourStoryOption[];
+      readonly options: readonly TourChoiceOption[];
     }
   | ({ readonly kind: 'quiz' } & TourQuiz);
 
-export interface TourStoryStep {
+/** A story step: what it does, and how it moves on. */
+export interface TourStep {
   readonly id: string;
-  readonly action: TourStoryAction;
+  readonly action: TourStepAction;
   readonly advance: TourStepAdvance;
 }
 
 /** A station's blocks and its story, read together. */
 export interface TourStationContent {
   readonly blocks: readonly TourBlock[];
-  readonly steps: readonly TourStoryStep[];
+  readonly steps: readonly TourStep[];
 }
+
+const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 /** Thrown inside a step's read when a lenient reader cannot show it;
  *  caught per step. Never escapes this module. */
 class SkippedStep extends Error {}
 
 interface StoryContext {
-  readonly fail: Fail;
+  readonly fail: TourFail;
   readonly lenient: boolean;
   /** The ids of the blocks read. */
   readonly blocks: ReadonlySet<string>;
@@ -92,33 +133,181 @@ interface StoryContext {
   readonly namedBlocks: ReadonlySet<string>;
 }
 
-function requireId(value: unknown, at: string, fail: Fail): string {
-  if (typeof value !== 'string' || !TOUR_ID_PATTERN.test(value)) {
-    return fail(`"${at}" must be a short path-safe id`);
-  }
-  return value;
+/** The ids of the blocks `steps` show: a station's STORY blocks. Every
+ *  other block of the station is free (it stands in the world). */
+export function tourShownBlockIds(
+  steps: readonly TourStep[]
+): ReadonlySet<string> {
+  return new Set(
+    steps.flatMap((s) => (s.action.kind === 'show' ? [s.action.block] : []))
+  );
 }
 
-function requireText(value: unknown, at: string, fail: Fail): string {
-  if (typeof value !== 'string' || value.trim() === '') {
-    return fail(`"${at}" must be a non-empty string`);
-  }
-  return value;
+// --- quizzes ----------------------------------------------------------
+
+function parseQuizOptions(
+  value: unknown,
+  at: string,
+  fail: TourFail
+): TourQuizOption[] {
+  const options = requireTourArray(value, at, fail).map((o, i) => {
+    const oat = `${at}[${String(i)}]`;
+    if (!isRecord(o)) return fail(`"${oat}" must be an object`);
+    return {
+      id: requireTourId(o.id, `${oat}.id`, fail),
+      label: requireTourText(o.label, `${oat}.label`, fail),
+    };
+  });
+  if (options.length < 2) fail(`"${at}" must list at least 2 options`);
+  assertUniqueTourIds(
+    options.map((o) => o.id),
+    'option',
+    fail,
+    `${at}: `
+  );
+  return options;
 }
 
-function assertUnique(ids: readonly string[], what: string, fail: Fail): void {
-  const seen = new Set<string>();
-  for (const id of ids) {
-    if (seen.has(id)) fail(`duplicate ${what} id "${id}"`);
-    seen.add(id);
+function parseChoiceAnswer(
+  type: 'single' | 'multiple',
+  v: Record<string, unknown>,
+  at: string,
+  fail: TourFail
+): TourQuizAnswer {
+  const options = parseQuizOptions(v.options, `${at}.options`, fail);
+  const ids = new Set(options.map((o) => o.id));
+  if (type === 'single') {
+    if (typeof v.correct !== 'string' || !ids.has(v.correct)) {
+      return fail(`"${at}.correct" must name one of its options`);
+    }
+    return { type, options, correct: v.correct };
   }
+  const correct = Array.isArray(v.correct) ? (v.correct as unknown[]) : [];
+  if (
+    correct.length === 0 ||
+    new Set(correct).size !== correct.length ||
+    !correct.every((c) => typeof c === 'string' && ids.has(c))
+  ) {
+    fail(`"${at}.correct" must list at least one of its options, each once`);
+  }
+  return { type, options, correct: correct as string[] };
+}
+
+function parseHashedAnswer(
+  type: 'text' | 'code',
+  v: Record<string, unknown>,
+  at: string,
+  fail: TourFail
+): TourQuizAnswer {
+  const salt = requireTourText(v.salt, `${at}.salt`, fail);
+  const hashes = requireTourArray(v.sha256, `${at}.sha256`, fail);
+  if (hashes.length === 0) fail(`"${at}.sha256" must list at least one hash`);
+  hashes.forEach((h, i) => {
+    if (typeof h !== 'string' || !SHA256_HEX.test(h)) {
+      fail(`"${at}.sha256[${String(i)}]" must be lowercase SHA-256 hex`);
+    }
+  });
+  return { type, salt, sha256: hashes as string[] };
+}
+
+function parseNumberAnswer(
+  v: Record<string, unknown>,
+  at: string,
+  fail: TourFail
+): TourQuizAnswer {
+  if (!isFiniteNumber(v.value)) {
+    return fail(`"${at}.value" must be a finite number`);
+  }
+  if (!isFiniteNumber(v.tolerance) || v.tolerance < 0) {
+    return fail(`"${at}.tolerance" must be a number >= 0`);
+  }
+  const unit = tourTextOf(v.unit);
+  return {
+    type: 'number',
+    value: v.value,
+    tolerance: v.tolerance,
+    ...(unit === undefined ? {} : { unit }),
+  };
+}
+
+/** A quiz's answer, or null when a lenient reader does not know its type
+ *  (a newer minor's). */
+function parseAnswer(
+  value: unknown,
+  at: string,
+  fail: TourFail,
+  lenient: boolean
+): TourQuizAnswer | null {
+  if (!isRecord(value)) return fail(`"${at}" must be an object`);
+  switch (value.type) {
+    case 'single':
+    case 'multiple':
+      return parseChoiceAnswer(value.type, value, at, fail);
+    case 'text':
+    case 'code':
+      return parseHashedAnswer(value.type, value, at, fail);
+    case 'number':
+      return parseNumberAnswer(value, at, fail);
+    default:
+      if (lenient) return null;
+      return fail(
+        `"${at}.type" must be single, multiple, text, number or code`
+      );
+  }
+}
+
+/**
+ * A quiz's question, points and answer. Null when a lenient reader does
+ * not know the answer's type (a newer minor's): the step cannot be shown.
+ */
+function parseQuiz(
+  v: Record<string, unknown>,
+  at: string,
+  options: { readonly fail: TourFail; readonly lenient: boolean }
+): TourQuiz | null {
+  const { fail } = options;
+  const { points } = v;
+  if (!isFiniteNumber(points) || !Number.isInteger(points) || points < 0) {
+    return fail(`"${at}.points" must be an integer >= 0`);
+  }
+  const answer = parseAnswer(v.answer, `${at}.answer`, fail, options.lenient);
+  if (answer === null) return null;
+  return {
+    question: requireTourText(v.question, `${at}.question`, fail),
+    points,
+    answer,
+  };
+}
+
+// --- steps ------------------------------------------------------------
+
+/** How a step advances: tap when absent; a newer minor's mode reads as
+ *  tap for a lenient reader. */
+function parseAdvance(
+  value: unknown,
+  at: string,
+  options: { readonly fail: TourFail; readonly lenient: boolean }
+): TourStepAdvance {
+  const { fail } = options;
+  if (value === undefined) return { mode: 'tap' };
+  if (!isRecord(value)) return fail(`"${at}" must be an object`);
+  if (value.mode === 'tap') return { mode: 'tap' };
+  if (value.mode !== 'auto') {
+    // A newer minor's mode: the visitor taps on, as with no rule at all.
+    if (options.lenient) return { mode: 'tap' };
+    return fail(`"${at}.mode" must be "tap" or "auto"`);
+  }
+  if (!isFiniteNumber(value.afterS) || value.afterS <= 0) {
+    return fail(`"${at}.afterS" must be a number of seconds > 0`);
+  }
+  return { mode: 'auto', afterS: value.afterS };
 }
 
 function parseShow(
   v: Record<string, unknown>,
   at: string,
   ctx: StoryContext
-): TourStoryAction {
+): TourStepAction {
   const block = v.block;
   if (typeof block === 'string' && ctx.blocks.has(block)) {
     return { kind: 'show', block };
@@ -130,33 +319,36 @@ function parseShow(
   return ctx.fail(`"${at}.block" must name a block of this station`);
 }
 
-function parseOption(value: unknown, at: string, fail: Fail): TourStoryOption {
+function parseOption(
+  value: unknown,
+  at: string,
+  fail: TourFail
+): TourChoiceOption {
   if (!isRecord(value)) return fail(`"${at}" must be an object`);
   return {
-    id: requireId(value.id, `${at}.id`, fail),
-    label: requireText(value.label, `${at}.label`, fail),
+    id: requireTourId(value.id, `${at}.id`, fail),
+    label: requireTourText(value.label, `${at}.label`, fail),
     ...(value.goto === undefined
       ? {}
-      : { goto: requireId(value.goto, `${at}.goto`, fail) }),
+      : { goto: requireTourId(value.goto, `${at}.goto`, fail) }),
   };
 }
 
 function parseChoice(
   v: Record<string, unknown>,
   at: string,
-  fail: Fail
-): TourStoryAction {
-  const prompt = requireText(v.prompt, `${at}.prompt`, fail);
-  if (!Array.isArray(v.options))
-    return fail(`"${at}.options" must be an array`);
-  const options = (v.options as unknown[]).map((o, i) =>
-    parseOption(o, `${at}.options[${String(i)}]`, fail)
+  fail: TourFail
+): TourStepAction {
+  const prompt = requireTourText(v.prompt, `${at}.prompt`, fail);
+  const options = requireTourArray(v.options, `${at}.options`, fail).map(
+    (o, i) => parseOption(o, `${at}.options[${String(i)}]`, fail)
   );
   if (options.length < 2) fail(`"${at}.options" must list at least 2 options`);
-  assertUnique(
+  assertUniqueTourIds(
     options.map((o) => o.id),
     'option',
-    fail
+    fail,
+    `${at}.options: `
   );
   return { kind: 'choice', prompt, options };
 }
@@ -165,7 +357,7 @@ function parseAction(
   value: unknown,
   at: string,
   ctx: StoryContext
-): TourStoryAction {
+): TourStepAction {
   if (!isRecord(value)) return ctx.fail(`"${at}" must be an object`);
   switch (value.kind) {
     case 'show':
@@ -173,7 +365,7 @@ function parseAction(
     case 'choice':
       return parseChoice(value, at, ctx.fail);
     case 'quiz': {
-      const quiz = parseTourQuiz(value, at, ctx);
+      const quiz = parseQuiz(value, at, ctx);
       if (quiz === null) throw new SkippedStep();
       return { kind: 'quiz', ...quiz };
     }
@@ -183,45 +375,52 @@ function parseAction(
   }
 }
 
-/** A step, or null when a lenient reader cannot show it; its id either
- *  way (a choice may name a skipped step). */
+/** A step read: its id either way (a choice may name a skipped step), its
+ *  index in the file, and the step - null when a lenient reader cannot
+ *  show it. */
+interface ReadStep {
+  readonly id: string;
+  readonly index: number;
+  readonly step: TourStep | null;
+}
+
 function parseStep(
   value: unknown,
+  index: number,
   at: string,
   ctx: StoryContext
-): { id: string; step: TourStoryStep | null } {
+): ReadStep {
   if (!isRecord(value)) return ctx.fail(`"${at}" must be an object`);
-  const id = requireId(value.id, `${at}.id`, ctx.fail);
-  let action: TourStoryAction;
+  const id = requireTourId(value.id, `${at}.id`, ctx.fail);
+  let action: TourStepAction;
   try {
     action = parseAction(value.action, `${at}.action`, ctx);
   } catch (err) {
-    if (err instanceof SkippedStep) return { id, step: null };
+    if (err instanceof SkippedStep) return { id, index, step: null };
     throw err;
   }
-  const advance = parseTourStepAdvance(value.advance, `${at}.advance`, ctx);
-  return { id, step: { id, action, advance } };
+  const advance = parseAdvance(value.advance, `${at}.advance`, ctx);
+  return { id, index, step: { id, action, advance } };
 }
 
-/** Every `goto` names a step of the station (the skipped ones included).
- *  `read` holds every step of the file, null where a lenient reader
- *  skipped one, so a failure names the step by its index in the file. */
+/** Every `goto` names a step of the station (the skipped ones included);
+ *  a failure names the step by its index in the FILE. */
 function checkGotos(
-  read: readonly { readonly step: TourStoryStep | null }[],
-  stepIds: ReadonlySet<string>,
+  read: readonly ReadStep[],
   at: string,
-  fail: Fail
+  fail: TourFail
 ): void {
-  read.forEach(({ step }, i) => {
-    if (step?.action.kind !== 'choice') return;
+  const stepIds = new Set(read.map((r) => r.id));
+  for (const { step, index } of read) {
+    if (step?.action.kind !== 'choice') continue;
     step.action.options.forEach((option, o) => {
       if (option.goto !== undefined && !stepIds.has(option.goto)) {
         fail(
-          `"${at}[${String(i)}].action.options[${String(o)}].goto" must name a step of this station`
+          `"${at}[${String(index)}].action.options[${String(o)}].goto" must name a step of this station`
         );
       }
     });
-  });
+  }
 }
 
 /**
@@ -230,14 +429,12 @@ function checkGotos(
  * than two is skipped too - repeated, because skipping a choice can strand
  * another that jumped to it. Ends: every round removes something.
  */
-function withoutStrandedChoices(
-  steps: readonly TourStoryStep[]
-): TourStoryStep[] {
+function withoutStrandedChoices(steps: readonly TourStep[]): TourStep[] {
   let kept = [...steps];
   for (;;) {
     const ids = new Set(kept.map((s) => s.id));
     let changed = false;
-    const next = kept.flatMap((step): TourStoryStep[] => {
+    const next = kept.flatMap((step): TourStep[] => {
       const { action } = step;
       if (action.kind !== 'choice') return [step];
       const options = action.options.filter(
@@ -254,19 +451,18 @@ function withoutStrandedChoices(
   }
 }
 
-function readSteps(
-  value: unknown,
-  at: string,
-  ctx: StoryContext
-): TourStoryStep[] {
-  if (!Array.isArray(value)) return ctx.fail(`"${at}" must be an array`);
-  const read = (value as unknown[]).map((s, i) =>
-    parseStep(s, `${at}[${String(i)}]`, ctx)
+function readSteps(value: unknown, at: string, ctx: StoryContext): TourStep[] {
+  const read = requireTourArray(value, at, ctx.fail).map((s, i) =>
+    parseStep(s, i, `${at}[${String(i)}]`, ctx)
   );
-  const ids = read.map((r) => r.id);
-  assertUnique(ids, 'step', ctx.fail);
+  assertUniqueTourIds(
+    read.map((r) => r.id),
+    'step',
+    ctx.fail,
+    `${at}: `
+  );
+  checkGotos(read, at, ctx.fail);
   const steps = read.flatMap((r) => (r.step === null ? [] : [r.step]));
-  checkGotos(read, new Set(ids), at, ctx.fail);
   return ctx.lenient ? withoutStrandedChoices(steps) : steps;
 }
 
@@ -292,7 +488,7 @@ export function parseTourStationContent(
   at: string,
   options: TourBlocksReadOptions
 ): TourStationContent {
-  const fail: Fail = options.fail;
+  const { fail } = options;
   if (!isRecord(value)) return fail(`"${at}" must be an object`);
   const lenient = options.lenient === true;
   const read = readTourBlocks(value.blocks, `${at}.blocks`, options);
@@ -302,38 +498,6 @@ export function parseTourStationContent(
     blocks: new Set(read.map((r) => r.block.id)),
     namedBlocks: namedBlockIds(value.blocks),
   });
-  const shown = new Set(
-    steps.flatMap((s) => (s.action.kind === 'show' ? [s.action.block] : []))
-  );
+  const shown = tourShownBlockIds(steps);
   return { blocks: placeTourBlocks(read, shown, options), steps };
-}
-
-function defaultFail(message: string): never {
-  throw new Error(`tour-story: ${message}`);
-}
-
-/**
- * A station's content as a writer writes it: `content` re-read strictly
- * through {@link parseTourStationContent}, so a programming error fails
- * loud here instead of producing a file a visitor cannot open - including
- * any value a reader would leave out (an optional text over its cap). The
- * result is ready for `JSON.stringify`.
- */
-export function serializeTourStationContent(
-  content: TourStationContent,
-  options: {
-    readonly assets: TourBlocksReadOptions['assets'];
-    readonly fail?: Fail;
-  }
-): TourStationContent {
-  const fail = options.fail ?? defaultFail;
-  return parseTourStationContent(
-    JSON.parse(JSON.stringify(content)) as unknown,
-    'content',
-    {
-      assets: options.assets,
-      fail,
-      onDropped: (drop) => fail(drop.reason),
-    }
-  );
 }

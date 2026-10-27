@@ -50,14 +50,14 @@ function station(
     id,
     title: id.toUpperCase(),
     geo: { lat: geo.lat, lon: geo.lon, alt: 400, headingDeg: 0 },
-    items: [],
+    blocks: [],
     activateRadiusM: 20,
     foundRadiusM: 5,
     hint: "arrow",
     steps: [
       {
         id: "t",
-        action: { kind: "text", text: "Hi" },
+        action: { kind: "show", block: "hi" },
         advance: { mode: "tap" },
       },
     ],

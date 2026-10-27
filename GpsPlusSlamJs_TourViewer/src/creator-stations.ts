@@ -28,6 +28,7 @@
  */
 
 import { calcGpsCoords, type LatLong } from "gps-plus-slam-app-framework/core";
+import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { Vector3, type Object3D } from "three";
 
 import { EYE_HEIGHT_M } from "./breadcrumbs.js";
@@ -77,7 +78,7 @@ export function stationsAsFinished(input: {
     foundRadiusM: station.foundRadiusM,
     name: stationTitle(station, index + 1),
     started: !inFile.has(station.id),
-    itemIds: station.items.map((item) => item.id),
+    itemIds: tourFreeBlocks(station).map((block) => block.id),
   }));
 }
 

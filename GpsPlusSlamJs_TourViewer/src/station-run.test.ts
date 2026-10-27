@@ -35,7 +35,7 @@ import {
 
 const step = {
   id: "s1",
-  action: { kind: "text", text: "Hello" },
+  action: { kind: "show", block: "hi" },
   advance: { mode: "tap" },
 } as const;
 
@@ -43,7 +43,7 @@ function station(id: string, extra: Partial<TourStation> = {}): TourStation {
   return {
     id,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    items: [],
+    blocks: [],
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",

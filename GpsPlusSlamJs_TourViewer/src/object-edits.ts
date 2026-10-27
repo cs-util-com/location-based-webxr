@@ -88,11 +88,11 @@ export function pinTextEdit(
   | { readonly kind: "edited"; readonly after: TourObject }
   | { readonly kind: "unchanged" }
   | { readonly kind: "refused"; readonly reason: string } {
-  if (object.kind !== "pin") return { kind: "unchanged" };
-  const label = text.trim();
-  if (label === "") return { kind: "refused", reason: EMPTY_PIN };
-  if (label === object.label) return { kind: "unchanged" };
-  return { kind: "edited", after: { ...object, label } };
+  if (object.kind !== "shortText") return { kind: "unchanged" };
+  const caption = text.trim();
+  if (caption === "") return { kind: "refused", reason: EMPTY_PIN };
+  if (caption === object.caption) return { kind: "unchanged" };
+  return { kind: "edited", after: { ...object, caption } };
 }
 
 /**
@@ -137,10 +137,5 @@ export function moveObjectTo(
   }
   const onGlobe =
     Math.abs(lon) <= 180 ? lon : ((((lon + 180) % 360) + 360) % 360) - 180;
-  // The two arms are the same expression on purpose: the narrowing makes
-  // each spread keep its own geo shape (a pin's heading, a photo's
-  // rotation) instead of a union of both, which TypeScript would refuse.
-  return object.kind === "pin"
-    ? { ...object, geo: { ...object.geo, lat, lon: onGlobe } }
-    : { ...object, geo: { ...object.geo, lat, lon: onGlobe } };
+  return { ...object, geo: { ...object.geo, lat, lon: onGlobe } };
 }

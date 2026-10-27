@@ -1,23 +1,20 @@
 /**
- * Why this test matters: `tour.json` carries the tour kit's game content
- * (tour kit plan K1, §8 D7: the full schema in one step) - stations, their
- * steps, scene choices, quizzes and the media assets they name. It is
- * hand-editable external data that later drives what a visitor sees and
- * hears, so every cross-reference must be checked at the boundary: a step
- * naming a missing asset, an image block pointing at an audio file, a
- * choice jumping to a step that does not exist, a quiz whose correct answer
- * is not one of its options. Each would otherwise surface as a broken
- * station in the middle of a walk, far from the file that caused it.
+ * Why this test matters: `tour.json` carries the tour's game content -
+ * stations, the blocks they show, their stories (shows, choices,
+ * quizzes) and the media assets the blocks name. It is hand-editable
+ * external data that later drives what a visitor sees and hears, so every
+ * cross-reference must be checked at the boundary: a block naming a
+ * missing asset, a picture pointing at an audio file, a show naming
+ * another station's block, a choice jumping to a step that does not
+ * exist, a quiz whose correct answer is not one of its options. Each
+ * would otherwise surface as a broken station in the middle of a walk,
+ * far from the file that caused it.
  */
 
 import { describe, expect, it } from 'vitest';
 
-import {
-  parseTourAssets,
-  parseTourStations,
-  tourStationRecord,
-  type TourAsset,
-} from './tour-stations';
+import { parseTourAssets, type TourAsset } from './tour-assets';
+import { parseTourStations } from './tour-stations';
 
 class Invalid extends Error {}
 const fail = (message: string): never => {
@@ -37,15 +34,27 @@ function assets(): TourAsset[] {
 }
 
 const geo = { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 30 };
+const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
+
+/** A long text shown by a step, so a station has a story. */
+const welcome = (id = 'welcome') => ({
+  id,
+  kind: 'longText',
+  view: 'card',
+  title: 'Welcome',
+  body: 'Welcome',
+  pose: POSE,
+});
 
 function station(extra: Record<string, unknown> = {}): Record<string, unknown> {
+  const id = typeof extra.id === 'string' ? extra.id : 's1';
   return {
-    id: 's1',
+    id,
     geo,
     activateRadiusM: 25,
     foundRadiusM: 5,
-    steps: [{ id: 'a', block: { kind: 'text', text: 'Welcome' } }],
-    items: [],
+    blocks: [welcome(`welcome-${id}`)],
+    steps: [{ id: 'a', action: { kind: 'show', block: `welcome-${id}` } }],
     ...extra,
   };
 }
@@ -54,85 +63,36 @@ function parse(stations: unknown) {
   return parseTourStations(stations, { assets: assets(), fail });
 }
 
-describe('parseTourAssets', () => {
-  it('accepts allowlisted media named content/<id>.<ext> and derives the kind from the extension', () => {
-    const parsed = assets();
-    expect(parsed.map((a) => [a.id, a.kind])).toEqual([
-      ['gate', 'image'],
-      ['knight', 'image'],
-      ['voice', 'audio'],
-      ['arch', 'model'],
-      ['clip', 'video'],
-    ]);
-    expect(parsed[0]).toEqual({
-      id: 'gate',
-      path: 'content/gate.jpg',
-      kind: 'image',
-      width: 800,
-      height: 600,
-    });
-  });
-
-  it.each([
-    ['not an array', {}, /"assets" must be an array/],
-    [
-      'a path-unsafe id',
-      [{ id: '../x', path: 'content/x.jpg' }],
-      /assets\[0\]\.id/,
-    ],
-    [
-      'a path that is not its own content entry',
-      [{ id: 'a', path: 'content/b.jpg' }],
-      /assets\[0\]\.path" must be content\/a\.<ext>/,
-    ],
-    [
-      'an SVG (it can carry script, K0)',
-      [{ id: 'a', path: 'content/a.svg' }],
-      /assets\[0\]\.path/,
-    ],
-    [
-      'a zero image width',
-      [{ id: 'a', path: 'content/a.png', width: 0, height: 4 }],
-      /assets\[0\]\.width/,
-    ],
-    [
-      'a size on a non-image',
-      [{ id: 'a', path: 'content/a.mp3', width: 4, height: 4 }],
-      /assets\[0\]\.width.*only for an image/,
-    ],
-    [
-      'a duplicate asset id',
-      [
-        { id: 'a', path: 'content/a.png' },
-        { id: 'a', path: 'content/a.jpg' },
-      ],
-      /duplicate asset id "a"/,
-    ],
-  ])('rejects %s', (_label, data, message) => {
-    expect(() => parseTourAssets(data, { fail })).toThrow(message);
-  });
-});
-
 describe('parseTourStations', () => {
   it('accepts a castle station: a character scene with a choice, a model and a quiz', () => {
     const [parsed] = parse([
       station({
         title: 'The gate',
         hint: 'arrow',
-        steps: [
+        blocks: [
           {
-            id: 'hello',
-            block: {
-              kind: 'character',
-              name: 'Sir Kurt',
-              image: 'knight',
-              voice: 'voice',
-              caption: 'Welcome to the castle!',
-            },
+            id: 'kurt',
+            kind: 'character',
+            view: 'stage',
+            name: 'Sir Kurt',
+            image: 'knight',
+            voice: 'voice',
+            caption: 'Welcome to the castle!',
+            pose: POSE,
           },
           {
+            id: 'arch-model',
+            kind: 'model',
+            view: 'stage',
+            asset: 'arch',
+            pose: POSE,
+          },
+        ],
+        steps: [
+          { id: 'hello', action: { kind: 'show', block: 'kurt' } },
+          {
             id: 'ask',
-            block: {
+            action: {
               kind: 'choice',
               prompt: 'Where to?',
               options: [
@@ -143,12 +103,12 @@ describe('parseTourStations', () => {
           },
           {
             id: 'arch',
-            block: { kind: 'model', asset: 'arch' },
+            action: { kind: 'show', block: 'arch-model' },
             advance: { mode: 'auto', afterS: 4 },
           },
           {
             id: 'q',
-            block: {
+            action: {
               kind: 'quiz',
               question: 'When was the gate built?',
               points: 10,
@@ -162,17 +122,21 @@ describe('parseTourStations', () => {
     expect(parsed?.geo).toEqual(geo);
     expect(parsed?.hint).toBe('arrow');
     expect(parsed?.steps.map((s) => s.action.kind)).toEqual([
-      'character',
+      'show',
       'choice',
-      'model',
+      'show',
       'quiz',
+    ]);
+    expect(parsed?.blocks.map((b) => [b.id, b.kind, b.view])).toEqual([
+      ['kurt', 'character', 'stage'],
+      ['arch-model', 'model', 'stage'],
     ]);
     // Defaults are written out, so a renderer never guesses.
     expect(parsed?.steps[0]?.advance).toEqual({ mode: 'tap' });
     expect(parsed?.steps[2]?.advance).toEqual({ mode: 'auto', afterS: 4 });
   });
 
-  it('defaults the hint to the arrow (K-D6)', () => {
+  it('defaults the hint to the arrow', () => {
     expect(parse([station()])[0]?.hint).toBe('arrow');
   });
 
@@ -191,9 +155,10 @@ describe('parseTourStations', () => {
     ];
     const [parsed] = parse([
       station({
+        blocks: [],
         steps: answers.map((answer, i) => ({
           id: `q${String(i)}`,
-          block: { kind: 'quiz', question: 'Q?', points: 1, answer },
+          action: { kind: 'quiz', question: 'Q?', points: 1, answer },
         })),
       }),
     ]);
@@ -212,10 +177,11 @@ describe('parseTourStations', () => {
       station({
         id: 's1',
         next: 'nowhere',
+        blocks: [],
         steps: [
           {
             id: 'q',
-            block: {
+            action: {
               kind: 'quiz',
               question: 'Left or right?',
               points: 0,
@@ -238,9 +204,19 @@ describe('parseTourStations', () => {
     expect(stations[0]?.steps[0]?.action).not.toHaveProperty('route');
   });
 
-  const step = (block: Record<string, unknown>, extra = {}) => ({
-    id: 'a',
-    block,
+  /** A station whose one step is `action` (and no blocks). */
+  const withStep = (action: Record<string, unknown>, extra = {}) =>
+    station({ blocks: [], steps: [{ id: 'a', action, ...extra }] });
+  /** A station whose one block (shown by its one step) is `block`. */
+  const withBlock = (block: Record<string, unknown>) =>
+    station({
+      blocks: [{ id: 'b', view: 'card', pose: POSE, ...block }],
+      steps: [{ id: 'a', action: { kind: 'show', block: 'b' } }],
+    });
+  const quiz = (extra: Record<string, unknown>) => ({
+    kind: 'quiz',
+    question: 'Q',
+    points: 1,
     ...extra,
   });
   const single = {
@@ -251,17 +227,28 @@ describe('parseTourStations', () => {
     ],
     correct: 'x',
   };
+  const placedPin = (
+    id: string,
+    position: unknown[],
+    rotation = [0, 0, 0, 1]
+  ) => ({
+    id,
+    kind: 'shortText',
+    view: 'pin',
+    caption: 'Hi',
+    pose: { position, rotation },
+  });
 
   it.each([
     ['not an array', {}, /"stations" must be an array/],
     ['a bad station id', [station({ id: 'a b' })], /stations\[0\]\.id/],
     [
       'a duplicate station id',
-      [station(), station()],
+      [station(), { ...station(), blocks: [], steps: [] }],
       /duplicate station id "s1"/,
     ],
     [
-      'a station without a geo pose (no code-only station, D9)',
+      'a station without a geo pose (no code-only station)',
       [station({ geo: undefined, anchor: { code: 'a1b2c3d4e5f6' } })],
       /stations\[0\]\.geo/,
     ],
@@ -271,83 +258,72 @@ describe('parseTourStations', () => {
       /stations\[0\]\.geo\.lat/,
     ],
     [
-      'items that are not a list',
-      [station({ items: {} })],
-      /stations\[0\]\.items" must be an array/,
+      'blocks that are not a list',
+      [station({ blocks: {} })],
+      /stations\[0\]\.blocks" must be an array/,
     ],
     [
-      'an item without a local pose',
-      [
-        station({
-          items: [
-            {
-              id: 'p1',
-              kind: 'pin',
-              label: 'Hi',
-              createdAtIso: '2026-10-18T06:00:00.000Z',
-            },
-          ],
-        }),
-      ],
-      /stations\[0\]\.items\[0\]\.pose/,
+      'steps that are not a list',
+      [station({ steps: {} })],
+      /stations\[0\]\.steps" must be an array/,
     ],
     [
-      'an item placed absurdly far from its station',
+      'a block without a local pose',
       [
         station({
-          items: [
-            {
-              id: 'p1',
-              kind: 'pin',
-              label: 'Hi',
-              createdAtIso: '2026-10-18T06:00:00.000Z',
-              pose: { position: [0, 0, 20_000], rotation: [0, 0, 0, 1] },
-            },
-          ],
+          blocks: [{ ...placedPin('p1', [0, 0, 0]), pose: undefined }],
+          steps: [],
         }),
       ],
-      /stations\[0\]\.items\[0\]\.pose\.position" must be three numbers within 10000 m/,
+      /stations\[0\]\.blocks\[0\]\.pose/,
     ],
     [
-      'an item whose rotation is not a unit quaternion',
-      [
-        station({
-          items: [
-            {
-              id: 'p1',
-              kind: 'pin',
-              label: 'Hi',
-              createdAtIso: '2026-10-18T06:00:00.000Z',
-              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 2] },
-            },
-          ],
-        }),
-      ],
-      /stations\[0\]\.items\[0\]\.pose\.rotation" must be a unit quaternion/,
+      'a block placed absurdly far from its station',
+      [station({ blocks: [placedPin('p1', [0, 0, 20_000])], steps: [] })],
+      /stations\[0\]\.blocks\[0\]\.pose\.position" must be three numbers within 10000 m/,
     ],
     [
-      'the same item twice in a station',
+      'a block whose rotation is not a unit quaternion',
       [
         station({
-          items: [
-            {
-              id: 'p1',
-              kind: 'pin',
-              label: 'Hi',
-              createdAtIso: '2026-10-18T06:00:00.000Z',
-              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-            },
-            {
-              id: 'p1',
-              kind: 'pin',
-              label: 'Again',
-              createdAtIso: '2026-10-18T06:00:00.000Z',
-              pose: { position: [1, 0, 0], rotation: [0, 0, 0, 1] },
-            },
-          ],
+          blocks: [placedPin('p1', [0, 0, 0], [0, 0, 0, 2])],
+          steps: [],
         }),
       ],
-      /duplicate item id "p1"/,
+      /stations\[0\]\.blocks\[0\]\.pose\.rotation" must be a unit quaternion/,
+    ],
+    [
+      'the same block twice in a station',
+      [
+        station({
+          blocks: [placedPin('p1', [0, 0, 0]), placedPin('p1', [1, 0, 0])],
+          steps: [],
+        }),
+      ],
+      /duplicate block id "p1"/,
+    ],
+    [
+      'the same block id in two stations (block ids are tour-wide)',
+      [
+        station({ blocks: [placedPin('p1', [0, 0, 0])], steps: [] }),
+        station({ id: 's2', blocks: [placedPin('p1', [0, 0, 0])], steps: [] }),
+      ],
+      /duplicate block id "p1"/,
+    ],
+    [
+      "a show naming another station's block",
+      [
+        station({
+          blocks: [welcome('w1')],
+          steps: [{ id: 'a', action: { kind: 'show', block: 'w1' } }],
+        }),
+        station({
+          id: 's2',
+          blocks: [],
+          steps: [{ id: 'a', action: { kind: 'show', block: 'w1' } }],
+        }),
+      ],
+      /stations\[1\]\.steps\[0\]\.action\.block" must name a block of this station/,
     ],
     [
       'a found radius larger than the activation radius',
@@ -365,83 +341,98 @@ describe('parseTourStations', () => {
       [
         station({
           steps: [
-            step({ kind: 'text', text: 'a' }),
-            step({ kind: 'text', text: 'b' }),
+            { id: 'a', action: { kind: 'show', block: 'welcome-s1' } },
+            { id: 'a', action: { kind: 'show', block: 'welcome-s1' } },
           ],
         }),
       ],
-      /stations\[0\]: duplicate step id "a"/,
+      /stations\[0\]\.steps: duplicate step id "a"/,
+    ],
+    [
+      'an unknown step kind',
+      [withStep({ kind: 'html' })],
+      /stations\[0\]\.steps\[0\]\.action\.kind/,
+    ],
+    [
+      'a step stored under the earlier key block',
+      [
+        station({
+          steps: [{ id: 'a', block: { kind: 'show', block: 'welcome-s1' } }],
+        }),
+      ],
+      /stations\[0\]\.steps\[0\]\.action/,
     ],
     [
       'an unknown block kind',
-      [station({ steps: [step({ kind: 'html' })] })],
-      /stations\[0\]\.steps\[0\]\.block\.kind/,
+      [withBlock({ kind: 'html' })],
+      /stations\[0\]\.blocks\[0\]\.kind/,
     ],
     [
-      'an empty text',
-      [station({ steps: [step({ kind: 'text', text: ' ' })] })],
-      /steps\[0\]\.block\.text/,
+      'an empty long text',
+      [withBlock({ kind: 'longText', title: 'T', body: ' ' })],
+      /blocks\[0\]\.body/,
     ],
     [
-      'an image block naming a missing asset',
-      [station({ steps: [step({ kind: 'image', asset: 'nope' })] })],
-      /steps\[0\]\.block\.asset" must name an image asset/,
+      'a picture naming a missing asset',
+      [withBlock({ kind: 'picture', image: 'nope', widthM: 1 })],
+      /blocks\[0\]\.image" must name an image asset/,
     ],
     [
-      'an image block naming an audio asset',
-      [station({ steps: [step({ kind: 'image', asset: 'voice' })] })],
-      /steps\[0\]\.block\.asset" must name an image asset/,
+      'a picture naming an audio asset',
+      [withBlock({ kind: 'picture', image: 'voice', widthM: 1 })],
+      /blocks\[0\]\.image" must name an image asset/,
     ],
     [
       'a character without a caption (captions always)',
       [
-        station({
-          steps: [step({ kind: 'character', name: 'K', image: 'knight' })],
+        withBlock({
+          kind: 'character',
+          view: 'stage',
+          name: 'K',
+          image: 'knight',
         }),
       ],
-      /steps\[0\]\.block\.caption/,
+      /blocks\[0\]\.caption/,
     ],
     [
       'a character voice that is not audio',
       [
-        station({
-          steps: [
-            step({
-              kind: 'character',
-              name: 'K',
-              image: 'knight',
-              caption: 'Hi',
-              voice: 'gate',
-            }),
-          ],
+        withBlock({
+          kind: 'character',
+          view: 'stage',
+          name: 'K',
+          image: 'knight',
+          caption: 'Hi',
+          voice: 'gate',
         }),
       ],
-      /steps\[0\]\.block\.voice" must name an audio asset/,
+      /blocks\[0\]\.voice" must name an audio asset/,
     ],
     [
       'audio without a transcript (audio needs a text version)',
-      [station({ steps: [step({ kind: 'audio', asset: 'voice' })] })],
-      /steps\[0\]\.block\.transcript/,
+      [withBlock({ kind: 'audio', audio: 'voice' })],
+      /blocks\[0\]\.transcript/,
     ],
     [
       'video without a transcript',
-      [station({ steps: [step({ kind: 'video', asset: 'clip' })] })],
-      /steps\[0\]\.block\.transcript/,
+      [withBlock({ kind: 'video', video: 'clip' })],
+      /blocks\[0\]\.transcript/,
     ],
     [
-      'a model block naming an image',
-      [station({ steps: [step({ kind: 'model', asset: 'gate' })] })],
-      /steps\[0\]\.block\.asset" must name a model asset/,
+      'a model naming an image',
+      [withBlock({ kind: 'model', asset: 'gate' })],
+      /blocks\[0\]\.asset" must name a model asset/,
     ],
     [
       'an auto advance without a positive duration',
       [
         station({
           steps: [
-            step(
-              { kind: 'text', text: 'a' },
-              { advance: { mode: 'auto', afterS: 0 } }
-            ),
+            {
+              id: 'a',
+              action: { kind: 'show', block: 'welcome-s1' },
+              advance: { mode: 'auto', afterS: 0 },
+            },
           ],
         }),
       ],
@@ -452,7 +443,11 @@ describe('parseTourStations', () => {
       [
         station({
           steps: [
-            step({ kind: 'text', text: 'a' }, { advance: { mode: 'swipe' } }),
+            {
+              id: 'a',
+              action: { kind: 'show', block: 'welcome-s1' },
+              advance: { mode: 'swipe' },
+            },
           ],
         }),
       ],
@@ -461,31 +456,23 @@ describe('parseTourStations', () => {
     [
       'a choice with one option',
       [
-        station({
-          steps: [
-            step({
-              kind: 'choice',
-              prompt: 'P',
-              options: [{ id: 'o', label: 'O', goto: 'a' }],
-            }),
-          ],
+        withStep({
+          kind: 'choice',
+          prompt: 'P',
+          options: [{ id: 'o', label: 'O', goto: 'a' }],
         }),
       ],
-      /steps\[0\]\.block\.options" must list at least 2/,
+      /steps\[0\]\.action\.options" must list at least 2/,
     ],
     [
       'a choice jumping to a missing step',
       [
-        station({
-          steps: [
-            step({
-              kind: 'choice',
-              prompt: 'P',
-              options: [
-                { id: 'o', label: 'O', goto: 'a' },
-                { id: 'p', label: 'P', goto: 'zzz' },
-              ],
-            }),
+        withStep({
+          kind: 'choice',
+          prompt: 'P',
+          options: [
+            { id: 'o', label: 'O', goto: 'a' },
+            { id: 'p', label: 'P', goto: 'zzz' },
           ],
         }),
       ],
@@ -493,116 +480,62 @@ describe('parseTourStations', () => {
     ],
     [
       'a negative quiz score',
-      [
-        station({
-          steps: [
-            step({ kind: 'quiz', question: 'Q', points: -1, answer: single }),
-          ],
-        }),
-      ],
-      /steps\[0\]\.block\.points/,
+      [withStep(quiz({ points: -1, answer: single }))],
+      /steps\[0\]\.action\.points/,
     ],
     [
       'a single-choice correct answer that is not an option',
-      [
-        station({
-          steps: [
-            step({
-              kind: 'quiz',
-              question: 'Q',
-              points: 1,
-              answer: { ...single, correct: 'z' },
-            }),
-          ],
-        }),
-      ],
-      /block\.answer\.correct" must name one of its options/,
+      [withStep(quiz({ answer: { ...single, correct: 'z' } }))],
+      /action\.answer\.correct" must name one of its options/,
     ],
     [
       'a multiple-choice answer with no correct option',
       [
-        station({
-          steps: [
-            step({
-              kind: 'quiz',
-              question: 'Q',
-              points: 1,
-              answer: { ...single, type: 'multiple', correct: [] },
-            }),
-          ],
-        }),
+        withStep(
+          quiz({ answer: { ...single, type: 'multiple', correct: [] } })
+        ),
       ],
-      /block\.answer\.correct" must list at least one of its options/,
+      /action\.answer\.correct" must list at least one of its options/,
     ],
     [
       'duplicate option ids',
       [
-        station({
-          steps: [
-            step({
-              kind: 'quiz',
-              question: 'Q',
-              points: 1,
-              answer: {
-                ...single,
-                options: [
-                  { id: 'x', label: 'X' },
-                  { id: 'x', label: 'Y' },
-                ],
-              },
-            }),
-          ],
-        }),
+        withStep(
+          quiz({
+            answer: {
+              ...single,
+              options: [
+                { id: 'x', label: 'X' },
+                { id: 'x', label: 'Y' },
+              ],
+            },
+          })
+        ),
       ],
-      /block\.answer\.options: duplicate option id "x"/,
+      /action\.answer\.options: duplicate option id "x"/,
     ],
     [
       'a text answer hash that is not SHA-256 hex',
       [
-        station({
-          steps: [
-            step({
-              kind: 'quiz',
-              question: 'Q',
-              points: 1,
-              answer: { type: 'text', salt: 's', sha256: ['abc'] },
-            }),
-          ],
-        }),
+        withStep(
+          quiz({ answer: { type: 'text', salt: 's', sha256: ['abc'] } })
+        ),
       ],
-      /block\.answer\.sha256\[0\]/,
+      /action\.answer\.sha256\[0\]/,
     ],
     [
       'a code answer without a salt',
       [
-        station({
-          steps: [
-            step({
-              kind: 'quiz',
-              question: 'Q',
-              points: 1,
-              answer: { type: 'code', salt: '', sha256: ['a'.repeat(64)] },
-            }),
-          ],
-        }),
+        withStep(
+          quiz({ answer: { type: 'code', salt: '', sha256: ['a'.repeat(64)] } })
+        ),
       ],
-      /block\.answer\.salt/,
+      /action\.answer\.salt/,
     ],
     [
       'a negative number tolerance',
-      [
-        station({
-          steps: [
-            step({
-              kind: 'quiz',
-              question: 'Q',
-              points: 1,
-              answer: { type: 'number', value: 1, tolerance: -1 },
-            }),
-          ],
-        }),
-      ],
-      /block\.answer\.tolerance/,
+      [withStep(quiz({ answer: { type: 'number', value: 1, tolerance: -1 } }))],
+      /action\.answer\.tolerance/,
     ],
   ])('rejects %s', (_label, data, message) => {
     expect(() => parse(data)).toThrow(Invalid);
@@ -610,84 +543,48 @@ describe('parseTourStations', () => {
   });
 });
 
-describe('version 3 stations (tour editor plan 2026-10-17-1816, W3)', () => {
-  // Why: a station is now the parent of what was placed around it. It has
-  // its own geo pose and no code (D9), it may have no story at all (an
-  // automatic station, D20: finding it completes it), and its pins and
-  // photos carry local poses that move with it.
-  it('a station may have no steps: an automatic station only groups its items', () => {
-    const [parsed] = parse([station({ steps: [] })]);
-    expect(parsed?.steps).toEqual([]);
-  });
-
-  it('reads its items with their local poses, kind by kind', () => {
+describe('stations as the parent of what was placed around them', () => {
+  // Why: a station has its own geo pose and no code, it may have no story
+  // at all (an automatic station: finding it completes it), and its
+  // blocks carry local poses that move with it.
+  it('a station may have no steps: an automatic station only groups its free blocks', () => {
     const [parsed] = parse([
-      station({
-        items: [
-          {
-            id: 'p1',
-            kind: 'pin',
-            label: 'The well',
-            createdAtIso: '2026-10-18T06:00:00.000Z',
-            pose: { position: [1, 0.5, -2], rotation: [0, 0, 0, 1] },
-          },
-          {
-            id: 'f1',
-            kind: 'photo',
-            image: 'content/f1.jpg',
-            imageWidth: 640,
-            imageHeight: 480,
-            createdAtIso: '2026-10-18T06:01:00.000Z',
-            pose: { position: [3, 1.6, 0], rotation: [0, 0.6, 0, 0.8] },
-          },
-        ],
-      }),
+      station({ blocks: [placedPinAt('p1')], steps: [] }),
     ]);
-    expect(parsed?.items).toEqual([
-      {
-        id: 'p1',
-        kind: 'pin',
-        label: 'The well',
-        createdAtIso: '2026-10-18T06:00:00.000Z',
-        pose: { position: [1, 0.5, -2], rotation: [0, 0, 0, 1] },
-      },
-      {
-        id: 'f1',
-        kind: 'photo',
-        image: 'content/f1.jpg',
-        imageWidth: 640,
-        imageHeight: 480,
-        createdAtIso: '2026-10-18T06:01:00.000Z',
-        pose: { position: [3, 1.6, 0], rotation: [0, 0.6, 0, 0.8] },
-      },
+    expect(parsed?.steps).toEqual([]);
+    expect(parsed?.blocks.map((b) => b.id)).toEqual(['p1']);
+  });
+
+  it('reads its free blocks with their local poses, kind by kind', () => {
+    const pin = {
+      id: 'p1',
+      kind: 'shortText',
+      view: 'pin',
+      caption: 'The well',
+      createdAtIso: '2026-10-18T06:00:00.000Z',
+      pose: { position: [1, 0.5, -2], rotation: [0, 0, 0, 1] },
+    };
+    const picture = {
+      id: 'f1',
+      kind: 'picture',
+      view: 'plane',
+      image: 'gate',
+      widthM: 1,
+      createdAtIso: '2026-10-18T06:01:00.000Z',
+      pose: { position: [3, 1.6, 0], rotation: [0, 0.6, 0, 0.8] },
+    };
+    const model = {
+      id: 'm1',
+      kind: 'model',
+      view: 'placed',
+      asset: 'arch',
+      sizeM: 3,
+      pose: { position: [2, 0, 1], rotation: [0, 0, 0, 1] },
+    };
+    const [parsed] = parse([
+      station({ blocks: [pin, picture, model], steps: [] }),
     ]);
-  });
-
-  // Why: a placed model names a model asset, and the reference is
-  // resolved here, where the assets are known, so a renderer never meets a
-  // model with no file or an image where a model should be.
-  const placedModel = (asset: unknown) => ({
-    id: 'm1',
-    kind: 'model',
-    asset,
-    sizeM: 3,
-    createdAtIso: '2026-10-19T12:00:00.000Z',
-    pose: { position: [2, 0, 1], rotation: [0, 0, 0, 1] },
-  });
-
-  it('reads a placed model naming a model asset, its size exactly', () => {
-    const [parsed] = parse([station({ items: [placedModel('arch')] })]);
-    expect(parsed?.items).toEqual([placedModel('arch')]);
-  });
-
-  it.each([
-    ['a missing asset', 'nowhere'],
-    ['an image asset', 'gate'],
-    ['an audio asset', 'voice'],
-  ])('refuses a placed model naming %s', (_name, asset) => {
-    expect(() => parse([station({ items: [placedModel(asset)] })])).toThrow(
-      /"stations\[0\]\.items\[0\]\.asset" must name a model asset/
-    );
+    expect(parsed?.blocks).toEqual([pin, picture, model]);
   });
 
   it('a lenient read leaves out a model whose asset it left out or does not have', () => {
@@ -697,64 +594,73 @@ describe('version 3 stations (tour editor plan 2026-10-17-1816, W3)', () => {
       [...assetsJson, { id: 'tower', path: 'content/tower.usdz' }],
       { fail, lenient: true }
     );
+    const placedModel = (id: string, asset: string) => ({
+      id,
+      kind: 'model',
+      view: 'placed',
+      asset,
+      sizeM: 3,
+      pose: POSE,
+    });
     const [parsed] = parseTourStations(
       [
         station({
-          items: [
-            placedModel('tower'),
-            { ...placedModel('nowhere'), id: 'm2' },
-            { ...placedModel('arch'), id: 'm3' },
+          blocks: [
+            placedModel('m1', 'tower'),
+            placedModel('m2', 'nowhere'),
+            placedModel('m3', 'arch'),
           ],
+          steps: [],
         }),
       ],
       { assets: newer, fail, lenient: true }
     );
-    expect(parsed?.items.map((i) => i.id)).toEqual(['m3']);
+    expect(parsed?.blocks.map((b) => b.id)).toEqual(['m3']);
   });
 
-  it('ignores a code a version 2 station named: no station is found by a code any more', () => {
+  it('ignores a code an earlier station named: no station is found by a code any more', () => {
     const [parsed] = parse([station({ anchor: { code: 'a1b2c3d4e5f6' } })]);
     expect(parsed).not.toHaveProperty('anchor');
   });
+
+  it('ignores the earlier items list: what a station shows is its blocks', () => {
+    const [parsed] = parse([station({ items: [{ id: 'p1', kind: 'pin' }] })]);
+    expect(parsed).not.toHaveProperty('items');
+  });
 });
 
-describe("a station's description and card image (minor 2, G2 build plan M1a)", () => {
-  // Why: the 3D editor's station cards show a description and a picture
-  // (G2 build plan 2026-10-21-2247, §3.4, §4.2.4). Both are station fields
-  // a creator types or picks, so the reader keeps exactly what the editor
-  // writes (a description trimmed, as the tour's own), and never fails a
-  // tour over either: a value of the wrong shape is dropped and reported
-  // (the writer refuses it), and a card image whose photo or asset was
-  // deleted is dropped, reported like the cover's `image-gone`, and the
-  // write still succeeds (Q14).
-  const photoItem = (id: string) => ({
+function placedPinAt(id: string) {
+  return {
     id,
-    kind: 'photo',
-    image: `content/${id}.jpg`,
-    imageWidth: 640,
-    imageHeight: 480,
-    createdAtIso: '2026-10-21T06:01:00.000Z',
-    pose: { position: [3, 1.6, 0], rotation: [0, 0, 0, 1] },
-  });
-  const pinItem = {
-    id: 'p1',
-    kind: 'pin',
-    label: 'The well',
-    createdAtIso: '2026-10-21T06:00:00.000Z',
-    pose: { position: [1, 0.5, -2], rotation: [0, 0, 0, 1] },
+    kind: 'shortText',
+    view: 'pin',
+    caption: 'Hi',
+    pose: POSE,
   };
+}
+
+describe("a station's description and card image", () => {
+  // Why: the 3D editor's station cards show a description and a picture.
+  // Both are station fields a creator types or picks, so the reader keeps
+  // exactly what the editor writes (a description trimmed, as the tour's
+  // own), and never fails a tour over either: a value of the wrong shape
+  // is dropped and reported (the writer refuses it), and a card image
+  // whose image asset was deleted is dropped, reported like the cover's
+  // `image-gone`, and the write still succeeds.
   type Drop = { field: string; station: string; cause?: string };
   function parseWithDrops(stations: unknown, lenient = false) {
     const dropped: Drop[] = [];
     const parsed = parseTourStations(stations, {
-      assets: assets(),
+      assets: parseTourAssets(assetsJson, { fail, lenient }),
       fail,
       lenient,
       onDropped: (drop) => {
+        if (!('station' in drop)) return;
+        const d = drop;
         dropped.push({
-          field: drop.field,
-          station: drop.station,
-          cause: drop.cause,
+          field: d.field,
+          station: d.station,
+          ...(d.cause === undefined ? {} : { cause: d.cause }),
         });
       },
     });
@@ -771,10 +677,10 @@ describe("a station's description and card image (minor 2, G2 build plan M1a)", 
   });
 
   it("drops a description that is not text or is longer than the tour's own limit, and says so, never failing the tour", () => {
-    // Why (as the tour details, M4a review #6): a hand-edited 2001
-    // character description must cost the description, not the tour - a
-    // refused tour cannot even be opened in the editor to fix it. The drop
-    // carries no cause, so the writer still refuses such a value loudly.
+    // Why (as the tour details): a hand-edited 2001 character description
+    // must cost the description, not the tour - a refused tour cannot even
+    // be opened in the editor to fix it. The drop carries no cause, so the
+    // writer still refuses such a value loudly.
     const { parsed, dropped } = parseWithDrops([
       station({ description: 42 }),
       station({ id: 's2', description: 'x'.repeat(2001) }),
@@ -792,26 +698,25 @@ describe("a station's description and card image (minor 2, G2 build plan M1a)", 
     ).toHaveLength(4000);
   });
 
-  it('names a photo of the same station or an image asset of the tour', () => {
+  it('names an image asset of the tour', () => {
     const { parsed, dropped } = parseWithDrops([
-      station({ image: 'f1', items: [photoItem('f1')] }),
-      station({ id: 's2', image: 'gate' }),
+      station({ image: 'gate' }),
+      station({ id: 's2', image: 'knight' }),
     ]);
-    expect(parsed.map((s) => s.image)).toEqual(['f1', 'gate']);
+    expect(parsed.map((s) => s.image)).toEqual(['gate', 'knight']);
     expect(dropped).toEqual([]);
   });
 
-  it("drops an image naming no picture of the station - another station's photo, a pin, an audio or model asset, a missing id - and says so, never failing the tour", () => {
+  it('drops an image naming no image asset - a block, an audio or model asset, a missing id - and says so, never failing the tour', () => {
     const { parsed, dropped } = parseWithDrops([
-      station({ image: 'f2', items: [pinItem] }),
-      station({ id: 's2', image: 'p1', items: [photoItem('f2')] }),
+      station({ image: 'p1', blocks: [placedPinAt('p1')], steps: [] }),
       station({ id: 's3', image: 'voice' }),
       station({ id: 's4', image: 'arch' }),
       station({ id: 's5', image: 'gone' }),
     ]);
     for (const s of parsed) expect(s).not.toHaveProperty('image');
     expect(dropped).toEqual(
-      ['s1', 's2', 's3', 's4', 's5'].map((id) => ({
+      ['s1', 's3', 's4', 's5'].map((id) => ({
         field: 'image',
         station: id,
         cause: 'station-image-gone',
@@ -840,83 +745,23 @@ describe("a station's description and card image (minor 2, G2 build plan M1a)", 
   });
 
   it("a newer minor's image naming what this reader skipped is left out unreported, never called gone", () => {
-    // Why: a lenient read leaves out what it cannot show (a photo of a
-    // newer image type, an asset of a newer media type); the picture is
-    // not gone, this reader just cannot see it. Saying "gone" would be
-    // false, and such a tour is never written back here anyway.
-    const { parsed, dropped } = parseWithDrops(
-      [
-        station({
-          image: 'f9',
-          items: [{ ...photoItem('f9'), image: 'content/f9.heic' }],
-        }),
-      ],
-      true
-    );
-    expect(parsed[0]?.items).toEqual([]);
+    // Why: a lenient read leaves out what it cannot show (an asset of a
+    // newer media type); the picture is not gone, this reader just cannot
+    // see it. Saying "gone" would be false, and such a tour is never
+    // written back here anyway.
+    const dropped: Drop[] = [];
+    const parsed = parseTourStations([station({ image: 'f9' })], {
+      assets: parseTourAssets(
+        [...assetsJson, { id: 'f9', path: 'content/f9.heic' }],
+        { fail, lenient: true }
+      ),
+      fail,
+      lenient: true,
+      onDropped: (drop) => {
+        if ('station' in drop) dropped.push(drop);
+      },
+    });
     expect(parsed[0]).not.toHaveProperty('image');
     expect(dropped).toEqual([]);
-  });
-});
-
-describe("a step's action and the file's key", () => {
-  // Why: the reader names what a step does `action`, while the file keeps
-  // its key `block`, so every file written before still reads and every
-  // file written now has the same bytes. A writer that forgot the mapping
-  // would write a file no reader opens; one that wrote both keys would
-  // change every tour's bytes.
-  it('reads the file key block into the field action, and keeps no block key', () => {
-    const step = parse([station()])[0]?.steps[0];
-    expect(step).toEqual({
-      id: 'a',
-      action: { kind: 'text', text: 'Welcome' },
-      advance: { mode: 'tap' },
-    });
-    expect(step).not.toHaveProperty('block');
-  });
-
-  it('a step stored with action and no block is refused: the file format is unchanged', () => {
-    expect(() =>
-      parse([
-        station({
-          steps: [{ id: 'a', action: { kind: 'text', text: 'Welcome' } }],
-        }),
-      ])
-    ).toThrow(/steps\[0\]\.block/);
-  });
-
-  it('tourStationRecord refuses a step without its action, naming the field a step holds in memory', () => {
-    // Why: a caller handing the writer a step in the FILE's shape (its
-    // content under `block`) got a message about the file's key, or a
-    // TypeError, that pointed nowhere near the cause.
-    const parsed = parse([station()])[0]!;
-    const fileShaped = {
-      ...parsed,
-      steps: [
-        {
-          id: 'a',
-          block: { kind: 'text', text: 'Hi' },
-          advance: { mode: 'tap' },
-        },
-      ],
-    } as unknown as typeof parsed;
-    expect(() => tourStationRecord(fileShaped)).toThrow(
-      /steps\[0\] has no "action"/
-    );
-  });
-
-  it('tourStationRecord writes the action back under block, in the order id, block, advance, every other key as it was', () => {
-    const parsed = parse([station({ title: 'Gate' })])[0]!;
-    const record = tourStationRecord(parsed);
-    expect(Object.keys(record)).toEqual(Object.keys(parsed));
-    expect(record.steps).toEqual([
-      {
-        id: 'a',
-        block: { kind: 'text', text: 'Welcome' },
-        advance: { mode: 'tap' },
-      },
-    ]);
-    expect(Object.keys(record.steps[0]!)).toEqual(['id', 'block', 'advance']);
-    expect(parse([JSON.parse(JSON.stringify(record))])[0]).toEqual(parsed);
   });
 });

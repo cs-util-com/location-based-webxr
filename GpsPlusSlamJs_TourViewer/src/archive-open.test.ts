@@ -61,8 +61,9 @@ function creatorWork(ctx: ReturnType<typeof createTourViewerSession>) {
   ctx.tourDocument.place(
     {
       id: "pin-1",
-      kind: "pin",
-      label: "Gate",
+      kind: "shortText",
+      view: "pin",
+      caption: "Gate",
       createdAtIso: "2026-09-27T00:00:00.000Z",
       geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
     },

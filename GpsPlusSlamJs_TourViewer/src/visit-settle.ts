@@ -766,7 +766,7 @@ function settledObject(
         z: world.position[2],
       },
       worldNueRotation:
-        object.kind === "pin" ? [0, 0, 0, 1] : [...world.rotation],
+        object.kind === "shortText" ? [0, 0, 0, 1] : [...world.rotation],
       zero,
     });
     return { ...object, geo };

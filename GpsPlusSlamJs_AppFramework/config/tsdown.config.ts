@@ -71,12 +71,13 @@ const entryFiles = [
   // The v2 game content, the signed manifest and its signature (tour kit
   // plan K1), deep-imported by the Tour Viewer the same way.
   'src/ar/tour-stations.ts',
-  // Version 3's station items and the station frame (tour editor plan
-  // W3), deep-imported by the Tour Viewer the same way.
+  // A block's local pose and the station frame, deep-imported by the Tour
+  // Viewer the same way.
   'src/ar/tour-items.ts',
   'src/ar/tour-station-pose.ts',
-  // Version 4's station blocks and the story that shows them, deep-
-  // imported by the Tour Viewer the same way.
+  // Version 4's media assets, station blocks and the story that shows
+  // them, deep-imported by the Tour Viewer the same way.
+  'src/ar/tour-assets.ts',
   'src/ar/tour-blocks.ts',
   'src/ar/tour-story.ts',
   'src/ar/tour-signed-manifest.ts',

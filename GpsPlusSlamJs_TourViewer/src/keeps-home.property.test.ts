@@ -27,7 +27,7 @@ import {
 } from "./keeps-home.js";
 import { horizontalM } from "./move-with-code.js";
 // Activates the licence the geodesy below needs (as every v3 tour test).
-import "./test-support/v3-tour.js";
+import "./test-support/tour-of.js";
 import {
   documentObjects,
   initialTourDocumentState,
@@ -54,7 +54,7 @@ function station(id: string, north: number): TourStation {
     foundRadiusM: RADIUS_M,
     hint: "arrow",
     steps: [],
-    items: [],
+    blocks: [],
   };
 }
 
@@ -64,7 +64,7 @@ function withPin(north: number, east = 0): TourDocumentState {
     initialTourDocumentState,
     act.opened({
       manifest: {
-        version: 3,
+        version: 4,
         minor: 0,
         order: "fixed",
         assets: [],
@@ -77,8 +77,9 @@ function withPin(north: number, east = 0): TourDocumentState {
     act.placed({
       object: {
         id: "p",
-        kind: "pin",
-        label: "p",
+        kind: "shortText",
+        view: "pin",
+        caption: "p",
         createdAtIso: "2026-10-25T00:00:00.000Z",
         geo: spot(north, east),
         station: "s",

@@ -10,7 +10,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import {
   createEmptyTourManifest,
   type TourManifest,
-  type TourObject,
+  type TourPicture,
+  type TourPin,
   type TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
@@ -48,26 +49,34 @@ function level(northM: number | null): QrLevel {
   };
 }
 
-function pin(id: string, label: string, lat = AT.lat): TourObject {
+function pin(id: string, label: string, lat = AT.lat): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-10-13T00:00:00.000Z",
     geo: { ...AT, lat, headingDeg: 0 },
   };
 }
 
-function photo(id: string, label?: string): TourObject {
+function photo(id: string, label?: string): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-10-13T00:00:00.000Z",
     geo: { ...AT, rotation: [0, 0, 0, 1] },
-    ...(label === undefined ? {} : { label }),
+    ...(label === undefined ? {} : { caption: label }),
   };
 }
 
@@ -85,7 +94,7 @@ function stationAt(id: string, geo: QrGeoPose, title?: string): TourStation {
     foundRadiusM: 5,
     hint: "arrow",
     steps: [],
-    items: [],
+    blocks: [],
   };
 }
 
@@ -240,6 +249,7 @@ describe("buildEditorModel", () => {
         {
           id: "m",
           kind: "model",
+          view: "placed",
           asset: "statue",
           sizeM: 3,
           createdAtIso: "2026-10-19T00:00:00.000Z",

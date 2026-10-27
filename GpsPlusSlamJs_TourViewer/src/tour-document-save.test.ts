@@ -17,6 +17,7 @@ import {
   parseTourManifest,
   serializeTourManifest,
   type TourObject,
+  type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { openTourFile, type TourSession } from "./tour-session.js";
 import {
@@ -33,17 +34,18 @@ import {
   dispatchThunk,
   TOUR_REPLACED,
 } from "./tour-document-save.js";
-import { tourOf, withWorldObjects } from "./test-support/v3-tour.js";
+import { captionOf, tourOf, withWorldObjects } from "./test-support/tour-of.js";
 
 beforeAll(() => {
   createTourViewerStore();
 });
 
-function pin(id: string, label = `pin ${id}`): TourObject {
+function pin(id: string, label = `pin ${id}`): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-10-13T00:00:00.000Z",
     geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 },
   };
@@ -94,7 +96,7 @@ async function labels(blob: Blob): Promise<string[]> {
   );
   return withWorldObjects(
     parseTourManifest(JSON.parse(new TextDecoder().decode(bytes))),
-  ).objects.map((o) => (o as { label: string }).label);
+  ).objects.map((o) => captionOf(o) ?? "");
 }
 
 describe("createTourSaves", () => {
@@ -228,7 +230,7 @@ describe("createTourSaves", () => {
     expect(doc(store).past).toHaveLength(0);
     // The undo is a change of its own against the file just written.
     expect(doc(store).placed.map((p) => p.object)).toMatchObject([
-      { id: "a", label: "Old" },
+      { id: "a", caption: "Old" },
     ]);
     await session.close();
   });

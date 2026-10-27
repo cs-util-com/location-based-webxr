@@ -1,7 +1,7 @@
 /**
  * The automatic-station rule (tour editor plan 2026-10-17-1816, W3, D20,
  * D21): which station a new element (a pin, a photo, later a model)
- * belongs to. A version 3 tour has no loose items: each
+ * belongs to. A tour has no loose items: each
  * lives in a station, its pose relative to the station's anchor.
  *
  * - A station's ANCHOR is fixed at its first element and is never

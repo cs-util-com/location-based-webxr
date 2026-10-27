@@ -22,13 +22,18 @@
  */
 import type {
   TourAsset,
-  TourItem,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
+import { objectLook, type ObjectLook } from "../../object-describe.js";
 import { stationTitle } from "../../station-run.js";
+import {
+  ownedAssetIds,
+  worldBlocks,
+  type WorldBlock,
+} from "../../tour-document.js";
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
 import { stationImagePath } from "./tree-model.js";
 
@@ -103,7 +108,7 @@ interface StationInspector {
 
 interface ItemInspector {
   readonly kind: "item";
-  readonly itemKind: TourItem["kind"];
+  readonly itemKind: ObjectLook;
   readonly title: string;
   readonly sub: string;
   /** Its station's id. */
@@ -171,7 +176,7 @@ export interface InspectorCode {
   readonly printSizeM: number | null;
 }
 
-const KIND_LABEL: Readonly<Record<TourItem["kind"], string>> = {
+const KIND_LABEL: Readonly<Record<ObjectLook, string>> = {
   pin: "Pin",
   photo: "Photo",
   model: "3D model",
@@ -214,19 +219,25 @@ function photoLabel(label: string | undefined): string {
 }
 
 /** The pictures `station`'s card may show (its photos, then the tour's
- *  image assets), and the one it shows (`stationImagePath`'s rule). */
+ *  image assets that are no captured photo's own, `owned`), and the one
+ *  it shows (`stationImagePath`'s rule). */
 function cardImages(
   station: TourStation,
   assets: readonly TourAsset[],
+  owned: ReadonlySet<string>,
 ): { images: InspectorImage[]; imageId: string | null } {
   const images: InspectorImage[] = [
-    ...station.items.flatMap((i) =>
-      i.kind === "photo"
-        ? [{ id: i.id, path: i.image, label: photoLabel(i.label) }]
-        : [],
-    ),
+    ...worldBlocks(station).flatMap((i) => {
+      if (i.kind !== "picture") return [];
+      const path = assets.find(
+        (a) => a.id === i.image && a.kind === "image",
+      )?.path;
+      return path === undefined
+        ? []
+        : [{ id: i.id, path, label: photoLabel(i.caption) }];
+    }),
     ...assets.flatMap((a) =>
-      a.kind === "image"
+      a.kind === "image" && !owned.has(a.id)
         ? [{ id: a.id, path: a.path, label: "Tour image" }]
         : [],
     ),
@@ -263,7 +274,7 @@ function offGroundOf(
 /** `item`'s height over the ground; null for one that cannot be placed
  *  or before the ground under it has loaded. */
 function itemOffGround(
-  item: TourItem,
+  item: WorldBlock,
   station: TourStation,
   groundAt: InspectorGround | undefined,
 ): number | null {
@@ -275,10 +286,11 @@ function itemOffGround(
   }
 }
 
-function itemTitle(item: TourItem): string {
-  if (item.kind === "pin") return item.label;
-  const caption = item.label?.trim() ?? "";
-  return caption === "" ? KIND_LABEL[item.kind] : caption;
+function itemTitle(item: WorldBlock): string {
+  if (item.kind === "shortText") return item.caption;
+  const caption =
+    (item.kind === "picture" ? item.caption : item.title)?.trim() ?? "";
+  return caption === "" ? KIND_LABEL[objectLook(item.kind)] : caption;
 }
 
 /** The inspector for `selected` (the page's selection id), or null when
@@ -312,7 +324,7 @@ export function buildInspector(input: {
     const station = stations[index];
     if (station === undefined) return null;
     const description = station.description?.trim() ?? "";
-    const offs = station.items.map((item) =>
+    const offs = worldBlocks(station).map((item) =>
       itemOffGround(item, station, groundAt),
     );
     return {
@@ -323,10 +335,10 @@ export function buildInspector(input: {
       place: { number: index + 1, count: stations.length },
       description: description === "" ? null : description,
       imagePath: stationImagePath(station, input.assets),
-      ...cardImages(station, input.assets),
+      ...cardImages(station, input.assets, ownedAssetIds({ stations })),
       foundRadiusM: station.foundRadiusM,
       activateRadiusM: station.activateRadiusM,
-      outside: station.items.filter(
+      outside: worldBlocks(station).filter(
         (i) =>
           Math.hypot(i.pose.position[0], i.pose.position[2]) >
           station.foundRadiusM,
@@ -340,17 +352,17 @@ export function buildInspector(input: {
     };
   }
   for (const [index, station] of stations.entries()) {
-    const item = station.items.find((i) => i.id === selected);
+    const item = worldBlocks(station).find((i) => i.id === selected);
     if (item === undefined) continue;
     const [northM, upM, eastM] = item.pose.position;
     return {
       kind: "item",
-      itemKind: item.kind,
+      itemKind: objectLook(item.kind),
       title: itemTitle(item),
-      sub: `${KIND_LABEL[item.kind]} in ${stationTitle(station, index + 1)}`,
+      sub: `${KIND_LABEL[objectLook(item.kind)]} in ${stationTitle(station, index + 1)}`,
       stationId: station.id,
-      text: item.kind === "pin" ? item.label : null,
-      sizeM: item.kind === "model" ? item.sizeM : null,
+      text: item.kind === "shortText" ? item.caption : null,
+      sizeM: item.kind === "model" ? (item.sizeM ?? null) : null,
       offset: { northM, upM, eastM },
       headingDeg: headingOfRotation(item.pose.rotation),
       groundOffM: itemOffGround(item, station, groundAt),

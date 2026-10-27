@@ -22,14 +22,15 @@
  *
  * @see inspector-edits.ts.md
  */
-import type {
-  TourItem,
-  TourStation,
-} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import type { GestureEdit } from "../../editor3d/gesture.js";
-import type { StationEdit } from "../../tour-document.js";
+import {
+  worldBlocks,
+  type StationEdit,
+  type WorldBlock,
+} from "../../tour-document.js";
 import { STATION_PREFIX } from "../editor-model.js";
 import { eastNorthOf, placeAtEastNorth } from "../tour-origin.js";
 import { headingOfRotation, ON_GROUND_M } from "./inspector-model.js";
@@ -149,13 +150,13 @@ const AXIS: Readonly<Record<string, 0 | 1 | 2>> = {
 };
 
 function itemEdit(
-  item: TourItem,
+  item: WorldBlock,
   station: TourStation,
   field: string,
   value: string,
 ): InspectorEdit {
   if (field === "title") {
-    return item.kind === "pin"
+    return item.kind === "shortText"
       ? { kind: "text", id: item.id, text: value }
       : NONE;
   }
@@ -168,7 +169,7 @@ function itemEdit(
   const typed = typedNumber(value);
   if (typed === null) return { kind: "invalid", reason: NOT_A_NUMBER };
   if (field === "size" && item.kind === "model") {
-    return Math.abs(typed - item.sizeM) < SAME
+    return Math.abs(typed - (item.sizeM ?? Number.NaN)) < SAME
       ? NONE
       : { kind: "scene", edit: { kind: "size", id: item.id, sizeM: typed } };
   }
@@ -220,7 +221,7 @@ export function inspectorEdit(input: {
       : stationEdit(station, field, value, input.origin);
   }
   for (const station of stations) {
-    const item = station.items.find((i) => i.id === selected);
+    const item = worldBlocks(station).find((i) => i.id === selected);
     if (item !== undefined) return itemEdit(item, station, field, value);
   }
   return NONE;
@@ -248,7 +249,7 @@ type GroundAt = (place: {
  *  while the ground under any of them has not loaded. */
 function groundedItems(
   station: TourStation,
-  items: readonly TourItem[],
+  items: readonly WorldBlock[],
   groundAt: GroundAt,
 ): { id: string; alt: number; off: number }[] | null {
   const out: { id: string; alt: number; off: number }[] = [];
@@ -282,7 +283,7 @@ export function groundEdit(input: {
     const station = stations.find((s) => s.id === id);
     if (station === undefined) return NO_GROUND;
     if (which === "ground-items") {
-      const items = groundedItems(station, station.items, groundAt);
+      const items = groundedItems(station, worldBlocks(station), groundAt);
       if (items === null) return null;
       const off = items.filter((i) => Math.abs(i.off) > ON_GROUND_M);
       return off.length === 0
@@ -302,7 +303,7 @@ export function groundEdit(input: {
   }
   if (which !== "ground") return NO_GROUND;
   for (const station of stations) {
-    const item = station.items.find((i) => i.id === selected);
+    const item = worldBlocks(station).find((i) => i.id === selected);
     if (item === undefined) continue;
     const [grounded] = groundedItems(station, [item], groundAt) ?? [];
     if (grounded === undefined) return null;

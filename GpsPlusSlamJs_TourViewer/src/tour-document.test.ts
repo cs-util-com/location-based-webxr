@@ -14,6 +14,8 @@ import type {
   TourManifest,
   TourModel,
   TourObject,
+  TourPicture,
+  TourPin,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
@@ -47,25 +49,33 @@ import {
   viewOf,
   type TourDocumentState,
 } from "./tour-document.js";
-import { stationIdOf, tourOf } from "./test-support/v3-tour.js";
+import { stationIdOf, tourOf, withCaption } from "./test-support/tour-of.js";
 
-function pin(id: string, label = `pin ${id}`, lat = 48.52): TourObject {
+function pin(id: string, label = `pin ${id}`, lat = 48.52): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-10-18T00:00:00.000Z",
     geo: { lat, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
   };
 }
 
-function photo(id: string, lat = 48.5201): TourObject {
+function photo(id: string, lat = 48.5201): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-10-18T00:00:00.000Z",
     geo: { lat, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
   };
@@ -134,7 +144,7 @@ describe("tour document: the open", () => {
     expect(changeCount(minted)).toBe(0);
     const edited = reduce(
       minted,
-      act.edited({ object: { ...pin("a"), label: "x" }, what: "e" }),
+      act.edited({ object: { ...pin("a"), caption: "x" }, what: "e" }),
     );
     expect(manifestToWrite(edited)?.tourId).toBe("minted0001");
     expect(manifestToWrite(save(edited))?.tourId).toBe("minted0001");
@@ -154,7 +164,7 @@ describe("tour document: the open", () => {
     let state = open();
     state = reduce(
       state,
-      act.edited({ object: { ...pin("a"), label: "x" }, what: "e" }),
+      act.edited({ object: { ...pin("a"), caption: "x" }, what: "e" }),
     );
     state = reduce(state, act.opened({ manifest: tourOf([pin("z")]) }));
     expect(state.generation).toBe(2);
@@ -195,7 +205,7 @@ describe("tour document: the open", () => {
       foundRadiusM: 25,
       hint: "arrow",
       steps: [],
-      items: [],
+      blocks: [],
     });
     const state = open(parseTourManifest(fileJson));
     const ids = [stationIdOf("a"), "walk-1"];
@@ -216,7 +226,7 @@ describe("tour document: edits and their history", () => {
     const a = objectOf(state, "a");
     state = reduce(
       state,
-      act.edited({ object: { ...a, label: "new" }, what: "the text" }),
+      act.edited({ object: withCaption(a, "new"), what: "the text" }),
     );
     expect(changeCount(state)).toBe(1);
     state = reduce(state, act.edited({ object: a, what: "the text" }));
@@ -230,7 +240,7 @@ describe("tour document: edits and their history", () => {
     // a delete's Undo and bury the creator's last change one step deeper.
     let state = open();
     const a = objectOf(state, "a");
-    const moved = { ...a, label: "new" };
+    const moved = { ...a, caption: "new" };
     state = reduce(state, act.edited({ object: moved, what: "the text" }));
     const before = state;
     state = reduce(
@@ -330,7 +340,7 @@ describe("tour document: a station's frame (D17)", () => {
     const written = manifestToWrite(state)!;
     const moved = written.stations.find((s) => s.id === station)!;
     expect(moved.geo.lat).toBeCloseTo(was.geo.lat + 0.0001, 12);
-    expect(moved.items[0]!.pose).toEqual(was.items[0]!.pose);
+    expect(moved.blocks[0]!.pose).toEqual(was.blocks[0]!.pose);
     state = reduce(state, act.undone());
     expect(state.stations).toEqual(framesOf(OPENED));
     expect(changeCount(state)).toBe(0);
@@ -402,8 +412,8 @@ describe("tour document: a station's frame (D17)", () => {
     expect(state.stations).toEqual(framesOf(OPENED));
     const written = manifestToWrite(state)!;
     expect(
-      written.stations.find((s) => s.id === station)!.items[0]!.pose,
-    ).toEqual(was.items[0]!.pose);
+      written.stations.find((s) => s.id === station)!.blocks[0]!.pose,
+    ).toEqual(was.blocks[0]!.pose);
   });
 
   it("refuses nothing for an unknown station, and changes nothing", () => {
@@ -438,7 +448,7 @@ describe("tour document: a station's description and card image (G2 build plan M
   ): TourDocumentState {
     return open({
       ...OPENED,
-      assets: [ART],
+      assets: [...OPENED.assets, ART],
       stations: OPENED.stations.map((s) =>
         s.id === stationIdOf(objectId) ? { ...s, ...extra } : s,
       ),
@@ -523,7 +533,7 @@ describe("tour document: a restore", () => {
     state = reduce(
       state,
       act.restored({
-        objects: [{ ...objectOf(state, "a"), label: "restored" }],
+        objects: [withCaption(objectOf(state, "a"), "restored")],
         deleted: ["b"],
         needsNoGps: true,
         details: { title: "R" },
@@ -567,7 +577,7 @@ function stationAt(
     foundRadiusM: radiusM,
     hint: "arrow",
     steps: [],
-    items: [],
+    blocks: [],
     ...extra,
   };
 }
@@ -575,10 +585,10 @@ function stationAt(
 /** A tour of `stations` (no objects yet): one pin each keeps them from
  *  being automatic empties nobody placed into. */
 function tourWith(...stations: TourStation[]): TourDocumentState {
-  return open({ version: 3, minor: 0, order: "fixed", assets: [], stations });
+  return open({ version: 4, minor: 0, order: "fixed", assets: [], stations });
 }
 
-function pinAt(id: string, geo: TourObject["geo"]): TourObject {
+function pinAt(id: string, geo: TourObject["geo"]): TourPin {
   return { ...pin(id), geo };
 }
 
@@ -674,6 +684,7 @@ describe("tour document: every object belongs to a station", () => {
       foundRadiusM: 25,
       hint: "arrow",
       steps: [],
+      blocks: [],
     });
     expect(manifestNow(state)!.stations.map((s) => s.id)).toEqual([
       "s",
@@ -681,7 +692,7 @@ describe("tour document: every object belongs to a station", () => {
     ]);
     expect(stationOf(state, "p")).toBe("fresh");
     const written = manifestToWrite(state)!;
-    expect(written.stations[1]!.items.map((i) => i.id)).toEqual(["p"]);
+    expect(written.stations[1]!.blocks.map((i) => i.id)).toEqual(["p"]);
   });
 
   it("'New station here' starts its own station even within another's radius", () => {
@@ -840,10 +851,19 @@ describe("tour document: every object belongs to a station", () => {
         "a step",
         tourWith(
           stationAt("k", 0, 25, {
+            blocks: [
+              {
+                id: "hi",
+                kind: "shortText",
+                view: "card",
+                caption: "Hi",
+                pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+              },
+            ],
             steps: [
               {
                 id: "x",
-                action: { kind: "text", text: "Hi" },
+                action: { kind: "show", block: "hi" },
                 advance: { mode: "tap" },
               },
             ],
@@ -905,8 +925,8 @@ describe("tour document: every object belongs to a station", () => {
 
   it("a restored object naming a station the document lacks joins by the rule, and a draft's created station comes back first", () => {
     const state = tourWith(stationAt("s", 0));
-    const created = stationAt("made", 400);
-    const { items: _items, ...frame } = created;
+    // A frame is a station with its story only: this one has none.
+    const frame = stationAt("made", 400);
     const restored = reduce(
       state,
       act.restored({
@@ -1073,7 +1093,7 @@ describe("tour document: the save status", () => {
     state = reduce(
       state,
       act.edited({
-        object: { ...objectOf(state, "a"), label: "during" },
+        object: withCaption(objectOf(state, "a"), "during"),
         what: "e",
       }),
     );
@@ -1186,7 +1206,7 @@ describe("tour document: the rules its reducers keep", () => {
     const a = objectOf(state, "a");
     const again = reduce(
       state,
-      act.placed({ object: { ...a, label: "twice" }, what: "p" }),
+      act.placed({ object: withCaption(a, "twice"), what: "p" }),
     );
     expect(again).toEqual(state);
     expect(canPlace(state, a)).toBe(false);
@@ -1284,7 +1304,7 @@ describe("tour document: the rules its reducers keep", () => {
       act.restored({
         objects: [
           { ...a, geo: { ...a.geo, lat: a.geo.lat + far } },
-          { ...objectOf(state, "b"), label: "kept" },
+          withCaption(objectOf(state, "b"), "kept"),
         ],
         deleted: [],
         newStationIds: ["far", "unused"],
@@ -1334,7 +1354,7 @@ describe("tour document: what an edit would change", () => {
     const state = open();
     expect(pinTextChange(state, "a", "  New  ")).toEqual({
       kind: "edited",
-      after: { ...objectOf(state, "a"), label: "New" },
+      after: { ...objectOf(state, "a"), caption: "New" },
     });
     expect(pinTextChange(state, "a", "pin a")).toEqual({ kind: "unchanged" });
     expect(pinTextChange(state, "a", "   ")).toMatchObject({
@@ -1406,10 +1426,13 @@ function del(state: TourDocumentState, id: string): TourDocumentState {
 
 function relabel(state: TourDocumentState, id: string): TourDocumentState {
   const object = objectOf(state, id);
-  if (object.kind !== "pin") throw new Error(`${id} is no pin`);
+  if (object.kind !== "shortText") throw new Error(`${id} is no pin`);
   return reduce(
     state,
-    act.edited({ object: { ...object, label: `${object.label}!` }, what: id }),
+    act.edited({
+      object: { ...object, caption: `${object.caption}!` },
+      what: id,
+    }),
   );
 }
 
@@ -1605,9 +1628,10 @@ describe("tour document: a placed 3D model rides along unchanged", () => {
   const model: TourModel = {
     id: "m",
     kind: "model",
+    view: "placed",
     asset: "statue",
     sizeM: 12.345678901234,
-    label: "The fountain",
+    title: "The fountain",
     createdAtIso: "2026-10-19T12:00:00.000Z",
     geo: { lat: 48.5203, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
   };
@@ -1624,7 +1648,7 @@ describe("tour document: a placed 3D model rides along unchanged", () => {
     });
     state = reduce(
       state,
-      act.edited({ object: { ...pin("a"), label: "x" }, what: "e" }),
+      act.edited({ object: { ...pin("a"), caption: "x" }, what: "e" }),
     );
     const station = stationIdOf("m");
     const was = withModel.stations.find((s) => s.id === station)!;
@@ -1637,13 +1661,14 @@ describe("tour document: a placed 3D model rides along unchanged", () => {
       }),
     );
     const written = manifestToWrite(state)!;
-    const item = written.stations.find((s) => s.id === station)!.items[0]!;
-    expect(item).toEqual(was.items[0]);
-    // The file the save writes carries it at minor 1, readable again.
+    const item = written.stations.find((s) => s.id === station)!.blocks[0]!;
+    expect(item).toEqual(was.blocks[0]);
+    // The file the save writes carries it in format 4.0, readable again.
     const json = JSON.parse(serializeTourManifest(written)) as {
+      version: number;
       minor: number;
     };
-    expect(json.minor).toBe(1);
+    expect([json.version, json.minor]).toEqual([4, 0]);
     const saved = save(state);
     expect(objectOf(saved, "m")).toMatchObject({
       kind: "model",

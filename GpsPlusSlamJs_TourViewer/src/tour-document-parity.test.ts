@@ -36,6 +36,8 @@ import {
   serializeTourManifest,
   type TourManifest,
   type TourObject,
+  type TourPicture,
+  type TourPin,
   type TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
@@ -64,7 +66,7 @@ import {
   createTourViewerStore,
 } from "./tour-viewer-session.js";
 import { documentObjects, selectTourDocument } from "./tour-document.js";
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 
 beforeAll(() => {
   createTourViewerStore();
@@ -72,23 +74,31 @@ beforeAll(() => {
 
 // --- the tour both pages open ----------------------------------------------
 
-function pin(id: string, label = `pin ${id}`, lat = 48.52): TourObject {
+function pin(id: string, label = `pin ${id}`, lat = 48.52): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-10-18T00:00:00.000Z",
     geo: { lat, lon: 9.05, alt: 340, headingDeg: 0 },
   };
 }
 
-function photo(id: string): TourObject {
+function photo(id: string): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-10-18T00:00:00.000Z",
     geo: { lat: 48.5201, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
   };
@@ -687,7 +697,7 @@ function titleOrId(station: TourStation): string {
 }
 
 /** An item's kind. */
-function kindOf(item: TourStation["items"][number]): string {
+function kindOf(item: TourStation["blocks"][number]): string {
   return item.kind;
 }
 
@@ -697,7 +707,7 @@ function itemsByStation(written: TourManifest): {
 } {
   const opened = new Set(tourOf(OPENED).stations.map((s) => s.id));
   const itemsOf = (stations: readonly TourStation[]) =>
-    stations.map((s) => s.items.map((i) => i.id).sort());
+    stations.map((s) => s.blocks.map((i) => i.id).sort());
   return {
     opened: itemsOf(written.stations.filter((s) => opened.has(s.id))),
     added: itemsOf(written.stations.filter((s) => !opened.has(s.id))),
@@ -709,7 +719,7 @@ function stationHolding(
   written: TourManifest,
   id: string,
 ): TourStation | undefined {
-  return written.stations.find((s) => s.items.some((i) => i.id === id));
+  return written.stations.find((s) => s.blocks.some((i) => i.id === id));
 }
 
 const ROWS: readonly Row[] = [
@@ -1078,7 +1088,7 @@ const ROWS: readonly Row[] = [
     each: ({ written }) => {
       const copy = written.stations[3];
       expect(copy?.title).toBe("Station 3 copy");
-      expect(copy?.items.map(kindOf)).toEqual(["photo"]);
+      expect(copy?.blocks.map(kindOf)).toEqual(["picture"]);
       expect(itemsByStation(written).opened[0]).toHaveLength(2);
     },
   },
@@ -1107,7 +1117,7 @@ const ROWS: readonly Row[] = [
         added: [["a"]],
       });
       const home = stationHolding(written, "a");
-      expect(home?.items[0]?.pose.position[1]).toBeCloseTo(-1.5, 6);
+      expect(home?.blocks[0]?.pose.position[1]).toBeCloseTo(-1.5, 6);
     },
   },
   {
@@ -1298,7 +1308,7 @@ describe("the parity contract: an earlier file carrying debug camera captures", 
         foundRadiusM: 25,
         hint: "arrow",
         steps: [],
-        items: [],
+        blocks: [],
       },
     ],
     captureSpots: {
@@ -1406,7 +1416,7 @@ describe("a draft of a file-opened tour across saves", () => {
     await page.edit("a", "After the second Finish");
     const next = await phonePage(page.lastFinished(), stores, true, written);
     expect(next.objects().find((o) => o.id === "a")).toMatchObject({
-      label: "After the second Finish",
+      caption: "After the second Finish",
     });
   }, 60_000);
 
@@ -1478,7 +1488,7 @@ describe("a draft of a file-opened tour across saves", () => {
     await page.edit("a", "After the second download");
     const next = await desktopPage(second.file, stores, true, second.written);
     expect(next.objects().find((o) => o.id === "a")).toMatchObject({
-      label: "After the second download",
+      caption: "After the second download",
     });
   }, 60_000);
 });

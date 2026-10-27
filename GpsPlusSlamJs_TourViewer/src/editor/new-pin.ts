@@ -7,10 +7,12 @@
  * @see new-pin.ts.md
  */
 import type {
-  TourObject,
+  TourPin,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+
+import { worldBlocks } from "../tour-document.js";
 
 /** How far a new pin keeps from every item of its station (m). */
 const CLEAR_M = 2.2;
@@ -31,7 +33,7 @@ export function freePinSpot(station: TourStation): {
   eastM: number;
 } {
   const radius = Math.max(0, station.foundRadiusM);
-  const taken = station.items.map((i) => ({
+  const taken = worldBlocks(station).map((i) => ({
     north: i.pose.position[0],
     east: i.pose.position[2],
   }));
@@ -62,7 +64,7 @@ export function newPin(input: {
     readonly lat: number;
     readonly lon: number;
   }) => number | null;
-}): TourObject {
+}): TourPin {
   const { station } = input;
   const spot = freePinSpot(station);
   const geo = itemGeoPose(
@@ -70,11 +72,14 @@ export function newPin(input: {
     station.geo,
   );
   const ground = input.groundAt({ lat: geo.lat, lon: geo.lon });
-  const pins = station.items.filter((i) => i.kind === "pin").length;
+  const pins = worldBlocks(station).filter(
+    (i) => i.kind === "shortText",
+  ).length;
   return {
     id: input.id,
-    kind: "pin",
-    label: `New pin ${String(pins + 1)}`,
+    kind: "shortText",
+    view: "pin",
+    caption: `New pin ${String(pins + 1)}`,
     createdAtIso: input.nowIso,
     geo: {
       ...geo,

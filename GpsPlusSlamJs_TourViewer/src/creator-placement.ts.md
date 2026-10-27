@@ -66,13 +66,13 @@ troubleshooting recording's record of each placement. Split out of
   visit's own alignment (`visit-settle.ts`, basis `visit-alignment`). "Place a pin
   here" reads the hit-test reticle (a surface must be under it, else the
   panel says so), opens the overlay label input (with a Cancel), and Save
-  mints a `pin` record from the reticle's GPS-world position
+  mints a pin (a short text in its `pin` view) from the reticle's GPS-world position
   (`content-placement.ts`; the reticle rides the lerped visual alignment,
   which converges within ~0.3 s of a correction - the one frame difference
   to the photo's target-matrix mint, accepted);
   "Capture a photo here" encodes the latest camera frame's pixels
   (`ctx.latestFrame.image`) through `seams.encodeFrameJpeg` and mints a
-  `photo` record from THAT frame's raw capture pose
+  picture (its `plane` view, its own image asset) from THAT frame's raw capture pose
   (`ctx.latestFrame.cameraPose`) through the session alignment, keeping the
   JPEG for the rebuild. One photo is in flight at a time: its button
   stays disabled from the tap until the encode lands or fails, through

@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
   TourAsset,
+  TourBlock,
   TourStation,
-} from "gps-plus-slam-app-framework/ar/tour-stations";
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import {
   createStationPrefetch,
@@ -33,14 +34,24 @@ function station(id: string, assetIds: string[]): TourStation {
   return {
     id,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    items: [],
+    blocks: assetIds.map((asset, i) => ({
+      id: `b${String(i)}`,
+      kind: "picture" as const,
+      view: "card" as const,
+      image: asset,
+      widthM: 1,
+      pose: {
+        position: [0, 0, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+      },
+    })),
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
-    steps: assetIds.map((asset, i) => ({
+    steps: assetIds.map((_asset, i) => ({
       id: `s${String(i)}`,
-      action: { kind: "image", asset },
-      advance: { mode: "tap" },
+      action: { kind: "show" as const, block: `b${String(i)}` },
+      advance: { mode: "tap" as const },
     })),
   };
 }
@@ -75,58 +86,105 @@ function harness(budgetBytes = 1000, sizes: Record<string, number> = {}) {
 }
 
 describe("stationAssetIds", () => {
-  it("lists what a story reads, in step order, once each: figures and voices, pictures, sounds, models", () => {
-    const s: TourStation = {
+  const POSE = {
+    position: [0, 0, 0] as [number, number, number],
+    rotation: [0, 0, 0, 1] as [number, number, number, number],
+  };
+  /** `station` with these blocks, each shown by a step in this order. */
+  function told(blocks: TourBlock[]): TourStation {
+    return {
       ...station("gate", []),
-      steps: [
-        {
-          id: "a",
-          action: {
-            kind: "character",
-            name: "K",
-            image: "knight",
-            caption: "c",
-            voice: "voice",
-          },
-          advance: { mode: "tap" },
-        },
-        {
-          id: "b",
-          action: { kind: "text", text: "t" },
-          advance: { mode: "tap" },
-        },
-        {
-          id: "c",
-          action: { kind: "model", asset: "arch" },
-          advance: { mode: "tap" },
-        },
-        {
-          id: "d",
-          action: {
-            kind: "character",
-            name: "K",
-            image: "knight",
-            caption: "c",
-          },
-          advance: { mode: "tap" },
-        },
-      ],
+      blocks,
+      steps: blocks.map((b) => ({
+        id: `s-${b.id}`,
+        action: { kind: "show", block: b.id },
+        advance: { mode: "tap" },
+      })),
     };
+  }
+
+  it("lists what a story reads, in step order, once each: figures and voices, pictures, sounds, models", () => {
+    const s = told([
+      {
+        id: "a",
+        kind: "character",
+        view: "stage",
+        name: "K",
+        image: "knight",
+        caption: "c",
+        voice: "voice",
+        pose: POSE,
+      },
+      {
+        id: "b",
+        kind: "longText",
+        view: "card",
+        title: "t",
+        body: "t",
+        pose: POSE,
+      },
+      { id: "c", kind: "model", view: "stage", asset: "arch", pose: POSE },
+      {
+        id: "d",
+        kind: "character",
+        view: "stage",
+        name: "K",
+        image: "knight",
+        caption: "c",
+        pose: POSE,
+      },
+    ]);
     expect(stationAssetIds(s)).toEqual(["knight", "voice", "arch"]);
+  });
+
+  // Why: the story draws a figure or a model only in its stage view
+  // (`scene-view.ts`); reading one shown in the card would spend a phone's
+  // data and memory on a file nothing draws. A voice plays in either view.
+  it("reads a figure or a model only for its stage view, and a voice in either", () => {
+    const s = told([
+      {
+        id: "a",
+        kind: "character",
+        view: "card",
+        name: "K",
+        image: "knight",
+        caption: "c",
+        voice: "voice",
+        pose: POSE,
+      },
+      { id: "c", kind: "model", view: "card", asset: "arch", pose: POSE },
+    ]);
+    expect(stationAssetIds(s)).toEqual(["voice"]);
   });
 
   it("never lists a video: K4 shows its transcript, and a video may be 256 MiB (R3)", () => {
     // Why this test matters (K4 review R3): the prefetch read video files
     // nothing played, up to the K0 entry cap each, over a phone's data.
+    const base = station("gate", ["knight"]);
     const s: TourStation = {
-      ...station("gate", ["knight"]),
-      steps: [
+      ...base,
+      blocks: [
         {
           id: "v",
-          action: { kind: "video", asset: "film", transcript: "t" },
+          kind: "video",
+          view: "card",
+          video: "film",
+          poster: "big",
+          transcript: "t",
+          pose: {
+            position: [0, 0, 0] as [number, number, number],
+            rotation: [0, 0, 0, 1] as [number, number, number, number],
+          },
+        },
+        ...base.blocks,
+      ],
+      steps: [
+        {
+          id: "sv",
+          action: { kind: "show", block: "v" },
           advance: { mode: "tap" },
         },
-        ...station("gate", ["knight"]).steps,
+        ...base.steps,
       ],
     };
     expect(stationAssetIds(s)).toEqual(["knight"]);

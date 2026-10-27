@@ -138,8 +138,8 @@ guarantee it relies on is unit-tested in `src/seams.test.ts`.
 - `levelTexts(bytes)` returns the level files (`qr/*.json`) by entry name,
   as text.
 - `worldManifest(text)` parses a `tour.json` text and adds its pins and
-  photos in the world as `objects` (the framework's `tourObjects`;
-  version 3 keeps them in stations, tour editor plan W3). The world view
+  photos in the world as `objects` (the framework's `tourObjects`: a
+  station's free short texts, pictures and models). The world view
   runs the core's licensed geodesy, so the first call activates the
   licence with a `NullStorageBackend` store, as the app does at boot.
 - `downloadedZip(page, index)` returns the entry names, the manifest (by

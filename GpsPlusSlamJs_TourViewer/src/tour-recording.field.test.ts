@@ -38,7 +38,7 @@ import {
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
 import { createTourViewerStore } from "./tour-viewer-session.js";
-import { withWorldObjects } from "./test-support/v3-tour.js";
+import { withWorldObjects } from "./test-support/tour-of.js";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   alignmentTurnDeg,
@@ -568,7 +568,7 @@ describe.skipIf(TOUR_ZIP === undefined)("a Tour Viewer tour zip", () => {
       );
     }
     for (const o of zip.manifest.objects) {
-      const label = "label" in o ? String(o.label) : "";
+      const label = "caption" in o ? String(o.caption) : "";
       const where = zip.code === null ? "" : ` ${fromCode(zip.code, o.geo)}`;
       lines.push(`object ${o.kind} ${o.id} "${label}"${where}`);
     }
@@ -753,7 +753,8 @@ describe.skipIf(ZIP === undefined || TOUR_ZIP === undefined)(
       };
       const storedCode = storedGeo(level.json)!;
       const lines: string[] = [];
-      const label = (o: TourObject) => ("label" in o ? String(o.label) : o.id);
+      const label = (o: TourObject) =>
+        "caption" in o && o.caption !== undefined ? o.caption : o.id;
       const metres = (a: { lat: number; lon: number }, b: typeof a) => {
         const d = enOf(a, b);
         return Math.hypot(d.e, d.n);

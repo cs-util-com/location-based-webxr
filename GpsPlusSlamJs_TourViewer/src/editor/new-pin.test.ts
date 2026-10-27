@@ -13,7 +13,7 @@ import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 // Activates the licence the station frame's geodesy needs.
-import "../test-support/v3-tour.js";
+import "../test-support/tour-of.js";
 import { freePinSpot, newPin } from "./new-pin.js";
 
 const AT = "2026-10-25T10:00:00Z";
@@ -30,10 +30,11 @@ function station(
     foundRadiusM,
     hint: "arrow",
     steps: [],
-    items: items.map(([north, east], i) => ({
+    blocks: items.map(([north, east], i) => ({
       id: `pin-${String(i)}`,
-      kind: "pin",
-      label: `Pin ${String(i)}`,
+      kind: "shortText",
+      view: "pin",
+      caption: `Pin ${String(i)}`,
       createdAtIso: AT,
       pose: { position: [north, 0, east], rotation: [0, 0, 0, 1] },
     })),
@@ -88,8 +89,9 @@ describe("newPin", () => {
     });
     expect(pin).toMatchObject({
       id: "new1",
-      kind: "pin",
-      label: "New pin 1",
+      kind: "shortText",
+      view: "pin",
+      caption: "New pin 1",
       createdAtIso: AT,
       station: "s",
     });
@@ -107,6 +109,6 @@ describe("newPin", () => {
       groundAt: () => null,
     });
     expect(pin.geo.alt).toBeCloseTo(520, 6);
-    expect(pin.label).toBe("New pin 2");
+    expect(pin.caption).toBe("New pin 2");
   });
 });

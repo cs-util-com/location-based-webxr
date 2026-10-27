@@ -30,7 +30,7 @@ function station(id: string, title: string): TourStation {
     foundRadiusM: 10,
     hint: "arrow",
     steps: [],
-    items: [],
+    blocks: [],
   };
 }
 

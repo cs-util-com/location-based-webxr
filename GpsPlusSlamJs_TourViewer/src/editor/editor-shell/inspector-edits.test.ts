@@ -14,7 +14,7 @@ import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 // Activates the licence the station frame's geodesy needs.
-import "../../test-support/v3-tour.js";
+import "../../test-support/tour-of.js";
 import { eastNorthOf } from "../tour-origin.js";
 import { groundEdit, inspectorEdit } from "./inspector-edits.js";
 
@@ -30,17 +30,19 @@ const STATIONS = [
     foundRadiusM: 25,
     hint: "arrow",
     steps: [],
-    items: [
+    blocks: [
       {
         id: "pin-1",
-        kind: "pin",
-        label: "Fountain",
+        kind: "shortText",
+        view: "pin",
+        caption: "Fountain",
         createdAtIso: AT,
         pose: { position: [4, 1.5, -2], rotation: [0, 0, 0, 1] },
       },
       {
         id: "model-1",
         kind: "model",
+        view: "placed",
         asset: "horse",
         sizeM: 2.4,
         createdAtIso: AT,

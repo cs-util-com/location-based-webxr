@@ -10,7 +10,11 @@
  */
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourObject,
+  TourPicture,
+  TourPin,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   authoringObjects,
   deleteObject,
@@ -18,26 +22,35 @@ import {
   pinTextEdit,
   upsertPlaced,
 } from "./object-edits.js";
+import { captionOf } from "./test-support/tour-of.js";
 
 type Entry = { readonly object: TourObject; readonly blob?: Blob };
 
-function pin(id: string, label = `pin ${id}`): TourObject {
+function pin(id: string, label = `pin ${id}`): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-10-13T00:00:00.000Z",
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 30 },
   };
 }
 
-function photo(id: string): TourObject {
+function photo(id: string): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-10-13T00:00:00.000Z",
     geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0.6, 0, 0.8] },
   };
@@ -47,7 +60,7 @@ describe("pinTextEdit", () => {
   it("edits a pin's text, trimmed", () => {
     expect(pinTextEdit(pin("a", "Old"), "  New  ")).toEqual({
       kind: "edited",
-      after: { ...pin("a"), label: "New" },
+      after: { ...pin("a"), caption: "New" },
     });
   });
 
@@ -152,8 +165,8 @@ describe("upsertPlaced", () => {
   it("replaces an entry by id in place, or appends", () => {
     const placed: Entry[] = [{ object: pin("a") }, { object: pin("b") }];
     expect(
-      upsertPlaced(placed, { object: pin("a", "new") }).map(
-        (p) => (p.object as { label: string }).label,
+      upsertPlaced(placed, { object: pin("a", "new") }).map((p) =>
+        captionOf(p.object),
       ),
     ).toEqual(["new", "pin b"]);
     expect(upsertPlaced(placed, { object: pin("c") })).toHaveLength(3);

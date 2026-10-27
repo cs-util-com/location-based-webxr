@@ -47,7 +47,7 @@ function station(i: number, north: number, east: number): TourStation {
     activateRadiusM: 20,
     foundRadiusM: 5,
     hint: "arrow",
-    items: [],
+    blocks: [],
     steps: [
       {
         id: "ask",

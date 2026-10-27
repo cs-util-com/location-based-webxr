@@ -16,7 +16,10 @@ import type {
   QrDetectionEvent,
   QrTrackingControllerConfig,
 } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourObject,
+  TourPin,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
 import {
   setZeroPos,
@@ -24,7 +27,7 @@ import {
 } from "gps-plus-slam-app-framework/state";
 
 import type { TourViewerSeams } from "./seams.js";
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 import type { TourSession } from "./tour-session.js";
 import {
   createTourViewerSession,
@@ -120,11 +123,12 @@ function vote(): RecordGpsEventPayload {
 
 /** A pin standing `north` / `east` metres from the zero (its own station,
  *  `st-<id>`, `tourOf`). */
-function pin(id: string, north: number, east: number): TourObject {
+function pin(id: string, north: number, east: number): TourPin {
   return {
     id,
-    kind: "pin",
-    label: id,
+    kind: "shortText",
+    view: "pin",
+    caption: id,
     createdAtIso: "2026-10-19T08:00:00.000Z",
     geo: at(north, east),
   };

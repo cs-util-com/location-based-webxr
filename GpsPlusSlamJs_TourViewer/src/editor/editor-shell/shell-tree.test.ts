@@ -34,12 +34,14 @@ const STATIONS = [
     foundRadiusM: 25,
     hint: "arrow",
     steps: [],
-    items: [
+    blocks: [
       {
         id: "photo-1",
-        kind: "photo",
-        image: "content/photo-1.jpg",
-        label: "The arch",
+        kind: "picture",
+        view: "plane",
+        image: "photo-1",
+        widthM: 1,
+        caption: "The arch",
         createdAtIso: AT,
         pose: { position: [4, 1.5, -2], rotation: [0, 0, 0, 1] },
       },
@@ -53,9 +55,18 @@ const STATIONS = [
     foundRadiusM: 30,
     hint: "arrow",
     steps: [],
-    items: [],
+    blocks: [],
   },
 ] as unknown as TourStation[];
+
+/** The photo's own image asset: a captured photo's file. */
+const PHOTO_ASSET = {
+  id: "photo-1",
+  path: "content/photo-1.jpg",
+  kind: "image" as const,
+  width: 4,
+  height: 3,
+};
 
 const CODES = [{ id: "level-1", title: "Code 1", meta: "Printed code" }];
 
@@ -64,7 +75,11 @@ const store = createTourViewerStore(undefined, {
 });
 store.dispatch(
   tourDocumentActions.opened({
-    manifest: { ...createEmptyTourManifest(), stations: STATIONS },
+    manifest: {
+      ...createEmptyTourManifest(),
+      assets: [PHOTO_ASSET],
+      stations: STATIONS,
+    },
   }),
 );
 

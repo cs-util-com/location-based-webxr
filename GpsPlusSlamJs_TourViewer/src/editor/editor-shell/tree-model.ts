@@ -8,9 +8,10 @@
  */
 import type {
   TourAsset,
-  TourItem,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { objectLook, type ObjectLook } from "../../object-describe.js";
+import { worldBlocks, type WorldBlock } from "../../tour-document.js";
 
 import { stationTitle } from "../../station-run.js";
 import type {
@@ -31,7 +32,7 @@ const LAYER_LABELS: Readonly<Record<ShellLayer, string>> = {
 /** An item of a station, as its card lists it. */
 interface TreeChild {
   readonly id: string;
-  readonly kind: TourItem["kind"];
+  readonly kind: ObjectLook;
   /** Text, never markup: it comes from a file anyone can write. */
   readonly title: string;
   readonly selected: boolean;
@@ -96,11 +97,12 @@ export interface TreeInput {
   readonly layers: readonly ShellLayer[];
 }
 
-function itemTitle(item: TourItem): string {
-  if (item.kind === "pin") return item.label;
-  const caption = item.label?.trim() ?? "";
+function itemTitle(item: WorldBlock): string {
+  if (item.kind === "shortText") return item.caption;
+  const caption =
+    (item.kind === "picture" ? item.caption : item.title)?.trim() ?? "";
   if (caption !== "") return caption;
-  return item.kind === "photo" ? "Photo" : "3D model";
+  return item.kind === "picture" ? "Photo" : "3D model";
 }
 
 /**
@@ -112,17 +114,20 @@ export function stationImagePath(
   station: TourStation,
   assets: readonly TourAsset[],
 ): string | null {
-  const photos = station.items.filter(
-    (i): i is Extract<TourItem, { kind: "photo" }> => i.kind === "photo",
+  const imagePath = (id: string): string | null =>
+    assets.find((a) => a.id === id && a.kind === "image")?.path ?? null;
+  const photos = worldBlocks(station).flatMap((i) =>
+    i.kind === "picture" ? [i] : [],
   );
   const named = station.image;
   if (named !== undefined) {
     const photo = photos.find((p) => p.id === named);
-    if (photo !== undefined) return photo.image;
-    const asset = assets.find((a) => a.id === named && a.kind === "image");
-    if (asset !== undefined) return asset.path;
+    if (photo !== undefined) return imagePath(photo.image);
+    const asset = imagePath(named);
+    if (asset !== null) return asset;
   }
-  return photos[0]?.image ?? null;
+  const first = photos[0];
+  return first === undefined ? null : imagePath(first.image);
 }
 
 /** The tree for `input`. */
@@ -141,10 +146,10 @@ export function buildTree(input: TreeInput): TreeModel {
       imagePath: stationImagePath(station, input.assets),
       open: open.has(station.id),
       selected: view.selected === selection,
-      context: station.items.some((i) => i.id === view.selected),
-      children: station.items.map((item) => ({
+      context: worldBlocks(station).some((i) => i.id === view.selected),
+      children: worldBlocks(station).map((item) => ({
         id: item.id,
-        kind: item.kind,
+        kind: objectLook(item.kind),
         title: itemTitle(item),
         selected: item.id === view.selected,
       })),

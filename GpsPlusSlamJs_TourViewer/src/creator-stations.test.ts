@@ -3,12 +3,13 @@ import fc from "fast-check";
 import type {
   TourManifest,
   TourObject,
+  TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
 import { Group, Mesh, type RingGeometry, type Vector3 } from "three";
 
 import { createCreatorDocument } from "./creator-document.js";
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 import {
   manifestToWrite,
   tourDocumentActions,
@@ -53,12 +54,13 @@ function withRadius(manifest: TourManifest, radiusM?: number): TourManifest {
 const zero = { lat: 47.5, lon: 8.7 };
 
 /** A pin `north`/`east` metres from the zero. */
-function pin(id: string, north: number, east: number): TourObject {
+function pin(id: string, north: number, east: number): TourPin {
   const g = calcGpsCoords(zero, [north, 0, east]);
   return {
     id,
-    kind: "pin",
-    label: id,
+    kind: "shortText",
+    view: "pin",
+    caption: id,
     createdAtIso: "2026-10-18T00:00:00.000Z",
     geo: { lat: g.lat, lon: g.lon, alt: 400, headingDeg: 0 },
   };

@@ -67,7 +67,9 @@ test("the list edits a hosted pin on the page - no AR needed - and the Finish wr
   const pins = zip.manifest.objects.filter((o) => o.id === FIXTURE_PIN);
   // Replaced in place: one record, the new text.
   expect(pins).toHaveLength(1);
-  expect(pins[0]?.kind === "pin" && pins[0].label).toBe("The renamed pin");
+  expect(pins[0]?.kind === "shortText" && pins[0].caption).toBe(
+    "The renamed pin",
+  );
 });
 
 test("the tour's name typed in step 3 is the title the Finish writes", async ({
@@ -152,7 +154,9 @@ test("a desk edit is finished without entering AR, and the hosted code's level i
   const zip = await downloadedZip(page, 0);
   const pins = zip.manifest.objects.filter((o) => o.id === FIXTURE_PIN);
   expect(pins).toHaveLength(1);
-  expect(pins[0]?.kind === "pin" && pins[0].label).toBe("Renamed at the desk");
+  expect(pins[0]?.kind === "shortText" && pins[0].caption).toBe(
+    "Renamed at the desk",
+  );
   const hosted = await page.evaluate(async (url) => {
     const response = await fetch(url);
     return Array.from(new Uint8Array(await response.arrayBuffer()));
@@ -176,9 +180,9 @@ test("a deleted photo leaves the zip with its jpg, and a deleted hosted pin leav
   );
   await finishAndDownload(page, 0);
   const first = await downloadedZip(page, 0);
-  const photo = first.manifest.objects.find((o) => o.kind === "photo");
+  const photo = first.manifest.objects.find((o) => o.kind === "picture");
   expect(photo, "the photo is in the first zip").toBeDefined();
-  const jpg = photo?.kind === "photo" ? photo.image : "";
+  const jpg = photo?.kind === "picture" ? photo.imageAsset.path : "";
   expect(first.names).toContain(jpg);
 
   // On the page now (the Finish ended the session): delete both. The list

@@ -45,11 +45,11 @@ function station(
     steps: [
       {
         id: "s",
-        action: { kind: "text", text: "Hi" },
+        action: { kind: "show", block: "hi" },
         advance: { mode: "tap" },
       },
     ],
-    items: [],
+    blocks: [],
   };
 }
 

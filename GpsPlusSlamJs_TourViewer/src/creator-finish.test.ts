@@ -43,6 +43,8 @@ import {
 import {
   parseTourManifest,
   serializeTourManifest,
+  type TourPicture,
+  type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type {
   TourManifest,
@@ -67,7 +69,7 @@ import { describeTourTrust } from "./tour-trust-view.js";
 import { linkTrustKey, type TrustStorage } from "./tour-trust.js";
 import { FINISH_LABELS } from "./qr-author-mode.js";
 import { readZipBlobEntry } from "./zip-blob.js";
-import { tourOf, withWorldObjects } from "./test-support/v3-tour.js";
+import { tourOf, withWorldObjects } from "./test-support/tour-of.js";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 /** The element surface `creator-setup` writes to, and nothing else. */
@@ -154,11 +156,12 @@ function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {
   return out;
 }
 
-function pin(id: string): TourObject {
+function pin(id: string): TourPin {
   return {
     id,
-    kind: "pin",
-    label: `pin ${id}`,
+    kind: "shortText",
+    view: "pin",
+    caption: `pin ${id}`,
     createdAtIso: "2026-09-11T00:00:01.000Z",
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
   };
@@ -566,7 +569,7 @@ describe("the finish continues a listed tour's series, unsigned (K1 milestone re
       `${WRAP}tour.json`,
     );
     expect(JSON.parse(new TextDecoder().decode(bytes))).toMatchObject({
-      version: 3,
+      version: 4,
       minor: 0,
     });
   });
@@ -669,13 +672,20 @@ async function publishedManifest(blob: Blob) {
   );
 }
 
-function photo(id: string): TourObject {
+function photo(id: string): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-09-11T00:00:01.000Z",
     geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
   };
@@ -688,7 +698,7 @@ describe("edits and deletions reach the published zip (authoring plan 2026-09-28
   // take a deleted photo's jpg out of the archive.
 
   it("replaces an edited hosted object in place, keeping its position in the list", async () => {
-    const edited: TourObject = { ...pin("b"), label: "the new text" };
+    const edited: TourObject = { ...pin("b"), caption: "the new text" };
     const { dom, ctx } = await wireFinishable({
       hosted: [pin("a"), pin("b"), pin("c")],
       placed: [edited],
@@ -700,7 +710,7 @@ describe("edits and deletions reach the published zip (authoring plan 2026-09-28
     expect(written.objects.map((o) => o.id)).toEqual(["a", "b", "c"]);
     expect(written.objects[1]).toMatchObject({
       id: "b",
-      label: "the new text",
+      caption: "the new text",
     });
     // The edit is in the zip, so it leaves the list of work to write.
     expect(ctx.tourDocument.entries()).toEqual([]);
@@ -1021,7 +1031,7 @@ describe("the finish writes no debug camera captures", () => {
     await settle(ctx);
     expect(ctx.finishError).toBeNull();
     const written = await writtenManifest(ctx);
-    expect(written).toMatchObject({ version: 3, minor: 0 });
+    expect(written).toMatchObject({ version: 4, minor: 0 });
     expect(written).not.toHaveProperty("captureSpots");
     // One station: the pin's. None for a frame.
     expect(parseTourManifest(written).stations).toHaveLength(1);
@@ -1647,7 +1657,7 @@ describe("desk edits: a Finish with no AR visit (code book plan M4d, §9 D4)", (
   // now it runs when something changed, and writes no level entry (the
   // rebuild keeps the hosted ones byte for byte).
   it("finishes a desk edit with no code in hand, writing no level entry", async () => {
-    const edited: TourObject = { ...pin("b"), label: "the new text" };
+    const edited: TourObject = { ...pin("b"), caption: "the new text" };
     const { dom, ctx, setup } = await wireFinishable({
       hosted: [pin("a"), pin("b")],
       placed: [edited],
@@ -1664,7 +1674,7 @@ describe("desk edits: a Finish with no AR visit (code book plan M4d, §9 D4)", (
     const written = await publishedManifest(blob);
     expect(written.objects[1]).toMatchObject({
       id: "b",
-      label: "the new text",
+      caption: "the new text",
     });
     // The hosted level file is kept as it was: nothing rewrote it.
     const names = await entryNamesOf(blob);
@@ -1688,7 +1698,7 @@ describe("desk edits: a Finish with no AR visit (code book plan M4d, §9 D4)", (
   // changed objects. A desk edit changes objects and no code: Finish must
   // still lead with saving them.
   it("leads with saving a desk edit that is not finished", async () => {
-    const edited: TourObject = { ...pin("b"), label: "the new text" };
+    const edited: TourObject = { ...pin("b"), caption: "the new text" };
     const { dom, setup } = await wireFinishable({
       hosted: [pin("a"), pin("b")],
       placed: [edited],

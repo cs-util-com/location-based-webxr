@@ -57,14 +57,14 @@ function metres(
 }
 
 describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
-  it("is a valid version 3 tour with three geo stations in a fixed order", async () => {
+  it("is a valid version 4 tour with three geo stations in a fixed order", async () => {
     const files = await entries();
     const raw = files.get("tour.json");
     expect(raw).toBeDefined();
     const json = JSON.parse(new TextDecoder().decode(raw)) as unknown;
-    // Written at version 3 (tour editor plan W3): an older build refuses
-    // it with "update the app" rather than misreading it.
-    expect(json).toMatchObject({ version: 3, minor: 0 });
+    // Written at version 4: an older build refuses it with "update the
+    // app" rather than misreading it.
+    expect(json).toMatchObject({ version: 4, minor: 0 });
     const manifest = parseTourManifest(json);
     expect(manifest.order).toBe("fixed");
     expect(manifest.stations.map((s) => s.id)).toEqual([
@@ -166,14 +166,16 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     // change to the reader's in-memory model (a renamed field, a reshaped
     // type) must not change one written byte; this pins the writer's
     // output for a real tour, beside the generated ones in the framework.
+    // Re-recorded when the tour moved to format 4 (its script writes it
+    // through this writer, so the file is the writer's own bytes).
     const files = await entries();
     const json = JSON.parse(
       new TextDecoder().decode(files.get("tour.json")),
     ) as unknown;
     const written = serializeTourManifest(parseTourManifest(json));
-    expect(written.length).toBe(3412);
+    expect(written.length).toBe(5354);
     expect(createHash("sha256").update(written).digest("hex")).toBe(
-      "7e1762c5ff70d65904632f6cf7776bfee2eb725bf724b6df894682726857b247",
+      "c6399b32d9dc36776231c1f158c4848e4b072e07259e9ee521c324c23c8aeefe",
     );
   });
 });

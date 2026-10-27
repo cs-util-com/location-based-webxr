@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 import {
   NOT_FINISHED,
   notFinishedSentence,
@@ -20,8 +20,9 @@ import {
 
 const pin = {
   id: "p1",
-  kind: "pin",
-  label: "Gate",
+  kind: "shortText",
+  view: "pin",
+  caption: "Gate",
   geo: { lat: 47, lon: 8, alt: 400, rotation: [0, 0, 0, 1] },
   createdAtIso: "2026-10-20T00:00:00.000Z",
 } as unknown as TourObject;

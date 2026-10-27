@@ -18,6 +18,7 @@ import {
   createEmptyTourManifest,
   parseTourManifest,
   serializeTourManifest,
+  tourObjectRecord,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
@@ -42,12 +43,13 @@ import {
   writeDraftMeta,
   writeDraftObject,
 } from "./draft-persistence.js";
-import "./test-support/v3-tour.js";
+import "./test-support/tour-of.js";
 import { createCreatorDocument } from "./creator-document.js";
 import { manifestToWrite } from "./tour-document.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import type { VisitLogEntry } from "./visit-log.js";
 import { objectContentKey } from "./authoring-draft.js";
+import { withCaption } from "./test-support/tour-of.js";
 
 /** An in-memory store with the same contract as the OPFS one. */
 function memoryStore(): DraftFileStore & { files: Map<string, Blob | string> } {
@@ -88,8 +90,9 @@ function pin(
 ): TourObject {
   return {
     id,
-    kind: "pin",
-    label: id,
+    kind: "shortText",
+    view: "pin",
+    caption: id,
     createdAtIso,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
   };
@@ -101,12 +104,19 @@ function photo(
 ): TourObject {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    imageWidth: 4,
-    imageHeight: 3,
   };
 }
 
@@ -198,7 +208,9 @@ describe("parseDraftObject", () => {
     // Validation is the manifest's own, on purpose: a draft must never
     // hold something the finish would later reject, and a second validator
     // here is how the two would come to disagree.
-    expect(parseDraftObject(JSON.stringify(pin("a")))?.id).toBe("a");
+    expect(
+      parseDraftObject(JSON.stringify(tourObjectRecord(pin("a"))))?.id,
+    ).toBe("a");
     for (const bad of ["", "null", "{}", '{"id":"a"}', "[1,2]"]) {
       expect(parseDraftObject(bad), bad).toBeNull();
     }
@@ -631,18 +643,16 @@ describe("an AR visit's log is its own file (authoring plan 2026-09-28-0953 M3b)
   });
 });
 
-describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", () => {
-  // Why this matters: drafts live on the creator's phone across app
-  // updates. A draft written by the pre-K1 app (format version 1) must load
-  // with every object and photo - a draft that silently stopped loading
-  // after an update would cost the creator a walk they cannot repeat. A
-  // draft holds world poses, not a tour file, so it needs no migration: its
-  // objects are put back into the tour document, which seats each in a
-  // station, and its Finish writes version 3 (tour editor plan W3).
-  it("loads a v1 draft from the files the old app wrote, and finishes it as version 3", async () => {
+describe("object records of an earlier format", () => {
+  // Why this matters: an object record is the framework's `format: 4`
+  // record (a block, a picture's asset entry, the geo pose). A record an
+  // earlier app wrote (a `kind: "pin"` object with a `label`, or a photo
+  // with its image path) belongs to a tour of an earlier format, which the
+  // app now refuses, deleting its draft with it. Until then such a record
+  // must read as nothing, never as a half-read object the Finish would
+  // write wrongly.
+  it("reads a record an earlier app wrote as nothing, and the draft's own records as the objects they were", async () => {
     const store = memoryStore();
-    // The files exactly as the pre-K1 app wrote them (literal keys and
-    // records, not this version's writers).
     store.files.set(
       "meta",
       JSON.stringify({
@@ -652,9 +662,9 @@ describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", (
       }),
     );
     store.files.set(
-      "object:p1",
+      "object:old",
       JSON.stringify({
-        id: "p1",
+        id: "old",
         kind: "pin",
         label: "The old gate",
         createdAtIso: "2026-09-20T10:00:00.000Z",
@@ -662,23 +672,28 @@ describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", (
       }),
     );
     store.files.set(
-      "object:f1",
+      "object:oldphoto",
       JSON.stringify({
-        id: "f1",
+        id: "oldphoto",
         kind: "photo",
-        image: "content/f1.jpg",
+        image: "content/oldphoto.jpg",
         imageWidth: 640,
         imageHeight: 480,
         createdAtIso: "2026-09-20T10:01:00.000Z",
         geo: { lat: 47.5, lon: 8.7, alt: 401, rotation: [0, 0, 0, 1] },
       }),
     );
-    store.files.set("photo:f1", new Blob(["jpeg"]));
+    store.files.set("photo:oldphoto", new Blob(["jpeg"]));
+    // The draft's own records, as this app writes them.
+    await writeDraftObject(store, withCaption(pin("p1"), "The new gate"));
+    await writeDraftObject(store, photo("f1"), new Blob(["jpeg"]));
     const stored = await readDraft(store);
-    expect(stored?.draft.objects.map((o) => o.id)).toEqual(["p1", "f1"]);
+    expect(stored?.draft.objects.map((o) => o.id).sort()).toEqual(["f1", "p1"]);
     expect(stored?.photos.has("f1")).toBe(true);
+    expect(stored?.photos.has("oldphoto")).toBe(false);
     // As the page does: the draft restored into the tour it opened (here
-    // one without tour.json), then written.
+    // one without tour.json), then written - at version 4, reading back as
+    // the objects the draft held.
     const tourStore = createTourViewerStore();
     const doc = createCreatorDocument(tourStore);
     doc.open(createEmptyTourManifest());
@@ -695,14 +710,14 @@ describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", (
         manifestToWrite(tourStore.getState().tourDocument)!,
       ),
     );
-    expect(finished).toMatchObject({ version: 3, minor: 0 });
+    expect(finished).toMatchObject({ version: 4, minor: 0 });
     const read = tourObjects(parseTourManifest(finished));
-    expect(read.map((o) => [o.id, o.kind])).toEqual([
-      ["p1", "pin"],
-      ["f1", "photo"],
+    expect(read.map((o) => [o.id, o.kind]).sort()).toEqual([
+      ["f1", "picture"],
+      ["p1", "shortText"],
     ]);
-    for (const [i, o] of read.entries()) {
-      const draft = stored!.draft.objects[i]!;
+    for (const o of read) {
+      const draft = stored!.draft.objects.find((d) => d.id === o.id)!;
       expect(o.geo.lat).toBeCloseTo(draft.geo.lat, 9);
       expect(o.geo.lon).toBeCloseTo(draft.geo.lon, 9);
       expect(o.geo.alt).toBeCloseTo(draft.geo.alt, 6);
@@ -750,22 +765,22 @@ describe("writeDraftEdit (M6 E2p)", () => {
     const store = memoryStore();
     await writeDraftMeta(store, META);
     const hosted = pin("a");
-    const later = { ...hosted, label: "a later version" };
+    const later = { ...hosted, caption: "a later version" };
     await writeDraftEdit(
       store,
-      { ...hosted, label: "one" },
+      withCaption(hosted, "one"),
       undefined,
       objectContentKey(hosted),
     );
     await writeDraftEdit(
       store,
-      { ...hosted, label: "two" },
+      withCaption(hosted, "two"),
       undefined,
       objectContentKey(later),
     );
     await writeDraftEdit(
       store,
-      { ...hosted, label: "three" },
+      withCaption(hosted, "three"),
       undefined,
       undefined,
     );
@@ -774,7 +789,7 @@ describe("writeDraftEdit (M6 E2p)", () => {
       objectContentKey(hosted),
       objectContentKey(later),
     ]);
-    expect(read?.draft.objects[0]).toMatchObject({ label: "three" });
+    expect(read?.draft.objects[0]).toMatchObject({ caption: "three" });
     await writeDraftEdit(store, pin("new"), undefined, undefined);
     expect((await readDraft(store))?.draft.bases?.has("new")).toBe(false);
   });

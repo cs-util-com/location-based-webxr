@@ -4,7 +4,7 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 
 import {
   entriesForVisitor,
@@ -26,12 +26,19 @@ const GEO = { lat: 48, lon: 11, alt: 500, rotation: [0, 0, 0, 1] } as const;
 
 const photo: TourObject = {
   id: "f1",
-  kind: "photo",
+  kind: "picture",
+  view: "plane",
   geo: GEO,
   createdAtIso: "2026-10-05T10:00:00.000Z",
-  image: "content/f1.jpg",
-  imageWidth: 4,
-  imageHeight: 3,
+  image: "f1",
+  widthM: 1,
+  imageAsset: {
+    id: "f1",
+    path: "content/f1.jpg",
+    kind: "image",
+    width: 4,
+    height: 3,
+  },
 };
 
 /** A version 3 tour: each of `objects` in a station of its own. */

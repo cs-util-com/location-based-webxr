@@ -38,14 +38,20 @@
  *   far away for the skip.
  * - `/ranges-ok/stations-tour-no-code.zip` - the same tour without its
  *   printed code: only a walk gives the guide its heading.
+ * - `/ranges-ok/blocks-tour.zip` - the stations tour whose gate also
+ *   holds, beside its pin, a captured photo (its own image asset), a
+ *   picture of the tour's knight image in the world and a placed model of
+ *   the arch: every kind of free block a tour can stand in the world.
+ * - `/ranges-ok/v3-tour.zip` - a tour in the earlier format 3 (a station
+ *   holding a pin as an item), which the app refuses.
  * - `/ranges-ok/walk-tour.zip` (any order) and
  *   `/ranges-ok/walk-tour-fixed.zip` (fixed order) - the visitor walk
  *   prototype's "Old town walk": four
  *   stations at the prototype's spots, each a story of auto-advancing
  *   lines, for the sheet's and the layout's specs.
  *
- * Every `tour.json` here is version 3 (tour editor plan W3): stations at
- * geo poses, pins and photos as their items.
+ * Every `tour.json` here is version 4: stations at geo poses, their pins
+ * and photos as free blocks, their stories as blocks shown by steps.
  *
  * CORS: the app origin (the vite port) differs from this server's,
  * and `Range` is not a CORS-safelisted request header, so the preflight
@@ -63,11 +69,19 @@ import {
 } from "@zip.js/zip.js";
 
 import { e2eQrLevelEntryName } from "./qr-fixture.mjs";
-import { inOwnStation, stationAt } from "./v3-fixture.mjs";
+import {
+  capturedPhoto,
+  imageAsset,
+  inOwnStation,
+  pinBlock,
+  showStep,
+  stationAt,
+  textCard,
+} from "./tour-fixture.mjs";
 
 const port = Number(process.argv[2] ?? "5197");
 
-/** The default tour's photo items, in its pin's station. */
+/** The default tour's photos, in its pin's station. */
 const FIXTURE_PHOTO_IDS = ["fixturephoto1", "fixturephoto2", "fixturephoto3"];
 
 /** 1×1 red PNG — a real decodable image, 67 bytes. */
@@ -135,30 +149,26 @@ async function buildZip({ withLevel = true, needsNoGps = false } = {}) {
       "tour.json",
       new TextReader(
         JSON.stringify({
-          version: 3,
+          version: 4,
           minor: 0,
           ...(needsNoGps ? { needsNoGps: true } : {}),
+          assets: FIXTURE_PHOTO_IDS.map((id) =>
+            imageAsset(id, `content/${id}.png`, 1, 1),
+          ),
           stations: [
             stationAt(
               "st-fixturepin01",
               { lat: 47.50009, lon: 8.7, alt: 400 },
               [
-                {
-                  id: "fixturepin01",
-                  kind: "pin",
+                pinBlock("fixturepin01", "Fixture pin", {
                   createdAtIso: "2026-09-08T12:00:00.000Z",
-                  label: "Fixture pin",
-                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-                },
-                ...FIXTURE_PHOTO_IDS.map((id, i) => ({
-                  id,
-                  kind: "photo",
-                  image: `content/${id}.png`,
-                  imageWidth: 1,
-                  imageHeight: 1,
-                  createdAtIso: "2026-09-08T12:00:00.000Z",
-                  pose: { position: [i + 1, 0, 0], rotation: [0, 0, 0, 1] },
-                })),
+                }),
+                ...FIXTURE_PHOTO_IDS.map((id, i) =>
+                  capturedPhoto(id, {
+                    createdAtIso: "2026-09-08T12:00:00.000Z",
+                    pose: { position: [i + 1, 0, 0], rotation: [0, 0, 0, 1] },
+                  }),
+                ),
               ],
             ),
           ],
@@ -211,8 +221,10 @@ const DEG_PER_M_LON = 1.32966e-5;
  * the scene (only the present one's).
  * `withCode: false`: the same tour without its printed code (no level),
  * so nothing but walking gives the guide a heading.
+ * `worldBlocks: true`: the gate also stands a captured photo, a picture
+ * of the knight image and a placed arch in the world.
  */
-async function buildStationsZip({ withCode = true } = {}) {
+async function buildStationsZip({ withCode = true, worldBlocks = false } = {}) {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
   await writer.add("session.json", new TextReader('{"kind":"e2e-stations"}'));
   if (withCode)
@@ -245,6 +257,39 @@ async function buildStationsZip({ withCode = true } = {}) {
     new Uint8ArrayReader(new Uint8Array([0xff, 0xfb, 0x90, 0x00])),
   );
   await writer.add("content/arch.glb", new Uint8ArrayReader(minimalGlb()));
+  if (worldBlocks) {
+    await writer.add(
+      "content/gate-photo.png",
+      new Uint8ArrayReader(TINY_PNG.slice()),
+    );
+  }
+  /** The gate's free blocks besides its pin (`worldBlocks`). */
+  const gateWorld = worldBlocks
+    ? [
+        capturedPhoto("gate-photo", {
+          caption: "The gate at dusk",
+          createdAtIso: "2026-10-19T08:00:00.000Z",
+          pose: { position: [1, 1.5, 2], rotation: [0, 0, 0, 1] },
+        }),
+        {
+          id: "gate-knight",
+          kind: "picture",
+          view: "plane",
+          image: "knight",
+          widthM: 0.5,
+          pose: { position: [-1, 1.5, 2], rotation: [0, 0, 0, 1] },
+        },
+        {
+          id: "gate-arch",
+          kind: "model",
+          view: "placed",
+          asset: "arch",
+          sizeM: 2,
+          title: "The arch",
+          pose: { position: [0, 0, 4], rotation: [0, 0, 0, 1] },
+        },
+      ]
+    : [];
   const geo = (north, east) => ({
     lat: 47.5 + north * DEG_PER_M_LAT,
     lon: 8.7 + east * DEG_PER_M_LON,
@@ -255,7 +300,7 @@ async function buildStationsZip({ withCode = true } = {}) {
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 3,
+        version: 4,
         minor: 0,
         title: "E2E castle",
         order: "fixed",
@@ -263,6 +308,9 @@ async function buildStationsZip({ withCode = true } = {}) {
           { id: "knight", path: "content/knight.png", width: 1, height: 1 },
           { id: "voice", path: "content/voice.mp3" },
           { id: "arch", path: "content/arch.glb" },
+          ...(worldBlocks
+            ? [imageAsset("gate-photo", "content/gate-photo.png", 1, 1)]
+            : []),
         ],
         stations: [
           {
@@ -272,29 +320,30 @@ async function buildStationsZip({ withCode = true } = {}) {
             activateRadiusM: 30,
             foundRadiusM: 5,
             hint: "arrow",
-            items: [
-              {
-                id: "gate-pin",
-                kind: "pin",
-                label: "Gate sign",
+            blocks: [
+              pinBlock("gate-pin", "Gate sign", {
                 createdAtIso: "2026-10-19T08:00:00.000Z",
                 pose: { position: [0, 1.5, 1], rotation: [0, 0, 0, 1] },
+              }),
+              ...gateWorld,
+              {
+                id: "sir-kay",
+                kind: "character",
+                view: "stage",
+                name: "Sir Kay",
+                image: "knight",
+                caption: "Halt, traveller!",
+                voice: "voice",
+                pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
               },
+              textCard("farewell-text", "The gate", "Farewell."),
+              textCard("welcome-text", "The gate", "Welcome inside."),
             ],
             steps: [
-              {
-                id: "knight",
-                block: {
-                  kind: "character",
-                  name: "Sir Kay",
-                  image: "knight",
-                  caption: "Halt, traveller!",
-                  voice: "voice",
-                },
-              },
+              showStep("knight", "sir-kay"),
               {
                 id: "ask",
-                block: {
+                action: {
                   kind: "choice",
                   prompt: "Enter the castle?",
                   options: [
@@ -302,12 +351,10 @@ async function buildStationsZip({ withCode = true } = {}) {
                     { id: "yes", label: "Yes", goto: "welcome" },
                   ],
                 },
+                advance: { mode: "tap" },
               },
-              { id: "farewell", block: { kind: "text", text: "Farewell." } },
-              {
-                id: "welcome",
-                block: { kind: "text", text: "Welcome inside." },
-              },
+              showStep("farewell", "farewell-text"),
+              showStep("welcome", "welcome-text"),
             ],
           },
           {
@@ -317,25 +364,21 @@ async function buildStationsZip({ withCode = true } = {}) {
             activateRadiusM: 20,
             foundRadiusM: 5,
             hint: "arrow",
-            items: [
-              {
-                id: "well-pin",
-                kind: "pin",
-                label: "Well sign",
+            blocks: [
+              pinBlock("well-pin", "Well sign", {
                 createdAtIso: "2026-10-19T08:00:00.000Z",
                 pose: { position: [0, 1.5, 1], rotation: [0, 0, 0, 1] },
-              },
-            ],
-            steps: [
+              }),
               {
-                id: "arch",
-                block: {
-                  kind: "model",
-                  asset: "arch",
-                  caption: "The old arch.",
-                },
+                id: "old-arch",
+                kind: "model",
+                view: "stage",
+                asset: "arch",
+                title: "The old arch.",
+                pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
               },
             ],
+            steps: [showStep("arch", "old-arch")],
           },
           {
             id: "tower",
@@ -344,8 +387,8 @@ async function buildStationsZip({ withCode = true } = {}) {
             activateRadiusM: 20,
             foundRadiusM: 5,
             hint: "arrow",
-            items: [],
-            steps: [{ id: "top", block: { kind: "text", text: "The top." } }],
+            blocks: [textCard("top-text", "The tower", "The top.")],
+            steps: [showStep("top", "top-text")],
           },
         ],
       }),
@@ -396,18 +439,20 @@ async function buildWalkZip(order) {
     activateRadiusM: 60,
     foundRadiusM: radiusM,
     hint: "arrow",
-    items: [],
-    steps: lines.map((text, i) => ({
-      id: `${id}-${String(i)}`,
-      block: { kind: "text", text },
-      advance: { mode: "auto", afterS: 6 },
-    })),
+    blocks: lines.map((text, i) =>
+      textCard(`${id}-line-${String(i)}`, title, text),
+    ),
+    steps: lines.map((_text, i) =>
+      showStep(`${id}-${String(i)}`, `${id}-line-${String(i)}`, {
+        advance: { mode: "auto", afterS: 6 },
+      }),
+    ),
   });
   await writer.add(
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 3,
+        version: 4,
         minor: 0,
         title: "Old town walk",
         order,
@@ -549,17 +594,13 @@ async function buildBakedZip() {
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 3,
+        version: 4,
         minor: 0,
         stations: [
           stationAt("walk-0", { lat: 47.50002, lon: 8.7, alt: 400 }, [
-            {
-              id: "bakedpin01",
-              kind: "pin",
+            pinBlock("bakedpin01", "A pin beside the captures", {
               createdAtIso: "2026-09-08T12:00:00.000Z",
-              label: "A pin beside the captures",
-              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-            },
+            }),
           ]),
           stationAt("walk-1", { lat: 47.50011, lon: 8.7, alt: 400 }),
         ],
@@ -610,6 +651,45 @@ async function buildBakedZip() {
   return writer.close();
 }
 
+/**
+ * A tour in the earlier format 3, written literally (no writer of this
+ * app writes it any more): one station holding a pin as an item. The app
+ * refuses it, and deletes the draft it kept for it.
+ */
+async function buildV3Zip() {
+  const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
+  await writer.add(
+    "tour.json",
+    new TextReader(
+      JSON.stringify({
+        version: 3,
+        minor: 0,
+        title: "An older tour",
+        stations: [
+          {
+            id: "st-old",
+            geo: { lat: 47.50009, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+            activateRadiusM: 50,
+            foundRadiusM: 25,
+            hint: "arrow",
+            steps: [],
+            items: [
+              {
+                id: "oldpin",
+                kind: "pin",
+                label: "An older pin",
+                createdAtIso: "2026-09-08T12:00:00.000Z",
+                pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+              },
+            ],
+          },
+        ],
+      }),
+    ),
+  );
+  return writer.close();
+}
+
 /** A real, decodable grey PNG of `width` x 1 px. */
 function greyPng(width) {
   const chunk = (type, data) => {
@@ -640,28 +720,27 @@ function greyPng(width) {
 /** The details tour (W2): two placed photos, the second the cover. */
 async function buildDetailsZip() {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
-  const photo = (id, width, lat) => ({
-    id,
-    kind: "photo",
-    image: `content/${id}.png`,
-    imageWidth: width,
-    imageHeight: 1,
-    createdAtIso: "2026-10-17T00:00:00.000Z",
+  const photo = (id, lat) => ({
+    ...capturedPhoto(id, { createdAtIso: "2026-10-17T00:00:00.000Z" }),
     geo: { lat, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
   });
   await writer.add(
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 3,
+        version: 4,
         minor: 0,
         title: "Harbour Lights",
         description: "Six places along the old harbour.",
         cover: "second",
         contact: "guide@example.org",
+        assets: [
+          imageAsset("first", "content/first.png", 1, 1),
+          imageAsset("second", "content/second.png", 3, 1),
+        ],
         stations: [
-          inOwnStation(photo("first", 1, 47.5)),
-          inOwnStation(photo("second", 3, 47.5001)),
+          inOwnStation(photo("first", 47.5)),
+          inOwnStation(photo("second", 47.5001)),
         ],
       }),
     ),
@@ -683,7 +762,7 @@ async function buildUnfinishedZip() {
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 3,
+        version: 4,
         minor: 0,
         title: "Harbour Lights",
         contact: "guide@example.org",
@@ -720,6 +799,8 @@ const noGpsZipBytes = await buildZip({ needsNoGps: true });
 const recordingZipBytes = await buildRecordingZip();
 const stationsZipBytes = await buildStationsZip();
 const stationsNoCodeZipBytes = await buildStationsZip({ withCode: false });
+const blocksZipBytes = await buildStationsZip({ worldBlocks: true });
+const v3ZipBytes = await buildV3Zip();
 const walkZipBytes = await buildWalkZip("any");
 const walkFixedZipBytes = await buildWalkZip("fixed");
 const sampleZipBytes = new Uint8Array(
@@ -908,6 +989,14 @@ createServer((req, res) => {
       stationsNoCodeZipBytes,
       '"e2e-stations-nc-v1"',
     );
+    return;
+  }
+  if (url.pathname === "/ranges-ok/blocks-tour.zip") {
+    handleArchive(req, res, "ranges-ok", blocksZipBytes, '"e2e-blocks-v1"');
+    return;
+  }
+  if (url.pathname === "/ranges-ok/v3-tour.zip") {
+    handleArchive(req, res, "ranges-ok", v3ZipBytes, '"e2e-v3-v1"');
     return;
   }
   if (url.pathname === "/ranges-ok/walk-tour.zip") {

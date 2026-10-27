@@ -18,7 +18,7 @@ import {
   selectTrackingQuality,
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
-import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-stations";
+import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import { registerFrameUpdate } from "gps-plus-slam-app-framework/ar/frame-loop";

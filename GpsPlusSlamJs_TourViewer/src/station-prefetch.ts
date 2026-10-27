@@ -30,9 +30,9 @@
 
 import type {
   TourAsset,
+  TourBlock,
   TourStation,
-  TourStep,
-} from "gps-plus-slam-app-framework/ar/tour-stations";
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { imageInfoOfBlob } from "gps-plus-slam-app-framework/utils/image-header";
 
@@ -91,26 +91,43 @@ export async function decodeFigure<T>(
   return decode(blob, decodeDivisor(info));
 }
 
-/** The asset ids a station's story reads, in step order, deduplicated.
- *  Never a video (K4 review R3): K4 shows a video step's transcript, and a
- *  video may be as large as the tour's entry cap allows. */
-export function stationAssetIds(station: TourStation): string[] {
-  const ids = station.steps.flatMap((step: TourStep): string[] => {
-    const action = step.action;
-    switch (action.kind) {
-      case "image":
-      case "audio":
-      case "model":
-        return [action.asset];
-      case "character":
-        return action.voice === undefined
-          ? [action.image]
-          : [action.image, action.voice];
-      default:
-        return [];
-    }
+/** The asset ids a station's story reads: the blocks its `show` steps
+ *  name, in step order, deduplicated - what the story draws
+ *  (`scene-view.ts`): a figure or a model only in its stage view, a
+ *  character's voice in either. Never a video (K4 review R3): a video
+ *  block shows its transcript, and a video may be as large as the tour's
+ *  entry cap allows; nor its poster, which nothing draws yet. A station's
+ *  free blocks are the world's, read on their own. */
+export function stationAssetIds(
+  station: Pick<TourStation, "blocks" | "steps">,
+): string[] {
+  const blocks = new Map(station.blocks.map((b) => [b.id, b]));
+  const ids = station.steps.flatMap((step): readonly string[] => {
+    if (step.action.kind !== "show") return [];
+    const block = blocks.get(step.action.block);
+    return block === undefined ? [] : storyAssetIds(block);
   });
   return [...new Set(ids)];
+}
+
+/** The assets the story reads to show `block`. */
+function storyAssetIds(block: TourBlock): readonly string[] {
+  switch (block.kind) {
+    case "picture":
+      return [block.image];
+    case "audio":
+      return [block.audio];
+    case "model":
+      return block.view === "stage" ? [block.asset] : [];
+    case "character": {
+      const figure = block.view === "stage" ? [block.image] : [];
+      return block.voice === undefined ? figure : [...figure, block.voice];
+    }
+    case "shortText":
+    case "longText":
+    case "video":
+      return [];
+  }
 }
 
 export interface StationPrefetch {

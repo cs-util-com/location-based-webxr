@@ -113,7 +113,7 @@ function drawnGroups(page) {
 }
 
 /** The photo planes standing in the fake scene, however deep: a
- *  station's items hang under its frame (pins are sprites, not meshes). */
+ *  station's free blocks hang under its frame (pins are sprites, not meshes). */
 function photoPlanes(page) {
   return page.evaluate(() => {
     /** @param {any} o @returns {number} */
@@ -852,8 +852,8 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
     "fixturephoto3",
   ]);
   const [, , , , pin, photo] = manifest.objects;
-  expect(pin?.kind).toBe("pin");
-  expect(pin?.kind === "pin" ? pin.label : null).toBe("The old gate");
+  expect(pin?.kind).toBe("shortText");
+  expect(pin?.kind === "shortText" ? pin.caption : null).toBe("The old gate");
   // The pin keeps its place RELATIVE TO THE CODE (D10b): the visit settles
   // through its alignment corrected rigidly onto the code's stored pose.
   // The reticle (3 m north, 2 m west of the zero, altitude 400.5 - GPS-world
@@ -874,12 +874,14 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
       ((pin?.geo.lon ?? 0) - 8.7001) * metresPerDegLon,
     ),
   ).toBeCloseTo(Math.hypot(1, 3), 1);
-  expect(photo?.kind).toBe("photo");
-  if (photo?.kind === "photo") {
-    expect(photo.image).toBe(`content/${photo.id}.jpg`);
-    expect(photo.imageWidth).toBe(2); // the fakes' 2×2 frames
+  expect(photo?.kind).toBe("picture");
+  if (photo?.kind === "picture") {
+    expect(photo.imageAsset.path).toBe(`content/${photo.id}.jpg`);
+    expect(photo.imageAsset.width).toBe(2); // the fakes' 2×2 frames
     // The encoder fake's bytes rode through the rebuild untouched.
-    expect(Array.from(rebuilt.entries[photo.image])).toEqual([255, 216, 255]);
+    expect(Array.from(rebuilt.entries[photo.imageAsset.path])).toEqual([
+      255, 216, 255,
+    ]);
   }
   // The reticle was torn down with the session.
   expect(
@@ -951,25 +953,27 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // The fixture's pin and photos, batch one's pin and photo, batch two's
   // pin.
   expect(secondManifest.objects.map((o) => o.kind)).toEqual([
-    "pin",
-    "photo",
-    "photo",
-    "photo",
-    "pin",
-    "photo",
-    "pin",
+    "shortText",
+    "picture",
+    "picture",
+    "picture",
+    "shortText",
+    "picture",
+    "shortText",
   ]);
   const labels = secondManifest.objects.flatMap((o) =>
-    o.kind === "pin" ? [o.label] : [],
+    o.kind === "shortText" ? [o.caption] : [],
   );
   expect(labels).toEqual(["Fixture pin", "The old gate", "The second visit"]);
   // Batch one's photo bytes are still in the archive, not just its record.
   const keptPhoto = secondManifest.objects.find(
-    (o) => o.kind === "photo" && !o.id.startsWith("fixturephoto"),
+    (o) => o.kind === "picture" && !o.id.startsWith("fixturephoto"),
   );
   expect(
     Array.from(
-      second.entries[keptPhoto?.kind === "photo" ? keptPhoto.image : ""],
+      second.entries[
+        keptPhoto?.kind === "picture" ? keptPhoto.imageAsset.path : ""
+      ],
     ),
   ).toEqual([255, 216, 255]);
 });
@@ -1095,7 +1099,7 @@ test("a first measurement of a code the tour does not store is minted into the r
   expect(level.qr.mintQuality?.gpsAccuracyM).toBe(5);
   const manifest = worldManifest(rebuilt.entries["tour.json"]);
   expect(
-    manifest.objects.map((o) => (o.kind === "pin" ? o.label : o.kind)),
+    manifest.objects.map((o) => (o.kind === "shortText" ? o.caption : o.kind)),
   ).toEqual(["First code's pin"]);
 });
 
@@ -1222,7 +1226,9 @@ test("two new codes 20 m apart, measured in one visit, both reach the zip with o
   expect(geoDistanceM(geoOf(first), geoOf(second))).toBeCloseTo(20, 0);
   const manifest = worldManifest(rebuilt.entries["tour.json"]);
   expect(
-    manifest.objects.map((o) => (o.kind === "pin" ? o.label : o.kind)).sort(),
+    manifest.objects
+      .map((o) => (o.kind === "shortText" ? o.caption : o.kind))
+      .sort(),
   ).toEqual(["Pin at the first code", "Pin at the second code"]);
   // The summary after Finish names both codes: it listed only the code in
   // hand and the hosted ones, so the first code was missing (M4e).
@@ -1843,7 +1849,7 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
       markerUpdates: t.qrDebugUpdates,
       groups: t.fakeScene.children.length,
       // The station's group -> the station's frame at its pose (tour
-      // editor plan W3: playback as station groups) -> the station's items.
+      // editor plan W3: playback as station groups) -> the station's free blocks.
       planes: t.fakeScene.children
         .flatMap((/** @type {any} */ c) => (c.isGroup ? c.children : []))
         .flatMap((/** @type {any} */ s) => (s.isGroup ? s.children : []))
@@ -2569,7 +2575,7 @@ test("a crash does not lose the walk: placed content survives a reload and lands
   const rebuilt = await readDownloadedZip(page, 0);
   const manifest = worldManifest(rebuilt.entries["tour.json"]);
   const labels = manifest.objects.flatMap((o) =>
-    o.kind === "pin" ? [o.label] : [],
+    o.kind === "shortText" ? [o.caption] : [],
   );
   // The fixture's own pin, plus the one placed BEFORE the reload.
   expect(labels).toContain("The old gate");
@@ -3149,7 +3155,7 @@ test("a draft accumulates ACROSS finishes: both batches land in the zip", async 
   const rebuilt = await readDownloadedZip(page, 0);
   const manifest = worldManifest(rebuilt.entries["tour.json"]);
   const labels = manifest.objects.flatMap((o) =>
-    o.kind === "pin" ? [o.label] : [],
+    o.kind === "shortText" ? [o.caption] : [],
   );
   expect(labels).toContain("Batch one");
   expect(labels).toContain("Batch two");
@@ -3584,7 +3590,7 @@ test("an opted-in authoring session is recorded across the finish and saved as i
     Buffer.from(packed.payload.grid.depthF32, "base64url").readFloatLE(0),
   ).toBe(1.5);
   const placed = actions.find((a) => a.type === "tourAuthoring/objectPlaced");
-  expect(placed.payload.object.label).toBe("Recorded gate");
+  expect(placed.payload.object.caption).toBe("Recorded gate");
   // The logged odometry, taken back through the logged group matrix, is
   // the reticle's world position (the fake group follows the alignment).
   const [ox, oy, oz] = placed.payload.reticleOdomNue;

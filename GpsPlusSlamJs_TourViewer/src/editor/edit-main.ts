@@ -154,6 +154,7 @@ import type { InspectorCode } from "./editor-shell/inspector-model.js";
 import type { GroundPlace } from "./editor-shell/scene-menu.js";
 import { stationTitle } from "../station-run.js";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type {
   Editor3dStats,
   Editor3dView,
@@ -1355,7 +1356,7 @@ function reorderStations(order: readonly string[]): void {
 function splitItem(id: string): void {
   if (editor === null) return;
   const kind = manifestToWrite(store.getState().tourDocument)
-    ?.stations.flatMap((s) => s.items)
+    ?.stations.flatMap((s) => tourFreeBlocks(s))
     .find((i) => i.id === id)?.kind;
   endUndo();
   const outcome = editor.moveToNewStation(id);

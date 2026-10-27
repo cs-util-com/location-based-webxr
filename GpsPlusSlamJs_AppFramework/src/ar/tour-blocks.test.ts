@@ -28,7 +28,7 @@ import {
   type TourBlock,
   type TourBlockDrop,
 } from './tour-blocks';
-import { parseTourAssets } from './tour-stations';
+import { parseTourAssets } from './tour-assets';
 
 class Invalid extends Error {}
 const fail = (message: string): never => {

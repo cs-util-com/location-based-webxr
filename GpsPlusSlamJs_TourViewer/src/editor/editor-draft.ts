@@ -56,10 +56,9 @@
  */
 
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
-import {
-  tourItems,
-  type TourManifest,
-  type TourObject,
+import type {
+  TourManifest,
+  TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import { tourImageIds } from "gps-plus-slam-app-framework/ar/tour-details";
@@ -472,10 +471,8 @@ function heldAgainst(
   const details = settings.details;
   const cover = details?.cover;
   if (details === undefined || cover === undefined) return settings;
-  const images = tourImageIds({
-    objects: tourItems(manifest),
-    assets: manifest.assets,
-  });
+  // A captured photo's image is an asset of the tour since version 4.
+  const images = tourImageIds({ objects: [], assets: manifest.assets });
   if (images.has(cover)) return settings;
   const { cover: _gone, ...rest } = details;
   return {
@@ -1176,7 +1173,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           (stored.draft.bases?.get(o.id)?.seen.length ?? 0) === 0 &&
           o.station !== undefined &&
           knownStations.has(o.station) &&
-          (o.kind !== "photo" || stored.photos.has(o.id)),
+          (o.kind !== "picture" || o.image !== o.id || stored.photos.has(o.id)),
       );
       const pictures = new Map(
         made.flatMap((o) => {

@@ -17,7 +17,7 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
     `entries`, `manifestWrap`, `integrity`, `budget`, `readWholeArchive`).
   - `input.manifest` - the manifest the tour carries now (after any
     earlier rebuild; an empty one for a tour without). It is written at
-    version 3 through `withTourContent` (`tour-content.ts`): the edits
+    version 4 through `withTourContent` (`tour-content.ts`): the edits
     apply to its world view (`tourObjects`), and every pin and photo is
     written into the station it names - the stations are the manifest's
     as they are (the tour document seated every object). A manifest

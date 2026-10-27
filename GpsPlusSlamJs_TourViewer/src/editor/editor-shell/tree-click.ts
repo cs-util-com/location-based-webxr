@@ -86,14 +86,14 @@ export function treeClickPlan(
   id: string,
   stations: readonly {
     readonly id: string;
-    readonly items: readonly { readonly id: string }[];
+    readonly blocks: readonly { readonly id: string }[];
   }[],
 ): TreeClickPlan | null {
   if (outcome === "none") return null;
   const station = id.startsWith(STATION) ? id.slice(STATION.length) : null;
   const holder =
     station === null
-      ? (stations.find((s) => s.items.some((i) => i.id === id))?.id ?? null)
+      ? (stations.find((s) => s.blocks.some((i) => i.id === id))?.id ?? null)
       : null;
   if (outcome === "deselect") {
     return {

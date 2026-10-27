@@ -437,7 +437,7 @@ test("?allstations=1 shows every station's content at once", async ({
     .toEqual(["station-content:gate", "station-content:well"]);
 });
 
-/** What one station's group draws, however deep (its items hang under
+/** What one station's group draws, however deep (its free blocks hang under
  *  their frame): every mesh (a photo plane) and sprite (a pin), each
  *  with its opacity. */
 function drawnOpacitiesIn(page, group) {

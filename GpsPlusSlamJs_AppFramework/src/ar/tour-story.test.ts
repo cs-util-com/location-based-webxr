@@ -13,12 +13,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TourBlockDrop } from './tour-blocks';
-import { parseTourAssets } from './tour-stations';
-import {
-  parseTourStationContent,
-  serializeTourStationContent,
-  type TourStationContent,
-} from './tour-story';
+import { parseTourAssets } from './tour-assets';
+import { parseTourStationContent, type TourStationContent } from './tour-story';
 
 class Invalid extends Error {}
 const fail = (message: string): never => {
@@ -148,8 +144,8 @@ describe('the story: show, choice, quiz', () => {
 
   it('a show step naming no block of this station fails', () => {
     // Why: a step showing nothing the station has is a broken file, as a
-    // choice jumping to no step is (another station's block: the
-    // manifest's tests, where block ids are tour-wide).
+    // choice jumping to no step is (another station's block:
+    // `tour-stations.test.ts`, where block ids are tour-wide).
     expect(() =>
       parse({ blocks: [pin], steps: [show('s1', 'other-station-block')] })
     ).toThrow(/must name a block of this station/);
@@ -379,37 +375,5 @@ describe('a file of a newer minor (lenient)', () => {
       { lenient: true }
     );
     expect(content.steps).toEqual([]);
-  });
-});
-
-describe('serializeTourStationContent', () => {
-  it('writes what the reader reads back, and fails loud on a value a reader would drop', () => {
-    const content = parse({ blocks: [pin, text], steps: [show('a', 'intro')] });
-    const record = serializeTourStationContent(content, { assets: ASSETS });
-    expect(
-      parse(
-        JSON.parse(JSON.stringify(record)) as {
-          blocks: unknown[];
-          steps: unknown[];
-        }
-      )
-    ).toEqual(content);
-    const broken = {
-      ...content,
-      blocks: [{ ...content.blocks[0]!, description: 'x'.repeat(161) }],
-    } as TourStationContent;
-    expect(() =>
-      serializeTourStationContent(broken, { assets: ASSETS, fail })
-    ).toThrow(/description/);
-  });
-
-  it('refuses a free card, which no reader would accept', () => {
-    const content = parse({ blocks: [text], steps: [show('a', 'intro')] });
-    expect(() =>
-      serializeTourStationContent(
-        { ...content, steps: [] },
-        { assets: ASSETS, fail }
-      )
-    ).toThrow(Invalid);
   });
 });

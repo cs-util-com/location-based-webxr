@@ -96,9 +96,11 @@ ray (`pick`).
   or a model) is hit first from above; what it can take is a click beside
   a code. At a few pixels on screen that is little. Codes have no gizmo; their point and the inspector's
   printed size do not change. Tilted up, a code is its printed size. Billboards and poles rise with
-  `standing`; models keep their pose, and pins stand. `renderTourStation` skips models, so the layer
-  adds them at their pose, scaled to their size by `modelScale`; a model
-  whose file cannot be read is left out.
+  `standing`; models keep their pose, and pins stand. `renderTourStation` skips placed models (and draws each
+  picture from the tour's assets, passed to it), so the layer adds the
+  free blocks in their `placed` view at their pose, scaled to their size
+  by `modelScale`; a model whose file cannot be read, or one without a
+  size, is left out.
 - **The found-radius circle** is the selected station's ring: amber (the
   gizmo's colour, its radius dots sit on it) while the station itself is
   selected, a lighter blue while an item in it is, else blue.

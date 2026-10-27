@@ -10,13 +10,23 @@
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { horizontalM } from "./move-with-code.js";
+import type { WorldBlock } from "./tour-content.js";
 
-/** A pin's text; a photo's caption, or "Photo" when it has none or only
- *  blanks. */
-export function objectTitle(object: TourObject): string {
-  if (object.kind === "pin") return object.label;
-  const caption = object.label;
-  return caption !== undefined && caption.trim().length > 0 ? caption : "Photo";
+/** What an object in the world is, in the pages' words and icons: a short
+ *  text is a pin, a picture a photo, a model a model. */
+export type ObjectLook = "pin" | "photo" | "model";
+
+export function objectLook(kind: TourObject["kind"]): ObjectLook {
+  if (kind === "shortText") return "pin";
+  return kind === "picture" ? "photo" : "model";
+}
+
+/** A pin's text; a photo's caption (a model's title), or "Photo" when it
+ *  has none or only blanks. */
+export function objectTitle(object: TourObject | WorldBlock): string {
+  if (object.kind === "shortText") return object.caption;
+  const text = object.kind === "picture" ? object.caption : object.title;
+  return text !== undefined && text.trim().length > 0 ? text : "Photo";
 }
 
 /** "4 m from the code" / "12 m from the nearest code"; "" without a code

@@ -13,7 +13,8 @@ import {
   parseTourManifest,
   serializeTourManifest,
   type TourManifest,
-  type TourObject,
+  type TourPicture,
+  type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   documentFrames,
@@ -30,25 +31,33 @@ import {
   settingsRecord,
   settingsRecordText,
 } from "./tour-document-draft.js";
-import { stationIdOf, tourOf } from "./test-support/v3-tour.js";
+import { stationIdOf, tourOf } from "./test-support/tour-of.js";
 
-function pin(id: string, lat: number): TourObject {
+function pin(id: string, lat: number): TourPin {
   return {
     id,
-    kind: "pin",
-    label: `pin ${id}`,
+    kind: "shortText",
+    view: "pin",
+    caption: `pin ${id}`,
     createdAtIso: "2026-10-18T00:00:00.000Z",
     geo: { lat, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
   };
 }
 
-function photo(id: string, lat: number): TourObject {
+function photo(id: string, lat: number): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-10-18T00:00:00.000Z",
     geo: { lat, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
   };
@@ -79,11 +88,23 @@ const OPENED: TourManifest = parseTourManifest(
             steps: [
               {
                 id: "s1",
-                action: { kind: "image", asset: "img1" },
+                action: { kind: "show", block: "look" },
                 advance: { mode: "tap" },
               },
             ],
-            items: [],
+            blocks: [
+              {
+                id: "look",
+                kind: "picture",
+                view: "card",
+                image: "img1",
+                widthM: 1,
+                pose: {
+                  position: [0, 0, 0],
+                  rotation: [0, 0, 0, 1],
+                },
+              },
+            ],
           },
         ],
       }),
@@ -429,6 +450,7 @@ describe("the draft keeps the stations whole", () => {
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow" as const,
+      blocks: [],
       steps: [],
     };
     const restored = reduce(
@@ -443,10 +465,23 @@ describe("the draft keeps the stations whole", () => {
           {
             ...frame,
             id: "noAsset",
+            blocks: [
+              {
+                id: "look",
+                kind: "picture",
+                view: "card",
+                image: "elsewhere",
+                widthM: 1,
+                pose: {
+                  position: [0, 0, 0],
+                  rotation: [0, 0, 0, 1],
+                },
+              },
+            ],
             steps: [
               {
                 id: "s1",
-                action: { kind: "image", asset: "elsewhere" },
+                action: { kind: "show", block: "look" },
                 advance: { mode: "tap" },
               },
             ],

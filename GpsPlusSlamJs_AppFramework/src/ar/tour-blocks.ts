@@ -7,10 +7,6 @@
  * world while its station is shown, so its view must be a world view. A
  * block a `show` step names is a STORY block (`tour-story.ts`).
  *
- * Not wired yet: the manifest still reads and writes version 3. This module
- * and `tour-story.ts` define and validate the version 4 model beside it, so
- * the format is settled and tested before the first file is written.
- *
  * Caps are counted ONE way, by {@link tourTextCount}, which the editor's
  * counters reuse: Unicode code points after trimming and collapsing every
  * whitespace run to one space, except a long text's body, counted in
@@ -36,16 +32,15 @@
  */
 
 import { isFiniteNumber, isRecord } from '../utils/json-guards.js';
-import { TOUR_ID_PATTERN } from './tour-archive.js';
+import type { TourAsset, TourAssetKind } from './tour-assets.js';
 import {
-  parseTourLocalPose,
-  TOUR_MODEL_MAX_SIZE_M,
-  TOUR_MODEL_MIN_SIZE_M,
-  type TourLocalPose,
-} from './tour-items.js';
-import type { TourAsset, TourAssetKind } from './tour-stations.js';
+  assertUniqueTourIds,
+  requireTourId,
+  type TourFail,
+} from './tour-fields.js';
+import { parseTourLocalPose, type TourLocalPose } from './tour-items.js';
 
-type Fail = (message: string) => never;
+type Fail = TourFail;
 
 /** What a block is. */
 export type TourBlockKind =
@@ -103,6 +98,18 @@ export const TOUR_BLOCK_TEXT_RULES = {
   model: { title: optional(80) },
   character: { name: required(80), caption: required(2000) },
 } as const satisfies Record<TourBlockKind, Record<string, TourTextRule>>;
+
+/**
+ * A placed model's size: the scaled model's largest side (m), inclusive.
+ * "Largest side" is measured ONE way, by every renderer and the editor:
+ * the axis-aligned box of the glTF's default scene at rest pose, node
+ * transforms included, in the glb's own units (glTF metres), before the
+ * block's own rotation - the largest of its three extents. The scale
+ * factor is `sizeM` over that length. A size, not a factor: a factor's
+ * sensible range would depend on the model's own size.
+ */
+export const TOUR_MODEL_MIN_SIZE_M = 0.05;
+export const TOUR_MODEL_MAX_SIZE_M = 500;
 
 /** A picture's width in the world (m), inclusive. */
 export const TOUR_PICTURE_MIN_WIDTH_M = 0.05;
@@ -477,11 +484,7 @@ function createdAtOf(value: unknown, at: string, fail: Fail) {
 
 /** One block's id, checked at every minor. */
 function blockIdOf(value: Fields, at: string, fail: Fail): string {
-  const { id } = value;
-  if (typeof id !== 'string' || !TOUR_ID_PATTERN.test(id)) {
-    return fail(`"${at}.id" must be a short path-safe id`);
-  }
-  return id;
+  return requireTourId(value.id, `${at}.id`, fail);
 }
 
 function readBlock(v: Fields, ctx: BlockContext): TourBlockRead {
@@ -544,16 +547,8 @@ export function readTourBlocks(
       return [];
     }
   });
-  assertUniqueBlockIds(ids, fail);
+  assertUniqueTourIds(ids, 'block', fail);
   return read;
-}
-
-function assertUniqueBlockIds(ids: readonly string[], fail: Fail): void {
-  const seen = new Set<string>();
-  for (const id of ids) {
-    if (seen.has(id)) fail(`duplicate block id "${id}"`);
-    seen.add(id);
-  }
 }
 
 /** Block ids are unique across the tour, not only within a station. */
@@ -561,8 +556,9 @@ export function checkTourBlockIdsUnique(
   stations: readonly { readonly blocks: readonly { readonly id: string }[] }[],
   fail: Fail
 ): void {
-  assertUniqueBlockIds(
+  assertUniqueTourIds(
     stations.flatMap((s) => s.blocks.map((b) => b.id)),
+    'block',
     fail
   );
 }

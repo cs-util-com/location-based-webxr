@@ -14,8 +14,8 @@
  *   free ones in a world view, story ones in any;
  * - stations' contents: free and story blocks, shows, choices whose
  *   options jump or continue, quizzes of every answer type;
- * - version 3 manifests with steps of every kind and items of every kind,
- *   for the properties that pin today's format byte for byte.
+ * - whole version 4 manifests of one to four stations, block ids unique
+ *   across the tour.
  *
  * `fast-check` is NOT bundled into the built file (`neverBundle` in
  * `config/tsdown.config.ts`): it is imported as a bare specifier and
@@ -30,15 +30,13 @@ import fc from 'fast-check';
 import {
   TOUR_BLOCK_TEXT_RULES,
   TOUR_BLOCK_VIEWS,
+  TOUR_MODEL_MAX_SIZE_M,
+  TOUR_MODEL_MIN_SIZE_M,
   TOUR_PICTURE_MAX_WIDTH_M,
   TOUR_PICTURE_MIN_WIDTH_M,
   type TourBlockKind,
   type TourTextRule,
 } from '../ar/tour-blocks.js';
-import {
-  TOUR_MODEL_MAX_SIZE_M,
-  TOUR_MODEL_MIN_SIZE_M,
-} from '../ar/tour-items.js';
 
 /** The assets every generated block names: one or two of each kind, with
  *  ids the block id generator also produces (they may collide). */
@@ -467,155 +465,103 @@ export function tourStationContentArbitrary(
   });
 }
 
-// --- version 3 ---------------------------------------------------------
+// --- manifests ----------------------------------------------------------
 
-/** A version 3 step's content (its `block`), one of every kind, naming
- *  only {@link TOUR_ARBITRARY_ASSETS}. */
-const v3StepBlock = fc.oneof(
-  fc
-    .string({ minLength: 1, maxLength: 30 })
-    .filter((s) => s.trim() !== '')
-    .map((text) => ({ kind: 'text', text })),
-  fc
-    .option(fc.constant('A gate'), { nil: undefined })
-    .map((caption) => defined({ kind: 'image', asset: 'gate', caption })),
-  fc.option(fc.constant('voice'), { nil: undefined }).map((voice) =>
-    defined({
-      kind: 'character',
-      name: 'Knight',
-      image: 'knight',
-      caption: 'Halt!',
-      voice,
-    })
-  ),
-  fc.constant({ kind: 'audio', asset: 'voice', transcript: 'Hello there.' }),
-  fc.constant({ kind: 'video', asset: 'clip', transcript: 'Knights ride.' }),
-  fc.constant({ kind: 'model', asset: 'arch', caption: 'The arch' }),
-  quizActionArbitrary.map(({ question, points, answer }) => ({
-    kind: 'quiz',
-    question,
-    points,
-    answer,
-  }))
-);
-
-const v3Geo = fc.record({
+const geoArbitrary = fc.record({
   lat: coordinate(-89, 89),
   lon: coordinate(-179, 179),
   alt: coordinate(-400, 8000),
   headingDeg: coordinate(0, 359.9),
 });
 
-const v3Item = (id: string) =>
-  fc.oneof(
-    fc
-      .record({
-        createdAtIso: iso,
-        pose: tourLocalPoseArbitrary,
-        label: fc.stringMatching(/^[A-Za-z ]{0,20}[A-Za-z]$/),
-      })
-      .map((p) => ({
-        id,
-        kind: 'pin',
-        ...p,
-      })),
-    fc
-      .record({
-        createdAtIso: iso,
-        pose: tourLocalPoseArbitrary,
-        imageWidth: fc.integer({ min: 1, max: 4096 }),
-        imageHeight: fc.integer({ min: 1, max: 4096 }),
-      })
-      .map((p) => ({ id, kind: 'photo', image: `content/${id}.jpg`, ...p })),
-    fc
-      .record({
-        createdAtIso: iso,
-        pose: tourLocalPoseArbitrary,
-        sizeM: modelSize,
-      })
-      .map((p) => ({ id, kind: 'model', asset: 'arch', ...p }))
-  );
+/** `content` with every block id another station already uses renamed
+ *  (`s<station>b<index>`, suffixed until no block of the tour has it), and
+ *  the `show` steps naming it with it: block ids are unique across the
+ *  tour. */
+function withTourUniqueBlockIds(
+  content: {
+    blocks: Record<string, unknown>[];
+    steps: Record<string, unknown>[];
+  },
+  station: number,
+  used: Set<string>
+): { blocks: Record<string, unknown>[]; steps: Record<string, unknown>[] } {
+  const own = new Set(content.blocks.map((b) => b.id as string));
+  const taken = (id: string) => used.has(id) || own.has(id);
+  const renamed = new Map<string, string>();
+  const blocks = content.blocks.map((block, i) => {
+    const id = block.id as string;
+    if (!used.has(id)) return block;
+    let fresh = `s${String(station)}b${String(i)}`;
+    while (taken(fresh)) fresh += '_';
+    own.add(fresh);
+    renamed.set(id, fresh);
+    return { ...block, id: fresh };
+  });
+  for (const block of blocks) used.add(block.id as string);
+  const steps = content.steps.map((step) => {
+    const action = step.action as Record<string, unknown>;
+    const to =
+      action.kind === 'show' ? renamed.get(action.block as string) : undefined;
+    return to === undefined
+      ? step
+      : { ...step, action: { ...action, block: to } };
+  });
+  return { blocks, steps };
+}
 
-/** A version 3 station with 0-4 steps (the last may be a choice back to
- *  the first two) and its items, ids prefixed so they never meet an asset
- *  id (version 3 shares one namespace across items and assets). */
-function v3Station(index: number): fc.Arbitrary<Record<string, unknown>> {
-  const sid = `s${String(index)}`;
+/**
+ * A version 4 `tour.json` (a JSON record) of one to four stations, each
+ * with a generated content ({@link tourStationContentArbitrary}: free and
+ * story blocks of every kind, shows, choices and quizzes), block ids
+ * unique across the tour, order fixed or any, assets
+ * {@link TOUR_ARBITRARY_ASSETS}.
+ */
+export function tourManifestArbitrary(
+  size: TourStationContentSize = {}
+): fc.Arbitrary<Record<string, unknown>> {
   return fc
-    .record({
-      blocks: fc.array(
-        fc.record({ block: v3StepBlock, advance: advanceArbitrary }),
-        {
-          maxLength: 4,
-        }
-      ),
-      choice: fc.boolean(),
-      items: fc
-        .integer({ min: 0, max: 3 })
-        .chain((n) =>
-          fc.tuple(
-            ...Array.from({ length: n }, (_, i) =>
-              v3Item(`${sid}-i${String(i)}`)
-            )
+    .integer({ min: 1, max: 4 })
+    .chain((n) =>
+      fc.record({
+        stations: fc.tuple(
+          ...Array.from({ length: n }, (_, i) =>
+            fc.record({
+              content: tourStationContentArbitrary(size),
+              geo: geoArbitrary,
+              title: fc.option(fc.stringMatching(/^[A-Za-z]{1,12}$/), {
+                nil: undefined,
+              }),
+              index: fc.constant(i),
+            })
           )
         ),
-      geo: v3Geo,
-      title: fc.option(fc.stringMatching(/^[A-Za-z]{1,12}$/), {
-        nil: undefined,
-      }),
-    })
-    .map(({ blocks, choice, items, geo, title }) => {
-      const steps: Record<string, unknown>[] = blocks.map((b, i) => ({
-        id: `st${String(i)}`,
-        block: b.block,
-        advance: b.advance,
-      }));
-      if (choice && steps.length >= 2) {
-        steps.push({
-          id: 'pick',
-          block: {
-            kind: 'choice',
-            prompt: 'Which?',
-            options: [
-              { id: 'x', label: 'X', goto: 'st0' },
-              { id: 'y', label: 'Y', goto: 'st1' },
-            ],
-          },
-          advance: { mode: 'tap' },
-        });
-      }
+        order: fc.constantFrom('fixed', 'any'),
+        title: fc.option(fc.stringMatching(/^[A-Za-z ]{1,20}$/), {
+          nil: undefined,
+        }),
+      })
+    )
+    .map(({ stations, order, title }) => {
+      const used = new Set<string>();
       return defined({
-        id: sid,
+        version: 4,
         title,
-        geo,
-        activateRadiusM: 30,
-        foundRadiusM: 20,
-        hint: 'arrow',
-        steps,
-        items,
+        order,
+        assets: TOUR_ARBITRARY_ASSETS.map((a) => ({ ...a })),
+        stations: stations.map(({ content, geo, title: name, index }) => {
+          const unique = withTourUniqueBlockIds(content, index, used);
+          return defined({
+            id: `s${String(index)}`,
+            title: name,
+            geo,
+            activateRadiusM: 30,
+            foundRadiusM: 20,
+            hint: 'arrow',
+            blocks: unique.blocks,
+            steps: unique.steps,
+          });
+        }),
       });
     });
 }
-
-/** A version 3 `tour.json` (a JSON record) of one to four stations with
- *  steps of every kind and items of every kind, order fixed or any. */
-export const tourManifestV3Arbitrary: fc.Arbitrary<Record<string, unknown>> = fc
-  .integer({ min: 1, max: 4 })
-  .chain((n) =>
-    fc.record({
-      stations: fc.tuple(...Array.from({ length: n }, (_, i) => v3Station(i))),
-      order: fc.constantFrom('fixed', 'any'),
-      title: fc.option(fc.stringMatching(/^[A-Za-z ]{1,20}$/), {
-        nil: undefined,
-      }),
-    })
-  )
-  .map(({ stations, order, title }) =>
-    defined({
-      version: 3,
-      title,
-      order,
-      assets: TOUR_ARBITRARY_ASSETS.map((a) => ({ ...a })),
-      stations,
-    })
-  );

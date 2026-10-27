@@ -37,11 +37,11 @@ function station(id: string, north: number, east: number): TourStation {
     steps: [
       {
         id: "s",
-        action: { kind: "text", text: "Hi" },
+        action: { kind: "show", block: "hi" },
         advance: { mode: "tap" },
       },
     ],
-    items: [],
+    blocks: [],
   };
 }
 

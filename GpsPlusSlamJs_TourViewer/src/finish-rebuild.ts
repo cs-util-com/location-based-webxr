@@ -38,7 +38,11 @@ import {
   downloadSafeName,
   nameSurvivesDownload,
 } from "./content-disposition.js";
-import { withReferencedAssets, withTourContent } from "./tour-content.js";
+import {
+  isCapturedPhoto,
+  withReferencedAssets,
+  withTourContent,
+} from "./tour-content.js";
 import { archiveFileName, type TourSession } from "./tour-session.js";
 
 /** The open tour, as far as a rebuild reads it. */
@@ -274,8 +278,8 @@ export async function rebuildFinishedTour(
     manifestPath,
     manifestJson: serializeTourManifest(written),
     photos: input.placed.flatMap((p) =>
-      p.object.kind === "photo" && p.blob !== undefined
-        ? [{ image: p.object.image, blob: p.blob }]
+      isCapturedPhoto(p.object) && p.blob !== undefined
+        ? [{ image: p.object.imageAsset.path, blob: p.blob }]
         : [],
     ),
   });

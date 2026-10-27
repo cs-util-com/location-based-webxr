@@ -83,7 +83,7 @@ import {
   odomNueFromWebXr,
   throughAlignment,
 } from "./visit-anchoring.js";
-import { asHosted, tourOf } from "./test-support/v3-tour.js";
+import { asHosted, tourOf, withCaption } from "./test-support/tour-of.js";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 // The pipeline builds its controller from this module; capture the config
@@ -764,7 +764,7 @@ describe(
       const [pin, photo] = a.ctx.tourDocument.entries();
       expect(pin?.placement?.visit).toBe(0);
       expect(pin?.placement?.local.position).toEqual([2, 0, -1]);
-      expect(photo?.object.kind).toBe("photo");
+      expect(photo?.object.kind).toBe("picture");
       expect(photo?.placement?.visit).toBe(0);
       expect(photo?.placement?.local).toEqual(odomNueFromWebXr(cameraPose));
     });
@@ -1277,7 +1277,7 @@ describe(
       const gate = a.ctx.tourDocument
         .entries()
         .find(
-          (p) => p.object.kind === "pin" && p.object.label === "Near A",
+          (p) => p.object.kind === "shortText" && p.object.caption === "Near A",
         )!.object;
       expect(
         near.getWorldPosition(new Vector3()).distanceTo(worldOf(gate.geo)),
@@ -1454,7 +1454,7 @@ describe(
       const pin = a.ctx.tourDocument
         .objects()
         .find(
-          (o) => o.object.kind === "pin" && o.object.label === label,
+          (o) => o.object.kind === "shortText" && o.object.caption === label,
         )!.object;
       const station = a.ctx.tourDocument
         .state()
@@ -1617,7 +1617,7 @@ describe(
       await flush();
 
       const photo = a.ctx.tourDocument.entries().at(-1)!.object;
-      expect(photo.kind).toBe("photo");
+      expect(photo.kind).toBe("picture");
       expect(worldOf(photo.geo).distanceTo(settledPhotoAt(end))).toBeLessThan(
         1e-3,
       );
@@ -1848,11 +1848,11 @@ describe(
       expect(a.ctx.finishError).toBeNull();
 
       const written = tourObjects(a.ctx.tourDocument.manifest()!).map((o) =>
-        o.kind === "pin" ? o.label : o.id,
+        o.kind === "shortText" ? o.caption : o.id,
       );
       expect(written).toEqual(["Gate"]);
       expect(a.ctx.tourDocument.entries().map((p) => p.object.kind)).toEqual([
-        "photo",
+        "picture",
       ]);
       const photo = a.ctx.tourDocument.entries()[0]!.object;
       expect(worldOf(photo.geo).distanceTo(settledPhotoAt(end))).toBeLessThan(
@@ -2013,7 +2013,8 @@ describe(
       const pin = a.ctx.tourDocument
         .entries()
         .find(
-          (p) => p.object.kind === "pin" && p.object.label === "Beside A",
+          (p) =>
+            p.object.kind === "shortText" && p.object.caption === "Beside A",
         )!.object;
       // Placed relative to the code as it was stored, not 20 m off.
       const offset = worldOf(pin.geo).sub(codeWorldOf(stored.json));
@@ -2093,7 +2094,7 @@ describe(
       // Placed relative to the code as it is stored, not 20 m off.
       const pin = a.ctx.tourDocument
         .entries()
-        .find((p) => p.object.kind === "pin")!.object;
+        .find((p) => p.object.kind === "shortText")!.object;
       const offset = worldOf(pin.geo).sub(codeWorldOf(hosted.json));
       expect(
         offset.distanceTo(new Vector3(3, 0, 1).sub(codeLocal)),
@@ -2255,10 +2256,17 @@ describe(
     function hostedPhoto(id: string): TourObject {
       return {
         id,
-        kind: "photo",
-        image: `content/${id}.jpg`,
-        imageWidth: 4,
-        imageHeight: 3,
+        kind: "picture",
+        view: "plane",
+        image: id,
+        widthM: 1,
+        imageAsset: {
+          id: id,
+          path: `content/${id}.jpg`,
+          kind: "image",
+          width: 4,
+          height: 3,
+        },
         createdAtIso: "2026-09-29T10:00:00.000Z",
         geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 400, rotation: [0, 0, 0, 1] },
       };
@@ -2305,21 +2313,28 @@ describe(
       );
       a.dom.objectList.listHandlers!.editText("h1", "  The old mill ");
       await flush();
-      // The hosted pin as its station reads it back (version 3), relabelled.
+      // The hosted pin as its station reads it back, its text changed.
       expect(a.ctx.tourDocument.entries().map((p) => p.object)).toEqual([
-        { ...asHosted(hostedPin("h1", "Hosted gate")), label: "The old mill" },
+        {
+          ...asHosted(hostedPin("h1", "Hosted gate")),
+          caption: "The old mill",
+        },
       ]);
       expect(a.labels.some((o) => o.name === "The old mill")).toBe(true);
       expect(a.ctx.placedPreviews.size).toBe(1);
       const log = logged(a, "tourAuthoring/objectEdited").at(-1)!.payload;
-      expect((log["before"] as { label: string }).label).toBe("Hosted gate");
-      expect((log["after"] as { label: string }).label).toBe("The old mill");
+      expect((log["before"] as { caption: string }).caption).toBe(
+        "Hosted gate",
+      );
+      expect((log["after"] as { caption: string }).caption).toBe(
+        "The old mill",
+      );
       expect(log["surface"]).toBe("ar");
       expect(a.dom.objectList.lastModel?.note).toMatch(/Saved "The old mill"/);
       // An empty text changes nothing.
       a.dom.objectList.listHandlers!.editText("h1", "   ");
       expect(a.ctx.tourDocument.entries()[0]?.object).toMatchObject({
-        label: "The old mill",
+        caption: "The old mill",
       });
     });
 
@@ -2677,10 +2692,12 @@ describe(
       list.listHandlers!.undo();
       await flush();
       expect(a.ctx.tourDocument.entries().map((p) => p.object)).toMatchObject([
-        { id: "h1", label: "Mill" },
+        { id: "h1", caption: "Mill" },
       ]);
       expect(JSON.parse(String(files.get(objectKey("h1"))))).toMatchObject({
-        label: "Mill",
+        block: {
+          caption: "Mill",
+        },
       });
       expect(files.has(deletedKey("h1"))).toBe(false);
 
@@ -2717,13 +2734,13 @@ describe(
       const h2 = a.ctx.tourDocument
         .objects()
         .find((o) => o.object.id === "h2")!.object;
-      a.ctx.tourDocument.edit({ ...h2, label: "Later" }, "a later change");
+      a.ctx.tourDocument.edit(withCaption(h2, "Later"), "a later change");
       list.listHandlers!.undo();
       await flush();
       expect(a.ctx.tourDocument.deleted()).toEqual(["h1"]);
       expect(
         a.ctx.tourDocument.objects().find((o) => o.object.id === "h2")?.object,
-      ).toMatchObject({ label: "Later" });
+      ).toMatchObject({ caption: "Later" });
       expect(list.lastModel?.undo).toBe(false);
     });
 
@@ -2784,13 +2801,13 @@ describe(
         .objects()
         .find((o) => o.object.id === "h3")!.object;
       // A change that renders nothing, then the tap.
-      a.ctx.tourDocument.edit({ ...h3, label: "Shed" }, "a later change");
+      a.ctx.tourDocument.edit(withCaption(h3, "Shed"), "a later change");
       a.dom.undoButton.click();
       await flush();
       expect(a.ctx.tourDocument.deleted()).toEqual(["h1", "h2"]);
       expect(
         a.ctx.tourDocument.objects().find((o) => o.object.id === "h3")?.object,
-      ).toMatchObject({ label: "Shed" });
+      ).toMatchObject({ caption: "Shed" });
     });
 
     // Why: the async-UI rule (root CLAUDE.md) for the strip's tap - the
@@ -3109,7 +3126,7 @@ describe(
           a.ctx.tourDocument
             .entries()
             .map((p) => [
-              p.object.kind === "pin" ? p.object.label : p.object.id,
+              p.object.kind === "shortText" ? p.object.caption : p.object.id,
               p.object.geo,
             ]),
         );
@@ -3181,7 +3198,7 @@ describe(
           a.ctx.tourDocument
             .entries()
             .map((p) => [
-              p.object.kind === "pin" ? p.object.label : p.object.id,
+              p.object.kind === "shortText" ? p.object.caption : p.object.id,
               p.object.geo,
             ]),
         );
@@ -3234,8 +3251,10 @@ describe(
       expect(new Set(moved).size).toBe(moved.length);
       const between = a.ctx.tourDocument
         .entries()
-        .find((p) => p.object.kind === "pin" && p.object.label === "between")!
-        .object.id;
+        .find(
+          (p) =>
+            p.object.kind === "shortText" && p.object.caption === "between",
+        )!.object.id;
       expect(moved.filter((id) => id === between)).toHaveLength(1);
     });
 
@@ -3286,8 +3305,9 @@ describe(
       await a.placePin("bank", [10, 0, -8]);
       const placed = a.ctx.tourDocument
         .entries()
-        .find((p) => p.object.kind === "pin" && p.object.label === "bank")!
-        .object.geo;
+        .find(
+          (p) => p.object.kind === "shortText" && p.object.caption === "bank",
+        )!.object.geo;
       a.endVisit();
       const decision = codePosition(a)?.decision as {
         kind: string;
@@ -3299,8 +3319,9 @@ describe(
       expect(a.codes.inHand()?.json).not.toBe(stored.json);
       const bank = a.ctx.tourDocument
         .entries()
-        .find((p) => p.object.kind === "pin" && p.object.label === "bank")!
-        .object.geo;
+        .find(
+          (p) => p.object.kind === "shortText" && p.object.caption === "bank",
+        )!.object.geo;
       expect(worldOf(bank).distanceTo(worldOf(placed))).toBeLessThan(0.1);
       await openFinishableTour(a);
       a.ctx.tourManifestStatus = "settled";
@@ -3328,7 +3349,7 @@ describe(
       const pin = a.ctx.tourDocument
         .objects()
         .find(
-          (o) => o.object.kind === "pin" && o.object.label === "new",
+          (o) => o.object.kind === "shortText" && o.object.caption === "new",
         )!.object;
       const station = a.ctx.tourDocument
         .state()
@@ -3336,7 +3357,7 @@ describe(
       const near = a.ctx.tourDocument
         .objects()
         .find(
-          (o) => o.object.kind === "pin" && o.object.label === "near",
+          (o) => o.object.kind === "shortText" && o.object.caption === "near",
         )!.object;
       expect(station.id).not.toBe(near.station);
       expect(station.geo).toMatchObject({
@@ -3417,7 +3438,9 @@ describe(
     function stationOf(a: ReturnType<typeof authoring>, label: string) {
       const pin = a.ctx.tourDocument
         .entries()
-        .find((p) => p.object.kind === "pin" && p.object.label === label)!;
+        .find(
+          (p) => p.object.kind === "shortText" && p.object.caption === label,
+        )!;
       return a.ctx.tourDocument
         .state()
         .stations.find((s) => s.id === pin.object.station)!;
@@ -3789,7 +3812,7 @@ describe(
       const hosted = a.ctx.tourDocument
         .entries()
         .find(
-          (p) => p.object.kind === "pin" && p.object.label === "near",
+          (p) => p.object.kind === "shortText" && p.object.caption === "near",
         )!.object;
       hostInstead(a, tourOf([hosted]));
       a.endVisit();
@@ -3810,7 +3833,7 @@ describe(
       const hosted = a.ctx.tourDocument
         .entries()
         .find(
-          (p) => p.object.kind === "pin" && p.object.label === "near",
+          (p) => p.object.kind === "shortText" && p.object.caption === "near",
         )!.object;
       const opened = tourOf([hosted]);
       hostInstead(a, opened);
@@ -3820,7 +3843,9 @@ describe(
       const moved = a.ctx.tourDocument.manifest()!;
       const [after] = moved.stations;
       expect(after!.geo).not.toEqual(station!.geo);
-      expect(after!.items).toBe(station!.items);
+      // The blocks as they were: the same local poses, re-expressed in no
+      // frame (the station moved, they ride along).
+      expect(after!.blocks).toEqual(station!.blocks);
       // The page's edit is the pin where its moved station puts it.
       const edit = a.ctx.tourDocument
         .entries()
@@ -3840,8 +3865,8 @@ describe(
         JSON.parse(serializeTourManifest(a.ctx.tourDocument.manifest()!)),
       );
       const home = written.stations.find((s) => s.id === station!.id)!;
-      expect(home.items.map((i) => i.pose)).toEqual(
-        station!.items.map((i) => i.pose),
+      expect(home.blocks.map((i) => i.pose)).toEqual(
+        station!.blocks.map((i) => i.pose),
       );
       expect(home.geo).toEqual(after!.geo);
     });
@@ -4132,7 +4157,7 @@ describe(
         a.dom.objectList.listHandlers!.editText("h1", "Gate, phone 1");
         await flush();
         // The creator uploaded that edit: the next load opens it hosted.
-        const a1 = { ...a0, label: "Gate, phone 1" } as TourObject;
+        const a1 = { ...a0, caption: "Gate, phone 1" } as TourObject;
         const b = await load(store, [a1]);
         b.dom.objectList.listHandlers!.editText("h1", "Gate, phone 2");
         await flush();
@@ -4192,7 +4217,7 @@ describe(
         await flush();
         a.dom.objectList.listHandlers!.editText("h1", "Gate, phone");
         await flush();
-        const desk = { ...a0, label: "Gate, desk" } as TourObject;
+        const desk = { ...a0, caption: "Gate, desk" } as TourObject;
         let open!: () => void;
         const b = authoring({
           store,
@@ -4334,7 +4359,7 @@ describe(
         a.dom.objectList.listHandlers!.editText("h1", "Gate, phone");
         await flush();
         // The desktop editor renamed it in the hosted file meanwhile.
-        const desk = { ...a0, label: "Gate, desk" } as TourObject;
+        const desk = { ...a0, caption: "Gate, desk" } as TourObject;
         const b = await load(store, [desk]);
         await vi.waitFor(() => {
           expect(b.ctx.placementNote ?? "").toMatch(/replaced by a newer one/);
@@ -4747,8 +4772,8 @@ describe(
       a.tapPhoto({ position: [0, 1.4, 0], rotation: [0, 0, 0, 1] });
       await flush();
       expect(a.ctx.tourDocument.entries().map((p) => p.object.kind)).toEqual([
-        "pin",
-        "photo",
+        "shortText",
+        "picture",
       ]);
       // The settle has no code to correct them through: the visit's own
       // GPS alignment places them.
@@ -4768,7 +4793,7 @@ describe(
       expect(a.codes.inHand()).toBeNull();
       await a.placePin("Outside", [30, 0, -5]);
       expect(a.ctx.tourDocument.entries().map((p) => p.object.kind)).toEqual([
-        "pin",
+        "shortText",
       ]);
     });
   },
@@ -4984,7 +5009,8 @@ describe(
       const pin = a.ctx.tourDocument
         .entries()
         .find(
-          (p) => p.object.kind === "pin" && p.object.label === "Beside A",
+          (p) =>
+            p.object.kind === "shortText" && p.object.caption === "Beside A",
         )!.object;
       const settled = a.settledLogs().at(-1)!.payload;
       expect(settled.objects.find((o) => o.id === pin.id)?.basis).toBe(
@@ -5241,7 +5267,8 @@ describe(
       const pin = a.ctx.tourDocument
         .entries()
         .find(
-          (p) => p.object.kind === "pin" && p.object.label === "at the copy",
+          (p) =>
+            p.object.kind === "shortText" && p.object.caption === "at the copy",
         )!.object;
       const settled = a.settledLogs().at(-1)!.payload;
       expect(settled.objects.find((o) => o.id === pin.id)?.basis).not.toBe(
@@ -5269,7 +5296,8 @@ describe(
       const pin = a.ctx.tourDocument
         .entries()
         .find(
-          (p) => p.object.kind === "pin" && p.object.label === "home pin",
+          (p) =>
+            p.object.kind === "shortText" && p.object.caption === "home pin",
         )!.object;
       // Plainly: through this visit's alignment (a 22 m north shift).
       const plain = worldOf(pin.geo).sub(new Vector3(22, 400, 0));
@@ -5293,7 +5321,8 @@ describe(
       const pinBefore = a.ctx.tourDocument
         .entries()
         .find(
-          (p) => p.object.kind === "pin" && p.object.label === "by the copy",
+          (p) =>
+            p.object.kind === "shortText" && p.object.caption === "by the copy",
         )!.object.geo;
       // Seen 5 m off its (weakly saved) spot after a reliable walk: improved.
       await visitSeeing(a, 5);
@@ -5309,7 +5338,8 @@ describe(
       const pinAfter = a.ctx.tourDocument
         .entries()
         .find(
-          (p) => p.object.kind === "pin" && p.object.label === "by the copy",
+          (p) =>
+            p.object.kind === "shortText" && p.object.caption === "by the copy",
         )!.object.geo;
       expect(worldOf(pinAfter).distanceTo(worldOf(pinBefore))).toBeLessThan(
         1e-6,
@@ -5355,7 +5385,7 @@ describe(
       const pin = a.ctx.tourDocument
         .entries()
         .find(
-          (p) => p.object.kind === "pin" && p.object.label === "by B",
+          (p) => p.object.kind === "shortText" && p.object.caption === "by B",
         )!.object;
       expect(Math.abs(worldOf(pin.geo).x - 31)).toBeLessThan(2);
     });
@@ -5631,11 +5661,11 @@ describe(
       await flush();
       const pinBefore = a.ctx.tourDocument
         .entries()
-        .find((p) => p.object.kind === "pin")!.object.geo;
+        .find((p) => p.object.kind === "shortText")!.object.geo;
       await visitSeeing(a, 30);
       const pinAfter = a.ctx.tourDocument
         .entries()
-        .find((p) => p.object.kind === "pin")!.object.geo;
+        .find((p) => p.object.kind === "shortText")!.object.geo;
       expect(pinAfter).toEqual(pinBefore);
       const entries = [...files.keys()]
         .filter((k) => k.startsWith(visitKey("")))
@@ -5696,7 +5726,7 @@ describe(
 
     function lastPhoto(a: ReturnType<typeof authoring>) {
       const photo = a.ctx.tourDocument.entries().at(-1)!.object;
-      expect(photo.kind).toBe("photo");
+      expect(photo.kind).toBe("picture");
       return photo;
     }
 
@@ -5760,7 +5790,7 @@ describe(
       // into the photo's station: the arm makes it start its own.
       await a.placePin("Next", [3, 0, 1]);
       const next = a.ctx.tourDocument.entries().at(-1)!.object;
-      expect(next.kind).toBe("pin");
+      expect(next.kind).toBe("shortText");
       expect(next.station).toBeDefined();
       expect(next.station).not.toBe(photoStation);
       expect(a.ctx.tourDocument.newStationArmed()).toBe(false);

@@ -31,6 +31,15 @@ time. Plan:
 
 ## Invariants & assumptions
 
+- **A `show` step shows the block it names, by its view.** A block in its
+  `stage` view (a character or a model) stands at the station, as the
+  character and model steps of earlier versions did; every other block
+  shows in the card: a short text's caption, a long text's body, a
+  picture with its caption, a video's transcript, an audio's transcript
+  with its sound, a model's title, a character's caption with its voice
+  (a character in the card plays its voice, but no figure stands). A
+  block's world view (a pin, a plane, a placed model) is drawn with its
+  station's free blocks (`content-placement.ts`), never by a step.
 - A character's figure goes to the stage as it is; the stage's decoder
   measures it from its own header (the decode cap, `station-prefetch.ts`
   `decodeFigure`).
@@ -40,8 +49,9 @@ time. Plan:
   is then not shown, and the status says "The picture is too large to show
   here - the words are below."
 - **Captions always** (plan §4.1): every step puts words in `text` - the
-  text, the image's or model's caption, the character's caption, the
-  audio's or video's transcript. A character also shows its name.
+  text, the picture's caption, the model's title, the character's
+  caption, the audio's or video's transcript. A character also shows its
+  name.
 - **Async feedback** (CLAUDE.md): a step's media shows "Loading the
   picture/figure/sound/3D model…" in `status`, cleared when it shows;
   while the stage holds a loaded figure or model back for the visitor's
@@ -79,7 +89,9 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
 ## Tests
 
 - `scene-view.test.ts` - steps in order and the end, a character (name,
-  caption, figure on the stage, voice), refused sound and unreadable file,
+  caption, figure on the stage, voice), a figure or a model only in its
+  stage view (a card character's voice still plays), a video's transcript,
+  refused sound and unreadable file,
   a late picture dropped and URLs revoked, the auto timer and its cancel, a
   choice, one story at a time and the queue, de-duplication and `stopAll`;
   ending a playing, a queued and an unknown story (R9); the figure's

@@ -10,7 +10,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourObject,
+  TourPin,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   followDocument,
   parseSettingsRecord,
@@ -28,14 +31,15 @@ import {
   tourDocumentReducer as reduce,
   type TourDocumentState,
 } from "./tour-document.js";
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 
-function pin(id: string, label = `pin ${id}`): TourObject {
+function pin(id: string, label = `pin ${id}`): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-10-18T00:00:00.000Z",
     geo: { lat: 48.52, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
   };
@@ -211,10 +215,17 @@ describe("followDocument", () => {
   it("a photo's picture the page holds goes with its record", () => {
     const photo: TourObject = {
       id: "p",
-      kind: "photo",
-      image: "content/p.jpg",
-      imageWidth: 4,
-      imageHeight: 3,
+      kind: "picture",
+      view: "plane",
+      image: "p",
+      widthM: 1,
+      imageAsset: {
+        id: "p",
+        path: "content/p.jpg",
+        kind: "image",
+        width: 4,
+        height: 3,
+      },
       createdAtIso: "2026-10-18T00:00:00.000Z",
       geo: { lat: 48.52, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
     };
@@ -421,7 +432,7 @@ describe("followDocument, the stations this page created", () => {
       steps: [
         {
           id: "q",
-          block: { ...quiz, route: { correct: "b" } },
+          action: { ...quiz, route: { correct: "b" } },
           advance: { mode: "tap" },
         },
       ],
@@ -536,35 +547,40 @@ describe("followDocument, the codes record (plan M3b)", () => {
 describe("settingsRecordText", () => {
   // Why: a draft stores its station frames inside the settings record,
   // and the record's reader reads each frame as the tour format reads a
-  // station - a step's content under the file's key `block`. The reader's
-  // own field is `action`, so a record stored without mapping would lose
-  // every frame with a story on reload. Drafts stored before keep reading.
+  // station - its story blocks and the steps that show them. A frame
+  // stored in any other shape would be dropped on reload, and the
+  // station's story with it.
   const frame = {
     id: "gate",
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
     activateRadiusM: 30,
     foundRadiusM: 10,
     hint: "arrow" as const,
+    blocks: [
+      {
+        id: "welcome",
+        kind: "longText" as const,
+        view: "card" as const,
+        title: "Gate",
+        body: "Welcome",
+        pose: {
+          position: [0, 0, 0] as [number, number, number],
+          rotation: [0, 0, 0, 1] as [number, number, number, number],
+        },
+      },
+    ],
     steps: [
       {
         id: "s1",
-        action: { kind: "text" as const, text: "Welcome" },
+        action: { kind: "show" as const, block: "welcome" },
         advance: { mode: "tap" as const },
       },
     ],
   };
 
-  it("stores a frame's steps under block, and reads them back as the frames they were", () => {
+  it("stores a frame with its story blocks and steps, and reads it back as the frame it was", () => {
     const record = { needsNoGps: false, frames: [frame] };
     const text = settingsRecordText(record);
-    const stored = JSON.parse(text) as {
-      frames: { steps: Record<string, unknown>[] }[];
-    };
-    expect(Object.keys(stored.frames[0]!.steps[0]!)).toEqual([
-      "id",
-      "block",
-      "advance",
-    ]);
     expect(parseSettingsRecord(text)?.frames).toEqual([frame]);
   });
 

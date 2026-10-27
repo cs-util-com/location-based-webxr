@@ -125,8 +125,8 @@ describe("nearStations", () => {
 describe("selectedStationOf", () => {
   const manifest = {
     stations: [
-      { id: "a", items: [{ id: "pin1" }] },
-      { id: "b", items: [{ id: "photo2" }] },
+      { id: "a", blocks: [{ id: "pin1" }] },
+      { id: "b", blocks: [{ id: "photo2" }] },
     ],
   };
 

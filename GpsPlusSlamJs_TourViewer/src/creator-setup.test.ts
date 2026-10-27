@@ -37,14 +37,24 @@ import {
   deletedKey,
   META_KEY,
   objectKey,
+  parseDraftObject,
   photoKey,
   readDraft,
   visitKey,
 } from "./draft-persistence.js";
 import { serializeVisitLogEntry, type VisitLogEntry } from "./visit-log.js";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  tourObjectRecord,
+  type TourObject,
+  type TourPin,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { ObjectListHandlers } from "./object-list.js";
-import { asHosted, stationIdOf, tourOf } from "./test-support/v3-tour.js";
+import {
+  asHosted,
+  stationIdOf,
+  tourOf,
+  withCaption,
+} from "./test-support/tour-of.js";
 import { SETTINGS_KEY } from "./tour-document-draft.js";
 import { manifestToWrite } from "./tour-document.js";
 
@@ -70,6 +80,11 @@ interface FakeEl {
   /** What the setup bound to the object list (M4), so a test can drive an
    *  edit or a delete the way the list's buttons do. */
   listHandlers: ObjectListHandlers | null;
+}
+
+/** `object` as a draft holds it on disk (`tourObjectRecord`). */
+function recordText(object: TourObject): string {
+  return JSON.stringify(tourObjectRecord(object));
 }
 
 function el(): FakeEl {
@@ -259,11 +274,12 @@ function memoryStore(
   };
 }
 
-function pin(id: string): TourObject {
+function pin(id: string): TourPin {
   return {
     id,
-    kind: "pin",
-    label: `pin ${id}`,
+    kind: "shortText",
+    view: "pin",
+    caption: `pin ${id}`,
     createdAtIso: "2026-09-10T00:00:01.000Z",
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
   };
@@ -432,7 +448,7 @@ describe("rejecting a draft deletes what was rejected, and nothing else", () => 
     // being modal.
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+      [objectKey("old-pin")]: recordText(pin("old-pin")),
     });
     const { dom, setup } = wire(store);
 
@@ -444,7 +460,7 @@ describe("rejecting a draft deletes what was rejected, and nothing else", () => 
 
     // This session places, AFTER the draft was read. In the app this is
     // `recordPlacement`; here the file is written the same way it would be.
-    await store.put(objectKey("mine"), JSON.stringify(pin("mine")));
+    await store.put(objectKey("mine"), recordText(pin("mine")));
 
     dom.draftDiscard.click();
     await settle();
@@ -471,7 +487,7 @@ describe("rejecting a draft deletes what was rejected, and nothing else", () => 
     // independently by both reviewers).
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("good")]: JSON.stringify(pin("good")),
+      [objectKey("good")]: recordText(pin("good")),
       // Not JSON the parser accepts.
       [objectKey("older-shape")]: JSON.stringify({ id: "older-shape" }),
       // Bytes with no record at all.
@@ -501,7 +517,7 @@ describe("rejecting a draft deletes what was rejected, and nothing else", () => 
     // caller should not have to know that an object is two things.
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("shot")]: JSON.stringify(pin("shot")),
+      [objectKey("shot")]: recordText(pin("shot")),
       [photoKey("shot")]: "bytes",
     });
     const { dom, setup } = wire(store);
@@ -529,7 +545,7 @@ describe("the rejection is committed by the meta write", () => {
     const { store, files } = memoryStore(
       {
         [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-        [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+        [objectKey("old-pin")]: recordText(pin("old-pin")),
         [photoKey("old-pin")]: "bytes",
       },
       { removeNeverSettles: true },
@@ -562,7 +578,7 @@ describe("the rejection is committed by the meta write", () => {
     const { store } = memoryStore(
       {
         [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-        [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+        [objectKey("old-pin")]: recordText(pin("old-pin")),
       },
       { removeNeverSettles: true },
     );
@@ -593,7 +609,7 @@ describe("the rejection is committed by the meta write", () => {
     const { store, files } = memoryStore(
       {
         [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-        [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+        [objectKey("old-pin")]: recordText(pin("old-pin")),
       },
       { putFails: true },
     );
@@ -632,7 +648,7 @@ describe("the rejection is committed by the meta write", () => {
     const { store, metaPuts } = memoryStore(
       {
         [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-        [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+        [objectKey("old-pin")]: recordText(pin("old-pin")),
       },
       { putFails: true },
     );
@@ -668,7 +684,7 @@ describe("the rejection is committed by the meta write", () => {
     const { store } = memoryStore(
       {
         [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-        [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+        [objectKey("old-pin")]: recordText(pin("old-pin")),
       },
       { putFails: true },
     );
@@ -714,7 +730,7 @@ describe("the rejection is committed by the meta write", () => {
       META_KEY,
       JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
     );
-    files.set(objectKey("old-pin"), JSON.stringify(pin("old-pin")));
+    files.set(objectKey("old-pin"), recordText(pin("old-pin")));
 
     setup.presentDraftForTour(TOUR);
     await settle();
@@ -762,7 +778,7 @@ describe("the rejection is committed by the meta write", () => {
       META_KEY,
       JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
     );
-    files.set(objectKey("old-pin"), JSON.stringify(pin("old-pin")));
+    files.set(objectKey("old-pin"), recordText(pin("old-pin")));
     setup.presentDraftForTour(TOUR);
     await settle();
     dom.draftDiscard.click();
@@ -797,7 +813,7 @@ describe("the rejection is committed by the meta write", () => {
       META_KEY,
       JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
     );
-    files.set(objectKey("old-pin"), JSON.stringify(pin("old-pin")));
+    files.set(objectKey("old-pin"), recordText(pin("old-pin")));
     setup.presentDraftForTour(TOUR);
     await settle();
     dom.draftDiscard.click();
@@ -849,7 +865,7 @@ describe("the rejection is committed by the meta write", () => {
       META_KEY,
       JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
     );
-    files.set(objectKey("old-pin"), JSON.stringify(pin("old-pin")));
+    files.set(objectKey("old-pin"), recordText(pin("old-pin")));
     setup.presentDraftForTour(TOUR);
     await settle();
     dom.draftDiscard.click();
@@ -889,7 +905,7 @@ describe("the rejection is committed by the meta write", () => {
       META_KEY,
       JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
     );
-    files.set(objectKey("old-pin"), JSON.stringify(pin("old-pin")));
+    files.set(objectKey("old-pin"), recordText(pin("old-pin")));
     setup.presentDraftForTour(TOUR);
     await settle();
     dom.draftDiscard.click();
@@ -922,9 +938,9 @@ describe("the rejection is committed by the meta write", () => {
         level: null,
         rejected: ["left-behind"],
       }),
-      [objectKey("left-behind")]: JSON.stringify(pin("left-behind")),
+      [objectKey("left-behind")]: recordText(pin("left-behind")),
       [photoKey("left-behind")]: "bytes",
-      [objectKey("alive")]: JSON.stringify(pin("alive")),
+      [objectKey("alive")]: recordText(pin("alive")),
     });
     const { dom, setup } = wire(store);
 
@@ -949,7 +965,7 @@ describe("the rejection is committed by the meta write", () => {
     const { store } = memoryStore(
       {
         [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-        [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+        [objectKey("old-pin")]: recordText(pin("old-pin")),
       },
       { removeNeverSettles: true },
     );
@@ -957,7 +973,7 @@ describe("the rejection is committed by the meta write", () => {
 
     setup.presentDraftForTour(TOUR);
     await settle();
-    await store.put(objectKey("mine"), JSON.stringify(pin("mine")));
+    await store.put(objectKey("mine"), recordText(pin("mine")));
     dom.draftDiscard.click();
     await settle();
 
@@ -974,7 +990,7 @@ describe("the spent-draft path", () => {
     // from the read now, so it cannot include a later placement.
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("hosted")]: JSON.stringify(pin("hosted")),
+      [objectKey("hosted")]: recordText(pin("hosted")),
     });
     const { ctx, dom, setup } = wire(store);
     // The hosted manifest already carries it, and the draft holds no
@@ -1011,7 +1027,7 @@ describe("the spent-draft path", () => {
     const { store, files } = memoryStore(
       {
         [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-        [objectKey("hosted")]: JSON.stringify(pin("hosted")),
+        [objectKey("hosted")]: recordText(pin("hosted")),
       },
       { removeNeverSettles: true },
     );
@@ -1036,7 +1052,7 @@ describe("the spent-draft path", () => {
     const { store, files } = memoryStore(
       {
         [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-        [objectKey("hosted")]: JSON.stringify(pin("hosted")),
+        [objectKey("hosted")]: recordText(pin("hosted")),
       },
       { putFails: true },
     );
@@ -1171,7 +1187,7 @@ describe("a draft offered while the AR session runs", () => {
     // creator would not see it and would place the same content again.
     const { store } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+      [objectKey("old-pin")]: recordText(pin("old-pin")),
     });
     const { ctx, dom, setup } = wire(store, { placeable: true });
     setup.presentDraftForTour(TOUR);
@@ -1228,7 +1244,7 @@ describe("work made before the tour's draft opened reaches it", () => {
     // left this session's measurement only in memory.
     const { store, codesPuts } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
-      [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+      [objectKey("old-pin")]: recordText(pin("old-pin")),
     });
     const { dom, setup } = wire(store, { placeable: true });
     setup.codes.setInHand({ id: "fresh", json: "{}" }, null);
@@ -1320,7 +1336,7 @@ describe("work made before the tour's draft opened reaches it", () => {
     await settle();
     // The visit is in the log now; an object of the same id reaches the
     // draft and is offered.
-    files.set(objectKey(SHARED), JSON.stringify(pin(SHARED)));
+    files.set(objectKey(SHARED), recordText(pin(SHARED)));
     dom.draftOffer.hidden = true;
     setup.presentDraftForTour(TOUR);
     await settle();
@@ -1377,7 +1393,7 @@ describe("the troubleshooting recording's log of a placement", () => {
     }[];
     expect(logged).toHaveLength(1);
     const payload = logged[0]!.payload;
-    expect(payload.object.kind).toBe("pin");
+    expect(payload.object.kind).toBe("shortText");
     // The fake reticle sits at world (1, 0, -2); the group is shifted 1 m.
     expect(payload.reticleOdomNue).toEqual([0, 0, -2]);
     expect(payload.arWorldGroupMatrix[12]).toBe(1);
@@ -1440,7 +1456,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
   // lost across a crash with nothing on screen saying so. A deletion had
   // no representation at all, so a crash brought the object back.
   const HOSTED = pin("hosted");
-  const EDITED: TourObject = { ...pin("hosted"), label: "the new text" };
+  const EDITED: TourObject = { ...pin("hosted"), caption: "the new text" };
   /** `object` as the document holds it: in the station it stands in
    *  (every object names its station). */
   const inItsStation = (object: TourObject): TourObject => ({
@@ -1451,7 +1467,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
   it("offers an edit of a hosted object as a change, and restores it in place of the hosted one", async () => {
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("hosted")]: JSON.stringify(EDITED),
+      [objectKey("hosted")]: recordText(EDITED),
     });
     const { ctx, dom, setup } = wire(store);
     ctx.tourDocument.open(tourOf([HOSTED]));
@@ -1492,13 +1508,13 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
   // by those lists alone, so Restore after a Finish brought back an older
   // version of a note the creator had changed or deleted here, and "Delete
   // it" rejected the live record of a changed one.
-  const LIVE: TourObject = { ...pin("hosted"), label: "typed here" };
+  const LIVE: TourObject = { ...pin("hosted"), caption: "typed here" };
 
   /** The tour's draft offered, an edit of the hosted note on disk. */
   async function offeredEdit() {
     const disk = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("hosted")]: JSON.stringify(EDITED),
+      [objectKey("hosted")]: recordText(EDITED),
     });
     const page = wire(disk.store);
     page.ctx.tourDocument.open(tourOf([HOSTED]));
@@ -1549,7 +1565,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     // (As written: the stored copy names its station.)
     expect(
       ctx.tourDocument.objects().find((o) => o.object.id === "hosted")?.object,
-    ).toMatchObject({ label: LIVE.label });
+    ).toMatchObject({ caption: LIVE.caption });
   });
 
   // Why: Restore leaves out what live work outranks, but its note counted
@@ -1558,7 +1574,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     const OTHER_PIN = pin("other");
     const disk = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("hosted")]: JSON.stringify(EDITED),
+      [objectKey("hosted")]: recordText(EDITED),
       [deletedKey("other")]: "1",
     });
     const page = wire(disk.store);
@@ -1592,7 +1608,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
 
     dom.draftDiscard.click();
     await settle();
-    expect(JSON.parse(String(files.get(objectKey("hosted"))))).toEqual(
+    expect(parseDraftObject(String(files.get(objectKey("hosted"))))).toEqual(
       inItsStation(LIVE),
     );
     expect(rejectedOf(files.get(META_KEY) as string)).not.toContain("hosted");
@@ -1625,9 +1641,9 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     page.dom.draftDiscard.click();
     await settle();
     expect(disk.files.has(deletedKey("hosted"))).toBe(false);
-    expect(JSON.parse(String(disk.files.get(objectKey("hosted"))))).toEqual(
-      inItsStation(LIVE),
-    );
+    expect(
+      parseDraftObject(String(disk.files.get(objectKey("hosted")))),
+    ).toEqual(inItsStation(LIVE));
 
     // The reload: the edit is offered as the change it is, never a delete.
     const again = wire(disk.store);
@@ -1680,7 +1696,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     // so the sweep would take the live edit's file with it.
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("hosted")]: JSON.stringify(HOSTED),
+      [objectKey("hosted")]: recordText(HOSTED),
     });
     const { ctx, setup } = wire(store);
     ctx.tourDocument.open(tourOf([HOSTED]));
@@ -1690,7 +1706,7 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
 
     expect(files.has(objectKey("hosted"))).toBe(true);
     // The live edit's content, not the spent draft's (M4 review #2).
-    expect(JSON.parse(String(files.get(objectKey("hosted"))))).toEqual(
+    expect(parseDraftObject(String(files.get(objectKey("hosted"))))).toEqual(
       inItsStation(EDITED),
     );
     const meta = JSON.parse(String(files.get(META_KEY))) as {
@@ -1717,8 +1733,8 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
   const NEW_TEXT = "the new text";
   // An edit starts from the hosted pin as its station reads it back
   // (version 3).
-  const EDITED: TourObject = { ...asHosted(HOSTED), label: NEW_TEXT };
-  const OLDER: TourObject = { ...HOSTED, label: "an older edit" };
+  const EDITED: TourObject = withCaption(asHosted(HOSTED), NEW_TEXT);
+  const OLDER: TourObject = { ...HOSTED, caption: "an older edit" };
   const PUBLISHED = tourOf([HOSTED]);
 
   /** Open the tour on `store` in a fresh page (a reopen after the tab
@@ -1735,7 +1751,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
   /** The text of the object file the draft holds for `id`. */
   function onDisk(files: Map<string, unknown>, id: string): unknown {
     const text = files.get(objectKey(id));
-    return typeof text === "string" ? JSON.parse(text) : undefined;
+    return typeof text === "string" ? parseDraftObject(text) : undefined;
   }
 
   it("keeps an edit of an object a spent draft had rejected, across a crash", async () => {
@@ -1743,7 +1759,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
     // and its ids are rejected. Then the creator edits the hosted pin.
     const { store } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("hosted")]: JSON.stringify(HOSTED),
+      [objectKey("hosted")]: recordText(HOSTED),
     });
     const first = await reopen(store);
     first.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
@@ -1760,7 +1776,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
   it("keeps a deletion of an object a spent draft had rejected, across a crash", async () => {
     const { store } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("hosted")]: JSON.stringify(HOSTED),
+      [objectKey("hosted")]: recordText(HOSTED),
     });
     const first = await reopen(store);
     first.dom.objectList.listHandlers!.remove("hosted");
@@ -1775,7 +1791,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
   it("keeps an edit made after 'Delete it' rejected the same object", async () => {
     const { store } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("hosted")]: JSON.stringify(OLDER),
+      [objectKey("hosted")]: recordText(OLDER),
     });
     const first = await reopen(store);
     expect(first.dom.draftOffer.hidden, "the older edit is offered").toBe(
@@ -1799,7 +1815,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
     // see the id is no longer rejected, or it deletes the new edit.
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("hosted")]: JSON.stringify(OLDER),
+      [objectKey("hosted")]: recordText(OLDER),
     });
     const first = await reopen(store);
     first.dom.draftDiscard.click();
@@ -1826,7 +1842,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
       level: null,
       rejected: ["hosted"],
     }),
-    [objectKey("placed")]: JSON.stringify(pin("placed")),
+    [objectKey("placed")]: recordText(pin("placed")),
   };
 
   it("keeps an edit of an id a discard rejected, made after a reload", async () => {
@@ -1903,7 +1919,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
     const { store } = memoryStore(
       {
         [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-        [objectKey("hosted")]: JSON.stringify(OLDER),
+        [objectKey("hosted")]: recordText(OLDER),
       },
       {
         // The sweep's three removes (record, bytes, tombstone).
@@ -1930,7 +1946,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
     // it" on a draft holding an edit rejects that edit for good.
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("hosted")]: JSON.stringify(OLDER),
+      [objectKey("hosted")]: recordText(OLDER),
     });
     const first = await reopen(store);
     first.dom.draftDiscard.click();
@@ -1943,7 +1959,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
   it("writes an edit made while the draft opened over the older edit the draft held", async () => {
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("hosted")]: JSON.stringify(OLDER),
+      [objectKey("hosted")]: recordText(OLDER),
     });
     const { ctx, setup } = wire(store);
     ctx.tourDocument.open(PUBLISHED);
@@ -1958,7 +1974,7 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
   it("writes a deletion made while the draft opened over the older edit the draft held", async () => {
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
-      [objectKey("hosted")]: JSON.stringify(OLDER),
+      [objectKey("hosted")]: recordText(OLDER),
     });
     const { ctx, setup } = wire(store);
     ctx.tourDocument.open(PUBLISHED);
@@ -2086,7 +2102,7 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
     const { store, metaPuts, codesPuts } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
       [CODES_KEY]: JSON.stringify({ level: a, levels: [a, b] }),
-      [objectKey("placed")]: JSON.stringify(pin("placed")),
+      [objectKey("placed")]: recordText(pin("placed")),
     });
     const { dom, setup } = wire(store);
     const liveA = { id: a.id, json: '{"a":"live"}' };
@@ -2119,7 +2135,7 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
     const { store, files, codesPuts } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
       [CODES_KEY]: JSON.stringify({ level: a, levels: [a, b] }),
-      [objectKey("placed")]: JSON.stringify(pin("placed")),
+      [objectKey("placed")]: recordText(pin("placed")),
     });
     const { dom, setup } = wire(store);
     setup.presentDraftForTour(TOUR);
@@ -2147,7 +2163,7 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
       {
         [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
         [CODES_KEY]: JSON.stringify({ level: a, levels: [a, b] }),
-        [objectKey("placed")]: JSON.stringify(pin("placed")),
+        [objectKey("placed")]: recordText(pin("placed")),
       },
       { failKeys: (key) => refuseMeta && key === META_KEY },
     );
@@ -2183,7 +2199,7 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
         rejected: ["hosted"],
       }),
       [CODES_KEY]: JSON.stringify({ level: a, levels: [a] }),
-      [objectKey("placed")]: JSON.stringify(pin("placed")),
+      [objectKey("placed")]: recordText(pin("placed")),
     });
     const page = wire(store);
     page.ctx.tourDocument.open(PUBLISHED);
@@ -2236,7 +2252,7 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
     const { store, files, metaPuts, codesPuts } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
       [CODES_KEY]: JSON.stringify({ level: a, levels: [a] }),
-      [objectKey("hosted")]: JSON.stringify(HOSTED),
+      [objectKey("hosted")]: recordText(HOSTED),
     });
     const { ctx, dom, setup } = wire(store);
     ctx.tourDocument.open(PUBLISHED);
@@ -2273,7 +2289,7 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
       const { store, files, metaPuts } = memoryStore({
         [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
         [CODES_KEY]: JSON.stringify({ level: a, levels: [a] }),
-        [objectKey("hosted")]: JSON.stringify(HOSTED),
+        [objectKey("hosted")]: recordText(HOSTED),
       });
       const { ctx, dom, setup } = wire(store);
       ctx.tourDocument.open(PUBLISHED);
@@ -2772,7 +2788,7 @@ describe("'New station here' (D8)", () => {
   function stationsOf(ctx: ReturnType<typeof createTourViewerSession>) {
     return (
       manifestToWrite(ctx.tourDocument.state())?.stations.map((s) =>
-        s.items.map((i) => (i.kind === "pin" ? i.label : i.id)),
+        s.blocks.map((i) => (i.kind === "shortText" ? i.caption : i.id)),
       ) ?? []
     );
   }

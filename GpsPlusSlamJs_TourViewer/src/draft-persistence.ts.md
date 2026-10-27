@@ -205,12 +205,14 @@ are the framework's.
   shuffle between restores would produce a different `tour.json` each time
   for no reason a reader could see.
 - **A draft holds world poses, never a tour file** (tour kit plan K1, §8
-  D7; tour editor plan W3). A draft object is validated by the framework's
-  world-view reader (`parseTourObject`), whose pin and photo shapes have
-  not changed since version 1. So a draft written by a pre-K1 app loads
-  unchanged and needs no migration, and its Finish writes version 3, with
-  every object in a station (`draft-persistence.test.ts` loads one from
-  the files the old app wrote).
+  D7; tour editor plan W3). A draft object is the framework's `format: 4`
+  record (`tourObjectRecord`: the block without its local pose, a
+  picture's image asset entry, the geo pose and the station), validated by
+  the framework's world-view reader (`parseTourObject`). A record an
+  earlier app wrote (a pin with a `label`, a photo with its image path)
+  reads as nothing: its tour is in an older format, which the app refuses,
+  deleting that tour's draft with it. The Finish writes version 4, with
+  every object in a station (`draft-persistence.test.ts`).
 
 ## Examples
 

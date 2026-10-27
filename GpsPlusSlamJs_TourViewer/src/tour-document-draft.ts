@@ -14,7 +14,6 @@ import { parseGeoPose } from "gps-plus-slam-app-framework/ar/qr/geo-pose";
 import {
   createEmptyTourManifest,
   parseTourManifest,
-  tourStationRecord,
   type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_ID_PATTERN } from "gps-plus-slam-app-framework/ar/tour-archive";
@@ -149,9 +148,9 @@ function idOf(entry: unknown): string | undefined {
   return typeof id === "string" && TOUR_ID_PATTERN.test(id) ? id : undefined;
 }
 
-/** One frame, read with `assets` for its steps; undefined when it does
- *  not read. Its card image is read apart: the probe holds no items, so a
- *  photo of the station would read as gone - a well-formed id is kept,
+/** One frame, read with `assets` for its story; undefined when it does
+ *  not read. Its card image is read apart: the probe holds no free
+ *  blocks, so a captured photo of the station would read as gone - a well-formed id is kept,
  *  and the document shows and writes it only while it names a picture
  *  (its effective image). */
 function parseFrame(
@@ -164,7 +163,7 @@ function parseFrame(
     const probe = parseTourManifest({
       ...createEmptyTourManifest(),
       assets,
-      stations: [{ ...(entry as object), items: [] }],
+      stations: [entry],
     });
     const frame = framesOf(probe).find((f) => f.id === id);
     const image = (entry as { image?: unknown }).image;
@@ -258,27 +257,17 @@ export function parseSettingsRecord(
   }
 }
 
-/** A settings record as a draft stores it: its frames in the tour file's
- *  shape (a step's action under `block`, `tourStationRecord`), every
- *  other field and the key order as they are. `parseSettingsRecord` reads
- *  a frame as the format reads a station, so a frame stored in the
- *  reader's own shape would be lost; and a draft stored before reads the
- *  same as one stored now. */
+/** A settings record as a draft stores it: the record as it is, its
+ *  frames already in the tour file's shape (the step's `action` is the
+ *  file's own key), which `parseSettingsRecord` reads as the format reads
+ *  a station. */
 export function settingsRecordText<
   R extends Pick<
     TourSettingsRecord,
     "needsNoGps" | "createdStations" | "frames"
   >,
 >(record: R): string {
-  return JSON.stringify({
-    ...record,
-    ...(record.createdStations === undefined
-      ? {}
-      : { createdStations: record.createdStations.map(tourStationRecord) }),
-    ...(record.frames === undefined
-      ? {}
-      : { frames: record.frames.map(tourStationRecord) }),
-  });
+  return JSON.stringify(record);
 }
 
 /** The codes a draft keeps (plan M3b): the code in hand, and every code

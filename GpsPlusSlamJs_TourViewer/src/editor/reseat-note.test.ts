@@ -16,7 +16,7 @@ import type {
 import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
 
 // Activates the licence the geodesy below needs (as every v3 tour test).
-import "../test-support/v3-tour.js";
+import "../test-support/tour-of.js";
 import {
   documentObjects,
   initialTourDocumentState,
@@ -42,7 +42,7 @@ function station(id: string, north: number, title?: string): TourStation {
     foundRadiusM: 10,
     hint: "arrow",
     steps: [],
-    items: [],
+    blocks: [],
   };
 }
 
@@ -52,7 +52,7 @@ function tour(): TourDocumentState {
     initialTourDocumentState,
     act.opened({
       manifest: {
-        version: 3,
+        version: 4,
         minor: 0,
         order: "fixed",
         assets: [],
@@ -65,8 +65,9 @@ function tour(): TourDocumentState {
     act.placed({
       object: {
         id: "p",
-        kind: "pin",
-        label: "Look\nup",
+        kind: "shortText",
+        view: "pin",
+        caption: "Look\nup",
         createdAtIso: "2026-10-26T00:00:00.000Z",
         geo: spot(5),
         station: "s",

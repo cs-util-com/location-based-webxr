@@ -10,10 +10,7 @@
 
 import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
-import {
-  tourItems,
-  type TourManifest,
-} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { signedManifestFilesOf } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
   LEGACY_SESSION_IMAGES_DIR,
@@ -26,7 +23,8 @@ import { tourUnfinished } from "./tour-unfinished.js";
 /**
  * The entries of `entryNames` a visitor reads: `tour.json`, every code
  * level, the signed list and its signature, and the content files the
- * manifest names (under `wrap`, the tour's folder). Nothing else: a
+ * manifest's assets name (under `wrap`, the tour's folder; a captured
+ * photo's file is its picture's asset). Nothing else: a
  * visitor never shows the zip's other images, nor a recorded frame - not
  * even one a file's debug capture spots name.
  */
@@ -38,9 +36,6 @@ export function visitorEntryNames(
   const named = new Set<string>([
     `${wrap}${TOUR_MANIFEST_ENTRY}`,
     ...signedManifestFilesOf(entryNames),
-    ...tourItems(manifest).flatMap((o) =>
-      o.kind === "photo" ? [`${wrap}${o.image}`] : [],
-    ),
     ...manifest.assets.map((a) => `${wrap}${a.path}`),
   ]);
   return new Set(

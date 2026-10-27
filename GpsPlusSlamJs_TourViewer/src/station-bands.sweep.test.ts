@@ -160,7 +160,7 @@ const JUDGED_RADII = [5, STATION_RADIUS_M];
 const CODE_ACCURACIES = [1, 3, 5];
 const JUDGED_STEP = {
   id: "s",
-  action: { kind: "text", text: "Hi" },
+  action: { kind: "show", block: "hi" },
   advance: { mode: "tap" },
 } as const;
 
@@ -173,7 +173,7 @@ function judgedStation(foundRadiusM: number): TourStation {
     foundRadiusM,
     hint: "arrow",
     steps: [JUDGED_STEP],
-    items: [],
+    blocks: [],
   };
 }
 

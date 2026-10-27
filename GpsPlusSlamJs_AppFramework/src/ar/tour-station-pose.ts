@@ -1,21 +1,21 @@
 /**
- * A station's frame in `tour.json` version 3 (tour editor plan
- * 2026-10-17-1816, W3): converts an item's LOCAL pose (relative to its
- * station) to its world geo pose and back, and gives the WORLD VIEW of a
- * tour - every pin, photo and model with its geo pose and the station
- * holding it - which a viewer places and a creator's drafts hold.
+ * A station's frame in `tour.json` version 4: converts a block's LOCAL
+ * pose (relative to its station) to its world geo pose and back, and gives
+ * the WORLD VIEW of a tour - every FREE block (a pin, a picture's plane, a
+ * placed model) with its geo pose and the station holding it - which a
+ * viewer places and a creator's drafts hold.
  *
  * THE FRAME. A station's geo pose is the origin of a local tangent frame:
  * North, Up and East metres from its latitude and longitude (Up is the
  * absolute altitude, the stack's NUE convention: `calcRelativeCoordsInMeters`
  * with a zero altitude term), turned by the station's rotation against
- * north. An item at local pose `(p, q)` stands at `R_s p` from the station
+ * north. A block at local pose `(p, q)` stands at `R_s p` from the station
  * with the rotation `R_s q`. Both directions use the same geodesy the level
  * files and the creator's minting use (`calcRelativeCoordsInMeters`,
  * `mintQrGeoPose`), so a geo pose converted to local and back lands within
  * micrometres of itself (the property test bounds it), and a local pose
- * never changes unless an editor sets a new one (D17: a station moves
- * rigidly, its items' local poses stay bit-identical).
+ * never changes unless an editor sets a new one (a station moves rigidly,
+ * its blocks' local poses stay bit-identical).
  *
  * Double precision throughout: `qr-pose.ts`'s `composePose` goes through
  * gl-matrix's float32 arrays, which would cost centimetres at an absolute
@@ -33,8 +33,11 @@ import {
   renormalizeUnitQuaternion,
 } from './qr/qr-geo-pose-minting.js';
 import { rotateVectorByQuaternion } from './qr/qr-pose.js';
-import type { TourItem, TourLocalPose } from './tour-items.js';
+import type { TourAsset } from './tour-assets.js';
+import type { TourBlock } from './tour-blocks.js';
+import type { TourLocalPose } from './tour-items.js';
 import type { TourManifest, TourObject } from './tour-manifest.js';
+import { tourShownBlockIds } from './tour-story.js';
 
 const IDENTITY: Quaternion = [0, 0, 0, 1];
 
@@ -74,7 +77,7 @@ export function geoPoseRotation(geo: QrGeoPose): Quaternion {
 }
 
 /**
- * Where a geo pose stands in a station's frame: the local pose an item
+ * Where a geo pose stands in a station's frame: the local pose a block
  * placed at `geo` gets in the station at `station`.
  */
 export function localPoseOf(geo: QrGeoPose, station: QrGeoPose): TourLocalPose {
@@ -87,7 +90,7 @@ export function localPoseOf(geo: QrGeoPose, station: QrGeoPose): TourLocalPose {
   const inverse = conjugate(geoPoseRotation(station));
   // Up as the difference of the two altitudes, in double precision: the
   // core's relative coordinates are float32, which rounds an absolute
-  // altitude by up to 30 micrometres - noise on every save of an item.
+  // altitude by up to 30 micrometres - noise on every save of a block.
   const [n, u, e] = rotateVectorByQuaternion(inverse, [
     nue[0],
     geo.alt - station.alt,
@@ -100,7 +103,7 @@ export function localPoseOf(geo: QrGeoPose, station: QrGeoPose): TourLocalPose {
   };
 }
 
-/** The geo pose of an item at local pose `pose` in the station at
+/** The geo pose of a block at local pose `pose` in the station at
  *  `station`, minted as the creator's placements are. */
 export function itemGeoPose(
   pose: TourLocalPose,
@@ -115,22 +118,55 @@ export function itemGeoPose(
   });
 }
 
-/** An item in the world: its fields, its geo pose and its station. */
-function placed(item: TourItem, station: { id: string; geo: QrGeoPose }) {
-  const { pose, ...fields } = item;
+/** A free block in the world: its fields, its geo pose and its station,
+ *  and a picture's image asset (`assets`, which the reader resolved). */
+function placed(
+  block: TourBlock,
+  station: { readonly id: string; readonly geo: QrGeoPose },
+  assets: ReadonlyMap<string, TourAsset>
+): TourObject {
+  const { pose, ...fields } = block;
+  const imageAsset =
+    block.kind === 'picture' ? assets.get(block.image) : undefined;
   return {
     ...fields,
     geo: itemGeoPose(pose, station.geo),
     station: station.id,
+    ...(imageAsset === undefined ? {} : { imageAsset }),
   } as TourObject;
 }
 
-/** The tour's pins and photos in the world, each naming its station, in
- *  station order. */
+/** A station's FREE blocks: the ones no step of its story shows, which
+ *  stand in the world while the station is shown. */
+export function tourFreeBlocks(station: {
+  readonly blocks: readonly TourBlock[];
+  readonly steps: Parameters<typeof tourShownBlockIds>[0];
+}): TourBlock[] {
+  const shown = tourShownBlockIds(station.steps);
+  return station.blocks.filter((b) => !shown.has(b.id));
+}
+
+/** The tour's free blocks in the world, each naming its station, in
+ *  station order (a reader settled each one's world view). */
 export function tourObjects(
-  manifest: Pick<TourManifest, 'stations'>
+  manifest: Pick<TourManifest, 'stations' | 'assets'>
 ): TourObject[] {
+  const assets = new Map(manifest.assets.map((a) => [a.id, a]));
   return manifest.stations.flatMap((station) =>
-    station.items.map((item) => placed(item, station))
+    tourFreeBlocks(station).map((block) => placed(block, station, assets))
   );
+}
+
+/** The free block an object is, at `pose` in its station: the object
+ *  without its geo pose, its station and a picture's inline asset (the
+ *  tour lists the asset). */
+export function tourObjectBlock(
+  object: TourObject,
+  pose: TourLocalPose
+): TourBlock {
+  const { geo: _geo, station: _station, ...rest } = object;
+  const { imageAsset: _asset, ...fields } = rest as typeof rest & {
+    imageAsset?: TourAsset;
+  };
+  return { ...fields, pose };
 }

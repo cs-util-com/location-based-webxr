@@ -30,9 +30,11 @@ far the visitor is from each offered station. Plan:
     fresh read (kept only while a station asked for it);
   - `heldBytes()`; `sync()` - drop everything now if the tour changed or
     closed (every other call checks too).
-- `stationAssetIds(station)` - the asset ids a story reads, in step order,
-  once each (figures and voices, pictures, sounds, models; never a video,
-  K4 review R3).
+- `stationAssetIds(station)` - the asset ids a story reads: the blocks
+  its `show` steps name, in step order, once each (pictures, sounds,
+  voices; a figure or a model only in its `stage` view, the one the story
+  draws; never a video nor its poster, K4 review R3). A station's free
+  blocks are the world's, never read here.
 - `decodeDivisor(size)` - the divisor that brings a figure of this size
   within `MAX_DECODE_SIDE_PX` (a size is required: K4 review R17 removed
   the "no size: 1" case).
@@ -111,7 +113,9 @@ const blob = await prefetch.load(asset.path); // a hit when it was prefetched
   never over the cap or unmeasured (R2); the asset list, the decode
   divisor, the
   radius, one read at a time, joining and hitting, a story-only read not
-  kept, a failed read not kept, never a video (R3), offline not retried for
+  kept, a failed read not kept, never a video nor its poster (R3), a
+  figure or a model only in its stage view and a voice in either, offline
+  not retried for
   the same station (R4), a shared asset held until both stations are done
   (R11), kept across a session end and dropped at a tour close (R15), the
   budget and its release order, a full budget not re-read, a station

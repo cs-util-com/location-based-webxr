@@ -25,6 +25,7 @@ import { groundHit } from "gps-plus-slam-globe/editor";
 
 import type { GroundPlace } from "../editor/editor-shell/scene-menu.js";
 import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
+import { worldBlocks } from "../tour-document.js";
 import { EDITOR_CAMERA } from "./editor3d-camera.js";
 import {
   clampedPose,
@@ -178,7 +179,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       };
     }
     for (const station of tour.stations) {
-      const item = station.items.find((i) => i.id === selection);
+      const item = worldBlocks(station).find((i) => i.id === selection);
       if (item === undefined) continue;
       const geo = itemGeoPose(item.pose, station.geo);
       const c = worldOf({ ...geo, alt: world.groundAt(geo) ?? geo.alt });
@@ -186,7 +187,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
         kind: "item",
         id: item.id,
         geo,
-        sizeM: item.kind === "model" ? item.sizeM : null,
+        sizeM: item.kind === "model" ? (item.sizeM ?? null) : null,
         centre: { x: c.x, y: c.y, z: c.z },
       };
     }

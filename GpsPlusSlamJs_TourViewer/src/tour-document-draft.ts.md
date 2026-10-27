@@ -46,26 +46,25 @@ createdStations?, handMadeStations?, frames?, order?, deletedStations? }`
   namespace, on both pages; `readDraft` skips it.
 - `settingsRecordText(record)` - the text a draft stores for a settings
   record (both pages write through it): `JSON.stringify` of the record
-  with its `createdStations` and `frames` in the tour file's shape
-  (`tourStationRecord`: a step's action under the file's key `block`),
-  every other field and the key order as they are. `parseSettingsRecord`
-  reads a frame as the format reads a station, so a frame stored in the
-  reader's own shape (`action`) would be lost, and drafts stored before
-  read the same as ones stored now.
+  as it is. Its `createdStations` and `frames` are already in the tour
+  file's shape (a frame is a station with its story blocks, a step's
+  `action` the file's own key), which `parseSettingsRecord` reads as the
+  format reads a station.
 - `parseSettingsRecord(text, against?)` - a stored record, or undefined
   when it does not read (a bad station pose or detail costs the record,
   never the objects beside it). `against` is the opened tour: its
   assets are what a story step may name (without it, a frame whose step
   names an asset is lost). The created frames and the `frames` are read
   one by one, in one pass, as the format reads a station
-  (`parseTourManifest`, without items, alone: a station names no other,
+  (`parseTourManifest`, without free blocks, alone: a station names no other,
   so no frame depends on a sibling); of two under one id the first is
   kept. A frame that does not read is lost, and only it - the objects
   naming it are seated by the station rule as they come back. A `next`
   or a quiz `route` an older build stored is ignored by that reader, so
   it neither costs the frame nor survives the read.
-  The format's reader drops a card image naming a photo (the probe holds
-  no items), so a well-formed `image` id of the record is put back on the
+  The format's reader drops a card image naming a captured photo not yet
+  written (the probe holds no free blocks, and its assets are the opened
+  tour's), so a well-formed `image` id of the record is put back on the
   frame it read from: a copied station's card showing its own copied
   photo comes back with it. `deletedStations` and `order` keep the
   well-formed ids, once each.

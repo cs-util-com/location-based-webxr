@@ -7,10 +7,8 @@
  */
 
 import { tourCoverEntry } from "gps-plus-slam-app-framework/ar/tour-details";
-import {
-  tourItems,
-  type TourManifest,
-} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import { NOT_FINISHED, tourUnfinished } from "./tour-unfinished.js";
 
@@ -60,7 +58,7 @@ const NO_TOUR: VisitorStartView = {
 /** The chosen cover, else the first placed photo; never a debug camera
  *  capture (a visitor never sees one). */
 function coverPathOf(manifest: TourManifest): string | null {
-  const items = tourItems(manifest);
+  const items = tourObjects(manifest);
   const chosen = tourCoverEntry({
     objects: items,
     assets: manifest.assets,
@@ -68,7 +66,8 @@ function coverPathOf(manifest: TourManifest): string | null {
   });
   if (chosen !== null) return chosen;
   for (const object of items) {
-    if (object.kind === "photo") return object.image;
+    if (object.kind === "picture" && object.imageAsset !== undefined)
+      return object.imageAsset.path;
   }
   return null;
 }

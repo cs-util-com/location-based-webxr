@@ -114,11 +114,12 @@ async function twoPinTour() {
     foundRadiusM: 25,
     hint: "arrow",
     steps: [],
-    items: [
+    blocks: [
       {
         id: `p${id}`,
-        kind: "pin",
-        label: `Pin ${id}`,
+        kind: "shortText",
+        view: "pin",
+        caption: `Pin ${id}`,
         createdAtIso: "2026-10-25T09:00:00.000Z",
         pose: { position: [5, 1.5, 0], rotation: [0, 0, 0, 1] },
       },
@@ -242,7 +243,7 @@ test("a station's name, description and radius typed in the inspector are one st
     "1 item stands outside the circle: visitors see it only from inside the circle.",
   );
   expect(
-    (await stationNow(page, "a")).items.map((/** @type {any} */ i) => i.id),
+    (await stationNow(page, "a")).blocks.map((/** @type {any} */ i) => i.id),
   ).toEqual(["pa"]);
 
   // A value that is no number is said, and writes nothing.
@@ -318,7 +319,7 @@ test("Put items on the ground, Put on the ground, Add pin, a pin's text and a ty
   ).toBeVisible();
   expect(await revision(page)).toBe(start + 1);
   const anchor = (await stationNow(page, "a")).geo.alt;
-  expect((await stationNow(page, "a")).items[0].pose.position[1]).toBeCloseTo(
+  expect((await stationNow(page, "a")).blocks[0].pose.position[1]).toBeCloseTo(
     0,
     1,
   );
@@ -327,7 +328,7 @@ test("Put items on the ground, Put on the ground, Add pin, a pin's text and a ty
   await expect(act(page, "ground-items")).toBeDisabled();
   await page.locator("#studio-undo").click();
   await expect
-    .poll(async () => (await stationNow(page, "a")).items[0].pose.position[1])
+    .poll(async () => (await stationNow(page, "a")).blocks[0].pose.position[1])
     .toBeCloseTo(1.5, 1);
 
   // Station b stands 3 m over the ground; locked, its own Put on the
@@ -375,7 +376,7 @@ test("Put items on the ground, Put on the ground, Add pin, a pin's text and a ty
   expect(await revision(page)).toBe(before + 4);
   const pin = await selected(page);
   expect(
-    (await stationNow(page, "b")).items.map((/** @type {any} */ i) => i.id),
+    (await stationNow(page, "b")).blocks.map((/** @type {any} */ i) => i.id),
   ).toContain(pin);
   await expect(field(page, "title")).toHaveValue("New pin 2");
   await field(page, "title").fill("Look up");
@@ -383,9 +384,9 @@ test("Put items on the ground, Put on the ground, Add pin, a pin's text and a ty
   await expect
     .poll(
       async () =>
-        (await stationNow(page, "b")).items.find(
+        (await stationNow(page, "b")).blocks.find(
           (/** @type {any} */ i) => i.id === pin,
-        )?.label,
+        )?.caption,
     )
     .toBe("Look up");
   expect(await revision(page)).toBe(before + 5);
@@ -446,7 +447,7 @@ test("Put items on the ground, Put on the ground, Add pin, a pin's text and a ty
     }),
   ).toBeVisible();
   const home = (await tourNow(page)).stations.find((/** @type {any} */ s) =>
-    s.items.some((/** @type {any} */ i) => i.id === "pa"),
+    s.blocks.some((/** @type {any} */ i) => i.id === "pa"),
   );
   expect(home.id).not.toBe("a");
   await selectStation(page, home.id);

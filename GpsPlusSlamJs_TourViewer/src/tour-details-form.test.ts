@@ -21,7 +21,7 @@ import {
   type DetailsForm,
   type TourDetailFields,
 } from "./tour-details-form.js";
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 
 const form = (over: Partial<DetailsForm> = {}): DetailsForm => ({
   name: "",

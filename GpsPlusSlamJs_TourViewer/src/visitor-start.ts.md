@@ -16,16 +16,17 @@ plus a small wiring that writes the page and loads the photo from the zip.
   - `title`: the manifest's `title`, trimmed; `"An AR tour"` when it has
     none, an empty one, or no manifest.
   - `subline`: `"N places to discover"` (`"1 place …"`): the tour's
-    stations (the pins and photos they hold are not places of their own; since version 3 every one of them is in a
-    station). `"This tour is not finished yet."`
+    stations (the pins and photos they hold are not places of their own;
+    every one of them is in a station). `"This tour is not finished yet."`
     for a tour that is not (`tour-unfinished.ts`: no `tour.json`, or no
     station): the printed code may point at the hosted file before its
     first Finish, and that is said plainly, not as an error.
   - `description`: the manifest's `description` (W2 of the tour editor
     plan 2026-10-17-1816), trimmed; `null` for none.
   - `coverPath`: the cover the creator chose (`cover`, W2; its entry by
-    the framework's `tourCoverEntry`), else the first placed photo's
-    `image` (in station order, `tourItems`), else `null`. Never a debug
+    the framework's `tourCoverEntry`), else the first picture in the
+    world's image file (its `imageAsset` path, in station order,
+    `tourObjects`), else `null`. Never a debug
     camera capture: a visitor never sees one.
   - `pageTitle`: the tab's title, which a shared link's title shows too:
     the tour's name, else "Tour Viewer".

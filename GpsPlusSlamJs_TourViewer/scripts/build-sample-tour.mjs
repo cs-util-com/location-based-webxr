@@ -16,6 +16,10 @@ import {
   Uint8ArrayWriter,
   ZipWriter,
 } from "@zip.js/zip.js";
+import {
+  parseTourManifest,
+  serializeTourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const OUT = join(here, "..", "public", "samples", "marienplatz-tour.zip");
@@ -290,10 +294,11 @@ function geoAt(northM, eastM, altM) {
 export function buildSampleTour() {
   const knight = knightPng();
   return {
-    // Version 3 (tour editor plan W3): every station has a geo pose of its
-    // own and carries its items; this story places no pins or photos.
+    // Version 4: every station has a geo pose of its own, its story's
+    // blocks and the steps that show them; this story places no pins or
+    // photos in the world.
     tour: {
-      version: 3,
+      version: 4,
       minor: 0,
       title: "The knight of Marienplatz (sample)",
       order: "fixed",
@@ -315,21 +320,44 @@ export function buildSampleTour() {
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
+          blocks: [
+            {
+              id: "konrad-greets",
+              kind: "character",
+              view: "stage",
+              name: "Sir Konrad",
+              image: "knight",
+              caption:
+                "Halt, traveller! I guard this square. Will you help me find the old gate?",
+              voice: "fanfare",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+            {
+              id: "konrad-sighs",
+              kind: "longText",
+              view: "card",
+              title: "The column",
+              body: "Sir Konrad sighs. Come back when you can - the gate is a few steps east.",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+            {
+              id: "konrad-thanks",
+              kind: "longText",
+              view: "card",
+              title: "The column",
+              body: "Splendid! Walk about 30 m east, to the corner of the square.",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+          ],
           steps: [
             {
               id: "greet",
-              block: {
-                kind: "character",
-                name: "Sir Konrad",
-                image: "knight",
-                caption:
-                  "Halt, traveller! I guard this square. Will you help me find the old gate?",
-                voice: "fanfare",
-              },
+              action: { kind: "show", block: "konrad-greets" },
+              advance: { mode: "tap" },
             },
             {
               id: "ask",
-              block: {
+              action: {
                 kind: "choice",
                 prompt: "Help the knight?",
                 options: [
@@ -337,23 +365,19 @@ export function buildSampleTour() {
                   { id: "no", label: "Not right now", goto: "later" },
                 ],
               },
+              advance: { mode: "tap" },
             },
             {
               id: "later",
-              block: {
-                kind: "text",
-                text: "Sir Konrad sighs. Come back when you can - the gate is a few steps east.",
-              },
+              action: { kind: "show", block: "konrad-sighs" },
+              advance: { mode: "tap" },
             },
             {
               id: "thanks",
-              block: {
-                kind: "text",
-                text: "Splendid! Walk about 30 m east, to the corner of the square.",
-              },
+              action: { kind: "show", block: "konrad-thanks" },
+              advance: { mode: "tap" },
             },
           ],
-          items: [],
         },
         {
           id: "gate",
@@ -362,17 +386,23 @@ export function buildSampleTour() {
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
+          blocks: [
+            {
+              id: "old-arch",
+              kind: "model",
+              view: "stage",
+              asset: "arch",
+              title: "Here stood the old gate. Imagine riding through it.",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+          ],
           steps: [
             {
               id: "arch",
-              block: {
-                kind: "model",
-                asset: "arch",
-                caption: "Here stood the old gate. Imagine riding through it.",
-              },
+              action: { kind: "show", block: "old-arch" },
+              advance: { mode: "tap" },
             },
           ],
-          items: [],
         },
         {
           id: "steps",
@@ -381,18 +411,24 @@ export function buildSampleTour() {
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
+          blocks: [
+            {
+              id: "konrad-farewell",
+              kind: "character",
+              view: "stage",
+              name: "Sir Konrad",
+              image: "knight",
+              caption: "You found every place. Farewell, and thank you!",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+          ],
           steps: [
             {
               id: "farewell",
-              block: {
-                kind: "character",
-                name: "Sir Konrad",
-                image: "knight",
-                caption: "You found every place. Farewell, and thank you!",
-              },
+              action: { kind: "show", block: "konrad-farewell" },
+              advance: { mode: "tap" },
             },
           ],
-          items: [],
         },
       ],
     },
@@ -408,9 +444,11 @@ export async function buildSampleTourZip() {
   const { tour, files } = buildSampleTour();
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
   const options = { lastModDate: FIXED_DATE };
+  // Through the format's own reader and writer: a tour the reader
+  // refuses fails the build, not the phone.
   await writer.add(
     "tour.json",
-    new TextReader(`${JSON.stringify(tour, null, 2)}\n`),
+    new TextReader(serializeTourManifest(parseTourManifest(tour))),
     options,
   );
   for (const [name, bytes] of Object.entries(files)) {

@@ -4,85 +4,80 @@
 
 ### ⚠️ Breaking changes
 
+- **`tour.json` version 4: station blocks** (`ar/tour-manifest`,
+  `ar/tour-stations`, `ar/tour-blocks`, `ar/tour-story`, new
+  `ar/tour-assets` and `ar/tour-fields`). The next release of this
+  package is 2.0.0. A station holds `blocks` (short text, long text,
+  picture, video, audio, model, character, each in a view and at a local
+  pose) and `steps` (`show` a block, `choice`, `quiz`); a block no step
+  shows is free and stands in the world (`pin`, `plane`, `placed`).
+  Every media file is an asset, a captured photo's too, and block ids
+  and asset ids are separate namespaces. Removed: `TourItem` and its
+  kinds, `tourItems`, `parseTourContentFields`, `parseTourItems`,
+  `parseTourQuiz`, `parseTourStepAdvance`, `tourStationRecord`,
+  `tourManifestRecord`, `TourStepRecord`, `TourPhoto`,
+  `serializeTourStationContent`; `TOUR_MODEL_MIN_SIZE_M` and
+  `TOUR_MODEL_MAX_SIZE_M` moved to `ar/tour-blocks`, `parseTourAssets` and
+  `TourAsset` to `ar/tour-assets`, and the step, quiz and advance types to
+  `ar/tour-story` (all still re-exported by `ar/tour-manifest`). The world
+  view (`tourObjects`) is every free block with its geo pose (`TourPin`,
+  `TourPicture` with its image asset inline, `TourModel`); a creator's
+  draft stores one as a `TourObjectRecord` of format 4
+  (`tourObjectRecord`, `parseTourObject`). Versions 1, 2 and 3 are refused
+  with `TourManifestOlderFormatError` (the file's `version` on it): no
+  migration.
 - **No more routing: `order: "branch"`, a station's `next` and a quiz's
   `route` are gone** (`ar/tour-stations`, `ar/tour-manifest`). `TourOrder`
   is `'fixed' | 'any'`; `TourStation.next`, `TourQuiz.route` and the
   `TourQuizRoute` type are removed. A file of a minor this reader knows
-  that carries `"order": "branch"` is refused (`"order" must be "fixed"
-or "any"`); from a newer minor an unknown order still reads as `any`.
-  A station's `next` and a quiz's `route` are unknown fields now: ignored
-  whatever they name, and never written. Until a later version brings
-  rules that decide where a walk goes, no tour can branch its walk by an
-  answer. This breaks the API and the format and still ships in a minor
-  release, by decision, because no editor ever wrote these fields and no
-  tours carry them.
-- **A step's content is `TourStep.action`, typed `TourStepAction`**
-  (`ar/tour-stations`, `ar/tour-manifest`): it was `TourStep.block`, typed
-  `TourBlock`. Only the reader's in-memory names change: the file still
-  stores a step's content under `block`, the reader maps that key to
-  `action`, and the writer maps it back, so every file reads as before and
-  every tour is written with the same bytes. A writer of its own must map
-  to the file's shape with `tourStationRecord` (or `tourManifestRecord`,
-  new) before `JSON.stringify`; `TourStepRecord` types a step in that
-  shape. This breaks the API and still ships in a minor release, by
-  decision, because its one known consumer is this repository's Tour
-  Viewer, changed with it.
+  that carries `"order": "branch"` is refused in a sentence a creator can
+  act on (the tour lets answers choose the next station, which this
+  version no longer does; change its order to fixed or any); from a newer
+  minor an unknown order still reads as `any`. A station's `next` and a
+  quiz's `route` are unknown fields now: ignored whatever they name, and
+  never written. Until a later version brings rules that decide where a
+  walk goes, no tour can branch its walk by an answer.
+- **A step's content is `TourStep.action`, typed `TourStepAction`**: it
+  was `TourStep.block`, typed `TourBlock`. In version 4 the file stores it
+  under `action` too, so nothing maps a step on the way in or out.
 - **`captureSpots` and its types**: `TourManifest.captureSpots`,
   `TourCaptureSpots`, `TourCapture`, `TourCaptureGeo` and
   `tourCaptureGeos` (all since 1.27.0). A walk's camera captures are debug
   data, never tour content, and no app writes them any more. The reader
   now ignores a file's `captureSpots` like any unknown field (whatever its
-  shape; the stations it named stay as written), and the writer never
-  writes it. This breaks the API and still ships in a minor release, by
-  decision, because no tours exist yet that carry the field.
+  shape), and the writer never writes it.
 - **`TourManifestReadOptions.onDropped` hears a `TourManifestDrop`**
-  (`TourDetailsDrop | TourStationDrop`) instead of a `TourDetailsDrop`:
-  a reader now also reports a station description or card image it left
-  out (below). A handler typed for `TourDetailsDrop` alone no longer
-  compiles; narrow on `'station' in drop` (only a `TourStationDrop`
-  carries it). This breaks the API and still ships in a minor release, by
-  decision, because `onDropped` is new in 1.30.0 and its one known handler
-  is this repository's Tour Viewer, changed with it.
+  (`TourDetailsDrop | TourStationDrop | TourBlockDrop`) instead of a
+  `TourDetailsDrop`: a reader now also reports a station description or
+  card image it left out (below), and a block or block field. A handler
+  typed for `TourDetailsDrop` alone no longer compiles; narrow on
+  `'station' in drop` or `'block' in drop`.
 
 ### Added
 
-- **A placed 3D model, `tour.json` version 3 minor 1** (`ar/tour-items`,
-  `ar/tour-manifest`): a station item of kind `model` (`TourModelItem`; in
-  the world view `TourModel`) names a model asset of the tour (`asset`, a
-  `.glb` in `assets`) and carries its size in metres, `sizeM`: the scaled
+- **A placed 3D model**: a free block of kind `model` in the `placed` view
+  (`TourModelBlock`; in the world view `TourModel`) names a model asset of
+  the tour (a `.glb`) and carries its size in metres, `sizeM`: the scaled
   model's largest side, from `TOUR_MODEL_MIN_SIZE_M` (0.05) to
   `TOUR_MODEL_MAX_SIZE_M` (500), both inclusive. A size outside the bound
   is refused, never clamped; a lenient read (a newer minor) leaves out a
   model whose positive size lies beyond the bound, and nothing that is not
-  a positive finite number is a size at any minor. Pins and photos have no
-  size. The writer writes the lowest minor the tour needs (at least 1
-  while it carries a model), so a tour without models is written exactly
-  as before. Nothing renders a placed model yet. For older writers: npm
-  1.30.0 (minor 0) reads a minor 1 tour leniently, without its models, and
-  refuses to save it.
-- **A station's description and card image, `tour.json` version 3 minor
-  2** (`ar/tour-stations`, `ar/tour-manifest`): `TourStation.description`
+  a positive finite number is a size at any minor.
+- **A station's description and card image**: `TourStation.description`
   (the tour description's rule: trimmed, at most 2000 characters; blank
-  reads as none) and `TourStation.image` (the id of a photo item of that
-  station or an image asset of the tour). An image whose photo or asset
-  is gone is left out and reported through `onDropped` as a
-  `TourStationDrop` (`cause: 'station-image-gone'`), and the writer
-  accepts that drop as it does the cover's `image-gone`. An image that is
-  not an id, or a description that is not text or too long, is left out
-  and reported with no cause, as a malformed tour detail is, and the writer
-  refuses it. Neither ever fails a read. `TOUR_MANIFEST_MINOR` is 2; the
-  writer writes 2 only while a station carries either field, so every
-  other tour is written exactly as before. For older writers: npm 1.30.0
-  (minor 0) and viewers built since 3.1 (minor 1) read a 3.2 tour
-  leniently, without the two fields, and refuse to save it.
-
+  reads as none) and `TourStation.image` (the id of an image asset of the
+  tour, a captured photo's among them). An image whose asset is gone is
+  left out and reported through `onDropped` as a `TourStationDrop`
+  (`cause: 'station-image-gone'`), and the writer accepts that drop as it
+  does the cover's `image-gone`. An image that is not an id, or a
+  description that is not text or too long, is left out and reported with
+  no cause, as a malformed tour detail is, and the writer refuses it.
+  Neither ever fails a read.
 - **`TourManifest.tourId`**: an optional id a tour carries in its
   `tour.json`, minted once by the app that first saves the tour and kept
   by every save, so a tour opened from a file keeps one key across saves.
   Read when it follows the one id rule (`TOUR_ID_PATTERN`) and dropped
-  otherwise, at every minor; the writer refuses a bad one. No new minor:
-  older readers ignore the field and older writers drop it, which costs
-  only that key.
+  otherwise, at every minor; the writer refuses a bad one.
 - **`state/position-precision`** (deep import): one judgement, for every
   app, of how precise the position it works with is now.
   `positionPrecision(input)` takes the position the app judges
@@ -101,26 +96,26 @@ or "any"`); from a newer minor an unknown order still reads as `any`.
   yes at least 90 % right on an honest raw-fix accuracy report, in a row,
   a square grid and a hex grid of targets), a code judged as 1 m
   (`CODE_HELD_ERROR_M`). Reads no clock.
-- **`ar/tour-blocks`** (deep import): the station blocks of the coming
-  `tour.json` version 4, defined and validated ahead of the reader that
-  will use them (nothing reads or writes version 4 yet). Seven kinds
-  (`shortText`, `longText`, `picture`, `video`, `audio`, `model`,
-  `character`), each with a `view` from `TOUR_BLOCK_VIEWS` and a local
-  pose; caps per text in `TOUR_BLOCK_TEXT_RULES`, all counted by one
-  function, `tourTextCount` (code points after trimming and collapsing
-  whitespace; UTF-16 units for a long text's body). `readTourBlocks`,
-  `placeTourBlocks`, `checkTourBlockText`, `tourFloorView`,
-  `checkTourBlockIdsUnique`.
+- **`ar/tour-blocks`** (deep import): the station blocks of `tour.json`
+  version 4. Seven kinds (`shortText`, `longText`, `picture`, `video`,
+  `audio`, `model`, `character`), each with a `view` from
+  `TOUR_BLOCK_VIEWS` and a local pose; caps per text in
+  `TOUR_BLOCK_TEXT_RULES`, all counted by one function, `tourTextCount`
+  (code points after trimming and collapsing whitespace; UTF-16 units for
+  a long text's body), the one count an editor's counter shows.
+  `readTourBlocks`, `placeTourBlocks`, `checkTourBlockText`,
+  `tourFloorView`, `checkTourBlockIdsUnique`.
 - **`ar/tour-story`** (deep import): a version 4 station's story - `show`
   a block, a `choice` whose options jump to a step or continue, a `quiz`
   with no route - read together with its blocks
-  (`parseTourStationContent`, `serializeTourStationContent`).
-- **`parseTourQuiz` and `parseTourStepAdvance`** (`ar/tour-stations`):
-  the version 3 quiz and advance readers, exported so version 4 reads both
-  alike.
+  (`parseTourStationContent`), and `tourShownBlockIds`, a station's story
+  blocks.
+- **`ar/tour-station-pose`**: `tourFreeBlocks(station)` and
+  `tourObjectBlock(object, pose)`, the free blocks of a station and the
+  block a world-view object is.
 - **`test-utils/tour-arbitraries`** (deep import): fast-check generators
   of valid tour content (texts at every cap, blocks of every kind and
-  view, station contents, version 3 manifests). `fast-check` is not
+  view, station contents, version 4 manifests). `fast-check` is not
   bundled: a consumer brings its own.
 
 ### Fixed

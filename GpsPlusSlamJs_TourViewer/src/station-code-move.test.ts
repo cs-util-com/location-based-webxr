@@ -11,12 +11,12 @@ import { describe, expect, it } from "vitest";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type {
-  TourItem,
+  TourBlock,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
-import "./test-support/v3-tour.js";
+import "./test-support/tour-of.js";
 import { moveWithCode } from "./move-with-code.js";
 import { moveStationsWithCode } from "./station-code-move.js";
 
@@ -48,10 +48,11 @@ function metres(a: QrGeoPose, b: QrGeoPose): number {
   return Math.hypot(r[0], r[1], r[2]);
 }
 
-const pin = (id: string, position: [number, number, number]): TourItem => ({
+const pin = (id: string, position: [number, number, number]): TourBlock => ({
   id,
-  kind: "pin",
-  label: id,
+  kind: "shortText",
+  view: "pin",
+  caption: id,
   createdAtIso: "2026-10-18T00:00:00.000Z",
   pose: { position, rotation: [0, 0, 0, 1] },
 });
@@ -59,7 +60,7 @@ const pin = (id: string, position: [number, number, number]): TourItem => ({
 function station(
   id: string,
   geo: QrGeoPose,
-  items: TourItem[] = [],
+  items: TourBlock[] = [],
 ): TourStation {
   return {
     id,
@@ -68,7 +69,7 @@ function station(
     foundRadiusM: 25,
     hint: "arrow",
     steps: [],
-    items,
+    blocks: items,
   };
 }
 
@@ -87,7 +88,7 @@ describe("moveStationsWithCode (D17)", () => {
     expect(out.moved).toEqual(["near"]);
     const [moved] = out.stations;
     // The very same items: nothing of them was rewritten.
-    expect(moved!.items).toBe(items);
+    expect(moved!.blocks).toBe(items);
     expect(moved!.geo).toEqual(moveWithCode(near.geo, code, improved));
     expect({ ...moved, geo: near.geo }).toEqual(near);
     // Every item stands where the code's correction puts it.

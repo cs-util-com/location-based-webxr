@@ -12,10 +12,12 @@ import fc from "fast-check";
 import type {
   TourManifest,
   TourObject,
+  TourPicture,
+  TourPin,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 import { visitorStartView, wireVisitorStart } from "./visitor-start.js";
 
 const GEO: TourStation["geo"] = {
@@ -25,29 +27,37 @@ const GEO: TourStation["geo"] = {
   rotation: [0, 0, 0, 1],
 };
 
-function pin(id: string): TourObject {
+function pin(id: string): TourPin {
   return {
     id,
-    kind: "pin",
-    label: id,
+    kind: "shortText",
+    view: "pin",
+    caption: id,
     geo: GEO,
     createdAtIso: "2026-10-13T00:00:00.000Z",
-  } as unknown as TourObject;
+  };
 }
 
-function photo(id: string): TourObject {
+function photo(id: string): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     geo: GEO,
     createdAtIso: "2026-10-13T00:00:00.000Z",
-  } as unknown as TourObject;
+  };
 }
 
-/** A version 3 tour: each of `objects` in a station of its own. */
+/** A tour: each of `objects` in a station of its own. */
 function tour(
   extra: Partial<TourManifest> & { objects?: readonly TourObject[] },
 ): TourManifest {
@@ -65,7 +75,7 @@ function emptyStations(count: number): TourStation[] {
     foundRadiusM: 25,
     hint: "arrow",
     steps: [],
-    items: [],
+    blocks: [],
   }));
 }
 
@@ -113,7 +123,7 @@ describe("visitorStartView", () => {
     const [only] = shared.stations;
     const both = {
       ...shared,
-      stations: [{ ...only!, items: [...only!.items, ...only!.items] }],
+      stations: [{ ...only!, blocks: [...only!.blocks, ...only!.blocks] }],
     };
     expect(visitorStartView(both).subline).toBe("1 place to discover");
   });
@@ -162,7 +172,7 @@ describe("visitorStartView", () => {
   // gives no cover.)
 
   // The cover is read from the zip by its path: only the tour's own photos
-  // may be named - a photo object's image - never anything else the
+  // may be named - a photo object's image file - never anything else the
   // manifest holds (M4 review #8).
   it("only ever names one of the tour's own photos (property)", () => {
     fc.assert(
@@ -189,17 +199,17 @@ describe("visitorStartView", () => {
           const { coverPath } = visitorStartView(manifest);
           // An empty station adds none.
           const own = objects.flatMap((o) =>
-            o.kind === "photo" ? [(o as { image: string }).image] : [],
+            o.kind === "picture" ? [o.imageAsset.path] : [],
           );
           // The chosen photo when it is one of them, else the first of
           // them, in that order, or none when there is none.
           const chosen = objects.find(
-            (o) => o.id === cover && o.kind === "photo",
+            (o) => o.id === cover && o.kind === "picture",
           );
           expect(coverPath).toBe(
-            chosen === undefined
-              ? (own[0] ?? null)
-              : (chosen as { image: string }).image,
+            chosen?.kind === "picture"
+              ? chosen.imageAsset.path
+              : (own[0] ?? null),
           );
         },
       ),

@@ -30,10 +30,11 @@ reason; no production module imports it.
   `{ blocks, steps }` record: free and story blocks, one `show` per story
   block, choices (options jumping to a step or continuing) and quizzes of
   every answer type, in a shuffled order.
-- `tourManifestV3Arbitrary` - a valid version 3 `tour.json` record of one
-  to four stations with steps of every kind and items of every kind, order
-  `fixed` or `any`. Item ids are prefixed by their station, so they never
-  meet an asset id (version 3 shares one namespace for both).
+- `tourManifestArbitrary(size?)` - a valid version 4 `tour.json` record
+  of one to four stations, each with a generated content (the size as for
+  `tourStationContentArbitrary`), block ids unique across the tour (a
+  block id another station already uses is renamed, and its `show` steps
+  with it), order `fixed` or `any`, assets `TOUR_ARBITRARY_ASSETS`.
 
 ## Invariants & assumptions
 
@@ -63,8 +64,9 @@ fc.assert(
 - `tour-arbitraries.test.ts` - counts as claimed for every rule, the
   boundaries reached, `over` texts over and failing, the hostile spellings
   actually produced, surrogate pairs counted twice in UTF-16, ids at 64
-  characters and colliding with asset ids, version 3 manifests accepted by
-  the reader with steps of every kind.
+  characters and colliding with asset ids, version 4 manifests accepted by
+  the reader with blocks of every kind, steps of every kind and free
+  blocks.
 - `tour-arbitraries.bundle.test.ts` - builds this entry with the package's
   own build settings and asserts it imports `fast-check` by name and
   carries none of its code.

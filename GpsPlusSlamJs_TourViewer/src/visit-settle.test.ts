@@ -208,10 +208,17 @@ describe("settling the visit that measured the code (B2)", () => {
     const photo = {
       object: {
         id: "shot",
-        kind: "photo",
-        image: "content/shot.jpg",
-        imageWidth: 4,
-        imageHeight: 3,
+        kind: "picture",
+        view: "plane",
+        image: "shot",
+        widthM: 1,
+        imageAsset: {
+          id: "shot",
+          path: "content/shot.jpg",
+          kind: "image",
+          width: 4,
+          height: 3,
+        },
         createdAtIso: NOW,
         geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 401.4 },
       } as TourObject,
@@ -983,7 +990,9 @@ describe("moving a pin to the reticle (M4) goes through the settle's alignment",
     expect(offset.distanceTo(expected)).toBeLessThan(1e-3);
     // The record is the same object: id, text and creation time kept.
     expect(moved!.object.id).toBe("hosted");
-    expect(moved!.object.kind === "pin" && moved!.object.label).toBe("hosted");
+    expect(moved!.object.kind === "shortText" && moved!.object.caption).toBe(
+      "hosted",
+    );
     expect(moved!.object.createdAtIso).toBe(hostedPin.createdAtIso);
   });
 

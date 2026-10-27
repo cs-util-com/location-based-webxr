@@ -22,6 +22,8 @@ import { describe, expect, it } from "vitest";
 import {
   type TourManifest,
   type TourObject,
+  type TourPicture,
+  type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import { META_KEY, objectKey, readDraft } from "../draft-persistence.js";
@@ -33,7 +35,7 @@ import {
   type NoBackupReason,
 } from "./editor-draft.js";
 import type { EditorLock } from "./save-target.js";
-import { tourOf } from "../test-support/v3-tour.js";
+import { captionOf, tourOf } from "../test-support/tour-of.js";
 import { hostedObjects } from "../authoring-draft.js";
 import { parseSettingsRecord } from "../tour-document-draft.js";
 
@@ -179,23 +181,31 @@ function draftIn(
   return Object.assign(draft, { said });
 }
 
-function pin(id: string, label = id): TourObject {
+function pin(id: string, label = id): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-10-14T00:00:00.000Z",
     geo: { lat: 48.5, lon: 9.0, alt: 340, headingDeg: 0 },
   };
 }
 
-function photo(id: string, lat = 48.5): TourObject {
+function photo(id: string, lat = 48.5): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-10-14T00:00:00.000Z",
     geo: { lat, lon: 9.0, alt: 340, rotation: [0, 0, 0, 1] },
   };
@@ -267,7 +277,7 @@ describe("createEditorDraft", () => {
     await draft.idle();
     draft.close();
     expect(
-      (await draftIn(b).open(K1, original)).offer?.objects.map((o) => o.label),
+      (await draftIn(b).open(K1, original)).offer?.objects.map(captionOf),
     ).toEqual(["edited"]);
     // The copy put in place (a recording tour keeps its key): spent, and
     // its record goes.
@@ -293,7 +303,7 @@ describe("createEditorDraft", () => {
     draft.close();
     const opened = await draftIn(b).open(K1, written);
     expect(opened.superseded).toBeNull();
-    expect(opened.offer?.objects.map((o) => o.label)).toEqual(["second"]);
+    expect(opened.offer?.objects.map(captionOf)).toEqual(["second"]);
   });
 
   it("a save built but never put in place: both the original and the built copy offer the later edit", async () => {
@@ -310,7 +320,7 @@ describe("createEditorDraft", () => {
     for (const file of [original, built]) {
       const opened = await draftIn(b).open(K1, file);
       expect(opened.superseded).toBeNull();
-      expect(opened.offer?.objects.map((o) => o.label)).toEqual(["second"]);
+      expect(opened.offer?.objects.map(captionOf)).toEqual(["second"]);
     }
   });
 
@@ -369,7 +379,7 @@ describe("createEditorDraft", () => {
     expect(old?.size ?? 0).toBe(0);
     expect(old?.has(META_KEY) ?? false).toBe(false);
     const opened = await draftIn(b).open(K2, written);
-    expect(opened.offer?.objects.map((o) => o.label)).toEqual(["after"]);
+    expect(opened.offer?.objects.map(captionOf)).toEqual(["after"]);
     expect(opened.offer?.deleted).toEqual([]);
   });
 
@@ -392,9 +402,9 @@ describe("createEditorDraft", () => {
     await draft.idle();
     draft.close();
     const opened = await draftIn(b).open(K2, written);
-    expect(opened.offer?.objects.map((o) => o.label)).toEqual(["after"]);
+    expect(opened.offer?.objects.map(captionOf)).toEqual(["after"]);
     const before = await draftIn(b).open(K1, original);
-    expect(before.offer?.objects.map((o) => o.label)).toEqual(["saved"]);
+    expect(before.offer?.objects.map(captionOf)).toEqual(["saved"]);
   });
 
   it("a download's move spends nothing: a download never put anywhere leaves every edit offered", async () => {
@@ -413,7 +423,7 @@ describe("createEditorDraft", () => {
     await draft.idle();
     draft.close();
     const opened = await draftIn(b).open(K2, original);
-    expect(opened.offer?.objects.map((o) => o.label).sort()).toEqual([
+    expect(opened.offer?.objects.map(captionOf).sort()).toEqual([
       "after",
       "saved",
     ]);
@@ -456,7 +466,7 @@ describe("createEditorDraft", () => {
     await draft.idle();
     draft.close();
     const reopened = await draftIn(b).open(K2, written);
-    expect(reopened.offer?.objects.map((o) => o.label).sort()).toEqual([
+    expect(reopened.offer?.objects.map(captionOf).sort()).toEqual([
       "during",
       "from an earlier visit",
     ]);
@@ -488,7 +498,7 @@ describe("createEditorDraft", () => {
     draft.close();
     const reopened = await draftIn(b).open(K2, written);
     expect(reopened.offer?.deleted).toEqual([]);
-    expect(reopened.offer?.objects.map((o) => o.label)).toEqual(["during"]);
+    expect(reopened.offer?.objects.map(captionOf)).toEqual(["during"]);
   });
 
   it("Delete it takes the offer's records, never one edited since the open, and a later edit of a deleted one is kept", async () => {
@@ -512,7 +522,7 @@ describe("createEditorDraft", () => {
     await draft.idle();
     draft.close();
     const reopened = await draftIn(b).open(K1, original);
-    expect(reopened.offer?.objects.map((o) => o.label)).toEqual(["live a"]);
+    expect(reopened.offer?.objects.map(captionOf)).toEqual(["live a"]);
     expect(reopened.offer?.deleted).toEqual(["c"]);
   });
 
@@ -536,7 +546,7 @@ describe("createEditorDraft", () => {
     draft.close();
     const reopened = await draftIn(b).open(K1, original);
     expect(reopened.offer?.deleted).toEqual([]);
-    expect(reopened.offer?.objects.map((o) => o.label)).toEqual(["live b"]);
+    expect(reopened.offer?.objects.map(captionOf)).toEqual(["live b"]);
   });
 
   it("a rejected id whose files are gone is dropped from the meta at the next open, so a later edit of it is not hidden", async () => {
@@ -559,7 +569,7 @@ describe("createEditorDraft", () => {
     await later.idle();
     later.close();
     expect(
-      (await draftIn(b).open(K1, original)).offer?.objects.map((o) => o.label),
+      (await draftIn(b).open(K1, original)).offer?.objects.map(captionOf),
     ).toEqual(["new"]);
   });
 
@@ -592,7 +602,7 @@ describe("createEditorDraft", () => {
     await later.idle();
     later.close();
     expect(
-      (await draftIn(b).open(K1, original)).offer?.objects.map((o) => o.label),
+      (await draftIn(b).open(K1, original)).offer?.objects.map(captionOf),
     ).toEqual(["new"]);
   });
 
@@ -642,7 +652,7 @@ describe("createEditorDraft", () => {
     await draft.forgetDeletion("a");
     draft.close();
     const { offer } = await draftIn(b).open(K1, tour(pin("a")));
-    expect(offer?.objects.map((o) => o.label)).toEqual(["edited"]);
+    expect(offer?.objects.map(captionOf)).toEqual(["edited"]);
     expect(offer?.deleted).toEqual([]);
   });
 
@@ -839,7 +849,7 @@ describe("createEditorDraft", () => {
     old.landed(written, K3);
     b.releaseOpens();
     const opened = await opening;
-    expect(opened.offer?.objects.map((o) => o.label)).toEqual([
+    expect(opened.offer?.objects.map(captionOf)).toEqual([
       "from an earlier visit",
     ]);
     expect(await draft.writes().saveObject(pin("b", "new"))).toBe(true);
@@ -853,7 +863,7 @@ describe("createEditorDraft", () => {
     // file's: it is offered, not called replaced.
     const again = await draftIn(b).open(K2, second);
     expect(again.superseded).toBeNull();
-    expect(again.offer?.objects.map((o) => o.label)).toEqual(["new"]);
+    expect(again.offer?.objects.map(captionOf)).toEqual(["new"]);
   });
 
   // Why (review #6): the hold was released before the closed tour's
@@ -1574,6 +1584,7 @@ describe("createEditorDraft, the stations the page created", () => {
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow" as const,
+    blocks: [],
     steps: [],
   });
   const movedA = (): TourObject => ({
@@ -1592,10 +1603,22 @@ describe("createEditorDraft, the stations the page created", () => {
     await draft.open(K1, tour(pin("a")));
     const story = {
       ...frame("s-new"),
+      blocks: [
+        {
+          id: "hello-text",
+          kind: "shortText" as const,
+          view: "card" as const,
+          caption: "Hello there.",
+          pose: {
+            position: [0, 0, 0] as [number, number, number],
+            rotation: [0, 0, 0, 1] as [number, number, number, number],
+          },
+        },
+      ],
       steps: [
         {
           id: "hello",
-          action: { kind: "text" as const, text: "Hello there." },
+          action: { kind: "show" as const, block: "hello-text" },
           advance: { mode: "tap" as const },
         },
       ],
@@ -1661,7 +1684,7 @@ describe("createEditorDraft, the stations the page created", () => {
     await first.idle();
     const carried: TourManifest = {
       ...opened,
-      stations: [...opened.stations, { ...frame("s-new"), items: [] }],
+      stations: [...opened.stations, { ...frame("s-new"), blocks: [] }],
     };
     first.writes().landed(carried, K1);
     await first.idle();

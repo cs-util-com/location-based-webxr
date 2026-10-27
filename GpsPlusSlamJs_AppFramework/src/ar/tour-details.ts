@@ -36,8 +36,8 @@ export const TOUR_CONTACT_MAX_CHARS = 320;
 export interface TourDetails {
   /** A few sentences on what the tour is; line breaks kept. */
   description?: string;
-  /** The id of one of the tour's images: a photo object's or an image
-   *  asset's (both name a content file by id). */
+  /** The id of one of the tour's image assets (a captured photo's
+   *  among them). */
   cover?: string;
   /** An e-mail address (bare, or `mailto:`) or an http(s) link. */
   contact?: string;
@@ -218,13 +218,15 @@ export function parseTourDetails(
   return { details, dropped };
 }
 
-/** The parts of a tour a cover is looked up in: structural, so a later
- *  format version with its own records passes them as well. */
+/** The parts of a tour a cover is looked up in: the tour's assets, and
+ *  the world view's pictures (`tour-manifest.ts` `TourObject`), whose
+ *  image asset a page holding a captured photo carries inline before any
+ *  tour lists it. Structural, so the caller passes either. */
 export interface TourImages {
   readonly objects: readonly {
-    readonly id: string;
     readonly kind: string;
     readonly image?: string;
+    readonly imageAsset?: { readonly id: string; readonly path: string };
   }[];
   readonly assets: readonly {
     readonly id: string;
@@ -233,11 +235,18 @@ export interface TourImages {
   }[];
 }
 
-/** The ids a cover may name: the placed photos' and the image assets'
- *  (both name a content file by id). */
+/** The image assets a picture of `objects` carries inline. */
+function pictureAssets(tour: TourImages) {
+  return tour.objects.flatMap((o) =>
+    o.kind === 'picture' && o.imageAsset !== undefined ? [o.imageAsset] : []
+  );
+}
+
+/** The ids a cover or a station's card image may name: the tour's image
+ *  assets, and the image assets its pictures carry. */
 export function tourImageIds(tour: TourImages): Set<string> {
   return new Set([
-    ...tour.objects.filter((o) => o.kind === 'photo').map((o) => o.id),
+    ...pictureAssets(tour).map((a) => a.id),
     ...tour.assets.filter((a) => a.kind === 'image').map((a) => a.id),
   ]);
 }
@@ -249,9 +258,9 @@ export function tourCoverEntry(
 ): string | null {
   const { cover } = tour;
   if (cover === undefined) return null;
-  const photo = tour.objects.find((o) => o.kind === 'photo' && o.id === cover);
-  if (photo?.image !== undefined) return photo.image;
   return (
-    tour.assets.find((a) => a.kind === 'image' && a.id === cover)?.path ?? null
+    tour.assets.find((a) => a.kind === 'image' && a.id === cover)?.path ??
+    pictureAssets(tour).find((a) => a.id === cover)?.path ??
+    null
   );
 }

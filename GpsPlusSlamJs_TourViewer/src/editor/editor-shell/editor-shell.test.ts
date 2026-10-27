@@ -66,11 +66,12 @@ function station(id: string, dLat: number, pinText = `Pin ${id}`): TourStation {
     foundRadiusM: 25,
     hint: "arrow",
     steps: [],
-    items: [
+    blocks: [
       {
         id: `p${id}`,
-        kind: "pin",
-        label: pinText,
+        kind: "shortText",
+        view: "pin",
+        caption: pinText,
         createdAtIso: AT,
         pose: { position: [5, 1.5, 0], rotation: [0, 0, 0, 1] },
       },

@@ -22,6 +22,8 @@ import {
   serializeTourManifest,
   type TourManifest,
   type TourObject,
+  type TourPicture,
+  type TourPin,
   type TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
@@ -39,29 +41,37 @@ import {
   stationIdOf,
   tourOf,
   withWorldObjects,
-} from "./test-support/v3-tour.js";
+} from "./test-support/tour-of.js";
 import { withTourContent } from "./tour-content.js";
 
 const WRAP = "mytour/";
 const LEVEL_ID = "abc123";
 
-function pin(id: string, label = `pin ${id}`): TourObject {
+function pin(id: string, label = `pin ${id}`): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-09-11T00:00:01.000Z",
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
   };
 }
 
-function photo(id: string): TourObject {
+function photo(id: string): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-09-11T00:00:01.000Z",
     geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
   };
@@ -80,7 +90,7 @@ const HERE: TourStation = {
   foundRadiusM: 25,
   hint: "arrow",
   steps: [],
-  items: [],
+  blocks: [],
 };
 
 /** An empty tour with `HERE`. */
@@ -177,7 +187,7 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
     // In station order (version 3): the new "b" in the station it names,
     // a's.
     expect(carried.objects.map((o) => o.id)).toEqual(["a", "b", "kept"]);
-    expect(carried.objects[0]).toMatchObject({ label: "new text" });
+    expect(carried.objects[0]).toMatchObject({ caption: "new text" });
     // What it reports writing is what the zip carries.
     expect(withWorldObjects(result!.written)).toEqual(carried);
     const names = await namesOf(result!.blob);
@@ -449,10 +459,20 @@ describe("rebuildFinishedTour drops the assets nothing uses", () => {
   it("writes the step's asset and the cover, and leaves out a stray asset's entry", async () => {
     const told: TourStation = {
       ...HERE,
+      blocks: [
+        {
+          id: "look-picture",
+          kind: "picture",
+          view: "card",
+          image: "used",
+          widthM: 1,
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+      ],
       steps: [
         {
           id: "look",
-          action: { kind: "image", asset: "used" },
+          action: { kind: "show", block: "look-picture" },
           advance: { mode: "tap" },
         },
       ],
@@ -493,6 +513,7 @@ describe("rebuildFinishedTour drops the assets nothing uses", () => {
     const statue: TourObject = {
       id: "m1",
       kind: "model",
+      view: "placed",
       asset: "statue",
       sizeM: 4,
       createdAtIso: "2026-10-20T00:00:00.000Z",
@@ -571,7 +592,7 @@ describe("pendingAfterRebuild (M6 E0b: what is still to save after a write)", ()
     const saved = withTourContent(manifestOf([pin("a")]), {
       objects: [pin("a"), seated(near, stationIdOf("a"))],
     });
-    expect(saved.stations.map((s) => s.items.map((i) => i.id))).toEqual([
+    expect(saved.stations.map((s) => s.blocks.map((i) => i.id))).toEqual([
       ["a", "near"],
     ]);
     const placed = { object: near };

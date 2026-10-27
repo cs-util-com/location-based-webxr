@@ -13,7 +13,7 @@ import type { MintAlignmentInfo } from "gps-plus-slam-app-framework/ar/qr/qr-min
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type {
   TourObject,
-  TourPhoto,
+  TourPicture,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   GPS_POINT_SOURCE_SYNTHETIC_QR,
@@ -285,7 +285,7 @@ export interface CreatorSettle {
   record(visit: number): VisitSettleRecord | undefined;
   /** A photo minted through its settled visit's record: logged as that
    *  settle's late arrival. */
-  lateArrival(visit: number, photo: TourPhoto): void;
+  lateArrival(visit: number, photo: TourPicture): void;
   /** Forget the running visit's settle (a Finish that wrote nothing). */
   unsettle(visit: number | null): void;
   /** The refused correction's line as the live line's lead, or "". */

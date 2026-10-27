@@ -14,7 +14,7 @@ import {
   parseTourManifest,
   serializeTourManifest,
   type TourManifest,
-  type TourObject,
+  type TourPin,
   type TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
@@ -22,7 +22,7 @@ import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 import { manifestToWrite } from "../tour-document.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
-import { stationIdOf, tourOf } from "../test-support/v3-tour.js";
+import { stationIdOf, tourOf } from "../test-support/tour-of.js";
 import { createEditorSession } from "./editor-session.js";
 import { buildTree } from "./editor-shell/tree-model.js";
 
@@ -30,11 +30,12 @@ beforeAll(() => {
   createTourViewerStore();
 });
 
-function pin(id: string, lat: number): TourObject {
+function pin(id: string, lat: number): TourPin {
   return {
     id,
-    kind: "pin",
-    label: `pin ${id}`,
+    kind: "shortText",
+    view: "pin",
+    caption: `pin ${id}`,
     createdAtIso: "2026-10-25T00:00:00.000Z",
     geo: { lat, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
   };

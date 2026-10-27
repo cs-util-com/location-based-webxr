@@ -400,8 +400,10 @@ export function contentEntriesToRemove(
 ): string[] {
   const gone = new Set(deleted);
   return existing.flatMap((object) =>
-    object.kind === "photo" && gone.has(object.id)
-      ? [`${wrap}${object.image}`]
+    object.kind === "picture" &&
+    object.image === object.id &&
+    gone.has(object.id)
+      ? [`${wrap}${object.imageAsset.path}`]
       : [],
   );
 }

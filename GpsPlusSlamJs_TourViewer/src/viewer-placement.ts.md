@@ -63,7 +63,8 @@ them.
   - The tour's content (`tour.json`, M5) is rendered once per session as
     soon as the gate allows it and the GPS zero exists
     (`renderTourStation`: a group per station at its geo pose, its
-    pins and photos as children at their local poses, version 3; each
+    free blocks (pins and pictures) as children at their local poses, the
+    stations without free blocks skipped; each
     station one "items" part of the side table, see below; labels
     through `seams.createLabel`, photos
     decoded through `deps.loadContent` when given (the stations' prefetch

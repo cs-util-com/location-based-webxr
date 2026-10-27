@@ -887,8 +887,8 @@ let licensed = false;
 
 /**
  * A `tour.json` text parsed, with its pins and photos in the world as
- * `objects` (version 3 keeps them in stations at local poses, tour editor
- * plan W3) - what the specs read back from a written tour.
+ * `objects` (the stations' free blocks, at world poses) - what the specs
+ * read back from a written tour.
  * @param {string} text
  */
 export function worldManifest(text) {

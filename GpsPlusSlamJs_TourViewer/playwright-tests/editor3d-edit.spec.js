@@ -67,8 +67,9 @@ async function openWithPin(page) {
       const first = hook.manifest().stations[0];
       const out = hook.editor().place({
         id,
-        kind: "pin",
-        label: "Drag me",
+        kind: "shortText",
+        view: "pin",
+        caption: "Drag me",
         createdAtIso: "2026-10-22T08:00:00.000Z",
         station: first.id,
         geo: {
@@ -121,7 +122,7 @@ function selected(page) {
  */
 function pinOf(tour) {
   for (const station of tour.stations) {
-    const item = station.items.find((/** @type {any} */ i) => i.id === PIN);
+    const item = station.blocks.find((/** @type {any} */ i) => i.id === PIN);
     if (item !== undefined) return { item, station };
   }
   return null;
@@ -367,7 +368,7 @@ test("answers every key: nudges, turns, height, delete, duplicate, Esc, and leav
   await expect(page.locator(".toast", { hasText: "Deleted" })).toBeVisible();
   expect(
     (await manifest(page)).stations.some((/** @type {any} */ s) =>
-      s.items.some((/** @type {any} */ i) => i.id === copy),
+      s.blocks.some((/** @type {any} */ i) => i.id === copy),
     ),
   ).toBe(false);
   await selectPin(page, station);
@@ -714,8 +715,8 @@ async function oneCodeTour() {
         activateRadiusM: 30,
         foundRadiusM: 5,
         hint: "arrow",
+        blocks: [],
         steps: [],
-        items: [],
       },
     ],
   };

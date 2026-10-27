@@ -334,7 +334,7 @@ function summaryObject(object: TourObject): SummaryObject | null {
   if (!readablePoint(point)) return null;
   return {
     id: object.id,
-    kind: object.kind,
+    kind: object.kind === "shortText" ? "pin" : "photo",
     label: objectTitle(object),
     ...point,
   };

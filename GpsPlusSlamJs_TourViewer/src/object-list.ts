@@ -22,7 +22,12 @@
 
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { codeDistanceLine, objectTitle } from "./object-describe.js";
+import {
+  codeDistanceLine,
+  objectLook,
+  objectTitle,
+  type ObjectLook,
+} from "./object-describe.js";
 
 /** One object as the list sees it. */
 export interface ObjectListEntry {
@@ -56,7 +61,7 @@ export interface ObjectListState {
 
 interface ObjectRowModel {
   readonly id: string;
-  readonly kind: TourObject["kind"];
+  readonly kind: ObjectLook;
   /** A pin's text; a photo's caption or "Photo". */
   readonly title: string;
   /** On the page: kind, where it stands (in the zip, changed, new) and the
@@ -120,20 +125,20 @@ function rowOf(entry: ObjectListEntry, state: ObjectListState): ObjectRowModel {
   const distance = codeDistanceLine(object, state.codes);
   return {
     id: object.id,
-    kind: object.kind,
+    kind: objectLook(object.kind),
     title,
     detail: state.inAr
       ? distance
       : [
-          object.kind === "pin" ? "Pin" : "Photo",
+          object.kind === "shortText" ? "Pin" : "Photo",
           standing(entry),
           ...(distance === "" ? [] : [distance]),
         ].join(" · "),
     compact: state.inAr,
     selected: object.id === state.selectedId,
     busy,
-    canEditText: object.kind === "pin",
-    canMove: object.kind === "pin" && state.inAr,
+    canEditText: object.kind === "shortText",
+    canMove: object.kind === "shortText" && state.inAr,
     canDeselect: state.inAr && object.id === state.selectedId,
     enabled: busy === null && !state.locked,
   };

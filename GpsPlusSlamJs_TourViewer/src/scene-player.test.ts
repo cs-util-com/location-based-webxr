@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import type { TourStep } from "gps-plus-slam-app-framework/ar/tour-stations";
+import type { TourStep } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import {
   createScenePlayer,
@@ -18,16 +18,23 @@ import {
 
 const text = (id: string, auto?: number): TourStep => ({
   id,
-  action: { kind: "text", text: `text ${id}` },
+  action: { kind: "show", block: `b-${id}` },
   advance:
     auto === undefined ? { mode: "tap" } : { mode: "auto", afterS: auto },
 });
-const choice = (id: string, options: [string, string][]): TourStep => ({
+const choice = (
+  id: string,
+  options: [string, string | undefined][],
+): TourStep => ({
   id,
   action: {
     kind: "choice",
     prompt: "Which way?",
-    options: options.map(([oid, go]) => ({ id: oid, label: oid, goto: go })),
+    options: options.map(([oid, go]) =>
+      go === undefined
+        ? { id: oid, label: oid }
+        : { id: oid, label: oid, goto: go },
+    ),
   },
   advance: { mode: "tap" },
 });
@@ -66,6 +73,19 @@ describe("createScenePlayer", () => {
     expect(p.choose("nope")?.id).toBe("c");
     expect(p.choose("right")?.id).toBe("r");
     expect(p.next()).toBeNull();
+  });
+
+  it("a choice whose option names no step goes on to the next step", () => {
+    const p = createScenePlayer([
+      choice("c", [
+        ["on", undefined],
+        ["back", "c"],
+      ]),
+      text("n"),
+      text("m"),
+    ]);
+    expect(p.choose("on")?.id).toBe("n");
+    expect(p.next()?.id).toBe("m");
   });
 
   it("a choice on a step that is not current changes nothing", () => {

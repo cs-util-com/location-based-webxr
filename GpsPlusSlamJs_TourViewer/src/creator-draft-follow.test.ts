@@ -11,14 +11,14 @@
  * nothing on screen would say so.
  */
 import { describe, expect, it } from "vitest";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { TourPin } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 
 import { draftKeyForTour } from "./authoring-draft.js";
 import { wireCreatorDraft } from "./creator-draft.js";
 import { META_KEY, objectKey, photoKey } from "./draft-persistence.js";
 import { parseSettingsRecord, SETTINGS_KEY } from "./tour-document-draft.js";
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 import {
   createTourViewerSession,
   createTourViewerStore,
@@ -28,11 +28,12 @@ import { createVisitLog } from "./visit-log.js";
 const OLD = "local-file:00000000000000000000000000000001";
 const NEW = "local-file:tour:0123456789abcdef0123456789abcdef";
 
-function pin(id: string, label = id): TourObject {
+function pin(id: string, label = id): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-10-20T00:00:00.000Z",
     geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
   };
@@ -246,10 +247,22 @@ describe("the phone draft's settings record", () => {
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow" as const,
+      blocks: [
+        {
+          id: "hello-text",
+          kind: "shortText" as const,
+          view: "card" as const,
+          caption: "Hello there.",
+          pose: {
+            position: [0, 0, 0] as [number, number, number],
+            rotation: [0, 0, 0, 1] as [number, number, number, number],
+          },
+        },
+      ],
       steps: [
         {
           id: "hello",
-          action: { kind: "text" as const, text: "Hello there." },
+          action: { kind: "show" as const, block: "hello-text" },
           advance: { mode: "tap" as const },
         },
       ],

@@ -50,7 +50,7 @@ import {
 
 const step = {
   id: "t",
-  action: { kind: "text", text: "Hi" },
+  action: { kind: "show", block: "hi" },
   advance: { mode: "tap" },
 } as const;
 
@@ -59,7 +59,7 @@ function station(id: string, extra: Partial<TourStation> = {}): TourStation {
     id,
     title: id.toUpperCase(),
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    items: [],
+    blocks: [],
     activateRadiusM: 20,
     foundRadiusM: 5,
     hint: "arrow",

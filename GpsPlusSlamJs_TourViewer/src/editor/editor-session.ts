@@ -13,12 +13,13 @@ import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type {
   TourManifest,
   TourObject,
+  TourPicture,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import {
-  TOUR_ITEM_MAX_OFFSET_M,
   TOUR_MODEL_MAX_SIZE_M,
   TOUR_MODEL_MIN_SIZE_M,
-} from "gps-plus-slam-app-framework/ar/tour-items";
+} from "gps-plus-slam-app-framework/ar/tour-blocks";
 import {
   TOUR_DESCRIPTION_MAX_CHARS,
   TOUR_TITLE_MAX_CHARS,
@@ -45,6 +46,7 @@ import {
   detailsChange,
   documentObjects,
   effectiveDetails,
+  isCapturedPhoto,
   isDocumentEdit,
   manifestNow,
   objectFits,
@@ -101,11 +103,10 @@ const PICTURE_GONE =
 /** An object as the undo's words name it: its text, shortened, or what
  *  it is. */
 function objectName(object: TourObject): string {
-  const label =
-    "label" in object && typeof object.label === "string"
-      ? object.label.trim()
-      : "";
-  if (label === "") return object.kind === "photo" ? "a photo" : "a note";
+  const label = (
+    (object.kind === "model" ? object.title : object.caption) ?? ""
+  ).trim();
+  if (label === "") return object.kind === "picture" ? "a photo" : "a note";
   const chars = [...label];
   return `"${chars.length > 40 ? `${chars.slice(0, 39).join("")}…` : label}"`;
 }
@@ -595,21 +596,22 @@ export function createEditorSession(input: {
    *  page's copy of the file, failing that from this session's own last
    *  bytes - the page's copy may not read right after an in-place write.
    *  Rejects when every way fails. */
-  function readPicture(object: TourObject & { kind: "photo" }): Promise<Blob> {
+  function readPicture(object: TourPicture): Promise<Blob> {
     const held = pictures.get(object.id);
     if (held !== undefined) return Promise.resolve(held);
     const newest = saves.newest()?.blob;
-    return loadPhoto(object.image).catch((err: unknown) =>
+    const entry = object.imageAsset.path;
+    return loadPhoto(entry).catch((err: unknown) =>
       newest === undefined
         ? Promise.reject(err instanceof Error ? err : new Error(String(err)))
-        : readZipBlobEntry(newest, `${session.manifestWrap}${object.image}`),
+        : readZipBlobEntry(newest, `${session.manifestWrap}${entry}`),
     );
   }
 
   /** Keep a deleted photo's picture for an undo after a save. */
   function keepPicture(found: AuthoringObject): void {
     const object = found.object;
-    if (object.kind !== "photo") return;
+    if (!isCapturedPhoto(object)) return;
     const id = object.id;
     if (pictures.has(id)) return;
     // Read now, while the copy that carries it is at hand. A read that
@@ -692,7 +694,7 @@ export function createEditorSession(input: {
   ): Promise<Map<string, Blob> | null> {
     const read = new Map<string, Blob>();
     for (const object of objects) {
-      if (object.kind !== "photo") continue;
+      if (!isCapturedPhoto(object)) continue;
       try {
         read.set(object.id, await readPicture(object));
       } catch {
@@ -930,8 +932,14 @@ export function createEditorSession(input: {
         .filter((o) => o.station === stationId);
       const read = await picturesOf(items);
       if (read === null) return { kind: "refused", reason: PICTURE_UNREAD };
+      // Every block of the station gets a new id, its story's too: block
+      // ids are unique across the tour.
+      const blockIds = new Set([
+        ...items.map((o) => o.id),
+        ...frame.blocks.map((b) => b.id),
+      ]);
       const newItemIds = Object.fromEntries(
-        items.map((o) => [o.id, newObjectId()]),
+        [...blockIds].map((id) => [id, newObjectId()]),
       );
       const newStationId = newObjectId();
       // The pictures under the copies' ids before the copies exist: the
@@ -1126,7 +1134,7 @@ export function createEditorSession(input: {
           madeIds.has(object.id) &&
           !live.has(object.id) &&
           find(object.id) === undefined &&
-          (object.kind !== "photo" || offeredPicture(object) !== undefined),
+          (!isCapturedPhoto(object) || offeredPicture(object) !== undefined),
       );
       const objects = [
         ...work.objects.filter(

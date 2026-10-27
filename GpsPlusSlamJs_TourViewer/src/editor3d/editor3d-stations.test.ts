@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type {
-  TourItem,
+  TourBlock,
   TourManifest,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -67,7 +67,7 @@ function station(
   id: string,
   east: number,
   north: number,
-  items: TourItem[] = [],
+  items: TourBlock[] = [],
 ): TourStation {
   return {
     id,
@@ -82,35 +82,51 @@ function station(
     foundRadiusM: 8,
     hint: "arrow",
     steps: [],
-    items,
+    blocks: items,
   };
 }
 
+/** A tour of `stations` listing `assets` and each picture's photo
+ *  (`content/<image>.jpg`), as a file holding captured photos does. */
 function manifest(
   stations: TourStation[],
   assets: TourManifest["assets"] = [],
-) {
+): TourManifest {
+  const photos = stations.flatMap((s) =>
+    s.blocks.flatMap((b) =>
+      b.kind === "picture"
+        ? [
+            {
+              id: b.image,
+              path: `content/${b.image}.jpg`,
+              kind: "image" as const,
+            },
+          ]
+        : [],
+    ),
+  );
   return {
-    version: 3,
-    minor: 2,
+    version: 4,
+    minor: 0,
     order: "fixed",
-    assets,
+    assets: [...assets, ...photos],
     stations,
-  } as TourManifest;
+  };
 }
 
-const photo = (id: string): TourItem => ({
-  kind: "photo",
+const photo = (id: string): TourBlock => ({
+  kind: "picture",
+  view: "plane",
   id,
   createdAtIso: "2026-10-22T08:00:00Z",
-  image: `content/${id}.jpg`,
-  imageWidth: 400,
-  imageHeight: 300,
+  image: id,
+  widthM: 1,
   pose: { position: [1, 1.5, 0], rotation: [0, 0, 0, 1] },
 });
 
-const model = (id: string, asset: string, sizeM: number): TourItem => ({
+const model = (id: string, asset: string, sizeM: number): TourBlock => ({
   kind: "model",
+  view: "placed",
   id,
   createdAtIso: "2026-10-22T08:00:00Z",
   asset,
@@ -786,7 +802,7 @@ describe("createStationsLayer", () => {
     const west = {
       ...model("m", "horse", 8),
       pose: { position: [0, 0, -6], rotation: [0, 0, 0, 1] },
-    } as TourItem;
+    } as TourBlock;
     const a = station("a", 0, 0, [photo("p"), west]);
     layer.setTour(
       manifest(

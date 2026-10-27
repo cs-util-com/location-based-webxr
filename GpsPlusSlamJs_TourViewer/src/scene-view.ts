@@ -16,10 +16,11 @@
 
 import type {
   TourAsset,
+  TourBlock,
   TourStation,
   TourStep,
   TourStepAction,
-} from "gps-plus-slam-app-framework/ar/tour-stations";
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import {
   createScenePlayer,
@@ -255,15 +256,23 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     });
   }
 
-  /** Show one step's action: its words at once, its media as they load. */
-  function showAction(station: TourStation, action: TourStepAction): void {
-    switch (action.kind) {
-      case "text":
-        dom.text.textContent = action.text;
+  /** Show one `show` step's block, as the step kinds of earlier versions
+   *  showed it: its words at once, its media as they load. A `stage`
+   *  figure or model stands at the station (with its voice); every other view shows in
+   *  the card (a world view's own drawing comes with its station's free
+   *  blocks, never from a step). */
+  function showBlock(station: TourStation, block: TourBlock): void {
+    switch (block.kind) {
+      case "shortText":
+        dom.text.textContent = block.caption;
         return;
-      case "image":
-        dom.text.textContent = action.caption ?? "";
-        withAsset(action.asset, "picture", async (blob) => {
+      case "longText":
+        dom.text.textContent = block.body;
+        return;
+      case "picture": {
+        dom.text.textContent = block.caption ?? "";
+        const alt = block.alt ?? block.caption ?? "";
+        withAsset(block.image, "picture", async (blob) => {
           const token = renderToken;
           if ((await deps.checkPicture(blob)) !== null) {
             return "The picture is too large to show here - the words are below.";
@@ -271,36 +280,52 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
           if (token !== renderToken) return undefined;
           liveUrl = deps.objectUrls.create(blob);
           dom.image.src = liveUrl;
-          dom.image.alt = action.caption ?? "";
+          dom.image.alt = alt;
           dom.image.hidden = false;
           return undefined;
         });
         return;
+      }
       case "character":
-        dom.text.textContent = action.caption;
-        withAsset(action.image, "figure", (blob) =>
-          stageFigure("figure", (onWaiting) =>
-            deps.stage.showCharacter(station.id, blob, onWaiting),
-          ),
-        );
-        if (action.voice !== undefined) playSound(action.voice);
+        dom.text.textContent = block.caption;
+        if (block.view === "stage") {
+          withAsset(block.image, "figure", (blob) =>
+            stageFigure("figure", (onWaiting) =>
+              deps.stage.showCharacter(station.id, blob, onWaiting),
+            ),
+          );
+        }
+        if (block.voice !== undefined) playSound(block.voice);
         return;
       case "audio":
-        dom.text.textContent = action.transcript;
-        playSound(action.asset);
+        dom.text.textContent = block.transcript;
+        playSound(block.audio);
         return;
       case "video":
         // Video is later (plan §5 K4): its transcript stands in.
-        dom.text.textContent = action.transcript;
+        dom.text.textContent = block.transcript;
         return;
       case "model":
-        dom.text.textContent = action.caption ?? "";
-        withAsset(action.asset, "3D model", (blob) =>
+        dom.text.textContent = block.title ?? "";
+        if (block.view !== "stage") return;
+        withAsset(block.asset, "3D model", (blob) =>
           stageFigure("3D model", (onWaiting) =>
             deps.stage.showModel(station.id, blob, onWaiting),
           ),
         );
         return;
+    }
+  }
+
+  /** Show one step's action: a block, or a choice's buttons. */
+  function showAction(station: TourStation, action: TourStepAction): void {
+    switch (action.kind) {
+      case "show": {
+        const block = station.blocks.find((b) => b.id === action.block);
+        // The reader resolved every `show`: none names a missing block.
+        if (block !== undefined) showBlock(station, block);
+        return;
+      }
       case "choice":
         dom.text.textContent = action.prompt;
         dom.choices.replaceChildren(
@@ -317,6 +342,13 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     }
   }
 
+  /** The block a step shows, or null for a choice or a quiz. */
+  function shownBlock(station: TourStation, step: TourStep): TourBlock | null {
+    const { action } = step;
+    if (action.kind !== "show") return null;
+    return station.blocks.find((b) => b.id === action.block) ?? null;
+  }
+
   function render(step: TourStep | null): void {
     releaseStep();
     if (story === null) return;
@@ -324,11 +356,11 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       endStory();
       return;
     }
-    const action = step.action;
-    dom.speaker.hidden = action.kind !== "character";
-    dom.speaker.textContent = action.kind === "character" ? action.name : "";
-    dom.continueButton.hidden = action.kind === "choice";
-    showAction(story.station, action);
+    const block = shownBlock(story.station, step);
+    dom.speaker.hidden = block?.kind !== "character";
+    dom.speaker.textContent = block?.kind === "character" ? block.name : "";
+    dom.continueButton.hidden = step.action.kind === "choice";
+    showAction(story.station, step.action);
     armTimer(step);
     deps.onChange?.();
   }

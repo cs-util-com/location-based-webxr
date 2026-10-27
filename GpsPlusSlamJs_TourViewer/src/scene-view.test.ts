@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
   TourAsset,
+  TourBlock,
   TourStation,
   TourStep,
-} from "gps-plus-slam-app-framework/ar/tour-stations";
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { createSceneView, type SceneViewDom } from "./scene-view";
 
@@ -38,18 +39,47 @@ function fakeDom() {
   return { dom, lastChoices: () => choices.at(-1) ?? [] };
 }
 
-const tap = (id: string, text: string): TourStep => ({
-  id,
-  action: { kind: "text", text },
-  advance: { mode: "tap" },
-});
+/** A block's own fields: what a step of these tests shows. */
+type BlockFields = TourBlock extends infer B
+  ? B extends TourBlock
+    ? Omit<B, "id" | "pose">
+    : never
+  : never;
+
+/** Every block a step of these tests shows, by its id: `station` holds
+ *  the ones its steps show. */
+const shownBlocks = new Map<string, TourBlock>();
+
+/** A tap step showing a new block of `fields`. */
+function showing(id: string, fields: BlockFields): TourStep {
+  const blockId = `${id}-${String(shownBlocks.size)}`;
+  shownBlocks.set(blockId, {
+    ...fields,
+    id: blockId,
+    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+  });
+  return {
+    id,
+    action: { kind: "show", block: blockId },
+    advance: { mode: "tap" },
+  };
+}
+
+/** A tap step showing a text in the scene card. */
+const tap = (id: string, text: string): TourStep =>
+  showing(id, { kind: "longText", view: "card", title: id, body: text });
 
 function station(id: string, steps: TourStep[], title?: string): TourStation {
+  const blocks = steps.flatMap((s) => {
+    const block =
+      s.action.kind === "show" ? shownBlocks.get(s.action.block) : undefined;
+    return block === undefined ? [] : [block];
+  });
   return {
     id,
     ...(title === undefined ? {} : { title }),
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    items: [],
+    blocks,
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
@@ -165,17 +195,14 @@ describe("createSceneView", () => {
     const h = harness();
     h.view.offer(
       station("gate", [
-        {
-          id: "k",
-          action: {
-            kind: "character",
-            name: "Sir Kay",
-            image: "knight",
-            caption: "Welcome, traveller.",
-            voice: "voice",
-          },
-          advance: { mode: "tap" },
-        },
+        showing("k", {
+          kind: "character",
+          view: "stage",
+          name: "Sir Kay",
+          image: "knight",
+          caption: "Welcome, traveller.",
+          voice: "voice",
+        }),
       ]),
     );
     expect(h.dom.speaker).toEqual({ textContent: "Sir Kay", hidden: false });
@@ -210,16 +237,13 @@ describe("createSceneView", () => {
     });
     h.view.offer(
       station("gate", [
-        {
-          id: "k",
-          action: {
-            kind: "character",
-            name: "Sir Kay",
-            image: "knight",
-            caption: "Welcome, traveller.",
-          },
-          advance: { mode: "tap" },
-        },
+        showing("k", {
+          kind: "character",
+          view: "stage",
+          name: "Sir Kay",
+          image: "knight",
+          caption: "Welcome, traveller.",
+        }),
       ]),
     );
     await settle();
@@ -247,17 +271,14 @@ describe("createSceneView", () => {
     });
     h.view.offer(
       station("gate", [
-        {
-          id: "k",
-          action: {
-            kind: "character",
-            name: "Sir Kay",
-            image: "knight",
-            caption: "Welcome, traveller.",
-            voice: "voice",
-          },
-          advance: { mode: "tap" },
-        },
+        showing("k", {
+          kind: "character",
+          view: "stage",
+          name: "Sir Kay",
+          image: "knight",
+          caption: "Welcome, traveller.",
+          voice: "voice",
+        }),
       ]),
     );
     return { ...h, stand: () => stand() };
@@ -317,17 +338,14 @@ describe("createSceneView", () => {
     });
     h.view.offer(
       station("gate", [
-        {
-          id: "k",
-          action: {
-            kind: "character",
-            name: "Sir Kay",
-            image: "knight",
-            caption: "Welcome, traveller.",
-            voice: "voice",
-          },
-          advance: { mode: "tap" },
-        },
+        showing("k", {
+          kind: "character",
+          view: "stage",
+          name: "Sir Kay",
+          image: "knight",
+          caption: "Welcome, traveller.",
+          voice: "voice",
+        }),
       ]),
     );
     await settle();
@@ -338,17 +356,71 @@ describe("createSceneView", () => {
     expect(h.dom.status.textContent).toBe("");
   });
 
+  // Why: a block shown in the scene card stays in the card. A character or
+  // a model stands in the world only in its stage view; in the card its
+  // words (and a character's voice) are all there is, so a card never
+  // makes a figure appear at the station.
+  it("stages a figure or a model only in its stage view; in the card it says the words and a character's voice still plays", async () => {
+    const h = harness();
+    h.view.offer(
+      station("gate", [
+        showing("k", {
+          kind: "character",
+          view: "card",
+          name: "Sir Kay",
+          image: "knight",
+          caption: "Welcome, traveller.",
+          voice: "voice",
+        }),
+        showing("m", {
+          kind: "model",
+          view: "card",
+          asset: "arch",
+          title: "The arch",
+        }),
+      ]),
+    );
+    expect(h.dom.speaker).toEqual({ textContent: "Sir Kay", hidden: false });
+    expect(h.dom.text.textContent).toBe("Welcome, traveller.");
+    await settle();
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
+    expect(h.stage.showCharacter).not.toHaveBeenCalled();
+    h.view.continueTapped();
+    expect(h.dom.speaker.hidden).toBe(true);
+    expect(h.dom.text.textContent).toBe("The arch");
+    await settle();
+    expect(h.stage.showModel).not.toHaveBeenCalled();
+  });
+
+  // Why: this version plays no clip; a video's transcript is what the
+  // visitor gets, so a video block never leaves the card empty.
+  it("shows a video's transcript in its place", () => {
+    const h = harness();
+    h.view.offer(
+      station("s", [
+        showing("v", {
+          kind: "video",
+          view: "card",
+          video: "clip",
+          transcript: "The gate opens at dawn.",
+        }),
+      ]),
+    );
+    expect(h.dom.text.textContent).toBe("The gate opens at dawn.");
+  });
+
   it("says when a sound is refused or a file cannot be read, and keeps the words", async () => {
     const refused = harness({
       play: () => Promise.reject(new Error("NotAllowedError")),
     });
     refused.view.offer(
       station("s", [
-        {
-          id: "a",
-          action: { kind: "audio", asset: "voice", transcript: "Listen." },
-          advance: { mode: "tap" },
-        },
+        showing("a", {
+          kind: "audio",
+          view: "card",
+          audio: "voice",
+          transcript: "Listen.",
+        }),
       ]),
     );
     await settle();
@@ -360,11 +432,12 @@ describe("createSceneView", () => {
     });
     broken.view.offer(
       station("s", [
-        {
-          id: "m",
-          action: { kind: "model", asset: "arch", caption: "The arch" },
-          advance: { mode: "tap" },
-        },
+        showing("m", {
+          kind: "model",
+          view: "stage",
+          asset: "arch",
+          title: "The arch",
+        }),
       ]),
     );
     await settle();
@@ -377,11 +450,13 @@ describe("createSceneView", () => {
     const h = harness({ loadAsset: () => new Promise((r) => (release = r)) });
     h.view.offer(
       station("s", [
-        {
-          id: "i",
-          action: { kind: "image", asset: "knight", caption: "The knight" },
-          advance: { mode: "tap" },
-        },
+        showing("i", {
+          kind: "picture",
+          view: "card",
+          image: "knight",
+          caption: "The knight",
+          widthM: 1,
+        }),
         tap("t", "Next"),
       ]),
     );
@@ -395,11 +470,12 @@ describe("createSceneView", () => {
     const shown = harness();
     shown.view.offer(
       station("s", [
-        {
-          id: "i",
-          action: { kind: "image", asset: "knight" },
-          advance: { mode: "tap" },
-        },
+        showing("i", {
+          kind: "picture",
+          view: "card",
+          image: "knight",
+          widthM: 1,
+        }),
         tap("t", "Next"),
       ]),
     );
@@ -418,11 +494,13 @@ describe("createSceneView", () => {
     });
     h.view.offer(
       station("s", [
-        {
-          id: "i",
-          action: { kind: "image", asset: "knight", caption: "The knight" },
-          advance: { mode: "tap" },
-        },
+        showing("i", {
+          kind: "picture",
+          view: "card",
+          image: "knight",
+          caption: "The knight",
+          widthM: 1,
+        }),
       ]),
     );
     await settle();

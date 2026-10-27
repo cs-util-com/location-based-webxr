@@ -15,31 +15,40 @@ import {
 import {
   parseTourManifest,
   serializeTourManifest,
-  type TourObject,
+  type TourPicture,
+  type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { rebuildFinishedTour } from "./finish-rebuild.js";
-import { tourOf, withWorldObjects } from "./test-support/v3-tour.js";
+import { tourOf, withWorldObjects } from "./test-support/tour-of.js";
 import { openTourFile } from "./tour-session.js";
 
 const HOSTED = ["a", "b", "c", "d"] as const;
 
-function photo(id: string): TourObject {
+function photo(id: string): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-09-11T00:00:01.000Z",
     geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
   };
 }
 
-function pin(id: string, label: string): TourObject {
+function pin(id: string, label: string): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-09-11T00:00:01.000Z",
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
   };
@@ -67,7 +76,9 @@ describe("rebuildFinishedTour (property)", () => {
         fc.uniqueArray(fc.constantFrom("n1", "n2", "n3"), { maxLength: 3 }),
         async (deleted, edited, added) => {
           const placed = [
-            ...edited.map((id) => ({ object: pin(id, `edited ${id}`) })),
+            ...edited.map((id) => ({
+              object: { ...photo(id), caption: `edited ${id}` },
+            })),
             // A new pin as the tour document hands it over: seated in the
             // station holding it (the writer assigns none).
             ...added.map((id) => ({
@@ -106,7 +117,7 @@ describe("rebuildFinishedTour (property)", () => {
           const byId = new Map(carried.objects.map((o) => [o.id, o]));
           // A deletion wins over an edit of the same id.
           for (const id of edited.filter((e) => !deleted.includes(e))) {
-            expect(byId.get(id)).toMatchObject({ label: `edited ${id}` });
+            expect(byId.get(id)).toMatchObject({ caption: `edited ${id}` });
           }
           const names = readStoredCentralDirectory(bytes).map((e) => e.name);
           for (const id of HOSTED) {

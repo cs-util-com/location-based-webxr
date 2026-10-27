@@ -11,7 +11,11 @@
  * and a stable identity for the readers that memoize on it.
  */
 import { describe, expect, it } from "vitest";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourObject,
+  TourPicture,
+  TourPin,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { createCreatorDocument } from "./creator-document.js";
 import { stationsAsFinished } from "./creator-stations.js";
@@ -23,25 +27,33 @@ import {
   type TourSettingsRecord,
 } from "./tour-document-draft.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf, withCaption } from "./test-support/tour-of.js";
 
-function pin(id: string, lat = 48.52): TourObject {
+function pin(id: string, lat = 48.52): TourPin {
   return {
     id,
-    kind: "pin",
-    label: `pin ${id}`,
+    kind: "shortText",
+    view: "pin",
+    caption: `pin ${id}`,
     createdAtIso: "2026-10-19T00:00:00.000Z",
     geo: { lat, lon: 9.05, alt: 340, headingDeg: 0 },
   };
 }
 
-function photo(id: string): TourObject {
+function photo(id: string): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-10-19T00:00:00.000Z",
     geo: { lat: 48.5201, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
   };
@@ -231,10 +243,10 @@ describe("the creator's document: changes through the slice's guards", () => {
     const doc = fresh();
     doc.open(tourOf([]));
     doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
-    doc.edit({ ...pin("p"), label: "New" }, "the text");
+    doc.edit({ ...pin("p"), caption: "New" }, "the text");
     expect(doc.entries()[0]?.placement).toEqual(PLACEMENT);
     const moved = { ...PLACEMENT, visit: 2 };
-    doc.move({ ...pin("p"), label: "New" }, "the move", moved);
+    doc.move({ ...pin("p"), caption: "New" }, "the move", moved);
     expect(doc.entries()[0]?.placement).toEqual(moved);
   });
 
@@ -528,7 +540,7 @@ describe("the creator's document: the draft follows it", () => {
     doc.follow(draft);
     doc.open(tourOf([pin("a"), pin("b", 48.5202)]));
     const a = doc.objects()[0]!.object;
-    await expect(doc.edit({ ...a, label: "x" }, "e")?.backedUp).resolves.toBe(
+    await expect(doc.edit(withCaption(a, "x"), "e")?.backedUp).resolves.toBe(
       true,
     );
     await expect(doc.remove("b", "the delete")?.backedUp).resolves.toBe(false);
@@ -553,7 +565,7 @@ describe("the creator's document: the draft follows it", () => {
     const { draft, calls } = recordingDraft();
     doc.follow(draft);
     doc.open(tourOf([pin("a")]));
-    doc.edit({ ...doc.objects()[0]!.object, label: "x" }, "e");
+    doc.edit(withCaption(doc.objects()[0]!.object, "x"), "e");
     calls.length = 0;
     const generation = doc.saveStarted();
     doc.saved({
@@ -578,7 +590,7 @@ describe("the creator's document: the tour as opened", () => {
     expect(doc.opened()).toBeNull();
     const file = tourOf([pin("a")]);
     doc.open(file);
-    doc.edit({ ...doc.objects()[0]!.object, label: "x" }, "e");
+    doc.edit(withCaption(doc.objects()[0]!.object, "x"), "e");
     const generation = doc.saveStarted();
     doc.saved({
       generation,
@@ -662,7 +674,7 @@ describe("the creator's document: the tour's name (plan W2, §23 #8)", () => {
             foundRadiusM: 25,
             hint: "arrow",
             steps: [],
-            items: [],
+            blocks: [],
           },
         ],
       }),
@@ -734,7 +746,7 @@ describe("the creator's document: 'New station here' (D8)", () => {
     });
     // What the Finish writes is what the HUD says.
     const written = manifestToWrite(doc.state());
-    expect(written?.stations.map((s) => s.items.map((i) => i.id))).toEqual([
+    expect(written?.stations.map((s) => s.blocks.map((i) => i.id))).toEqual([
       ["a"],
       ["b"],
     ]);

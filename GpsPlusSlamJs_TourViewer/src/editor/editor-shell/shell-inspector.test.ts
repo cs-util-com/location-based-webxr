@@ -36,11 +36,13 @@ const STATIONS = [
     hint: "arrow",
     steps: [],
     image: "photo-1",
-    items: [
+    blocks: [
       {
         id: "photo-1",
-        kind: "photo",
-        image: "content/photo-1.jpg",
+        kind: "picture",
+        view: "plane",
+        image: "photo-1",
+        widthM: 1,
         createdAtIso: AT,
         pose: { position: [4, 1.5, -2], rotation: [0, 0, 0, 1] },
       },
@@ -54,9 +56,18 @@ const STATIONS = [
     foundRadiusM: 30,
     hint: "arrow",
     steps: [],
-    items: [],
+    blocks: [],
   },
 ] as unknown as TourStation[];
+
+/** The photo's own image asset: a captured photo's file. */
+const PHOTO_ASSET = {
+  id: "photo-1",
+  path: "content/photo-1.jpg",
+  kind: "image" as const,
+  width: 4,
+  height: 3,
+};
 
 const CODES: InspectorCode[] = [
   {
@@ -74,7 +85,11 @@ function storeWith(selected: string | null) {
   });
   store.dispatch(
     tourDocumentActions.opened({
-      manifest: { ...createEmptyTourManifest(), stations: STATIONS },
+      manifest: {
+        ...createEmptyTourManifest(),
+        assets: [PHOTO_ASSET],
+        stations: STATIONS,
+      },
     }),
   );
   store.dispatch(editorViewActions.selected({ id: selected }));
@@ -303,11 +318,12 @@ describe("drawInspector", () => {
         stations: [
           {
             ...STATIONS[1],
-            items: [
+            blocks: [
               {
                 id: "pin-x",
-                kind: "pin",
-                label: "Look up",
+                kind: "shortText",
+                view: "pin",
+                caption: "Look up",
                 createdAtIso: AT,
                 pose: { position: [1, 0, 1], rotation: [0, 0, 0, 1] },
               },
@@ -563,7 +579,7 @@ describe("drawInspector", () => {
     const gate = buildInspector({
       selected: "station:gate",
       stations: STATIONS,
-      assets: [],
+      assets: [PHOTO_ASSET],
       codes: CODES,
     });
     drawInspector(dock, gate, { folded: false, positionOpen: false }, nested);
@@ -582,11 +598,12 @@ describe("drawInspector", () => {
       s.id === "steps"
         ? {
             ...s,
-            items: [
+            blocks: [
               {
                 id: "lines",
-                kind: "pin",
-                label: "line one\nline two",
+                kind: "shortText",
+                view: "pin",
+                caption: "line one\nline two",
                 createdAtIso: AT,
                 pose: { position: [1, 0, 1], rotation: [0, 0, 0, 1] },
               },

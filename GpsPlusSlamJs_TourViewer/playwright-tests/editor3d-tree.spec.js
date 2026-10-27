@@ -286,6 +286,7 @@ async function photoTour(page) {
   const manifest = {
     ...createEmptyTourManifest(),
     title: "One photo",
+    assets: [{ id: "shot", path: "content/shot.jpg", width: 8, height: 6 }],
     stations: [
       {
         id: "fountain",
@@ -295,13 +296,13 @@ async function photoTour(page) {
         foundRadiusM: 25,
         hint: "arrow",
         steps: [],
-        items: [
+        blocks: [
           {
             id: "shot",
-            kind: "photo",
-            image: "content/shot.jpg",
-            imageWidth: 8,
-            imageHeight: 6,
+            kind: "picture",
+            view: "plane",
+            image: "shot",
+            widthM: 1,
             createdAtIso: "2026-10-25T09:00:00.000Z",
             pose: { position: [3, 1.5, 0], rotation: [0, 0, 0, 1] },
           },
@@ -385,7 +386,9 @@ test("a station copied with its photo is saved with a picture of its own, and op
   );
   expect(written.stations).toHaveLength(2);
   const pictures = written.stations.map(
-    (/** @type {any} */ s) => s.items[0]?.image,
+    (/** @type {any} */ s) =>
+      written.assets.find((/** @type {any} */ a) => a.id === s.blocks[0]?.image)
+        ?.path,
   );
   // Two photos, two pictures: the copy's is its own file, the same bytes.
   expect(new Set(pictures).size).toBe(2);
@@ -471,11 +474,12 @@ async function threePinTour() {
     foundRadiusM: 25,
     hint: "arrow",
     steps: [],
-    items: [
+    blocks: [
       {
         id: `p${id}`,
-        kind: "pin",
-        label: `Pin ${id}`,
+        kind: "shortText",
+        view: "pin",
+        caption: `Pin ${id}`,
         createdAtIso: "2026-10-25T09:00:00.000Z",
         pose: { position: [2, 1.5, 0], rotation: [0, 0, 0, 1] },
       },

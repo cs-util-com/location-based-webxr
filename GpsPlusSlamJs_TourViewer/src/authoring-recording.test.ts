@@ -743,8 +743,9 @@ describe("the order the page writes", () => {
       objectPlaced({
         object: {
           id: "p1",
-          kind: "pin",
-          label: "Gate",
+          kind: "shortText",
+          view: "pin",
+          caption: "Gate",
           createdAtIso: "2026-09-28T10:00:03.000Z",
           geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
         },

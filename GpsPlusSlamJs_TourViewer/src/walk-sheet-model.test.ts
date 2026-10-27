@@ -31,7 +31,7 @@ import {
 
 const step = {
   id: "s",
-  action: { kind: "text", text: "Hi" },
+  action: { kind: "show", block: "hi" },
   advance: { mode: "tap" },
 } as const;
 
@@ -44,7 +44,7 @@ function station(id: string, title: string): TourStation {
     foundRadiusM: 10,
     hint: "arrow",
     steps: [step],
-    items: [],
+    blocks: [],
   };
 }
 

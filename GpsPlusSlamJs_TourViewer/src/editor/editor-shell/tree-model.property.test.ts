@@ -43,10 +43,11 @@ const stationList = fc
               foundRadiusM: 25,
               hint: "arrow",
               steps: [],
-              items: Array.from({ length: n }, (_, i) => ({
+              blocks: Array.from({ length: n }, (_, i) => ({
                 id: `${id}-pin${String(i)}`,
-                kind: "pin",
-                label: "A pin",
+                kind: "shortText",
+                view: "pin",
+                caption: "A pin",
                 createdAtIso: "2026-10-22T10:00:00Z",
                 pose: POSE,
               })),
@@ -124,7 +125,7 @@ function run(stations: readonly TourStation[], steps: readonly Step[]) {
       continue;
     }
     clock += s.gap;
-    const item = s.item ? target.items[0] : undefined;
+    const item = s.item ? target.blocks[0] : undefined;
     const id = item?.id ?? `station:${target.id}`;
     const click = treeClick({
       id,

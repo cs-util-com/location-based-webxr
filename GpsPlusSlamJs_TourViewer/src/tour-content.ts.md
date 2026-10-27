@@ -2,12 +2,15 @@
 
 ## Purpose
 
-The Tour Viewer's write path for a version 3 tour (tour editor plan
+The Tour Viewer's write path for a version 4 tour (tour editor plan
 `GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md`,
-W3, D20, D21). The pages place, move and compare a WORLD view: every pin and
-photo with its geo pose, as the framework's `tourObjects` reads it. They
-write through `withTourContent`, which puts every object into the station
-it names at a LOCAL pose. A version 3 tour has no loose pins. The walk's
+W3, D20, D21). The pages place, move and compare a WORLD view: every pin
+(a short text in its `pin` view), photo (a picture in its `plane` view)
+and placed model with its geo pose, as the framework's `tourObjects`
+reads a station's free blocks. They write through `withTourContent`,
+which puts every object into the station it names as a free block at a
+LOCAL pose, beside the station's story blocks, and lists a captured
+photo's image asset. A tour has no loose pins. The walk's
 camera captures are debug data, never in a station (an earlier file's
 `captureSpots` is an unknown field to the framework's reader).
 
@@ -24,11 +27,24 @@ camera captures are debug data, never in a station (an earlier file's
   saved file compares this one (the authoring draft's `hostedObjects`).
 - `automaticStationFrame(id, at)`: a new automatic station's frame
   (below), the one the tour document's station rule starts.
+- `storyBlocksOf(station)`: a station's story blocks, the ones a step
+  shows (what a frame of the tour document holds inline).
+- `WorldBlock`, `worldBlocks(station)`: a station's free blocks
+  (`tourFreeBlocks`, the ones no step shows) as the short texts, pictures
+  and models standing in the world they are.
+- `isCapturedPhoto(object)`: a picture whose image asset carries its own
+  id (`content/<id>.jpg`, minted with it) - what a creator page takes with
+  the camera; a picture naming another of the tour's images is not one.
+- `ownedAssetIds(manifest)`: the image assets that are a captured photo's
+  own. Such an asset is part of its picture: written while the picture
+  is, gone with it; a cover or card image naming it names the photo.
 - `withTourContent(manifest, { objects }) -> TourManifest`: the manifest
-  with `objects` as its pins and photos, each in the station it names (or,
-  naming none, the one the manifest holds it in), the stations kept as
-  they are and in their order. Throws an `Error` naming the object for one
-  in no station of the manifest.
+  with `objects` as its free blocks, each in the station it names (or,
+  naming none, the one the manifest holds it in) beside the station's
+  story blocks, the stations kept as they are and in their order, and the
+  captured photos' assets those of `objects` (a deleted photo's asset
+  goes, a new one's is listed). Throws an `Error` naming the object for
+  one in no station of the manifest.
 - `withReferencedAssets(manifest, alsoKeep?) -> TourManifest`: the
   manifest without the assets it does not use, in their order; the same
   manifest when every asset is in use. `alsoKeep` (the document's
@@ -36,10 +52,10 @@ camera captures are debug data, never in a station (an earlier file's
   the manifest does not, so that step finds them after the write. A write applies it after
   `withTourContent`, and the rebuild removes the dropped assets' files
   (`finish-rebuild.ts`). Used means (module-private
-  `referencedAssetIds`): every step block's (an image, a character's image and voice,
-  an audio, a video, a model) in any station, every item's (none for a pin
-  or a photo; a placed model its model file), every station's card image
-  (format minor 2; it may name an image asset) and the cover.
+  `referencedAssetIds`): every block's of every station, story or free
+  (`blockAssetIds`: a picture's image, a video and its poster, an audio,
+  a model's file, a character's image and voice; none for a text), every
+  station's card image and the cover.
 - `keepsItself(station, imageAssets) -> boolean`: whether an EMPTY
   station carries the creator's own work, which keeps it when its last
   item leaves: a title, story steps, a non-blank description (a blank one
@@ -48,11 +64,13 @@ camera captures are debug data, never in a station (an earlier file's
   document (`withoutEmptied`) ask.
 - `imageAssetIds(assets) -> ReadonlySet<string>`: the image assets' ids,
   through the framework's `tourImageIds` (what `keepsItself` takes).
-- `stepAssetIds(station)`, `objectAssetIds(object)`: the assets a
-  station's (or a frame's) steps name, and a pin's, photo's or model's,
-  as a station's item or in its world view (none for a pin or a photo, a
-  model's own model file; a closed switch) - what the write and the
-  document's history read.
+- `blockAssetIds(block)` (module-internal): the assets one block names (a closed switch: a
+  new kind fails to compile until it says which it keeps).
+  `stepAssetIds(station)`: the assets a station's (or a frame's) story
+  blocks name. `objectAssetIds(object)`: the assets an object in the
+  world keeps (a model its file, a picture the tour's image it names, a
+  pin none; a captured photo's own asset none, as it is part of its
+  picture) - what the write and the document's history read.
 
 ## Invariants & assumptions
 
@@ -82,7 +100,7 @@ camera captures are debug data, never in a station (an earlier file's
   D5/D43; `withoutDebugCaptures`, which dropped them, went with the
   field).
 - An object missing from `objects` leaves its station. A station this
-  write EMPTIED (it held items and holds none now) goes when nothing else
+  write EMPTIED (it held free blocks and holds none now) goes when nothing else
   keeps it: nothing of its own (`keepsItself`: no title, no steps, no non-blank
   description, no card image naming an image asset). A station names no
   other (a station's `next` and a quiz's routes left the format), so no
@@ -103,8 +121,8 @@ camera captures are debug data, never in a station (an earlier file's
   bare spot the station rule removes. An image asset still resolves, so it keeps the
   station.
 - The order of the world view read back is the stations' order, then the
-  items' order within each station, which can differ from the order the
-  objects were placed in.
+  free blocks' order within each station, which can differ from the order
+  the objects were placed in.
 - **An asset nothing names is not written.** A visitor downloads every
   asset a tour lists, so one a changed step or cover left behind would
   ride along in every copy. A photo's image is its own content file, not

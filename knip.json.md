@@ -54,7 +54,7 @@ entirely after confirming they were only transitively pulled in.
   package's `exports` map, which points at `dist/`, so knip never sees that
   use and would report their public exports as unused. The version 4
   block and story readers (`src/ar/tour-blocks.ts`, `src/ar/tour-story.ts`)
-  are such entries before any app imports them: their member types
+  are such entries: their member types
   (`TourPictureBlock`, `TourStoryStep` and the like) are the public API a
   renderer narrows to. `dpdm` is in `ignoreDependencies` because the framework's
   `check:cycles` command moved from an inline package.json script into

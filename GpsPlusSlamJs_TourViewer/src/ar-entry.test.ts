@@ -32,7 +32,7 @@ import {
 import { RECORDING_DEPTH } from "./authoring-recording.js";
 import { tourDocumentActions } from "./tour-document.js";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 import {
   endSession,
   recordGpsEvent,
@@ -69,8 +69,9 @@ function el() {
 const FINISHED_TOUR = tourOf([
   {
     id: "p1",
-    kind: "pin",
-    label: "Gate",
+    kind: "shortText",
+    view: "pin",
+    caption: "Gate",
     geo: { lat: 47, lon: 8, alt: 400, rotation: [0, 0, 0, 1] },
     createdAtIso: "2026-10-20T00:00:00.000Z",
   } as unknown as TourObject,

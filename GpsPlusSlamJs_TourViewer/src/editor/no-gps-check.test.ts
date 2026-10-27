@@ -56,7 +56,7 @@ function station(
     foundRadiusM: 5,
     hint: "arrow",
     steps: [],
-    items: [],
+    blocks: [],
   };
 }
 

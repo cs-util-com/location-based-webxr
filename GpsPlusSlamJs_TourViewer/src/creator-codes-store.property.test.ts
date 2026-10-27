@@ -15,7 +15,7 @@ import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
 import { wireCreatorCodes, type CreatorCodes } from "./creator-codes.js";
 import { wireReferenceCodes } from "./test-support/creator-codes-reference.js";
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 import { tourDocumentActions } from "./tour-document.js";
 import {
   createTourViewerSession,

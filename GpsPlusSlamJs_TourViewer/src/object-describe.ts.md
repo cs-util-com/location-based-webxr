@@ -11,8 +11,14 @@ rule before a third page used it (root `CLAUDE.md` DEC-H3). Pure.
 
 ## Public API
 
-- `objectTitle(object): string` - a pin's text; a photo's caption, or
-  `"Photo"` when it has none or only blanks.
+- `ObjectLook` - `"pin" | "photo" | "model"`: what an object in the
+  world is in the pages' words and icons; `objectLook(kind)` maps the
+  format's kinds onto it (a short text is a pin, a picture a photo, a
+  model a model). The format's kinds stay out of the pages' words.
+- `objectTitle(object): string` - for an object in the world or a
+  station's free block: a pin's text (its caption); a photo's caption, or
+  a model's title, else `"Photo"` when it has none or only blanks (the
+  word an untitled model has always been listed under).
 - `codeDistanceLine(object, codes): string` - `"4 m from the code"` with
   one code, `"12 m from the nearest code"` with several, `""` without a
   code or without a finite distance. Whole metres: the objects' own GPS
@@ -28,12 +34,13 @@ rule before a third page used it (root `CLAUDE.md` DEC-H3). Pure.
 ## Examples
 
 ```ts
-objectTitle({ kind: "photo", label: "  " /* ... */ }); // "Photo"
+objectTitle({ kind: "picture", caption: "  " /* ... */ }); // "Photo"
 codeDistanceLine(pin, [codeGeo]); // "4 m from the code"
 ```
 
 ## Tests
 
-`object-describe.test.ts` (a pin's text, a photo's caption or "Photo",
+`object-describe.test.ts` (a pin's text, a photo's caption or "Photo", the
+looks of the three kinds,
 the distance to one code or the nearest of several, none without a
 code); `object-list.test.ts` pins that the list uses the same rule.

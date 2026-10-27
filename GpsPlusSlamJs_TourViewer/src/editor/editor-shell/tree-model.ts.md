@@ -19,7 +19,8 @@ codes, chips }`:
 imagePath | null, open, selected, context, children }`; `context` is
     true for the card of a selected item; `children` are its items
     (`TreeChild`);
-  - an item's title: a pin's label, else its trimmed caption, else
+  - an item's title: a pin's caption, else a picture's trimmed caption
+    or a model's trimmed title, else
     "Photo" or "3D model";
   - `TreeCode` - a code's row; `TreeChip` - `{ layer, label, on }`, on
     unless hidden.

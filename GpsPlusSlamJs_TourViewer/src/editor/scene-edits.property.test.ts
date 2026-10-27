@@ -15,13 +15,14 @@ import {
   parseTourManifest,
   serializeTourManifest,
   type TourObject,
+  type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { manifestToWrite } from "../tour-document.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
-import { stationIdOf, tourOf } from "../test-support/v3-tour.js";
+import { stationIdOf, tourOf } from "../test-support/tour-of.js";
 import {
   startGesture,
   type GestureTarget,
@@ -75,11 +76,12 @@ function world(
   };
 }
 
-function pin(id: string, east: number, north: number, alt: number): TourObject {
+function pin(id: string, east: number, north: number, alt: number): TourPin {
   return {
     id,
-    kind: "pin",
-    label: `pin ${id}`,
+    kind: "shortText",
+    view: "pin",
+    caption: `pin ${id}`,
     createdAtIso: "2026-10-22T00:00:00.000Z",
     geo: {
       lat: LAT + north / M_LAT,

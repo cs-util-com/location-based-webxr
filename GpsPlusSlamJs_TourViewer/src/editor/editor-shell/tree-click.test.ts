@@ -18,8 +18,8 @@ import {
 } from "./tree-click.js";
 
 const STATIONS = [
-  { id: "a", items: [{ id: "pin-1" }, { id: "photo-1" }] },
-  { id: "b", items: [] },
+  { id: "a", blocks: [{ id: "pin-1" }, { id: "photo-1" }] },
+  { id: "b", blocks: [] },
 ];
 
 describe("treeClick", () => {

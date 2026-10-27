@@ -3,7 +3,7 @@ import fc from "fast-check";
 import type {
   TourAsset,
   TourStation,
-} from "gps-plus-slam-app-framework/ar/tour-stations";
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { createStationPrefetch } from "./station-prefetch";
 
@@ -25,14 +25,24 @@ function station(id: string, assetIds: readonly string[]): TourStation {
   return {
     id,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    items: [],
+    blocks: assetIds.map((asset, i) => ({
+      id: `b${String(i)}`,
+      kind: "picture" as const,
+      view: "card" as const,
+      image: asset,
+      widthM: 1,
+      pose: {
+        position: [0, 0, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+      },
+    })),
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
-    steps: assetIds.map((asset, i) => ({
+    steps: assetIds.map((_asset, i) => ({
       id: `s${String(i)}`,
-      action: { kind: "image", asset },
-      advance: { mode: "tap" },
+      action: { kind: "show" as const, block: `b${String(i)}` },
+      advance: { mode: "tap" as const },
     })),
   };
 }

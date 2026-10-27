@@ -15,7 +15,7 @@ import {
   tourDocumentActions,
 } from "./tour-document.js";
 import { createTourViewerSession } from "./tour-viewer-session.js";
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 import type { CodeMeasurement, CodeSighting } from "./visit-settle.js";
 
 /** A level text whose `storedGeo` reads (the parser's minimal shape). */

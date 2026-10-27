@@ -35,10 +35,12 @@ import {
   tourImageIds,
 } from "gps-plus-slam-app-framework/ar/tour-details";
 import {
-  TOUR_ITEM_MAX_OFFSET_M,
+  TOUR_BLOCK_TEXT_RULES,
   TOUR_MODEL_MAX_SIZE_M,
   TOUR_MODEL_MIN_SIZE_M,
-} from "gps-plus-slam-app-framework/ar/tour-items";
+  tourTextCount,
+} from "gps-plus-slam-app-framework/ar/tour-blocks";
+import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import type {
   TourManifest,
   TourObject,
@@ -47,6 +49,7 @@ import type {
 import {
   itemGeoPose,
   localPoseOf,
+  tourFreeBlocks,
   tourObjects,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { hostedObjects, objectContentKey } from "./authoring-draft.js";
@@ -101,15 +104,27 @@ import {
   keepsItself,
   objectAssetIds,
   stepAssetIds,
+  storyBlocksOf,
 } from "./tour-content.js";
 import { sameJson } from "./same-json.js";
 import type { CodeMeasurement } from "./visit-settle.js";
 
 export type { LevelText } from "./code-book.js";
+/** The world view's readers (`tour-content.ts`), for the pages: the
+ *  free blocks of a station, and which pictures are captured photos and
+ *  own their image asset. Read-only; the rules stay behind the document. */
+export {
+  isCapturedPhoto,
+  ownedAssetIds,
+  worldBlocks,
+  type WorldBlock,
+} from "./tour-content.js";
 
-/** A station without its items: what the document edits of a station
- *  (its pose, D17); the items stay with the written tour. */
-export type StationFrame = Omit<TourStation, "items">;
+/** A station as the document edits it: its pose (D17), its own fields and
+ *  its story - its steps and the blocks they show (`blocks` holds those
+ *  only). Its free blocks are objects (the world view, `objects`), and
+ *  stay with the written tour. */
+export type StationFrame = TourStation;
 
 /** A station's pose: what a draft keeps of a frame moved here (D17), so
  *  a reload puts the station back with its items (the r875 milestone
@@ -534,9 +549,12 @@ export const initialTourDocumentState: TourDocumentState = {
 
 // --- the pure rules ---------------------------------------------------------
 
-/** A manifest's stations without their items. */
+/** A manifest's stations without their free blocks (`StationFrame`). */
 export function framesOf(manifest: TourManifest): StationFrame[] {
-  return manifest.stations.map(({ items: _items, ...frame }) => frame);
+  return manifest.stations.map((station) => ({
+    ...station,
+    blocks: storyBlocksOf(station),
+  }));
 }
 
 /** The frames of the stations this page created (the station rule, "New
@@ -629,12 +647,12 @@ export function stationsGoneSinceOpen(state: TourDocumentState): string[] {
   );
   const listed = new Set<string>();
   for (const file of filesOf(state)) {
-    const imageAssets = imageAssetIds(file.assets);
+    const imageAssets = imageAssetIds(file);
     for (const station of file.stations) {
       if (carried.has(station.id)) continue;
       if (
         state.deletedStations.includes(station.id) ||
-        station.items.length === 0 ||
+        tourFreeBlocks(station).length === 0 ||
         keepsItself(station, imageAssets)
       ) {
         listed.add(station.id);
@@ -679,12 +697,12 @@ function withFrames(
    *  one of its written items is neither deleted nor put elsewhere. */
   const inUse = (station: TourStation): boolean =>
     named.has(station.id) ||
-    station.items.some(
-      (item) =>
-        !gone.has(item.id) &&
-        (movedTo.get(item.id) ?? station.id) === station.id,
+    tourFreeBlocks(station).some(
+      (block) =>
+        !gone.has(block.id) &&
+        (movedTo.get(block.id) ?? station.id) === station.id,
     );
-  const imageAssets = imageAssetIds(written.assets);
+  const imageAssets = imageAssetIds(written);
   return {
     ...written,
     stations: [
@@ -699,7 +717,10 @@ function withFrames(
         ) {
           return [];
         }
-        return [{ ...frame, items: own?.items ?? [] }];
+        // The written free blocks first, then the frame's story blocks:
+        // the order every write puts a station's blocks in.
+        const free = own === undefined ? [] : tourFreeBlocks(own);
+        return [{ ...frame, blocks: [...free, ...frame.blocks] }];
       }),
       ...written.stations.filter(
         (s) =>
@@ -715,10 +736,12 @@ function withFrames(
  *  nothing else keeps one in the frames once a write left it out. */
 function bareEmptyStations(manifest: TourManifest | null): Set<string> {
   if (manifest === null) return new Set();
-  const imageAssets = imageAssetIds(manifest.assets);
+  const imageAssets = imageAssetIds(manifest);
   return new Set(
     manifest.stations
-      .filter((s) => s.items.length === 0 && !keepsItself(s, imageAssets))
+      .filter(
+        (s) => tourFreeBlocks(s).length === 0 && !keepsItself(s, imageAssets),
+      )
       .map((s) => s.id),
   );
 }
@@ -789,11 +812,15 @@ export function effectiveDetails(state: TourDocumentState): TourDetailFields {
 }
 
 /** The images the tour may show as its cover: its photos as they stand
- *  with the edits, and its image assets. */
+ *  with the edits, and its image assets that are no captured photo's own
+ *  (`imageAssetIds`). A deleted photo's own asset is still listed in the
+ *  file written last, and must not keep it a cover. */
 export function coverImageIds(state: TourDocumentState): Set<string> {
+  const written = state.written;
+  const free = written === null ? new Set<string>() : imageAssetIds(written);
   return tourImageIds({
     objects: documentObjects(state).map((o) => o.object),
-    assets: state.written?.assets ?? [],
+    assets: (written?.assets ?? []).filter((a) => free.has(a.id)),
   });
 }
 
@@ -878,19 +905,19 @@ export function manifestNow(state: TourDocumentState): TourManifest | null {
   );
 }
 
-/** The images each station's card may show now, by station id: a photo of
- *  that station as the document holds it, or an image asset of the written
- *  tour. The tour's objects are read once, however many stations are
- *  asked. */
+/** The images each station's card may show now, by station id: the image
+ *  of a picture of that station as the document holds it, or an image
+ *  asset of the written tour that is no captured photo's own. The tour's
+ *  objects are read once, however many stations are asked. */
 function stationImages(
   state: TourDocumentState,
 ): (stationId: string) => ReadonlySet<string> {
-  const assets = imageAssetIds(state.written?.assets ?? []);
+  const assets = writtenImageAssets(state);
   const byStation = new Map<string, Set<string>>();
   for (const { object } of documentObjects(state)) {
-    if (object.kind !== "photo" || object.station === undefined) continue;
+    if (object.kind !== "picture" || object.station === undefined) continue;
     const ids = byStation.get(object.station) ?? new Set(assets);
-    ids.add(object.id);
+    ids.add(object.image);
     byStation.set(object.station, ids);
   }
   return (stationId) => byStation.get(stationId) ?? assets;
@@ -914,6 +941,12 @@ function withEffectiveImages(
         : withoutField(station, "image"),
     ),
   };
+}
+
+/** The written tour's image assets that are no captured photo's own
+ *  (`imageAssetIds`); none before a tour is written. */
+function writtenImageAssets(state: TourDocumentState): ReadonlySet<string> {
+  return state.written === null ? new Set() : imageAssetIds(state.written);
 }
 
 /** `value` without its optional field `key`. */
@@ -1122,7 +1155,7 @@ function withoutEmptied(
   const ids = new Set([...candidates].filter((id) => id !== undefined));
   if (ids.size === 0) return state.stations;
   const named = new Set(documentObjects(state).map((o) => o.object.station));
-  const imageAssets = imageAssetIds(state.written?.assets ?? []);
+  const imageAssets = writtenImageAssets(state);
   const handMade = new Set(state.handMade);
   const gone = (frame: StationFrame): boolean =>
     ids.has(frame.id) &&
@@ -1191,7 +1224,7 @@ export function changeCount(state: TourDocumentState): number {
     (f) => !writtenFrames.has(f.id) && !named.has(f.id),
   ).length;
   const removed = written.stations.filter(
-    (s) => !nowIds.has(s.id) && s.items.length === 0,
+    (s) => !nowIds.has(s.id) && tourFreeBlocks(s).length === 0,
   ).length;
   const now = effectiveDetails(state);
   const details = DETAIL_FIELDS.filter((f) => now[f] !== written[f]).length;
@@ -1321,7 +1354,8 @@ export function picturesNeeded(
   const hosted = hostedObjects(state.written);
   return contentAt(state.written, view, keptStationsOf(state))
     .placed.filter(
-      (p) => p.object.kind === "photo" && hosted.key(p.object.id) === undefined,
+      (p) =>
+        p.object.kind === "picture" && hosted.key(p.object.id) === undefined,
     )
     .map((p) => p.object.id);
 }
@@ -1928,14 +1962,15 @@ function freeStationId(state: TourDocumentState, id: string): boolean {
 }
 
 /** Whether `id` may name a new item: a well-formed id that no object of
- *  the document, no deleted one, no written item and no asset carries
- *  (items and assets share one namespace). */
+ *  the document, no deleted one, no written item, no story block and no
+ *  asset carries (blocks and assets share one namespace). */
 function freeObjectId(state: TourDocumentState, id: string): boolean {
   if (!TOUR_ID_PATTERN.test(id) || state.deleted.includes(id)) return false;
   const written = state.written;
   return ![
     ...documentObjects(state).map((o) => o.object.id),
     ...(written === null ? [] : tourObjects(written).map((o) => o.id)),
+    ...allFrames(state).flatMap((s) => s.blocks.map((b) => b.id)),
     ...(written?.assets ?? []).map((a) => a.id),
   ].includes(id);
 }
@@ -2022,9 +2057,18 @@ function shownTitle(state: TourDocumentState, frame: StationFrame): string {
   return `Station ${String(at + 1)}`;
 }
 
+/** `text` marked as a copy, when the mark fits under `max` characters
+ *  (`tourTextCount`); else `text` as it is, which a save still takes. */
+function copyText(text: string, max: number): string {
+  const marked = `${text} copy`;
+  return tourTextCount(marked) <= max ? marked : text;
+}
+
 /** `object` as a new item `newId` at `geo` in `station`: made now
- *  (`createdAtIso`), a photo under its own content file (`content/<id>.`
- *  its extension), a label marked as a copy. */
+ *  (`createdAtIso`), a captured photo under its own image asset (the new
+ *  id, `content/<id>.` its extension), its text marked as a copy where
+ *  the mark fits (a pin's caption, a picture's caption, a model's
+ *  title). */
 function copiedObject(
   object: TourObject,
   copy: {
@@ -2041,13 +2085,43 @@ function copiedObject(
     geo: copy.geo,
     station: copy.station,
   };
-  const marked =
-    object.label === undefined
-      ? base
-      : { ...base, label: `${object.label} copy` };
-  if (marked.kind !== "photo") return marked;
-  const ext = /\.([a-z0-9]{1,5})$/.exec(marked.image)?.[1] ?? "jpg";
-  return { ...marked, image: `content/${copy.id}.${ext}` };
+  const rules = TOUR_BLOCK_TEXT_RULES;
+  switch (base.kind) {
+    case "shortText":
+      return {
+        ...base,
+        caption: copyText(base.caption, rules.shortText.caption.max),
+      };
+    case "model":
+      return base.title === undefined
+        ? base
+        : { ...base, title: copyText(base.title, rules.model.title.max) };
+    case "picture": {
+      const marked =
+        base.caption === undefined
+          ? base
+          : {
+              ...base,
+              caption: copyText(base.caption, rules.picture.caption.max),
+            };
+      // A picture naming an asset of the tour's shares it; a captured
+      // photo's own file is copied under the new id.
+      if (object.kind !== "picture" || object.image !== object.id) {
+        return marked;
+      }
+      const ext =
+        /\.([a-z0-9]{1,5})$/.exec(marked.imageAsset.path)?.[1] ?? "jpg";
+      return {
+        ...marked,
+        image: copy.id,
+        imageAsset: {
+          ...marked.imageAsset,
+          id: copy.id,
+          path: `content/${copy.id}.${ext}`,
+        },
+      };
+    }
+  }
 }
 
 /**
@@ -2183,7 +2257,8 @@ function stationsReorder(
 interface StationDuplicatePayload {
   readonly stationId: string;
   readonly newStationId: string;
-  /** A new id for EVERY item of the station, by its old id. */
+  /** A new id for EVERY block of the station, by its old id: its items
+   *  and its story's blocks (block ids are unique across the tour). */
   readonly newItemIds: Readonly<Record<string, string>>;
   readonly createdAtIso: string;
   /** Where the copy stands; beside the original when absent
@@ -2216,24 +2291,35 @@ function stationDuplicate(
     .map((o) => o.object)
     .filter((o) => o.station === frame.id);
   const newIds = items.map((o) => payload.newItemIds[o.id]);
+  const storyIds = frame.blocks.map((b) => payload.newItemIds[b.id]);
+  const minted = [...newIds, ...storyIds];
   if (
-    newIds.some((id) => id === undefined || !freeObjectId(before, id)) ||
-    new Set(newIds).size !== newIds.length
+    minted.some((id) => id === undefined || !freeObjectId(before, id)) ||
+    new Set(minted).size !== minted.length
   ) {
     return before;
   }
+  const renamed = (id: string): string => payload.newItemIds[id] ?? id;
   const geo = payload.geo ?? duplicateStationGeo(frame);
   if (!isGlobePoint(geo)) return before;
   // A card image of an image asset stays valid on the copy; one of the
   // station's own photo names a photo the copy does not hold.
   const keepsImage =
-    frame.image !== undefined &&
-    imageAssetIds(before.written.assets).has(frame.image);
+    frame.image !== undefined && imageAssetIds(before.written).has(frame.image);
   const copy: StationFrame = {
     ...(keepsImage ? frame : withoutField(frame, "image")),
     id: payload.newStationId,
     geo,
     title: copyTitle(shownTitle(before, frame)),
+    blocks: frame.blocks.map((b) => ({ ...b, id: renamed(b.id) })),
+    steps: frame.steps.map((s) =>
+      s.action.kind === "show"
+        ? {
+            ...s,
+            action: { ...s.action, block: renamed(s.action.block) },
+          }
+        : s,
+    ),
   };
   let placed = before.placed;
   for (const [i, item] of items.entries()) {

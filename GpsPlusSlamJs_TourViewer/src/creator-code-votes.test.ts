@@ -577,7 +577,7 @@ async function indoorCreator(
   function settledAt(label: string): Vector3 {
     const entry = ctx.tourDocument
       .entries()
-      .find((e) => e.object.kind === "pin" && e.object.label === label);
+      .find((e) => e.object.kind === "shortText" && e.object.caption === label);
     expect(entry, `no object ${label}`).toBeDefined();
     return new Vector3(...objectPoseNue(entry!.object.geo, ZERO).positionNue);
   }

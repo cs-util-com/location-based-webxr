@@ -34,7 +34,7 @@
  * settles.
  */
 import { describe, expect, it, vi } from "vitest";
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 import { Matrix4, Object3D, Scene, Vector3 } from "three";
 import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
@@ -158,8 +158,9 @@ function tourAtTruth(): { level: QrLevel; pin: TourPin } {
     level: { version: 1, qr: { physicalSizeM: 0.2, geo: qrGeo } },
     pin: {
       id: "pin",
-      kind: "pin",
-      label: "Here",
+      kind: "shortText",
+      view: "pin",
+      caption: "Here",
       createdAtIso: "2026-09-30T00:00:00.000Z",
       geo: {
         lat: pinGeo.lat,
@@ -564,14 +565,14 @@ describe("after a code-set zero the content shows on the first voted lock (no co
         id: "tower",
         title: "TOWER",
         geo: levelGeo,
-        items: [],
+        blocks: [],
         activateRadiusM: 30,
         foundRadiusM: 5,
         hint: "arrow",
         steps: [
           {
             id: "s",
-            action: { kind: "text", text: "Hi" },
+            action: { kind: "show", block: "hi" },
             advance: { mode: "tap" },
           },
         ],

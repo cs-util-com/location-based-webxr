@@ -6,28 +6,27 @@ one of the station's blocks (`tour-blocks.ts`), asks a CHOICE, or asks a
 QUIZ; all content lives in the blocks. Blocks and story are read together,
 because each decides the other: a `show` must name a block of this
 station, and a block no step shows is free and must stand in the world.
-
-**Not wired yet.** The manifest still reads and writes version 3, whose
-steps carry their content inline (`tour-stations.ts`). The quiz and the
-advance rule are that module's (`parseTourQuiz`, `parseTourStepAdvance`),
-so both versions read them alike.
+The manifest reads every station's blocks and story here
+(`tour-stations.ts`).
 
 ## Public API
 
 - `parseTourStationContent(value, at, options): TourStationContent` -
   reads `value.blocks` and `value.steps`; `options` are
   `TourBlocksReadOptions` (`{ assets, fail, lenient?, onDropped? }`).
-  Throws through `fail` naming the first violation.
-- `serializeTourStationContent(content, { assets, fail? }): TourStationContent`
-  - the content as a writer writes it, re-read strictly from a JSON copy;
-    any value a reader would leave out (an optional text over its cap)
-    fails here instead. Ready for `JSON.stringify`.
+  Throws through `fail` naming the first violation, a step by its index
+  in the file (`stations[0].steps[2].action.block`).
+- `tourShownBlockIds(steps): ReadonlySet<string>` - the ids of the blocks
+  `steps` show: a station's STORY blocks. Every other block is free.
 - Types:
-  - `TourStationContent` - `{ blocks: TourBlock[], steps: TourStoryStep[] }`;
-  - `TourStoryStep` - `{ id, action, advance }`;
-  - `TourStoryAction` - `{ kind: 'show', block }`,
+  - `TourStationContent` - `{ blocks: TourBlock[], steps: TourStep[] }`;
+  - `TourStep` - `{ id, action, advance }`, the file's own shape;
+  - `TourStepAction` - `{ kind: 'show', block }`,
     `{ kind: 'choice', prompt, options }` or `{ kind: 'quiz' } & TourQuiz`;
-  - `TourStoryOption` - `{ id, label, goto? }`.
+  - `TourChoiceOption` - `{ id, label, goto? }`;
+  - `TourQuiz` - `{ question, points, answer }`; `TourQuizAnswer`,
+    `TourQuizOption`;
+  - `TourStepAdvance` - `{ mode: 'tap' }` or `{ mode: 'auto', afterS }`.
 
 ## The story
 
@@ -36,16 +35,25 @@ so both versions read them alike.
 - `choice`: a non-empty prompt and at least two options with unique ids;
   an option's `goto` names a step of this station, or is absent - the
   scene continues at the next step. A `goto` naming no step fails.
-- `quiz`: `question`, `points` and `answer` as in version 3. There is no
+- `quiz`: `question`, `points` (an integer >= 0) and `answer`. There is no
   `route`: answers do not branch the walk. A `route` field is an unknown
   field and ignored.
-- Step ids are unique within the station; `advance` is `tap` when absent.
+  - Answers: `single { options, correct }`, `multiple { options,
+correct[] }` (at least 2 options, unique ids, correct among them),
+    `text`/`code { salt, sha256[] }` (salted SHA-256 hex of the accepted
+    answers after normalisation - a deterrent only), `number { value,
+tolerance >= 0, unit? }`.
+- `advance`: `{ mode: 'tap' }` (also when absent, and written out on a
+  read so a renderer never guesses) or `{ mode: 'auto', afterS > 0 }`.
+- Step ids are unique within the station.
 
 ## Invariants & assumptions
 
 - After a read, every `show` names a block in `blocks`, every `goto`
   names a step in `steps`, every choice has at least two options, and
   every block no step shows is in a world view (`pin`, `plane`, `placed`).
+- **The in-memory step is the file's step.** Nothing maps a step on the
+  way in or out, so the manifest's writer writes what it read.
 - **LENIENT for a NEWER MINOR:** a step of an unknown kind, a quiz of an
   unknown answer type, and a `show` naming a block the reader skipped are
   left out. A choice then keeps only the options whose step is still there
@@ -54,7 +62,8 @@ so both versions read them alike.
   can strand another that jumped to it. A block left free by a skipped
   step must still stand in the world, or it is skipped and reported. A
   `goto` naming a step that does not exist at all still fails, named by
-  its step's index in the file (skipped steps counted).
+  its step's index in the file (skipped steps counted). An unknown
+  advance mode is a tap.
 - Strict at this reader's own minor: every one of these fails.
 
 ## Examples
@@ -64,8 +73,8 @@ const content = parseTourStationContent(station, 'stations[0]', {
   assets,
   fail,
 });
-const record = serializeTourStationContent(content, { assets });
-JSON.stringify(record);
+const story = tourShownBlockIds(content.steps);
+const free = content.blocks.filter((b) => !story.has(b.id));
 ```
 
 ## Tests
@@ -74,10 +83,13 @@ JSON.stringify(record);
   station's block refused; one block shown twice; an optional and a
   dangling `goto`; option and step ids unique; a quiz route ignored; an
   unknown action kind refused; a free card refused; lenient skips,
-  choice pruning, floor views; the writer's strict re-read.
+  choice pruning, floor views; errors named by the step's index in the
+  file.
 - `tour-story.property.test.ts` - generated station contents (swept at
-  three sizes) read exactly and round-trip through the writer; newer
-  minor values injected anywhere never fail a lenient read and leave no
-  dangling reference, while a strict read of the same file fails; chained
-  stranded choices of depth 1-6 all go; an over-cap text fails a required
-  field and is dropped, reported, from an optional one.
+  three sizes) read exactly and survive a JSON round trip unchanged;
+  newer minor values injected anywhere never fail a lenient read and
+  leave no dangling reference, while a strict read of the same file
+  fails; chained stranded choices of depth 1-6 all go; an over-cap text
+  fails a required field and is dropped, reported, from an optional one.
+- `tour-stations.test.ts` - every quiz answer type and the advance rule,
+  through a whole station.

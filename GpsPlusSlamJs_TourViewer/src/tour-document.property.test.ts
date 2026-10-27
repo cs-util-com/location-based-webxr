@@ -17,11 +17,13 @@ import {
   serializeTourManifest,
   type TourManifest,
   type TourObject,
+  type TourPicture,
+  type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { rebuildFinishedTour } from "./finish-rebuild.js";
-import { stationIdOf, tourOf } from "./test-support/v3-tour.js";
+import { stationIdOf, tourOf } from "./test-support/tour-of.js";
 import { openTourFile } from "./tour-session.js";
 import {
   documentObjects,
@@ -40,23 +42,31 @@ import {
   settingsRecordText,
 } from "./tour-document-draft.js";
 
-function pin(id: string, lat: number): TourObject {
+function pin(id: string, lat: number): TourPin {
   return {
     id,
-    kind: "pin",
-    label: `pin ${id}`,
+    kind: "shortText",
+    view: "pin",
+    caption: `pin ${id}`,
     createdAtIso: "2026-10-18T00:00:00.000Z",
     geo: { lat, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
   };
 }
 
-function photo(id: string, lat: number): TourObject {
+function photo(id: string, lat: number): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-10-18T00:00:00.000Z",
     geo: { lat, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
   };
@@ -85,7 +95,7 @@ const WITH_CAPTURES: TourManifest = parseTourManifest({
       foundRadiusM: 25,
       hint: "arrow",
       steps: [],
-      items: [],
+      blocks: [],
     },
   ],
   captureSpots: {
@@ -199,10 +209,11 @@ function apply(state: TourDocumentState, op: Op): TourDocumentState {
   switch (op.kind) {
     case "edit": {
       const object = current(op.id);
-      if (object?.kind !== "pin" || object.label === op.label) return state;
+      if (object?.kind !== "shortText" || object.caption === op.label)
+        return state;
       return reduce(
         state,
-        act.edited({ object: { ...object, label: op.label }, what: "edit" }),
+        act.edited({ object: { ...object, caption: op.label }, what: "edit" }),
       );
     }
     case "move": {
@@ -1104,12 +1115,15 @@ const keeperArb = fc.constantFrom("none", "description", "asset", "own");
 function openedWithKeepers(keepers: readonly string[]): TourDocumentState {
   const manifest: TourManifest = {
     ...OPENED,
-    assets: [{ id: "art", path: "content/art.png", kind: "image" }],
+    assets: [
+      ...OPENED.assets,
+      { id: "art", path: "content/art.png", kind: "image" },
+    ],
     stations: OPENED.stations.map((s, i) => {
       const keeper = keepers[i];
       if (keeper === "description") return { ...s, description: "Kept." };
       if (keeper === "asset") return { ...s, image: "art" };
-      if (keeper === "own") return { ...s, image: s.items[0]!.id };
+      if (keeper === "own") return { ...s, image: s.blocks[0]!.id };
       return s;
     }),
   };
@@ -1274,7 +1288,7 @@ describe("tour document (properties): every object belongs to a station", () => 
         km,
         (radius, n1, e1, n2, e2) => {
           const manifest: TourManifest = {
-            version: 3,
+            version: 4,
             minor: 0,
             order: "fixed",
             assets: [],
@@ -1286,7 +1300,7 @@ describe("tour document (properties): every object belongs to a station", () => 
                 foundRadiusM: radius,
                 hint: "arrow",
                 steps: [],
-                items: [],
+                blocks: [],
               },
             ],
           };

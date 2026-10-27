@@ -166,7 +166,9 @@ imperative resources only - that handle and the pictures' side table
       east, an item 1.5 m east); a photo's picture is read first (the
       page's copy, `loadPhoto`, then the newest zip; `PICTURE_UNREAD` when
       none reads) and held under the copy's id, so the save writes the
-      copy's own `content/<id>.<ext>` and the draft keeps it.
+      copy's own `content/<id>.<ext>` and the draft keeps it. A station's
+      copy mints a new id for every block of it, its story's too (block
+      ids are unique across the tour).
     - `groundItems([{ id, alt }])` - "Put on the ground": the altitudes the
       page measured, ONE step for all; refused whole for an unknown id or
       a height beyond an item's reach of its station (`HEIGHT_REFUSED`).

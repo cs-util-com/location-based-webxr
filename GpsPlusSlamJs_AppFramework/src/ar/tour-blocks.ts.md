@@ -8,10 +8,8 @@ local `pose` in the station's frame). A block no story step shows is
 FREE and stands in the world; a block a `show` step names is a STORY
 block (`tour-story.ts`).
 
-**Not wired yet.** The manifest (`tour-manifest.ts`) still reads and
-writes version 3. This module and `tour-story.ts` define and validate the
-version 4 model beside it, so the format is settled and tested before the
-first file is written.
+The manifest (`tour-manifest.ts`) reads every station's blocks and story
+through `tour-story.ts`, which reads the blocks here.
 
 ## Public API
 
@@ -31,8 +29,9 @@ model | character`.
   - `model`: `title` optional 80;
   - `character`: `name` required 80, `caption` required 2000.
 - `TOUR_PICTURE_MIN_WIDTH_M` (0.05), `TOUR_PICTURE_MAX_WIDTH_M` (50) - a
-  picture's `widthM`, inclusive. A model's `sizeM` uses the item bounds
-  of `tour-items.ts`.
+  picture's `widthM`, inclusive.
+- `TOUR_MODEL_MIN_SIZE_M` (0.05), `TOUR_MODEL_MAX_SIZE_M` (500) - a
+  model's `sizeM`, inclusive.
 - `tourTextCount(text, unit = 'codePoints'): number` - THE count every cap
   is checked against and every editor counter shows: code points after
   trimming and collapsing each whitespace run to one space, or (`utf16`)

@@ -33,6 +33,12 @@ content stands in the scene (only the present one's).
 `/ranges-ok/stations-tour-no-code.zip` is the same stations tour without
 its printed code (no level): only a walk gives the guide its heading
 (`visitor-walk.spec.js`, the finding-direction path).
+`/ranges-ok/blocks-tour.zip` is the stations tour whose gate also stands,
+beside its pin, a captured photo (its own image asset), a picture of the
+tour's knight image and a placed model of the arch: every kind of free
+block a tour stands in the world (`blocks-tour.spec.js`).
+`/ranges-ok/v3-tour.zip` is a tour in the earlier format 3, written
+literally: the app refuses it and deletes the draft it kept for it.
 
 `/ranges-ok/walk-tour.zip` (any order) and `/ranges-ok/walk-tour-fixed.zip`
 (fixed order) are the visitor walk prototype's "Old town walk" (`visitor-walk.spec.js` and
@@ -47,11 +53,15 @@ proxy's own path so the app treats it as a Drive tour without a Google host
 with the file name "My tour.zip", any other id sends none (the fallback).
 `content-disposition` is in the exposed headers, because the app (port 5187) reads this server (port 5197) cross-origin.
 
-Every `tour.json` it writes is version 3 (tour editor plan 2026-10-17-1816,
-W3): stations at geo poses, the pins and photos as their items. The station shapes come from
-`v3-fixture.mjs` (`stationAt`, `inOwnStation`: anchored exactly at the
-element, turned like north, so its local pose is a zero offset), which the
-editor spec uses too.
+Every `tour.json` it writes is version 4: stations at geo poses, the pins
+and photos as their free blocks (a pin a short text in its `pin` view, a
+photo a picture in its `plane` view whose image asset carries its own id),
+a story as card or stage blocks shown by `show` steps. The shapes come
+from `tour-fixture.mjs` (`stationAt`, `inOwnStation`: anchored exactly at
+the element, turned like north, so its local pose is a zero offset;
+`pinBlock`, `capturedPhoto`, `imageAsset`, `textCard`, `showStep`),
+which the editor spec uses too. A story line of an earlier format's text
+step is a long text in the card, titled with its station's title.
 
 ## Public API
 

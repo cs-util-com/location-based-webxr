@@ -28,7 +28,7 @@ const AT = "2026-10-22T10:00:00Z";
 function station(
   id: string,
   extra: Partial<TourStation> = {},
-  items: TourStation["items"] = [],
+  items: TourStation["blocks"] = [],
 ): TourStation {
   return {
     id,
@@ -37,36 +37,38 @@ function station(
     foundRadiusM: 25,
     hint: "arrow",
     steps: [],
-    items,
+    blocks: items,
     ...extra,
   };
 }
 
 const PIN = {
   id: "pin-1",
-  kind: "pin",
-  label: "Fountain <b>1612</b>",
+  kind: "shortText",
+  view: "pin",
+  caption: "Fountain <b>1612</b>",
   createdAtIso: AT,
   pose: POSE,
 } as const;
 const PHOTO = {
   id: "photo-1",
-  kind: "photo",
-  image: "content/photo-1.jpg",
-  imageWidth: 4,
-  imageHeight: 3,
+  kind: "picture",
+  view: "plane",
+  image: "photo-1",
+  widthM: 1,
   createdAtIso: AT,
   pose: POSE,
 } as const;
 const PHOTO_2 = {
   ...PHOTO,
   id: "photo-2",
-  image: "content/photo-2.jpg",
-  label: "  The square in 1900  ",
+  image: "photo-2",
+  caption: "  The square in 1900  ",
 };
 const MODEL = {
   id: "model-1",
   kind: "model",
+  view: "placed",
   asset: "horse",
   sizeM: 2.4,
   createdAtIso: AT,
@@ -74,6 +76,8 @@ const MODEL = {
 } as const;
 const ASSETS: TourAsset[] = [
   { id: "cover", path: "content/cover.webp", kind: "image" },
+  { id: "photo-1", path: "content/photo-1.jpg", kind: "image" },
+  { id: "photo-2", path: "content/photo-2.jpg", kind: "image" },
   { id: "horse", path: "content/horse.glb", kind: "model" },
 ];
 

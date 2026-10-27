@@ -156,7 +156,7 @@ test("a creator with location allowed but no fix is lined up by the tour's store
   await finishAndDownload(page, 0);
   const zip = await downloadedZip(page, 0);
   const pin = zip.manifest.objects.find(
-    (o) => o.kind === "pin" && o.label === "Placed indoors",
+    (o) => o.kind === "shortText" && o.caption === "Placed indoors",
   );
   expect(pin).toBeDefined();
   // The code's votes set the session zero at the code's stored spot and

@@ -6,7 +6,7 @@
  * every property that uses it while they all stay green. This pins what
  * the generators claim: exact counts in the reader's own unit, the
  * boundaries actually reached, the hostile spellings actually produced,
- * ids at their limit and colliding across namespaces, and version 3
+ * ids at their limit and colliding across namespaces, and version 4
  * manifests the reader accepts.
  */
 
@@ -20,10 +20,11 @@ import {
   type TourTextRule,
 } from '../ar/tour-blocks';
 import { parseTourManifest } from '../ar/tour-manifest';
+import { tourObjects } from '../ar/tour-station-pose';
 import {
   TOUR_ARBITRARY_ASSETS,
   tourIdArbitrary,
-  tourManifestV3Arbitrary,
+  tourManifestArbitrary,
   tourTextArbitrary,
 } from './tour-arbitraries';
 
@@ -109,15 +110,19 @@ describe('tourIdArbitrary', () => {
   });
 });
 
-describe('tourManifestV3Arbitrary', () => {
-  it('builds version 3 manifests the reader accepts, with steps of every kind', () => {
+describe('tourManifestArbitrary', () => {
+  it('builds version 4 manifests the reader accepts, with blocks of every kind, steps of every kind and free blocks', () => {
     const kinds = new Set<string>();
+    const steps = new Set<string>();
+    let free = 0;
     fc.assert(
-      fc.property(tourManifestV3Arbitrary, (record) => {
+      fc.property(tourManifestArbitrary(), (record) => {
         const manifest = parseTourManifest(JSON.parse(JSON.stringify(record)));
         for (const station of manifest.stations) {
-          for (const step of station.steps) kinds.add(step.action.kind);
+          for (const block of station.blocks) kinds.add(block.kind);
+          for (const step of station.steps) steps.add(step.action.kind);
         }
+        free += tourObjects(manifest).length;
       }),
       { numRuns: 200, seed: 9 }
     );
@@ -125,13 +130,14 @@ describe('tourManifestV3Arbitrary', () => {
       [
         'audio',
         'character',
-        'choice',
-        'image',
+        'longText',
         'model',
-        'quiz',
-        'text',
+        'picture',
+        'shortText',
         'video',
       ].sort()
     );
+    expect([...steps].sort()).toEqual(['choice', 'quiz', 'show']);
+    expect(free).toBeGreaterThan(0);
   });
 });

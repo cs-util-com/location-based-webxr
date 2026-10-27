@@ -48,7 +48,10 @@ import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/fr
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
 import { registerFrameUpdate } from "gps-plus-slam-app-framework/ar/frame-loop";
-import { tourItems } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  tourFreeBlocks,
+  tourObjects,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import { renderTourStation } from "./content-placement.js";
 import type { ViewerMode } from "./mode.js";
@@ -1011,7 +1014,7 @@ export function createViewerPlacement(deps: {
   function tryPlaceContent(current: TourSession): void {
     if (ctx.contentAttempted || ctx.tourManifestStatus !== "settled") return;
     const manifest = ctx.tourDocument.manifest();
-    if (manifest === null || tourItems(manifest).length === 0) return;
+    if (manifest === null || tourObjects(manifest).length === 0) return;
     const zero = selectZeroReference(arStore.getState());
     const scene = seams.getScene();
     if (zero === null || scene === null) return;
@@ -1023,12 +1026,13 @@ export function createViewerPlacement(deps: {
     const loadContent =
       deps.loadContent ?? ((path: string) => current.loadContentEntry(path));
     for (const station of manifest.stations) {
-      if (station.items.length === 0) continue;
+      if (tourFreeBlocks(station).length === 0) continue;
       // One group per station, its pins and photos as children at their
       // local poses (tour editor plan W3).
       const part: ContentPart = {
         render: (parent, alive) =>
           renderTourStation(station, {
+            assets: manifest.assets,
             scene: parent,
             zero,
             alive,

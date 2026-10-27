@@ -14,29 +14,31 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
 
 - `buildEditorModel({ manifest, objects, levels, fileName }): EditorModel`
   - `objects`: the pins and photos as they stand, in the world (the
-    session's edits applied to `tourObjects(manifest)`; version 3 keeps
-    them in stations, tour editor plan W3).
+    session's edits applied to `tourObjects(manifest)`: the stations'
+    free short texts, pictures and models at their world poses).
   - `items`: codes first (in `levels`' order - the zip's, which is the
     phone's numbering - titled by `codeLabel`: "The code" alone, else
     "Code N"; `number` 1-based; `at` null without a stored position), then
-    the pins and photos of `objects` (title `objectTitle`, meta "Text note" /
-    "Photo note" plus `codeDistanceLine`, a photo's `image` path), then the
+    the pins and photos of `objects` (kind `pin` for a short text, `photo`
+    for a picture - the page's words, not the format's; title
+    `objectTitle`, meta "Text note" / "Photo note" plus
+    `codeDistanceLine`, a photo's `image` the path of its image asset), then the
     stations. The walk's debug camera captures are never items (they were
     listed as "Recorded photo" until M1 of the debug-captures plan).
   - `counts` per kind, `fitPoints` (every position, for framing), `title`
     (the manifest's, trimmed, else `fileName`).
 - Every manifest note is listed; one whose position cannot be drawn keeps
   its row with `at: null` and "· no position" in its meta (E1 review #9).
-- A placed 3D model (format minor 1) is listed nowhere and counted as no
+- A placed 3D model is listed nowhere and counted as no
   kind: this 2D editor knows pins and photos only, and a model shown as a
   note would be mislabelled. The tour keeps it untouched (the document
   slice carries it); the 3D editor is where it shows.
 - The story's stations (`kind: "station"`, id `station:<id>`, title or
   "Station N" by `station-run.ts` `stationTitle`, meta "Station N"), at
-  their own geo pose (version 3: every station has one, D9). Every
+  their own geo pose (every station has one). Every
   station is listed, the automatic ones that hold the pins and photos
   included. A station standing within `ON_CODE_M` (1 m) of a code's
-  measured point carries `onCode: true`: version 3 has no code link,
+  measured point carries `onCode: true`: a station names no code,
   but a creator still puts stations at codes, and the map draws such a
   station beside the code, never under it (PR #609 review). Its `at`
   stays its own point.

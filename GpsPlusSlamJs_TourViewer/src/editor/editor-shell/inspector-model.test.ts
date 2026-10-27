@@ -13,7 +13,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 // Activates the licence an item's place in the world needs.
-import "../../test-support/v3-tour.js";
+import "../../test-support/tour-of.js";
 
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
@@ -42,17 +42,19 @@ const STATIONS: TourStation[] = [
     foundRadiusM: 25,
     hint: "arrow",
     steps: [],
-    items: [
+    blocks: [
       {
         id: "pin-1",
-        kind: "pin",
-        label: "Fountain, 1612",
+        kind: "shortText",
+        view: "pin",
+        caption: "Fountain, 1612",
         createdAtIso: AT,
         pose: { position: [4, 1.5, -2], rotation: [0, 0, 0, 1] },
       },
       {
         id: "model-1",
         kind: "model",
+        view: "placed",
         asset: "horse",
         sizeM: 2.4,
         createdAtIso: AT,
@@ -67,7 +69,7 @@ const STATIONS: TourStation[] = [
     foundRadiusM: 30,
     hint: "arrow",
     steps: [],
-    items: [],
+    blocks: [],
   } as unknown as TourStation,
 ];
 
@@ -288,25 +290,37 @@ describe("buildInspector: the values the inspector edits", () => {
     foundRadiusM: 10,
     hint: "arrow",
     steps: [],
-    items: [
+    blocks: [
       {
         id: "photo-1",
-        kind: "photo",
-        image: "content/photo-1.jpg",
-        label: "North face",
+        kind: "picture",
+        view: "plane",
+        image: "photo-1",
+        widthM: 1,
+        caption: "North face",
         createdAtIso: AT,
         pose: { position: [3, 1.5, 4], rotation: [0, 0, 0, 1] },
       },
       {
         id: "pin-far",
-        kind: "pin",
-        label: "Far pin",
+        kind: "shortText",
+        view: "pin",
+        caption: "Far pin",
         createdAtIso: AT,
         pose: { position: [12, 0, 0], rotation: [0, 0, 0, 1] },
       },
     ],
   } as unknown as TourStation;
+  /** The photo's own image asset: a captured photo's file. */
+  const PHOTO_ASSET = {
+    id: "photo-1",
+    path: "content/photo-1.jpg",
+    kind: "image" as const,
+    width: 4,
+    height: 3,
+  };
   const ASSETS = [
+    PHOTO_ASSET,
     {
       id: "img-2",
       path: "content/img-2.png",
@@ -358,7 +372,7 @@ describe("buildInspector: the values the inspector edits", () => {
         stations: [
           { ...PHOTO_STATION, image: undefined } as unknown as TourStation,
         ],
-        assets: [],
+        assets: [PHOTO_ASSET],
         codes: [],
       }),
     ).toMatchObject({

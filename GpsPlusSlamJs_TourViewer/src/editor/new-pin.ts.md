@@ -14,9 +14,9 @@ loaded and seated in the station it was added to.
   radius), 12 places a ring starting due north and going clockwise, that
   keeps more than 2.2 m from every item; with none free, 4 m north (or
   the radius, if smaller).
-- `newPin({ station, id, nowIso, groundAt })` -> `TourObject`: a pin with
-  that id and time, labelled "New pin n" (n one more than the station's
-  pins), its `geo` at the free spot (`itemGeoPose`), its height the
+- `newPin({ station, id, nowIso, groundAt })` -> `TourPin`: a pin (a short
+  text in its `pin` view) with that id and time, its caption "New pin n"
+  (n one more than the station's pins), its `geo` at the free spot (`itemGeoPose`), its height the
   ground's there by `groundAt` (the anchor's height while none has
   loaded), and `station` set to the station's id, so the station rule
   does not seat it in another.

@@ -27,18 +27,16 @@ export interface Reseat {
 }
 
 const KIND_WORD: Readonly<Record<TourObject["kind"], string>> = {
-  pin: "The pin",
-  photo: "The photo",
+  shortText: "The pin",
+  picture: "The photo",
   model: "The 3D model",
 };
 
-/** An item as the line names it: a pin's or a caption's text, shortened,
- *  else what it is. */
+/** An item as the line names it: a pin's text, a picture's caption or a
+ *  model's title, shortened, else what it is. */
 function itemName(object: TourObject): string {
-  const label =
-    "label" in object && typeof object.label === "string"
-      ? object.label.replace(/\s+/g, " ").trim()
-      : "";
+  const text = object.kind === "model" ? object.title : object.caption;
+  const label = (text ?? "").replace(/\s+/g, " ").trim();
   if (label === "") return KIND_WORD[object.kind];
   const chars = [...label];
   return `"${chars.length > 40 ? `${chars.slice(0, 39).join("")}…` : label}"`;

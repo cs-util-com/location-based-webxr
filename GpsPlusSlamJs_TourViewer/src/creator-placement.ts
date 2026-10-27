@@ -14,7 +14,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import type {
   TourObject,
-  TourPhoto,
+  TourPicture,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
 import {
@@ -96,7 +96,7 @@ export function wireCreatorPlacement(deps: {
   ) => { readonly alignment: number[]; readonly zero: LatLong } | undefined;
   /** A photo minted through a settled visit's record: log it as that
    *  settle's late arrival. */
-  lateArrival: (visit: number, photo: TourPhoto) => void;
+  lateArrival: (visit: number, photo: TourPicture) => void;
   /** Where object `id` went among the stations, for its note ("it starts
    *  Station 3", "in Station 2"; `creator-stations.ts`), or null. Absent:
    *  the note names no station. */
@@ -178,7 +178,7 @@ export function wireCreatorPlacement(deps: {
     extras: Parameters<TourViewerSession["tourDocument"]["place"]>[1],
   ): { object: TourObject; ownStation: boolean } | null {
     const what =
-      object.kind === "pin" ? `the pin "${object.label}"` : "a photo";
+      object.kind === "shortText" ? `the pin "${object.caption}"` : "a photo";
     const refusal = placeRefusal(ctx.tourDocument.state(), object);
     const change =
       refusal === null ? ctx.tourDocument.place(object, extras, what) : null;
@@ -463,7 +463,7 @@ export function wireCreatorPlacement(deps: {
         logPlacement(placedPhoto.object, { cameraOdomPose: cameraPose });
         // Logged as the settle's late arrival, through its record: the
         // photo as the document took it (its own station, D8).
-        if (settled !== undefined && placedPhoto.object.kind === "photo") {
+        if (settled !== undefined && placedPhoto.object.kind === "picture") {
           deps.lateArrival(visit, placedPhoto.object);
         }
         deps.previews.sync();

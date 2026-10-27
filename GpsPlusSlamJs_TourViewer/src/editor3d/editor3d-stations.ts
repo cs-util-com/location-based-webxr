@@ -45,10 +45,12 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type {
+  TourAsset,
   TourManifest,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
+import { worldBlocks } from "../tour-document.js";
 import {
   objectPoseNue,
   renderTourStation,
@@ -365,6 +367,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   deps.parent.add(group);
   const stations = new Map<string, StationEntry>();
   let assets = new Map<string, string>();
+  let tourAssets: readonly TourAsset[] = [];
   let codes: THREE.Group[] = [];
   /** Each code's square and its morph. */
   let codeSquares: CodeSquare[] = [];
@@ -413,8 +416,8 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   };
 
   const placeModels = async (entry: StationEntry, content: StationContent) => {
-    for (const item of entry.station.items) {
-      if (item.kind !== "model") continue;
+    for (const item of worldBlocks(entry.station)) {
+      if (item.kind !== "model" || item.sizeM === undefined) continue;
       const path = assets.get(item.asset);
       if (path === undefined) continue;
       const model = await deps
@@ -458,6 +461,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     entry.content = content;
     renders++;
     void renderTourStation(entry.station, {
+      assets: tourAssets,
       scene: entry.root,
       zero: { lat: entry.station.geo.lat, lon: entry.station.geo.lon },
       alive: () => content.alive,
@@ -575,7 +579,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
 
   const entryOfItem = (id: string): StationEntry | null => {
     for (const entry of stations.values()) {
-      if (entry.station.items.some((i) => i.id === id)) return entry;
+      if (entry.station.blocks.some((i) => i.id === id)) return entry;
     }
     return null;
   };
@@ -650,8 +654,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       return;
     }
     const entry = entryOfItem(p.id);
-    const item = entry?.station.items.find((i) => i.id === p.id);
-    if (entry === null || item === undefined) return;
+    if (entry === null) return;
+    const item = worldBlocks(entry.station).find((i) => i.id === p.id);
+    if (item === undefined) return;
     poseDrawn(entry, p.id, item.pose, null);
   };
 
@@ -662,7 +667,8 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       manifest: TourManifest | null,
       levels: ReadonlyMap<string, QrLevel>,
     ) {
-      assets = new Map((manifest?.assets ?? []).map((a) => [a.id, a.path]));
+      tourAssets = manifest?.assets ?? [];
+      assets = new Map(tourAssets.map((a) => [a.id, a.path]));
       const keep = new Set<string>();
       (manifest?.stations ?? []).forEach((station, index) => {
         keep.add(station.id);
@@ -788,7 +794,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
      *  null for an id no station holds. */
     itemPointOf(id: string): THREE.Vector3 | null {
       for (const entry of stations.values()) {
-        const item = entry.station.items.find((i) => i.id === id);
+        const item = worldBlocks(entry.station).find((i) => i.id === id);
         if (item === undefined) continue;
         const { geo } = entry.station;
         const frame = objectPoseNue(geo, { lat: geo.lat, lon: geo.lon });

@@ -238,8 +238,9 @@ describe("a recording without tour.json", () => {
     const placed = ctx.tourDocument.place(
       {
         id: "p",
-        kind: "pin",
-        label: "p",
+        kind: "shortText",
+        view: "pin",
+        caption: "p",
         createdAtIso: "2026-10-20T00:00:00.000Z",
         geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 },
       },

@@ -7,7 +7,10 @@
  * the rule lives once, here.
  */
 import { beforeAll, describe, expect, it } from "vitest";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourPicture,
+  TourPin,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import { codeDistanceLine, objectTitle } from "./object-describe.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
@@ -19,26 +22,34 @@ beforeAll(() => {
 
 const GEO = { lat: 47.5, lon: 8.7, alt: 400 };
 
-function pin(label: string): TourObject {
+function pin(label: string): TourPin {
   return {
     id: "p",
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-09-11T00:00:01.000Z",
     geo: { ...GEO, headingDeg: 0 },
   };
 }
 
-function photo(label?: string): TourObject {
+function photo(label?: string): TourPicture {
   return {
     id: "f",
-    kind: "photo",
-    image: "content/f.jpg",
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: "f",
+    widthM: 1,
+    imageAsset: {
+      id: "f",
+      path: "content/f.jpg",
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-09-11T00:00:01.000Z",
     geo: { ...GEO, rotation: [0, 0, 0, 1] },
-    ...(label === undefined ? {} : { label }),
+    ...(label === undefined ? {} : { caption: label }),
   };
 }
 

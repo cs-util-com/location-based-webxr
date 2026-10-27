@@ -32,12 +32,8 @@ import {
   type TourBlockKind,
   type TourTextRule,
 } from './tour-blocks';
-import { parseTourAssets } from './tour-stations';
-import {
-  parseTourStationContent,
-  serializeTourStationContent,
-  type TourStationContent,
-} from './tour-story';
+import { parseTourAssets } from './tour-assets';
+import { parseTourStationContent, type TourStationContent } from './tour-story';
 
 class Invalid extends Error {}
 const fail = (message: string): never => {
@@ -75,18 +71,15 @@ describe('station content (properties)', () => {
     { maxBlocks: 6, maxExtraSteps: 3 },
     { maxBlocks: 16, maxExtraSteps: 8 },
   ]) {
-    it(`the reader keeps a valid file exactly, and parse(serialize(x)) is x (up to ${String(size.maxBlocks)} blocks)`, () => {
+    it(`the reader keeps a valid file exactly, and what it read reads back the same through JSON (up to ${String(size.maxBlocks)} blocks)`, () => {
       fc.assert(
         fc.property(tourStationContentArbitrary(size), (record) => {
           const parsed = parse(record);
           // Nothing added, nothing rewritten: texts as written, every
           // optional value that was there, no default invented.
           expect(parsed).toEqual(record);
-          const written = serializeTourStationContent(parsed, {
-            assets: ASSETS,
-            fail,
-          });
-          expect(parse(copy(written))).toEqual(parsed);
+          // The manifest's writer writes the in-memory station as it is.
+          expect(parse(copy(parsed))).toEqual(parsed);
         }),
         { numRuns: size.maxBlocks > 6 ? 40 : 120 }
       );

@@ -15,8 +15,9 @@ origin?, groundAt? })` ->
   - `StationInspector` - `kind: "station"`, title, `sub` "Station n of
     N", `place` (`{ number, count }`, for Earlier and Later), `name`
     (its own title to edit, empty for an untitled one), description,
-    `imagePath`, `images` (the station's photos,
-    then the tour's image assets, each `{ id, path, label }`) and
+    `imagePath`, `images` (the station's photos, each its image asset's
+    path, then the tour's other image assets - a captured photo's own
+    asset is its photo's, never listed twice - each `{ id, path, label }`) and
     `imageId` (the one its card shows, or null), `foundRadiusM`,
     `activateRadiusM`, `outside` (how many of its items stand outside
     the found circle), `offGround` (how many items stand more than
@@ -26,7 +27,7 @@ origin?, groundAt? })` ->
     `position` (`InspectorPosition`), or null when the
     station's point or the origin cannot be read;
   - `ItemInspector` - `kind: "item"`, `itemKind`, title, `sub` naming
-    its station, `stationId`, `text` (a pin's label to edit; null for a
+    its station, `stationId`, `text` (a pin's caption to edit; null for a
     photo or a model), `sizeM` (a model's, else null), `offset`
     (`northM`, `upM`, `eastM` in the station's frame), `headingDeg`,
     `groundOffM` (its height over the ground, rounded as the station's;

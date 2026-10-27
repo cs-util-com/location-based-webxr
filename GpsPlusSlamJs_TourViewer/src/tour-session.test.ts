@@ -16,10 +16,10 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 import {
   createEmptyTourManifest,
-  tourItems,
   serializeTourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   archiveFileName,
   openTourFile,
@@ -28,7 +28,7 @@ import {
   tourFileKeyOfFile,
   tourLabel,
 } from "./tour-session.js";
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 
 /**
  * Why these tests matter: this module is the viewer's whole data path — if
@@ -480,12 +480,19 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
     // looks half-placed rather than broken.
     const photo: TourObject = {
       id: "ab12ab12ab12ab12",
-      kind: "photo",
-      image: "content/ab12ab12ab12ab12.jpg",
+      kind: "picture",
+      view: "plane",
+      image: "ab12ab12ab12ab12",
+      widthM: 1,
+      imageAsset: {
+        id: "ab12ab12ab12ab12",
+        path: "content/ab12ab12ab12ab12.jpg",
+        kind: "image",
+        width: 1024,
+        height: 768,
+      },
       geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
       createdAtIso: "2026-09-08T12:00:00.000Z",
-      imageWidth: 1024,
-      imageHeight: 768,
     };
     const wrapped = await openTourSession("https://x/wrapped.zip", {
       fetchImpl: rangeServer(
@@ -497,7 +504,7 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
     });
     expect(wrapped.manifestWrap).toBe("mytour/");
     const manifest = await wrapped.loadTourManifest();
-    expect(tourItems(manifest!)[0]?.id).toBe(photo.id);
+    expect(tourObjects(manifest!)[0]?.id).toBe(photo.id);
     // The reader asks with the name the MANIFEST carries; the session joins
     // the prefix it found the manifest under.
     await expect(

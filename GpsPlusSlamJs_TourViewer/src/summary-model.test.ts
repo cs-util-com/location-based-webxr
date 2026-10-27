@@ -93,8 +93,9 @@ function bearingDeg(a: MapPoint, b: MapPoint): number {
 
 const pin = (id: string, label: string, p: MapPoint): TourObject => ({
   id,
-  kind: "pin",
-  label,
+  kind: "shortText",
+  view: "pin",
+  caption: label,
   createdAtIso: "2026-10-01T00:00:00.000Z",
   geo: { lat: p.lat, lon: p.lng, alt: 400, rotation: [0, 0, 0, 1] },
 });
@@ -357,10 +358,17 @@ describe("buildSummaryModel", () => {
   it("labels pins by their text and photos by caption or kind, where they stand", () => {
     const photo: TourObject = {
       id: "p1",
-      kind: "photo",
-      image: "content/p1.jpg",
-      imageWidth: 4,
-      imageHeight: 3,
+      kind: "picture",
+      view: "plane",
+      image: "p1",
+      widthM: 1,
+      imageAsset: {
+        id: "p1",
+        path: "content/p1.jpg",
+        kind: "image",
+        width: 4,
+        height: 3,
+      },
       createdAtIso: "2026-10-01T00:00:00.000Z",
       geo: {
         lat: at(3, 3).lat,
@@ -375,7 +383,7 @@ describe("buildSummaryModel", () => {
       objects: [
         pin("a", "Old gate", at(1, 2)),
         photo,
-        { ...photo, id: "p2", label: "The tower" },
+        { ...photo, id: "p2", caption: "The tower" },
       ],
     });
     expect(model.objects.map((o) => [o.kind, o.label])).toEqual([
@@ -398,6 +406,7 @@ describe("buildSummaryModel", () => {
         {
           id: "m",
           kind: "model",
+          view: "placed",
           asset: "statue",
           sizeM: 3,
           createdAtIso: "2026-10-19T00:00:00.000Z",

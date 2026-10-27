@@ -149,7 +149,7 @@ function tourOf(
     id: `s${String(i)}`,
     title: `S${String(i)}`,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    items: [],
+    blocks: [],
     activateRadiusM: s.foundRadiusM * 4,
     foundRadiusM: s.foundRadiusM,
     hint: "arrow",
@@ -157,7 +157,7 @@ function tourOf(
       ? [
           {
             id: "t",
-            action: { kind: "text", text: "Hi" },
+            action: { kind: "show", block: "hi" },
             advance: { mode: "tap" },
           },
         ]

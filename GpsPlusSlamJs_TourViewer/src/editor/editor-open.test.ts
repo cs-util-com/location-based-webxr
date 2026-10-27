@@ -60,7 +60,7 @@ describe("openTourForEditing", () => {
       {
         path: "tour.json",
         data: JSON.stringify({
-          version: 3,
+          version: 4,
           minor: 0,
           stations: [],
           description: "Fine.",
@@ -73,7 +73,10 @@ describe("openTourForEditing", () => {
     expect(out.kind).toBe("opened");
     if (out.kind !== "opened") return;
     expect(out.manifest.description).toBe("Fine.");
-    expect(out.dropped.map((d) => d.field)).toEqual(["cover", "contact"]);
+    expect(out.dropped.map((d) => ("field" in d ? d.field : d.kind))).toEqual([
+      "cover",
+      "contact",
+    ]);
     expect(droppedDetailsLine(out.dropped)).toBe(
       "This tour's cover and contact could not be read, so the editor left them out: the next save writes the tour without them. Set them again in the tour's details.",
     );
@@ -100,15 +103,15 @@ describe("openTourForEditing", () => {
       activateRadiusM: 50,
       foundRadiusM: 25,
       steps: [],
-      items: [],
+      blocks: [],
       ...extra,
     });
     const file = await zipFile([
       {
         path: "tour.json",
         data: JSON.stringify({
-          version: 3,
-          minor: 2,
+          version: 4,
+          minor: 0,
           stations: [
             bare("k3f9", { title: "The old well", image: "gone" }),
             bare("q7x2", { image: "lost" }),
@@ -121,7 +124,7 @@ describe("openTourForEditing", () => {
     const out = await openTourForEditing(file);
     expect(out.kind).toBe("opened");
     if (out.kind !== "opened") return;
-    expect(out.dropped.map((d) => d.field)).toEqual([
+    expect(out.dropped.map((d) => ("field" in d ? d.field : d.kind))).toEqual([
       "image",
       "image",
       "description",

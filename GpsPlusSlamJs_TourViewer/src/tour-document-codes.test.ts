@@ -23,7 +23,7 @@ import {
   type TourDocumentState,
 } from "./tour-document.js";
 import type { CodeMeasurement } from "./visit-settle.js";
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 const HOSTED = [{ id: "h", json: "hosted-h" }];
@@ -177,8 +177,9 @@ describe("the tour document's parsed hosted levels (plan M3b)", () => {
 describe("a settle as one step of the document (plan M3b, Q-D)", () => {
   const PIN: TourObject = {
     id: "p",
-    kind: "pin",
-    label: "Gate",
+    kind: "shortText",
+    view: "pin",
+    caption: "Gate",
     createdAtIso: "2026-10-21T00:00:00.000Z",
     geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 },
   };

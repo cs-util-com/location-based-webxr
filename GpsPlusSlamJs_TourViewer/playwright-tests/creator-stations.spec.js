@@ -92,12 +92,12 @@ async function expectWrittenAsTold(page) {
   const { manifest } = await downloadedZip(page, 0);
   const holding = (/** @type {string} */ label) =>
     manifest.stations.find((s) =>
-      s.items.some((i) => i.kind === "pin" && i.label === label),
+      s.blocks.some((i) => i.kind === "shortText" && i.caption === label),
     );
   const fixture = holding("Fixture pin");
   const started = holding("Outside");
   const outside = manifest.objects.find(
-    (o) => o.kind === "pin" && o.label === "Outside",
+    (o) => o.kind === "shortText" && o.caption === "Outside",
   );
   if (fixture === undefined || started === undefined || outside === undefined) {
     throw new Error("the written tour lost a pin or its station");
@@ -212,10 +212,10 @@ test("'New station here' makes the next pin start its own station within the rad
   const { manifest } = await downloadedZip(page, 0);
   const holding = (/** @type {string} */ label) =>
     manifest.stations.find((s) =>
-      s.items.some((i) => i.kind === "pin" && i.label === label),
+      s.blocks.some((i) => i.kind === "shortText" && i.caption === label),
     );
   const own = manifest.objects.find(
-    (o) => o.kind === "pin" && o.label === "Own",
+    (o) => o.kind === "shortText" && o.caption === "Own",
   );
   const fixture = holding("Fixture pin");
   const started = holding("Own");
@@ -225,7 +225,7 @@ test("'New station here' makes the next pin start its own station within the rad
   expect(started.id).not.toBe(fixture.id);
   expect(holding("After")?.id).toBe(started.id);
   // The fixture's station keeps its own pin and photos, nothing more.
-  expect(fixture.items.map((i) => i.id)).toEqual([
+  expect(fixture.blocks.map((i) => i.id)).toEqual([
     "fixturepin01",
     "fixturephoto1",
     "fixturephoto2",
@@ -273,7 +273,10 @@ async function pinInStore(page, label) {
         .tourDocument;
       const pin = doc.placed
         .map((/** @type {any} */ p) => p.object)
-        .find((/** @type {any} */ o) => o.kind === "pin" && o.label === label);
+        .find(
+          (/** @type {any} */ o) =>
+            o.kind === "shortText" && o.caption === label,
+        );
       const frame =
         pin === undefined
           ? null

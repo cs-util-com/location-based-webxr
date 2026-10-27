@@ -95,7 +95,7 @@ const VOTE_ACCURACY_M = 0.5;
 
 const step = {
   id: "s",
-  action: { kind: "text", text: "Hi" },
+  action: { kind: "show", block: "hi" },
   advance: { mode: "tap" },
 } as const;
 
@@ -114,7 +114,7 @@ function station(
     foundRadiusM,
     hint: "arrow",
     steps: [step],
-    items: [],
+    blocks: [],
   };
 }
 
