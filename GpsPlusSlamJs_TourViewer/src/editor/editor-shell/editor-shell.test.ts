@@ -241,6 +241,48 @@ describe("the inspector's typed fields", () => {
     shell.hide();
   });
 
+  // Why: the page refuses a text over the format's cap (its toast says
+  // so). The field was reset to the tour's value before the edit was
+  // sent, so the creator's typing was wiped by the refusal; it must stay
+  // in the field to be shortened. A written edit still shows the tour's
+  // value, as the draw gives it.
+  it("keep the typed text in the field when the page refuses the edit", () => {
+    const cases = [
+      { selection: "pa", name: "description", text: "x".repeat(161) },
+      { selection: "pb", name: "title", text: "A pin text the page refuses" },
+      { selection: "station:a", name: "title", text: "A name it refuses" },
+    ] as const;
+    for (const { selection, name, text } of cases) {
+      const { select, edits, shell } = setUp();
+      edits.block.mockReturnValue("refused");
+      edits.text.mockReturnValue("refused");
+      edits.station.mockReturnValue("refused");
+      select(selection);
+      const input = typeInto(name, text);
+      input.blur();
+      const sent =
+        edits.block.mock.calls.length +
+        edits.text.mock.calls.length +
+        edits.station.mock.calls.length;
+      expect(sent, `${selection} ${name}`).toBe(1);
+      expect(input.value, `${selection} ${name}`).toBe(text);
+      shell.hide();
+    }
+  });
+
+  it("show the tour's value again when the page writes the edit", () => {
+    const { select, edits, shell } = setUp();
+    edits.block.mockReturnValue("written");
+    select("pa");
+    const description = typeInto("description", "Under the arch");
+    description.blur();
+    expect(edits.block).toHaveBeenCalledTimes(1);
+    // The fake page wrote nothing to the store, so the tour's value is
+    // still the empty one.
+    expect(description.value).toBe("");
+    shell.hide();
+  });
+
   it("are written when the view hides", () => {
     const { select, edits, shell } = setUp();
     select("station:a");

@@ -243,8 +243,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   `askOpenSaveFile` opens the save dialog IN the sample's click or the
   link's submit, before the fetch, suggesting the name the fetched file
   will carry (`linkFileName`, the sample's own name; a Drive link without
-  a `.zip` name gives `tour-<start of its file id>.zip`, r955 review #1,
-  so a second Drive tour does not offer the first one's file). Asking
+  a `.zip` name gives `tour-<start of its file id>.zip`, so a second Drive
+  tour does not offer the first one's file), dated to the minute
+  (`datedFileName`, local time: `<name>-YYYY-MM-DD-HHMM.zip`), so the
+  same link or the sample reopened does not offer the file holding its
+  edited tour, where Enter plus Replace would write the original over it. Asking
   before the fetch is kept on purpose: Chromium opens the dialog only
   within a few seconds of the click, and the fetch can take longer. The fetch runs
   meanwhile and the tour opens as before; only once it opened does
@@ -260,10 +263,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   Nothing is written into the picked file before the tour opened: a
   failed fetch, or a file the open refuses, writes nothing, and the
   picked file is released (`settleUnusedPick` over `save-target.ts`'s
-  `releaseUnusedPick`, PR bot finding 11): the browser made it empty as
-  it was picked, so an empty one is removed where the handle can, one that
-  holds something is left as it was, and the open's error says which
-  beside what went wrong. A dismissed dialog writes nothing and the tour
+  `releaseUnusedPick`): the browser made it, or emptied it if it existed,
+  as it was picked, so it is never deleted (an empty file may be a tour
+  the creator chose to replace), and the open's error says, beside what
+  went wrong, that nothing of the tour was written into it and not to
+  rely on it if it was an existing file. A dismissed dialog writes nothing and the tour
   stays in the browser's draft until Save, which asks again; a write that
   fails says so in a toast that stays (`chosenFileUnwritten`, with what
   became of the file; it no longer says Save asks again, since Save asks
@@ -744,10 +748,10 @@ asked for in the click under the link's file name, "Saving into" while
 the held write runs, then the toast, the file holding the tour and the
 first edit saved into it by itself, the written file's size and SHA-256
 the link's own, and Share and publish's line; a link that fails after a
-pick writing nothing, the empty file removed and said, and an existing
-(seeded) file picked left byte for byte; a write refused at the open (a
+pick writing nothing, the file kept and the sentence said, and an existing
+(seeded) file picked neither written nor deleted; a write refused at the open (a
 lasting toast, the status line back, the name the open's, the file
-removed, the first Save of a change asking again); the save slot held
+kept, the first Save of a change asking again); the save slot held
 while the write at the open runs; a dismissed dialog
 leaving the tour in the browser (the status line says so) and the first
 Save asking again; and on Android (its client hints) the same dialog as

@@ -190,39 +190,20 @@ export function pickSaveFile(
 
 /**
  * A file the save dialog gave that nothing will be written into (the open
- * it was asked for failed, or was refused, or its write did not land):
- * the browser made it as it was picked, so an empty one is removed where
- * the handle can (`remove`, Chromium's), and one that holds something (an
- * existing file picked to be replaced) is left as it was. Resolves to the
- * sentence that says which, null when no file was picked (PR bot finding
- * 11, r955 review #1: an unexplained 0-byte file stayed behind).
+ * it was asked for failed, or was refused, or its write did not land).
+ * It is NEVER deleted: the browser empties a chosen file as the dialog
+ * returns (the spec, and Chromium), so an empty file may be a new one or
+ * a tour the creator chose to replace - and the page cannot tell which.
+ * Resolves to one sentence true in both cases, null when no file was
+ * picked. Never throws.
  */
 export async function releaseUnusedPick(
   pick: Promise<SaveFilePick> | null,
 ): Promise<string | null> {
   const picked = await pick;
   if (picked?.kind !== "picked") return null;
-  const { handle } = picked;
-  let size: number;
-  try {
-    size = (await handle.getFile()).size;
-  } catch {
-    return `Nothing was written into ${handle.name}.`;
-  }
-  if (size > 0)
-    return `Nothing was written into ${handle.name}; it is as it was.`;
-  const removable = handle as FileSystemFileHandle & {
-    remove?: () => Promise<void>;
-  };
-  if (typeof removable.remove === "function") {
-    try {
-      await removable.remove();
-      return `Nothing was written into ${handle.name}, and the empty file was removed.`;
-    } catch {
-      // Said below: the creator can delete it.
-    }
-  }
-  return `Nothing was written into ${handle.name}: it is empty and can be deleted.`;
+  const { name } = picked.handle;
+  return `Nothing of the tour was written into ${name}. The browser may have emptied it when it was chosen, so if it was an existing file, do not rely on it.`;
 }
 
 async function askToWrite(handle: WritableFileHandle): Promise<boolean> {

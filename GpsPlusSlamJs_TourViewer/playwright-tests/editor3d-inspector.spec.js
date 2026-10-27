@@ -452,7 +452,9 @@ test("a short text's Description is a labelled field with its count: one step, r
     .toBe("Under the arch");
 
   // Over the cap: marked as it is typed, and nothing written (undo and
-  // redo moved the revision too: compare with it as it stands now).
+  // redo moved the revision too: compare with it as it stands now). The
+  // refused text stays in the field, so the creator can shorten it rather
+  // than type it again.
   const beforeOver = await revision(page);
   await description.fill("x".repeat(161));
   const over = await countOf();
@@ -466,6 +468,8 @@ test("a short text's Description is a labelled field with its count: one step, r
   ).toBeVisible();
   expect(await revision(page)).toBe(beforeOver);
   expect((await blockNow())?.description).toBe("Under the arch");
+  await expect(description).toHaveValue("x".repeat(161));
+  await expect(await countOf()).toHaveText("161 / 160");
 
   // Saved, and opened again in a new page: as typed.
   const download = page.waitForEvent("download");

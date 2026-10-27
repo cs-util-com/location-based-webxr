@@ -33,7 +33,10 @@ saved exactly as a chosen file is.
     error.
 - `linkFileName(link): string | null` - the name the fetched file will
   carry (the same rule, of the trimmed link), worked out before any
-  request: the save dialog asked for in the open's click suggests it.
+  request: the save dialog asked for in the open's click suggests it,
+  dated to the minute (`editor-session.ts` `datedFileName`): one name per
+  link would let a reopen's Enter plus Replace write the original over
+  the edited tour.
   Null for text that is not an http(s) link (the open refuses it and no
   dialog is asked for).
 - `linkOpenErrorText(err, link): string` - the dialog's sentence: the

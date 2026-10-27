@@ -123,15 +123,20 @@ interface ShellStationCommands {
   remove(selection: string): void;
 }
 
+/** Whether the page wrote a typed edit or refused it (a text over the
+ *  format's cap, said by the page): a refused one keeps its text in the
+ *  field. */
+export type TypedEditOutcome = "written" | "refused";
+
 /** The page's edits the inspector gives: each one undo step, a refusal
  *  said by the page. */
 interface ShellEditCommands {
   /** A station's name, description, found radius or card picture. */
-  station(stationId: string, edit: StationEdit): void;
+  station(stationId: string, edit: StationEdit): TypedEditOutcome;
   /** A pin's text. */
-  text(itemId: string, text: string): void;
+  text(itemId: string, text: string): TypedEditOutcome;
   /** One of a free block's other text fields (`block-fields.ts`). */
-  block(itemId: string, field: string, value: string): void;
+  block(itemId: string, field: string, value: string): TypedEditOutcome;
   /** A pose or a size, as the 3D view's gestures write them. */
   scene(edit: GestureEdit): void;
   /** Items' heights (the ground under each, or a typed height), as one
@@ -467,8 +472,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
 
   /** `input`'s text written as the edit it types for `selected`: one
    *  undo step. The field shows the tour's value again first, so a draw
-   *  the edit causes carries nothing over, and a refused edit leaves the
-   *  tour's value showing. */
+   *  the edit causes carries nothing over, and a value that is no number
+   *  leaves the tour's value showing. A text the page refuses (over its
+   *  cap) is put back in the field, so the typing is not lost: the
+   *  refusal changes no state, so no draw replaces the field. */
   const commitField = (input: TypedField, selected: string | null) => {
     const value = input.value;
     if (selected === null || value === input.defaultValue || input.readOnly) {
@@ -482,17 +489,20 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       field: input.dataset["field"] ?? "",
       value,
     });
+    let outcome: TypedEditOutcome = "written";
     if (edit.kind === "invalid") deps.say(edit.reason);
     else if (edit.kind === "station")
-      deps.edits.station(edit.stationId, edit.edit);
-    else if (edit.kind === "text") deps.edits.text(edit.id, edit.text);
+      outcome = deps.edits.station(edit.stationId, edit.edit);
+    else if (edit.kind === "text")
+      outcome = deps.edits.text(edit.id, edit.text);
     else if (edit.kind === "block") {
-      deps.edits.block(edit.id, edit.field, edit.value);
+      outcome = deps.edits.block(edit.id, edit.field, edit.value);
     } else if (edit.kind === "scene") deps.edits.scene(edit.edit);
     else if (edit.kind === "turn") view?.turn(edit.selection, edit.deg);
     else if (edit.kind === "height") {
       deps.edits.groundItems([{ id: edit.id, alt: edit.alt }]);
     }
+    if (outcome === "refused") input.value = value;
   };
 
   /** A ground command on the selection: run at once with the ground

@@ -127,6 +127,7 @@ import {
 import {
   copyFileName,
   createEditorSession,
+  datedFileName,
   type EditorSave,
   type EditorSession,
 } from "./editor-session.js";
@@ -151,7 +152,10 @@ import {
   setItemDisabled,
 } from "./menu-button.js";
 import { inField, inMenu } from "./key-target.js";
-import { createEditorShell } from "./editor-shell/editor-shell.js";
+import {
+  createEditorShell,
+  type TypedEditOutcome,
+} from "./editor-shell/editor-shell.js";
 import { newPin } from "./new-pin.js";
 import { reseatOf, type Reseat } from "./reseat-note.js";
 import { newObjectId } from "../content-placement.js";
@@ -1261,23 +1265,26 @@ function announceReseat(before: TourDocumentState, id: string): Reseat | null {
 }
 
 /** An edit the 3D inspector typed or pressed, written through `write`:
- *  one step; a refusal is said, a change counted. */
+ *  one step; a refusal is said, a change counted. Its outcome tells the
+ *  inspector whether to keep the typed text (`refused`, no tour open
+ *  included: nothing was written). */
 function writeInspectorEdit(
   write: (
     session: EditorSession,
   ) =>
     | { readonly kind: string }
     | { readonly kind: "refused"; readonly reason: string },
-): void {
-  if (editor === null) return;
+): TypedEditOutcome {
+  if (editor === null) return "refused";
   endUndo();
   const outcome = write(editor);
   refresh();
   if ("reason" in outcome) {
     toast(outcome.reason);
-    return;
+    return "refused";
   }
   if (outcome.kind !== "unchanged") autosave.changed();
+  return "written";
 }
 
 /** The 3D inspector's Add pin: a new pin in `stationId`, clear of its
@@ -2450,7 +2457,9 @@ let openWriting: string | null = null;
  * its first edit. Only where the browser adopts a saved file
  * (`adoptsSavedFile`): without the save dialog the tour stays in this
  * browser's draft until Save, as before. Null there, and for text that is
- * not a link (`name` null: the open refuses it).
+ * not a link (`name` null: the open refuses it). The dialog suggests the
+ * name dated to the minute (`datedFileName`): the same link reopened must
+ * not suggest the file that holds its edited tour.
  */
 function askOpenSaveFile(name: string | null): Promise<SaveFilePick> | null {
   if (
@@ -2459,7 +2468,10 @@ function askOpenSaveFile(name: string | null): Promise<SaveFilePick> | null {
   ) {
     return null;
   }
-  return pickSaveFile(window as unknown as SavePickerWindow, name);
+  return pickSaveFile(
+    window as unknown as SavePickerWindow,
+    datedFileName(name, new Date()),
+  );
 }
 
 /** The file picked at the open of `mine`, while it is still the open tour
@@ -2496,8 +2508,8 @@ function chosenFileUnwritten(
 
 /**
  * The file picked at an open that did not happen (the fetch failed, or the
- * tour was refused): it is released (`releaseUnusedPick`: an empty one
- * removed), and what became of it is added to the open's error, unless
+ * tour was refused): it is released (`releaseUnusedPick`: kept, never
+ * deleted), and what became of it is added to the open's error, unless
  * that error was replaced or closed meanwhile (PR bot finding 11).
  */
 function settleUnusedPick(pick: Promise<SaveFilePick> | null): void {
@@ -3566,15 +3578,11 @@ const shell = createEditorShell({
     remove: deleteSelection,
   },
   edits: {
-    station: (stationId, edit) => {
-      writeInspectorEdit((e) => e.editStation(stationId, edit));
-    },
-    text: (id, text) => {
-      writeInspectorEdit((e) => e.editText(id, text));
-    },
-    block: (id, field, value) => {
-      writeInspectorEdit((e) => e.editBlockField(id, field, value));
-    },
+    station: (stationId, edit) =>
+      writeInspectorEdit((e) => e.editStation(stationId, edit)),
+    text: (id, text) => writeInspectorEdit((e) => e.editText(id, text)),
+    block: (id, field, value) =>
+      writeInspectorEdit((e) => e.editBlockField(id, field, value)),
     scene: commitSceneEdit,
     groundItems: (items) => {
       writeInspectorEdit((e) => e.groundItems(items));

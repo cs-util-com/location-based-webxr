@@ -123,8 +123,27 @@ type UndoOutcome =
  *  its `.zip` (any case), so the copy is never taken for the tour's own
  *  file. */
 export function copyFileName(name: string): string {
+  return beforeZip(name, " copy");
+}
+
+/** The name the save dialog suggests for a tour opened from a link or the
+ *  sample: `name` with `-YYYY-MM-DD-HHMM` (`now`, local time) before its
+ *  `.zip` (any case), so reopening the same link never suggests the file
+ *  that holds the edited tour - Enter, then Replace, would write the
+ *  original over it. Two opens in the same local minute still share a
+ *  name (so do two in the hour a daylight-saving change repeats). */
+export function datedFileName(name: string, now: Date): string {
+  const two = (n: number) => String(n).padStart(2, "0");
+  const day = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
+  const time = `${two(now.getHours())}${two(now.getMinutes())}`;
+  return beforeZip(name, `-${day}-${time}`);
+}
+
+/** `name` with `insert` before its `.zip` ending (any case), else at its
+ *  end: a ".zip" that is not the end is part of the name. */
+function beforeZip(name: string, insert: string): string {
   const at = /\.zip$/i.test(name) ? name.length - 4 : name.length;
-  return `${name.slice(0, at)} copy${name.slice(at)}`;
+  return `${name.slice(0, at)}${insert}${name.slice(at)}`;
 }
 
 export interface EditorSave {

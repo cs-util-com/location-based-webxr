@@ -156,8 +156,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   when its text differs from the tour's (`defaultValue`): one edit, one
   undo step per field. The field is set back to the tour's value before
   the edit is written, so the redraw shows what the tour now holds (a
-  refusal or a value that is no number is said, and the tour's value
-  stays). Escape in a changed field puts the tour's value back and goes
+  value that is no number is said, and the tour's value stays). A text
+  the page refuses (over the format's cap; its station, pin text and
+  block commands return `TypedEditOutcome`, `"refused"`) is said by the
+  page and put back in the field, so the typing is kept to be shortened. Escape in a changed field puts the tour's value back and goes
   no further (the page's Escape would deselect). Text still typed when
   the selection changes or the view hides is committed to the selection
   it was typed for.
@@ -253,7 +255,9 @@ with its stations shown.
 The shell itself under jsdom, on `edit.html`'s markup and a real store
 with the page's commands as spies (`editor-shell.test.ts`): text typed
 and not committed goes to the selection it was typed for on a selection
-change and on `hide()`; a draw while typing (a store change, the ground
+change and on `hide()`; a refused text (a block field, a pin text, a
+station name) kept in the field, a written one showing the tour's value;
+a draw while typing (a store change, the ground
 arriving on the readout's tick) commits nothing and keeps the text and
 the focus (Chromium's synchronous `focusout` on a removed field is
 reproduced there, jsdom lacks it); the commit's own draw hands the focus

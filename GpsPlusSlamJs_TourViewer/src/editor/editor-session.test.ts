@@ -34,6 +34,7 @@ import { selectTourDocument, tourDocumentActions } from "../tour-document.js";
 import {
   copyFileName,
   createEditorSession,
+  datedFileName,
   NOT_IN_TOUR,
   TOO_FAR_FROM_STATION,
   type EditorSession,
@@ -313,6 +314,24 @@ describe("createEditorSession, Save a copy", () => {
     expect(copyFileName("a.zip.bak")).toBe("a.zip.bak copy");
     expect(copyFileName("xzip")).toBe("xzip copy");
     expect(copyFileName("")).toBe(" copy");
+  });
+
+  // Why: a tour opened from a link or the sample asks where to save it,
+  // and the dialog suggests this name. Were it the same at every open,
+  // reopening the same link and pressing Enter, then Replace, would write
+  // the original tour over the file holding the edited one.
+  it("dates the name a tour opened from a link or the sample suggests, in local time", () => {
+    const now = new Date(2026, 9, 7, 9, 5, 59);
+    expect(datedFileName("tour-1AbCdEfGhIjK.zip", now)).toBe(
+      "tour-1AbCdEfGhIjK-2026-10-07-0905.zip",
+    );
+    expect(datedFileName("Old Town.ZIP", now)).toBe(
+      "Old Town-2026-10-07-0905.ZIP",
+    );
+    expect(datedFileName("a.zip.bak", now)).toBe("a.zip.bak-2026-10-07-0905");
+    expect(datedFileName("sample.zip", new Date(2026, 11, 31, 23, 59))).toBe(
+      "sample-2026-12-31-2359.zip",
+    );
   });
 
   it("waits for a save that runs, and copies what it saved too", async () => {

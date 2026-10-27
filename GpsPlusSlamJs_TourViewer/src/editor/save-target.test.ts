@@ -542,26 +542,29 @@ describe("adoptsSavedFile", () => {
 
 // Why: the open from a link or the sample asks for its file IN the click,
 // before the fetch (the dialog needs the click), so a fetch or an open
-// can fail after the creator picked a file. The browser has made that file
-// by then, empty. It must never stay behind unexplained (PR bot finding
-// 11, r955 review #1): an empty one is removed where the browser can, a
-// file that holds something is left as it was, and each case is said.
+// can fail after the creator picked a file. By then the browser has made
+// that file - and if it was an existing file, Chromium has already
+// emptied it (the spec's save dialog clears a chosen file before it
+// returns). So the page can never tell a new empty file from a tour the
+// creator chose to replace: it must never delete a picked file, and the
+// one sentence it says must be true in both cases.
 describe("releaseUnusedPick", () => {
-  function picked(size: number, remove?: () => Promise<void>) {
+  const SAID =
+    "Nothing of the tour was written into linked.zip. The browser may have emptied it when it was chosen, so if it was an existing file, do not rely on it.";
+
+  function picked(size: number | "unreadable") {
     const calls: string[] = [];
     const handle = {
       kind: "file",
       name: "linked.zip",
       getFile: () =>
-        Promise.resolve(new File([new Uint8Array(size)], "linked.zip")),
-      ...(remove === undefined
-        ? {}
-        : {
-            remove: () => {
-              calls.push("remove");
-              return remove();
-            },
-          }),
+        size === "unreadable"
+          ? Promise.reject(new Error("gone"))
+          : Promise.resolve(new File([new Uint8Array(size)], "linked.zip")),
+      remove: () => {
+        calls.push("remove");
+        return Promise.resolve();
+      },
     } as unknown as FileSystemFileHandle;
     return {
       pick: Promise.resolve({ kind: "picked", handle } as const),
@@ -569,28 +572,11 @@ describe("releaseUnusedPick", () => {
     };
   }
 
-  it("removes an empty picked file and says so", async () => {
-    const { pick, calls } = picked(0, () => Promise.resolve());
-    expect(await releaseUnusedPick(pick)).toBe(
-      "Nothing was written into linked.zip, and the empty file was removed.",
-    );
-    expect(calls).toEqual(["remove"]);
-  });
-
-  it("leaves a file that holds something as it was", async () => {
-    const { pick, calls } = picked(5, () => Promise.resolve());
-    expect(await releaseUnusedPick(pick)).toBe(
-      "Nothing was written into linked.zip; it is as it was.",
-    );
-    expect(calls).toEqual([]);
-  });
-
-  it("names an empty file it cannot remove, so the creator can", async () => {
-    for (const remove of [undefined, () => Promise.reject(new Error("no"))]) {
-      const { pick } = picked(0, remove);
-      expect(await releaseUnusedPick(pick)).toBe(
-        "Nothing was written into linked.zip: it is empty and can be deleted.",
-      );
+  it("never removes a picked file, empty or not, and says the same true sentence", async () => {
+    for (const size of [0, 5, "unreadable"] as const) {
+      const { pick, calls } = picked(size);
+      expect(await releaseUnusedPick(pick)).toBe(SAID);
+      expect(calls).toEqual([]);
     }
   });
 
@@ -599,17 +585,5 @@ describe("releaseUnusedPick", () => {
     for (const kind of ["cancelled", "unavailable"] as const) {
       expect(await releaseUnusedPick(Promise.resolve({ kind }))).toBeNull();
     }
-  });
-
-  it("says only that nothing was written into a picked file it cannot read", async () => {
-    const handle = {
-      kind: "file",
-      name: "linked.zip",
-      getFile: () => Promise.reject(new Error("gone")),
-      remove: () => Promise.resolve(),
-    } as unknown as FileSystemFileHandle;
-    expect(
-      await releaseUnusedPick(Promise.resolve({ kind: "picked", handle })),
-    ).toBe("Nothing was written into linked.zip.");
   });
 });

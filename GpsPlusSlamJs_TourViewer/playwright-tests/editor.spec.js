@@ -4939,9 +4939,11 @@ test("a tour opened from its link asks where to save it in the click, and is tha
   // asks (Chromium opens the dialog only within a few seconds of a click,
   // and the fetch can take longer - the stand-in refuses a later call),
   // writes the fetched tour there once it has opened, says so while it
-  // writes, and saves every later edit into it by itself.
+  // writes, and saves every later edit into it by itself. The name it
+  // suggests is dated to the minute (local time), so reopening the same
+  // link never offers the file that holds the edited tour.
   await withBothDialogs(page);
-  await page.clock.install();
+  await page.clock.install({ time: new Date(2026, 9, 7, 9, 5) });
   await page.goto("/edit.html");
   await expect(page.locator("#open-fineprint")).toContainText(
     "asks where to save it as it opens",
@@ -4954,10 +4956,11 @@ test("a tour opened from its link asks where to save it in the click, and is tha
   await page.locator("#link-input").fill(LINKED_TOUR);
   await page.locator("#link-btn").click();
   await expect(page.locator("#topbar")).toBeVisible({ timeout: 15000 });
-  // Asked once, in the click, under the name the link's file carries.
+  // Asked once, in the click, under the name the link's file carries,
+  // dated.
   expect(
     await page.evaluate(() => Reflect.get(window, "__savePickNames")),
-  ).toEqual(["sample-tour.zip"]);
+  ).toEqual(["sample-tour-2026-10-07-0905.zip"]);
   // While the tour is written into the chosen file, the status says so.
   await expect(page.locator("#save-status")).toHaveText(
     "Saving into linked.zip…",
@@ -5022,15 +5025,16 @@ test("the sample asks where to save it in its click, and the chosen file holds i
   );
 });
 
-test("a link that fails after a file was picked writes nothing into it, removes the empty file, and says so", async ({
+test("a link that fails after a file was picked writes nothing into it, keeps the file, and says so", async ({
   page,
 }) => {
   // Why: the dialog is asked for before the fetch (it needs the click), so
   // the fetch can fail after the creator picked a file - which the browser
-  // has made by then, empty. Nothing may be written there until the
-  // tour's bytes are in hand and the tour opened, and the empty file must
-  // not stay behind unexplained (PR bot finding 11, r955 review #1): it is
-  // removed, and the open says so beside what went wrong.
+  // has made by then, empty, or emptied if it existed (Chromium truncates
+  // a file chosen in the save dialog). Nothing may be written there until
+  // the tour's bytes are in hand and the tour opened. The page cannot tell
+  // a new empty file from an emptied tour, so it never deletes the file,
+  // and the open says, beside what went wrong, words true either way.
   await withBothDialogs(page);
   await page.goto("/edit.html");
   await clickBoundSavePicker(page, "never-written.zip");
@@ -5043,21 +5047,21 @@ test("a link that fails after a file was picked writes nothing into it, removes 
     { timeout: 15000 },
   );
   await expect(page.locator("#open-error")).toContainText(
-    "Nothing was written into never-written.zip, and the empty file was removed.",
+    "Nothing of the tour was written into never-written.zip. The browser may have emptied it when it was chosen, so if it was an existing file, do not rely on it.",
   );
   expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
-  expect(await opfsText(page, "never-written.zip")).toBeNull();
+  expect(await opfsSize(page, "never-written.zip")).toBe(0);
   await expect(page.locator("#topbar")).toBeHidden();
   await expect(page.locator("#link-btn")).toBeEnabled();
 });
 
-test("a link that fails after an existing file was picked leaves that file as it was, and says so", async ({
+test("a link that fails after an existing file was picked never deletes it, and says so", async ({
   page,
 }) => {
-  // Why: the file picked may already hold something (picked to be
-  // replaced). The stand-in is seeded, so this assertion fails if anything
-  // is written or the file is removed (the earlier one compared an empty
-  // stand-in with 0 bytes and could not fail, PR bot finding 12).
+  // Why: the file picked may be an existing one (picked to be replaced).
+  // A real Chromium has emptied it by now; the stand-in cannot, so it is
+  // seeded, and this assertion fails if the page writes anything into the
+  // file or deletes it. The message must not claim the file is as it was.
   await withBothDialogs(page);
   await page.goto("/edit.html");
   await clickBoundSavePicker(page, "kept.zip", { seed: "an older tour" });
@@ -5066,19 +5070,19 @@ test("a link that fails after an existing file was picked leaves that file as it
     .fill("http://127.0.0.1:5197/no-cors/tour.zip");
   await page.locator("#link-btn").click();
   await expect(page.locator("#open-error")).toContainText(
-    "Nothing was written into kept.zip; it is as it was.",
+    "Nothing of the tour was written into kept.zip. The browser may have emptied it when it was chosen, so if it was an existing file, do not rely on it.",
     { timeout: 15000 },
   );
   expect(await opfsText(page, "kept.zip")).toBe("an older tour");
 });
 
-test("a write refused at the open says so in a toast that stays, removes the empty file, and the first Save asks again", async ({
+test("a write refused at the open says so in a toast that stays, keeps the file, and the first Save asks again", async ({
   page,
 }) => {
   // Why: the write at the open can fail (a full disk). The UI-feedback
   // rule wants the failure said and the in-progress state ended: the
   // status leaves "Saving into...", the tour keeps the name it opened
-  // with, the empty file is removed, and the first Save of a change asks
+  // with, the picked file is kept (never deleted), and the first Save of a change asks
   // for a file again (r955 review #2). The toast no longer says Save asks
   // again while there is nothing to save (Save does not ask then).
   await withBothDialogs(page);
@@ -5091,12 +5095,12 @@ test("a write refused at the open says so in a toast that stays, removes the emp
   });
   await expect(toastLine).toBeVisible({ timeout: 15000 });
   await expect(toastLine).toContainText(
-    "Nothing was written into full-disk.zip, and the empty file was removed. Your changes are kept in this browser until you save.",
+    "Nothing of the tour was written into full-disk.zip. The browser may have emptied it when it was chosen, so if it was an existing file, do not rely on it. Your changes are kept in this browser until you save.",
   );
   await expect(toastLine).not.toContainText("Save asks for a file again");
   await expect(page.locator("#save-status")).toHaveText("No changes");
   await expect(page.locator("#tour-file")).toHaveText("marienplatz-tour.zip");
-  expect(await opfsText(page, "full-disk.zip")).toBeNull();
+  expect(await opfsSize(page, "full-disk.zip")).toBe(0);
   // A toast that stays: still there long after a passing one would go.
   await page.clock.runFor(30_000);
   await expect(toastLine).toBeVisible();

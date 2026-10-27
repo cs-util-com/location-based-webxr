@@ -306,6 +306,14 @@ changes`; a label is cut at 40 characters, a label-less note is "a
 - `copyFileName(name)` - a copy's file name: " copy" before a trailing
   `.zip` (any case), or at the end of a name without one
   ("tour.zip" -> "tour copy.zip").
+- `datedFileName(name, now)` - the name the save dialog suggests for a
+  tour opened from a link or the sample: `-YYYY-MM-DD-HHMM` (`now`, local
+  time) before a trailing `.zip` (any case), or at the end of a name
+  without one ("tour-1AbCdEfGhIjK.zip" -> "tour-1AbCdEfGhIjK-2026-10-07-0905.zip").
+  Reopening the same link must not suggest the file holding its edited
+  tour, a Replace away from writing the original over it. Two opens in the
+  same local minute (or in the hour a daylight-saving change repeats)
+  still share a name.
 
 ## Invariants & assumptions
 
@@ -403,7 +411,9 @@ for after refused, its reads its own tour), and a replaced session reading
 its tour as it stood when replaced, an edit no read followed included. The
 save thunk itself: `../tour-document-save.test.ts`. Save a copy: the
 copy carrying the edits under "<name> copy.zip" while the change count,
-the undo and the next save are as before; `copyFileName`'s cases; a
-copy asked for during a save waiting for it.
+the undo and the next save are as before; `copyFileName`'s and `datedFileName`'s cases; a
+copy asked for during a save waiting for it. `editor-session.property.test.ts`:
+`datedFileName` differs for any two local minutes and keeps the name and
+its ending around the date.
 
 `station-lock.property.test.ts` drives a real session with random command sequences (moves, radius, rename, delete, copy, reorder, item moves and poses, grounding, adds, and the lock itself; up to 30 at full length) and checks that no command changes a station's pose while it is locked, plus the refusal's words and the open edits.

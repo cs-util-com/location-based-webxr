@@ -45,26 +45,38 @@ build plan, re-cut" and its cold review
   it reads.
 - `releaseUnusedPick(pick): Promise<string | null>` - a file the save
   dialog gave that nothing will be written into (the open it was asked
-  for failed or was refused, or its write did not land; PR bot finding
-  11). The browser made it as it was picked, so an EMPTY one is removed
-  where the handle has Chromium's `remove()`; one that holds something
-  (an existing file picked to be replaced) is left as it was. Resolves to
-  the sentence that says which: "Nothing was written into <name>, and the
-  empty file was removed." / "...; it is as it was." / "...: it is empty
-  and can be deleted." (no `remove`, or it failed) / "Nothing was written
-  into <name>." (the file cannot be read); null for no pick, a dismissed
-  dialog or none. Never throws.
+  for failed or was refused, or its write did not land). It is NEVER
+  deleted, and not even read: the browser empties a file as it is chosen
+  in the save dialog (below), so an empty file may be a new one or a tour
+  the creator chose to replace, and the page cannot tell which. Resolves
+  to one sentence true in both cases: "Nothing of the tour was written
+  into <name>. The browser may have emptied it when it was chosen, so if
+  it was an existing file, do not rely on it."; null for no pick, a
+  dismissed dialog or none. Never throws.
+- **A file chosen in the save dialog is emptied as it is chosen** (checked
+  2026-10-27 against the sources, not measured on a desktop): the File
+  System Access spec's `showSaveFilePicker()` says "otherwise the existing
+  file is cleared before this method returned", its algorithm step "Set
+  entry's binary data to an empty byte sequence" running once the user
+  made a selection (https://wicg.github.io/file-system-access/). Chromium
+  does the same: `FileSystemAccessManagerImpl::DidChooseEntries`, for
+  `SELECT_SAVEAS_FILE`, calls `CreateAndTruncateFile` (or
+  `CreateAndTruncateLocalFile` on POSIX desktops) under the comment
+  "Create file if it doesn't yet exist, and truncate file if it does
+  exist" (content/browser/file_system_access/file_system_access_manager_impl.cc,
+  main as of 2026-10-23). So deleting an "empty" picked file would delete a
+  tour the creator chose to replace; the e2e stand-in cannot truncate, so
+  the e2e seeds the file and asserts it is neither written nor deleted.
+  Not settled by the sources: what a browser outside Chromium does, and
+  whether a platform dialog bypasses this path; the sentence and the
+  never-delete rule hold either way.
 - **How a write lands** (PR bot finding 15): every write here goes through
   the framework's `writeFileOrAbort`, `createWritable()` with its default
   `keepExistingData: false`. That is NOT a write in place: Chrome writes a
   temporary copy and swaps it in at `close()`, and an error aborts the
   copy and leaves the file as it was (on a desktop by the spec; on Android
-  measured once, below). Not measured: whether Chrome empties an existing
-  file at the moment it is PICKED in the save dialog (r955 review #1 asked
-  for a desktop check; it needs a person at the system dialog, which no
-  e2e can drive) - `releaseUnusedPick` removes a file only when it is
-  empty, so an emptied existing file would be removed, its bytes already
-  gone either way.
+  measured once, below). A file PICKED in the save dialog is another
+  matter: it is emptied at the pick (above), before any write.
 - `createSaveTarget(handle, opened, { maxBytes? }): Promise<SaveTarget>` -
   the baseline (size, modified time, the last 64 KiB) is read from `opened`
   at once; `maxBytes` defaults to the open cap
@@ -155,7 +167,7 @@ cancelled only by a dismissal, unavailable without one or on any other
 refusal; `isSame` by the browser's answer, else by the name; `isSameFile`
 by the handle's answer, and by the name without a handle or with one that
 cannot tell; `adoptsSavedFile` with both dialogs and without either,
-and the fine print's words for each; `releaseUnusedPick` removing an empty
-file, leaving a full one, naming one it cannot remove or read, and silent
-without a pick. The page's e2e (`playwright-tests/editor.spec.js`)
+and the fine print's words for each; `releaseUnusedPick` never removing
+a picked file (empty, full or unreadable) and saying one sentence true
+for each, and silent without a pick. The page's e2e (`playwright-tests/editor.spec.js`)
 writes a real origin-private file through it.
