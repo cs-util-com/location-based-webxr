@@ -48,7 +48,7 @@ export function tourBlocksById(
 }
 
 /** The sheet's elements. */
-export interface PinSheetDom {
+interface PinSheetDom {
   readonly sheet: Pick<HTMLElement, "hidden">;
   readonly title: Pick<HTMLElement, "textContent">;
   readonly text: Pick<HTMLElement, "textContent">;
