@@ -241,6 +241,9 @@ export interface CreatorSetup {
   /** A tour opened and its manifest settled: load any draft for it, and
    *  either offer what is not already hosted or delete a spent one. */
   presentDraftForTour: (tourUrl: string) => void;
+  /** A tour refused as an older format: delete this device's draft for
+   *  it (`CreatorDraft.forgetRefused`); true when there was one. */
+  forgetRefusedDraft: (tourUrl: string) => Promise<boolean>;
   /** A tap in AR (an XR `select` the overlay did not cancel): select the
    *  object under the tap (its target ray; the screen centre when null),
    *  or clear the selection on a miss. */
@@ -1100,6 +1103,8 @@ export function wireCreatorSetup(deps: {
       settle.reset();
       measuring.reset();
     },
+    forgetRefusedDraft: (tourUrl) =>
+      creator ? draft.forgetRefused(tourUrl) : Promise.resolve(false),
     presentDraftForTour: (tourUrl) => {
       if (!creator) return; // a visitor authors nothing
       // The manifest just settled: its objects join the previews and the

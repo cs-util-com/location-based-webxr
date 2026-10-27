@@ -5,6 +5,7 @@
  * branch carries a contract of its own).
  */
 
+import type { TourManifestOlderFormatError } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
   ArchiveLimitError,
@@ -98,6 +99,23 @@ export function describeIntegrityError(err: TourIntegrityError): string {
     return "This tour was made with a newer version of the app, so it cannot be checked here. Reload the page to update the app, then try again.";
   }
   return `This tour does not match its own list of contents, so it is not shown: it was changed after it was made or signed, or the file is damaged. Do not trust this copy - ask its author for a fresh link. (Detail: ${err.message}.)`;
+}
+
+/**
+ * A tour in a format this app no longer opens, refused in plain words:
+ * which format, and that it has to be made again (no converter exists).
+ * `draftDeleted`: this device held unsaved changes for it, which the
+ * refusal deleted - they had nothing left to be restored into - and the
+ * same sentence says so.
+ */
+export function olderFormatRefusal(
+  err: TourManifestOlderFormatError,
+  draftDeleted: boolean,
+): string {
+  const lost = draftDeleted
+    ? ", and its unsaved changes cannot be restored"
+    : "";
+  return `This tour is in an older format (version ${String(err.version)}) that this version of the app no longer opens; it has to be made again${lost}.`;
 }
 
 /** A visitor's words for a host that blocks reads: the download route

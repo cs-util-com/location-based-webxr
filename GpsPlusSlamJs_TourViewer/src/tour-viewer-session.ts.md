@@ -231,6 +231,10 @@ unchanged across the split (the split's behaviour-neutrality proof).
 
 ## UI round 1 additions
 
+- `TourViewerHooks.forgetRefusedDraft(tourUrl): Promise<boolean>` - a tour
+  refused as an older format: delete the draft this device holds for it;
+  true when there was one, never rejects (`createUnwiredHooks` resolves
+  false; `main.ts` wires the creator setup's).
 - `TourViewerHooks.confirmLeaveTour()` - false when the creator declined to
   leave an unsaved rebuilt file for another tour (U2; `main.ts` binds it,
   `createUnwiredHooks` returns true).

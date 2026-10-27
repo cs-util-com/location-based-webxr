@@ -31,7 +31,12 @@ and the codes, or the reason the file cannot be edited, worded by
       Recorder or scan zip) - refused rather than shown as an empty map
       (M6 E1 plan review #8);
     - "This tour cannot be read: ..." when the manifest or a level rejects
-      after the open succeeded.
+      after the open succeeded;
+    - for a tour of an older format (`TourManifestOlderFormatError`),
+      `olderFormatRefusal(err, false)` (`open-errors.ts`) with
+      `olderFormat: { fileKey, error }` - the file's key (its session's
+      `archive.url`, the draft's key) so the page can delete the draft it
+      kept for it and say so.
   - `onIntegrityFailure` is passed to the opener for the late (background)
     check; `open` replaces the opener in tests.
 - `droppedDetailsLine(dropped): string | null` - the page's toast for

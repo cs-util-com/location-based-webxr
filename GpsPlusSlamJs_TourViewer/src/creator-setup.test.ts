@@ -1082,6 +1082,45 @@ describe("the spent-draft path", () => {
   });
 });
 
+/**
+ * Why these tests matter: a tour of an older format is refused, never
+ * converted, so its draft has nothing left to be restored into. The
+ * refusal deletes it and says so - but only that tour's: the draft of
+ * another tour on the same device is its creator's unsaved work.
+ */
+describe("a refused older tour's draft", () => {
+  it("is deleted, another tour's is left, and whether one was there is said", async () => {
+    const a = memoryStore({
+      [META_KEY]: "{}",
+      [objectKey("p1")]: "{}",
+    });
+    const b = memoryStore({
+      [META_KEY]: "{}",
+      [objectKey("p2")]: "{}",
+    });
+    const { setup } = wire(a.store, {
+      storeFor: (key) => (key.includes("other-tour") ? b.store : a.store),
+    });
+    await expect(setup.forgetRefusedDraft(TOUR)).resolves.toBe(true);
+    expect([...a.files.keys()]).toEqual([]);
+    expect([...b.files.keys()].sort()).toEqual(
+      [META_KEY, objectKey("p2")].sort(),
+    );
+    await expect(
+      setup.forgetRefusedDraft(TOUR),
+      "nothing is left to delete",
+    ).resolves.toBe(false);
+    // The other tour's link refused in turn: its own draft goes.
+    await expect(setup.forgetRefusedDraft(OTHER_TOUR)).resolves.toBe(true);
+    expect([...b.files.keys()]).toEqual([]);
+  });
+
+  it("is none where the device keeps no drafts", async () => {
+    const { setup } = wire(memoryStore().store, { firstOpenFails: true });
+    await expect(setup.forgetRefusedDraft(TOUR)).resolves.toBe(false);
+  });
+});
+
 describe("a placement reaches the draft", () => {
   it("writes the object file, not just the in-memory list", async () => {
     // Why this test matters: this is THE write the whole feature exists

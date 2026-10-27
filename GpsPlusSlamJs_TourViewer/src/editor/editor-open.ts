@@ -12,6 +12,7 @@
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import {
   createEmptyTourManifest,
+  TourManifestOlderFormatError,
   type TourManifest,
   type TourManifestDrop,
   type TourStationDrop,
@@ -21,7 +22,7 @@ import type {
   TourDetailsField,
 } from "gps-plus-slam-app-framework/ar/tour-details";
 import type { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
-import { describeOpenError } from "../open-errors.js";
+import { describeOpenError, olderFormatRefusal } from "../open-errors.js";
 import { stationTitle } from "../station-run.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
 
@@ -41,7 +42,17 @@ export type EditorOpen =
        *  (`droppedDetailsLine`, `droppedStationFieldsLine`). */
       readonly dropped: readonly TourManifestDrop[];
     }
-  | { readonly kind: "refused"; readonly reason: string };
+  | {
+      readonly kind: "refused";
+      readonly reason: string;
+      /** A tour of a format this app no longer opens: its file's key
+       *  (the draft's, `editorDraftKey`) and the refusal, so the page
+       *  can delete the draft it kept for it and say so. */
+      readonly olderFormat?: {
+        readonly fileKey: string;
+        readonly error: TourManifestOlderFormatError;
+      };
+    };
 
 /** Said for a zip that is not a tour. */
 export const NOT_A_TOUR =
@@ -191,6 +202,13 @@ export async function openTourForEditing(
   } catch (err) {
     // A broken tour.json or level file rejects after the open succeeded.
     await session.close().catch(() => undefined);
+    if (err instanceof TourManifestOlderFormatError) {
+      return {
+        kind: "refused",
+        reason: olderFormatRefusal(err, false),
+        olderFormat: { fileKey: session.archive.url, error: err },
+      };
+    }
     return {
       kind: "refused",
       reason: `This tour cannot be read: ${describeOpenError(err)}`,

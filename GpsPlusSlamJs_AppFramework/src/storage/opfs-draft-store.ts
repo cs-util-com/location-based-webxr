@@ -58,15 +58,14 @@ export interface DraftFileStore {
   /**
    * Empty the namespace.
    *
-   * **NO PRODUCTION CALLER as of 2026-09-10.** It was how a spent or
-   * discarded draft was thrown away, and both callers now delete the ids
-   * they are rejecting instead - because "empty everything, then write back
-   * what should have stayed" left a window in which the survivors existed
-   * only in memory, which is the shape that produced four silent data-loss
-   * defects in the Tour Viewer's authoring. Kept because it is working,
-   * tested API and its tests encode a real OPFS hazard (deleting while
-   * iterating a directory skips entries), but READ THE ORDERING NOTE BELOW
-   * AS HISTORY: with no caller, nothing is currently protected by it.
+   * It was how a spent or discarded draft was thrown away, and both those
+   * callers now delete the ids they are rejecting instead - because "empty
+   * everything, then write back what should have stayed" left a window in
+   * which the survivors existed only in memory, which is the shape that
+   * produced four silent data-loss defects in the Tour Viewer's authoring.
+   * Its one caller now is the draft of a tour refused as an older format
+   * (both Tour Viewer pages), where nothing is written back: the whole
+   * namespace goes, with `firstKey` the meta (below).
    *
    * `firstKey`, when given, is deleted BEFORE anything else and its
    * deletion is awaited on its own. That exists because clearing is not
@@ -74,7 +73,8 @@ export interface DraftFileStore {
    * deleting the one file that decides whether a draft EXISTS first means a
    * reload mid-clear finds no draft rather than the one just thrown away.
    * Ordering rather than synchronisation, because a page reload takes any
-   * in-memory guard with it.
+   * in-memory guard with it. That is what the refused tour's deletion
+   * relies on: a reload midway finds no draft, never a partial one.
    */
   clear(firstKey?: string): Promise<void>;
 }

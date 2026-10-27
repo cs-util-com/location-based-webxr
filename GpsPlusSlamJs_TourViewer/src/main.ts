@@ -703,6 +703,7 @@ hooks.presentNoTour = () => {
   print.presentNoTour();
 };
 hooks.presentDraftForTour = setup.presentDraftForTour;
+hooks.forgetRefusedDraft = setup.forgetRefusedDraft;
 
 // The recording's controls: a `?debug=1` creator's or visitor's (M1b;
 // polish round M3, Q-Data); wired before the AR entry that asks them at

@@ -135,6 +135,15 @@ export interface CreatorDraft {
    * land.
    */
   follow(tourUrl: string): Promise<boolean>;
+  /**
+   * `tourUrl` was refused as an older format: its draft has nothing left
+   * to be restored into, so its namespace is emptied, the meta first (a
+   * reload midway finds no draft). After any write queued for its meta.
+   * True when a draft was there (its meta); false for none, or for a
+   * device that keeps no drafts. Never rejects. Never the open tour's: a
+   * refused tour never opens its draft.
+   */
+  forgetRefused(tourUrl: string): Promise<boolean>;
   /** Say, once, that this device keeps no backup copy. */
   warnNoBackup(): void;
   /** False once the creator was told no backup is kept. */
@@ -736,6 +745,19 @@ export function wireCreatorDraft(deps: {
     return (await recordMeta(tourUrl)) && copied;
   }
 
+  function forgetRefused(tourUrl: string): Promise<boolean> {
+    return draftWrites
+      .run(metaChainKey(tourUrl), async () => {
+        const store = await deps.openDraftStore(draftKeyForTour(tourUrl));
+        if (store === undefined) return false;
+        const keys = await store.keys();
+        if (keys.length === 0) return false;
+        await store.clear(META_KEY);
+        return keys.includes(META_KEY);
+      })
+      .catch(() => false);
+  }
+
   /** Put a restored draft's objects and deletions back into the tour
    *  document, as one step (see the restore below). Returns what it put
    *  back, live work left out: what the restore's note may claim. */
@@ -1316,6 +1338,7 @@ export function wireCreatorDraft(deps: {
 
   return {
     present,
+    forgetRefused,
     reset: () => {
       supersededNote = null;
       // A write still queued for the closing tour keeps its own holder.

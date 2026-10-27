@@ -124,7 +124,9 @@ were here. What stays is the Finish's side:
     `resetFinishStep` (a tour closed: the code module's `reset` runs first,
     so nothing reset after it reads the closing tour's codes), `presentDraftForTour` (a tour
     opened AND its manifest settled - "spent" is a question about that
-    manifest, so it cannot be asked earlier), `beginAuthorVisit`,
+    manifest, so it cannot be asked earlier), `forgetRefusedDraft` (a tour
+    refused as an older format: the draft's `forgetRefused`; a visitor's
+    page resolves false), `beginAuthorVisit`,
     `endAuthorVisit` (it also ends the stations' line and ring, and
     disarms "New station here": the chip is the session's, D8),
     `tickStations` (every camera frame in a creator's session: the open

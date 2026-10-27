@@ -14,6 +14,7 @@ import {
 import { resolveQrPayload } from "gps-plus-slam-app-framework/utils/qr-payload/qr-launch-dispatch";
 import {
   createEmptyTourManifest,
+  TourManifestOlderFormatError,
   type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
@@ -26,6 +27,7 @@ import {
   describeOpenError,
   OPEN_FILE_ADVICE_LABEL,
   offersFileOpen,
+  olderFormatRefusal,
 } from "./open-errors.js";
 import {
   linkStatusText,
@@ -524,6 +526,20 @@ export function wireArchiveOpen(deps: {
         hooks.tryPlaceTour(); // a visitor's content may now be placeable
         return filled;
       };
+      /** A tour of a format this app no longer opens: refused. A
+       *  creator's draft for it has nothing left to be restored into, so
+       *  it is deleted, and the refusal says so once it is gone. */
+      const refuseOlderFormat = (err: TourManifestOlderFormatError): void => {
+        dom.errorBox.textContent = olderFormatRefusal(err, false);
+        if (deps.mode !== "creator") return;
+        void hooks
+          .forgetRefusedDraft(tourKeyOf(source, opened))
+          .then((deleted) => {
+            if (deleted && ctx.session === opened) {
+              dom.errorBox.textContent = olderFormatRefusal(err, true);
+            }
+          });
+      };
       const manifestDone = opened.loadTourManifest().then(
         (manifest) => {
           if (ctx.session !== opened) return;
@@ -542,9 +558,13 @@ export function wireArchiveOpen(deps: {
           // overwrite a placement it could not read.
           ctx.tourManifestStatus = "broken";
           const filled = fillGallery(opened);
-          dom.errorBox.textContent = `Reading the tour's content list (tour.json) failed: ${
-            err instanceof Error ? err.message : String(err)
-          }`;
+          if (err instanceof TourManifestOlderFormatError) {
+            refuseOlderFormat(err);
+          } else {
+            dom.errorBox.textContent = `Reading the tour's content list (tour.json) failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`;
+          }
           hooks.renderAuthorReadout();
           return filled;
         },

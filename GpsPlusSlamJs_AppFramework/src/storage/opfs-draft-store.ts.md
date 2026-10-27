@@ -33,10 +33,12 @@ so the recorder can use it when it grows authoring of its own.
     than a loss, which is why the contract is shaped this way; if it ever
     needs to be actionable, returning a boolean as `put` does is the
     change.
-  - **`clear()` has NO production caller since 2026-09-10.** Both former
-    callers delete the ids they read instead. It is kept as working, tested
-    API - its tests encode a real OPFS hazard - but nothing depends on its
-    ordering guarantee today.
+  - **`clear()`'s one production caller is the draft of a tour refused
+    as an older format** (the Tour Viewer's phone and editor pages delete
+    that tour's whole namespace with `clear(META_KEY)`; nothing is
+    written back, so the window below does not arise). The two earlier
+    callers, a spent and a discarded draft, delete the ids they read
+    instead since 2026-09-10.
 - `DRAFT_STORE_DIR`.
 
 ## Invariants & assumptions
@@ -64,14 +66,12 @@ so the recorder can use it when it grows authoring of its own.
   - The names are collected BEFORE any removal: deleting while iterating
     the directory mutates what the enumerator is walking, and entries
     survive it.
-  - **`firstKey` IS HISTORY, not a live protection** - the same qualifier
-    the interface carries, because this list is where a reader checks what
-    still holds. It deleted the file that decides whether a draft EXISTS
-    first and on its own, so a reload racing a fire-and-forget clear found
-    no draft rather than the one just discarded. **There has been no such
-    caller since 2026-09-10**, and the Tour Viewer now commits a rejection
-    by writing its meta rather than by deleting anything, so the ordering
-    protects nothing today.
+  - **`firstKey` is live again for one caller.** It deletes the file that
+    decides whether a draft EXISTS first and on its own, so a reload
+    racing the clear finds no draft rather than a partial one. Between
+    2026-09-10 and the refused-tour deletion it had no caller (the Tour
+    Viewer commits a rejection by writing its meta rather than by deleting
+    anything); the refused-tour deletion passes the meta as `firstKey`.
 
 ## Why not `opfs-storage.ts`
 

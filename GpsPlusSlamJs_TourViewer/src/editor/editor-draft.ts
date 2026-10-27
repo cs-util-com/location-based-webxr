@@ -597,6 +597,15 @@ export interface EditorDraft extends DraftObjectWrites, DraftSettingsWrites {
   close(): void;
   /** Every queued write settled. */
   idle(): Promise<void>;
+  /**
+   * The file `fileKey` was refused as an older format: its draft has
+   * nothing left to be restored into, so its namespace is emptied, the
+   * meta first (a reload midway finds no draft), under the draft's lock -
+   * a tab editing it keeps it. True when a draft was there (its meta);
+   * false for none, a lock another tab holds, or no persistence. Never
+   * rejects.
+   */
+  forget(fileKey: string): Promise<boolean>;
 }
 
 /** The draft with the save notes `writes()` binds to one open. */
@@ -713,6 +722,24 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     };
     work.then(settled, settled);
     return work;
+  }
+
+  async function forget(fileKey: string): Promise<boolean> {
+    const key = editorDraftKey(fileKey);
+    const lock = await deps.holdLock(key).catch(() => null);
+    if (lock === null || !lock.granted) return false;
+    try {
+      const store = await deps.openStore(key);
+      if (store === undefined) return false;
+      const keys = await store.keys();
+      if (keys.length === 0) return false;
+      await store.clear(META_KEY);
+      return keys.includes(META_KEY);
+    } catch {
+      return false;
+    } finally {
+      lock.release();
+    }
   }
 
   function makeSpace(fileKey: string): Space {
@@ -1373,6 +1400,8 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     },
 
     close,
+
+    forget,
 
     idle() {
       if (writing === 0) return Promise.resolve();

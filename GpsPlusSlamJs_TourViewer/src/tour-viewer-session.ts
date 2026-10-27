@@ -269,6 +269,11 @@ export interface TourViewerHooks {
    *  already absorbed. It waits for the manifest because "spent" is
    *  defined against it. */
   presentDraftForTour(tourUrl: string): void;
+  /** A tour refused as an older format (`TourManifestOlderFormatError`):
+   *  delete the draft this device holds for it (its creator-facing url),
+   *  which has nothing left to be restored into. True when there was one.
+   *  Never rejects. */
+  forgetRefusedDraft(tourUrl: string): Promise<boolean>;
   /** A session reached running, or a tour opened into a running session:
    *  derive the scan gate (idle when no session runs). */
   startScanGate(): void;
@@ -315,6 +320,7 @@ export function createUnwiredHooks(): TourViewerHooks {
     selectInView: () => undefined,
     presentNoTour: () => undefined,
     presentDraftForTour: () => undefined,
+    forgetRefusedDraft: () => Promise.resolve(false),
     startScanGate: () => undefined,
     resetScanGate: () => undefined,
     reconsiderScanGate: () => undefined,

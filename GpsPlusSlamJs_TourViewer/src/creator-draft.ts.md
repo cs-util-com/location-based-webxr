@@ -46,6 +46,15 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
   - `finished(ids, written)` - `creator-finish.ts` after a Finish wrote
     these objects: their versions in `written` are this device's own work.
     The ids (all of this load's Finishes) are kept for `uploaded`.
+  - `forgetRefused(tourUrl)` - `tourUrl` was refused as an older format
+    (`archive-open.ts`): its namespace (`draftKeyForTour`) is emptied
+    with `clear(META_KEY)`, the meta first so a reload midway finds no
+    draft, in the meta's queue (after any write queued for it). True when
+    a draft was there (its meta); false for none or no persistence; never
+    rejects. The refused tour never presented its draft, so no open
+    tour's state is touched. The emptied directory itself stays (the store
+    empties in place). Tests: `creator-setup.test.ts` ("a refused older
+    tour's draft").
   - `follow(tourUrl)` (debug-captures plan, Q-I) - the file a Finish
     delivered of a tour opened from a file opens under another key once
     its save wrote the tour's own id: the draft switches to that

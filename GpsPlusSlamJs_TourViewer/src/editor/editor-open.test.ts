@@ -173,6 +173,27 @@ describe("openTourForEditing", () => {
     expect(out.reason).toMatch(/^This tour cannot be read: /);
   });
 
+  // Why: a tour of an older format is refused, never converted, in the
+  // words the phone uses; the page needs the file's key to delete the
+  // draft this browser kept for it.
+  it("refuses a tour of an older format in its own words, with the file's key", async () => {
+    const file = await zipFile([
+      {
+        path: "tour.json",
+        data: JSON.stringify({ version: 3, minor: 0, stations: [] }),
+      },
+    ]);
+    const out = await openTourForEditing(file);
+    expect(out).toMatchObject({
+      kind: "refused",
+      reason:
+        "This tour is in an older format (version 3) that this version of the app no longer opens; it has to be made again.",
+    });
+    if (out.kind !== "refused") return;
+    expect(out.olderFormat?.fileKey).toMatch(/^local-file:/);
+    expect(out.olderFormat?.error.version).toBe(3);
+  });
+
   it("refuses a file that is not a zip before reading it", async () => {
     const open = () => Promise.reject(new Error("must not be called"));
     await expect(

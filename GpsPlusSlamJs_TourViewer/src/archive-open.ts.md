@@ -188,6 +188,17 @@ DOM glue, its own module since the flows plan M6.
   where no station held them, before it settled.) Tests:
   `archive-open-file.test.ts` ("a creator's recording opens without its
   debug camera captures").
+- **A tour of an older format is refused, and a creator's draft for it
+  deleted** (versions 1 to 3, `TourManifestOlderFormatError`): the
+  manifest status is `broken` as for any unreadable `tour.json`, and the
+  error box says `olderFormatRefusal` (`open-errors.ts`) instead of the
+  reader's message. A creator's page then asks
+  `hooks.forgetRefusedDraft(tourKeyOf(...))` to delete the draft it kept
+  for that tour (it has nothing left to be restored into, and is never
+  presented); once one was deleted, and the tour is still the open one,
+  the box adds that its unsaved changes cannot be restored. A visitor kept
+  no draft: nothing is looked for. Tests: `archive-open-file.test.ts` ("a
+  tour in an older format"), `playwright-tests/older-format.spec.js`.
 - **The gallery waits for `tour.json` and leaves out the creator's walk**
   (scan-pass plan S1, `tour-read-set.ts`): the settle sets
   `ctx.scanEntries` (empty without a manifest, as before) and then fills

@@ -22,6 +22,7 @@ import {
   sampleRecordingBytes,
 } from "./test-support/sample-recording.js";
 import { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
+import { TourManifestOlderFormatError } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { wireArchiveOpen, type ArchiveOpenDom } from "./archive-open.js";
 import {
@@ -116,6 +117,7 @@ function wire(mode: "creator" | "visitor" = "creator") {
     presentLocalTour: vi.fn(),
     presentTourForPrint: vi.fn(),
     presentDraftForTour: vi.fn(),
+    forgetRefusedDraft: vi.fn((_tourUrl: string) => Promise.resolve(false)),
   };
   const ctx = createTourViewerSession();
   const archive = wireArchiveOpen({
@@ -215,6 +217,63 @@ describe("open a file", () => {
     dom.fileInput.fire("change");
     expect(mocks.openTourFile).not.toHaveBeenCalled();
     expect(dom.openFileButton.disabled).toBe(false);
+  });
+});
+
+/**
+ * Why these tests matter: a tour of an older format is refused, never
+ * converted, so a draft this device kept for it has nothing it could be
+ * restored into. The creator who opens that tour again is told so in the
+ * refusal itself, and the draft is deleted; a visitor kept no draft, and
+ * the refused tour's draft is never offered.
+ */
+describe("a tour in an older format", () => {
+  const REFUSED =
+    "This tour is in an older format (version 3) that this version of the app no longer opens; it has to be made again";
+
+  function olderTour(url: string) {
+    return {
+      ...fakeSession(url),
+      loadTourManifest: () =>
+        Promise.reject(new TourManifestOlderFormatError(3)),
+    };
+  }
+
+  it("a creator's: refused, its draft deleted, and the refusal says so", async () => {
+    mocks.openTourFile.mockResolvedValueOnce(olderTour("local-file:old"));
+    const { dom, hooks, ctx } = wire("creator");
+    hooks.forgetRefusedDraft.mockResolvedValueOnce(true);
+    pick(dom, new File(["zip"], "old.zip"));
+    await vi.waitFor(() =>
+      expect(dom.errorBox.textContent).toBe(
+        `${REFUSED}, and its unsaved changes cannot be restored.`,
+      ),
+    );
+    expect(hooks.forgetRefusedDraft).toHaveBeenCalledWith("local-file:old");
+    expect(hooks.presentDraftForTour).not.toHaveBeenCalled();
+    expect(ctx.tourManifestStatus).toBe("broken");
+  });
+
+  it("a creator's with no draft on this device: refused, nothing more said", async () => {
+    mocks.openTourFile.mockResolvedValueOnce(olderTour("local-file:old"));
+    const { dom, hooks } = wire("creator");
+    pick(dom, new File(["zip"], "old.zip"));
+    await vi.waitFor(() =>
+      expect(hooks.forgetRefusedDraft).toHaveBeenCalledWith("local-file:old"),
+    );
+    await vi.waitFor(() =>
+      expect(dom.errorBox.textContent).toBe(`${REFUSED}.`),
+    );
+  });
+
+  it("a visitor's: refused, and no draft is looked for", async () => {
+    mocks.openTourFile.mockResolvedValueOnce(olderTour("local-file:old"));
+    const { dom, hooks } = wire("visitor");
+    pick(dom, new File(["zip"], "old.zip"));
+    await vi.waitFor(() =>
+      expect(dom.errorBox.textContent).toBe(`${REFUSED}.`),
+    );
+    expect(hooks.forgetRefusedDraft).not.toHaveBeenCalled();
   });
 });
 

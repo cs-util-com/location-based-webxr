@@ -53,7 +53,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   hooks).
 - **File > Open…** shows the dialog with Cancel (and Esc) back to
   the open tour; the open tour stays until the new file has opened, so a
-  refused file costs nothing (E1 review #4).
+  refused file costs nothing (E1 review #4). A tour of an older format is
+  refused in `#open-error` (`olderFormatRefusal`), and the draft this
+  browser kept for its file is deleted (`EditorDraft.forget`); once one
+  was, and the box still shows that refusal, it adds that its unsaved
+  changes cannot be restored (`playwright-tests/older-format.spec.js`).
 - **Details the reader dropped** (a hand-edited description, contact or
   cover; M4a review #6) are said in a toast that stays until closed
   (`droppedDetailsLine`): which ones, and that the next save writes the

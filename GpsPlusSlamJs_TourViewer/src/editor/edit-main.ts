@@ -48,7 +48,7 @@ import {
   type TourSaveHolder,
   type TourSaveStatus,
 } from "../tour-document.js";
-import { describeIntegrityError } from "../open-errors.js";
+import { describeIntegrityError, olderFormatRefusal } from "../open-errors.js";
 import { debugCapturesOf } from "../debug-captures.js";
 import { pictureProblem } from "../image-cap.js";
 import { scanEntryNames } from "../tour-read-set.js";
@@ -1932,6 +1932,16 @@ async function openFile(
     setBusy(false, "");
     openError.textContent = outcome.reason;
     openError.hidden = false;
+    const older = outcome.olderFormat;
+    if (older !== undefined) {
+      // Its draft has nothing left to be restored into: deleted, and the
+      // refusal says so once it is gone.
+      void draft.forget(older.fileKey).then((deleted) => {
+        if (deleted && openError.textContent === outcome.reason) {
+          openError.textContent = olderFormatRefusal(older.error, true);
+        }
+      });
+    }
     return false;
   }
   // A failure the background check latched before the tour was ours

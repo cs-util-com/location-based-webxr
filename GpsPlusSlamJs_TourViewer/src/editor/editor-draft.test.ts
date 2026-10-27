@@ -218,6 +218,53 @@ function tour(...objects: TourObject[]): TourManifest {
 const K1 = "local-file:00000000000000000000000000000001";
 const K2 = "local-file:00000000000000000000000000000002";
 
+/**
+ * Why these tests matter: a file of an older format is refused, never
+ * converted, so the draft this browser kept for it has nothing left to be
+ * restored into. The refusal deletes that draft, and only that file's,
+ * under the draft's lock: a tab still editing it keeps it.
+ */
+describe("a refused older file's draft", () => {
+  async function seed(b: ReturnType<typeof browser>, fileKey: string) {
+    const store = (await b.open(editorDraftKey(fileKey)))!;
+    await store.put(META_KEY, "{}");
+    await store.put(objectKey("a"), "{}");
+  }
+
+  it("is deleted, another file's is left, and whether one was there is said", async () => {
+    const b = browser();
+    await seed(b, K1);
+    await seed(b, K2);
+    const draft = draftIn(b);
+    await expect(draft.forget(K1)).resolves.toBe(true);
+    expect([...(b.spaces.get(editorDraftKey(K1))?.keys() ?? [])]).toEqual([]);
+    expect(b.spaces.get(editorDraftKey(K2))?.size).toBe(2);
+    await expect(draft.forget(K1), "nothing is left").resolves.toBe(false);
+    // The lock went with it: the file's draft can be held again.
+    expect((await draft.open(K1, tour(pin("a")))).backedUp).toBe(true);
+  });
+
+  it("is kept while another tab holds it", async () => {
+    const b = browser();
+    await seed(b, K1);
+    const held = locks();
+    const tab = draftIn(b, held);
+    await tab.open(K1, tour(pin("a")));
+    const other = draftIn(b, held);
+    await expect(other.forget(K1)).resolves.toBe(false);
+    expect(b.spaces.get(editorDraftKey(K1))?.has(META_KEY)).toBe(true);
+  });
+
+  it("is none where the browser keeps no drafts", async () => {
+    const draft = createEditorDraft({
+      openStore: () => Promise.resolve(undefined),
+      holdLock: locks(),
+      noBackup: () => undefined,
+    });
+    await expect(draft.forget(K1)).resolves.toBe(false);
+  });
+});
+
 describe("createEditorDraft", () => {
   it("backs an edit up under the editor's own namespace, with the opened version as seen", async () => {
     // Why (review #3): the phone keys a file-opened tour by the same file
