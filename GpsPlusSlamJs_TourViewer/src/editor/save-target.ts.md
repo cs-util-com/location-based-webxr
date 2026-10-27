@@ -43,6 +43,28 @@ build plan, re-cut" and its cold review
   thrown `TypeError`): the caller downloads instead and asks again before
   it relies on the download. `SavePickerWindow` is the part of `window`
   it reads.
+- `releaseUnusedPick(pick): Promise<string | null>` - a file the save
+  dialog gave that nothing will be written into (the open it was asked
+  for failed or was refused, or its write did not land; PR bot finding
+  11). The browser made it as it was picked, so an EMPTY one is removed
+  where the handle has Chromium's `remove()`; one that holds something
+  (an existing file picked to be replaced) is left as it was. Resolves to
+  the sentence that says which: "Nothing was written into <name>, and the
+  empty file was removed." / "...; it is as it was." / "...: it is empty
+  and can be deleted." (no `remove`, or it failed) / "Nothing was written
+  into <name>." (the file cannot be read); null for no pick, a dismissed
+  dialog or none. Never throws.
+- **How a write lands** (PR bot finding 15): every write here goes through
+  the framework's `writeFileOrAbort`, `createWritable()` with its default
+  `keepExistingData: false`. That is NOT a write in place: Chrome writes a
+  temporary copy and swaps it in at `close()`, and an error aborts the
+  copy and leaves the file as it was (on a desktop by the spec; on Android
+  measured once, below). Not measured: whether Chrome empties an existing
+  file at the moment it is PICKED in the save dialog (r955 review #1 asked
+  for a desktop check; it needs a person at the system dialog, which no
+  e2e can drive) - `releaseUnusedPick` removes a file only when it is
+  empty, so an emptied existing file would be removed, its bytes already
+  gone either way.
 - `createSaveTarget(handle, opened, { maxBytes? }): Promise<SaveTarget>` -
   the baseline (size, modified time, the last 64 KiB) is read from `opened`
   at once; `maxBytes` defaults to the open cap
@@ -133,5 +155,7 @@ cancelled only by a dismissal, unavailable without one or on any other
 refusal; `isSame` by the browser's answer, else by the name; `isSameFile`
 by the handle's answer, and by the name without a handle or with one that
 cannot tell; `adoptsSavedFile` with both dialogs and without either,
-and the fine print's words for each. The page's e2e (`playwright-tests/editor.spec.js`)
+and the fine print's words for each; `releaseUnusedPick` removing an empty
+file, leaving a full one, naming one it cannot remove or read, and silent
+without a pick. The page's e2e (`playwright-tests/editor.spec.js`)
 writes a real origin-private file through it.

@@ -1,6 +1,7 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import {
   TextReader,
   TextWriter,
@@ -4074,32 +4075,65 @@ test("Done shows its save in progress and stays shut when the save fails, and a 
  * `window.__releaseWalkPick()`; `dismiss` has the creator dismiss it (an
  * AbortError - only inside the gesture: outside it the refusal comes
  * first); `unreadable` hands back the file as a handle that writes but
- * cannot be read back (`getFile` refuses).
+ * cannot be read back (`getFile` refuses); `failWrite` as one whose
+ * every write is refused at its close (a full disk), the file left as it
+ * was; `seed`: the text the file already holds, as an existing file
+ * picked to be replaced does (else it is empty, as the browser makes a
+ * new one on the pick).
  * @param {import("@playwright/test").Page} page
  * @param {string} name
- * @param {{ hold?: boolean, dismiss?: boolean, unreadable?: boolean }} [options]
+ * @param {{ hold?: boolean, dismiss?: boolean, unreadable?: boolean, failWrite?: boolean, seed?: string }} [options]
  */
 async function clickBoundSavePicker(page, name, options = {}) {
   await page.evaluate(
-    async ({ fileName, hold, dismiss, unreadable }) => {
+    async ({ fileName, hold, dismiss, unreadable, failWrite, seed }) => {
       const root = await navigator.storage.getDirectory();
       const real = await root.getFileHandle(fileName, { create: true });
-      const handle = unreadable
-        ? {
-            kind: "file",
-            name: real.name,
-            createWritable: () => real.createWritable(),
-            getFile: () =>
-              Promise.reject(
-                new DOMException(
-                  "the file could not be read",
-                  "NotReadableError",
+      if (seed !== null) {
+        const seeding = await real.createWritable();
+        await seeding.write(seed);
+        await seeding.close();
+      }
+      const failing = {
+        kind: "file",
+        name: real.name,
+        createWritable: async () => {
+          const writable = await real.createWritable();
+          return {
+            write: (/** @type {Blob} */ data) => writable.write(data),
+            close: async () => {
+              await writable.abort();
+              throw new DOMException(
+                "There is not enough space on the disk.",
+                "QuotaExceededError",
+              );
+            },
+            abort: () => Promise.resolve(),
+          };
+        },
+        getFile: () => real.getFile(),
+        remove: () => real.remove(),
+        isSameEntry: (/** @type {FileSystemHandle} */ other) =>
+          real.isSameEntry(other),
+      };
+      const handle = failWrite
+        ? failing
+        : unreadable
+          ? {
+              kind: "file",
+              name: real.name,
+              createWritable: () => real.createWritable(),
+              getFile: () =>
+                Promise.reject(
+                  new DOMException(
+                    "the file could not be read",
+                    "NotReadableError",
+                  ),
                 ),
-              ),
-            isSameEntry: (/** @type {FileSystemHandle} */ other) =>
-              real.isSameEntry(other),
-          }
-        : real;
+              isSameEntry: (/** @type {FileSystemHandle} */ other) =>
+                real.isSameEntry(other),
+            }
+          : real;
       let inClick = false;
       for (const type of ["click", "keydown"]) {
         document.addEventListener(
@@ -4144,6 +4178,8 @@ async function clickBoundSavePicker(page, name, options = {}) {
       hold: options.hold === true,
       dismiss: options.dismiss === true,
       unreadable: options.unreadable === true,
+      failWrite: options.failWrite === true,
+      seed: options.seed ?? null,
     },
   );
 }
@@ -4854,6 +4890,46 @@ function opfsSize(page, name) {
   }, name);
 }
 
+/**
+ * The text a file of the page's origin-private file system holds, or null
+ * when there is no such file.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} name
+ */
+function opfsText(page, name) {
+  return page.evaluate(async (fileName) => {
+    const root = await navigator.storage.getDirectory();
+    try {
+      return await (
+        await root.getFileHandle(fileName)
+      )
+        .getFile()
+        .then((f) => f.text());
+    } catch {
+      return null;
+    }
+  }, name);
+}
+
+/**
+ * The size and SHA-256 (hex) of a file of the page's origin-private file
+ * system.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} name
+ */
+function opfsDigest(page, name) {
+  return page.evaluate(async (fileName) => {
+    const root = await navigator.storage.getDirectory();
+    const file = await (await root.getFileHandle(fileName)).getFile();
+    const bytes = await file.arrayBuffer();
+    const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+    return {
+      size: bytes.byteLength,
+      sha256: [...hash].map((b) => b.toString(16).padStart(2, "0")).join(""),
+    };
+  }, name);
+}
+
 test("a tour opened from its link asks where to save it in the click, and is that file from its first edit", async ({
   page,
 }) => {
@@ -4897,6 +4973,13 @@ test("a tour opened from its link asks where to save it in the click, and is tha
   await expect(page.locator("#save-status")).toHaveText("No changes");
   const written = await readOpfsTour(page, "linked.zip");
   expect(tourJsonOf(written)).toContain('"version"');
+  // The fetched bytes, unchanged, before the first edit (r955 review #4):
+  // the same size and SHA-256 as the link serves.
+  const served = await (await page.request.get(LINKED_TOUR)).body();
+  expect(await opfsDigest(page, "linked.zip")).toEqual({
+    size: served.length,
+    sha256: createHash("sha256").update(served).digest("hex"),
+  });
   // The first edit is saved into it by itself, with no dialog.
   await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
   await page.locator("#no-gps-input").check();
@@ -4939,13 +5022,15 @@ test("the sample asks where to save it in its click, and the chosen file holds i
   );
 });
 
-test("a link that fails after a file was picked writes nothing into it, and says why as before", async ({
+test("a link that fails after a file was picked writes nothing into it, removes the empty file, and says so", async ({
   page,
 }) => {
-  // Why: the dialog is asked for before the fetch, so the fetch can fail
-  // after the creator picked a file. Nothing may be written there until
-  // the tour's bytes are in hand and the tour opened: the picked file is
-  // left as it was, and the open says what went wrong as it always did.
+  // Why: the dialog is asked for before the fetch (it needs the click), so
+  // the fetch can fail after the creator picked a file - which the browser
+  // has made by then, empty. Nothing may be written there until the
+  // tour's bytes are in hand and the tour opened, and the empty file must
+  // not stay behind unexplained (PR bot finding 11, r955 review #1): it is
+  // removed, and the open says so beside what went wrong.
   await withBothDialogs(page);
   await page.goto("/edit.html");
   await clickBoundSavePicker(page, "never-written.zip");
@@ -4957,10 +5042,97 @@ test("a link that fails after a file was picked writes nothing into it, and says
     "Download the file to this computer, then choose it above.",
     { timeout: 15000 },
   );
+  await expect(page.locator("#open-error")).toContainText(
+    "Nothing was written into never-written.zip, and the empty file was removed.",
+  );
   expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
-  expect(await opfsSize(page, "never-written.zip")).toBe(0);
+  expect(await opfsText(page, "never-written.zip")).toBeNull();
   await expect(page.locator("#topbar")).toBeHidden();
   await expect(page.locator("#link-btn")).toBeEnabled();
+});
+
+test("a link that fails after an existing file was picked leaves that file as it was, and says so", async ({
+  page,
+}) => {
+  // Why: the file picked may already hold something (picked to be
+  // replaced). The stand-in is seeded, so this assertion fails if anything
+  // is written or the file is removed (the earlier one compared an empty
+  // stand-in with 0 bytes and could not fail, PR bot finding 12).
+  await withBothDialogs(page);
+  await page.goto("/edit.html");
+  await clickBoundSavePicker(page, "kept.zip", { seed: "an older tour" });
+  await page
+    .locator("#link-input")
+    .fill("http://127.0.0.1:5197/no-cors/tour.zip");
+  await page.locator("#link-btn").click();
+  await expect(page.locator("#open-error")).toContainText(
+    "Nothing was written into kept.zip; it is as it was.",
+    { timeout: 15000 },
+  );
+  expect(await opfsText(page, "kept.zip")).toBe("an older tour");
+});
+
+test("a write refused at the open says so in a toast that stays, removes the empty file, and the first Save asks again", async ({
+  page,
+}) => {
+  // Why: the write at the open can fail (a full disk). The UI-feedback
+  // rule wants the failure said and the in-progress state ended: the
+  // status leaves "Saving into...", the tour keeps the name it opened
+  // with, the empty file is removed, and the first Save of a change asks
+  // for a file again (r955 review #2). The toast no longer says Save asks
+  // again while there is nothing to save (Save does not ask then).
+  await withBothDialogs(page);
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await clickBoundSavePicker(page, "full-disk.zip", { failWrite: true });
+  await page.locator("#sample-btn").click();
+  const toastLine = page.locator(".toast", {
+    hasText: "The tour is open, but full-disk.zip could not be written",
+  });
+  await expect(toastLine).toBeVisible({ timeout: 15000 });
+  await expect(toastLine).toContainText(
+    "Nothing was written into full-disk.zip, and the empty file was removed. Your changes are kept in this browser until you save.",
+  );
+  await expect(toastLine).not.toContainText("Save asks for a file again");
+  await expect(page.locator("#save-status")).toHaveText("No changes");
+  await expect(page.locator("#tour-file")).toHaveText("marienplatz-tour.zip");
+  expect(await opfsText(page, "full-disk.zip")).toBeNull();
+  // A toast that stays: still there long after a passing one would go.
+  await page.clock.runFor(30_000);
+  await expect(toastLine).toBeVisible();
+  await page.locator("#no-gps-input").check();
+  await expect(page.locator("#save-status")).toHaveText(
+    "1 change not saved - kept in this browser until you save",
+  );
+  await save(page);
+  expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(2);
+});
+
+test("while the write at the open runs, it holds the save slot: Save waits", async ({
+  page,
+}) => {
+  // Why: the write at the open did not hold the page's save slot, so Save,
+  // Ctrl+S and Done stayed enabled during it; an edit plus Ctrl+S then
+  // could adopt the wrong file and leak a name lock (r955 review #3).
+  await withBothDialogs(page);
+  await page.goto("/edit.html");
+  await heldWriteSavePicker(page, "slow.zip");
+  await page.locator("#link-input").fill(LINKED_TOUR);
+  await page.locator("#link-btn").click();
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saving into slow.zip…",
+    { timeout: 15000 },
+  );
+  await expect(page.locator("#file-save")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await page.evaluate(() => Reflect.get(window, "__releaseWrite")());
+  await expect(page.locator("#tour-file")).toHaveText("slow.zip");
+  await expect(page.locator("#file-save")).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
 });
 
 test("a dismissed dialog at the open leaves the tour in this browser, said in the status, and the first Save asks again", async ({

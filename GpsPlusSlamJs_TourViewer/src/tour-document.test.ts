@@ -1513,29 +1513,34 @@ describe("tour document: a step across an in-place save (D33)", () => {
   // clear the due resave and the last save's error as any save's does:
   // after a copy, the step across the in-place file was never written,
   // and the failed save's reason was gone though nothing had saved.
-  it("a copy holds the slot but takes neither the resave nor the last error on", () => {
-    const due = undo(saveInPlace(del(open(), "b")));
-    expect(due.save.resave).toBe(true);
-    const copying = reduce(due, act.saveClaimed({ by: "copy" }));
-    expect(copying.save).toMatchObject({
-      by: "copy",
-      status: "saving",
-      resave: true,
-    });
-    expect(reduce(copying, act.saveReleased({})).save.resave).toBe(true);
-    const failed = reduce(
-      reduce(open(), act.saveClaimed({ by: "explicit" })),
-      act.saveReleased({ error: "Not saved: disk" }),
-    );
-    const afterCopy = reduce(
-      reduce(failed, act.saveClaimed({ by: "copy" })),
-      act.saveReleased({}),
-    );
-    expect(afterCopy.save).toMatchObject({
-      status: "error",
-      error: "Not saved: disk",
-    });
-  });
+  // The write at an open from a link (r955 review #3) holds the slot the
+  // same way: it writes the fetched bytes, never the document.
+  it.each(["copy", "open"] as const)(
+    "a %s write holds the slot but takes neither the resave nor the last error on",
+    (by) => {
+      const due = undo(saveInPlace(del(open(), "b")));
+      expect(due.save.resave).toBe(true);
+      const copying = reduce(due, act.saveClaimed({ by }));
+      expect(copying.save).toMatchObject({
+        by,
+        status: "saving",
+        resave: true,
+      });
+      expect(reduce(copying, act.saveReleased({})).save.resave).toBe(true);
+      const failed = reduce(
+        reduce(open(), act.saveClaimed({ by: "explicit" })),
+        act.saveReleased({ error: "Not saved: disk" }),
+      );
+      const afterCopy = reduce(
+        reduce(failed, act.saveClaimed({ by })),
+        act.saveReleased({}),
+      );
+      expect(afterCopy.save).toMatchObject({
+        status: "error",
+        error: "Not saved: disk",
+      });
+    },
+  );
 
   it("a claimed save takes the resave on; an open forgets it; a refused undo sets nothing", () => {
     const due = undo(saveInPlace(del(open(), "b")));

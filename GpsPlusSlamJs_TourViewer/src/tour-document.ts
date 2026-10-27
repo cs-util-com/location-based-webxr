@@ -184,9 +184,12 @@ export type SettleChange =
     };
 
 /** Who holds a page's one save slot: an explicit Save, the autosave, a
- *  step of the walk's move, or "Save a copy…" (a second file, never the
- *  tour's own: it takes neither a due resave nor the last error on). */
-export type TourSaveHolder = "explicit" | "auto" | "walk" | "copy";
+ *  step of the walk's move, "Save a copy…" (a second file, never the
+ *  tour's own: it takes neither a due resave nor the last error on), or
+ *  "open": the fetched bytes of a tour from a link or the sample written
+ *  into the file its open asked for (the document is not written, so it
+ *  takes neither on either; r955 review #3). */
+export type TourSaveHolder = "explicit" | "auto" | "walk" | "copy" | "open";
 
 /** The save status (what used to be a page's module-scope save flags). */
 export interface TourSaveStatus {
@@ -3001,7 +3004,9 @@ const tourDocumentSlice = createSlice({
         // save's error stays said.
         save: saveWith(
           before.save,
-          by === "copy" ? { by } : { by, error: null, resave: false },
+          by === "copy" || by === "open"
+            ? { by }
+            : { by, error: null, resave: false },
         ),
       };
     },

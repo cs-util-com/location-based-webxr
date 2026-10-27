@@ -171,6 +171,7 @@ import {
   holdEditorLock,
   isSameFile,
   pickSaveFile,
+  releaseUnusedPick,
   pickTourFile,
   saveFinePrint,
   InPlaceRefusal,
@@ -808,6 +809,12 @@ function renderSaveState(): void {
         "saving",
         "Saving a copy…",
         count > 0 || undelivered !== null || saveState().error !== null,
+      );
+    } else if (saveState().by === "open") {
+      showSaveStatus(
+        "saving",
+        `Saving into ${openWriting ?? "the chosen file"}…`,
+        count > 0,
       );
     } else {
       showSaveStatus("saving", "Saving…");
@@ -1853,6 +1860,7 @@ function dropTour(reason: string): void {
   fileKey = null;
   tourDraft = null;
   savedIntoChosen = false;
+  chosenAtOpen = false;
   draft.close();
   store.dispatch(tourDocumentActions.closed());
   resetEditing();
@@ -2431,6 +2439,10 @@ let savedIntoChosen = false;
  *  then. Reset by every open. */
 let chosenAtOpen = false;
 
+/** The name of the file the open's write is filling while it holds the
+ *  save slot (`keepInChosenFile`, the "open" claim); null otherwise. */
+let openWriting: string | null = null;
+
 /**
  * A tour from a link or the sample asks where to save it IN the open's
  * click, before any await (Chromium opens the dialog only within a few
@@ -2463,17 +2475,40 @@ async function stillToChoose(
   return picked.handle;
 }
 
-/** The file picked at the open could not be written: the line shows the
- *  tour unsaved again, and a toast that stays says why and what follows. */
-function chosenFileUnwritten(name: string, err: unknown): void {
-  renderSaveState();
+/** The file picked at the open could not be written: a toast that stays
+ *  says why, what became of the file (`left`, `releaseUnusedPick`'s
+ *  sentence) and what follows. Save asks for a file again only once there
+ *  is something to save, so the toast does not promise it (r955 review
+ *  #2). */
+function chosenFileUnwritten(
+  name: string,
+  err: unknown,
+  left: string | null,
+): void {
   fileToasts.push(
     toast(
-      `The tour is open, but ${name} could not be written (${err instanceof Error ? err.message : String(err)}). Your changes are kept in this browser until you save, and Save asks for a file again.`,
+      `The tour is open, but ${name} could not be written (${err instanceof Error ? err.message : String(err)}).${left === null ? "" : ` ${left}`} Your changes are kept in this browser until you save.`,
       undefined,
       null,
     ),
   );
+}
+
+/**
+ * The file picked at an open that did not happen (the fetch failed, or the
+ * tour was refused): it is released (`releaseUnusedPick`: an empty one
+ * removed), and what became of it is added to the open's error, unless
+ * that error was replaced or closed meanwhile (PR bot finding 11).
+ */
+function settleUnusedPick(pick: Promise<SaveFilePick> | null): void {
+  if (pick === null) return;
+  const shown = openError.textContent;
+  void releaseUnusedPick(pick).then((line) => {
+    if (line === null || openError.hidden || openError.textContent !== shown) {
+      return;
+    }
+    openError.textContent = `${shown ?? ""}\n${line}`;
+  });
 }
 
 /**
@@ -2492,20 +2527,52 @@ async function keepInChosenFile(
   fetched: File,
   pick: Promise<SaveFilePick>,
 ): Promise<void> {
-  const handle = await stillToChoose(mine, pick);
-  if (handle === null) return;
-  showSaveStatus("saving", `Saving into ${handle.name}…`, false);
-  try {
-    await writeFileOrAbort(handle, fetched);
-  } catch (err) {
-    if (editor === mine) chosenFileUnwritten(handle.name, err);
+  // A save the creator started meanwhile runs out first; the slot is then
+  // this write's, taken with no await between the check and the claim,
+  // until the file is adopted (r955 review #3: Save, Ctrl+S and Done
+  // stayed enabled during the write, and a save in between could adopt
+  // another file).
+  let handle = await stillToChoose(mine, pick);
+  if (handle !== null) {
+    await savesSettled();
+    handle = await stillToChoose(mine, pick);
+  }
+  if (handle === null) {
+    // Picked, but no longer to be written (another tour opened, or a Save
+    // chose a file meanwhile): not left behind empty and unexplained.
+    void releaseUnusedPick(pick).then((line) => {
+      if (line !== null) toast(line);
+    });
     return;
   }
-  if (editor !== mine) return;
-  chosenAtOpen = true;
+  openWriting = handle.name;
+  const ended = claimSave("open");
   renderSaveState();
-  await adoptChosen(mine, handle);
-  if (editor === mine && openedFile?.handle === handle) {
+  let adopted = false;
+  try {
+    await writeFileOrAbort(handle, fetched);
+    if (editor !== mine) return;
+    chosenAtOpen = true;
+    await adoptChosen(mine, handle);
+    adopted = editor === mine && openedFile?.handle === handle;
+  } catch (err) {
+    if (editor === mine) {
+      const left = await releaseUnusedPick(
+        Promise.resolve({ kind: "picked", handle }),
+      );
+      if (editor === mine) chosenFileUnwritten(handle.name, err, left);
+    }
+  } finally {
+    openWriting = null;
+    if (editor === mine) releaseSave();
+    ended();
+    renderSaveState();
+    // An autosave held back during the write runs now, into the adopted
+    // file, and so does a resave that fell due meanwhile.
+    autosave.poke();
+    if (editor === mine) void resaveIfDue();
+  }
+  if (adopted) {
     toast(
       `Saved to ${handle.name}. Your changes are saved into it by themselves.`,
     );
@@ -2946,6 +3013,8 @@ sampleButton.addEventListener("click", () => {
       const file = new File([blob], SAMPLE_NAME, { type: "application/zip" });
       if ((await openFile(file)) && pick !== null && editor !== null) {
         void keepInChosenFile(editor, file, pick);
+      } else {
+        settleUnusedPick(pick);
       }
     })
     .catch((err: unknown) => {
@@ -2954,6 +3023,7 @@ sampleButton.addEventListener("click", () => {
         err instanceof Error ? err.message : String(err)
       }`;
       openError.hidden = false;
+      settleUnusedPick(pick);
     });
 });
 // A hosted tour, from its link (tour editor plan 2026-10-17-1816, W1): the
@@ -2972,17 +3042,19 @@ linkForm.addEventListener("submit", (event) => {
   })
     .then(async (file) => {
       setBusy(false, "");
-      if (!(await openFile(file))) return;
+      if (!(await openFile(file)) || editor === null) {
+        settleUnusedPick(pick);
+        return;
+      }
       // Done names the host the tour was fetched from (W2).
       linkHost = hostOfLink(link);
-      if (pick !== null && editor !== null) {
-        void keepInChosenFile(editor, file, pick);
-      }
+      if (pick !== null) void keepInChosenFile(editor, file, pick);
     })
     .catch((err: unknown) => {
       setBusy(false, "");
       openError.textContent = linkOpenErrorText(err, link);
       openError.hidden = false;
+      settleUnusedPick(pick);
     });
 });
 cancelButton.addEventListener("click", () => {

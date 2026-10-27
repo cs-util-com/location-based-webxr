@@ -242,23 +242,35 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   first Save's rule: both file dialogs, Android included):
   `askOpenSaveFile` opens the save dialog IN the sample's click or the
   link's submit, before the fetch, suggesting the name the fetched file
-  will carry (`linkFileName`, the sample's own name). The fetch runs
+  will carry (`linkFileName`, the sample's own name; a Drive link without
+  a `.zip` name gives `tour-<start of its file id>.zip`, r955 review #1,
+  so a second Drive tour does not offer the first one's file). Asking
+  before the fetch is kept on purpose: Chromium opens the dialog only
+  within a few seconds of the click, and the fetch can take longer. The fetch runs
   meanwhile and the tour opens as before; only once it opened does
   `keepInChosenFile` take the pick: a picked file is written with the
   fetched bytes unchanged (the status line says "Saving into <name>…"
-  while it writes) and ADOPTED (`adoptChosen`, so saves go there in
+  while it writes, and the write holds the page's save slot as an
+  `"open"` claim until the file is adopted, so Save, Ctrl+S and Done wait
+  for it, r955 review #3) and ADOPTED (`adoptChosen`, so saves go there in
   place and by themselves from the first edit), a toast says "Saved to
   <name>. Your changes are saved into it by themselves.", and Share and
   publish names it as "the file you chose when you opened the tour"
-  (`DoneSaved.chosenAtOpen`, reset by every open). Nothing is written into
-  the picked file before the tour opened: a failed fetch, or a file the
-  open refuses, leaves it as it was (the browser itself may have created
-  it empty), and the open says what went wrong as before. A dismissed
-  dialog writes nothing and the tour stays in the browser's draft until
-  Save, which asks again; a write that fails says so in a toast that stays
-  (`chosenFileUnwritten`) and leaves the tour the same way. A pick that
-  lands after another tour opened, or after a Save already gave the tour a
-  file, is ignored (`stillToChoose`).
+  (`DoneSaved.chosenAtOpen`, reset by every open and by `dropTour`).
+  Nothing is written into the picked file before the tour opened: a
+  failed fetch, or a file the open refuses, writes nothing, and the
+  picked file is released (`settleUnusedPick` over `save-target.ts`'s
+  `releaseUnusedPick`, PR bot finding 11): the browser made it empty as
+  it was picked, so an empty one is removed where the handle can, one that
+  holds something is left as it was, and the open's error says which
+  beside what went wrong. A dismissed dialog writes nothing and the tour
+  stays in the browser's draft until Save, which asks again; a write that
+  fails says so in a toast that stays (`chosenFileUnwritten`, with what
+  became of the file; it no longer says Save asks again, since Save asks
+  only once there is a change) and leaves the tour the same way. A pick
+  that lands after another tour opened, or after a Save already gave the
+  tour a file, is not written (`stillToChoose`) and is released the same
+  way, said in a toast.
 - **Where unsaved changes are, without a file saved into by itself:**
   while no in-place target exists (a browser without the save dialog, a
   dismissed dialog, a refused permission) and the draft backs
@@ -545,7 +557,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 - **Titles:** the top bar and the tab say the tour's name (`model.title`,
   the file's name when it has none): `<name> - Tour editor`.
 - **The open dialog's fine print** is `save-target.ts`'s
-  `saveFinePrint(window, navigator)`: Save writes the chosen file where
+  `saveFinePrint(window)`: Save writes the chosen file where
   the file picker exists, a tour from a link asks for its file as it
   opens (or at its first Save) where the browser adopts it, else gives a
   new copy
@@ -730,8 +742,13 @@ and a chosen file that cannot be read back saying so, the next Save
 asking again. A tour opened from its link or the sample (`editor.spec.js`):
 asked for in the click under the link's file name, "Saving into" while
 the held write runs, then the toast, the file holding the tour and the
-first edit saved into it by itself, and Share and publish's line; a link
-that fails after a pick writing nothing into it; a dismissed dialog
+first edit saved into it by itself, the written file's size and SHA-256
+the link's own, and Share and publish's line; a link that fails after a
+pick writing nothing, the empty file removed and said, and an existing
+(seeded) file picked left byte for byte; a write refused at the open (a
+lasting toast, the status line back, the name the open's, the file
+removed, the first Save of a change asking again); the save slot held
+while the write at the open runs; a dismissed dialog
 leaving the tour in the browser (the status line says so) and the first
 Save asking again; and on Android (its client hints) the same dialog as
 on a desktop.

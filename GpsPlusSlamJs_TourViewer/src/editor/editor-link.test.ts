@@ -58,13 +58,22 @@ describe("fetchTourFile", () => {
     expect(archive.dispose).toHaveBeenCalledTimes(1);
   });
 
-  it("names a link without a .zip name tour.zip (a Drive id says nothing)", async () => {
-    const drive = "https://drive.google.com/file/d/abc123/view";
+  // Why: every Drive link used to suggest the bare `tour.zip`, so a second
+  // tour opened from Drive offered the first one's file, and Enter plus
+  // the system's "Replace?" wrote the original over an edited tour (r955
+  // review #1). A Drive link's file carries the start of its file id.
+  it("names a Drive link after the start of its file id, any other link without a .zip name tour.zip", async () => {
+    const drive = "https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQ/view";
     const archive = fakeArchive(new Uint8Array([1]), drive);
     const file = await fetchTourFile(drive, {
       open: () => Promise.resolve(archive),
     });
-    expect(file.name).toBe("tour.zip");
+    expect(file.name).toBe("tour-1AbCdEfGhIjK.zip");
+    const other = "https://example.test/share?file=7";
+    const plain = await fetchTourFile(other, {
+      open: () => Promise.resolve(fakeArchive(new Uint8Array([1]), other)),
+    });
+    expect(plain.name).toBe("tour.zip");
   });
 
   it("stops the download when a read fails, and rejects", async () => {
@@ -97,6 +106,9 @@ describe("linkFileName", () => {
     expect(linkFileName(`  ${LINK}  `)).toBe("Castle walk.zip");
     expect(linkFileName("https://drive.example.test/file/d/abc/view")).toBe(
       "tour.zip",
+    );
+    expect(linkFileName("https://drive.google.com/open?id=abc")).toBe(
+      "tour-abc.zip",
     );
     const file = await fetchTourFile(LINK, {
       open: () => Promise.resolve(fakeArchive(new Uint8Array([1, 2]), LINK)),

@@ -16,6 +16,8 @@ import {
   type OpenRemoteArchiveOptions,
 } from "gps-plus-slam-app-framework/storage";
 
+import { driveFileId } from "gps-plus-slam-app-framework/utils/drive-file-id";
+
 import { HOST_REFUSED_TEXT, describeOpenError } from "../open-errors.js";
 import { archiveFileName, readArchiveInSlices } from "../tour-session.js";
 
@@ -62,10 +64,27 @@ export async function fetchTourFile(
   });
   try {
     const blob = await readArchiveInSlices(archive, options.sliceBytes);
-    return new File([blob], archiveFileName(url), { type: "application/zip" });
+    return new File([blob], fetchedFileName(url), {
+      type: "application/zip",
+    });
   } finally {
     archive.dispose();
   }
+}
+
+/** How many characters of a Drive file id a linked tour's name keeps:
+ *  enough to tell two tours apart, short enough to read in a dialog. */
+const DRIVE_ID_CHARS = 12;
+
+/** The link's own `.zip` name; for a Drive link without one,
+ *  `tour-<start of its file id>.zip` (r955 review #1: every Drive link
+ *  suggested `tour.zip`, so a second one offered the first one's file);
+ *  else `tour.zip`. */
+function fetchedFileName(url: string): string {
+  const named = archiveFileName(url);
+  if (named !== "tour.zip") return named;
+  const id = driveFileId(url);
+  return id === null ? named : `tour-${id.slice(0, DRIVE_ID_CHARS)}.zip`;
 }
 
 /**
@@ -76,7 +95,7 @@ export async function fetchTourFile(
  */
 export function linkFileName(link: string): string | null {
   const url = link.trim();
-  return isWebLink(url) ? archiveFileName(url) : null;
+  return isWebLink(url) ? fetchedFileName(url) : null;
 }
 
 /** The editor's sentence for a link that did not open: the viewer's words

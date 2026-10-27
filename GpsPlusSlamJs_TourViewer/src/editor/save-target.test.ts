@@ -14,6 +14,7 @@ import {
   holdEditorLock,
   pickSaveFile,
   pickTourFile,
+  releaseUnusedPick,
   saveFinePrint,
   InPlaceRefusal,
   type PickerWindow,
@@ -536,5 +537,79 @@ describe("adoptsSavedFile", () => {
     });
     expect(openOnly).toContain("saved as a new copy");
     expect(openOnly).not.toContain("asks where to save it");
+  });
+});
+
+// Why: the open from a link or the sample asks for its file IN the click,
+// before the fetch (the dialog needs the click), so a fetch or an open
+// can fail after the creator picked a file. The browser has made that file
+// by then, empty. It must never stay behind unexplained (PR bot finding
+// 11, r955 review #1): an empty one is removed where the browser can, a
+// file that holds something is left as it was, and each case is said.
+describe("releaseUnusedPick", () => {
+  function picked(size: number, remove?: () => Promise<void>) {
+    const calls: string[] = [];
+    const handle = {
+      kind: "file",
+      name: "linked.zip",
+      getFile: () =>
+        Promise.resolve(new File([new Uint8Array(size)], "linked.zip")),
+      ...(remove === undefined
+        ? {}
+        : {
+            remove: () => {
+              calls.push("remove");
+              return remove();
+            },
+          }),
+    } as unknown as FileSystemFileHandle;
+    return {
+      pick: Promise.resolve({ kind: "picked", handle } as const),
+      calls,
+    };
+  }
+
+  it("removes an empty picked file and says so", async () => {
+    const { pick, calls } = picked(0, () => Promise.resolve());
+    expect(await releaseUnusedPick(pick)).toBe(
+      "Nothing was written into linked.zip, and the empty file was removed.",
+    );
+    expect(calls).toEqual(["remove"]);
+  });
+
+  it("leaves a file that holds something as it was", async () => {
+    const { pick, calls } = picked(5, () => Promise.resolve());
+    expect(await releaseUnusedPick(pick)).toBe(
+      "Nothing was written into linked.zip; it is as it was.",
+    );
+    expect(calls).toEqual([]);
+  });
+
+  it("names an empty file it cannot remove, so the creator can", async () => {
+    for (const remove of [undefined, () => Promise.reject(new Error("no"))]) {
+      const { pick } = picked(0, remove);
+      expect(await releaseUnusedPick(pick)).toBe(
+        "Nothing was written into linked.zip: it is empty and can be deleted.",
+      );
+    }
+  });
+
+  it("says nothing for a dismissed or unavailable dialog, or none at all", async () => {
+    expect(await releaseUnusedPick(null)).toBeNull();
+    for (const kind of ["cancelled", "unavailable"] as const) {
+      expect(await releaseUnusedPick(Promise.resolve({ kind }))).toBeNull();
+    }
+  });
+
+  it("says only that nothing was written into a picked file it cannot read", async () => {
+    const handle = {
+      kind: "file",
+      name: "linked.zip",
+      getFile: () => Promise.reject(new Error("gone")),
+      remove: () => Promise.resolve(),
+    } as unknown as FileSystemFileHandle;
+    expect(
+      await releaseUnusedPick(Promise.resolve({ kind: "picked", handle })),
+    ).toBe("Nothing was written into linked.zip.");
   });
 });
