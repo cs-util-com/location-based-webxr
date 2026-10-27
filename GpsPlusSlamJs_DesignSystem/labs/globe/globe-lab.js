@@ -845,7 +845,23 @@ const PARAMS = {
   perfSteps: { fallback: 40, min: 1, max: 200 },
   perfSettleS: { fallback: 120, min: 1, max: 600 },
   perfSpeed: { fallback: null, min: 0.05, max: 20 },
+  // The fixed-view sweep (`globe-perf-views.js`), on with the text key
+  // `perfItems` (item counts, "5,20,50"): each view and count held
+  // `perfHoldS` after a settle of at most `perfViewSettleS`, the whole
+  // sweep `perfRepeats` times. `perfAuto` 1 starts the recorder's run by
+  // itself (any sweep), so one link is the whole phone test.
+  perfRepeats: { fallback: 3, min: 1, max: 10 },
+  perfHoldS: { fallback: 5, min: 1, max: 60 },
+  perfViewSettleS: { fallback: 20, min: 1, max: 300 },
+  perfAuto: { fallback: 0, min: 0, max: 1 },
 };
+
+/**
+ * The fixed-view sweep's street view (`globe-perf-views.js`): the camera
+ * stands this far south of the items (m) at an eye height and looks at a
+ * point this high over the ground at their middle (m).
+ */
+const PERF_STREET = Object.freeze({ backM: 30, lookAtM: 1 });
 
 /** The sweeps the recorder knows (`/globe/globe-perf-sweep.js`). */
 const PERF_SWEEPS = ["quick", "full", "overhead"];
@@ -942,6 +958,9 @@ function readHashParams() {
     // `controls` drives every recorder run through the controls' wheel
     // input; absent, each cell says (`/globe/globe-perf-sweep.js`).
     perfDrive: params.get("perfDrive") === "controls" ? "controls" : null,
+    // The fixed-view sweep's item counts, as text: the recorder parses it
+    // (`parsePerfItems`), so the page loads nothing of it without perf=1.
+    perfItems: params.get("perfItems"),
     // Which noise the volume's clouds read (round-3 plan 2026-10-08-2345,
     // N1): `tile` (the baked 24 km tile), `hex` (H1/H2) or `live` (the
     // per-octave noise that never repeats in view). Absent or unknown:
@@ -4937,8 +4956,19 @@ void main() {
   // only with #perf=1: its handle on the page is what it reads (cheap
   // counts, no raycasts, so it never adds to what it counts) and the few
   // things it sets.
+  /** The drawn ground at a place (m over the ellipsoid), 0 before any relief. */
+  const perfGroundM = ({ lat, lng }) =>
+    terrain?.plugin.sampleCartographicElevation(lat * DEG, lng * DEG) ?? 0;
   if (params.perf === 1) {
     const { createGlobePerf } = await import("./globe-perf.js");
+    // The fixed-view sweep's editor-style items (`globe-perf-views.js`).
+    const { createPerfItems } = await import("./globe-perf-items.js");
+    const perfItems = createPerfItems({
+      parent: globe.group,
+      ellipsoid: globe.tiles.ellipsoid,
+      groundM: perfGroundM,
+      eyeItems,
+    });
     let tookCamera = false;
     const altitudeNow = () =>
       globe.tiles.ellipsoid.getPositionElevation(
@@ -4969,7 +4999,7 @@ void main() {
        * law (`pitchAtDeg`), as the dive places it. The first call takes
        * the camera from the fly-in and the pin, as a press would.
        */
-      placeCamera(place, altitudeM) {
+      placeCamera(place, altitudeM, pose = null) {
         const now = performance.now();
         if (!tookCamera) {
           tookCamera = true;
@@ -4978,12 +5008,14 @@ void main() {
           controls.release();
         }
         const ellipsoid = globe.tiles.ellipsoid;
-        const view = obliqueCamera(
-          ellipsoid,
-          orbitPose(ellipsoid, place),
-          altitudeM,
-          pitchAtDeg(altitudeM, { pitchLowDeg: params.pitchLow }),
-        );
+        const view =
+          pose ??
+          obliqueCamera(
+            ellipsoid,
+            orbitPose(ellipsoid, place),
+            altitudeM,
+            pitchAtDeg(altitudeM, { pitchLowDeg: params.pitchLow }),
+          );
         placeCameraEcef(view.position, view.quaternion);
         returnFov(now);
         controls.followIntro();
@@ -5036,6 +5068,61 @@ void main() {
       setEOverride(e) {
         eOverride = e;
       },
+      // The fixed-view sweep (`globe-perf-views.js`).
+      viewPlace: () => params.url,
+      // The drawn share has reached the altitude's: a view is not settled
+      // while the relief is still being handed the frame (`settled` reads
+      // an undrawn relief as idle).
+      bandAtTarget: () => !terrain || Math.abs(bandShare - bandTarget) < 1e-3,
+      placeView(place, view) {
+        const ellipsoid = globe.tiles.ellipsoid;
+        if (worldFrame.target === null) setFrameTarget(place);
+        // The controls' height rays hit the drawn surface, as when the user
+        // owns the camera: on the whole scene they hit the cloud shell and
+        // lifted a street camera about 2 km.
+        controls.pickFrom(surfaceTiles().group);
+        if (!view.street) {
+          const groundM = view.aglM === undefined ? 0 : perfGroundM(place);
+          this.placeCamera(place, view.altitudeM ?? groundM + view.aglM);
+          return;
+        }
+        // Street level: an eye height over the ground, standing back from
+        // the items (south of them) and looking at their middle.
+        const back = {
+          lat: place.lat - PERF_STREET.backM / (radius * DEG),
+          lng: place.lng,
+        };
+        const eye = ellipsoid.getCartographicToPosition(
+          back.lat * DEG,
+          back.lng * DEG,
+          perfGroundM(back) + GLOBE_EYE.clearanceM,
+          new THREE.Vector3(),
+        );
+        const look = ellipsoid.getCartographicToPosition(
+          place.lat * DEG,
+          place.lng * DEG,
+          perfGroundM(place) + PERF_STREET.lookAtM,
+          new THREE.Vector3(),
+        );
+        const up = new THREE.Vector3();
+        ellipsoid.getEastNorthUpAxes(
+          back.lat * DEG,
+          back.lng * DEG,
+          new THREE.Vector3(),
+          new THREE.Vector3(),
+          up,
+        );
+        // A camera looks down its -z: lookAt(eye, target) points -z at target.
+        const m = new THREE.Matrix4().lookAt(eye, look, up);
+        this.placeCamera(place, 0, {
+          position: eye,
+          quaternion: new THREE.Quaternion().setFromRotationMatrix(m),
+        });
+      },
+      setItems(offsets, place) {
+        perfItems.set(offsets, place);
+      },
+      bytesDownloaded: globeBytesDownloaded,
       currentE: () => terrain?.plugin.heightScale ?? null,
     });
     window.__globeLab.perf = perf.api;

@@ -25,6 +25,16 @@ import {
 import { deviceBlock } from "./globe-device.js";
 import { createPerfRecorder } from "./globe-perf-recorder.js";
 import {
+  PERF_VIEWS,
+  formatViewTable,
+  itemOffsets,
+  parsePerfItems,
+  perfViewCells,
+  perfViewsEstimateMs,
+  summariseViewRuns,
+  viewRunLabel,
+} from "./globe-perf-views.js";
+import {
   browserShareEnv,
   copyExport,
   downloadExport,
@@ -59,6 +69,18 @@ export const GLOBE_PERF = Object.freeze({
    * carries both readings, and the DEC-PERF-3 verdict keeps the plan's.
    */
   thresholdsMs: Object.freeze([33, 34, 50, 51, 100]),
+  /**
+   * The fixed-view sweep (`perfItems`, `globe-perf-views.js`): frames
+   * held after the items change before a run opens, so a run measures the
+   * held view, not the items' first upload and compile (counted apart, in
+   * the first frames' events of the run before).
+   */
+  itemsWarmMs: 500,
+  /**
+   * ... and each held run takes at least this many frames after its hold,
+   * so a slow device (SwiftShader: seconds a frame) never ends a run empty.
+   */
+  viewMinFrames: 3,
 });
 
 /** The overlay's markup; the styles keep every control usable at 390 px. */
@@ -92,7 +114,11 @@ const PANEL_HTML = `
  * `{ renderer, canvas, globe, terrain, params(), counts(), placeCamera(place,
  * altitudeM), updateControls(), altitudeM(), wheelZoom(deltaY), settled(),
  * setFactors(cell | null),
- * setEOverride(e | null), currentE() }`. Returns the hooks the lab's frame
+ * setEOverride(e | null), currentE() }`, and for the fixed-view sweep
+ * `viewPlace()` (the link's place or null), `bandAtTarget()`,
+ * `placeView(place, view)`,
+ * `setItems(offsets, place)` (`itemOffsets`: metres east and north of the
+ * place) and `bytesDownloaded()`. Returns the hooks the lab's frame
  * calls (`frameStart`, `drives`, `drive`, `frameEnd`, `mark`, `eStep`) and
  * `api` for the smokes.
  */
@@ -184,13 +210,16 @@ export function createGlobePerf(lab) {
     const t0 = performance.now();
     while (performance.now() - t0 < ms) await nextFrame();
   };
-  /** Holds until the lab's drawn carriers settle, `settleFrames` in a row. */
-  const settle = async (timeoutMs) => {
+  /**
+   * Holds until the lab's drawn carriers settle, `settleFrames` in a row,
+   * and `also()` holds too.
+   */
+  const settle = async (timeoutMs, also = () => true) => {
     const t0 = performance.now();
     let still = 0;
     while (performance.now() - t0 < timeoutMs) {
       await nextFrame();
-      still = lab.settled() ? still + 1 : 0;
+      still = lab.settled() && also() ? still + 1 : 0;
       if (still >= GLOBE_PERF.settleFrames) return true;
     }
     return false;
@@ -353,6 +382,40 @@ export function createGlobePerf(lab) {
     });
   }
 
+  /**
+   * The fixed-view sweep (`globe-perf-views.js`): for each repeat and
+   * view, one camera move and its settle, then for each item count a short
+   * warm-up and a held run. The camera is placed every frame, so the
+   * street view follows the ground as the relief refines under it.
+   */
+  async function runViews(viewCells, label) {
+    const place = lab.viewPlace() ?? placeOf(lab.params().perfPlace);
+    const settleMs = lab.params().perfViewSettleS * 1000;
+    const holdMs = lab.params().perfHoldS * 1000;
+    let move = null;
+    let settledBefore = false;
+    for (const cell of viewCells) {
+      const view = PERF_VIEWS.find((v) => v.id === cell.view);
+      if (move !== `${cell.repeat}/${cell.view}`) {
+        move = `${cell.repeat}/${cell.view}`;
+        label(cell);
+        driver = { place, view };
+        settledBefore = await settle(settleMs, lab.bandAtTarget);
+      }
+      lab.setItems(itemOffsets(cell.items), place);
+      await wait(GLOBE_PERF.itemsWarmMs);
+      const started = startRun(cell, viewRunLabel(cell));
+      await wait(holdMs);
+      for (let k = 0; k < GLOBE_PERF.viewMinFrames; k++) await nextFrame();
+      endRun(cell, started, {
+        settledBefore,
+        bytes: lab.bytesDownloaded(),
+        requests: performance.getEntriesByType("resource").length,
+      });
+    }
+    lab.setItems([], place);
+  }
+
   /** Who and what ran (§4.1, DEC-PERF-1): strings, numbers, booleans. */
   function device() {
     return deviceBlock({
@@ -399,8 +462,12 @@ export function createGlobePerf(lab) {
         peaks: r.peaks,
         checkpoints: r.checkpoints ?? null,
         eCheck: r.eCheck ?? null,
+        bytes: r.bytes ?? null,
+        requests: r.requests ?? null,
       })),
       overhead: overheadVerdict(),
+      // The fixed-view sweep's table (null without it).
+      views: viewCells ? summariseViewRuns(finished) : null,
       longAnimationFrameMs: loafDurations,
     });
   }
@@ -431,7 +498,18 @@ export function createGlobePerf(lab) {
     ...(params.perfDrive === null ? {} : { drive: params.perfDrive }),
   }));
   const pauses = cells.filter((c) => c.pauseBefore).length;
-  const estimateMs = perfSweepEstimateMs(cells) + pauses * GLOBE_PERF.pauseMs;
+  // The fixed-view sweep (`perfItems`) replaces the zoom's cells.
+  const itemCounts = parsePerfItems(params.perfItems);
+  const viewCells =
+    itemCounts === null
+      ? null
+      : perfViewCells({ items: itemCounts, repeats: params.perfRepeats });
+  const estimateMs = viewCells
+    ? perfViewsEstimateMs(viewCells, {
+        holdMs: params.perfHoldS * 1000 + GLOBE_PERF.itemsWarmMs,
+        settleMs: params.perfViewSettleS * 1000,
+      }) + GLOBE_PERF.calibrateMs
+    : perfSweepEstimateMs(cells) + pauses * GLOBE_PERF.pauseMs;
   const panel = document.createElement("section");
   panel.id = "globe-perf";
   panel.setAttribute("aria-label", "Frame-time recorder");
@@ -439,10 +517,13 @@ export function createGlobePerf(lab) {
   document.body.append(panel);
   const part = (name) => panel.querySelector(`[data-perf="${name}"]`);
   const minutes = (ms) => Math.max(1, Math.ceil(ms / 60_000));
-  const runs = `${cells.length} run${cells.length === 1 ? "" : "s"}`;
-  part("plan").textContent = stepped
-    ? `Frame-stepped path, ${runs} (counts only).`
-    : `${sweep ?? "One run"}: ${runs}, about ${minutes(estimateMs)} min. Do not touch the screen while it runs.`;
+  const runCount = viewCells?.length ?? cells.length;
+  const runs = `${runCount} run${runCount === 1 ? "" : "s"}`;
+  part("plan").textContent = viewCells
+    ? `Views with items ${itemCounts.join(", ")}: ${runs}, at most ${minutes(estimateMs)} min. Do not touch the screen while it runs.`
+    : stepped
+      ? `Frame-stepped path, ${runs} (counts only).`
+      : `${sweep ?? "One run"}: ${runs}, about ${minutes(estimateMs)} min. Do not touch the screen while it runs.`;
   const setStatus = (text) => {
     status = text;
     part("status").textContent = text;
@@ -464,7 +545,10 @@ export function createGlobePerf(lab) {
   part("download").addEventListener("click", () => {
     const how = downloadExport(
       exportText(),
-      exportFileName(sweep ?? (stepped ? "step" : "run"), Date.now()),
+      exportFileName(
+        viewCells ? "views" : (sweep ?? (stepped ? "step" : "run")),
+        Date.now(),
+      ),
       share,
     );
     setStatus(
@@ -496,8 +580,19 @@ export function createGlobePerf(lab) {
     const left = () =>
       minutes(Math.max(0, estimateMs - (performance.now() - t0)));
     setStatus("Calibrating the refresh rate...");
-    await calibrate(placeOf(cells[0].place));
-    for (let i = 0; i < cells.length; i++) {
+    await calibrate(
+      viewCells
+        ? (lab.viewPlace() ?? placeOf(params.perfPlace))
+        : placeOf(cells[0].place),
+    );
+    if (viewCells) {
+      await runViews(viewCells, (cell) =>
+        setStatus(
+          `Repeat ${cell.repeat} of ${params.perfRepeats}: ${cell.view}. At most ${left()} min left.`,
+        ),
+      );
+    }
+    for (let i = 0; i < (viewCells ? 0 : cells.length); i++) {
       const cell = cells[i];
       if (cell.pauseBefore) {
         setStatus(`Pause against heat, 1 min. About ${left()} min left.`);
@@ -511,9 +606,14 @@ export function createGlobePerf(lab) {
     }
     driver = null;
     lab.setFactors(null);
-    const lines = finished.map((r) =>
-      formatFrameRunSummary(`${r.label}${r.voided ? " VOID" : ""}`, r.summary),
-    );
+    const lines = viewCells
+      ? [formatViewTable(summariseViewRuns(finished))]
+      : finished.map((r) =>
+          formatFrameRunSummary(
+            `${r.label}${r.voided ? " VOID" : ""}`,
+            r.summary,
+          ),
+        );
     const timed = finished.filter((r) => !r.voided && !r.stepped && r.hooks);
     if (timed.length > 1) {
       const passed = timed.filter(
@@ -537,7 +637,7 @@ export function createGlobePerf(lab) {
     part("run").disabled = false;
     setStatus("Done. Copy or Download the result.");
   }
-  part("run").addEventListener("click", () => {
+  const start = () =>
     runAll().catch((error) => {
       driver = null;
       if (rec.running()) rec.stopRun();
@@ -546,7 +646,9 @@ export function createGlobePerf(lab) {
       setStatus(`Failed: ${error?.message ?? error}`);
       console.error(error);
     });
-  });
+  part("run").addEventListener("click", start);
+  // `perfAuto=1`: the run starts by itself, so one link is the whole test.
+  if (params.perfAuto === 1) start();
 
   return {
     /**
@@ -618,7 +720,10 @@ export function createGlobePerf(lab) {
      */
     drive(now) {
       const target = typeof driver === "function" ? driver(now) : driver;
-      if (target.controls) {
+      if (target.view) {
+        lab.placeView(target.place, target.view);
+        lab.updateControls();
+      } else if (target.controls) {
         lab.wheelZoom(
           perfWheelDeltaY(Math.max(1, lab.altitudeM()), target.altitudeM),
         );

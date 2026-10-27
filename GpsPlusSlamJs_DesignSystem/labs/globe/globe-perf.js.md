@@ -90,6 +90,23 @@
   the hash's values come back at the end. `perfSpeed` replaces every
   cell's speed (short runs for the smokes). The overhead sweep turns the
   hooks off (frame intervals only) on alternate runs.
+- The fixed-view sweep (`perfItems=5,20,50`, `globe-perf-views.js`): after
+  the calibration, for each repeat and view one camera move and a settle
+  of at most `perfViewSettleS` (the drawn carriers idle AND the band's
+  drawn share at the altitude's, `lab.bandAtTarget`: an undrawn relief
+  reads as idle, so a low view settled before the relief took the frame), then for each item count the items set
+  (`lab.setItems(itemOffsets(n), place)`), a 500 ms warm-up
+  (`GLOBE_PERF.itemsWarmMs`: the items' first upload and compile fall
+  outside the held run) and a run held `perfHoldS` and at least 3 more frames
+  (`GLOBE_PERF.viewMinFrames`: under SwiftShader a 1 s hold ended runs with
+  no frame), labelled
+  `<view> n=<count> r<repeat>`, with the bytes the page had needed
+  (`bytesDownloaded`, `/globe-assets/` only) and the resource count.
+  The camera is placed every frame (`lab.placeView`), so the street view
+  follows the ground as it refines. The overlay shows the pooled table
+  (`formatViewTable`), the export adds it as `views`
+  (`summariseViewRuns`), and the file name says `views`. `perfAuto=1`
+  starts any sweep without a press.
 - The export: the framework's `frame-export/1` (`buildFrameExport`: the
   device block, every run, the pooled attribution, the 20 worst frames
   with their events), plus `lab` (per run: index, time since load, cell,

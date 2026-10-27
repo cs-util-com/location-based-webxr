@@ -993,6 +993,20 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     (`ocean`, `alps`, `pole`, `city`; default `alps`), and `perfDrive`
     (`controls` drives every run through the controls' wheel input;
     absent, each cell says).
+  - The fixed-view sweep (`globe-perf-views.js`, `globe-perf-items.js`,
+    loaded with the recorder): the text key `perfItems` (item counts,
+    e.g. `5,20,50`; malformed reads as no sweep) replaces the zoom's
+    runs by held views (space, 100 km, 10 km, 1 km over the ground, and
+    street level at an eye height, 30 m south of the items looking at
+    them) at the link's place (`at=`, else `perfPlace`), each count held
+    `perfHoldS` (1-60, default 5) after a settle of at most
+    `perfViewSettleS` (1-300, default 20), the whole sweep `perfRepeats`
+    times (1-10, default 3). The items stand on the drawn ground on the
+    globe's Earth-centred group and are registered with the eye camera's
+    near plane. `perfAuto=1` starts the recorder's run without a press
+    (any sweep), so one link is a whole phone test. The handle gains
+    `viewPlace`, `placeView`, `setItems` and `bytesDownloaded`;
+    `placeCamera` takes an optional ECEF pose in place of the pitch law.
   - The factors it varies, also hash keys that apply live:
     `adjustHeight` (the controls' height adjustment, its two raycasts a
     frame, default 1), `reliefCacheMiB` (the relief's cache cap, 8-4096,
