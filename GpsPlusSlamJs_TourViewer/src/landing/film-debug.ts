@@ -1,7 +1,7 @@
 /**
  * The film's `?debug=1` parts, for measuring on a phone: the readout text
  * (renderer, pixel ratio and quality, scene build time, the film's time,
- * the live frame percentiles and the whole run's frames over 50 and
+ * the live frame percentiles and the whole run's frames over 33, 50 and
  * 100 ms) and quality knobs read from the page's address
  * (`film-dpr`, `film-shadows`, `film-eye`, `film-aa`), so one phone can
  * compare settings without a new build.
@@ -12,7 +12,9 @@
  */
 import type { SceneQuality } from "./film-scene.js";
 
-/** The highest pixel ratio a knob may ask for (phones reach 3). */
+/** The pixel ratio knob's range: phones reach 3; below 0.5 the picture
+ *  is too coarse for a comparison to mean anything. */
+const MIN_DPR = 0.5;
 const MAX_DPR = 3;
 
 function flag(value: string | null): boolean | null {
@@ -22,8 +24,8 @@ function flag(value: string | null): boolean | null {
 }
 
 /**
- * `base` with the address's knobs applied: `film-dpr` (a pixel ratio cap
- * above 0, at most 3), `film-shadows`, `film-eye` (the phone screen's 3D
+ * `base` with the address's knobs applied: `film-dpr` (a pixel ratio cap;
+ * a positive number, held to 0.5 to 3), `film-shadows`, `film-eye` (the phone screen's 3D
  * pass) and `film-aa` (antialiasing), each `0` or `1`. A knob it cannot
  * read is ignored.
  */
@@ -33,8 +35,8 @@ export function debugQuality(search: string, base: SceneQuality): SceneQuality {
   const dpr = dprText === null || dprText === "" ? Number.NaN : Number(dprText);
   return {
     pixelRatioCap:
-      Number.isFinite(dpr) && dpr > 0 && dpr <= MAX_DPR
-        ? dpr
+      Number.isFinite(dpr) && dpr > 0
+        ? Math.min(MAX_DPR, Math.max(MIN_DPR, dpr))
         : base.pixelRatioCap,
     shadows: flag(q.get("film-shadows")) ?? base.shadows,
     eyePass: flag(q.get("film-eye")) ?? base.eyePass,
@@ -59,6 +61,8 @@ export interface ReadoutInput {
   /** The whole run's frames, counted while it played. */
   readonly run: {
     readonly count: number;
+    /** Over 33 ms: a frame missed at 30 per second (the recorder's reports use it too). */
+    readonly over33: number;
     readonly over50: number;
     readonly over100: number;
   };
@@ -66,7 +70,7 @@ export interface ReadoutInput {
   readonly buildMs: number;
 }
 
-/** The whole run's frame count and its frames over 50 and 100 ms. */
+/** The whole run's frame count and its frames over 33, 50 and 100 ms. */
 export type RunCounts = ReadoutInput["run"];
 
 /**
@@ -79,16 +83,18 @@ export function createRunCounts(): {
   counts(): RunCounts;
 } {
   let count = 0;
+  let over33 = 0;
   let over50 = 0;
   let over100 = 0;
   return {
     push(ms) {
       if (!(Number.isFinite(ms) && ms >= 0)) return;
       count += 1;
+      if (ms > 33) over33 += 1;
       if (ms > 50) over50 += 1;
       if (ms > 100) over100 += 1;
     },
-    counts: () => ({ count, over50, over100 }),
+    counts: () => ({ count, over33, over50, over100 }),
   };
 }
 
@@ -118,7 +124,7 @@ export function filmReadout(i: ReadoutInput): string {
   }
   if (i.run.count > 0) {
     lines.push(
-      `${String(i.run.count)} frames: ${String(i.run.over50)} over 50 ms, ${String(i.run.over100)} over 100`,
+      `${String(i.run.count)} frames: ${String(i.run.over33)} over 33 ms, ${String(i.run.over50)} over 50, ${String(i.run.over100)} over 100`,
     );
   }
   return lines.join("\n");

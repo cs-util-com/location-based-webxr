@@ -69,15 +69,36 @@ test.describe("the hero film on a desktop", () => {
     storageState: FIRST_VISIT,
   });
 
-  test("waits below the fold, plays in view, and names its parts on the bar", async ({
+  test("waits while under half of it is in view, plays once half is, and names its parts on the bar", async ({
     page,
   }) => {
-    // At 1440x800 less than half of the film is in view at the top of the
-    // page (at 1440x900 a little more than half is, so it starts there at
-    // once), so it waits and starts only when scrolled to.
-    await page.setViewportSize({ width: 1440, height: 800 });
+    // A window short enough that only part of the film is in view at the
+    // top of the page, so it must wait and start only when scrolled to.
+    await page.setViewportSize({ width: 1024, height: 640 });
     const errors = pageErrors(page);
     const host = await openFilm(page);
+    // The film's own view observer reports in the same step as one made
+    // after it: once this one has reported, the film has seen the view
+    // too, so "waiting" below is its answer to a real share, not the
+    // state before any report.
+    const firstShare = await page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const el = document.getElementById("landing-film");
+          if (!el) throw new Error("no film");
+          const io = new IntersectionObserver(
+            (entries) => {
+              io.disconnect();
+              const last = entries[entries.length - 1];
+              requestAnimationFrame(() => resolve(last?.intersectionRatio));
+            },
+            { threshold: [0, 0.05, 0.1, 0.25, 0.5, 0.75, 1] },
+          );
+          io.observe(el);
+        }),
+    );
+    expect(firstShare).toBeGreaterThan(0);
+    expect(firstShare).toBeLessThan(0.5);
     await expect(host).toHaveAttribute("data-film-state", "waiting");
     await expect(host).toHaveAttribute("data-playing", "false");
 

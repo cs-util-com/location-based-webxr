@@ -232,7 +232,14 @@ its chunk fails, the hero shows its last moment as a drawing).
   no change of size on mount, the still within 1 px of the picture. A
   reduced-motion list of captions grows the box below
   (`:has(> .lf-list)`), 119 to 195 px, once at mount (below the fold on
-  an upright phone) and back when the film is played. The film's inner
+  an upright phone) and back when the film is played. That growth is
+  reserved under reduced motion until the film mounts, as a bottom margin
+  on `.landing-film:not([data-mount])` (156 px up to 480 px wide, 118 px
+  wider), a lower bound of the measured growth: a page the wizard
+  reloaded mid-setup was otherwise pushed 35 px past the stage at
+  390x844. Measured 2026-10-27, the content below still moves on mount
+  by 1 to 2 px at most widths, 20 px on a phone held sideways, 20 px at
+  360 and 39 px at 320 px wide (more in a wider face), never up. The film's inner
   room is `--lf-inset` (16 px upright, the page's gutter; 12 px framed). Each picture box is `2 * --pw + 28px` tall, `--pw` the
   phone's width: 206 px (56vw under 368 px), 214 px from 900 px wide, and
   `(100svh - 74px) / 2 - 14px` on a phone held sideways (at most 560 px

@@ -165,6 +165,9 @@ export function mountLanding(options: MountLandingOptions): MountedLanding {
     reduced = next;
     unmount(dom.film);
     unmount(dom.cards);
+    // the old film's reason for drawing flat goes with it; the new one
+    // reports its own
+    delete dom.film.dataset["filmFallback"];
     void mountFilm();
     void mountCards();
   });

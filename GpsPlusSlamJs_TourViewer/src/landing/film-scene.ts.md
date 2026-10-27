@@ -19,14 +19,19 @@ at eye height in a second pass.
   - `onContextLost`: called for the live renderer's lost context only.
   - Throws when the renderer cannot start (the caller falls back).
 - `FilmScene`: `canvas`, `layout(ly)`, `draw(frame, camera, t)` (true when
-  it rendered), `anchors(eye, sw, sh)`, `prepare()`, `show()`, `release()`,
-  `bench(n)`, `info()`.
+  it rendered), `anchors(eye, sw, sh)`, `prepare()`, `show()`, `release()`.
 - `prepare(): Promise<void>`: compiles the shaders for the model camera
-  (and the eye's, with `eyePass`) through three.js `compileAsync`, which
-  uses `KHR_parallel_shader_compile` where the browser has it. Resolves
-  when the first draw will not wait on a compile; without the extension it
-  resolves after a short wait and the first draw finishes what is left.
-  A released scene resolves at once.
+  (and the eye's, with `eyePass`) through three.js `compile`, which uses
+  `KHR_parallel_shader_compile` where the browser has it, then waits for
+  every program to report ready with its own check (`film-compile.ts`
+  `whenReady`). Resolves when the first draw will not wait on a compile;
+  without the extension the programs report ready at once and the first
+  draw finishes what is left. It never rejects, and a scene released
+  meanwhile (AR, a lost context, a remount) resolves at the next check
+  without touching the freed programs.
+  - Not `compileAsync`: its own wait polls the programs from a timer that
+    outlives a release, read a freed program there (an uncaught TypeError)
+    and never settled.
 
 ## Invariants
 

@@ -245,10 +245,14 @@ describe("mountLanding", () => {
     expect(calls.map((c) => c.part).sort()).toEqual(["cards", "film", "uses"]);
     notify(false);
     expect(destroyed).toEqual([]);
+    // The old film's reason for drawing flat must not outlive it: the
+    // new film reports its own (here none).
+    dom.film.dataset["filmFallback"] = "context-lost";
     notify(true);
     await vi.waitFor(() => {
       expect(calls).toHaveLength(5);
     });
+    expect(dom.film.dataset["filmFallback"]).toBeUndefined();
     expect(destroyed.sort()).toEqual(["cards", "film"]);
     const again = calls.slice(3);
     expect(again.map((c) => c.part).sort()).toEqual(["cards", "film"]);

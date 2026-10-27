@@ -613,9 +613,20 @@ test.describe("a returning device", () => {
   // after the print dialog), and the browser restores where the creator
   // was. If the use cases' chunk mounts after that restoration (a slow
   // network), the section must not grow the page above the stage.
-  test("comes back to the stage after a reload, also when the use cases arrive late", async ({
-    page,
-  }) => {
+  for (const reduced of [false, true]) {
+    // Under reduced motion the film opens with its captions as a list,
+    // which grows its box when it mounts: that growth sits above the
+    // stage too.
+    test(`comes back to the stage after a reload, also when the use cases arrive late${reduced ? ", under reduced motion" : ""}`, async ({
+      page,
+    }) => {
+      if (reduced) await page.emulateMedia({ reducedMotion: "reduce" });
+      await comesBackAfterReload(page);
+    });
+  }
+
+  /** @param {import("@playwright/test").Page} page */
+  async function comesBackAfterReload(page) {
     await page.goto("/?nocache=1");
     await expect(page.getByTestId("landing-uses")).toHaveAttribute(
       "data-mount",
@@ -649,7 +660,13 @@ test.describe("a returning device", () => {
     await expect
       .poll(() => stageTop(page).then(Math.abs))
       .toBeLessThanOrEqual(24);
-  });
+    // and the film too has mounted by then (its box the last to settle)
+    await expect(page.getByTestId("landing-film")).toHaveAttribute(
+      "data-mount",
+      "ready",
+    );
+    expect(Math.abs(await stageTop(page))).toBeLessThanOrEqual(24);
+  }
 
   // A first visit keeps the stage at its own height; only a page that
   // opened at the stage needs it a view tall.

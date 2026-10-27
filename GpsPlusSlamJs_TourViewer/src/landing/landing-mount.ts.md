@@ -18,7 +18,8 @@ film's still are static in `index.html` and show without this module.
     (`#landing-uses`).
   - Mounts the film with `{ reducedMotion, onArStarting, onFallback }`
     (`onFallback` marks the host `data-film-fallback="no-webgl"` or
-    `"context-lost"`, removed on destroy), the cards with
+    `"context-lost"`, removed on destroy and before a reduced-motion
+    remount, so only the mounted film's reason stands), the cards with
     `{ reducedMotion, filmHost }` (so no card moves while the film plays)
     and the use cases with their host.
   - Each host gets `data-mount="ready"`, or `"failed"` when its chunk did

@@ -27,7 +27,8 @@ and lets `card-play.ts` decide which picture moves. Loaded by
     (removed and added again on a new run, so the CSS sequence restarts
     from its first frame). `aria-pressed` follows the pause.
   - Blocked (no picture moves by itself) while `filmHost` carries
-    `data-playing="true"` or the tab is hidden.
+    `data-playing="true"` (the film moving with at least its start share
+    in view, not merely playing) or the tab is hidden.
   - `destroy()` stops the controller and the observers, empties the docks,
     hides the pause, unmarks "Show again" and removes the shared drawing
     (which sits beside the list, not in it: the list holds only its cards).

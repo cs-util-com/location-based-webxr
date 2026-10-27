@@ -88,8 +88,6 @@ function fakeScene(
     })),
     show: vi.fn(),
     release: vi.fn(),
-    bench: vi.fn(() => 1),
-    info: vi.fn(() => ({ renderer: "fake", calls: 0, triangles: 0, dpr: 1 })),
     onLost: () => undefined,
   };
   return s;
@@ -159,6 +157,8 @@ function setup(
 
 afterEach(() => {
   document.body.innerHTML = "";
+  delete document.body.dataset["arActive"];
+  window.history.replaceState(null, "", "/");
 });
 
 describe("landing film: frames", () => {
@@ -321,6 +321,26 @@ describe("landing film: renderer and fallback", () => {
     expect(t.onFallback).not.toHaveBeenCalled();
   });
 
+  // "AR has the GPU" must hold for every film on the page, also one that
+  // enters the view again during the session or is mounted afresh then
+  // (a reduced-motion change remounts it): the page's live-session mark
+  // is what it checks, not only its own handoff.
+  it("builds no renderer while the page says an AR session is live", () => {
+    document.body.dataset["arActive"] = "true";
+    const t = setup({ webgl: true });
+    t.view(0.6);
+    t.view(0);
+    t.view(0.6);
+    t.host.querySelector<HTMLElement>(".lf-stage")!.click();
+    t.film.jumpTo(2);
+    expect(t.scenes).toHaveLength(0);
+    expect(t.onFallback).not.toHaveBeenCalled();
+    document.body.dataset["arActive"] = "false";
+    t.view(0);
+    t.view(0.6);
+    expect(t.scenes).toHaveLength(1);
+  });
+
   it("rebuilds on a tap after AR, even with no change of view", () => {
     const t = setup({ webgl: true });
     t.view(0.6);
@@ -480,6 +500,20 @@ describe("landing film: the page's side", () => {
     expect(t.host.dataset.playing).toBeUndefined();
   });
 
+  // One moving thing at a time means the film MOVING, not merely in its
+  // playing state: it plays on down to a tenth in view, and a film mostly
+  // scrolled away must not keep the cards below it frozen.
+  it("holds the cards still only while it plays with its start share in view", () => {
+    const t = setup();
+    t.view(0.6);
+    expect(t.host.dataset.playing).toBe("true");
+    t.view(0.3);
+    expect(t.film.snapshot().status).toBe("playing");
+    expect(t.host.dataset.playing).toBe("false");
+    t.view(0.6);
+    expect(t.host.dataset.playing).toBe("true");
+  });
+
   it("gives the host back as it was, and unregisters from AR", () => {
     const t = setup({ webgl: true });
     t.view(0.6);
@@ -516,6 +550,53 @@ describe("landing film: the page's side", () => {
 });
 
 describe("landing film: the debug readout", () => {
+  // The quality knobs exist to compare settings on one phone; without
+  // `?debug=1` they must change nothing, or a shared link with a knob in
+  // it would quietly give every reader a lower-quality film.
+  it("takes the address's quality knobs only with ?debug=1", () => {
+    const built: unknown[] = [];
+    const mount = () => {
+      const host = document.createElement("div");
+      document.body.append(host);
+      let shareCb: (v: number) => void = () => undefined;
+      const film = createLandingFilm(
+        host,
+        { reducedMotion: false, onArStarting: () => () => undefined },
+        DEFAULT_TUNING,
+        {
+          webgl: () => true,
+          createScene: (_doc, _parts, quality) => {
+            built.push(quality);
+            return fakeScene();
+          },
+          observeView: (_el, cb) => {
+            shareCb = cb;
+            return () => undefined;
+          },
+          observeSize: () => () => undefined,
+          size: () => ({ w: 400, h: 500 }),
+          viewport: () => ({ w: 390, h: 844, dpr: 2 }),
+        },
+      );
+      shareCb(0.6);
+      const hidden = host.querySelector(".lf-debug")?.hasAttribute("hidden");
+      film.destroy();
+      return hidden;
+    };
+    window.history.replaceState(null, "", "/?film-shadows=0&film-dpr=1");
+    expect(mount()).toBe(true);
+    window.history.replaceState(
+      null,
+      "",
+      "/?debug=1&film-shadows=0&film-dpr=1",
+    );
+    expect(mount()).toBe(false);
+    expect(built).toEqual([
+      DEFAULT_TUNING.quality,
+      { ...DEFAULT_TUNING.quality, shadows: false, pixelRatioCap: 1 },
+    ]);
+  });
+
   // `?debug=1` is how the frame budget is checked on a phone: the readout
   // must show the whole run's slow frames and the settings the scene was
   // really built with, and the address's quality knobs must reach the
@@ -572,7 +653,7 @@ describe("landing film: the debug readout", () => {
     expect(readout?.hasAttribute("hidden")).toBe(false);
     const lines = (readout?.textContent ?? "").split("\n");
     expect(lines[0]).toBe("3d, dpr 1.5, eye aa");
-    expect(lines.at(-1)).toBe("3 frames: 2 over 50 ms, 1 over 100");
+    expect(lines.at(-1)).toBe("3 frames: 2 over 33 ms, 2 over 50, 1 over 100");
     film.destroy();
   });
 });

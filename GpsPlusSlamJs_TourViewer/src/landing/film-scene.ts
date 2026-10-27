@@ -16,6 +16,7 @@
  */
 import * as THREE from "three";
 
+import { whenReady } from "./film-compile.js";
 import type { FilmFrame, SceneState, ViewName } from "./film-story.js";
 import { smoothEase } from "./film-math.js";
 import {
@@ -72,7 +73,8 @@ export interface FilmScene {
   /**
    * Compiles the scene's shaders ahead of its first draw, in parallel where
    * the browser offers `KHR_parallel_shader_compile`, so that draw does
-   * not stall the page. Resolves when they are ready; on a browser without
+   * not stall the page. Resolves when they are ready, and at once when
+   * the scene is released meanwhile (never rejects); on a browser without
    * the extension the first draw finishes what is left.
    */
   prepare(): Promise<void>;
@@ -80,9 +82,6 @@ export interface FilmScene {
   show(): void;
   /** Frees the renderer and its WebGL context on purpose. */
   release(): void;
-  /** Average ms of `n` full renders (model and screen), GPU work included. */
-  bench(n: number): number;
-  info(): { renderer: string; calls: number; triangles: number; dpr: number };
 }
 
 const DEG = Math.PI / 180;
@@ -955,6 +954,15 @@ export function createFilmScene(
   let sig = "";
   let released = false;
 
+  /** Whether a material's program has finished compiling (three's own check). */
+  const programReady = (m: THREE.Material): boolean => {
+    const props = renderer.properties.get(m) as
+      { currentProgram?: { isReady?: () => boolean } } | undefined;
+    const program = props?.currentProgram;
+    // no program to wait for, or no way to ask: the first draw finishes it
+    return typeof program?.isReady !== "function" || program.isReady();
+  };
+
   const sync = (S: SceneState, on: boolean, eyeOf: EyeName, t: number) => {
     state = S;
     const n = dotPos.findIndex((s) => s > S.route);
@@ -1206,10 +1214,21 @@ export function createFilmScene(
         ],
       };
     },
-    async prepare() {
-      if (released) return;
-      await renderer.compileAsync(scene, cam);
-      if (quality.eyePass && !released) await renderer.compileAsync(scene, eye);
+    prepare() {
+      if (released) return Promise.resolve();
+      // compile(), not compileAsync(): three's own wait reads the programs
+      // from a timer that outlives a release and throws there
+      const pending = new Set(renderer.compile(scene, cam));
+      if (quality.eyePass) {
+        for (const m of renderer.compile(scene, eye)) pending.add(m);
+      }
+      return whenReady({
+        stopped: () => released,
+        ready: () => {
+          for (const m of pending) if (programReady(m)) pending.delete(m);
+          return pending.size === 0;
+        },
+      });
     },
     show() {
       canvas.classList.add("lf-on");
@@ -1232,34 +1251,6 @@ export function createFilmScene(
       canvas.remove();
       parts.tags.replaceChildren();
       setLead(null);
-    },
-    bench(n) {
-      if (released || !camNow) return Number.NaN;
-      const gl = renderer.getContext();
-      const px = new Uint8Array(4);
-      const was = phoneOn;
-      phoneOn = true;
-      render();
-      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-      const t0 = performance.now();
-      for (let i = 0; i < n; i++) render();
-      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-      const ms = (performance.now() - t0) / n;
-      phoneOn = was;
-      render();
-      return Math.round(ms * 100) / 100;
-    },
-    info() {
-      const gl = renderer.getContext();
-      const ext = gl.getExtension("WEBGL_debug_renderer_info");
-      return {
-        renderer: ext
-          ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL))
-          : "n/a",
-        calls: renderer.info.render.calls,
-        triangles: renderer.info.render.triangles,
-        dpr: renderer.getPixelRatio(),
-      };
     },
   };
 }

@@ -24,18 +24,31 @@ timeline.
     `onArStarting`.
 - `createLandingFilm(host, options, tuning?, env?)`: the same with the pace,
   the renderer and the browser parts as seams; returns a handle with
-  `snapshot`, `jumpTo`, `toggle`, `renderer`, `frames`, `buildMs`, `scene`,
-  `segments`, `totalS` (tests and measurements).
+  `snapshot`, `jumpTo`, `toggle`, `renderer`, `segments`, `totalS` (for
+  tests). The frame measurements exist only behind `?debug=1` (the
+  readout).
 - `DEFAULT_TUNING`: speed 0.75, hold 1.5 s, camera 1.1 s, settle 0.22 s,
   start share 0.5, leave share 0.1, full quality.
+  - **Full quality is not shown to meet the phone budget** (no frame over
+    50 ms). Measured on a production build at 390x844 with the CPU slowed
+    4x through the DevTools protocol, 30 s runs: 18 and 24 frames over
+    50 ms in about 1 350 at full quality; `film-shadows=0`, `film-dpr=1.5`,
+    `film-eye=0` and all off gave 14 to 77, and two repeats of one setting
+    differed more than any two settings did. A slowed CPU slows the main
+    thread, not the GPU, while three of the four knobs cut GPU work, so a
+    desktop cannot decide this. It stays full quality until a phone
+    decides it: a phone's `?debug=1` readout over a whole run with fewer
+    slow frames under `film-shadows=0` or `film-dpr=1.5` than at full
+    quality would make that setting the default.
 
 ## What the page sees
 
 - On the host: `data-film-state` (waiting, playing, paused, finished),
   `data-film-beat` (0 to 7), `data-film-moving` ("true" while it plays
-  with its start share in view), `data-playing` ("true" exactly while the
-  state is playing; the cards hold still then, `landing-cards.ts`). All
-  four are removed on `destroy`.
+  with its start share in view), `data-playing` (the same as
+  `data-film-moving`: the cards hold still while it is "true",
+  `landing-cards.ts`; a film that plays on with under half of it in view
+  does not hold them). All four are removed on `destroy`.
 - A `landing-film-change` event on the host, `detail: { status, beat, moving, pausedBy }`,
   only when one of these changes (not every frame). The cards wait while
   `moving` is true.
@@ -55,6 +68,10 @@ timeline.
 - `stop` (AR): pause, free the renderer (not a fallback), show the flat
   still; a new scene is built the next time the film comes into view or is
   played. It does not restart by itself while still in view.
+- No renderer is built while the page marks a live AR session
+  (`body[data-ar-active="true"]`), whatever the film's own state: a film
+  that re-enters the view during the session, or one mounted afresh then
+  (a reduced-motion change), waits for the next entry into view after it.
 - A real context loss, no WebGL, or a renderer that will not start: the
   flat drawing on the same timeline and bar, reported once.
 - Reduced motion: opens on the last picture with every caption as a list
@@ -63,7 +80,7 @@ timeline.
 - `?debug=1`: a readout over the picture (`film-debug.ts`): the renderer,
   its pixel ratio and quality, the scene's build time, the film's time,
   the last frames' percentiles (`utils/frame-times`) and the whole run's
-  frames over 50 and 100 ms. With it the address's knobs `film-dpr`,
+  frames over 33, 50 and 100 ms. With it the address's knobs `film-dpr`,
   `film-shadows`, `film-eye` and `film-aa` change the scene's quality,
   so one phone can compare settings (for example
   `/?debug=1&film-shadows=0`). Without `?debug=1` the knobs do nothing.
@@ -96,9 +113,11 @@ const film = mountLandingFilm(hostEl, {
 
 `landing-film.test.ts` (jsdom, a fake frame queue and a fake scene): no
 frames while idle, plays once, reduced motion, the AR handoff, the
-fallbacks, the host attributes and event, `data-playing`, destroy, the
+fallbacks, no renderer during a live AR session, the host attributes and
+event, `data-playing` (false while it plays mostly out of view), destroy, the
 drawing kept while the scene compiles (and a scene ended meanwhile never
-shown), and the debug readout built with the knobs' quality.
+shown), the debug readout built with the knobs' quality, and the knobs
+ignored without `?debug=1`.
 
 `playwright-tests/landing-film.spec.js` (the real page): waits below the
 fold and plays in view, the bar's eight named parts with one current, a

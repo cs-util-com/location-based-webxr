@@ -20,11 +20,13 @@ against it.
   and the navigation type `"navigate"`.
 - `reassertLandingSkip(document)` - scrolls `#setup-stage` to the top,
   instantly, while `<html data-landing-skip="applied">`.
-- `holdLandingSkip(document, Observer = ResizeObserver)` - for a skipped
-  page: puts the stage back now and on every resize of `#landing`,
-  `#setup-stage`, `#setup-map` and `#setup-card`, until the mark reads
-  `"moved"` (then it disconnects). `main.ts` calls it once at the end of
-  its boot.
+- `holdLandingSkip(document, { until?, graceMs?, Observer?, view? })` -
+  for a skipped page: puts the stage back now and on every resize of
+  `#landing`, `#setup-stage`, `#setup-map` and `#setup-card`. It ends
+  (and disconnects) on the reader's first input or on a scroll it did not
+  make (`"moved"`), or `graceMs` (1 s) after `until` settled
+  (`"released"`). `main.ts` calls it right after `mountLanding`, with
+  `until: landing.ready`, so a throw later in its wiring cannot skip it.
 
 ## Invariants & assumptions
 
@@ -33,7 +35,12 @@ against it.
   first visit (the safe direction).
 - A hash never skips: the browser goes to that place in the page.
 - A visitor (`?qr`) never skips: the landing is not shown to a visitor.
-- The skip is visual only: focus and screen readers start at the top.
+- The skip moves the keyboard too: the inline copy gives `#setup-stage`
+  `tabindex="-1"` and focuses it without a scroll, so the first Tab goes
+  on from the stage instead of to the landing's first link (which would
+  scroll the page back to the top). The stage draws no focus ring
+  (`index.html`, `#setup-stage:focus`). A screen reader's own reading
+  cursor follows its own rules; most start at the focused element.
 - The inline copy scrolls `#setup-stage` with `{ block: "start", behavior:
 "instant" }`. It runs before the rest of the page is parsed, so the stage
   carries `min-height: 100vh` (index.html) to make its top reachable; the

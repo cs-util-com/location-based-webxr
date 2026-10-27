@@ -841,6 +841,24 @@
         height: auto;
         max-height: none;
       }
+      /* Under reduced motion the film opens with its captions as a list,
+         which grows the box by 119 to 195 px when the film mounts (the
+         list wraps more on a narrow phone). A page restored mid-setup
+         (the wizard reloads on purpose) must not be pushed down by that,
+         so the growth is reserved below the box until the film mounts: a
+         lower bound of the measured growth (system face; index.html.md). */
+
+      @media (prefers-reduced-motion: reduce) {
+        .landing-film:not([data-mount]) {
+          margin-bottom: 156px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) and (width > 480px) {
+        .landing-film:not([data-mount]) {
+          margin-bottom: 118px;
+        }
+      }
       .landing-film picture {
         display: block;
         aspect-ratio: 9 / 10;

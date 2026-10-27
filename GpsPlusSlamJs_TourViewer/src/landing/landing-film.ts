@@ -77,6 +77,12 @@ export const DEFAULT_TUNING: FilmTuning = {
   // leaves the view (and pauses) below a tenth: hysteresis, so a film at
   // the edge of the view does not flicker between playing and paused
   leaveShare: 0.1,
+  // Full quality, NOT shown to meet the phone budget (no frame over 50 ms):
+  // at 390x844 with the CPU slowed 4x, 18 and 24 frames over 50 ms in 30 s,
+  // and every knob (shadows, pixel ratio 1.5, eye pass, all off) within the
+  // noise of repeats (14 to 77). A slowed CPU cannot judge knobs that cut
+  // GPU work; a phone's `?debug=1` readout with fewer slow frames under
+  // `film-shadows=0` or `film-dpr=1.5` over a whole run would change this.
   quality: FULL_QUALITY,
 };
 
@@ -114,14 +120,7 @@ export interface LandingFilmHandle extends LandingPart {
   snapshot(): PlayerSnapshot;
   jumpTo(beat: number): void;
   toggle(): void;
-  /** The view share as the film saw it last. */
-  share(): number;
   renderer(): "3d" | "floor";
-  /** Played-frame intervals, ms (the last 600). */
-  frames(): ReturnType<ReturnType<typeof createFrameTimes>["summary"]>;
-  /** The longest scene build, ms (a long task on a slow phone). */
-  buildMs(): number;
-  scene(): FilmScene | null;
   readonly totalS: number;
   readonly segments: readonly Segment[];
 }
@@ -262,8 +261,8 @@ export function createLandingFilm(
   const timeline = createTimeline<ViewName>(FILM_BEATS, tuning);
   const dom = buildFilmDom(doc);
   const phone = createPhoneView(dom);
-  const frames = createFrameTimes(600);
-  // the whole run's slow frames, for the readout only
+  // the frame measurements exist only for the `?debug=1` readout
+  const frames = env.debug ? createFrameTimes(600) : null;
   const run = env.debug ? createRunCounts() : null;
   const quality = env.quality(tuning.quality);
   let sceneDpr = 1;
@@ -276,7 +275,6 @@ export function createLandingFilm(
   let layoutKey = 0;
   let floorSig = "";
   let anchorKey = "";
-  let share = 0;
   let buildMs = 0;
   let lastFrameNow: number | null = null;
   /**
@@ -353,8 +351,10 @@ export function createLandingFilm(
       host.dataset.filmState = snap.status;
       host.dataset.filmBeat = String(snap.position.beat);
       host.dataset.filmMoving = String(snap.moving);
-      // the cards below hold still while this is "true" (landing-cards.ts)
-      host.dataset.playing = String(snap.status === "playing");
+      // the cards below hold still while this is "true" (landing-cards.ts):
+      // while the film moves with its start share in view, not while it
+      // plays on mostly scrolled away
+      host.dataset.playing = String(snap.moving);
       host.dispatchEvent(
         new (win?.CustomEvent ?? CustomEvent)("landing-film-change", {
           detail: {
@@ -366,7 +366,7 @@ export function createLandingFilm(
         }),
       );
     }
-    if (run) {
+    if (run && frames) {
       dom.debug.hidden = false;
       dom.debug.textContent = filmReadout({
         renderer: scene ? "3d" : "floor",
@@ -391,7 +391,7 @@ export function createLandingFilm(
       const id = rf((now) => {
         if (cancelled.delete(id)) return;
         if (lastFrameNow !== null) {
-          frames.push(now - lastFrameNow);
+          frames?.push(now - lastFrameNow);
           run?.push(now - lastFrameNow);
         }
         lastFrameNow = now;
@@ -432,8 +432,16 @@ export function createLandingFilm(
     if (r) options.onFallback?.(r);
   };
 
+  /** The page's mark of a live AR session (ar-entry.ts). */
+  const arActive = () => doc.body?.dataset["arActive"] === "true";
+
   function ensureScene(): void {
     if (destroyed || !gpu.wantsScene() || !ly) return;
+    if (arActive()) {
+      // AR has the GPU: build on the next entry into view (or a tap) after it
+      rebuildOnEntry = true;
+      return;
+    }
     const t0 = env.now();
     try {
       const vp = env.viewport();
@@ -553,7 +561,7 @@ export function createLandingFilm(
   const unobserveSize = env.observeSize(host, onResize);
   layout();
   const unobserveView = env.observeView(host, (v) => {
-    share = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
+    const share = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
     if (share === 0) rebuildOnEntry = false;
     else if (!rebuildOnEntry) ensureScene();
     player.setViewShare(share);
@@ -574,11 +582,7 @@ export function createLandingFilm(
       ensureScene();
       player.toggle();
     },
-    share: () => share,
     renderer: () => (scene ? "3d" : "floor"),
-    frames: () => frames.summary(),
-    buildMs: () => buildMs,
-    scene: () => scene,
     destroy() {
       if (destroyed) return;
       player.destroy();
