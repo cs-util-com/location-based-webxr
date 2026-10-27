@@ -43,8 +43,10 @@
  *   picture of the tour's knight image in the world and a placed model of
  *   the arch: every kind of free block a tour can stand in the world.
  * - `/ranges-ok/story-blocks-tour.zip` - the stations tour whose gate
- *   story first shows a pin in the world (B2b): it stands from that step
- *   on, for the rest of the visit.
+ *   story first shows a pin with a description in the world (B2b): it
+ *   stands from that step on, for the rest of the visit; then a video card
+ *   (`fixtures/tiny-clip.webm`, 64x36 VP8, recorded once in Chromium) and
+ *   a long text in two paragraphs.
  * - `/ranges-ok/v3-tour.zip` - a tour in the earlier format 3 (a station
  *   holding a pin as an item), which the app refuses.
  * - `/ranges-ok/walk-tour.zip` (any order) and
@@ -297,9 +299,10 @@ async function buildStationsZip({
         },
       ]
     : [];
-  /** The gate's story blocks in the world (`storyBlocks`, station
-   *  blocks plan B2b): a pin its first step shows, which stands from then
-   *  on for the rest of the visit. */
+  /** The gate's new story blocks (`storyBlocks`, station blocks plan
+   *  B2b): a pin with a description its first step shows, which stands
+   *  from then on for the rest of the visit; a video card (the committed
+   *  WebM, the knight as its poster); a long text in two paragraphs. */
   const gateStory = storyBlocks
     ? [
         {
@@ -307,10 +310,38 @@ async function buildStationsZip({
           kind: "shortText",
           view: "pin",
           caption: "The old sign",
+          description: "Carved in 1400.",
           pose: { position: [2, 1.5, 1], rotation: [0, 0, 0, 1] },
+        },
+        {
+          id: "gate-clip",
+          kind: "video",
+          view: "card",
+          video: "clip",
+          poster: "knight",
+          transcript: "The gate opens at dawn.",
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+        {
+          id: "gate-history",
+          kind: "longText",
+          view: "card",
+          title: "The gate",
+          body: "Built in **1400**,\nrebuilt later.\n\nThe second part.",
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
         },
       ]
     : [];
+  if (storyBlocks) {
+    await writer.add(
+      "content/clip.webm",
+      new Uint8ArrayReader(
+        new Uint8Array(
+          readFileSync(new URL("./fixtures/tiny-clip.webm", import.meta.url)),
+        ),
+      ),
+    );
+  }
   const geo = (north, east) => ({
     lat: 47.5 + north * DEG_PER_M_LAT,
     lon: 8.7 + east * DEG_PER_M_LON,
@@ -332,6 +363,7 @@ async function buildStationsZip({
           ...(worldBlocks
             ? [imageAsset("gate-photo", "content/gate-photo.png", 1, 1)]
             : []),
+          ...(storyBlocks ? [{ id: "clip", path: "content/clip.webm" }] : []),
         ],
         stations: [
           {
@@ -362,7 +394,13 @@ async function buildStationsZip({
               textCard("welcome-text", "The gate", "Welcome inside."),
             ],
             steps: [
-              ...(storyBlocks ? [showStep("sign", "gate-story-sign")] : []),
+              ...(storyBlocks
+                ? [
+                    showStep("sign", "gate-story-sign"),
+                    showStep("clip", "gate-clip"),
+                    showStep("history", "gate-history"),
+                  ]
+                : []),
               showStep("knight", "sir-kay"),
               {
                 id: "ask",

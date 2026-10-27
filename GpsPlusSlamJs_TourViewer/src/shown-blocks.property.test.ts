@@ -171,6 +171,14 @@ describe("a story's world (property)", () => {
           text: { textContent: "" },
           status: { textContent: "" },
           image: { src: "", alt: "", hidden: true },
+          video: {
+            src: "",
+            poster: "",
+            hidden: true,
+            pause: () => undefined,
+            removeAttribute: () => undefined,
+            load: () => undefined,
+          },
           choices: {
             replaceChildren: (...nodes: (Node | string)[]) => {
               choices = nodes as unknown as { click: () => void }[];

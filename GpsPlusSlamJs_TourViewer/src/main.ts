@@ -935,6 +935,7 @@ const stations = wireVisitorStations({
       text: element("scene-text"),
       status: element("scene-status"),
       image: element<HTMLImageElement>("scene-image"),
+      video: element<HTMLVideoElement>("scene-video"),
       choices: element("scene-choices"),
       continueButton: element("scene-continue"),
       playNext: element("scene-play-next"),

@@ -34,8 +34,9 @@ time. Plan:
 - **A `show` step shows the block it names, by its view.** A block in its
   `stage` view (a character or a model) stands at the station, as the
   character and model steps of earlier versions did; every other block
-  shows in the card: a short text's caption, a long text's body, a
-  picture with its caption, a video's transcript, an audio's transcript
+  shows in the card: a short text's caption, a long text's plain text P
+  (B2b), a picture with its caption, a video's player and transcript (B2b),
+  an audio's transcript
   with its sound, a model's title, a character's caption with its voice
   (a character in the card plays its voice, but no figure stands). A
   block's world view (a pin, a plane, a placed model) is drawn with its
@@ -74,8 +75,22 @@ time. Plan:
   its sound stopped when the step changes.
 - **Auto steps** advance on `schedule(afterS x 1000)`; a tap first cancels
   the timer. A choice never auto-advances.
-- **Video** shows its transcript (video is later). A quiz never reaches the
-  view (the player skips it until K5).
+- **Video** (B2b step 3) plays in the card's `<video controls playsinline
+preload="metadata">` (`dom.video`, `SceneVideo`): the clip and its
+  poster are read through `loadAsset` as object URLs of the step, the
+  player shows once either is here, a tap on its controls plays it (the
+  tap is the activation, so no autoplay rule applies), and the transcript
+  stays below. A clip or poster that cannot be read says so on the status
+  line and keeps the words. On the next step, an end or a stop the player
+  pauses, drops its `src` and `poster` (`removeAttribute` then `load()`;
+  `src = ""` would fetch the page) and hides, and every object URL of the
+  step is revoked. The clip is not prefetched (K4 review R3: it may be as
+  large as the tour's entry cap); it is read when its step shows.
+- **A long text** (B2b step 4) shows `plainTextOf(parseTourMarkdown(body))
+.text` (S0's P): paragraphs a blank line apart, a soft break as a space,
+  no markup characters; `#scene-text` has `white-space: pre-line` so the
+  breaks show.
+- A quiz never reaches the view (the player skips it until K5).
 - **One story at a time** is the community PR idea (K-D4: the idea, not
   its implementation): a new tap stops the previous story.
 
@@ -90,7 +105,9 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
 
 - `scene-view.test.ts` - steps in order and the end, a character (name,
   caption, figure on the stage, voice), a figure or a model only in its
-  stage view (a card character's voice still plays), a video's transcript,
+  stage view (a card character's voice still plays), the video card's
+  player (clip, poster, transcript, freed on the next step; an unreadable
+  clip), a long text's paragraphs (B2b),
   refused sound and unreadable file,
   a late picture dropped and URLs revoked, the auto timer and its cancel, a
   choice, one story at a time and the queue, de-duplication and `stopAll`;

@@ -28,6 +28,10 @@ import {
   playableStepCount,
   type ScenePlayer,
 } from "./scene-player.js";
+import {
+  parseTourMarkdown,
+  plainTextOf,
+} from "gps-plus-slam-app-framework/ar/tour-markdown";
 import { worldBlockReachedBy } from "./shown-blocks.js";
 import { stationTitle } from "./station-run.js";
 
@@ -42,12 +46,21 @@ export interface SceneViewDom {
   /** Loading and failures of this step's media, `aria-live`. */
   readonly status: Pick<HTMLElement, "textContent">;
   readonly image: Pick<HTMLImageElement, "src" | "alt" | "hidden">;
+  /** The video card's player (B2b): a `<video controls playsinline>`
+   *  above the transcript. */
+  readonly video: SceneVideo;
   readonly choices: Pick<HTMLElement, "replaceChildren">;
   readonly continueButton: Pick<HTMLElement, "hidden">;
   readonly playNext: Pick<HTMLElement, "textContent" | "hidden">;
 }
 
 /** The sound of a step (one channel: a new clip stops the previous). */
+/** What the story card uses of its `<video>` element. */
+export type SceneVideo = Pick<
+  HTMLVideoElement,
+  "src" | "poster" | "hidden" | "pause" | "removeAttribute" | "load"
+>;
+
 export interface SceneAudio {
   /** Rejects when the browser refuses to play (the captions still show). */
   play(blob: Blob, onEnded: () => void): Promise<void>;
@@ -150,7 +163,8 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   let cancelTimer: (() => void) | null = null;
   /** The step held (`holdStep`): no timer runs. */
   let held = false;
-  let liveUrl: string | null = null;
+  /** The step's object URLs (a picture; a clip and its poster). */
+  const liveUrls: string[] = [];
   /** The step's media share one status line (r881 re-review M1: one
    *  asset's settle blanked another's line). What it says, per step: */
   /** The figure or model the stage holds back for the visitor's position. */
@@ -176,17 +190,34 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     cancelTimer?.();
     cancelTimer = null;
     deps.audio.stop();
-    if (liveUrl !== null) {
-      deps.objectUrls.revoke(liveUrl);
-      liveUrl = null;
-    }
+    for (const url of liveUrls.splice(0)) deps.objectUrls.revoke(url);
     dom.image.hidden = true;
     dom.image.src = "";
+    stopVideo();
     figureWait = null;
     loading.length = 0;
     notice = null;
     dom.status.textContent = "";
     dom.choices.replaceChildren();
+  }
+
+  /** The player stops and lets its clip go (removing `src` and `load()`
+   *  is how a media element drops its resource; `src = ""` would ask
+   *  for the page's own URL). */
+  function stopVideo(): void {
+    const { video } = dom;
+    video.pause();
+    video.removeAttribute("src");
+    video.removeAttribute("poster");
+    video.load();
+    video.hidden = true;
+  }
+
+  /** An object URL for this step, freed when the step changes. */
+  function stepUrl(blob: Blob): string {
+    const url = deps.objectUrls.create(blob);
+    liveUrls.push(url);
+    return url;
   }
 
   function renderQueue(): void {
@@ -273,7 +304,9 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         dom.text.textContent = block.caption;
         return;
       case "longText":
-        dom.text.textContent = block.body;
+        // Its plain text P (S0): paragraphs a blank line apart, shown as
+        // breaks (`white-space: pre-line`), no markup characters (B2b).
+        dom.text.textContent = plainTextOf(parseTourMarkdown(block.body)).text;
         return;
       case "picture": {
         dom.text.textContent = block.caption ?? "";
@@ -284,8 +317,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
             return "The picture is too large to show here - the words are below.";
           }
           if (token !== renderToken) return undefined;
-          liveUrl = deps.objectUrls.create(blob);
-          dom.image.src = liveUrl;
+          dom.image.src = stepUrl(blob);
           dom.image.alt = alt;
           dom.image.hidden = false;
           return undefined;
@@ -308,8 +340,21 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         playSound(block.audio);
         return;
       case "video":
-        // Video is later (plan §5 K4): its transcript stands in.
+        // The card plays it (B2b): the browser's controls, so a tap plays
+        // it (a gesture, so its sound may play); its poster while it
+        // waits; the transcript below. The player shows once either file
+        // is here; a clip that cannot be read says so (`withAsset`).
         dom.text.textContent = block.transcript;
+        if (block.poster !== undefined) {
+          withAsset(block.poster, "poster", (blob) => {
+            dom.video.poster = stepUrl(blob);
+            dom.video.hidden = false;
+          });
+        }
+        withAsset(block.video, "video", (blob) => {
+          dom.video.src = stepUrl(blob);
+          dom.video.hidden = false;
+        });
         return;
       case "model":
         dom.text.textContent = block.title ?? "";

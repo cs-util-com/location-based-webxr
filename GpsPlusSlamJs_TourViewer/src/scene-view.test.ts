@@ -19,13 +19,31 @@ import { createSceneView, type SceneViewDom } from "./scene-view";
 
 function fakeDom() {
   const choices: { label: string; click: () => void }[][] = [];
-  const dom: SceneViewDom = {
+  /** The card's player: what it was told, and whether it was stopped. */
+  const video = {
+    src: "",
+    poster: "",
+    hidden: true as boolean | "until-found",
+    paused: false,
+    loads: 0,
+    pause() {
+      video.paused = true;
+    },
+    removeAttribute(name: string) {
+      if (name === "src" || name === "poster") video[name] = "";
+    },
+    load() {
+      video.loads += 1;
+    },
+  };
+  const dom: SceneViewDom & { video: typeof video } = {
     panel: { hidden: true },
     title: { textContent: "" },
     speaker: { textContent: "", hidden: true },
     text: { textContent: "" },
     status: { textContent: "" },
     image: { src: "", alt: "", hidden: true },
+    video,
     choices: {
       replaceChildren: (...nodes: (Node | string)[]) => {
         choices.push(
@@ -100,6 +118,17 @@ const assets = new Map<string, TourAsset>([
   ],
   ["voice", { id: "voice", path: "content/voice.mp3", kind: "audio" }],
   ["arch", { id: "arch", path: "content/arch.glb", kind: "model" }],
+  ["clip", { id: "clip", path: "content/clip.webm", kind: "video" }],
+  [
+    "still",
+    {
+      id: "still",
+      path: "content/still.png",
+      kind: "image",
+      width: 16,
+      height: 9,
+    },
+  ],
 ]);
 
 function harness(
@@ -396,10 +425,50 @@ describe("createSceneView", () => {
     expect(h.stage.showModel).not.toHaveBeenCalled();
   });
 
-  // Why: this version plays no clip; a video's transcript is what the
-  // visitor gets, so a video block never leaves the card empty.
-  it("shows a video's transcript in its place", () => {
+  // Why (station blocks plan B2b step 3): the video card plays - its
+  // clip in a video element with the browser's controls (a tap plays it,
+  // a gesture, so its sound may play), its poster while it waits, its
+  // transcript below as before. The clip and the poster are object URLs
+  // of the step: the next step stops the clip and frees both, or a long
+  // walk would hold every clip it ever played.
+  it("plays a video card: its clip and poster in the video element, the transcript below, freed on the next step", async () => {
     const h = harness();
+    h.view.offer(
+      station("s", [
+        showing("v", {
+          kind: "video",
+          view: "card",
+          video: "clip",
+          poster: "still",
+          transcript: "The gate opens at dawn.",
+        }),
+        tap("next", "Next"),
+      ]),
+    );
+    expect(h.dom.text.textContent).toBe("The gate opens at dawn.");
+    await settle();
+    expect(h.dom.video.hidden).toBe(false);
+    expect(h.urls.created).toHaveLength(2);
+    expect([h.dom.video.src, h.dom.video.poster].sort()).toEqual(
+      [...h.urls.created].sort(),
+    );
+    expect(h.dom.status.textContent).toBe("");
+    h.view.continueTapped();
+    expect(h.dom.video).toMatchObject({
+      hidden: true,
+      paused: true,
+      src: "",
+      poster: "",
+    });
+    expect([...h.urls.revoked].sort()).toEqual([...h.urls.created].sort());
+  });
+
+  // Why: a clip that cannot be read must say so and keep the words, like
+  // every other medium (UI async-feedback rule) - never a blank player.
+  it("says when a video cannot be read, keeps the words, and shows no player", async () => {
+    const h = harness({
+      loadAsset: () => Promise.reject(new Error("offline")),
+    });
     h.view.offer(
       station("s", [
         showing("v", {
@@ -410,7 +479,34 @@ describe("createSceneView", () => {
         }),
       ]),
     );
+    expect(h.dom.status.textContent).toBe("Loading the video…");
+    await settle();
+    expect(h.dom.status.textContent).toBe(
+      "The video could not be loaded - the words are below.",
+    );
+    expect(h.dom.video.hidden).toBe(true);
     expect(h.dom.text.textContent).toBe("The gate opens at dawn.");
+  });
+
+  // Why (station blocks plan B2b step 4): a long text's paragraphs are
+  // the creator's, written as S0 markdown. The card shows its plain text
+  // P - paragraphs apart by a blank line, a soft line break as a space,
+  // no markup characters - instead of the raw body with its stars.
+  it("shows a long text card as its paragraphs, without the markup", () => {
+    const h = harness();
+    h.view.offer(
+      station("s", [
+        showing("t", {
+          kind: "longText",
+          view: "card",
+          title: "History",
+          body: "Built in **1400**,\nrebuilt later.\n\nThe second part.",
+        }),
+      ]),
+    );
+    expect(h.dom.text.textContent).toBe(
+      "Built in 1400, rebuilt later.\n\nThe second part.",
+    );
   });
 
   it("says when a sound is refused or a file cannot be read, and keeps the words", async () => {

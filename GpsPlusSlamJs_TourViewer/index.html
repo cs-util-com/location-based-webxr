@@ -2491,10 +2491,18 @@
       #scene-panel p {
         margin: 0;
       }
-      #scene-image {
+      #scene-image,
+      #scene-video {
         max-width: 100%;
         max-height: 30vh;
         object-fit: contain;
+      }
+      #scene-video[hidden] {
+        display: none;
+      }
+      /* A long text's paragraphs (B2b): P keeps them a blank line apart. */
+      #scene-text {
+        white-space: pre-line;
       }
       #scene-choices {
         display: flex;
@@ -6127,6 +6135,14 @@
                       alt=""
                       hidden
                     />
+                    <video
+                      id="scene-video"
+                      data-testid="scene-video"
+                      controls
+                      playsinline
+                      preload="metadata"
+                      hidden
+                    ></video>
                     <p id="scene-text" data-testid="scene-text"></p>
                     <p id="scene-status" data-testid="scene-status"></p>
                     <div id="scene-choices" data-testid="scene-choices"></div>
