@@ -9,6 +9,10 @@ section's dynamic chunk.
 
 ## Public API
 
+- `keepUsesHeight`: re-exported from `uses-height.ts`, so the height
+  keeper ships in this chunk and loads (or fails) with the section it
+  keeps.
+
 - `mountUseCases(host: HTMLElement): { destroy(): void }`
   - replaces the host's content (the page's placeholder) with
     `renderUseCases(USE_CASES)` in the shipped look;

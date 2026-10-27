@@ -44,9 +44,10 @@ function makeDom(): LandingDom {
 type Part = keyof LandingLoaders;
 
 /** Loaders that record their calls and hand back destroy spies. */
-function spyLoaders(fail: Partial<Record<Part, boolean>> = {}) {
+function spyLoaders(fail: Partial<Record<Part | "usesMount", boolean>> = {}) {
   const calls: { part: Part; host: HTMLElement; options?: unknown }[] = [];
   const destroyed: Part[] = [];
+  const kept: HTMLElement[] = [];
   const part = (name: Part): LandingPart => ({
     destroy: () => {
       destroyed.push(name);
@@ -77,12 +78,18 @@ function spyLoaders(fail: Partial<Record<Part, boolean>> = {}) {
         ? refuse()
         : Promise.resolve({
             mountUseCases: (host) => {
+              if (fail.usesMount === true) throw new Error("mount");
               calls.push({ part: "uses", host });
               return part("uses");
             },
+            keepUsesHeight: (host) => {
+              kept.push(host);
+              host.style.removeProperty("min-height");
+              return () => undefined;
+            },
           }),
   };
-  return { loaders, calls, destroyed };
+  return { loaders, calls, destroyed, kept };
 }
 
 const noAr = () => () => undefined;
@@ -149,6 +156,45 @@ describe("mountLanding", () => {
     expect(dom.film.dataset["mount"]).toBe("failed");
     expect(dom.film.querySelector("img")).not.toBeNull();
     expect(calls.map((c) => c.part).sort()).toEqual(["cards", "uses"]);
+  });
+
+  // The page reserves the use cases' kept height inline before their
+  // chunk arrives. Where they never mount (a failed or stale chunk, or a
+  // mount that throws), that reservation must go: kept, it leaves a blank
+  // gap of the section's whole height above the setup, which a reload
+  // restores into view.
+  it("drops the use cases' inline reservation when they fail to mount", async () => {
+    for (const fail of [{ uses: true }, { usesMount: true }]) {
+      const dom = makeDom();
+      dom.uses.style.minHeight = "2400px";
+      const { loaders } = spyLoaders(fail);
+      await mountLanding({
+        mode: "creator",
+        dom,
+        reducedMotion: false,
+        onArStarting: noAr,
+        loaders,
+      }).ready;
+      expect(dom.uses.dataset["mount"], JSON.stringify(fail)).toBe("failed");
+      expect(dom.uses.style.minHeight, JSON.stringify(fail)).toBe("");
+    }
+  });
+
+  // The height keeper comes in the use cases' own chunk, so it cannot
+  // fail on its own: a separate chunk that failed alone marked a section
+  // that had loaded fine as failed.
+  it("keeps the use cases' height with the keeper from their own chunk", async () => {
+    const dom = makeDom();
+    const { loaders, kept } = spyLoaders();
+    await mountLanding({
+      mode: "creator",
+      dom,
+      reducedMotion: false,
+      onArStarting: noAr,
+      loaders,
+    }).ready;
+    expect(kept).toEqual([dom.uses]);
+    expect(dom.uses.dataset["mount"]).toBe("ready");
   });
 
   it("destroys what mounted, and a part that mounts after destroy at once", async () => {
