@@ -235,8 +235,11 @@ its chunk fails, the hero shows its last moment as a drawing).
   (`:has(> .lf-list)`), 119 to 195 px, once at mount (below the fold on
   an upright phone) and back when the film is played. That growth is
   reserved under reduced motion until the film mounts, as a bottom margin
-  on `.landing-film:not([data-mount])` (156 px up to 480 px wide, 118 px
-  wider), a lower bound of the measured growth: a page the wizard
+  on `.landing-film:not([data-mount], :has(> .lf-list))` (156 px up
+  to 480 px wide, 118 px wider; it goes in the same style change as the
+  list arrives, so the box changes once instead of growing by the list and
+  then shrinking by the margin, which now and then left a restored reload
+  that margin past the stage), a lower bound of the measured growth: a page the wizard
   reloaded mid-setup was otherwise pushed 35 px past the stage at
   390x844. Measured 2026-10-27, the content below still moves on mount
   by 1 to 2 px at most widths, 20 px on a phone held sideways, 20 px at
@@ -253,7 +256,12 @@ its chunk fails, the hero shows its last moment as a drawing).
   gap: measured 2026-10-26 the section still grows on mount by 8 to 28 px
   at most widths (145 px at 320, 83 at 639 and 64 at 640, near the column
   steps) and by 32 to 282 px in the wide face. A host whose chunk failed
-  drops the reservation.
+  drops the reservation. A lower bound measured in one face is not enough
+  in a wider one (the CI's Linux face put the stage 141 px down after a
+  reload at 390x844), so the height the tab last measured, at the same
+  window width, is kept in session storage and set as the host's inline
+  `min-height` by the classic script `#landing-uses-height` right after the
+  host, before the first paint (`src/landing/uses-height.ts`).
 - **Gaps** (all set here, the design system zeroes margins): the hero's
   kicker 16 px under the band (34 px from 900 px), the `h1` 8 px, lede 10,
   make-line 12 (20 from 900 px), needs 7, button 14, film 18 (28 from

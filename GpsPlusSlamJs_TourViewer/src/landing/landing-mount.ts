@@ -86,6 +86,16 @@ export interface MountedLanding {
   destroy(): void;
 }
 
+/** The tab's session storage, or null where reading it throws (site data
+ *  blocked). */
+function sessionStore(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Mounts the landing's parts for a creator; a visitor's page loads none.
  * Each part's host says how its mount went in `data-mount`: "ready", or
@@ -155,7 +165,25 @@ export function mountLanding(options: MountLandingOptions): MountedLanding {
   const ready = Promise.all([
     mountFilm(),
     mountCards(),
-    mount(dom.uses, async () => (await loaders.uses()).mountUseCases(dom.uses)),
+    mount(dom.uses, async () => {
+      // the keeper comes with the section, never in the page's first load
+      const [uses, { keepUsesHeight }] = await Promise.all([
+        loaders.uses(),
+        import("./uses-height.js"),
+      ]);
+      const part = uses.mountUseCases(dom.uses);
+      // kept for the next load: a reload reserves the height measured here
+      const unkeep = keepUsesHeight(dom.uses, {
+        storage: sessionStore(),
+        width: () => window.innerWidth,
+      });
+      return {
+        destroy() {
+          unkeep();
+          part.destroy();
+        },
+      };
+    }),
   ]).then(() => undefined);
 
   // The parts that move follow the reader's setting while the page is

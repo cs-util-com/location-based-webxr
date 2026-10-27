@@ -21,7 +21,11 @@ film's still are static in `index.html` and show without this module.
     `"context-lost"`, removed on destroy and before a reduced-motion
     remount, so only the mounted film's reason stands), the cards with
     `{ reducedMotion, filmHost }` (so no card moves while the film plays)
-    and the use cases with their host.
+    and the use cases with their host. Once the use cases mounted, their
+    host's height is kept in session storage for the next load
+    (`keepUsesHeight`, `uses-height.ts`, imported with the use cases'
+    chunk so it is not in the page's first load), and the keeping stops
+    with the part's `destroy`.
   - Each host gets `data-mount="ready"`, or `"failed"` when its chunk did
     not load or its mount threw; a failed part keeps the host's static
     content.

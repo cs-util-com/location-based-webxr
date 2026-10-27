@@ -906,15 +906,33 @@ test.describe("a returning device", () => {
   // was. If the use cases' chunk mounts after that restoration (a slow
   // network), the section must not grow the page above the stage.
   for (const reduced of [false, true]) {
-    // Under reduced motion the film opens with its captions as a list,
-    // which grows its box when it mounts: that growth sits above the
-    // stage too.
-    test(`comes back to the stage after a reload, also when the use cases arrive late${reduced ? ", under reduced motion" : ""}`, async ({
-      page,
-    }) => {
-      if (reduced) await page.emulateMedia({ reducedMotion: "reduce" });
-      await comesBackAfterReload(page);
-    });
+    for (const face of ["system", "wide", "wider"]) {
+      // Under reduced motion the film opens with its captions as a list,
+      // which grows its box when it mounts: that growth sits above the
+      // stage too. The page's reservations are measured in this machine's
+      // face; the CI's Linux face sets the text wider, so every section
+      // above the stage is taller there. The wide face stands in for it,
+      // and "wider" spaces its letters out further still: a face wider
+      // than any the reservations were measured in.
+      test(`comes back to the stage after a reload, also when the use cases arrive late${reduced ? ", under reduced motion" : ""}${face === "system" ? "" : `, in a ${face} face`}`, async ({
+        page,
+      }) => {
+        if (reduced) await page.emulateMedia({ reducedMotion: "reduce" });
+        if (face !== "system") await useWideFont(page);
+        if (face === "wider") {
+          await page.addInitScript(() => {
+            const style = document.createElement("style");
+            style.textContent = "* { letter-spacing: 0.04em !important; }";
+            document.addEventListener(
+              "DOMContentLoaded",
+              () => document.head.append(style),
+              { once: true },
+            );
+          });
+        }
+        await comesBackAfterReload(page);
+      });
+    }
   }
 
   /** @param {import("@playwright/test").Page} page */

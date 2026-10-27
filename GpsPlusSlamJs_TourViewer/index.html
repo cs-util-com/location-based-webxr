@@ -849,16 +849,20 @@
          list wraps more on a narrow phone). A page restored mid-setup
          (the wizard reloads on purpose) must not be pushed down by that,
          so the growth is reserved below the box until the film mounts: a
-         lower bound of the measured growth (system face; index.html.md). */
+         lower bound of the measured growth (system face; index.html.md).
+         It goes in the same style change as the list arrives, so the box
+         changes once (a net few px) instead of growing by the whole list
+         and then shrinking by the margin: a reload restored at the stage
+         was, now and then, left that margin past it. */
 
       @media (prefers-reduced-motion: reduce) {
-        .landing-film:not([data-mount]) {
+        .landing-film:not([data-mount], :has(> .lf-list)) {
           margin-bottom: 156px;
         }
       }
 
       @media (prefers-reduced-motion: reduce) and (width > 480px) {
-        .landing-film:not([data-mount]) {
+        .landing-film:not([data-mount], :has(> .lf-list)) {
           margin-bottom: 118px;
         }
       }
@@ -4423,6 +4427,34 @@
             </li>
           </ul>
         </div>
+        <script id="landing-uses-height">
+          // The height this tab measured the mounted use cases at, at this
+          // width, reserved before the first paint: the browser restores a
+          // reload's scroll before their chunk arrives, and the CSS lower
+          // bound below is measured in one face only. The same rule as
+          // keptUsesHeight (src/landing/uses-height.ts), held to it by
+          // uses-height.test.ts.
+          try {
+            const kept = JSON.parse(
+              sessionStorage.getItem("tour-viewer.landing.uses-height") ??
+                "null",
+            );
+            const height = kept === null ? undefined : kept.height;
+            if (
+              typeof kept === "object" &&
+              kept !== null &&
+              kept.width === window.innerWidth &&
+              typeof height === "number" &&
+              height > 0 &&
+              height < 20000
+            ) {
+              document.getElementById("landing-uses").style.minHeight =
+                `${String(height)}px`;
+            }
+          } catch {
+            // Site data blocked or nothing readable: the CSS lower bound.
+          }
+        </script>
       </section>
       <!-- The setup stage (polish round M2b, the L5 look): the map of six
            stations beside (wide) or above (phone) the step card. The card
