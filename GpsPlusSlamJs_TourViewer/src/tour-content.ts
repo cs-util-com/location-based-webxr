@@ -239,15 +239,23 @@ export function withTourContent(
   };
 }
 
-/** `manifest`'s assets without the captured photos' own (`ownedAssetIds`),
- *  then the image assets of `objects`' pictures not listed yet, in their
+/** `manifest`'s assets without the captured photos' own (`ownedAssetIds`)
+ *  that nothing written names any more - no object of `objects`, no story
+ *  block (another picture may show a photo's image, B2a review 2) - then
+ *  the image assets of `objects`' pictures not listed yet, in their
  *  order. */
 function withPictureAssets(
   manifest: TourManifest,
   objects: readonly TourObject[],
 ): TourAsset[] {
   const owned = ownedAssetIds(manifest);
-  const kept = manifest.assets.filter((a) => !owned.has(a.id));
+  const named = new Set([
+    ...objects.flatMap(blockAssetIds),
+    ...manifest.stations.flatMap(stepAssetIds),
+  ]);
+  const kept = manifest.assets.filter(
+    (a) => !owned.has(a.id) || named.has(a.id),
+  );
   const listed = new Set(kept.map((a) => a.id));
   const added: TourAsset[] = [];
   for (const object of objects) {

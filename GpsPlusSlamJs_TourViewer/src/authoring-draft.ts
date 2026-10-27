@@ -388,26 +388,6 @@ export function applyObjectChanges(
   return out;
 }
 
-/**
- * The zip entries a Finish removes: the content file of each deleted
- * photo, under the zip's wrap (`TourSession.manifestWrap`), so a deleted
- * photo takes its jpg with it (plan §3.4). Pins have no content file.
- */
-export function contentEntriesToRemove(
-  existing: readonly TourObject[],
-  deleted: readonly string[],
-  wrap: string,
-): string[] {
-  const gone = new Set(deleted);
-  return existing.flatMap((object) =>
-    object.kind === "picture" &&
-    object.image === object.id &&
-    gone.has(object.id)
-      ? [`${wrap}${object.imageAsset.path}`]
-      : [],
-  );
-}
-
 /** Counts of work other than new placements (an edit or a move of an
  *  object the zip carries, a deletion, and an AR visit's log - which goes
  *  to the summary, never into the zip). */

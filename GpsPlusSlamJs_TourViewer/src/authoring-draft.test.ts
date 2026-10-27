@@ -30,7 +30,6 @@ import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import {
   applyObjectChanges,
-  contentEntriesToRemove,
   draftDeletionsNotYetHosted,
   draftHasUnhostedLevel,
   draftIsSpent,
@@ -352,18 +351,7 @@ describe("applyObjectChanges (the Finish: replace and filter, plan §3.4)", () =
   });
 });
 
-describe("contentEntriesToRemove (a deleted photo takes its jpg with it)", () => {
-  it("names each deleted photo's content entry under the zip's wrap, and nothing else", () => {
-    expect(
-      contentEntriesToRemove(
-        [photo("p1"), photo("p2"), pin("a")],
-        ["p1", "a", "absent"],
-        "mytour/",
-      ),
-    ).toEqual(["mytour/content/p1.jpg"]);
-    expect(contentEntriesToRemove([photo("p1")], [], "")).toEqual([]);
-  });
-
+describe("a deleted model leaves a shared asset", () => {
   // Why: placed 3D models (format minor 1) name a SHARED model asset, not a
   // file of their own. Deleting one model must never remove that asset's
   // file - the other model still draws from it - and the tour written
@@ -382,7 +370,6 @@ describe("contentEntriesToRemove (a deleted photo takes its jpg with it)", () =>
     const manifest = tourOf(both, {
       assets: [{ id: "statue", path: "content/statue.glb", kind: "model" }],
     });
-    expect(contentEntriesToRemove(both, ["m1"], "mytour/")).toEqual([]);
     const written = finishedManifest({ manifest, placed: [], deleted: ["m1"] });
     const read = parseTourManifest(JSON.parse(serializeTourManifest(written)));
     expect(tourObjects(read).map((i) => i.id)).toEqual(["m2"]);

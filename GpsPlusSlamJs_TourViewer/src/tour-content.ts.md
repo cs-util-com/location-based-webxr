@@ -43,7 +43,8 @@ camera captures are debug data, never in a station (an earlier file's
   naming none, the one the manifest holds it in) beside the station's
   story blocks, the stations kept as they are and in their order, and the
   captured photos' assets those of `objects` (a deleted photo's asset
-  goes, a new one's is listed). Throws an `Error` naming the object for
+  goes unless another object or a story block still names its image,
+  B2a review 2; a kept one stays in its place; a new one's is listed). Throws an `Error` naming the object for
   one in no station of the manifest.
 - `withReferencedAssets(manifest, alsoKeep?) -> TourManifest`: the
   manifest without the assets it does not use, in their order; the same

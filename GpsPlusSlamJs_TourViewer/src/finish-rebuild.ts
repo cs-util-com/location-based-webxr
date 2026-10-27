@@ -28,7 +28,6 @@ import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
 import {
   applyObjectChanges,
-  contentEntriesToRemove,
   hostedObjects,
 } from "./authoring-draft.js";
 import type { LevelText } from "./code-book.js";
@@ -174,14 +173,13 @@ export function finishedManifest(input: FinishedManifestInput): TourManifest {
   );
 }
 
-/** The zip entries a write removes: a deleted photo's content file, the
- *  file of an asset the write dropped (as a deleted photo's), the entries
+/** The zip entries a write removes: the file of every asset the write
+ *  dropped (a deleted photo's own included, and only when nothing else
+ *  names it: B2a review 2, never by the picture alone), the entries
  *  visitors never read that were left out, the old signatures, and a list
  *  that does not continue (`listName`, undefined when it does or there is
  *  none). */
 function entriesToRemove(input: {
-  readonly hosted: readonly TourObject[];
-  readonly deleted: readonly string[];
   readonly wrap: string;
   readonly before: TourManifest;
   readonly written: TourManifest;
@@ -192,7 +190,6 @@ function entriesToRemove(input: {
   const { wrap } = input;
   const keptAssets = new Set(input.written.assets.map((a) => a.id));
   return [
-    ...contentEntriesToRemove(input.hosted, input.deleted, wrap),
     ...input.before.assets.flatMap((a) =>
       keptAssets.has(a.id) ? [] : [`${wrap}${a.path}`],
     ),
@@ -237,9 +234,9 @@ export async function rebuildFinishedTour(
   // The manifest (`finishedManifest`); the photos' bytes become content
   // entries next to it.
   const deleted = [...input.deleted];
-  const hosted = tourObjects(manifest);
   const written: TourManifest = finishedManifest({ ...input, deleted });
-  // A deleted photo takes its content file with it. A signature over
+  // A deleted photo takes its content file with it when nothing else
+  // names its image (the dropped assets' files). A signature over
   // the old list cannot cover the files this Finish rewrites, so it
   // goes - the output is unsigned until K2 signs on export. The list
   // itself CONTINUES for a listed tour (K1 milestone review R7, below);
@@ -258,8 +255,6 @@ export async function rebuildFinishedTour(
     ? []
     : scanEntryNames(entryNames, written, wrap);
   const removed = entriesToRemove({
-    hosted,
-    deleted,
     wrap,
     before: manifest,
     written,
