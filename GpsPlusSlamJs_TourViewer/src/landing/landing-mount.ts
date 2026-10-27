@@ -9,6 +9,7 @@
  * @see landing-mount.ts.md
  */
 import type { ViewerMode } from "../mode.js";
+import type { UsesHeightEnv } from "./uses-height.js";
 
 /** What every mounted part hands back. */
 export interface LandingPart {
@@ -48,13 +49,7 @@ export interface LandingLoaders {
   /** The use cases and their height keeper, in one chunk. */
   uses(): Promise<{
     mountUseCases(host: HTMLElement): LandingPart;
-    keepUsesHeight(
-      host: HTMLElement,
-      env: {
-        readonly storage: Pick<Storage, "setItem"> | null;
-        readonly width: () => number;
-      },
-    ): () => void;
+    keepUsesHeight(host: HTMLElement, env: UsesHeightEnv): () => void;
   }>;
 }
 
@@ -188,6 +183,12 @@ export function mountLanding(options: MountLandingOptions): MountedLanding {
         const unkeep = uses.keepUsesHeight(dom.uses, {
           storage: sessionStore(),
           width: () => window.innerWidth,
+          onWindowResize: (listener) => {
+            window.addEventListener("resize", listener);
+            return () => {
+              window.removeEventListener("resize", listener);
+            };
+          },
         });
         return {
           destroy() {

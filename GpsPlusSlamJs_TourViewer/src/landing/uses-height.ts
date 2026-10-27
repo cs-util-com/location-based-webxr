@@ -49,13 +49,17 @@ export function keptUsesHeight(
 export interface UsesHeightEnv {
   readonly storage: Pick<Storage, "setItem"> | null;
   readonly width: () => number;
+  /** Listens to the window's resize; returns the unlisten. */
+  readonly onWindowResize: (listener: () => void) => () => void;
 }
 
 /**
  * Drops the reservation the inline script set on the mounted section's
  * host (its own height holds the place now) and keeps the host's height
- * for the next load, again whenever it changes (storage is written only
- * when the kept value would change). Returns the unwatch. Storage that
+ * for the next load, again whenever the host or the window resizes
+ * (storage is written only when the kept value would change). The window
+ * too: the value is keyed by its width, and on a wide window the capped
+ * section keeps its size when only that width changes. Returns the unwatch. Storage that
  * throws (site data blocked, full) keeps nothing.
  */
 export function keepUsesHeight(
@@ -77,10 +81,12 @@ export function keepUsesHeight(
     }
   };
   keep();
-  if (typeof ResizeObserver !== "function") return () => undefined;
+  const unlisten = env.onWindowResize(keep);
+  if (typeof ResizeObserver !== "function") return unlisten;
   const watch = new ResizeObserver(keep);
   watch.observe(host);
   return () => {
+    unlisten();
     watch.disconnect();
   };
 }

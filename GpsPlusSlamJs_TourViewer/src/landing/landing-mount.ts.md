@@ -25,8 +25,9 @@ film's still are static in `index.html` and show without this module.
     host's height is kept in session storage for the next load
     (`keepUsesHeight`, `uses-height.ts`, re-exported by `use-cases.ts`
     so it ships in the use cases' own chunk: not in the page's first load,
-    and never failing apart from the section), and the keeping stops with
-    the part's `destroy`.
+    and never failing apart from the section), at the window's width and
+    again on the window's `resize` (the kept value is keyed by that
+    width), and the keeping stops with the part's `destroy`.
   - Each host gets `data-mount="ready"`, or `"failed"` when its chunk did
     not load or its mount threw; a failed part keeps the host's static
     content. A failed use-cases part also drops the inline `min-height`
@@ -102,7 +103,8 @@ mountLanding({
   a landing; each part gets its host and options; a failed chunk keeps the
   static content and the others mount; a failed use-cases chunk or mount
   drops the inline reservation; the height keeper comes from the use
-  cases' own chunk; destroy, also before a load
+  cases' own chunk, with the window's resize and its unlisten; destroy,
+  also before a load
   settles; the real default chunks mount and unmount; the AR signal on a
   tap, on a live session, and not after unregistering; a change of the
   reduced-motion setting mounts the film and the cards again with it, one

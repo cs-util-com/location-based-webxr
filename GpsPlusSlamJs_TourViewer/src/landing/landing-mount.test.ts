@@ -18,6 +18,7 @@ import {
   type LandingLoaders,
   type LandingPart,
 } from "./landing-mount.js";
+import type { UsesHeightEnv } from "./uses-height.js";
 
 function makeDom(): LandingDom {
   document.body.innerHTML = `
@@ -48,6 +49,7 @@ function spyLoaders(fail: Partial<Record<Part | "usesMount", boolean>> = {}) {
   const calls: { part: Part; host: HTMLElement; options?: unknown }[] = [];
   const destroyed: Part[] = [];
   const kept: HTMLElement[] = [];
+  const keptEnv: UsesHeightEnv[] = [];
   const part = (name: Part): LandingPart => ({
     destroy: () => {
       destroyed.push(name);
@@ -82,14 +84,15 @@ function spyLoaders(fail: Partial<Record<Part | "usesMount", boolean>> = {}) {
               calls.push({ part: "uses", host });
               return part("uses");
             },
-            keepUsesHeight: (host) => {
+            keepUsesHeight: (host, env) => {
               kept.push(host);
+              keptEnv.push(env);
               host.style.removeProperty("min-height");
               return () => undefined;
             },
           }),
   };
-  return { loaders, calls, destroyed, kept };
+  return { loaders, calls, destroyed, kept, keptEnv };
 }
 
 const noAr = () => () => undefined;
@@ -195,6 +198,32 @@ describe("mountLanding", () => {
     }).ready;
     expect(kept).toEqual([dom.uses]);
     expect(dom.uses.dataset["mount"]).toBe("ready");
+  });
+
+  // The kept height is keyed by the window's width, and the keeper hears of
+  // a width-only resize through the window: the page must hand it the
+  // window's own resize event, and take the listener back again.
+  it("hands the height keeper the window's resize, and its unlisten", async () => {
+    const dom = makeDom();
+    const { loaders, keptEnv } = spyLoaders();
+    await mountLanding({
+      mode: "creator",
+      dom,
+      reducedMotion: false,
+      onArStarting: noAr,
+      loaders,
+    }).ready;
+    const env = keptEnv[0];
+    if (env === undefined) throw new Error("no keeper");
+    let heard = 0;
+    const unlisten = env.onWindowResize(() => {
+      heard += 1;
+    });
+    window.dispatchEvent(new Event("resize"));
+    expect(heard).toBe(1);
+    unlisten();
+    window.dispatchEvent(new Event("resize"));
+    expect(heard).toBe(1);
   });
 
   it("destroys what mounted, and a part that mounts after destroy at once", async () => {

@@ -74,6 +74,7 @@ describe("keptUsesHeight", () => {
 });
 
 describe("keepUsesHeight", () => {
+  const noWindowResize = () => () => undefined;
   const hostOf = (height: number) => {
     const host = document.createElement("div");
     host.style.minHeight = "2500px";
@@ -87,6 +88,7 @@ describe("keepUsesHeight", () => {
     const unwatch = keepUsesHeight(host, {
       storage: { setItem: (k, v) => stored.set(k, v) },
       width: () => 390,
+      onWindowResize: noWindowResize,
     });
     expect(host.style.minHeight).toBe("");
     expect(keptUsesHeight(stored.get(USES_HEIGHT_KEY) ?? null, 390)).toBe(2391);
@@ -115,6 +117,7 @@ describe("keepUsesHeight", () => {
       const unwatch = keepUsesHeight(host, {
         storage: { setItem: (_k, v) => writes.push(v) },
         width: () => width,
+        onWindowResize: noWindowResize,
       });
       const report = () => {
         for (const cb of observed) cb();
@@ -142,6 +145,7 @@ describe("keepUsesHeight", () => {
     keepUsesHeight(hostOf(0), {
       storage: { setItem: (k, v) => stored.set(k, v) },
       width: () => 390,
+      onWindowResize: noWindowResize,
     })();
     expect(stored.size).toBe(0);
     expect(() =>
@@ -152,11 +156,45 @@ describe("keepUsesHeight", () => {
           },
         },
         width: () => 390,
+        onWindowResize: noWindowResize,
       })(),
     ).not.toThrow();
     expect(() =>
-      keepUsesHeight(hostOf(2000), { storage: null, width: () => 390 })(),
+      keepUsesHeight(hostOf(2000), {
+        storage: null,
+        width: () => 390,
+        onWindowResize: noWindowResize,
+      })(),
     ).not.toThrow();
+  });
+
+  // On a wide window the section is capped at the column's width, so a
+  // window resized only in width leaves the section's size alone and its
+  // observer never reports: the kept value would still carry the old
+  // width, and the next load at the new width would reserve nothing. The
+  // window's own resize keeps it again.
+  it("keeps the height again at the new width when only the window's width changes", () => {
+    const stored = new Map<string, string>();
+    let width = 1440;
+    const resized: (() => void)[] = [];
+    let unlistened = 0;
+    const unwatch = keepUsesHeight(hostOf(2391), {
+      storage: { setItem: (k, v) => stored.set(k, v) },
+      width: () => width,
+      onWindowResize: (listener) => {
+        resized.push(listener);
+        return () => {
+          unlistened += 1;
+        };
+      },
+    });
+    width = 1600;
+    for (const listener of resized) listener();
+    expect(keptUsesHeight(stored.get(USES_HEIGHT_KEY) ?? null, 1600)).toBe(
+      2391,
+    );
+    unwatch();
+    expect(unlistened).toBe(1);
   });
 });
 
