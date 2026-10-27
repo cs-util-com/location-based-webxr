@@ -383,8 +383,8 @@ written, hand })` (the hosted texts enter the book);
 
 - `selectTourDocument(root)` - the slice in a store's state.
 - Re-exported from `tour-content.ts` for the pages, read-only: `worldBlocks`
-  and `WorldBlock` (a station's free blocks), `isCapturedPhoto` and
-  `ownedAssetIds` (the pictures that own their image asset). A page reads
+  and `WorldBlock` (a station's free blocks), `storyBlocksOf` (the blocks
+  its story shows), `isCapturedPhoto` and `ownedAssetIds` (the pictures that own their image asset). A page reads
   them here, never from `tour-content.ts` (the boundary rule
   `document-rules-through-tour-document`).
 - The codes: `documentCodes(state)` (the book, in order),

@@ -1609,3 +1609,28 @@ body[data-view="3d"] .view3d-credits {
     --s-name-min: 58px;
   }
 }
+
+/* The blocks a station's story shows: listed, not edited, here. */
+.story-blocks {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.story-blocks li {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.story-blocks .kind {
+  color: var(--s-muted);
+}
+
+.story-blocks .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

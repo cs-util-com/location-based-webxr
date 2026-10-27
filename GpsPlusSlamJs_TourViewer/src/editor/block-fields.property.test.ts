@@ -1,7 +1,8 @@
 /**
  * Why this property matters (B2c acceptance): any sequence of block field
  * edits from the inspector must keep the block one the writer and the
- * reader accept - no cap broken, no field written blank, the block's kind,
+ * reader accept - no cap broken, no field written blank, no field the
+ * block needs emptied, the block's kind,
  * id, view and place untouched. A unit test checks the cases someone
  * thought of; this one types arbitrary text, emoji and whitespace runs
  * into every field of every kind.
@@ -28,14 +29,41 @@ const BLOCKS = [
     geo: GEO,
   },
   { id: "m", kind: "model", view: "placed", asset: "a", sizeM: 1, geo: GEO },
+  { id: "l", kind: "longText", view: "card", title: "T", body: "B" },
+  { id: "v", kind: "video", view: "card", video: "c", transcript: "W" },
+  { id: "au", kind: "audio", view: "card", audio: "s", transcript: "W" },
+  {
+    id: "ch",
+    kind: "character",
+    view: "stage",
+    name: "N",
+    image: "i",
+    caption: "C",
+  },
 ] as unknown as TourObject[];
 
 const text = fc.oneof(
   fc.string({ maxLength: 50 }),
   fc.string({ unit: "grapheme", maxLength: 400 }),
-  fc.constantFrom("", "   ", "\n\n", "x".repeat(1300), "\u{1F600}".repeat(41)),
+  fc.constantFrom(
+    "",
+    "   ",
+    "\n\n",
+    "x".repeat(1300),
+    "\u{1F600}".repeat(41),
+    // Under the body's cap in characters, over it in UTF-16 units.
+    "\u{1F600}".repeat(16_001),
+  ),
 );
-const field = fc.constantFrom("title", "caption", "description", "alt", "body");
+const field = fc.constantFrom(
+  "title",
+  "caption",
+  "description",
+  "alt",
+  "body",
+  "transcript",
+  "name",
+);
 
 describe("block field edits", () => {
   it("keep every text field within its rule, the envelope untouched", () => {
@@ -54,6 +82,8 @@ describe("block field edits", () => {
           >;
           for (const f of blockFields(block)) {
             const value = (block as unknown as Record<string, unknown>)[f.name];
+            // A field the block needs is never emptied.
+            expect(!f.required || typeof value === "string").toBe(true);
             if (value === undefined) continue;
             const rule = rules[f.name];
             expect(rule).toBeDefined();

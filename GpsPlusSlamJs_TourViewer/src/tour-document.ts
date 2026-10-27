@@ -111,11 +111,13 @@ import type { CodeMeasurement } from "./visit-settle.js";
 
 export type { LevelText } from "./code-book.js";
 /** The world view's readers (`tour-content.ts`), for the pages: the
- *  free blocks of a station, and which pictures are captured photos and
- *  own their image asset. Read-only; the rules stay behind the document. */
+ *  free blocks of a station, the blocks its story shows, and which
+ *  pictures are captured photos and own their image asset. Read-only; the
+ *  rules stay behind the document. */
 export {
   isCapturedPhoto,
   ownedAssetIds,
+  storyBlocksOf,
   worldBlocks,
   type WorldBlock,
 } from "./tour-content.js";

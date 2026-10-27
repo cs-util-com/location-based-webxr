@@ -26,10 +26,12 @@ counter beside the field.
   default and could be announced at every keystroke, while every page
   names the counter from its field (`aria-describedby`), so it is read as
   the field is focused.
-- `textCounterLine(text, max)` / `wireTextCounter(field, out, max)` -
+- `textCounterLine(text, max, unit?)` / `wireTextCounter(field, out, max, unit?)` -
   the same for any text against its cap `max`, by the same count (the
-  editor inspector's block fields, `editor/block-fields.ts`, B2c); the
-  pin's two are these with `PIN_TEXT_MAX_CHARS`.
+  editor inspector's block fields, `editor/block-fields.ts`),
+  counted in `unit` (`codePoints` by default; `utf16` for a long
+  text's body, as the format counts it); the pin's two are these with
+  `PIN_TEXT_MAX_CHARS`.
 
 ## Invariants & assumptions
 

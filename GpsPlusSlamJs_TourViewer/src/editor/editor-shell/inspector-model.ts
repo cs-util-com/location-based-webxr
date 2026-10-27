@@ -31,10 +31,16 @@ import { objectLook, type ObjectLook } from "../../object-describe.js";
 import { stationTitle } from "../../station-run.js";
 import {
   ownedAssetIds,
+  storyBlocksOf,
   worldBlocks,
   type WorldBlock,
 } from "../../tour-document.js";
-import { blockFields, type BlockField } from "../block-fields.js";
+import {
+  BLOCK_KIND_LABEL,
+  blockFields,
+  blockTitle,
+  type BlockField,
+} from "../block-fields.js";
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
 import { stationImagePath } from "./tree-model.js";
 
@@ -105,6 +111,18 @@ interface StationInspector {
   /** Its position, height and heading may not be edited (the page's view
    *  state, `isStationLocked`): its gizmo is its radius dots alone. */
   readonly locked: boolean;
+  /** The blocks its story shows, in the station's order, by kind and
+   *  name (`blockTitle`): listed, not edited, here. */
+  readonly story: readonly InspectorStoryBlock[];
+}
+
+/** A block a station's story shows, as its inspector lists it. */
+export interface InspectorStoryBlock {
+  readonly id: string;
+  /** Its kind in the block model's words ("Long text"). */
+  readonly kind: string;
+  /** Text, never markup: it comes from a file anyone can write. */
+  readonly title: string;
 }
 
 interface ItemInspector {
@@ -180,14 +198,6 @@ export interface InspectorCode {
   } | null;
   readonly printSizeM: number | null;
 }
-
-/** Each kind in the block model's words (B2c: a pin is a short text, a
- *  photo a picture). */
-const KIND_LABEL: Readonly<Record<ObjectLook, string>> = {
-  pin: "Short text",
-  photo: "Picture",
-  model: "3D model",
-};
 
 /**
  * The bearing (degrees clockwise from north, 0-360) a rotation in a
@@ -293,13 +303,6 @@ function itemOffGround(
   }
 }
 
-function itemTitle(item: WorldBlock): string {
-  if (item.kind === "shortText") return item.caption;
-  const caption =
-    (item.kind === "picture" ? item.caption : item.title)?.trim() ?? "";
-  return caption === "" ? KIND_LABEL[objectLook(item.kind)] : caption;
-}
-
 /** The inspector for `selected` (the page's selection id), or null when
  *  nothing is selected or the tour does not have it. */
 export function buildInspector(input: {
@@ -356,6 +359,11 @@ export function buildInspector(input: {
       groundOffM: offGroundOf(station.geo, groundAt),
       position: positionOf(station.geo, origin),
       locked: !(input.unlockedStations ?? []).includes(id),
+      story: storyBlocksOf(station).map((block) => ({
+        id: block.id,
+        kind: BLOCK_KIND_LABEL[block.kind],
+        title: blockTitle(block),
+      })),
     };
   }
   for (const [index, station] of stations.entries()) {
@@ -365,8 +373,8 @@ export function buildInspector(input: {
     return {
       kind: "item",
       itemKind: objectLook(item.kind),
-      title: itemTitle(item),
-      sub: `${KIND_LABEL[objectLook(item.kind)]} in ${stationTitle(station, index + 1)}`,
+      title: blockTitle(item),
+      sub: `${BLOCK_KIND_LABEL[item.kind]} in ${stationTitle(station, index + 1)}`,
       stationId: station.id,
       text: item.kind === "shortText" ? item.caption : null,
       sizeM: item.kind === "model" ? (item.sizeM ?? null) : null,

@@ -55,6 +55,10 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     locked or on the ground, its note "x.x m up/down"), with a note
     saying what the metres are from; a station whose position cannot be
     read says so.
+  - A station whose story shows blocks: under "In its story", a
+    labelled list with a row per block, its kind and its name as text
+    (`ul.story-blocks`, `data-block` its id), and a note that they are
+    listed, not edited, here.
   - An item: what it is and its station (a pin's text to type in the
     head, "Pin text"), its commands, a model's Size to type, and under
     "Position" its Offset east and north, Height (up from the anchor)
@@ -129,7 +133,9 @@ opened again, and the fields' layout at four window sizes).
 
 `shell-inspector.test.ts` also covers the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
 
-It also covers the fields to type per kind, a locked station's place
+It also covers a station's story blocks, listed by kind and name as
+text under "In its story" (no list without a story), the fields to type
+per kind (each counted in its unit), a locked station's place
 and heading read-only with its Put on the ground off, a pin's text in
 the head with its count as it is typed (none for a read-only one or a
 station's name, which is typed in its labelled Name field in the body,

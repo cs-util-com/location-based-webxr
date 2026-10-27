@@ -11,7 +11,8 @@ import type {
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { objectLook, type ObjectLook } from "../../object-describe.js";
-import { worldBlocks, type WorldBlock } from "../../tour-document.js";
+import { worldBlocks } from "../../tour-document.js";
+import { blockTitle } from "../block-fields.js";
 
 import { stationTitle } from "../../station-run.js";
 import type {
@@ -97,14 +98,6 @@ export interface TreeInput {
   readonly layers: readonly ShellLayer[];
 }
 
-function itemTitle(item: WorldBlock): string {
-  if (item.kind === "shortText") return item.caption;
-  const caption =
-    (item.kind === "picture" ? item.caption : item.title)?.trim() ?? "";
-  if (caption !== "") return caption;
-  return item.kind === "picture" ? "Photo" : "3D model";
-}
-
 /**
  * A station's card picture: the photo of that station or the image asset
  * of the tour its `image` names, else its first photo; null without any.
@@ -150,7 +143,7 @@ export function buildTree(input: TreeInput): TreeModel {
       children: worldBlocks(station).map((item) => ({
         id: item.id,
         kind: objectLook(item.kind),
-        title: itemTitle(item),
+        title: blockTitle(item),
         selected: item.id === view.selected,
       })),
     };

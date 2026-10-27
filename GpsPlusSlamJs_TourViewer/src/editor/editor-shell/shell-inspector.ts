@@ -308,7 +308,7 @@ function blockTextField(field: BlockField): HTMLElement[] {
   if (input !== null) {
     count.id = `${input.id}-count`;
     input.setAttribute("aria-describedby", count.id);
-    wireTextCounter(input, count, field.max);
+    wireTextCounter(input, count, field.max, field.unit);
   }
   return [row, count];
 }
@@ -480,6 +480,32 @@ function stationPosition(
   ];
 }
 
+/** The blocks the station's story shows, a row each by kind and name:
+ *  listed, not edited, here (the 3D view draws none of them). */
+function storyList(model: StationModel): HTMLElement {
+  const box = el("div", "isec story");
+  const tag = el("span", "flabel", "In its story");
+  tag.id = fieldId();
+  const list = el("ul", "story-blocks");
+  list.setAttribute("aria-labelledby", tag.id);
+  for (const block of model.story) {
+    const row = el("li", "");
+    row.dataset["block"] = block.id;
+    row.append(el("span", "kind", block.kind), el("span", "name", block.title));
+    list.append(row);
+  }
+  box.append(
+    tag,
+    list,
+    el(
+      "div",
+      "note",
+      "Shown while the station's story runs; listed here, not edited here yet.",
+    ),
+  );
+  return box;
+}
+
 function stationParts(
   model: StationModel,
   state: InspectorState,
@@ -518,6 +544,7 @@ function stationParts(
     ]),
     section,
   ];
+  if (model.story.length > 0) parts.push(storyList(model));
   const p = model.position;
   if (p === null) {
     // Nothing for the lock to keep still: the note stands alone.

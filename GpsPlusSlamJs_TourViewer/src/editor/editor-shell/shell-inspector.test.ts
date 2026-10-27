@@ -202,6 +202,7 @@ describe("drawInspector", () => {
         groundOffM: null,
         position: null,
         locked: true,
+        story: [],
       },
       { folded: false, positionOpen: false },
       pictures,
@@ -212,6 +213,67 @@ describe("drawInspector", () => {
       (n) => n.textContent,
     );
     expect(notes).toContain("The file gives this station no position.");
+  });
+
+  // Why: the blocks a station's story shows stand nowhere in the 3D view,
+  // so the station's inspector is where the creator sees them: a labelled
+  // list, a row each with its kind and its name as text (a name is the
+  // file's, never markup), and no list at all for a station without a
+  // story.
+  it("lists the blocks its story shows, by kind and name, as text", () => {
+    const station = (story: { id: string; kind: string; title: string }[]) =>
+      ({
+        kind: "station",
+        title: "Unplaced",
+        sub: "Station 1 of 1",
+        place: { number: 1, count: 1 },
+        name: "Unplaced",
+        description: null,
+        imagePath: null,
+        images: [],
+        imageId: null,
+        foundRadiusM: 25,
+        activateRadiusM: 50,
+        outside: 0,
+        offGround: null,
+        groundOffM: null,
+        position: null,
+        locked: true,
+        story,
+      }) as const;
+    drawInspector(
+      dock,
+      station([
+        { id: "intro", kind: "Long text", title: "The <b>siege</b>" },
+        { id: "guard", kind: "Character", title: "The watchman" },
+      ]),
+      { folded: false, positionOpen: false },
+      pictures,
+    );
+    const list = dock.body.querySelector<HTMLElement>("ul.story-blocks");
+    expect(list).not.toBeNull();
+    const label = list?.getAttribute("aria-labelledby") ?? "";
+    expect(dock.body.querySelector(`[id="${label}"]`)?.textContent).toBe(
+      "In its story",
+    );
+    expect(
+      [...(list?.querySelectorAll("li") ?? [])].map((li) => [
+        li.dataset["block"],
+        li.querySelector(".kind")?.textContent,
+        li.querySelector(".name")?.textContent,
+      ]),
+    ).toEqual([
+      ["intro", "Long text", "The <b>siege</b>"],
+      ["guard", "Character", "The watchman"],
+    ]);
+    expect(list?.querySelector("b")).toBeNull();
+    drawInspector(
+      dock,
+      station([]),
+      { folded: false, positionOpen: false },
+      pictures,
+    );
+    expect(dock.body.querySelector("ul.story-blocks")).toBeNull();
   });
 
   it("is hidden while nothing is selected", () => {

@@ -13,6 +13,7 @@
 import {
   TOUR_BLOCK_TEXT_RULES,
   tourTextCount,
+  type TourTextUnit,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
 /** The most characters a pin's text takes. */
@@ -33,8 +34,12 @@ export function pinTextTooLong(text: string): boolean {
 
 /** A counter's line for `text` against `max`, by the format's count:
  *  "12 / 160" (every text counter of the creator pages, B2a review #4). */
-export function textCounterLine(text: string, max: number): string {
-  return `${String(tourTextCount(text))} / ${String(max)}`;
+export function textCounterLine(
+  text: string,
+  max: number,
+  unit: TourTextUnit = "codePoints",
+): string {
+  return `${String(tourTextCount(text, unit))} / ${String(max)}`;
 }
 
 /** The counter's line for `text`: "12 / 40". */
@@ -69,16 +74,18 @@ export function wirePinTextCounter(
   return wireTextCounter(field, out, PIN_TEXT_MAX_CHARS);
 }
 
-/** `wirePinTextCounter` for any text and its cap `max` (a block's
- *  fields, `editor/block-fields.ts`). */
+/** `wirePinTextCounter` for any text and its cap `max`, counted in
+ *  `unit` (a block's fields, `editor/block-fields.ts`: a long text's body
+ *  counts UTF-16 units). */
 export function wireTextCounter(
   field: PinTextField,
   out: PinTextCounterOutput,
   max: number,
+  unit: TourTextUnit = "codePoints",
 ): { update(): void } {
   const update = (): void => {
-    out.textContent = textCounterLine(field.value, max);
-    out.toggleAttribute("data-over", tourTextCount(field.value) > max);
+    out.textContent = textCounterLine(field.value, max, unit);
+    out.toggleAttribute("data-over", tourTextCount(field.value, unit) > max);
   };
   out.setAttribute("aria-live", "off");
   field.addEventListener("input", update);

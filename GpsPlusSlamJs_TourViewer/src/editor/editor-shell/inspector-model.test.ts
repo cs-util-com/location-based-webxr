@@ -133,6 +133,7 @@ describe("buildInspector", () => {
       offGround: null,
       groundOffM: null,
       locked: true,
+      story: [],
       position: {
         eastM: expect.any(Number),
         northM: expect.any(Number),
@@ -161,6 +162,60 @@ describe("buildInspector", () => {
     expect(b.northM - a.northM).toBeCloseTo((48.138 - 48.1371234) * 111_190, 0);
   });
 
+  // A station's story shows blocks that do not stand in the world (a long
+  // text, a character on its stage): the station's inspector lists them,
+  // each by its kind and its name, in the station's order, so the creator
+  // sees what the story carries though the 3D view draws none of it.
+  it("lists the blocks the station's story shows, by kind and name", () => {
+    const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
+    const show = (id: string, block: string) => ({
+      id,
+      action: { kind: "show", block },
+      advance: { mode: "tap" },
+    });
+    const storyStation = {
+      ...STATIONS[1],
+      steps: [show("s1", "intro"), show("s2", "guard")],
+      blocks: [
+        {
+          id: "intro",
+          kind: "longText",
+          view: "card",
+          title: "The siege",
+          body: "In 1632...",
+          pose: POSE,
+        },
+        {
+          id: "guard",
+          kind: "character",
+          view: "stage",
+          name: "",
+          image: "cut",
+          caption: "Halt!",
+          pose: POSE,
+        },
+        {
+          id: "unused",
+          kind: "video",
+          view: "card",
+          video: "v",
+          transcript: "x",
+          pose: POSE,
+        },
+      ],
+    } as unknown as TourStation;
+    const model = buildInspector({
+      selected: "station:b",
+      stations: [STATIONS[0]!, storyStation],
+      assets: [],
+      codes: CODES,
+    });
+    expect(model?.kind === "station" && model.story).toEqual([
+      { id: "intro", kind: "Long text", title: "The siege" },
+      { id: "guard", kind: "Character", title: "Character" },
+    ]);
+  });
+
   it("shows an item's kind, its station, its offset and its size", () => {
     expect(inspect("pin-1")).toEqual({
       kind: "item",
@@ -178,6 +233,8 @@ describe("buildInspector", () => {
           value: "",
           max: 160,
           prose: true,
+          unit: "codePoints",
+          required: false,
         },
       ],
       offset: { northM: 4, upM: 1.5, eastM: -2 },

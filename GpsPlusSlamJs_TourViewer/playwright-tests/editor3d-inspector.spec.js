@@ -776,3 +776,131 @@ test("the inspector's fields sit in place at a phone, a phone in landscape, a ta
     await expectInspectorLayout(page, size);
   }
 });
+
+test("a picture's and a model's fields are typed in the inspector, the station lists its story's blocks, and the edits survive a draft reload, a save and a new open", async ({
+  page,
+  context,
+}) => {
+  // Why: a picture's title, caption and alt text and a model's title are
+  // typed in the inspector by the format's caps; each edit must reach the
+  // shared tour document, be backed up by the draft over a reload, be
+  // written by the save and read back by a new open. The tree names an
+  // untitled picture by its kind, and a station's inspector lists the
+  // blocks its story shows (the 3D view draws none of them).
+  test.slow();
+  const zip = Buffer.from(
+    await (
+      await fetch("http://127.0.0.1:5197/ranges-ok/blocks-tour.zip")
+    ).arrayBuffer(),
+  );
+  await page.context().addInitScript(() => {
+    // @ts-expect-error - absent in this browser for the test.
+    delete window.showOpenFilePicker;
+    // @ts-expect-error - absent in this browser for the test.
+    delete window.showSaveFilePicker;
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await page.goto("/edit.html");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  await openZip(page, zip, "blocks-tour.zip");
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 60_000,
+  });
+  await selectStation(page, "gate");
+  const inspector = page.locator("#shell-inspector");
+  // The story's character, listed by kind and name.
+  const story = inspector.locator("ul.story-blocks li");
+  await expect(story.filter({ hasText: "Sir Kay" })).toHaveText(
+    "CharacterSir Kay",
+  );
+  // An untitled picture is named by its kind in the tree.
+  const card = page.locator('#tree-body .card[data-station="gate"]');
+  await expect(card.locator('[data-select="gate-knight"]')).toContainText(
+    "Picture",
+  );
+  const blockNow = async (/** @type {string} */ id) =>
+    (await stationNow(page, "gate")).blocks.find(
+      (/** @type {any} */ b) => b.id === id,
+    );
+
+  await card.locator('[data-select="gate-photo"]').click();
+  await expect.poll(() => selected(page)).toBe("gate-photo");
+  await expect(inspector.locator(".sub")).toHaveText("Picture in The gate");
+  await inspector.getByLabel("Title", { exact: true }).fill("Dusk");
+  await inspector.getByLabel("Title", { exact: true }).press("Enter");
+  await expect
+    .poll(async () => (await blockNow("gate-photo"))?.title)
+    .toBe("Dusk");
+  const alt = inspector.getByLabel("Alt text", { exact: true });
+  await alt.fill("The gate's two towers against a red sky");
+  await alt.press("Tab");
+  await expect
+    .poll(async () => (await blockNow("gate-photo"))?.alt)
+    .toBe("The gate's two towers against a red sky");
+  // The picture is now named by its title.
+  await expect(card.locator('[data-select="gate-photo"]')).toContainText(
+    "Dusk",
+  );
+
+  await card.locator('[data-select="gate-arch"]').click();
+  await expect.poll(() => selected(page)).toBe("gate-arch");
+  await expect(inspector.locator(".sub")).toHaveText("3D model in The gate");
+  const modelTitle = inspector.getByLabel("Title", { exact: true });
+  await expect(modelTitle).toHaveValue("The arch");
+  await modelTitle.fill("The castle arch");
+  await modelTitle.press("Enter");
+  await expect
+    .poll(async () => (await blockNow("gate-arch"))?.title)
+    .toBe("The castle arch");
+
+  // A reload: the draft offers the edits, and Restore brings them back.
+  await expect(page.locator("body")).toHaveAttribute("data-draft", "saved");
+  await page.reload();
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  await openZip(page, zip, "blocks-tour.zip");
+  const offer = page.locator(".toast.draft-offer");
+  await offer.locator("button", { hasText: "Restore" }).click();
+  await expect(offer).toHaveCount(0);
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 60_000,
+  });
+  expect(await blockNow("gate-photo")).toMatchObject({
+    title: "Dusk",
+    alt: "The gate's two towers against a red sky",
+    caption: "The gate at dusk",
+  });
+  expect((await blockNow("gate-arch"))?.title).toBe("The castle arch");
+
+  // Saved, and opened again in a new page: as typed.
+  const download = page.waitForEvent("download");
+  await save(page);
+  const { readFileSync } = await import("node:fs");
+  const written = readFileSync(await (await download).path());
+  const gate = (await savedTour(written)).stations.find(
+    (/** @type {any} */ s) => s.id === "gate",
+  );
+  const savedBlock = (/** @type {string} */ id) =>
+    gate.blocks.find((/** @type {any} */ b) => b.id === id);
+  expect(savedBlock("gate-photo")).toMatchObject({
+    title: "Dusk",
+    alt: "The gate's two towers against a red sky",
+  });
+  expect(savedBlock("gate-arch")).toMatchObject({ title: "The castle arch" });
+  const next = await context.newPage();
+  await answerHosts(next);
+  await next.setViewportSize({ width: 1440, height: 900 });
+  await next.goto("/edit.html");
+  await expect(next.locator("body")).toHaveAttribute("data-editor", "ready");
+  await openZip(next, written, "blocks-tour.zip");
+  await expect(next.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 60_000,
+  });
+  await next.locator('#tree-body .card[data-station="gate"] .pick').click();
+  await next
+    .locator('#tree-body .card[data-station="gate"] [data-select="gate-arch"]')
+    .click();
+  await expect(
+    next.locator("#shell-inspector").getByLabel("Title", { exact: true }),
+  ).toHaveValue("The castle arch");
+});
