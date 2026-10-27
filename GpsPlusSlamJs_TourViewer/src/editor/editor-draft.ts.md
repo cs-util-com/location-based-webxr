@@ -106,7 +106,9 @@ editor's own namespace, one tab at a time. Design:
     holds (a download clears nothing, as since E2c). A no-op for the
     key it has.
   - `backsUp()`, `close()`, `idle()`.
-  - `forget(fileKey)` - the file was refused as an older format: its
+  - `forget(fileKey)` - the file was refused as an older format (a bare
+    content key, `isTourContentKey`, deletes nothing and reads false: it
+    names the recording, which another tour may share; B2a review 4): its
     namespace (`editorDraftKey`) is emptied with `clear(META_KEY)` (the
     meta first: a reload midway finds no draft) under the draft's lock,
     released after; a tab holding the lock keeps its draft. True when a

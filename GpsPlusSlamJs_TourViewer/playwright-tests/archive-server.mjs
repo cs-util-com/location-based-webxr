@@ -664,6 +664,9 @@ async function buildV3Zip() {
       JSON.stringify({
         version: 3,
         minor: 0,
+        // Its own id, as a 3.x save wrote it: the editor kept its draft
+        // under `local-file:tour:<id>` (B2a review finding 1).
+        tourId: "OlderTour3",
         title: "An older tour",
         stations: [
           {

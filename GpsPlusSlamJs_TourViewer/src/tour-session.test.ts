@@ -1056,6 +1056,18 @@ describe("openTourFile (K0)", () => {
     await b.close();
   });
 
+  // Why (B2a review finding 1): a version-3 file's draft lives under
+  // `local-file:tour:<id>`. The key must be read from the raw `tourId`,
+  // never from a 4.0 parse of the whole tour - that parse refuses an
+  // older format, and the key fell back to the content key, so the
+  // refusal deleted no draft (or another tour's on the same recording).
+  it("keys an older-format file by its raw tourId, without parsing the tour", async () => {
+    const text = JSON.stringify({ version: 3, tourId: "OldTour_7", items: [] });
+    const bytes = await buildZip({ "tour.json": text });
+    const file = new File([bytes as BlobPart], "old.zip");
+    expect(await tourFileKeyOfFile(file)).toBe("local-file:tour:OldTour_7");
+  });
+
   it("says in plain words when the file is not a zip", async () => {
     const err = await openTourFile(
       new File(["not a zip at all"], "notes.zip"),

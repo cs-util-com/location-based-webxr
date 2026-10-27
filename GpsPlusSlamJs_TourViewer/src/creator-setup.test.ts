@@ -1119,6 +1119,18 @@ describe("a refused older tour's draft", () => {
     const { setup } = wire(memoryStore().store, { firstOpenFails: true });
     await expect(setup.forgetRefusedDraft(TOUR)).resolves.toBe(false);
   });
+
+  // Why (B2a review finding 4): a file's content key names the recording,
+  // not the tour, so another tour on the same recording may keep its
+  // draft under it; a refusal must never delete by such a key.
+  it("is kept when the refused file is known only by its content key", async () => {
+    const a = memoryStore({ [META_KEY]: "{}", [objectKey("p1")]: "{}" });
+    const { setup } = wire(a.store);
+    await expect(
+      setup.forgetRefusedDraft("local-file:0123456789abcdef0123456789abcdef"),
+    ).resolves.toBe(false);
+    expect(a.files.size).toBe(2);
+  });
 });
 
 describe("a placement reaches the draft", () => {

@@ -225,6 +225,10 @@ const K2 = "local-file:00000000000000000000000000000002";
  * under the draft's lock: a tab still editing it keeps it.
  */
 describe("a refused older file's draft", () => {
+  // A refused file is keyed by its own tour id; a bare content key is
+  // shared by every tour on the same recording (see the last test).
+  const T1 = "local-file:tour:OlderTour1";
+  const T2 = "local-file:tour:OlderTour2";
   async function seed(b: ReturnType<typeof browser>, fileKey: string) {
     const store = (await b.open(editorDraftKey(fileKey)))!;
     await store.put(META_KEY, "{}");
@@ -233,26 +237,26 @@ describe("a refused older file's draft", () => {
 
   it("is deleted, another file's is left, and whether one was there is said", async () => {
     const b = browser();
-    await seed(b, K1);
-    await seed(b, K2);
+    await seed(b, T1);
+    await seed(b, T2);
     const draft = draftIn(b);
-    await expect(draft.forget(K1)).resolves.toBe(true);
-    expect([...(b.spaces.get(editorDraftKey(K1))?.keys() ?? [])]).toEqual([]);
-    expect(b.spaces.get(editorDraftKey(K2))?.size).toBe(2);
-    await expect(draft.forget(K1), "nothing is left").resolves.toBe(false);
+    await expect(draft.forget(T1)).resolves.toBe(true);
+    expect([...(b.spaces.get(editorDraftKey(T1))?.keys() ?? [])]).toEqual([]);
+    expect(b.spaces.get(editorDraftKey(T2))?.size).toBe(2);
+    await expect(draft.forget(T1), "nothing is left").resolves.toBe(false);
     // The lock went with it: the file's draft can be held again.
-    expect((await draft.open(K1, tour(pin("a")))).backedUp).toBe(true);
+    expect((await draft.open(T1, tour(pin("a")))).backedUp).toBe(true);
   });
 
   it("is kept while another tab holds it", async () => {
     const b = browser();
-    await seed(b, K1);
+    await seed(b, T1);
     const held = locks();
     const tab = draftIn(b, held);
-    await tab.open(K1, tour(pin("a")));
+    await tab.open(T1, tour(pin("a")));
     const other = draftIn(b, held);
-    await expect(other.forget(K1)).resolves.toBe(false);
-    expect(b.spaces.get(editorDraftKey(K1))?.has(META_KEY)).toBe(true);
+    await expect(other.forget(T1)).resolves.toBe(false);
+    expect(b.spaces.get(editorDraftKey(T1))?.has(META_KEY)).toBe(true);
   });
 
   it("is none where the browser keeps no drafts", async () => {
@@ -261,7 +265,18 @@ describe("a refused older file's draft", () => {
       holdLock: locks(),
       noBackup: () => undefined,
     });
-    await expect(draft.forget(K1)).resolves.toBe(false);
+    await expect(draft.forget(T1)).resolves.toBe(false);
+  });
+
+  // Why (B2a review finding 4): a content key names the recording, not
+  // the tour - the tour kit's own files are left out of it - so another
+  // tour built on the same recording may keep its draft under it.
+  // Deleting by such a key could empty that tour's unsaved work.
+  it("is kept when the refused file is known only by its content key", async () => {
+    const b = browser();
+    await seed(b, K1);
+    await expect(draftIn(b).forget(K1)).resolves.toBe(false);
+    expect(b.spaces.get(editorDraftKey(K1))?.size).toBe(2);
   });
 });
 

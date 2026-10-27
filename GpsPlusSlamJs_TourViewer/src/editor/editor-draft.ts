@@ -91,6 +91,7 @@ import {
   writeDraftMeta,
 } from "../draft-persistence.js";
 import { createKeyedChain } from "../keyed-chain.js";
+import { isTourContentKey } from "../tour-file-key.js";
 import type { EditorLock } from "./save-target.js";
 import {
   framesOf,
@@ -725,6 +726,8 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   }
 
   async function forget(fileKey: string): Promise<boolean> {
+    // A content key may be another tour's on the same recording.
+    if (isTourContentKey(fileKey)) return false;
     const key = editorDraftKey(fileKey);
     const lock = await deps.holdLock(key).catch(() => null);
     if (lock === null || !lock.granted) return false;

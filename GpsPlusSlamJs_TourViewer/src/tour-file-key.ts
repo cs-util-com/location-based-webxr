@@ -83,6 +83,18 @@ export function isTourFileKey(key: string): boolean {
   return typeof key === "string" && key.startsWith(TOUR_FILE_KEY_PREFIX);
 }
 
+/** True for a bare content key ({@link tourFileKey}): a file known by
+ *  neither a series nor a tour id. Such a key names the RECORDING, not the
+ *  tour (the tour kit's files are left out of it), so two tours on one
+ *  recording share it - nothing may be deleted by it (B2a review 4). */
+export function isTourContentKey(key: string): boolean {
+  return (
+    isTourFileKey(key) &&
+    !key.startsWith(`${TOUR_FILE_KEY_PREFIX}series:`) &&
+    !key.startsWith(`${TOUR_FILE_KEY_PREFIX}tour:`)
+  );
+}
+
 /** The folder every name sits in (`"mytour/"`), or `""` when they do not
  *  all share one - the shape a "compress this folder" re-zip produces. */
 function sharedFolder(names: readonly string[]): string {

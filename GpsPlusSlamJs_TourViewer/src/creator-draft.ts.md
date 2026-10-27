@@ -47,6 +47,9 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     these objects: their versions in `written` are this device's own work.
     The ids (all of this load's Finishes) are kept for `uploaded`.
   - `forgetRefused(tourUrl)` - `tourUrl` was refused as an older format
+    (a bare content key, `isTourContentKey`, deletes nothing and reads
+    false: it names the recording, which another tour may share; B2a
+    review 4)
     (`archive-open.ts`): its namespace (`draftKeyForTour`) is emptied
     with `clear(META_KEY)`, the meta first so a reload midway finds no
     draft, in the meta's queue (after any write queued for it). True when

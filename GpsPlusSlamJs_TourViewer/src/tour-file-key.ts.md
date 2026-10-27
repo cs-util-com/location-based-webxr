@@ -27,6 +27,9 @@ cold-review G3: "open a file" needs its own cache and draft key).
   (`crypto.getRandomValues`), within the manifest's id rule. The tour
   document's open mints one for a tour without an id (`tour-document.ts`).
 - `isTourFileKey(key)` - true for a key made here (all three forms).
+- `isTourContentKey(key)` - true for the bare content key only (neither
+  `series:` nor `tour:`). It names the recording, not the tour, so a
+  refusal never deletes a draft by it (B2a review 4).
 - The prefix (`"local-file:"`) is module-private; `isTourFileKey` reads it.
 - `interface TourFileKeyEntry { filename; directory?; uncompressedSize; crc32? }`
   (zip.js `Entry` satisfies it).

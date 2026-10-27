@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { TOUR_ID_PATTERN } from "gps-plus-slam-app-framework/ar/tour-archive";
 
 import {
+  isTourContentKey,
   isTourFileKey,
   newTourId,
   tourFileKey,
@@ -185,5 +186,16 @@ describe("the tour id key (debug-captures plan, Q-I)", () => {
       }),
       { numRuns: 20 },
     );
+  });
+
+  // Why (B2a review finding 4): only the bare content key names a
+  // recording rather than a tour; a refusal deletes drafts by every other
+  // key, and by this one never.
+  it("tells the bare content key from a series or tour id key", async () => {
+    const content = await tourFileKey(ENTRIES);
+    expect(isTourContentKey(content)).toBe(true);
+    expect(isTourContentKey(tourIdFileKey("a1B2"))).toBe(false);
+    expect(isTourContentKey(tourSeriesFileKey("a1B2"))).toBe(false);
+    expect(isTourContentKey("https://example.test/tour.zip")).toBe(false);
   });
 });

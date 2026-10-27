@@ -47,6 +47,7 @@ import {
 } from "./draft-persistence.js";
 import type { CreatorCodes } from "./creator-codes.js";
 import { createKeyedChain } from "./keyed-chain.js";
+import { isTourContentKey } from "./tour-file-key.js";
 import {
   createdStationFrames,
   type StationFrame,
@@ -746,6 +747,8 @@ export function wireCreatorDraft(deps: {
   }
 
   function forgetRefused(tourUrl: string): Promise<boolean> {
+    // A content key may be another tour's on the same recording.
+    if (isTourContentKey(tourUrl)) return Promise.resolve(false);
     return draftWrites
       .run(metaChainKey(tourUrl), async () => {
         const store = await deps.openDraftStore(draftKeyForTour(tourUrl));
