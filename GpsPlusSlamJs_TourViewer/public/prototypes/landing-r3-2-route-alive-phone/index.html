@@ -1,0 +1,2033 @@
+<!doctype html>
+<html lang="en" data-ar="0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Make an AR Tour</title>
+<script type="importmap">
+  { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.min.js" } }
+</script>
+<style>
+:root {
+  --paper: #f4eedf;
+  --paper-2: #ebe3cf;
+  --paper-3: #ddd2b6;
+  --card: #fbf8ef;
+  --ink: #2a2824;
+  --ink-2: #57534a;
+  --ink-3: #847d70;
+  --line: #c9bea3;
+  --route: #cf4428;
+  --route-dark: #b23a22;
+  --route-soft: #f5d9cd;
+  --ok: #2f7a4c;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --gut: 16px;
+  --fmin: 13px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); -webkit-text-size-adjust: 100%; }
+body { overflow-x: hidden; }
+p, h1, h2, h3, ol, ul, figure { margin: 0; }
+button, input { font: inherit; color: inherit; }
+a { color: inherit; }
+[hidden] { display: none !important; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+html[data-ar="1"] .ar-no, html[data-ar="0"] .ar-yes { display: none; }
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font: 600 15px/1.1 var(--sans); min-height: 46px; padding: 11px 18px;
+  border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; color: var(--ink); cursor: pointer;
+}
+.btn.primary { background: var(--route); border-color: var(--route); color: #fff; }
+.btn.primary:hover { background: var(--route-dark); border-color: var(--route-dark); }
+.btn.small { min-height: 40px; padding: 8px 15px; font-size: 14px; }
+.btn:active { transform: translateY(1px); }
+.btn svg { width: 17px; height: 17px; flex: none; }
+.linkish { background: none; border: 0; padding: 4px 2px; margin: -4px 0; color: var(--ink); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.btn:focus-visible, .linkish:focus-visible, summary:focus-visible, .ar-toggle button:focus-visible, input:focus-visible { outline: 3px solid var(--route); outline-offset: 2px; }
+
+/* ---------- the story stage: sticky; copy and picture in separate cells, so a moving picture never covers text ---------- */
+.story { position: relative; height: 640svh; }
+.stage {
+  position: sticky; top: 0; height: 100svh; max-width: 1440px; margin: 0 auto;
+  display: grid; grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-areas: "top" "visit" "copy" "art" "act";
+}
+.top { grid-area: top; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 38px; padding: 4px var(--gut) 0; }
+.proto-label { font: 600 11px/1 var(--sans); letter-spacing: .02em; background: var(--ink); color: var(--paper); padding: 5px 9px; border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.proto-label .long { display: none; }
+.ar-toggle { display: flex; flex: none; border: 1.5px solid var(--ink); border-radius: 999px; padding: 2px; background: #fff; }
+.ar-toggle button { border: 0; background: none; border-radius: 999px; padding: 5px 9px; font: 600 12px/1 var(--sans); cursor: pointer; min-height: 26px; }
+.ar-toggle button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+/* the visitor's way in: one line, always at the top */
+.visit { grid-area: visit; position: relative; z-index: 6; padding: 6px var(--gut) 0; font-size: 14px; line-height: 1.4; color: var(--ink-2); }
+.visit b { color: var(--ink); }
+.visit-pop { position: absolute; left: var(--gut); right: var(--gut); top: calc(100% + 6px); max-width: 460px; background: var(--card); border: 1.5px solid var(--ink); border-radius: 10px; padding: 10px; box-shadow: 4px 4px 0 var(--paper-3); }
+.visit-pop form { display: flex; flex-wrap: wrap; gap: 8px; }
+.visit-pop input { flex: 1 1 180px; min-width: 0; font: 15px var(--sans); padding: 9px 11px; min-height: 44px; border: 1.5px solid var(--ink); border-radius: 8px; background: #fff; }
+.visit-pop .msg { margin-top: 7px; font-size: 13.5px; color: var(--ink-2); }
+.visit-pop .msg:empty { display: none; }
+.scanbtn { display: none; }
+html[data-ar="1"] .scanbtn { display: inline-flex; }
+
+.copy { grid-area: copy; display: grid; padding: 10px var(--gut) 2px; align-items: end; }
+.copy > .panel, .actions > .act { grid-area: 1 / 1; opacity: 0; visibility: hidden; transform: translateY(-5px); transition: opacity .3s ease, transform .3s ease, visibility 0s .3s; }
+.copy > .panel.on, .actions > .act.on { opacity: 1; visibility: visible; transform: none; transition: opacity .3s ease .05s, transform .3s ease .05s, visibility 0s 0s; }
+.kicker { font: 700 12px/1.25 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--route-dark); }
+.kicker .of { color: var(--ink-3); letter-spacing: .06em; }
+.panel h1, .panel h2 { font-family: var(--serif); font-weight: 600; line-height: 1.06; letter-spacing: -.01em; margin: 7px 0 8px; }
+.panel h1 { font-size: clamp(28px, 7.4vw, 56px); }
+.panel h2 { font-size: clamp(25px, 6.6vw, 46px); }
+.panel h1 em, .panel h2 em { color: var(--route); font-style: italic; }
+.lede { font-size: 16px; line-height: 1.45; color: var(--ink-2); max-width: 32em; }
+.lede b { color: var(--ink); font-weight: 650; }
+.req { margin-top: 7px; font-size: 13.5px; line-height: 1.35; color: var(--ink-2); display: flex; gap: 8px; align-items: baseline; }
+.req::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); transform: translateY(-1px); }
+html[data-ar="1"] .req::before { background: var(--ok); }
+.req b { font-weight: 600; color: var(--ink); }
+
+.art { grid-area: art; position: relative; min-height: 0; overflow: hidden; }
+.art > svg.layer, .art > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* the close views fill the cell; a soft edge lets the model fade into the paper instead of ending in a hard frame */
+#gl { opacity: 0; transition: opacity .6s ease;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 10px), transparent), linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  -webkit-mask-composite: source-in; mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 10px), transparent), linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent); mask-composite: intersect; }
+#gl.on { opacity: 1; }
+html.nomask #gl { -webkit-mask-image: none; mask-image: none; }
+#floor { transition: opacity .5s ease; }
+html.gl #floor { opacity: 0; }
+#lead { pointer-events: none; z-index: 3; }
+.tags { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.tag {
+  position: absolute; left: 0; top: 0; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  font: italic 600 12.5px/1 var(--serif); color: var(--ink); background: rgba(251, 248, 239, .94);
+  border: 1px solid var(--ink); border-radius: 999px; padding: 2px 8px 2px 2px; opacity: 0; transition: opacity .3s;
+  will-change: transform;
+}
+.tag b { font: 700 11px/1 var(--sans); font-style: normal; background: var(--route); color: #fff; border-radius: 50%; width: 18px; height: 18px; display: grid; place-items: center; }
+.tag.start { padding-left: 8px; background: var(--ink); color: var(--paper); }
+.tag.who { padding-left: 8px; font-family: var(--sans); font-style: normal; font-size: 12px; }
+.tag.who.maker { border-color: var(--route); color: var(--route-dark); }
+.tag.on { opacity: 1; }
+.hint { position: absolute; left: 12px; bottom: 10px; z-index: 2; font-size: 12.5px; color: var(--ink-3); pointer-events: none; transition: opacity .4s; }
+.stage:not([data-beat="0"]) .hint { opacity: 0; }
+
+/* ---------- the making phone: a frame whose screen shows the park at eye height ---------- */
+.mphone { position: absolute; left: 0; top: 0; width: 180px; height: 330px; z-index: 4; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .3s ease, visibility 0s .3s; }
+.mphone.on { opacity: 1; visibility: visible; transition: opacity .3s ease, visibility 0s 0s; }
+/* the bezel is a ring of box-shadow around the rounded screen, so the screen's square corners are always covered */
+.mscreen {
+  position: absolute; inset: 9px; border-radius: 19px; overflow: hidden; container-type: inline-size;
+  box-shadow: 0 0 0 9px var(--ink), 6px 7px 0 9px rgba(42, 40, 36, .18);
+}
+.mphone::after { content: ""; position: absolute; top: 3px; left: 50%; width: 30%; height: 4px; margin-left: -15%; background: #4a4740; border-radius: 2px; }
+.mscreen > * { font-size: clamp(var(--fmin), 6.6cqw, 17px); }
+.still { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+html.gl .still, html.gl .floor-only { display: none !important; }
+.cover { position: absolute; inset: 0; background: #22211e; pointer-events: none; }
+.ov { position: absolute; inset: 0; }
+.anc { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+.tcard { position: absolute; left: 0; bottom: .55em; width: min(10.2em, 84cqw); background: rgba(251, 248, 239, .97); border: 1px solid var(--ink); border-radius: .7em; padding: .5em .65em .58em; box-shadow: .2em .25em 0 rgba(42, 40, 36, .2); opacity: 0; transform: translateX(-50%); }
+.tcard.dashed { border: 1.5px dashed var(--route); }
+.tcard .t { font: 700 1.08em/1.15 var(--serif); color: var(--ink); min-height: 1.15em; }
+.tcard .b { font-size: .94em; line-height: 1.28; color: var(--ink-2); margin-top: .2em; }
+.caret { display: none; width: 1.5px; height: 1em; background: var(--route); vertical-align: -.12em; margin-left: 1px; }
+.caret.on { display: inline-block; }
+.pic { position: absolute; left: 0; top: 0; width: 38cqw; background: #fff; padding: 1.4cqw 1.4cqw 0; border: 1px solid var(--ink); box-shadow: .18em .22em 0 rgba(42, 40, 36, .2); opacity: 0; transform-origin: 50% 50%; }
+.pic svg { display: block; width: 100%; height: auto; }
+.pic .pcap { font: italic .8em/1 var(--serif); color: var(--ink-2); text-align: center; padding: .35em 0 .42em; white-space: nowrap; }
+.ghost { position: absolute; left: 0; top: 0; width: 34cqw; height: 28cqw; border: 1.5px dashed #fff; border-radius: 4px; background: rgba(28, 26, 22, .42); display: grid; place-items: center; color: #fff; font: 700 .8em/1 var(--sans); text-shadow: 0 1px 2px rgba(0, 0, 0, .5); opacity: 0; }
+.nextlbl { position: absolute; left: 0; top: 0; transform: translateX(-50%); display: flex; align-items: center; gap: .4em; white-space: nowrap; background: rgba(251, 248, 239, .97); color: var(--ink); border: 1px solid var(--ink); border-radius: 999px; padding: .4em .7em .4em .45em; font: 600 .88em/1 var(--sans); opacity: 0; }
+.nextlbl svg { width: 1.2em; height: 1.2em; flex: none; }
+.retic, .ripple, .pinF { position: absolute; left: 0; top: 0; }
+.retic { width: 34cqw; margin-left: -17cqw; margin-top: -5cqw; opacity: 0; }
+.ripple { width: 30cqw; height: 8cqw; margin-left: -15cqw; margin-top: -4cqw; border: 2.5px solid #fff; border-radius: 50%; opacity: 0; }
+.retic svg { display: block; width: 100%; height: auto; overflow: visible; }
+.pinF { width: 13cqw; margin-left: -6.5cqw; transform-origin: 50% 100%; opacity: 0; }
+.pinF svg { display: block; width: 100%; height: auto; }
+.halo { position: absolute; left: 0; top: 0; border: 3px solid #fff; outline: 1.5px solid var(--route); border-radius: 6px; opacity: 0; }
+.scanbox { position: absolute; left: 0; top: 0; opacity: 0; }
+.scanbox i { position: absolute; width: 22%; height: 18%; border: 0 solid #fff; filter: drop-shadow(0 0 1px rgba(0, 0, 0, .6)); }
+.scanbox i:nth-child(1) { left: 0; top: 0; border-width: 3px 0 0 3px; border-top-left-radius: 6px; }
+.scanbox i:nth-child(2) { right: 0; top: 0; border-width: 3px 3px 0 0; border-top-right-radius: 6px; }
+.scanbox i:nth-child(3) { left: 0; bottom: 0; border-width: 0 0 3px 3px; border-bottom-left-radius: 6px; }
+.scanbox i:nth-child(4) { right: 0; bottom: 0; border-width: 0 3px 3px 0; border-bottom-right-radius: 6px; }
+.posterF { position: absolute; left: 0; top: 0; opacity: 0; transform-origin: 50% 0; }
+.posterF svg { display: block; width: 100%; height: 100%; }
+.callout { position: absolute; left: 0; bottom: .6em; width: min(9.6em, 80cqw); transform: translateX(-50%); background: rgba(251, 248, 239, .97); border: 1px solid var(--ink); border-radius: .7em; padding: .45em .6em; font-size: .9em; line-height: 1.26; color: var(--ink-2); box-shadow: .18em .22em 0 rgba(42, 40, 36, .2); opacity: 0; }
+.callout b { display: block; color: var(--ink); font: 700 1.05em/1.15 var(--serif); }
+
+.ui { position: absolute; inset: 0; pointer-events: none; }
+.status { position: absolute; left: 0; right: 0; top: 0; height: 1.9em; display: flex; align-items: center; justify-content: space-between; padding: 0 1.25em; font: 600 .74em/1 var(--sans); color: var(--ink); }
+.status svg { height: .95em; width: auto; fill: var(--ink); }
+.hud { position: absolute; left: .55em; right: .55em; top: 2.05em; display: flex; align-items: center; gap: .4em; }
+.hud-x { flex: none; width: 2.05em; height: 2.05em; border-radius: 50%; background: rgba(28, 26, 22, .55); display: grid; place-items: center; }
+.hud-x svg { width: .82em; height: .82em; stroke: #fff; stroke-width: 2.4; fill: none; stroke-linecap: round; }
+.pill { min-width: 0; flex: 1; height: 2.05em; border-radius: 999px; background: rgba(28, 26, 22, .6); color: #fff; display: flex; align-items: center; gap: .45em; padding: 0 .75em; font: 600 .9em/1 var(--sans); white-space: nowrap; overflow: hidden; }
+.pill .dots { display: flex; gap: .26em; margin-left: auto; }
+.pill .dots i { width: .42em; height: .42em; border-radius: 50%; background: rgba(255, 255, 255, .45); }
+.pill .dots i.on { background: #fff; }
+.pill .tg { flex: none; font-size: .82em; letter-spacing: .06em; text-transform: uppercase; background: var(--route); padding: .3em .42em; border-radius: .4em; }
+.pill .tg.ok { background: var(--ok); }
+.chip { position: absolute; left: 50%; top: 4.7em; display: flex; align-items: center; gap: .4em; padding: .45em .8em; border-radius: 999px; background: var(--ok); color: #fff; font: 700 .86em/1 var(--sans); white-space: nowrap; opacity: 0; transform: translateX(-50%); }
+.sheet { position: absolute; left: .45em; right: .45em; bottom: .45em; background: rgba(251, 248, 239, .97); color: var(--ink); border: 1px solid var(--ink); border-radius: 1em; padding: .65em .7em .7em; opacity: 0; }
+.sheet .hint2 { font-size: .92em; line-height: 1.3; color: var(--ink-2); text-align: center; }
+.sbtn { display: flex; align-items: center; justify-content: center; margin-top: .5em; height: 2.45em; border-radius: 999px; background: var(--route); color: #fff; font: 700 .9em/1 var(--sans); }
+.tools { display: flex; gap: .4em; }
+.tool { flex: 1; display: flex; flex-direction: column; align-items: center; gap: .25em; padding: .42em .2em .38em; border-radius: .8em; border: 1.5px solid var(--line); font: 600 .9em/1 var(--sans); color: var(--ink-2); background: #fff; }
+.tool svg { width: 1.45em; height: 1.45em; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tool.sel { border-color: var(--route); color: var(--route-dark); background: var(--route-soft); }
+.share-row { display: flex; gap: .55em; align-items: center; }
+.share-row .qr { width: 3.3em; height: 3.3em; flex: none; }
+.share-row b { display: block; font: 700 1em/1.15 var(--serif); }
+.share-row span { display: block; font-size: .9em; line-height: 1.26; color: var(--ink-2); margin-top: .15em; }
+.share-btns { display: flex; gap: .4em; margin-top: .5em; }
+.share-btns span { flex: 1; display: flex; align-items: center; justify-content: center; height: 2.25em; border-radius: 999px; font: 700 .86em/1 var(--sans); border: 1.5px solid var(--ink); white-space: nowrap; }
+.share-btns span.p { background: var(--route); border-color: var(--route); color: #fff; }
+/* a narrow screen (a phone held sideways, a 360 px phone) keeps the essentials only */
+@container (max-width: 158px) {
+  .tcard .b, .share-row span, .share-btns span + span, .pill .dots, .hud-x, .pic .pcap { display: none; }
+  .pic { padding-bottom: 1.4cqw; }
+  .share-row .qr { width: 2.8em; height: 2.8em; }
+}
+
+/* the old photo the story starts with: lies where the phone will be */
+.polaroid { position: absolute; left: 0; top: 0; z-index: 4; width: 170px; background: #fff; border: 1px solid var(--ink); padding: 8px 8px 0; box-shadow: 5px 6px 0 rgba(42, 40, 36, .18); opacity: 0; pointer-events: none; }
+.polaroid svg { display: block; width: 100%; height: auto; }
+.polaroid figcaption { font: italic 15px/1.2 var(--serif); color: var(--ink-2); text-align: center; padding: 8px 2px 10px; }
+
+.actions { grid-area: act; display: grid; padding: 8px var(--gut) max(12px, env(safe-area-inset-bottom)); }
+.act { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; align-content: start; }
+.ease { list-style: none; padding: 0; margin: 2px 0 0; flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 3px 14px; font-size: 13px; line-height: 1.3; color: var(--ink-2); }
+.ease li { display: flex; gap: 6px; align-items: baseline; }
+.ease li::before { content: ""; flex: none; width: 10px; height: 5px; border-left: 2px solid var(--ok); border-bottom: 2px solid var(--ok); transform: translateY(-3px) rotate(-45deg); }
+.beats { display: flex; gap: 5px; align-items: center; margin-left: auto; }
+.beats i { width: 7px; height: 7px; border-radius: 50%; background: var(--paper-3); }
+.beats i.on { background: var(--route); }
+
+/* phone held sideways and wider screens: text left, picture right */
+@media (orientation: landscape) and (min-width: 600px), (min-width: 1000px) {
+  .stage {
+    grid-template-columns: minmax(300px, .8fr) minmax(0, 1.2fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto minmax(0, 1fr);
+    grid-template-areas: "top top" "visit art" ". art" "copy art" "act art" ". art";
+  }
+  .copy { padding: 8px 10px 2px 28px; }
+  .visit { padding-left: 28px; padding-right: 10px; }
+  .actions { padding: 10px 10px 16px 28px; }
+  .art { margin: 4px 0 10px; }
+}
+@media (min-width: 1000px) {
+  .proto-label .long { display: inline; }
+  .proto-label .short { display: none; }
+  .top { padding: 8px 28px 0 56px; }
+  .copy, .visit, .actions { padding-left: 56px; }
+  .visit { font-size: 15px; padding-top: 14px; }
+  .lede { font-size: 18.5px; }
+  .req { font-size: 15px; }
+  .ease { font-size: 14px; }
+  .art { margin-right: 20px; }
+}
+@media (max-height: 520px) and (orientation: landscape) {
+  .top { min-height: 32px; padding-top: 2px; }
+  .visit { font-size: 13px; padding-top: 2px; }
+  .panel h1 { font-size: 25px; margin: 4px 0 5px; }
+  .panel h2 { font-size: 24px; margin: 4px 0 5px; }
+  .lede { font-size: 14px; line-height: 1.38; }
+  .req { font-size: 12.5px; margin-top: 4px; }
+  .kicker { font-size: 11px; }
+  .actions { padding-top: 6px; padding-bottom: 8px; }
+  .btn { min-height: 40px; padding: 8px 14px; font-size: 14px; }
+  .ease { font-size: 12.5px; }
+  .polaroid { width: 130px; }
+}
+
+/* ---------- below the story ---------- */
+.sec { max-width: 1100px; margin: 0 auto; padding: 56px var(--gut) 18px; }
+.sec-head { max-width: 40em; margin-bottom: 18px; }
+.sec h2 { font: 600 clamp(27px, 6.6vw, 42px)/1.08 var(--serif); margin: 6px 0 8px; letter-spacing: -.01em; }
+.sec h2 em { color: var(--route); font-style: italic; }
+.sec-sub { font-size: 16px; line-height: 1.5; color: var(--ink-2); }
+
+/* setup: the steps hang on a dotted route, one under another, each opens for more */
+.steps { list-style: none; padding: 0; margin: 0; max-width: 46em; position: relative; }
+.steps::before { content: ""; position: absolute; left: 15px; top: 22px; bottom: 30px; width: 4px; background: radial-gradient(circle, var(--route) 1.6px, transparent 2px) 50% 0 / 4px 9px repeat-y; opacity: .75; }
+.steps > li { position: relative; }
+.steps summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 34px minmax(0, 1fr) 22px; gap: 2px 14px; padding: 14px 2px 14px 0; align-items: start; }
+.steps summary::-webkit-details-marker { display: none; }
+.steps .pin { position: relative; width: 34px; height: 34px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--card); border: 2px solid var(--route); display: grid; place-items: center; margin-top: 1px; }
+.steps .pin span { transform: rotate(45deg); font: 700 14px/1 var(--sans); color: var(--route-dark); }
+.steps details[open] .pin { background: var(--route); }
+.steps details[open] .pin span { color: #fff; }
+.steps h3 { font: 600 19px/1.25 var(--serif); color: var(--ink); padding-top: 5px; }
+.steps .short { grid-column: 2; font-size: 15.5px; line-height: 1.45; color: var(--ink-2); }
+.steps .where { grid-column: 2; font-size: 13.5px; line-height: 1.35; color: var(--ink-3); margin-top: 2px; }
+.steps .where.need { color: var(--route-dark); }
+html[data-ar="1"] .steps .where.need { color: var(--ok); }
+.steps .chev { grid-column: 3; grid-row: 1; width: 22px; height: 22px; margin-top: 6px; stroke: var(--ink-2); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .25s; }
+.steps details[open] .chev { transform: rotate(180deg); }
+.steps .more { padding: 0 0 16px 48px; font-size: 15px; line-height: 1.5; color: var(--ink-2); }
+.steps .more p + p { margin-top: 8px; }
+.later { display: inline-block; font: 700 11px/1 var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--ok); border: 1.5px solid var(--ok); border-radius: 999px; padding: 4px 7px; margin-left: 6px; vertical-align: 2px; }
+.setup-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 18px; }
+.fine { font-size: 13.5px; color: var(--ink-3); }
+.returning { margin-top: 16px; font-size: 15px; color: var(--ink-2); }
+
+/* ideas: each a small model-like scene with a phone showing what the tour adds */
+.ideas { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
+.idea { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 13px; align-items: start; }
+.idea svg { display: block; width: 100%; height: auto; border-radius: 8px; border: 1.5px solid var(--ink); background: #e9ece2; }
+.idea h3 { font: 600 17.5px/1.22 var(--serif); color: var(--ink); margin-top: 2px; }
+.idea p { font-size: 14.5px; line-height: 1.42; color: var(--ink-2); margin-top: 3px; }
+.idea .who { font: 700 12px/1.2 var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-top: 0; }
+@media (min-width: 640px) {
+  .ideas { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 26px; }
+  .idea { grid-template-columns: 150px minmax(0, 1fr); }
+}
+@media (min-width: 1000px) {
+  .sec { padding-top: 76px; }
+  .sec-sub { font-size: 18px; }
+  .ideas { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .idea { grid-template-columns: 1fr; gap: 10px; }
+}
+
+footer { max-width: 1100px; margin: 0 auto; padding: 40px var(--gut) 40px; font-size: 14px; color: var(--ink-3); }
+footer nav { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 18px; }
+footer nav a { color: var(--ink-2); }
+details.notes { border: 1px dashed var(--line); border-radius: 10px; background: var(--card); }
+details.notes summary { cursor: pointer; padding: 12px 14px; font: 600 14px var(--sans); color: var(--ink-2); }
+details.notes .nb { padding: 0 16px 16px; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+details.notes h3 { font: 700 13px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--ink); margin: 14px 0 4px; }
+details.notes ul { padding-left: 18px; }
+details.notes li { margin: 3px 0; }
+details.notes code { font-size: 13px; }
+
+.toast { position: fixed; left: 50%; bottom: 18px; z-index: 90; transform: translate(-50%, 30px); opacity: 0; background: var(--ink); color: var(--paper); padding: 11px 16px; border-radius: 14px; font-size: 14.5px; line-height: 1.4; width: max-content; max-width: min(30em, calc(100vw - 32px)); text-align: center; transition: opacity .25s, transform .3s; pointer-events: none; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+
+<section class="story" id="story" aria-label="A tour, seen and made">
+  <div class="stage" id="stage" data-beat="0">
+    <div class="top">
+      <span class="proto-label"><span class="short">Prototype R3-2</span><span class="long">Prototype R3-2 - The route, and the phone that makes it</span></span>
+      <div class="ar-toggle" role="group" aria-label="Fake this device's AR support">
+        <button type="button" data-ar-set="auto" id="arAuto" aria-pressed="true">Device</button>
+        <button type="button" data-ar-set="1" aria-pressed="false">AR phone</button>
+        <button type="button" data-ar-set="0" aria-pressed="false">No AR</button>
+      </div>
+    </div>
+
+    <!-- the visitor's way in comes first: someone holding a code or a link gets straight in -->
+    <div class="visit">
+      <p><b>Here to walk a tour?</b> <span class="ar-no">Scan its code with an Android phone, or</span><span class="ar-yes">Scan its code with this phone's camera, or</span> <button type="button" class="linkish" id="visitToggle" aria-expanded="false" aria-controls="visitPop">paste its link</button>.</p>
+      <div class="visit-pop" id="visitPop" hidden>
+        <form id="visitForm" novalidate>
+          <label class="vh" for="visitIn">Tour link</label>
+          <input id="visitIn" type="url" inputmode="url" placeholder="https://" autocomplete="off" spellcheck="false">
+          <button type="submit" class="btn small">Open</button>
+          <button type="button" class="btn small scanbtn" id="scanBtn">Scan the code</button>
+        </form>
+        <p class="msg" id="visitMsg" role="status" aria-live="polite"></p>
+      </div>
+    </div>
+
+    <div class="copy" id="copy">
+      <div class="panel on" data-b="0">
+        <p class="kicker">AR tours, on your phone, on site</p>
+        <h1>You have a story to tell, <em>or something to show.</em></h1>
+        <p class="lede">We give you the tools so your visitors experience it in the real world, right where it happened. <b>Make a tour yourself, without programming.</b></p>
+        <p class="req"><span>Needs an Android phone with Chrome (AR). <b class="ar-yes">This phone has it.</b></span></p>
+      </div>
+      <div class="panel" data-b="1">
+        <p class="kicker">What a visitor sees</p>
+        <h2>They hold up the phone. <em>The story is right there.</em></h2>
+        <p class="lede">At the mill, a few lines and an old photo float on the spot where the tour's maker put them. Then the next station shows the way.</p>
+      </div>
+      <div class="panel" data-b="2">
+        <p class="kicker">What making one looks like <span class="of">1 of 5</span></p>
+        <h2>Start with a story <em>you know.</em></h2>
+        <p class="lede">The old mill turned here for a hundred years, and you still have the photo.</p>
+      </div>
+      <div class="panel" data-b="3">
+        <p class="kicker">What making one looks like <span class="of">2 of 5</span></p>
+        <h2>Walk there <em>with your phone.</em></h2>
+        <p class="lede">Stand where it happened and tap. A station drops onto that spot.</p>
+      </div>
+      <div class="panel" data-b="4">
+        <p class="kicker">What making one looks like <span class="of">3 of 5</span></p>
+        <h2>Add words <em>and pictures.</em></h2>
+        <p class="lede">Type a few lines, add the old photo. They stay on that spot.</p>
+      </div>
+      <div class="panel" data-b="5">
+        <p class="kicker">Then, along the walk</p>
+        <h2>The same <em>at every spot.</em></h2>
+        <p class="lede">Walk your route once and place a station wherever there is something to tell.</p>
+      </div>
+      <div class="panel" data-b="6">
+        <p class="kicker">What making one looks like <span class="of">4 of 5</span></p>
+        <h2>Hang a code <em>where the walk begins.</em></h2>
+        <p class="lede">When the tour is ready, print its code and hang it at the start. While you build, you do not need it.</p>
+      </div>
+      <div class="panel" data-b="7">
+        <p class="kicker">What making one looks like <span class="of">5 of 5</span></p>
+        <h2>Visitors scan it. <em>Your stations appear.</em></h2>
+        <p class="lede">They scan the code at the start and walk. Each station appears on its spot, one after another.</p>
+      </div>
+    </div>
+
+    <div class="art" id="art">
+      <svg class="layer" id="floor" role="img" aria-label="A small model park with a mill, a pond and trees. A dotted route links a code at the start with five numbered stations."></svg>
+      <canvas id="gl" aria-hidden="true"></canvas>
+      <div class="tags" id="tags" aria-hidden="true"></div>
+      <svg class="layer" id="lead" aria-hidden="true"><line id="leadLine" x1="0" y1="0" x2="0" y2="0" stroke="#2a2824" stroke-width="1.3" stroke-dasharray="4 4" opacity="0"/><circle id="leadDot" r="3" fill="#2a2824" opacity="0"/></svg>
+
+      <figure class="polaroid" id="polaroid" aria-hidden="true">
+        <svg viewBox="0 0 120 90"><rect width="120" height="90" fill="#d8c19c"/><rect width="120" height="44" fill="#e6d6b8"/><path d="M26 76 V40 L58 20 L90 40 V76 Z" fill="#b59c74"/><path d="M22 42 L58 17 L94 42" fill="none" stroke="#6b5538" stroke-width="3"/><circle cx="22" cy="60" r="14" fill="none" stroke="#5d4a33" stroke-width="2.6"/><path d="M22 46 V74 M8 60 H36 M12 50 L32 70 M32 50 L12 70" stroke="#5d4a33" stroke-width="1.2"/><g fill="#6f5a3c"><rect x="44" y="48" width="7" height="9"/><rect x="70" y="48" width="7" height="9"/><path d="M54 76 V64 A5 5 0 0 1 64 64 V76 Z"/></g><rect y="76" width="120" height="14" fill="#c6ab82"/><rect width="120" height="90" fill="none" stroke="#000" stroke-opacity=".08" stroke-width="6"/></svg>
+        <figcaption>The mill, 1910</figcaption>
+      </figure>
+
+      <div class="mphone" id="mphone" aria-hidden="true">
+        <div class="mscreen" id="mscreen">
+          <!-- drawn stills: what the screen shows where 3D is not available -->
+          <svg class="still" data-still="mill" viewBox="0 0 100 190" preserveAspectRatio="xMidYMid slice">
+            <rect width="100" height="190" fill="#dfe7e3"/>
+            <path d="M-4 112 C 20 104 60 106 104 110 V190 H-4Z" fill="#d3cfa6"/>
+            <path d="M0 118 C 18 116 28 122 40 119" stroke="#b8cbc3" stroke-width="5" fill="none"/>
+            <rect x="54" y="80" width="52" height="34" fill="#efe7d4" stroke="#2a2824" stroke-width=".7"/>
+            <path d="M50 82 L80 61 L110 82 Z" fill="#a49a86" stroke="#2a2824" stroke-width=".7"/>
+            <rect x="62" y="90" width="7" height="9" fill="#6c665b"/><rect x="84" y="99" width="8" height="15" fill="#6c665b"/>
+            <circle cx="47" cy="99" r="14" fill="none" stroke="#8f7457" stroke-width="2.4"/>
+            <path d="M47 85 V113 M33 99 H61 M37 89 L57 109 M57 89 L37 109" stroke="#8f7457" stroke-width="1"/>
+            <circle cx="12" cy="92" r="13" fill="#a7ae7c"/><path d="M12 105 V116" stroke="#8a735a" stroke-width="2.4"/>
+            <path d="M22 118 L28 82 L34 118Z" fill="#8c9a6c"/>
+            <path d="M30 190 L74 190 L50 116 L46 116 Z" fill="#f6f1e3"/>
+            <circle cx="88" cy="128" r="9" fill="#a7ae7c"/><path d="M88 137 V146" stroke="#8a735a" stroke-width="2"/>
+          </svg>
+          <svg class="still" data-still="poster" viewBox="0 0 100 190" preserveAspectRatio="xMidYMid slice">
+            <rect width="100" height="190" fill="#dfe7e3"/>
+            <path d="M-4 116 C 30 110 70 112 104 116 V190 H-4Z" fill="#d3cfa6"/>
+            <circle cx="12" cy="96" r="15" fill="#a7ae7c"/><path d="M12 111 V122" stroke="#8a735a" stroke-width="2.4"/>
+            <path d="M80 122 L88 80 L96 122Z" fill="#8c9a6c"/>
+            <rect x="60" y="88" width="30" height="26" fill="#efe7d4" stroke="#2a2824" stroke-width=".6"/><path d="M57 90 L75 76 L93 90Z" fill="#b8a48a" stroke="#2a2824" stroke-width=".6"/>
+            <path d="M14 190 L86 190 L58 118 L42 118 Z" fill="#f6f1e3"/>
+          </svg>
+          <div class="ov">
+            <div class="anc" id="aRet"><div class="retic"><svg viewBox="0 0 100 30"><ellipse cx="50" cy="15" rx="44" ry="11" fill="rgba(255,255,255,.2)" stroke="#fff" stroke-width="2.4" stroke-dasharray="7 6"/><path d="M2 15h8M98 15h-8M50 1v5M50 29v-5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><circle cx="50" cy="15" r="2.6" fill="#fff"/></svg></div><div class="ripple"></div></div>
+            <div class="anc floor-only" id="aPinF"><div class="pinF"><svg viewBox="0 0 26 92"><ellipse cx="13" cy="89" rx="9" ry="2.6" fill="rgba(42,40,36,.25)"/><path d="M13 30 V88" stroke="#2a2824" stroke-width="1.6"/><path d="M13 32 L4 16 A 11 11 0 1 1 22 16 Z" fill="#cf4428"/><circle cx="13" cy="11" r="4.2" fill="#fff"/></svg></div></div>
+            <div class="anc floor-only" id="aPosterF"><div class="posterF"><svg viewBox="0 0 40 70" preserveAspectRatio="none"><rect x="18" y="40" width="4" height="30" fill="#a88c6c"/><rect x="0" y="0" width="40" height="46" fill="#fff" stroke="#2a2824" stroke-width="1"/><rect x="0" y="0" width="40" height="7" fill="#cf4428"/><use href="#qrSym" x="8" y="12" width="24" height="24"/></svg></div></div>
+            <div class="anc" id="aHalo"><div class="halo"></div><div class="scanbox"><i></i><i></i><i></i><i></i></div></div>
+            <div class="anc" id="aPic"><div class="ghost">+ Picture</div><div class="pic">
+              <svg viewBox="0 0 120 90" aria-hidden="true"><rect width="120" height="90" fill="#d8c19c"/><rect width="120" height="44" fill="#e6d6b8"/><path d="M26 76 V40 L58 20 L90 40 V76 Z" fill="#b59c74"/><path d="M22 42 L58 17 L94 42" fill="none" stroke="#6b5538" stroke-width="3"/><circle cx="22" cy="60" r="14" fill="none" stroke="#5d4a33" stroke-width="2.6"/><path d="M22 46 V74 M8 60 H36 M12 50 L32 70 M32 50 L12 70" stroke="#5d4a33" stroke-width="1.2"/><g fill="#6f5a3c"><rect x="44" y="48" width="7" height="9"/><rect x="70" y="48" width="7" height="9"/><path d="M54 76 V64 A5 5 0 0 1 64 64 V76 Z"/></g><rect y="76" width="120" height="14" fill="#c6ab82"/></svg>
+              <div class="pcap">The mill, 1910</div></div></div>
+            <div class="anc" id="aCard"><div class="tcard"><div class="t"><span id="ct">The old mill</span><span class="caret"></span></div><div class="b">Built in 1820. The stream still runs below.</div></div></div>
+            <div class="anc" id="aCall"><div class="callout"><b>Your tour's code</b>Hung where the walk begins.</div></div>
+            <div class="anc" id="aNext"><div class="nextlbl"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="10" fill="#cf4428"/><path d="M6 10h7M10 6.5 13.5 10 10 13.5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Next: the old oak</div></div>
+          </div>
+          <div class="ui">
+            <div class="status"><span>10:24</span><span><svg viewBox="0 0 34 12"><path d="M0 9h3v3H0zM5 6h3v6H5zM10 3h3v9h-3zM15 0h3v12h-3z"/><rect x="21" y="1" width="11" height="10" rx="2" fill="none" stroke="#2a2824" stroke-width="1.4"/><rect x="23" y="3" width="6.5" height="6" rx=".8"/></svg></span></div>
+            <div class="hud"><span class="hud-x"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8"/></svg></span><span class="pill" id="pill"></span></div>
+            <div class="chip" id="chip">Tour found: Mill Park</div>
+            <div class="sheet" id="shPlace"><p class="hint2">Stand where it happened</p><span class="sbtn" id="placeBtn">Place here</span></div>
+            <div class="sheet" id="shTools"><div class="tools"><span class="tool sel" id="tText"><svg viewBox="0 0 24 24"><path d="M5 6h14M12 6v13M9 19h6"/></svg>Text</span><span class="tool" id="tPic"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4 3 2.5 3-3 5 4"/></svg>Picture</span></div></div>
+            <div class="sheet" id="shShare"><div class="share-row"><svg class="qr" viewBox="0 0 25 25" aria-hidden="true"><use href="#qrSym" width="25" height="25"/></svg><div><b>Mill Park is ready</b><span>Print its code. Hang it where the walk begins.</span></div></div><div class="share-btns"><span class="p" id="printBtn">Print the code</span><span>Copy link</span></div></div>
+          </div>
+          <div class="cover" id="cover"></div>
+        </div>
+      </div>
+
+      <p class="hint" id="hint">Scroll: what a visitor sees, then how it is made</p>
+    </div>
+
+    <div class="actions">
+      <div class="act on" data-a="0">
+        <a class="btn primary" href="#setup" id="makeBtn">Make your tour</a>
+        <button type="button" class="btn" id="tryBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M12 8.5v5M9.5 11h5"/></svg>Try it here</button>
+        <ul class="ease" aria-label="Why it is easy">
+          <li>Nothing to install</li>
+          <li>It runs in the browser</li>
+          <li>No code to print while you build: hang it when the tour is ready</li>
+        </ul>
+      </div>
+      <div class="act" data-a="1">
+        <a class="btn primary small" href="#setup" id="makeBtn2">Make your tour</a>
+        <a class="linkish" href="#setup" id="skipBtn">Skip to the steps</a>
+        <span class="beats" id="beats" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<main>
+<section class="sec" id="setup" aria-labelledby="setupH">
+  <div class="sec-head">
+    <p class="kicker">Make your tour</p>
+    <h2 id="setupH">Six steps, <em>one after another.</em></h2>
+    <p class="sec-sub">Start on any computer. The walk happens on site, with an Android phone with Chrome. Nothing is printed while you build: the code comes last, when the tour is ready. Open a step to read more.</p>
+  </div>
+  <ol class="steps">
+    <li><details>
+      <summary><span class="pin"><span>1</span></span><h3>Where your tour's file is stored</h3><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="short">Your tour is one small file, kept in storage you already have.</span><span class="where">On any computer</span></summary>
+      <div class="more">
+        <p>Google Drive, Dropbox, OneDrive, GitHub or your own server. The setup gives you an empty starter tour to put there.</p>
+        <p>The file stays yours. Once a visitor's phone has loaded the tour, it keeps working without signal.</p>
+      </div>
+    </details></li>
+    <li><details>
+      <summary><span class="pin"><span>2</span></span><h3>The link that opens your tour</h3><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="short">Paste the file's share link once. It is what your code will open.</span><span class="where">On any computer</span></summary>
+      <div class="more">
+        <p>The page checks the link right away. When you change the tour later, you replace the file, and the link and the code stay the same.</p>
+      </div>
+    </details></li>
+    <li><details>
+      <summary><span class="pin"><span>3</span></span><h3>Walk the route and place your stations</h3><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="short">At each spot: stand there, tap to place, add a few lines and a picture.</span><span class="where need"><span class="ar-no">On site, with an Android phone with Chrome</span><span class="ar-yes">On site: this phone can do it</span></span></summary>
+      <div class="more">
+        <p>This is the walk the story above shows. You can start right away, without a printed code: placing works anywhere along the walk.</p>
+        <p>Words can be changed later, on a computer.</p>
+      </div>
+    </details></li>
+    <li><details>
+      <summary><span class="pin"><span>4</span></span><h3>Save the tour and put the file back</h3><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="short">When you finish the walk, the tour is saved on your phone. It replaces the file in your storage.</span><span class="where">From your phone or a computer</span></summary>
+      <div class="more">
+        <p>The page shows how, for the storage you chose in step 1. The link does not change.</p>
+      </div>
+    </details></li>
+    <li><details>
+      <summary><span class="pin"><span>5</span></span><h3>Print the code <span class="later">When ready</span></h3><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="short">A PDF with your tour's code, printed at actual size.</span><span class="where">On any computer, then a printer</span></summary>
+      <div class="more">
+        <p>Printing can come after the walk, whenever the tour is ready. Each page has a 10 cm bar to check the size.</p>
+      </div>
+    </details></li>
+    <li><details>
+      <summary><span class="pin"><span>6</span></span><h3>Hang it where the walk begins <span class="later">When ready</span></h3><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="short">Flat on a wall or a post, at about chest height.</span><span class="where">On site</span></summary>
+      <div class="more">
+        <p>Pick a spot a phone can see squarely from about a metre away. Visitors scan it there to open the tour.</p>
+      </div>
+    </details></li>
+  </ol>
+  <div class="setup-foot">
+    <button type="button" class="btn primary" id="startBtn">Start with step 1</button>
+    <span class="fine">No sign-up, no account.</span>
+  </div>
+  <p class="returning">You already have a tour? <button type="button" class="linkish" id="editBtn"><span class="ar-no">Open the editor</span><span class="ar-yes">Continue building it on site</span></button></p>
+</section>
+
+<section class="sec" id="ideas" aria-labelledby="ideasH">
+  <div class="sec-head">
+    <p class="kicker">Ideas, if you want them</p>
+    <h2 id="ideasH">What people <em>make with it.</em></h2>
+    <p class="sec-sub">Each is a tour like Mill Park: stations on real spots, seen through a phone.</p>
+  </div>
+  <ul class="ideas">
+    <li class="idea">
+      <svg viewBox="0 0 160 110" role="img" aria-label="Through the phone, the collapsed castle tower stands again on its stump">
+        <path d="M0 74 L44 66 L96 70 L160 64 V110 H0Z" fill="#d3cfa6"/><path d="M0 110 L60 82 L160 96 V110Z" fill="#c4bf94"/>
+        <path d="M14 74 V50 h5 v-4 h5 v4 h5 v-4 h5 v4 h5 V74Z" fill="#d8cfba" stroke="#2a2824" stroke-width=".8"/>
+        <path d="M44 72 V56 l4 -3 l3 4 l4 -6 l3 5 l3 -2 V72Z" fill="#c9bea3" stroke="#2a2824" stroke-width=".8"/>
+        <rect x="88" y="6" width="56" height="100" rx="9" fill="#2a2824"/><rect x="92" y="12" width="48" height="88" rx="6" fill="#dfe7e3"/>
+        <path d="M92 74 L116 70 L140 72 V100 H92Z" fill="#d3cfa6"/>
+        <path d="M104 72 V36 h4 v-4 h4 v4 h4 v-4 h4 v4 h4 v-4 h4 V72Z" fill="#efe7d4" stroke="#cf4428" stroke-width="1"/><path d="M102 32 L116 20 L130 32Z" fill="#a49a86" stroke="#cf4428" stroke-width="1"/><rect x="113" y="46" width="6" height="9" rx="3" fill="#6c665b"/>
+        <path d="M108 72 V60 l4 -3 l3 4 l4 -6 l3 5 l3 -2 V72Z" fill="#c9bea3"/>
+      </svg>
+      <div><p class="who">A heritage group</p><h3>The tower stands again</h3><p>At the castle ruin, a visitor holds up the phone and the collapsed tower stands on its stump again, as it once was.</p></div>
+    </li>
+    <li class="idea">
+      <svg viewBox="0 0 160 110" role="img" aria-label="Through the phone, a clue card with a question mark floats above a park bench">
+        <path d="M0 72 H160 V110 H0Z" fill="#d3cfa6"/><circle cx="22" cy="44" r="18" fill="#a7ae7c"/><path d="M22 62 V74" stroke="#8a735a" stroke-width="3"/>
+        <path d="M34 78 h44 M34 72 h44" stroke="#a88c6c" stroke-width="4"/><path d="M38 78 v10 M74 78 v10" stroke="#2a2824" stroke-width="2"/>
+        <rect x="88" y="6" width="56" height="100" rx="9" fill="#2a2824"/><rect x="92" y="12" width="48" height="88" rx="6" fill="#dfe7e3"/>
+        <path d="M92 72 H140 V100 H92Z" fill="#d3cfa6"/><path d="M96 80 h40 M96 75 h40" stroke="#a88c6c" stroke-width="3"/>
+        <rect x="100" y="30" width="32" height="30" rx="3" fill="#fbf8ef" stroke="#2a2824" stroke-width=".8"/><text x="116" y="52" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="19" fill="#cf4428">?</text><path d="M116 60 V72" stroke="#2a2824" stroke-width="1"/>
+      </svg>
+      <div><p class="who">A parent</p><h3>A birthday treasure hunt</h3><p>Six clues across the park. Each one floats where the last answer pointed, and its answer says where to go next.</p></div>
+    </li>
+    <li class="idea">
+      <svg viewBox="0 0 160 110" role="img" aria-label="Through the phone, an empty shop window holds a painting">
+        <rect width="160" height="110" fill="#e6ddc8"/><rect y="10" width="160" height="10" fill="#a49a86"/><rect x="8" y="30" width="44" height="54" fill="#57534a"/><rect x="58" y="36" width="20" height="48" fill="#a88c6c"/><rect y="84" width="160" height="26" fill="#d8cfba"/>
+        <rect x="88" y="6" width="56" height="100" rx="9" fill="#2a2824"/><rect x="92" y="12" width="48" height="88" rx="6" fill="#e6ddc8"/>
+        <rect x="92" y="28" width="48" height="56" fill="#57534a"/><rect x="92" y="84" width="48" height="16" fill="#d8cfba"/>
+        <rect x="100" y="36" width="32" height="40" fill="#c39a3c"/><rect x="103" y="39" width="26" height="34" fill="#e8b65a"/><circle cx="122" cy="47" r="4" fill="#f4e3b0"/><path d="M103 73 V62 l7 -6 l6 5 l5 -8 l8 7 V73Z" fill="#4f7a8c"/>
+      </svg>
+      <div><p class="who">A group of painters</p><h3>Paintings in empty shop windows</h3><p>A walk down a street of empty shops. Through the phone, each window holds a painting, there for whoever looks.</p></div>
+    </li>
+    <li class="idea">
+      <svg viewBox="0 0 160 110" role="img" aria-label="Indoors, through the phone, a card beside a framed painting tells more about it">
+        <rect width="160" height="110" fill="#efe9dc"/><rect y="86" width="160" height="24" fill="#c9bea3"/><rect x="18" y="26" width="42" height="50" fill="#a88c6c"/><rect x="22" y="30" width="34" height="42" fill="#5a6f7e"/><circle cx="39" cy="45" r="7" fill="#e2c9a4"/><path d="M27 72 q12 -18 24 0Z" fill="#3a3a52"/><rect x="32" y="80" width="14" height="3" fill="#fff"/>
+        <rect x="88" y="6" width="56" height="100" rx="9" fill="#2a2824"/><rect x="92" y="12" width="48" height="88" rx="6" fill="#efe9dc"/>
+        <rect x="94" y="34" width="22" height="30" fill="#a88c6c"/><rect x="96" y="36" width="18" height="26" fill="#5a6f7e"/><circle cx="105" cy="45" r="4" fill="#e2c9a4"/>
+        <rect x="112" y="28" width="26" height="34" rx="2" fill="#fbf8ef" stroke="#cf4428" stroke-width="1"/><rect x="115" y="32" width="15" height="2.4" fill="#2a2824"/><rect x="115" y="37" width="20" height="1.6" fill="#847d70"/><rect x="115" y="41" width="18" height="1.6" fill="#847d70"/><rect x="115" y="45" width="19" height="1.6" fill="#847d70"/><rect x="115" y="50" width="12" height="9" fill="#d8cfba"/><path d="M116 58 q3 -6 6 0" stroke="#57534a" stroke-width=".7" fill="none"/>
+        <rect x="92" y="86" width="48" height="14" fill="#c9bea3"/>
+      </svg>
+      <div><p class="who">A small museum</p><h3>More about every painting</h3><p>Indoors, beside each painting or object on show, the phone tells what the label leaves out: the sketch beneath it, the story behind it.</p></div>
+    </li>
+    <li class="idea">
+      <svg viewBox="0 0 160 110" role="img" aria-label="Through the phone, the artist's first sketch hangs beside a sculpture on a lawn">
+        <path d="M0 74 H160 V110 H0Z" fill="#d3cfa6"/><circle cx="18" cy="48" r="16" fill="#a7ae7c"/><rect x="40" y="74" width="20" height="8" fill="#d8cfba" stroke="#2a2824" stroke-width=".7"/><path d="M44 74 C 38 54 60 52 52 36 C 64 44 64 62 56 74Z" fill="#a88c6c" stroke="#2a2824" stroke-width=".7"/>
+        <rect x="88" y="6" width="56" height="100" rx="9" fill="#2a2824"/><rect x="92" y="12" width="48" height="88" rx="6" fill="#dfe7e3"/>
+        <path d="M92 76 H140 V100 H92Z" fill="#d3cfa6"/><path d="M116 76 C 110 58 128 56 122 42 C 132 50 132 64 126 76Z" fill="#a88c6c"/>
+        <g transform="rotate(-6 106 40)"><rect x="95" y="26" width="22" height="28" fill="#fffdf6" stroke="#cf4428" stroke-width="1"/><path d="M101 50 C 97 40 109 38 105 31 C 112 35 112 44 108 50Z" fill="none" stroke="#57534a" stroke-width=".9"/></g>
+      </svg>
+      <div><p class="who">An open-air exhibition</p><h3>A sculpture path</h3><p>Beside each sculpture in the park, the artist's first sketch, and one line on how the work came about.</p></div>
+    </li>
+    <li class="idea">
+      <svg viewBox="0 0 160 110" role="img" aria-label="Through the phone, a photo of a frog the class found floats above the pond">
+        <path d="M0 62 H160 V110 H0Z" fill="#d3cfa6"/><ellipse cx="50" cy="86" rx="46" ry="14" fill="#b8cbc3" stroke="#d8cfba" stroke-width="2"/><path d="M8 78 V58 M12 80 V62 M74 80 V60" stroke="#8c9a6c" stroke-width="2"/>
+        <rect x="88" y="6" width="56" height="100" rx="9" fill="#2a2824"/><rect x="92" y="12" width="48" height="88" rx="6" fill="#dfe7e3"/>
+        <path d="M92 66 H140 V100 H92Z" fill="#d3cfa6"/><ellipse cx="116" cy="86" rx="26" ry="10" fill="#b8cbc3"/>
+        <rect x="102" y="28" width="28" height="28" fill="#fff" stroke="#cf4428" stroke-width="1"/><rect x="104" y="30" width="24" height="19" fill="#a9c0a0"/><ellipse cx="116" cy="43" rx="8" ry="4.4" fill="#5f8a3c"/><circle cx="112.5" cy="38.5" r="2" fill="#5f8a3c"/><circle cx="119.5" cy="38.5" r="2" fill="#5f8a3c"/><path d="M116 56 V78" stroke="#fff" stroke-width="1.2"/>
+      </svg>
+      <div><p class="who">A school class</p><h3>The pond life trail</h3><p>At each stop on the bank, the photo of what the class found there, right above the water.</p></div>
+    </li>
+    <li class="idea">
+      <svg viewBox="0 0 160 110" role="img" aria-label="Through the phone, a photo of the flower bed in summer floats above the bare winter bed">
+        <path d="M0 70 H160 V110 H0Z" fill="#d8d4b8"/><path d="M8 84 h70 l-6 10 h-58Z" fill="#a88c6c"/><path d="M18 84 v-8 M30 84 v-6 M44 84 v-9 M58 84 v-7 M68 84 v-5" stroke="#8a735a" stroke-width="1.6"/>
+        <rect x="88" y="6" width="56" height="100" rx="9" fill="#2a2824"/><rect x="92" y="12" width="48" height="88" rx="6" fill="#e3e8e4"/>
+        <path d="M92 74 H140 V100 H92Z" fill="#d8d4b8"/><path d="M96 86 h40 l-4 7 h-32Z" fill="#a88c6c"/>
+        <rect x="100" y="26" width="32" height="34" fill="#fff" stroke="#cf4428" stroke-width="1"/><rect x="102" y="28" width="28" height="24" fill="#b9cf9c"/><g fill="#cf4428"><circle cx="108" cy="38" r="3"/><circle cx="116" cy="34" r="3.2"/><circle cx="124" cy="39" r="3"/><circle cx="112" cy="45" r="2.6"/><circle cx="121" cy="46" r="2.8"/></g><text x="116" y="58" text-anchor="middle" font-family="Georgia,serif" font-style="italic" font-size="5" fill="#57534a">in June</text><path d="M116 60 V84" stroke="#fff" stroke-width="1.2"/>
+      </svg>
+      <div><p class="who">A gardener</p><h3>The garden through the year</h3><p>At each bed, a photo of how it looks in another season, so a winter visitor still sees the summer roses.</p></div>
+    </li>
+    <li class="idea">
+      <svg viewBox="0 0 160 110" role="img" aria-label="Through the phone, a drawing from a legend hangs above an old stone bridge">
+        <path d="M0 70 H160 V110 H0Z" fill="#d3cfa6"/><path d="M0 86 C 40 80 60 92 160 84 V96 C 80 104 40 94 0 100Z" fill="#b8cbc3"/><path d="M14 80 Q 42 58 70 80 V86 H14Z" fill="#d8cfba" stroke="#2a2824" stroke-width=".8"/><path d="M28 86 Q 42 72 56 86Z" fill="#b8cbc3"/>
+        <rect x="88" y="6" width="56" height="100" rx="9" fill="#2a2824"/><rect x="92" y="12" width="48" height="88" rx="6" fill="#dfe7e3"/>
+        <path d="M92 70 H140 V100 H92Z" fill="#d3cfa6"/><path d="M96 80 Q 116 64 136 80 V86 H96Z" fill="#d8cfba"/><path d="M106 86 Q 116 76 126 86Z" fill="#b8cbc3"/>
+        <g transform="rotate(4 116 40)"><rect x="100" y="24" width="32" height="30" fill="#fffdf6" stroke="#cf4428" stroke-width="1"/><path d="M106 46 q6 -14 12 -6 q4 -8 8 2 M108 34 l4 -3 l3 3" stroke="#57534a" stroke-width=".9" fill="none"/><circle cx="124" cy="31" r="2.4" fill="none" stroke="#57534a" stroke-width=".8"/></g>
+      </svg>
+      <div><p class="who">A storyteller</p><h3>A legend, told where it happened</h3><p>A local legend in six places. At the old bridge, a drawing of what the tale says happened right there.</p></div>
+    </li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <nav aria-label="More">
+    <a href="../../../">For developers: build your own AR app</a>
+    <a href="../../legal.html">Legal notice</a>
+    <a href="../../legal.html#privacy">Privacy</a>
+    <a href="../../">The real start page</a>
+  </nav>
+  <details class="notes" id="notes">
+    <summary>About this prototype</summary>
+    <div class="nb">
+      <h3>Direction</h3>
+      <p>The earlier route page's low-poly model park and its self-drawing route stay the hero. A phone joins the model for the making side: the story is told in scroll steps (a story you know, walk there, add words and pictures, hang a code, visitors see it), and at each step either the route moves or the phone acts, never both. The phone's screen is the same model park seen at eye height from where the person in the model stands.</p>
+      <h3>Why it should work for this audience</h3>
+      <ul>
+        <li>The model park reads at a glance as a place and the numbered pins as an order; the phone shows what a person standing in that place actually does with it.</li>
+        <li>The person in the model, a dashed line to the phone and a pale wedge of view on the ground tie the two pictures together: this phone belongs to that person, looking that way.</li>
+        <li>The station placed in the making steps is the one the visitor saw at the start, and the last step walks the finished route, so the story closes where it began.</li>
+      </ul>
+      <h3>Load-bearing details (check a build against these)</h3>
+      <ul>
+        <li>Order: way in for visitors (one line at the top), motivation and the route drawing itself, what a visitor sees, the five making steps (plus one step that walks the rest of the route), the setup as six sections on a dotted route, ideas.</li>
+        <li>One moving thing at a time: a step waits until the camera has arrived, then plays its own short sequence once; the camera never moves while the phone acts, and the phone is put away before the camera moves on. Text sits in its own grid cell and never moves while the picture does.</li>
+        <li>Scroll: the stage is sticky; each step takes <span data-n="beat"></span> % of the screen height of scrolling. Going back shows a step finished, without replaying it; scrolling past a step skips its sequence.</li>
+        <li>Framing: the overview fits the whole park into the picture cell's real camera frustum; the close views fit the start of the route into the part of the cell left of the phone, so the phone never covers the person, the pin or the code.</li>
+        <li>Phone: about <span data-n="phw"></span> of the picture's width on a portrait phone, height-limited elsewhere; text inside it has a 13 px base (at 390 px wide the card title is 14 px and its body 12.2 px; the smallest text is the photo caption at 10.4 px and the clock at 9.6 px); a screen narrower than 158 px drops the card body, the share sheet's second line and the station dots.</li>
+        <li>The phone does not sway: its screen is drawn by the 3D scene underneath it, and one moving thing at a time is the rule here.</li>
+        <li>Paper palette and serif headings of the earlier route page; route red only for the route, pins, the maker and the primary button.</li>
+        <li>Reduced motion: every step shows its finished picture at once, the camera jumps, nothing plays. Without WebGL: the same steps as flat drawings, with drawn screens in the phone.</li>
+      </ul>
+      <h3>Measured cost (desktop machine under other load, not a phone)</h3>
+      <ul id="costList">
+        <li>JS: <span data-n="js"></span></li>
+        <li>Frames: <span data-n="frames"></span></li>
+      </ul>
+      <h3>Known weaknesses</h3>
+      <ul>
+        <li>The story is long on a phone: eight scroll steps before the setup. "Skip to the steps" is always on screen.</li>
+        <li>The eye-height view is a model, not a camera image: it says "this is the place" more than "this is AR".</li>
+        <li>three.js takes most of the 250 kB budget.</li>
+        <li>The fake codes are patterns, not real codes.</li>
+        <li>Frame times could not be measured on a quiet machine (see the cost above); on a phone the camera moves and the walking steps are the frames to watch.</li>
+        <li>Below about 158 px of phone screen (a 360 px phone, or one held sideways) the card shows its title only.</li>
+      </ul>
+      <h3>Parameters it rests on</h3>
+      <ul>
+        <li>Scroll per step: <code>?beat=</code> (55 / 70 / 90, default 70).</li>
+        <li>Camera move: <code>?cam=</code> seconds (0.8 / 1.1 / 1.6, default 1.1); act speed <code>?speed=</code>.</li>
+        <li>Phone width on a portrait phone: <code>?ph=</code> (0.42 / 0.47 / 0.52, default 0.47).</li>
+        <li>Text base inside the phone: <code>?fs=</code> (12 / 13 / 14, default 13).</li>
+        <li>Close-view direction <code>?az2=</code> (-12 / 4 / 22, default 4), overview <code>?az=</code> (default 72).</li>
+        <li><code>?ar=1</code> / <code>?ar=0</code> fake the device's AR support; <code>?gl=0</code> forces the drawings without 3D.</li>
+      </ul>
+    </div>
+  </details>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs><symbol id="qrSym" viewBox="-2 -2 25 25"><rect x="-2" y="-2" width="25" height="25" fill="#fff"/><path id="qrPath" fill="#2a2824" fill-rule="evenodd"/></symbol></defs></svg>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var root = document.documentElement;
+  var qs = new URLSearchParams(location.search);
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function num(k, d, lo, hi) { var v = parseFloat(qs.get(k)); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function seg(t, a, b) { return clamp((t - a) / (b - a), 0, 1); }
+  function sm(x) { return x * x * (3 - 2 * x); }
+  function eo(x) { return 1 - Math.pow(1 - x, 3); }
+  function bk(x) { var c = 1.7; x = clamp(x, 0, 1); return x <= 0 ? 0 : 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); }
+  function bump(x) { return x > 0 && x < 1 ? Math.sin(Math.PI * x) : 0; }
+  var DEG = Math.PI / 180;
+
+  /* ================= parameters (each can be swept from the URL) ================= */
+  var FMIN = num('fs', 13, 10, 18);
+  var BEAT = num('beat', 70, 40, 140);
+  var CAM_S = num('cam', 1.1, 0.2, 3);
+  var SPEED = num('speed', 1, 0.25, 3);
+  var PHW = num('ph', 0.47, 0.36, 0.6);
+  var AZ = num('az', 72, -80, 100), AZ2 = num('az2', 4, -80, 100);
+  root.style.setProperty('--fmin', FMIN + 'px');
+
+  /* ================= the park (one data set for the drawing and the 3D model) ================= */
+  // World units: 1 unit is about 2.5 m. x east, y up, z south (towards the viewer).
+  function cr(p0, p1, p2, p3, t) {
+    var t2 = t * t, t3 = t2 * t;
+    return [0, 1].map(function (i) {
+      return 0.5 * (2 * p1[i] + (-p0[i] + p2[i]) * t + (2 * p0[i] - 5 * p1[i] + 4 * p2[i] - p3[i]) * t2 + (-p0[i] + 3 * p1[i] - 3 * p2[i] + p3[i]) * t3);
+    });
+  }
+  function spline(ctrl, per) {
+    var out = [];
+    for (var i = 0; i < ctrl.length - 1; i++) {
+      var p0 = ctrl[Math.max(0, i - 1)], p1 = ctrl[i], p2 = ctrl[i + 1], p3 = ctrl[Math.min(ctrl.length - 1, i + 2)];
+      for (var k = 0; k < per; k++) out.push(cr(p0, p1, p2, p3, k / per));
+    }
+    out.push(ctrl[ctrl.length - 1].slice());
+    return out;
+  }
+  function measured(pts) {
+    var cum = [0];
+    for (var i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    var len = cum[cum.length - 1];
+    function at(s) {
+      s = clamp(s, 0, len);
+      var lo = 0, hi = cum.length - 1;
+      while (hi - lo > 1) { var m = (lo + hi) >> 1; if (cum[m] <= s) lo = m; else hi = m; }
+      var sg = cum[hi] - cum[lo] || 1, f = (s - cum[lo]) / sg, a = pts[lo], b = pts[hi];
+      var dx = b[0] - a[0], dz = b[1] - a[1], dl = Math.hypot(dx, dz) || 1;
+      return { x: a[0] + dx * f, z: a[1] + dz * f, tx: dx / dl, tz: dz / dl };
+    }
+    function nearest(x, z) {
+      var best = 0, bd = 1e9;
+      for (var i = 0; i < pts.length; i++) { var d = Math.hypot(pts[i][0] - x, pts[i][1] - z); if (d < bd) { bd = d; best = cum[i]; } }
+      return best;
+    }
+    return { pts: pts, cum: cum, len: len, at: at, nearest: nearest };
+  }
+
+  var PER = 12;
+  var ROUTE_CTRL = [[-7.4, -5.3], [-10.0, -5.1], [-12.0, -4.4], [-12.3, -1.0], [-11.4, 3.0], [-9.4, 5.6], [-6.4, 6.5], [-2.5, 8.4], [2.0, 8.5], [5.0, 7.0], [9.5, 7.4], [12.2, 5.0], [11.6, 1.6], [8.0, 0.2], [3.8, -1.4], [1.0, -3.0], [0.4, -5.0], [2.8, -5.9], [6.5, -6.6], [10.0, -7.2], [12.8, -6.0]];
+  var route = measured(spline(ROUTE_CTRL, PER));
+  var LEN = route.len;
+  var STATIONS = [
+    { n: 1, name: 'Mill wheel', ctrl: 2, pin: [-13.1, -6.3] },
+    { n: 2, name: 'Old oak', ctrl: 6, pin: [-5.2, 5.0] },
+    { n: 3, name: 'Pond', ctrl: 9, pin: [5.3, 5.2] },
+    { n: 4, name: 'Fountain', ctrl: 16, pin: [-1.4, -6.0] },
+    { n: 5, name: 'Viewpoint', ctrl: 20, pin: [14.4, -4.9] }
+  ];
+  STATIONS.forEach(function (s) { s.s = route.cum[s.ctrl * PER]; });
+  var streamCtrl = [[-14.5, -13.9], [-14.2, -9], [-14.8, -3.5], [-14.1, 2.5], [-14.9, 8.5], [-14.5, 13.9]];
+  var stream = spline(streamCtrl.map(function (p) { return [p[1], p[0]]; }), 8).map(function (p) { return [p[1], p[0]]; });
+  function streamX(z) {
+    for (var i = 1; i < stream.length; i++) if (stream[i][1] >= z) {
+      var a = stream[i - 1], b = stream[i], f = (z - a[1]) / ((b[1] - a[1]) || 1);
+      return a[0] + (b[0] - a[0]) * f;
+    }
+    return stream[stream.length - 1][0];
+  }
+
+  // where the people stand, and what their phone looks at (x, z on the ground; targets x, y, z)
+  var SPOT = { mill: [-11.95, 1.0], poster: [-6.15, -1.6], scan: [-6.2, -2.6] };
+  var LOOK = { mill: [-13.1, 1.61, -6.3], poster: [-6.2, 1.72, -5.5], scan: [-6.2, 1.64, -5.5] };
+  var EYES = {
+    mill: { pos: [SPOT.mill[0], 0.68, SPOT.mill[1]], target: LOOK.mill, fov: 56 },
+    poster: { pos: [SPOT.poster[0], 0.68, SPOT.poster[1]], target: LOOK.poster, fov: 58 },
+    scan: { pos: [SPOT.scan[0], 0.68, SPOT.scan[1]], target: LOOK.scan, fov: 50 }
+  };
+  var S_FIG = route.nearest(SPOT.mill[0], SPOT.mill[1]);
+  var START = route.at(0);
+  var LEAD_IN = Math.hypot(START.x - SPOT.scan[0], START.z - SPOT.scan[1]);
+
+  var PARK = {
+    slab: { w: 36, d: 28, r: 2.6, grass: 0.3, earth: 0.9 },
+    mill: { x0: -12.6, x1: -6.2, z0: -11.6, z1: -6.8, h: 2.6, roof: 1.7 },
+    barn: { x0: 6.6, x1: 11.2, z0: -13.0, z1: -10.2, h: 2.0, roof: 1.3 },
+    yard: { x0: -3.6, x1: 4.6, z0: -10.4, z1: -4.0 },
+    fountain: { x: 0.2, z: -7.4 },
+    pond: { x: 6.6, z: 3.6, rx: 3.3, rz: 2.0 },
+    oak: { x: -3.4, z: 2.6, r: 2.1, h: 2.4 },
+    lookout: { x: 14.3, z: -5.6, s: 2.6, h: 0.45 },
+    poster: { x: -6.2, z: -5.6 },
+    wheel: { x: -12.95, z: -9.2, y: 1.15, r: 1.45, w: 0.45 },
+    streamW: 2.2, stream: stream, pathW: 0.9,
+    route: route, stations: STATIONS,
+    pinH: 2.2,
+    // seen at eye height a pin stands lower, so the card above it and the sheet below it both have room on the screen
+    eyePinH: 1.3,
+    light: null,
+    colors: {
+      grass: '#d3cfa6', grassSide: '#bdb68c', earth: '#b59f7e', path: '#f6f1e3', water: '#b8cbc3', waterLine: '#e3ece6',
+      wall: '#efe7d4', roof: '#a49a86', roof2: '#b8a48a', dark: '#6c665b', paving: '#e7dfc9', tree: '#a7ae7c', conifer: '#8c9a6c',
+      trunk: '#8a735a', ink: '#2a2824', paper: '#f4eedf', route: '#cf4428', stone: '#d8cfba', wood: '#a88c6c', sky: '#dfe7e3'
+    }
+  };
+  (function () { var la = (AZ - 55) * DEG, c = Math.sqrt(1 - 0.82 * 0.82); PARK.light = [Math.sin(la) * c, 0.82, Math.cos(la) * c]; })();
+  var CAMX = Math.sin(AZ * DEG), CAMZ = Math.cos(AZ * DEG), CAM2X = Math.sin(AZ2 * DEG), CAM2Z = Math.cos(AZ2 * DEG);
+
+  // what each close view must show
+  var M = PARK.mill;
+  var REGIONS = {
+    mill: [[-13.1, PARK.pinH + 1.0, -6.3], [-13.1, 0, -6.3], [-13.4, 2.8, -9.2], [-12.6, M.h + M.roof, -9.2], [-9.6, M.h + M.roof, -9.2], [SPOT.mill[0], 1.9, SPOT.mill[1]], [SPOT.mill[0], 0, SPOT.mill[1] + 0.8], [-14.2, 0, -2.5], [-10.4, 0, -2.5]],
+    poster: [[-6.2, 2.7, -5.6], [-6.2, 0, -5.6], [START.x, 0, START.z], [SPOT.poster[0], 1.9, SPOT.poster[1]], [SPOT.poster[0], 0, SPOT.poster[1] + 0.7], [SPOT.scan[0], 0, SPOT.scan[1]], [-10.4, 0, -4.4], [-2.2, 0, -4.4], [-6.2, 0, -7.6], [-6.2, 0, 0.6]]
+  };
+
+  // trees: deterministic scatter, kept off paths, buildings, water, and out of every view the story needs
+  (function () {
+    var s = 7;
+    function rnd() { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }
+    function inBox(b, x, z, m) { return x > b.x0 - m && x < b.x1 + m && z > b.z0 - m && z < b.z1 + m; }
+    function near(x, z, d) { for (var i = 0; i < route.pts.length; i += 2) if (Math.hypot(route.pts[i][0] - x, route.pts[i][1] - z) < d) return true; return false; }
+    function segDist(x, z, a, b) {
+      var dx = b[0] - a[0], dz = b[1] - a[1], l = dx * dx + dz * dz || 1, t = clamp(((x - a[0]) * dx + (z - a[1]) * dz) / l, 0, 1);
+      return Math.hypot(x - a[0] - t * dx, z - a[1] - t * dz);
+    }
+    var sightLines = [[SPOT.mill, [-13.1, -6.3]], [SPOT.mill, [-13.0, -9.2]], [SPOT.poster, [-6.2, -5.6]], [SPOT.scan, [-6.2, -5.6]]];
+    // nothing may stand between the close-view camera and the spots the story needs
+    var keep2 = [SPOT.mill, SPOT.poster, SPOT.scan, [-13.1, -6.3], [-6.2, -5.6], [-13.0, -9.2]].map(function (k) { return [k, [k[0] + CAM2X * 4.4, k[1] + CAM2Z * 4.4]]; });
+    var trees = [], P = PARK;
+    for (var gx = -16.5; gx <= 16.5; gx += 2.4) for (var gz = -12.6; gz <= 12.6; gz += 2.4) {
+      var x = gx + (rnd() - 0.5) * 1.8, z = gz + (rnd() - 0.5) * 1.8, kind = rnd() < 0.32 ? 1 : 0, sc = 0.78 + rnd() * 0.42;
+      if (Math.abs(x) > 16.9 || Math.abs(z) > 12.9) continue;
+      if (Math.abs(x) > 15.4 && Math.abs(z) > 10.4) continue;
+      if (near(x, z, 1.7)) continue;
+      if (near(x - CAMX * 1.9, z - CAMZ * 1.9, 1.55)) continue;
+      if (inBox(P.mill, x, z, 1.0) || inBox(P.barn, x, z, 0.9) || inBox(P.yard, x, z, 0.6)) continue;
+      if (x < -12.6 && z > -11 && z < -7.5) continue;
+      if (Math.abs(x - streamX(z)) < 2.1) continue;
+      if (Math.pow((x - P.pond.x) / (P.pond.rx + 1), 2) + Math.pow((z - P.pond.z) / (P.pond.rz + 1), 2) < 1) continue;
+      if (Math.hypot(x - P.oak.x, z - P.oak.z) < 3.2 || Math.hypot(x - P.lookout.x, z - P.lookout.z) < 2.6 || Math.hypot(x - P.poster.x, z - P.poster.z) < 1.6) continue;
+      if (STATIONS.some(function (st) { return Math.hypot(x - st.pin[0], z - st.pin[1]) < 1.6 || Math.hypot(x - CAMX * 2.2 - st.pin[0], z - CAMZ * 2.2 - st.pin[1]) < 2.0; })) continue;
+      if (sightLines.some(function (l) { return segDist(x, z, l[0], l[1]) < 1.9; })) continue;
+      if (keep2.some(function (l) { return segDist(x, z, l[0], l[1]) < 1.8; })) continue;
+      if (x > -7.2 && x < 0 && z > -4.2 && z < 2.6) continue;
+      trees.push({ x: x, z: z, kind: kind, s: sc });
+    }
+    PARK.trees = trees;
+  })();
+
+  /* ================= the story: one function per step, giving the whole picture at time t ================= */
+  // S: the model (route drawn length, pins risen, code hung, the person, the wedge of view, the camera)
+  // U: the phone (on or off, which view, what its screen shows)
+  function blankS() { return { route: 0, pins: [0, 0, 0, 0, 0], pulse: [0, 0, 0, 0, 0], poster: 0, fig: null, wedge: 0, view: 'over' }; }
+  function blankU() {
+    return { on: false, eye: 'mill', cover: 1, pill: 'visit', chip: 0, retic: 0, glide: 0, press: 0, ripple: 0, pinF: 0, posterF: 0,
+      place: 0, tools: 0, toolPic: 0, card: 0, typed: 99, body: 1, dashed: false, ghost: 0, pic: 0, next: 0,
+      share: 0, print: 0, halo: 0, callout: 0, scan: 0, polaroid: 0 };
+  }
+  function full(s) { s.route = LEN; s.pins = [1, 1, 1, 1, 1]; s.poster = 1; }
+  function person(s, who, spot, k, look) {
+    s.fig = { who: who, x: spot[0], z: spot[1], k: k, yaw: Math.atan2(look[0] - spot[0], look[2] - spot[1]), look: [look[0], look[2]], bob: 0 };
+  }
+  function walking(s, who, p, k) { s.fig = { who: who, x: p.x, z: p.z, k: k, yaw: Math.atan2(p.tx, p.tz), look: null, bob: 1 }; }
+  // the moment the hero's drawn line reaches each stop (the draw is eased with a smoothstep; invert it by bisection)
+  var RISE = STATIONS.map(function (st) {
+    var f = st.s / LEN, lo = 0, hi = 1;
+    for (var k = 0; k < 30; k++) { var m = (lo + hi) / 2; if (sm(m) < f) lo = m; else hi = m; }
+    return 0.5 + 3.0 * hi;
+  });
+  var TYPE = 'The old mill';
+
+  var BEATS = [
+    { // 0: the motivation; the finished route draws itself
+      dur: 4.3,
+      apply: function (t, s) {
+        s.view = 'over';
+        s.poster = bk(seg(t, 0.2, 0.7));
+        s.route = LEN * sm(seg(t, 0.5, 3.5));
+        s.pins = RISE.map(function (r) { return bk(seg(t, r, r + 0.6)); });
+      }
+    },
+    { // 1: what a visitor sees at the first station
+      dur: 2.7,
+      apply: function (t, s, u) {
+        full(s); s.view = 'mill';
+        person(s, 'visitor', SPOT.mill, eo(seg(t, 0, 0.3)), LOOK.mill);
+        s.wedge = seg(t, 0.65, 1);
+        u.on = t >= 0.3; u.eye = 'mill'; u.cover = 1 - seg(t, 0.65, 1); u.pill = 'visit';
+        u.pinF = 1; u.card = eo(seg(t, 1.05, 1.5)); u.pic = eo(seg(t, 1.55, 2.1)); u.next = seg(t, 2.25, 2.65);
+      }
+    },
+    { // 2 (1 of 5): a story you know; the park is empty again, the old photo lies where the phone will be
+      dur: 2.1,
+      apply: function (t, s, u) {
+        var k = 1 - sm(seg(t, 0.75, 1.3));
+        s.view = 'mill'; s.route = LEN * (1 - seg(t, 0.75, 1.25)); s.pins = [k, k, k, k, k]; s.poster = k;
+        var sw = seg(t, 0.3, 0.6);
+        person(s, sw < 0.5 ? 'visitor' : 'maker', SPOT.mill, sw < 0.5 ? 1 - 2 * sw : eo(2 * sw - 1), LOOK.mill);
+        s.wedge = 1 - seg(t, 0, 0.3);
+        u.on = t < 0.3; u.eye = 'mill'; u.cover = 0; u.pill = 'visit'; u.pinF = 1; u.card = 1; u.pic = 1; u.next = 1;
+        u.polaroid = eo(seg(t, 1.45, 1.95));
+      }
+    },
+    { // 3 (2 of 5): walk there and place a station
+      dur: 3.9,
+      apply: function (t, s, u) {
+        var p = bk(seg(t, 2.45, 3.05));
+        s.view = 'mill'; s.pins = [p, 0, 0, 0, 0];
+        person(s, 'maker', SPOT.mill, 1, LOOK.mill);
+        s.wedge = seg(t, 0.7, 1);
+        u.polaroid = 1 - seg(t, 0, 0.3);
+        u.on = t >= 0.35; u.eye = 'mill'; u.cover = 1 - seg(t, 0.7, 1); u.pill = 'make'; u.place = 1;
+        u.retic = seg(t, 1.1, 1.35) * (1 - seg(t, 2.45, 2.75)); u.glide = 1 - eo(seg(t, 1.1, 2.1));
+        u.press = bump(seg(t, 2.15, 2.45)); u.pinF = p; u.ripple = seg(t, 2.7, 3.7);
+      }
+    },
+    { // 4 (3 of 5): add words and a picture
+      dur: 4.1,
+      apply: function (t, s, u) {
+        s.view = 'mill'; s.pins = [1, 0, 0, 0, 0];
+        person(s, 'maker', SPOT.mill, 1, LOOK.mill); s.wedge = 1;
+        u.on = true; u.eye = 'mill'; u.cover = 0; u.pill = 'make'; u.pinF = 1;
+        u.place = 1 - seg(t, 0, 0.25); u.tools = seg(t, 0.25, 0.5);
+        u.card = eo(seg(t, 0.45, 0.9)); u.dashed = true; u.typed = Math.round(seg(t, 0.95, 1.85) * TYPE.length); u.body = seg(t, 1.9, 2.3);
+        u.toolPic = t >= 2.4 ? 1 : 0; u.ghost = seg(t, 2.5, 2.75) * (1 - seg(t, 3.3, 3.5)); u.pic = eo(seg(t, 3.25, 3.85));
+      }
+    },
+    { // 5: and so on along the walk; the person walks on and the route draws behind them
+      dur: 7.6,
+      apply: function (t, s) {
+        s.view = 'over';
+        var w = seg(t, 0.9, 7.4), sw = S_FIG + (LEN - S_FIG) * w;
+        s.route = t < 0.9 ? S_FIG * sm(seg(t, 0, 0.6)) : sw;
+        s.pins = STATIONS.map(function (st, i) {
+          if (i === 0) return 1;
+          var tr = 0.9 + 6.5 * (st.s - S_FIG) / (LEN - S_FIG);
+          return bk(seg(t, tr, tr + 0.6));
+        });
+        walking(s, 'maker', route.at(sw), 1);
+        if (t < 0.9 || w >= 1) s.fig.bob = 0;
+      }
+    },
+    { // 6 (4 of 5): when the tour is ready, the code is printed and hung at the start
+      dur: 4.3,
+      apply: function (t, s, u) {
+        full(s); s.poster = bk(seg(t, 2.3, 3.1)); s.view = 'poster';
+        person(s, 'maker', SPOT.poster, eo(seg(t, 0, 0.3)), LOOK.poster);
+        s.wedge = seg(t, 0.65, 1);
+        u.on = t >= 0.3; u.eye = 'poster'; u.cover = 1 - seg(t, 0.65, 1); u.pill = 'saved';
+        u.share = eo(seg(t, 1.0, 1.4)) * (1 - seg(t, 2.3, 2.6)); u.print = bump(seg(t, 1.9, 2.2)); u.posterF = s.poster;
+        u.halo = seg(t, 3.1, 3.45); u.callout = eo(seg(t, 3.4, 3.9));
+      }
+    },
+    { // 7 (5 of 5): a visitor scans the code, then walks the finished route to its end
+      dur: 12.6,
+      apply: function (t, s, u) {
+        full(s);
+        s.view = t < 3.3 ? 'poster' : 'over';
+        if (t < 4.6) person(s, 'visitor', SPOT.scan, eo(seg(t, 0, 0.3)), LOOK.scan);
+        else {
+          var d = seg(t, 4.6, 12.3) * (LEAD_IN + LEN), p;
+          if (d < LEAD_IN) { var f = d / LEAD_IN; p = { x: SPOT.scan[0] + (START.x - SPOT.scan[0]) * f, z: SPOT.scan[1] + (START.z - SPOT.scan[1]) * f, tx: START.x - SPOT.scan[0], tz: START.z - SPOT.scan[1] }; }
+          else p = route.at(d - LEAD_IN);
+          walking(s, 'visitor', p, 1);
+          if (t >= 12.3) s.fig.bob = 0;
+          var sw = d - LEAD_IN;
+          s.pulse = STATIONS.map(function (st) { return Math.max(0, 1 - Math.abs(sw - st.s) / 1.4); });
+        }
+        s.wedge = seg(t, 0.65, 1) * (1 - seg(t, 2.9, 3.1));
+        u.on = t >= 0.3 && t < 3.0; u.eye = 'scan'; u.cover = 1 - seg(t, 0.65, 1); u.pill = 'scan'; u.posterF = 1;
+        u.scan = eo(seg(t, 1.0, 1.7)); u.chip = seg(t, 1.75, 2.05);
+      }
+    }
+  ];
+  var N = BEATS.length;
+
+  /* ================= layout: where the phone sits in the picture cell ================= */
+  var art = $('#art'), stage = $('#stage'), story = $('#story');
+  var phone = $('#mphone'), screenEl = $('#mscreen'), polaroid = $('#polaroid');
+  var LY = null;
+  function layout() {
+    var W = art.clientWidth || 1, H = art.clientHeight || 1, portrait = W / H < 1.05 && innerWidth < 700;
+    var pw = portrait ? W * PHW : Math.min(W * 0.4, 290);
+    var ph = pw * 1.83;
+    if (ph > H - 52) { ph = H - 52; pw = ph / 1.83; } // clear of the soft top and bottom edge of the picture
+    var mr = portrait ? 12 : Math.max(14, W * 0.04);
+    var x = Math.round(W - pw - mr), y = Math.round((H - ph) / 2);
+    pw = Math.round(pw); ph = Math.round(ph);
+    LY = {
+      W: W, H: H, portrait: portrait,
+      phone: { x: x, y: y, w: pw, h: ph },
+      screen: { x: x + 9, y: y + 9, w: pw - 18, h: ph - 18 },
+      free: { x0: 40, x1: Math.max(90, x - 14), y0: 26, y1: H - 10 }
+    };
+    phone.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+    phone.style.width = pw + 'px'; phone.style.height = ph + 'px';
+    var pol = Math.min(pw * 0.95, 190);
+    polaroid.style.width = pol + 'px';
+    polaroid.style.transform = 'translate(' + Math.round(x + (pw - pol) / 2) + 'px,' + Math.round(y + ph * 0.24) + 'px) rotate(-4deg)';
+    return LY;
+  }
+  // a close view fills the free space left of the phone, but never more than CLOSE_MAX px, so a wide screen shows more park, not a bigger one
+  var CLOSE_MAX = [num('cw', 400, 150, 1200), num('ch', 470, 150, 1200)];
+  function closeRect() {
+    var f = LY.free, w = Math.min(f.x1 - f.x0, CLOSE_MAX[0]), h = Math.min(f.y1 - f.y0, CLOSE_MAX[1]), cx = (f.x0 + f.x1) / 2, cy = (f.y0 + f.y1) / 2;
+    return { x0: cx - w / 2, x1: cx + w / 2, y0: cy - h / 2, y1: cy + h / 2 };
+  }
+  // a view rectangle in normalised device coordinates (-1..1, y up)
+  function ndcRect(view) {
+    if (view === 'over') return [-0.91, 0.91, -0.9, 0.86];
+    var f = closeRect(), W = LY.W, H = LY.H;
+    return [f.x0 / W * 2 - 1, f.x1 / W * 2 - 1, 1 - f.y1 / H * 2, 1 - f.y0 / H * 2];
+  }
+  var EL_P = num('el', 56, 20, 75), EL_W = num('elw', 40, 20, 75), EL2 = num('el2', 40, 20, 75), FOV = 15, FOV2 = 18;
+  function viewParams(view) {
+    var a = LY.W / LY.H;
+    if (view === 'over') return { az: AZ * DEG, el: (a < 1.2 ? EL_P : EL_W) * DEG, fov: FOV };
+    return { az: AZ2 * DEG, el: EL2 * DEG, fov: FOV2 };
+  }
+
+  /* ================= the drawing: the same park, drawn flat in SVG (no-WebGL floor) ================= */
+  function hex(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; }
+  function shade(c, k) { var v = hex(c).map(function (x) { return clamp(Math.round(x * k), 0, 255); }); return 'rgb(' + v.join(',') + ')'; }
+  function hull(pts) {
+    pts = pts.slice().sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+    function cross(o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); }
+    var lo = [], up = [];
+    pts.forEach(function (p) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); });
+    for (var i = pts.length - 1; i >= 0; i--) { var p = pts[i]; while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+    up.pop(); lo.pop();
+    return lo.concat(up);
+  }
+  function slabOutline(Sl, inset) {
+    var w = Sl.w / 2 - inset, d = Sl.d / 2 - inset, r = Sl.r - inset, out = [];
+    [[w - r, d - r, 0], [-(w - r), d - r, 90], [-(w - r), -(d - r), 180], [w - r, -(d - r), 270]].forEach(function (c) {
+      for (var k = 0; k <= 6; k++) { var a = (c[2] + k * 15) * DEG; out.push([c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r]); }
+    });
+    return out;
+  }
+  var ICO = (function () {
+    var t = (1 + Math.sqrt(5)) / 2;
+    var v = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]].map(function (p) { var l = Math.hypot(p[0], p[1], p[2]); return [p[0] / l, p[1] / l, p[2] / l]; });
+    var f = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]];
+    return { v: v, f: f };
+  })();
+  var floorSvg = $('#floor'), leadLine = $('#leadLine'), leadDot = $('#leadDot');
+  var floorKey = '';
+
+  function drawFloor(S) {
+    if (!LY) return;
+    var view = S.view, VP = viewParams(view), P = PARK, C = P.colors;
+    var ca = Math.cos(VP.az), sa = Math.sin(VP.az), ce = Math.cos(VP.el), se = Math.sin(VP.el);
+    var B = [sa * ce, se, ca * ce], Lt = P.light;
+    var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+    function pr(x, y, z, keep) {
+      var X = x * ca - z * sa, Y = se * sa * x - ce * y + se * ca * z;
+      if (keep !== false) { minX = Math.min(minX, X); maxX = Math.max(maxX, X); minY = Math.min(minY, Y); maxY = Math.max(maxY, Y); }
+      return [X, Y];
+    }
+    function depth(x, y, z) { return x * B[0] + y * B[1] + z * B[2]; }
+    function ptsStr(arr, keep) { return arr.map(function (p) { var q = pr(p[0], p[1], p[2], keep); return q[0].toFixed(2) + ',' + q[1].toFixed(2); }).join(' '); }
+    function poly(arr, fill, extra) { return '<polygon points="' + ptsStr(arr) + '" fill="' + fill + '"' + (extra || '') + '/>'; }
+    function face(arr, n, base) {
+      var l = Math.hypot(n[0], n[1], n[2]); n = [n[0] / l, n[1] / l, n[2] / l];
+      if (n[0] * B[0] + n[1] * B[1] + n[2] * B[2] <= 0.0005) return null;
+      var k = 0.64 + 0.4 * Math.max(0, n[0] * Lt[0] + n[1] * Lt[1] + n[2] * Lt[2]);
+      var col = shade(base, k), d = 0;
+      arr.forEach(function (p) { d += depth(p[0], p[1], p[2]); });
+      return { d: d / arr.length, s: poly(arr, col, ' stroke="' + col + '" stroke-width=".05" stroke-linejoin="round"') };
+    }
+    function faces(list) { return list.filter(Boolean).sort(function (a, b) { return a.d - b.d; }).map(function (f) { return f.s; }).join(''); }
+    function box(x0, x1, y0, y1, z0, z1, c) {
+      return [
+        face([[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], [0, 1, 0], c),
+        face([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 1], c),
+        face([[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]], [0, 0, -1], c),
+        face([[x1, y0, z0], [x1, y0, z1], [x1, y1, z1], [x1, y1, z0]], [1, 0, 0], c),
+        face([[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], [-1, 0, 0], c)
+      ];
+    }
+    function roof(b, c) {
+      var o = 0.3, xa = b.x0 - o, xb = b.x1 + o, za = b.z0 - o, zb = b.z1 + o, zm = (b.z0 + b.z1) / 2, y0 = b.h, y1 = b.h + b.roof, a = zb - zm;
+      return [
+        face([[xa, y0, zb], [xb, y0, zb], [xb, y1, zm], [xa, y1, zm]], [0, a, b.roof], c),
+        face([[xa, y0, za], [xb, y0, za], [xb, y1, zm], [xa, y1, zm]], [0, a, -b.roof], c),
+        face([[b.x0, y0, za + o], [b.x0, y0, zb - o], [b.x0, y1, zm]], [-1, 0, 0], C.wall),
+        face([[b.x1, y0, za + o], [b.x1, y0, zb - o], [b.x1, y1, zm]], [1, 0, 0], C.wall)
+      ];
+    }
+    function prism(x, z, r, y0, y1, n, c, top) {
+      var out = [], i;
+      for (i = 0; i < n; i++) {
+        var a0 = i / n * 2 * Math.PI, a1 = (i + 1) / n * 2 * Math.PI, am = (a0 + a1) / 2;
+        out.push(face([[x + Math.cos(a0) * r, y0, z + Math.sin(a0) * r], [x + Math.cos(a1) * r, y0, z + Math.sin(a1) * r], [x + Math.cos(a1) * r, y1, z + Math.sin(a1) * r], [x + Math.cos(a0) * r, y1, z + Math.sin(a0) * r]], [Math.cos(am), 0, Math.sin(am)], c));
+      }
+      var cap = []; for (i = 0; i < n; i++) cap.push([x + Math.cos(i / n * 2 * Math.PI) * r, y1, z + Math.sin(i / n * 2 * Math.PI) * r]);
+      out.push(face(cap, [0, 1, 0], top || c));
+      return out;
+    }
+    function cone(x, z, r, y0, h, n, c) {
+      var out = [];
+      for (var i = 0; i < n; i++) {
+        var a0 = i / n * 2 * Math.PI, a1 = (i + 1) / n * 2 * Math.PI, am = (a0 + a1) / 2;
+        out.push(face([[x + Math.cos(a0) * r, y0, z + Math.sin(a0) * r], [x + Math.cos(a1) * r, y0, z + Math.sin(a1) * r], [x, y0 + h, z]], [Math.cos(am) * h, r, Math.sin(am) * h], c));
+      }
+      return out;
+    }
+    function blob(x, y, z, r, sy, c) {
+      return ICO.f.map(function (f) {
+        var pts = f.map(function (i) { var p = ICO.v[i]; return [x + p[0] * r, y + p[1] * r * sy, z + p[2] * r]; });
+        var n = [0, 1, 2].map(function (k) { return (ICO.v[f[0]][k] + ICO.v[f[1]][k] + ICO.v[f[2]][k]) / 3; });
+        return face(pts, [n[0], n[1] / sy, n[2]], c);
+      });
+    }
+    function shadowOf(pts3) {
+      var g = [];
+      pts3.forEach(function (p) { g.push([p[0], p[2]]); g.push([p[0] - Lt[0] / Lt[1] * p[1], p[2] - Lt[2] / Lt[1] * p[1]]); });
+      return poly(hull(g).map(function (q) { return [q[0], 0.03, q[1]]; }), 'rgba(70,56,30,.17)');
+    }
+    function ring(x, z, rx, rz, y, n) { var o = []; for (var i = 0; i < n; i++) { var a = i / n * 2 * Math.PI; o.push([x + Math.cos(a) * rx, y, z + Math.sin(a) * rz]); } return o; }
+    function ribbon(pts, w, y) {
+      var Lf = [], R = [];
+      for (var i = 0; i < pts.length; i++) {
+        var a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1;
+        var nx = -dz / l * w / 2, nz = dx / l * w / 2;
+        Lf.push([pts[i][0] + nx, y, pts[i][1] + nz]); R.unshift([pts[i][0] - nx, y, pts[i][1] - nz]);
+      }
+      return Lf.concat(R);
+    }
+
+    var Sl = P.slab, out = [], i;
+    var ol = slabOutline(Sl, 0), top = -Sl.grass - Sl.earth;
+    out.push(poly(hull(ol.concat(ol.map(function (q) { return [q[0] - Lt[0] / Lt[1] * 1.6, q[1] - Lt[2] / Lt[1] * 1.6]; }))).map(function (q) { return [q[0], top, q[1]]; }), 'rgba(70,56,30,.12)'));
+    var sides = [];
+    for (i = 0; i < ol.length; i++) {
+      var a = ol[i], b = ol[(i + 1) % ol.length], mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
+      var nx = b[1] - a[1], nz = -(b[0] - a[0]); if (nx * mx + nz * mz < 0) { nx = -nx; nz = -nz; }
+      sides.push(face([[a[0], -Sl.grass, a[1]], [b[0], -Sl.grass, b[1]], [b[0], top, b[1]], [a[0], top, a[1]]], [nx, 0, nz], C.earth));
+      sides.push(face([[a[0], 0, a[1]], [b[0], 0, b[1]], [b[0], -Sl.grass, b[1]], [a[0], -Sl.grass, a[1]]], [nx, 0, nz], C.grassSide));
+    }
+    out.push(faces(sides));
+    out.push(poly(ol.map(function (q) { return [q[0], 0, q[1]]; }), C.grass));
+    out.push(poly(ribbon(P.stream, P.streamW, 0.01), C.water));
+    var Y = P.yard;
+    out.push(poly([[Y.x0, 0.01, Y.z0], [Y.x1, 0.01, Y.z0], [Y.x1, 0.01, Y.z1], [Y.x0, 0.01, Y.z1]], C.paving, ' stroke="' + C.stone + '" stroke-width=".12"'));
+    out.push(poly(ring(P.pond.x, P.pond.z, P.pond.rx, P.pond.rz, 0.012, 36), C.water, ' stroke="' + C.stone + '" stroke-width=".18"'));
+    out.push(poly(ribbon(route.pts, P.pathW, 0.02), C.path));
+    [P.mill, P.barn].forEach(function (bd) { out.push(shadowOf([[bd.x0, bd.h + bd.roof * .6, bd.z0], [bd.x1, bd.h + bd.roof * .6, bd.z0], [bd.x1, bd.h + bd.roof * .6, bd.z1], [bd.x0, bd.h + bd.roof * .6, bd.z1]])); });
+    P.trees.forEach(function (t) { var hc = (t.kind ? 1.6 : 2.0) * t.s, r = (t.kind ? 0.75 : 0.95) * t.s; out.push(shadowOf(ring(t.x, t.z, r, r, hc, 8))); });
+    out.push(shadowOf(ring(P.oak.x, P.oak.z, P.oak.r * 0.95, P.oak.r * 0.95, P.oak.h + 1.2, 10)));
+    // the wedge the person's phone looks along
+    var fg = S.fig && S.fig.k > 0.5 ? S.fig : null;
+    if (fg && fg.look && S.wedge > 0.5) {
+      var wl = 4.4, hw = 17 * DEG, wy = Math.atan2(fg.look[0] - fg.x, fg.look[1] - fg.z);
+      out.push(poly([[fg.x, 0.04, fg.z], [fg.x + Math.sin(wy - hw) * wl, 0.04, fg.z + Math.cos(wy - hw) * wl], [fg.x + Math.sin(wy + hw) * wl, 0.04, fg.z + Math.cos(wy + hw) * wl]], 'rgba(207,68,40,.22)'));
+    }
+    for (var sd = 0.3; sd < S.route; sd += 0.62) { var q = route.at(sd), pp = pr(q.x, 0.05, q.z); out.push('<ellipse cx="' + pp[0].toFixed(2) + '" cy="' + pp[1].toFixed(2) + '" rx=".17" ry="' + (0.17 * se).toFixed(3) + '" fill="' + C.route + '"/>'); }
+    var objs = [];
+    function add(x, z, s) { objs.push({ d: depth(x, 0, z), s: s }); }
+    var Mi = P.mill;
+    add((Mi.x0 + Mi.x1) / 2, (Mi.z0 + Mi.z1) / 2, faces(box(Mi.x0, Mi.x1, 0, Mi.h, Mi.z0, Mi.z1, C.wall).concat(roof(Mi, C.roof), box(-8.9, -8.1, 0, 1.3, Mi.z1, Mi.z1 + 0.05, C.dark), box(-11.4, -10.6, 1.2, 1.9, Mi.z1, Mi.z1 + 0.05, C.dark), box(-7.4, -6.8, 1.2, 1.9, Mi.z1, Mi.z1 + 0.05, C.dark))));
+    var W = P.wheel, wr = [];
+    for (i = 0; i <= 16; i++) { var aw = i / 16 * 2 * Math.PI; wr.push([W.x - W.w, W.y + Math.cos(aw) * W.r, W.z + Math.sin(aw) * W.r]); }
+    add(W.x, W.z + 2.5, '<polygon points="' + ptsStr(wr) + '" fill="none" stroke="' + shade(C.wood, .8) + '" stroke-width=".26"/>');
+    var Bn = P.barn;
+    add((Bn.x0 + Bn.x1) / 2, (Bn.z0 + Bn.z1) / 2, faces(box(Bn.x0, Bn.x1, 0, Bn.h, Bn.z0, Bn.z1, C.wall).concat(roof(Bn, C.roof2), box(8.5, 9.3, 0, 1.2, Bn.z1, Bn.z1 + 0.05, C.dark))));
+    var F = P.fountain;
+    add(F.x, F.z, faces(prism(F.x, F.z, 1.0, 0, 0.38, 12, C.stone, C.water).concat(prism(F.x, F.z, 0.18, 0.38, 1.1, 6, C.stone), prism(F.x, F.z, 0.45, 1.1, 1.22, 8, C.stone, C.water))));
+    var LK = P.lookout, hs = LK.s / 2;
+    add(LK.x, LK.z, faces(box(LK.x - hs, LK.x + hs, 0, LK.h, LK.z - hs, LK.z + hs, C.stone).concat(box(LK.x + hs - 0.12, LK.x + hs, LK.h, LK.h + 0.8, LK.z - hs, LK.z + hs, C.wood), box(LK.x - hs, LK.x + hs, LK.h, LK.h + 0.8, LK.z - hs, LK.z - hs + 0.12, C.wood))));
+    P.trees.forEach(function (t) {
+      var trunk = prism(t.x, t.z, 0.13 * t.s, 0, (t.kind ? 0.5 : 0.9) * t.s, 5, C.trunk);
+      var crown = t.kind ? cone(t.x, t.z, 0.75 * t.s, 0.4 * t.s, 2.6 * t.s, 7, C.conifer) : blob(t.x, 1.75 * t.s, t.z, 0.95 * t.s, 0.9, C.tree);
+      add(t.x, t.z, faces(trunk) + faces(crown));
+    });
+    var O = P.oak;
+    add(O.x, O.z, faces(prism(O.x, O.z, 0.32, 0, O.h, 6, C.trunk)) + faces(blob(O.x - 0.5, O.h + 0.9, O.z, O.r * 0.8, 0.85, C.tree).concat(blob(O.x + 0.7, O.h + 0.7, O.z + 0.3, O.r * 0.75, 0.85, C.tree), blob(O.x, O.h + 1.4, O.z - 0.4, O.r * 0.8, 0.85, C.tree))));
+    var PO = P.poster;
+    if (S.poster > 0.5) add(PO.x, PO.z, faces(box(PO.x - 0.06, PO.x + 0.06, 0, 1.0, PO.z - 0.06, PO.z + 0.06, C.wood).concat(box(PO.x - 0.5, PO.x + 0.5, 0.9, 2.1, PO.z + 0.06, PO.z + 0.12, '#ffffff'))));
+    var bigOver = view === 'over' ? 1.9 : 1.25, figHead = null;
+    if (fg) {
+      var hgt = 0.62 * bigOver, wp = pr(fg.x, 0, fg.z), wh = pr(fg.x, hgt, fg.z), col = fg.who === 'maker' ? C.route : C.ink;
+      figHead = pr(fg.x, hgt + 0.25, fg.z, false);
+      add(fg.x, fg.z, '<line x1="' + wp[0].toFixed(2) + '" y1="' + (wp[1] - 0.15).toFixed(2) + '" x2="' + wh[0].toFixed(2) + '" y2="' + (wh[1] + 0.3).toFixed(2) + '" stroke="' + col + '" stroke-width="' + (0.2 * bigOver).toFixed(2) + '" stroke-linecap="round"/><circle cx="' + wh[0].toFixed(2) + '" cy="' + wh[1].toFixed(2) + '" r="' + (0.09 * bigOver).toFixed(2) + '" fill="' + C.paper + '" stroke="' + C.ink + '" stroke-width=".05"/>');
+    }
+    objs.sort(function (a, b) { return a.d - b.d; }).forEach(function (o) { out.push(o.s); });
+    var labels = [];
+    STATIONS.forEach(function (st, k) {
+      if (S.pins[k] < 0.5) return;
+      var x = st.pin[0], z = st.pin[1], g = pr(x, 0, z), hd = pr(x, P.pinH, z), tip = pr(x, P.pinH - 0.85, z);
+      out.push('<ellipse cx="' + g[0].toFixed(2) + '" cy="' + g[1].toFixed(2) + '" rx=".42" ry="' + (0.42 * se).toFixed(2) + '" fill="rgba(42,40,36,.22)"/>');
+      out.push('<line x1="' + g[0].toFixed(2) + '" y1="' + g[1].toFixed(2) + '" x2="' + tip[0].toFixed(2) + '" y2="' + tip[1].toFixed(2) + '" stroke="' + C.ink + '" stroke-width=".07"/>');
+      out.push('<path d="M' + tip[0].toFixed(2) + ' ' + tip[1].toFixed(2) + ' L' + (hd[0] - 0.5).toFixed(2) + ' ' + (hd[1] + 0.28).toFixed(2) + ' L' + (hd[0] + 0.5).toFixed(2) + ' ' + (hd[1] + 0.28).toFixed(2) + ' Z" fill="' + shade(C.route, .85) + '"/>');
+      out.push('<circle cx="' + hd[0].toFixed(2) + '" cy="' + hd[1].toFixed(2) + '" r=".6" fill="' + C.route + '"/><circle cx="' + (hd[0] - 0.06).toFixed(2) + '" cy="' + (hd[1] - 0.05).toFixed(2) + '" r=".23" fill="#fff"/>');
+      labels.push({ x: hd[0], y: hd[1] - 0.75, n: String(st.n), t: st.name });
+    });
+    if (S.poster > 0.5) { var pt = pr(PO.x, 2.4, PO.z); labels.push({ x: pt[0], y: pt[1] - 0.2, n: '', t: 'Start: the code' }); }
+    if (fg) labels.push({ x: figHead[0], y: figHead[1] - 0.1, n: '', t: fg.who === 'maker' ? 'You' : 'A visitor', who: fg.who });
+
+    // fit: the overview fits everything drawn; a close view fits its region into the space left of the phone
+    var vb, s;
+    if (view === 'over') {
+      var pad = 1.2, padTop = 2.4;
+      vb = [minX - pad, minY - padTop, maxX - minX + 2 * pad, maxY - minY + pad + padTop];
+      s = Math.min(LY.W / vb[2], LY.H / vb[3]);
+      vb = [vb[0] - (LY.W / s - vb[2]) / 2, vb[1] - (LY.H / s - vb[3]) / 2, LY.W / s, LY.H / s];
+    } else {
+      var bx0 = 1e9, by0 = 1e9, bx1 = -1e9, by1 = -1e9;
+      REGIONS[view].forEach(function (p) { var q = pr(p[0], p[1], p[2], false); bx0 = Math.min(bx0, q[0]); bx1 = Math.max(bx1, q[0]); by0 = Math.min(by0, q[1]); by1 = Math.max(by1, q[1]); });
+      var fr = closeRect(), fw = fr.x1 - fr.x0, fh = fr.y1 - fr.y0, bw = bx1 - bx0, bh = by1 - by0;
+      s = Math.min(fw / bw, fh / bh);
+      vb = [bx0 - (fr.x0 + (fw - bw * s) / 2) / s, by0 - (fr.y0 + (fh - bh * s) / 2) / s, LY.W / s, LY.H / s];
+    }
+    var fs = 12 / s, lab = '';
+    labels.forEach(function (l) {
+      var lx = (l.x - vb[0]) * s, ly = (l.y - vb[1]) * s;
+      if (lx < 34 || lx > LY.W - 34 || ly < 18 || ly > LY.H - 4) return;
+      var w = (l.t.length * 0.5 + (l.n ? 1.9 : 1.2)) * fs, h = 1.55 * fs, x0 = l.x - w / 2, y0 = l.y - h;
+      var fill = l.n ? 'rgba(251,248,239,.94)' : l.who ? 'rgba(251,248,239,.94)' : C.ink, tcol = l.n || l.who ? (l.who === 'maker' ? C.route : C.ink) : C.paper;
+      lab += '<g class="lb" data-x="' + l.x.toFixed(2) + '" data-h="' + h.toFixed(3) + '" data-fs="' + fs.toFixed(3) + '" data-n="' + (l.n ? 1 : 0) + '"><rect x="' + x0.toFixed(2) + '" y="' + y0.toFixed(2) + '" width="' + w.toFixed(2) + '" height="' + h.toFixed(2) + '" rx="' + (h / 2).toFixed(2) + '" fill="' + fill + '" stroke="' + (l.who === 'maker' ? C.route : C.ink) + '" stroke-width="' + (1 / s).toFixed(3) + '"/>' +
+        (l.n ? '<circle cx="' + (x0 + h / 2).toFixed(2) + '" cy="' + (y0 + h / 2).toFixed(2) + '" r="' + (h / 2 - 1.6 / s).toFixed(2) + '" fill="' + C.route + '"/><text x="' + (x0 + h / 2).toFixed(2) + '" y="' + (y0 + h / 2).toFixed(2) + '" font-family="system-ui, sans-serif" font-weight="700" font-size="' + (fs * 0.9).toFixed(2) + '" fill="#fff" text-anchor="middle" dominant-baseline="central">' + l.n + '</text>' : '') +
+        '<text x="' + (l.n ? x0 + h + 0.3 * fs : l.x).toFixed(2) + '" y="' + (y0 + h / 2).toFixed(2) + '" font-family="' + (l.who ? 'system-ui, sans-serif' : 'Georgia, serif') + '"' + (l.who ? '' : ' font-style="italic"') + ' font-weight="600" font-size="' + fs.toFixed(2) + '" fill="' + tcol + '"' + (l.n ? '' : ' text-anchor="middle"') + ' dominant-baseline="central" class="nm">' + l.t + '</text></g>';
+    });
+    floorSvg.setAttribute('viewBox', vb.map(function (v) { return v.toFixed(2); }).join(' '));
+    floorSvg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    floorSvg.innerHTML = out.join('') + lab;
+    Array.prototype.forEach.call(floorSvg.querySelectorAll('.lb'), function (g) {
+      var t = g.querySelector('.nm'), r = g.querySelector('rect'), c = g.querySelector('circle'), numEl = g.querySelector('text:not(.nm)');
+      var len; try { len = t.getComputedTextLength(); } catch (e) { return; }
+      if (!len) return;
+      var h = +g.dataset.h, f = +g.dataset.fs, x = +g.dataset.x, isN = g.dataset.n === '1';
+      var w = len + (isN ? h + 0.3 * f + 0.7 * f : 1.4 * f), x0 = x - w / 2;
+      r.setAttribute('x', x0.toFixed(2)); r.setAttribute('width', w.toFixed(2));
+      if (isN) { c.setAttribute('cx', (x0 + h / 2).toFixed(2)); numEl.setAttribute('x', (x0 + h / 2).toFixed(2)); t.setAttribute('x', (x0 + h + 0.3 * f).toFixed(2)); }
+    });
+    // the dashed line from the phone to the person who holds it
+    if (figHead && U.on && view !== 'over') setLead((figHead[0] - vb[0]) * s, (figHead[1] - vb[1]) * s);
+    else setLead(null);
+  }
+  function setLead(x, y) {
+    if (x === null || !LY) { leadLine.setAttribute('opacity', '0'); leadDot.setAttribute('opacity', '0'); return; }
+    var px = LY.phone.x - 3, py = LY.phone.y + LY.phone.h * 0.46;
+    leadLine.setAttribute('x1', x.toFixed(1)); leadLine.setAttribute('y1', y.toFixed(1));
+    leadLine.setAttribute('x2', px.toFixed(1)); leadLine.setAttribute('y2', py.toFixed(1));
+    leadDot.setAttribute('cx', x.toFixed(1)); leadDot.setAttribute('cy', y.toFixed(1));
+    leadLine.setAttribute('opacity', '.6'); leadDot.setAttribute('opacity', '.8');
+  }
+
+  /* ================= the phone's screen: write only what changed ================= */
+  var memo = new Map();
+  function css(el, prop, v) {
+    var k = memo.get(el) || {}; if (k[prop] === v) return; k[prop] = v; memo.set(el, k); el.style[prop] = v;
+  }
+  var E = {
+    cover: $('#cover'), pill: $('#pill'), chip: $('#chip'), place: $('#shPlace'), tools: $('#shTools'), share: $('#shShare'),
+    placeBtn: $('#placeBtn'), printBtn: $('#printBtn'), tText: $('#tText'), tPic: $('#tPic'),
+    retic: $('.retic'), ripple: $('.ripple'), pinF: $('.pinF'), posterF: $('.posterF'), halo: $('.halo'), scan: $('.scanbox'),
+    pic: $('.pic'), ghost: $('.ghost'), card: $('.tcard'), ct: $('#ct'), caret: $('.caret'), body: $('.tcard .b'),
+    callout: $('.callout'), next: $('.nextlbl'),
+    aRet: $('#aRet'), aPinF: $('#aPinF'), aPosterF: $('#aPosterF'), aHalo: $('#aHalo'), aPic: $('#aPic'), aCard: $('#aCard'), aCall: $('#aCall'), aNext: $('#aNext'),
+    stills: $$('.still')
+  };
+  var PILLS = {
+    visit: 'Mill Park<span class="dots"><i class="on"></i><i></i><i></i><i></i><i></i></span>',
+    make: '<span class="tg">Making</span>Station 1',
+    saved: '<span class="tg ok">Saved</span>5 stations',
+    scan: 'Scan the code'
+  };
+  var curPill = '', curEye = '';
+  // where things sit on the screen, as fractions, for the drawn screens (the 3D view projects its own)
+  var FLOOR_ANCHORS = {
+    mill: { pin: [0.47, 0.47], ground: [0.47, 0.705], next: [0.5, 0.88] },
+    poster: { board: [0.33, 0.4, 0.67, 0.71], ground: [0.5, 0.8], next: [0.5, 0.88] },
+    scan: { board: [0.27, 0.34, 0.73, 0.77], ground: [0.5, 0.85], next: [0.5, 0.88] }
+  };
+  function anchors(eye) {
+    var sw = LY.screen.w, sh = LY.screen.h;
+    if (L.ready && L.scene) return L.scene.anchors(eye, sw, sh);
+    var f = FLOOR_ANCHORS[eye], o = {};
+    if (f.pin) o.pin = [f.pin[0] * sw, f.pin[1] * sh];
+    if (f.board) o.board = [f.board[0] * sw, f.board[1] * sh, f.board[2] * sw, f.board[3] * sh];
+    o.ground = [f.ground[0] * sw, f.ground[1] * sh];
+    o.next = [f.next[0] * sw, f.next[1] * sh];
+    return o;
+  }
+  function placeAnchors() {
+    if (!LY) return;
+    var A = anchors(U.eye), sw = LY.screen.w, sh = LY.screen.h;
+    function at(el, x, y) { el.style.transform = 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px)'; }
+    var pin = A.pin || [sw / 2, sh * 0.4];
+    at(E.aCard, clamp(pin[0], sw * 0.44, sw * 0.56), Math.max(pin[1], sh * 0.42));
+    // the old photo hangs just left of the pin's pole, below the card
+    at(E.aPic, clamp(pin[0] - sw * 0.46, sw * 0.04, sw * 0.6), Math.max(pin[1], sh * 0.42) + sh * 0.03);
+    at(E.aRet, A.ground[0], A.ground[1]);
+    at(E.aPinF, A.ground[0], A.ground[1]);
+    E.pinF.style.marginTop = (-(A.ground[1] - pin[1]) - 4) + 'px';
+    at(E.aNext, A.next[0], A.next[1]);
+    if (A.board) {
+      var b = A.board, bw = b[2] - b[0], bh = b[3] - b[1];
+      at(E.aHalo, b[0] - 5, b[1] - 5);
+      E.halo.style.width = (bw + 10) + 'px'; E.halo.style.height = (bh + 10) + 'px';
+      E.scan.style.width = (bw + 16) + 'px'; E.scan.style.height = (bh + 16) + 'px'; E.scan.style.left = '-3px'; E.scan.style.top = '-3px';
+      at(E.aPosterF, b[0], b[1]);
+      E.posterF.style.width = bw + 'px'; E.posterF.style.height = (bh * 70 / 46) + 'px';
+      at(E.aCall, (b[0] + b[2]) / 2, b[1] - 6);
+    }
+  }
+  function uiApply(u) {
+    if (u.on !== phone.classList.contains('on')) phone.classList.toggle('on', u.on);
+    if (u.eye !== curEye) {
+      curEye = u.eye;
+      E.stills.forEach(function (s) { s.style.display = s.dataset.still === (u.eye === 'mill' ? 'mill' : 'poster') ? '' : 'none'; });
+      placeAnchors();
+    }
+    css(E.cover, 'opacity', u.on ? u.cover.toFixed(3) : '1');
+    if (u.pill !== curPill) { curPill = u.pill; E.pill.innerHTML = PILLS[u.pill]; }
+    css(E.chip, 'opacity', u.chip.toFixed(3));
+    css(E.chip, 'transform', 'translateX(-50%) translateY(' + ((1 - u.chip) * -0.4).toFixed(2) + 'em)');
+    function sheet(el, v) { css(el, 'opacity', v.toFixed(3)); css(el, 'transform', 'translateY(' + ((1 - v) * 0.8).toFixed(2) + 'em)'); css(el, 'visibility', v > 0.001 ? 'visible' : 'hidden'); }
+    sheet(E.place, u.place); sheet(E.tools, u.tools); sheet(E.share, u.share);
+    css(E.placeBtn, 'transform', 'scale(' + (1 - 0.06 * u.press).toFixed(3) + ')');
+    css(E.placeBtn, 'background', u.press > 0.3 ? 'var(--route-dark)' : '');
+    css(E.printBtn, 'transform', 'scale(' + (1 - 0.06 * u.print).toFixed(3) + ')');
+    css(E.printBtn, 'background', u.print > 0.3 ? 'var(--route-dark)' : '');
+    E.tText.classList.toggle('sel', !u.toolPic); E.tPic.classList.toggle('sel', !!u.toolPic);
+    css(E.retic, 'opacity', u.retic.toFixed(3));
+    css(E.retic, 'transform', 'translate(' + (u.glide * 34).toFixed(1) + 'px,' + (u.glide * 46).toFixed(1) + 'px)');
+    css(E.ripple, 'opacity', (u.ripple > 0 && u.ripple < 1 ? 0.9 * (1 - u.ripple) : 0).toFixed(3));
+    css(E.ripple, 'transform', 'scale(' + (0.7 + 1.4 * u.ripple).toFixed(3) + ')');
+    css(E.pinF, 'opacity', u.pinF > 0.01 ? '1' : '0');
+    css(E.pinF, 'transform', 'scaleY(' + Math.max(0.001, u.pinF).toFixed(3) + ')');
+    css(E.posterF, 'opacity', u.posterF > 0.01 ? '1' : '0');
+    css(E.posterF, 'transform', 'translateY(' + ((1 - Math.min(1, u.posterF)) * -14).toFixed(1) + 'px) scale(' + Math.max(0.001, u.posterF).toFixed(3) + ')');
+    css(E.halo, 'opacity', u.halo.toFixed(3));
+    css(E.scan, 'opacity', (u.scan > 0 ? Math.min(1, u.scan * 3) : 0).toFixed(3));
+    css(E.scan, 'transform', 'scale(' + (1.35 - 0.35 * u.scan).toFixed(3) + ')');
+    css(E.card, 'opacity', u.card.toFixed(3));
+    css(E.card, 'transform', 'translateX(-50%) translateY(' + ((1 - u.card) * 0.8).toFixed(2) + 'em) scale(' + (0.94 + 0.06 * u.card).toFixed(3) + ')');
+    E.card.classList.toggle('dashed', !!u.dashed);
+    var typed = Math.min(TYPE.length, u.typed);
+    if (E.ct.textContent.length !== typed) E.ct.textContent = TYPE.slice(0, typed);
+    E.caret.classList.toggle('on', u.dashed && typed < TYPE.length && u.card > 0.5);
+    css(E.body, 'opacity', u.body.toFixed(3));
+    css(E.ghost, 'opacity', u.ghost.toFixed(3));
+    css(E.pic, 'opacity', u.pic.toFixed(3));
+    css(E.pic, 'transform', 'scale(' + (0.82 + 0.18 * u.pic).toFixed(3) + ') rotate(' + (-3 + 1 * u.pic).toFixed(2) + 'deg)');
+    css(E.next, 'opacity', u.next.toFixed(3));
+    css(E.callout, 'opacity', u.callout.toFixed(3));
+    css(E.callout, 'transform', 'translateX(-50%) translateY(' + ((1 - u.callout) * 0.8).toFixed(2) + 'em)');
+    css(polaroid, 'opacity', u.polaroid.toFixed(3));
+  }
+
+  /* ================= the step engine ================= */
+  var S = blankS(), U = blankU();
+  var L = window.__landing = {
+    park: PARK, route: route, stations: STATIONS, eyes: EYES, regions: REGIONS, spot: SPOT,
+    clamp: clamp, sm: sm, reduced: reduced, ready: false, failed: '', scene: null,
+    layout: function () { return LY; }, ndcRect: ndcRect, viewParams: viewParams,
+    params: { fs: FMIN, beat: BEAT, cam: CAM_S, speed: SPEED, ph: PHW, az2: AZ2 }
+  };
+  function hasWebGL() {
+    try {
+      var c = document.createElement('canvas'), g = c.getContext('webgl2') || c.getContext('webgl');
+      if (!g) return false;
+      var ext = g.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext();
+      return true;
+    } catch (e) { return false; }
+  }
+  L.want3d = qs.get('gl') !== '0' && hasWebGL();
+  var anim = !reduced;
+
+  var cur = -1, T = 0, playing = false, waiting = false, settleAt = 0, b0Pending = L.want3d && anim, raf = 0, lastNow = 0;
+  function applyBeat(b, t) {
+    var s = blankS(), u = blankU();
+    BEATS[b].apply(t, s, u);
+    S = s; U = u; L.state = S; L.ui = U;
+    uiApply(U);
+    if (L.ready && L.scene) L.scene.sync(S, U);
+    else floorIfChanged();
+  }
+  var panels = $$('.copy .panel'), acts = $$('.actions .act'), beatDots = $$('#beats i');
+  function showPanel(b) {
+    stage.dataset.beat = String(b);
+    panels.forEach(function (p) { p.classList.toggle('on', +p.dataset.b === b); });
+    acts.forEach(function (a) { a.classList.toggle('on', +a.dataset.a === (b === 0 ? 0 : 1)); });
+    var k = [0, 0, 1, 2, 3, 3, 4, 5][b];
+    beatDots.forEach(function (d, i) { d.classList.toggle('on', i < k); });
+  }
+  function enterBeat(b) {
+    var from = cur;
+    if (b === cur) return;
+    cur = b; showPanel(b);
+    // forward: play the step's own short sequence once the camera has arrived; backward or skipping: show it finished
+    var play = anim && (b === 0 ? b0Pending : b === from + 1) && (b !== 0 || L.ready);
+    if (b === 0 && !play && b0Pending) { applyBeat(0, 0); playing = false; drawIfFloor(); return; }
+    T = play ? 0 : BEATS[b].dur;
+    playing = play; waiting = play; settleAt = 0;
+    applyBeat(b, T);
+    drawIfFloor();
+    if (play) kick();
+  }
+  function drawIfFloor() { if (!L.ready) { floorSig = ''; floorIfChanged(); } }
+  // without 3D the drawing is rebuilt only when something visible in it changes, not every frame
+  var floorSig = '';
+  function floorIfChanged() {
+    var f = S.fig, k = [S.view, S.pins.map(function (v) { return v > 0.5 ? 1 : 0; }).join(''), S.poster > 0.5, f && f.k > 0.5 ? f.who + Math.round(f.x) + ',' + Math.round(f.z) : '-', S.wedge > 0.5, U.on, Math.floor(S.route / 1.5)].join('|');
+    if (k === floorSig) return;
+    floorSig = k; drawFloor(S);
+  }
+  function kick() { if (!raf) { lastNow = performance.now(); raf = requestAnimationFrame(loop); } }
+  function loop(now) {
+    raf = 0;
+    if (!playing) return;
+    var dt = Math.min(0.1, (now - lastNow) / 1000); lastNow = now;
+    if (document.hidden) { kick(); return; }
+    if (waiting) {
+      var moving = L.scene && L.scene.moving();
+      if (moving) settleAt = 0;
+      else if (!settleAt) settleAt = now;
+      else if (now - settleAt > 220) waiting = false;
+    } else {
+      T = Math.min(BEATS[cur].dur, T + dt * SPEED);
+      applyBeat(cur, T);
+      if (T >= BEATS[cur].dur) { playing = false; if (cur === 0) b0Pending = false; return; }
+    }
+    raf = requestAnimationFrame(loop);
+  }
+  L.beatInfo = function () { return { beat: cur, t: T, playing: playing, waiting: waiting }; };
+
+  function beatFromScroll() {
+    var r = story.getBoundingClientRect(), span = story.offsetHeight - innerHeight;
+    if (span <= 0) return 0;
+    var per = span / (N - 1 + 0.6), y = clamp(-r.top, 0, span);
+    return clamp(Math.floor(y / per + 0.4), 0, N - 1);
+  }
+  story.style.height = 'calc(100svh + ' + ((N - 1 + 0.6) * BEAT).toFixed(1) + 'svh)';
+  var ticking = false;
+  function onScroll() {
+    if (ticking) return; ticking = true;
+    requestAnimationFrame(function () { ticking = false; enterBeat(beatFromScroll()); });
+  }
+  addEventListener('scroll', onScroll, { passive: true });
+  L.goBeat = function (b) {
+    var span = story.offsetHeight - innerHeight, per = span / (N - 1 + 0.6);
+    window.scrollTo({ top: story.offsetTop + per * b + 1, behavior: 'instant' });
+    enterBeat(b);
+  };
+
+  var lastKey = '';
+  function onResize() {
+    var W = art.clientWidth, H = art.clientHeight, key = W + 'x' + H;
+    if (key === lastKey || !W || !H) return; lastKey = key;
+    layout(); placeAnchors();
+    if (L.ready && L.scene) L.scene.resize(); else drawFloor(S);
+  }
+  L.onLayout = function () { placeAnchors(); };
+
+  /* ================= 3D lifecycle hooks ================= */
+  L.fail = function (why) {
+    L.failed = why || 'failed'; L.ready = false; L.scene = null;
+    root.classList.remove('gl'); $('#gl').classList.remove('on'); $('#tags').innerHTML = '';
+    b0Pending = false; if (cur === 0) { T = BEATS[0].dur; playing = false; }
+    applyBeat(cur < 0 ? 0 : cur, T); placeAnchors(); drawFloor(S);
+  };
+  L.onReady = function () {
+    L.ready = true; root.classList.add('gl');
+    placeAnchors();
+    var b = cur < 0 ? 0 : cur;
+    if (b === 0 && b0Pending && anim) { cur = -1; enterBeat(0); }
+    else { applyBeat(b, playing ? T : BEATS[b].dur); }
+  };
+
+  /* ================= deterministic fake code (a pattern, not a real code) ================= */
+  (function qr() {
+    var n = 21, sd = Math.imul(8, 2654435761) >>> 0 || 1, d = '';
+    function r() { sd ^= sd << 13; sd >>>= 0; sd ^= sd >>> 17; sd ^= sd << 5; sd >>>= 0; return sd / 4294967296; }
+    function finder(x, y) { return (x < 8 && y < 8) || (x > n - 9 && y < 8) || (x < 8 && y > n - 9); }
+    for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) if (!finder(x, y) && r() < 0.47) d += 'M' + x + ' ' + y + 'h1v1h-1z';
+    [[0, 0], [n - 7, 0], [0, n - 7]].forEach(function (f) {
+      d += 'M' + f[0] + ' ' + f[1] + 'h7v7h-7z' + 'M' + (f[0] + 1) + ' ' + (f[1] + 1) + 'v5h5v-5z' + 'M' + (f[0] + 2) + ' ' + (f[1] + 2) + 'h3v3h-3z';
+    });
+    $('#qrPath').setAttribute('d', d);
+  })();
+
+  /* ================= toast, AR support, buttons ================= */
+  var toastEl = $('#toast'), toastT = 0;
+  function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(function () { toastEl.classList.remove('show'); }, 4200); }
+  var detected = null;
+  var arMode = qs.get('ar') === '1' || qs.get('ar') === '0' ? qs.get('ar') : 'auto';
+  function arOn() { return root.dataset.ar === '1'; }
+  function applyAr() {
+    var on = arMode === '1' ? true : arMode === '0' ? false : detected === true;
+    root.dataset.ar = on ? '1' : '0';
+    $$('[data-ar-set]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.arSet === arMode)); });
+    $('#arAuto').textContent = detected === null ? 'Device' : (detected ? 'Device: AR' : 'Device: no AR');
+    $('#visitMsg').textContent = '';
+  }
+  $$('[data-ar-set]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      arMode = b.dataset.arSet;
+      var u = new URL(location.href);
+      if (arMode === 'auto') u.searchParams.delete('ar'); else u.searchParams.set('ar', arMode);
+      try { history.replaceState(null, '', u); } catch (e) { /* file: or sandboxed */ }
+      applyAr();
+    });
+  });
+  applyAr();
+  (function detect() {
+    var xr = navigator.xr;
+    if (!xr || typeof xr.isSessionSupported !== 'function') { detected = false; applyAr(); return; }
+    var settled = false;
+    var tm = setTimeout(function () { if (!settled) { settled = true; detected = false; applyAr(); } }, 1500);
+    try {
+      xr.isSessionSupported('immersive-ar').then(function (ok) {
+        if (settled) return; settled = true; clearTimeout(tm); detected = !!ok; applyAr();
+      }, function () { if (settled) return; settled = true; clearTimeout(tm); detected = false; applyAr(); });
+    } catch (e) { settled = true; clearTimeout(tm); detected = false; applyAr(); }
+  })();
+
+  function toSetup(e) { if (e) e.preventDefault(); $('#setup').scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' }); }
+  ['#makeBtn', '#makeBtn2', '#skipBtn'].forEach(function (s) { $(s).addEventListener('click', toSetup); });
+  $('#tryBtn').addEventListener('click', function () {
+    toast(arOn()
+      ? 'Here the page would place an example station in front of you. You put it where you like, then walk up to it as a visitor would.'
+      : 'Trying it needs an Android phone with Chrome (AR). Open this page there to place an example station in front of you.');
+  });
+  $('#visitToggle').addEventListener('click', function () {
+    var pop = $('#visitPop'), open = pop.hidden;
+    pop.hidden = !open; this.setAttribute('aria-expanded', String(open));
+    if (open) $('#visitIn').focus();
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('#visitPop').hidden) { $('#visitPop').hidden = true; $('#visitToggle').setAttribute('aria-expanded', 'false'); } });
+  $('#scanBtn').addEventListener('click', function () { toast('Here the real page opens the camera to scan the tour\'s code.'); });
+  $('#visitForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var v = $('#visitIn').value.trim(), msg = $('#visitMsg');
+    if (!v) { msg.textContent = 'Paste the link first. It starts with https://'; $('#visitIn').focus(); return; }
+    if (!/^https?:\/\/[^\s/]+\.[^\s]+/i.test(v)) { msg.textContent = 'That does not look like a link yet. It should start with https://'; return; }
+    msg.textContent = arOn() ? 'Here the real page would open this tour and start the camera.' : 'That looks like a tour link. Open it on an Android phone with Chrome to walk the tour.';
+  });
+  $('#startBtn').addEventListener('click', function () { toast('Here the real page opens step 1: where your tour\'s file is stored.'); });
+  $('#editBtn').addEventListener('click', function () { toast(arOn() ? 'Here the real page picks up your saved tour on this phone.' : 'Here the real page opens the editor, where you change words and move stations on a map.'); });
+
+  // numbers in the notes panel
+  var NOTE = { beat: String(BEAT), phw: Math.round(PHW * 100) + ' %', js: "the page's own script is 27 kB gzip; three.js 0.185.1 adds 87 kB + 101 kB gzip (module and core), 216 kB in all against a 250 kB budget. three.js loads only after the first paint and an idle moment.",
+    frames: "one full render of the model and the phone's screen costs about 1.6 ms at 390 px wide (2.6 ms at 1440 px, 4.8 ms at twice the pixel density) on this desktop's built-in graphics, and nothing is rendered while nothing moves. Run through all eight steps at 390 x 844 on a machine held at 100 % CPU by other work, the median frame is 16.7 ms and 9 to 37 frames per run take over 50 ms; the earlier route page shows 19 to 24 such frames under the same load, and a blank page none. At 4x and 6x CPU slow-down a blank page alone already shows 14 to 19 frames over 50 ms in 20 s, so those runs measure the machine, not this page. A real phone still has to be checked." };
+  L.note = function (k, v) { NOTE[k] = v; fillNotes(); };
+  function fillNotes() { $$('span[data-n]').forEach(function (el) { el.textContent = NOTE[el.dataset.n] || ''; }); }
+  fillNotes();
+
+  /* ================= start ================= */
+  layout();
+  if ('ResizeObserver' in window) new ResizeObserver(onResize).observe(art); else addEventListener('resize', onResize);
+  addEventListener('pageshow', function () { onScroll(); });
+  onResize();
+  enterBeat(beatFromScroll());
+})();
+</script>
+
+<script type="module">
+const L = window.__landing;
+if (L && L.want3d) boot();
+
+async function boot() {
+  // three.js never blocks the first paint: wait for load, the first contentful paint, then an idle moment
+  if (document.readyState !== 'complete') await new Promise((r) => addEventListener('load', r, { once: true }));
+  await new Promise((r) => {
+    const done = () => { clearTimeout(t); r(); };
+    const t = setTimeout(done, 1500);
+    try {
+      if (performance.getEntriesByName('first-contentful-paint').length) return done();
+      const po = new PerformanceObserver((list) => { if (list.getEntriesByName('first-contentful-paint').length) { po.disconnect(); done(); } });
+      po.observe({ type: 'paint', buffered: true });
+    } catch (e) { requestAnimationFrame(() => requestAnimationFrame(done)); }
+  });
+  await new Promise((r) => ('requestIdleCallback' in window ? requestIdleCallback(r, { timeout: 600 }) : setTimeout(r, 100)));
+  let THREE;
+  try { THREE = await import('three'); } catch (e) { L.fail('three.js could not be loaded'); return; }
+  try { start(THREE); } catch (e) { L.fail('3D could not start: ' + (e && e.message)); }
+}
+
+function start(THREE) {
+  const P = L.park, C = P.colors, route = P.route, DEG = Math.PI / 180;
+  const canvas = document.getElementById('gl'), art = document.getElementById('art');
+  const tagsEl = document.getElementById('tags'), leadLine = document.getElementById('leadLine'), leadDot = document.getElementById('leadDot');
+  const reduced = L.reduced, CAM_S = L.params.cam;
+  // diagnostic switches for cost measurements: ?shadow=0, ?eye=0, ?mask=0
+  const dq = new URLSearchParams(location.search), NO_EYE = dq.get('eye') === '0';
+  if (dq.get('mask') === '0') document.documentElement.classList.add('nomask');
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x000000, 0);
+  renderer.shadowMap.enabled = dq.get('shadow') !== '0';
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.autoUpdate = false;
+  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); running = false; L.fail('WebGL context lost'); }, false);
+
+  const scene = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(15, 1, 1, 2000);
+  cam.layers.enable(2); // layer 2: seen from above only (the person, the wedge)
+  const eye = new THREE.PerspectiveCamera(60, 0.5, 0.08, 220);
+  eye.layers.enable(1); // layer 1: seen at eye height only (the land beyond the model)
+  scene.add(new THREE.HemisphereLight(0xfff7e8, 0xb6a684, 1.55));
+  const sun = new THREE.DirectionalLight(0xfff0d8, 2.0);
+  sun.position.set(P.light[0] * 40, P.light[1] * 40, P.light[2] * 40);
+  sun.castShadow = true;
+  const small = Math.min(innerWidth, innerHeight) < 700;
+  sun.shadow.mapSize.set(small ? 1024 : 2048, small ? 1024 : 2048);
+  Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 5, far: 90 });
+  sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.03; sun.shadow.radius = 3;
+  scene.add(sun);
+
+  const mats = {};
+  const mat = (c, extra) => {
+    const k = c + (extra ? JSON.stringify(extra) : '');
+    return mats[k] || (mats[k] = new THREE.MeshLambertMaterial(Object.assign({ color: c }, extra || {})));
+  };
+  const mesh = (geo, m, x = 0, y = 0, z = 0, cast = true, recv = true) => {
+    const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = cast; o.receiveShadow = recv; scene.add(o); return o;
+  };
+
+  // --- the slab: a rounded tile of grass on a band of earth, on a table that catches its shadow
+  const S0 = P.slab;
+  const shape = (inset) => {
+    const w = S0.w / 2 - inset, d = S0.d / 2 - inset, r = S0.r - inset, s = new THREE.Shape();
+    s.moveTo(-w + r, -d); s.lineTo(w - r, -d); s.quadraticCurveTo(w, -d, w, -d + r); s.lineTo(w, d - r); s.quadraticCurveTo(w, d, w - r, d);
+    s.lineTo(-w + r, d); s.quadraticCurveTo(-w, d, -w, d - r); s.lineTo(-w, -d + r); s.quadraticCurveTo(-w, -d, -w + r, -d);
+    return s;
+  };
+  const slab = (inset, depth, bev, top, capC, sideC) => {
+    const g = new THREE.ExtrudeGeometry(shape(inset + bev), { depth, bevelEnabled: true, bevelThickness: bev, bevelSize: bev, bevelSegments: 2, curveSegments: 6 });
+    g.rotateX(-Math.PI / 2);
+    const m = new THREE.Mesh(g, [mat(capC), mat(sideC)]);
+    m.position.y = top - depth - bev; m.receiveShadow = true; m.castShadow = true; scene.add(m); return m;
+  };
+  slab(0, S0.grass - 0.1, 0.05, 0, C.grass, C.grassSide);
+  slab(0.04, S0.earth - 0.1, 0.05, -S0.grass, C.earth, C.earth);
+  const table = new THREE.Mesh(new THREE.PlaneGeometry(140, 140).rotateX(-Math.PI / 2), new THREE.ShadowMaterial({ opacity: 0.13, color: 0x46381e }));
+  table.position.y = -S0.grass - S0.earth - 0.01; table.receiveShadow = true; table.layers.set(2); scene.add(table);
+
+  // --- at eye height the model's edge must not show: land and a ring of far trees beyond it, seen by the phone only
+  const land = new THREE.Mesh(new THREE.CircleGeometry(170, 48).rotateX(-Math.PI / 2), mat('#cfcba0'));
+  land.position.y = -0.03; land.layers.set(1); scene.add(land);
+  {
+    const far = [];
+    let sd = 11;
+    const rnd = () => { sd = (sd * 16807) % 2147483647; return (sd - 1) / 2147483646; };
+    for (let i = 0; i < 90; i++) {
+      const a = rnd() * Math.PI * 2, r = 21 + rnd() * 40, x = Math.cos(a) * r, z = Math.sin(a) * r * 0.85;
+      if (Math.abs(x) < 19 && Math.abs(z) < 15.5) continue;
+      far.push({ x, z, s: 1.1 + rnd() * 1.4 });
+    }
+    const geo = new THREE.IcosahedronGeometry(1, 0), o = new THREE.Object3D();
+    const im = new THREE.InstancedMesh(geo, mat('#b3b98d', { flatShading: true }), far.length);
+    far.forEach((t, i) => { o.position.set(t.x, 1.6 * t.s, t.z); o.scale.set(1.3 * t.s, 1.6 * t.s, 1.3 * t.s); o.rotation.set(0, t.x, 0); o.updateMatrix(); im.setMatrixAt(i, o.matrix); });
+    im.layers.set(1); scene.add(im);
+  }
+
+  // --- ground decals
+  const ribbonGeo = (pts, w, y) => {
+    const pos = [], idx = [];
+    pts.forEach((p, i) => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+      const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = -dz / l * w / 2, nz = dx / l * w / 2;
+      pos.push(p[0] + nx, y, p[1] + nz, p[0] - nx, y, p[1] - nz);
+      if (i) { const k = i * 2; idx.push(k - 2, k, k - 1, k - 1, k, k + 1); }
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+    g.setIndex(idx);
+    return g;
+  };
+  const flat = (c) => mat(c, { side: THREE.DoubleSide });
+  mesh(ribbonGeo(P.stream, P.streamW, 0.012), flat(C.water), 0, 0, 0, false);
+  mesh(ribbonGeo(P.stream.map((q) => [q[0] + 0.25, q[1]]), 0.14, 0.02), flat(C.waterLine), 0, 0, 0, false);
+  const Y = P.yard;
+  mesh(new THREE.PlaneGeometry(Y.x1 - Y.x0, Y.z1 - Y.z0).rotateX(-Math.PI / 2), mat(C.paving), (Y.x0 + Y.x1) / 2, 0.01, (Y.z0 + Y.z1) / 2, false);
+  const pondRim = mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), mat(C.stone), P.pond.x, 0.008, P.pond.z, false);
+  pondRim.scale.set(P.pond.rx + 0.2, 1, P.pond.rz + 0.2);
+  const pond = mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), mat(C.water), P.pond.x, 0.016, P.pond.z, false);
+  pond.scale.set(P.pond.rx, 1, P.pond.rz);
+  mesh(ribbonGeo(route.pts, P.pathW, 0.022), flat(C.path), 0, 0, 0, false);
+
+  // --- buildings
+  const roofGeo = (b) => {
+    const o = 0.3, xa = b.x0 - o, xb = b.x1 + o, za = b.z0 - o, zb = b.z1 + o, zm = (b.z0 + b.z1) / 2, y0 = b.h, y1 = b.h + b.roof;
+    const v = [xa, y0, zb, xb, y0, zb, xb, y1, zm, xa, y0, zb, xb, y1, zm, xa, y1, zm,
+      xb, y0, za, xa, y0, za, xa, y1, zm, xb, y0, za, xa, y1, zm, xb, y1, zm,
+      xa + o, y0, zb - o, xa + o, y1, zm, xa + o, y0, za + o, xb - o, y0, za + o, xb - o, y1, zm, xb - o, y0, zb - o,
+      xa, y0 - 0.02, za, xb, y0 - 0.02, za, xb, y0 - 0.02, zb, xa, y0 - 0.02, za, xb, y0 - 0.02, zb, xa, y0 - 0.02, zb];
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+    g.computeVertexNormals();
+    return g;
+  };
+  const house = (b, roofC, details) => {
+    mesh(new THREE.BoxGeometry(b.x1 - b.x0, b.h, b.z1 - b.z0), mat(C.wall), (b.x0 + b.x1) / 2, b.h / 2, (b.z0 + b.z1) / 2);
+    const r = new THREE.Mesh(roofGeo(b), mat(roofC, { side: THREE.DoubleSide }));
+    r.castShadow = true; r.receiveShadow = true; scene.add(r);
+    details.forEach((d) => mesh(new THREE.BoxGeometry(d[1] - d[0], d[3] - d[2], 0.06), mat(C.dark), (d[0] + d[1]) / 2, (d[2] + d[3]) / 2, b.z1 + 0.03, false, false));
+  };
+  house(P.mill, C.roof, [[-8.9, -8.1, 0, 1.3], [-11.4, -10.6, 1.2, 1.9], [-7.4, -6.8, 1.2, 1.9]]);
+  house(P.barn, C.roof2, [[8.5, 9.3, 0, 1.2]]);
+
+  // --- the mill wheel (still: one moving thing at a time)
+  const W = P.wheel, wheel = new THREE.Group();
+  wheel.position.set(W.x - W.w / 2, W.y, W.z);
+  const wood = mat(C.wood), woodD = mat('#8f7457');
+  [-W.w / 2, W.w / 2].forEach((dx) => { const t = new THREE.Mesh(new THREE.TorusGeometry(W.r, 0.08, 5, 28).rotateY(Math.PI / 2), woodD); t.position.x = dx; t.castShadow = true; wheel.add(t); });
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const paddle = new THREE.Mesh(new THREE.BoxGeometry(W.w + 0.1, 0.06, 0.42), wood);
+    paddle.position.set(0, Math.cos(a) * (W.r - 0.1), Math.sin(a) * (W.r - 0.1)); paddle.rotation.x = -a; paddle.castShadow = true; wheel.add(paddle);
+    if (i % 3 === 0) { const sp = new THREE.Mesh(new THREE.BoxGeometry(0.08, W.r * 2, 0.08), woodD); sp.rotation.x = a; wheel.add(sp); }
+  }
+  wheel.add(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, W.w + 0.4, 10).rotateZ(Math.PI / 2), woodD));
+  wheel.rotation.x = -0.4;
+  scene.add(wheel);
+
+  // --- fountain, lookout, the code on its post
+  const F = P.fountain;
+  mesh(new THREE.CylinderGeometry(1.0, 1.05, 0.38, 20), mat(C.stone), F.x, 0.19, F.z);
+  mesh(new THREE.CylinderGeometry(0.86, 0.86, 0.02, 20), mat(C.water), F.x, 0.37, F.z, false);
+  mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.75, 8), mat(C.stone), F.x, 0.74, F.z);
+  mesh(new THREE.CylinderGeometry(0.45, 0.3, 0.12, 12), mat(C.stone), F.x, 1.14, F.z);
+  const LK = P.lookout, hs = LK.s / 2;
+  mesh(new THREE.BoxGeometry(LK.s, LK.h, LK.s), mat(C.stone), LK.x, LK.h / 2, LK.z);
+  mesh(new THREE.BoxGeometry(0.12, 0.8, LK.s), wood, LK.x + hs - 0.06, LK.h + 0.4, LK.z);
+  mesh(new THREE.BoxGeometry(LK.s, 0.8, 0.12), wood, LK.x, LK.h + 0.4, LK.z - hs + 0.06);
+  const posterG = new THREE.Group();
+  posterG.position.set(P.poster.x, 0, P.poster.z);
+  {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.0, 0.12), wood); post.position.y = 0.5;
+    const board = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.2, 0.08), mat('#ffffff')); board.position.set(0, 1.5, 0.08);
+    const band = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.18), mat(C.route)); band.position.set(0, 2.0, 0.125);
+    const q1 = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), mat(C.ink)); q1.position.set(0, 1.45, 0.125);
+    const q2 = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.4), mat('#ffffff')); q2.position.set(0, 1.45, 0.13);
+    const q3 = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.2), mat(C.ink)); q3.position.set(0, 1.45, 0.135);
+    posterG.add(post, board, band, q1, q2, q3);
+  }
+  posterG.scale.setScalar(0.001); scene.add(posterG);
+  const BOARD = { x: P.poster.x, z: P.poster.z + 0.13, y0: 0.9, y1: 2.1, w: 1.0 };
+
+  // --- trees (instanced)
+  const T = P.trees, broad = T.filter((t) => !t.kind), conif = T.filter((t) => t.kind);
+  const icoGeo = new THREE.IcosahedronGeometry(1, 0), coneGeo = new THREE.ConeGeometry(1, 1, 7).translate(0, 0.5, 0), trunkGeo = new THREE.CylinderGeometry(0.1, 0.14, 1, 6).translate(0, 0.5, 0);
+  const inst = (geo, m, list, setter) => {
+    const im = new THREE.InstancedMesh(geo, m, list.length), o = new THREE.Object3D();
+    list.forEach((t, i) => { setter(o, t); o.updateMatrix(); im.setMatrixAt(i, o.matrix); });
+    im.castShadow = true; im.receiveShadow = true; scene.add(im); return im;
+  };
+  inst(icoGeo, mat(C.tree, { flatShading: true }), broad, (o, t) => { o.position.set(t.x, 1.75 * t.s, t.z); o.scale.set(0.95 * t.s, 0.86 * t.s, 0.95 * t.s); o.rotation.set(0, t.x * 3.1, 0); });
+  inst(coneGeo, mat(C.conifer, { flatShading: true }), conif, (o, t) => { o.position.set(t.x, 0.4 * t.s, t.z); o.scale.set(0.75 * t.s, 2.6 * t.s, 0.75 * t.s); o.rotation.set(0, t.z * 2.3, 0); });
+  inst(trunkGeo, mat(C.trunk), T, (o, t) => { o.position.set(t.x, 0, t.z); o.scale.set(t.s, (t.kind ? 0.5 : 0.95) * t.s, t.s); o.rotation.set(0, 0, 0); });
+  const O = P.oak;
+  mesh(new THREE.CylinderGeometry(0.26, 0.38, O.h, 7).translate(0, O.h / 2, 0), mat(C.trunk), O.x, 0, O.z);
+  [[-0.5, O.h + 0.9, 0, 0.8], [0.7, O.h + 0.7, 0.3, 0.75], [0, O.h + 1.4, -0.4, 0.8]].forEach((c) => {
+    const m = mesh(icoGeo, mat(C.tree, { flatShading: true }), O.x + c[0], c[1], O.z + c[2]); m.scale.set(O.r * c[3], O.r * c[3] * 0.85, O.r * c[3]);
+  });
+
+  // --- the route: dots that draw themselves
+  const dotPos = [];
+  for (let s = 0.3; s < route.len; s += 0.62) dotPos.push(s);
+  const dots = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.16, 0.04, 10), new THREE.MeshBasicMaterial({ color: C.route }), dotPos.length);
+  { const o = new THREE.Object3D(); dotPos.forEach((s, i) => { const q = route.at(s); o.position.set(q.x, 0.05, q.z); o.updateMatrix(); dots.setMatrixAt(i, o.matrix); }); }
+  dots.count = 0; dots.layers.set(2); scene.add(dots); // the dotted route belongs to the model, not to what a phone sees
+
+  // --- pins with blob shadows, and their labels
+  const blobGeo = new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2);
+  const blobMat = new THREE.MeshBasicMaterial({ color: 0x2a2824, transparent: true, opacity: 0.2, depthWrite: false });
+  const red = mat(C.route), ink = mat(C.ink), white = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const pins = P.stations.map((st) => {
+    const g = new THREE.Group(); g.position.set(st.pin[0], 0, st.pin[1]);
+    const head = new THREE.Group();
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.44, 18, 12), red);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.33, 0.66, 16).rotateX(Math.PI), red); tip.position.y = -0.42;
+    const eyeDot = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 8), white);
+    head.add(ball, tip, eyeDot);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 6).translate(0, 0.5, 0), ink);
+    const blob = new THREE.Mesh(blobGeo, blobMat); blob.position.y = 0.03; blob.scale.setScalar(0.45);
+    g.add(head, pole, blob); scene.add(g);
+    const tag = document.createElement('span'); tag.className = 'tag'; tag.innerHTML = '<b>' + st.n + '</b>' + st.name; tagsEl.appendChild(tag);
+    return { st, g, head, pole, blob, eyeDot, tag, rise: 0, base: 0.001, pulse: 0 };
+  });
+  const startTag = document.createElement('span'); startTag.className = 'tag start'; startTag.textContent = 'Start: the code'; tagsEl.appendChild(startTag);
+  const whoTag = document.createElement('span'); whoTag.className = 'tag who'; tagsEl.appendChild(whoTag);
+  const setPin = (p, k, pulse) => {
+    p.rise = k; p.pulse = pulse || 0;
+    p.base = Math.min(1, Math.max(0.001, k * 1.3)) * (1 + 0.25 * p.pulse);
+    p.blob.scale.setScalar(0.45 * Math.min(1, Math.max(0.001, k)));
+    p.g.visible = k > 0.001;
+  };
+  // the pin stands at its full height in the model and lower in the phone (P.eyePinH)
+  const poseFor = (H) => pins.forEach((p) => { const h = H * Math.max(0, p.rise); p.head.position.y = h; p.pole.scale.y = Math.max(0.001, h - 0.75); p.pole.visible = h > 0.8; });
+  pins.forEach((p) => setPin(p, 0));
+
+  // --- the person (the maker in route red, a visitor in ink) and the pale wedge their phone looks along
+  const fig = new THREE.Group();
+  const bodyMaker = mat(C.route), bodyVisitor = ink;
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.3, 4, 10), bodyVisitor); body.position.y = 0.36;
+  const headF = new THREE.Mesh(new THREE.SphereGeometry(0.15, 14, 10), mat(C.paper)); headF.position.y = 0.76;
+  const fBlob = new THREE.Mesh(blobGeo, blobMat); fBlob.position.y = 0.03; fBlob.scale.setScalar(0.3);
+  fig.add(body, headF, fBlob); fig.visible = false;
+  fig.traverse((o) => o.layers.set(2));
+  scene.add(fig);
+  const wedgeGeo = new THREE.BufferGeometry();
+  wedgeGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0, 0, 0, 0], 3));
+  wedgeGeo.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
+  const wedgeMat = new THREE.MeshBasicMaterial({ color: C.route, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+  const wedge = new THREE.Mesh(wedgeGeo, wedgeMat); wedge.layers.set(2); wedge.visible = false; wedge.renderOrder = 2; scene.add(wedge);
+
+  // --- cameras: an overview fitted to the real frustum, close views fitted beside the phone, and the phone's eye
+  const keyPts = [];
+  (() => {
+    const w = S0.w / 2, d = S0.d / 2;
+    for (const [x, z] of [[-w, -d], [w, -d], [w, d], [-w, d], [0, -d], [0, d], [-w, 0], [w, 0]]) { keyPts.push([x, 0, z], [x, -S0.grass - S0.earth, z]); }
+    const m = P.mill, b = P.barn;
+    keyPts.push([m.x0, m.h + m.roof, (m.z0 + m.z1) / 2], [m.x1, m.h + m.roof, (m.z0 + m.z1) / 2], [b.x0, b.h + b.roof, (b.z0 + b.z1) / 2], [b.x1, b.h + b.roof, (b.z0 + b.z1) / 2]);
+    T.forEach((t) => keyPts.push([t.x, 2.7 * t.s, t.z]));
+    P.stations.forEach((st) => keyPts.push([st.pin[0], P.pinH + 1.9, st.pin[1]]));
+    keyPts.push([P.poster.x, 3.6, P.poster.z]);
+  })();
+  const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+  const dirOf = (az, el) => V3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+  function fit(pts, vp, aspect, rect) {
+    const az = vp.az, el = vp.el, fov = vp.fov * DEG, tv = Math.tan(fov / 2), th = tv * aspect;
+    const dir = dirOf(az, el), up = V3(0, 1, 0);
+    const r = new THREE.Vector3().crossVectors(up, dir).normalize();
+    const u = new THREE.Vector3().crossVectors(dir, r).normalize();
+    const target = V3(0, 0, 0); pts.forEach((p) => { target.x += p[0] / pts.length; target.y += p[1] / pts.length; target.z += p[2] / pts.length; });
+    const hw = (rect[1] - rect[0]) / 2, hh = (rect[3] - rect[2]) / 2, cxT = (rect[0] + rect[1]) / 2, cyT = (rect[2] + rect[3]) / 2, tmp = new THREE.Vector3();
+    const ndc = (d) => {
+      const c = target.clone().addScaledVector(dir, d); let x0 = 99, x1 = -99, y0 = 99, y1 = -99;
+      for (const k of pts) {
+        tmp.set(k[0], k[1], k[2]).sub(c);
+        const z = -tmp.dot(dir), x = tmp.dot(r) / (z * th), y = tmp.dot(u) / (z * tv);
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+      }
+      return [x0, x1, y0, y1];
+    };
+    let d = 100;
+    for (let it = 0; it < 4; it++) {
+      let lo = 5, hi = 4000;
+      for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2, b = ndc(mid); if ((b[1] - b[0]) / 2 <= hw && (b[3] - b[2]) / 2 <= hh) hi = mid; else lo = mid; }
+      d = hi;
+      const b = ndc(d), cx = (b[0] + b[1]) / 2, cy = (b[2] + b[3]) / 2;
+      target.addScaledVector(r, (cx - cxT) * d * th).addScaledVector(u, (cy - cyT) * d * tv);
+    }
+    return { az, el, d, fov: vp.fov, target };
+  }
+  const SIZES = { over: { big: 1.45, fig: 1.9 }, mill: { big: 1.1, fig: 1.3 }, poster: { big: 1.1, fig: 1.3 } };
+  let VIEWS = {}, W0 = 0, H0 = 0, curView = null;
+  let camNow = null, tw = null, camDoneAt = 0;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const angLerp = (a, b, t) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * t; };
+  function viewState(name) { const v = VIEWS[name]; return { az: v.az, el: v.el, d: v.d, fov: v.fov, target: v.target.clone(), big: SIZES[name].big, figS: SIZES[name].fig }; }
+  function blend(a, b, t) {
+    return { az: angLerp(a.az, b.az, t), el: lerp(a.el, b.el, t), d: Math.exp(lerp(Math.log(a.d), Math.log(b.d), t)), fov: lerp(a.fov, b.fov, t), target: a.target.clone().lerp(b.target, t), big: lerp(a.big, b.big, t), figS: lerp(a.figS, b.figS, t) };
+  }
+  function goView(name) {
+    if (name === curView && camNow) return;
+    curView = name;
+    if (!camNow || reduced) { camNow = viewState(name); tw = null; camDoneAt = performance.now(); dirty = true; kick(); return; }
+    tw = { from: camNow, name, t0: performance.now(), dur: CAM_S * 1000 };
+    dirty = true; kick();
+  }
+  function placeCamera() {
+    const c = camNow;
+    cam.fov = c.fov; cam.position.copy(c.target).addScaledVector(dirOf(c.az, c.el), c.d);
+    cam.near = Math.max(0.5, c.d * 0.2); cam.far = c.d * 4 + 80;
+    cam.lookAt(c.target); cam.updateProjectionMatrix();
+  }
+  function setEye(name) {
+    const e = L.eyes[name], Ly = L.layout();
+    eye.position.set(e.pos[0], e.pos[1], e.pos[2]); eye.fov = e.fov; eye.aspect = Math.max(0.2, Ly.screen.w / Ly.screen.h);
+    eye.lookAt(e.target[0], e.target[1], e.target[2]); eye.updateProjectionMatrix(); eye.updateMatrixWorld();
+  }
+
+  let state = null, ui = null, eyeName = 'mill', phoneOn = false, sig = '';
+  function sync(S, U) {
+    state = S; ui = U;
+    const n = dotPos.findIndex((s) => s > S.route); dots.count = n < 0 ? dotPos.length : n;
+    pins.forEach((p, i) => setPin(p, S.pins[i], S.pulse[i]));
+    posterG.scale.setScalar(Math.max(0.001, S.poster));
+    const f = S.fig;
+    if (f && f.k > 0.001) {
+      fig.visible = true; fig.position.set(f.x, f.bob ? Math.abs(Math.sin(performance.now() / 1000 * 9)) * 0.05 : 0, f.z); fig.rotation.y = f.yaw;
+      body.material = f.who === 'maker' ? bodyMaker : bodyVisitor; fig.userData.k = f.k;
+      whoTag.textContent = f.who === 'maker' ? 'You' : 'A visitor'; whoTag.classList.toggle('maker', f.who === 'maker');
+    } else fig.visible = false;
+    if (f && f.look && S.wedge > 0.01) {
+      const wl = 4.4, hw = 17 * DEG, wy = Math.atan2(f.look[0] - f.x, f.look[1] - f.z), a = wedgeGeo.attributes.position;
+      a.setXYZ(0, f.x, 0.045, f.z);
+      a.setXYZ(1, f.x + Math.sin(wy - hw) * wl, 0.045, f.z + Math.cos(wy - hw) * wl);
+      a.setXYZ(2, f.x + Math.sin(wy + hw) * wl, 0.045, f.z + Math.cos(wy + hw) * wl);
+      a.needsUpdate = true; wedgeGeo.computeBoundingSphere();
+      wedge.visible = true; wedgeMat.opacity = 0.26 * S.wedge;
+    } else wedge.visible = false;
+    if (U.eye !== eyeName) { eyeName = U.eye; setEye(eyeName); L.onLayout(); }
+    phoneOn = U.on;
+    goView(S.view);
+    const k = [dots.count, S.pins.map((v) => v.toFixed(3)).join(), S.pulse.map((v) => v.toFixed(2)).join(), S.poster.toFixed(3),
+      f ? [f.who, f.x.toFixed(3), f.z.toFixed(3), f.k.toFixed(3), f.yaw.toFixed(3), f.bob].join() : '-', S.wedge.toFixed(3), U.on, U.eye].join('|');
+    if (k !== sig || (f && f.bob)) { sig = k; dirty = true; kick(); }
+  }
+
+  let dirty = true, running = true, raf = 0, firstFrame = true;
+  const pv = new THREE.Vector3();
+  function project(c, x, y, z, w, h) { pv.set(x, y, z).project(c); return [(pv.x + 1) / 2 * w, (1 - pv.y) / 2 * h, pv.z]; }
+  function render() {
+    if (!camNow) return;
+    placeCamera();
+    const big = camNow.big;
+    pins.forEach((p) => p.head.scale.setScalar(p.base * big));
+    poseFor(P.pinH);
+    const fk = fig.userData.k || 0;
+    fig.scale.setScalar(Math.max(0.001, camNow.figS * fk));
+    // the pin's white "eye" faces whoever looks
+    const faceTo = (c) => pins.forEach((p) => { const v = c.position.clone().sub(p.g.position); v.y = 0; v.normalize().multiplyScalar(0.33); p.eyeDot.position.set(v.x, 0.04, v.z); });
+    faceTo(cam);
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, W0, H0);
+    renderer.setClearColor(0x000000, 0);
+    if (firstFrame) { renderer.shadowMap.needsUpdate = true; }
+    renderer.render(scene, cam);
+    // labels follow the model
+    const lab = (el, on, x, y, z, dy) => {
+      el.classList.toggle('on', on);
+      if (!on) return;
+      const q = project(cam, x, y, z, W0, H0);
+      el.style.transform = 'translate(' + q[0].toFixed(1) + 'px,' + (q[1] - dy).toFixed(1) + 'px) translate(-50%,-100%)';
+    };
+    const Ly = L.layout();
+    const hidden = (x, y) => x < 30 || x > W0 - 30 || y < 22 || y > H0 - 4 || (phoneOn && x > Ly.phone.x - 8 && x < Ly.phone.x + Ly.phone.w + 8 && y > Ly.phone.y - 8 && y < Ly.phone.y + Ly.phone.h + 8);
+    pins.forEach((p) => {
+      const hy = P.pinH * Math.max(p.rise, 0.6) + 0.45 + 0.45 * big;
+      const q = project(cam, p.g.position.x, hy, p.g.position.z, W0, H0);
+      lab(p.tag, p.rise > 0.6 && !hidden(q[0], q[1]), p.g.position.x, hy, p.g.position.z, 4);
+    });
+    const sq = project(cam, P.poster.x, 2.3, P.poster.z, W0, H0);
+    lab(startTag, state && state.poster > 0.6 && !hidden(sq[0], sq[1]), P.poster.x, 2.3, P.poster.z, 6);
+    const fy = 0.95 * camNow.figS * fk + 0.15;
+    if (curView === 'over' && !tw) {
+      // in the overview the tag hangs below the person, so it never sits on a station's name
+      whoTag.classList.toggle('on', fig.visible && fk > 0.6);
+      const q = project(cam, fig.position.x, 0, fig.position.z, W0, H0);
+      whoTag.style.transform = 'translate(' + q[0].toFixed(1) + 'px,' + (q[1] + 7).toFixed(1) + 'px) translate(-50%,0)';
+    } else lab(whoTag, fig.visible && fk > 0.6, fig.position.x, fy, fig.position.z, 4);
+    // the dashed line from the phone to the person
+    if (phoneOn && fig.visible && fk > 0.5 && curView !== 'over') {
+      const q = project(cam, fig.position.x, 0.62 * camNow.figS, fig.position.z, W0, H0);
+      const px = Ly.phone.x - 3, py = Ly.phone.y + Ly.phone.h * 0.46;
+      leadLine.setAttribute('x1', q[0].toFixed(1)); leadLine.setAttribute('y1', q[1].toFixed(1));
+      leadLine.setAttribute('x2', px.toFixed(1)); leadLine.setAttribute('y2', py.toFixed(1));
+      leadDot.setAttribute('cx', q[0].toFixed(1)); leadDot.setAttribute('cy', q[1].toFixed(1));
+      leadLine.setAttribute('opacity', '.6'); leadDot.setAttribute('opacity', '.8');
+    } else { leadLine.setAttribute('opacity', '0'); leadDot.setAttribute('opacity', '0'); }
+    // the phone's screen: the same park at eye height, drawn into the rectangle under the phone frame
+    if (phoneOn && !NO_EYE) {
+      const s = Ly.screen;
+      pins.forEach((p) => p.head.scale.setScalar(p.base));
+      poseFor(P.eyePinH);
+      faceTo(eye);
+      renderer.setScissorTest(true);
+      renderer.setScissor(s.x, H0 - s.y - s.h, s.w, s.h);
+      renderer.setViewport(s.x, H0 - s.y - s.h, s.w, s.h);
+      renderer.setClearColor(C.sky, 1);
+      renderer.render(scene, eye);
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, W0, H0);
+      renderer.setClearColor(0x000000, 0);
+    }
+    firstFrame = false;
+  }
+  function frame(now) {
+    raf = 0;
+    if (!running) return;
+    let again = false;
+    if (tw) {
+      const k = Math.min(1, (now - tw.t0) / tw.dur), e = k * k * (3 - 2 * k);
+      camNow = blend(tw.from, viewState(tw.name), e); dirty = true;
+      if (k >= 1) { tw = null; camDoneAt = now; } else again = true;
+    }
+    if (state && state.fig && state.fig.bob && !reduced) { fig.position.y = Math.abs(Math.sin(now / 1000 * 9)) * 0.05; dirty = true; }
+    if (dirty) { dirty = false; render(); }
+    if (again) kick();
+  }
+  function kick() { if (!raf && running) raf = requestAnimationFrame(frame); }
+
+  function anchors(name, sw, sh) {
+    setEye(name);
+    const pin = P.stations[0].pin, o = {};
+    o.pin = project(eye, pin[0], P.eyePinH + 0.55, pin[1], sw, sh);
+    o.ground = project(eye, pin[0], 0.02, pin[1], sw, sh);
+    o.next = [sw * 0.5, sh * 0.88];
+    const a = project(eye, BOARD.x - BOARD.w / 2, BOARD.y1, BOARD.z, sw, sh), b = project(eye, BOARD.x + BOARD.w / 2, BOARD.y0, BOARD.z, sw, sh);
+    o.board = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])];
+    setEye(eyeName);
+    return o;
+  }
+
+  function resize() {
+    const Ly = L.layout(); if (!Ly || Ly.W < 2 || Ly.H < 2) return;
+    W0 = Ly.W; H0 = Ly.H;
+    renderer.setSize(W0, H0, false);
+    cam.aspect = W0 / H0;
+    const a = W0 / H0;
+    VIEWS = {
+      over: fit(keyPts, L.viewParams('over'), a, L.ndcRect('over')),
+      mill: fit(L.regions.mill, L.viewParams('mill'), a, L.ndcRect('mill')),
+      poster: fit(L.regions.poster, L.viewParams('poster'), a, L.ndcRect('poster'))
+    };
+    if (curView) { if (tw) tw.from = camNow; else camNow = viewState(curView); }
+    setEye(eyeName);
+    L.onLayout();
+    dirty = true; kick();
+  }
+
+  if ('IntersectionObserver' in window) new IntersectionObserver((es) => { if (es[0].isIntersecting) { dirty = true; kick(); } }).observe(art);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { dirty = true; kick(); } });
+
+  L.scene = {
+    sync, resize, anchors,
+    moving: () => !!tw,
+    // test hook: average milliseconds of n full renders (model plus phone screen), GPU work included by reading one pixel
+    bench(n) { const gl = renderer.getContext(), px = new Uint8Array(4); const was = phoneOn; phoneOn = true; render(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const t0 = performance.now(); for (let i = 0; i < n; i++) render(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const ms = (performance.now() - t0) / n; phoneOn = was; render(); return +ms.toFixed(2); },
+    info() { const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info'); return { renderer: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'n/a', calls: renderer.info.render.calls, tris: renderer.info.render.triangles, dpr: renderer.getPixelRatio(), view: curView }; },
+    framing() {
+      const pts = keyPts.map((k) => project(cam, k[0], k[1], k[2], W0, H0));
+      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+      return { w: W0, h: H0, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys), view: curView };
+    }
+  };
+  resize();
+  L.onReady();
+  if (L.state && L.ui) sync(L.state, L.ui);
+  render();
+  canvas.classList.add('on');
+}
+</script>
+</body>
+</html>

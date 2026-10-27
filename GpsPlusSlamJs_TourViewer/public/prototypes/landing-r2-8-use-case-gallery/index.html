@@ -1,0 +1,939 @@
+<!doctype html>
+<html lang="en" data-ar="0" data-view="row">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Tour Examples Gallery</title>
+<style>
+/* ===== Tokens. Ink is the real world, the six spot colours are what a tour adds. ===== */
+:root {
+  --paper: #fbfaf6;
+  --white: #fff;
+  --ink: #151515;
+  --ink-2: #46453f;
+  --ink-3: #75736b;
+  --hair: #d9d6cc;
+  --red: #f15060;
+  --teal: #00838a;
+  --blue: #0078bf;
+  --green: #00a95c;
+  --orange: #ff6c2f;
+  --pink: #ff48b0;
+  --display: "Avenir Next Condensed", "Bahnschrift", "Roboto Condensed", "Arial Narrow", sans-serif-condensed, "Helvetica Neue", Arial, sans-serif;
+  --serif: Charter, "Sitka Text", Cambria, Georgia, "Noto Serif", serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --gut: 16px;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; background: var(--paper); }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.45 var(--serif); overflow-x: hidden; }
+html.modal, html.modal body { overflow: hidden; }
+button { font: inherit; color: inherit; }
+a { color: inherit; }
+html[data-ar="1"] .ar-no, html[data-ar="0"] .ar-yes { display: none !important; }
+
+/* ===== Masthead: double rule, brand, AR preview toggle ===== */
+.mast { border-bottom: 3px solid var(--ink); box-shadow: 0 4px 0 -2px var(--paper), 0 5px 0 -2px var(--ink); background: var(--paper); }
+.mast-in { max-width: 1320px; margin: 0 auto; padding: 8px var(--gut); display: flex; align-items: center; gap: 10px; min-height: 46px; }
+.brand { font: 800 19px/1 var(--display); font-stretch: condensed; letter-spacing: .06em; text-transform: uppercase; }
+.issue { font: italic 14px var(--serif); color: var(--ink-2); display: none; }
+.mast-tools { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.mast-tools .lbl { font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); display: none; }
+.seg { display: inline-flex; border: 1.5px solid var(--ink); }
+.seg button { border: 0; background: transparent; font: 600 12.5px/1 var(--sans); padding: 0 10px; min-height: 36px; cursor: pointer; white-space: nowrap; }
+.seg button + button { border-left: 1.5px solid var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+@media (min-width: 720px) { .issue, .mast-tools .lbl { display: inline; } }
+
+/* ===== Hero: the three first-five-seconds facts ===== */
+.hero { max-width: 1320px; margin: 0 auto; padding: 18px var(--gut) 14px; }
+.kicker { margin: 0 0 8px; font: 700 12.5px/1.25 var(--sans); letter-spacing: .14em; text-transform: uppercase; }
+.kicker b { background: var(--ink); color: var(--paper); padding: 2px 6px; margin-right: 6px; font-weight: 700; }
+.hero h1 { margin: 0 0 12px; font: 800 var(--h1, min(11.6vw, 48px))/.96 var(--display); font-stretch: condensed; letter-spacing: -.005em; }
+.hero h1 span { display: block; }
+.deck { margin: 0 0 10px; font: 17px/1.42 var(--serif); color: var(--ink-2); max-width: 36em; }
+.deck strong { color: var(--ink); font-weight: 700; }
+.req { margin: 0 0 14px; font: 14px/1.4 var(--sans); color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.req b { color: var(--ink); }
+.chip { display: inline-flex; align-items: center; gap: 6px; font: 600 12.5px var(--sans); padding: 2px 8px; border: 1px solid var(--ink-3); }
+.chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+html[data-ar="1"] .chip::before { background: var(--green); }
+.hero-cta { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 18px; font: 700 15px/1.1 var(--sans); border: 1.5px solid var(--ink); background: transparent; color: var(--ink); text-decoration: none; cursor: pointer; }
+.btn.primary { background: var(--ink); color: var(--paper); }
+.btn:focus-visible, .seg button:focus-visible, .more:focus-visible, .tile:focus-visible, .linkish:focus-visible, .d-close:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.linkish { display: inline-flex; align-items: center; background: none; border: 0; padding: 8px 0; min-height: 44px; font: 600 14px var(--sans); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; color: var(--ink); }
+@media (min-width: 720px) {
+  .hero { display: grid; grid-template-columns: 1.15fr 1fr; gap: 0 40px; align-items: end; padding-top: 28px; }
+  .hero h1 { --h1: clamp(46px, 6vw, 92px); margin: 0; }
+  .hero-side .deck { margin-top: 0; }
+  .hero-side .hero-cta { margin-bottom: 4px; }
+  .kicker { grid-column: 1 / -1; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .hero { padding-top: 12px; padding-bottom: 8px; align-items: center; }
+  .hero h1 { --h1: 50px; }
+  .deck { font-size: 15px; margin-bottom: 6px; }
+  .req { margin-bottom: 8px; }
+}
+
+/* ===== Gallery ===== */
+.gallery { max-width: 1320px; margin: 0 auto; padding: 0 0 28px; }
+.g-head { margin: 0 var(--gut); padding: 10px 0 12px; border-top: 1.5px solid var(--ink); display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
+.section { margin: 0; font: 800 15px/1.2 var(--display); font-stretch: condensed; letter-spacing: .12em; text-transform: uppercase; }
+.g-deck { margin: 0; font: italic 15px/1.35 var(--serif); color: var(--ink-2); flex: 1 1 260px; }
+@media (max-width: 719px) { .g-head { align-items: center; } .g-deck { flex-basis: 100%; } }
+.legend { margin: 0; font: 12.5px/1.3 var(--sans); color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; width: 100%; }
+.legend i { display: inline-block; width: 22px; height: 10px; margin-right: 5px; vertical-align: -1px; }
+.legend .li-ink { background: #fff; border: 1.5px solid var(--ink); }
+.legend .li-spot { background: linear-gradient(90deg, var(--red) 0 16.6%, var(--teal) 0 33.3%, var(--blue) 0 50%, var(--green) 0 66.6%, var(--orange) 0 83.3%, var(--pink) 0); }
+.g-view { margin-left: auto; }
+.g-view .seg button { font-size: 12px; }
+
+.cards { list-style: none; margin: 0; padding: 0; }
+.card { position: relative; display: flex; flex-direction: column; background: transparent; }
+.pic { position: relative; margin: 0 0 10px; border: 1.5px solid var(--ink); background: #fff; }
+.pic .tag { position: absolute; left: 0; top: 0; background: var(--ink); color: var(--paper); font: 700 10.5px/1 var(--sans); letter-spacing: .12em; text-transform: uppercase; padding: 5px 7px; }
+.maker { margin: 0 0 2px; font: 700 12px/1.3 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); display: flex; gap: 7px; align-items: center; }
+.maker::before { content: ""; flex: none; width: 10px; height: 10px; background: var(--spot); }
+.title { margin: 0 0 6px; font: 800 27px/1.02 var(--display); font-stretch: condensed; }
+.sees { margin: 0 0 10px; font: 15.5px/1.42 var(--serif); }
+.sees .at { display: block; font: 700 11px/1.3 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 2px; }
+.meta { display: flex; gap: 18px; margin: auto 0 0; padding: 8px 0 0; border-top: 1px solid var(--hair); font: 13px/1.3 var(--sans); }
+.meta div { display: flex; flex-direction: column; }
+.meta dt { font: 700 10.5px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+.meta dd { margin: 0; font-weight: 600; }
+.more { align-self: flex-start; margin-top: 8px; background: none; border: 0; border-bottom: 2px solid var(--spot); padding: 10px 0 4px; min-height: 44px; font: 700 15px var(--sans); cursor: pointer; }
+.more::after { content: ""; position: absolute; inset: 0; }
+.card:hover .title { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; text-decoration-color: var(--spot); }
+
+/* small screens: a swipeable row (default) or one column, switchable */
+.row-hint { display: none; margin: 8px var(--gut) 0; font: 600 12.5px var(--sans); color: var(--ink-3); }
+@media (max-width: 719px) {
+  html[data-view="row"] .cards { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-left: var(--gut); padding: 0 var(--gut) 6px; gap: 14px; overscroll-behavior-x: contain; scrollbar-width: thin; }
+  html[data-view="row"] .card { flex: 0 0 var(--card-w, 80%); scroll-snap-align: start; }
+  html[data-view="row"] .row-hint { display: block; }
+  html[data-view="list"] .cards { padding: 0 var(--gut); }
+  html[data-view="list"] .card { padding: 18px 0 22px; border-top: 1px solid var(--ink); }
+  html[data-view="list"] .card:first-child { border-top: 0; padding-top: 4px; }
+}
+@media (min-width: 720px) {
+  .g-view { display: none; }
+  .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 40px; margin: 0 var(--gut); }
+  .card { padding: 4px 0 26px; }
+  .card:nth-child(2n)::before { content: ""; position: absolute; left: -20px; top: 4px; bottom: 26px; border-left: 1px solid var(--hair); }
+}
+@media (min-width: 1080px), (orientation: landscape) and (max-height: 500px) and (min-width: 720px) {
+  .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .card:nth-child(2n)::before { content: none; }
+  .card:not(:nth-child(3n+1))::before { content: ""; position: absolute; left: -20px; top: 4px; bottom: 26px; border-left: 1px solid var(--hair); }
+}
+@media (orientation: landscape) and (max-height: 500px) and (min-width: 720px) {
+  .cards { column-gap: 28px; }
+  .card:not(:nth-child(3n+1))::before { left: -14px; }
+  .title { font-size: 22px; }
+  .sees { font-size: 14px; }
+}
+
+/* ===== Illustrations: one shared style. Ink line art = the place; spot colour = the tour. ===== */
+.ill { display: block; width: 100%; height: auto; }
+.ill .bg { fill: var(--spot); opacity: .07; }
+.ill .r { fill: #fff; stroke: var(--ink); stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; }
+.ill .l { fill: none; stroke: var(--ink); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+.ill .g { fill: url(#glass); stroke: var(--ink); stroke-width: 1.4; }
+.ill .k { fill: var(--ink); }
+.ill .s { fill: var(--spot); }
+.ill .so { fill: none; stroke: var(--spot); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ill .sw { fill: #fff; stroke: var(--spot); stroke-width: 2; }
+.ill .dash { fill: none; stroke: var(--spot); stroke-width: 1.3; stroke-dasharray: 3 3; }
+.ill .route { fill: none; stroke: var(--spot); stroke-width: 3.6; stroke-linecap: round; stroke-dasharray: .1 7; }
+.ill .vf { fill: none; stroke: var(--ink); stroke-width: 2.2; }
+.ill text { font-family: var(--serif); font-style: normal; font-weight: 400; }
+.ill .t-s { font: 700 7px var(--sans); letter-spacing: .1em; fill: var(--on-spot, #fff); }
+.ill .t-n { font: 700 9px var(--sans); fill: var(--on-spot, #fff); }
+.ill .t-i { font: 8.6px var(--serif); fill: var(--ink); }
+.ill .t-c { font: italic 6.6px var(--serif); fill: var(--ink-2); }
+.ill .t-k { font: 700 7px var(--sans); letter-spacing: .14em; fill: var(--ink); }
+.ill .add { transition: opacity .25s; }
+.layer-off .ill .add { opacity: 0; }
+
+/* ===== Detail view (dialog) ===== */
+dialog#detail { padding: 0; border: 0; max-width: none; max-height: none; width: 100%; height: 100%; margin: 0; background: var(--paper); color: var(--ink); }
+dialog#detail::backdrop { background: rgba(21, 21, 21, .55); }
+dialog#detail[open] { animation: dIn .22s ease-out; }
+@keyframes dIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.d-in { height: 100%; overflow-y: auto; overscroll-behavior: contain; }
+.d-top { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px var(--gut); background: var(--paper); border-bottom: 3px solid var(--ink); }
+.d-tag { font: 700 11px var(--sans); letter-spacing: .12em; text-transform: uppercase; }
+.d-close { margin-left: auto; width: 44px; height: 44px; border: 0; background: none; cursor: pointer; display: grid; place-items: center; }
+.d-close svg { width: 20px; height: 20px; stroke: var(--ink); stroke-width: 2.4; }
+.d-grid { padding: 14px var(--gut) 28px; }
+.d-pic { margin: 0; }
+.d-pic .frame { border: 1.5px solid var(--ink); background: #fff; }
+.d-layer { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font: 13px var(--sans); color: var(--ink-2); }
+.d-text h2 { margin: 2px 0 8px; font: 800 34px/1 var(--display); font-stretch: condensed; }
+.d-text h3 { margin: 22px 0 8px; padding-top: 8px; border-top: 1.5px solid var(--ink); font: 800 14px/1.2 var(--display); font-stretch: condensed; letter-spacing: .12em; text-transform: uppercase; }
+.d-sees { margin: 0; font: 18px/1.42 var(--serif); }
+.d-sees .at { display: block; font: 700 11px/1.3 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+.d-steps { list-style: none; counter-reset: s; margin: 0; padding: 0; display: grid; gap: 12px; }
+.d-steps li { counter-increment: s; display: grid; grid-template-columns: 34px 1fr; gap: 0 10px; font: 16px/1.45 var(--serif); }
+.d-steps li::before { content: counter(s); font: 800 30px/1 var(--display); font-stretch: condensed; color: var(--spot); }
+.d-steps b { font-family: var(--sans); font-size: 14.5px; }
+.d-req { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; font: 14.5px/1.4 var(--sans); }
+.d-req li { padding-left: 18px; position: relative; }
+.d-req li::before { content: ""; position: absolute; left: 0; top: .5em; width: 8px; height: 8px; border: 1.5px solid var(--ink); }
+.d-req li.own::before { background: var(--spot); border-color: var(--spot); }
+.d-meta { margin: 14px 0 0; font: 13.5px var(--sans); color: var(--ink-2); }
+.d-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+@media (min-width: 900px) {
+  dialog#detail { width: min(1080px, calc(100% - 64px)); height: auto; max-height: calc(100% - 64px); margin: auto; border: 1.5px solid var(--ink); }
+  .d-in { max-height: calc(100vh - 64px); }
+  .d-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 32px; padding: 24px 28px 32px; align-items: start; }
+  .d-pic { position: sticky; top: 76px; }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .d-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .d-pic { position: sticky; top: 64px; }
+  .d-text h2 { font-size: 28px; }
+}
+
+/* ===== Make yours: the one dark block ===== */
+.make { background: var(--ink); color: var(--paper); content-visibility: auto; contain-intrinsic-size: auto 1100px; }
+.make-in { max-width: 1320px; margin: 0 auto; padding: 30px var(--gut) 36px; }
+.make .kicker { color: #bdbab0; }
+.make h2:focus { outline: none; }
+.make h2 { margin: 0 0 10px; font: 800 clamp(48px, 13vw, 96px)/.92 var(--display); font-stretch: condensed; }
+.make .deck { color: #d7d4ca; }
+.make .deck strong { color: #fff; }
+.like { margin: 0 0 12px; padding: 8px 12px; border-left: 4px solid var(--like, var(--red)); background: #242424; font: italic 15px/1.4 var(--serif); color: #fff; }
+.six { list-style: none; counter-reset: s; margin: 18px 0 24px; padding: 0; display: grid; gap: 0; border-top: 1px solid #3a3a3a; }
+.six li { counter-increment: s; display: grid; grid-template-columns: 38px 1fr; gap: 0 10px; padding: 10px 0; border-bottom: 1px solid #3a3a3a; font: 15px/1.4 var(--serif); color: #d7d4ca; }
+.six li::before { content: counter(s); font: 800 28px/1 var(--display); font-stretch: condensed; color: #fff; }
+.six b { display: block; font: 700 15px/1.3 var(--sans); color: #fff; }
+.six li.site b::after { content: "on site, Android with Chrome"; display: inline-block; margin-left: 8px; padding: 1px 6px; font: 700 10.5px/1.5 var(--sans); letter-spacing: .06em; text-transform: uppercase; background: var(--paper); color: var(--ink); vertical-align: 1px; }
+.start { border: 1.5px solid var(--paper); padding: 16px; background: #1d1d1d; }
+.start h3 { margin: 0 0 4px; font: 800 24px/1.1 var(--display); font-stretch: condensed; }
+.start > p { margin: 0 0 12px; color: #d7d4ca; font-size: 15px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.tile { min-height: 48px; padding: 8px 12px; border: 1.5px solid #6a6a66; background: transparent; color: var(--paper); text-align: left; font: 600 14.5px/1.2 var(--sans); cursor: pointer; }
+.tile[aria-pressed="true"] { border-color: var(--paper); background: var(--paper); color: var(--ink); }
+.start-out { min-height: 1.4em; margin: 0 0 14px; font: 15px/1.45 var(--serif); color: #fff; }
+.make .btn { border-color: var(--paper); color: var(--paper); }
+.make .btn.primary { background: var(--paper); color: var(--ink); }
+.make .fine { margin: 12px 0 0; font: 13.5px/1.4 var(--sans); color: #bdbab0; }
+.make .btn:focus-visible, .tile:focus-visible { outline-color: #8fd0ff; }
+@media (min-width: 900px) {
+  .make-in { display: grid; grid-template-columns: 1fr 1fr; gap: 0 48px; padding-top: 48px; padding-bottom: 56px; }
+  .make-head { grid-column: 1 / -1; }
+  .six { margin-top: 0; }
+}
+
+/* ===== Footer + notes ===== */
+.foot { max-width: 1320px; margin: 0 auto; padding: 22px var(--gut) 40px; font: 14px/1.5 var(--sans); color: var(--ink-2); content-visibility: auto; contain-intrinsic-size: auto 400px; }
+.foot-row { display: flex; flex-wrap: wrap; gap: 4px 20px; align-items: center; padding-bottom: 14px; border-bottom: 1px solid var(--hair); }
+.foot-row p { margin: 0; }
+.notes { margin-top: 16px; border: 1px solid var(--hair); background: #fff; }
+.notes summary { cursor: pointer; padding: 12px 14px; font: 700 13px var(--sans); letter-spacing: .06em; text-transform: uppercase; min-height: 44px; }
+.notes .n-body { padding: 0 14px 14px; font: 14px/1.5 var(--sans); color: var(--ink-2); }
+.notes h4 { margin: 14px 0 4px; font: 700 13px var(--sans); color: var(--ink); }
+.notes p, .notes ul { margin: 0 0 6px; }
+.notes ul { padding-left: 18px; }
+
+/* toast */
+.toast { position: fixed; left: 50%; bottom: 18px; z-index: 90; transform: translate(-50%, 24px); opacity: 0; max-width: calc(100vw - 32px); padding: 10px 16px; background: var(--ink); color: var(--paper); font: 14px/1.35 var(--sans); text-align: center; pointer-events: none; transition: opacity .2s, transform .25s; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+dialog .toast { position: fixed; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+</style>
+</head>
+<body>
+<!-- shared paint for every illustration: halftone dots per spot colour, and window glass -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <pattern id="ht-red" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(30)"><circle cx="2.5" cy="2.5" r="1.25" fill="#f15060"/></pattern>
+    <pattern id="ht-teal" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(30)"><circle cx="2.5" cy="2.5" r="1.25" fill="#00838a"/></pattern>
+    <pattern id="ht-blue" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(30)"><circle cx="2.5" cy="2.5" r="1.25" fill="#0078bf"/></pattern>
+    <pattern id="ht-green" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(30)"><circle cx="2.5" cy="2.5" r="1.25" fill="#00a95c"/></pattern>
+    <pattern id="ht-orange" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(30)"><circle cx="2.5" cy="2.5" r="1.25" fill="#ff6c2f"/></pattern>
+    <pattern id="ht-pink" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(30)"><circle cx="2.5" cy="2.5" r="1.25" fill="#ff48b0"/></pattern>
+    <pattern id="glass" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fff"/><path d="M0 0V6" stroke="#151515" stroke-width=".8" opacity=".55"/></pattern>
+  </defs>
+</svg>
+
+<header class="mast">
+  <div class="mast-in">
+    <span class="brand">Tour Viewer</span>
+    <span class="issue">Six example tours</span>
+    <div class="mast-tools">
+      <span class="lbl" id="arLbl">Preview as</span>
+      <div class="seg" role="group" aria-labelledby="arLbl">
+        <button type="button" data-ar-set="auto" aria-pressed="false">Auto</button>
+        <button type="button" data-ar-set="1" aria-pressed="false">AR phone</button>
+        <button type="button" data-ar-set="0" aria-pressed="false">No AR</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+<section class="hero" aria-labelledby="h1">
+  <p class="kicker"><b>AR</b>Tours on your phone, on site</p>
+  <h1 id="h1">Hold up a phone. <span>The story appears.</span></h1>
+  <div class="hero-side">
+  <p class="deck">Notes and photos, placed in the real world and seen through the camera. <strong>You can make a tour like this yourself: no code, no sign-up, no account.</strong></p>
+  <p class="req"><span>Walking a tour needs <b>an Android phone with Chrome</b> (AR support).</span>
+    <span class="chip ar-yes">This phone can show tours</span>
+    <span class="chip ar-no">This device cannot show AR</span></p>
+  <div class="hero-cta">
+    <a class="btn primary" href="#make" id="heroMake">Make your tour</a>
+    <button type="button" class="linkish ar-yes" id="scanBtn">At a tour poster? Scan it</button>
+    <button type="button" class="linkish ar-no" id="linkBtn">Got a tour link? Open it</button>
+  </div>
+  </div>
+</section>
+
+<section class="gallery" id="gallery" aria-labelledby="gTitle">
+  <div class="g-head">
+    <h2 class="section" id="gTitle">Who makes them</h2>
+    <span class="g-view"><span class="seg" role="group" aria-label="Layout of the examples">
+        <button type="button" data-view-set="row" aria-pressed="true">Swipe</button>
+        <button type="button" data-view-set="list" aria-pressed="false">List</button>
+      </span></span>
+    <p class="g-deck">Six example tours. The makers and places are invented; the steps are the real ones.</p>
+    <p class="legend"><span><i class="li-ink"></i>the real place</span><span><i class="li-spot"></i>what the tour adds, seen through the phone</span></p>
+  </div>
+
+  <ol class="cards" id="cards">
+    <!-- 01 town history walk -->
+    <li class="card" data-id="market" style="--spot:var(--red)">
+      <figure class="pic">
+        <svg class="ill" viewBox="0 0 320 210" style="--spot:#f15060" role="img" aria-label="A town square with an empty plot between two houses. Through the phone, an old photo of a bakery hangs in the gap.">
+          <rect class="bg" width="320" height="210"/>
+          <g class="real">
+            <path class="l" d="M0 150H320"/>
+            <path class="l" opacity=".5" d="M160 150L30 210M160 150L105 210M160 150L215 210M160 150L290 210M112 166H208M70 186H250"/>
+            <path class="r" d="M12 150V62L46 34L80 62V150Z"/>
+            <path class="l" d="M22 76h12v16h-12zM58 76h12v16h-12zM22 104h12v16h-12zM58 104h12v16h-12zM39 126h12v24h-12z"/>
+            <path class="r" d="M226 150V56H240V46H254V36H284V46H298V56H312V150Z"/>
+            <path class="l" d="M238 68h14v18h-14zM262 50h12v14h-12zM286 68h14v18h-14zM236 104h42v26h-42zM288 112h14v38h-14z"/>
+            <path class="l" d="M84 138H220M90 150V134M104 150V134M118 150V134M132 150V134M174 150V134M188 150V134M202 150V134M216 150V134"/>
+            <path class="l" d="M210 150V100M204 100h12l-2-9h-8z"/>
+          </g>
+          <g class="add">
+            <path class="route" d="M172 210C162 190 168 172 156 156"/>
+            <ellipse class="so" cx="150" cy="150" rx="16" ry="3.5" style="stroke-width:1.4"/>
+            <path class="dash" d="M150 124V147"/>
+            <rect class="sw" x="104" y="44" width="92" height="80"/>
+            <rect x="110" y="50" width="80" height="54" fill="url(#ht-red)"/>
+            <path class="s" d="M120 104V80L150 64L180 80V104Z"/>
+            <path d="M128 104V90h10v14zM158 88h14v10h-14z" fill="#fff"/>
+            <text class="t-c" x="150" y="117" text-anchor="middle">the bakery, 1900</text>
+            <circle class="s" cx="104" cy="44" r="8"/><text class="t-n" x="104" y="47.2" text-anchor="middle">3</text>
+          </g>
+          <path class="vf" d="M10 24V10H24M296 10H310V24M310 186V200H296M24 200H10V186"/>
+        </svg>
+        <figcaption class="tag">Example 01</figcaption>
+      </figure>
+      <p class="maker">By a small town's history club</p>
+      <h3 class="title">The Old Market Walk</h3>
+      <p class="sees"><span class="at">At station 3 of 8</span>A photo of the bakery from 1900 hangs in the empty plot where it once stood.</p>
+      <dl class="meta"><div><dt>Made in</dt><dd>Two afternoons</dd></div><div><dt>Stations</dt><dd>8</dd></div></dl>
+      <button type="button" class="more" aria-haspopup="dialog">How they made it</button>
+    </li>
+
+    <!-- 02 school science trail -->
+    <li class="card" data-id="pond" style="--spot:var(--teal)">
+      <figure class="pic">
+        <svg class="ill" viewBox="0 0 320 210" style="--spot:#00838a" role="img" aria-label="A school pond with reeds and a sign. Through the phone, a question card and a photo of a dragonfly larva float above the water.">
+          <rect class="bg" width="320" height="210"/>
+          <g class="real">
+            <path class="r" d="M0 122Q14 100 30 114Q44 92 62 112Q78 96 96 116Q110 104 124 120V122Z"/>
+            <path class="r" d="M226 122Q244 98 262 112Q280 90 298 110Q310 100 320 108V122Z"/>
+            <path class="l" d="M0 122H320"/>
+            <ellipse class="r" cx="168" cy="166" rx="124" ry="30"/>
+            <path class="l" opacity=".55" d="M88 162h22M140 178h30M206 156h24M228 180h18M118 150h16"/>
+            <ellipse class="r" cx="196" cy="170" rx="11" ry="3.8"/><ellipse class="r" cx="216" cy="176" rx="7" ry="2.6"/><ellipse class="r" cx="120" cy="172" rx="9" ry="3.2"/>
+            <path class="l" d="M24 210Q26 176 20 150M34 210Q34 180 38 156M44 210Q46 186 52 168M14 210Q12 190 6 174"/>
+            <rect class="k" x="17.5" y="144" width="5" height="15" rx="2.5"/><rect class="k" x="35.5" y="150" width="5" height="15" rx="2.5"/><rect class="k" x="49.5" y="162" width="5" height="13" rx="2.5"/>
+            <path class="l" d="M290 206V152"/><rect class="r" x="266" y="136" width="48" height="18"/><text class="t-k" x="290" y="148" text-anchor="middle">POND</text>
+          </g>
+          <g class="add">
+            <path class="dash" d="M150 86L172 134"/>
+            <g transform="translate(176 158)"><path class="s" d="M0 0C-4-6-8-10-8-15A8 8 0 1 1 8-15C8-10 4-6 0 0Z"/><circle cy="-15" r="3" fill="#fff"/></g>
+            <rect class="sw" x="54" y="28" width="144" height="58"/>
+            <rect class="s" x="54" y="28" width="144" height="14"/>
+            <text class="t-s" x="61" y="38">STATION 2 OF 5</text>
+            <text class="t-i" x="61" y="58">What lives under</text>
+            <text class="t-i" x="61" y="72">the lily pads?</text>
+            <g transform="rotate(4 252 67)">
+              <rect class="sw" x="214" y="36" width="76" height="64"/>
+              <rect x="219" y="41" width="66" height="42" fill="url(#ht-teal)"/>
+              <path class="s" d="M226 64c8-7 24-9 38-4c6 2 10 6 8 9c-10 2-32 3-46-5z"/>
+              <path class="so" style="stroke-width:1.4" d="M238 69l-6 9M250 71l-2 9M262 71l3 8"/>
+              <text class="t-c" x="252" y="94" text-anchor="middle">dragonfly larva</text>
+            </g>
+          </g>
+          <path class="vf" d="M10 24V10H24M296 10H310V24M310 186V200H296M24 200H10V186"/>
+        </svg>
+        <figcaption class="tag">Example 02</figcaption>
+      </figure>
+      <p class="maker">By a teacher and a science class</p>
+      <h3 class="title">The Pond Life Trail</h3>
+      <p class="sees"><span class="at">At station 2 of 5</span>A question floats over the water, with a photo of what the class found under the lily pads.</p>
+      <dl class="meta"><div><dt>Made in</dt><dd>Three lessons</dd></div><div><dt>Stations</dt><dd>5</dd></div></dl>
+      <button type="button" class="more" aria-haspopup="dialog">How they made it</button>
+    </li>
+
+    <!-- 03 museum sculpture path -->
+    <li class="card" data-id="sculpture" style="--spot:var(--blue)">
+      <figure class="pic">
+        <svg class="ill" viewBox="0 0 320 210" style="--spot:#0078bf" role="img" aria-label="A garden with a hedge, a bench and a sculpture on a plinth. Through the phone, the artist's sketch and a short note appear beside it.">
+          <rect class="bg" width="320" height="210"/>
+          <g class="real">
+            <path class="r" d="M0 132V84Q8 70 18 82Q28 68 40 80Q52 66 64 80Q76 68 88 80Q100 66 112 80Q124 68 136 80Q148 66 160 80Q172 68 184 80Q196 66 208 80Q220 68 232 80Q244 66 256 80Q268 68 280 80Q292 66 304 80Q312 72 320 80V132Z"/>
+            <path class="l" opacity=".5" d="M20 102l6 4M60 96l6 4M110 106l6 4M150 96l6 4M196 104l6 4M262 98l6 4M292 106l6 4"/>
+            <path class="l" d="M0 132H320M0 150H320"/>
+            <path class="l" d="M118 210L152 150M206 210L174 150"/>
+            <path class="l" style="stroke-width:2.2" d="M150 180h.1M170 196h.1M160 166h.1M182 186h.1M140 200h.1M164 206h.1"/>
+            <rect class="r" x="200" y="116" width="48" height="34"/>
+            <path class="r" d="M206 116C200 98 208 84 222 82C238 80 246 94 242 106C240 112 244 114 244 116Z"/>
+            <circle class="r" cx="224" cy="100" r="6"/>
+            <ellipse class="r" cx="224" cy="72" rx="11" ry="9"/>
+            <path class="l" d="M28 150V138M92 150V138M22 136H98M26 126H94M30 126V136M90 126V136"/>
+          </g>
+          <g class="add">
+            <g transform="rotate(-4 120 70)">
+              <rect class="sw" x="74" y="30" width="94" height="80"/>
+              <path class="so" style="stroke-width:1" d="M104 88C98 72 106 60 120 58C134 56 142 68 138 80C136 86 140 88 140 88ZM116 75a5 5 0 1 0 10 0a5 5 0 1 0 -10 0M112 50a9 7 0 1 0 18 0a9 7 0 1 0 -18 0"/>
+              <path class="so" style="stroke-width:.7" d="M106 86l6-10M112 87l6-10M128 87l6-10M134 86l4-7M84 94h70"/>
+              <text class="t-c" x="121" y="104" text-anchor="middle">the clay model, 1961</text>
+            </g>
+            <circle class="s" cx="76" cy="36" r="8"/><text class="t-n" x="76" y="39.2" text-anchor="middle">4</text>
+            <rect class="sw" x="180" y="22" width="124" height="36"/>
+            <text class="t-i" x="187" y="37">Cast in bronze from a</text>
+            <text class="t-i" x="187" y="50">model the size of a hand.</text>
+            <path class="dash" d="M236 58L229 63"/>
+          </g>
+          <path class="vf" d="M10 24V10H24M296 10H310V24M310 186V200H296M24 200H10V186"/>
+        </svg>
+        <figcaption class="tag">Example 03</figcaption>
+      </figure>
+      <p class="maker">By a museum's education team</p>
+      <h3 class="title">The Sculpture Garden Path</h3>
+      <p class="sees"><span class="at">At station 4 of 12</span>The artist's first sketch hangs beside the bronze, with one line on how it was made.</p>
+      <dl class="meta"><div><dt>Made in</dt><dd>One morning on site</dd></div><div><dt>Stations</dt><dd>12</dd></div></dl>
+      <button type="button" class="more" aria-haspopup="dialog">How they made it</button>
+    </li>
+
+    <!-- 04 nature reserve -->
+    <li class="card" data-id="marsh" style="--spot:var(--green)">
+      <figure class="pic">
+        <svg class="ill" viewBox="0 0 320 210" style="--spot:#00a95c" role="img" aria-label="A marsh with reeds, a boardwalk and a bird hide. Through the phone, a note sits low in the reeds and a heron photo floats above.">
+          <rect class="bg" width="320" height="210"/>
+          <g class="real">
+            <path class="r" d="M0 112Q10 94 24 104Q36 86 52 102Q64 92 78 108L80 112Z"/>
+            <path class="l" d="M0 112H320"/>
+            <path class="r" d="M222 112V94H264V112Z"/><path class="r" d="M216 96L243 82L270 96Z"/><rect class="k" x="232" y="99" width="22" height="4"/>
+            <path class="l" opacity=".55" d="M96 124h40M180 120h30M90 134h30M220 130h40M120 142h24"/>
+            <path class="l" d="M104 210L150 138M214 210L172 138M146 144H176M138 156H184M128 172H194M116 190H204"/>
+            <path class="l" d="M10 210Q14 170 8 140M22 210Q22 176 28 148M34 210Q38 184 46 160M48 210Q50 186 58 172M70 210Q70 192 76 182M84 210Q86 196 92 188"/>
+            <ellipse class="k" cx="8" cy="138" rx="2.2" ry="6"/><ellipse class="k" cx="28" cy="146" rx="2.2" ry="6"/><ellipse class="k" cx="46" cy="158" rx="2.2" ry="6"/>
+            <path class="l" d="M300 210Q296 172 304 142M288 210Q290 182 282 158M274 210Q276 190 266 172M312 210Q316 186 318 168"/>
+            <ellipse class="k" cx="304" cy="140" rx="2.2" ry="6"/><ellipse class="k" cx="282" cy="156" rx="2.2" ry="6"/>
+          </g>
+          <g class="add">
+            <path class="route" d="M160 210C158 186 164 166 160 146"/>
+            <rect class="sw" x="14" y="88" width="124" height="46"/>
+            <rect class="s" x="14" y="88" width="124" height="13"/>
+            <text class="t-s" x="20" y="97.5">LOOKOUT 2</text>
+            <text class="t-i" x="20" y="115">Look low: warblers nest</text>
+            <text class="t-i" x="20" y="127">in these reeds in spring.</text>
+            <path class="dash" d="M64 134V150"/>
+            <g transform="translate(64 170)"><path class="s" d="M0 0C-4-6-8-10-8-15A8 8 0 1 1 8-15C8-10 4-6 0 0Z"/><circle cy="-15" r="3" fill="#fff"/></g>
+            <g transform="rotate(3 266 50)">
+              <rect class="sw" x="230" y="16" width="74" height="66"/>
+              <rect x="235" y="21" width="64" height="44" fill="url(#ht-green)"/>
+              <path class="s" d="M254 58c0-8 6-13 14-13c5 0 7-5 5-10c-1-4 2-6 5-4l7 3l-7 1c-1 7-2 12-6 15c6 3 9 7 7 9z"/>
+              <path class="so" style="stroke-width:1.4" d="M264 58v7M270 58v7"/>
+              <text class="t-c" x="267" y="76" text-anchor="middle">grey heron</text>
+            </g>
+          </g>
+          <path class="vf" d="M10 24V10H24M296 10H310V24M310 186V200H296M24 200H10V186"/>
+        </svg>
+        <figcaption class="tag">Example 04</figcaption>
+      </figure>
+      <p class="maker">By a nature reserve's volunteers</p>
+      <h3 class="title">Heron Marsh Lookouts</h3>
+      <p class="sees"><span class="at">At lookout 2 of 6</span>A note sits low in the reeds, right where the nests are, so nobody has to leave the boardwalk.</p>
+      <dl class="meta"><div><dt>Made in</dt><dd>A weekend</dd></div><div><dt>Lookouts</dt><dd>6</dd></div></dl>
+      <button type="button" class="more" aria-haspopup="dialog">How they made it</button>
+    </li>
+
+    <!-- 05 family scavenger hunt -->
+    <li class="card" data-id="hunt" style="--spot:var(--orange)">
+      <figure class="pic">
+        <svg class="ill" viewBox="0 0 320 210" style="--spot:#ff6c2f;--on-spot:#151515" role="img" aria-label="A park with a big tree, a bench and a slide. Through the phone, a clue card floats above the bench and an X marks a spot under the tree.">
+          <rect class="bg" width="320" height="210"/>
+          <g class="real">
+            <path class="l" d="M0 140H320"/>
+            <path class="r" d="M52 108C30 108 26 84 40 76C36 54 58 38 78 44C94 32 120 42 116 64C134 70 132 104 108 104C100 112 64 114 52 108Z"/>
+            <path class="l" opacity=".5" d="M64 60q6-6 12 0M88 74q6-6 12 0M50 88q6-6 12 0M98 94q6-6 12 0"/>
+            <path class="r" d="M72 140V100H86V140Z"/>
+            <path class="l" d="M176 140V128M236 140V128M170 126H242M174 116H238M178 116V126M234 116V126"/>
+            <path class="l" d="M278 140V96M292 140V96M278 106H292M278 118H292M278 130H292M292 96Q302 96 306 112Q312 132 320 138"/>
+            <path class="l" d="M20 162l3-6l3 6M130 178l3-6l3 6M250 168l3-6l3 6M196 196l3-6l3 6M286 190l3-6l3 6"/>
+            <path class="l" opacity=".45" d="M118 210Q150 170 220 150"/>
+          </g>
+          <g class="add">
+            <path class="route" d="M116 210Q102 186 82 172"/>
+            <path class="so" style="stroke-width:4" d="M64 156l18 10M82 156l-18 10"/>
+            <path class="s" d="M128 32l4 9l10 1l-7 7l2 10l-9-5l-9 5l2-10l-7-7l10-1z"/>
+            <rect class="sw" x="146" y="22" width="150" height="62"/>
+            <rect class="s" x="146" y="22" width="150" height="14"/>
+            <text class="t-s" x="153" y="32">CLUE 4 OF 6</text>
+            <text class="t-i" x="153" y="54">How many benches can</text>
+            <text class="t-i" x="153" y="68">you see from here?</text>
+            <path class="dash" d="M206 84Q212 98 206 112"/>
+          </g>
+          <path class="vf" d="M10 24V10H24M296 10H310V24M310 186V200H296M24 200H10V186"/>
+        </svg>
+        <figcaption class="tag">Example 05</figcaption>
+      </figure>
+      <p class="maker">By a parent, for a ninth birthday</p>
+      <h3 class="title">The Birthday Treasure Hunt</h3>
+      <p class="sees"><span class="at">At clue 4 of 6</span>A question hangs over the park bench; its answer says where to look for clue 5.</p>
+      <dl class="meta"><div><dt>Made in</dt><dd>One evening</dd></div><div><dt>Clues</dt><dd>6</dd></div></dl>
+      <button type="button" class="more" aria-haspopup="dialog">How they made it</button>
+    </li>
+
+    <!-- 06 artist's exhibition -->
+    <li class="card" data-id="windows" style="--spot:var(--pink)">
+      <figure class="pic">
+        <svg class="ill" viewBox="0 0 320 210" style="--spot:#ff48b0;--on-spot:#151515" role="img" aria-label="A street front with three empty shop windows. Through the phone, a painting hangs in each window.">
+          <rect class="bg" width="320" height="210"/>
+          <g class="real">
+            <rect class="r" x="8" y="26" width="304" height="134"/>
+            <path class="l" d="M8 40H312M8 46H312"/>
+            <rect class="g" x="28" y="68" width="72" height="84"/><rect class="g" x="124" y="68" width="72" height="84"/><rect class="g" x="220" y="68" width="72" height="84"/>
+            <path class="l" d="M0 166H320M0 176H320M40 176l-8 34M120 176l-4 34M200 176l4 34M280 176l8 34"/>
+          </g>
+          <g class="add">
+            <rect class="sw" x="36" y="76" width="56" height="64"/>
+            <rect x="41" y="81" width="46" height="54" fill="url(#ht-pink)"/>
+            <circle class="s" cx="64" cy="100" r="11"/>
+            <path class="so" style="stroke-width:3" d="M42 122q11-8 22 0t22 0"/>
+            <rect class="sw" x="132" y="76" width="56" height="64"/>
+            <path class="s" d="M140 134V104L152 92V134ZM156 134V86L168 98V134ZM172 134V110L182 102V134Z"/>
+            <rect class="sw" x="228" y="76" width="56" height="64"/>
+            <rect x="233" y="81" width="46" height="54" fill="url(#ht-pink)"/>
+            <path class="s" d="M233 135C246 112 262 120 279 96V135Z"/>
+            <rect class="sw" x="114" y="145" width="92" height="16"/>
+            <text class="t-c" x="160" y="156" text-anchor="middle">No. 2 - Morning, river</text>
+          </g>
+          <path class="vf" d="M10 24V10H24M296 10H310V24M310 186V200H296M24 200H10V186"/>
+        </svg>
+        <figcaption class="tag">Example 06</figcaption>
+      </figure>
+      <p class="maker">By a painter, as a street exhibition</p>
+      <h3 class="title">Paintings in Empty Windows</h3>
+      <p class="sees"><span class="at">At painting 2 of 9</span>Each empty shop window holds one painting, there only for people who look through a phone.</p>
+      <dl class="meta"><div><dt>Made in</dt><dd>One day</dd></div><div><dt>Paintings</dt><dd>9</dd></div></dl>
+      <button type="button" class="more" aria-haspopup="dialog">How they made it</button>
+    </li>
+  </ol>
+  <p class="row-hint" id="rowHint" aria-hidden="true">1 of 6 - swipe for more</p>
+</section>
+
+<section class="make" id="make" aria-labelledby="makeTitle">
+  <div class="make-in">
+    <div class="make-head">
+      <p class="kicker">Your turn</p>
+      <h2 id="makeTitle" tabindex="-1">Make yours.</h2>
+      <p class="like" id="like" hidden></p>
+      <p class="deck"><strong>Six steps, all on this page.</strong> Steps 1 to 4 work on any computer or phone. Step 5 happens on site, with an Android phone with Chrome.</p>
+    </div>
+    <ol class="six">
+      <li><span><b>Choose where your tour lives</b>One small file, in storage you already have.</span></li>
+      <li><span><b>Paste its share link</b>That link becomes the code on your poster.</span></li>
+      <li><span><b>Print your poster</b>Any printer, at actual size.</span></li>
+      <li><span><b>Hang it where the walk begins</b>Flat, at chest height, out of the rain.</span></li>
+      <li class="site"><span><b>Walk it and place things</b>Scan your poster, walk the route, tap to place notes and photos.</span></li>
+      <li><span><b>Save the tour back</b>Same link, same poster. Add more any time.</span></li>
+    </ol>
+    <div class="start" id="start">
+      <h3>Step 1: where will your tour live?</h3>
+      <p>Your tour is one small file. It stays in your storage; you share it by link.</p>
+      <div class="tiles" role="group" aria-label="Storage options">
+        <button type="button" class="tile" data-p="Google Drive" aria-pressed="false">Google Drive</button>
+        <button type="button" class="tile" data-p="Dropbox" aria-pressed="false">Dropbox</button>
+        <button type="button" class="tile" data-p="OneDrive" aria-pressed="false">OneDrive</button>
+        <button type="button" class="tile" data-p="GitHub" aria-pressed="false">GitHub</button>
+        <button type="button" class="tile" data-p="your own server" aria-pressed="false">Your own server</button>
+      </div>
+      <p class="start-out" id="startOut" role="status" aria-live="polite"></p>
+      <a class="btn primary" href="../../" id="startBtn">Start the setup</a>
+      <p class="fine ar-no">On a computer, do steps 1 to 4 here, then open this page on an Android phone with Chrome for step 5.</p>
+      <p class="fine ar-yes">This phone can do all six steps, including the walk on site.</p>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="foot">
+  <div class="foot-row">
+    <p>Already made a tour?</p>
+    <button type="button" class="linkish" data-toast="Here the editor would open (it works best on a computer).">Open the editor</button>
+    <button type="button" class="linkish ar-yes" data-toast="Here you would pick a tour file from this phone and play it or keep setting it up.">Continue from this phone</button>
+    <a class="linkish" href="../../../">Building with the code? The developer site</a>
+  </div>
+  <details class="notes" id="notes">
+    <summary>About this prototype</summary>
+    <div class="n-body">
+      <h4>Direction</h4>
+      <p>A use-case gallery: a non-developer recognises themselves in an example tour before they understand the technology, then makes their own.</p>
+      <h4>Why it should work for this audience</h4>
+      <p>A guide, teacher, museum or town office thinks in places and visitors, not in AR. Six makers who look like them, each with a real station, a real effort ("one evening") and the real steps, answer "is this for me?" and "how much work is it?" at once. One visual rule carries the AR idea: black line art is the place, colour is what the tour adds through the phone; the detail view's "With the tour / Without" switch makes that difference tangible without any 3D.</p>
+      <h4>Load-bearing details</h4>
+      <ul>
+        <li>First screen at 390x844: brand bar, the three facts (AR on site; make it yourself, no code, no sign-up, no account; Android with Chrome), and the first example's picture plus its maker line above the fold.</li>
+        <li>The illustration rule: ink line art, white fills, one spot colour per tour, halftone dots, viewfinder corners. Every example uses only notes, photos, pins and route dots, the content a tour holds today.</li>
+        <li>Every card says "Example" and the gallery head says the makers and places are invented. No testimonials, no quotes from people, no accuracy numbers.</li>
+        <li>Type: condensed bold sans for headlines (system condensed faces), a serif for reading, the system sans for labels. Hairline grid, no rounded corners, no shadows; the only dark block is "Make yours".</li>
+        <li>Phone layout: a swipeable row (default) with the next card peeking at 80 % card width; "List" switches to one column. From 720 px a two-column grid, from 1080 px (and in phone landscape) three columns.</li>
+        <li>Motion: none on load. The detail view fades in (220 ms) and the "Without" switch fades the colour layer (250 ms); both off under reduced motion.</li>
+        <li>The detail view is a modal dialog with its own history entry: the phone's Back closes it; #ex-&lt;id&gt; deep-links an example.</li>
+      </ul>
+      <h4>Measured cost (desktop machine, under load; not phone numbers)</h4>
+      <p id="costNote">JS: one inline script, 15.2 kB raw, 5.4 kB gzip; no CDN JS, no WebGL, no images (the whole page is 64 kB, 18.1 kB gzip). At 390x844 in headless Chromium on a desktop: 5 s idle had no frame over 50 ms at 1x, 4x or 6x CPU throttle; 5 s scroll in the swipe layout, worst 33 ms at 4x and 50 ms at 6x; swiping the row, worst 17 ms. The list layout had one scroll frame of 100 to 150 ms at 4x. The costliest action is opening an example: about 45 to 90 ms at 4x, the first open up to about 230 ms. That cost is the modal itself (about 13 ms for an empty dialog) plus laying out the dialog's text; removing the picture copy, the halftone patterns or the fade made no clear difference. These are desktop numbers, not phone numbers, taken while the machine ran other work.</p>
+      <h4>Swipe or list on a phone (390x844)</h4>
+      <p>Swipe reads better here. The first screen shows the first example whole, its title, and the edge of the next one, and "Make yours" is one short scroll away (page about 2 700 px tall). The list gives each picture about a fifth more size but needs about five screens of examples before "Make yours" (page about 5 300 px). The verdict would reverse if readers do not swipe and only ever see example 1; only use on real phones can tell. Card width: at 76 % the next card shows enough to read its tag, at 90 % it nearly disappears; 80 % is the compromise.</p>
+      <h4>Known weaknesses</h4>
+      <ul>
+        <li>No moving picture of AR; the "Without" switch is a stand-in for seeing it.</li>
+        <li>The made-up times ("one evening") are estimates for tours of that size, not measurements.</li>
+        <li>Condensed headline faces differ by platform (Bahnschrift, Roboto Condensed, Avenir Next Condensed); without one the headline falls back to a regular sans and runs one line longer.</li>
+        <li>In the swipe row only one example is fully visible at a time, so a reader may never reach the sixth.</li>
+        <li>Opening an example breaks the 50 ms frame budget at 4x throttle (see above); a build would keep the detail laid out instead of creating it on tap.</li>
+      </ul>
+      <h4>Parameters it rests on</h4>
+      <ul>
+        <li>Headline size on a phone (about 45 px at 390 wide; 34, 40 and 46 tried), which decides whether the first picture reaches the fold. With the two-line headline it does at every size tried; the earlier four-line headline at 40 px pushed the picture below it.</li>
+        <li>Card width in the swipe row (80 %; 76, 84 and 90 tried).</li>
+        <li>?ar=1 / ?ar=0 fake the device's AR support (the toggle does the same; Auto asks the browser). ?view=row / ?view=list pick the phone layout.</li>
+      </ul>
+    </div>
+  </details>
+</footer>
+
+<dialog id="detail" aria-labelledby="dTitle">
+  <div class="d-in" id="dIn">
+    <div class="d-top">
+      <span class="d-tag" id="dTag">Example</span>
+      <button type="button" class="d-close" id="dClose" aria-label="Close"><svg viewBox="0 0 20 20" fill="none"><path d="M3 3L17 17M17 3L3 17"/></svg></button>
+    </div>
+    <div class="d-grid">
+      <figure class="d-pic" id="dPic">
+        <div class="frame" id="dFrame"></div>
+        <div class="d-layer"><span class="seg" role="group" aria-label="Show the picture">
+          <button type="button" data-layer="1" aria-pressed="true">With the tour</button>
+          <button type="button" data-layer="0" aria-pressed="false">Without</button>
+        </span><span id="dLayerNote">What a visitor sees through the phone</span></div>
+      </figure>
+      <div class="d-text">
+        <p class="maker" id="dMaker"></p>
+        <h2 id="dTitle"></h2>
+        <p class="d-sees" id="dSees"></p>
+        <h3>How they made it</h3>
+        <ol class="d-steps" id="dSteps"></ol>
+        <h3>What it really takes</h3>
+        <ul class="d-req" id="dReq"></ul>
+        <p class="d-meta" id="dMeta"></p>
+        <div class="d-actions">
+          <button type="button" class="btn primary" id="dMake">Make one like this</button>
+          <button type="button" class="btn" id="dNext">Next example</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  var root = document.documentElement;
+  var $ = function (s, el) { return (el || document).querySelector(s); };
+  var $$ = function (s, el) { return Array.prototype.slice.call((el || document).querySelectorAll(s)); };
+  var params;
+  try { params = new URLSearchParams(location.search); } catch (e) { params = { get: function () { return null; } }; }
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------- toast ---------- */
+  var toastEl = $('#toast'), toastT;
+  function toast(msg) {
+    var host = dlg.open ? dlg : document.body;
+    if (toastEl.parentNode !== host) host.appendChild(toastEl);
+    toastEl.textContent = String(msg);
+    toastEl.classList.add('show');
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { toastEl.classList.remove('show'); }, 3200);
+  }
+
+  /* ---------- AR support: faked by ?ar=1 / ?ar=0 or the toggle; Auto asks the browser ---------- */
+  var arMode = params.get('ar') === '1' ? '1' : params.get('ar') === '0' ? '0' : 'auto';
+  var autoAr = '0';
+  function applyAr() {
+    root.dataset.ar = arMode === 'auto' ? autoAr : arMode;
+    $$('[data-ar-set]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.arSet === arMode)); });
+  }
+  function setParam(key, val) {
+    try {
+      var u = new URL(location.href);
+      if (val === null) u.searchParams.delete(key); else u.searchParams.set(key, val);
+      history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+    } catch (e) { /* the URL stays as it is; the page state still changes */ }
+  }
+  function setAr(mode) {
+    arMode = mode === '1' || mode === '0' ? mode : 'auto';
+    setParam('ar', arMode === 'auto' ? null : arMode);
+    applyAr();
+  }
+  $$('[data-ar-set]').forEach(function (b) { b.addEventListener('click', function () { setAr(b.dataset.arSet); }); });
+  applyAr();
+  // Only a positive answer to immersive-ar counts as "this phone can".
+  try {
+    if (navigator.xr && typeof navigator.xr.isSessionSupported === 'function') {
+      navigator.xr.isSessionSupported('immersive-ar').then(function (ok) { autoAr = ok ? '1' : '0'; applyAr(); }, function () { /* unknown: stay at no */ });
+    }
+  } catch (e) { /* no WebXR: stay at no */ }
+
+  /* ---------- phone layout: swipe row or one column ---------- */
+  var view = params.get('view') === 'list' ? 'list' : 'row';
+  function applyView() {
+    root.dataset.view = view;
+    $$('[data-view-set]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.viewSet === view)); });
+  }
+  $$('[data-view-set]').forEach(function (b) {
+    b.addEventListener('click', function () { view = b.dataset.viewSet === 'list' ? 'list' : 'row'; setParam('view', view === 'row' ? null : view); applyView(); });
+  });
+  applyView();
+  var cw = parseFloat(params.get('cw'));
+  if (cw >= 60 && cw <= 95) root.style.setProperty('--card-w', cw + '%');
+  var h1 = parseFloat(params.get('h1'));
+  if (h1 >= 24 && h1 <= 60) $('.hero h1').style.setProperty('--h1', h1 + 'px');
+
+  // "n of 6" under the swipe row, updated at most once per frame
+  var cardsEl = $('#cards'), hint = $('#rowHint'), cards = $$('.card'), hintQueued = false;
+  function updateHint() {
+    hintQueued = false;
+    var first = cards[0].getBoundingClientRect(), step = cards.length > 1 ? cards[1].getBoundingClientRect().left - first.left : 1;
+    var i = step > 0 ? Math.round(cardsEl.scrollLeft / step) : 0;
+    i = Math.max(0, Math.min(cards.length - 1, i));
+    hint.textContent = (i + 1) + ' of ' + cards.length + (i < cards.length - 1 ? ' - swipe for more' : ' - the last one');
+  }
+  cardsEl.addEventListener('scroll', function () { if (!hintQueued) { hintQueued = true; requestAnimationFrame(updateHint); } }, { passive: true });
+
+  /* ---------- the examples: detail data ---------- */
+  var SHARED = [
+    'An Android phone with Chrome, to place things on site.',
+    'Somewhere to keep one small file that you already use: Google Drive, Dropbox, OneDrive, GitHub or your own web space.',
+    'A printer, for the poster where the walk begins.',
+    'Visitors need an Android phone with Chrome. Nothing to install, no sign-up, no account.'
+  ];
+  var EX = {
+    market: {
+      n: '01', spot: '#f15060', title: 'The Old Market Walk', maker: "By a small town's history club",
+      at: 'At station 3 of 8', sees: 'A photo of the bakery from 1900 hangs in the empty plot where it once stood. Visitors stand where the photographer stood and compare.',
+      steps: [
+        ['At home', 'they picked eight photos from the club\'s archive and wrote a few lines for each.'],
+        ['One poster', 'went up on the notice board by the old well, where the walk begins.'],
+        ['One member walked the route', 'with an Android phone, scanned the poster and tapped each photo into place. The tour file went back into the club\'s shared Google Drive.']
+      ],
+      own: 'Visitors without an Android phone still get the printed leaflet; the tour adds to it.',
+      took: 'Two afternoons', count: '8 stations'
+    },
+    pond: {
+      n: '02', spot: '#00838a', title: 'The Pond Life Trail', maker: 'By a teacher and a science class',
+      at: 'At station 2 of 5', sees: 'A question floats over the water, with a photo of what the class found under the lily pads. The answer is at the next station.',
+      steps: [
+        ['In class', 'each group of pupils wrote one question and took one photo for it.'],
+        ['The teacher printed the poster', 'at school and fixed it to the fence by the pond.'],
+        ['On a dry afternoon', 'the teacher walked the pond with the class and placed each group\'s question where it belongs. The file lives in the school\'s OneDrive.']
+      ],
+      own: 'Pupils walk it in small groups, with one Android phone with Chrome per group.',
+      took: 'Three lessons', count: '5 stations'
+    },
+    sculpture: {
+      n: '03', spot: '#0078bf', title: 'The Sculpture Garden Path', maker: "By a museum's education team",
+      at: 'At station 4 of 12', sees: 'The artist\'s first sketch hangs beside the bronze, with one line on how it was made.',
+      steps: [
+        ['At their desks', 'the team wrote one short note per sculpture and photographed the artists\' sketches from the archive.'],
+        ['Two posters', 'one at each garden gate, so the path can start from either end.'],
+        ['One morning before opening', 'a colleague walked the path and placed each sketch beside its sculpture. The file sits on the museum\'s own web server.']
+      ],
+      own: 'The printed labels stay. The tour adds to them; it does not replace them for visitors without an Android phone.',
+      took: 'One morning on site, plus writing', count: '12 stations'
+    },
+    marsh: {
+      n: '04', spot: '#00a95c', title: 'Heron Marsh Lookouts', maker: "By a nature reserve's volunteers",
+      at: 'At lookout 2 of 6', sees: 'A note sits low in the reeds, right where the nests are, so nobody has to leave the boardwalk to find them.',
+      steps: [
+        ['Over coffee', 'the volunteers chose six lookouts and wrote what to look for at each.'],
+        ['The poster hangs', 'inside the shelter at the gate, out of the rain.'],
+        ['On a calm weekend', 'two volunteers walked the boardwalk and placed notes and photos. The file is kept in their Dropbox.']
+      ],
+      own: 'There is no signal at the far lookouts. The tour keeps working once it has loaded at the gate.',
+      took: 'A weekend', count: '6 lookouts'
+    },
+    hunt: {
+      n: '05', spot: '#ff6c2f', title: 'The Birthday Treasure Hunt', maker: 'By a parent, for a ninth birthday',
+      at: 'At clue 4 of 6', sees: 'A question hangs over the park bench. Its answer says where to look for clue 5.',
+      steps: [
+        ['The evening before', 'a parent wrote six clues, each pointing to the next.'],
+        ['One poster', 'printed at home and taped to the park gate for the afternoon.'],
+        ['A walk round the park', 'to place each clue where it belongs. The file stayed in Google Drive; the poster came down after the party.']
+      ],
+      own: 'The children shared two Android phones with Chrome between them.',
+      took: 'One evening', count: '6 clues'
+    },
+    windows: {
+      n: '06', spot: '#ff48b0', title: 'Paintings in Empty Windows', maker: 'By a painter, as a street exhibition',
+      at: 'At painting 2 of 9', sees: 'Each empty shop window holds one painting, there only for people who look through a phone.',
+      steps: [
+        ['In the studio', 'the painter photographed nine paintings and gave each a title and one line.'],
+        ['A poster', 'in the café window at the end of the street starts the walk.'],
+        ['One quiet morning', 'the painter walked the street and hung each painting in an empty window, in AR. The file is kept in a GitHub repository.']
+      ],
+      own: 'Nothing is fixed to the windows: the paintings exist only in the tour.',
+      took: 'One day', count: '9 paintings'
+    }
+  };
+  var ORDER = Object.keys(EX);
+
+  /* ---------- detail dialog: its own history entry, so Back closes it ---------- */
+  var dlg = $('#detail'), lastCard = null, curId = null;
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function render(id) {
+    var ex = EX[id]; if (!ex) return false;
+    curId = id;
+    dlg.style.setProperty('--spot', ex.spot);
+    var src = $('.card[data-id="' + id + '"] .ill');
+    var frame = $('#dFrame');
+    frame.textContent = '';
+    if (src) frame.appendChild(src.cloneNode(true));
+    $('#dTag').textContent = 'Example ' + ex.n + ' - made up to show the idea';
+    $('#dMaker').textContent = ex.maker;
+    $('#dTitle').textContent = ex.title;
+    $('#dSees').innerHTML = '<span class="at">' + esc(ex.at) + '</span>' + esc(ex.sees);
+    $('#dSteps').innerHTML = ex.steps.map(function (s) { return '<li><span><b>' + esc(s[0]) + '</b> ' + esc(s[1]) + '</span></li>'; }).join('');
+    $('#dReq').innerHTML = '<li class="own">' + esc(ex.own) + '</li>' + SHARED.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('');
+    $('#dMeta').textContent = 'Made in: ' + ex.took + '. ' + ex.count + '. Example times are estimates for a tour of this size.';
+    setLayer(true);
+    $('#dIn').scrollTop = 0;
+    return true;
+  }
+  function openDetail(id, how) {
+    if (!render(id)) return;
+    if (!dlg.open) {
+      root.classList.add('modal');
+      try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); }
+    }
+    var st = { detail: id };
+    try {
+      if (how === 'push') history.pushState(st, '', '#ex-' + id);
+      else if (how === 'replace') history.replaceState(st, '', '#ex-' + id);
+    } catch (e) { /* history unavailable: the dialog still works, Back just leaves */ }
+    $('#dClose').focus();
+  }
+  function requestClose() {
+    if (history.state && history.state.detail) history.back();
+    else if (dlg.open) dlg.close();
+  }
+  dlg.addEventListener('cancel', function (e) { e.preventDefault(); requestClose(); });
+  dlg.addEventListener('click', function (e) { if (e.target === dlg) requestClose(); });
+  dlg.addEventListener('close', function () {
+    root.classList.remove('modal');
+    if (toastEl.parentNode !== document.body) document.body.appendChild(toastEl);
+    if (lastCard) { var b = $('.more', lastCard); if (b) b.focus({ preventScroll: true }); }
+  });
+  window.addEventListener('popstate', function (e) {
+    var st = e.state;
+    if (st && st.detail && EX[st.detail]) openDetail(st.detail, 'none');
+    else if (dlg.open) dlg.close();
+  });
+  $('#dClose').addEventListener('click', requestClose);
+  $$('.card').forEach(function (card) {
+    $('.more', card).addEventListener('click', function () { lastCard = card; openDetail(card.dataset.id, 'push'); });
+  });
+  $('#dNext').addEventListener('click', function () {
+    var i = (ORDER.indexOf(curId) + 1) % ORDER.length;
+    lastCard = $('.card[data-id="' + ORDER[i] + '"]');
+    openDetail(ORDER[i], 'replace');
+  });
+
+  function setLayer(on) {
+    $('#dPic').classList.toggle('layer-off', !on);
+    $$('[data-layer]').forEach(function (b) { b.setAttribute('aria-pressed', String((b.dataset.layer === '1') === on)); });
+    $('#dLayerNote').textContent = on ? 'What a visitor sees through the phone' : 'The place as it is, without a phone';
+  }
+  $$('[data-layer]').forEach(function (b) { b.addEventListener('click', function () { setLayer(b.dataset.layer === '1'); }); });
+
+  /* ---------- make yours ---------- */
+  function goMake() {
+    var make = $('#make');
+    make.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+    try { $('#makeTitle').focus({ preventScroll: true }); } catch (e) { /* older browsers */ }
+  }
+  $('#dMake').addEventListener('click', function () {
+    var ex = EX[curId];
+    var like = $('#like');
+    if (ex) {
+      like.textContent = 'Starting from an idea like "' + ex.title + '". Your own place, your own stories.';
+      like.style.setProperty('--like', ex.spot);
+      like.hidden = false;
+    }
+    lastCard = null;
+    // close first (Back entry included), then scroll once the page is back
+    if (history.state && history.state.detail) {
+      window.addEventListener('popstate', function once() { window.removeEventListener('popstate', once); setTimeout(goMake, 0); });
+      history.back();
+    } else { if (dlg.open) dlg.close(); goMake(); }
+  });
+
+  var startOut = $('#startOut');
+  $$('.tile').forEach(function (t) {
+    t.addEventListener('click', function () {
+      $$('.tile').forEach(function (o) { o.setAttribute('aria-pressed', String(o === t)); });
+      startOut.textContent = t.dataset.p.charAt(0).toUpperCase() + t.dataset.p.slice(1) + ' it is. Next you upload an empty starter file there and copy its share link.';
+    });
+  });
+  $('#startBtn').addEventListener('click', function (e) {
+    e.preventDefault();
+    toast('Here the real setup would open at step 1' + ($('.tile[aria-pressed="true"]') ? ', with your storage chosen.' : '.'));
+  });
+  $('#scanBtn').addEventListener('click', function () { toast('Here the camera would open to scan the tour poster.'); });
+  $('#linkBtn').addEventListener('click', function () { toast('Here you would paste the link. The tour itself opens on an Android phone with Chrome.'); });
+  $$('[data-toast]').forEach(function (b) { b.addEventListener('click', function () { toast(b.dataset.toast); }); });
+
+  window.addEventListener('hashchange', function () {
+    var h = /^#ex-([a-z]+)$/.exec(location.hash || '');
+    if (h && EX[h[1]] && !(dlg.open && curId === h[1])) { lastCard = $('.card[data-id="' + h[1] + '"]'); openDetail(h[1], 'replace'); }
+  });
+  // deep link: #ex-<id> opens that example, with a Back entry to the gallery
+  var m = /^#ex-([a-z]+)$/.exec(location.hash || '');
+  if (m && EX[m[1]]) {
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
+    lastCard = $('.card[data-id="' + m[1] + '"]');
+    openDetail(m[1], 'push');
+  }
+
+  window.__landing = { ready: true, open: function (id) { openDetail(id, 'push'); }, close: requestClose };
+})();
+</script>
+</body>
+</html>
