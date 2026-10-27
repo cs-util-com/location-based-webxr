@@ -335,8 +335,10 @@ its chunk fails, the hero shows its last moment as a drawing).
     reads too small at about 534 px wide, or the text column too narrow,
     the breakpoint goes to 1100.
   - The headline beside the film is 48 px, and 40 px where its column is
-    narrow (1000 to 1159 px wide: about 386 to 453 px) or the window short
-    (under 680 px high). In a wide face (Verdana; the CI's Linux face,
+    narrow (1000 to 1159 px wide: 460 to 540 px beside the half-row film
+    of the correction below) or the window under 740 px high (34 px on the
+    shortest windows; both cuts measured again in the second correction
+    below). In a wide face (Verdana; the CI's Linux face,
     DejaVu Sans, is wider still in the headline, see the correction below)
     48 px wrapped it to five lines in
     the narrow column and four in the 454 px one, so the hero's button
@@ -366,7 +368,7 @@ its chunk fails, the hero shows its last moment as a drawing).
     exactly what the CI's run saw. So under the same condition as the
     40 px headline (under 1160 px wide or under 680 px high) the film
     takes half the row (0.5) instead of 58 %: the text column is then
-    about 466 px at 1000 px, 510 px at 1100 px and 540 px at 1280 px, and
+    460 px at 1000 px, 510 px at 1100 px and 540 px at 1280 px, and
     the film's picture 458, 508 and 538 px wide (532, 590 and 624 before).
     From 1160 px wide and 680 px high the share stays 0.58. Swept at the
     seven desktop sizes in the system face, Verdana, Verdana spaced 0.02em
@@ -379,14 +381,64 @@ its chunk fails, the hero shows its last moment as a drawing).
     - unchanged (40 px at 0.58): -19 px in unspaced DejaVu at 1100x600 and
       -18 px at 1000x700 spaced 0.06em.
     - Outside the condition (1280x720, 48 px at 0.58) a five-line headline
-      leaves 15 px in DejaVu and in spaced Verdana: the thinnest margin
-      left, unchanged here.
+      left 15 px in DejaVu and in spaced Verdana; the second correction
+      below sets 40 px there.
     - The e2e "the hero on the first screen, in a wide face" spaces
       Verdana 0.02em wider (`playwright-tests/wide-font.js`), which set
       every hero line at least as long as real DejaVu did at all seven
       sizes, so this machine sees the CI's red; it pins the share at each
       size. Reversing: if the film reads too small at 458 px (1000 px
       wide), a 1000 to 1099 px window could stack the hero instead.
+  - **Corrected again 2026-10-27: the 680 px cut was set in Verdana.**
+    Swept with the real DejaVu Sans files (the CI's face) from 561 to
+    800 px high in 10 px steps (and at 561, 579, 619, 679 and 739) at 1000,
+    1050, 1099, 1100, 1159, 1160, 1280, 1440 and 1920 px wide, in the
+    system face, Verdana, Verdana spaced 0.02em wider and DejaVu Sans
+    spaced 0, 0.02, 0.04 and 0.06em wider:
+    - From 1160 px wide and 680 to 704 px high the 48 px headline took
+      five lines in DejaVu beside the 58 % film (a 453.6 px text column)
+      and the button ended below the window: 25 px at 680, 15 px at 690,
+      5 px at 700, against 160 px clear at 679 (a cliff of 185 px at the
+      cut). The headline is now 40 px under 740 px high at every width
+      from 1000 px (three lines in DejaVu, four spaced 0.04em or more);
+      the film's share keeps its cut at 680 px.
+    - Considered: the film at half the row up to 740 px high with 48 px
+      (135 px clear at 1280x680 in DejaVu, 27 px spaced 0.06em). Not
+      taken: it narrows the film from 626 to 540 px at sizes as common as
+      1280x720, and at that width the drawn phone's chip in the film's
+      last part ("Tour found ... Opened in the browser", 125 px in
+      Verdana) no longer fits the phone's 119 px screen; the film's own
+      e2e (the scanning part at 1280x720, in a wide face) went red. The
+      chip already overflows wherever the film is 540 px or narrower
+      (1000 to 1159 px wide at any height, and under 680 px high), which
+      is a separate defect.
+    - At 1000 to 1100 px wide and 561 to 576 px high the 40 px headline
+      took three lines in DejaVu and ended the button 14 px below the
+      window (1000x561); spaced 0.04em wider it took four lines up to
+      610 px high (58 px below at 561, 19 px at 600). Now 34 px under
+      580 px high, and under 620 px below 1100 px wide. A 36 px headline
+      still ended it 1.5 px below a 561 px window; 35 px fit by 1.8 px;
+      moving the short landscape cut (560 px) instead was not taken, as
+      six rules of the page (the step cards, the use cases, the setup
+      stage) share it.
+    - The button's least room per face across the sweep: the system face
+      98 px (1000x561); Verdana and unspaced DejaVu 5 px (1000x561, three
+      lines at 34 px); Verdana spaced 0.02em and DejaVu spaced 0.02em
+      4.6 px (1100x580, three lines at 40 px); DejaVu spaced 0.04 and
+      0.06em 1.4 px (1000x620, four lines at 40 px). No size in the sweep
+      puts the button below the window. From 740 px high the least is
+      35 px (1160x740, five lines at 48 px, every wide face). At 560 px
+      and below the phone's landscape layout applies (at least 162 px).
+    - The film's width at the cuts (system face): 1159 to 1160 px wide
+      under 680 px high 539.5 to 540 px (no jump); from 680 px high
+      539.5 to 626.4 px, the text column 539.5 to 453.6 px; at the 680 px
+      cut (1280 px wide) 540 to 626.4 px; at the 740 px cut only the
+      headline changes (40 to 48 px).
+    - Pinned in "the hero on the first screen" at 1000x570, 1000x610,
+      1100x570, 1440x680, 1280x690, 1280x720 and 1280x740 besides the
+      earlier sizes. Reversing: if 40 px reads too small from 680 to
+      739 px high, the half-row film with 48 px, once the phone's chip
+      fits a 119 px screen.
   - From 900 px wide and taller than 560 px the step cards' pictures start
     at their kicker's line (`align-items: start`, the picture 6 px down,
     the kicker's own top padding), and the cards are 56 px apart

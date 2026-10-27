@@ -414,7 +414,8 @@ for (const { viewport, wide } of [
       near(film.y, kicker.y);
       expect(stage.width / stage.height).toBeCloseTo(16 / 9, 1);
       // The film's column is 58 % of the row less the gap, half of it
-      // where the text column is narrow (under 1160 px wide).
+      // where the text column is narrow (under 1160 px wide) or the window
+      // short (under 680 px high).
       const share = viewport.width < 1160 || viewport.height < 680 ? 0.5 : 0.58;
       near(film.width, (column.right - column.left - 48) * share);
       // The picture and its bar on the first screen, 23 px or more clear.
@@ -562,16 +563,19 @@ test.describe("the hero film on a wide screen", () => {
 });
 
 // The hero's button and the film's picture and bar end on the first
-// screen at seven desktop sizes, short windows included, in this
+// screen at thirteen desktop sizes, short windows included, in this
 // machine's face and in a wide one (spaced 0.02em wider, so it is at
 // least as wide as the CI's Linux face, DejaVu Sans; wide-font.js).
 // Beside the film, a 48 px headline wraps to four or five lines in a wide
-// face and pushed the button below a 600 or 700 px high window, and even
-// at 40 px DejaVu wrapped it to four lines in a 428 px column, 19 px below
-// a 1100x600 window. So where the text column is narrow (under 1160 px
-// wide) or the window short (under 680 px high) the headline is 40 px and
-// the film takes half the row instead of 58 %, and elsewhere 48 px at
-// 58 %; both are pinned here.
+// face and pushed the button below a 600 or 700 px high window (25 px
+// below a 1280x680 one beside a 58 % film), and even at 40 px DejaVu
+// wrapped it to four lines in a 428 px column, 19 px below a 1100x600
+// window, and to three in a 460 px one, 14 px below a 1000x561 window.
+// So the headline is 40 px where the text column is narrow (under 1160 px
+// wide) or the window under 740 px high, 34 px under 580 px high (under
+// 620 px below 1100 px wide), and 48 px elsewhere; the film takes half the
+// row where the column is narrow or the window under 680 px high, and
+// 58 % elsewhere. Both are pinned here, on both sides of each cut.
 for (const wide of [false, true]) {
   test.describe(`the hero on the first screen${wide ? ", in a wide face" : ""}`, () => {
     test.use({
@@ -579,7 +583,7 @@ for (const wide of [false, true]) {
       storageState: FIRST_VISIT,
     });
 
-    test("keeps the button and the film's picture and bar in view at seven desktop sizes", async ({
+    test("keeps the button and the film's picture and bar in view at thirteen desktop sizes", async ({
       page,
     }) => {
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -591,11 +595,17 @@ for (const wide of [false, true]) {
       );
       /** @type {[number, number, string, number][]} */
       const sizes = [
+        [1000, 570, "34px", 0.5],
+        [1000, 610, "34px", 0.5],
         [1000, 700, "40px", 0.5],
+        [1100, 570, "34px", 0.5],
         [1100, 600, "40px", 0.5],
         [1100, 700, "40px", 0.5],
         [1280, 600, "40px", 0.5],
-        [1280, 720, "48px", 0.58],
+        [1440, 680, "40px", 0.58],
+        [1280, 690, "40px", 0.58],
+        [1280, 720, "40px", 0.58],
+        [1280, 740, "48px", 0.58],
         [1440, 900, "48px", 0.58],
         [1920, 1080, "48px", 0.58],
       ];
