@@ -244,8 +244,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   link's submit, before the fetch, suggesting the name the fetched file
   will carry (`linkFileName`, the sample's own name; a Drive link without
   a `.zip` name gives `tour-<start of its file id>.zip`, so a second Drive
-  tour does not offer the first one's file), dated to the minute
-  (`datedFileName`, local time: `<name>-YYYY-MM-DD-HHMM.zip`), so the
+  tour does not offer the first one's file), dated to the second
+  (`datedFileName`, local time: `<name>-YYYY-MM-DD-HHMMSS.zip`), so the
   same link or the sample reopened does not offer the file holding its
   edited tour, where Enter plus Replace would write the original over it. Asking
   before the fetch is kept on purpose: Chromium opens the dialog only
@@ -254,11 +254,13 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   `keepInChosenFile` take the pick: a picked file is written with the
   fetched bytes unchanged (the status line says "Saving into <name>…"
   while it writes, and the write holds the page's save slot as an
-  `"open"` claim until the file is adopted, so Save and Done are
-  unavailable meanwhile and Ctrl+S waits for it, queued as behind an
-  autosave and run once the write ends; the claim is taken right after a
-  synchronous `saving()` check, a save started during the last await
-  waited for first) and ADOPTED (`adoptChosen`, so saves go there in
+  `"open"` claim until the file is adopted, so Save is unavailable
+  meanwhile, Ctrl+S is queued as behind an autosave and runs once the
+  write ends, and Share and publish waits for it through `savesSettled`;
+  the claim is taken with no await after the wait's last `saving()`
+  check, a save started during the last await waited for first, and a
+  claim stuck on an ended save stops the wait - `save-slot-wait.ts`'s
+  `waitForSaveSlot`) and ADOPTED (`adoptChosen`, so saves go there in
   place and by themselves from the first edit), a toast says "Saved to
   <name>. Your changes are saved into it by themselves." - or only
   "Saved to <name>." when no in-place save got attached (another tab
@@ -272,16 +274,20 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   picked file is released (`settleUnusedPick` over `save-target.ts`'s
   `releaseUnusedPick`): the browser made it, or emptied it if it existed,
   as it was picked, so it is never deleted (an empty file may be a tour
-  the creator chose to replace), and the open's error says, beside what
-  went wrong, that nothing of the tour was written into it and not to
-  rely on it if it was an existing file. A dismissed dialog writes nothing and the tour
-  stays in the browser's draft until Save, which asks again; a write that
+  the creator chose to replace), and a toast that stays says, beside the
+  open's error that says what went wrong, that nothing of the tour was
+  written into it and not to rely on it if it was an existing file (a
+  toast, so a later change of the open's error cannot drop it). A
+  dismissed dialog writes nothing and the tour
+  stays in the browser's draft until Save, which asks again, suggesting
+  the name dated to the second as the open's dialog did (`datedSave`, set
+  by an open from a link or the sample, reset by every open); a write that
   fails says so in a toast that stays (`chosenFileUnwritten`, with what
   became of the file; it no longer says Save asks again, since Save asks
   only once there is a change) and leaves the tour the same way. A pick
   that lands after another tour opened, or after a Save already gave the
   tour a file, is not written (`stillToChoose`) and is released the same
-  way, said in a toast.
+  way, said in a toast that stays.
 - **Where unsaved changes are, without a file saved into by itself:**
   while no in-place target exists (a browser without the save dialog, a
   dismissed dialog, a refused permission) and the draft backs
@@ -329,7 +335,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     explicit Save or a download lands (no write loop).
   - **Ctrl+S during an autosave** commits the card and runs right after
     it, and so does Ctrl+S during the write at a link's or the sample's
-    open (the `"open"` claim); the Save button is disabled while any save
+    open (the `"open"` claim), during a copy being saved (`"copy"`) and
+    during a move of the debug data (`"walk"`): every claim but an
+    explicit Save itself queues it, and the claim's end runs it
+    (`runQueuedSave`); the Save button is disabled while any save
     runs, so only the key queues (E2b-2 milestone review #10). A queued Ctrl+S belongs to its tour:
     a save whose tour closed meanwhile drops it (`abandon`, milestone review
     #7). A restored draft's work is saved by itself like any edit.
@@ -426,7 +435,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   save arrived (`delivered`: in place under the target's name, or
   downloaded; "unchanged" when nothing was saved), the host (the link's the
   tour was fetched from, else the setup's stored choice, else Google
-  Drive; a picker of `TOUR_HOSTS`), whether the newest bytes carry the
+  Drive; a picker of `TOUR_HOSTS`), for a tour from a link the name its
+  file has there (`linkHostedName`; null for a link that names no zip,
+  such as a Drive file id), so the update steps say to rename the saved,
+  dated file to it before uploading it over that file, whether the newest bytes carry the
   walk (`walkEntries()`; a check that fails is `unknown`, said as "may
   carry", never as "carries none" - the M4b milestone review #9), and the
   Drive-mount tip's switch (`DRIVE_MOUNT_TIP_SHOWN`, off). The rest of the
@@ -588,7 +600,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   workflow state is its `save` status, not module variables - who holds
   the one save slot (`saveClaimed` / `saveReleased`; `saving()`,
   `walkMoving()`, the autosave's `by === "auto"`), a Save queued behind
-  an autosave or the write at the open (`saveQueued`), a save built (`saveBuilt`), where the last
+  any other claim (`saveQueued`), a save built (`saveBuilt`), where the last
   one arrived (`saveDelivered`, read by Share and publish and by the status line's
   "Saved to …" / "Saved as …", `savedLine()`; `#save-status[data-saved]`
   is only a view of it, for the e2e, never read back; every write of the
@@ -756,7 +768,8 @@ asked for in the click under the link's file name, "Saving into" while
 the held write runs, then the toast, the file holding the tour and the
 first edit saved into it by itself, the written file's size and SHA-256
 the link's own, and Share and publish's line; a link that fails after a
-pick writing nothing, the file kept and the sentence said, and an existing
+pick writing nothing, the file kept and the sentence said in a toast that
+outlasts the usual toast time, and an existing
 (seeded) file picked neither written nor deleted; a write refused at the open (a
 lasting toast, the status line back, the name the open's, the file
 kept, the first Save of a change asking again); the save slot held
@@ -765,5 +778,6 @@ pressed then saving the edit made meanwhile once the write landed (the
 page's clock paused, so no autosave could); a file another tab is
 editing not said to save by itself; a dismissed dialog
 leaving the tour in the browser (the status line says so) and the first
-Save asking again; and on Android (its client hints) the same dialog as
+Save asking again, under the dated name; a Ctrl+S pressed while a copy
+is being saved saving the tour once the copy is done; and on Android (its client hints) the same dialog as
 on a desktop.

@@ -19,7 +19,11 @@ import {
 import { driveFileId } from "gps-plus-slam-app-framework/utils/drive-file-id";
 
 import { HOST_REFUSED_TEXT, describeOpenError } from "../open-errors.js";
-import { archiveFileName, readArchiveInSlices } from "../tour-session.js";
+import {
+  archiveFileName,
+  readArchiveInSlices,
+  zipNameOf,
+} from "../tour-session.js";
 
 /** What the editor's link open needs of the transport; injected in tests. */
 type OpenArchive = (
@@ -96,6 +100,17 @@ function fetchedFileName(url: string): string {
 export function linkFileName(link: string): string | null {
   const url = link.trim();
   return isWebLink(url) ? fetchedFileName(url) : null;
+}
+
+/**
+ * The name of the file the link points to, as the host keeps it: the
+ * link's own `.zip` name (the trimmed link's). Null for text that is not
+ * an http(s) link, and for a link that names no file (a Drive link by its
+ * id): `linkFileName`'s stand-in is no name the host knows.
+ */
+export function linkHostedName(link: string): string | null {
+  const url = link.trim();
+  return isWebLink(url) ? zipNameOf(url) : null;
 }
 
 /** The editor's sentence for a link that did not open: the viewer's words

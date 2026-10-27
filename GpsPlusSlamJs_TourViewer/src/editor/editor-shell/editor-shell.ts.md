@@ -159,7 +159,15 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   value that is no number is said, and the tour's value stays). A text
   the page refuses (over the format's cap; its station, pin text and
   block commands return `TypedEditOutcome`, `"refused"`) is said by the
-  page and put back in the field, so the typing is kept to be shortened. Escape in a changed field puts the tour's value back and goes
+  page and put back in the field, so the typing is kept to be shortened.
+  That text lasts only until the inspector is drawn again: a refusal on
+  Enter keeps the focus in the field, and a draw carries focused, typed
+  text over; a refusal when the field is left lets the focus go where it
+  was going, and the next draw (any store change, an autosave's status
+  among them) shows the tour's value. The focus is not pulled back into
+  the refused field: when it was left for another selection, the draw for
+  that selection would carry the refused text into the new selection's
+  field of the same name. Escape in a changed field puts the tour's value back and goes
   no further (the page's Escape would deselect). Text still typed when
   the selection changes or the view hides is committed to the selection
   it was typed for.

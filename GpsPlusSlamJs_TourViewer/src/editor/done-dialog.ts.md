@@ -29,9 +29,12 @@ the move (`edit-main.ts`, `EditorSession.moveWalkOut`).
   file you chose when you opened the tour"), the host, whether
   the newest bytes carry the walk (`true`, `false`, or `"unknown"` when
   the check failed: said as "may carry", never as none - the M4b milestone
-  review #9), and the tip's switch.
+  review #9), the tip's switch, and, for a tour opened from its link,
+  `hostedName`: the name of the file at that link (null when the link
+  names none), which `update` says to rename the saved file to.
 - `doneWords(facts)` - the dialog's words: `where`, `update` (the host's
-  steps from `tour-host.ts` `hostReplaceOnComputer`, naming the file),
+  steps from `tour-host.ts` `hostReplaceOnComputer`, naming the file and,
+  where it differs, the hosted file's name),
   `publicLine`, `walk` (null without a walk) and `driveTip` (null unless
   the switch is on, the host is Drive and the file was written in place).
 - `MOVE_LABELS` - the move button's idle, in-progress and second-step

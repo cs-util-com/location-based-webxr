@@ -39,7 +39,13 @@ offered). Plan:
   the desktop editor's Done (tour editor plan 2026-10-17-1816, W2): names
   the saved file, and Drive included (the Drive website's upload with
   "Replace existing file"). Both read one sentence per host, so the
-  phone's and the computer's words cannot drift apart.
+  phone's and the computer's words cannot drift apart. With a third
+  argument, `hostedName` (the name of the file at the tour's link), that
+  differs from the saved file's, it starts "Rename <saved> to <hosted>,
+  the name of the file at your tour's link, and upload it under that name
+  over that file": a host keeps the link only for a file of the same name.
+  Null there means the link names no file (a Drive link by its id), and
+  the words ask for that name without giving it.
 - `needsStarterZip(host)` - every cloud host needs a file before it gives a
   link; an own server does not.
 - `readTourHost(store)` / `writeTourHost(store, host | null)` - the choice (null clears it) under

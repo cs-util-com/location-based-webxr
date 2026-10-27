@@ -271,7 +271,7 @@ export function archiveFileName(url: string): string {
 
 /** The link's last path segment when it is a real `.zip` name (decoded,
  *  no path separator in it), else null. */
-function zipNameOf(url: string): string | null {
+export function zipNameOf(url: string): string | null {
   try {
     const last = decodeURIComponent(
       new URL(url).pathname.split("/").filter(Boolean).at(-1) ?? "",

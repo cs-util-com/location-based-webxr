@@ -116,6 +116,9 @@ not-checked`): a link's complete copies are checked through
 - `archiveFileName(url): string` (pure) - the hosted file's name for the
   same-name re-upload: the last path segment when it ends in `.zip`
   (decoded), else `tour.zip`.
+- `zipNameOf(url): string | null` (pure) - that segment, or null where the
+  link names no `.zip` file (no stand-in): the editor's Done names it as
+  the hosted file's name.
 - `tourLabel(url): string` (pure, never throws) - what the creator's panel
   calls a tour (scan-to-open plan §9 #11): a real `.zip` name (cut at 24),
   else `Google Drive file <first 10 of the id>…` for every Drive spelling

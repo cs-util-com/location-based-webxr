@@ -57,6 +57,10 @@ export interface DoneFacts {
   readonly debugLeftOut: boolean;
   /** The Drive-mount tip's switch (`DRIVE_MOUNT_TIP_SHOWN`). */
   readonly driveMountTip: boolean;
+  /** For a tour opened from its link: the hosted file's name, which the
+   *  saved file must be uploaded under (`hostReplaceOnComputer`); null
+   *  when the link names no file. Absent for a tour from a file. */
+  readonly hostedName?: string | null;
 }
 
 export interface DoneWords {
@@ -116,7 +120,7 @@ export function doneWords(facts: DoneFacts): DoneWords {
   const name = facts.saved.name;
   return {
     where: whereLine(facts.saved),
-    update: hostReplaceOnComputer(facts.host, name),
+    update: hostReplaceOnComputer(facts.host, name, facts.hostedName),
     publicLine: PUBLIC_LINE,
     walk: walkLine(name, facts.carriesWalk),
     debugSave: debugSaveLine(facts),

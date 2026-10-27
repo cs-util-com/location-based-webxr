@@ -34,11 +34,16 @@ saved exactly as a chosen file is.
 - `linkFileName(link): string | null` - the name the fetched file will
   carry (the same rule, of the trimmed link), worked out before any
   request: the save dialog asked for in the open's click suggests it,
-  dated to the minute (`editor-session.ts` `datedFileName`): one name per
+  dated to the second (`editor-session.ts` `datedFileName`): one name per
   link would let a reopen's Enter plus Replace write the original over
   the edited tour.
   Null for text that is not an http(s) link (the open refuses it and no
   dialog is asked for).
+- `linkHostedName(link): string | null` - the name of the file at the
+  link as the host keeps it: the link's own `.zip` name. Null for text
+  that is not a link and for a link that names no file (a Drive link by
+  its id), whose `linkFileName` is a stand-in no host knows. Done tells
+  the creator to upload the saved file under it.
 - `linkOpenErrorText(err, link): string` - the dialog's sentence: the
   viewer's `describeOpenError`, except for `cors`, whose viewer text names
   the viewer's "Open the downloaded file" button; here the viewer's first

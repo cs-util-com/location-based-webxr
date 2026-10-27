@@ -107,6 +107,23 @@ describe("doneWords", () => {
     expect(doneWords(IN_PLACE).update).toMatch(/Replace existing file/);
   });
 
+  // Why: the file a tour opened from its link was saved into carries a
+  // dated name, and a host keeps the link only for a file of the hosted
+  // name; Done must name that one, not the saved one alone.
+  it("names the hosted file's name for a tour opened from its link", () => {
+    const update = doneWords({
+      ...IN_PLACE,
+      hostedName: "old castle.zip",
+    }).update;
+    expect(update.startsWith("Rename castle.zip to old castle.zip,")).toBe(
+      true,
+    );
+    expect(update).toContain("upload it under that name");
+    expect(doneWords({ ...IN_PLACE, hostedName: "castle.zip" }).update).toBe(
+      doneWords(IN_PLACE).update,
+    );
+  });
+
   it("always says a file at a link is public at once", () => {
     expect(doneWords(IN_PLACE).publicLine).toMatch(/public/);
     expect(doneWords(IN_PLACE).publicLine).toMatch(/as soon as/);

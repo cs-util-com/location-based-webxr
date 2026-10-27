@@ -18,6 +18,7 @@ import {
   NOT_A_LINK,
   fetchTourFile,
   linkFileName,
+  linkHostedName,
   linkOpenErrorText,
 } from "./editor-link.js";
 
@@ -100,6 +101,20 @@ describe("fetchTourFile", () => {
 // before the fetch - so the save dialog's suggested name must be the name
 // the fetched file will carry, worked out from the link alone; and text
 // that is not a link opens no dialog at all (the open refuses it).
+// Why: Done tells the creator to upload the saved file under the hosted
+// file's name; only a name the link itself carries is that name, never
+// a stand-in made up for a link without one.
+describe("linkHostedName", () => {
+  it("is the link's own zip name, and null where the link names none", () => {
+    expect(linkHostedName(LINK)).toBe("Castle walk.zip");
+    expect(linkHostedName(`  ${LINK}  `)).toBe("Castle walk.zip");
+    expect(linkHostedName("https://drive.google.com/open?id=abc")).toBeNull();
+    expect(
+      linkHostedName("https://drive.example.test/file/d/abc/view"),
+    ).toBeNull();
+  });
+});
+
 describe("linkFileName", () => {
   it("is the name the fetched file carries, before any request", async () => {
     expect(linkFileName(LINK)).toBe("Castle walk.zip");
@@ -119,6 +134,7 @@ describe("linkFileName", () => {
   it("is null for what is not a web link", () => {
     for (const text of ["", "   ", "castle.zip", "ftp://example.test/a.zip"]) {
       expect(linkFileName(text)).toBeNull();
+      expect(linkHostedName(text)).toBeNull();
     }
   });
 });

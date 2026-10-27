@@ -88,6 +88,7 @@ import { holdPageInert } from "./page-inert.js";
 import {
   fetchTourFile,
   linkFileName,
+  linkHostedName,
   linkOpenErrorText,
 } from "./editor-link.js";
 import { driveProxyBaseUrl } from "../drive-proxy-url.js";
@@ -131,6 +132,7 @@ import {
   type EditorSave,
   type EditorSession,
 } from "./editor-session.js";
+import { waitForSaveSlot } from "./save-slot-wait.js";
 import {
   bundleMatchesTour,
   debugBundleFileName,
@@ -468,6 +470,10 @@ let resaveTimer: number | null = null;
 let refusalToast: HTMLElement | null = null;
 /** The host of the link the open tour was fetched from, if it was. */
 let linkHost: TourHost | null = null;
+/** The name of the file at that link (`linkHostedName`; null: the link
+ *  names none), which Done tells the creator to upload under; undefined
+ *  for a tour not fetched from a link. */
+let linkHosted: string | null | undefined;
 /** The end of the save that runs, for Done to wait on. */
 let saveEnd: Promise<void> = Promise.resolve();
 /** A move of the walk, as the session builds it. */
@@ -2004,6 +2010,8 @@ async function openFile(
   // The 3D view showed the tour that goes now.
   viewSwitch.close();
   linkHost = null;
+  linkHosted = undefined;
+  datedSave = false;
   select(null);
   const previous = session;
   session = outcome.session;
@@ -2437,8 +2445,17 @@ function askSaveFile(): Promise<SaveFilePick> | null {
   ) {
     return null;
   }
-  return pickSaveFile(window as unknown as SavePickerWindow, mine.savedName());
+  return pickSaveFile(
+    window as unknown as SavePickerWindow,
+    datedSave ? datedFileName(mine.savedName(), new Date()) : mine.savedName(),
+  );
 }
+
+/** The open tour came from a link or the sample: its first Save suggests
+ *  the name dated to the second, as its open's dialog did, so it does not
+ *  suggest the file that holds an earlier edit of the same tour. Reset by
+ *  every open. */
+let datedSave = false;
 
 /** The open tour's changes were last delivered into a file the first Save
  *  asked for (`askSaveFile`), not into one opened: Done names it as the
@@ -2462,7 +2479,7 @@ let openWriting: string | null = null;
  * (`adoptsSavedFile`): without the save dialog the tour stays in this
  * browser's draft until Save, as before. Null there, and for text that is
  * not a link (`name` null: the open refuses it). The dialog suggests the
- * name dated to the minute (`datedFileName`): the same link reopened must
+ * name dated to the second (`datedFileName`): the same link reopened must
  * not suggest the file that holds its edited tour.
  */
 function askOpenSaveFile(name: string | null): Promise<SaveFilePick> | null {
@@ -2513,17 +2530,13 @@ function chosenFileUnwritten(
 /**
  * The file picked at an open that did not happen (the fetch failed, or the
  * tour was refused): it is released (`releaseUnusedPick`: kept, never
- * deleted), and what became of it is added to the open's error, unless
- * that error was replaced or closed meanwhile (PR bot finding 11).
+ * deleted), and what became of it is said in a toast that stays, beside
+ * the open's error: it holds whatever that error became meanwhile.
  */
 function settleUnusedPick(pick: Promise<SaveFilePick> | null): void {
   if (pick === null) return;
-  const shown = openError.textContent;
   void releaseUnusedPick(pick).then((line) => {
-    if (line === null || openError.hidden || openError.textContent !== shown) {
-      return;
-    }
-    openError.textContent = `${shown ?? ""}\n${line}`;
+    if (line !== null) fileToasts.push(toast(line, undefined, null));
   });
 }
 
@@ -2544,24 +2557,21 @@ async function keepInChosenFile(
   pick: Promise<SaveFilePick>,
 ): Promise<void> {
   // A save the creator started meanwhile runs out first; the slot is then
-  // this write's until the file is adopted (Save, Ctrl+S and Done stay
-  // unavailable during the write, and a save in between could adopt
-  // another file). `saving()` is checked again after the last await,
-  // with none between that check and the claim: a save that started
-  // while `stillToChoose` awaited is waited for too.
-  let handle = await stillToChoose(mine, pick);
-  while (handle !== null && saving()) {
-    const end = saveEnd;
-    await savesSettled();
-    // A claim left on an ended save is a bug, not a wait: never spin.
-    if (saving() && saveEnd === end) break;
-    handle = await stillToChoose(mine, pick);
-  }
+  // this write's until the file is adopted, since a save in between could
+  // adopt another file: Save is unavailable during the write, Ctrl+S is
+  // queued and runs after it, and Share and publish waits for it
+  // (`savesSettled`). No await lies between the wait's last check and the
+  // claim (`waitForSaveSlot`).
+  const handle = await waitForSaveSlot(
+    { busy: saving, end: () => saveEnd, settled: savesSettled },
+    () => stillToChoose(mine, pick),
+  );
   if (handle === null) {
     // Picked, but no longer to be written (another tour opened, or a Save
-    // chose a file meanwhile): not left behind empty and unexplained.
+    // chose a file meanwhile): not left behind empty and unexplained, in
+    // a toast that stays.
     void releaseUnusedPick(pick).then((line) => {
-      if (line !== null) toast(line);
+      if (line !== null) fileToasts.push(toast(line, undefined, null));
     });
     return;
   }
@@ -2590,10 +2600,7 @@ async function keepInChosenFile(
     renderSaveState();
     // A Save asked for (Ctrl+S) during the write runs now, into the
     // adopted file, as one waiting behind an autosave does.
-    if (saveState().queued && editor === mine && !saving()) {
-      store.dispatch(tourDocumentActions.saveQueued({ queued: false }));
-      void runSave();
-    }
+    runQueuedSave(mine);
     // An autosave held back during the write runs now, into the adopted
     // file, and so does a resave that fell due meanwhile.
     autosave.poke();
@@ -2647,9 +2654,10 @@ async function runSave(
   if (editor === null) return;
   if (saving()) {
     const by = saveState().by;
-    if (by === "auto" || by === "open") {
-      // Committed now, saved right after the autosave, or the write at
-      // the open, that runs.
+    if (by !== "explicit") {
+      // Committed now, saved right after what holds the save (the
+      // autosave, the write at the open, a copy, a move of the debug
+      // data). A second Save during a Save is the same Save.
       card.commit();
       if (ui().moving !== null) finishMove();
       store.dispatch(tourDocumentActions.saveQueued({ queued: true }));
@@ -2661,6 +2669,14 @@ async function runSave(
   if (editor !== mine || outcome === "held") return;
   if (outcome === "saved") autosave.saved();
   else autosave.failed();
+}
+
+/** A Save asked for while something else held the save (`runSave`)
+ *  runs once the slot is free, and only for the tour it was asked for. */
+function runQueuedSave(mine: EditorSession): void {
+  if (!saveState().queued || editor !== mine || saving()) return;
+  store.dispatch(tourDocumentActions.saveQueued({ queued: false }));
+  void runSave();
 }
 
 /**
@@ -2732,6 +2748,8 @@ async function saveCopy(): Promise<void> {
     if (editor === mine) releaseSave();
     ended();
     renderSaveState();
+    // A Save asked for while the copy was built runs now.
+    runQueuedSave(mine);
     // An autosave held back while the copy was built runs now, and so
     // does a resave (D33) that fell due meanwhile.
     autosave.poke();
@@ -2779,10 +2797,7 @@ async function saveTour(
     // never a save of a tour opened meanwhile.
     if (editor === mine) releaseSave();
     ended();
-    if (saveState().queued && editor === mine && !saving()) {
-      store.dispatch(tourDocumentActions.saveQueued({ queued: false }));
-      void runSave();
-    }
+    runQueuedSave(mine);
     // A step that crossed the file while this save wrote it (D33).
     if (editor === mine) void resaveIfDue();
     // A save that fell due while this autosave ran starts now. Not after
@@ -3046,7 +3061,9 @@ sampleButton.addEventListener("click", () => {
       const blob = await response.blob();
       setBusy(false, "");
       const file = new File([blob], SAMPLE_NAME, { type: "application/zip" });
-      if ((await openFile(file)) && pick !== null && editor !== null) {
+      const opened = await openFile(file);
+      if (opened) datedSave = true;
+      if (opened && pick !== null && editor !== null) {
         void keepInChosenFile(editor, file, pick);
       } else {
         settleUnusedPick(pick);
@@ -3083,6 +3100,10 @@ linkForm.addEventListener("submit", (event) => {
       }
       // Done names the host the tour was fetched from (W2).
       linkHost = hostOfLink(link);
+      // ... and the name its file has there, which the saved one (dated)
+      // does not carry.
+      linkHosted = linkHostedName(link);
+      datedSave = true;
       if (pick !== null) void keepInChosenFile(editor, file, pick);
     })
     .catch((err: unknown) => {
@@ -3202,6 +3223,7 @@ async function finishEditing(): Promise<void> {
     debugLeftOut:
       ui().openedWalk && !ui().keepsWalk && walk !== null && walk.length === 0,
     driveMountTip: DRIVE_MOUNT_TIP_SHOWN,
+    ...(linkHosted === undefined ? {} : { hostedName: linkHosted }),
   });
   releaseOutside = holdOutside(element("done-modal"));
 }
@@ -3357,6 +3379,8 @@ async function holdForMove(
     ended();
     if (editor === mine) {
       refresh();
+      // A Save asked for during the move runs now.
+      runQueuedSave(mine);
       autosave.poke();
     } else {
       renderSaveState();

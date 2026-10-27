@@ -127,15 +127,15 @@ export function copyFileName(name: string): string {
 }
 
 /** The name the save dialog suggests for a tour opened from a link or the
- *  sample: `name` with `-YYYY-MM-DD-HHMM` (`now`, local time) before its
- *  `.zip` (any case), so reopening the same link never suggests the file
- *  that holds the edited tour - Enter, then Replace, would write the
- *  original over it. Two opens in the same local minute still share a
+ *  sample: `name` with `-YYYY-MM-DD-HHMMSS` (`now`, local time) before
+ *  its `.zip` (any case), so reopening the same link never suggests the
+ *  file that holds the edited tour - Enter, then Replace, would write the
+ *  original over it. Two opens in the same local second still share a
  *  name (so do two in the hour a daylight-saving change repeats). */
 export function datedFileName(name: string, now: Date): string {
   const two = (n: number) => String(n).padStart(2, "0");
   const day = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
-  const time = `${two(now.getHours())}${two(now.getMinutes())}`;
+  const time = `${two(now.getHours())}${two(now.getMinutes())}${two(now.getSeconds())}`;
   return beforeZip(name, `-${day}-${time}`);
 }
 

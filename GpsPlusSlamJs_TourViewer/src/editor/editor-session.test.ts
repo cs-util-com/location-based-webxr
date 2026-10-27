@@ -323,14 +323,14 @@ describe("createEditorSession, Save a copy", () => {
   it("dates the name a tour opened from a link or the sample suggests, in local time", () => {
     const now = new Date(2026, 9, 7, 9, 5, 59);
     expect(datedFileName("tour-1AbCdEfGhIjK.zip", now)).toBe(
-      "tour-1AbCdEfGhIjK-2026-10-07-0905.zip",
+      "tour-1AbCdEfGhIjK-2026-10-07-090559.zip",
     );
     expect(datedFileName("Old Town.ZIP", now)).toBe(
-      "Old Town-2026-10-07-0905.ZIP",
+      "Old Town-2026-10-07-090559.ZIP",
     );
-    expect(datedFileName("a.zip.bak", now)).toBe("a.zip.bak-2026-10-07-0905");
-    expect(datedFileName("sample.zip", new Date(2026, 11, 31, 23, 59))).toBe(
-      "sample-2026-12-31-2359.zip",
+    expect(datedFileName("a.zip.bak", now)).toBe("a.zip.bak-2026-10-07-090559");
+    expect(datedFileName("sample.zip", new Date(2026, 11, 31, 23, 59, 7))).toBe(
+      "sample-2026-12-31-235907.zip",
     );
   });
 

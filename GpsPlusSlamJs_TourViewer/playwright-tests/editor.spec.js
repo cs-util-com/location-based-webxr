@@ -1630,6 +1630,38 @@ test("Save a copy refuses the tour's own file, and writes through another file p
   await expect(page.locator("#unsaved-mark")).toBeVisible();
 });
 
+test("Ctrl+S pressed while a copy is being saved saves the tour once the copy is done", async ({
+  page,
+}) => {
+  // Why: a copy holds the page's save slot while it is built. Ctrl+S
+  // pressed then must not be dropped in silence: it waits, as it does
+  // behind an autosave, and saves the tour into its own file once the
+  // copy is done (here: its dialog dismissed).
+  await inPlaceTourEdited(page, "Saved after the copy");
+  const status = page.locator("#save-status");
+  await expect(status).toHaveText("1 change not saved");
+  await page.evaluate(() => {
+    // @ts-expect-error - the e2e's own save dialog.
+    window.showSaveFilePicker = () =>
+      new Promise((_resolve, reject) => {
+        // @ts-expect-error - called by the test.
+        window.__dismiss = () =>
+          reject(new DOMException("dismissed", "AbortError"));
+      });
+  });
+  await fileCommand(page, "saveCopy");
+  await expect(status).toHaveText("Saving a copy…");
+  await page.keyboard.press("Control+s");
+  await page.evaluate(() => {
+    // @ts-expect-error - set by the held dialog.
+    window.__dismiss();
+  });
+  await expect(status).toHaveText("Saved to editor-fixture.zip");
+  expect(
+    (await readOpfsTour(page, "editor-fixture.zip"))["tour.json"],
+  ).toContain("Saved after the copy");
+});
+
 test("a copy leaves the tour's own save due: it says it saves a copy, keeps the unsaved mark, and a step across the file is written after it", async ({
   page,
 }) => {
@@ -4149,10 +4181,16 @@ async function clickBoundSavePicker(page, name, options = {}) {
       }
       // @ts-expect-error - read by the test.
       window.__walkPicks = 0;
+      // @ts-expect-error - read by the test: the names each call suggested.
+      window.__walkPickNames = [];
       // @ts-expect-error - the e2e's own save dialog.
-      window.showSaveFilePicker = () => {
+      window.showSaveFilePicker = (
+        /** @type {{ suggestedName?: string } | undefined} */ asked,
+      ) => {
         // @ts-expect-error - counted for the test.
         window.__walkPicks += 1;
+        // @ts-expect-error - recorded for the test.
+        window.__walkPickNames.push(asked?.suggestedName ?? null);
         if (!inClick) {
           return Promise.reject(
             new DOMException(
@@ -4940,7 +4978,7 @@ test("a tour opened from its link asks where to save it in the click, and is tha
   // and the fetch can take longer - the stand-in refuses a later call),
   // writes the fetched tour there once it has opened, says so while it
   // writes, and saves every later edit into it by itself. The name it
-  // suggests is dated to the minute (local time), so reopening the same
+  // suggests is dated to the second (local time), so reopening the same
   // link never offers the file that holds the edited tour.
   await withBothDialogs(page);
   await page.clock.install({ time: new Date(2026, 9, 7, 9, 5) });
@@ -4958,9 +4996,11 @@ test("a tour opened from its link asks where to save it in the click, and is tha
   await expect(page.locator("#topbar")).toBeVisible({ timeout: 15000 });
   // Asked once, in the click, under the name the link's file carries,
   // dated.
-  expect(
-    await page.evaluate(() => Reflect.get(window, "__savePickNames")),
-  ).toEqual(["sample-tour-2026-10-07-0905.zip"]);
+  const asked = await page.evaluate(() =>
+    Reflect.get(window, "__savePickNames"),
+  );
+  expect(asked).toHaveLength(1);
+  expect(asked[0]).toMatch(/^sample-tour-2026-10-07-0905\d{2}\.zip$/);
   // While the tour is written into the chosen file, the status says so.
   await expect(page.locator("#save-status")).toHaveText(
     "Saving into linked.zip…",
@@ -5004,6 +5044,11 @@ test("a tour opened from its link asks where to save it in the click, and is tha
   await expect(page.locator("#done-where")).toHaveText(
     "Your changes are saved in linked.zip, the file you chose when you opened the tour.",
   );
+  // ... and says to upload it under the name the file at the link has,
+  // which the chosen file does not carry.
+  await expect(page.locator("#done-update")).toContainText(
+    "Rename linked.zip to sample-tour.zip, the name of the file at your tour's link, and upload it under that name",
+  );
 });
 
 test("the sample asks where to save it in its click, and the chosen file holds it", async ({
@@ -5034,8 +5079,9 @@ test("a link that fails after a file was picked writes nothing into it, keeps th
   // a file chosen in the save dialog). Nothing may be written there until
   // the tour's bytes are in hand and the tour opened. The page cannot tell
   // a new empty file from an emptied tour, so it never deletes the file,
-  // and the open says, beside what went wrong, words true either way.
+  // and the page says, beside what went wrong, words true either way.
   await withBothDialogs(page);
+  await page.clock.install();
   await page.goto("/edit.html");
   await clickBoundSavePicker(page, "never-written.zip");
   await page
@@ -5046,9 +5092,15 @@ test("a link that fails after a file was picked writes nothing into it, keeps th
     "Download the file to this computer, then choose it above.",
     { timeout: 15000 },
   );
-  await expect(page.locator("#open-error")).toContainText(
-    "Nothing of the tour was written into never-written.zip. The browser may have emptied it when it was chosen, so if it was an existing file, do not rely on it.",
-  );
+  // What became of the file is said in a toast that stays, as the other
+  // warnings about a file are: a passing one could go unread.
+  const left = page.locator(".toast", {
+    hasText:
+      "Nothing of the tour was written into never-written.zip. The browser may have emptied it when it was chosen, so if it was an existing file, do not rely on it.",
+  });
+  await expect(left).toBeVisible();
+  await page.clock.runFor(30_000);
+  await expect(left).toBeVisible();
   expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
   expect(await opfsSize(page, "never-written.zip")).toBe(0);
   await expect(page.locator("#topbar")).toBeHidden();
@@ -5069,10 +5121,12 @@ test("a link that fails after an existing file was picked never deletes it, and 
     .locator("#link-input")
     .fill("http://127.0.0.1:5197/no-cors/tour.zip");
   await page.locator("#link-btn").click();
-  await expect(page.locator("#open-error")).toContainText(
-    "Nothing of the tour was written into kept.zip. The browser may have emptied it when it was chosen, so if it was an existing file, do not rely on it.",
-    { timeout: 15000 },
-  );
+  await expect(
+    page.locator(".toast", {
+      hasText:
+        "Nothing of the tour was written into kept.zip. The browser may have emptied it when it was chosen, so if it was an existing file, do not rely on it.",
+    }),
+  ).toBeVisible({ timeout: 15000 });
   expect(await opfsText(page, "kept.zip")).toBe("an older tour");
 });
 
@@ -5116,7 +5170,7 @@ test("while the write at the open runs, it holds the save slot: Save waits, and 
   page,
 }) => {
   // Why: the write at the open holds the page's save slot, so Save shows
-  // as unavailable during it and a click on it runs nothing. Ctrl+S
+  // as unavailable during it. Ctrl+S
   // pressed then must not be dropped in silence: it waits, as it does
   // behind an autosave, and saves the edit made meanwhile into the
   // adopted file once the write has landed. The page's clock is paused
@@ -5138,14 +5192,6 @@ test("while the write at the open runs, it holds the save slot: Save waits, and 
   );
   await page.clock.pauseAt(new Date(2026, 9, 7, 10, 0));
   await page.locator("#no-gps-input").check();
-  // Save, pressed through its menu: unavailable, so nothing runs and the
-  // write at the open still holds the slot.
-  await page.locator("#file-menu-btn").click();
-  await fileItem(page, "save").click({ force: true });
-  await expect(page.locator("#save-status")).toHaveText(
-    "Saving into slow.zip…",
-  );
-  await page.keyboard.press("Escape");
   await page.keyboard.press("Control+s");
   await page.evaluate(() => Reflect.get(window, "__releaseWrite")());
   await expect(page.locator("#tour-file")).toHaveText("slow.zip");
@@ -5202,8 +5248,11 @@ test("a dismissed dialog at the open leaves the tour in this browser, said in th
   // Why: dismissing the dialog must not stop the tour from opening, nor
   // download anything; the tour is then kept only in this browser, which
   // the status line says beside the unsaved changes, and the first Save
-  // asks for a file as it did before.
+  // asks for a file as it did before - suggesting a dated name, as the
+  // open's dialog did, so Enter there never offers to replace a file
+  // holding an earlier edit of the same tour.
   await withBothDialogs(page);
+  await page.clock.install({ time: new Date(2026, 9, 7, 9, 5) });
   await page.goto("/edit.html");
   await clickBoundSavePicker(page, "never-written.zip", { dismiss: true });
   await page.locator("#sample-btn").click();
@@ -5216,6 +5265,13 @@ test("a dismissed dialog at the open leaves the tour in this browser, said in th
   );
   await save(page);
   expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(2);
+  const names = await page.evaluate(() =>
+    Reflect.get(window, "__walkPickNames"),
+  );
+  expect(names).toHaveLength(2);
+  for (const suggested of names) {
+    expect(suggested).toMatch(/^marienplatz-tour-2026-10-07-0905\d{2}\.zip$/);
+  }
 });
 
 test("on Android a tour from the sample asks for its file as on a desktop, and saves into it by itself", async ({
