@@ -2832,6 +2832,43 @@
         animation: enter-rise var(--t-enter) var(--ease-out);
       }
 
+      /* A pin's whole text on a tap (B2b): docked to the bottom edge
+         above the walk's sheet, as it is. */
+      .pin-sheet[hidden] {
+        display: none;
+      }
+      body[data-mode="visitor"][data-ar-active="true"]
+        .pin-sheet:not([hidden]) {
+        position: fixed;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-width: 520px;
+        max-height: 50vh;
+        margin: 0 auto;
+        padding: 18px 18px 24px;
+        overflow-y: auto;
+        border-top: 1px solid var(--walk-line);
+        border-radius: 22px 22px 0 0;
+        background: var(--walk-surface);
+        color: var(--walk-ink);
+        font-size: 15px;
+        line-height: 1.45;
+        text-shadow: none;
+        box-shadow: 0 -10px 30px rgb(0 0 0 / 25%);
+      }
+      #pin-sheet-title,
+      #pin-sheet-text {
+        margin: 0;
+      }
+      #pin-sheet-text {
+        white-space: pre-line;
+      }
+
       /* The sheet: docked to the bottom edge, the design
          system's .sheet atom as its base. */
       body[data-mode="visitor"][data-ar-active="true"]
@@ -6007,6 +6044,25 @@
                 data-testid="walk-toast-root"
                 aria-hidden="true"
               ></div>
+              <section
+                id="pin-sheet"
+                class="sheet pin-sheet"
+                data-testid="pin-sheet"
+                role="dialog"
+                aria-labelledby="pin-sheet-title"
+                hidden
+              >
+                <h3 id="pin-sheet-title" data-testid="pin-sheet-title"></h3>
+                <p id="pin-sheet-text" data-testid="pin-sheet-text"></p>
+                <button
+                  type="button"
+                  id="pin-sheet-close"
+                  class="btn walk-btn"
+                  data-testid="pin-sheet-close"
+                >
+                  Close
+                </button>
+              </section>
               <section
                 id="walk-sheet"
                 class="sheet walk-sheet"

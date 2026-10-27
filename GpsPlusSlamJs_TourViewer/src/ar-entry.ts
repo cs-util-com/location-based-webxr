@@ -623,6 +623,8 @@ export function wireArEntry(deps: {
     // measurement replaces it (mintGeneration).
     ctx.reticle?.dispose();
     ctx.reticle = null;
+    ctx.visitorSelect?.dispose();
+    ctx.visitorSelect = null;
     ctx.latestFrame = null;
     for (const preview of ctx.placedPreviews.values()) preview.dispose();
     ctx.placedPreviews.clear();
@@ -866,6 +868,11 @@ export function wireArEntry(deps: {
           },
           surface === null ? undefined : () => surface.pick(),
         );
+      } else {
+        // The visitor's taps: a pin opens its sheet (B2b, `pin-sheet.ts`).
+        ctx.visitorSelect = seams.startXrSelect((tap) => {
+          hooks.visitorTap(tap);
+        });
       }
     }
     if (authorMode) hooks.beginAuthorVisit();

@@ -60,6 +60,10 @@ createAudioElement; xrProjection0 }`
     `onSelect` option, with where the tap pointed: the driver's second
     argument (`SelectTargetRay`, the target ray relative to the viewer),
     or null (M4 review #4).
+  - `startXrSelect(onSelect)` - every XR `select` with its target ray,
+    without a reticle (the framework's `startXrSelectListener`): the
+    visitor's pin taps (B2b). The fake stores `onSelect` as
+    `test.xrSelect`, so `tapXr()` reaches it as it reaches the creator's.
   - `pickObjectInView(targets, tap)` - the object id under the tap:
     `object-pick.ts`'s camera-ray raycast with the framework camera,
     through `ndcOfTargetRay(camera, tap.targetRayInViewer)` - the screen

@@ -45,6 +45,9 @@ since the flows plan M6.
     the reticle under the world group once the runtime is up
     (`ctx.reticle`, disposed on session end), whose XR `select` - a tap in
     AR that the overlay did not cancel - calls `hooks.selectInView(tap)`
+    (a visitor's session starts `seams.startXrSelect` instead,
+    `ctx.visitorSelect`, disposed on session end, whose taps call
+    `hooks.visitorTap(tap)`: the pin sheet, B2b)
     with where the tap pointed (the driver's target ray, or null; M4
     review #4)
     (authoring plan 2026-09-28-0953 M4); every camera frame (a

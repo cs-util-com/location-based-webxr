@@ -38,6 +38,10 @@ listed in `index.html.md`. The concerns and their modules:
   the object list's DOM view (`createObjectListView` over `#object-list`,
   authoring plan 2026-09-28-0953 M4) and hands it in, and binds
   `hooks.selectInView`.
+- `pin-sheet.ts` - the visitor's pin sheet (B2b): `main.ts` builds it over
+  `#pin-sheet`, binds `hooks.visitorTap` to it, closes it with
+  `hooks.stopStations`, and in visitor mode cancels `beforexrselect` on
+  `#ar-root` for the overlay's own taps (`cancelsXrSelect`).
 - `viewer-placement.ts` - the viewer pipeline and the photo placement
   (`createViewerPlacement`).
 - `ar-entry.ts` - the AR entry, the runtime start/end, the status line

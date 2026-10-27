@@ -97,6 +97,38 @@ test("a pin the story shows stands in the world from its step on, and stays afte
     .toEqual(["gate-pin", "gate-story-sign"]);
 });
 
+test("a tap on a pin with a description opens its whole text in a sheet, a tap on its Close is no tap in the world", async ({
+  page,
+}) => {
+  // Why this test matters (B2b step 5): a pin shows only its caption in
+  // the world; its description is reachable only by a tap in AR, which is
+  // the session's select. Only a pin with a description is offered to the
+  // tap (the gate's own pin has none), and the sheet's Close is the
+  // overlay's tap, never a select that would hit what stands behind it.
+  await atTheGate(page);
+  await expect(page.getByTestId("scene-text")).toHaveText("The old sign");
+  await expect
+    .poll(() => gateIds(page), { timeout: 20000 })
+    .toContain("gate-story-sign");
+  const tapped = await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    t.pickId = "gate-story-sign";
+    return { fired: t.tapXr(), offered: t.pickTargets };
+  });
+  expect(tapped).toEqual({ fired: true, offered: ["gate-story-sign"] });
+  await expect(page.getByTestId("pin-sheet")).toBeVisible();
+  await expect(page.getByTestId("pin-sheet-title")).toHaveText("The old sign");
+  await expect(page.getByTestId("pin-sheet-text")).toHaveText(
+    "Carved in 1400.",
+  );
+  const closeIsWorldTap = await page.evaluate(() =>
+    /** @type {any} */ (window).__tourViewerTest.tapXr("#pin-sheet-close"),
+  );
+  expect(closeIsWorldTap).toBe(false);
+  await page.getByTestId("pin-sheet-close").click();
+  await expect(page.getByTestId("pin-sheet")).toBeHidden();
+});
+
 /** Continue the gate's story from its first step to `text`. */
 async function continueTo(page, text) {
   for (let i = 0; i < 4; i += 1) {
