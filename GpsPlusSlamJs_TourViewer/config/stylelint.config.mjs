@@ -5,7 +5,12 @@ export default {
   rules: {
     // Catch invalid CSS values (e.g., "color: 12px", "width: red").
     // This is the primary defense against LLM "hallucinated" properties.
-    "csstree/validator": true,
+    // Its syntax data predates container queries, which the landing's
+    // drawn phones use for their text sizes (src/landing/*.css).
+    "csstree/validator": {
+      ignoreAtrules: ["container"],
+      ignoreProperties: ["container-type"],
+    },
 
     // Disable formatting rules — Prettier handles these.
     "rule-empty-line-before": null,

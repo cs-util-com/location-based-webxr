@@ -277,11 +277,13 @@ test.describe("a computer (no AR)", () => {
   });
 });
 
+// The claim sits in the landing's first lines (its first five seconds),
+// under the motivation, not further down where a reader may never get.
 test("the setup page says the tour needs an Android phone with Chrome", async ({
   page,
 }) => {
   await page.goto("/?nocache=1");
-  await expect(page.locator(".setup-lede")).toContainText(
+  await expect(page.getByTestId("landing-needs")).toContainText(
     "Android phones with Chrome",
   );
 });

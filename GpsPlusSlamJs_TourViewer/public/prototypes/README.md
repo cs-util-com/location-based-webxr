@@ -61,6 +61,11 @@ wired into its logic: every interaction is faked.
   error" button that draws every block and its target 1 m off; made
   2026-10-25. Section 0 of each page's notes says what it costs and where
   it fails.
+- `use-cases-true-colour/` - the start page's use-case pictures in the
+  look the page does not use (the place dimmed, the tour's pictures in
+  their own colours), with a switch to the shipped route-light look;
+  rendered from `src/landing/use-case-markup.ts`, no script beyond the
+  switch.
 
 **Kept, the chosen and the unchosen** (owner, 2026-10-11 evening): another
 developer may prefer a variant the owner did not choose and ask their own

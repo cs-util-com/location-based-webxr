@@ -116,8 +116,9 @@ export function wizardStepKey(url: string): string {
   return `tour-viewer.wizard.${url}`;
 }
 
-/** The storage key for the last url a creator opened. */
-const WIZARD_LAST_URL_KEY = "tour-viewer.wizard.last-url";
+/** The storage key for the last url a creator opened; the landing reads
+ *  it to tell a returning device (`landing/landing-skip.ts`). */
+export const WIZARD_LAST_URL_KEY = "tour-viewer.wizard.last-url";
 
 /**
  * The browser's step store, or undefined where reaching for it throws.

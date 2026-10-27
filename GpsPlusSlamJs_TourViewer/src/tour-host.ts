@@ -179,7 +179,9 @@ export interface TourHostStore {
   setItem(key: string, value: string): void;
 }
 
-const HOST_KEY = "tour-viewer.wizard.host";
+/** The storage key of the choice; the landing reads it to tell a
+ *  returning device (`landing/landing-skip.ts`). */
+export const HOST_KEY = "tour-viewer.wizard.host";
 
 /** The stored host, or null: none chosen, an unknown value, or a store
  *  that is missing or throws (site data blocked). */

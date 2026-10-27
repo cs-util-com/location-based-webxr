@@ -8,9 +8,20 @@ downloading the whole file first.
 
 ## Two pages in one
 
-- **The plain page is the creator's guided setup.** Four steps, one open
-  at a time: host a zip and paste its link, print the code, hang it, and
-  measure it in AR and place content - after Finish the same step saves
+- **The plain page is the creator's: a landing, then the guided setup.**
+  The landing comes first: one line for a visitor who came for a tour
+  (scan its code, or open its link further down), what the app is for and
+  that tours run on Android phones with Chrome, the hero, five step cards
+  whose pictures play while in view (a tap pauses one; "Show again"
+  restarts it; nothing moves by itself under reduced motion), a short
+  "Make your own tour" and examples of what people make. Its "Make your
+  tour" buttons bring the setup into view. A device that used the setup
+  before (a stored storage choice or link) opens scrolled to the setup;
+  a reload or a link to a place in the page keeps the browser's own
+  position. A visitor's page downloads none of the landing's moving parts.
+  The setup has six steps, one open at a time (they open in any order):
+  where the tour lives, its link, print the code, hang it, and create it
+  in AR - after Finish the same step saves
   the rebuilt zip to the phone by itself (a button saves it again) and
   shows the recipe for replacing the hosted file. The link last opened and the step reached with it are
   remembered on the device: after a reload (the AR session, the print

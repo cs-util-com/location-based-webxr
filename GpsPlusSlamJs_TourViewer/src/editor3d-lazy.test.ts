@@ -15,8 +15,14 @@
  * fences beside it (`editor-only-packages.test.ts`, the dependency rules
  * in `config/.dependency-cruiser.cjs`) hold the source; this holds the
  * bundle the browser gets.
+ *
+ * The same build holds the creator's landing to its shape: the main page
+ * loads only its small static part before an `import()` (a visitor pays
+ * for nothing else), and its dynamic chunks stay within a size budget, so
+ * a picture or a film that grows the start page shows up here first.
  */
 import { existsSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -35,6 +41,32 @@ const THREE_D_ONLY: readonly [string, RegExp][] = [
   ["the elevation package", /\/GpsPlusSlamJs_Osm\/|\/gps-plus-slam-osm\//],
   ["the 3D view", /\/src\/editor3d\//],
 ];
+
+/** The landing's modules the main page may load before any `import()`:
+ *  the mount shim and the returning-device rule (today's two), and the
+ *  cards' controller with its one helper (small, no DOM; allowed, today
+ *  they ride in the cards' chunk). Everything else under `src/landing/`
+ *  (the cards' drawing, the film, the use cases) is a dynamic chunk, so a
+ *  visitor never downloads it. */
+const LANDING_STATIC = [
+  "landing-mount.ts",
+  "card-play.ts",
+  "clamp01.ts",
+  "landing-skip.ts",
+];
+
+/** The landing's dynamic chunks' JavaScript together, gzipped,
+ *  unminified (the build here does not minify, so this bounds the shipped
+ *  JavaScript from above). JavaScript only: the chunks' CSS is not
+ *  counted, nor the hero's still drawing (public/landing, about 16 kB
+ *  gzip for each of its two layouts, one of which a creator's page
+ *  fetches), nor three.js, which the film imports from chunks the main
+ *  page loads statically anyway. Measured 2026-10-26 at 61.7 kB with the
+ *  cards, the use cases and the film (the film 35.0 of it; minified the
+ *  three are 43.8 kB); the budget leaves about a fifth of headroom, far
+ *  under the plan's 250 kB ceiling for the landing's own code
+ *  (landing-mount.ts.md, "Size"). */
+const LANDING_BUDGET_KB = 74;
 
 /** The pages with a script of their own (`legal.html` has none: it loads
  *  no module at all). */
@@ -59,6 +91,38 @@ describe("the 3D view's code in the app's bundle", () => {
       }
     },
   );
+
+  it("keeps the landing's moving parts out of the main page's first load", () => {
+    const loaded = [...staticClosure(chunks, "main")];
+    const landing = loaded
+      .filter((id) => id.includes("/src/landing/"))
+      .map((id) => id.slice(id.lastIndexOf("/") + 1))
+      .sort();
+    // The check sees the landing at all: the shim is always there.
+    expect(landing).toContain("landing-mount.ts");
+    expect(landing.filter((file) => !LANDING_STATIC.includes(file))).toEqual(
+      [],
+    );
+  });
+
+  it("keeps the landing's dynamic chunks within their budget", () => {
+    const first = new Set(
+      [...staticClosure(chunks, "main")].filter((id) =>
+        id.includes("/src/landing/"),
+      ),
+    );
+    const lazy = chunks.filter(
+      (c) =>
+        c.entry === null &&
+        c.moduleIds.some(
+          (id) => id.includes("/src/landing/") && !first.has(id),
+        ),
+    );
+    // The cards' pictures and the use cases, at least: the check sees them.
+    expect(lazy.length).toBeGreaterThanOrEqual(2);
+    const kb = lazy.reduce((sum, c) => sum + gzipSync(c.code).length, 0) / 1024;
+    expect(kb).toBeLessThanOrEqual(LANDING_BUDGET_KB);
+  });
 
   it("is reached from the editor's page by import(), the geoid with it", () => {
     const edit = chunks.find((c) => c.entry === "edit");
