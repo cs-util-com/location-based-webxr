@@ -29,7 +29,9 @@ width, is exact in whatever face the page is set in.
   unreadable JSON, a width or height that is not a number, or a height
   that is not above 0 and below 20 000 px.
 - `keepUsesHeight(host, { storage, width }): () => void`: called by
-  `landing-mount.ts` once the use cases mounted. Removes the inline
+  `landing-mount.ts` once the use cases mounted (it comes in their chunk,
+  re-exported by `use-cases.ts`; where they fail to mount,
+  `landing-mount.ts` drops the inline reservation itself). Removes the inline
   `min-height` the page's script set (the mounted section now holds its
   own place), stores the host's border-box height at `width()`, and stores
   it again whenever the host resizes (a `ResizeObserver`, where there is
@@ -65,8 +67,10 @@ keptUsesHeight(sessionStorage.getItem(USES_HEIGHT_KEY), innerWidth); // 2391.5
 - `uses-height.test.ts`: the rule (same width, other width, malformed
   values, a round-trip property), the keeper (drops the inline reservation,
   stores the height, survives a throwing or missing storage), and the
-  inline script held to the rule (a property over generated stored values,
-  its place in the page).
+  inline script held to the rule (two properties: every height valid by
+  construction is reserved height for height, and any other stored value,
+  near misses and the exact 0 and 20 000 px edges included, gets the same
+  answer as `keptUsesHeight`; and its place in the page).
 - `playwright-tests/landing.spec.js`, "a returning device": the reload
   comes back to the stage within 24 px when the use cases arrive late, in
   the system face, the wide face and a wider one, also under reduced

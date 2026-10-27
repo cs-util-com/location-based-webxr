@@ -165,43 +165,68 @@ describe("the landing-uses-height script in index.html", () => {
     return host.style.minHeight;
   }
 
-  it("reserves exactly what keptUsesHeight reads, for any stored value (property)", () => {
-    // Most generated values are kept at the width read back, so the
-    // reserving branch is exercised as often as the refusing ones.
-    const stored = fc.oneof(
-      { weight: 1, arbitrary: fc.constant(null) },
-      { weight: 1, arbitrary: fc.string() },
-      {
-        weight: 6,
-        arbitrary: fc
-          .record({
-            width: fc.oneof(
-              { weight: 3, arbitrary: fc.constant(390) },
-              { weight: 1, arbitrary: fc.integer({ min: 380, max: 400 }) },
-              { weight: 1, arbitrary: fc.constant("390") },
-            ),
-            height: fc.oneof(
-              { weight: 3, arbitrary: fc.double({ min: -100, max: 30000 }) },
-              { weight: 1, arbitrary: fc.constant("2000") },
-              { weight: 1, arbitrary: fc.constant(null) },
-            ),
-          })
-          .map((v) => JSON.stringify(v)),
-      },
+  // The parity is proven in two halves, so neither depends on how often a
+  // random draw happens to land in it: every value valid by construction
+  // must be reserved, height for height, and every other value (anything
+  // at all, and the near misses around each condition, the exact 0 and
+  // 20 000 px edges included) must give the inline copy the same answer as
+  // keptUsesHeight. A single mixed property that counted its reserving
+  // draws was flaky: that count is a random variable, not a proof.
+  it("reserves every height keptUsesHeight keeps, height for height (property)", () => {
+    const height = fc.oneof(
+      fc.integer({ min: 1, max: 19999 }),
+      fc.double({
+        min: 0,
+        max: 20000,
+        minExcluded: true,
+        maxExcluded: true,
+        noNaN: true,
+      }),
     );
-    let reserved = 0;
+    fc.assert(
+      fc.property(height, (h) => {
+        const s = encodeUsesHeight(390, h);
+        expect(keptUsesHeight(s, 390)).toBe(h);
+        expect(runInline(s, 390)).toBe(`${String(h)}px`);
+      }),
+      { numRuns: 300 },
+    );
+    expect(runInline(encodeUsesHeight(390, 2391.5), 390)).toBe("2391.5px");
+  });
+
+  it("answers as keptUsesHeight for any other stored value (property)", () => {
+    const stored = fc.oneof(
+      fc.constant(null),
+      fc.string(),
+      fc.json(),
+      fc
+        .record({
+          width: fc.oneof(
+            fc.constant(390),
+            fc.integer({ min: 380, max: 400 }),
+            fc.constant("390"),
+          ),
+          height: fc.oneof(
+            fc.double({ min: -100, max: 30000 }),
+            fc.constantFrom(0, -0, -1, 19999.999, 20000, 20000.001),
+            fc.constant("2000"),
+            fc.constant(null),
+          ),
+        })
+        .map((v) => JSON.stringify(v)),
+    );
     fc.assert(
       fc.property(stored, (s) => {
         const kept = keptUsesHeight(s, 390);
-        if (kept !== null) reserved += 1;
         expect(runInline(s, 390)).toBe(
           kept === null ? "" : `${String(kept)}px`,
         );
       }),
       { numRuns: 300 },
     );
-    expect(reserved).toBeGreaterThan(30);
-    expect(runInline(encodeUsesHeight(390, 2391.5), 390)).toBe("2391.5px");
+    for (const edge of [0, 20000]) {
+      expect(runInline(encodeUsesHeight(390, edge), 390)).toBe("");
+    }
   });
 
   it("reserves nothing where storage throws", () => {
