@@ -108,7 +108,11 @@ export interface FilmEnv {
     el: Element,
     onShare: (share: number) => void,
   ) => () => void;
-  readonly observeSize: (el: Element, onSize: () => void) => () => void;
+  /** One watch over all of `els`: a report that resizes several calls once. */
+  readonly observeSize: (
+    els: readonly Element[],
+    onSize: () => void,
+  ) => () => void;
   readonly viewport: () => { w: number; h: number; dpr: number };
   readonly now: () => number;
   /** The stage's size, CSS px. */
@@ -165,10 +169,10 @@ function browserEnv(doc: Document): FilmEnv {
       io.observe(el);
       return () => io.disconnect();
     },
-    observeSize(el, onSize) {
+    observeSize(els, onSize) {
       if (win && typeof win.ResizeObserver === "function") {
         const ro = new win.ResizeObserver(() => onSize());
-        ro.observe(el);
+        for (const el of els) ro.observe(el);
         return () => ro.disconnect();
       }
       win?.addEventListener("resize", onSize);
@@ -571,9 +575,9 @@ export function createLandingFilm(
   dom.stage.addEventListener("click", onStageClick);
   // layout() measures the stage, so the stage is observed: a caption that
   // wraps past its reserved room resizes the stage, not the host. The host
-  // too, because the list's stage height follows the host's.
-  const unobserveSize = env.observeSize(host, onResize);
-  const unobserveStage = env.observeSize(dom.stage, onResize);
+  // too, because the list's stage height follows the host's. One observer
+  // for both: a window resize that resizes both lays out once.
+  const unobserveSize = env.observeSize([host, dom.stage], onResize);
   layout();
   const unobserveView = env.observeView(host, (v) => {
     const share = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
@@ -612,7 +616,6 @@ export function createLandingFilm(
       }
       unobserveView();
       unobserveSize();
-      unobserveStage();
       dom.stage.removeEventListener("click", onStageClick);
       if (owned) {
         const s = owned;

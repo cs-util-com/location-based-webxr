@@ -123,8 +123,8 @@ function setup(
       shareCb = cb;
       return () => undefined;
     },
-    observeSize: (el, cb) => {
-      sizeCbs.set(el, cb);
+    observeSize: (els, cb) => {
+      for (const el of els) sizeCbs.set(el, cb);
       return () => undefined;
     },
     size: o.size ?? (() => ({ w: 400, h: 500 })),
@@ -280,6 +280,52 @@ describe("landing film: reduced motion", () => {
     expect(scene.layout).toHaveBeenLastCalledWith(
       expect.objectContaining({ W: 380, H: 420 }),
     );
+  });
+
+  // A window resize resizes the host and the stage at once: with an
+  // observer for each, the film measured and laid out twice per resize.
+  // One observer watches both, so one report is one layout.
+  it("watches the host and the stage with one observer, one layout per report", () => {
+    const observers: { cb: () => void; els: Element[] }[] = [];
+    const Real = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      readonly els: Element[] = [];
+      constructor(cb: () => void) {
+        observers.push({ cb, els: this.els });
+      }
+      observe(el: Element) {
+        this.els.push(el);
+      }
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      const host = document.createElement("div");
+      document.body.append(host);
+      let measured = 0;
+      const film = createLandingFilm(
+        host,
+        { reducedMotion: false, onArStarting: () => () => undefined },
+        DEFAULT_TUNING,
+        {
+          webgl: () => false,
+          observeView: () => () => undefined,
+          size: () => {
+            measured += 1;
+            return { w: 400, h: 500 };
+          },
+          viewport: () => ({ w: 390, h: 844, dpr: 2 }),
+        },
+      );
+      const stage = host.querySelector(".lf-stage");
+      expect(observers).toHaveLength(1);
+      expect(observers[0]?.els).toEqual([host, stage]);
+      measured = 0;
+      observers[0]?.cb();
+      expect(measured).toBe(1);
+      film.destroy();
+    } finally {
+      globalThis.ResizeObserver = Real;
+    }
   });
 
   it("keeps the stage's last good height when a measurement reads nothing", () => {

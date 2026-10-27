@@ -89,7 +89,8 @@ timeline.
 - The layout follows the stage, which is what it measures: both the stage
   and the host are observed for size (a caption that wraps past its
   reserved room resizes the stage while the host keeps its size; the
-  list's stage height follows the host).
+  list's stage height follows the host), by one observer (`observeSize`
+  takes both), so a window resize that resizes both lays out once.
 - `?debug=1`: a readout over the picture (`film-debug.ts`): the renderer,
   its pixel ratio and quality, the scene's build time, the film's time,
   the last frames' percentiles (`utils/frame-times`) and the whole run's
@@ -126,7 +127,8 @@ const film = mountLandingFilm(hostEl, {
 
 `landing-film.test.ts` (jsdom, a fake frame queue and a fake scene): no
 frames while idle, plays once, reduced motion (and the list stage keeping
-its last good height), the AR handoff, the
+its last good height), one size observer over the host and the stage
+(one layout per report), the AR handoff, the
 fallbacks, no renderer and no playing during a live AR session (also
 after the handoff, whatever the view reports), a scene whose compile throws
 at once shown and freed, the host attributes and
