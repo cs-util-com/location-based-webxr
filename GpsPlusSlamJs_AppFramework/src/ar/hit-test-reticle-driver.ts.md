@@ -94,7 +94,8 @@ handle.dispose();
   dispose semantics), the three in-flight-request races, reticle driving
   through the real view-model (NUE pose check), and `onSelect` nullable-tap
   semantics, including the tap's target ray read against the viewer space
-  and `null` for an event without a usable pose. The XR frame loop is mocked to hand the tests the raw callback;
+  and `null` for an event without a usable pose (the ray is read by
+  `targetRayOf`, shared with `xr-select-listener.ts`). The XR frame loop is mocked to hand the tests the raw callback;
   three.js objects are real.
 - [hit-test-reticle-driver.property.test.ts](hit-test-reticle-driver.property.test.ts)
   — fast-check property driving arbitrary interleavings of ticks, request

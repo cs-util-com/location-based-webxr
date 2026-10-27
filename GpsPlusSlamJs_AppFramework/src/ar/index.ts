@@ -153,6 +153,12 @@ export {
   startHitTestReticle,
 } from './hit-test-reticle-driver.js';
 
+// --- xr-select-listener ---
+export {
+  type XrSelectListener,
+  startXrSelectListener,
+} from './xr-select-listener.js';
+
 // --- enable-gps-ar ---
 export {
   type EnableGpsArStatus,

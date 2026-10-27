@@ -34,6 +34,7 @@ import {
   updateReticleAtSurface,
 } from '../visualization/hit-test-reticle.js';
 import { registerXrFrameUpdate } from './xr-frame-loop.js';
+import { targetRayOf } from './xr-select-listener.js';
 
 /** Live-reticle handle returned by {@link startHitTestReticle}. */
 export interface HitTestReticleHandle {
@@ -110,32 +111,6 @@ async function requestHitTestSource(
 ): Promise<XRHitTestSource | null> {
   const source = await session.requestHitTestSource?.({ space: viewerSpace });
   return source ?? null;
-}
-
-/**
- * The tap's target ray relative to `viewerSpace`, read from a `select`
- * event - or null when the event, its frame or the pose is missing, or the
- * frame refuses (it is only active while the event is dispatched).
- */
-function targetRayOf(
-  event: unknown,
-  viewerSpace: XRReferenceSpace | null
-): SelectTargetRay | null {
-  if (viewerSpace === null || typeof event !== 'object' || event === null) {
-    return null;
-  }
-  const { frame, inputSource } = event as Partial<XRInputSourceEvent>;
-  if (typeof frame?.getPose !== 'function' || inputSource === undefined) {
-    return null;
-  }
-  try {
-    const pose = frame.getPose(inputSource.targetRaySpace, viewerSpace);
-    return pose
-      ? { targetRayInViewer: Array.from(pose.transform.matrix) }
-      : null;
-  } catch {
-    return null;
-  }
 }
 
 /**

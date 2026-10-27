@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- `startXrSelectListener(onSelect)` (`ar`, new `ar/xr-select-listener`):
+  every WebXR `select` with the tap's target ray, without a hit-test
+  reticle (the Tour Viewer's pin taps). `targetRayOf` moved there from the
+  reticle driver, which now imports it; its behaviour is unchanged.
+
 ### ⚠️ Breaking changes
 
 - **`tour.json` version 4: station blocks** (`ar/tour-manifest`,
