@@ -153,5 +153,35 @@ export function createPerfItems({ parent, ellipsoid, groundM, eyeItems }) {
     get count() {
       return root.children.length;
     },
+    /**
+     * Where item `k` stands for `camera` now: `{ inView, footOverGroundM }`
+     * (`inView` its pole's middle inside the camera's frustum; the foot's
+     * height over `groundM` at its place, negative when the drawn ground
+     * rose over it), or null without that item. For the smokes.
+     */
+    probe(k, camera, groundOf) {
+      const item = root.children[k];
+      if (!item) return null;
+      root.updateMatrixWorld(true);
+      camera.updateMatrixWorld();
+      const middle = new THREE.Vector3(0, PERF_ITEM.poleM / 2, 0).applyMatrix4(
+        item.matrixWorld,
+      );
+      const frustum = new THREE.Frustum().setFromProjectionMatrix(
+        new THREE.Matrix4().multiplyMatrices(
+          camera.projectionMatrix,
+          camera.matrixWorldInverse,
+        ),
+      );
+      // The foot in the parent's Earth-centred frame (the root is at its
+      // identity there), then over the ellipsoid.
+      const foot = new THREE.Vector3().applyMatrix4(item.matrix);
+      const at = ellipsoid.getPositionToCartographic(foot, {});
+      const place = { lat: at.lat / DEG, lng: at.lon / DEG };
+      return {
+        inView: frustum.containsPoint(middle),
+        footOverGroundM: at.height - groundOf(place),
+      };
+    },
   };
 }

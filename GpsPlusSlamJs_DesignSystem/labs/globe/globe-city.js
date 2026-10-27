@@ -204,6 +204,9 @@ export function createGlobeCity({
       return;
     }
     if (reply.kind === "settled" || reply.kind === "finished") {
+      // "settled" is the first pass; retries may still bring a new stage
+      // until "finished".
+      if (reply.kind === "finished") load.ended = true;
       if (reply.counts) load.counts = reply.counts;
       load.progress = 1;
       settle(load, reply.outcome, reply);
@@ -228,7 +231,10 @@ export function createGlobeCity({
         made.terminate();
         if (worker === made) worker = null;
         fail(e.message || "the city's worker failed");
-        if (current) settle(current, "unavailable");
+        if (current) {
+          current.ended = true;
+          settle(current, "unavailable");
+        }
       });
       worker = made;
     }
@@ -245,6 +251,7 @@ export function createGlobeCity({
       progress: 0,
       frozen: 0,
       outcome: null,
+      ended: false,
       stages: [],
       resolve,
       finished,
@@ -328,6 +335,7 @@ export function createGlobeCity({
       shown,
       load: current && {
         outcome: current.outcome,
+        ended: current.ended,
         stages: [...current.stages],
         counts: current.counts,
         progress: current.progress,

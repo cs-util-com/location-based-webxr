@@ -26,14 +26,20 @@
     - `altitudeM()` and `wheelZoom(deltaY)` (a wheel event at the canvas
       centre, then the controls' update);
     - `settled()`, `setFactors(cell | null)`, `setEOverride(e | null)`,
-      `currentE()`.
+      `currentE()`;
+    - for the fixed-view sweep: `setItems(offsets, place)`,
+      `placeView(view)`, `setPaused(paused)` (the frame renders nothing
+      while true: the refresh calibration), `eyeMode` (the hash's `eye`)
+      `viewReadiness()` (`{ band, release, city, osm }`, each true
+      when ready) and `cityDelivered()` (the city's deliveries drawn).
   - It returns the hooks the lab's frame calls:
     - `frameStart(now)`, `frameEnd(now)`;
     - `drives()` and `drive(now)`: while a path runs, it owns the camera;
     - `mark(kind)`, `eStep(spanMs)`;
     - `api` for the smokes (`window.__globeLab.perf`): `run()`,
       `status()`, `runs()`, `exportText()`, `estimateMs()`,
-      `refreshIntervalMs()`.
+      `refreshIntervalMs()`, `refresh()` (the snapped rate) and
+      `wakeLock()` (the screen lock's report).
 - The overlay (§4.1): the plan (sweep, runs, estimated minutes) before
   Run, the remaining minutes while it runs, then the framework's summary
   per run (p50/p95/p99/max, the counts over each threshold, PASS or
@@ -90,23 +96,60 @@
   the hash's values come back at the end. `perfSpeed` replaces every
   cell's speed (short runs for the smokes). The overhead sweep turns the
   hooks off (frame intervals only) on alternate runs.
-- The fixed-view sweep (`perfItems=5,20,50`, `globe-perf-views.js`): after
-  the calibration, for each repeat and view one camera move and a settle
-  of at most `perfViewSettleS` (the drawn carriers idle AND the band's
-  drawn share at the altitude's, `lab.bandAtTarget`: an undrawn relief
-  reads as idle, so a low view settled before the relief took the frame), then for each item count the items set
-  (`lab.setItems(itemOffsets(n), place)`), a 500 ms warm-up
-  (`GLOBE_PERF.itemsWarmMs`: the items' first upload and compile fall
-  outside the held run) and a run held `perfHoldS` and at least 3 more frames
-  (`GLOBE_PERF.viewMinFrames`: under SwiftShader a 1 s hold ended runs with
-  no frame), labelled
-  `<view> n=<count> r<repeat>`, with the bytes the page had needed
-  (`bytesDownloaded`, `/globe-assets/` only) and the resource count.
-  The camera is placed every frame (`lab.placeView`), so the street view
-  follows the ground as it refines. The overlay shows the pooled table
-  (`formatViewTable`), the export adds it as `views`
-  (`summariseViewRuns`), and the file name says `views`. `perfAuto=1`
-  starts any sweep without a press.
+- The fixed-view sweep (`perfItems=0,5,20,50`, `globe-perf-views.js`):
+  - The screen: a Screen Wake Lock is held from the start to Done
+    (`globe-perf-wake.js`) and asked for again when the page comes back;
+    when it is refused or missing the status line asks the tester to set
+    the screen's auto-lock to Never. The export's `wakeLock` says whether
+    it held throughout. A run the hidden page interrupted is void.
+  - The calibration: the frame renders nothing (`lab.setPaused(true)`)
+    for 2 s, so the median frame interval is the display's own, snapped
+    to 30, 60, 90 or 120 Hz (`snapRefreshInterval`); a measurement more
+    than 10 % off its rate is flagged (`refresh.mismatch`, and the
+    device block's `refreshMismatch`). The drop counts use the snapped
+    interval.
+  - The plan (`perfViewCells`): a discarded warm-up pass per view
+    (`perfWarmup=1`, the default) and then each repeat with the counts'
+    order rotated per repeat and view. Without `eye=1` the street view is
+    left out (`viewsSkipped`, and said in the plan) rather than measured
+    from a camera the editor never uses. The estimate includes the
+    calibration.
+  - Per move: the camera placed every frame (`lab.placeView`, so the
+    street view follows the ground as it refines), then a settle of at
+    most `perfViewSettleS`: the drawn carriers idle AND every
+    `lab.viewReadiness()` key true: the band's drawn share at the
+    altitude's (an undrawn relief reads as idle), no band cache release
+    pending or draining, the city's load ended (its retries included) and
+    its arrival fade done, the OSM map's ramp done with no re-evaluation
+    backlog and no drawn tile waiting.
+  - The city comes from public Overpass servers and may not come at all
+    (measured 2026-10-27 on this desktop: no reply in 3 min). When a
+    move's settle times out on the city and it has delivered nothing, the
+    sweep stops waiting for it (`cityGaveUp`, the move's label, in the
+    export and the overlay) and measures without it; once it delivers it
+    is waited for again, and a held run it lands in is void
+    (`city.arrived`).
+  - Per count: the items set (`lab.setItems(itemOffsets(n), place)`) and
+    their first 500 ms recorded as their own sample (`itemsWarm`: frames,
+    the worst frame, the programs, textures and geometries made), then a
+    quiet wait of at most `perfQuietS` for the same readiness (a release
+    starts 5 s after a carrier leaves the band, so it can fall inside a
+    held run), then a run held `perfHoldS` and at least 3 more frames
+    (`GLOBE_PERF.viewMinFrames`), labelled `<view> n=<count> r<repeat>`,
+    with the bytes the page had needed (`bytesDownloaded`,
+    `/globe-assets/` only), the bytes at the move (`bytesAtMove`) and the
+    settle's outcome (`settle: { move, moveNotReady, quiet, notReady }`).
+    What decides is the view right before the run: a run whose quiet wait
+    timed out is kept but marked (`settledBefore: false`) and the table
+    counts it and leaves it out of every number; a slow move whose view
+    was ready by the run is pooled.
+  - The overlay shows the pooled table (`formatViewTable`: p50, p95, max,
+    work per frame, drop, over 34 and over 51 ms, against the measured
+    rate, and the MiB each move needed) and whether the screen stayed on;
+    the export adds `views` (`summariseViewRuns`), `viewDownloads`,
+    `viewsSkipped`, `cityGaveUp`, `refresh` and `wakeLock`, and the file name says
+    `views`. A failed start removes its items and unpauses the frame.
+  - `perfAuto=1` starts any sweep without a press.
 - The export: the framework's `frame-export/1` (`buildFrameExport`: the
   device block, every run, the pooled attribution, the 20 worst frames
   with their events), plus `lab` (per run: index, time since load, cell,

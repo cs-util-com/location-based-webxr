@@ -44,8 +44,10 @@ roadLiftM?, roadOffset?, heightsUrl? })` (`heightsUrl` the relief's height
   - `state()`: `{ phase: idle | loading | ready | failed, target, stage,
 counts, groundM, objects, mainMs, message, fade, shown, load }`
     (`mainMs` the main thread's time turning a delivery into three.js
-    objects; `load` the current load's outcome, delivered stages, counts
-    and progress);
+    objects; `load` the current load's outcome, `ended` (true once the
+    worker said `finished`, after its retries, or failed: no later stage
+    can arrive), delivered stages, counts and progress; the recorder's
+    fixed-view settle waits for `ended`);
   - `dispose()`: frees the city's own geometry and materials (never the
     trees' shared ones, `disposeCityObjects`) and ends the worker.
 - Invariants & assumptions:

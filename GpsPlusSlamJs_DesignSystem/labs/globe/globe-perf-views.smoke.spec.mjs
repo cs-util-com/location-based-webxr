@@ -28,7 +28,8 @@ const HASH = [
   "stars=0&milkyWay=0&atmo=0&groundSky=0&cloudVolume=0",
   "relief=1&reliefHeights=synthetic&city=0&cityWarm=0&eye=1",
   "at=46.948,7.4474",
-  "perf=1&perfAuto=1&perfItems=3&perfRepeats=1&perfHoldS=1&perfViewSettleS=60",
+  // No warm-up pass (its unit tests cover the plan): it doubles the moves.
+  "perf=1&perfAuto=1&perfItems=3&perfRepeats=1&perfHoldS=1&perfViewSettleS=60&perfQuietS=60&perfWarmup=0",
 ].join("&");
 
 const VIEWS = ["space", "100km", "10km", "1km", "street"];
@@ -81,6 +82,7 @@ test("the fixed-view sweep starts by itself and measures each view with its item
       clearanceM: s.planes.clearanceM,
       near: s.planes.near,
       centreHitM: hit?.miss === null ? hit.t : null,
+      item0: window.__globeLab.perfItem(0),
     };
   });
   console.log(`street view: ${JSON.stringify(street)}`);
@@ -92,6 +94,13 @@ test("the fixed-view sweep starts by itself and measures each view with its item
   // Looking a little down at the items' middle 30 m ahead: the ray hits
   // the ground beyond it, not the sky and not at the feet.
   expect(street.centreHitM).toBeGreaterThan(20);
+  // The items are what is measured: the first one (near the middle) must
+  // be in the camera's view and stand on the drawn ground, not under it
+  // (a relief that refined after the items were placed buries them).
+  expect(street.item0).not.toBeNull();
+  expect(street.item0.inView).toBe(true);
+  expect(street.item0.footOverGroundM).toBeGreaterThan(-0.1);
+  expect(street.item0.footOverGroundM).toBeLessThan(0.5);
 
   await page.waitForFunction(
     () => /^(Done|Failed)/.test(window.__globeLab.perf.status()),
@@ -104,15 +113,22 @@ test("the fixed-view sweep starts by itself and measures each view with its item
   const out = JSON.parse(
     await page.evaluate(() => window.__globeLab.perf.exportText()),
   );
+  console.log(
+    `settles: ${JSON.stringify(out.lab.map((r) => [r.label, r.settle]))}`,
+  );
   expect(errors).toEqual([]);
   expect(out.lab.map((r) => r.label)).toEqual(VIEWS.map((v) => `${v} n=3 r1`));
   for (const r of out.lab) {
     expect(r.work.frames).toBeGreaterThan(0);
     expect(r.bytes).toBeGreaterThan(0);
   }
-  expect(out.views.map((r) => [r.view, r.items, r.runs])).toEqual(
+  // One run per view, pooled or counted as timed out: under SwiftShader a
+  // low view's queues may not drain within the waits, and such a run must
+  // be counted, never pooled.
+  expect(out.views.map((r) => [r.view, r.items, r.runs + r.timedOut])).toEqual(
     VIEWS.map((v) => [v, 3, 1]),
   );
+  expect(out.views.find((r) => r.view === "space").runs).toBe(1);
   // The items leave with the sweep.
   expect(await page.evaluate(() => window.__globeLab.state().eye.items)).toBe(
     0,

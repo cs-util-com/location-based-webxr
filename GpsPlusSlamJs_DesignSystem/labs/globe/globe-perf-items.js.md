@@ -17,10 +17,19 @@
     moves nothing); `set([])` removes them all. Each is registered in
     `eyeItems` (`perf-item-<k>`) with a bounding sphere in world
     coordinates, so the eye camera's near plane follows them.
+  - `probe(k, camera, groundOf)` -> `{ inView, footOverGroundM }` or null
+    without item `k`: whether its pole's middle is inside `camera`'s
+    frustum, and its foot's height over `groundOf(place)` (negative when
+    the drawn ground rose over it). The smoke reads it through
+    `window.__globeLab.perfItem(k)`, so a sweep that measured buried or
+    unseen items fails.
 - Invariants & assumptions: the spheres are taken through the parent's
   matrix of the last frame, so they are right until the frame recentres
   (the recorder places the camera and never recentres). The lab's
   `clearEyeItems` smoke hook assumes meshes and must not be used while
-  these are registered.
-- Tests: `globe-perf-views.smoke.spec.mjs` (registered while held, removed
-  after the sweep).
+  these are registered. The items are placed once per held run, after
+  the view's settle, so they stand on the relief as refined then; a
+  later refinement can move the ground under them (the smoke checks
+  item 0 at street level).
+- Tests: `globe-perf-views.smoke.spec.mjs` (registered while held, item 0
+  in view and on the ground at street level, removed after the sweep).

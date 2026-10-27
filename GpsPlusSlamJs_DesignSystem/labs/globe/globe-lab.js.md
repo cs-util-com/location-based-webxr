@@ -1001,12 +1001,24 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     them) at the link's place (`at=`, else `perfPlace`), each count held
     `perfHoldS` (1-60, default 5) after a settle of at most
     `perfViewSettleS` (1-300, default 20), the whole sweep `perfRepeats`
-    times (1-10, default 3). The items stand on the drawn ground on the
-    globe's Earth-centred group and are registered with the eye camera's
-    near plane. `perfAuto=1` starts the recorder's run without a press
-    (any sweep), so one link is a whole phone test. The handle gains
-    `viewPlace`, `placeView`, `setItems` and `bytesDownloaded`;
-    `placeCamera` takes an optional ECEF pose in place of the pitch law.
+    times (1-10, default 3), after a discarded warm-up pass per view
+    (`perfWarmup`, 0-1, default 1); before each held run a quiet wait of
+    at most `perfQuietS` (1-300, default 10) until the view is ready
+    again. Street level needs `eye=1` and is left out without it. The
+    items stand on the drawn ground on the globe's Earth-centred group
+    and are registered with the eye camera's near plane. `perfAuto=1`
+    starts the recorder's run without a press (any sweep), so one link
+    is a whole phone test. The handle gains `viewPlace`, `placeView`,
+    `setItems`, `bytesDownloaded`, `setPaused(paused)` (the frame calls
+    the recorder's hooks and renders nothing: the refresh calibration),
+    `eyeMode` and `viewReadiness()` (`{ band, release, city, osm }`: the
+    band's drawn share at the altitude's; no band cache release pending
+    or draining; the city's load ended and its arrival fade done, or no
+    city; the OSM map off, or its ramp done with no re-evaluation backlog
+    and no drawn tile waiting), `cityDelivered()` (the city's deliveries
+    drawn, 0 without a city); `placeCamera` takes an optional ECEF pose
+    in place of the pitch law. `window.__globeLab.perfItem(k)` reports
+    item `k`'s `{ inView, footOverGroundM }` (`globe-perf-items.js`).
   - The factors it varies, also hash keys that apply live:
     `adjustHeight` (the controls' height adjustment, its two raycasts a
     frame, default 1), `reliefCacheMiB` (the relief's cache cap, 8-4096,

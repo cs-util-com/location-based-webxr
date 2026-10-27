@@ -1,11 +1,11 @@
 /**
- * The frame-time recorder's fixed-view sweep (`#perf=1&perfItems=5,20,50`):
+ * The frame-time recorder's fixed-view sweep (`#perf=1&perfItems=0,5,20,50`):
  * the full look held at five views, from space down to street level, with
  * editor-style items standing at the place, each view and item count held
  * a few seconds and repeated, so one link on a phone measures what an
- * editor on the globe would cost. Pure: the plan, the items' layout and
- * the table; `globe-perf.js` runs it and `globe-lab.js` places the camera
- * and the items.
+ * editor on the globe would cost. Pure: the plan, the items' layout, the
+ * display's refresh and the table; `globe-perf.js` runs it and
+ * `globe-lab.js` places the camera and the items.
  *
  * @see globe-perf-views.js.md
  */
@@ -36,10 +36,10 @@ export const PERF_VIEWS_LIMITS = Object.freeze({
 });
 
 /**
- * The item counts from the hash's `perfItems` text ("5,20,50"): unique and
- * ascending, each a whole number from 0 to `maxItems`, at most `maxCounts`
- * of them. Absent, empty or malformed text is null (no sweep), never a
- * partly read list.
+ * The item counts from the hash's `perfItems` text ("0,5,20,50"): unique
+ * and ascending, each a whole number from 0 (the baseline without items)
+ * to `maxItems`, at most `maxCounts` of them. Absent, empty or malformed
+ * text is null (no sweep), never a partly read list.
  */
 export function parsePerfItems(text) {
   if (typeof text !== "string" || text.trim() === "") return null;
@@ -51,34 +51,90 @@ export function parsePerfItems(text) {
 }
 
 /**
- * The sweep's cells: for each repeat, each view in order, each item count.
- * One camera move per view and repeat; the counts change only the items.
- * RangeError for a repeat count that is not a positive integer.
+ * The sweep's cells: a discarded warm-up pass (repeat 0, one cell per view
+ * at the largest count, so the first measured repeat finds the shaders
+ * compiled and the caches as warm as every later one does), then for each
+ * repeat each view in order with every item count. One camera move per
+ * view and repeat; the counts change only the items. Inside a view the
+ * counts' order rotates by the repeat and the view's index (a Latin
+ * square over as many repeats as counts), so no count is always the first
+ * after a move. `views` defaults to every view (street level needs eye
+ * mode; the recorder leaves it out without). RangeError for a repeat
+ * count that is not a positive integer.
  */
-export function perfViewCells({ items, repeats }) {
+export function perfViewCells({
+  items,
+  repeats,
+  views = PERF_VIEWS,
+  warmup = true,
+}) {
   if (!(Number.isInteger(repeats) && repeats > 0)) {
     throw new RangeError(`repeats must be a positive integer, got ${repeats}`);
   }
   const cells = [];
-  for (let repeat = 1; repeat <= repeats; repeat++) {
-    for (const view of PERF_VIEWS) {
-      for (const n of items) cells.push({ repeat, view: view.id, items: n });
+  if (warmup && items.length > 0) {
+    const most = Math.max(...items);
+    for (const view of views) {
+      cells.push({ repeat: 0, view: view.id, items: most, warmup: true });
     }
+  }
+  for (let repeat = 1; repeat <= repeats; repeat++) {
+    views.forEach((view, v) => {
+      const shift = (repeat - 1 + v) % items.length;
+      for (let k = 0; k < items.length; k++) {
+        cells.push({
+          repeat,
+          view: view.id,
+          items: items[(k + shift) % items.length],
+        });
+      }
+    });
   }
   return cells;
 }
 
-/** A cell's run label: view, item count and repeat. */
+/** A cell's run label: view, item count and repeat (or `warm`). */
 export const viewRunLabel = (cell) =>
-  `${cell.view} n=${cell.items} r${cell.repeat}`;
+  `${cell.view} n=${cell.items} ${cell.warmup ? "warm" : `r${cell.repeat}`}`;
 
 /**
- * An upper bound on the sweep's length (ms): every camera move waits its
- * whole settle timeout, every cell holds `holdMs`.
+ * An upper bound on the sweep's length (ms): the calibration, every camera
+ * move waiting its whole settle timeout and every cell holding `holdMs`
+ * (the caller folds each cell's warm-up into `holdMs`).
  */
-export function perfViewsEstimateMs(cells, { holdMs, settleMs }) {
+export function perfViewsEstimateMs(
+  cells,
+  { holdMs, settleMs, calibrateMs = 0 },
+) {
   const moves = new Set(cells.map((c) => `${c.repeat}/${c.view}`)).size;
-  return moves * settleMs + cells.length * holdMs;
+  return calibrateMs + moves * settleMs + cells.length * holdMs;
+}
+
+/** The refresh rates a display runs at (Hz), which a calibration snaps to. */
+export const PERF_REFRESH_HZ = Object.freeze([30, 60, 90, 120]);
+
+/**
+ * The display's refresh from a calibration's median interval (ms):
+ * `{ measuredMs, hz, intervalMs, mismatch }`, snapped to the nearest of
+ * `PERF_REFRESH_HZ`; `mismatch` when the measurement is more than 10 % off
+ * the interval it snapped to (a page too busy to calibrate, or a rate not
+ * in the list). Null without a usable measurement (null, not finite, not
+ * > 0).
+ */
+export function snapRefreshInterval(measuredMs) {
+  if (!(Number.isFinite(measuredMs) && measuredMs > 0)) return null;
+  let hz = PERF_REFRESH_HZ[0];
+  for (const candidate of PERF_REFRESH_HZ) {
+    const off = Math.abs(1000 / candidate - measuredMs);
+    if (off < Math.abs(1000 / hz - measuredMs)) hz = candidate;
+  }
+  const intervalMs = 1000 / hz;
+  return {
+    measuredMs,
+    hz,
+    intervalMs,
+    mismatch: Math.abs(measuredMs - intervalMs) / intervalMs > 0.1,
+  };
 }
 
 /** The golden angle (rad): a sunflower's spiral never lines items up. */
@@ -114,68 +170,145 @@ const median = (values) => {
 };
 const overAt = (stats, ms) =>
   stats.over.find((o) => o.thresholdMs === ms)?.count ?? 0;
+const sumOf = (list, read) => list.reduce((sum, x) => sum + read(x), 0);
+const viewIndex = (id) => PERF_VIEWS.findIndex((v) => v.id === id);
 
 /**
- * One row per view and item count, in the sweep's order: the repeats'
- * median p50 and p95, the worst frame, the frames over 33 and 50 ms
- * summed, and the most bytes the page had needed (MiB). Voided runs (a
- * touch, the page hidden, a lost context) are counted, not pooled.
- * `runs` are the recorder's finished runs with `cell` and `bytes`.
+ * One row per view and item count, in the views' order, then the count:
+ * the pooled runs' median p50, p95 and work per frame (the frame
+ * callback's own time, ms), the worst frame, the refreshes dropped and the
+ * frames over 33, 34, 50 and 51 ms summed, and the items' worst warm-up
+ * frame. Pooled are the runs that were neither voided (a touch, the page
+ * hidden, a lost context) nor held after a settle that timed out; those
+ * are counted (`voided`, `timedOut`) and kept out of every number. The
+ * warm-up pass is left out entirely. `runs` are the recorder's finished
+ * runs with `cell`, `settledBefore`, `work` and `itemsWarm`.
  */
 export function summariseViewRuns(runs) {
   const groups = new Map();
   for (const r of runs) {
+    if (r.cell.warmup) continue;
     const key = `${r.cell.view}/${r.cell.items}`;
     if (!groups.has(key)) {
       groups.set(key, { view: r.cell.view, items: r.cell.items, list: [] });
     }
     groups.get(key).list.push(r);
   }
-  const viewIndex = (id) => PERF_VIEWS.findIndex((v) => v.id === id);
   return [...groups.values()]
     .sort((a, b) => viewIndex(a.view) - viewIndex(b.view) || a.items - b.items)
     .map(({ view, items, list }) => {
-      const kept = list.filter((r) => !r.voided && r.summary.stats.count > 0);
+      const counted = list.filter(
+        (r) => !r.voided && r.summary.stats.count > 0,
+      );
+      const kept = counted.filter((r) => r.settledBefore !== false);
       const stats = kept.map((r) => r.summary.stats);
+      const some = kept.length > 0;
+      const work = kept
+        .filter((r) => r.work?.frames > 0)
+        .map((r) => r.work.insideMs / r.work.frames);
+      const warm = kept
+        .map((r) => r.itemsWarm?.maxFrameMs)
+        .filter((ms) => Number.isFinite(ms));
       return {
         view,
         items,
         runs: kept.length,
-        voided: list.length - kept.length,
-        p50Ms: kept.length ? median(stats.map((s) => s.p50Ms)) : null,
-        p95Ms: kept.length ? median(stats.map((s) => s.p95Ms)) : null,
-        maxMs: kept.length ? Math.max(...stats.map((s) => s.maxMs)) : null,
-        over33: stats.reduce((sum, s) => sum + overAt(s, 33), 0),
-        over50: stats.reduce((sum, s) => sum + overAt(s, 50), 0),
-        bytesMiB: +(
-          Math.max(0, ...list.map((r) => r.bytes ?? 0)) /
-          2 ** 20
-        ).toFixed(1),
+        voided: list.length - counted.length,
+        timedOut: counted.length - kept.length,
+        p50Ms: some ? median(stats.map((s) => s.p50Ms)) : null,
+        p95Ms: some ? median(stats.map((s) => s.p95Ms)) : null,
+        maxMs: some ? Math.max(...stats.map((s) => s.maxMs)) : null,
+        workMs: work.length ? +median(work).toFixed(2) : null,
+        dropped: sumOf(stats, (s) => s.droppedFrames ?? 0),
+        over33: sumOf(stats, (s) => overAt(s, 33)),
+        over34: sumOf(stats, (s) => overAt(s, 34)),
+        over50: sumOf(stats, (s) => overAt(s, 50)),
+        over51: sumOf(stats, (s) => overAt(s, 51)),
+        itemsWarmMaxMs: warm.length ? Math.max(...warm) : null,
       };
     });
+}
+
+/**
+ * Each camera move's own download (MiB): the bytes counter after the
+ * move's last run minus the counter at the move (`bytesAtMove`), in the
+ * sweep's order, the warm-up pass included (where a cold page downloads
+ * most). The counter is the caller's; runs without both numbers are
+ * skipped.
+ */
+export function summariseViewDownloads(runs) {
+  const moves = new Map();
+  for (const r of runs) {
+    if (!(Number.isFinite(r.bytesAtMove) && Number.isFinite(r.bytes))) {
+      continue;
+    }
+    const key = `${r.cell.repeat}/${r.cell.view}`;
+    const m = moves.get(key) ?? {
+      view: r.cell.view,
+      repeat: r.cell.repeat,
+      at: r.bytesAtMove,
+      after: r.bytes,
+    };
+    m.after = Math.max(m.after, r.bytes);
+    moves.set(key, m);
+  }
+  return [...moves.values()].map((m) => ({
+    view: m.view,
+    repeat: m.repeat,
+    mib: +(Math.max(0, m.after - m.at) / 2 ** 20).toFixed(1),
+  }));
 }
 
 /** A number with `decimals`, "-" for none, padded to `width`. */
 const col = (value, width, decimals = 0) =>
   (value === null ? "-" : value.toFixed(decimals)).padEnd(width);
 
-/** The table as text for the overlay and the export: one line per row. */
-export function formatViewTable(rows) {
-  const header = "view    n    p50    p95    max     >33  >50  MiB";
-  const lines = rows.map((r) =>
-    [
+/**
+ * The table as text for the overlay and the export: one line per row, then
+ * what the columns are, the display's rate the long frames are read
+ * against (`refresh`, from `snapRefreshInterval`) and each move's download
+ * (`downloads`, from `summariseViewDownloads`), when given.
+ */
+export function formatViewTable(rows, { refresh = null, downloads = [] } = {}) {
+  const header = "view    n    p50    p95    max     work  drop >34  >51";
+  const lines = rows.map((r) => {
+    const apart = [
+      r.voided ? `${r.voided} void` : null,
+      r.timedOut ? `${r.timedOut} timed out` : null,
+    ].filter(Boolean);
+    return [
       r.view.padEnd(7),
       col(r.items, 4),
       col(r.p50Ms, 6, 1),
       col(r.p95Ms, 6, 1),
       col(r.maxMs, 7, 1),
-      col(r.over33, 4),
-      col(r.over50, 4),
-      col(r.bytesMiB, 0, 1),
-      r.voided ? `(${r.voided} void)` : "",
+      col(r.workMs, 5, 1),
+      col(r.dropped, 4),
+      col(r.over34, 4),
+      col(r.over51, 4),
+      apart.length ? `(${apart.join(", ")})` : "",
     ]
       .join(" ")
-      .trimEnd(),
-  );
-  return [header, ...lines].join("\n");
+      .trimEnd();
+  });
+  const notes = [
+    "p50/p95/max: frame intervals (ms); work: the frame callback's own",
+    "time (ms, median); drop: refreshes missed; >34, >51: frames over 34",
+    "and 51 ms.",
+  ];
+  if (refresh) {
+    const { hz, intervalMs, measuredMs, mismatch } = refresh;
+    notes.push(
+      `display ${hz} Hz (measured ${measuredMs.toFixed(1)} ms): a frame ${intervalMs.toFixed(1)} ms, one missed refresh ${(2 * intervalMs).toFixed(1)} ms${mismatch ? "; the measurement does not fit that rate" : ""}.`,
+    );
+  } else {
+    notes.push("display rate not measured: drop is not counted.");
+  }
+  if (downloads.length) {
+    notes.push(
+      "MiB per move (globe-lab assets, from the move to its last run):",
+      downloads.map((d) => `${d.view} r${d.repeat} ${d.mib}`).join(", "),
+    );
+  }
+  return [header, ...lines, "", ...notes].join("\n");
 }

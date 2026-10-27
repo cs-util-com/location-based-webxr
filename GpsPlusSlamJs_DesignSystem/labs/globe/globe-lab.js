@@ -854,6 +854,12 @@ const PARAMS = {
   perfHoldS: { fallback: 5, min: 1, max: 60 },
   perfViewSettleS: { fallback: 20, min: 1, max: 300 },
   perfAuto: { fallback: 0, min: 0, max: 1 },
+  // 0 leaves out the sweep's discarded warm-up pass (short smokes).
+  perfWarmup: { fallback: 1, min: 0, max: 1 },
+  // Before each held run, at most this long (s) for the view to be ready
+  // again (the items' warm-up may have queued work); a run held after it
+  // timed out is counted apart, never pooled.
+  perfQuietS: { fallback: 10, min: 1, max: 300 },
 };
 
 /**
@@ -3217,9 +3223,18 @@ async function start() {
   let eOverride = null;
   /** The band's share on the frame before (the recorder's edge mark). */
   let lastShare = bandShare;
+  /**
+   * The recorder's refresh calibration: while true the frame does no work
+   * (nothing updated, nothing drawn), so its intervals are the display's.
+   */
+  let perfPaused = false;
 
   const frame = () => {
     hooks.frameStart(performance.now());
+    if (perfPaused) {
+      hooks.frameEnd(performance.now());
+      return;
+    }
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     // Both sides: a phone's URL bar changes only the height.
@@ -4959,6 +4974,19 @@ void main() {
   /** The drawn ground at a place (m over the ellipsoid), 0 before any relief. */
   const perfGroundM = ({ lat, lng }) =>
     terrain?.plugin.sampleCartographicElevation(lat * DEG, lng * DEG) ?? 0;
+  /**
+   * The OSM map is ready for a held view: off, or fully faded out while
+   * inactive, or fully on with nothing near the camera waiting for its map
+   * and no gated tile left to look at again (its `coverage` walks the drawn
+   * tiles, so it is read only once the cheap counts allow it).
+   */
+  const perfOsmReady = () => {
+    if (!osm || !osmAttached || params.osm !== 1) return true;
+    const s = osm.stats();
+    if (!s.active) return s.on <= 1e-3;
+    if (s.on < 0.999 || s.reevaluateBacklog > 0) return false;
+    return osm.coverage().waiting === 0;
+  };
   if (params.perf === 1) {
     const { createGlobePerf } = await import("./globe-perf.js");
     // The fixed-view sweep's editor-style items (`globe-perf-views.js`).
@@ -5068,12 +5096,41 @@ void main() {
       setEOverride(e) {
         eOverride = e;
       },
+      /** The refresh calibration: the frame does no work while paused. */
+      setPaused(paused) {
+        perfPaused = paused === true;
+      },
       // The fixed-view sweep (`globe-perf-views.js`).
       viewPlace: () => params.url,
-      // The drawn share has reached the altitude's: a view is not settled
-      // while the relief is still being handed the frame (`settled` reads
-      // an undrawn relief as idle).
-      bandAtTarget: () => !terrain || Math.abs(bandShare - bandTarget) < 1e-3,
+      // Street level needs eye mode (read at start, as the controls are).
+      eyeMode: startParams.eye,
+      /**
+       * Which parts of a held view are ready, beside the drawn carriers'
+       * queues (`settled`): `band`, the drawn share at the altitude's (an
+       * undrawn relief reads as idle, so a low view settled before the
+       * relief took the frame); `release`, no carrier's cache release
+       * waiting or draining (it runs `bandReleaseMs` after a move and frees
+       * hundreds of tiles); `city`, no city load or retry running and its
+       * arrival fade done; `osm`, the OSM map at its strength with no tile
+       * near the camera waiting for its map.
+       */
+      viewReadiness() {
+        const cityState = city?.state();
+        return {
+          band: !terrain || Math.abs(bandShare - bandTarget) < 1e-3,
+          release: Object.values(outOfBand).every(
+            (o) => o.since === null || o.done,
+          ),
+          city:
+            !cityState ||
+            (cityState.phase !== "loading" &&
+              (cityState.load === null || cityState.load.ended) &&
+              Math.abs(cityState.shown - cityState.fade) < 1e-3),
+          osm: perfOsmReady(),
+        };
+      },
+      /** The city's deliveries drawn so far (0 without a city). */
+      cityDelivered: () => city?.state().load?.stages.length ?? 0,
       placeView(place, view) {
         const ellipsoid = globe.tiles.ellipsoid;
         if (worldFrame.target === null) setFrameTarget(place);
@@ -5126,6 +5183,9 @@ void main() {
       currentE: () => terrain?.plugin.heightScale ?? null,
     });
     window.__globeLab.perf = perf.api;
+    // For the sweep's smoke: whether item `k` is in the camera's view and
+    // how far its foot stands over the drawn ground now (`globe-perf-items.js`).
+    window.__globeLab.perfItem = (k) => perfItems.probe(k, camera, perfGroundM);
   }
 }
 
