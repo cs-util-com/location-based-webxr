@@ -628,6 +628,34 @@ for (const wide of [false, true]) {
   });
 }
 
+// The visitors' card is where a reader asks whether a visitor needs an
+// app: it says so plainly, in bold, before what the visitor then sees, and
+// its picture's caption says it again.
+test.describe("the visitors' card", () => {
+  test.use({
+    viewport: { width: 390, height: 844 },
+    storageState: FIRST_VISIT,
+  });
+
+  test("says the tour opens in the phone's browser, with no app to install", async ({
+    page,
+  }) => {
+    await openLanding(page);
+    const card = page.getByTestId("landing-card").nth(4);
+    await expect(card.locator(".landing-card-kicker")).toHaveText(
+      "Your visitors",
+    );
+    const first = card.locator(".landing-say").first();
+    await expect(first).toContainText(
+      "No app to install: the tour opens in their phone's browser.",
+    );
+    await expect(first.locator("b")).toHaveText("No app to install:");
+    await expect(card.locator("figcaption")).toContainText(
+      "On their phone: the tour opens in the browser, and station 1 appears on the path.",
+    );
+  });
+});
+
 test.describe("the cards' pictures", () => {
   test.use({
     viewport: { width: 390, height: 844 },

@@ -77,7 +77,7 @@ describe("film story: the parts", () => {
       "Add words and a picture",
       "Along the walk",
       "Hang the code",
-      "Visitors scan it",
+      "Visitors scan it, no app to install",
     ]);
   });
 
@@ -148,6 +148,11 @@ describe("film story: the captions", () => {
     expect(BEAT_CAPTIONS).toHaveLength(8);
     for (const c of BEAT_CAPTIONS) expect(c).toMatch(/^[A-Z].*\.$/);
     expect(BEAT_CAPTIONS[7]).toContain("scan it there to open the tour");
+    // A visitor who expects to need an app stops at the code: the part
+    // where the code is scanned says the tour opens in the phone's own
+    // browser and there is nothing to install.
+    expect(BEAT_CAPTIONS[7]).toMatch(/\bin their phone's browser\b/);
+    expect(BEAT_CAPTIONS[7]).toContain("No app to install.");
     expect(BEAT_CAPTIONS.join(" ")).not.toMatch(
       /position|places the stations|anchor/i,
     );

@@ -58,7 +58,7 @@ function template(qr: string): string {
       <div class="lf-ui">
         <div class="lf-status"><span>10:24</span><span><svg viewBox="0 0 34 12"><path d="M0 9h3v3H0zM5 6h3v6H5zM10 3h3v9h-3zM15 0h3v12h-3z"/><rect x="21" y="1" width="11" height="10" rx="2" fill="none" stroke="#2a2824" stroke-width="1.4"/><rect x="23" y="3" width="6.5" height="6" rx=".8"/></svg></span></div>
         <div class="lf-hud"><span class="lf-hud-x"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8"/></svg></span><span class="lf-pill"></span></div>
-        <div class="lf-chip">Tour found: Mill Park</div>
+        <div class="lf-chip"><b>Tour found: Mill Park</b><span>Opened in the browser</span></div>
         <div class="lf-sheet" data-sheet="place"><p class="lf-hint2">Stand where it happened</p><span class="lf-sbtn" data-btn="place">Place here</span></div>
         <div class="lf-sheet" data-sheet="tools"><div class="lf-tools"><span class="lf-tool lf-sel" data-tool="text"><svg viewBox="0 0 24 24"><path d="M5 6h14M12 6v13M9 19h6"/></svg>Text</span><span class="lf-tool" data-tool="pic"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4 3 2.5 3-3 5 4"/></svg>Picture</span></div></div>
         <div class="lf-sheet" data-sheet="share"><div class="lf-share-row"><svg class="lf-qr" viewBox="0 0 25 25" aria-hidden="true"><use href="#${qr}" width="25" height="25"/></svg><div><b>Mill Park is ready</b><span>Print its code. Hang it where the walk begins.</span></div></div><div class="lf-share-btns"><span class="lf-p" data-btn="print">Print the code</span><span>Copy link</span></div></div>

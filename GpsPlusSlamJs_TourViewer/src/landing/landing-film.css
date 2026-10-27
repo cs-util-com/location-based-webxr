@@ -684,16 +684,23 @@
   top: 4.7em;
   left: 50%;
   display: flex;
-  gap: 0.4em;
+  flex-direction: column;
+  gap: 0.3em;
   align-items: center;
   padding: 0.45em 0.8em;
-  border-radius: 999px;
+  border-radius: 0.8em;
   opacity: 0;
   background: var(--lf-ok);
   color: #fff;
   font: 700 0.86em/1 var(--lf-sans);
   white-space: nowrap;
   transform: translateX(-50%);
+}
+
+/* the found tour's second line: where it opened */
+.lf-chip span {
+  font-size: 0.86em;
+  font-weight: 600;
 }
 
 .lf-sheet {

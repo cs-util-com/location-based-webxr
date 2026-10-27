@@ -196,7 +196,9 @@ its chunk fails, the hero shows its last moment as a drawing).
   `.landing-needs` "Tours run on Android phones with Chrome." and a "Make
   your tour" button, `.landing-begin`), the film's host `#landing-film`,
   the five step cards (`.landing-cards`, each `.landing-card`: kicker,
-  `h3`, two lines, a picture box `.landing-pic` with its dock
+  `h3`, two lines (the visitors' card leads with a bold "No app to
+  install:", the tour opens in the phone's browser, and its caption says it
+  again), a picture box `.landing-pic` with its dock
   `.lc-dock[data-kind]` and, for cards 2 to 5, a pause button over the
   picture `.landing-hold`, authored `hidden`, and "Show again"
   `.landing-again`, invisible but in the layout until the cards' module

@@ -1,6 +1,8 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
+import { useWideFont } from "./wide-font.js";
+
 /**
  * The hero film on a creator's first visit: a model park in eight parts,
  * with a bar to pause, play and jump, and a caption under the picture.
@@ -341,6 +343,91 @@ test.describe("the hero film on a phone", () => {
     await expect(host.locator(".lf-film")).toHaveCount(0);
   });
 });
+
+// The part where a visitor scans the code is where a reader wonders whether
+// a visitor needs an app: the bar, the caption and the drawn phone's screen
+// all say the tour opens in the browser. Every caption must fit the room
+// the box keeps for it (three lines up to 480 px wide, two wider): the box
+// has a fixed height, so a longer one would be cut, not make room. Checked
+// in the system face and in a wide one, down to a 320 px phone.
+for (const viewport of [
+  { width: 320, height: 640 },
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+  { width: 1280, height: 720 },
+]) {
+  for (const wide of [false, true]) {
+    test.describe(`the scanning part at ${String(viewport.width)}x${String(viewport.height)}${wide ? ", in a wide face" : ""}`, () => {
+      test.use({ viewport, storageState: FIRST_VISIT });
+
+      test("says the tour opens in the browser with no app, its chip inside the screen, every caption in its room", async ({
+        page,
+      }) => {
+        if (wide) await useWideFont(page);
+        const host = await openFilm(page);
+        await host.scrollIntoViewIfNeeded();
+
+        const fits = await host.evaluate((root) => {
+          const cap = root.querySelector(".lf-caption");
+          if (!(cap instanceof HTMLElement)) throw new Error("no caption");
+          const shown = cap.textContent;
+          const room = parseFloat(getComputedStyle(cap).minHeight);
+          const over = [...root.querySelectorAll(".lf-captions li")]
+            .map((li) => {
+              cap.textContent = li.textContent;
+              return { text: li.textContent, h: cap.offsetHeight };
+            })
+            .filter((c) => c.h > room + 0.5);
+          cap.textContent = shown;
+          return { room, over };
+        });
+        expect(fits.room).toBeGreaterThan(0);
+        expect(fits.over).toEqual([]);
+
+        const scan = host.locator(".lf-seg").nth(7);
+        await expect(scan).toHaveAccessibleName(
+          "Part 8 of 8: Visitors scan it, no app to install",
+        );
+        await scan.click();
+        await expect(host).toHaveAttribute("data-film-beat", "7");
+        await expect(host.locator(".lf-caption")).toContainText(
+          "in their phone's browser. No app to install.",
+        );
+        // The drawn phone, once the code is found: the chip names the tour
+        // and the browser, inside the screen and above the code's frame.
+        const at = await page.waitForFunction(
+          () => {
+            const q = (/** @type {string} */ s) =>
+              document.querySelector(`#landing-film ${s}`);
+            const chip = q(".lf-chip");
+            const screen = q(".lf-mscreen");
+            const frame = q(".lf-scanbox");
+            if (!chip || !screen || !frame) return null;
+            if (Number(getComputedStyle(chip).opacity) < 0.999) return null;
+            const r = (/** @type {Element} */ e) => e.getBoundingClientRect();
+            const c = r(chip);
+            const s = r(screen);
+            return {
+              text: chip.textContent,
+              inside:
+                c.left >= s.left - 0.5 &&
+                c.right <= s.right + 0.5 &&
+                c.top >= s.top - 0.5,
+              clear: c.bottom <= r(frame).top + 0.5,
+            };
+          },
+          null,
+          { polling: "raf", timeout: 10000 },
+        );
+        expect(await at.jsonValue()).toEqual({
+          text: "Tour found: Mill ParkOpened in the browser",
+          inside: true,
+          clear: true,
+        });
+      });
+    });
+  }
+}
 
 // The box is reserved before the film arrives: the page's still stands
 // where the film's picture will be, at its proportion, and the box keeps

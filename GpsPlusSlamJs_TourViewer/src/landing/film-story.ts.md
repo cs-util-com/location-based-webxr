@@ -27,13 +27,18 @@ bar title and its caption.
 5. Along the walk: the person walks on, the route draws behind them.
 6. Hang the code: printed and hung where the walk begins.
 7. Visitors scan it, then walk the finished route (the camera moves to the
-   overview inside the part, at 3.3 s).
+   overview inside the part, at 3.3 s). Its bar name and caption say that
+   the tour opens in the phone's browser and there is no app to install:
+   this is where a reader wonders whether a visitor needs one.
 
 ## Invariants
 
 - Pure and deterministic; numbers match the prototype exactly (the port was
   checked value by value against it).
 - The captions claim only what the film shows; the code opens the tour.
+- Every caption fits the room the film's box keeps for it (three lines up
+  to 480 px wide, two wider), down to 320 px and in a wide face; pinned by
+  `landing-film.spec.js` ("the scanning part").
 
 ## Tests
 

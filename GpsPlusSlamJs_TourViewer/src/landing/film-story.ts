@@ -376,9 +376,9 @@ const BEATS: readonly Beat[] = [
       { atS: 0, view: "poster" },
       { atS: 3.3, view: "over" },
     ],
-    title: "Visitors scan it",
+    title: "Visitors scan it, no app to install",
     caption:
-      "Visitors scan it there to open the tour. Your stations appear, one after another.",
+      "Visitors scan it there to open the tour in their phone's browser. No app to install.",
     apply(t, s, u) {
       full(s);
       s.view = t < 3.3 ? "poster" : "over";
