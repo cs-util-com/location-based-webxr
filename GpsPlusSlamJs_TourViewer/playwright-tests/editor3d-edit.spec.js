@@ -838,10 +838,11 @@ test("a code laid flat in the top view is drawn 12 px on screen from high above,
     for (const m of [12, 300, 1000]) {
       const now = await at(m);
       const label = `${size.width}x${size.height} at ${m} m`;
-      // Relative tolerances (r955 review #5): the canvas's height can be
-      // a half pixel off the box read here, an error that grows with the
-      // code's size on screen. At 12 px they are the 0.1 / 0.3 / 0.2 px
-      // this test first allowed.
+      // Only the match against the wanted size is relative (0.3 px per
+      // 12 px): the canvas's height can be a half pixel off the box read
+      // here, an error that grows with the code's size on screen. The floor
+      // and the far ceiling compare with SCREEN_PX itself, so written as
+      // fractions of it they are still 0.1 px under and 0.2 px over.
       expect(now.px, label).toBeGreaterThan(SCREEN_PX * (1 - 0.1 / 12));
       expect(Math.abs(now.px - now.wantPx) / now.wantPx, label).toBeLessThan(
         0.3 / 12,

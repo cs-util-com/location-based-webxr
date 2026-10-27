@@ -22,6 +22,10 @@ counter beside the field.
 - `wirePinTextCounter(field, out): { update() }` - shows the count in
   `out` at once and on every `input`, with a `data-over` attribute while
   the text is too long; `update()` after the page sets the value itself.
+  `out` gets `aria-live="off"`: an `<output>` is a live region by
+  default and could be announced at every keystroke, while every page
+  names the counter from its field (`aria-describedby`), so it is read as
+  the field is focused.
 - `textCounterLine(text, max)` / `wireTextCounter(field, out, max)` -
   the same for any text against its cap `max`, by the same count (the
   editor inspector's block fields, `editor/block-fields.ts`, B2c); the
@@ -51,4 +55,4 @@ if (pinTextTooLong(input.value)) showRefusal(PIN_TEXT_TOO_LONG);
   units (40 emoji fit, 41 do not); whitespace collapsed; the counter's
   line; any text counted exactly as the format counts it (property); the
   wired counter at once, while typing and on `update()`, marked while
-  over.
+  over, and never a live region.

@@ -51,12 +51,16 @@ export interface PinTextField {
 export interface PinTextCounterOutput {
   textContent: string | null;
   toggleAttribute(name: string, force: boolean): boolean;
+  setAttribute(name: string, value: string): void;
 }
 
 /**
  * Show `field`'s count in `out` as it is typed, marked `data-over` while
  * the text is too long. `update()` shows it now (after the page set the
- * field's value itself).
+ * field's value itself). `out` is not a live region (`aria-live="off"`;
+ * an <output> is one by default and could be announced at every
+ * keystroke): the field names it with `aria-describedby`, so it is read
+ * as the field is focused.
  */
 export function wirePinTextCounter(
   field: PinTextField,
@@ -76,6 +80,7 @@ export function wireTextCounter(
     out.textContent = textCounterLine(field.value, max);
     out.toggleAttribute("data-over", tourTextCount(field.value) > max);
   };
+  out.setAttribute("aria-live", "off");
   field.addEventListener("input", update);
   update();
   return { update };

@@ -132,6 +132,7 @@ describe("the counter", () => {
         marks.push([name, force]);
         return force;
       },
+      setAttribute: () => undefined,
     };
     wireTextCounter(field, out, 3);
     expect(out.textContent).toBe("3 / 3");

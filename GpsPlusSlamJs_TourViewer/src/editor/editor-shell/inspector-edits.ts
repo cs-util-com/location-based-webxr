@@ -169,7 +169,6 @@ function itemEdit(
   if (blockFields(item).some((f) => f.name === field)) {
     return { kind: "block", id: item.id, field, value };
   }
-  if (field === "title") return NONE;
   const axis = AXIS[field];
   const known =
     axis !== undefined ||

@@ -107,6 +107,41 @@ describe("inspectorEdit", () => {
     expect(edit("model-1", "caption", "x")).toEqual({ kind: "none" });
   });
 
+  // Why: every kind of block in the 3D view has a title field (a short
+  // text's is its text, a picture's and a model's a block field), so a
+  // typed title is never dropped as a field the kind lacks.
+  it("writes a typed title for every kind of block", () => {
+    const [first] = STATIONS;
+    if (first === undefined) throw new Error("no station");
+    const withPicture = [
+      {
+        ...first,
+        blocks: [
+          ...first.blocks,
+          {
+            id: "photo-1",
+            kind: "picture",
+            view: "placed",
+            asset: "photo",
+            createdAtIso: AT,
+            pose: { position: [1, 1, 1], rotation: [0, 0, 0, 1] },
+          },
+        ],
+      },
+    ] as unknown as TourStation[];
+    const titled = (selected: string) =>
+      inspectorEdit({
+        selected,
+        stations: withPicture,
+        origin: ORIGIN,
+        field: "title",
+        value: "Named",
+      }).kind;
+    expect(titled("pin-1")).toBe("text");
+    expect(titled("model-1")).toBe("block");
+    expect(titled("photo-1")).toBe("block");
+  });
+
   // Why: the typed metres must be where the 3D view then draws the
   // station, measured from the same origin; its height and turn stay.
   it("moves a station to the east and north typed, its height and heading kept", () => {

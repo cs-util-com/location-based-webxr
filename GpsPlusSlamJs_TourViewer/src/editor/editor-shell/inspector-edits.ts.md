@@ -94,7 +94,7 @@ groundEdit({
 
 ## Tests
 
-`inspector-edits.test.ts`: a station's title, description and radius; a pin's text and no model caption; a station moved to the typed east and north, height and heading kept; the turn to a typed heading; an item's typed offset; a typed height as the altitude alone; a model's size; a value that is no number (hex, exponents, thousands separators among them) and the plain decimals that are, an unchanged one; a selection the tour lacks, a code, an unknown field. `groundEdit`: an item once its ground has loaded, a station's items as one edit, a station's anchor with its turn kept, nothing for what stands on the ground already. End to end:
+`inspector-edits.test.ts`: a station's title, description and radius; a pin's text and no model caption; a typed title written for every kind of block (so no "title" falls through as a field the kind lacks); a station moved to the typed east and north, height and heading kept; the turn to a typed heading; an item's typed offset; a typed height as the altitude alone; a model's size; a value that is no number (hex, exponents, thousands separators among them) and the plain decimals that are, an unchanged one; a selection the tour lacks, a code, an unknown field. `groundEdit`: an item once its ground has loaded, a station's items as one edit, a station's anchor with its turn kept, nothing for what stands on the ground already. End to end:
 `playwright-tests/editor3d-inspector.spec.js`. A typed height of items
 outside a lowered circle keeping their station and place, through the
 reducer: `keeps-home.property.test.ts`.

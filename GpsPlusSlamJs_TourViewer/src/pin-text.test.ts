@@ -69,6 +69,7 @@ describe("wirePinTextCounter", () => {
       },
     };
     const attrs = new Set<string>();
+    const set = new Map<string, string>();
     const out = {
       textContent: null as string | null,
       toggleAttribute(name: string, force: boolean) {
@@ -76,8 +77,11 @@ describe("wirePinTextCounter", () => {
         else attrs.delete(name);
         return force;
       },
+      setAttribute(name: string, value: string) {
+        set.set(name, value);
+      },
     };
-    return { field, out, attrs, type: () => handler() };
+    return { field, out, attrs, set, type: () => handler() };
   }
 
   it("shows the count at once and as it is typed, marked while too long", () => {
@@ -93,5 +97,15 @@ describe("wirePinTextCounter", () => {
     counter.update();
     expect(out.textContent).toBe("5 / 40");
     expect(attrs.has("data-over")).toBe(false);
+  });
+
+  // Why: an <output> is a live region by default, so a screen reader
+  // could announce the count at every keystroke. The field names its
+  // count (aria-describedby), which is read when the field is focused, so
+  // the count itself is not live.
+  it("is not a live region: the count is read with its field", () => {
+    const { field, out, set } = fakes("Gate");
+    wirePinTextCounter(field, out);
+    expect(set.get("aria-live")).toBe("off");
   });
 });
