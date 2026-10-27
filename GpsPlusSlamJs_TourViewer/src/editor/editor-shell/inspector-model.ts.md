@@ -17,7 +17,9 @@ origin?, groundAt? })` ->
     (its own title to edit, empty for an untitled one), description,
     `imagePath`, `images` (the station's photos, each its image asset's
     path, then the tour's other image assets - a captured photo's own
-    asset is its photo's, never listed twice - each `{ id, path, label }`) and
+    asset is its photo's, never listed twice - each `{ id, path, label }`,
+    `id` the ASSET id a station's `image` names: a picture is offered by
+    the image it shows, and each asset once, B2a review 3) and
     `imageId` (the one its card shows, or null), `foundRadiusM`,
     `activateRadiusM`, `outside` (how many of its items stand outside
     the found circle), `offGround` (how many items stand more than

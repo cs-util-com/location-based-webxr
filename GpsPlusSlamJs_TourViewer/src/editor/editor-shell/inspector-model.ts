@@ -226,6 +226,14 @@ function cardImages(
   assets: readonly TourAsset[],
   owned: ReadonlySet<string>,
 ): { images: InspectorImage[]; imageId: string | null } {
+  // Offered by the ASSET a picture shows (`i.image`), which is what a
+  // station's `image` names, and each asset once (B2a review 3).
+  const listed = new Set<string>();
+  const once = (image: InspectorImage): InspectorImage[] => {
+    if (listed.has(image.id)) return [];
+    listed.add(image.id);
+    return [image];
+  };
   const images: InspectorImage[] = [
     ...worldBlocks(station).flatMap((i) => {
       if (i.kind !== "picture") return [];
@@ -234,11 +242,11 @@ function cardImages(
       )?.path;
       return path === undefined
         ? []
-        : [{ id: i.id, path, label: photoLabel(i.caption) }];
+        : once({ id: i.image, path, label: photoLabel(i.caption) });
     }),
     ...assets.flatMap((a) =>
       a.kind === "image" && !owned.has(a.id)
-        ? [{ id: a.id, path: a.path, label: "Tour image" }]
+        ? once({ id: a.id, path: a.path, label: "Tour image" })
         : [],
     ),
   ];
