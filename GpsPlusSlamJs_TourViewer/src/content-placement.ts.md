@@ -149,3 +149,14 @@ not drawn; a picture's file read from the tour's assets), no further decode once
 property that the local poses
 taken from the settled geo reproduce each object's direct AR pose within
 the stated bound, swept over zero distances of 0, 100, 1000 and 5000 m.
+
+## Given blocks (B2b)
+
+- `renderStationBlocks(station, blocks, deps)`: `blocks` of the station
+  drawn as `renderTourStation` draws its free blocks (a group at the
+  station's geo pose, each block at its local pose). `renderTourStation`
+  is `renderStationBlocks(station, tourFreeBlocks(station), deps)`. The
+  visitor draws each reached story world block this way, one part per
+  block.
+- Tests: `content-placement.test.ts` "draws exactly the given blocks of a
+  station, in its frame".

@@ -218,6 +218,36 @@ describe("stationAssetIds and the world (B2b)", () => {
     };
     expect(stationAssetIds(s)).toEqual(["knight", "arch"]);
   });
+
+  // Why (B2b step 2): a placed model a story step reaches stands in the
+  // world from then on, so its file is read ahead like a staged one's.
+  it("reads a placed story model's file, as a staged one's", () => {
+    const POSE = {
+      position: [0, 0, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    };
+    const s: TourStation = {
+      ...station("gate", []),
+      blocks: [
+        {
+          id: "m",
+          kind: "model",
+          view: "placed",
+          asset: "arch",
+          sizeM: 2,
+          pose: POSE,
+        },
+      ],
+      steps: [
+        {
+          id: "s-m",
+          action: { kind: "show", block: "m" },
+          advance: { mode: "tap" },
+        },
+      ],
+    };
+    expect(stationAssetIds(s)).toEqual(["arch"]);
+  });
 });
 
 describe("decodeDivisor", () => {

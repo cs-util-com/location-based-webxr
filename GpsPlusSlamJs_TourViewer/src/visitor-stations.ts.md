@@ -223,3 +223,11 @@ hooks.tickStations = stations.tick;
   `playwright-tests/visitor-walk-radar.spec.js` (the pill's text and
   side, the HUD pair, the cues) and `visitor-walk-layout.spec.js` (the
   pill's place).
+
+## Shown story blocks (B2b)
+
+- The story panel's `onBlockShown` goes to `guide.blockShown`, never to
+  the store directly: the story's first step is reached inside the guide
+  call that finds the station, which at the visitor's first tick there is
+  also the call that starts the walk, so a direct dispatch would meet no
+  walk and be lost (`station-guide.walk-store.test.ts` pins both ways).

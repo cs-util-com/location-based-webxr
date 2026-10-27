@@ -112,6 +112,7 @@ function harness(
       image: Blob,
       onWaiting?: () => void,
     ) => Promise<void>;
+    onBlockShown?: (stationId: string, blockId: string) => void;
   } = {},
 ) {
   const { dom, lastChoices } = fakeDom();
@@ -164,6 +165,9 @@ function harness(
     onChange: () => {
       changes.count += 1;
     },
+    ...(overrides.onBlockShown === undefined
+      ? {}
+      : { onBlockShown: overrides.onBlockShown }),
   });
   return { view, dom, timers, ended, urls, audio, stage, lastChoices, changes };
 }
@@ -625,6 +629,81 @@ describe("createSceneView", () => {
     expect(h.stage.clear).toHaveBeenCalled();
     h.view.continueTapped();
     expect(h.ended).toEqual([]);
+  });
+});
+
+describe("a story's world blocks (B2b)", () => {
+  // Why (station blocks plan B2b step 2, B-Q4): a story block with a
+  // world view (a pin, a plane, a placed model) stands in the world from
+  // the moment its step is reached, for the rest of the visit. The view
+  // is where a step is reached, so it says which world block it reached -
+  // after a tap, after a choice - and never a card or a stage block,
+  // whose lifetimes are the panel's and the stage's.
+  it("says each world block a step reaches, after a tap and after a choice, and no card or stage block", () => {
+    const reached: string[] = [];
+    const h = harness({
+      onBlockShown: (stationId, blockId) => {
+        reached.push(`${stationId}:${blockId}`);
+      },
+    });
+    const sign = showing("sign", {
+      kind: "shortText",
+      view: "pin",
+      caption: "The old sign",
+    });
+    const card = tap("words", "Some words");
+    const figure = showing("figure", {
+      kind: "character",
+      view: "stage",
+      name: "K",
+      image: "knight",
+      caption: "Halt",
+    });
+    const plane = showing("plane", {
+      kind: "picture",
+      view: "plane",
+      image: "knight",
+      widthM: 1,
+    });
+    const arch = showing("arch", {
+      kind: "model",
+      view: "placed",
+      asset: "arch",
+      sizeM: 2,
+    });
+    const blockOf = (step: TourStep) =>
+      step.action.kind === "show" ? step.action.block : "";
+    h.view.offer(
+      station("s", [
+        sign,
+        card,
+        figure,
+        {
+          id: "c",
+          action: {
+            kind: "choice",
+            prompt: "Which?",
+            options: [
+              { id: "p", label: "Picture", goto: "plane" },
+              { id: "m", label: "Model", goto: "arch" },
+            ],
+          },
+          advance: { mode: "tap" },
+        },
+        plane,
+        arch,
+      ]),
+    );
+    expect(reached).toEqual([`s:${blockOf(sign)}`]);
+    h.view.continueTapped(); // the card
+    h.view.continueTapped(); // the stage figure
+    expect(reached).toEqual([`s:${blockOf(sign)}`]);
+    h.view.continueTapped(); // the choice
+    h.lastChoices()[1]!.click(); // the model
+    expect(reached).toEqual([`s:${blockOf(sign)}`, `s:${blockOf(arch)}`]);
+    h.view.continueTapped(); // the end
+    expect(h.ended).toEqual(["s"]);
+    expect(reached).toHaveLength(2);
   });
 });
 

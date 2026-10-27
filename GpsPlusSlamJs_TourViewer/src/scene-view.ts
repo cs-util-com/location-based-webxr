@@ -28,6 +28,7 @@ import {
   playableStepCount,
   type ScenePlayer,
 } from "./scene-player.js";
+import { worldBlockReachedBy } from "./shown-blocks.js";
 import { stationTitle } from "./station-run.js";
 
 /** The story panel's elements, all inside `#ar-root` (the DOM overlay). */
@@ -93,6 +94,11 @@ export interface SceneViewDeps {
   /** The story started, moved to another step, ended or stopped, or the
    *  queue changed: what the sheet draws of it (`progress`) may differ. */
   onChange?(): void;
+  /** A step reached a block with a world view (a pin, a plane, a placed
+   *  model): it stands in the station's world from now on (station
+   *  blocks plan B2b, `shown-blocks.ts`). Its words show in the card as
+   *  before. */
+  onBlockShown?(stationId: string, blockId: string): void;
 }
 
 /** Where a choice-free story is (the story card's dots). */
@@ -259,8 +265,8 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   /** Show one `show` step's block, as the step kinds of earlier versions
    *  showed it: its words at once, its media as they load. A `stage`
    *  figure or model stands at the station (with its voice); every other view shows in
-   *  the card (a world view's own drawing comes with its station's free
-   *  blocks, never from a step). */
+   *  the card; a world view (pin, plane, placed model) also stands in the
+   *  station's world from this step on (`onBlockShown`, B2b). */
   function showBlock(station: TourStation, block: TourBlock): void {
     switch (block.kind) {
       case "shortText":
@@ -360,6 +366,8 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     dom.speaker.hidden = block?.kind !== "character";
     dom.speaker.textContent = block?.kind === "character" ? block.name : "";
     dom.continueButton.hidden = step.action.kind === "choice";
+    const reached = worldBlockReachedBy(story.station, step);
+    if (reached !== null) deps.onBlockShown?.(story.station.id, reached.id);
     showAction(story.station, step.action);
     armTimer(step);
     deps.onChange?.();

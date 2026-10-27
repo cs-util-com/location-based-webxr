@@ -486,3 +486,17 @@ unknown-code line, the no-detector placement, and the per-entry
 re-placement. The pure
 pieces: `qr-viewer-mode.test.ts`, `image-planes.test.ts`,
 `tour-flow.test.ts` (`isPlacementReady`).
+
+## Reached story blocks (B2b)
+
+- `syncContent` (and the end of `tryPlaceContent`) gives each reached
+  story world block (`selectShownBlocks` through `reachedWorldBlocks`)
+  one part of its station's side-table entry, key `story:<blockId>`,
+  drawn by `renderStationBlocks` with the same renderer deps as the
+  station's `items`; a block no longer reached (a new walk) has its part
+  removed. The table is told only changes, and a new table (a new AR
+  entry) is told again.
+- A tour whose stations hold no free block but a story world block is
+  placed too (the early return also asks `hasStoryWorldBlocks`).
+- Tests: `viewer-placement-story-blocks.test.ts`; the e2e
+  `story-blocks.spec.js` (a pin the story shows stays after its end).

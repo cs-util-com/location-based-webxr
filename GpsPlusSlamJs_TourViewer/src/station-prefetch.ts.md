@@ -32,8 +32,9 @@ far the visitor is from each offered station. Plan:
     closed (every other call checks too).
 - `stationAssetIds(station)` - the asset ids a story reads: the blocks
   its `show` steps name, in step order, once each (pictures, sounds,
-  voices; a figure or a model only in its `stage` view, the one the story
-  draws; never a video nor its poster, K4 review R3), then the files of
+  voices; a figure only in its `stage` view, a model in its `stage` or
+  `placed` view - a reached placed model stands in the world from its
+  step on, B2b; never a video nor its poster, K4 review R3), then the files of
   the station's free PLACED models (B2b, G2 follow-up 9: drawn with the
   station, so read ahead with it). Free pictures are read on their own.
 - `decodeDivisor(size)` - the divisor that brings a figure of this size
@@ -115,7 +116,8 @@ const blob = await prefetch.load(asset.path); // a hit when it was prefetched
   divisor, the
   radius, one read at a time, joining and hitting, a story-only read not
   kept, a failed read not kept, never a video nor its poster (R3), a
-  figure or a model only in its stage view and a voice in either, offline
+  figure only in its stage view, a model in its stage or placed view
+  (B2b) and a voice in either, offline
   not retried for
   the same station (R4), a shared asset held until both stations are done
   (R11), kept across a session end and dropped at a tour close (R15), the

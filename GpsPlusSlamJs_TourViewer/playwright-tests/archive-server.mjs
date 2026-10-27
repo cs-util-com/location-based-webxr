@@ -42,6 +42,9 @@
  *   holds, beside its pin, a captured photo (its own image asset), a
  *   picture of the tour's knight image in the world and a placed model of
  *   the arch: every kind of free block a tour can stand in the world.
+ * - `/ranges-ok/story-blocks-tour.zip` - the stations tour whose gate
+ *   story first shows a pin in the world (B2b): it stands from that step
+ *   on, for the rest of the visit.
  * - `/ranges-ok/v3-tour.zip` - a tour in the earlier format 3 (a station
  *   holding a pin as an item), which the app refuses.
  * - `/ranges-ok/walk-tour.zip` (any order) and
@@ -224,7 +227,11 @@ const DEG_PER_M_LON = 1.32966e-5;
  * `worldBlocks: true`: the gate also stands a captured photo, a picture
  * of the knight image and a placed arch in the world.
  */
-async function buildStationsZip({ withCode = true, worldBlocks = false } = {}) {
+async function buildStationsZip({
+  withCode = true,
+  worldBlocks = false,
+  storyBlocks = false,
+} = {}) {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
   await writer.add("session.json", new TextReader('{"kind":"e2e-stations"}'));
   if (withCode)
@@ -290,6 +297,20 @@ async function buildStationsZip({ withCode = true, worldBlocks = false } = {}) {
         },
       ]
     : [];
+  /** The gate's story blocks in the world (`storyBlocks`, station
+   *  blocks plan B2b): a pin its first step shows, which stands from then
+   *  on for the rest of the visit. */
+  const gateStory = storyBlocks
+    ? [
+        {
+          id: "gate-story-sign",
+          kind: "shortText",
+          view: "pin",
+          caption: "The old sign",
+          pose: { position: [2, 1.5, 1], rotation: [0, 0, 0, 1] },
+        },
+      ]
+    : [];
   const geo = (north, east) => ({
     lat: 47.5 + north * DEG_PER_M_LAT,
     lon: 8.7 + east * DEG_PER_M_LON,
@@ -326,6 +347,7 @@ async function buildStationsZip({ withCode = true, worldBlocks = false } = {}) {
                 pose: { position: [0, 1.5, 1], rotation: [0, 0, 0, 1] },
               }),
               ...gateWorld,
+              ...gateStory,
               {
                 id: "sir-kay",
                 kind: "character",
@@ -340,6 +362,7 @@ async function buildStationsZip({ withCode = true, worldBlocks = false } = {}) {
               textCard("welcome-text", "The gate", "Welcome inside."),
             ],
             steps: [
+              ...(storyBlocks ? [showStep("sign", "gate-story-sign")] : []),
               showStep("knight", "sir-kay"),
               {
                 id: "ask",
@@ -803,6 +826,7 @@ const recordingZipBytes = await buildRecordingZip();
 const stationsZipBytes = await buildStationsZip();
 const stationsNoCodeZipBytes = await buildStationsZip({ withCode: false });
 const blocksZipBytes = await buildStationsZip({ worldBlocks: true });
+const storyBlocksZipBytes = await buildStationsZip({ storyBlocks: true });
 const v3ZipBytes = await buildV3Zip();
 const walkZipBytes = await buildWalkZip("any");
 const walkFixedZipBytes = await buildWalkZip("fixed");
@@ -991,6 +1015,16 @@ createServer((req, res) => {
       "ranges-ok",
       stationsNoCodeZipBytes,
       '"e2e-stations-nc-v1"',
+    );
+    return;
+  }
+  if (url.pathname === "/ranges-ok/story-blocks-tour.zip") {
+    handleArchive(
+      req,
+      res,
+      "ranges-ok",
+      storyBlocksZipBytes,
+      '"e2e-story-blocks-v1"',
     );
     return;
   }

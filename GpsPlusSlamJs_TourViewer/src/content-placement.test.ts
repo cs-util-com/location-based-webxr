@@ -32,6 +32,7 @@ import {
   objectPoseNue,
   renderTourObjects,
   renderTourStation,
+  renderStationBlocks,
   rotationFromHeading,
 } from "./content-placement";
 import { contentSegment } from "./tour-flow";
@@ -537,6 +538,45 @@ describe("renderTourStation", () => {
     expect(quiet.count).toBe(0);
     expect(quiet.skipped).toEqual([]);
     quiet.dispose();
+  });
+
+  // Why (B2b step 2): a story block its story reached stands with the
+  // station's own, drawn alone in the station's frame - the free blocks
+  // are another part, so only the given blocks may be drawn here.
+  it("draws exactly the given blocks of a station, in its frame", async () => {
+    const scene = new Group();
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 5, 0, 5, yaw(0));
+    const pose = {
+      position: [1, 1.5, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    };
+    const sign = {
+      id: "sign",
+      kind: "shortText" as const,
+      view: "pin" as const,
+      caption: "Old sign",
+      pose,
+    };
+    const free = { ...sign, id: "free", caption: "Free" };
+    const rendered = await renderStationBlocks(
+      stationAt("s", stationGeo, [free, sign]),
+      [sign],
+      {
+        assets: [],
+        scene,
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+      },
+    );
+    const ids: string[] = [];
+    rendered.root.traverse((o) => {
+      const id = o.userData["objectId"];
+      if (typeof id === "string") ids.push(id);
+    });
+    expect(ids).toEqual(["sign"]);
+    expect(rendered.root.parent).toBe(scene);
+    rendered.dispose();
   });
 
   it("places each station as a group at its pose, with its pins and photos as children at their local poses", async () => {

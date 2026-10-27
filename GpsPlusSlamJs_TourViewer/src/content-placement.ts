@@ -276,8 +276,22 @@ export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
  * in the station's: for a zero within a kilometre the two agree to well
  * under a centimetre (`content-placement.test.ts`, swept).
  */
-export async function renderTourStation(
+export function renderTourStation(
   station: Pick<TourStation, "geo" | "blocks" | "steps">,
+  deps: TourStationRendererDeps,
+): Promise<RenderedTourObjects> {
+  return renderStationBlocks(station, tourFreeBlocks(station), deps);
+}
+
+/**
+ * `blocks` of `station` as `renderTourStation` draws its free blocks: a
+ * group at the station's geo pose, each block at its local pose. The
+ * visitor draws a story block its story reached this way (station blocks
+ * plan B2b, `shown-blocks.ts`).
+ */
+export async function renderStationBlocks(
+  station: Pick<TourStation, "geo">,
+  blocks: readonly TourBlock[],
   deps: TourStationRendererDeps,
 ): Promise<RenderedTourObjects> {
   const frame = new Group();
@@ -286,7 +300,7 @@ export async function renderTourStation(
   frame.quaternion.set(...at.rotationNue);
   const paths = new Map(deps.assets.map((a) => [a.id, a.path]));
   const part = await renderContent(
-    tourFreeBlocks(station).map((block) => ({
+    blocks.map((block) => ({
       drawn: drawnBlock(block, paths),
       pose: {
         positionNue: block.pose.position,

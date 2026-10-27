@@ -114,6 +114,12 @@ export interface VisitorWalkState {
    *  any-order tour; cleared when it is found or skipped, and with the
    *  walk. Kept across AR entries (it is progress). */
   readonly chosenId: string | null;
+  /** Per station, the story blocks with a world view a `show` step reached,
+   *  in the order reached (station blocks plan B2b, B-Q4): they stand in
+   *  the world for the rest of the visit, kept with the walk (the
+   *  lifetime of `done`): a story's end, a stop and a new AR entry keep
+   *  them, a new walk starts without them (`shown-blocks.ts`). */
+  readonly shownBlocks: Readonly<Record<string, readonly string[]>>;
 }
 
 /** The sheet's two states. */
@@ -131,6 +137,7 @@ const initialVisitorWalkState: VisitorWalkState = {
   chooser: false,
   noGuess: false,
   chosenId: null,
+  shownBlocks: {},
 };
 
 /** A new walk (another tour, or the first): everything starts anew. */
@@ -178,6 +185,12 @@ export const noGuessSet = createAction<boolean>("visitorWalk/noGuessSet");
 export const targetChosen = createAction<string | null>(
   "visitorWalk/targetChosen",
 );
+/** A story step reached a block with a world view (`shown-blocks.ts`):
+ *  it stands in the station's world from now on. */
+export const blockShown = createAction<{
+  readonly stationId: string;
+  readonly blockId: string;
+}>("visitorWalk/blockShown");
 /** One guide call's changes, applied in order as one dispatch. */
 export const walkBatched = createAction<readonly UnknownAction[]>(
   "visitorWalk/walkBatched",
@@ -283,6 +296,15 @@ export function visitorWalkReducer(
     return initialVisitorWalkState;
   }
   if (walkStepped.match(action)) return stepped(state, action.payload);
+  if (blockShown.match(action)) {
+    const { stationId, blockId } = action.payload;
+    const shown = state.shownBlocks[stationId] ?? [];
+    if (state.progress === null || shown.includes(blockId)) return state;
+    return {
+      ...state,
+      shownBlocks: { ...state.shownBlocks, [stationId]: [...shown, blockId] },
+    };
+  }
   if (skipTaken.match(action)) {
     const { id, atMs } = action.payload;
     return {
@@ -462,6 +484,17 @@ export function walkChoiceOffered(walk: VisitorWalkState): boolean {
 /** The open tour's walk; null: no tour, or none placed yet. */
 export function selectWalkProgress(state: WithWalk): WalkProgress | null {
   return state.visitorWalk.progress;
+}
+
+const NONE_SHOWN: readonly string[] = [];
+
+/** The story world blocks a step of `stationId`'s story reached, in the
+ *  order reached (`blockShown`); none for a station with none. */
+export function selectShownBlocks(
+  state: WithWalk,
+  stationId: string,
+): readonly string[] {
+  return state.visitorWalk.shownBlocks[stationId] ?? NONE_SHOWN;
 }
 
 /** The sheet: its peek, or the list pulled up. */

@@ -126,3 +126,14 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
 - Tests: "a held step stops its timer; released, it runs again from the
   start" and "a hold set with no story is dropped when the next story
   starts" in `scene-view.test.ts`.
+
+## World blocks a step reaches (B2b)
+
+- `onBlockShown?(stationId, blockId)`: called from the step's render when
+  a `show` step reaches a block with a world view (`worldBlockReachedBy`),
+  after a tap, a timer or a choice alike. The card still shows its words;
+  the app keeps the block standing in the world from then on. Never for a
+  card or a stage block.
+- Tests: `scene-view.test.ts` "a story's world blocks (B2b)";
+  `shown-blocks.property.test.ts` drives this view under any action
+  sequence.

@@ -358,6 +358,11 @@ export function wireVisitorStations(deps: {
     onChange: () => {
       calls.request();
     },
+    // A reached world block stands from now on (B2b): kept with the
+    // walk, through the guide's call (it may be the one starting the walk).
+    onBlockShown: (stationId, blockId) => {
+      guide.blockShown(stationId, blockId);
+    },
   });
   /** The open tour's stations as the guide reads them. */
   function guideTour(): StationTour | null {

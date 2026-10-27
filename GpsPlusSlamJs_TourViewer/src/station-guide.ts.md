@@ -748,3 +748,12 @@ undo, note }`: the line's station, how the position stands
   could not tell when a complete tour's wait ends. On the golden's
   streams that is most ticks: presence holds from a station until the
   next is entered.
+
+## Shown story blocks (B2b)
+
+- `blockShown(stationId, blockId)`: a story step reached a world block;
+  one `visitorWalk/blockShown` change in the current call's batch, so it
+  lands after a walk start in the same call. Nothing with no walk.
+- Tests: `station-guide.walk-store.test.ts` "keeps a block shown by the
+  story the walk's first call starts" and its counterpart "loses a block
+  dispatched straight to the store ...".

@@ -169,6 +169,7 @@ import {
   targetChosen,
   visitorWalkReducer,
   walkBatched,
+  blockShown as blockShownAction,
   walkChoiceOffered,
   walkCleared,
   walkFocus,
@@ -426,6 +427,11 @@ export interface StationGuide {
   codeLocked(): void;
   /** A station's story played to its end. */
   storyEnded(stationId: string): void;
+  /** A story step of `stationId` reached a block with a world view
+   *  (station blocks plan B2b, `shown-blocks.ts`): kept with the walk.
+   *  It joins the current call's batch, so a block the story shows in the
+   *  call that starts the walk is kept after that start. */
+  blockShown(stationId: string, blockId: string): void;
   /** The skip button or the story card's end control (`control`,
    *  default the skip button): does the action it carries, for the
    *  station it names (R14). */
@@ -1723,6 +1729,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         handle(run.finish(stationId, deps.now()));
         if (walk().note !== null) change(noteCleared());
         render();
+      });
+    },
+    blockShown(stationId, blockId) {
+      inCall(() => {
+        if (walk().progress !== null) {
+          change(blockShownAction({ stationId, blockId }));
+        }
       });
     },
     skipTapped(control) {
