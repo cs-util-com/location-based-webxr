@@ -76,7 +76,9 @@ timeline.
   flat drawing on the same timeline and bar, reported once.
 - Reduced motion: opens on the last picture with every caption as a list
   and a play button; the film then grows below its box (the stage keeps
-  its height) instead of shrinking the picture.
+  its height) instead of shrinking the picture. A measurement of that
+  height under 2 px (taken mid-resize) keeps the last good one, so the
+  stage is never left 0 px tall.
 - `?debug=1`: a readout over the picture (`film-debug.ts`): the renderer,
   its pixel ratio and quality, the scene's build time, the film's time,
   the last frames' percentiles (`utils/frame-times`) and the whole run's
@@ -112,7 +114,8 @@ const film = mountLandingFilm(hostEl, {
 ## Tests
 
 `landing-film.test.ts` (jsdom, a fake frame queue and a fake scene): no
-frames while idle, plays once, reduced motion, the AR handoff, the
+frames while idle, plays once, reduced motion (and the list stage keeping
+its last good height), the AR handoff, the
 fallbacks, no renderer during a live AR session, the host attributes and
 event, `data-playing` (false while it plays mostly out of view), destroy, the
 drawing kept while the scene compiles (and a scene ended meanwhile never

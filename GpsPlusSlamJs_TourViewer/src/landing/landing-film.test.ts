@@ -99,6 +99,7 @@ function setup(
     webgl?: boolean;
     sceneThrows?: boolean;
     prepare?: () => Promise<void>;
+    size?: () => { w: number; h: number };
   } = {},
 ) {
   const host = document.createElement("div");
@@ -106,6 +107,7 @@ function setup(
   document.body.append(host);
   const frames = frameQueue();
   let shareCb: (v: number) => void = () => undefined;
+  let sizeCb: () => void = () => undefined;
   const scenes: ReturnType<typeof fakeScene>[] = [];
   const env: Partial<FilmEnv> = {
     webgl: () => o.webgl ?? false,
@@ -120,8 +122,11 @@ function setup(
       shareCb = cb;
       return () => undefined;
     },
-    observeSize: () => () => undefined,
-    size: () => ({ w: 400, h: 500 }),
+    observeSize: (_el, cb) => {
+      sizeCb = cb;
+      return () => undefined;
+    },
+    size: o.size ?? (() => ({ w: 400, h: 500 })),
     viewport: () => ({ w: 390, h: 844, dpr: 2 }),
     now: () => 0,
     debug: false,
@@ -151,6 +156,7 @@ function setup(
     onFallback,
     unregister,
     view: (v: number) => shareCb(v),
+    resized: () => sizeCb(),
     ar: () => arStop?.(),
   };
 }
@@ -236,6 +242,28 @@ describe("landing film: reduced motion", () => {
     expect(t.host.querySelector(".lf-play")?.getAttribute("aria-label")).toBe(
       "Play the film",
     );
+  });
+
+  // With the caption list the stage keeps the height it has with one
+  // caption, measured with the list hidden. A measurement that reads
+  // (almost) nothing, as one taken in the middle of a resize can, must
+  // not leave the stage with no height: it was seen drawn 0 px tall in
+  // about 1 of 8 full-page screenshots of a phone-sized window.
+  it("keeps the stage's last good height when a measurement reads nothing", () => {
+    let size = { w: 400, h: 500 };
+    const t = setup({ reducedMotion: true, size: () => size });
+    t.view(1);
+    const stage = t.host.querySelector<HTMLElement>(".lf-stage")!;
+    expect(stage.style.height).toBe("500px");
+    size = { w: 0, h: 0 };
+    t.resized();
+    expect(stage.style.height).toBe("500px");
+    size = { w: 400, h: 1.5 };
+    t.resized();
+    expect(stage.style.height).toBe("500px");
+    size = { w: 400, h: 420 };
+    t.resized();
+    expect(stage.style.height).toBe("420px");
   });
 
   it("plays when asked, and the list gives way to the caption", () => {

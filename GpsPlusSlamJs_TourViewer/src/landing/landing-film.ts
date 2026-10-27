@@ -285,6 +285,8 @@ export function createLandingFilm(
   let rebuildOnEntry = false;
   let lastEmit = "";
   let listMode = false;
+  /** The stage's last good height with the caption list (sizeStageForList). */
+  let listStageH: number | null = null;
   let destroyed = false;
 
   dom.captions.replaceChildren(
@@ -523,6 +525,9 @@ export function createLandingFilm(
    * With the list the film grows below its box instead of shrinking the
    * picture: the stage keeps the height it has with the one-line caption
    * (measured in one synchronous pass, so nothing is painted in between).
+   * A measurement under 2 px (taken mid-resize) keeps the last good
+   * height rather than leave the stage with none; the next resize
+   * measures again.
    */
   function sizeStageForList(): void {
     dom.stage.style.removeProperty("height");
@@ -530,7 +535,8 @@ export function createLandingFilm(
     showList(false);
     const { h } = env.size(dom.stage);
     showList(true);
-    if (h >= 2) dom.stage.style.height = `${String(h)}px`;
+    if (h >= 2) listStageH = h;
+    if (listStageH !== null) dom.stage.style.height = `${String(listStageH)}px`;
   }
 
   function layout(): void {
