@@ -507,7 +507,9 @@ describe("withReferencedAssets", () => {
   // names is a tour the reader refuses (or a picture that never loads).
   // Over every generated 4.0 tour (blocks of every kind, free and in
   // stories) with unused assets added: the unused ones go, every other
-  // stays in its order, and the strict reader takes the result.
+  // stays in its order, and the strict reader takes the result. About
+  // 4 s alone and 7.5 s in the gate with coverage (300 generated tours,
+  // each read and written), so its time out is 30 s, not the default 5.
   it("never drops an asset something names, and drops every one nothing names (property)", () => {
     fc.assert(
       fc.property(
@@ -541,7 +543,7 @@ describe("withReferencedAssets", () => {
       ),
       { numRuns: 300 },
     );
-  });
+  }, 30_000);
 
   it("returns the tour itself when every asset is in use", () => {
     const manifest = {
