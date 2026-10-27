@@ -203,7 +203,8 @@ its chunk fails, the hero shows its last moment as a drawing).
   marks it `data-ready`, a 44 px target whose negative margin keeps the
   caption's line height; both described by their card's heading,
   `aria-describedby="landing-step-<n>"`), a closing line, "Make your own
-  tour" (`.landing-make`: six reasons in one list, two columns from 600 px;
+  tour" (`.landing-make`: six reasons in one list, two columns from 600 px, three across the
+  whole column from 900 px wide and taller than 560 px;
   a line that the setup's steps open in any order; `#setup-begin`), and the
   use cases' host `#landing-uses` (a short static list until their section,
   `src/landing/use-cases.ts`, replaces it, its heading with it; the host
@@ -259,16 +260,52 @@ its chunk fails, the hero shows its last moment as a drawing).
   900 px); on a phone held sideways 6, 6, 4 and 10. Cards: text then
   picture 20 px (stacked) or side by side with a column gap of 5 % of the
   view, at most 72 px (desktop, from 1440 px wide), or 22 px (sideways
-  phone); caption 9 px under the picture; 52 px (76 px desktop, 40 px
-  sideways) after each card; inside a card the kicker 6 px above the
+  phone); caption 9 px under the picture; 52 px (56 px from 900 px wide
+  and taller than 560 px, 40 px sideways) after each card; inside a card the kicker 6 px above the
   heading, the heading 12 px above its first line (8 px sideways), lines
   10 px apart, the text indented 50 px for the marks (76 px desktop). "Make your own tour": 14 px
   between heading, list, line and button. `landing.spec.js` pins them at
-  390x844, 844x390 and 1440x900, also in a wide face.
+  390x844, 844x390 and 1440x900, also in a wide face, and the wide-screen
+  layout below at 1280x720, 1440x900 and 1920x1080.
 - **Sizes without `clamp()` or `min()`:** the prototypes' fluid sizes are
   steps at 600, 900 and 1160 px (`h1` 29, 44, 56, 60 px; 25 px on a phone
-  held sideways); the csstree validator rejects `clamp()`, `min()` and
+  held sideways; 48 px from 1000 px, where it shares the row with the
+  film); the csstree validator rejects `clamp()`, `min()` and
   `max()` here.
+- **On a wide screen** (every rule has a height guard or a width no phone
+  has, so a phone, upright or held sideways, keeps its layout; measured
+  2026-10-27 at 390x844 and 844x390, no element moved or changed size):
+  - From 768 px wide and taller than 560 px the reading text is larger
+    (`.landing-way` and the film's caption 16 px, the reasons and the
+    numbered order 17.5 px, the use cases' sentences 17 px) and so are the
+    main buttons (`.landing-begin`: 17 px, at least 52 px high).
+  - From 1000 px wide the hero's text and film stand side by side
+    (`.landing-hero` a two-column grid, 48 px apart, the film's top on the
+    kicker's). The film's box is 58 % of the row less the gap, at 16:9 plus
+    its chrome, its height capped at `100svh - 96px` (and its width with
+    it), so the whole film, bar and caption included, is on the first
+    screen: it starts about 73 px down, which leaves about 23 px below it.
+    Swept 2026-10-27: the breakpoint at 1000, 1100 and 1200 px (1200 left a
+    1100 px window stacked with only the film's top in view; 1000 and 1100
+    both fit, so the lower one won, its text column about 386 px at
+    1000 px); the share at 0.52, 0.58 and 0.64 (0.64 gave a four-line `h1`
+    and pushed the button under a 600 px high window; 0.58 makes text and
+    film about equally tall); the cap at 72, 96 and 120 px (72 let the film
+    run past a 500 px high window). Reversing: if the film's small text
+    reads too small at about 534 px wide, or the text column too narrow,
+    the breakpoint goes to 1100.
+  - From 900 px wide and taller than 560 px the step cards' pictures start
+    at their kicker's line (`align-items: start`, the picture 6 px down,
+    the kicker's own top padding), and the cards are 56 px apart.
+  - From 900 px wide and taller than 560 px the setup stage stands on the
+    landing's column (1128 px and its 16 px gutters): the map's title and
+    its frame's outer line on the column's left edge, the step card's right
+    edge on its right. The card is sticky (16 px from the top) beside the
+    map while the map is in view, except during AR, whose panel lives in
+    the card. Its travel is only as long as the map runs on below it
+    (about 100 px at 1280x720), and on a first visit the page ends about
+    where the stage does. "You already have a tour?" below it keeps its own
+    narrower centred column.
 - **Its moving parts** are mounted by `src/landing/landing-mount.ts`
   (dynamic imports, a creator only; see its sidecar): the cards' pictures
   (`landing-cards.ts`, which play by `card-play.ts`), the use cases

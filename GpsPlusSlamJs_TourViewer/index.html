@@ -1381,6 +1381,87 @@
         }
       }
 
+      /* ===== The landing on a wide screen (index.html.md, "The landing
+         on a wide screen"). Each rule has a height guard or a width no
+         phone has, so a phone, upright or held sideways, keeps its
+         layout (landing.spec.js pins both). */
+
+      /* From tablet width up, the reading text and the main buttons are
+         larger, under the large headlines. */
+      @media (width >= 768px) and (height > 560px) {
+        .landing-way,
+        .landing-caption {
+          font-size: 16px;
+        }
+
+        .landing-why,
+        .landing-order {
+          font-size: 17.5px;
+        }
+
+        .landing-uses .uc-sentence {
+          font-size: 17px;
+        }
+
+        .landing .landing-begin {
+          min-height: 52px;
+          padding-inline: 26px;
+          font-size: 17px;
+        }
+      }
+
+      @media (width >= 900px) and (height > 560px) {
+        /* The six reasons across the whole column, three to a row. */
+        .landing-why {
+          max-width: none;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        /* Each step's picture starts at its kicker's line (the kicker's
+           6 px top padding), and the cards sit a little closer. */
+        .landing-card {
+          align-items: start;
+          padding-bottom: 56px;
+        }
+
+        .landing-fig {
+          margin-top: 6px;
+        }
+      }
+
+      /* From 1000 px wide the hero's text and film stand side by side
+         (swept 1000, 1100 and 1200: below 1000 the text column gets
+         narrower than about 380 px; stacked, a 1000 to 1199 px window
+         showed only the film's top). The film takes 58 % of the row less
+         the gap (swept 0.52, 0.58, 0.64), its top on the kicker's, its
+         height capped so the whole film stays on the first screen: it
+         starts about 73 px down and 96 px leaves about 23 px below it
+         (swept 72, 96, 120: 72 let it run past a 500 px window). */
+      @media (width >= 1000px) {
+        .landing-hero {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          column-gap: 48px;
+          align-items: start;
+        }
+
+        .landing-film {
+          --hero-film-w: calc((100cqw - 48px) * 0.58);
+
+          width: var(--hero-film-w);
+          max-width: calc((100svh - 96px - var(--film-chrome)) * 16 / 9 + 2px);
+          height: calc(
+            (var(--hero-film-w) - 2px) * 9 / 16 + var(--film-chrome)
+          );
+          max-height: calc(100svh - 96px);
+          margin: 0;
+        }
+
+        .landing h1 {
+          font-size: 48px;
+        }
+      }
+
       /* A phone held sideways: each step's text beside its picture, the
          picture sized to the view's height. */
       @media (orientation: landscape) and (height <= 560px) {
@@ -1627,6 +1708,36 @@
         box-shadow: 4px 4px 0 var(--map-paper-3);
         padding: var(--space-3);
         margin: var(--space-3) var(--space-3) var(--space-4);
+      }
+
+      /* On a wide screen the stage stands on the landing's centred column
+         (--landing-wide, 1128 px, and its 16 px gutters): the map's frame
+         and the card's edges on the column's edges, and the step card in
+         view beside the map while the map is (not during AR, whose panel
+         lives inside the card). */
+      @media (width >= 900px) and (height > 560px) {
+        body[data-mode="creator"] .setup-stage {
+          max-width: calc(1128px + 32px);
+          padding-inline: 16px;
+        }
+
+        body[data-mode="creator"] .setup-map {
+          padding-inline: 0;
+        }
+
+        /* Its outline sits 4 px outside it (1 px line, 3 px offset). */
+        body[data-mode="creator"] .setup-map-frame {
+          margin-inline: 4px;
+        }
+
+        body[data-mode="creator"] .setup-card {
+          margin-inline: 0;
+        }
+
+        body[data-mode="creator"]:not([data-ar-active="true"]) .setup-card {
+          position: sticky;
+          top: 16px;
+        }
       }
       .setup-card-top {
         display: flex;

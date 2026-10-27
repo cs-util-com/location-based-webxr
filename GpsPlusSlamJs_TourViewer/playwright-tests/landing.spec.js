@@ -12,7 +12,9 @@ import { useWideFont } from "./wide-font.js";
  * gap that is not set explicitly is simply gone, and the intro this
  * replaces once reached its readers with its spacing lost while every
  * presence test passed. These pin positions and gaps
- * at a phone, a phone held across and a desktop, also in a wide face. The
+ * at a phone, a phone held across and a desktop, also in a wide face, and
+ * the wide-screen layout (the hero side by side, the stage on the column)
+ * at three desktop sizes. The
  * cards' pictures must play only in view, pause on a tap until the next,
  * and hold still under reduced motion. A device that used the setup
  * before opens at the setup, but never against the browser's own scroll
@@ -121,7 +123,10 @@ for (const viewport of VIEWPORTS) {
         near(gap(lede, make), expected.make);
         near(gap(make, needs), expected.needs);
         near(gap(needs, cta), expected.cta);
-        near(gap(cta, film), expected.film);
+        // From 1000 px wide the film stands beside the text instead
+        // (pinned by "the landing on a wide screen").
+        const side = viewport.width >= 1000;
+        if (!side) near(gap(cta, film), expected.film);
 
         // The film's picture keeps its proportion (9:10 upright, the
         // page's whole width; 3:2 on a sideways phone and 16:9 from 900 px
@@ -139,7 +144,7 @@ for (const viewport of VIEWPORTS) {
         if (upright) {
           expect(film.x).toBe(0);
           expect(film.width).toBe(viewport.width);
-        } else {
+        } else if (!side) {
           near(film.x, (viewport.width - film.width) / 2);
         }
         expect(filmBar.y + filmBar.height - filmStage.y).toBeLessThanOrEqual(
@@ -172,7 +177,7 @@ for (const viewport of VIEWPORTS) {
         // picture with the caption, whichever ends lower) to what the next
         // one shows (beside each other, the shorter of the two is centred
         // on the taller).
-        const afterCard = desktop ? 76 : sideways ? 40 : 52;
+        const afterCard = desktop ? 56 : sideways ? 40 : 52;
         /** @type {number | null} */
         let shownEnd = null;
         for (let i = 0; i < 5; i++) {
@@ -237,7 +242,24 @@ for (const viewport of VIEWPORTS) {
                 els.map((el) => Math.round(el.getBoundingClientRect().left)),
               ).size,
           );
-        expect(columns).toBe(viewport.width >= 600 ? 2 : 1);
+        expect(columns).toBe(
+          desktop && viewport.height > 560 ? 3 : viewport.width >= 600 ? 2 : 1,
+        );
+        // A phone keeps its reading sizes (the larger ones start at
+        // tablet width, and never on a phone held sideways).
+        if (!desktop) {
+          const fontSize = (/** @type {string} */ selector) =>
+            page
+              .locator(selector)
+              .first()
+              .evaluate((el) => getComputedStyle(el).fontSize);
+          expect(await fontSize(".landing-way")).toBe("14.5px");
+          expect(await fontSize(".landing-caption")).toBe(
+            sideways ? "13px" : "14.5px",
+          );
+          expect(await fontSize(".landing-reason")).toBe("16px");
+          expect(await fontSize("#setup-begin")).toBe("14px");
+        }
 
         // The use cases: their heading the landing's section gap below
         // "Make your own tour", their grid one, two or three columns wide,
@@ -333,6 +355,196 @@ test.describe("the film's box on a short desktop window", () => {
     expect(stage.width / stage.height).toBeCloseTo(16 / 9, 1);
     expect(stage.width).toBeLessThan(1280 - 32);
     expect(bar.y + bar.height - stage.y).toBeLessThanOrEqual(600 - 24 + 1);
+  });
+});
+
+// On a wide screen the landing uses its width: the hero's text and film
+// side by side with the whole film on the first screen, larger reading
+// text and buttons, the six reasons in three columns, the setup stage on
+// the landing's own column with its card in view beside the map, and each
+// step's picture starting at its kicker's line. Positions and gaps, not
+// presence: a layout that merely shows everything passes a presence test.
+for (const viewport of [
+  { width: 1280, height: 720 },
+  { width: 1440, height: 900 },
+  { width: 1920, height: 1080 },
+]) {
+  test.describe(`the landing on a wide screen, ${String(viewport.width)}x${String(viewport.height)}`, () => {
+    test.use({ viewport, storageState: FIRST_VISIT });
+
+    test("sets the hero side by side, the text larger, the reasons in three columns, the stage on the column and its card beside the map", async ({
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await openLanding(page);
+      await expect(page.getByTestId("landing-film")).toHaveAttribute(
+        "data-mount",
+        "ready",
+      );
+      const near = (/** @type {number} */ actual, /** @type {number} */ want) =>
+        expect(Math.abs(actual - want)).toBeLessThanOrEqual(1);
+      const at = (/** @type {string} */ selector) =>
+        box(page.locator(selector).first());
+      // The landing's column: the hero's content box.
+      const column = await page.locator(".landing-hero").evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const s = getComputedStyle(el);
+        return {
+          left: r.left + parseFloat(s.paddingLeft),
+          right: r.right - parseFloat(s.paddingRight),
+        };
+      });
+      near(column.right - column.left, Math.min(1128, viewport.width - 32));
+
+      // The hero: text left, film right, 48 px apart, the film's top on
+      // the kicker's, the film's right edge on the column's.
+      const kicker = await at(".landing-hero .landing-kicker");
+      const text = await at(".landing-hero-text");
+      const film = await at("#landing-film");
+      const stage = await at("#landing-film .lf-stage");
+      const bar = await at("#landing-film .lf-controls");
+      near(text.x, column.left);
+      near(film.x - (text.x + text.width), 48);
+      near(film.x + film.width, column.right);
+      near(film.y, kicker.y);
+      expect(stage.width / stage.height).toBeCloseTo(16 / 9, 1);
+      // The film's column is 58 % of the row less the gap.
+      near(film.width, (column.right - column.left - 48) * 0.58);
+      // The picture and its bar on the first screen, 23 px or more clear.
+      expect(stage.y).toBeGreaterThanOrEqual(0);
+      expect(bar.y + bar.height).toBeLessThanOrEqual(viewport.height - 23);
+      // The button under the text on the first screen too.
+      const cta = await at(".landing-hero .landing-cta");
+      expect(cta.y + cta.height).toBeLessThanOrEqual(viewport.height);
+
+      // The reading text and the main buttons, larger than a phone's.
+      const size = (/** @type {string} */ selector) =>
+        page
+          .locator(selector)
+          .first()
+          .evaluate((el) => getComputedStyle(el).fontSize);
+      expect(await size(".landing-way")).toBe("16px");
+      expect(await size(".landing-caption")).toBe("16px");
+      expect(await size(".landing-reason")).toBe("17.5px");
+      expect(await size(".landing-order")).toBe("17.5px");
+      expect(await size(".uc-sentence")).toBe("17px");
+      for (const id of ["landing-begin-top", "setup-begin"]) {
+        const begin = page
+          .getByTestId(id)
+          .or(page.locator(`#${id}`))
+          .first();
+        expect(
+          await begin.evaluate((el) => getComputedStyle(el).fontSize),
+        ).toBe("17px");
+        expect((await box(begin)).height).toBeGreaterThanOrEqual(52);
+      }
+
+      // The six reasons across the whole column, three to a row.
+      const why = await at(".landing-why");
+      near(why.x, column.left);
+      near(why.width, column.right - column.left);
+      const lefts = await page
+        .locator(".landing-reason")
+        .evaluateAll((els) =>
+          els.map((el) => Math.round(el.getBoundingClientRect().left)),
+        );
+      expect(new Set(lefts).size).toBe(3);
+      expect(lefts).toHaveLength(6);
+
+      // Each step's picture starts at its kicker's line; the cards 56 px
+      // apart (from what one shows to what the next shows).
+      const cards = page.getByTestId("landing-card");
+      /** @type {number | null} */
+      let shownEnd = null;
+      for (let i = 0; i < 5; i++) {
+        const card = cards.nth(i);
+        const cardKicker = card.locator(".landing-card-kicker");
+        const line = await cardKicker.evaluate(
+          (el) =>
+            el.getBoundingClientRect().top +
+            parseFloat(getComputedStyle(el).paddingTop),
+        );
+        const pic = await box(card.locator(".landing-pic"));
+        const cardText = await box(card.locator(".landing-card-text"));
+        const fig = await box(card.locator(".landing-fig"));
+        near(pic.y, line);
+        if (shownEnd !== null) {
+          near(Math.min(cardText.y, fig.y) - shownEnd, 56);
+        }
+        shownEnd = Math.max(cardText.y + cardText.height, fig.y + fig.height);
+      }
+
+      // The setup stage on the same column: the map's title and the
+      // outer line of its frame on the column's left edge, the card's
+      // right edge on its right edge.
+      const title = await at(".setup-map-title");
+      const frame = await at(".setup-map-frame");
+      const card = await at("#setup-card");
+      near(title.x, column.left);
+      // the frame's outline sits 4 px outside it (1 px line, 3 px offset)
+      near(frame.x - 4, column.left);
+      near(card.x + card.width, column.right);
+
+      // Scrolled into the stage, the step card stays in view beside the
+      // map while the map is. On this short first-visit page the page
+      // ends about where the stage does, so room is added below it first
+      // (a longer step, or a page that opened at the stage, has it).
+      // The card can travel as far as the map runs on below it (the
+      // stage ends with the map); half of that is scrolled, so the card,
+      // left alone, would sit half a travel above the view's top + 16.
+      const travel = await page.getByTestId("setup-stage").evaluate((el) => {
+        const room = document.createElement("div");
+        room.style.height = "2000px";
+        document.body.append(room);
+        el.scrollIntoView({ block: "start", behavior: "instant" });
+        const cardEl = /** @type {HTMLElement} */ (
+          document.getElementById("setup-card")
+        );
+        const mapEl = /** @type {HTMLElement} */ (
+          document.querySelector(".setup-map-frame")
+        );
+        const below =
+          mapEl.getBoundingClientRect().bottom -
+          cardEl.getBoundingClientRect().bottom;
+        window.scrollBy({ top: below / 2, behavior: "instant" });
+        return below;
+      });
+      expect(travel).toBeGreaterThan(40);
+      const mapNow = await at(".setup-map-frame");
+      const cardNow = await at("#setup-card");
+      expect(mapNow.y).toBeLessThan(0);
+      expect(mapNow.y + mapNow.height).toBeGreaterThan(cardNow.y);
+      near(cardNow.y, 16);
+    });
+  });
+}
+
+// The film itself, not only its picture and bar, fits the first screen
+// beside the text: measured with the film playing (drawn flat, so the
+// shared machine does not render it in software).
+test.describe("the hero film on a wide screen", () => {
+  test.use({
+    viewport: { width: 1280, height: 720 },
+    storageState: FIRST_VISIT,
+  });
+
+  test("is wholly on the first screen, beside the text", async ({ page }) => {
+    await page.addInitScript(() => {
+      const get = HTMLCanvasElement.prototype.getContext;
+      // @ts-expect-error a stand-in that refuses only WebGL
+      HTMLCanvasElement.prototype.getContext = function (kind, ...rest) {
+        if (String(kind).startsWith("webgl")) return null;
+        return get.call(this, kind, ...rest);
+      };
+    });
+    await openLanding(page);
+    const film = page.getByTestId("landing-film");
+    await expect(film).toHaveAttribute("data-film-state", "playing");
+    const filmBox = await box(film);
+    const text = await box(page.locator(".landing-hero-text"));
+    expect(filmBox.y).toBeGreaterThanOrEqual(0);
+    expect(filmBox.y + filmBox.height).toBeLessThanOrEqual(720);
+    expect(filmBox.x).toBeGreaterThan(text.x + text.width);
   });
 });
 

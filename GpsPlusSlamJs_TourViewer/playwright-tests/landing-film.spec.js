@@ -72,9 +72,11 @@ test.describe("the hero film on a desktop", () => {
   test("waits while under half of it is in view, plays once half is, and names its parts on the bar", async ({
     page,
   }) => {
-    // A window short enough that only part of the film is in view at the
-    // top of the page, so it must wait and start only when scrolled to.
-    await page.setViewportSize({ width: 1024, height: 640 });
+    // A window narrow enough that the film stands under the text (from
+    // 1000 px it stands beside it, wholly in view) and short enough that
+    // only part of it is in view at the top of the page, so it must wait
+    // and start only when scrolled to.
+    await page.setViewportSize({ width: 960, height: 640 });
     const errors = pageErrors(page);
     const host = await openFilm(page);
     // The film's own view observer reports in the same step as one made
