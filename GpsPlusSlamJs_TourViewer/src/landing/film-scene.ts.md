@@ -24,9 +24,11 @@ at eye height in a second pass.
   (and the eye's, with `eyePass`) through three.js `compile`, which uses
   `KHR_parallel_shader_compile` where the browser has it, then waits for
   every program to report ready with its own check (`film-compile.ts`
-  `whenReady`). Resolves when the first draw will not wait on a compile;
+  `compileAhead`, which waits by `whenReady`). Resolves when the first draw will not wait on a compile;
   without the extension the programs report ready at once and the first
-  draw finishes what is left. It never rejects, and a scene released
+  draw finishes what is left. It never throws and never rejects (a
+  compile that throws at once, as on a context already lost, settles at
+  once), and a scene released
   meanwhile (AR, a lost context, a remount) resolves at the next check
   without touching the freed programs.
   - Not `compileAsync`: its own wait polls the programs from a timer that

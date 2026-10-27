@@ -16,7 +16,7 @@
  */
 import * as THREE from "three";
 
-import { whenReady } from "./film-compile.js";
+import { compileAhead } from "./film-compile.js";
 import type { FilmFrame, SceneState, ViewName } from "./film-story.js";
 import { smoothEase } from "./film-math.js";
 import {
@@ -1218,16 +1218,14 @@ export function createFilmScene(
       if (released) return Promise.resolve();
       // compile(), not compileAsync(): three's own wait reads the programs
       // from a timer that outlives a release and throws there
-      const pending = new Set(renderer.compile(scene, cam));
-      if (quality.eyePass) {
-        for (const m of renderer.compile(scene, eye)) pending.add(m);
-      }
-      return whenReady({
-        stopped: () => released,
-        ready: () => {
-          for (const m of pending) if (programReady(m)) pending.delete(m);
-          return pending.size === 0;
+      return compileAhead({
+        compile: () => {
+          const all = [...renderer.compile(scene, cam)];
+          if (quality.eyePass) all.push(...renderer.compile(scene, eye));
+          return all;
         },
+        isReady: programReady,
+        stopped: () => released,
       });
     },
     show() {

@@ -64,7 +64,9 @@ timeline.
   longest task (build plus first draw, about 550 ms at 4x) into a build of
   about 300 ms and a first draw of about 150 ms. A scene released (AR),
   lost or destroyed while it compiles is freed and never shown; a failed
-  `prepare` still shows it (its first draw compiles).
+  `prepare` still shows it (its first draw compiles), and so does one
+  whose compile throws at once (`compileAhead` settles then): it is not
+  reported as a missing WebGL and is freed like any other scene.
 - `stop` (AR): pause, free the renderer (not a fallback), show the flat
   still; a new scene is built the next time the film comes into view or is
   played. It does not restart by itself while still in view.
@@ -72,6 +74,9 @@ timeline.
   (`body[data-ar-active="true"]`), whatever the film's own state: a film
   that re-enters the view during the session, or one mounted afresh then
   (a reduced-motion change), waits for the next entry into view after it.
+  Nor does it play: during the session the player is told the film is out
+  of view, so a view report then (which re-arms its start rule) cannot
+  start the flat drawing behind AR.
 - A real context loss, no WebGL, or a renderer that will not start: the
   flat drawing on the same timeline and bar, reported once.
 - Reduced motion: opens on the last picture with every caption as a list
@@ -116,7 +121,9 @@ const film = mountLandingFilm(hostEl, {
 `landing-film.test.ts` (jsdom, a fake frame queue and a fake scene): no
 frames while idle, plays once, reduced motion (and the list stage keeping
 its last good height), the AR handoff, the
-fallbacks, no renderer during a live AR session, the host attributes and
+fallbacks, no renderer and no playing during a live AR session (also
+after the handoff, whatever the view reports), a scene whose compile throws
+at once shown and freed, the host attributes and
 event, `data-playing` (false while it plays mostly out of view), destroy, the
 drawing kept while the scene compiles (and a scene ended meanwhile never
 shown), the debug readout built with the knobs' quality, and the knobs

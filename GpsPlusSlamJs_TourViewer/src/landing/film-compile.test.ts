@@ -9,7 +9,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { whenReady } from "./film-compile.js";
+import { compileAhead, whenReady } from "./film-compile.js";
 
 /** A timer that runs only when told to. */
 function manualTimer() {
@@ -107,5 +107,48 @@ describe("whenReady", () => {
     expect(await settled(p)).toBe(true);
     expect(ready).toHaveBeenCalledTimes(3);
     expect(timer.queued()).toBe(0);
+  });
+});
+
+// The scene compiles ahead with three.js `compile`, which can throw at
+// once (a context already lost: a shader cannot even be created). The
+// film must not read that as "no WebGL" and drop the scene without
+// freeing it: compiling ahead is only a head start, so a compile that
+// throws settles at once and the first draw (or the loss path) takes over.
+describe("compileAhead", () => {
+  it("waits for every compiled program, then settles", async () => {
+    const timer = manualTimer();
+    const ready = new Set<string>();
+    const p = compileAhead({
+      compile: () => ["a", "b"],
+      isReady: (m) => ready.has(m),
+      stopped: () => false,
+      ...timer,
+    });
+    ready.add("a");
+    timer.tick();
+    expect(await settled(p)).toBe(false);
+    ready.add("b");
+    timer.tick();
+    expect(await settled(p)).toBe(true);
+  });
+
+  it("settles at once, with no timer, when the compile itself throws", async () => {
+    const timer = manualTimer();
+    const isReady = vi.fn(() => false);
+    let p: Promise<void> | undefined;
+    expect(() => {
+      p = compileAhead({
+        compile: () => {
+          throw new TypeError("shaderSource: not a shader");
+        },
+        isReady,
+        stopped: () => false,
+        ...timer,
+      });
+    }).not.toThrow();
+    expect(await settled(p!)).toBe(true);
+    expect(isReady).not.toHaveBeenCalled();
+    expect(timer.later).not.toHaveBeenCalled();
   });
 });

@@ -23,6 +23,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { compileAhead } from "./film-compile.js";
 import type { FilmScene } from "./film-scene.js";
 import { BEAT_CAPTIONS } from "./film-story.js";
 import {
@@ -359,6 +360,9 @@ describe("landing film: renderer and fallback", () => {
     t.view(0.6);
     t.view(0);
     t.view(0.6);
+    // nor does it play its flat drawing behind the session
+    expect(t.film.snapshot().status).not.toBe("playing");
+    expect(t.frames.requestFrame).not.toHaveBeenCalled();
     t.host.querySelector<HTMLElement>(".lf-stage")!.click();
     t.film.jumpTo(2);
     expect(t.scenes).toHaveLength(0);
@@ -366,6 +370,25 @@ describe("landing film: renderer and fallback", () => {
     document.body.dataset["arActive"] = "false";
     t.view(0);
     t.view(0.6);
+    expect(t.scenes).toHaveLength(1);
+  });
+
+  // The handoff pauses the film; a view report under a tenth re-arms its
+  // start rule, so one at half or more during the session would start it
+  // again, drawing flat behind AR. During the session it sees no view.
+  it("does not start again while the session lasts, whatever the view reports", () => {
+    const t = setup({ webgl: true });
+    t.view(0.6);
+    t.frames.step();
+    document.body.dataset["arActive"] = "true";
+    t.ar();
+    const asked = t.frames.requestFrame.mock.calls.length;
+    t.frames.runOut();
+    t.view(0.05);
+    t.view(0.6);
+    expect(t.film.snapshot().status).not.toBe("playing");
+    t.frames.runOut();
+    expect(t.frames.requestFrame.mock.calls.length).toBe(asked);
     expect(t.scenes).toHaveLength(1);
   });
 
@@ -431,6 +454,29 @@ describe("landing film: renderer and fallback", () => {
     await flush();
     expect(t.film.renderer()).toBe("3d");
     expect(t.onFallback).not.toHaveBeenCalled();
+  });
+
+  // three.js `compile` can throw at once (a context already lost). That
+  // is no missing WebGL, and the scene it belongs to must be shown (its
+  // first draw compiles) and freed later, not dropped while still alive.
+  it("shows the scene when its compile throws at once, reports nothing and frees it on destroy", async () => {
+    const t = setup({
+      webgl: true,
+      prepare: () =>
+        compileAhead({
+          compile: () => {
+            throw new TypeError("shaderSource: not a shader");
+          },
+          isReady: () => true,
+          stopped: () => false,
+        }),
+    });
+    t.view(0.6);
+    await flush();
+    expect(t.onFallback).not.toHaveBeenCalled();
+    expect(t.film.renderer()).toBe("3d");
+    t.film.destroy();
+    expect(t.scenes[0]!.release).toHaveBeenCalledTimes(1);
   });
 
   /** A scene still compiling, ended by `end`; then the compile finishes. */

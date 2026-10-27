@@ -570,7 +570,9 @@ export function createLandingFilm(
     const share = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
     if (share === 0) rebuildOnEntry = false;
     else if (!rebuildOnEntry) ensureScene();
-    player.setViewShare(share);
+    // during a live AR session the film sees no view: a report there must
+    // not start it again, drawing flat behind the session
+    player.setViewShare(arActive() ? 0 : share);
   });
   const unregisterAr = options.onArStarting(stop);
   report(gpu.initialFallback);

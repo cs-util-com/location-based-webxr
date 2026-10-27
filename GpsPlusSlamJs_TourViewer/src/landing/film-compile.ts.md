@@ -2,8 +2,9 @@
 
 ## Purpose
 
-The film's wait for its compiled shaders: polls a readiness check and
-stops the moment the scene is freed, settling in every case. It replaces
+The film's compile-ahead and its wait for the compiled shaders: polls a
+readiness check and stops the moment the scene is freed, settling in
+every case, also when the compile itself throws. It replaces
 three.js's `compileAsync` wait, whose timer outlives a released renderer,
 reads a freed program there (an uncaught TypeError) and never settles.
 
@@ -22,6 +23,17 @@ reads a freed program there (an uncaught TypeError) and never settles.
     without parallel compiling, whose programs report ready at once)
     needs no timer.
 
+- `compileAhead({ compile, isReady, stopped, later? }): Promise<void>`
+  - `compile()`: compiles the scene's programs and returns what it
+    compiled (three.js `renderer.compile`, once per camera).
+  - `isReady(item)`: whether that item's program is ready.
+  - Waits by `whenReady` until every compiled item is ready. A `compile`
+    that throws (a context already lost: `createShader` returns null and
+    `shaderSource` throws) settles at once with no timer and never asks
+    `isReady`: compiling ahead is only a head start, and the first draw,
+    or the loss path, takes over. Never throws and never rejects, so the
+    film never mistakes it for a renderer that will not start.
+
 ## Invariants
 
 - Never calls `ready` after `stopped()` returned true.
@@ -30,13 +42,10 @@ reads a freed program there (an uncaught TypeError) and never settles.
 ## Example
 
 ```ts
-const pending = new Set(renderer.compile(scene, camera));
-await whenReady({
+await compileAhead({
+  compile: () => renderer.compile(scene, camera),
+  isReady: programReady,
   stopped: () => released,
-  ready: () => {
-    for (const m of pending) if (programReady(m)) pending.delete(m);
-    return pending.size === 0;
-  },
 });
 ```
 
@@ -44,5 +53,8 @@ await whenReady({
 
 `film-compile.test.ts`: ready at once with no timer, polling until ready,
 stopping (no further check, settled, no timer left), already stopped, a
-throwing check, giving up after the last try. The scene's use of it
+throwing check, giving up after the last try; `compileAhead` waiting for
+every compiled item, and settling at once with no timer when the compile
+throws. `landing-film.test.ts` shows such a scene shown, unreported and
+freed. The scene's use of it
 (`film-scene.ts` `prepare`) needs WebGL and is covered by the film's e2e.

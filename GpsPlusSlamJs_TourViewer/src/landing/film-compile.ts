@@ -54,3 +54,38 @@ export function whenReady(o: WhenReadyOptions): Promise<void> {
     check();
   });
 }
+
+export interface CompileAheadOptions<M> {
+  /** Compiles the scene's programs and returns what it compiled (three.js `compile`). */
+  compile(): Iterable<M>;
+  /** Whether one compiled item's program is ready; may throw (counted as done). */
+  isReady(item: M): boolean;
+  /** True once the scene is freed. */
+  stopped(): boolean;
+  /** As `whenReady`'s. */
+  later?: (cb: () => void, ms: number) => void;
+}
+
+/**
+ * Compiles ahead and waits until every compiled program is ready (by
+ * `whenReady`). A compile that throws (a context already lost, where a
+ * shader cannot even be created) settles at once: compiling ahead is only
+ * a head start, and the first draw, or the loss path, takes over. Never
+ * throws and never rejects.
+ */
+export function compileAhead<M>(o: CompileAheadOptions<M>): Promise<void> {
+  let pending: Set<M>;
+  try {
+    pending = new Set(o.compile());
+  } catch {
+    return Promise.resolve();
+  }
+  return whenReady({
+    stopped: () => o.stopped(),
+    ready: () => {
+      for (const m of pending) if (o.isReady(m)) pending.delete(m);
+      return pending.size === 0;
+    },
+    ...(o.later ? { later: o.later } : {}),
+  });
+}
