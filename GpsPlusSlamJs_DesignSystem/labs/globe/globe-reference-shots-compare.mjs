@@ -6,22 +6,78 @@
  * at several thresholds, and the largest difference anywhere. Writes, per
  * view, `<name>-pair.png` (before | after | the difference amplified) into
  * the output folder and prints one line per view; `views.json` facts that
- * differ (the credits, the tile counts) are printed too.
+ * differ (the credits, the tile counts) are printed too, and the intro
+ * trace's first differing frame per field (`trace.json`).
  *
  *   node labs/globe/globe-reference-shots-compare.mjs <before> <after> <out>
  *
- * Exits 1 when a view is missing from either side or the sizes differ; a
- * pixel difference is reported, never judged: whether it is visible is the
+ * Exits 1 when one of the fixed views (or the trace) is missing from either
+ * side, or the sizes or the trace's lengths differ; a pixel or trace
+ * difference is reported, never judged: whether it is visible is the
  * reader's call, with the image in front of them.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import sharp from "sharp";
 
-/** The thresholds (8-bit levels) the changed-pixel shares are counted at. */
-const THRESHOLDS = [1, 4, 16, 48];
+/**
+ * The thresholds (8-bit levels) the changed-pixel shares are counted at;
+ * `>0` is every changed pixel, so "identical" is a number, not a reading.
+ */
+const THRESHOLDS = [0, 1, 4, 16, 48];
+
+/**
+ * The views the capture writes. Fixed, not read from a folder: a view the
+ * capture failed to write on BOTH sides would otherwise pass unnoticed.
+ */
+export const VIEW_NAMES = [
+  "1-space",
+  "2-space-sky",
+  "3-approach",
+  "4-above-clouds",
+  "5-below-clouds",
+  "6-street",
+  "7-drift",
+];
+
+/**
+ * Two intro traces (one entry per frame): null when they match exactly,
+ * else `{ lengths }` for traces of different lengths, or `{ fields }` with,
+ * per field that differs, its first differing frame and the largest numeric
+ * difference over all frames (null for a field that is not numeric).
+ */
+export function diffTrace(a, b) {
+  if (a.length !== b.length) return { lengths: [a.length, b.length] };
+  const numbers = (v) =>
+    typeof v === "number"
+      ? [v]
+      : Array.isArray(v)
+        ? v.flatMap(numbers)
+        : v && typeof v === "object"
+          ? Object.values(v).flatMap(numbers)
+          : [];
+  const fields = {};
+  for (let i = 0; i < a.length; i++) {
+    for (const key of new Set([...Object.keys(a[i]), ...Object.keys(b[i])])) {
+      const x = a[i][key];
+      const y = b[i][key];
+      if (JSON.stringify(x) === JSON.stringify(y)) continue;
+      const f = (fields[key] ??= { firstFrame: i, maxAbs: 0 });
+      const nx = numbers(x);
+      const ny = numbers(y);
+      if (f.maxAbs !== null && nx.length === ny.length && nx.length > 0) {
+        for (let k = 0; k < nx.length; k++) {
+          f.maxAbs = Math.max(f.maxAbs, Math.abs(nx[k] - ny[k]));
+        }
+      } else {
+        f.maxAbs = null;
+      }
+    }
+  }
+  return Object.keys(fields).length === 0 ? null : { fields };
+}
 
 /**
  * The difference of two RGBA buffers of the same size: the share of pixels
@@ -73,7 +129,7 @@ const raw = async (path) => {
   return { data: new Uint8Array(data), width: info.width, height: info.height };
 };
 
-async function main([before, after, out]) {
+export async function main([before, after, out]) {
   if (!before || !after || !out) {
     console.error(
       "usage: globe-reference-shots-compare.mjs <before> <after> <out>",
@@ -81,15 +137,15 @@ async function main([before, after, out]) {
     return 2;
   }
   mkdirSync(out, { recursive: true });
-  const names = readdirSync(before).filter((f) => f.endsWith(".png"));
   let failed = false;
-  for (const name of names) {
-    const b = join(after, name);
-    if (!existsSync(b)) {
-      console.log(`${name}: MISSING in ${after}`);
+  for (const name of VIEW_NAMES.map((v) => `${v}.png`)) {
+    const gone = [before, after].filter((dir) => !existsSync(join(dir, name)));
+    if (gone.length > 0) {
+      console.log(`${name}: MISSING in ${gone.join(" and ")}`);
       failed = true;
       continue;
     }
+    const b = join(after, name);
     const x = await raw(join(before, name));
     const y = await raw(b);
     if (x.width !== y.width || x.height !== y.height) {
@@ -140,6 +196,26 @@ async function main([before, after, out]) {
       if (JSON.stringify(v[key]) !== JSON.stringify(w[key])) {
         console.log(
           `${v.name} ${key}: ${JSON.stringify(v[key])} -> ${JSON.stringify(w[key])}`,
+        );
+      }
+    }
+  }
+  const traces = [before, after].map((dir) => join(dir, "trace.json"));
+  const goneTrace = traces.filter((f) => !existsSync(f));
+  if (goneTrace.length > 0) {
+    console.log(`trace.json: MISSING as ${goneTrace.join(" and ")}`);
+    failed = true;
+  } else {
+    const [ta, tb] = traces.map((f) => JSON.parse(readFileSync(f, "utf8")));
+    const d = diffTrace(ta, tb);
+    if (d === null) console.log(`trace: ${ta.length} frames, identical`);
+    else if (d.lengths) {
+      console.log(`trace: LENGTHS ${d.lengths[0]} vs ${d.lengths[1]}`);
+      failed = true;
+    } else {
+      for (const [key, f] of Object.entries(d.fields)) {
+        console.log(
+          `trace ${key}: differs from frame ${f.firstFrame}, max |d| ${f.maxAbs}`,
         );
       }
     }

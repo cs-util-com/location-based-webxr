@@ -83,7 +83,9 @@
 
 - Tests: `globe-view.test.ts` (Node, a fake renderer and canvas, the real
   surface with a stub map loader): the frame's order with the seams, the
-  paused frame, the fit, the clear colour and the sky switch, the drift,
+  paused frame, the fit, the clear colour and the sky switch, the sun and
+  the sidereal angle at the frame's instant (already set when `driveCamera`
+  runs, with a fake sun that moves with the time), the drift,
   the frame move (a property over places and altitudes), the recentre and
   the gesture, `viewPoseEcef`. The browser check is the lab's smokes and the
   reference-view screenshots

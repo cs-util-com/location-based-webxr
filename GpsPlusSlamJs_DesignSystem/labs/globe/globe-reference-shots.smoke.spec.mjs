@@ -16,7 +16,14 @@
  * the approach and resets the speed dust), and every network answer is
  * local and deterministic: the height tiles are the relief's synthetic
  * surface generated in the page, Overpass answers an empty city, and the
- * OSM map is a numbered test pattern per tile.
+ * OSM map is a numbered test pattern per tile. A request to any other host
+ * fails the run, so a capture never depends on the network.
+ *
+ * A second test runs on Playwright's clock: one view with the clouds'
+ * default drift (`7-drift.png`), and a per-frame trace of the intro flight
+ * (`trace.json`: the camera's pose, the clouds' offset, the world frame's
+ * target and the speed dust), stepped frame by frame, so state a refactor
+ * changed shows even where no image would.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -40,6 +47,26 @@ const REFERENCE_HASH =
 const PINNED = "&cloudDrift=0";
 
 const AT = { lat: 46.948, lng: 7.4474 };
+
+/** The intro flight's frames the trace records (16 ms each). */
+const TRACE_FRAMES = 240;
+
+/**
+ * Fails the run on a request to a host that is not the dev server: every
+ * answer a capture depends on is a local route. Registered FIRST, so the
+ * specific routes (registered after it, and so asked first) answer their
+ * hosts and only what they leave falls through to it.
+ */
+async function refuseForeignHosts(context, foreign) {
+  await context.route("**/*", (route) => {
+    const url = new URL(route.request().url());
+    if (url.hostname === "127.0.0.1" || url.hostname === "localhost") {
+      return route.fallback();
+    }
+    foreign.push(url.origin + url.pathname);
+    return route.abort();
+  });
+}
 
 /**
  * The fixed views: `altitudeKm` above the ellipsoid, or `aglM` above the
@@ -150,6 +177,29 @@ async function settle(page, { timeoutMs, quietMs = 3000 }) {
   return (Date.now() - started) / 1000;
 }
 
+/**
+ * Routes every network answer locally (a foreign host is recorded in
+ * `foreign`), opens the lab at `hash`, waits for it to be ready and hides
+ * everything but the drawing: the panel, the readout (it counts frames)
+ * and the status lines are DOM over the canvas; the credits are read as
+ * text.
+ */
+async function openReference(page, context, hash, foreign) {
+  await refuseForeignHosts(context, foreign);
+  await routeCityFixture(context, page, { version: 0.6, elements: [] });
+  await routeOsmPattern(context, page);
+  await page.goto(`/labs/globe/#${hash}`);
+  await page.waitForFunction(
+    () => window.__globeLab?.ready || window.__globeLab?.error,
+    null,
+    { timeout: 120_000 },
+  );
+  expect(await page.evaluate(() => window.__globeLab.error)).toBeNull();
+  await page.addStyleTag({
+    content: "body > :not(#globe-canvas) { visibility: hidden !important; }",
+  });
+}
+
 const holdView = (page, view) =>
   page.evaluate((v) => window.__globeLab.placeView(v), view);
 
@@ -165,20 +215,8 @@ test("the reference views render and settle", async ({ page, context }) => {
     if (m.type() === "error") errors.push(m.text());
   });
   page.on("pageerror", (e) => errors.push(e.message));
-  await routeCityFixture(context, page, { version: 0.6, elements: [] });
-  await routeOsmPattern(context, page);
-  await page.goto(`/labs/globe/#${REFERENCE_HASH}${PINNED}`);
-  await page.waitForFunction(
-    () => window.__globeLab?.ready || window.__globeLab?.error,
-    null,
-    { timeout: 120_000 },
-  );
-  expect(await page.evaluate(() => window.__globeLab.error)).toBeNull();
-  // Only the drawing: the panel, the readout (it counts frames) and the
-  // status lines are DOM over the canvas; the credits are read as text.
-  await page.addStyleTag({
-    content: "body > :not(#globe-canvas) { visibility: hidden !important; }",
-  });
+  const foreign = [];
+  await openReference(page, context, `${REFERENCE_HASH}${PINNED}`, foreign);
   const report = [];
   for (const v of VIEWS) {
     let altitudeKm = v.altitudeKm;
@@ -230,4 +268,83 @@ test("the reference views render and settle", async ({ page, context }) => {
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await context.unrouteAll({ behavior: "ignoreErrors" });
   expect(errors).toEqual([]);
+  expect(foreign).toEqual([]);
+});
+
+// WHY: the pinned views above hold the clouds still, so a refactor that
+// broke their drift, or moved the frame's state without changing a held
+// image (the intro's camera path, the world frame's target, the dust),
+// would pass them. On Playwright's clock the frames are stepped 16 ms at a
+// time from one paused instant, so two builds compute the same frames and
+// any difference in the trace is the code's.
+test("the drift view and the intro trace on Playwright's clock", async ({
+  page,
+  context,
+}) => {
+  test.skip(!OUT, "set GLOBE_SHOTS_DIR to capture the reference views");
+  test.setTimeout(3_600_000);
+  mkdirSync(OUT, { recursive: true });
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const foreign = [];
+  await page.clock.install({ time: Date.UTC(2026, 9, 5, 11) });
+  await openReference(page, context, REFERENCE_HASH, foreign);
+  const approach = VIEWS.find((v) => v.name === "3-approach");
+  const view = {
+    ...AT,
+    altitudeKm: approach.altitudeKm,
+    headingDeg: approach.headingDeg,
+    pitchDeg: approach.pitchDeg,
+  };
+  await holdView(page, view);
+  await settle(page, { timeoutMs: 900_000 });
+  // From here the clock stands; only runFor moves it.
+  const now = await page.evaluate(() => Date.now());
+  await page.clock.pauseAt(now + 1000);
+  // A changed far rate and back re-seeds the clouds at this instant (the
+  // lab's hash reaction), so the drift no longer carries the loading's
+  // real-time frames.
+  const setHash = (hash) =>
+    page.evaluate((h) => {
+      location.hash = h;
+    }, hash);
+  await setHash(`${REFERENCE_HASH}&cloudDrift=0.5`);
+  await setHash(REFERENCE_HASH);
+  await holdView(page, view);
+  await page.clock.runFor(5000);
+  await page.screenshot({ path: join(OUT, "7-drift.png") });
+  // The intro flight from this instant: another target and back restarts
+  // it (and re-seeds the clouds), then every frame's state is recorded
+  // right after the frame ran.
+  await setHash(
+    `${REFERENCE_HASH.replace("at=46.948,7.4474", "at=0,0")}&cloudDrift=0.5`,
+  );
+  await setHash(REFERENCE_HASH);
+  await page.evaluate(() => {
+    const w = /** @type {any} */ (window);
+    w.__trace = [];
+    const raf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (cb) =>
+      raf((t) => {
+        cb(t);
+        const s = w.__globeLab.state();
+        w.__trace.push({
+          cameraDistanceM: s.cameraDistanceM,
+          cameraDirection: s.cameraDirection,
+          cameraForward: s.cameraForward,
+          cloudLonOffsetRad: s.cloudLonOffsetRad,
+          worldFrame: s.worldFrame,
+          dust: s.dust,
+        });
+      });
+  });
+  for (let i = 0; i < TRACE_FRAMES; i++) await page.clock.runFor(16);
+  const trace = await page.evaluate(() => /** @type {any} */ (window).__trace);
+  writeFileSync(join(OUT, "trace.json"), JSON.stringify(trace, null, 1));
+  console.log(`trace: ${trace.length} frames`);
+  expect(trace.length).toBeGreaterThan(TRACE_FRAMES / 2);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await context.unrouteAll({ behavior: "ignoreErrors" });
+  expect(errors).toEqual([]);
+  expect(foreign).toEqual([]);
 });

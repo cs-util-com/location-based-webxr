@@ -30,6 +30,8 @@ import {
   type GlobeViewSeams,
   type GlobeViewSettings,
 } from "./globe-view.js";
+import { greenwichSiderealAngleRad } from "./globe-stars.js";
+import { sunDirectionEcef } from "./globe-sun.js";
 
 const DEG = Math.PI / 180;
 
@@ -71,6 +73,13 @@ const SETTINGS: GlobeViewSettings = {
 function makeView(
   overrides: Partial<GlobeViewSettings> = {},
   seams: GlobeViewSeams | ((log: string[]) => GlobeViewSeams) = {},
+  solarPosition: (ms: number) => {
+    elevationRad: number;
+    azimuthRad: number;
+  } = () => ({
+    elevationRad: 0.3,
+    azimuthRad: 1.2,
+  }),
 ) {
   const log: string[] = [];
   const canvas = { clientWidth: 800, clientHeight: 400 };
@@ -80,7 +89,7 @@ function makeView(
     canvas: canvas as unknown as HTMLCanvasElement,
     fovYDeg: settings.fovY,
     settings: () => settings,
-    solarPosition: () => ({ elevationRad: 0.3, azimuthRad: 1.2 }),
+    solarPosition,
     mapLoader: stubLoader,
     createRenderer: () => fakeRenderer(log) as unknown as THREE.WebGLRenderer,
     monoNow: () => mono,
@@ -202,14 +211,57 @@ describe("createGlobeView: the frame", () => {
     expect(seen).toEqual([]);
   });
 
-  it("counts the frame's instant and steps the sun by the clock", () => {
-    const { view } = makeView();
+  // Why: the sun, the clouds' offset and the stars' angle are the clock's
+  // at THIS frame's instant, and the page's camera drive (the intro flight,
+  // the controls) already sees them: a sun stepped after the drive, or from
+  // another instant, lights the frame a frame late. The fake sun moves with
+  // the time, so a stale value is a different value.
+  it("counts the frame's instant and steps the sun by the clock before the camera drive", () => {
+    const startMs = Date.UTC(2026, 9, 5, 11);
+    const sunAt = (ms: number) => ({
+      elevationRad: 0.3 + (ms - startMs) / 3_600_000,
+      azimuthRad: 1.2,
+    });
+    const seen: { sun: THREE.Vector3; sidereal: number }[] = [];
+    const made = makeView(
+      {},
+      {
+        // Runs only inside view.frame(), after `made` is assigned.
+        driveCamera: () => {
+          seen.push({
+            sun: made.view.globe.surfaceUniforms.uSunEcef.value.clone(),
+            sidereal: made.view.state().siderealAngleRad,
+          });
+        },
+      },
+      sunAt,
+    );
+    const view = made.view;
+    view.startClock({ startMs, scale: 1 });
+    const expectAt = (
+      ms: number,
+      got: { sun: THREE.Vector3; sidereal: number },
+    ) => {
+      const sun = sunDirectionEcef(
+        view.globe.tiles.ellipsoid,
+        sunAt(ms),
+      ).normalize();
+      expect(got.sun.distanceTo(sun)).toBeLessThan(1e-12);
+      expect(got.sidereal).toBe(greenwichSiderealAngleRad(ms));
+    };
     view.frame();
-    const s = view.state();
-    expect(s.frameAt).toBe(1000);
-    // The fake sun: 0.3 rad high, so the light is not at its default.
-    expect(view.globe.sun.position.length()).toBeGreaterThan(0);
-    expect(Number.isFinite(s.siderealAngleRad)).toBe(true);
+    expect(view.state().frameAt).toBe(1000);
+    expectAt(startMs, seen[0]!);
+    expectAt(startMs, {
+      sun: view.globe.surfaceUniforms.uSunEcef.value,
+      sidereal: view.state().siderealAngleRad,
+    });
+    // Half an hour on: the next frame's drive sees the next frame's sun.
+    made.advance(1_800_000);
+    view.frame();
+    expect(view.state().frameAt).toBe(1000 + 1_800_000);
+    expectAt(startMs + 1_800_000, seen[1]!);
+    expect(seen[1]!.sun.distanceTo(seen[0]!.sun)).toBeGreaterThan(1e-3);
   });
 });
 

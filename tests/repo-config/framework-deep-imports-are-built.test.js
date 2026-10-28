@@ -165,9 +165,16 @@ describe('framework deep imports are built entrypoints', () => {
       for (const [, sub] of source.matchAll(PAGE_PATH)) {
         loaded.add(sub.replace(/\/index$/, ''));
       }
+      // As the code moves, a page path in the lab becomes a bare
+      // `${PACKAGE}/...` import in the Globe package: both count, so the
+      // floor below does not fall while the modules are still loaded.
+      if (file.startsWith('GpsPlusSlamJs_Globe/')) {
+        for (const sub of deepImports(source)) loaded.add(sub);
+      }
     }
-    // Twenty-two distinct modules when this was set (2026-10-28): far
-    // fewer means the scan lost the lab, not that the lab lost imports.
+    // Twenty-two distinct modules when this was set (2026-10-28), page
+    // paths and bare imports together: far fewer means the scan lost the
+    // lab or the package, not that they lost imports.
     expect(loaded.size, "the scan must see the globe lab's framework modules").toBeGreaterThanOrEqual(15);
     const missing = [...loaded].filter((sub) => !built.has(sub)).sort();
     expect(
