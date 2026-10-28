@@ -9,6 +9,7 @@
  * @see landing-mount.ts.md
  */
 import type { ViewerMode } from "../mode.js";
+import type { UsesHeightEnv } from "./uses-height.js";
 
 /** What every mounted part hands back. */
 export interface LandingPart {
@@ -45,7 +46,11 @@ export interface LandingLoaders {
       options: LandingFilmOptions,
     ): LandingPart;
   }>;
-  uses(): Promise<{ mountUseCases(host: HTMLElement): LandingPart }>;
+  /** The use cases and their height keeper, in one chunk. */
+  uses(): Promise<{
+    mountUseCases(host: HTMLElement): LandingPart;
+    keepUsesHeight(host: HTMLElement, env: UsesHeightEnv): () => void;
+  }>;
 }
 
 const LANDING_LOADERS: LandingLoaders = {
@@ -118,6 +123,7 @@ export function mountLanding(options: MountLandingOptions): MountedLanding {
   const mount = async (
     host: HTMLElement,
     load: () => Promise<LandingPart>,
+    onFailed?: () => void,
   ): Promise<void> => {
     const turn = (asked.get(host) ?? 0) + 1;
     asked.set(host, turn);
@@ -134,6 +140,7 @@ export function mountLanding(options: MountLandingOptions): MountedLanding {
       // deploy): the static content stays, which is the whole fallback.
       if (!destroyed && asked.get(host) === turn) {
         host.dataset["mount"] = "failed";
+        onFailed?.();
       }
     }
   };
@@ -165,25 +172,37 @@ export function mountLanding(options: MountLandingOptions): MountedLanding {
   const ready = Promise.all([
     mountFilm(),
     mountCards(),
-    mount(dom.uses, async () => {
-      // the keeper comes with the section, never in the page's first load
-      const [uses, { keepUsesHeight }] = await Promise.all([
-        loaders.uses(),
-        import("./uses-height.js"),
-      ]);
-      const part = uses.mountUseCases(dom.uses);
-      // kept for the next load: a reload reserves the height measured here
-      const unkeep = keepUsesHeight(dom.uses, {
-        storage: sessionStore(),
-        width: () => window.innerWidth,
-      });
-      return {
-        destroy() {
-          unkeep();
-          part.destroy();
-        },
-      };
-    }),
+    mount(
+      dom.uses,
+      async () => {
+        // the keeper comes in the section's own chunk, never in the page's
+        // first load, and cannot fail apart from the section
+        const uses = await loaders.uses();
+        const part = uses.mountUseCases(dom.uses);
+        // kept for the next load: a reload reserves the height measured here
+        const unkeep = uses.keepUsesHeight(dom.uses, {
+          storage: sessionStore(),
+          width: () => window.innerWidth,
+          onWindowResize: (listener) => {
+            window.addEventListener("resize", listener);
+            return () => {
+              window.removeEventListener("resize", listener);
+            };
+          },
+        });
+        return {
+          destroy() {
+            unkeep();
+            part.destroy();
+          },
+        };
+      },
+      // the page reserved the kept height inline before the chunk arrived;
+      // a section that never mounts must not leave that much blank page
+      () => {
+        dom.uses.style.removeProperty("min-height");
+      },
+    ),
   ]).then(() => undefined);
 
   // The parts that move follow the reader's setting while the page is
@@ -232,13 +251,16 @@ export function watchArStarting(
       }
     };
     doc.addEventListener("click", onTap, { capture: true });
+    const live = (): boolean => doc.body.dataset["arActive"] === "true";
     const watch = new MutationObserver(() => {
-      if (doc.body.dataset["arActive"] === "true") stop();
+      if (live()) stop();
     });
     watch.observe(doc.body, {
       attributes: true,
       attributeFilter: ["data-ar-active"],
     });
+    // a part registered during a live session never sees the change
+    if (live()) stop();
     return () => {
       doc.removeEventListener("click", onTap, { capture: true });
       watch.disconnect();

@@ -1465,18 +1465,45 @@
         }
       }
 
-      /* Beside the film the headline is 40 px where its column is narrow
-         (under 1160 px wide, about 386 to 453 px) or the window short
-         (under 680 px high). At 48 px a wide face (the CI's Linux face)
-         wraps it to five lines there, or four, and the hero's button ended
-         below a 700 or 600 px high window; from 1160 px wide it ends at
-         about 653 px. Swept 36 to 48 px in both faces at seven desktop
-         sizes: 42 px still pushed it under a 1100x600 window (index.html.md,
-         "On a wide screen"). */
+      /* Beside the film the headline is 40 px where the text column is
+         narrow (under 1160 px wide) or the window under 740 px high, and
+         the film takes half the row instead of 58 % where the column is
+         narrow or the window under 680 px high. At 48 px a wide face (the
+         CI's Linux face, DejaVu Sans Bold) wraps the headline to five
+         lines beside a 58 % film (a 454 px text column), and the button
+         ended 25 px below a 1280x680 window and 5 px below a 1280x700 one;
+         at 40 px it takes three lines there and the button stays 104 px
+         clear (61 px in DejaVu spaced 0.06em wider). Half the row with
+         48 px would fit too, but narrows the film from 626 to 540 px, and
+         the drawn phone's chip in its last part no longer fits that
+         film's screen. With half the row the text column is 460 px at
+         1000 px wide, 510 px at 1100 and 540 px from 1160 (the column's
+         cap). The headline is 34 px under 580 px high, and under 620 px
+         below 1100 px wide: at 40 px it took three lines in DejaVu Sans
+         and ended the button 14 px below a 1000x561 window, and four
+         lines in DejaVu spaced 0.04em wider, 19 px below a 1000x600 one.
+         Swept in the system face, Verdana and DejaVu Sans, each spaced up
+         to 0.06em wider, at 1000 to 1920 px wide and 561 to 800 px high:
+         no size puts the button below the window (index.html.md, "On a
+         wide screen"). */
       @media (width >= 1000px) and (width < 1160px),
-        (width >= 1000px) and (height < 680px) {
+        (width >= 1000px) and (height < 740px) {
         .landing h1 {
           font-size: 40px;
+        }
+      }
+
+      @media (width >= 1000px) and (width < 1160px),
+        (width >= 1000px) and (height < 680px) {
+        .landing-film {
+          --hero-film-w: calc((100cqw - 48px) * 0.5);
+        }
+      }
+
+      @media (width >= 1000px) and (height < 580px),
+        (width >= 1000px) and (width < 1100px) and (height < 620px) {
+        .landing h1 {
+          font-size: 34px;
         }
       }
 
@@ -4443,9 +4470,9 @@
           // The height this tab measured the mounted use cases at, at this
           // width, reserved before the first paint: the browser restores a
           // reload's scroll before their chunk arrives, and the CSS lower
-          // bound below is measured in one face only. The same rule as
-          // keptUsesHeight (src/landing/uses-height.ts), held to it by
-          // uses-height.test.ts.
+          // bound in the page's styles is measured in one face only. The
+          // same rule as keptUsesHeight (src/landing/uses-height.ts), held
+          // to it by uses-height.test.ts.
           try {
             const kept = JSON.parse(
               sessionStorage.getItem("tour-viewer.landing.uses-height") ??

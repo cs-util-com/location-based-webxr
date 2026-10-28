@@ -65,6 +65,16 @@ export interface FilmPlayer {
   destroy(): void;
 }
 
+/**
+ * The film has left the view: under `leaveShare` of it is in view. The one
+ * rule for leaving, shared by the player (which pauses and re-arms its
+ * start there) and the film (which rebuilds a handed-off renderer only
+ * after it), so the two can never disagree about a film near the edge.
+ */
+export function hasLeftView(share: number, leaveShare: number): boolean {
+  return share < leaveShare;
+}
+
 export function createFilmPlayer(o: FilmPlayerOptions): FilmPlayer {
   if (!(
     Number.isFinite(o.startShare) &&
@@ -165,7 +175,7 @@ export function createFilmPlayer(o: FilmPlayerOptions): FilmPlayer {
     setViewShare(v) {
       if (destroyed) return;
       share = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
-      if (share < o.leaveShare) {
+      if (hasLeftView(share, o.leaveShare)) {
         armed = true;
         if (status === "playing") pause("view");
       } else if (share >= o.startShare && armed) {

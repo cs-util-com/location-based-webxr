@@ -10,6 +10,10 @@ import "./use-cases.css";
 import { USE_CASES } from "./use-case-data.js";
 import { renderUseCases } from "./use-case-markup.js";
 
+// The height keeper ships in this chunk, so it loads (or fails) with the
+// section it keeps; the landing mounts both from this one import.
+export { keepUsesHeight } from "./uses-height.js";
+
 export interface MountedUseCases {
   /** Empties the host. Safe to call more than once. */
   destroy(): void;

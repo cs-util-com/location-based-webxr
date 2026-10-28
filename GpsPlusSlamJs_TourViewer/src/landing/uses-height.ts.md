@@ -28,13 +28,21 @@ width, is exact in whatever face the page is set in.
   window width `width`, or null for nothing stored, another width,
   unreadable JSON, a width or height that is not a number, or a height
   that is not above 0 and below 20 000 px.
-- `keepUsesHeight(host, { storage, width }): () => void`: called by
-  `landing-mount.ts` once the use cases mounted. Removes the inline
+- `keepUsesHeight(host, { storage, width, onWindowResize }): () => void`: called by
+  `landing-mount.ts` once the use cases mounted (it comes in their chunk,
+  re-exported by `use-cases.ts`; where they fail to mount,
+  `landing-mount.ts` drops the inline reservation itself). Removes the inline
   `min-height` the page's script set (the mounted section now holds its
   own place), stores the host's border-box height at `width()`, and stores
   it again whenever the host resizes (a `ResizeObserver`, where there is
-  one). Returns the unwatch. A height of 0 is not stored; storage that is
-  null or throws stores nothing.
+  one) or the window does (`onWindowResize`, which `landing-mount.ts`
+  binds to the window's `resize` event), writing storage only when the
+  kept value would change. Returns the unwatch, which also unlistens. The
+  window's resize is needed because the value is keyed by the window's
+  width: on a wide window the section is capped at the column's width, so
+  a width-only resize leaves its size alone, its observer never reports,
+  and the kept width would go stale. A height of 0 is not stored; storage that is null or
+  throws stores nothing.
 
 ## Invariants
 
@@ -56,6 +64,10 @@ width, is exact in whatever face the page is set in.
 const unkeep = keepUsesHeight(dom.uses, {
   storage: window.sessionStorage,
   width: () => window.innerWidth,
+  onWindowResize: (listener) => {
+    window.addEventListener("resize", listener);
+    return () => window.removeEventListener("resize", listener);
+  },
 });
 keptUsesHeight(sessionStorage.getItem(USES_HEIGHT_KEY), innerWidth); // 2391.5
 ```
@@ -64,9 +76,13 @@ keptUsesHeight(sessionStorage.getItem(USES_HEIGHT_KEY), innerWidth); // 2391.5
 
 - `uses-height.test.ts`: the rule (same width, other width, malformed
   values, a round-trip property), the keeper (drops the inline reservation,
-  stores the height, survives a throwing or missing storage), and the
-  inline script held to the rule (a property over generated stored values,
-  its place in the page).
+  stores the height, stores it again at the new width after a window
+  resize that left the section's size alone, survives a throwing or
+  missing storage), and the
+  inline script held to the rule (two properties: every height valid by
+  construction is reserved height for height, and any other stored value,
+  near misses and the exact 0 and 20 000 px edges included, gets the same
+  answer as `keptUsesHeight`; and its place in the page).
 - `playwright-tests/landing.spec.js`, "a returning device": the reload
   comes back to the stage within 24 px when the use cases arrive late, in
   the system face, the wide face and a wider one, also under reduced

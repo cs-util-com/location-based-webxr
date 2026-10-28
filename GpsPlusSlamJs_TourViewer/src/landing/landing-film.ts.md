@@ -44,11 +44,10 @@ timeline.
 ## What the page sees
 
 - On the host: `data-film-state` (waiting, playing, paused, finished),
-  `data-film-beat` (0 to 7), `data-film-moving` ("true" while it plays
-  with its start share in view), `data-playing` (the same as
-  `data-film-moving`: the cards hold still while it is "true",
+  `data-film-beat` (0 to 7), `data-playing` ("true" while it plays with
+  its start share in view: the cards hold still while it is "true",
   `landing-cards.ts`; a film that plays on with under half of it in view
-  does not hold them). All four are removed on `destroy`.
+  does not hold them). All three are removed on `destroy`.
 - A `landing-film-change` event on the host, `detail: { status, beat, moving, pausedBy }`,
   only when one of these changes (not every frame). The cards wait while
   `moving` is true.
@@ -69,7 +68,10 @@ timeline.
   reported as a missing WebGL and is freed like any other scene.
 - `stop` (AR): pause, free the renderer (not a fallback), show the flat
   still; a new scene is built the next time the film comes into view or is
-  played. It does not restart by itself while still in view.
+  played. It does not restart by itself while still in view. "Comes into
+  view" means after it left the view by the player's own rule
+  (`hasLeftView`, under the leave share), so the player can never resume
+  it on the flat drawing while the renderer waits for a share of 0.
 - No renderer is built while the page marks a live AR session
   (`body[data-ar-active="true"]`), whatever the film's own state: a film
   that re-enters the view during the session, or one mounted afresh then
@@ -84,6 +86,11 @@ timeline.
   its height) instead of shrinking the picture. A measurement of that
   height under 2 px (taken mid-resize) keeps the last good one, so the
   stage is never left 0 px tall.
+- The layout follows the stage, which is what it measures: both the stage
+  and the host are observed for size (a caption that wraps past its
+  reserved room resizes the stage while the host keeps its size; the
+  list's stage height follows the host), by one observer (`observeSize`
+  takes both), so a window resize that resizes both lays out once.
 - `?debug=1`: a readout over the picture (`film-debug.ts`): the renderer,
   its pixel ratio and quality, the scene's build time, the film's time,
   the last frames' percentiles (`utils/frame-times`) and the whole run's
@@ -120,7 +127,8 @@ const film = mountLandingFilm(hostEl, {
 
 `landing-film.test.ts` (jsdom, a fake frame queue and a fake scene): no
 frames while idle, plays once, reduced motion (and the list stage keeping
-its last good height), the AR handoff, the
+its last good height), one size observer over the host and the stage
+(one layout per report), the AR handoff, the
 fallbacks, no renderer and no playing during a live AR session (also
 after the handoff, whatever the view reports), a scene whose compile throws
 at once shown and freed, the host attributes and

@@ -31,7 +31,11 @@ import { drawFloor, floorSignature } from "./film-floor.js";
 import { createGpuLifecycle, type FallbackReason } from "./film-gpu.js";
 import { filmLayout, type FilmLayout } from "./film-layout.js";
 import { createPhoneView, floorAnchors } from "./film-phone.js";
-import { createFilmPlayer, type PlayerSnapshot } from "./film-player.js";
+import {
+  createFilmPlayer,
+  hasLeftView,
+  type PlayerSnapshot,
+} from "./film-player.js";
 import type { LandingFilmOptions, LandingPart } from "./landing-mount.js";
 import {
   createFilmScene,
@@ -104,7 +108,11 @@ export interface FilmEnv {
     el: Element,
     onShare: (share: number) => void,
   ) => () => void;
-  readonly observeSize: (el: Element, onSize: () => void) => () => void;
+  /** One watch over all of `els`: a report that resizes several calls once. */
+  readonly observeSize: (
+    els: readonly Element[],
+    onSize: () => void,
+  ) => () => void;
   readonly viewport: () => { w: number; h: number; dpr: number };
   readonly now: () => number;
   /** The stage's size, CSS px. */
@@ -161,10 +169,10 @@ function browserEnv(doc: Document): FilmEnv {
       io.observe(el);
       return () => io.disconnect();
     },
-    observeSize(el, onSize) {
+    observeSize(els, onSize) {
       if (win && typeof win.ResizeObserver === "function") {
         const ro = new win.ResizeObserver(() => onSize());
-        ro.observe(el);
+        for (const el of els) ro.observe(el);
         return () => ro.disconnect();
       }
       win?.addEventListener("resize", onSize);
@@ -280,7 +288,9 @@ export function createLandingFilm(
   /**
    * After AR took the GPU, only a new entry into view (or a tap) builds
    * a renderer again: a view change while still in view (a layout shift
-   * during the session) must not build one behind it.
+   * during the session) must not build one behind it. The film has left
+   * the view by the player's own rule (hasLeftView), so it never resumes
+   * on its flat drawing where the renderer waited for more.
    */
   let rebuildOnEntry = false;
   let lastEmit = "";
@@ -352,7 +362,6 @@ export function createLandingFilm(
       lastEmit = key;
       host.dataset.filmState = snap.status;
       host.dataset.filmBeat = String(snap.position.beat);
-      host.dataset.filmMoving = String(snap.moving);
       // the cards below hold still while this is "true" (landing-cards.ts):
       // while the film moves with its start share in view, not while it
       // plays on mostly scrolled away
@@ -564,12 +573,17 @@ export function createLandingFilm(
   const before = [...host.childNodes];
   host.replaceChildren(dom.root);
   dom.stage.addEventListener("click", onStageClick);
-  const unobserveSize = env.observeSize(host, onResize);
+  // layout() measures the stage, so the stage is observed: a caption that
+  // wraps past its reserved room resizes the stage, not the host. The host
+  // too, because the list's stage height follows the host's. One observer
+  // for both: a window resize that resizes both lays out once.
+  const unobserveSize = env.observeSize([host, dom.stage], onResize);
   layout();
   const unobserveView = env.observeView(host, (v) => {
     const share = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
-    if (share === 0) rebuildOnEntry = false;
-    else if (!rebuildOnEntry) ensureScene();
+    if (hasLeftView(share, tuning.leaveShare)) rebuildOnEntry = false;
+    // built from the first sliver in view, so it is compiled before it plays
+    if (share > 0 && !rebuildOnEntry) ensureScene();
     // during a live AR session the film sees no view: a report there must
     // not start it again, drawing flat behind the session
     player.setViewShare(arActive() ? 0 : share);
@@ -613,7 +627,6 @@ export function createLandingFilm(
       host.replaceChildren(...before);
       delete host.dataset.filmState;
       delete host.dataset.filmBeat;
-      delete host.dataset.filmMoving;
       delete host.dataset.playing;
     },
   };

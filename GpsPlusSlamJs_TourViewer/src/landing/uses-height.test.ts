@@ -74,6 +74,7 @@ describe("keptUsesHeight", () => {
 });
 
 describe("keepUsesHeight", () => {
+  const noWindowResize = () => () => undefined;
   const hostOf = (height: number) => {
     const host = document.createElement("div");
     host.style.minHeight = "2500px";
@@ -87,10 +88,56 @@ describe("keepUsesHeight", () => {
     const unwatch = keepUsesHeight(host, {
       storage: { setItem: (k, v) => stored.set(k, v) },
       width: () => 390,
+      onWindowResize: noWindowResize,
     });
     expect(host.style.minHeight).toBe("");
     expect(keptUsesHeight(stored.get(USES_HEIGHT_KEY) ?? null, 390)).toBe(2391);
     unwatch();
+  });
+
+  // The observer reports every resize of the section, most of them (the
+  // window scrolled, a sibling moved) without a change of its height:
+  // session storage is written only when the kept value would change.
+  it("writes storage again only when the height or width changes", () => {
+    const writes: string[] = [];
+    let height = 2391;
+    let width = 390;
+    const host = hostOf(0);
+    host.getBoundingClientRect = () => ({ height }) as unknown as DOMRect;
+    const observed: (() => void)[] = [];
+    const Real = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(cb: () => void) {
+        observed.push(cb);
+      }
+      observe() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      const unwatch = keepUsesHeight(host, {
+        storage: { setItem: (_k, v) => writes.push(v) },
+        width: () => width,
+        onWindowResize: noWindowResize,
+      });
+      const report = () => {
+        for (const cb of observed) cb();
+      };
+      report();
+      report();
+      expect(writes).toHaveLength(1);
+      height = 2400;
+      report();
+      report();
+      width = 391;
+      report();
+      expect(
+        writes.map((v) => keptUsesHeight(v, width) ?? keptUsesHeight(v, 390)),
+      ).toEqual([2391, 2400, 2400]);
+      expect(writes).toHaveLength(3);
+      unwatch();
+    } finally {
+      globalThis.ResizeObserver = Real;
+    }
   });
 
   it("keeps nothing for a host with no height, and survives storage that throws", () => {
@@ -98,6 +145,7 @@ describe("keepUsesHeight", () => {
     keepUsesHeight(hostOf(0), {
       storage: { setItem: (k, v) => stored.set(k, v) },
       width: () => 390,
+      onWindowResize: noWindowResize,
     })();
     expect(stored.size).toBe(0);
     expect(() =>
@@ -108,11 +156,45 @@ describe("keepUsesHeight", () => {
           },
         },
         width: () => 390,
+        onWindowResize: noWindowResize,
       })(),
     ).not.toThrow();
     expect(() =>
-      keepUsesHeight(hostOf(2000), { storage: null, width: () => 390 })(),
+      keepUsesHeight(hostOf(2000), {
+        storage: null,
+        width: () => 390,
+        onWindowResize: noWindowResize,
+      })(),
     ).not.toThrow();
+  });
+
+  // On a wide window the section is capped at the column's width, so a
+  // window resized only in width leaves the section's size alone and its
+  // observer never reports: the kept value would still carry the old
+  // width, and the next load at the new width would reserve nothing. The
+  // window's own resize keeps it again.
+  it("keeps the height again at the new width when only the window's width changes", () => {
+    const stored = new Map<string, string>();
+    let width = 1440;
+    const resized: (() => void)[] = [];
+    let unlistened = 0;
+    const unwatch = keepUsesHeight(hostOf(2391), {
+      storage: { setItem: (k, v) => stored.set(k, v) },
+      width: () => width,
+      onWindowResize: (listener) => {
+        resized.push(listener);
+        return () => {
+          unlistened += 1;
+        };
+      },
+    });
+    width = 1600;
+    for (const listener of resized) listener();
+    expect(keptUsesHeight(stored.get(USES_HEIGHT_KEY) ?? null, 1600)).toBe(
+      2391,
+    );
+    unwatch();
+    expect(unlistened).toBe(1);
   });
 });
 
@@ -165,43 +247,68 @@ describe("the landing-uses-height script in index.html", () => {
     return host.style.minHeight;
   }
 
-  it("reserves exactly what keptUsesHeight reads, for any stored value (property)", () => {
-    // Most generated values are kept at the width read back, so the
-    // reserving branch is exercised as often as the refusing ones.
-    const stored = fc.oneof(
-      { weight: 1, arbitrary: fc.constant(null) },
-      { weight: 1, arbitrary: fc.string() },
-      {
-        weight: 6,
-        arbitrary: fc
-          .record({
-            width: fc.oneof(
-              { weight: 3, arbitrary: fc.constant(390) },
-              { weight: 1, arbitrary: fc.integer({ min: 380, max: 400 }) },
-              { weight: 1, arbitrary: fc.constant("390") },
-            ),
-            height: fc.oneof(
-              { weight: 3, arbitrary: fc.double({ min: -100, max: 30000 }) },
-              { weight: 1, arbitrary: fc.constant("2000") },
-              { weight: 1, arbitrary: fc.constant(null) },
-            ),
-          })
-          .map((v) => JSON.stringify(v)),
-      },
+  // The parity is proven in two halves, so neither depends on how often a
+  // random draw happens to land in it: every value valid by construction
+  // must be reserved, height for height, and every other value (anything
+  // at all, and the near misses around each condition, the exact 0 and
+  // 20 000 px edges included) must give the inline copy the same answer as
+  // keptUsesHeight. A single mixed property that counted its reserving
+  // draws was flaky: that count is a random variable, not a proof.
+  it("reserves every height keptUsesHeight keeps, height for height (property)", () => {
+    const height = fc.oneof(
+      fc.integer({ min: 1, max: 19999 }),
+      fc.double({
+        min: 0,
+        max: 20000,
+        minExcluded: true,
+        maxExcluded: true,
+        noNaN: true,
+      }),
     );
-    let reserved = 0;
+    fc.assert(
+      fc.property(height, (h) => {
+        const s = encodeUsesHeight(390, h);
+        expect(keptUsesHeight(s, 390)).toBe(h);
+        expect(runInline(s, 390)).toBe(`${String(h)}px`);
+      }),
+      { numRuns: 300 },
+    );
+    expect(runInline(encodeUsesHeight(390, 2391.5), 390)).toBe("2391.5px");
+  });
+
+  it("answers as keptUsesHeight for any other stored value (property)", () => {
+    const stored = fc.oneof(
+      fc.constant(null),
+      fc.string(),
+      fc.json(),
+      fc
+        .record({
+          width: fc.oneof(
+            fc.constant(390),
+            fc.integer({ min: 380, max: 400 }),
+            fc.constant("390"),
+          ),
+          height: fc.oneof(
+            fc.double({ min: -100, max: 30000 }),
+            fc.constantFrom(0, -0, -1, 19999.999, 20000, 20000.001),
+            fc.constant("2000"),
+            fc.constant(null),
+          ),
+        })
+        .map((v) => JSON.stringify(v)),
+    );
     fc.assert(
       fc.property(stored, (s) => {
         const kept = keptUsesHeight(s, 390);
-        if (kept !== null) reserved += 1;
         expect(runInline(s, 390)).toBe(
           kept === null ? "" : `${String(kept)}px`,
         );
       }),
       { numRuns: 300 },
     );
-    expect(reserved).toBeGreaterThan(30);
-    expect(runInline(encodeUsesHeight(390, 2391.5), 390)).toBe("2391.5px");
+    for (const edge of [0, 20000]) {
+      expect(runInline(encodeUsesHeight(390, edge), 390)).toBe("");
+    }
   });
 
   it("reserves nothing where storage throws", () => {

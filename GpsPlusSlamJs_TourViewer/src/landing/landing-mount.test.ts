@@ -18,6 +18,7 @@ import {
   type LandingLoaders,
   type LandingPart,
 } from "./landing-mount.js";
+import type { UsesHeightEnv } from "./uses-height.js";
 
 function makeDom(): LandingDom {
   document.body.innerHTML = `
@@ -44,9 +45,11 @@ function makeDom(): LandingDom {
 type Part = keyof LandingLoaders;
 
 /** Loaders that record their calls and hand back destroy spies. */
-function spyLoaders(fail: Partial<Record<Part, boolean>> = {}) {
+function spyLoaders(fail: Partial<Record<Part | "usesMount", boolean>> = {}) {
   const calls: { part: Part; host: HTMLElement; options?: unknown }[] = [];
   const destroyed: Part[] = [];
+  const kept: HTMLElement[] = [];
+  const keptEnv: UsesHeightEnv[] = [];
   const part = (name: Part): LandingPart => ({
     destroy: () => {
       destroyed.push(name);
@@ -77,12 +80,19 @@ function spyLoaders(fail: Partial<Record<Part, boolean>> = {}) {
         ? refuse()
         : Promise.resolve({
             mountUseCases: (host) => {
+              if (fail.usesMount === true) throw new Error("mount");
               calls.push({ part: "uses", host });
               return part("uses");
             },
+            keepUsesHeight: (host, env) => {
+              kept.push(host);
+              keptEnv.push(env);
+              host.style.removeProperty("min-height");
+              return () => undefined;
+            },
           }),
   };
-  return { loaders, calls, destroyed };
+  return { loaders, calls, destroyed, kept, keptEnv };
 }
 
 const noAr = () => () => undefined;
@@ -149,6 +159,71 @@ describe("mountLanding", () => {
     expect(dom.film.dataset["mount"]).toBe("failed");
     expect(dom.film.querySelector("img")).not.toBeNull();
     expect(calls.map((c) => c.part).sort()).toEqual(["cards", "uses"]);
+  });
+
+  // The page reserves the use cases' kept height inline before their
+  // chunk arrives. Where they never mount (a failed or stale chunk, or a
+  // mount that throws), that reservation must go: kept, it leaves a blank
+  // gap of the section's whole height above the setup, which a reload
+  // restores into view.
+  it("drops the use cases' inline reservation when they fail to mount", async () => {
+    for (const fail of [{ uses: true }, { usesMount: true }]) {
+      const dom = makeDom();
+      dom.uses.style.minHeight = "2400px";
+      const { loaders } = spyLoaders(fail);
+      await mountLanding({
+        mode: "creator",
+        dom,
+        reducedMotion: false,
+        onArStarting: noAr,
+        loaders,
+      }).ready;
+      expect(dom.uses.dataset["mount"], JSON.stringify(fail)).toBe("failed");
+      expect(dom.uses.style.minHeight, JSON.stringify(fail)).toBe("");
+    }
+  });
+
+  // The height keeper comes in the use cases' own chunk, so it cannot
+  // fail on its own: a separate chunk that failed alone marked a section
+  // that had loaded fine as failed.
+  it("keeps the use cases' height with the keeper from their own chunk", async () => {
+    const dom = makeDom();
+    const { loaders, kept } = spyLoaders();
+    await mountLanding({
+      mode: "creator",
+      dom,
+      reducedMotion: false,
+      onArStarting: noAr,
+      loaders,
+    }).ready;
+    expect(kept).toEqual([dom.uses]);
+    expect(dom.uses.dataset["mount"]).toBe("ready");
+  });
+
+  // The kept height is keyed by the window's width, and the keeper hears of
+  // a width-only resize through the window: the page must hand it the
+  // window's own resize event, and take the listener back again.
+  it("hands the height keeper the window's resize, and its unlisten", async () => {
+    const dom = makeDom();
+    const { loaders, keptEnv } = spyLoaders();
+    await mountLanding({
+      mode: "creator",
+      dom,
+      reducedMotion: false,
+      onArStarting: noAr,
+      loaders,
+    }).ready;
+    const env = keptEnv[0];
+    if (env === undefined) throw new Error("no keeper");
+    let heard = 0;
+    const unlisten = env.onWindowResize(() => {
+      heard += 1;
+    });
+    window.dispatchEvent(new Event("resize"));
+    expect(heard).toBe(1);
+    unlisten();
+    window.dispatchEvent(new Event("resize"));
+    expect(heard).toBe(1);
   });
 
   it("destroys what mounted, and a part that mounts after destroy at once", async () => {
@@ -323,6 +398,17 @@ describe("watchArStarting", () => {
     document.body.dataset["arActive"] = "true";
     await Promise.resolve();
     expect(stop).toHaveBeenCalledTimes(2);
+  });
+
+  // A part registered while a session is already live (a reduced-motion
+  // remount during AR) never sees the attribute change: it must be told at
+  // once, or it could build its renderer behind the session.
+  it("calls stop at once when a session is already live", () => {
+    makeDom();
+    document.body.dataset["arActive"] = "true";
+    const stop = vi.fn();
+    watchArStarting(document)(stop);
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 
   it("ignores taps elsewhere", () => {

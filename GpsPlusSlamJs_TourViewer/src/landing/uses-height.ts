@@ -49,36 +49,44 @@ export function keptUsesHeight(
 export interface UsesHeightEnv {
   readonly storage: Pick<Storage, "setItem"> | null;
   readonly width: () => number;
+  /** Listens to the window's resize; returns the unlisten. */
+  readonly onWindowResize: (listener: () => void) => () => void;
 }
 
 /**
  * Drops the reservation the inline script set on the mounted section's
  * host (its own height holds the place now) and keeps the host's height
- * for the next load, again whenever it changes. Returns the unwatch.
- * Storage that throws (site data blocked, full) keeps nothing.
+ * for the next load, again whenever the host or the window resizes
+ * (storage is written only when the kept value would change). The window
+ * too: the value is keyed by its width, and on a wide window the capped
+ * section keeps its size when only that width changes. Returns the unwatch. Storage that
+ * throws (site data blocked, full) keeps nothing.
  */
 export function keepUsesHeight(
   host: HTMLElement,
   env: UsesHeightEnv,
 ): () => void {
   host.style.removeProperty("min-height");
+  let written: string | null = null;
   const keep = (): void => {
     const height = host.getBoundingClientRect().height;
     if (!(height > 0)) return;
+    const value = encodeUsesHeight(env.width(), height);
+    if (value === written) return;
     try {
-      env.storage?.setItem(
-        USES_HEIGHT_KEY,
-        encodeUsesHeight(env.width(), height),
-      );
+      env.storage?.setItem(USES_HEIGHT_KEY, value);
+      written = value;
     } catch {
       // nothing kept: the next load reserves the page's lower bound
     }
   };
   keep();
-  if (typeof ResizeObserver !== "function") return () => undefined;
+  const unlisten = env.onWindowResize(keep);
+  if (typeof ResizeObserver !== "function") return unlisten;
   const watch = new ResizeObserver(keep);
   watch.observe(host);
   return () => {
+    unlisten();
     watch.disconnect();
   };
 }

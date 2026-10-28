@@ -23,12 +23,17 @@ film's still are static in `index.html` and show without this module.
     `{ reducedMotion, filmHost }` (so no card moves while the film plays)
     and the use cases with their host. Once the use cases mounted, their
     host's height is kept in session storage for the next load
-    (`keepUsesHeight`, `uses-height.ts`, imported with the use cases'
-    chunk so it is not in the page's first load), and the keeping stops
-    with the part's `destroy`.
+    (`keepUsesHeight`, `uses-height.ts`, re-exported by `use-cases.ts`
+    so it ships in the use cases' own chunk: not in the page's first load,
+    and never failing apart from the section), at the window's width and
+    again on the window's `resize` (the kept value is keyed by that
+    width), and the keeping stops with the part's `destroy`.
   - Each host gets `data-mount="ready"`, or `"failed"` when its chunk did
     not load or its mount threw; a failed part keeps the host's static
-    content.
+    content. A failed use-cases part also drops the inline `min-height`
+    the page reserved from a kept height: the static list is far shorter
+    than the mounted section, and the reservation would leave a blank gap
+    of the section's height above the setup.
   - `ready` settles once every part mounted or failed; it never rejects.
   - `watchReducedMotion(onChange)` - where given, the reader's setting is
     followed while the page is open: on a change the film and the cards
@@ -44,7 +49,9 @@ film's still are static in `index.html` and show without this module.
 - `watchArStarting(document)` - the page's "AR is starting" signal in the
   film's shape, `(stop) => unregister`: a capture-phase click on or inside
   `#enter-ar`, and `body[data-ar-active="true"]` (written by `ar-entry.ts`)
-  for a session started another way.
+  for a session started another way. A `stop` registered while the page
+  already marks a live session is called at once (a part mounted afresh
+  during AR never sees the attribute change).
 - Types: `LandingPart`, `LandingFilmOptions`, `LandingCardsOptions`,
   `LandingLoaders`, `LandingDom`, `MountLandingOptions`, `MountedLanding`.
   The film's and the use cases' modules implement `LandingFilmOptions` and
@@ -94,7 +101,10 @@ mountLanding({
 
 - `landing-mount.test.ts` (jsdom) - nothing loads for a visitor or without
   a landing; each part gets its host and options; a failed chunk keeps the
-  static content and the others mount; destroy, also before a load
+  static content and the others mount; a failed use-cases chunk or mount
+  drops the inline reservation; the height keeper comes from the use
+  cases' own chunk, with the window's resize and its unlisten; destroy,
+  also before a load
   settles; the real default chunks mount and unmount; the AR signal on a
   tap, on a live session, and not after unregistering; a change of the
   reduced-motion setting mounts the film and the cards again with it, one
