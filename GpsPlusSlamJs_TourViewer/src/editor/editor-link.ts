@@ -87,7 +87,7 @@ const PLAIN_STAND_IN = "tour.zip";
 
 /** The names `fetchedFileName` makes up for a link that names no file. */
 const DRIVE_STAND_IN = new RegExp(
-  `^tour-[A-Za-z0-9_-]{1,${String(DRIVE_ID_CHARS)}}\.zip$`,
+  `^tour-[A-Za-z0-9_-]{1,${String(DRIVE_ID_CHARS)}}\\.zip$`,
 );
 
 /** The link's own `.zip` name; for a Drive link without one,

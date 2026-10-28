@@ -238,5 +238,8 @@ describe("isLinkStandInName", () => {
     expect(isLinkStandInName("Castle walk.zip")).toBe(false);
     expect(isLinkStandInName("tour-of-the-old-town.zip")).toBe(false);
     expect(isLinkStandInName("tour-1AbCdEfGhIjK.zip.bak")).toBe(false);
+    // The dot before "zip" is literal: a name with any other character
+    // there is a real file's, never the stand-in.
+    expect(isLinkStandInName("tour-1AbCdEfGhIjK_zip")).toBe(false);
   });
 });
