@@ -443,10 +443,13 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   downloaded; "unchanged" when nothing was saved), the host (the link's the
   tour was fetched from - "own" for a link to no cloud host - else the
   setup's stored choice, else Google Drive; a picker of `TOUR_HOSTS`),
-  for a tour from a link the name its file has there (`linkHostedName`;
-  null for a link that names no zip, such as a Drive file id), else, for a
-  save under a dated name (also reopened, or restored from a draft), that
-  name without its date (`undatedFileName`), so the update steps say to
+  the name its file has at the tour's link (`editor-link.ts`
+  `doneHostedName`): in the session the tour was opened from its link, the
+  link's own name (`linkHostedName`; null for a link that names no zip,
+  such as a Drive file id - never the made-up name the save carries),
+  else, for a save under a dated name (also reopened, or restored from a
+  draft), that name without its date, null when that is a made-up link
+  name or the sample's, so the update steps say to
   rename the saved, dated file to it before uploading it over that file
   (the draft keeps no hosted name of its own), whether the newest bytes carry the
   walk (`walkEntries()`; a check that fails is `unknown`, said as "may

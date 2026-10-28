@@ -139,14 +139,17 @@ export function datedFileName(name: string, now: Date): string {
   return beforeZip(name, `-${day}-${time}`);
 }
 
-/** The stamp `datedFileName` puts before a name's `.zip` (or at its end). */
-const DATE_STAMP = /-\d{4}-\d{2}-\d{2}-\d{6}(\.zip)?$/i;
+/** The stamp `datedFileName` puts before a name's `.zip` (or at its end),
+ *  and the ` (1)` a browser adds to a download whose name was taken. */
+const DATE_STAMP = /-\d{4}-\d{2}-\d{2}-\d{6}(?: \(\d+\))?(\.zip)?$/i;
 
 /** The inverse of `datedFileName`: `name` without its
- *  `-YYYY-MM-\-HHMMSS` stamp before the `.zip` (any case) or at its
- *  end; any other name as it is. Done names the hosted file by it when the
- *  tour was not opened from its link in this session (the dated save
- *  reopened, a draft restored after a reload). */
+ *  `-YYYY-MM-DD-HHMMSS` stamp (and a browser's ` (1)` after it) before
+ *  the `.zip` (any case) or at its end; any other name as it is. A stamp
+ *  the creator typed is taken off too: the name is only offered as a
+ *  guess ("or whatever the file at your link is called"). Done names the
+ *  hosted file by it when the tour was not opened from its link in this
+ *  session (the dated save reopened, a draft restored after a reload). */
 export function undatedFileName(name: string): string {
   return name.replace(DATE_STAMP, (_stamp, zip?: string) => zip ?? "");
 }

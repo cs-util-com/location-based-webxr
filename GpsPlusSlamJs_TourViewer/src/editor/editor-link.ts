@@ -24,6 +24,7 @@ import {
   readArchiveInSlices,
   zipNameOf,
 } from "../tour-session.js";
+import { undatedFileName } from "./editor-session.js";
 
 /** What the editor's link open needs of the transport; injected in tests. */
 type OpenArchive = (
@@ -80,15 +81,60 @@ export async function fetchTourFile(
  *  enough to tell two tours apart, short enough to read in a dialog. */
 const DRIVE_ID_CHARS = 12;
 
+/** The fallback name `archiveFileName` gives a link without a `.zip`
+ *  name. */
+const PLAIN_STAND_IN = "tour.zip";
+
+/** The names `fetchedFileName` makes up for a link that names no file. */
+const DRIVE_STAND_IN = new RegExp(
+  `^tour-[A-Za-z0-9_-]{1,${String(DRIVE_ID_CHARS)}}\.zip$`,
+);
+
 /** The link's own `.zip` name; for a Drive link without one,
  *  `tour-<start of its file id>.zip` (r955 review #1: every Drive link
  *  suggested `tour.zip`, so a second one offered the first one's file);
  *  else `tour.zip`. */
 function fetchedFileName(url: string): string {
   const named = archiveFileName(url);
-  if (named !== "tour.zip") return named;
+  if (named !== PLAIN_STAND_IN) return named;
   const id = driveFileId(url);
   return id === null ? named : `tour-${id.slice(0, DRIVE_ID_CHARS)}.zip`;
+}
+
+/**
+ * Whether `name` is shaped like a name `fetchTourFile` makes up for a link
+ * that names no file (`tour-<start of a Drive id>.zip`, `tour.zip`): no
+ * host knows it. A hosted file really called `tour.zip` matches too, and
+ * is then said to be unknown rather than named - the safe side of the
+ * guess.
+ */
+export function isLinkStandInName(name: string): boolean {
+  return name === PLAIN_STAND_IN || DRIVE_STAND_IN.test(name);
+}
+
+/**
+ * The name of the file at the tour's link, for Done's words
+ * (`DoneFacts.hostedName`). `linkHosted`: what `linkHostedName` gave in
+ * this session (a name, null for a link that names none), undefined when
+ * the tour was not opened from a link in this session. Without it, a
+ * dated save (`datedFileName`; a reopened save, a draft restored after a
+ * reload) is undated - unless that gives a stand-in
+ * (`isLinkStandInName`) or `sampleName`, which no host knows: null then.
+ * Undefined: neither a link nor a dated save. Pure.
+ */
+export function doneHostedName(
+  savedName: string,
+  context: {
+    readonly linkHosted: string | null | undefined;
+    readonly sampleName: string;
+  },
+): string | null | undefined {
+  if (context.linkHosted !== undefined) return context.linkHosted;
+  const undated = undatedFileName(savedName);
+  if (undated === savedName) return undefined;
+  return undated === context.sampleName || isLinkStandInName(undated)
+    ? null
+    : undated;
 }
 
 /**

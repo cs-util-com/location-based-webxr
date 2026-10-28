@@ -57,9 +57,11 @@ export interface DoneFacts {
   readonly debugLeftOut: boolean;
   /** The Drive-mount tip's switch (`DRIVE_MOUNT_TIP_SHOWN`). */
   readonly driveMountTip: boolean;
-  /** For a tour opened from its link: the hosted file's name, which the
-   *  saved file must be uploaded under (`hostReplaceOnComputer`); null
-   *  when the link names no file. Absent for a tour from a file. */
+  /** The hosted file's name, which the saved file must be uploaded under
+   *  (`hostReplaceOnComputer`; `editor-link.ts` `doneHostedName`): the
+   *  link's, or a dated save's without its date; null when it is not
+   *  known (a link that names no file, the sample). Absent for a tour
+   *  neither opened from a link nor saved under a dated name. */
   readonly hostedName?: string | null;
 }
 

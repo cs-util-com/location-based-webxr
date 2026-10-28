@@ -44,6 +44,21 @@ saved exactly as a chosen file is.
   that is not a link and for a link that names no file (a Drive link by
   its id), whose `linkFileName` is a stand-in no host knows. Done tells
   the creator to upload the saved file under it.
+- `isLinkStandInName(name): boolean` - whether `name` has the shape of a
+  name `fetchTourFile` makes up for a link that names no file
+  (`tour-<up to 12 Drive id characters>.zip`, or `tour.zip`). A hosted
+  file really called `tour.zip` matches too, and is then said to be
+  unknown rather than named: the safe side of the guess.
+- `doneHostedName(savedName, { linkHosted, sampleName })` - the name Done
+  tells the creator to upload under (`DoneFacts.hostedName`). In the
+  session the tour was opened from its link, `linkHosted` as it is - a
+  name, or null for a link that names none (never the made-up name the
+  save carries: on Drive an upload under it makes a second file). Without
+  a link in this session, a dated save (`editor-session.ts`
+  `datedFileName`, also reopened or restored from a draft) is undated;
+  null when that gives a made-up link name or the sample's name, which no
+  host knows. Undefined for a tour neither from a link nor saved under a
+  dated name. Pure.
 - `linkOpenErrorText(err, link): string` - the dialog's sentence: the
   viewer's `describeOpenError`, except for `cors`, whose viewer text names
   the viewer's "Open the downloaded file" button; here the viewer's first
@@ -82,7 +97,10 @@ await openFile(file);
   in slices, the name, `warm: false`, the download stopped after a read
   failure, text that is not a link refused before any request, the
   wording of a refusal, and `linkFileName` (the fetched file's name, a
-  Drive link's after its id, null for text that is not a link).
+  Drive link's after its id, null for text that is not a link);
+  `doneHostedName` (the link's name in its session, null for a link that
+  names none, a reopened dated save undated - null for a made-up name or
+  the sample's) and `isLinkStandInName`.
 - `playwright-tests/editor-entry.spec.js` - in the real page against the
   e2e archive server: a linked sample tour opens with the dialog busy
   meanwhile, a host that blocks browsers is explained, and text that is

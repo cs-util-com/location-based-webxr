@@ -342,6 +342,12 @@ describe("createEditorSession, Save a copy", () => {
     );
     expect(undatedFileName("a.zip.bak-2026-10-07-090559")).toBe("a.zip.bak");
     expect(undatedFileName("castle.zip")).toBe("castle.zip");
+    // A browser that found the name taken saved it as "... (1).zip".
+    expect(undatedFileName("castle-2026-10-07-090500 (1).zip")).toBe(
+      "castle.zip",
+    );
+    expect(undatedFileName("castle-2026-10-07-090500 (12)")).toBe("castle");
+    expect(undatedFileName("castle (1).zip")).toBe("castle (1).zip");
     // Not the stamp: a date without its time, or one not before the end.
     expect(undatedFileName("castle-2026-10-07.zip")).toBe(
       "castle-2026-10-07.zip",

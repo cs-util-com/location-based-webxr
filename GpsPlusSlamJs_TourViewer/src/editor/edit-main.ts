@@ -86,6 +86,7 @@ import {
 } from "./editor-open.js";
 import { holdPageInert } from "./page-inert.js";
 import {
+  doneHostedName,
   fetchTourFile,
   linkFileName,
   linkHostedName,
@@ -129,7 +130,6 @@ import {
   copyFileName,
   createEditorSession,
   datedFileName,
-  undatedFileName,
   type EditorSave,
   type EditorSession,
 } from "./editor-session.js";
@@ -3238,7 +3238,10 @@ async function finishEditing(): Promise<void> {
   const walk = await mine.walkEntries().catch(() => null);
   if (editor !== mine || dialogOpen()) return;
   const saved = doneSaved();
-  const hostedName = doneHostedName(saved.name);
+  const hostedName = doneHostedName(saved.name, {
+    linkHosted,
+    sampleName: SAMPLE_NAME,
+  });
   done.open({
     saved,
     host: doneHost(),
@@ -3251,19 +3254,6 @@ async function finishEditing(): Promise<void> {
     ...(hostedName === undefined ? {} : { hostedName }),
   });
   releaseOutside = holdOutside(element("done-modal"));
-}
-
-/**
- * The name of the file at the tour's link, for Done's words: the name the
- * link carries, else - when the tour was saved under a dated name
- * (`datedFileName`) - that name without its date, which is also what a
- * reopened save or a restored draft still knows. Undefined: no link name
- * and no dated save; null: the link's name is unknown.
- */
-function doneHostedName(savedName: string): string | null | undefined {
-  if (typeof linkHosted === "string") return linkHosted;
-  const undated = undatedFileName(savedName);
-  return undated === savedName ? linkHosted : undated;
 }
 
 /**

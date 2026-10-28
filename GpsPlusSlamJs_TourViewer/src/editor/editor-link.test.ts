@@ -16,7 +16,9 @@ import { describe, expect, it, vi } from "vitest";
 import { HOST_REFUSED_TEXT, describeOpenError } from "../open-errors.js";
 import {
   NOT_A_LINK,
+  doneHostedName,
   fetchTourFile,
+  isLinkStandInName,
   linkFileName,
   linkHostedName,
   linkOpenErrorText,
@@ -163,5 +165,78 @@ describe("linkOpenErrorText", () => {
     expect(linkOpenErrorText(new Error("network gone"), LINK)).toBe(
       "network gone",
     );
+  });
+});
+
+/**
+ * Why these tests matter: Done tells the creator to rename the saved file
+ * to the hosted file's name before uploading it over the file at the
+ * link. A wrong name there is worse than none: on Drive an upload under
+ * another name makes a second file, and the link keeps showing the old
+ * tour. For a link that names no file the editor saves under a stand-in
+ * (`tour-<start of the Drive id>.zip`, or `tour.zip`) that the host never
+ * knew, so neither that name nor the sample's may be offered.
+ */
+describe("doneHostedName", () => {
+  const SAMPLE = "marienplatz-tour.zip";
+
+  it("gives the link's own name in the session the tour was opened from its link", () => {
+    expect(
+      doneHostedName("Castle walk-2026-10-07-090500.zip", {
+        linkHosted: "Castle walk.zip",
+        sampleName: SAMPLE,
+      }),
+    ).toBe("Castle walk.zip");
+  });
+
+  it("says the name is unknown for a link that names no file, never the stand-in the save was named after", () => {
+    for (const saved of [
+      "tour-1AbCdEfGhIjK-2026-10-07-090500.zip",
+      "tour-2026-10-07-090500.zip",
+    ]) {
+      expect(
+        doneHostedName(saved, { linkHosted: null, sampleName: SAMPLE }),
+      ).toBeNull();
+    }
+  });
+
+  it("undates a reopened dated save, except one dated from a stand-in or the sample", () => {
+    const reopened = (saved: string) =>
+      doneHostedName(saved, { linkHosted: undefined, sampleName: SAMPLE });
+    expect(reopened("Castle walk-2026-10-07-090500.zip")).toBe(
+      "Castle walk.zip",
+    );
+    expect(reopened("tour-1AbCdEfGhIjK-2026-10-07-090500.zip")).toBeNull();
+    expect(reopened("tour-2026-10-07-090500.zip")).toBeNull();
+    expect(reopened("marienplatz-tour-2026-10-07-090500.zip")).toBeNull();
+  });
+
+  it("has nothing to say for a tour neither fetched from a link nor saved under a dated name", () => {
+    expect(
+      doneHostedName("castle.zip", {
+        linkHosted: undefined,
+        sampleName: SAMPLE,
+      }),
+    ).toBeUndefined();
+  });
+});
+
+/**
+ * Why this test matters: the stand-in predicate is what keeps a reopened
+ * stand-in save from being offered as a hosted name; it must match every
+ * name the stand-in's maker produces and no ordinary one.
+ */
+describe("isLinkStandInName", () => {
+  it("knows the names the editor stands in with for a link that names no file", () => {
+    const drive = linkFileName(
+      "https://drive.google.com/open?id=1AbCdEfGhIjKlMnOp",
+    );
+    expect(drive).toBe("tour-1AbCdEfGhIjK.zip");
+    expect(isLinkStandInName("tour-1AbCdEfGhIjK.zip")).toBe(true);
+    expect(linkFileName("https://example.test/tours/latest")).toBe("tour.zip");
+    expect(isLinkStandInName("tour.zip")).toBe(true);
+    expect(isLinkStandInName("Castle walk.zip")).toBe(false);
+    expect(isLinkStandInName("tour-of-the-old-town.zip")).toBe(false);
+    expect(isLinkStandInName("tour-1AbCdEfGhIjK.zip.bak")).toBe(false);
   });
 });

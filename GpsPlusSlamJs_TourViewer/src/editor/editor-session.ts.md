@@ -315,9 +315,14 @@ changes`; a label is cut at 40 characters, a label-less note is "a
   same local second (or in the hour a daylight-saving change repeats)
   still share a name.
 - `undatedFileName(name)` - the inverse: drops a trailing
-  `-YYYY-MM-DD-HHMMSS` (before `.zip`, any case, or at the end), and
-  returns any other name unchanged. Done derives the name of the file at
-  the tour's link from a dated save with it, also after a reopen.
+  `-YYYY-MM-DD-HHMMSS` (before `.zip`, any case, or at the end), with a
+  browser's ` (1)` after it (a download whose name was taken:
+  `castle-2026-10-07-090500 (1).zip` -> `castle.zip`), and returns any
+  other name unchanged. A stamp the creator typed is taken off too, which
+  is acceptable: Done offers the result only as a guess ("or whatever the
+  file at your link is called"). Done derives the name of the file at the
+  tour's link from a dated save with it, also after a reopen
+  (`editor-link.ts` `doneHostedName`).
 
 ## Invariants & assumptions
 

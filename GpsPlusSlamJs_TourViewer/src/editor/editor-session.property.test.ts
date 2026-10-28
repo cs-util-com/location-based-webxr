@@ -89,7 +89,7 @@ describe("undatedFileName", () => {
   it("leaves a name without the date unchanged", () => {
     fc.assert(
       fc.property(name, (n) => {
-        fc.pre(!/-\d{4}-\d{2}-\d{2}-\d{6}(\.zip)?$/i.test(n));
+        fc.pre(!/-\d{4}-\d{2}-\d{2}-\d{6}( \(\d+\))?(\.zip)?$/i.test(n));
         expect(undatedFileName(n)).toBe(n);
       }),
     );
