@@ -1076,6 +1076,15 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   - `applyView` validates the pose, does the lab's side effects (the intro
     yields, the pin and the dust reset, the hold) and leaves the frame
     target and the camera to the view's own `placeView`.
+  - The frame's relief work comes from typed Globe modules, the page
+    keeping only its parameters, its DOM and its hooks: the band's gated
+    share and the carriers' release (`globe-band-step`), the clearance and
+    the relief's update with its timed E step (`globe-relief-step`), the
+    relief's clip planes (`globe-relief-planes`), the OSM map's step
+    (`globe-osm-frame`), the controls (`globe-camera-controls`, on the
+    page's canvas) and the credits line's text (`globeCreditsLine`;
+    `renderCredits` only builds the DOM). Each keeps the lab's order and
+    state, so the page's state readers and the smokes read the same values.
 - Tests: `globe.smoke.spec.mjs`:
   - on a fixed view (`#at=30,15&spinMs=0&turnMs=0`, 11:00 UTC on an
     equinox so it is day): boots, lit centre,

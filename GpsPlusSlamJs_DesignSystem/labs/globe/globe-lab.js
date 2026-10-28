@@ -13,7 +13,6 @@
  * @see globe-lab.js.md
  */
 import * as THREE from "three";
-import { GlobeControls } from "3d-tiles-renderer";
 
 import {
   GLOBE_SURFACE,
@@ -42,8 +41,7 @@ import {
   cloudShellShadowStrengths,
   cloudShellVolumeShares,
 } from "/globe/globe-cloud-shell-volume.js";
-import { creditsFor } from "/globe/globe-credits.js";
-import { GIBS_ACKNOWLEDGEMENT } from "/globe/globe-sources.js";
+import { creditsFor, globeCreditsLine } from "/globe/globe-credits.js";
 import {
   GLOBE_FALLBACK_TARGET,
   chooseGlobeTarget,
@@ -51,13 +49,7 @@ import {
   parseLatLngText,
   parseViewText,
 } from "/globe/globe-target.js";
-import {
-  applyOrbitPose,
-  clipPlanes,
-  reliefClearanceM,
-  orbitPose,
-  smoothstep,
-} from "/globe/globe-camera.js";
+import { applyOrbitPose, orbitPose, smoothstep } from "/globe/globe-camera.js";
 import { GLOBE_SKY } from "/globe/globe-sky.js";
 import { GLOBE_STARS } from "/globe/globe-stars.js";
 import {
@@ -102,10 +94,7 @@ import {
   introCameraPose,
   spinDirection,
 } from "/globe/globe-intro.js";
-import {
-  globeZoomOutLimitM,
-  limitGlobeZoomOut,
-} from "/globe/globe-zoom-limit.js";
+import { globeZoomOutLimitM } from "/globe/globe-zoom-limit.js";
 import {
   GLOBE_TERRAIN,
   createGlobeTerrain,
@@ -121,12 +110,9 @@ import { RELIEF_CACHE, reliefCacheBudget } from "/globe/globe-relief-cache.js";
 // The editor's building blocks (G1), from their one entry module.
 import {
   GLOBE_EYE,
-  applyEyeControls,
   createGlobeOsmOverlay,
-  eyeClipPlanes,
   groundHit,
   groundReachM,
-  nearestItemDistanceM,
   terrainAboveGround,
 } from "/globe/globe-editor.js";
 import {
@@ -139,15 +125,20 @@ import {
   groundRevisionM,
   readLandingGroundM,
 } from "/globe/landing-ground.js";
-import { nextDrawnShare, topLevelReady } from "/globe/globe-band-gate.js";
+import { createBandRelease, createBandShare } from "/globe/globe-band-step.js";
+import { createGlobeCameraControls } from "/globe/globe-camera-controls.js";
+import { createOsmFrameStep } from "/globe/globe-osm-frame.js";
+import { createReliefPlanes } from "/globe/globe-relief-planes.js";
+import {
+  liftAlongRadius,
+  reliefClearance,
+  updateRelief,
+} from "/globe/globe-relief-step.js";
 import { asStencilFill, asStencilWriter } from "/globe/globe-stencil-fill.js";
-import { drainTileCache, releaseTileCache } from "/globe/globe-tile-cache.js";
 import { SKY_FILL } from "/globe/sky-level.js";
 import {
   GLOBE_FLIGHT,
-  carrierShareAt,
   cityShareAt,
-  clearedAltitudeM,
   exaggerationAt,
   minimumAltitudeM,
   pitchAtDeg,
@@ -319,23 +310,16 @@ function statusView() {
  * textContent only: the texts come from the registry, never from markup.
  */
 function renderCredits(credits, heights = null, extra = []) {
+  // `heights`: the relief's credits (`reliefCredits`, linked below like the
+  // imagery's), or a plain sentence (synthetic heights); `extra`: credits
+  // that came later (the OSM map, G1 6), linked too.
+  const line = globeCreditsLine(credits, heights, extra);
   const details = document.createElement("details");
   const summary = document.createElement("summary");
-  // `heights`: the relief's credits (`reliefCredits`, linked below like the
-  // imagery's), or a plain sentence (synthetic heights).
-  const heightsText = Array.isArray(heights)
-    ? heights.map((c) => c.full).join(" · ")
-    : heights;
-  // `extra`: credits that came later (the OSM map, G1 6), linked too.
-  const extraText = extra.map((c) => c.full).join(" · ");
-  summary.textContent = `Imagery: ${credits.map((c) => c.short).join(" · ")}. ${PROCEDURAL_STARS}${heightsText ? ` ${heightsText}` : ""}${extraText ? ` Map: ${extraText}` : ""}`;
+  summary.textContent = line.summary;
   details.append(summary);
   const list = document.createElement("ul");
-  for (const c of [
-    ...credits,
-    ...(Array.isArray(heights) ? heights : []),
-    ...extra,
-  ]) {
+  for (const c of line.links) {
     const item = document.createElement("li");
     const link = document.createElement("a");
     link.href = c.href;
@@ -346,17 +330,10 @@ function renderCredits(credits, heights = null, extra = []) {
     list.append(item);
   }
   const note = document.createElement("p");
-  note.textContent = GIBS_ACKNOWLEDGEMENT;
+  note.textContent = line.note;
   details.append(list, note);
   creditsBox.replaceChildren(details);
 }
-
-/**
- * The stars are generated, not a catalogue (round-2 plan Q2: no catalogue
- * with a clearly public-domain or attribution-only licence was found), and
- * the credits line says so.
- */
-const PROCEDURAL_STARS = "Stars: procedural, not a star catalogue.";
 
 /**
  * The spin while the page waits for a target, in degrees per second. It
@@ -863,9 +840,6 @@ const PERF_STREET = Object.freeze({ backM: 30, lookAtM: 1 });
 
 /** The sweeps the recorder knows (`/globe/globe-perf-sweep.js`). */
 const PERF_SWEEPS = ["quick", "full", "overhead"];
-
-/** The highest real peak (m, Everest rounded up): the far plane's reach (F2a, M4). */
-const RELIEF_PEAK_M = 8_850;
 
 /** The floor the surface keeps under its cache cap, as a fraction of it. */
 const CACHE_FLOOR_RATIO =
@@ -1467,97 +1441,11 @@ function cameraControls(
   reliefPlanes = () => ({}),
   eyeItems = null,
 ) {
-  const controls = new GlobeControls(scene, camera, canvas);
-  controls.setEllipsoid(globe.tiles.ellipsoid, globe.tiles.group);
-  controls.enableDamping = true;
-  // First person (G1 5): the controls down to eye height, and the near
-  // plane following the nearest item (`eyeItems`: world bounding spheres).
-  if (eyeItems) applyEyeControls(controls);
-  controls.addEventListener("start", onTake);
-  const local = new THREE.Vector3();
-  let picking = scene;
-  /**
-   * The clip planes from the distance to the nearest drawn ground and the
-   * highest drawn peak (F2 plan F2a, M4), whoever owns the camera: after
-   * the intro places it, after the controls' own update (which sets planes
-   * of its own over the ellipsoid), and once more after the clearance's
-   * lift, which moves the camera later in the frame (`fitPlanes`).
-   */
-  const fitPlanes = () => {
-    local.copy(camera.position);
-    globe.tiles.group.worldToLocal(local);
-    const { near, far } = eyeItems
-      ? eyeClipPlanes(globe.tiles.ellipsoid, local, {
-          ...reliefPlanes(),
-          nearestItemM: nearestItemDistanceM(camera.position, eyeItems()),
-        })
-      : clipPlanes(globe.tiles.ellipsoid, local, reliefPlanes());
-    if (camera.near !== near || camera.far !== far) {
-      camera.near = near;
-      camera.far = far;
-      camera.updateProjectionMatrix();
-    }
-  };
-  return {
-    /**
-     * Fits the planes to where the camera is now: the frame calls it last,
-     * after every writer (F2a's browser run, 2026-10-05: fitted before the
-     * clearance's lift, the planes belonged to the dive's raw height, 3 km
-     * under the drawn ground, and the near plane cut into the ground).
-     */
-    fitPlanes,
-    followIntro() {
-      fitPlanes();
-      controls.getCameraUpDirection(controls.up);
-    },
-    update() {
-      controls.update();
-      fitPlanes();
-    },
-    /**
-     * What the controls' rays hit (F2a, M4; F1 review Major 5): the carrier
-     * drawing most of the frame, not the whole scene (the cloud shell, the
-     * other carrier).
-     */
-    pickFrom(object) {
-      if (picking !== object) {
-        picking = object;
-        controls.setScene(object);
-      }
-    },
-    /** The farthest the controls zoom out: a getter, metres from the centre. */
-    limit(limitM) {
-      limitGlobeZoomOut(controls, limitM);
-    },
-    /** The library's height adjustment (its two raycasts a frame, H5). */
-    setAdjustHeight(on) {
-      controls.adjustHeight = on;
-    },
-    /**
-     * Whether the controls are in a gesture or still gliding: a pointer
-     * down, a state other than none, or momentum left (the library's own
-     * test, with the globe's spin). Releasing them then would end the
-     * gesture, so a frame move waits (volume-cloud plan §14).
-     */
-    busy() {
-      return (
-        controls.pointerTracker.getPointerCount() > 0 ||
-        controls.state !== 0 ||
-        controls.globeInertiaFactor !== 0 ||
-        Boolean(controls._inertiaNeedsUpdate?.())
-      );
-    },
-    release() {
-      // Toggling `enabled` is the library's own reset: it ends any drag,
-      // forgets the pointers and drops the drag and rotation momentum. The
-      // globe's spin momentum and a pending wheel step are cleared here.
-      controls.enabled = false;
-      controls.enabled = true;
-      controls.zoomDelta = 0;
-      controls.globeInertia.identity();
-      controls.globeInertiaFactor = 0;
-    },
-  };
+  return createGlobeCameraControls(scene, camera, canvas, globe, {
+    onTake,
+    reliefPlanes,
+    eyeItems,
+  });
 }
 
 /** How long the pin waits for a fix, as OsmDemo's locate button does. */
@@ -2508,20 +2396,6 @@ async function start() {
   let groundUnderCameraM = null;
   /** Frames on which the clearance raised the camera. */
   let clearanceLifts = 0;
-  /**
-   * The share on the frame before, and the bytes released when a carrier
-   * left the frame (review 2026-10-03-1835 major 4: outside the band the
-   * inactive carrier's tiles are unloaded, not only left undrawn).
-   */
-  const released = { globe: 0, relief: 0 };
-  /**
-   * When each carrier left the band (performance.now(), null while it has
-   * pixels) and whether its cache has been released since.
-   */
-  const outOfBand = {
-    globe: { since: null, done: false, last: null },
-    relief: { since: null, done: false, last: null },
-  };
   /** The relief's share of the pixels this frame (the band's cross-fade). */
   let bandShare = terrain ? 1 : 0;
   /** The tiles the surface is mostly drawn with now: the relief's or the globe's. */
@@ -2545,37 +2419,17 @@ async function start() {
         fadeM: startParams.osmFadeM,
       })
     : null;
-  let osmAttached = false;
-  let osmLast = null;
-  /** The pose the OSM map was given last (the lab's state reports it). */
-  let osmPose = null;
   /** The OSM map's step each frame: attach on first use, then the pose. */
-  const osmFrame = (now) => {
-    if (!osm) return;
-    if (params.osm === 1 && !osmAttached) {
-      osm.attach(terrain);
-      osmAttached = true;
-      renderCredits(credits, heightsCredit, [osm.credit]);
-    }
-    if (!osmAttached) return;
-    osm.setEnabled(params.osm === 1);
-    osm.setFadeM(params.osmFadeM);
-    // Speed in the Earth's frame: the world is recentred under the camera.
-    const at = globe.tiles.group.worldToLocal(camera.position.clone());
-    const speedMps = osmLast
-      ? at.distanceTo(osmLast.at) / Math.max((now - osmLast.t) / 1000, 1e-3)
-      : 0;
-    osmLast = { at, t: now };
-    const altitude = globe.tiles.ellipsoid.getPositionElevation(at);
-    osmPose = {
-      aboveGroundM:
-        groundUnderCameraM === null || bandShare <= 0
-          ? Number.NaN
-          : altitude - groundUnderCameraM,
-      speedMps,
-    };
-    osm.update({ position: camera.position, ...osmPose, nowMs: now });
-  };
+  const osmFrame = osm
+    ? createOsmFrameStep({
+        osm,
+        terrain,
+        ellipsoid: globe.tiles.ellipsoid,
+        group: globe.tiles.group,
+        camera,
+        onAttach: () => renderCredits(credits, heightsCredit, [osm.credit]),
+      })
+    : null;
   const status = statusView();
   const flight = introFlight(globe.tiles.ellipsoid, {
     sunEcef: () => globe.surfaceUniforms.uSunEcef.value,
@@ -2629,7 +2483,6 @@ async function start() {
   // the highest real peak (8,850 m) times E. The first rule, the height
   // above the HIGHEST ground nearby, floored the near plane at 1 m under a
   // ridge (F2a's browser run, 2026-10-05).
-  const planeLocal = new THREE.Vector3();
   // The least height over the drawn ground the frame keeps (m): the
   // flight's 100 m, or an eye height in first person (G1 5).
   const cameraClearanceM = startParams.eye
@@ -2637,42 +2490,18 @@ async function start() {
     : GLOBE_FLIGHT.clearanceM;
   /** First person's items (a test hook places them): id to mesh and world sphere. */
   const eyeItems = new Map();
-  const RING = Array.from({ length: 8 }, (_, k) => (k * Math.PI) / 4);
-  /** The planes' last clearance (m), for the state; null without. */
-  let planeClearanceM = null;
-  let planeSamples = null;
-  const reliefPlanes = () => {
-    if (!terrain || bandShare <= 0 || params.reliefPlanes === 0) return {};
-    const ellipsoid = globe.tiles.ellipsoid;
-    globe.tiles.group.worldToLocal(planeLocal.copy(camera.position));
-    const c = ellipsoid.getPositionToCartographic(planeLocal, {});
-    const altitude = ellipsoid.getPositionElevation(planeLocal);
-    const below = terrain.plugin.sampleCartographicElevation(c.lat, c.lon);
-    const ringM = Math.max(10, altitude - Math.max(0, below ?? 0));
-    const samples = [{ distanceM: 0, groundM: below }];
-    for (const a of RING) {
-      samples.push({
-        distanceM: ringM,
-        groundM: terrain.plugin.sampleCartographicElevation(
-          c.lat + (ringM * Math.cos(a)) / radius,
-          c.lon +
-            (ringM * Math.sin(a)) / (radius * Math.max(Math.cos(c.lat), 0.01)),
-        ),
-      });
-    }
-    const clearanceM = reliefClearanceM(altitude, samples);
-    planeClearanceM = Number.isFinite(clearanceM) ? clearanceM : null;
-    planeSamples = {
-      altitude,
-      below,
-      ringM,
-      ring: samples.slice(1).map((x) => x.groundM),
-    };
-    return {
-      ...(planeClearanceM === null ? {} : { clearanceM }),
-      peakM: RELIEF_PEAK_M * terrain.plugin.heightScale,
-    };
-  };
+  const reliefPlanes = terrain
+    ? createReliefPlanes({
+        ellipsoid: globe.tiles.ellipsoid,
+        group: globe.tiles.group,
+        camera,
+        radiusM: radius,
+        sampleGround: (lat, lon) =>
+          terrain.plugin.sampleCartographicElevation(lat, lon),
+        heightScale: () => terrain.plugin.heightScale,
+        active: () => bandShare > 0 && params.reliefPlanes !== 0,
+      })
+    : () => ({});
   const controls = cameraControls(
     scene,
     camera,
@@ -3026,13 +2855,8 @@ async function start() {
   let perf = null;
   /** The Debug panel (`globe-debug.js`), created after the first frame's setup. */
   let debug = null;
-  /** The band share last written to the debug log (steps of 0.1). */
-  let loggedShare = null;
-  /** The altitude's share before the gate, and the gate's last frame. */
+  /** The altitude's share before the gate. */
   let bandTarget = 0;
-  let lastGateAt = null;
-  /** Whether the gate held the share back on the frame before. */
-  let bandHeld = false;
   /**
    * For the fill smoke: the relief's tiles hidden, as if none were loaded,
    * so every pixel must come from the globe's fill (round-6 plan G6-1).
@@ -3089,8 +2913,37 @@ async function start() {
   };
   /** An exaggeration the recorder holds in place of the altitude's, or null. */
   let eOverride = null;
-  /** The band's share on the frame before (the recorder's edge mark). */
-  let lastShare = bandShare;
+  /**
+   * The band's gated share (with its hold, edge and share events) and the
+   * release of a carrier out of the band (review 2026-10-03-1835 major 4:
+   * outside the band the inactive carrier's tiles are unloaded, not only
+   * left undrawn).
+   */
+  const bandLog = (kind, detail) => debugLog.log(kind, detail);
+  const bandMark = (kind, detail) => hooks.mark(kind, detail);
+  const band = terrain
+    ? createBandShare({
+        globeTiles: globe.tiles,
+        reliefTiles: terrain.tiles,
+        reliefSettled,
+        log: bandLog,
+        mark: bandMark,
+      })
+    : null;
+  const bandRelease = terrain
+    ? createBandRelease({
+        globe: {
+          cache: globe.tiles.lruCache,
+          keep: () => keepFor(globe.tiles),
+        },
+        relief: {
+          cache: terrain.tiles.lruCache,
+          keep: () => keepFor(terrain.tiles),
+        },
+        log: bandLog,
+        mark: bandMark,
+      })
+    : null;
   /**
    * The recorder's refresh calibration: while true the frame does no work
    * (nothing updated, nothing drawn), so its intervals are the display's.
@@ -3204,161 +3057,55 @@ async function start() {
         );
       }
       const highM = params.bandHigh * 1000;
-      const targetShare =
-        params.bandShare ??
-        carrierShareAt(altitudeM, {
-          highM,
-          lowM: Math.min(params.bandLow * 1000, highM - 1),
-        });
-      if (params.bandShare !== null || params.bandGate === 0) {
-        bandShare = targetShare;
-      } else {
-        // Each carrier's readiness from its last update (round-6 plan G6-1).
-        // The relief starts taking pixels only once its view is refined
-        // (round-6 plan G6-1, owner 2026-10-04: no flash from the globe's
-        // sharp imagery to the relief's coarse first tiles); once it has
-        // pixels it keeps them while its top tiles are loaded, so a pan at a
-        // low altitude never hands the frame back and forth.
-        const reliefReady =
-          topLevelReady(terrain.tiles) &&
-          (bandShare > 0 || params.bandSharp === 0 || reliefSettled());
-        const globeReady = topLevelReady(globe.tiles);
-        const held = !reliefReady || !globeReady;
-        if (held !== bandHeld) {
-          bandHeld = held;
-          debugLog.log(held ? "band.hold" : "band.go", {
-            reliefReady,
-            globeReady,
-            target: targetShare,
-            drawn: bandShare,
-          });
-        }
-        bandShare = nextDrawnShare({
-          // The first gated frame starts on the globe: it draws from orbit,
-          // and the relief takes over once it is ready.
-          drawn: lastGateAt === null ? 0 : bandShare,
-          target: targetShare,
-          reliefReady,
-          globeReady,
-          dtMs: lastGateAt === null ? 0 : Math.min(now - lastGateAt, 250),
-        });
-      }
-      lastGateAt = now;
-      bandTarget = targetShare;
+      bandShare = band.step(now, {
+        altitudeM,
+        fixedShare: params.bandShare,
+        highM,
+        lowM: Math.min(params.bandLow * 1000, highM - 1),
+        gate: params.bandGate !== 0,
+        sharp: params.bandSharp !== 0,
+      });
+      bandTarget = band.target();
       globe.surfaceUniforms.uCarrierShare.value = bandShare;
-      if (bandShare > 0 !== lastShare > 0 || bandShare < 1 !== lastShare < 1) {
-        hooks.mark("band.edge", { share: bandShare, altKm: altitudeM / 1000 });
-      }
-      if (bandShare > 0 && bandShare < 1) hooks.mark("band.mixed");
-      const shareStep = Math.round(bandShare * 10) / 10;
-      if (shareStep !== loggedShare) {
-        loggedShare = shareStep;
-        debugLog.log("band.share", {
-          share: shareStep,
-          altKm: altitudeM / 1000,
-        });
-      }
-      lastShare = bandShare;
       // A carrier out of the band for `bandReleaseMs` has its cache
       // released; a return before then cancels it. Not while frozen: the
       // smokes step the share over the same tiles.
       const frozen = params.bandFreeze === 1;
-      for (const [key, out, cache, keep] of [
-        ["globe", bandShare >= 1, globe.tiles.lruCache, keepFor(globe.tiles)],
-        [
-          "relief",
-          bandShare <= 0,
-          terrain.tiles.lruCache,
-          keepFor(terrain.tiles),
-        ],
-      ]) {
-        const o = outOfBand[key];
-        if (!out || frozen) {
-          if (!out) o.done = false;
-          o.since = null;
-        } else if (!o.done) {
-          o.since ??= now;
-          if (now - o.since >= params.bandReleaseMs) {
-            // For the smokes: when the carrier left, when its release
-            // started and ended, and its dispose cost per frame.
-            if (o.last?.leftAt !== o.since) {
-              o.last = {
-                leftAt: o.since,
-                releasedAt: now,
-                drainedAt: null,
-                frames: 0,
-                maxPerFrame: 0,
-                releaseMs: 0,
-                worstFrameMs: 0,
-                bytes: 0,
-              };
-              hooks.mark(`release.${key}`, { altKm: altitudeM / 1000 });
-            }
-            const t0 = performance.now();
-            const items = cache.itemList.length;
-            const step = params.bandDrainTiles;
-            // The drain keeps the carrier's coarsest tiles (depth 1, the
-            // root's children): cheap, and what lets it draw again at once
-            // when the view returns (round-6 plan G6-1, the zoom-out holes).
-            let left = 0;
-            let bytes;
-            if (step === 0) {
-              bytes = releaseTileCache(cache);
-            } else {
-              const drained = drainTileCache(cache, step, keep);
-              bytes = drained.freedBytes;
-              left = drained.left;
-            }
-            const ms = performance.now() - t0;
-            const l = o.last;
-            l.frames++;
-            l.maxPerFrame = Math.max(
-              l.maxPerFrame,
-              items - cache.itemList.length,
-            );
-            l.releaseMs += ms;
-            l.worstFrameMs = Math.max(l.worstFrameMs, ms);
-            l.bytes += bytes;
-            released[key] += bytes;
-            hooks.mark(`drain.${key}`);
-            if (left === 0) {
-              o.done = true;
-              l.drainedAt = now;
-              debugLog.log(`drained.${key}`, {
-                frames: l.frames,
-                mib: l.bytes / 2 ** 20,
-              });
-            }
-          }
-        }
-      }
+      bandRelease.step(now, {
+        share: bandShare,
+        altitudeM,
+        frozen,
+        releaseMs: params.bandReleaseMs,
+        drainTiles: params.bandDrainTiles,
+      });
       // The clearance every frame (one-scene plan §3.4; review 2026-10-03-1835
       // major 1): wherever the relief draws, the camera never comes closer
       // to the drawn ground under it than the clearance, whoever owns the
       // camera (the dive, the hold or the controls).
       if (bandShare > 0) {
-        const at = globe.tiles.ellipsoid.getPositionToCartographic(
-          globe.tiles.group.worldToLocal(camera.position.clone()),
-          {},
-        );
-        groundUnderCameraM = terrain.plugin.sampleCartographicElevation(
-          at.lat,
-          at.lon,
-        );
-        const cleared = clearedAltitudeM(
+        const clear = reliefClearance({
+          ellipsoid: globe.tiles.ellipsoid,
+          group: globe.tiles.group,
+          camera,
+          sampleGround: (lat, lon) =>
+            terrain.plugin.sampleCartographicElevation(lat, lon),
           altitudeM,
-          groundUnderCameraM,
-          cameraClearanceM,
-        );
-        if (cleared > altitudeM) {
+          clearanceM: cameraClearanceM,
+        });
+        groundUnderCameraM = clear.groundM;
+        if (clear.lift) {
           const lifted = ecefCamera();
-          const r = lifted.position.length();
-          lifted.position.multiplyScalar((r + cleared - altitudeM) / r);
+          liftAlongRadius(lifted.position, altitudeM, clear.clearedM);
           placeCameraEcef(lifted.position, lifted.quaternion);
           clearanceLifts += 1;
         }
       }
-      osmFrame(now);
+      osmFrame?.(now, {
+        on: params.osm === 1,
+        fadeM: params.osmFadeM,
+        groundUnderCameraM,
+        bandShare,
+      });
       // With the fill the globe always draws (only where the relief left a
       // pixel) and is always updated, coarse while the relief has every
       // pixel, so it keeps to its top tiles.
@@ -3376,22 +3123,17 @@ async function start() {
       }
       terrain.tiles.group.visible = bandShare > 0 && !reliefHidden;
       if ((bandShare > 0 || bandTarget > 0) && !frozen) {
-        terrain.tiles.setCamera(camera);
-        renderer.getDrawingBufferSize(terrainResolution);
-        terrain.tiles.setResolution(
-          camera,
-          terrainResolution.x,
-          terrainResolution.y,
-        );
         // An E step re-walks the relief's tile tree (frame-hitch plan H1):
         // the assignment is timed for the recorder.
-        const e = eOverride ?? exaggerationAt(altitudeM, heightLaw());
-        if (e !== terrain.plugin.heightScale) {
-          const t0 = performance.now();
-          terrain.plugin.heightScale = e;
-          hooks.eStep(performance.now() - t0, e);
-        }
-        terrain.tiles.update();
+        updateRelief({
+          tiles: terrain.tiles,
+          plugin: terrain.plugin,
+          camera,
+          renderer,
+          resolution: terrainResolution,
+          heightScale: eOverride ?? exaggerationAt(altitudeM, heightLaw()),
+          onEStep: (ms, e) => hooks.eStep(ms, e),
+        });
       }
     } else {
       globe.update(camera, renderer);
@@ -3928,8 +3670,8 @@ async function start() {
       planes: {
         near: camera.near,
         far: camera.far,
-        clearanceM: planeClearanceM,
-        samples: planeSamples,
+        clearanceM: terrain ? reliefPlanes.state().clearanceM : null,
+        samples: terrain ? reliefPlanes.state().samples : null,
       },
       // What the shader reads: the clouds' drift east, radians.
       cloudLonOffsetRad: globe.surfaceUniforms.uCloudLonOffset.value,
@@ -4059,14 +3801,14 @@ async function start() {
             source: terrarium ? reliefSource.id : "synthetic",
             fallback: terrain.reliefFallback(),
             meshMaxLevel: startParams.reliefMeshLevel,
-            releasedBytes: { ...released },
+            releasedBytes: { ...bandRelease.released },
             // The decoded heights kept past their tiles, and the height
             // tiles requested so far (synthetic heights only; DEC-N1).
             keptHeights: terrain.heightKeeperStats(),
             heightRequests: syntheticHeights?.requests.length ?? null,
             lastRelease: {
-              globe: outOfBand.globe.last,
-              relief: outOfBand.relief.last,
+              globe: bandRelease.outOfBand.globe.last,
+              relief: bandRelease.outOfBand.relief.last,
             },
             settled:
               terrain.tiles.loadProgress === 1 &&
@@ -4083,7 +3825,11 @@ async function start() {
       pixelRatio: renderer.getPixelRatio(),
       // The OSM map (G1 6): on, active, requests made, locks gated.
       osm: osm
-        ? { attached: osmAttached, pose: osmPose, ...osm.stats() }
+        ? {
+            attached: osmFrame.attached(),
+            pose: osmFrame.pose(),
+            ...osm.stats(),
+          }
         : null,
       // The first-person mode (G1 5): on, the near plane now, the
       // depth buffer three gave, the items the plane follows.
@@ -4820,7 +4566,7 @@ void main() {
    * tiles, so it is read only once the cheap counts allow it).
    */
   const perfOsmReady = () => {
-    if (!osm || !osmAttached || params.osm !== 1) return true;
+    if (!osm || !osmFrame.attached() || params.osm !== 1) return true;
     const s = osm.stats();
     if (!s.active) return s.on <= 1e-3;
     if (s.on < 0.999 || s.reevaluateBacklog > 0) return false;
@@ -4960,9 +4706,7 @@ void main() {
         const cityState = city?.state();
         return {
           band: !terrain || Math.abs(bandShare - bandTarget) < 1e-3,
-          release: Object.values(outOfBand).every(
-            (o) => o.since === null || o.done,
-          ),
+          release: bandRelease?.settled() ?? true,
           // A delivery that lands inside a held run voids it
           // (`city.arrived`), so a run need not wait for the load's end;
           // the sweep waits for that once, before its first move
@@ -5001,7 +4745,7 @@ void main() {
       itemsInView: () => perfItems.inView(camera),
       /** The OSM map's tiles waiting and failed (null without the map). */
       osmCoverage() {
-        if (!osm || !osmAttached || params.osm !== 1) return null;
+        if (!osm || !osmFrame.attached() || params.osm !== 1) return null;
         const c = osm.coverage();
         return { waiting: c.waiting, failed: c.failed };
       },
