@@ -328,14 +328,19 @@ test("the overhead sweep runs the recorder's hooks off and on", async ({
 // raycast for the point under the pointer on every zoom frame. The
 // controls-driven mode feeds their wheel input on the same altitude law,
 // so a run in it must actually fly the path (reach the bottom) and count
-// the controls' raycasts into the relief.
+// the controls' raycasts into the relief. A raycast is counted only on a
+// loaded relief tile, so the path must leave the relief time to load under
+// SwiftShader, at a few frames a second. Measured 2026-10-28: at 1 decade a
+// second the run had 29 frames and loaded no relief tile (0 raycasts); at
+// 0.25, 9 loads and 135 raycasts; at 0.1, 21 loads and 381 raycasts. 0.1
+// keeps a margin for CI and a busy machine, which are slower still.
 test("a zoom driven through the controls flies the path and counts their raycasts", async ({
   page,
 }) => {
   test.setTimeout(600_000);
   const errors = await bootPerf(
     page,
-    `${BASE}&${OLD_BAND}&relief=1&perf=1&perfDrive=controls&perfSpeed=1&perfPlace=alps`,
+    `${BASE}&${OLD_BAND}&relief=1&perf=1&perfDrive=controls&perfSpeed=0.1&perfPlace=alps`,
   );
   const out = await runToEnd(page, 540_000);
   expect(errors).toEqual([]);
