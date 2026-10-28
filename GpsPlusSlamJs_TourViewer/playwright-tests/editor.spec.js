@@ -5388,6 +5388,67 @@ test("a write at the open still running when another tour is opened lets the sav
   );
 });
 
+test("a Ctrl+S pressed in a tour opened while the last tour's copy was written saves that tour once the copy is done", async ({
+  page,
+}) => {
+  // Why: a copy holds the page's save slot until its write ends, also
+  // when another tour opened meanwhile, so a Ctrl+S in that tour waits
+  // behind it. The copy's end ran only the waiting Save of the tour it
+  // copied - gone by then - and the new tour's Ctrl+S was dropped in
+  // silence.
+  await inPlaceTourEdited(page, "Left in the first tour");
+  await heldWriteSavePicker(page, "a-copy.zip");
+  await fileCommand(page, "saveCopy");
+  await expect(page.locator("#save-status")).toHaveText("Saving a copy…");
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
+  await openAnother(page);
+  await offerOpfsFile(page, await editorTour(), "second.zip");
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-file")).toHaveText("second.zip");
+  await editTownHall(page, "Saved in the second tour");
+  await page.keyboard.press("Control+s");
+  await page.evaluate(() => Reflect.get(window, "__releaseWrite")());
+  await expect(page.locator("#save-status")).toHaveText("Saved to second.zip");
+  expect((await readOpfsTour(page, "second.zip"))["tour.json"]).toContain(
+    "Saved in the second tour",
+  );
+});
+
+test("a Ctrl+S queued behind a copy, on a tour with no file and nothing to save, says there is nothing to save", async ({
+  page,
+}) => {
+  // Why: "Press Save to choose where to save the tour" asks the creator
+  // to save. With no change to save, a Save says there is nothing to
+  // save, and a Ctrl+S that waited behind a copy must say the same, not
+  // send the creator to a dialog for nothing.
+  await withBothDialogs(page);
+  await autosaveOutOfTheWay(page);
+  await page.goto("/edit.html");
+  await dropOnDropBox(page, await editorTour(), "editor-fixture.zip");
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await heldWriteSavePicker(page, "a-copy.zip");
+  await fileCommand(page, "saveCopy");
+  await expect(page.locator("#file-save")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await page.keyboard.press("Control+s");
+  await page.evaluate(() => Reflect.get(window, "__releaseWrite")());
+  await expect(
+    page.locator(".toast", { hasText: "Saved a copy as a-copy.zip" }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".toast", { hasText: "Nothing to save" }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".toast", {
+      hasText: "Press Save to choose where to save the tour",
+    }),
+  ).toHaveCount(0);
+});
+
 test("a Ctrl+S queued behind a copy, on a tour with no file to save into, says to press Save instead of downloading", async ({
   page,
 }) => {

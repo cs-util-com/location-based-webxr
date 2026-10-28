@@ -340,13 +340,16 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     explicit Save itself queues it, and the claim's end runs it
     (`runQueuedSave`); the Save button is disabled while any save
     runs, so only the key queues (E2b-2 milestone review #10). A queued
-    Ctrl+S on a tour with no file to save into (no target, no opened
-    handle) in a browser that asks where to save does not run - the
-    browser allows that question only within the key press - but says
-    "Press Save to choose where to save the tour." instead of downloading.
+    Ctrl+S on a tour with unsaved work and no file to save into (no
+    target, no opened handle) in a browser that asks where to save does
+    not run - the browser allows that question only within the key press
+    - but says "Press Save to choose where to save the tour." instead of
+    downloading; with nothing to save it runs and says so, as Save does.
     The open's write and a copy let the slot go by their own claim
     (`saveEnd` still theirs), also when another tour opened meanwhile, so
-    a claim never outlives its write. A queued Ctrl+S belongs to its tour:
+    a claim never outlives its write; their end runs the Save queued for
+    the tour that shows then (every open drops one queued before it), so
+    a Ctrl+S in a tour opened meanwhile is not lost. A queued Ctrl+S belongs to its tour:
     a save whose tour closed meanwhile drops it (`abandon`, milestone review
     #7). A restored draft's work is saved by itself like any edit.
   - `body[data-autosave]` is the scheduler's state (`off`, `idle`,

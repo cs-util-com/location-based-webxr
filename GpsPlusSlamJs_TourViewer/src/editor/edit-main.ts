@@ -2604,8 +2604,10 @@ async function keepInChosenFile(
     ended();
     renderSaveState();
     // A Save asked for (Ctrl+S) during the write runs now, into the
-    // adopted file, as one waiting behind an autosave does.
-    runQueuedSave(mine);
+    // adopted file, as one waiting behind an autosave does - or into the
+    // tour opened meanwhile, which it was pressed for (every open drops a
+    // Save queued before it).
+    if (editor !== null) runQueuedSave(editor);
     // An autosave held back during the write runs now, into the adopted
     // file, and so does a resave that fell due meanwhile.
     autosave.poke();
@@ -2684,9 +2686,11 @@ function runQueuedSave(mine: EditorSession): void {
   // A tour with no file to save into asks where to save it, which the
   // browser allows only within a key press or a click - long gone now.
   // Run here, it would download the tour instead: Save asks.
+  // With nothing to save, Save only says so: it asks for no file then.
   if (
     target === null &&
     (openedFile?.handle ?? null) === null &&
+    unsavedWork() &&
     adoptsSavedFile(window as unknown as PickerWindow & SavePickerWindow)
   ) {
     toast(PRESS_SAVE_TO_CHOOSE);
@@ -2770,8 +2774,10 @@ async function saveCopy(): Promise<void> {
     if (saveEnd === myEnd) releaseSave();
     ended();
     renderSaveState();
-    // A Save asked for while the copy was built runs now.
-    runQueuedSave(mine);
+    // A Save asked for while the copy was built runs now - for the tour
+    // that shows, which it was pressed for also when another tour opened
+    // meanwhile (every open drops a Save queued before it).
+    if (editor !== null) runQueuedSave(editor);
     // An autosave held back while the copy was built runs now, and so
     // does a resave (D33) that fell due meanwhile.
     autosave.poke();
