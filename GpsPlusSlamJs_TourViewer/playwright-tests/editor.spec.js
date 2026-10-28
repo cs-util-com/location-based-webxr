@@ -3618,6 +3618,53 @@ test("a Ctrl+S pressed while the last tour's save still ran is not run later, un
   ).toHaveCount(0);
 });
 
+test("a Ctrl+S pressed in a tour opened while the last tour's save still ran saves that tour once that save ends", async ({
+  page,
+}) => {
+  // Why: the closed tour's save, ending, dropped every queued Save as if it
+  // were its own - but a Ctrl+S pressed after the next tour opened belongs
+  // to the tour that shows, and was lost without a word. A copy's and the
+  // open's write already run it for the tour that shows; a save must too.
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await offerCountedOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__holdWrites = true;
+  });
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  await editTownHall(page, "Written while the next tour opens");
+  await page.clock.runFor(3_500);
+  await page.waitForFunction(
+    // @ts-expect-error - set by the held write.
+    () => typeof window.__release === "function",
+  );
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
+  await openAnother(page);
+  await offerCountedOpfsFile(page, await editorTour(), "second.zip");
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-file")).toHaveText("second.zip");
+  await editTownHall(page, "Saved by Ctrl+S in the second tour");
+  await page.keyboard.press("Control+s");
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__holdWrites = false;
+    // @ts-expect-error - set by the held write.
+    window.__release();
+  });
+  // No clock advance: the autosave cannot be what saves it - the Ctrl+S is.
+  await expect(page.locator("#save-status")).toHaveText("Saved to second.zip");
+  await expect(
+    page.locator(".toast", { hasText: "Saved to second.zip" }),
+  ).toBeVisible();
+  expect((await readOpfsTour(page, "second.zip"))["tour.json"]).toContain(
+    "Saved by Ctrl+S in the second tour",
+  );
+});
+
 /**
  * The tour's saved `tour.json`, parsed as written.
  * @param {import("@playwright/test").Page} page

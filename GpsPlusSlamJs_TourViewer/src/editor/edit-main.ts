@@ -2642,9 +2642,8 @@ function keepStorage(): void {
  *  page shows its own state. */
 function abandon(): AutosaveOutcome {
   releaseSave();
-  // Its tour is closed: nothing of it runs next - a Ctrl+S queued behind it
-  // was pressed for a tour that no longer shows (E2b-2 milestone review #7).
-  store.dispatch(tourDocumentActions.saveQueued({ queued: false }));
+  // A Save queued now was pressed in the tour that shows (every open drops
+  // one queued before it): it stays, and the save's end runs it there.
   renderSaveState();
   return "held";
 }
@@ -2825,7 +2824,9 @@ async function saveTour(
     // never a save of a tour opened meanwhile.
     if (editor === mine) releaseSave();
     ended();
-    runQueuedSave(mine);
+    // A Save asked for while this save ran runs now, for the tour that
+    // shows - also when another tour opened meanwhile (`saveCopy`'s rule).
+    if (editor !== null) runQueuedSave(editor);
     // A step that crossed the file while this save wrote it (D33).
     if (editor === mine) void resaveIfDue();
     // A save that fell due while this autosave ran starts now. Not after
