@@ -355,6 +355,12 @@ for (const viewport of [
   { width: 390, height: 844 },
   { width: 844, height: 390 },
   { width: 1280, height: 720 },
+  // The film at 540 px and less on a desktop: the chip's lines wrap inside
+  // the screen there (they ran over it before, up to 30 px at 1000x700).
+  { width: 1000, height: 700 },
+  { width: 1100, height: 700 },
+  { width: 1159, height: 800 },
+  { width: 1280, height: 600 },
 ]) {
   for (const wide of [false, true]) {
     test.describe(`the scanning part at ${String(viewport.width)}x${String(viewport.height)}${wide ? ", in a wide face" : ""}`, () => {

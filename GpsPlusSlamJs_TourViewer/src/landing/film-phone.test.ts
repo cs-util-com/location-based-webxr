@@ -16,6 +16,7 @@ import { buildFilmDom } from "./film-dom.js";
 import { filmLayout } from "./film-layout.js";
 import {
   anchorPlacement,
+  chipLift,
   createPhoneView,
   floorAnchors,
   NARROW_SCREEN_PX,
@@ -106,6 +107,10 @@ describe("anchors", () => {
     expect(p.board?.halo.w).toBeCloseTo(bw + 10, 6);
     expect(p.board?.scan.w).toBeCloseTo(bw + 16, 6);
     expect(p.at.call?.[0]).toBeCloseTo(100, 6);
+    // the scan frame's top edge: 8 px above the board (the halo 5, the
+    // frame 3 more)
+    const board = floorAnchors("scan", 200, 400).board;
+    expect(p.board?.frameTop).toBeCloseTo((board?.[1] ?? 0) - 8, 6);
   });
 
   it("holds the card on screen when the pin is far to one side", () => {
@@ -190,5 +195,27 @@ describe("phone view", () => {
     expect(b.root.querySelector("use")?.getAttribute("href")).toBe(
       `#${String(id(b))}`,
     );
+  });
+});
+
+describe("the found-tour chip", () => {
+  // Why: on a small drawn phone (a film 540 px wide or less) the chip at its
+  // place ran 8 px into the scan frame on one line and 28 px once its words
+  // wrapped; it rises just enough to clear the frame, never above the
+  // screen, and stays where it is wherever it already clears.
+  it("rises just enough to clear the scan frame, and no further", () => {
+    expect(chipLift(45, 30, 90)).toBe(0);
+    expect(chipLift(45, 30, 70)).toBe(8);
+    expect(chipLift(45, 50, 57)).toBe(41);
+    // never above the screen's top (2 px kept)
+    expect(chipLift(45, 80, 60)).toBe(43);
+  });
+
+  // Why: defensive - a layout read before the page laid out gives NaN or
+  // infinities; the chip then stays at its place.
+  it("stays at its place for input that is not finite", () => {
+    expect(chipLift(Number.NaN, 30, 70)).toBe(0);
+    expect(chipLift(45, Number.POSITIVE_INFINITY, 70)).toBe(0);
+    expect(chipLift(45, 30, Number.NaN)).toBe(0);
   });
 });
