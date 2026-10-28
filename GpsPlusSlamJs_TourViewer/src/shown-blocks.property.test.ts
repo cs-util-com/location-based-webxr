@@ -8,7 +8,9 @@
  * one figure is `scene-stage.ts`'s own invariant, tested there), and a
  * reached block never leaves. The oracle is the block the open panel
  * shows after each action (its words), not `shown-blocks.ts`, so the
- * module cannot confirm itself.
+ * module cannot confirm itself. The view's reports go through the walk's
+ * real reducer, as on the page: "once each" and "never leaves" are the
+ * reducer's rules, and a list the test kept itself could not break them.
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -21,6 +23,13 @@ import type {
 
 import { createSceneView, type SceneViewDom } from "./scene-view.js";
 import { presentWorldBlocks } from "./shown-blocks.js";
+import { walkRoute } from "./station-run.js";
+import {
+  blockShown,
+  selectShownBlocks,
+  visitorWalkReducer,
+  walkStarted,
+} from "./visitor-walk-slice.js";
 
 const POSE = {
   position: [0, 0, 0] as [number, number, number],
@@ -159,8 +168,14 @@ describe("a story's world (property)", () => {
   it("stands the free world blocks plus every reached story world block, never a card or a stage block, and none leaves", () => {
     fc.assert(
       fc.property(arbStation, arbActs, (station, acts) => {
-        /** What the view reported (the app keeps it with the walk). */
-        const reached: string[] = [];
+        /** The walk the view's reports go to, as the page keeps them. */
+        let walk = visitorWalkReducer(
+          undefined,
+          walkStarted({ order: "fixed", route: walkRoute([station]) }),
+        );
+        const reached = (): string[] => [
+          ...selectShownBlocks({ visitorWalk: walk }, station.id),
+        ];
         /** The oracle: world blocks of steps the panel showed. */
         const oracle = new Set<string>();
         let choices: { click: () => void }[] = [];
@@ -172,6 +187,7 @@ describe("a story's world (property)", () => {
           text: { textContent: "" },
           status: { textContent: "" },
           image: { src: "", alt: "", hidden: true },
+          stationImage: { src: "", alt: "", hidden: true },
           video: {
             src: "",
             poster: "",
@@ -215,7 +231,7 @@ describe("a story's world (property)", () => {
           onStoryEnd: () => undefined,
           onBlockShown: (stationId, blockId) => {
             expect(stationId).toBe(station.id);
-            if (!reached.includes(blockId)) reached.push(blockId);
+            walk = visitorWalkReducer(walk, blockShown({ stationId, blockId }));
           },
         });
         const observe = (): void => {
@@ -227,7 +243,7 @@ describe("a story's world (property)", () => {
         view.offer(station);
         observe();
         for (const act of acts) {
-          const before = [...reached];
+          const before = reached();
           if (act.kind === "tap") view.continueTapped();
           else if (act.kind === "choose")
             choices[act.pick % Math.max(1, choices.length)]?.click();
@@ -236,12 +252,13 @@ describe("a story's world (property)", () => {
           else view.offer(station);
           observe();
           // Exactly the world blocks of steps shown, once each.
-          expect(new Set(reached)).toEqual(oracle);
-          expect(new Set(reached).size).toBe(reached.length);
+          const now = reached();
+          expect(new Set(now)).toEqual(oracle);
+          expect(new Set(now).size).toBe(now.length);
           // A reached block never leaves.
-          expect(reached.slice(0, before.length)).toEqual(before);
-          const present = presentWorldBlocks(station, reached).map((b) => b.id);
-          expect(present).toEqual([...freeWorld, ...reached]);
+          expect(now.slice(0, before.length)).toEqual(before);
+          const present = presentWorldBlocks(station, now).map((b) => b.id);
+          expect(present).toEqual([...freeWorld, ...now]);
           expect(present.every((id) => WORLD.has(blocks.get(id)!.view))).toBe(
             true,
           );

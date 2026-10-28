@@ -941,6 +941,7 @@ const stations = wireVisitorStations({
       text: element("scene-text"),
       status: element("scene-status"),
       image: element<HTMLImageElement>("scene-image"),
+      stationImage: element<HTMLImageElement>("scene-station-image"),
       video: element<HTMLVideoElement>("scene-video"),
       choices: element("scene-choices"),
       continueButton: element("scene-continue"),
@@ -1026,6 +1027,8 @@ hooks.tickStations = () => {
   setup.tickStations();
   // The present station's content follows the guide's verdict at once.
   viewer.syncContent();
+  // A pin's sheet goes with its pin.
+  pinSheet.sync();
 };
 hooks.stationCodeLocked = stations.codeLocked;
 hooks.unlockStationAudio = stations.unlockAudio;

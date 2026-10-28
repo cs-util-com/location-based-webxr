@@ -21,7 +21,9 @@ by the radius alone).
     (`stepless`); the offer is derived, never stored. Plain, serializable
     data.
   - `walkRoute(stations)` - that tour fact per station (`type WalkRoute`,
-    `{ id, stepless }`).
+    `{ id, stepless }`). Stepless means no steps AND no card to read: a
+    station with a description or a card picture keeps its card until
+    Continue (`scene-view.ts`), and that story end finishes it.
   - `startWalk(route, order)` - every station waiting.
   - `applyWalkStep(progress, step): { progress, events }` - one
     `type WalkStep`: `found` (an offered waiting station; the caller
@@ -158,7 +160,8 @@ run.finish("gate", nowMs); // done, the next station offered
   the suggestion clock, a station brought back under both orders;
   finishing (completing on the last end and waiting there,
   leaving that station and not another, the tap and never before
-  complete, the completing skip, a bring back, a stepless last station,
+  complete, the completing skip, a bring back, a stepless last station, a storyless
+  station with a card that is not stepless,
   the pure reads), and a property: every tour finishes within one
   action more than it takes to complete; properties: no deadlock and
   completion within one action per station for every preset, a done station never offered and

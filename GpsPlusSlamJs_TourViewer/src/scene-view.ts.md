@@ -77,11 +77,15 @@ time. Plan:
   the timer. A choice never auto-advances.
 - **Video** (B2b step 3) plays in the card's `<video controls playsinline
 preload="metadata">` (`dom.video`, `SceneVideo`): the clip and its
-  poster are read through `loadAsset` as object URLs of the step, the
-  player shows once either is here, a tap on its controls plays it (the
-  tap is the activation, so no autoplay rule applies), and the transcript
-  stays below. A clip or poster that cannot be read says so on the status
-  line and keeps the words. On the next step, an end or a stop the player
+  poster are read through `loadAsset` as object URLs of the step. The
+  player shows only once its CLIP is here: a player without a clip has
+  controls that do nothing. Until then (and for good when the clip cannot
+  be read) the poster stands as a still picture in `dom.image` (alt
+  empty: the transcript says it); a tap on the player's controls plays the
+  clip (the tap is the activation, so no autoplay rule applies), and the
+  transcript stays below. A clip that cannot be read says "The video could
+  not be loaded - the words are below." on the status line; a poster that
+  cannot be read says so too. The words always stay. On the next step, an end or a stop the player
   pauses, drops its `src` and `poster` (`removeAttribute` then `load()`;
   `src = ""` would fetch the page) and hides, and every object URL of the
   step is revoked. The clip is not prefetched (K4 review R3: it may be as
@@ -107,7 +111,9 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   caption, figure on the stage, voice), a figure or a model only in its
   stage view (a card character's voice still plays), the video card's
   player (clip, poster, transcript, freed on the next step; an unreadable
-  clip), a long text's paragraphs (B2b),
+  clip leaves the poster as a still and no player), a long text's
+  paragraphs (B2b), the station's card picture and a station with no story
+  (its card until Continue),
   refused sound and unreadable file,
   a late picture dropped and URLs revoked, the auto timer and its cancel, a
   choice, one story at a time and the queue, de-duplication and `stopAll`;
@@ -161,7 +167,18 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   `textContent`, line breaks kept by `white-space: pre-line`) under its
   name while its story plays; hidden for a station without one and when
   the story ends, so a queued station's card never keeps the last one's.
-- A station with no playable step shows no card, so neither its name nor
-  its description (as before: the walk's sheet names it).
-- Tests: `scene-view.test.ts` "the station's name and description";
-  the e2e `story-blocks.spec.js` at the gate.
+- `dom.stationImage`: the station's card picture (`station.image`, an
+  image asset), read through `loadAsset` and `checkPicture` as an object
+  URL, alt = the station's title; it stands above the story over every
+  step and goes when the story ends or stops (its URL revoked). A picture
+  that lands after its story ended is dropped (a token, as a step's); a
+  picture that cannot be read is left out silently - the words carry on.
+- A station with NO story steps still has a card when it has something to
+  say - a non-empty description or a card picture naming a known asset: its
+  name, description and picture show with Continue, which ends it. A
+  station with neither ends at once, as before (the walk's sheet names it).
+- Tests: `scene-view.test.ts` "the station's name and description", "holds
+  the card of a station with no story", "keeps the station's card picture
+  over every step", "drops a card picture that lands after its story
+  ended", "ends a station with no story and nothing to show at once"; the
+  e2e `story-blocks.spec.js` at the gate and "a station with no story".

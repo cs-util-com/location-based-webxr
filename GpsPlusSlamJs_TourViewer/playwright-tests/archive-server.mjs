@@ -47,6 +47,12 @@
  *   stands from that step on, for the rest of the visit; then a video card
  *   (`fixtures/tiny-clip.webm`, 64x36 VP8, recorded once in Chromium) and
  *   a long text in two paragraphs.
+ * - `/ranges-ok/storyless-tour.zip` - the stations tour whose gate has no
+ *   story, as a station made on the phone: only its name, its description
+ *   and its card picture (the knight).
+ * - `/ranges-ok/story-count-<5|20|50>.zip` - the stations tour whose gate
+ *   story first shows that many pins and pictures in the world, one per
+ *   step (the opt-in frame-time spec).
  * - `/ranges-ok/v3-tour.zip` - a tour in the earlier format 3 (a station
  *   holding a pin as an item), which the app refuses.
  * - `/ranges-ok/walk-tour.zip` (any order) and
@@ -233,6 +239,8 @@ async function buildStationsZip({
   withCode = true,
   worldBlocks = false,
   storyBlocks = false,
+  storyless = false,
+  storyCount = 0,
 } = {}) {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
   await writer.add("session.json", new TextReader('{"kind":"e2e-stations"}'));
@@ -332,6 +340,34 @@ async function buildStationsZip({
         },
       ]
     : [];
+  /** `storyCount` story blocks in the world (the frame-time spec,
+   *  `story-blocks-frame-time.spec.js`): pins and pictures of the knight,
+   *  alternating, on a ring of 2 to 5 m around the gate, each shown by its
+   *  own step before the knight speaks. */
+  const manyStory = Array.from({ length: storyCount }, (_, i) => {
+    const angle = (i / Math.max(1, storyCount)) * 2 * Math.PI;
+    const r = 2 + (i % 4);
+    const pose = {
+      position: [r * Math.cos(angle), 1 + (i % 3) * 0.5, r * Math.sin(angle)],
+      rotation: [0, 0, 0, 1],
+    };
+    return i % 2 === 0
+      ? {
+          id: `many-${String(i)}`,
+          kind: "shortText",
+          view: "pin",
+          caption: `Sign ${String(i)}`,
+          pose,
+        }
+      : {
+          id: `many-${String(i)}`,
+          kind: "picture",
+          view: "plane",
+          image: "knight",
+          widthM: 0.5,
+          pose,
+        };
+  });
   if (storyBlocks) {
     await writer.add(
       "content/clip.webm",
@@ -369,9 +405,10 @@ async function buildStationsZip({
           {
             id: "gate",
             title: "The gate",
-            ...(storyBlocks
+            ...(storyBlocks || storyless
               ? { description: "The castle's main gate, built in 1400." }
               : {}),
+            ...(storyless ? { image: "knight" } : {}),
             geo: geo(2, 1),
             activateRadiusM: 30,
             foundRadiusM: 5,
@@ -383,43 +420,53 @@ async function buildStationsZip({
               }),
               ...gateWorld,
               ...gateStory,
-              {
-                id: "sir-kay",
-                kind: "character",
-                view: "stage",
-                name: "Sir Kay",
-                image: "knight",
-                caption: "Halt, traveller!",
-                voice: "voice",
-                pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-              },
-              textCard("farewell-text", "The gate", "Farewell."),
-              textCard("welcome-text", "The gate", "Welcome inside."),
+              ...manyStory,
+              // The story's own blocks: a storyless station has none (a
+              // block no step shows must stand in the world).
+              ...(storyless
+                ? []
+                : [
+                    {
+                      id: "sir-kay",
+                      kind: "character",
+                      view: "stage",
+                      name: "Sir Kay",
+                      image: "knight",
+                      caption: "Halt, traveller!",
+                      voice: "voice",
+                      pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                    },
+                    textCard("farewell-text", "The gate", "Farewell."),
+                    textCard("welcome-text", "The gate", "Welcome inside."),
+                  ]),
             ],
-            steps: [
-              ...(storyBlocks
-                ? [
-                    showStep("sign", "gate-story-sign"),
-                    showStep("clip", "gate-clip"),
-                    showStep("history", "gate-history"),
-                  ]
-                : []),
-              showStep("knight", "sir-kay"),
-              {
-                id: "ask",
-                action: {
-                  kind: "choice",
-                  prompt: "Enter the castle?",
-                  options: [
-                    { id: "no", label: "Not today", goto: "farewell" },
-                    { id: "yes", label: "Yes", goto: "welcome" },
-                  ],
-                },
-                advance: { mode: "tap" },
-              },
-              showStep("farewell", "farewell-text"),
-              showStep("welcome", "welcome-text"),
-            ],
+            steps: storyless
+              ? []
+              : [
+                  ...(storyBlocks
+                    ? [
+                        showStep("sign", "gate-story-sign"),
+                        showStep("clip", "gate-clip"),
+                        showStep("history", "gate-history"),
+                      ]
+                    : []),
+                  ...manyStory.map((b) => showStep(b.id, b.id)),
+                  showStep("knight", "sir-kay"),
+                  {
+                    id: "ask",
+                    action: {
+                      kind: "choice",
+                      prompt: "Enter the castle?",
+                      options: [
+                        { id: "no", label: "Not today", goto: "farewell" },
+                        { id: "yes", label: "Yes", goto: "welcome" },
+                      ],
+                    },
+                    advance: { mode: "tap" },
+                  },
+                  showStep("farewell", "farewell-text"),
+                  showStep("welcome", "welcome-text"),
+                ],
           },
           {
             id: "well",
@@ -868,6 +915,16 @@ const stationsZipBytes = await buildStationsZip();
 const stationsNoCodeZipBytes = await buildStationsZip({ withCode: false });
 const blocksZipBytes = await buildStationsZip({ worldBlocks: true });
 const storyBlocksZipBytes = await buildStationsZip({ storyBlocks: true });
+const storylessZipBytes = await buildStationsZip({ storyless: true });
+/** The frame-time spec's tours, by story block count. */
+const storyCountZips = new Map(
+  await Promise.all(
+    [5, 20, 50].map(async (n) => [
+      n,
+      await buildStationsZip({ storyCount: n }),
+    ]),
+  ),
+);
 const v3ZipBytes = await buildV3Zip();
 const walkZipBytes = await buildWalkZip("any");
 const walkFixedZipBytes = await buildWalkZip("fixed");
@@ -1056,6 +1113,28 @@ createServer((req, res) => {
       "ranges-ok",
       stationsNoCodeZipBytes,
       '"e2e-stations-nc-v1"',
+    );
+    return;
+  }
+  const many = /^\/ranges-ok\/story-count-(5|20|50)\.zip$/.exec(url.pathname);
+  if (many !== null) {
+    const count = Number(many[1]);
+    handleArchive(
+      req,
+      res,
+      "ranges-ok",
+      storyCountZips.get(count),
+      `"e2e-story-count-${String(count)}-v1"`,
+    );
+    return;
+  }
+  if (url.pathname === "/ranges-ok/storyless-tour.zip") {
+    handleArchive(
+      req,
+      res,
+      "ranges-ok",
+      storylessZipBytes,
+      '"e2e-storyless-v1"',
     );
     return;
   }

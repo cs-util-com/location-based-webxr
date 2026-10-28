@@ -25,8 +25,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 /** Open the tour as a visitor, start AR aligned, and find the gate. */
-async function atTheGate(page) {
-  await page.goto(`/?qr=${encodeURIComponent(ARCHIVE)}`);
+async function atTheGate(page, archive = ARCHIVE) {
+  await page.goto(`/?qr=${encodeURIComponent(archive)}`);
   await expect(page.locator("body")).toHaveAttribute(
     "data-tour-open",
     "settled",
@@ -151,6 +151,26 @@ test("at the station the visitor reads its name and description over its story",
     "The castle's main gate, built in 1400.",
   );
   await expect(page.getByTestId("scene-description")).toBeVisible();
+});
+
+test("a station with no story shows its name, description and card picture until Continue", async ({
+  page,
+}) => {
+  // Why this test matters: a station made on the phone has no story steps.
+  // Its card used to close in the tick it opened, so the visitor never
+  // read its description or saw its picture. It now stays until Continue.
+  await atTheGate(page, "http://127.0.0.1:5197/ranges-ok/storyless-tour.zip");
+  await expect(page.getByTestId("scene-panel")).toBeVisible();
+  await expect(page.getByTestId("scene-title")).toHaveText("The gate");
+  await expect(page.getByTestId("scene-description")).toHaveText(
+    "The castle's main gate, built in 1400.",
+  );
+  const picture = page.getByTestId("scene-station-image");
+  await expect(picture).toBeVisible();
+  await expect(picture).toHaveAttribute("src", /^blob:/);
+  await expect(picture).toHaveAttribute("alt", "The gate");
+  await page.getByTestId("scene-continue").click();
+  await expect(page.getByTestId("scene-panel")).toBeHidden();
 });
 
 test("the video card plays its clip with the browser's controls, the transcript below", async ({

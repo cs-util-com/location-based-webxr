@@ -44,6 +44,7 @@ function fakeDom() {
     text: { textContent: "" },
     status: { textContent: "" },
     image: { src: "", alt: "", hidden: true },
+    stationImage: { src: "", alt: "", hidden: true },
     video,
     choices: {
       replaceChildren: (...nodes: (Node | string)[]) => {
@@ -449,6 +450,8 @@ describe("createSceneView", () => {
     expect(h.dom.text.textContent).toBe("The gate opens at dawn.");
     await settle();
     expect(h.dom.video.hidden).toBe(false);
+    // The still stood in for the player only until the clip was here.
+    expect(h.dom.image.hidden).toBe(true);
     expect(h.urls.created).toHaveLength(2);
     expect([h.dom.video.src, h.dom.video.poster].sort()).toEqual(
       [...h.urls.created].sort(),
@@ -487,6 +490,40 @@ describe("createSceneView", () => {
     );
     expect(h.dom.video.hidden).toBe(true);
     expect(h.dom.text.textContent).toBe("The gate opens at dawn.");
+  });
+
+  // Why: a poster that loads while its clip cannot be read used to show
+  // the player with its play control, which then played nothing. Now the
+  // player shows only with its clip; the poster stands as a still picture
+  // until then, and stays one beside the line that the clip could not be
+  // loaded.
+  it("shows the poster as a still and no player when the clip cannot be read", async () => {
+    const h = harness({
+      loadAsset: (path) =>
+        path.endsWith(".webm")
+          ? Promise.reject(new Error("offline"))
+          : Promise.resolve(new Blob([path])),
+    });
+    h.view.offer(
+      station("s", [
+        showing("v", {
+          kind: "video",
+          view: "card",
+          video: "clip",
+          poster: "still",
+          transcript: "The gate opens at dawn.",
+        }),
+      ]),
+    );
+    await settle();
+    expect(h.dom.video.hidden).toBe(true);
+    expect(h.dom.image).toMatchObject({
+      src: h.urls.created[0],
+      hidden: false,
+    });
+    expect(h.dom.status.textContent).toBe(
+      "The video could not be loaded - the words are below.",
+    );
   });
 
   // Why (station blocks plan B2b step 4): a long text's paragraphs are
@@ -752,6 +789,89 @@ describe("the station's name and description (B2b step 6)", () => {
     h.view.continueTapped();
     expect(h.dom.panel.hidden).toBe(true);
     expect(h.dom.description.hidden).toBe(true);
+  });
+
+  // Why: a station made on the phone has no story steps - only its name,
+  // its description and its card picture. Its card used to close in the
+  // same tick it opened (an empty story ends at once), so the visitor
+  // never read the description nor saw the picture of any such station.
+  // The card now stays until the visitor taps Continue, and only then is
+  // the station done.
+  it("holds the card of a station with no story - its name, description and picture - until Continue", async () => {
+    const h = harness();
+    h.view.offer({
+      ...station("bench", [], "The bench"),
+      description: "Sit and look at the lake.",
+      image: "still",
+    });
+    expect(h.dom.panel.hidden).toBe(false);
+    expect(h.dom.title.textContent).toBe("The bench");
+    expect(h.dom.description).toEqual({
+      textContent: "Sit and look at the lake.",
+      hidden: false,
+    });
+    expect(h.dom.continueButton.hidden).toBe(false);
+    expect(h.view.playing()).toBe("bench");
+    expect(h.ended).toEqual([]);
+    await settle();
+    expect(h.dom.stationImage).toEqual({
+      src: "blob:0",
+      alt: "The bench",
+      hidden: false,
+    });
+    h.view.continueTapped();
+    expect(h.dom.panel.hidden).toBe(true);
+    expect(h.ended).toEqual(["bench"]);
+    expect(h.dom.stationImage.hidden).toBe(true);
+    expect(h.urls.revoked).toEqual(["blob:0"]);
+  });
+
+  // Why: the card picture belongs to the station, not to a step: it stays
+  // over the whole story while its steps change, and is freed at its end.
+  it("keeps the station's card picture over every step of its story", async () => {
+    const h = harness();
+    h.view.offer({
+      ...station("gate", [tap("a", "Hello"), tap("b", "Bye")], "The gate"),
+      image: "still",
+    });
+    await settle();
+    expect(h.dom.stationImage.hidden).toBe(false);
+    const url = h.dom.stationImage.src;
+    h.view.continueTapped();
+    await settle();
+    expect(h.dom.text.textContent).toBe("Bye");
+    expect(h.dom.stationImage).toMatchObject({ src: url, hidden: false });
+    expect(h.urls.revoked).not.toContain(url);
+    h.view.continueTapped();
+    expect(h.dom.stationImage.hidden).toBe(true);
+    expect(h.urls.revoked).toContain(url);
+  });
+
+  // Why: a card picture that lands after its story ended (a slow read)
+  // must not paint over the next station's card.
+  it("drops a card picture that lands after its story ended", async () => {
+    let release: (blob: Blob) => void = () => undefined;
+    const h = harness({
+      loadAsset: () =>
+        new Promise<Blob>((resolve) => {
+          release = resolve;
+        }),
+    });
+    h.view.offer({ ...station("gate", [tap("a", "Hi")]), image: "still" });
+    h.view.continueTapped();
+    release(new Blob(["late"]));
+    await settle();
+    expect(h.dom.stationImage.hidden).toBe(true);
+    expect(h.urls.created).toEqual([]);
+  });
+
+  // Why: a station with nothing to read - no story, no description, no
+  // picture - has no card to hold: it is done when found, as before.
+  it("ends a station with no story and nothing to show at once", () => {
+    const h = harness();
+    h.view.offer(station("empty", [], "Empty"));
+    expect(h.dom.panel.hidden).toBe(true);
+    expect(h.ended).toEqual(["empty"]);
   });
 });
 
