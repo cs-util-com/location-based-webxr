@@ -19,6 +19,7 @@ import {
   pinTextCount,
   pinTextCounterLine,
   pinTextTooLong,
+  textCounterLine,
   wirePinTextCounter,
 } from "./pin-text.js";
 
@@ -57,6 +58,16 @@ describe("pin text", () => {
     expect(pinTextTooLong(decomposed.repeat(40))).toBe(false);
   });
 
+  // Why: the counter must say what the refusal decides. Counted as typed,
+  // 40 decomposed accents read "80 / 40" in red while the page accepts and
+  // stores them; the counter and every block field's counter
+  // (`wireTextCounter`) count the NFC text too.
+  it("shows the count of the NFC text in the counter", () => {
+    const decomposed = `e${String.fromCodePoint(0x301)}`.repeat(40);
+    expect(pinTextCounterLine(decomposed)).toBe("40 / 40");
+    expect(textCounterLine(decomposed, 40, "utf16")).toBe("40 / 40");
+  });
+
   it("is the format's count of the NFC text for any text", () => {
     fc.assert(
       fc.property(fc.string({ unit: "grapheme", maxLength: 80 }), (text) => {
@@ -66,32 +77,59 @@ describe("pin text", () => {
       }),
     );
   });
+
+  // Why: a counter that disagrees with the refusal shows red for a text
+  // the page stores, or calm for one it refuses.
+  it("counter and refusal agree for any text", () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(
+          fc.string({ unit: "grapheme", maxLength: 80 }),
+          fc
+            .array(fc.constantFrom("é", "a", " ", "\u{1F600}"), {
+              maxLength: 60,
+            })
+            .map((parts) => parts.join("")),
+        ),
+        (text) => {
+          const { field, out, attrs } = fakeCounter(text);
+          wirePinTextCounter(field, out);
+          expect(out.textContent).toBe(
+            `${String(pinTextCount(text))} / ${String(PIN_TEXT_MAX_CHARS)}`,
+          );
+          expect(attrs.has("data-over")).toBe(pinTextTooLong(text));
+        },
+      ),
+    );
+  });
 });
 
+function fakeCounter(value: string) {
+  let handler = (): void => {};
+  const field = {
+    value,
+    addEventListener: (_type: "input", h: () => void) => {
+      handler = h;
+    },
+  };
+  const attrs = new Set<string>();
+  const set = new Map<string, string>();
+  const out = {
+    textContent: null as string | null,
+    toggleAttribute(name: string, force: boolean) {
+      if (force) attrs.add(name);
+      else attrs.delete(name);
+      return force;
+    },
+    setAttribute(name: string, value: string) {
+      set.set(name, value);
+    },
+  };
+  return { field, out, attrs, set, type: () => handler() };
+}
+
 describe("wirePinTextCounter", () => {
-  function fakes(value: string) {
-    let handler = (): void => {};
-    const field = {
-      value,
-      addEventListener: (_type: "input", h: () => void) => {
-        handler = h;
-      },
-    };
-    const attrs = new Set<string>();
-    const set = new Map<string, string>();
-    const out = {
-      textContent: null as string | null,
-      toggleAttribute(name: string, force: boolean) {
-        if (force) attrs.add(name);
-        else attrs.delete(name);
-        return force;
-      },
-      setAttribute(name: string, value: string) {
-        set.set(name, value);
-      },
-    };
-    return { field, out, attrs, set, type: () => handler() };
-  }
+  const fakes = fakeCounter;
 
   it("shows the count at once and as it is typed, marked while too long", () => {
     const { field, out, attrs, type } = fakes("Gate");

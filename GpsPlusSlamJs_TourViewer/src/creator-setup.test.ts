@@ -1140,6 +1140,29 @@ describe("a refused older tour's draft", () => {
     expect(a.files.size).toBe(2);
   });
 
+  // Why: a draft this version opened is this version's from then on,
+  // whatever its object records. One holding only an older version's
+  // records and a deletion (a tombstone writes no meta) read as older, so
+  // refusing an older copy of the same tour cleared it and the deletion
+  // was lost. Opening the draft stamps the meta, so the refusal keeps it.
+  it("is kept once this version opened it, though its records are older and its work a deletion", async () => {
+    const a = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [objectKey("old")]: "{}",
+      [deletedKey("hosted")]: "1",
+    });
+    const { ctx, dom, setup } = wire(a.store);
+    ctx.tourDocument.open(tourOf([pin("hosted")]));
+    dom.draftOffer.hidden = true;
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    // The precondition: the draft stays (its deletion is offered), so no
+    // spent sweep stamped the meta on its own.
+    expect(dom.draftOffer.hidden).toBe(false);
+    await expect(setup.forgetRefusedDraft(TOUR)).resolves.toBe(false);
+    expect(a.files.has(deletedKey("hosted"))).toBe(true);
+  });
+
   it("is none where the device keeps no drafts", async () => {
     const { setup } = wire(memoryStore().store, { firstOpenFails: true });
     await expect(setup.forgetRefusedDraft(TOUR)).resolves.toBe(false);
@@ -2435,7 +2458,12 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
       setup.presentDraftForTour(TOUR);
       await settle();
       expect(dom.draftOffer.hidden, "the draft is offered").toBe(false);
-      expect(metaPuts, "no commit point: nothing is rejected").toEqual([]);
+      // The open stamps the meta (this version's draft from now on), and
+      // that write rejects nothing: no commit point.
+      expect(
+        metaPuts.flatMap((m) => rejectedOf(m)),
+        "no commit point: nothing is rejected",
+      ).toEqual([]);
       expect(files.has(objectKey("hosted"))).toBe(true);
       dom.draftRestore.click();
       expect(setup.codes.inHand()).toEqual(a);
@@ -2734,6 +2762,10 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     page.setup.presentDraftForTour(TOUR);
     await settle();
     expect(page.dom.draftOffer.hidden, "the pose is offered").toBe(false);
+    // The open's own meta write (its stamp) lands; the hold is for the
+    // tap's commit.
+    releaseHeldKeys();
+    await settle();
     page.dom.draftDiscard.click();
     await settle();
     page.setup.resetFinishStep();

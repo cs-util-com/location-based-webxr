@@ -93,7 +93,7 @@ function harness(stations: TourStation[], order: TourOrder) {
   };
   const guide = wireStationGuide({
     dom,
-    tour: () => ({ stations, order }),
+    tour: () => ({ assets: new Set(), stations, order }),
     placementAllowed: () => true,
     zero: () => zero,
     visitor: () => visitor,

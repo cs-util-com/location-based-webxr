@@ -230,7 +230,7 @@ function runThroughTheSlice(
   const store = configureStore({
     reducer: { visitorWalk: visitorWalkReducer },
   });
-  store.dispatch(walkStarted({ order, route: walkRoute(stations) }));
+  store.dispatch(walkStarted({ order, route: walkRoute(stations, new Set()) }));
   const progress = () => {
     const p = store.getState().visitorWalk.progress;
     if (p === null) throw new Error("no walk");
@@ -264,7 +264,12 @@ describe("the station run, held in its closure and through the walk's store", ()
         // The ids a caller may ask of, one the tour does not have included.
         const ids = [...stations.map((s) => s.id), "nowhere"];
         let nowMs = 5_000_000;
-        const closure = createStationRun({ stations, order, nowMs });
+        const closure = createStationRun({
+          assets: new Set(),
+          stations,
+          order,
+          nowMs,
+        });
         const slice = runThroughTheSlice(stations, order);
         expect(view(slice, ids, nowMs)).toEqual(view(closure, ids, nowMs));
         sequence.forEach((c, k) => {

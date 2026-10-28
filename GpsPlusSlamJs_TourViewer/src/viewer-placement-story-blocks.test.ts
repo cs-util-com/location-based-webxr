@@ -208,7 +208,7 @@ describe("a station's reached story blocks (B2b)", () => {
   it("stand in the station's world once reached, for a tour with no free block, and go with a new walk", async () => {
     const h = harness();
     h.store.dispatch(
-      walkStarted({ order: "fixed", route: walkRoute([STATION]) }),
+      walkStarted({ order: "fixed", route: walkRoute([STATION], new Set()) }),
     );
     await h.lock();
     h.ctx.placementUnsubscribe = () => undefined;
@@ -230,7 +230,7 @@ describe("a station's reached story blocks (B2b)", () => {
     expect(h.frames(), "no part for the card").toBe(1);
     // A new walk starts without it.
     h.store.dispatch(
-      walkStarted({ order: "fixed", route: walkRoute([STATION]) }),
+      walkStarted({ order: "fixed", route: walkRoute([STATION], new Set()) }),
     );
     await h.sync();
     expect(h.drawn()).toEqual([]);

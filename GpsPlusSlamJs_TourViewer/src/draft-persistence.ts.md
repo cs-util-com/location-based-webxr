@@ -146,7 +146,10 @@ are the framework's.
 - `isOlderVersionDraft(store)` - true only when the draft is PROVED to be
   written by an older version of this app: a meta without this version's
   `format` stamp (`writeDraftMeta`; work on a draft that placed no new
-  object leaves only older records, and the stamp keeps it), at least one
+  object leaves only older records, and the stamp keeps it - not every
+  such write writes the meta (a deletion writes its tombstone only), so
+  the phone's draft stamps it once per open, `creator-draft.ts`
+  `present`, and the desktop editor's writes it at every open), at least one
   object record, and every one reads as a JSON object whose `format` is
   absent or lower than `TOUR_OBJECT_RECORD_FORMAT` (the field came with
   format 4.0, so a 3.x record has none). Anything else - a stamped meta, a

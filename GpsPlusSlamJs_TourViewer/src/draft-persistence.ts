@@ -347,7 +347,10 @@ export function parseDraftObject(text: string): TourObject | null {
  * A meta this version wrote carries `format` (`writeDraftMeta`): such a
  * draft is this version's, whatever its object records - work on a draft
  * that placed no new object (a restore, a measured code, a deletion)
- * leaves only the older version's records in it. Without that stamp the
+ * leaves only the older version's records in it. Those writes do not all
+ * write the meta themselves (a deletion writes a tombstone only), so the
+ * phone's draft stamps it once per open (`creator-draft.ts` `present`),
+ * before any such work can reach the draft. Without that stamp the
  * proof is the object records: each one this version writes carries
  * `format` (`TOUR_OBJECT_RECORD_FORMAT`, `tourObjectRecord`); the field
  * came with format 4.0, so an older version's record carries none. Proved

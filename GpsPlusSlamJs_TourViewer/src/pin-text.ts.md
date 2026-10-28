@@ -38,7 +38,9 @@ counter beside the field.
 ## Invariants & assumptions
 
 - The count is of the text in NFC (`inputText`, `input-text.ts`), as it
-  is stored: a decomposed accent counts once (B2a review 6).
+  is stored: a decomposed accent counts once (B2a review 6). That holds
+  for the refusal and for every counter (`textCounterLine`,
+  `wireTextCounter`), so 40 decomposed accents read "40 / 40", not red.
 - **One count everywhere.** The counter, the refusal and the file's reader
   use the framework's `tourTextCount`, so a text the counter shows as 40
   is one the writer accepts.
@@ -59,6 +61,7 @@ if (pinTextTooLong(input.value)) showRefusal(PIN_TEXT_TOO_LONG);
 
 - `pin-text.test.ts` - the cap is the format's 40; code points, not UTF-16
   units (40 emoji fit, 41 do not); whitespace collapsed; the counter's
-  line; any text counted exactly as the format counts it (property); the
+  line, of the NFC text too; any text counted exactly as the format counts
+  it, and the wired counter agreeing with the refusal (properties); the
   wired counter at once, while typing and on `update()`, marked while
   over, and never a live region.

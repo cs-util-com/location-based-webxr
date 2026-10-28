@@ -105,7 +105,7 @@ describe("wireStationGuide (properties)", () => {
         };
         const guide = wireStationGuide({
           dom,
-          tour: () => ({ stations, order }),
+          tour: () => ({ assets: new Set(), stations, order }),
           placementAllowed: () => true,
           zero: () => zero,
           visitor: () => visitor,
@@ -203,7 +203,11 @@ describe("wireStationGuide (properties)", () => {
               line: { textContent: "", hidden: true },
               skip: { textContent: "", hidden: true, dataset: {} },
             },
-            tour: () => ({ stations: [station], order: "fixed" }),
+            tour: () => ({
+              assets: new Set(),
+              stations: [station],
+              order: "fixed",
+            }),
             placementAllowed: () => true,
             zero: () => zero,
             visitor: () => visitor,
@@ -278,7 +282,11 @@ describe("wireStationGuide (properties)", () => {
               line: { textContent: "", hidden: true },
               skip: { textContent: "", hidden: true, dataset: {} },
             },
-            tour: () => ({ stations: [station], order: "fixed" }),
+            tour: () => ({
+              assets: new Set(),
+              stations: [station],
+              order: "fixed",
+            }),
             placementAllowed: () => true,
             zero: () => zero,
             visitor: () => visitor,

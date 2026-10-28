@@ -1107,6 +1107,16 @@ export function wireCreatorDraft(deps: {
       // this one's meta.
       draftRejected = stored?.rejectedIds ?? [];
       diskRejected = new Set(stored?.rejectedOnDisk ?? []);
+      // The meta, stamped by this version (`writeDraftMeta`), once per
+      // open: from here on the draft is this version's work, whatever its
+      // object records. A deletion writes a tombstone and no meta, and a
+      // restore or a code writes none either, so without this a draft of
+      // older records plus such work read as an older version's
+      // (`isOlderVersionDraft`), and refusing an older copy of the same
+      // tour cleared it. With no draft yet it records what is already
+      // known, so a crash before the first placement still leaves the tour
+      // and the printed size behind.
+      void recordMeta(tourUrl);
       // Deletes that did not finish last time. `rejectedIds` is exactly
       // the ids the meta rejects whose files are still on disk, so this
       // is the only thing that reclaims them - and it is safe to repeat,
@@ -1153,10 +1163,8 @@ export function wireCreatorDraft(deps: {
         });
       }
       if (stored === undefined) {
-        // No draft yet, but there will be: record what is already known,
-        // so a crash before the first placement still leaves the tour and
-        // the printed size behind - and a code measured before the open.
-        void recordMeta(tourUrl);
+        // No draft yet, but there will be (its meta is written above): a
+        // code measured before the open is recorded too.
         if (hasPageCodes()) void writeCodes(store, tourUrl, pageCodes(), held);
         return;
       }

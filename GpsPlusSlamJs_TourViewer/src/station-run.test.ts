@@ -59,6 +59,7 @@ const at = (pairs: Record<string, number>) => new Map(Object.entries(pairs));
 describe("createStationRun: states", () => {
   it("waits, is found by GPS inside the found radius, and is done when its steps finish", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a")],
       order: "fixed",
       nowMs: 0,
@@ -85,6 +86,7 @@ describe("createStationRun: states", () => {
     // claimed it showed figures and fetched media. The activation radius
     // now only sets where the prefetch starts (`station-prefetch.ts`).
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a")],
       order: "fixed",
       nowMs: 0,
@@ -100,6 +102,7 @@ describe("createStationRun: states", () => {
     // on the tour's settings, how close one must be - no accuracy widens
     // the radius and no floor narrows it.
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a", { foundRadiusM: 2 }), station("b")],
       order: "any",
       nowMs: 0,
@@ -129,6 +132,7 @@ describe("createStationRun: states", () => {
   // ceiling the line uses, so the line and the latch agree.
   it("does not judge on a fix too weak to guide by: ±500 m inside a 10 m station is no arrival, ±5 m is", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a", { foundRadiusM: 10 })],
       order: "fixed",
       nowMs: 0,
@@ -146,6 +150,7 @@ describe("createStationRun: states", () => {
     "at ±%d m a position inside the radius finds the station exactly while the accuracy is within the ceiling",
     (accuracyM) => {
       const run = createStationRun({
+        assets: new Set(),
         stations: [station("a", { foundRadiusM: 10 })],
         order: "fixed",
         nowMs: 0,
@@ -167,6 +172,7 @@ describe("createStationRun: states", () => {
   // (`'none'`) judges nothing, as a fix too weak to guide by.
   it("judges a code's position by the radius alone (D16), and nothing on no precision at all", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a")],
       order: "fixed",
       nowMs: 0,
@@ -189,6 +195,7 @@ describe("createStationRun: states", () => {
 
   it("judges nothing it has no distance for, and no non-finite distance", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a")],
       order: "fixed",
       nowMs: 0,
@@ -202,6 +209,7 @@ describe("createStationRun: states", () => {
 
   it("a station whose every step was left out (a newer minor) is done the moment it is found", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a", { steps: [] }), station("b")],
       order: "fixed",
       nowMs: 0,
@@ -217,6 +225,7 @@ describe("createStationRun: states", () => {
 describe("createStationRun: offering", () => {
   it("fixed: one station at a time, in list order; a station not offered is never found", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b")],
       order: "fixed",
       nowMs: 0,
@@ -230,6 +239,7 @@ describe("createStationRun: offering", () => {
 
   it("any: every station not done is offered at once", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b"), station("c")],
       order: "any",
       nowMs: 0,
@@ -246,6 +256,7 @@ describe("createStationRun: offering", () => {
     // on the offer started it with the visitor already on the way; the run
     // names it as soon as the current station is found.
     const fixed = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b"), station("c")],
       order: "fixed",
       nowMs: 0,
@@ -257,6 +268,7 @@ describe("createStationRun: offering", () => {
     expect(fixed.upcoming()).toBeNull();
     // Under "any" every station not done is offered already.
     const any = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b")],
       order: "any",
       nowMs: 0,
@@ -267,6 +279,7 @@ describe("createStationRun: offering", () => {
 
   it("skip: a labelled way past a station nobody can reach, recorded as skipped (plan §8 D5)", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b")],
       order: "fixed",
       nowMs: 0,
@@ -287,6 +300,7 @@ describe("skip suggestion clock", () => {
     // at the tour's start, so after about two minutes every focus became a
     // one-tap skip.
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b")],
       order: "any",
       nowMs: 0,
@@ -307,6 +321,7 @@ describe("skip suggestion clock", () => {
   it("a skip can be undone: the station is offered again, unskipped, with a fresh clock (R14)", () => {
     for (const order of ["fixed", "any"] as const) {
       const run = createStationRun({
+        assets: new Set(),
         stations: [station("a"), station("b"), station("c")],
         order,
         nowMs: 0,
@@ -336,6 +351,7 @@ describe("skip suggestion clock", () => {
 
   it("is suggested only for an offered station not yet found, once its clock ran out", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b")],
       order: "fixed",
       nowMs: 0,
@@ -352,6 +368,7 @@ describe("skip suggestion clock", () => {
 
   it("restarts for the next station at the moment it becomes the focus", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b")],
       order: "fixed",
       nowMs: 0,
@@ -388,7 +405,12 @@ describe("createStationRun: properties", () => {
     fc.assert(
       fc.property(tourArb, ([n, order, actions]) => {
         const stations = stationsOf(n);
-        const run = createStationRun({ stations, order, nowMs: 0 });
+        const run = createStationRun({
+          assets: new Set(),
+          stations,
+          order,
+          nowMs: 0,
+        });
         let t = 1;
         let completions = 0;
         // Arbitrary actions on offered stations first, then drain.
@@ -423,7 +445,12 @@ describe("createStationRun: properties", () => {
     fc.assert(
       fc.property(tourArb, ([n, order, actions]) => {
         const stations = stationsOf(n);
-        const run = createStationRun({ stations, order, nowMs: 0 });
+        const run = createStationRun({
+          assets: new Set(),
+          stations,
+          order,
+          nowMs: 0,
+        });
         let t = 1;
         for (const [pick, how] of actions) {
           const offered = run.offered();
@@ -458,6 +485,7 @@ describe("finishing the tour: done is progress, finished is the visitor's", () =
   // story ended.
   const two = () =>
     createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b")],
       order: "fixed",
       nowMs: 0,
@@ -534,6 +562,7 @@ describe("finishing the tour: done is progress, finished is the visitor's", () =
 
   it("a stepless station is still done the moment it is found, and as the last one it waits too", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b", { steps: [] })],
       order: "fixed",
       nowMs: 0,
@@ -579,7 +608,7 @@ describe("finishing the tour: done is progress, finished is the visitor's", () =
   });
 
   it("the pure reads agree with the run, and a walk starts unfinished", () => {
-    const p0 = startWalk(walkRoute([station("a")]), "any");
+    const p0 = startWalk(walkRoute([station("a")], new Set()), "any");
     expect(walkFinished(p0)).toBe(false);
     expect(walkFinishWaitId(p0)).toBeNull();
     const found = applyWalkStep(p0, { kind: "found", id: "a" }).progress;
@@ -596,7 +625,12 @@ describe("finishing the tour: done is progress, finished is the visitor's", () =
     fc.assert(
       fc.property(tourArb, fc.boolean(), ([n, order, actions], leave) => {
         const stations = stationsOf(n);
-        const run = createStationRun({ stations, order, nowMs: 0 });
+        const run = createStationRun({
+          assets: new Set(),
+          stations,
+          order,
+          nowMs: 0,
+        });
         let t = 1;
         let lastSkipped = false;
         for (const [pick, how] of actions) {
@@ -660,7 +694,10 @@ describe("the walk's derived reads", () => {
   // a frame with nothing happening allocates no list; a step that changes
   // the walk reads anew.
   it("derives the offered list once per progress, and anew after a step that changes it", () => {
-    const p = startWalk(walkRoute([station("a"), station("b")]), "any");
+    const p = startWalk(
+      walkRoute([station("a"), station("b")], new Set()),
+      "any",
+    );
     const offered = walkOffered(p);
     expect(walkOffered(p)).toBe(offered);
     expect(offered).toEqual(["a", "b"]);

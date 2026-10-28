@@ -2,12 +2,58 @@
 
 ## [Unreleased]
 
+### Added
+
+- **The sky's and the clouds' building blocks, the frame recorder and two
+  small helpers are built subpaths**, for a typed globe that composes the
+  sky from its parts. They are low-level deep imports, not semver public
+  API: their signatures may change in a minor release. Their behaviour is
+  unchanged; until now only the no-build globe lab could load them, by
+  page path.
+  - **`visualization/atmosphere/atmosphere-model`** (deep import): the
+    physical atmosphere's numbers and its CPU maths.
+  - **`visualization/atmosphere/atmosphere-scattering`** (deep import):
+    the CPU twin of the scattering passes.
+  - **`visualization/atmosphere/atmosphere-glsl`** (deep import): the
+    atmosphere's GLSL, generated from the model.
+  - **`visualization/atmosphere/atmosphere-luts`** (deep import): the
+    look-up-table passes, the environment bake and the readbacks.
+  - **`visualization/atmosphere/cloud-layer`** (deep import): the 2D cloud
+    layer and its noise texture.
+  - **`visualization/atmosphere/cloud-hex`** (deep import): hex-tiling of
+    the clouds' big shapes.
+  - **`visualization/atmosphere/cloud-live-noise`** (deep import): the
+    clouds' noise evaluated live, per octave.
+  - **`visualization/atmosphere/cloud-coverage`** (deep import): the
+    clouds from a coverage map.
+  - **`visualization/atmosphere/cloud-sheet`** (deep import): the clouds
+    on a flat sheet a camera can fly through.
+  - **`visualization/atmosphere/cloud-slab`** (deep import): the clouds as
+    a thin ray-marched volume.
+  - **`visualization/atmosphere/cloud-shadow`** (deep import): cloud
+    shadows on three.js's lit materials.
+  - **`utils/frame-run`** (deep import): one frame-recorder run.
+  - **`utils/frame-run-report`** (deep import): its phone-readable summary
+    and export.
+  - **`utils/frame-target`** (deep import): a frame target checked from a
+    run's threshold counts.
+  - **`utils/glsl-float`** (deep import): the GLSL float-literal formatter.
+  - **`sensors/permission-state`** (deep import): the prompt-free
+    Permissions-API query.
+
+## [1.31.0] - 2026-10-28
+
+> ⚠️ **This MINOR carries breaking changes.** It is numbered 1.31.0 rather
+> than 2.0.0 (owner decision, 2026-10-28), as 1.22.0 was. The cost is stated
+> plainly: a consumer on `^1.x` gets these changes with no version-level
+> warning, among them a `tour.json` reader that refuses versions 1-3.
+> **Pin `1.30.0`** if you need the previous tour format.
+
 ### ⚠️ Breaking changes
 
 - **`tour.json` version 4: station blocks** (`ar/tour-manifest`,
   `ar/tour-stations`, `ar/tour-blocks`, `ar/tour-story`, new
-  `ar/tour-assets` and `ar/tour-fields`). The next release of this
-  package is 2.0.0. A station holds `blocks` (short text, long text,
+  `ar/tour-assets` and `ar/tour-fields`). A station holds `blocks` (short text, long text,
   picture, video, audio, model, character, each in a view and at a local
   pose) and `steps` (`show` a block, `choice`, `quiz`); a block no step
   shows is free and stands in the world (`pin`, `plane`, `placed`).
@@ -60,43 +106,6 @@
   with the tap's target ray, without a hit-test reticle (the Tour Viewer's
   pin taps). `targetRayOf` moved there from the reticle driver, which now
   imports it; its behaviour is unchanged.
-
-- **The sky's and the clouds' building blocks, the frame recorder and two
-  small helpers are built subpaths**, for a typed globe that composes the
-  sky from its parts. They are low-level deep imports, not semver public
-  API: their signatures may change in a minor release. Their behaviour is
-  unchanged; until now only the no-build globe lab could load them, by
-  page path.
-  - **`visualization/atmosphere/atmosphere-model`** (deep import): the
-    physical atmosphere's numbers and its CPU maths.
-  - **`visualization/atmosphere/atmosphere-scattering`** (deep import):
-    the CPU twin of the scattering passes.
-  - **`visualization/atmosphere/atmosphere-glsl`** (deep import): the
-    atmosphere's GLSL, generated from the model.
-  - **`visualization/atmosphere/atmosphere-luts`** (deep import): the
-    look-up-table passes, the environment bake and the readbacks.
-  - **`visualization/atmosphere/cloud-layer`** (deep import): the 2D cloud
-    layer and its noise texture.
-  - **`visualization/atmosphere/cloud-hex`** (deep import): hex-tiling of
-    the clouds' big shapes.
-  - **`visualization/atmosphere/cloud-live-noise`** (deep import): the
-    clouds' noise evaluated live, per octave.
-  - **`visualization/atmosphere/cloud-coverage`** (deep import): the
-    clouds from a coverage map.
-  - **`visualization/atmosphere/cloud-sheet`** (deep import): the clouds
-    on a flat sheet a camera can fly through.
-  - **`visualization/atmosphere/cloud-slab`** (deep import): the clouds as
-    a thin ray-marched volume.
-  - **`visualization/atmosphere/cloud-shadow`** (deep import): cloud
-    shadows on three.js's lit materials.
-  - **`utils/frame-run`** (deep import): one frame-recorder run.
-  - **`utils/frame-run-report`** (deep import): its phone-readable summary
-    and export.
-  - **`utils/frame-target`** (deep import): a frame target checked from a
-    run's threshold counts.
-  - **`utils/glsl-float`** (deep import): the GLSL float-literal formatter.
-  - **`sensors/permission-state`** (deep import): the prompt-free
-    Permissions-API query.
 
 - **A placed 3D model**: a free block of kind `model` in the `placed` view
   (`TourModelBlock`; in the world view `TourModel`) names a model asset of

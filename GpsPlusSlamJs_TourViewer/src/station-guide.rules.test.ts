@@ -56,6 +56,7 @@ const fixes = (accuracyM: number | null): PrecisionGpsPoint[] =>
 
 /** Three stations: the well nearest (30 m), the gate (50 m), the tower. */
 const ANY: StationTour = {
+  assets: new Set(),
   stations: [
     station("gate", 50, 0),
     station("well", 0, 30),
@@ -265,6 +266,7 @@ describe("no distance shown: nothing shows one, and no station is guessed", () =
   // the nearest by a position nobody vouches for.
   it("one station left to find and no distance: the line says 'Next', not 'nearest'", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("here", 0, 0), station("well", 0, 30)],
       order: "any",
     });
@@ -285,7 +287,11 @@ describe("no distance shown: nothing shows one, and no station is guessed", () =
   });
 
   it("fixed order keeps its station and its skip under too-weak GPS (the no-guess rule is any order only)", () => {
-    const h = harness({ stations: ANY.stations, order: "fixed" });
+    const h = harness({
+      assets: new Set(),
+      stations: ANY.stations,
+      order: "fixed",
+    });
     h.at(0, 0, 40);
     expect(h.view().focusId).toBe("gate");
     expect(h.dom.line.textContent).toBe(
@@ -339,6 +345,7 @@ describe("'Can't get there?' opens the list, armed or to choose", () => {
   // in chooser mode or not, changes nothing.
   it("a found station is never skipped or armed from a row", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("here", 0, 0), ...ANY.stations],
       order: "any",
     });
@@ -360,6 +367,7 @@ describe("'Can't get there?' opens the list, armed or to choose", () => {
   it("a story ending clears the end's ask, never a row's arm", () => {
     const h = harness(
       {
+        assets: new Set(),
         stations: [station("here", 0, 0), ...ANY.stations],
         order: "any",
       },
@@ -404,6 +412,7 @@ describe("the focus in the scene", () => {
       station(`n${String(i)}`, 10 * i, 0),
     );
     const h = harness({
+      assets: new Set(),
       stations: [...near, station("far", 300, 0)],
       order: "any",
     });
@@ -439,7 +448,11 @@ describe("the focus in the scene", () => {
     expect(h.cues.at(-1)).toBeNull();
     h.unvouched(0, 0);
     expect(h.cues.at(-1)).toBeNull();
-    const fixed = harness({ stations: ANY.stations, order: "fixed" });
+    const fixed = harness({
+      assets: new Set(),
+      stations: ANY.stations,
+      order: "fixed",
+    });
     fixed.at(0, 0);
     expect(fixed.cues.at(-1)?.id).toBe("gate");
     fixed.at(0, 0, 40);
@@ -533,6 +546,7 @@ describe("a skipped station comes back at any time", () => {
 
   it("a complete tour brought back is incomplete everywhere, and complete again once skipped", () => {
     const tour: StationTour = {
+      assets: new Set(),
       stations: [station("gate", 50, 0), station("well", 0, 30)],
       order: "any",
     };
@@ -588,7 +602,11 @@ describe("choosing a target", () => {
   });
 
   it("is not offered under fixed order", () => {
-    const h = harness({ stations: ANY.stations, order: "fixed" });
+    const h = harness({
+      assets: new Set(),
+      stations: ANY.stations,
+      order: "fixed",
+    });
     h.at(0, 0);
     h.guide.rowTapped("tower", "choose");
     expect(h.walk().chosenId).toBeNull();
@@ -599,7 +617,11 @@ describe("choosing a target", () => {
 describe("'End this story?' on the story card whenever a story plays", () => {
   it("with stations still to find, the card's control asks, confirms, and 'Keep listening' takes it back", () => {
     const h = harness(
-      { stations: [station("here", 0, 0), ...ANY.stations], order: "any" },
+      {
+        assets: new Set(),
+        stations: [station("here", 0, 0), ...ANY.stations],
+        order: "any",
+      },
       { end: true },
     );
     h.at(0, 0);
@@ -625,6 +647,7 @@ describe("being there at a station, and finishing the tour", () => {
   // once every station is done and the visitor left the last one, or
   // tapped "Finish the tour".
   const FIXED: StationTour = {
+    assets: new Set(),
     stations: [station("gate", 0, 0), station("well", 0, 60)],
     order: "fixed",
   };
@@ -736,6 +759,7 @@ describe("leaving the last station is judged by its own distance, not by presenc
     };
   }
   const pair = (spacingM: number): StationTour => ({
+    assets: new Set(),
     stations: [stepless("a", 0, 0), stepless("b", 0, spacingM)],
     order: "fixed",
   });

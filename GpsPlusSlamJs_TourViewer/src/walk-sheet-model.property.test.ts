@@ -133,7 +133,7 @@ function guideOver(order: TourOrder) {
   };
   const guide = wireStationGuide({
     dom,
-    tour: () => ({ stations: TOUR, order }),
+    tour: () => ({ assets: new Set(), stations: TOUR, order }),
     placementAllowed: () => true,
     zero: () => zero,
     visitor: () => visitor,

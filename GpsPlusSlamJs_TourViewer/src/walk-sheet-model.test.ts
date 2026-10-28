@@ -58,7 +58,7 @@ const TOUR = [
 function walk(order: TourOrder, steps: WalkStep[] = []): WalkProgress {
   return steps.reduce(
     (p, s) => applyWalkStep(p, s).progress,
-    startWalk(walkRoute(TOUR), order),
+    startWalk(walkRoute(TOUR, new Set()), order),
   );
 }
 
@@ -411,7 +411,7 @@ describe("the segments and the rows", () => {
       { kind: "skip", id: "s1" },
     ].reduce(
       (p, s) => applyWalkStep(p, s as WalkStep).progress,
-      startWalk(walkRoute(many), "any"),
+      startWalk(walkRoute(many, new Set()), "any"),
     );
     const m = walkSheetModel(
       input({ stations: many, progress, view: view({ focusId: "s2" }) }),
@@ -426,7 +426,7 @@ describe("the segments and the rows", () => {
       input({
         stations: many.slice(0, WALK_SEGMENT_LIMIT),
         progress: startWalk(
-          walkRoute(many.slice(0, WALK_SEGMENT_LIMIT)),
+          walkRoute(many.slice(0, WALK_SEGMENT_LIMIT), new Set()),
           "any",
         ),
         view: view({ focusId: "s0" }),

@@ -75,7 +75,7 @@ const TOUR = [station("a"), station("b"), station("c")];
 function started(order: TourOrder, stations = TOUR): VisitorWalkState {
   return visitorWalkReducer(
     undefined,
-    walkStarted({ order, route: walkRoute(stations) }),
+    walkStarted({ order, route: walkRoute(stations, new Set()) }),
   );
 }
 
@@ -111,7 +111,7 @@ describe("the reached story world blocks (B2b)", () => {
     const state = visitorWalkReducer(started("fixed"), shown("a", "sign"));
     const again = visitorWalkReducer(
       state,
-      walkStarted({ order: "fixed", route: walkRoute(TOUR) }),
+      walkStarted({ order: "fixed", route: walkRoute(TOUR, new Set()) }),
     );
     expect(again.shownBlocks).toEqual({});
     expect(visitorWalkReducer(state, walkCleared()).shownBlocks).toEqual({});
@@ -313,7 +313,7 @@ describe("visitorWalkReducer", () => {
     expect(started("fixed")).toEqual(
       visitorWalkReducer(
         state,
-        walkStarted({ order: "fixed", route: walkRoute(TOUR) }),
+        walkStarted({ order: "fixed", route: walkRoute(TOUR, new Set()) }),
       ),
     );
     const initial = visitorWalkReducer(undefined, { type: "@@init" });
@@ -371,7 +371,10 @@ describe("the sheet", () => {
         undefined,
         walkStarted({
           order: "any",
-          route: walkRoute([station("a", { steps: [] }), station("b")]),
+          route: walkRoute(
+            [station("a", { steps: [] }), station("b")],
+            new Set(),
+          ),
         }),
       ),
       sheetSet("list"),
@@ -445,7 +448,7 @@ describe("the sheet", () => {
     expect(
       visitorWalkReducer(
         list,
-        walkStarted({ order: "any", route: walkRoute(TOUR) }),
+        walkStarted({ order: "any", route: walkRoute(TOUR, new Set()) }),
       ).sheet,
     ).toBe("peek");
   });
@@ -514,7 +517,7 @@ describe("the page's store and the walk", () => {
     expect(store.getState().visitorWalk.progress).toBeNull();
     store.dispatch(
       walkBatched([
-        walkStarted({ order: "any", route: walkRoute(TOUR) }),
+        walkStarted({ order: "any", route: walkRoute(TOUR, new Set()) }),
         walkStepped({ kind: "found", id: "a" }),
       ]),
     );

@@ -584,7 +584,7 @@ describe("after a code-set zero the content shows on the first voted lock (no co
         line: { textContent: "", hidden: true },
         skip: { textContent: "", hidden: true, dataset: {} },
       },
-      tour: () => ({ stations, order: "fixed" }),
+      tour: () => ({ assets: new Set(), stations, order: "fixed" }),
       // The page's own gate (`visitor-stations.ts`).
       placementAllowed: () => stationPlacementAllowed(s.ctx, "visitor"),
       // ... and its alignment signals: the code that lined it up.

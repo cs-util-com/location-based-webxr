@@ -339,7 +339,7 @@ function runWithSides(
   const sides: TickSide[] = [];
   const guide = wireStationGuide({
     dom,
-    tour: () => ({ stations: s.stations, order: "any" }),
+    tour: () => ({ assets: new Set(), stations: s.stations, order: "any" }),
     placementAllowed: () => true,
     zero: () => ZERO,
     visitor: () =>

@@ -78,6 +78,9 @@ const entryFiles = [
   // Version 4's media assets, station blocks and the story that shows
   // them, deep-imported by the Tour Viewer the same way.
   'src/ar/tour-assets.ts',
+  // The field checks every reader of tour.json shares (the CHANGELOG
+  // names it a new module), deep-imported the same way.
+  'src/ar/tour-fields.ts',
   'src/ar/tour-blocks.ts',
   'src/ar/tour-story.ts',
   'src/ar/tour-signed-manifest.ts',
