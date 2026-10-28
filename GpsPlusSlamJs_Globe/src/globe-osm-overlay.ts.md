@@ -116,13 +116,15 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
       tile asked for), `reevaluateBacklog` (tiles the last look left for
       the next), `cappedLooks` (looks that left some).
     - `coverage()` -> `OsmCoverage` `{ near, withMap, coarse, waiting,
-unprocessed }`: the relief tiles drawn in the last update
+failed, unprocessed }`: the relief tiles drawn in the last update
       (`tiles.visibleTiles`, optional on `OsmOverlayTerrain`) that come
       within the fade's start of the camera of the last update (where the
       map is at full strength), with their map, too coarse for it (the level picked under
       the coarsest zoom: bare relief by design), or waiting for it (gated,
-      throttled, loading or failed); and drawn tiles the plugin has not
-      placed yet. All zero before `attach`, without `visibleTiles` or while
+      throttled, loading or failed; `failed` counts the failed ones among
+      them apart, since a failed tile is never asked for again and a check
+      waiting for the map must not wait on it); and drawn tiles the plugin
+      has not placed yet. All zero before `attach`, without `visibleTiles` or while
       the overlay is not ready. It walks every drawn tile: for checks and
       measurements, not each frame.
 - Invariants & assumptions:

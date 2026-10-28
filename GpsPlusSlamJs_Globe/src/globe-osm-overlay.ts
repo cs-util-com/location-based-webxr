@@ -691,6 +691,9 @@ export interface OsmCoverage {
   readonly coarse: number;
   /** Waiting for it: gated, throttled, loading or failed. */
   readonly waiting: number;
+  /** Of those, the ones whose request failed: never asked for again, so
+   *  a check that waits for the map stops waiting on these. */
+  readonly failed: number;
   /** Drawn tiles the plugin has not placed yet (no range). */
   readonly unprocessed: number;
 }
@@ -700,6 +703,7 @@ const NO_COVERAGE: OsmCoverage = Object.freeze({
   withMap: 0,
   coarse: 0,
   waiting: 0,
+  failed: 0,
   unprocessed: 0,
 });
 
@@ -927,15 +931,20 @@ export function createGlobeOsmOverlay({
       if (!drawn || !tileInfo || !overlay.isReady) return NO_COVERAGE;
       const reach = uniforms.uOsmFadeStart.value * uniforms.uOsmFadeM.value;
       const n = { unprocessed: 0, far: 0, withMap: 0, coarse: 0, waiting: 0 };
+      let failed = 0;
       for (const tile of drawn) {
         const info = tileInfo.get(tile);
-        if (info) n[kindOf(info, reach)]++;
+        if (!info) continue;
+        const kind = kindOf(info, reach);
+        n[kind]++;
+        if (kind === "waiting" && info.failed) failed++;
       }
       return {
         near: n.withMap + n.coarse + n.waiting,
         withMap: n.withMap,
         coarse: n.coarse,
         waiting: n.waiting,
+        failed,
         unprocessed: n.unprocessed,
       };
     },
