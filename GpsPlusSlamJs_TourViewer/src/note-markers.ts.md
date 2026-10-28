@@ -10,8 +10,9 @@ select.
 ## Public API
 
 - `noteKey(blockId, index)` - `"<blockId>#<index>"`.
-- `NOTE_MIN_GAP_PX` (46), `NOTE_MIN_OPACITY` (0.22), `NOTE_LABEL_RANGE_M`
-  (16).
+- `NOTE_MIN_GAP_PX` (46), `NOTE_MIN_OPACITY` (0.22). With no card open, the
+  note nearest the centre carries its label only within 16 m
+  (`NOTE_LABEL_RANGE_M`, module-private).
 - `noteOpacity(facing)` - 1 for a note facing the camera (cosine above
   0.25), fading to 0.22 as it turns away; NaN gives the floor.
 - `notesOnScreen(handles, camera, { width, height })` - every note of every

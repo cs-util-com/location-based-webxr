@@ -56,7 +56,7 @@ export const NOTE_MIN_GAP_PX = 46;
 /** A note's disc never fades below this. */
 export const NOTE_MIN_OPACITY = 0.22;
 /** The farthest a note's title shows by itself (m). */
-export const NOTE_LABEL_RANGE_M = 16;
+const NOTE_LABEL_RANGE_M = 16;
 /** A disc this far past the screen's edge still counts as on it (px). */
 const EDGE_SLACK_PX = 20;
 const PUSH_ROUNDS = 6;
