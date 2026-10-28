@@ -99,7 +99,7 @@ export async function decodeFigure<T>(
  *  character's voice in either. Never a video (K4 review R3): a video
  *  block shows its transcript, and a video may be as large as the tour's
  *  entry cap allows; nor its poster, which nothing draws yet. Then the
- *  files of the station's free PLACED models (station blocks plan B2b,
+ *  files of the station's free models (each in a world view) (station blocks plan B2b,
  *  G2 follow-up 9): drawn with the station, they would otherwise be read
  *  from the archive on arrival. Free pictures are read on their own. */
 export function stationAssetIds(
@@ -112,7 +112,7 @@ export function stationAssetIds(
     return block === undefined ? [] : storyAssetIds(block);
   });
   const models = tourFreeBlocks(station).flatMap((b) =>
-    b.kind === "model" && b.view === "placed" ? [b.asset] : [],
+    b.kind === "model" ? [b.asset] : [],
   );
   return [...new Set([...ids, ...models])];
 }

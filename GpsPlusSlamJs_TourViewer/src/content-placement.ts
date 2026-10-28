@@ -54,6 +54,7 @@ import type {
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { TOUR_MODEL_WORLD_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
@@ -61,6 +62,12 @@ import { Group, type Object3D, type Texture } from "three";
 
 import { placeCapturedImagePlanes } from "./image-planes.js";
 import { modelScale } from "./model-scale.js";
+import {
+  mountModelView,
+  type ModelViewEnv,
+  type ModelViewHandle,
+  type TourModelBlock,
+} from "./model-views.js";
 
 /** Ids are file stems (`content/<id>.jpg`) and must be unique in the
  *  manifest: 12 base-36 characters of randomness, path-safe by construction. */
@@ -262,6 +269,12 @@ export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
    * editor draws its own models on the group).
    */
   readonly loadModel?: (entryName: string) => Promise<Object3D | null>;
+  /**
+   * What a model's world view needs from the page (`model-views.ts`): the
+   * renderer's clipping switch for a cutaway. Absent: a cutaway's planes
+   * are set, and drawn only where the renderer already clips.
+   */
+  readonly modelViews?: ModelViewEnv;
 };
 
 /**
@@ -323,8 +336,9 @@ export async function renderStationBlocks(
 }
 
 /** What the renderer draws of one free block: a label with its text, a
- *  plane with its picture's archive entry, a placed model with its file's
- *  entry and its size (null entry: the tour lacks its asset), or nothing. */
+ *  plane with its picture's archive entry, a model in a world view with
+ *  its file's entry, its size and its block (null entry: the tour lacks
+ *  its asset), or nothing. */
 type Drawn =
   | { readonly id: string; readonly as: "label"; readonly text: string }
   | { readonly id: string; readonly as: "plane"; readonly entry: string | null }
@@ -333,6 +347,7 @@ type Drawn =
       readonly as: "model";
       readonly entry: string | null;
       readonly sizeM: number;
+      readonly block: TourModelBlock;
     }
   | { readonly id: string; readonly as: "none" };
 
@@ -362,7 +377,7 @@ function drawnBlock(
   }
   if (
     block.kind === "model" &&
-    block.view === "placed" &&
+    (TOUR_MODEL_WORLD_VIEWS as readonly string[]).includes(block.view) &&
     block.sizeM !== undefined
   ) {
     return {
@@ -370,23 +385,33 @@ function drawnBlock(
       as: "model",
       entry: paths.get(block.asset) ?? null,
       sizeM: block.sizeM,
+      block,
     };
   }
   return { id: block.id, as: "none" };
 }
 
-/** The one renderer: pins as labels, pictures as planes, placed models at
- *  their size (`modelScale`), each at its pose in `scene`'s frame, under
- *  one group added once everything decoded. */
+/** The one renderer: pins as labels, pictures as planes, models at their
+ *  size (`modelScale`) in their world view (`mountModelView`, kept in the
+ *  model's `userData.modelView`), each at its pose in `scene`'s frame,
+ *  under one group added once everything decoded. */
 async function renderContent(
   objects: readonly { readonly drawn: Drawn; readonly pose: ObjectPoseNue }[],
   deps: Omit<TourObjectRendererDeps, "poseOf"> & {
     alive?: () => boolean;
     loadModel?: TourStationRendererDeps["loadModel"];
+    modelViews?: ModelViewEnv;
   },
 ): Promise<RenderedTourObjects> {
   const labels: { object: Object3D; dispose(): void }[] = [];
   const models: Object3D[] = [];
+  const views: ModelViewHandle[] = [];
+  const disposeModels = (): void => {
+    // The views first: they give the models back their own materials,
+    // which `disposeObject3D` then frees.
+    for (const view of views) view.dispose();
+    for (const model of models) disposeObject3D(model);
+  };
   const photoPoses: ObjectPoseNue[] = [];
   const photoIds: string[] = [];
   const textures: Texture[] = [];
@@ -430,12 +455,17 @@ async function renderContent(
           skipped.push(drawn.id);
           continue;
         }
-        // The size the tour names, by the one rule every page shares.
-        model.scale.setScalar(modelScale(model, drawn.sizeM));
+        // The size the tour names, by the one rule every page shares;
+        // every view keeps it (a toy multiplies it by its own factor).
+        const scale = modelScale(model, drawn.sizeM);
+        model.scale.setScalar(scale);
         model.position.set(...pose.positionNue);
         model.quaternion.set(...pose.rotationNue);
         model.userData["objectId"] = drawn.id;
         models.push(model);
+        const view = mountModelView(model, drawn.block, scale, deps.modelViews);
+        model.userData["modelView"] = view;
+        views.push(view);
         continue;
       }
       const texture =
@@ -470,7 +500,7 @@ async function renderContent(
     // again as the visitor walks.
     for (const label of labels) label.dispose();
     for (const texture of textures) texture.dispose();
-    for (const model of models) disposeObject3D(model);
+    disposeModels();
     throw error;
   }
   deps.scene.add(group);
@@ -486,7 +516,7 @@ async function renderContent(
       deps.scene.remove(group);
       for (const label of labels) label.dispose();
       planes.dispose();
-      for (const model of models) disposeObject3D(model);
+      disposeModels();
     },
   };
 }

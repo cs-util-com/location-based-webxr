@@ -1,0 +1,204 @@
+/*
+ * A tour model's notes, its card and the toy's gesture layer on the AR
+ * overlay (model-visitor.ts, note-markers.ts). The design system zeroes
+ * margins and paddings, so every spacing here is set explicitly.
+ */
+
+.note-leaders,
+.note-markers {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.note-leader-under {
+  stroke: rgba(15, 17, 21, 0.55);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+
+.note-leader {
+  stroke: #f4f1ea;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.note-dot {
+  fill: #f4f1ea;
+  stroke: rgba(15, 17, 21, 0.55);
+  stroke-width: 1.5;
+}
+
+.note-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #f4f1ea;
+  font:
+    600 13px/28px system-ui,
+    sans-serif;
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.note-marker[hidden],
+.model-card[hidden],
+.model-gestures[hidden],
+.model-card [hidden] {
+  display: none;
+}
+
+.note-disc {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(15, 17, 21, 0.86);
+  box-shadow:
+    0 0 0 1.5px #e3b26a,
+    0 2px 8px rgba(0, 0, 0, 0.35);
+  text-align: center;
+  transition:
+    transform 0.15s,
+    background 0.15s;
+}
+
+.note-marker.open .note-disc {
+  background: #e3b26a;
+  color: #15171b;
+  transform: scale(1.12);
+}
+
+.note-label {
+  position: absolute;
+  left: 34px;
+  top: 2px;
+  max-width: 220px;
+  padding: 2px 9px;
+  border-radius: 12px;
+  background: rgba(15, 17, 21, 0.82);
+  font:
+    500 13.5px/20px system-ui,
+    sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+.note-marker.labelled .note-label {
+  opacity: 1;
+}
+
+.model-gestures {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  touch-action: none;
+}
+
+.model-card {
+  position: absolute;
+  left: 50%;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  width: min(420px, calc(100% - 24px));
+  margin: 0;
+  padding: 15px 16px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 18px;
+  background: rgba(15, 17, 21, 0.82);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: #f4f1ea;
+  z-index: 31;
+  font-family: system-ui, sans-serif;
+}
+
+.model-card-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4f1ea;
+  font-size: 18px;
+  line-height: 30px;
+  cursor: pointer;
+}
+
+.model-card-num {
+  margin: 0 36px 0 0;
+  color: #e3b26a;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.model-card-title {
+  margin: 3px 36px 7px 0;
+  font:
+    600 19px/1.25 Georgia,
+    "Times New Roman",
+    serif;
+}
+
+.model-card-text {
+  margin: 0;
+  max-height: 34vh;
+  overflow-y: auto;
+  font-size: 15px;
+  line-height: 1.5;
+  color: rgba(244, 241, 234, 0.86);
+}
+
+.model-card-text:empty {
+  display: none;
+}
+
+.model-card-row {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin: 12px 0 0;
+}
+
+.model-card-row:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
+.model-card-row button {
+  margin: 0;
+  padding: 7px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #f4f1ea;
+  font:
+    500 14px/1.2 system-ui,
+    sans-serif;
+  cursor: pointer;
+}
+
+.model-card-row button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

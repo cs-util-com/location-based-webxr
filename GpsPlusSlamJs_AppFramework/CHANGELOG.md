@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Added
+
+- **A model's views, notes, sections and clip, `tour.json` version 4
+  minor 1** (`ar/tour-blocks`, `ar/tour-manifest`). A model block gains
+  four world views besides `placed` - `ghost`, `hotspots`, `cutaway`,
+  `toy` (`TOUR_MODEL_WORLD_VIEWS`; every one needs `sizeM`) - and three
+  optional fields: `animation` `{ name, autoplay }`, `annotations` (1-32
+  notes `{ position, normal, title (64), text? (1024) }` in the model's own
+  space) and `sections` (1-4 named planes a cutaway steps through). New
+  exports: `TOUR_WORLD_VIEWS` (the one set of world views, for renderers),
+  `TOUR_MODEL_NOTE_RULES`, `TOUR_MODEL_MAX_NOTES`,
+  `TOUR_MODEL_SECTION_RULES`, `TOUR_MODEL_MAX_SECTIONS`,
+  `TOUR_MODEL_ANIMATION_RULES`, `TOUR_MODEL_SPACE_MAX`, `tourBlocksMinor`
+  and the types `TourModelWorldView`, `TourModelNote`, `TourModelSection`,
+  `TourModelAnimation`, `TourModelVector`. `TOUR_MANIFEST_MINOR` is 1, and
+  `serializeTourManifest` writes the lowest minor the tour needs: a tour
+  using none of this is still written at minor 0. A reader of minor 0
+  (1.31.0) opens a 4.1 tour leniently: a free model in a new view falls
+  back to `placed`, a story model to `card`, the new fields are ignored,
+  and that app will not save the tour. `TourModel['view']` widens from
+  `'placed'` to `TourModelWorldView`.
+
 ## [1.31.0] - 2026-10-28
 
 > ⚠️ **This MINOR carries breaking changes.** It is numbered 1.31.0 rather

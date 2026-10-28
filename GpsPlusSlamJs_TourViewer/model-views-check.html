@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Model views check</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/design.css" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0e0f12;
+      }
+      #ar-root {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+      }
+      .check-canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="ar-root"></div>
+    <script type="module">
+      import "./src/model-visitor.css";
+      import { startModelViewsCheck } from "./src/checks/model-views-check.ts";
+
+      startModelViewsCheck(document.getElementById("ar-root"));
+    </script>
+  </body>
+</html>
