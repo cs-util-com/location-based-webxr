@@ -38,6 +38,12 @@
     the calibration, one settle per move and one hold per cell. An
     estimate, not a bound: the quiet waits, a city waited for and slow
     frames are not in it, so the overlay labels it as one.
+  - `perfViewsPlanText({ items, runs, estimateMs, cityWaitS,
+streetSkipped })` -> the overlay's plan line: the counts, the runs,
+    the estimate's whole minutes "(an estimate)", then, when the sweep
+    waits for the city (`cityWaitS` > 0, the lab's `perfCityWaitS`),
+    "plus up to N min waiting for the city" (the estimate leaves it out),
+    that street level was left out, and not to touch the screen.
   - `missedThresholdsMs(intervalMs)` -> the thresholds (ms) for frames
     that missed at least 1, 2 and 3 refreshes: 1.5, 2.5 and 3.5
     intervals, halfway between the multiples a frame lands on (60 Hz:
@@ -77,7 +83,7 @@ false`) are counted and kept out of every number. `workMs` is the
 - Examples: `#at=46.948,7.4474&eye=1&perf=1&perfItems=0,5,20,50&perfAuto=1`.
 - Tests: `globe-perf-views.test.mjs` (the plan, the rotation and the
   even repeats' reversal, the missed thresholds, the warm-up,
-  the parse, the layout, the snap, the pooling, the downloads and the
-  table); `globe-perf-views.smoke.spec.mjs` (the sweep in the page: it
+  the parse, the layout, the snap, the pooling, the downloads, the
+  table and the plan line); `globe-perf-views.smoke.spec.mjs` (the sweep in the page: it
   starts by itself, visits each view with the items, the street camera at
   eye height, item 0 in view and on the drawn ground, the export's rows).

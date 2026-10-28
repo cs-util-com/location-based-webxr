@@ -22,6 +22,7 @@ import {
   parsePerfItems,
   perfViewCells,
   perfViewsEstimateMs,
+  perfViewsPlanText,
   snapRefreshInterval,
   summariseViewDownloads,
   summariseViewRuns,
@@ -186,6 +187,40 @@ describe("perfViewsEstimateMs", () => {
         calibrateMs: 2_000,
       }),
       2_000 + 20 * 20_000 + 50 * 5_000,
+    );
+  });
+});
+
+describe("perfViewsPlanText", () => {
+  // WHY: the estimate leaves out the wait for the city before the first
+  // move, which may take minutes on a phone (public Overpass servers). A
+  // tester reading only "about 9 min" would think a sweep still waiting
+  // for the city after 12 minutes had hung, so the plan names that wait.
+  it("names the most the city may add, and nothing when it is not waited for", () => {
+    const base = {
+      items: [0, 5, 20, 50],
+      runs: 80,
+      estimateMs: 8.5 * 60_000,
+      streetSkipped: false,
+    };
+    assert.equal(
+      perfViewsPlanText({ ...base, cityWaitS: 300 }),
+      "Views with items 0, 5, 20, 50: 80 runs, about 9 min (an estimate), plus up to 5 min waiting for the city. Do not touch the screen while it runs.",
+    );
+    assert.equal(
+      perfViewsPlanText({ ...base, cityWaitS: 0 }),
+      "Views with items 0, 5, 20, 50: 80 runs, about 9 min (an estimate). Do not touch the screen while it runs.",
+    );
+    // A part of a minute counts as a minute; street level left out says so.
+    assert.equal(
+      perfViewsPlanText({
+        ...base,
+        runs: 1,
+        estimateMs: 1_000,
+        cityWaitS: 61,
+        streetSkipped: true,
+      }),
+      "Views with items 0, 5, 20, 50: 1 run, about 1 min (an estimate), plus up to 2 min waiting for the city. Street level left out: it needs eye=1. Do not touch the screen while it runs.",
     );
   });
 });

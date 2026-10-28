@@ -122,6 +122,34 @@ export function perfViewsEstimateMs(
   return calibrateMs + moves * settleMs + cells.length * holdMs;
 }
 
+/** Whole minutes, at least 1, a part of a minute counted as one. */
+const minutesOf = (ms) => Math.max(1, Math.ceil(ms / 60_000));
+
+/**
+ * The overlay's plan line for a fixed-view sweep: the item counts, the
+ * runs, the estimate (`perfViewsEstimateMs`, labelled as one) and, when
+ * the sweep waits for the city before its first move (`cityWaitS` > 0),
+ * the most that wait may add, which the estimate leaves out; then that
+ * street level was left out (`streetSkipped`) and not to touch the screen.
+ */
+export function perfViewsPlanText({
+  items,
+  runs,
+  estimateMs,
+  cityWaitS,
+  streetSkipped,
+}) {
+  const city =
+    cityWaitS > 0
+      ? `, plus up to ${minutesOf(cityWaitS * 1000)} min waiting for the city`
+      : "";
+  return [
+    `Views with items ${items.join(", ")}: ${runs} run${runs === 1 ? "" : "s"}, about ${minutesOf(estimateMs)} min (an estimate)${city}.`,
+    ...(streetSkipped ? ["Street level left out: it needs eye=1."] : []),
+    "Do not touch the screen while it runs.",
+  ].join(" ");
+}
+
 /** The refresh rates a display runs at (Hz), which a calibration snaps to. */
 export const PERF_REFRESH_HZ = Object.freeze([30, 60, 90, 120]);
 

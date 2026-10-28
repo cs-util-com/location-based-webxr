@@ -11,7 +11,7 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 
-import { createSweepJournal } from "./globe-perf-journal.js";
+import { createSweepJournal, previousSweepText } from "./globe-perf-journal.js";
 
 /** A Storage-like map; `full` makes every write throw. */
 function fakeStorage() {
@@ -45,15 +45,50 @@ describe("createSweepJournal", () => {
     assert.equal(entry.state, "running");
     assert.equal(typeof entry.savedAt, "number");
   });
-  it("offers only a sweep that did not finish", () => {
+  // WHY: a reload after Done restarted an auto-starting sweep and wiped
+  // the finished result before it was copied: a finished sweep must block
+  // the auto-start as a cut-off one does. The journal is tied to the link,
+  // so a sweep kept from other settings is offered but never stops a new
+  // link from starting.
+  it("offers any kept sweep, and says whether it came from this link", () => {
     const storage = fakeStorage();
     const journal = createSweepJournal({ storage: () => storage });
-    journal.save({ text: "{}", runs: 3, total: 60, state: "running" });
-    assert.equal(journal.unfinished().runs, 3);
-    journal.save({ text: "{}", runs: 3, total: 60, state: "stopped" });
-    assert.equal(journal.unfinished().state, "stopped");
-    journal.save({ text: "{}", runs: 60, total: 60, state: "done" });
-    assert.equal(journal.unfinished(), null);
+    assert.equal(journal.previous("#perf=1"), null);
+    journal.save({
+      text: "{}",
+      runs: 3,
+      total: 60,
+      state: "running",
+      link: "#perf=1&perfItems=0,5",
+    });
+    assert.deepEqual(
+      { ...journal.previous("#perf=1&perfItems=0,5"), savedAt: 0 },
+      {
+        text: "{}",
+        runs: 3,
+        total: 60,
+        state: "running",
+        link: "#perf=1&perfItems=0,5",
+        savedAt: 0,
+        sameLink: true,
+      },
+    );
+    journal.save({
+      text: "{}",
+      runs: 60,
+      total: 60,
+      state: "done",
+      link: "#perf=1&perfItems=0,5",
+    });
+    assert.equal(journal.previous("#perf=1&perfItems=0,5").state, "done");
+    assert.equal(journal.previous("#perf=1&perfItems=0,5").sameLink, true);
+    assert.equal(journal.previous("#perf=1&perfItems=0,20").sameLink, false);
+    // An entry kept before the link was stored matches no link.
+    storage.setItem(
+      "globe-perf-sweep",
+      JSON.stringify({ text: "{}", runs: 1, total: 2, state: "running" }),
+    );
+    assert.equal(journal.previous("").sameLink, false);
     journal.clear();
     assert.equal(journal.load(), null);
   });
@@ -85,5 +120,44 @@ describe("createSweepJournal", () => {
     assert.equal(journal.load(), null);
     storage.setItem("globe-perf-sweep", JSON.stringify({ text: 5 }));
     assert.equal(journal.load(), null);
+  });
+});
+
+describe("previousSweepText", () => {
+  const entry = (state, sameLink) => ({
+    text: "{}",
+    runs: 7,
+    total: 80,
+    state,
+    sameLink,
+  });
+  // WHY: the tester reads this line once, on a phone, and decides whether
+  // the result is safe; a finished sweep must not read as cut off, and one
+  // from other settings must not read as this link's.
+  it("names how the kept sweep ended, and whether it is this link's", () => {
+    assert.equal(
+      previousSweepText(entry("running", true)),
+      "Previous sweep cut off after 7 of 80 runs (page reloaded). Copy or Download it, or start fresh.",
+    );
+    assert.equal(
+      previousSweepText(entry("done", true)),
+      "Previous sweep finished: 7 of 80 runs. Copy or Download it, or start fresh.",
+    );
+    assert.equal(
+      previousSweepText(entry("stopped", true)),
+      "Previous sweep stopped after 7 of 80 runs. Copy or Download it, or start fresh.",
+    );
+    assert.equal(
+      previousSweepText(entry("failed", true)),
+      "Previous sweep failed after 7 of 80 runs. Copy or Download it, or start fresh.",
+    );
+    assert.equal(
+      previousSweepText(entry("done", false)),
+      "An earlier sweep with other settings is kept (finished, 7 of 80 runs). Copy or Download it; a new sweep replaces it.",
+    );
+    assert.equal(
+      previousSweepText(entry("running", false)),
+      "An earlier sweep with other settings is kept (cut off, 7 of 80 runs). Copy or Download it; a new sweep replaces it.",
+    );
   });
 });

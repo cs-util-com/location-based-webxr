@@ -94,8 +94,10 @@
     frame inside the cross-fade), `release.globe`, `release.relief`;
   - `raycast` (the relief plugin's `raycastTile`, wrapped);
   - `loaf` (long animation frames, Chrome only, 50 ms and more);
-  - `touch`, `hidden`, `resize`, `orientation`, `context.lost`,
-    `context.restored` (the run is void).
+  - `touch`, `hidden`, `resize` (a turn of the phone changes the
+    viewport, so it fires `resize`; the deprecated `orientationchange`
+    is not listened to), `context.lost`, `context.restored` (the run is
+    void).
   - Per run also: the peaks of each carrier's cache (MiB), the globe's
     pending tiles and the lowest altitude reached (km).
 - The sweep (§4.4): `perfSweep=quick|full|overhead` runs the cells of
@@ -125,8 +127,11 @@
     order rotated per repeat and view, reversed on even repeats. Without `eye=1` the street view is
     left out (`viewsSkipped`, and said in the plan) rather than measured
     from a camera the editor never uses. The estimate includes the
-    calibration and is labelled as an estimate; the status shows
-    "Cell k of N" and the estimate's minutes left, or that it is past.
+    calibration and is labelled as an estimate; the plan line adds "plus
+    up to N min waiting for the city" (`perfCityWaitS`, which the
+    estimate leaves out; `perfViewsPlanText`); the status shows "Cell k
+    of N" and the estimate's minutes left, counted from after the city
+    wait, or that it is past. The quiet waits are not in the estimate.
   - The city gate: before the calibration, at most `perfCityWaitS`
     (default 300) for the city's load to end, its retries included
     (`lab.cityGate()`); a city not asked for within 10 s is not waited
@@ -175,8 +180,12 @@ quietMs, notReady, osm }`, `osm` the map's tiles waiting and failed),
     and the file name says `views`.
   - How a sweep ends: Done, stopped or failed, the summary of the runs
     finished and Copy and Download enabled every time (`outcome`,
-    `failure: { message, at }`). A failed or stopped sweep removes its
-    items and unpauses the frame.
+    `failure: { message, at }`), and the status ends "Copy or Download
+    the result." A failed or stopped sweep removes its items and unpauses
+    the frame. After a lost context Run stays disabled and the status
+    ends "Copy or Download them, then reload the page.": the context
+    stays lost, so a new sweep would wipe the kept results and stop at
+    once.
   - A lost context (`globe-perf-guard.js`), noticed whenever it happens
     and checked before every run, stops the sweep at once: "The device
     dropped the page's graphics at <where>; results up to there are
@@ -184,15 +193,24 @@ quietMs, notReady, osm }`, `osm` the map's tiles waiting and failed),
     `contextRestored` say when and where. The device block is read at
     load and once after the calibration, so it names the GPU even after
     a loss.
-  - The frame watchdog: no frame for `perfWatchdogS` (default 5) while
-    the page is on screen fails the sweep with where it was.
-  - A reload mid-sweep (`globe-perf-journal.js`): the export is kept in
-    the browser's storage after every run and at the end. A page that
-    finds an unfinished sweep there does not start by itself, even with
-    `perfAuto=1`: it shows "Previous sweep cut off after N of M runs
-    (page reloaded)" (or stopped or failed), Copy and Download give that
-    sweep's export (the file name says `cut-off`), and Run reads "Start
-    fresh". The export's `journal` reports the saves.
+  - The frame watchdog: no frame for `perfWatchdogS` (default 60,
+    `FRAME_WATCHDOG_DEFAULT_S`) while the page is on screen fails the
+    sweep with where it was. A minute, because a healthy but slow device
+    draws single frames of several seconds (an Intel iGPU at a pixel
+    ratio of 2, as a ratio-3 phone renders under the lab's cap: 6.4 to
+    9.7 s in the items' warm-ups), and the sweep runs once on the phone.
+  - A reload (`globe-perf-journal.js`): the export is kept in the
+    browser's storage after every run and at the end, with the link
+    (`location.hash`). A page that finds this link's sweep there,
+    whatever its state (a reload after Done included), does not start by
+    itself, even with `perfAuto=1`: it shows "Previous sweep cut off
+    after N of M runs (page reloaded)" (or "finished: N of M runs",
+    stopped or failed; `previousSweepText`), Copy and Download give that
+    sweep's export (the file name says `cut-off`, or `previous` for a
+    sweep that ended), and Run reads "Start fresh". A sweep kept from
+    other settings is offered the same way ("An earlier sweep with other
+    settings is kept ...") but does not block `perfAuto=1`, and the new
+    sweep replaces it. The export's `journal` reports the saves.
   - `perfAuto=1` starts any sweep without a press.
 - The export: the framework's `frame-export/1` (`buildFrameExport`: the
   device block, every run, the pooled attribution, the 20 worst frames
@@ -225,5 +243,5 @@ quietMs, notReady, osm }`, `osm` the map's tiles waiting and failed),
   raycasts. `globe-perf-views.smoke.spec.mjs` (the fixed-view sweep and
   its per-run records); `globe-perf-loss.smoke.spec.mjs` (a reload
   mid-sweep offers the cut-off sweep and does not start by itself; a
-  forced context loss stops the sweep with Copy and Download enabled, the
-  loss's place and the GPU in the export).
+  forced context loss stops the sweep with Copy and Download enabled, Run
+  disabled, the loss's place and the GPU's name in the export).

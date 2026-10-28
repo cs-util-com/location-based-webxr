@@ -39,7 +39,9 @@ const waitRuns = (page, n) =>
 
 // WHY: a reload must never start the sweep over by itself, and must offer
 // the cut-off sweep's runs; a lost context must stop the sweep at once,
-// say where, and leave Copy and Download working with the GPU named.
+// say where, and leave Copy and Download working with the GPU named. Run
+// stays off after a loss: the graphics stay lost, so a new sweep would
+// wipe the kept results and stop at once.
 test("a reload offers the cut-off sweep, and a lost context stops a sweep with its results", async ({
   page,
 }) => {
@@ -84,8 +86,9 @@ test("a reload offers the cut-off sweep, and a lost context stops a sweep with i
     { timeout: 120_000, polling: 250 },
   );
   expect(await status(page)).toMatch(
-    /^The device dropped the page's graphics at .+; results up to there are kept\./,
+    /^The device dropped the page's graphics at .+; results up to there are kept\. Copy or Download them, then reload the page\.$/,
   );
+  await expect(page.locator('[data-perf="run"]')).toBeDisabled();
   await expect(page.locator('[data-perf="copy"]')).toBeEnabled();
   await expect(page.locator('[data-perf="download"]')).toBeEnabled();
   const out = JSON.parse(
@@ -95,7 +98,8 @@ test("a reload offers the cut-off sweep, and a lost context stops a sweep with i
   expect(out.contextLost).not.toBeNull();
   expect(typeof out.contextLost.at).toBe("string");
   // The device block was read while the context was alive.
-  expect(out.device).toHaveProperty("gpuRenderer");
+  expect(typeof out.device.gpuRenderer).toBe("string");
+  expect(out.device.gpuRenderer.length).toBeGreaterThan(0);
   expect(out.lab.length).toBeGreaterThanOrEqual(1);
   expect(out.lab.length).toBeLessThan(8);
   // Kept for a reload too, as stopped.

@@ -24,7 +24,7 @@ import {
 } from "/globe/globe-perf-sweep.js";
 import { deviceBlock } from "./globe-device.js";
 import { createContextWatch, createFrameWatchdog } from "./globe-perf-guard.js";
-import { createSweepJournal } from "./globe-perf-journal.js";
+import { createSweepJournal, previousSweepText } from "./globe-perf-journal.js";
 import { createPerfRecorder } from "./globe-perf-recorder.js";
 import {
   PERF_VIEWS,
@@ -34,6 +34,7 @@ import {
   parsePerfItems,
   perfViewCells,
   perfViewsEstimateMs,
+  perfViewsPlanText,
   snapRefreshInterval,
   summariseViewDownloads,
   summariseViewRuns,
@@ -279,7 +280,8 @@ export function createGlobePerf(lab) {
   let deviceSnapshot = device();
   // Memory pressure on a phone (H6), a page that leaves the screen, a
   // touch anywhere but on the recorder's panel (§4.2: the run is not
-  // touched) and a resize or a turn of the phone void the run in progress.
+  // touched) and a resize void the run in progress (a turn of the phone
+  // changes the viewport, so it fires `resize` too).
   // A run voided on its last frame keeps why (`voidedBy`): the frame's
   // mark is closed only by the next frame.
   const voidRun = (kind) => {
@@ -300,7 +302,6 @@ export function createGlobePerf(lab) {
     if (document.visibilityState === "hidden") voidRun("hidden");
   });
   window.addEventListener("resize", () => voidRun("resize"));
-  window.addEventListener("orientationchange", () => voidRun("orientation"));
 
   const nextFrame = () =>
     new Promise((resolve, reject) => waiters.push({ resolve, reject }));
@@ -769,13 +770,17 @@ export function createGlobePerf(lab) {
       longAnimationFrameMs: loafDurations,
     });
   }
-  /** Keeps the export for a reload (`globe-perf-journal.js`). */
+  /**
+   * Keeps the export for a reload (`globe-perf-journal.js`), with the
+   * link it was measured with: only the same link's sweep blocks a start.
+   */
   const keep = (state) =>
     journal.save({
       text: exportText(),
       runs: finished.length,
       total: runCount,
       state,
+      link: location.hash,
     });
 
   // ---- The overlay (§4.1: usable at phone width, DEC-PERF-1) ----
@@ -848,7 +853,13 @@ export function createGlobePerf(lab) {
   const runCount = viewCells?.length ?? cells.length;
   const runs = `${runCount} run${runCount === 1 ? "" : "s"}`;
   part("plan").textContent = viewCells
-    ? `Views with items ${itemCounts.join(", ")}: ${runs}, about ${minutes(estimateMs)} min (an estimate).${viewsSkipped.length ? " Street level left out: it needs eye=1." : ""} Do not touch the screen while it runs.`
+    ? perfViewsPlanText({
+        items: itemCounts,
+        runs: runCount,
+        estimateMs,
+        cityWaitS: params.perfCityWaitS,
+        streetSkipped: viewsSkipped.length > 0,
+      })
     : stepped
       ? `Frame-stepped path, ${runs} (counts only).`
       : `${sweep ?? "One run"}: ${runs}, about ${minutes(estimateMs)} min. Do not touch the screen while it runs.`;
@@ -868,13 +879,19 @@ export function createGlobePerf(lab) {
   };
   const share = browserShareEnv(showText);
   /**
-   * A sweep the page was reloaded in the middle of (`globe-perf-journal.js`):
-   * its export is offered until a new sweep starts.
+   * A sweep kept from an earlier page (`globe-perf-journal.js`): cut off
+   * by a reload, stopped, failed or finished, from this link or from other
+   * settings. Its export is offered until a new sweep starts.
    */
-  let previous = journal.unfinished();
+  let previous = journal.previous(location.hash);
   const shareText = () => previous?.text ?? exportText();
-  const fileKind = () =>
-    `${viewCells ? "views" : (sweep ?? (stepped ? "step" : "run"))}${previous ? "-cut-off" : ""}`;
+  const fileKind = () => {
+    const kind = viewCells ? "views" : (sweep ?? (stepped ? "step" : "run"));
+    if (!previous) return kind;
+    return previous.state === "running"
+      ? `${kind}-cut-off`
+      : `${kind}-previous`;
+  };
   part("copy").addEventListener("click", async () => {
     const how = await copyExport(shareText(), share);
     setStatus(
@@ -956,19 +973,26 @@ export function createGlobePerf(lab) {
 
   /**
    * The end of a sweep, however it ended: the summary of what finished,
-   * Copy, Download and Run enabled, the export kept with its outcome.
+   * Copy and Download enabled, the export kept with its outcome, and the
+   * status saying to copy it. Run is enabled again unless the page's
+   * graphics are lost: they stay lost (`context.isLost()`), so a new sweep
+   * would wipe the kept results and stop at once; only a reload gets them
+   * back.
    */
   function endSweep(state, text) {
     sweeping = false;
     outcome = state;
     part("summary").textContent = summaryLines().join("\n\n");
     keep(state);
+    const lost = context.isLost();
     part("copy").disabled = false;
     part("download").disabled = false;
-    part("run").disabled = false;
+    part("run").disabled = lost;
     part("run").textContent = "Run";
     statusNote = "";
-    setStatus(text);
+    setStatus(
+      `${text} ${lost ? "Copy or Download them, then reload the page." : "Copy or Download the result."}`,
+    );
   }
 
   /** Every cell, then the summary; the overlay shows what is left. */
@@ -985,7 +1009,9 @@ export function createGlobePerf(lab) {
     failure = null;
     cityGate = null;
     sweeping = true;
-    const t0 = performance.now();
+    // The countdown starts after the wait for the city, which the
+    // estimate leaves out (the plan line names it apart).
+    let t0 = performance.now();
     const left = () => {
       const ms = estimateMs - (performance.now() - t0);
       return ms > 0
@@ -1002,6 +1028,7 @@ export function createGlobePerf(lab) {
     if (viewCells) {
       at("city wait");
       cityGate = await waitForCity(params.perfCityWaitS * 1000);
+      t0 = performance.now();
     }
     at("calibration");
     setStatus("Calibrating the refresh rate...");
@@ -1027,7 +1054,7 @@ export function createGlobePerf(lab) {
     driver = null;
     lab.setFactors(null);
     await wake.stop();
-    endSweep("done", "Done. Copy or Download the result.");
+    endSweep("done", "Done.");
   }
   /**
    * A frame watchdog while a sweep runs: no frame for `perfWatchdogS`
@@ -1080,18 +1107,18 @@ export function createGlobePerf(lab) {
   };
   part("run").addEventListener("click", start);
   if (previous) {
-    // Reloaded mid-sweep (iOS kills a tab for memory): never start over by
-    // itself; offer what was kept, and Run starts a fresh sweep.
     part("copy").disabled = false;
     part("download").disabled = false;
+    setStatus(previousSweepText(previous));
+  }
+  if (previous?.sameLink) {
+    // This link's sweep was kept (a reload mid-sweep, iOS killing a tab
+    // for memory, or a reload after Done): never start over by itself, so
+    // the kept result is not wiped; Run starts a fresh sweep.
     part("run").textContent = "Start fresh";
-    setStatus(
-      previous.state === "running"
-        ? `Previous sweep cut off after ${previous.runs} of ${previous.total} runs (page reloaded). Copy or Download it, or start fresh.`
-        : `Previous sweep ${previous.state} after ${previous.runs} of ${previous.total} runs. Copy or Download it, or start fresh.`,
-    );
   } else if (params.perfAuto === 1) {
-    // `perfAuto=1`: the run starts by itself, so one link is the whole test.
+    // `perfAuto=1`: the run starts by itself, so one link is the whole
+    // test (a sweep kept from other settings is replaced).
     start();
   }
 

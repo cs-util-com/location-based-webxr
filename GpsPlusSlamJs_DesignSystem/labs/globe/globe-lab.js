@@ -200,6 +200,7 @@ import { labelFor, locateAdvice, locateOnce } from "/fw/utils/locate-state.js";
 import { createGlobeDebug } from "./globe-debug.js";
 import { createDebugLog } from "./globe-debug-log.js";
 import { deviceBlock } from "./globe-device.js";
+import { FRAME_WATCHDOG_DEFAULT_S } from "./globe-perf-guard.js";
 
 const canvas = document.getElementById("globe-canvas");
 const errorBox = document.getElementById("globe-error");
@@ -864,8 +865,9 @@ const PARAMS = {
   // city's load to end (its retries included); 0 does not wait.
   perfCityWaitS: { fallback: 300, min: 0, max: 1800 },
   // A sweep with no frame for this long (s) while the page is on screen
-  // ends, with what it has (software rendering takes seconds a frame).
-  perfWatchdogS: { fallback: 5, min: 1, max: 600 },
+  // ends, with what it has; a healthy but slow device draws single frames
+  // of several seconds (`FRAME_WATCHDOG_DEFAULT_S`).
+  perfWatchdogS: { fallback: FRAME_WATCHDOG_DEFAULT_S, min: 1, max: 600 },
 };
 
 /**

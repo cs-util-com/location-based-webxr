@@ -45,6 +45,14 @@ export function createContextWatch({ canvas, gl, now }) {
 }
 
 /**
+ * The frame watchdog's default (s, the lab's `perfWatchdogS`): a healthy
+ * but slow device draws single frames of several seconds (an Intel iGPU at
+ * a pixel ratio of 2: 6.4 to 9.7 s in the items' warm-ups), so only a
+ * minute without a frame means the frames stopped.
+ */
+export const FRAME_WATCHDOG_DEFAULT_S = 60;
+
+/**
  * A frame watchdog: `frame(now)` at every frame, `expired(now, visible)`
  * on a timer. Expired when no frame came for more than `timeoutMs` while
  * the page was visible; a hidden page gets no frames by design, so the

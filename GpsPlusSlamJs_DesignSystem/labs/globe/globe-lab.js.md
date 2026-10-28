@@ -1007,7 +1007,8 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     again. Before the first move the sweep waits at most `perfCityWaitS`
     (0-1800, default 300; 0 does not wait) for the city's load to end,
     its retries included; a sweep with no frame for `perfWatchdogS`
-    (1-600, default 5) while the page is on screen ends with what it
+    (1-600, default 60: a healthy but slow device draws single frames
+    of several seconds) while the page is on screen ends with what it
     has. Street level needs `eye=1` and is left out without it. The
     items stand on the drawn ground on the globe's Earth-centred group
     and are registered with the eye camera's near plane. `perfAuto=1`

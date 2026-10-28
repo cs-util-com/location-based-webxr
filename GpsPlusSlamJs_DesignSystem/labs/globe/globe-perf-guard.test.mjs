@@ -13,7 +13,11 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 
-import { createContextWatch, createFrameWatchdog } from "./globe-perf-guard.js";
+import {
+  FRAME_WATCHDOG_DEFAULT_S,
+  createContextWatch,
+  createFrameWatchdog,
+} from "./globe-perf-guard.js";
 
 /** A canvas that fires the two context events the test asks for. */
 function fakeCanvas() {
@@ -114,6 +118,20 @@ describe("createFrameWatchdog", () => {
     assert.equal(dog.expired(60_000, false), false);
     assert.equal(dog.expired(64_000, true), false);
     assert.equal(dog.expired(65_001, true), true);
+  });
+  // WHY: the sweep runs once on a phone, and a watchdog that fires on a
+  // healthy but slow device ends it for nothing. An Intel iGPU at a pixel
+  // ratio of 2 (the lab's cap, so a ratio-3 phone renders like it) drew
+  // single frames of 6.4 to 9.7 s in the items' warm-ups; the default must
+  // let those through and still end a page whose frames really stopped.
+  it("by default lets a 10 s frame through and ends after a minute", () => {
+    assert.equal(FRAME_WATCHDOG_DEFAULT_S, 60);
+    const dog = createFrameWatchdog({
+      timeoutMs: FRAME_WATCHDOG_DEFAULT_S * 1000,
+    });
+    dog.frame(0);
+    assert.equal(dog.expired(9_700, true), false);
+    assert.equal(dog.expired(60_001, true), true);
   });
   it("refuses a timeout that is not finite and > 0", () => {
     for (const v of [0, -1, NaN, Infinity]) {
