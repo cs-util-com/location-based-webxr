@@ -115,6 +115,10 @@ export interface PinSheet {
   tapped(tap: SelectTargetRay | null): void;
   /** Close the sheet (its close button, the session's end). */
   close(): void;
+  /** Close the sheet when its pin is no longer one a tap could open: its
+   *  station's content hidden, the block gone from the tour, or no scene.
+   *  Called on every station tick; free while no sheet is open. */
+  sync(): void;
   /** The pin whose sheet is open, or null. */
   openId(): string | null;
 }
@@ -145,6 +149,13 @@ export function createPinSheet(deps: PinSheetDeps): PinSheet {
       dom.sheet.hidden = false;
     },
     close,
+    sync() {
+      if (open === null) return;
+      const scene = deps.scene();
+      if (scene === null || !tappablePins(scene, deps.blocks()).has(open)) {
+        close();
+      }
+    },
     openId: () => open,
   };
 }

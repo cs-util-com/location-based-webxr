@@ -17,6 +17,9 @@ tap on nothing closes the sheet.
     AR) closes it.
   - `close()` - hides and empties it (the Close button, `stopStations`).
   - `openId()` - the pin whose sheet is open, or null.
+  - `sync()` - closes the sheet when its pin is no longer one a tap could
+    open (its station's content hidden, the block gone from the tour, or no
+    scene); `main.ts` calls it on every station tick. Free while closed.
 - `tappablePins(scene, blocks)` - every shown object (itself and every
   ancestor `visible`) under a `station-content:<id>` group whose
   `userData.objectId` names a pin with a non-empty description, by id.

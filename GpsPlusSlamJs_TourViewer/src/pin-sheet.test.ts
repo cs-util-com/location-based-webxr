@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Why these tests matter (station blocks plan B2b step 5): a pin shows
  * only its caption in the world; its description is reachable only by a
@@ -81,14 +82,21 @@ describe("the visitor's overlay and the tour's blocks", () => {
   // select would open (or close) a pin sheet behind the button. A tap on
   // the overlay's empty area must stay a select, or no pin could be tapped.
   it("cancels the select of a tap on a control or a sheet, keeps one on the open view", () => {
-    const at = (selector: string | null) => ({
-      closest: (s: string) =>
-        selector !== null && s.split(", ").includes(selector) ? {} : null,
-    });
-    expect(cancelsXrSelect(at("button"))).toBe(true);
-    expect(cancelsXrSelect(at(".sheet"))).toBe(true);
-    expect(cancelsXrSelect(at("#scene-panel"))).toBe(true);
-    expect(cancelsXrSelect(at(null))).toBe(false);
+    // A real DOM: `closest` matches the element OR an ancestor against
+    // the whole selector list - a tap lands on the text inside a button,
+    // not on the button.
+    document.body.innerHTML = `<div id="overlay">
+        <button><span id="in-button">Continue</span></button>
+        <div class="sheet"><p id="in-sheet">Text</p></div>
+        <div id="scene-panel"><p id="in-panel">Words</p></div>
+        <div id="open-view"></div>
+      </div>`;
+    const at = (id: string) => document.getElementById(id);
+    expect(cancelsXrSelect(at("in-button"))).toBe(true);
+    expect(cancelsXrSelect(at("in-sheet"))).toBe(true);
+    expect(cancelsXrSelect(at("in-panel"))).toBe(true);
+    expect(cancelsXrSelect(at("open-view"))).toBe(false);
+    expect(cancelsXrSelect(at("overlay"))).toBe(false);
     expect(cancelsXrSelect(null)).toBe(false);
   });
 
@@ -150,6 +158,61 @@ describe("the pin sheet", () => {
     expect([
       ...tappablePins(scene, new Map(blocks.map((b) => [b.id, b]))).keys(),
     ]).toEqual(["told"]);
+  });
+
+  // Why: the sheet speaks for a pin in the world. When that pin is no
+  // longer there - its station's content hidden as the visitor walked on,
+  // or the block gone from the tour - a sheet left open describes nothing
+  // the visitor can see.
+  it("closes once its pin is no longer shown or no longer in the tour, and stays while it is", () => {
+    const scene = sceneWith([{ id: "sign", group: "station-content:gate" }]);
+    let blocks: TourBlock[] = [pin("sign", "Carved in 1400.")];
+    const dom = {
+      sheet: { hidden: true },
+      title: { textContent: "" },
+      text: { textContent: "" },
+    };
+    const sheet = createPinSheet({
+      dom,
+      scene: () => scene,
+      blocks: () => new Map(blocks.map((b) => [b.id, b])),
+      pick: (targets) => (targets.has("sign") ? "sign" : null),
+    });
+    sheet.tapped(null);
+    sheet.sync();
+    expect(sheet.openId(), "still there: kept").toBe("sign");
+    expect(dom.sheet.hidden).toBe(false);
+    scene.getObjectByName("station-content:gate")!.visible = false;
+    sheet.sync();
+    expect(sheet.openId()).toBeNull();
+    expect(dom).toEqual({
+      sheet: { hidden: true },
+      title: { textContent: "" },
+      text: { textContent: "" },
+    });
+    scene.getObjectByName("station-content:gate")!.visible = true;
+    sheet.tapped(null);
+    blocks = [];
+    sheet.sync();
+    expect(dom.sheet.hidden, "the block left the tour").toBe(true);
+  });
+
+  it("closes outside AR on a sync, with no scene to hold its pin", () => {
+    let scene: Object3D | null = sceneWith([
+      { id: "sign", group: "station-content:gate" },
+    ]);
+    const h = harness(null, [pin("sign", "More.")], () => "sign");
+    const sheet = createPinSheet({
+      dom: h.dom,
+      scene: () => scene,
+      blocks: () => new Map([["sign", pin("sign", "More.")]]),
+      pick: () => "sign",
+    });
+    sheet.tapped(null);
+    expect(h.dom.sheet.hidden).toBe(false);
+    scene = null;
+    sheet.sync();
+    expect(h.dom.sheet.hidden).toBe(true);
   });
 
   it("closes outside AR, with no scene to tap", () => {
