@@ -723,7 +723,7 @@ export function createGlobeCloudShellVolume(
       altitudeKm,
       shares,
       stations,
-      target,
+      target: frameAt,
       deckKm,
       cover = 1,
       cascade,
@@ -731,7 +731,7 @@ export function createGlobeCloudShellVolume(
       shadow = 0,
     }) {
       cameraKm = altitudeKm;
-      framed = target !== null;
+      framed = frameAt !== null;
       law = cloudShellVolumeLaw(altitudeKm, stations);
       shellIn = enabled && framed ? shares.shellIn : 0;
       weight = enabled && framed ? shares.shell : 0;
@@ -767,7 +767,7 @@ export function createGlobeCloudShellVolume(
       // The shell's own shadow (cloudShellShadowStrengths, M2).
       shadowStrength = shadow;
       uniforms.uShellIn.value = shellIn;
-      const frame = cloudShellFrame(ellipsoid, target, groundKm, frameMatrix);
+      const frame = cloudShellFrame(ellipsoid, frameAt, groundKm, frameMatrix);
       uniforms.uShellGaussianM.value = frame.gaussianRadiusM;
       // Each field's basis: the slab's for its own field (scale 1, no
       // offset), else the carried anchor over the scale and shifted by the

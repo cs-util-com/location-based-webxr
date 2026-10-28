@@ -1309,8 +1309,8 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
      * camera's own direction, the start's tilt fading out), then hold there
      * as `landed`.
      */
-    dive(now, target, start, { durationMs, toAltitudeM, clock }) {
-      dive = planDive(ellipsoid, start, orbitPose(ellipsoid, target), {
+    dive(now, target, fromPose, { durationMs, toAltitudeM, clock }) {
+      dive = planDive(ellipsoid, fromPose, orbitPose(ellipsoid, target), {
         durationMs,
         toAltitudeM,
         pitchLowDeg: params.pitchLow,
@@ -1772,7 +1772,7 @@ function bindPin({
   const beginPinFlight = (place, { fromAltitudeM = 0 } = {}) => {
     const params = getParams();
     controls.release();
-    const start = ecefCamera();
+    const startPose = ecefCamera();
     // The place's ground, if already read (a link reads it from load): the
     // flight lands `landAglM` above it (DEC-R4-1); else the ellipsoid
     // until the read arrives (`groundArrives`).
@@ -1786,27 +1786,27 @@ function bindPin({
       flightStart = meteorLinkStart(
         ellipsoid,
         orbitPose(ellipsoid, place),
-        start.position,
+        startPose.position,
         fromAltitudeM,
         params.landAglM,
         params.meteorDeg,
         groundM,
       );
-      start.position.copy(flightStart.position);
-      start.quaternion.copy(flightStart.quaternion);
-      placeCameraEcef(start.position, start.quaternion);
+      startPose.position.copy(flightStart.position);
+      startPose.quaternion.copy(flightStart.quaternion);
+      placeCameraEcef(startPose.position, startPose.quaternion);
       // A placement, not a speed: the dust starts from rest.
       resetSpeed();
     } else if (fromAltitudeM > 0) {
       // Out along the camera's own direction, its rotation kept.
-      const direction = start.position.clone().normalize();
-      start.position.copy(
+      const direction = startPose.position.clone().normalize();
+      startPose.position.copy(
         direction.multiplyScalar(
           surfaceRadiusAlong(ellipsoid, direction) + fromAltitudeM,
         ),
       );
       // Placed there at once, so no frame shows the intro's camera first.
-      placeCameraEcef(start.position, start.quaternion);
+      placeCameraEcef(startPose.position, startPose.quaternion);
       // A placement, not a speed: the dust starts from rest.
       resetSpeed();
     }
@@ -1817,9 +1817,9 @@ function bindPin({
         ellipsoid,
         now,
         flightStart ?? {
-          pose: currentPose(start),
-          distanceM: start.position.length(),
-          quaternion: start.quaternion,
+          pose: currentPose(startPose),
+          distanceM: startPose.position.length(),
+          quaternion: startPose.quaternion,
         },
         {
           target: place ? orbitPose(ellipsoid, place) : null,
@@ -1929,14 +1929,14 @@ function bindPin({
     // The world frame moves to the target at the press, the view unchanged
     // (F2a): the dive then runs in the target's local frame.
     setFrameTarget(located);
-    const start = ecefCamera();
+    const startPose = ecefCamera();
     flight.dive(
       performance.now(),
       located,
       {
-        pose: currentPose(start),
-        distanceM: start.position.length(),
-        quaternion: start.quaternion,
+        pose: currentPose(startPose),
+        distanceM: startPose.position.length(),
+        quaternion: startPose.quaternion,
       },
       {
         durationMs: params.diveMs,
@@ -2334,14 +2334,14 @@ async function start() {
    */
   const applyView = (at, { hold }) => {
     // The pose first: a view that is not finite throws before anything moves.
-    const pose = viewPoseEcef(globe.tiles.ellipsoid, at);
+    viewPoseEcef(globe.tiles.ellipsoid, at);
     flight.yieldToUser(performance.now());
     pin?.cameraTaken();
     // A placed view is a teleport, not a speed.
     speedDust.reset();
     heldView = hold;
-    setFrameTarget({ lat: at.lat, lng: at.lng });
-    placeCameraEcef(pose.position, pose.quaternion);
+    // The frame target, then the camera: the view's own placement.
+    view.placeView(at);
     camera.updateMatrixWorld();
   };
   /** A camera for the orbit poses, which are written in ECEF. */
@@ -3168,11 +3168,14 @@ async function start() {
         const groundTrue = exaggerationAt(0, heightLaw()) === 1;
         const key = place ? `${place.lat},${place.lng}` : null;
         if (key !== cityKey) cityTries = 0;
-        const now = performance.now();
+        const cityNow = performance.now();
         const cityState = city.state();
         if (key !== null && key === cityKey && cityState.phase === "failed") {
-          cityFailedAt ??= now;
-          if (now - cityFailedAt > CITY_RETRY_MS && cityTries < CITY_RETRIES) {
+          cityFailedAt ??= cityNow;
+          if (
+            cityNow - cityFailedAt > CITY_RETRY_MS &&
+            cityTries < CITY_RETRIES
+          ) {
             cityKey = null; // asks again below
           }
         }
@@ -3849,11 +3852,11 @@ async function start() {
    */
   const projectDirection = (direction) => {
     sky.syncCamera(camera);
-    const view = direction
+    const inView = direction
       .clone()
       .normalize()
       .transformDirection(sky.camera.matrixWorldInverse);
-    if (view.z >= 0) return null;
+    if (inView.z >= 0) return null;
     const p = direction.clone().normalize().project(sky.camera);
     return [(p.x + 1) / 2, (1 - p.y) / 2];
   };
@@ -4681,8 +4684,8 @@ void main() {
      * (degrees, the heading from north toward east, the pitch above the
      * local horizontal), so a smoke can stand where the owner stood.
      */
-    placeView(view) {
-      applyView(view, { hold: true });
+    placeView(at) {
+      applyView(at, { hold: true });
       frame();
     },
     hideCloudShell(on) {
@@ -4875,7 +4878,7 @@ void main() {
           controls.release();
         }
         const ellipsoid = globe.tiles.ellipsoid;
-        const view =
+        const cameraPose =
           pose ??
           obliqueCamera(
             ellipsoid,
@@ -4883,7 +4886,7 @@ void main() {
             altitudeM,
             pitchAtDeg(altitudeM, { pitchLowDeg: params.pitchLow }),
           );
-        placeCameraEcef(view.position, view.quaternion);
+        placeCameraEcef(cameraPose.position, cameraPose.quaternion);
         returnFov(now);
         controls.followIntro();
       },
@@ -5002,16 +5005,19 @@ void main() {
         const c = osm.coverage();
         return { waiting: c.waiting, failed: c.failed };
       },
-      placeView(place, view) {
+      placeView(place, fixedView) {
         const ellipsoid = globe.tiles.ellipsoid;
         if (frameTarget() === null) setFrameTarget(place);
         // The controls' height rays hit the drawn surface, as when the user
         // owns the camera: on the whole scene they hit the cloud shell and
         // lifted a street camera about 2 km.
         controls.pickFrom(surfaceTiles().group);
-        if (!view.street) {
-          const groundM = view.aglM === undefined ? 0 : perfGroundM(place);
-          this.placeCamera(place, view.altitudeM ?? groundM + view.aglM);
+        if (!fixedView.street) {
+          const groundM = fixedView.aglM === undefined ? 0 : perfGroundM(place);
+          this.placeCamera(
+            place,
+            fixedView.altitudeM ?? groundM + fixedView.aglM,
+          );
           return;
         }
         // Street level: an eye height over the ground, standing back from

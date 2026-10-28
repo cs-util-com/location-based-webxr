@@ -1067,6 +1067,15 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   framework's copy and `3d-tiles-renderer` (and `/plugins`) to the vendored
   library; nothing leaves the machine. The sun is real, so a view can be on
   the night side: the tests pin `#time=`.
+  - The lab's page modules (`labs/globe/*.js`) are linted for `no-undef`
+    and `no-shadow` only (`config/eslint.config.mjs`, the design system's
+    `lint` stage): the files are one no-build module split by hand, and a
+    shadowed name once fed the perf sweep the wrong world frame. A name
+    that would shadow an outer one is renamed (`startPose`, `fromPose`,
+    `cityNow`, `inView`, `cameraPose`, `fixedView`).
+  - `applyView` validates the pose, does the lab's side effects (the intro
+    yields, the pin and the dust reset, the hold) and leaves the frame
+    target and the camera to the view's own `placeView`.
 - Tests: `globe.smoke.spec.mjs`:
   - on a fixed view (`#at=30,15&spinMs=0&turnMs=0`, 11:00 UTC on an
     equinox so it is day): boots, lit centre,

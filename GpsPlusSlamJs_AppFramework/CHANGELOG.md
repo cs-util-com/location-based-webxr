@@ -62,10 +62,11 @@
   imports it; its behaviour is unchanged.
 
 - **The sky's and the clouds' building blocks, the frame recorder and two
-  small helpers are built subpaths**: low-level, public API with semver
-  like the rest, for a typed globe that composes the sky from its parts.
-  Their behaviour is unchanged; until now only the no-build globe lab
-  could load them, by page path.
+  small helpers are built subpaths**, for a typed globe that composes the
+  sky from its parts. They are low-level deep imports, not semver public
+  API: their signatures may change in a minor release. Their behaviour is
+  unchanged; until now only the no-build globe lab could load them, by
+  page path.
   - **`visualization/atmosphere/atmosphere-model`** (deep import): the
     physical atmosphere's numbers and its CPU maths.
   - **`visualization/atmosphere/atmosphere-scattering`** (deep import):

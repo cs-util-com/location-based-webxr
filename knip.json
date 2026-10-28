@@ -217,7 +217,7 @@
       "project": ["src/**/*.ts"]
     },
     "GpsPlusSlamJs_DesignSystem": {
-      "entry": ["config/stylelint.config.mjs"],
+      "entry": ["config/stylelint.config.mjs", "config/eslint.config.mjs"],
       "project": ["*.mjs", "config/*.mjs"],
       "ignoreUnresolved": [
         "/3d/water-metrics.mjs",
