@@ -4,6 +4,7 @@ import {
   BoxGeometry,
   Group,
   Mesh,
+  MeshBasicMaterial,
   Object3D,
   Quaternion,
   Texture,
@@ -35,6 +36,7 @@ import {
   renderStationBlocks,
   rotationFromHeading,
 } from "./content-placement";
+import { modelViewOf } from "./model-views";
 import { contentSegment } from "./tour-flow";
 
 /**
@@ -538,6 +540,70 @@ describe("renderTourStation", () => {
     expect(quiet.count).toBe(0);
     expect(quiet.skipped).toEqual([]);
     quiet.dispose();
+  });
+
+  // Why: every world view of a model - placed, ghost, hotspots, cutaway,
+  // toy - keeps the size the tour names by the one shared scale rule, and
+  // carries its view's handle for the visitor's page; freeing the station
+  // gives each model back its own material before freeing it.
+  it("draws a model in every world view by the shared scale, with its view's handle", async () => {
+    const scene = new Group();
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 5, yaw(0));
+    const views = ["placed", "ghost", "hotspots", "cutaway", "toy"] as const;
+    const station = stationAt(
+      "s",
+      stationGeo,
+      views.map((view) => ({
+        id: view,
+        kind: "model" as const,
+        view,
+        asset: "horse",
+        sizeM: 3,
+        createdAtIso: NOW,
+        pose: {
+          position: [0, 0, 0] as [number, number, number],
+          rotation: yaw(0),
+        },
+      })),
+    );
+    const own = new MeshBasicMaterial();
+    let freed = 0;
+    own.dispose = () => {
+      freed += 1;
+    };
+    let clipping = 0;
+    const rendered = await renderTourStation(station, {
+      assets: [{ id: "horse", path: "content/horse.glb", kind: "model" }],
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+      loadModel: () =>
+        Promise.resolve(new Mesh(new BoxGeometry(2, 0.5, 1), own)),
+      modelViews: { enableClipping: () => (clipping += 1) },
+    });
+    expect(rendered.count).toBe(views.length);
+    const drawn = new Map<string, Object3D>();
+    rendered.root.traverse((o) => {
+      const id = o.userData["objectId"];
+      if (typeof id === "string") drawn.set(id, o);
+    });
+    for (const view of views) {
+      const model = drawn.get(view)!;
+      expect(model.scale.x, view).toBeCloseTo(1.5, 12);
+      expect(modelViewOf(model)?.view, view).toBe(view);
+    }
+    expect(
+      clipping,
+      "a cutaway switches the renderer's clipping on",
+    ).toBeGreaterThan(0);
+    expect((drawn.get("ghost") as Mesh).material).not.toBe(own);
+    rendered.dispose();
+    expect(
+      (drawn.get("ghost") as Mesh).material,
+      "its own material is back",
+    ).toBe(own);
+    expect(freed, "each model's own material is freed once").toBe(views.length);
   });
 
   // Why (B2b step 2): a story block its story reached stands with the

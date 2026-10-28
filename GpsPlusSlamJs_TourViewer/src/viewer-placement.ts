@@ -1086,6 +1086,8 @@ export function createViewerPlacement(deps: {
       // through the same cache as the station's story.
       loadModel: async (entryName: string) =>
         seams.loadGlbModel(await loadContent(entryName)),
+      // A cutaway model clips by a plane.
+      modelViews: { enableClipping: () => seams.enableClipping() },
       loadPhotoTexture: async (entryName: string) =>
         // Measured before it is decoded (tour kit K4 review R2).
         decodeFrameTexture(await loadContent(entryName), PHOTO_DECODE_DIVISOR, {

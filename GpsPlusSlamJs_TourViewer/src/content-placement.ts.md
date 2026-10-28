@@ -42,7 +42,7 @@ way). The visitor's models are drawn by `renderTourStation` (below);`dispose()`r
 frees everything.`root` is the one group every rendered object hangs
 under - what a tap in AR is cast against to name the object
 (`object-pick.ts`, authoring plan 2026-09-28-0953 M4).
-- `renderTourStation(station, { scene, zero, assets, makeLabel, loadPhotoTexture, alive?, loadModel? })
+- `renderTourStation(station, { scene, zero, assets, makeLabel, loadPhotoTexture, alive?, loadModel?, modelViews? })
 -> Promise<RenderedTourObjects>` - the visitor's playback of ONE station
   (one call per station, so each station is drawn and freed on its own,
   `station-content.ts`): a `Group` at the station's geo pose in the
@@ -52,12 +52,15 @@ under - what a tap in AR is cast against to name the object
   `scene` once every picture decoded; `root` is that group. A `pin` short
   text is a label, a `plane` picture a photo plane whose file is the
   tour's asset of its `image` (from `assets`; a picture whose asset the
-  tour lacks is named in `skipped`, as one whose file fails), a `placed`
-  model (station blocks plan B2b) the scene `loadModel` gives for its
+  tour lacks is named in `skipped`, as one whose file fails), a model in
+  a world view (`placed`, `ghost`, `hotspots`, `cutaway`, `toy`) the scene `loadModel` gives for its
   asset's entry, scaled so its largest side is its `sizeM` by the one
   shared rule (`model-scale.ts` `modelScale`, the 3D editor's), at its
-  local pose, `userData.objectId` its id, freed with the station
-  (`disposeObject3D`); a model whose asset the tour lacks or whose load
+  local pose, `userData.objectId` its id, mounted in its view
+  (`model-views.ts` `mountModelView`, the handle kept in
+  `userData.modelView`; `modelViews.enableClipping` is what a cutaway
+  asks of the page), freed with the station (the view first, which gives
+  back the model's own materials, then `disposeObject3D`); a model whose asset the tour lacks or whose load
   fails (null or a rejection) is named in `skipped`; without
   `loadModel` (the 3D editor, which draws its own) a model is left out
   quietly as before. Models are added after the planes, so the planes'
@@ -140,7 +143,8 @@ model left out quietly (the photo loader never asked, no "could not
 load" in the status segment), a station's placed model drawn at its
 `sizeM` by `modelScale` at its local pose, a failed one in `skipped`,
 its geometry freed with the station, none drawn without `loadModel`
-(B2b), disposal, what a throw part-way frees (the
+(B2b), a model in every world view at the same shared scale with its
+view's handle and its own material back and freed on disposal, disposal, what a throw part-way frees (the
 decoded photo and the label made so far), and a
 caller's own pose and frame (`poseOf`) for pins and photos. For
 `renderTourStation`: the group structure (the station's group, its free

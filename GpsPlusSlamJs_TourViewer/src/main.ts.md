@@ -42,6 +42,11 @@ listed in `index.html.md`. The concerns and their modules:
   `#pin-sheet`, binds `hooks.visitorTap` to it, closes it with
   `hooks.stopStations`, and in visitor mode cancels `beforexrselect` on
   `#ar-root` for the overlay's own taps (`cancelsXrSelect`).
+- `model-visitor.ts` - a model's notes, its card and a toy in hand:
+  `main.ts` mounts its DOM under `#ar-root` (`mountModelVisitorDom`, styles
+  in `model-visitor.css`), ticks it in `hooks.tickStations`, gives
+  `hooks.visitorTap` to it first (a tap that opens no model card goes to
+  the pin sheet) and stops it in `hooks.stopStations`.
 - `viewer-placement.ts` - the viewer pipeline and the photo placement
   (`createViewerPlacement`).
 - `ar-entry.ts` - the AR entry, the runtime start/end, the status line
