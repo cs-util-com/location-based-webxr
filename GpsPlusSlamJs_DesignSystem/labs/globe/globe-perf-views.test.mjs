@@ -18,6 +18,7 @@ import {
   PERF_VIEWS,
   formatViewTable,
   itemOffsets,
+  missedThresholdsMs,
   parsePerfItems,
   perfViewCells,
   perfViewsEstimateMs,
@@ -117,7 +118,32 @@ describe("perfViewCells", () => {
       items,
     );
     assert.deepEqual(orderOf(1, "space"), [0, 5, 20, 50]);
-    assert.deepEqual(orderOf(2, "space"), [5, 20, 50, 0]);
+    assert.deepEqual(orderOf(2, "space"), [5, 0, 50, 20]);
+  });
+  // WHY: in a cyclic order every count always has the same predecessor, so
+  // 0 always ran right after 50 and paid the disposal of 50 items (garbage,
+  // freed GPU objects) as its own cost. Reversed on even repeats, each
+  // count follows a different neighbour in half the repeats.
+  it("reverses the order on even repeats, so no count always follows the same one", () => {
+    const items = [0, 5, 20, 50];
+    const cells = perfViewCells({ items, repeats: 4, warmup: false });
+    for (const view of PERF_VIEWS.map((v) => v.id)) {
+      const before = new Map(items.map((n) => [n, new Set()]));
+      for (let r = 1; r <= 4; r++) {
+        const order = cells
+          .filter((c) => c.repeat === r && c.view === view)
+          .map((c) => c.items);
+        for (let k = 1; k < order.length; k++) {
+          before.get(order[k]).add(order[k - 1]);
+        }
+      }
+      for (const [n, preds] of before) {
+        assert.ok(
+          preds.size >= 2,
+          `${view}: ${n} always follows ${[...preds]}`,
+        );
+      }
+    }
   });
   it("holds only the views it is given (street needs eye mode)", () => {
     const views = PERF_VIEWS.filter((v) => !v.street);
@@ -125,8 +151,13 @@ describe("perfViewCells", () => {
     assert.ok(cells.every((c) => c.view !== "street"));
     assert.equal(cells.length, 2 * views.length);
   });
-  it("refuses a repeat count that is not a positive integer", () => {
+  it("refuses a repeat count that is not a positive integer, an empty view list or no counts", () => {
     assert.throws(() => perfViewCells({ items: [5], repeats: 0 }), RangeError);
+    assert.throws(
+      () => perfViewCells({ items: [5], repeats: 1, views: [] }),
+      RangeError,
+    );
+    assert.throws(() => perfViewCells({ items: [], repeats: 1 }), RangeError);
     assert.throws(
       () => perfViewCells({ items: [5], repeats: 1.5 }),
       RangeError,
@@ -189,6 +220,24 @@ describe("snapRefreshInterval", () => {
   });
 });
 
+describe("missedThresholdsMs", () => {
+  // WHY: fixed 34 and 51 ms counters sit right on 60 Hz's refresh
+  // multiples (33.3, 50), so jitter moves frames across them, and at 30,
+  // 90 or 120 Hz they mean a different number of missed refreshes. Halfway
+  // between multiples (1.5, 2.5, 3.5 intervals) a frame that missed one,
+  // two or three refreshes is counted the same on every display.
+  it("puts the thresholds halfway between refresh multiples", () => {
+    assert.deepEqual(missedThresholdsMs(1000 / 60), [25, 41.7, 58.3]);
+    assert.deepEqual(missedThresholdsMs(1000 / 120), [12.5, 20.8, 29.2]);
+    assert.deepEqual(missedThresholdsMs(1000 / 30), [50, 83.3, 116.7]);
+  });
+  it("is null without a usable interval", () => {
+    for (const v of [null, undefined, 0, -1, NaN, Infinity]) {
+      assert.equal(missedThresholdsMs(v), null, String(v));
+    }
+  });
+});
+
 describe("itemOffsets", () => {
   it("places n distinct items around the centre, none closer than the spacing's half", () => {
     const offsets = itemOffsets(50, 6);
@@ -225,10 +274,19 @@ const run = (
   view,
   items,
   repeat,
-  { p50 = 10, p95 = 20, max = 30, over34 = 0, over51 = 0, dropped = 0 } = {},
+  {
+    p50 = 10,
+    p95 = 20,
+    max = 30,
+    missed1 = 0,
+    missed2 = 0,
+    missed3 = 0,
+    dropped = 0,
+  } = {},
   extra = {},
 ) => ({
   cell: { view, items, repeat },
+  missedMs: [25, 41.7, 58.3],
   voided: false,
   settledBefore: true,
   work: { insideMs: 4 * 300, frames: 300 },
@@ -241,10 +299,11 @@ const run = (
       maxMs: max,
       droppedFrames: dropped,
       over: [
-        { thresholdMs: 33, count: over34 + 1 },
-        { thresholdMs: 34, count: over34 },
-        { thresholdMs: 50, count: over51 + 1 },
-        { thresholdMs: 51, count: over51 },
+        { thresholdMs: 25, count: missed1 },
+        { thresholdMs: 33, count: missed2 + 1 },
+        { thresholdMs: 41.7, count: missed2 },
+        { thresholdMs: 50, count: missed3 + 1 },
+        { thresholdMs: 58.3, count: missed3 },
       ],
     },
   },
@@ -259,7 +318,15 @@ describe("summariseViewRuns", () => {
         "street",
         20,
         2,
-        { p50: 12, p95: 26, max: 70, over34: 2, over51: 1, dropped: 9 },
+        {
+          p50: 12,
+          p95: 26,
+          max: 70,
+          missed1: 4,
+          missed2: 2,
+          missed3: 1,
+          dropped: 9,
+        },
         { work: { insideMs: 6 * 100, frames: 100 } },
       ),
       run("street", 20, 3, { p50: 11, p95: 22, max: 45 }),
@@ -278,9 +345,10 @@ describe("summariseViewRuns", () => {
         workMs: 4,
         dropped: 0,
         over33: 1,
-        over34: 0,
         over50: 1,
-        over51: 0,
+        missed1: 0,
+        missed2: 0,
+        missed3: 0,
         itemsWarmMaxMs: 40,
       },
       {
@@ -295,9 +363,10 @@ describe("summariseViewRuns", () => {
         workMs: 4,
         dropped: 12,
         over33: 5,
-        over34: 2,
         over50: 4,
-        over51: 1,
+        missed1: 4,
+        missed2: 2,
+        missed3: 1,
         itemsWarmMaxMs: 40,
       },
     ]);
@@ -305,7 +374,7 @@ describe("summariseViewRuns", () => {
   it("leaves voided runs out of the numbers but counts them", () => {
     const [row] = summariseViewRuns([
       run("1km", 50, 1, { max: 30 }),
-      run("1km", 50, 2, { p50: 99, max: 999, over51: 9 }, { voided: true }),
+      run("1km", 50, 2, { p50: 99, max: 999, missed3: 9 }, { voided: true }),
     ]);
     assert.equal(row.runs, 1);
     assert.equal(row.voided, 1);
@@ -321,7 +390,7 @@ describe("summariseViewRuns", () => {
         "street",
         5,
         2,
-        { p95: 80, max: 900, over34: 40, over51: 20, dropped: 99 },
+        { p95: 80, max: 900, missed2: 40, missed3: 20, dropped: 99 },
         { settledBefore: false },
       ),
     ]);
@@ -329,7 +398,7 @@ describe("summariseViewRuns", () => {
     assert.equal(row.timedOut, 1);
     assert.equal(row.maxMs, 30);
     assert.equal(row.p95Ms, 20);
-    assert.equal(row.over51, 0);
+    assert.equal(row.missed3, 0);
     assert.equal(row.dropped, 0);
   });
   it("leaves the warm-up pass out entirely", () => {
@@ -346,6 +415,13 @@ describe("summariseViewRuns", () => {
     assert.equal(rows.length, 1);
     assert.equal(rows[0].runs, 1);
     assert.equal(rows[0].maxMs, 30);
+  });
+  it("reads the missed counts as null for runs without a calibrated rate", () => {
+    const [row] = summariseViewRuns([
+      run("space", 5, 1, {}, { missedMs: null }),
+    ]);
+    assert.equal(row.missed1, null);
+    assert.equal(row.missed3, null);
   });
   it("orders rows by the views' order, then the count", () => {
     const rows = summariseViewRuns([
@@ -396,7 +472,8 @@ describe("formatViewTable", () => {
         p50: 10.04,
         p95: 20.5,
         max: 40,
-        over34: 1,
+        missed1: 3,
+        missed2: 1,
         dropped: 2,
       }),
     ]);
@@ -407,13 +484,14 @@ describe("formatViewTable", () => {
     const lines = text.split("\n");
     assert.match(
       lines[0],
-      /view\s+n\s+p50\s+p95\s+max\s+work\s+drop\s+>34\s+>51/,
+      /view\s+n\s+p50\s+p95\s+max\s+work\s+drop\s+>=1\s+>=2\s+>=3/,
     );
     assert.match(
       lines[1],
-      /^street\s+20\s+10\.0\s+20\.5\s+40\.0\s+4\.0\s+2\s+1\s+0$/,
+      /^street\s+20\s+10\.0\s+20\.5\s+40\.0\s+4\.0\s+2\s+3\s+1\s+0$/,
     );
     assert.match(text, /display 60 Hz \(measured 16\.5 ms\): a frame 16\.7 ms/);
+    assert.match(text, /missed 1, 2, 3 refreshes: over 25, 41\.7, 58\.3 ms/);
     assert.match(text, /street r1 4\.4/);
   });
   it("names timed-out and voided runs on their row, and a calibration that does not fit", () => {

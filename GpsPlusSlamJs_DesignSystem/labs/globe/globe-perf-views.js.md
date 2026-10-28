@@ -19,18 +19,29 @@
       largest count, `warmup: true`): the first visit of a view loads its
       tiles and compiles its programs, which repeat 1 would otherwise pay
       alone;
-    - then, per repeat and view, every count once, in an order rotated by
-      `(repeat - 1 + view index)` (a Latin-square-like rotation): a fixed
-      ascending order put the largest count last after every move, so a
-      cost that grows with the time since the move (a cache release, a
-      drain, a city fade) read as the items' cost;
+    - the warm-up loads each view's tiles and compiles the scene's own
+      programs, not the items': a count of 0 disposes the items'
+      materials, so each count's first frames compile them again, which
+      its `itemsWarm` records apart;
+    - then, per repeat and view, every count once, starting at a count
+      rotated by `(repeat - 1 + view index)`: a fixed ascending order put
+      the largest count last after every move, so a cost that grows with
+      the time since the move (a cache release, a drain, a city fade) read
+      as the items' cost. Odd repeats go forward through the counts, even
+      repeats backward: forward only, each count always followed the same
+      one (0 followed 50 and paid its disposal);
     - `views` a subset (the recorder leaves `street` out without
       `eye=1`). RangeError for a repeat count that is not a positive
-      integer or an empty view list.
+      integer, an empty view list or no counts.
   - `viewRunLabel(cell)` -> `"street n=50 r3"`, or `"space n=50 warm"`.
   - `perfViewsEstimateMs(cells, { holdMs, settleMs, calibrateMs = 0 })`:
-    the calibration, one settle per move and one hold per cell (an
-    estimate: the quiet waits and the items' warm-up are not in it).
+    the calibration, one settle per move and one hold per cell. An
+    estimate, not a bound: the quiet waits, a city waited for and slow
+    frames are not in it, so the overlay labels it as one.
+  - `missedThresholdsMs(intervalMs)` -> the thresholds (ms) for frames
+    that missed at least 1, 2 and 3 refreshes: 1.5, 2.5 and 3.5
+    intervals, halfway between the multiples a frame lands on (60 Hz:
+    25, 41.7, 58.3), rounded to 0.1 ms; null without a usable interval.
   - `PERF_REFRESH_HZ`: 30, 60, 90, 120.
   - `snapRefreshInterval(ms)` -> `{ measuredMs, hz, intervalMs, mismatch }`:
     the nearest of those rates; `mismatch` when the measurement is more
@@ -41,7 +52,8 @@
     50 items within about 43 m. RangeError for a bad count or spacing.
   - `summariseViewRuns(runs)` -> one row per view and count:
     `{ view, items, runs, voided, timedOut, p50Ms, p95Ms, maxMs, workMs,
-dropped, over33, over34, over50, over51, itemsWarmMaxMs }`. Warm-up
+dropped, over33, over50, missed1, missed2, missed3, itemsWarmMaxMs }`
+    (`missedN` over each run's `missedMs`, null when a run has none). Warm-up
     runs are left out; voided runs (a touch, a hidden page, a lost
     context) and runs whose settle timed out (`extra.settledBefore ===
 false`) are counted and kept out of every number. `workMs` is the
@@ -50,18 +62,21 @@ false`) are counted and kept out of every number. `workMs` is the
   - `summariseViewDownloads(runs)` -> `[{ view, repeat, mib }]`, one per
     move: the bytes the page needed from the move to its last run.
   - `formatViewTable(rows, { refresh, downloads })` -> the overlay's text
-    table (`view n p50 p95 max work drop >34 >51`, a row's voided and
+    table (`view n p50 p95 max work drop >=1 >=2 >=3`, a row's voided and
     timed-out runs at its end), a legend, the display rate it was read
-    against (or that it was not measured), and the MiB per move.
+    against with the missed thresholds (or that it was not measured),
+    and the MiB per move.
 - Invariants & assumptions:
   - The counts come from the hash alone, so two devices given one link run
     the same plan; the views' order is fixed, the counts' order rotates.
-  - `>34` and `>51` are kept beside `drop` on purpose: at 60 Hz, 34 ms
-    is two refreshes, so `>34` counts frames that missed two or more
-    vsyncs, and `drop` (from the snapped rate) every missed one. The
-    export also keeps `over33` and `over50`; nothing reads them yet.
+  - The missed counts replace fixed 34 and 51 ms counters, which sat
+    right on 60 Hz's refresh multiples (jitter moved frames across them)
+    and meant another number of refreshes at 30, 90 or 120 Hz. `drop`
+    (refreshes missed in all, from the snapped rate) stays beside them;
+    the export also keeps `over33` and `over50`, the plan's verdict.
 - Examples: `#at=46.948,7.4474&eye=1&perf=1&perfItems=0,5,20,50&perfAuto=1`.
-- Tests: `globe-perf-views.test.mjs` (the plan, the rotation, the warm-up,
+- Tests: `globe-perf-views.test.mjs` (the plan, the rotation and the
+  even repeats' reversal, the missed thresholds, the warm-up,
   the parse, the layout, the snap, the pooling, the downloads and the
   table); `globe-perf-views.smoke.spec.mjs` (the sweep in the page: it
   starts by itself, visits each view with the items, the street camera at

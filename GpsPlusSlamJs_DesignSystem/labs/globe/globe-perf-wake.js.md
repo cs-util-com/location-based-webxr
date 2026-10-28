@@ -6,15 +6,20 @@
   Screen Wake Lock for the sweep and records whether it held, so a tester
   and the export both know.
 - Public API:
-  - `createWakeKeeper({ wakeLock, doc })` -> `{ start(), stop(), report() }`:
+  - `createWakeKeeper({ wakeLock, doc, onChange, startTimeoutMs = 3000 })`
+    -> `{ start(), stop(), report() }`:
     - `wakeLock` the page's `navigator.wakeLock` (undefined where the API
-      is missing), `doc` its `document`;
+      is missing), `doc` its `document`, `onChange(held)` told each
+      time the lock is taken or lost (the recorder's status line);
     - `start()` (async) requests a `screen` lock and listens for the page
-      becoming visible again; a lock the browser released (the page was
-      hidden) is requested again then;
+      becoming visible again; it waits at most `startTimeoutMs` for the
+      request (a request that never settles must not hold the sweep), and
+      a late answer still counts. A lock the browser released is asked
+      for again at once while the page is visible, else when it is
+      visible again; never two requests in flight;
     - `stop()` releases the lock and stops listening;
     - `report()` -> `{ supported, held, everHeld, requests, refused, lost,
-reacquired, heldThroughout }`: `refused` at most 10 `"Name:
+reacquired, heldThroughout, startTimedOut }`: `refused` at most 10 `"Name:
 message"` strings, `lost` the releases the page did not ask for,
       `heldThroughout` held from the start with no loss.
 - Invariants & assumptions:
@@ -25,4 +30,6 @@ message"` strings, `lost` the releases the page did not ask for,
 - Examples: `const wake = createWakeKeeper({ wakeLock: navigator.wakeLock,
 doc: document }); await wake.start(); ... wake.stop(); wake.report();`
 - Tests: `globe-perf-wake.test.mjs` (held and released, re-acquired
-  after a loss, a refusal recorded, unsupported, at most 10 refusals).
+  after a loss, asked for again at once while visible, never two
+  requests in flight, the start's timeout, a refusal recorded,
+  unsupported, at most 10 refusals).

@@ -83,6 +83,7 @@ describe("createWakeKeeper", () => {
       lost: 0,
       reacquired: 0,
       heldThroughout: true,
+      startTimedOut: false,
     });
     // Stopped: a later return to the page asks for nothing.
     doc.set("visible");
@@ -128,6 +129,59 @@ describe("createWakeKeeper", () => {
     assert.equal(await keeper.start(), false);
     assert.equal(keeper.report().supported, false);
     assert.equal(keeper.report().heldThroughout, false);
+    await keeper.stop();
+  });
+  // WHY: a battery saver (or the OS) can release the lock while the page
+  // stays on screen; no visibilitychange follows, so a keeper that asked
+  // again only on a return to the page ran the rest of the sweep unlocked
+  // and the screen locked minutes later, voiding runs.
+  it("asks again at once when the lock is released while the page is visible", async () => {
+    const wakeLock = fakeWakeLock();
+    const doc = fakeDoc();
+    const changes = [];
+    const keeper = createWakeKeeper({
+      wakeLock,
+      doc,
+      onChange: (held) => changes.push(held),
+    });
+    await keeper.start();
+    await wakeLock.sentinels[0].release();
+    await tick();
+    const r = keeper.report();
+    assert.equal(r.held, true);
+    assert.equal(r.lost, 1);
+    assert.equal(r.reacquired, 1);
+    assert.equal(r.requests, 2);
+    // The status line is told: lost, then held again.
+    assert.deepEqual(changes, [true, false, true]);
+    await keeper.stop();
+  });
+  // WHY: a release and a visibilitychange can arrive together; two
+  // requests in flight would hold two locks and leak one.
+  it("never has two requests in flight", async () => {
+    const wakeLock = fakeWakeLock();
+    const doc = fakeDoc();
+    const keeper = createWakeKeeper({ wakeLock, doc });
+    await keeper.start();
+    await wakeLock.sentinels[0].release();
+    doc.set("visible");
+    doc.set("visible");
+    await tick();
+    assert.equal(wakeLock.requests, 2);
+    assert.equal(keeper.report().held, true);
+    await keeper.stop();
+  });
+  // WHY: on some browsers the request neither resolves nor rejects for a
+  // long time (a permission prompt that never shows); the sweep must not
+  // wait on it.
+  it("starts without the lock when the request takes longer than its timeout", async () => {
+    const doc = fakeDoc();
+    const wakeLock = { request: () => new Promise(() => {}) };
+    const keeper = createWakeKeeper({ wakeLock, doc, startTimeoutMs: 20 });
+    const t0 = Date.now();
+    assert.equal(await keeper.start(), false);
+    assert.ok(Date.now() - t0 < 1000);
+    assert.equal(keeper.report().startTimedOut, true);
     await keeper.stop();
   });
   it("keeps at most ten refusals", async () => {
