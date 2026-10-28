@@ -2316,6 +2316,7 @@ async function start() {
     radius,
     ecefCamera,
     placeCameraEcef,
+    frameTarget,
     setFrameTarget,
     recentreFrame,
     earthCentreWorld,
@@ -3422,7 +3423,7 @@ async function start() {
       shellVolume !== null &&
       params.cloudShellVolume === 1 &&
       params.cloudNoise === "live" &&
-      view.frameTarget() !== null;
+      frameTarget() !== null;
     const flatOptions = {
       ceilingKm: volumeOn ? params.cloudVolumeCeilingKm : 0,
       fadeKm: volumeOn ? params.cloudVolumeFadeKm : 1,
@@ -3512,7 +3513,7 @@ async function start() {
         ? groundSky.update({
             altitudeKm: observerKm,
             sunWorld,
-            framed: view.frameTarget() !== null,
+            framed: frameTarget() !== null,
             edgeKm: params.skyEdgeKm,
             widthKm: Math.min(params.skyWidthKm, params.skyEdgeKm),
             stepPct: params.skyStepPct,
@@ -3533,7 +3534,7 @@ async function start() {
       cloudVolume.setFineGain(params.cloudFineGain);
       const volume = cloudVolume.update({
         altitudeKm: Math.max(0, observerKm),
-        target: view.frameTarget(),
+        target: frameTarget(),
         radiusKm: params.cloudVolumeKm,
         ceilingKm: params.cloudVolumeCeilingKm,
         fadeKm: params.cloudVolumeFadeKm,
@@ -3568,7 +3569,7 @@ async function start() {
           : 0,
         shares: cloudShares ?? { shellIn: 0, shell: 0, slab: 0 },
         stations: shellStations(params),
-        target: view.frameTarget(),
+        target: frameTarget(),
         deckKm: globe.cloudShell.heightM() / 1000,
         cover: params.cloudVolumeCover,
         cascade: shellCascade(
@@ -3964,7 +3965,7 @@ async function start() {
       ),
       frameRecentres: view.state().frameRecentres,
       // The world frame's target (F2a), null in ECEF.
-      worldFrame: view.frameTarget(),
+      worldFrame: frameTarget(),
       // The view's depression below the local horizontal (the oblique
       // flight's pitch, round-5 plan §3.5), degrees.
       cameraDepressionDeg:
@@ -5003,7 +5004,7 @@ void main() {
       },
       placeView(place, view) {
         const ellipsoid = globe.tiles.ellipsoid;
-        if (view.frameTarget() === null) setFrameTarget(place);
+        if (frameTarget() === null) setFrameTarget(place);
         // The controls' height rays hit the drawn surface, as when the user
         // owns the camera: on the whole scene they hit the cloud shell and
         // lifted a street camera about 2 km.
