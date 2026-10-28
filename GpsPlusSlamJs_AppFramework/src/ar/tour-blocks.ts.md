@@ -18,8 +18,24 @@ model | character`.
 - `TOUR_BLOCK_VIEWS` - the views this reader draws, per kind:
   - `shortText`: `pin`, `card`; `longText`: `card`;
   - `picture`: `plane`, `card`; `video`, `audio`: `card`;
-  - `model`: `placed`, `stage`, `card`; `character`: `stage`, `card`.
-  - The WORLD views (a free block's) are `pin`, `plane` and `placed`.
+  - `model`: `placed`, `ghost`, `hotspots`, `cutaway`, `toy`, `stage`,
+    `card`; `character`: `stage`, `card`.
+  - The WORLD views (a free block's) are `pin`, `plane` and the model's
+    world views, `TOUR_WORLD_VIEWS`; renderers ask that set rather than
+    keep a copy.
+- `TOUR_MODEL_WORLD_VIEWS` / `TourModelWorldView` - `placed`, `ghost`
+  (glass whose feet fade into the ground), `hotspots` (its notes drawn on
+  it, its clip held at rest), `cutaway` (cut open by its sections), `toy`
+  (at its pose and size until the visitor resizes or moves it). Every one
+  needs `sizeM`. All but `placed` are minor 1.
+- `TOUR_MODEL_NOTE_RULES` (`title` required 64, `text` optional 1024),
+  `TOUR_MODEL_MAX_NOTES` (32), `TOUR_MODEL_SECTION_RULES` (`name` required
+  40), `TOUR_MODEL_MAX_SECTIONS` (4), `TOUR_MODEL_ANIMATION_RULES` (`name`
+  required 128), `TOUR_MODEL_SPACE_MAX` (10 000, a point's largest
+  coordinate in the model's own units).
+- `tourBlocksMinor(blocks): number` - the lowest minor `blocks` need: 1
+  when a model stands in a view minor 1 added or carries `animation`,
+  `annotations` or `sections`; else 0. The writer stamps it.
 - `TOUR_BLOCK_TEXT_RULES` - every capped text, as `{ max, unit, required }`:
   - `shortText`: `caption` required 40, `description` optional 160;
   - `longText`: `title` required 80, `body` required 32 000 UTF-16 units;
@@ -73,9 +89,25 @@ model | character`.
 - `video`: `video` (a video asset), `transcript`, optional `title`, optional
   `poster` (an image asset).
 - `audio`: `audio` (an audio asset), `transcript`, optional `title`.
-- `model`: `asset` (a model asset), `sizeM` by view - required for
-  `placed`, refused for `stage` (shown at the file's own size), optional
-  for `card` - and optional `title`.
+- `model`: `asset` (a model asset), `sizeM` by view - required in every
+  world view, refused for `stage` (shown at the file's own size), optional
+  for `card` - and optional `title`. Minor 1 adds, in any view:
+  - `animation` `{ name, autoplay }` - a clip of the file by name (a name
+    the file lacks plays nothing); `autoplay` must be a boolean.
+  - `annotations` - 1 to 32 notes `{ position, normal, title, text? }` in
+    the model's own space (before `sizeM` scales it), so a note scales
+    and turns with the model. They live on the block, so replacing the
+    model file keeps them. An empty list reads as absent.
+  - `sections` - 1 to 4 planes `{ name, position, normal }` in the model's
+    own space; a cutaway cuts away what lies on the side `normal` points
+    to. Absent means one cut that turns to face the visitor; an empty
+    list is refused (a cutaway that cannot cut).
+  - A point or direction is three finite numbers and a direction is not
+    zero - malformed at every minor; a coordinate beyond
+    `TOUR_MODEL_SPACE_MAX`, too many notes or sections, a text over its
+    cap or a non-boolean `autoplay` is a rule a later minor may relax
+    (skips the block when lenient). Vectors are kept as written;
+    renderers normalise directions.
 - `character`: `name`, `image` (an image asset), `caption`, optional
   `voice` (an audio asset).
 
@@ -139,7 +171,17 @@ tourTextCount('\u{1F600}', 'utf16'); // 2
   messages an author reads (path, unit, article, bounds), a number or an
   array that would coerce into a valid id, kind or timestamp refused, a
   non-positive size malformed even for a newer minor, and an optional
-  over-cap text dropped with no listener. A scoped mutation run over this
+  over-cap text dropped with no listener. The model's minor-1 fields:
+  every world view needing a size, notes, sections and clip kept exactly,
+  notes surviving a replaced model file, the empty-list rules, 32 notes
+  and 4 sections at N and N+1 (strict and lenient), note title and text
+  caps, malformed vectors at every minor, the space bound, and
+  `tourBlocksMinor` per view and field.
+- `tour-blocks.property.test.ts` - a model's size for every double, and
+  for the minor-1 fields: every valid set reads back exactly through JSON
+  in every world view, any note count against the limit, any note title
+  against its cap, and the minor a model needs for every combination of
+  view and fields. A scoped mutation run over this
   file left two survivors, both equivalent: the `typeof value ===
 'string'` guard before a `Map.get` and an `Array.includes` that only
   match strings.

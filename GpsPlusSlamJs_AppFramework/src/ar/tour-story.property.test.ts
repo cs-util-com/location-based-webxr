@@ -28,6 +28,7 @@ import {
 } from '../test-utils/tour-arbitraries';
 import {
   TOUR_BLOCK_TEXT_RULES,
+  TOUR_WORLD_VIEWS,
   type TourBlockDrop,
   type TourBlockKind,
   type TourTextRule,
@@ -162,8 +163,7 @@ describe('a file of a newer minor (properties)', () => {
           const shown = new Set(shows);
           expect(
             content.blocks.filter(
-              (b) =>
-                !shown.has(b.id) && !['pin', 'plane', 'placed'].includes(b.view)
+              (b) => !shown.has(b.id) && !TOUR_WORLD_VIEWS.has(b.view)
             )
           ).toEqual([]);
           // Every block it left out was reported, by id.

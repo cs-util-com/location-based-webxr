@@ -30,8 +30,15 @@ import fc from 'fast-check';
 import {
   TOUR_BLOCK_TEXT_RULES,
   TOUR_BLOCK_VIEWS,
+  TOUR_MODEL_ANIMATION_RULES,
+  TOUR_MODEL_MAX_NOTES,
+  TOUR_MODEL_MAX_SECTIONS,
   TOUR_MODEL_MAX_SIZE_M,
   TOUR_MODEL_MIN_SIZE_M,
+  TOUR_MODEL_NOTE_RULES,
+  TOUR_MODEL_SECTION_RULES,
+  TOUR_MODEL_SPACE_MAX,
+  TOUR_MODEL_WORLD_VIEWS,
   TOUR_PICTURE_MAX_WIDTH_M,
   TOUR_PICTURE_MIN_WIDTH_M,
   type TourBlockKind,
@@ -240,10 +247,25 @@ const KIND_FIELDS: Record<
       sizeM:
         view === 'stage'
           ? fc.constant(undefined)
-          : view === 'placed'
+          : (TOUR_MODEL_WORLD_VIEWS as readonly string[]).includes(view)
             ? modelSize
             : fc.option(modelSize, { nil: undefined }),
       title: optionalText(r.model.title),
+      animation: fc.option(tourModelAnimationArbitrary, { nil: undefined }),
+      annotations: fc.option(
+        fc.array(tourModelNoteArbitrary, {
+          minLength: 1,
+          maxLength: TOUR_MODEL_MAX_NOTES,
+        }),
+        { nil: undefined }
+      ),
+      sections: fc.option(
+        fc.array(tourModelSectionArbitrary, {
+          minLength: 1,
+          maxLength: TOUR_MODEL_MAX_SECTIONS,
+        }),
+        { nil: undefined }
+      ),
     }),
   character: () =>
     fc.record({
@@ -253,6 +275,47 @@ const KIND_FIELDS: Record<
       voice: fc.option(fc.constant('voice'), { nil: undefined }),
     }),
 };
+
+/** A point in a model's own space, within the bound; with `direction`,
+ *  never zero. */
+export function tourModelVectorArbitrary(
+  direction = false
+): fc.Arbitrary<[number, number, number]> {
+  // JSON writes -0 as 0, so a file never holds one.
+  const c = fc
+    .double({
+      min: -TOUR_MODEL_SPACE_MAX,
+      max: TOUR_MODEL_SPACE_MAX,
+      noNaN: true,
+      noDefaultInfinity: true,
+    })
+    .map((x) => (x === 0 ? 0 : x));
+  const v = fc.tuple(c, c, c);
+  return direction ? v.filter(([x, y, z]) => x !== 0 || y !== 0 || z !== 0) : v;
+}
+
+/** A valid model note. */
+export const tourModelNoteArbitrary = fc
+  .record({
+    position: tourModelVectorArbitrary(),
+    normal: tourModelVectorArbitrary(true),
+    title: tourTextArbitrary(TOUR_MODEL_NOTE_RULES.title),
+    text: optionalText(TOUR_MODEL_NOTE_RULES.text),
+  })
+  .map((note) => defined(note));
+
+/** A valid model section. */
+export const tourModelSectionArbitrary = fc.record({
+  name: tourTextArbitrary(TOUR_MODEL_SECTION_RULES.name),
+  position: tourModelVectorArbitrary(),
+  normal: tourModelVectorArbitrary(true),
+});
+
+/** A valid model clip. */
+export const tourModelAnimationArbitrary = fc.record({
+  name: tourTextArbitrary(TOUR_MODEL_ANIMATION_RULES.name),
+  autoplay: fc.boolean(),
+});
 
 const modelSize = fc.double({
   min: TOUR_MODEL_MIN_SIZE_M,
@@ -269,7 +332,7 @@ export const TOUR_FREE_VIEWS: Readonly<
   picture: ['plane'],
   video: [],
   audio: [],
-  model: ['placed'],
+  model: TOUR_MODEL_WORLD_VIEWS,
   character: [],
 };
 

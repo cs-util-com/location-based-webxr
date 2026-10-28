@@ -23,6 +23,7 @@ import {
   serializeTourManifest,
   TOUR_MANIFEST_MINOR,
 } from './tour-manifest';
+import { tourBlocksMinor } from './tour-blocks';
 import { tourObjects } from './tour-station-pose';
 
 /** What a card image or the cover may name: an image asset, another
@@ -89,8 +90,13 @@ describe('tour manifest version 4 (properties)', () => {
         const parsed = parseTourManifest(m);
         const written = JSON.parse(serializeTourManifest(parsed)) as unknown;
         const again = parseTourManifest(written);
-        expect(again).toEqual(parsed);
-        expect(written).toMatchObject({ version: 4, minor: 0 });
+        // The writer stamps the lowest minor the tour needs; everything
+        // else reads back unchanged.
+        const needed = tourBlocksMinor(
+          parsed.stations.flatMap((s) => s.blocks)
+        );
+        expect(again).toEqual({ ...parsed, minor: needed });
+        expect(written).toMatchObject({ version: 4, minor: needed });
         // The same numbers exactly, not merely close: JSON round trips a
         // double exactly, and nothing on the way may recompute a pose.
         const poses = (x: typeof parsed) =>

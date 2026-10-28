@@ -35,7 +35,8 @@ tour id and the tour details.
     `cause` is a malformed value.
 - `serializeTourManifest(manifest, options?): string` - re-validates
   through the reader, refuses a manifest of a newer minor, then
-  pretty-prints `{ version: 4, minor: 0, ... }`. The in-memory shape is
+  pretty-prints `{ version: 4, minor, ... }` at the lowest minor the tour
+  needs. The in-memory shape is
   the file's shape (a step's content is `action` in both), so nothing is
   mapped on the way.
 - `createEmptyTourManifest(): TourManifest` - `{ version: 4, minor: 0,
@@ -152,10 +153,18 @@ TourPicture | TourModel` - a free block without its local pose, plus
 - **Minor (`minor`, default 0).** Additive revisions of version 4. A
   reader opens any minor; unknown fields are IGNORED at every level and at
   every minor. The writer refuses a manifest whose minor is newer than
-  `TOUR_MANIFEST_MINOR` (it was read with fields dropped). 4.0 has no
-  later minor yet, so the writer writes 0; the minor that adds a field or
-  a value brings back a "lowest minor the tour needs" rule, so an older
-  reader is never handed something it would drop on its own write.
+  `TOUR_MANIFEST_MINOR` (it was read with fields dropped). The writer
+  writes the LOWEST minor the tour needs (`tourBlocksMinor` over every
+  station's blocks), so an older reader opens fully every tour that uses
+  nothing newer, and is never handed something it would drop on its own
+  write.
+- **Minor 1** (`TOUR_MANIFEST_MINOR = 1`): a model's world views `ghost`,
+  `hotspots`, `cutaway` and `toy`, and its `animation`, `annotations`
+  (notes) and `sections` (`tour-blocks.ts.md`). This reader accepts them
+  in a file of any minor, as the reader of 3.1 accepted the model. A 4.0
+  reader opening a 4.1 tour reads it leniently: a model in a view it does
+  not know falls back to `placed`, and the new fields are ignored.
+  `TourModel['view']` is any `TourModelWorldView`.
 - **Unknown VALUES of a newer minor:** an unknown block kind or view, step
   kind, quiz answer type, advance mode or asset media type degrades as
   `tour-blocks.ts`, `tour-story.ts` and `tour-assets.ts` say (a story

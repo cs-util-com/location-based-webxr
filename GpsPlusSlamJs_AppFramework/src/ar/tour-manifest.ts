@@ -35,8 +35,12 @@
  *   unknown fields are ignored at every minor, so a typo in a hand-edited
  *   optional field reads as absent - but the WRITER refuses a tour of a
  *   newer minor than its own: rewriting it would silently drop what this
- *   version cannot read. The writer writes the LOWEST minor the tour needs;
- *   at 4.0 that is always 0.
+ *   version cannot read. The writer writes the LOWEST minor the tour needs
+ *   (`tourBlocksMinor`), so a tour an older reader can open fully is never
+ *   marked newer than it is. Minor 1 added a model's world views besides
+ *   `placed` (`ghost`, `hotspots`, `cutaway`, `toy`) and its `animation`,
+ *   `annotations` (notes) and `sections`; a reader of this version accepts
+ *   them in a file of any minor.
  * - A newer minor may also add VALUES to a closed list: a block kind or
  *   view, an order, an advance mode, an asset's media type. Read from a
  *   file of a newer minor, an unknown value degrades - the block or step
@@ -72,8 +76,10 @@ import {
 import {
   placeTourBlocks,
   readTourBlocks,
+  tourBlocksMinor,
   type TourBlockDrop,
   type TourModelBlock,
+  type TourModelWorldView,
   type TourPictureBlock,
   type TourShortTextBlock,
 } from './tour-blocks.js';
@@ -101,7 +107,12 @@ export type {
   TourBlockView,
   TourCharacterBlock,
   TourLongTextBlock,
+  TourModelAnimation,
   TourModelBlock,
+  TourModelNote,
+  TourModelSection,
+  TourModelVector,
+  TourModelWorldView,
   TourPictureBlock,
   TourShortTextBlock,
   TourVideoBlock,
@@ -126,7 +137,7 @@ export type {
 export const TOUR_MANIFEST_VERSION = 4;
 
 /** The newest additive revision of version 4 this module knows. */
-export const TOUR_MANIFEST_MINOR = 0;
+export const TOUR_MANIFEST_MINOR = 1;
 
 /** Where a free block stands in the WORLD: the view the viewer places and
  *  the creator's drafts hold (`tour-station-pose.ts` `tourObjects`). */
@@ -154,9 +165,9 @@ export type TourPicture = InWorld<TourPictureBlock> & {
   readonly view: 'plane';
   readonly imageAsset: TourAsset;
 };
-/** A 3D model placed in the world at its size. */
+/** A 3D model in the world at its size, in one of its world views. */
 export type TourModel = InWorld<TourModelBlock> & {
-  readonly view: 'placed';
+  readonly view: TourModelWorldView;
   readonly sizeM: number;
 };
 export type TourObject = TourPin | TourPicture | TourModel;
@@ -547,7 +558,6 @@ export function serializeTourManifest(
       `this tour was made with a newer version of the app (format ${String(TOUR_MANIFEST_VERSION)}.${String(parsed.minor)}); saving it here would drop what this version cannot read`
     );
   }
-  // 4.0 has no later minor yet: every tour needs 0. A field or view of a
-  // later minor brings back the lowest-minor rule here.
-  return JSON.stringify({ ...parsed, minor: 0 }, null, 2);
+  const minor = tourBlocksMinor(parsed.stations.flatMap((s) => s.blocks));
+  return JSON.stringify({ ...parsed, minor }, null, 2);
 }
