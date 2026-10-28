@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.31.0] - 2026-10-28
+
 > ⚠️ **This MINOR carries breaking changes.** It is numbered 1.31.0 rather
 > than 2.0.0 (owner decision, 2026-10-28), as 1.22.0 was. The cost is stated
 > plainly: a consumer on `^1.x` gets these changes with no version-level
