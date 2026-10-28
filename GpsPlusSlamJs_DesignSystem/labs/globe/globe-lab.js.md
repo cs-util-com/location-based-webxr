@@ -14,6 +14,25 @@
   back after a context loss). A sharp map that could not be made (a
   piece failed after its retries, or the GPU step threw) adds "The sharp
   cloud map could not load: the coarser one shows." (the preview stays).
+- The view core (full-globe editor plan 2026-10-27-1850 §3.1, a pure
+  refactor: the globe must look and perform as before): the renderer, the
+  scene, the camera, the surface, the sky pass, the clock, the world frame,
+  the drawing buffer's fit and the frame's order live in
+  `/globe/globe-view.js` (`createGlobeView`, see its sidecar). The lab
+  passes its hash values as `settings()`, the framework's
+  `solarPosition` (injected: the Globe package does not depend on the
+  framework yet), and its own work as seams: `driveCamera` (the intro, the
+  pin, the controls), `update` (the relief, the city, the OSM map, the
+  clouds, the air), `afterSky` (the ground sky), `beforeScene` and
+  `afterScene` (the dust, the depth, the cloud volumes, the atmosphere),
+  `frameStart`/`frameEnd` (the hooks, the perf sweep), `paused` and
+  `gestureBusy`. The air, the clouds, the city, the approach, the relief's
+  band and drains, the OSM step, the controls, the clip planes and the
+  credits stay here. `state()` reads the view's clock, sun, frame and
+  drift through it, unchanged in shape. The guard of the move is
+  `globe-reference-shots.smoke.spec.mjs` with
+  `globe-reference-shots-compare.mjs` (six held views, before and after,
+  side by side).
 - Round 2 (plan 2026-09-26-2055 M3 c-f; round-3 plan 2026-09-27-0532 §4 F):
   the lab owns a pinnable clock that drives the sun and the clouds' drift;
   a background pass (`/globe/globe-sky.js`) draws the sun's disc and glow

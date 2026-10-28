@@ -13,14 +13,14 @@
  * @see globe-lab.js.md
  */
 import * as THREE from "three";
-import { GlobeControls, WGS84_ELLIPSOID } from "3d-tiles-renderer";
+import { GlobeControls } from "3d-tiles-renderer";
 
 import {
   GLOBE_SURFACE,
   createGlobeImagery,
-  createGlobeSurface,
   elementMapLoader,
 } from "/globe/globe-surface.js";
+import { createGlobeView, viewPoseEcef } from "/globe/globe-view.js";
 import { CLOUD_VOLUME } from "/globe/globe-cloud-volume.js";
 import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
 import {
@@ -33,11 +33,7 @@ import {
   createCloudLiveLatticeTexture,
 } from "/fw/visualization/atmosphere/cloud-live-noise.js";
 import { flatCloudShare } from "/globe/globe-cloud-flat-fade.js";
-import {
-  GLOBE_CLOUD_DRIFT_LAW,
-  advanceCloudLonOffsetRad,
-  cloudDriftDegPerS,
-} from "/globe/globe-cloud-drift.js";
+import { GLOBE_CLOUD_DRIFT_LAW } from "/globe/globe-cloud-drift.js";
 import {
   CLOUD_HIGH_LAYER,
   CLOUD_SHELL_VOLUME,
@@ -59,22 +55,18 @@ import {
   applyOrbitPose,
   clipPlanes,
   reliefClearanceM,
-  orbitDistanceToFit,
   orbitPose,
   smoothstep,
 } from "/globe/globe-camera.js";
-import { sunDirectionEcef } from "/globe/globe-sun.js";
-import { GLOBE_SKY, createGlobeSky } from "/globe/globe-sky.js";
-import { GLOBE_STARS, greenwichSiderealAngleRad } from "/globe/globe-stars.js";
+import { GLOBE_SKY } from "/globe/globe-sky.js";
+import { GLOBE_STARS } from "/globe/globe-stars.js";
 import {
   GLOBE_CLOUD_DRIFT_DEG_PER_S,
   GLOBE_SURFACE_TUNING,
-  cloudLonOffsetRad,
 } from "/globe/globe-surface-material.js";
 import {
   readGlobeClockSetting,
   sameGlobeClockSetting,
-  startGlobeClock,
 } from "/globe/globe-clock.js";
 import {
   GLOBE_DIVE,
@@ -149,12 +141,6 @@ import {
 } from "/globe/landing-ground.js";
 import { nextDrawnShare, topLevelReady } from "/globe/globe-band-gate.js";
 import { asStencilFill, asStencilWriter } from "/globe/globe-stencil-fill.js";
-import {
-  applyEcefPose,
-  ecefPoseOf,
-  frameRecentreTarget,
-  worldFromEcefAt,
-} from "/globe/globe-frame.js";
 import { drainTileCache, releaseTileCache } from "/globe/globe-tile-cache.js";
 import { SKY_FILL } from "/globe/sky-level.js";
 import {
@@ -372,8 +358,6 @@ function renderCredits(credits, heights = null, extra = []) {
  */
 const PROCEDURAL_STARS = "Stars: procedural, not a star catalogue.";
 
-/** The camera's fit: the disc fills 90 % of the narrower side (§7.6). */
-const FIT_MARGIN = 0.1;
 /**
  * The spin while the page waits for a target, in degrees per second. It
  * starts over the sub-solar point (the day side the fly-in starts from,
@@ -2281,110 +2265,65 @@ async function start() {
     const p0 = readHashParams();
     return p0.relief === 1 && p0.bandFill === 1;
   })();
-  const renderer = new THREE.WebGLRenderer({
-    canvas,
-    antialias: true,
-    stencil: fillAtStart,
-    reversedDepthBuffer: readHashParams().depth === "reversed",
-  });
-  // Phase 1's exposure (§7.3): Neutral tone mapping (the look-dev
-  // default), no ambient light, a black sky; the sun at the surface's own
-  // intensity (5 since round 4, DEC-GL4-1; π in phase 1).
-  renderer.toneMapping = THREE.NeutralToneMapping;
-  // The frame clears once, then draws the sky pass, then the Earth over it.
-  renderer.autoClear = false;
-  const sky = createGlobeSky();
-  const sunWorld = new THREE.Vector3();
-  const earthDirection = new THREE.Vector3();
-  const celestial = new THREE.Quaternion();
-  let siderealAngleRad = 0;
-  const device = reportDevice(renderer);
-  const scene = new THREE.Scene();
-  const radius = WGS84_ELLIPSOID.radius.x;
-  const camera = new THREE.PerspectiveCamera(
-    PARAMS.fovY.fallback,
-    1,
-    radius * 0.01,
-    radius * 20,
-  );
-  let distance = radius * 3;
-  let fittedSize = "";
-  /** When the frame loop last ran (performance.now()), for the smokes. */
-  let frameAt = 0;
-  const terrainResolution = new THREE.Vector2();
   const startParams = readHashParams();
-  // A page with a relief compiles the band into the globe's shader; the
-  // plain globe draws the program from before the relief.
-  const globe = createGlobeSurface(
-    startParams.mapBitmap === 0 ? elementMapLoader : undefined,
-    {
-      band: startParams.relief === 1,
-      // A globe that fills the relief's gaps never discards (round-6 plan
-      // G6-1): its program keeps the GPU's early stencil test.
-      fill: fillAtStart,
-    },
-  );
-  useSurfaceDefaults(globe);
-  // The world frame (F2 plan F2a, M3): one matrix on globe.group, from ECEF
-  // to the target's local frame (x east, y up, the origin on the ground),
-  // or the identity before any target. Every camera pose is written and
-  // read in ECEF through it (`/globe/globe-frame.js`), never by assuming
-  // world = ECEF.
-  const worldFrame = { matrix: new THREE.Matrix4(), target: null };
-  globe.group.matrixAutoUpdate = false;
-  const ecefCamera = () => ecefPoseOf(camera, worldFrame.matrix);
-  const placeCameraEcef = (position, quaternion) =>
-    applyEcefPose(camera, { position, quaternion }, worldFrame.matrix);
   /** Set once the controls exist: they hold world-space drag state. */
   let onFrameChange = () => {};
-  /** Moves the world frame to `target` (null: ECEF), the view unchanged. */
-  const setFrameTarget = (target) => {
-    const next = params.worldFrame === 1 && target ? target : null;
-    if (
-      next?.lat === worldFrame.target?.lat &&
-      next?.lng === worldFrame.target?.lng
-    ) {
-      return;
-    }
-    const before = ecefCamera();
-    if (next) worldFromEcefAt(globe.tiles.ellipsoid, next, worldFrame.matrix);
-    else worldFrame.matrix.identity();
-    worldFrame.target = next ? { lat: next.lat, lng: next.lng } : null;
-    globe.group.matrix.copy(worldFrame.matrix);
-    globe.group.matrixWorldNeedsUpdate = true;
-    globe.group.updateMatrixWorld(true);
-    applyEcefPose(camera, before, worldFrame.matrix);
-    onFrameChange();
-    debugLog.log("frame", worldFrame.target);
-  };
-  /**
-   * Moves the frame under the camera once the user has flown it too far
-   * from the frame's origin (volume-cloud plan §14, `frameRecentreTarget`):
-   * a frame left on the link's target while the owner flew 244 km stood
-   * 4.7 km off the curved ground there, and the cloud deck, flat in the
-   * frame, floated above the camera (2026-10-06). The view is unchanged;
-   * the volume's noise is anchored to the ground, so its clouds stay put.
-   * It waits while the controls are busy, so a gesture is never cut short.
-   */
-  /** How many times the frame has recentred (the smokes count them). */
-  let frameRecentres = 0;
-  const recentreFrame = () => {
-    // Never under a gesture: a frame move releases the controls, which
-    // ended the owner's drags a second in (2026-10-06, r785).
-    if (worldFrame.target === null || controls.busy()) return;
-    const ellipsoid = globe.tiles.ellipsoid;
-    const c = ellipsoid.getPositionToCartographic(ecefCamera().position, {});
-    const next = frameRecentreTarget(
-      ellipsoid,
-      worldFrame.target,
-      { lat: c.lat / DEG, lng: c.lon / DEG },
-      c.height,
-    );
-    if (next) {
-      frameRecentres += 1;
-      setFrameTarget(next);
-    }
-  };
+  // The view core (`/globe/globe-view.js`): the renderer, the scene, the
+  // camera, the surface, the sky pass, the clock, the world frame and the
+  // frame's order. The page's parts of the frame come in through its
+  // seams, each at the place this page's frame did that work.
+  const view = createGlobeView({
+    canvas,
+    fovYDeg: PARAMS.fovY.fallback,
+    settings: () => params,
+    solarPosition,
+    stencil: fillAtStart,
+    reversedDepth: readHashParams().depth === "reversed",
+    // A page with a relief compiles the band into the globe's shader; the
+    // plain globe draws the program from before the relief.
+    mapLoader: startParams.mapBitmap === 0 ? elementMapLoader : undefined,
+    band: startParams.relief === 1,
+    // A globe that fills the relief's gaps never discards (round-6 plan
+    // G6-1): its program keeps the GPU's early stencil test.
+    fill: fillAtStart,
+    seams: {
+      frameStart: (now) => hooks.frameStart(now),
+      // The recorder's refresh calibration: no work while paused.
+      paused: () => perfPaused,
+      driveCamera: (now) => driveCamera(now),
+      update: (now) => updateFrame(now),
+      // The ground sky over the space sky's pixels, before the Earth covers
+      // the ground's (nothing above the edge).
+      afterSky: () => groundSky.render(camera),
+      beforeScene: () => beforeScene(),
+      afterScene: () => afterScene(),
+      frameEnd: (now) => hooks.frameEnd(now),
+      frameChanged: (target) => {
+        onFrameChange();
+        debugLog.log("frame", target);
+      },
+      // A frame move releases the controls, which ended the owner's drags
+      // a second in (2026-10-06, r785): never under a gesture.
+      gestureBusy: () => controls.busy(),
+    },
+  });
+  const {
+    renderer,
+    scene,
+    camera,
+    sky,
+    globe,
+    radius,
+    ecefCamera,
+    placeCameraEcef,
+    setFrameTarget,
+    recentreFrame,
+    earthCentreWorld,
+  } = view;
+  const sunWorld = new THREE.Vector3();
+  const device = reportDevice(renderer);
+  const terrainResolution = new THREE.Vector2();
+  useSurfaceDefaults(globe);
   /**
    * Puts the camera at a view (`view=`, the Debug export's pose; volume-cloud
    * plan §16): the frame moved under it first, the intro yielded, the camera
@@ -2392,50 +2331,18 @@ async function start() {
    * off (the smokes' held view); without it the user has the camera.
    * RangeError for a pose that is not finite.
    */
-  const applyView = (
-    { lat, lng, altitudeKm, headingDeg, pitchDeg },
-    { hold },
-  ) => {
-    const values = [lat, lng, altitudeKm, headingDeg, pitchDeg];
-    if (!values.every(Number.isFinite)) {
-      throw new RangeError(`a view needs finite values, got ${values}`);
-    }
+  const applyView = (at, { hold }) => {
+    // The pose first: a view that is not finite throws before anything moves.
+    const pose = viewPoseEcef(globe.tiles.ellipsoid, at);
     flight.yieldToUser(performance.now());
     pin?.cameraTaken();
     // A placed view is a teleport, not a speed.
     speedDust.reset();
     heldView = hold;
-    setFrameTarget({ lat, lng });
-    const ellipsoid = globe.tiles.ellipsoid;
-    const position = ellipsoid.getCartographicToPosition(
-      lat * DEG,
-      lng * DEG,
-      altitudeKm * 1000,
-      new THREE.Vector3(),
-    );
-    const east = new THREE.Vector3();
-    const north = new THREE.Vector3();
-    const up = new THREE.Vector3();
-    ellipsoid.getEastNorthUpAxes(lat * DEG, lng * DEG, east, north, up);
-    const h = headingDeg * DEG;
-    const p = pitchDeg * DEG;
-    const forward = east
-      .clone()
-      .multiplyScalar(Math.sin(h) * Math.cos(p))
-      .addScaledVector(north, Math.cos(h) * Math.cos(p))
-      .addScaledVector(up, Math.sin(p));
-    // A camera looks down its -z: lookAt(eye, target) points -z at target.
-    const look = new THREE.Matrix4().lookAt(new THREE.Vector3(), forward, up);
-    placeCameraEcef(
-      position,
-      new THREE.Quaternion().setFromRotationMatrix(look),
-    );
+    setFrameTarget({ lat: at.lat, lng: at.lng });
+    placeCameraEcef(pose.position, pose.quaternion);
     camera.updateMatrixWorld();
   };
-  /** The Earth's centre in the world (the origin of ECEF, through the frame). */
-  const earthCentre = new THREE.Vector3();
-  const earthCentreWorld = () =>
-    earthCentre.setFromMatrixPosition(globe.group.matrixWorld);
   /** A camera for the orbit poses, which are written in ECEF. */
   const ecefScratch = new THREE.PerspectiveCamera();
   const { radius: radii } = globe.tiles.ellipsoid;
@@ -2461,7 +2368,6 @@ async function start() {
   /** The speed dust's pass (round-3 plan D1, `dust=1`). */
   const speedDust = createSpeedDustPass();
   let shellThickness = null;
-  scene.add(globe.group);
   // The relief (F1): the library's terrain tiles wearing the globe's look,
   // in the globe's group, in place of the generated tiles. Created once, on
   // the page's first relief=1; its heights are exaggerated by altitude.
@@ -2672,7 +2578,7 @@ async function start() {
   const status = statusView();
   const flight = introFlight(globe.tiles.ellipsoid, {
     sunEcef: () => globe.surfaceUniforms.uSunEcef.value,
-    fitDistance: () => distance,
+    fitDistance: () => view.fitDistance(),
     zoomOutM: () => zoomOutM(),
   });
   // Set once the pin exists (below); a touch before that has no flight.
@@ -2792,7 +2698,7 @@ async function start() {
       radiusM: radius,
       fovYDeg: params.fovY,
       aspect: camera.aspect,
-      fitM: distance,
+      fitM: view.fitDistance(),
     });
   controls.limit(zoomOutM);
   /** The replay button or a new target or timing: the intro again. */
@@ -2831,41 +2737,10 @@ async function start() {
   let cityTries = 0;
   let cityFailedAt = null;
   let appliedHash = location.hash.slice(1);
-  /** The globe's one clock; restarted only when its setting changes. */
-  const startClock = () =>
-    startGlobeClock(params.clock, {
-      epochMs: Date.now(),
-      monoMs: performance.now(),
-    });
-  let clock = startClock();
-  const sceneMs = () => clock.timeAt(performance.now());
-  /**
-   * The clouds' offset, summed per frame at the rate for the camera's
-   * altitude (`globe-cloud-drift.ts`): rate x time would jump the clouds at
-   * every change of height. Seeded with rate x time at the far rate.
-   */
-  const cloudDrift = { offset: null, atMs: 0, rate: 0 };
-  const driftClouds = (mono) => {
-    const t = clock.driftTimeAt(mono);
-    const altitudeM = globe.tiles.ellipsoid.getPositionElevation(
-      ecefCamera().position,
-    );
-    cloudDrift.rate = cloudDriftDegPerS(altitudeM, {
-      farDegPerS: params.cloudDrift,
-      farM: params.cloudDriftFarKm * 1000,
-      windMps: params.cloudWindMps,
-    });
-    cloudDrift.offset =
-      cloudDrift.offset === null
-        ? cloudLonOffsetRad(t, params.cloudDrift)
-        : advanceCloudLonOffsetRad(
-            cloudDrift.offset,
-            (t - cloudDrift.atMs) / 1000,
-            cloudDrift.rate,
-          );
-    cloudDrift.atMs = t;
-    return cloudDrift.offset;
-  };
+  // The globe's one clock (the view's); restarted only when its setting
+  // changes. The clouds' drift is summed per frame in the view.
+  view.startClock(params.clock);
+  const sceneMs = () => view.sceneMs();
   /** When the frame last refreshed the hour label (performance.now()). */
   let clockShownAt = -Infinity;
   /**
@@ -2894,7 +2769,7 @@ async function start() {
     if (camera.fov !== params.fovY || renderer.getPixelRatio() !== ratio) {
       camera.fov = params.fovY;
       renderer.setPixelRatio(ratio);
-      fittedSize = ""; // refit on the next frame
+      view.refit(); // refit on the next frame
     }
     applyFactors(params);
     atmosphere.setLook({
@@ -2934,9 +2809,9 @@ async function start() {
     const viewChanged = viewText(next) !== viewText(params);
     const driftChanged = next.cloudDrift !== params.cloudDrift;
     params = next;
-    if (clockChanged) clock = startClock();
+    if (clockChanged) view.startClock(params.clock);
     // A new clock or far rate seeds the clouds where rate x time puts them.
-    if (clockChanged || driftChanged) cloudDrift.offset = null;
+    if (clockChanged || driftChanged) view.resetCloudDrift();
     if (restart) giveBackToIntro();
     // A new view= (or the intro restarted under one) puts the camera there.
     if (params.view && (viewChanged || restart)) {
@@ -2946,27 +2821,11 @@ async function start() {
     syncPanel();
     appliedHash = location.hash.slice(1);
   };
-  /**
-   * Everything the clock drives, at its instant: the sun (it moves 0.25° a
-   * minute) and the clouds' drift. Returns the instant.
-   */
-  const sunNow = () => {
-    const mono = performance.now();
-    const ms = clock.timeAt(mono);
-    globe.setSun(
-      sunDirectionEcef(globe.tiles.ellipsoid, solarPosition(ms, 0, 0)),
-    );
-    // The drift runs on the clock's DRIFT time: the scene's time up to real
-    // time, real time above it, so a fast clock does not strobe the clouds.
-    globe.surfaceUniforms.uCloudLonOffset.value = driftClouds(mono);
-    siderealAngleRad = greenwichSiderealAngleRad(ms);
-    return ms;
-  };
   const panel = bindPanel(
     () => params,
     () => onHash(),
     sceneMs,
-    () => clock.scale,
+    () => view.clock().scale,
   );
   const syncPanel = panel.sync;
   /**
@@ -3237,39 +3096,22 @@ async function start() {
    */
   let perfPaused = false;
 
-  const frame = () => {
-    hooks.frameStart(performance.now());
-    if (perfPaused) {
-      hooks.frameEnd(performance.now());
-      return;
-    }
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    // Both sides: a phone's URL bar changes only the height.
-    if (`${w}x${h}` !== fittedSize) {
-      fittedSize = `${w}x${h}`;
-      renderer.setSize(w, h, false);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      // At the lab's field of view, not the camera's: the fly-in varies
-      // the camera's on the way.
-      distance = orbitDistanceToFit({
-        fovYRad: params.fovY * DEG,
-        aspect: camera.aspect,
-        margin: FIT_MARGIN,
-        radius,
-      });
-    }
-    sunNow();
-    const now = performance.now();
-    frameAt = now;
+  /**
+   * The view's `driveCamera` seam: whoever owns the camera places it (the
+   * recorder's paths, the intro and the pin's flight, or the controls).
+   */
+  const driveCamera = (now) => {
     if (perf?.drives()) {
       // The recorder's paths (§4.2) place the camera themselves.
       perf.drive(now);
     } else if (flight.drives) {
       const step = flight.pose(now);
       if (step.pose) {
-        applyOrbitPose(ecefScratch, step.pose, step.distanceM ?? distance);
+        applyOrbitPose(
+          ecefScratch,
+          step.pose,
+          step.distanceM ?? view.fitDistance(),
+        );
         placeCameraEcef(ecefScratch.position, ecefScratch.quaternion);
         flight.cameraPlaced(ecefScratch.position.length());
         if (step.fovDeg !== undefined && camera.fov !== step.fovDeg) {
@@ -3292,6 +3134,12 @@ async function start() {
       if (!heldView) controls.update();
       recentreFrame();
     }
+  };
+  /**
+   * The view's `update` seam: the pin, the relief's band, the city, the OSM
+   * map, the clouds, the status lines and the air's per-frame state.
+   */
+  const updateFrame = (now) => {
     // The camera has its first pose now, whoever placed it.
     if (landPending) {
       landPending = false;
@@ -3574,7 +3422,7 @@ async function start() {
       shellVolume !== null &&
       params.cloudShellVolume === 1 &&
       params.cloudNoise === "live" &&
-      worldFrame.target !== null;
+      view.frameTarget() !== null;
     const flatOptions = {
       ceilingKm: volumeOn ? params.cloudVolumeCeilingKm : 0,
       fadeKm: volumeOn ? params.cloudVolumeFadeKm : 1,
@@ -3642,7 +3490,7 @@ async function start() {
     pin.afterFrame();
     // A running clock moves the hour: its label follows, once a second.
     const mono = performance.now();
-    if (clock.scale !== 0 && mono - clockShownAt >= 1000) {
+    if (view.clock().scale !== 0 && mono - clockShownAt >= 1000) {
       clockShownAt = mono;
       panel.showClock();
     }
@@ -3664,7 +3512,7 @@ async function start() {
         ? groundSky.update({
             altitudeKm: observerKm,
             sunWorld,
-            framed: worldFrame.target !== null,
+            framed: view.frameTarget() !== null,
             edgeKm: params.skyEdgeKm,
             widthKm: Math.min(params.skyWidthKm, params.skyEdgeKm),
             stepPct: params.skyStepPct,
@@ -3685,7 +3533,7 @@ async function start() {
       cloudVolume.setFineGain(params.cloudFineGain);
       const volume = cloudVolume.update({
         altitudeKm: Math.max(0, observerKm),
-        target: worldFrame.target,
+        target: view.frameTarget(),
         radiusKm: params.cloudVolumeKm,
         ceilingKm: params.cloudVolumeCeilingKm,
         fadeKm: params.cloudVolumeFadeKm,
@@ -3720,7 +3568,7 @@ async function start() {
           : 0,
         shares: cloudShares ?? { shellIn: 0, shell: 0, slab: 0 },
         stations: shellStations(params),
-        target: worldFrame.target,
+        target: view.frameTarget(),
         deckKm: globe.cloudShell.heightM() / 1000,
         cover: params.cloudVolumeCover,
         cascade: shellCascade(
@@ -3747,39 +3595,13 @@ async function start() {
       shellThickness = thickness;
       atmosphere.setLook({ thickness });
     }
-    // The sky pass first, from the direction the Earth is lit from (the
-    // light's position in the surface's group, turned into the world), with
-    // no depth, so the Earth drawn next covers it.
-    renderer.setClearColor(params.holeColor === 1 ? 0xff00ff : 0x000000);
-    renderer.clear();
-    if (params.sky !== 0) {
-      sky.setSun(
-        sunWorld
-          .copy(globe.sun.position)
-          .transformDirection(globe.group.matrixWorld),
-      );
-      // The stars: celestial to ECEF by sidereal time, then turned by the
-      // globe's placement in the world exactly as the sun's light is.
-      sky.setCelestialRotation(
-        globe.celestialToWorld(siderealAngleRad, celestial),
-      );
-      // Navy space, lighter towards the Earth (its centre through the frame).
-      earthDirection.copy(earthCentreWorld()).sub(camera.position);
-      const cameraDistance = earthDirection.length();
-      sky.setSpace({
-        strength: params.space,
-        earthDirection,
-        earthAngularRadiusRad: Math.asin(
-          Math.min(1, radius / Math.max(cameraDistance, radius)),
-        ),
-      });
-      sky.render(renderer, camera);
-      // The ground sky over the space sky's pixels, before the Earth covers
-      // the ground's (nothing above the edge).
-      groundSky.render(camera);
-    }
-    // The speed dust where the camera now is, after the clearance's lift:
-    // drawn before the Earth (which covers it) and, at `dustOver`, after.
+  };
+  /**
+   * The view's `beforeScene` seam (after the clear and the sky pass): the
+   * speed dust where the camera now is, after the clearance's lift, drawn
+   * before the Earth (which covers it) and, at `dustOver`, after.
+   */
+  const beforeScene = () => {
     const dustPose = ecefCamera();
     speedDust.update({
       nowMs: performance.now(),
@@ -3806,7 +3628,12 @@ async function start() {
       },
     });
     speedDust.render(renderer, 1 - params.dustOver);
-    renderer.render(scene, camera);
+  };
+  /**
+   * The view's `afterScene` seam: the dust over the Earth, the relief's
+   * depth, the cloud volumes and the air.
+   */
+  const afterScene = () => {
     speedDust.render(renderer, params.dustOver);
     // The cloud volume over the Earth, ending at the relief (C2).
     // The relief's depth (§17): below the hand-over, for the space pass's
@@ -3857,8 +3684,8 @@ async function start() {
         sceneDepthWeight: skyHandOver.weight,
       });
     }
-    hooks.frameEnd(performance.now());
   };
+  const frame = view.frame;
   // The Debug panel (round-6 plan 2026-10-04-1050 G6-0, DEC-G6-6): always
   // there; its live lines and Copy read this.
   const enu = {
@@ -4076,12 +3903,12 @@ async function start() {
       ...flight.state(),
       appliedHash,
       centreLatLon: centreLatLon(),
-      timeMs: sunNow(),
-      clock: { ...params.clock, scale: clock.scale },
+      timeMs: view.sunNow(),
+      clock: { ...params.clock, scale: view.clock().scale },
       hourLabel: document.querySelector('output[data-for="hour"]').textContent,
       cloudDrift: params.cloudDrift,
       // The rate at the camera's altitude this frame, degrees a second.
-      cloudDriftNow: cloudDrift.rate,
+      cloudDriftNow: view.state().cloudDriftRate,
       // The sky hand-over (F2b): the ground sky's state, and the observer's
       // height over the ellipsoid's image it is fed from (km).
       groundSky: { ...groundSky.state(), observerAltitudeKm: observerKm },
@@ -4124,7 +3951,7 @@ async function start() {
         waterRoughness: globe.surfaceUniforms.uWaterRoughness.value,
         cloudOpacity: globe.surfaceUniforms.uCloudOpacity.value,
       },
-      distance,
+      distance: view.fitDistance(),
       pin: pin.state(),
       // Who moves the camera, and where it is (round-2 plan M3a, M3b).
       cameraOwner: flight.drives ? "intro" : "controls",
@@ -4135,9 +3962,9 @@ async function start() {
       cameraForward: asArray(
         new THREE.Vector3(0, 0, -1).applyQuaternion(ecefCamera().quaternion),
       ),
-      frameRecentres,
+      frameRecentres: view.state().frameRecentres,
       // The world frame's target (F2a), null in ECEF.
-      worldFrame: worldFrame.target,
+      worldFrame: view.frameTarget(),
       // The view's depression below the local horizontal (the oblique
       // flight's pitch, round-5 plan §3.5), degrees.
       cameraDepressionDeg:
@@ -4151,7 +3978,7 @@ async function start() {
         ) *
           180) /
         Math.PI,
-      frameAt,
+      frameAt: view.state().frameAt,
       // The readout's text as of the last frame, and what the line shows
       // (the line is throttled, so it may lag by up to 250 ms).
       readout: readoutText,
@@ -4187,7 +4014,7 @@ async function start() {
           procedural: true,
         },
         milkyWay: sky.uniforms.uMilkyWay.value,
-        siderealAngleRad,
+        siderealAngleRad: view.state().siderealAngleRad,
       },
       atmosphere: {
         on: params.atmo !== 0,
@@ -5101,7 +4928,7 @@ void main() {
         const ratio = Math.min(window.devicePixelRatio, f.pixelRatio);
         if (renderer.getPixelRatio() !== ratio) {
           renderer.setPixelRatio(ratio);
-          fittedSize = "";
+          view.refit();
         }
       },
       setEOverride(e) {
@@ -5176,7 +5003,7 @@ void main() {
       },
       placeView(place, view) {
         const ellipsoid = globe.tiles.ellipsoid;
-        if (worldFrame.target === null) setFrameTarget(place);
+        if (view.frameTarget() === null) setFrameTarget(place);
         // The controls' height rays hit the drawn surface, as when the user
         // owns the camera: on the whole scene they hit the cloud shell and
         // lifted a street camera about 2 km.
