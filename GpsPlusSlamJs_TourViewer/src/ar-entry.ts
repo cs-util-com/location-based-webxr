@@ -11,10 +11,6 @@
 
 import { copyWithFeedback } from "gps-plus-slam-app-framework/utils/copy-with-feedback";
 import type { EnableGpsArState } from "gps-plus-slam-app-framework/ar";
-import {
-  GPS_POINT_SOURCE_DEVICE,
-  gpsPointSourceOf,
-} from "gps-plus-slam-app-framework/core";
 import type { GpsPosition } from "gps-plus-slam-app-framework/sensors";
 import { createGpsExtentTracker } from "gps-plus-slam-app-framework/state/gps-extent-tracker";
 import {
@@ -27,6 +23,7 @@ import {
   updateDeviceOrientation,
 } from "gps-plus-slam-app-framework/state";
 
+import { deviceGpsQuality } from "./device-gps-quality.js";
 import {
   arButtonView,
   COPY_LINK_LABELS,
@@ -50,12 +47,24 @@ import { describeOpenError } from "./open-errors.js";
 import { debugReadoutLines, visitorFusedHint } from "./qr-debug-readout.js";
 import type { TourViewerSeams } from "./seams.js";
 import { contentStatus } from "./station-content.js";
-import { arStatusLine, type ArStatusInput } from "./tour-flow.js";
+import {
+  arStatusLine,
+  type ArStatusInput,
+  type LocationRefusal,
+} from "./tour-flow.js";
 import { scanCardShown } from "./scan-gate.js";
-import { visitorStatus } from "./visitor-status.js";
+import {
+  FIND_CODE,
+  statusSentence,
+  visitorStatusParts,
+} from "./visitor-status.js";
+import { walkStatusRouting } from "./walk-status-routing.js";
+import type { WalkToast } from "./walk-toast.js";
+import { tourUnfinished } from "./tour-unfinished.js";
 import {
   selectHeadingPending,
   selectPresentStationId,
+  trackingLostSet,
 } from "./visitor-guide-slice.js";
 import type { LocationGate } from "./visitor-screen.js";
 import type { RecordingPanel } from "./recording-panel.js";
@@ -89,9 +98,25 @@ export interface ArEntryDom {
   arStatusLive?: HTMLElement;
   /** The visitor's scan card (polish round M4b) and its sentence line.
    *  Absent: no card (the node tests that do not need one). */
-  scanCard?: Pick<HTMLElement, "hidden">;
+  scanCard?: Pick<HTMLElement, "hidden" | "dataset">;
   scanCardLine?: Pick<HTMLElement, "textContent">;
+  /** The card's title: it reads "Code found - placing the tour…" in the
+   *  card's found look. */
+  scanCardTitle?: Pick<HTMLElement, "textContent">;
+  /** The visitor's coach in AR: the centred card
+   *  for a short wait, a tracking hint, or a state with no walk to show. */
+  coach?: {
+    root: Pick<HTMLElement, "hidden" | "dataset">;
+    text: Pick<HTMLElement, "textContent">;
+  };
+  /** The peek's line asking for the code (the prototype: in the peek, not over the
+   *  camera). */
+  codeTail?: Pick<HTMLElement, "hidden" | "textContent">;
 }
+
+/** The scan card's two titles (the first kept). */
+const SCAN_CARD_TITLE = "Scan the code again so the tour can start";
+const SCAN_CARD_FOUND_TITLE = "Code found - placing the tour…";
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
 export interface ArEntry {
@@ -116,6 +141,24 @@ export function wireArEntry(deps: {
   /** A creator's ring follows a mesh of the surroundings (polish round
    *  M5, Q-Mesh; `main.ts` turns it on unless `?mesh=0`). */
   meshCursor?: boolean;
+  /** The visitor's walk: the toast its news goes to,
+   *  and whether the visitor left AR with progress on the open tour (the
+   *  start then reads "Back to the tour"). */
+  walk?: {
+    toast: WalkToast;
+    progressKept(): boolean;
+    /** The walk's sheet shows now (the station guide runs): the status
+     *  reads the tour as placed (`ArStatusInput.walkRuns`). */
+    sheetShown?(): boolean;
+    /** The `?debug=1` lines of the walk: the radar's draw time and the
+     *  frame time, appended to the block. */
+    debugLines?(): string[];
+  };
+  /** How many location requests the page's requester saw refused
+   *  (`locationPermissionWithoutFix`'s `onRefused`): a creator's failed
+   *  start blames the location only when its own request was refused.
+   *  Absent: never. */
+  locationRefusals?: () => number;
 }): ArEntry {
   const {
     ctx,
@@ -132,6 +175,10 @@ export function wireArEntry(deps: {
   /** Whether this visit's first tap asked for the location: the button
    *  then reads as step 2 of 2 (polish round M4a, the owner's V4). */
   let hadLocationStep = false;
+  /** A creator's last start failed with the location refused: whether a
+   *  code the tour stores can start the next try (the line says what to
+   *  do next, `tour-flow.ts`). Null: no such failure. */
+  let locationRefusal: LocationRefusal | null = null;
   /** A Copy link tap is running: it owns the button's label until then. */
   let copying = false;
   /** Whether THIS session's depth sampler was started (a recorded entry). */
@@ -216,16 +263,83 @@ export function wireArEntry(deps: {
     }
   }
 
-  /** The scan card shows the visitor's sentence while the gate waits;
-   *  the status line steps aside meanwhile (kept with ?debug=1, whose
-   *  technical line the card does not carry). */
-  function renderScanCard(input: ArStatusInput, sentence: string): void {
-    const shown = scanCardShown(mode, input.arStatus, ctx.scanGate);
-    if (dom.scanCard !== undefined) dom.scanCard.hidden = !shown;
+  /** Whether the scan card shows the gate's wait now. */
+  function scanWaitShown(input: ArStatusInput): boolean {
+    return scanCardShown(
+      mode,
+      input.arStatus,
+      ctx.scanGate,
+      input.tour.kind === "open" && input.tour.unfinished !== undefined,
+    );
+  }
+
+  /** The scan card shows the visitor's sentence while the gate waits, and
+   *  "Code found - placing the tour…" with a check once the code passed
+   *  it (the prototype's `found` state); the status line steps aside meanwhile (kept with
+   *  ?debug=1, whose technical line the card does not carry). */
+  function renderScanCard(
+    shown: boolean,
+    found: boolean,
+    sentence: string,
+  ): void {
+    const visible = shown || found;
+    if (dom.scanCard !== undefined) {
+      dom.scanCard.hidden = !visible;
+      dom.scanCard.dataset["look"] = found && !shown ? "found" : "scan";
+    }
+    if (dom.scanCardTitle !== undefined) {
+      const title = found && !shown ? SCAN_CARD_FOUND_TITLE : SCAN_CARD_TITLE;
+      if (dom.scanCardTitle.textContent !== title) {
+        dom.scanCardTitle.textContent = title;
+      }
+    }
     if (dom.scanCardLine !== undefined) {
       dom.scanCardLine.textContent = shown ? sentence : "";
     }
-    dom.arStatus.hidden = shown && !ctx.debug;
+    dom.arStatus.hidden = visible && !ctx.debug;
+  }
+
+  /** The walk's surfaces for a visitor's sentence: the coach, the toast's news, the peek's code line. The
+   *  sentence itself stays on `#ar-status` and its live copy. */
+  function renderWalkRoute(
+    route: ReturnType<typeof walkStatusRouting>,
+    running: boolean,
+  ): void {
+    if (dom.coach !== undefined) {
+      const coach = route.coach;
+      dom.coach.root.hidden = coach === null;
+      if (coach === null) delete dom.coach.root.dataset["look"];
+      else dom.coach.root.dataset["look"] = coach.look;
+      const text = coach?.text ?? "";
+      if (dom.coach.text.textContent !== text)
+        dom.coach.text.textContent = text;
+    }
+    if (dom.codeTail !== undefined) {
+      dom.codeTail.hidden = !route.codeTail;
+      const text = route.codeTail ? FIND_CODE : "";
+      if (dom.codeTail.textContent !== text) dom.codeTail.textContent = text;
+    }
+    // News is said in AR only: the toast's place is over the camera.
+    // One render's news is one toast (a second would replace the first).
+    if (running) deps.walk?.toast.say([], route.toasts);
+  }
+
+  /** A visitor's tour that is not finished yet (`tour-unfinished.ts`),
+   *  once its manifest settled; a creator's tour is the one being made. */
+  function unfinishedTour(): {
+    unfinished?: { readonly contact: string | undefined };
+  } {
+    if (mode !== "visitor" || ctx.tourManifestStatus !== "settled") return {};
+    const manifest = ctx.tourDocument.manifest();
+    return tourUnfinished(manifest)
+      ? { unfinished: { contact: manifest?.contact } }
+      : {};
+  }
+
+  /** A visitor's open tour has nothing to show yet: no Start is offered
+   *  (no location asked, no empty session) - the start page says why. */
+  function startWithheld(): boolean {
+    return ctx.session !== null && unfinishedTour().unfinished !== undefined;
   }
 
   function renderArStatus(): void {
@@ -234,6 +348,7 @@ export function wireArEntry(deps: {
       mode,
       arStatus: arController.getState().status,
       arError: arController.getState().error ?? null,
+      locationRefusal,
       cameraFrames: ctx.cameraFrameCount,
       codesOnly: ctx.codesOnly,
       tour:
@@ -242,6 +357,7 @@ export function wireArEntry(deps: {
           : {
               kind: "open",
               levelCount: ctx.currentLevels?.size ?? null,
+              ...unfinishedTour(),
             },
       qr: {
         status: ctx.viewerQrStatus,
@@ -282,7 +398,6 @@ export function wireArEntry(deps: {
         ? null
         : computeOnboardingGuidance(selectTrackingQuality(arStore.getState())),
       placement: ctx.placement,
-      planesError: ctx.viewerPlanesError,
       contentError: ctx.contentError,
       gate: ctx.scanGate,
       // The tour's items, counted for the stations shown now (visitor plan
@@ -300,15 +415,22 @@ export function wireArEntry(deps: {
         ctx.stationContent !== null &&
         !ctx.stationContent.showsAny() &&
         selectPresentStationId(arStore.getState()) === null,
+      // The walk's sheet shows: its stations are placed.
+      walkRuns: deps.walk?.sheetShown?.() === true,
     };
     // A visitor reads one plain sentence (UI round 1, U1); the technical
     // line stays for the creator and for a visitor's `?debug=1`. The state
     // name is the stable channel for the page's styling and the tests.
-    const plain = visitorStatus(input);
+    const parts = visitorStatusParts(input);
+    const plain = statusSentence(parts);
     const visitor = mode === "visitor";
     const line = visitor && !ctx.debug ? plain.text : arStatusLine(input);
     dom.arStatus.textContent = line;
-    renderScanCard(input, plain.text);
+    const shown = scanWaitShown(input);
+    // The walk's surfaces are a visitor's (a creator keeps the line).
+    const route = visitor ? walkStatusRouting(parts, shown) : null;
+    renderScanCard(shown, route?.scanCard === "found", plain.text);
+    if (route !== null) renderWalkRoute(route, input.arStatus === "running");
     // The visitor's state machine only (a creator's would mislead), and
     // the gate for both (U1 milestone review #8, #9).
     if (visitor) dom.arStatus.dataset.state = plain.state;
@@ -328,6 +450,22 @@ export function wireArEntry(deps: {
     ) {
       dom.arStatusLive.textContent = live;
     }
+    publishTrackingLost(
+      visitor &&
+        input.arStatus === "running" &&
+        input.readiness?.phase === "ar-lost",
+    );
+  }
+
+  /** The walk's precision chip and radar read the tracking loss from the
+   *  store: its one publisher is here, from the
+   *  readiness phase the visitor's sentence uses (the phase the guide's
+   *  own tracking signal follows: both read `selectTrackingQuality`).
+   *  Dispatched last and only on a change - this runs per camera frame. */
+  function publishTrackingLost(lost: boolean): void {
+    if (arStore.getState().visitorGuide.trackingLost !== lost) {
+      arStore.dispatch(trackingLostSet(lost));
+    }
   }
 
   /** The scan gate as one word (`data-gate`): "passed-code" proves the
@@ -345,18 +483,12 @@ export function wireArEntry(deps: {
     const positions = selectGpsPositions(arStore.getState());
     if (positions === gpsQualityFor) return gpsQuality;
     gpsQualityFor = positions;
-    const accuracies = positions
-      .filter((p) => gpsPointSourceOf(p) === GPS_POINT_SOURCE_DEVICE)
-      .map((p) => p.latLongAccuracy)
-      .filter((a): a is number => typeof a === "number" && Number.isFinite(a))
-      .sort((a, b) => a - b);
+    // Device fixes only: a code's votes are no GPS (`device-gps-quality.ts`).
+    const device = deviceGpsQuality(positions);
     gpsQuality = {
-      accuracyM:
-        accuracies.length === 0 ? null : accuracies[accuracies.length >> 1]!,
+      accuracyM: device.accuracyM,
       extentM: gpsExtent.update(positions),
-      // Fixes WITH an accuracy are all the fixes there are: the store keeps
-      // no fix without one (ar-entry.test.ts pins it; PR #583 review).
-      fixes: accuracies.length,
+      fixes: device.fixes,
     };
     return gpsQuality;
   }
@@ -382,6 +514,7 @@ export function wireArEntry(deps: {
       .concat(
         meshSurface === null ? [] : [meshSurfaceLine(meshSurface.stats())],
       )
+      .concat(deps.walk?.debugLines?.() ?? [])
       .join("\n");
   }
 
@@ -395,10 +528,16 @@ export function wireArEntry(deps: {
     location: { pending: boolean; busy: boolean },
   ): void {
     const button = dom.enterArButton;
-    const view = arButtonView(state, mode, location, {
-      running: ctx.finishing,
-      failed: ctx.finishError !== null,
-    });
+    const view = arButtonView(
+      state,
+      mode,
+      location,
+      {
+        running: ctx.finishing,
+        failed: ctx.finishError !== null,
+      },
+      deps.walk?.progressKept() ?? false,
+    );
     if (!copying) {
       button.disabled = view.disabled;
       button.textContent = view.label;
@@ -446,8 +585,17 @@ export function wireArEntry(deps: {
     // instruction pinned over live video (milestone review, 2026-09-05).
     // A visitor's phone without AR gets no "once AR starts" hint: the
     // status line says what to do instead (polish round M4a, V4).
+    // A visitor's tour not finished yet gets neither the button nor its
+    // hint; during a session the button stays, as the way out.
+    const withheld = !sessionActive && startWithheld();
+    dom.enterArButton.hidden = withheld;
+    // The page's CSS reads it: "What happens?" describes a session this
+    // visitor cannot start, so it goes too (index.html).
+    dom.enterArButton.dataset["start"] = withheld ? "withheld" : "offered";
     dom.arHint.hidden =
-      sessionActive || (!authorMode && state.status === "unsupported");
+      withheld ||
+      sessionActive ||
+      (!authorMode && state.status === "unsupported");
     renderArStatus();
   }
 
@@ -473,10 +621,10 @@ export function wireArEntry(deps: {
     // The measured level SURVIVES the session end on purpose: finishing
     // ends the session itself (the download is a page-side tap). A new
     // measurement replaces it (mintGeneration).
-    ctx.imagePlanes?.dispose();
-    ctx.imagePlanes = null;
     ctx.reticle?.dispose();
     ctx.reticle = null;
+    ctx.visitorSelect?.dispose();
+    ctx.visitorSelect = null;
     ctx.latestFrame = null;
     for (const preview of ctx.placedPreviews.values()) preview.dispose();
     ctx.placedPreviews.clear();
@@ -495,6 +643,8 @@ export function wireArEntry(deps: {
     ctx.placementUnsubscribe = null;
     // The story stops with the session; the station progress stays.
     hooks.stopStations();
+    // The toast goes with the session; the next entry may say it again.
+    deps.walk?.toast.reset();
     dom.escapeButton.hidden = true;
     ctx.viewerQrStatus = null;
     ctx.viewerUnknownCode = null;
@@ -504,21 +654,11 @@ export function wireArEntry(deps: {
     ctx.viewerReprojectionPx = null;
     ctx.viewerLastEvaluation = null;
     ctx.placement = { kind: "idle" };
-    ctx.viewerPlanesError = null;
-    ctx.imagePlanesLoading = false;
     // The placement trigger is session state (unsubscribed above, before
     // the guide's teardown): let the next entry attempt again once ITS
     // tracking reports ready (flows plan M4, review #12 - per-entry
     // re-placement by design).
     ctx.placementAttempted = false;
-    ctx.joinDeclined = false;
-    // Invalidate any join still awaiting: it cannot be cancelled, but every
-    // post-await guard checks this token, so a stale run frees its textures
-    // instead of planting planes into a dead scene and clobbering the next
-    // session's latch (milestone review, finding 6 — the join's
-    // tens-of-seconds decode turned this race from theoretical into
-    // expected).
-    ctx.planesRunGeneration += 1;
     if (depthRunning) {
       seams.stopDepthCapture();
       depthRunning = false;
@@ -567,6 +707,34 @@ export function wireArEntry(deps: {
     });
   }
 
+  /** The browser's location permission; "unknown" when it cannot say. */
+  async function locationPermission(): Promise<string> {
+    try {
+      return await seams.queryGeolocationPermission();
+    } catch {
+      return "unknown";
+    }
+  }
+
+  /**
+   * Whether a creator starts without location: only when the permission is
+   * refused and a code the tour stores can line the visit up by its votes
+   * (`creator-measuring.ts`). Otherwise the start asks for location as it
+   * always did - and fails with its message where it is refused.
+   */
+  async function creatorStartsOnCodes(): Promise<boolean> {
+    if (!hooks.creatorCanStartOnCodes()) return false;
+    return (await locationPermission()) === "denied";
+  }
+
+  /** After a creator's failed start: whether the refused location failed
+   *  it, and whether a stored code can start the next try. A permission
+   *  that cannot be read claims nothing. */
+  async function creatorLocationRefusal(): Promise<LocationRefusal | null> {
+    if ((await locationPermission()) !== "denied") return null;
+    return hooks.creatorCanStartOnCodes() ? "code-can-start" : "no-code";
+  }
+
   async function enterAr(): Promise<void> {
     // The visitor's location-only tap (DEC-N2): request, re-label, and let
     // the next tap start the session inside its own user activation.
@@ -584,6 +752,7 @@ export function wireArEntry(deps: {
     }
     // The start the two steps led to: a later start is one tap again.
     hadLocationStep = false;
+    locationRefusal = null;
     ctx.cameraFrameCount = 0;
     // A refused AUTHOR pipeline (bad size, no detector) keeps AR unstarted —
     // the message is already in the author panel, where the author is
@@ -592,10 +761,15 @@ export function wireArEntry(deps: {
     if (authorMode && !hooks.startAuthorPipeline()) return;
     // A visitor who declined location starts on codes alone (QR-first
     // M1b-1): no location permission, no GPS watch; the scan gate then
-    // offers no GPS escape. Set before the pipeline and its gate start.
-    ctx.codesOnly = !authorMode && locationGate.codesOnly();
+    // offers no GPS escape. Set before the pipeline and its gate start. A
+    // creator does too when the location is refused and a code the tour
+    // stores can line the visit up.
+    ctx.codesOnly = authorMode
+      ? await creatorStartsOnCodes()
+      : locationGate.codesOnly();
     if (!authorMode) hooks.startViewerPipeline();
     const depth = entryDepth();
+    const refusalsBefore = deps.locationRefusals?.() ?? 0;
     const result = await arController.enable(
       buildArEnableConfig({
         container: dom.arRoot,
@@ -638,6 +812,14 @@ export function wireArEntry(deps: {
     // prompt, 2026-10-07).
     if (!result.ok) {
       endQrPipeline(ctx);
+      // Only a start whose own location request was refused: a permission
+      // refused earlier still reads denied when this start failed for
+      // another reason (no AR, the camera), which the hint would misname.
+      const refusedNow = (deps.locationRefusals?.() ?? 0) > refusalsBefore;
+      if (authorMode && !ctx.codesOnly && refusedNow) {
+        locationRefusal = await creatorLocationRefusal();
+        renderArStatus();
+      }
       return;
     }
     const runtime = startTourArRuntime(arStore, {
@@ -686,6 +868,11 @@ export function wireArEntry(deps: {
           },
           surface === null ? undefined : () => surface.pick(),
         );
+      } else {
+        // The visitor's taps: a pin opens its sheet (B2b, `pin-sheet.ts`).
+        ctx.visitorSelect = seams.startXrSelect((tap) => {
+          hooks.visitorTap(tap);
+        });
       }
     }
     if (authorMode) hooks.beginAuthorVisit();
@@ -703,7 +890,6 @@ export function wireArEntry(deps: {
     // predicate reads until the tracking-quality phase is `ready`, then
     // runs once.
     ctx.placementAttempted = false;
-    ctx.joinDeclined = false;
     ctx.placementUnsubscribe = arStore.subscribe(() => {
       hooks.tryPlaceTour();
       // The stations (tour kit plan K4) are judged on every GPS fix too.
@@ -737,6 +923,8 @@ export function wireArEntry(deps: {
       });
       return;
     }
+    // Hidden then; a tap that still arrives asks for nothing.
+    if (startWithheld()) return;
     if (!authorMode && arController.getState().status === "unsupported") {
       copyLink();
       return;

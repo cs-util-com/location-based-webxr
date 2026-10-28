@@ -51,18 +51,41 @@ export type PickOutcome =
     };
 
 /**
+ * Whether a tour without a file (a link, the sample, a drop, the file
+ * input) asks for a file with the save dialog - as it opens from a link or
+ * the sample, else at its first Save, in the click - and then ADOPTS it:
+ * saved into in place, and by itself, as a file opened with "Choose..." is.
+ * Wherever the browser has both file dialogs, Android included: a check on
+ * a phone (Chrome 155, Android 10) showed a picked file there is saved
+ * under a new name, kept across a reload (one tap grants the permission
+ * again), and that a rewrite cut short by closing the tab leaves the old
+ * file whole. A browser killed in the middle of a write was not measured.
+ */
+export function adoptsSavedFile(win: PickerWindow & SavePickerWindow): boolean {
+  return hasFilePicker(win) && typeof win.showSaveFilePicker === "function";
+}
+
+/**
  * The open dialog's fine print about Save, true for this browser (tour
  * editor plan 2026-10-17-1816, W2): where the file picker exists, a chosen
- * file is written in place (and saved by itself after a change); elsewhere,
- * and for a tour from a link or the sample, Save downloads a new copy.
- * It opens with what leaves the computer: nothing of the tour, but the map
- * comes from OpenStreetMap (W6: "nothing is uploaded" hid the tiles).
+ * file is written in place (and saved by itself after a change); a tour
+ * from a link or the sample asks where to save it as it opens (or at its
+ * first Save) and is saved into that file from then on where the browser
+ * adopts it
+ * (`adoptsSavedFile`), else as a new copy; without the picker, Save
+ * downloads a new copy. It opens with what leaves the computer: nothing of
+ * the tour, but the map comes from OpenStreetMap (W6: "nothing is
+ * uploaded" hid the tiles).
  */
-export function saveFinePrint(win: PickerWindow): string {
+export function saveFinePrint(win: PickerWindow & SavePickerWindow): string {
   const stays =
     "The tour file stays on this computer. The map comes from OpenStreetMap.";
+  const chosen = `${stays} A file you choose is saved into that file, where the browser allows it, and by itself a few seconds after each change.`;
+  if (adoptsSavedFile(win)) {
+    return `${chosen} A tour opened from a link, or the sample, asks where to save it as it opens (or at its first Save), and is saved into that file from then on.`;
+  }
   return hasFilePicker(win)
-    ? `${stays} A file you choose is saved into that file, where the browser allows it, and by itself a few seconds after each change. A tour opened from a link, or the sample, is saved as a new copy to put in place of the old one.`
+    ? `${chosen} A tour opened from a link, or the sample, is saved as a new copy to put in place of the old one.`
     : `${stays} Save gives you a new copy of the tour to put in place of the old one.`;
 }
 
@@ -165,6 +188,24 @@ export function pickSaveFile(
   );
 }
 
+/**
+ * A file the save dialog gave that nothing will be written into (the open
+ * it was asked for failed, or was refused, or its write did not land).
+ * It is NEVER deleted: the browser empties a chosen file as the dialog
+ * returns (the spec, and Chromium), so an empty file may be a new one or
+ * a tour the creator chose to replace - and the page cannot tell which.
+ * Resolves to one sentence true in both cases, null when no file was
+ * picked. Never throws.
+ */
+export async function releaseUnusedPick(
+  pick: Promise<SaveFilePick> | null,
+): Promise<string | null> {
+  const picked = await pick;
+  if (picked?.kind !== "picked") return null;
+  const { name } = picked.handle;
+  return `Nothing of the tour was written into ${name}. The browser may have emptied it when it was chosen, so if it was an existing file, do not rely on it.`;
+}
+
 async function askToWrite(handle: WritableFileHandle): Promise<boolean> {
   if (typeof handle.requestPermission !== "function") return false;
   try {
@@ -189,6 +230,28 @@ export class InPlaceRefusal extends Error {
     );
     this.name = "InPlaceRefusal";
   }
+}
+
+/**
+ * Whether `other` is the file `opened` names: the browser's answer
+ * (`isSameEntry`) where a handle can give one, else the same name -
+ * refusing a target costs a retry, writing over the tour costs the tour
+ * (the M4b fix re-review #1). `handle` is null for a file opened without
+ * one (the file input, a drop, a link).
+ */
+export async function isSameFile(
+  opened: { readonly name: string; readonly handle: FileSystemHandle | null },
+  other: FileSystemHandle,
+): Promise<boolean> {
+  const { handle } = opened;
+  try {
+    if (handle !== null && typeof handle.isSameEntry === "function") {
+      return await handle.isSameEntry(other);
+    }
+  } catch {
+    // Unknown: decided by the name below.
+  }
+  return other.name === opened.name;
 }
 
 export interface SaveTarget {
@@ -269,16 +332,7 @@ export async function createSaveTarget(
   return {
     name: handle.name,
     check,
-    async isSame(other) {
-      try {
-        if (typeof handle.isSameEntry === "function") {
-          return await handle.isSameEntry(other);
-        }
-      } catch {
-        // Unknown: decided by the name below.
-      }
-      return other.name === handle.name;
-    },
+    isSame: (other) => isSameFile({ name: handle.name, handle }, other),
     async write(blob) {
       // The rebuild stores entries uncompressed, so a deflated tour grows.
       if (blob.size > maxBytes) throw new InPlaceRefusal("too-large");
@@ -289,9 +343,11 @@ export async function createSaveTarget(
       if (state !== "same") throw new InPlaceRefusal(state);
       await writeFileOrAbort(handle, blob);
       const written = await handle.getFile();
-      // The baseline moves only once the write landed.
+      // The baseline moves only once the write landed. Its size and tail
+      // are the bytes written (one source, so they describe one file); its
+      // time is the file's, which only a read gives.
       base = {
-        size: written.size,
+        size: blob.size,
         lastModified: written.lastModified,
         tail: await tailOf(blob),
       };

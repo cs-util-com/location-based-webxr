@@ -1,0 +1,1085 @@
+/* The hero film (landing-film.ts). Everything is under .lf-film; the only
+   page variables it reads, each with a fallback, are --ink, --ink-dim,
+   --paper, --map-card, --map-line, --map-ink-3, --map-route,
+   --map-route-soft, --map-paper-3, --map-serif and --font-ui
+   (landing-film.ts.md). Sizes that the prototype took from container units are
+   custom properties the film sets from its layout (--lf-sw, --lf-fs).
+   One is the page's to set on the host: --lf-inset, the room between the
+   box's edges and the bar, the caption and the bottom (0 when unset). */
+
+.lf-film {
+  --lf-ink: var(--ink, #2a2824);
+  --lf-ink-2: var(--ink-dim, #57534a);
+  --lf-ink-3: var(--map-ink-3, #8c8577);
+  --lf-paper: var(--paper, #f4eedf);
+  --lf-paper-3: var(--map-paper-3, #ddd2b6);
+  --lf-card: var(--map-card, #fbf8ef);
+  --lf-line: var(--map-line, #c9bea3);
+  --lf-route: var(--map-route, #cf4428);
+  --lf-route-dark: #b23a22;
+  --lf-route-soft: var(--map-route-soft, #f5d9cd);
+  --lf-ok: #2f7a4c;
+  --lf-serif: var(
+    --map-serif,
+    "Iowan Old Style",
+    "Palatino Linotype",
+    palatino,
+    "Book Antiqua",
+    georgia,
+    serif
+  );
+  --lf-sans: var(--font-ui, system-ui, sans-serif);
+
+  /* The bar: the visible track's height (swept 3, 5, 8 px; 5 chosen),
+     seen parts light grey, and the outline every segment carries so the
+     light grey still meets 3:1 against the paper (film-css.test.ts). */
+  --lf-bar-h: 5px;
+  --lf-seen: var(--lf-line);
+  --lf-track-line: #847d70;
+
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding-bottom: var(--lf-inset, 0);
+  color: var(--lf-ink);
+  font-family: var(--lf-sans);
+
+  /* the prototype's figures stand on the line; the page's face sets
+     old-style ones, which shrink a station's number and the clock */
+  font-variant-numeric: lining-nums;
+}
+
+.lf-film[hidden] {
+  display: none;
+}
+
+/* the film's own reset, so its sizes do not depend on the page's (zero
+   specificity: every rule below wins over it) */
+:where(.lf-film) *,
+:where(.lf-film) *::before,
+:where(.lf-film) *::after {
+  box-sizing: border-box;
+}
+
+:where(.lf-film) p,
+:where(.lf-film) ol,
+:where(.lf-film) ul,
+:where(.lf-film) li,
+:where(.lf-film) figure,
+:where(.lf-film) figcaption {
+  margin: 0;
+}
+
+:where(.lf-film) button {
+  color: inherit;
+  font: inherit;
+}
+
+/* ---------- the scene ---------- */
+.lf-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lf-stage > .lf-layer,
+.lf-stage > canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* the close views fill the box; a soft edge lets the model fade into the
+   paper instead of ending in a hard frame */
+/* reduced motion's opening: every caption as a list below the picture;
+   the film grows below its box and the stage keeps its height (set by
+   landing-film.ts) */
+.lf-film.lf-list {
+  height: auto;
+  min-height: 100%;
+}
+
+.lf-film.lf-list .lf-stage {
+  flex: none;
+}
+
+.lf-gl {
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  mask-image:
+    linear-gradient(
+      to right,
+      transparent,
+      #000 36px,
+      #000 calc(100% - 10px),
+      transparent
+    ),
+    linear-gradient(
+      to bottom,
+      transparent,
+      #000 28px,
+      #000 calc(100% - 28px),
+      transparent
+    );
+  mask-composite: intersect;
+}
+
+.lf-gl.lf-on {
+  opacity: 1;
+}
+
+.lf-floor {
+  transition: opacity 0.5s ease;
+}
+
+.lf-film.lf-3d .lf-floor {
+  opacity: 0;
+}
+
+.lf-lead {
+  z-index: 3;
+  pointer-events: none;
+}
+
+.lf-tags {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.lf-tag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: 2px 8px 2px 2px;
+  border: 1px solid var(--lf-ink);
+  border-radius: 999px;
+  opacity: 0;
+  background: rgb(251 248 239 / 94%);
+  color: var(--lf-ink);
+  font: italic 600 12.5px/1 var(--lf-serif);
+  white-space: nowrap;
+  transition: opacity 0.3s;
+  will-change: transform;
+}
+
+.lf-tag b {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--lf-route);
+  color: #fff;
+  font: 700 11px/1 var(--lf-sans);
+}
+
+.lf-tag.lf-start {
+  padding-left: 8px;
+  background: var(--lf-ink);
+  color: var(--lf-paper);
+}
+
+.lf-tag.lf-who {
+  padding-left: 8px;
+  font-family: var(--lf-sans);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.lf-tag.lf-who.lf-maker {
+  border-color: var(--lf-route);
+  color: var(--lf-route-dark);
+}
+
+.lf-tag.lf-on {
+  opacity: 1;
+}
+
+/* a small mark on the scene while it is paused: a tap resumes */
+.lf-paused-mark {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 5;
+  display: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgb(42 40 36 / 70%);
+  pointer-events: none;
+}
+
+.lf-paused-mark::before,
+.lf-paused-mark::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  width: 3px;
+  height: 12px;
+  border-radius: 1px;
+  background: #fff;
+}
+
+.lf-paused-mark::before {
+  left: 11px;
+}
+
+.lf-paused-mark::after {
+  left: 16px;
+}
+
+.lf-film.lf-paused .lf-paused-mark {
+  display: grid;
+}
+
+/* ---------- the making phone: a frame whose screen shows the park at eye height ---------- */
+.lf-mphone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  width: 180px;
+  height: 330px;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.3s ease,
+    visibility 0s 0.3s;
+}
+
+.lf-mphone.lf-on {
+  visibility: visible;
+  opacity: 1;
+  transition:
+    opacity 0.3s ease,
+    visibility 0s 0s;
+}
+
+/* the bezel is a ring of box-shadow around the rounded screen, so the
+   screen's square corners are always covered */
+.lf-mscreen {
+  position: absolute;
+  inset: 9px;
+  overflow: hidden;
+  border-radius: 19px;
+  box-shadow:
+    0 0 0 9px var(--lf-ink),
+    6px 7px 0 9px rgb(42 40 36 / 18%);
+  font-size: var(--lf-fs, 13px);
+}
+
+.lf-mphone::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 30%;
+  height: 4px;
+  margin-left: -15%;
+  border-radius: 2px;
+  background: #4a4740;
+}
+
+.lf-still {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.lf-film.lf-3d .lf-still,
+.lf-film.lf-3d .lf-floor-only {
+  display: none;
+}
+
+.lf-cover {
+  position: absolute;
+  inset: 0;
+  background: #22211e;
+  pointer-events: none;
+}
+
+.lf-ov {
+  position: absolute;
+  inset: 0;
+}
+
+.lf-anc {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+}
+
+.lf-tcard {
+  position: absolute;
+  bottom: 0.55em;
+  left: 0;
+  width: 10.2em;
+  max-width: calc(var(--lf-sw, 160px) * 0.84);
+  padding: 0.5em 0.65em 0.58em;
+  border: 1px solid var(--lf-ink);
+  border-radius: 0.7em;
+  opacity: 0;
+  background: rgb(251 248 239 / 97%);
+  box-shadow: 0.2em 0.25em 0 rgb(42 40 36 / 20%);
+  transform: translateX(-50%);
+}
+
+.lf-tcard.lf-dashed {
+  border: 1.5px dashed var(--lf-route);
+}
+
+.lf-tcard .lf-t {
+  min-height: 1.15em;
+  color: var(--lf-ink);
+  font: 700 1.08em/1.15 var(--lf-serif);
+}
+
+.lf-tcard .lf-b {
+  margin-top: 0.2em;
+  color: var(--lf-ink-2);
+  font-size: 0.94em;
+  line-height: 1.28;
+}
+
+.lf-caret {
+  display: none;
+  width: 1.5px;
+  height: 1em;
+  margin-left: 1px;
+  background: var(--lf-route);
+  vertical-align: -0.12em;
+}
+
+.lf-caret.lf-on {
+  display: inline-block;
+}
+
+.lf-pic {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(var(--lf-sw, 160px) * 0.38);
+  padding: calc(var(--lf-sw, 160px) * 0.014) calc(var(--lf-sw, 160px) * 0.014) 0;
+  border: 1px solid var(--lf-ink);
+  opacity: 0;
+  background: #fff;
+  box-shadow: 0.18em 0.22em 0 rgb(42 40 36 / 20%);
+  transform-origin: 50% 50%;
+}
+
+.lf-pic svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.lf-pic .lf-pcap {
+  padding: 0.35em 0 0.42em;
+  color: var(--lf-ink-2);
+  font: italic 0.8em/1 var(--lf-serif);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.lf-ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: calc(var(--lf-sw, 160px) * 0.34);
+  height: calc(var(--lf-sw, 160px) * 0.28);
+  border: 1.5px dashed #fff;
+  border-radius: 4px;
+  opacity: 0;
+  background: rgb(28 26 22 / 42%);
+  color: #fff;
+  font: 700 0.8em/1 var(--lf-sans);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 50%);
+}
+
+.lf-nextlbl {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  gap: 0.4em;
+  align-items: center;
+  padding: 0.4em 0.7em 0.4em 0.45em;
+  border: 1px solid var(--lf-ink);
+  border-radius: 999px;
+  opacity: 0;
+  background: rgb(251 248 239 / 97%);
+  color: var(--lf-ink);
+  font: 600 0.88em/1 var(--lf-sans);
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.lf-nextlbl svg {
+  flex: none;
+  width: 1.2em;
+  height: 1.2em;
+}
+
+.lf-retic,
+.lf-ripple,
+.lf-pinf {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.lf-retic {
+  width: calc(var(--lf-sw, 160px) * 0.34);
+  margin-top: calc(var(--lf-sw, 160px) * -0.05);
+  margin-left: calc(var(--lf-sw, 160px) * -0.17);
+  opacity: 0;
+}
+
+.lf-ripple {
+  width: calc(var(--lf-sw, 160px) * 0.3);
+  height: calc(var(--lf-sw, 160px) * 0.08);
+  margin-top: calc(var(--lf-sw, 160px) * -0.04);
+  margin-left: calc(var(--lf-sw, 160px) * -0.15);
+  border: 2.5px solid #fff;
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.lf-retic svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.lf-pinf {
+  width: calc(var(--lf-sw, 160px) * 0.13);
+  margin-left: calc(var(--lf-sw, 160px) * -0.065);
+  opacity: 0;
+  transform-origin: 50% 100%;
+}
+
+.lf-pinf svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.lf-halo {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 3px solid #fff;
+  border-radius: 6px;
+  outline: 1.5px solid var(--lf-route);
+  opacity: 0;
+}
+
+.lf-scanbox {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+}
+
+.lf-scanbox i {
+  position: absolute;
+  width: 22%;
+  height: 18%;
+  border: 0 solid #fff;
+  filter: drop-shadow(0 0 1px rgb(0 0 0 / 60%));
+}
+
+.lf-scanbox i:nth-child(1) {
+  top: 0;
+  left: 0;
+  border-width: 3px 0 0 3px;
+  border-top-left-radius: 6px;
+}
+
+.lf-scanbox i:nth-child(2) {
+  top: 0;
+  right: 0;
+  border-width: 3px 3px 0 0;
+  border-top-right-radius: 6px;
+}
+
+.lf-scanbox i:nth-child(3) {
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 3px 3px;
+  border-bottom-left-radius: 6px;
+}
+
+.lf-scanbox i:nth-child(4) {
+  right: 0;
+  bottom: 0;
+  border-width: 0 3px 3px 0;
+  border-bottom-right-radius: 6px;
+}
+
+.lf-posterf {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  transform-origin: 50% 0;
+}
+
+.lf-posterf svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.lf-callout {
+  position: absolute;
+  bottom: 0.6em;
+  left: 0;
+  width: 9.6em;
+  max-width: calc(var(--lf-sw, 160px) * 0.8);
+  padding: 0.45em 0.6em;
+  border: 1px solid var(--lf-ink);
+  border-radius: 0.7em;
+  opacity: 0;
+  background: rgb(251 248 239 / 97%);
+  box-shadow: 0.18em 0.22em 0 rgb(42 40 36 / 20%);
+  color: var(--lf-ink-2);
+  font-size: 0.9em;
+  line-height: 1.26;
+  transform: translateX(-50%);
+}
+
+.lf-callout b {
+  display: block;
+  color: var(--lf-ink);
+  font: 700 1.05em/1.15 var(--lf-serif);
+}
+
+.lf-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.lf-status {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 1.9em;
+  padding: 0 1.25em;
+  color: var(--lf-ink);
+  font: 600 0.74em/1 var(--lf-sans);
+}
+
+.lf-status svg {
+  width: auto;
+  height: 0.95em;
+  fill: var(--lf-ink);
+}
+
+.lf-hud {
+  position: absolute;
+  top: 2.05em;
+  right: 0.55em;
+  left: 0.55em;
+  display: flex;
+  gap: 0.4em;
+  align-items: center;
+}
+
+.lf-hud-x {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.05em;
+  height: 2.05em;
+  border-radius: 50%;
+  background: rgb(28 26 22 / 55%);
+}
+
+.lf-hud-x svg {
+  width: 0.82em;
+  height: 0.82em;
+  fill: none;
+  stroke: #fff;
+  stroke-linecap: round;
+  stroke-width: 2.4;
+}
+
+.lf-pill {
+  display: flex;
+  flex: 1;
+  gap: 0.45em;
+  align-items: center;
+  min-width: 0;
+  height: 2.05em;
+  padding: 0 0.75em;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(28 26 22 / 60%);
+  color: #fff;
+  font: 600 0.9em/1 var(--lf-sans);
+  white-space: nowrap;
+}
+
+.lf-pill .lf-dots {
+  display: flex;
+  gap: 0.26em;
+  margin-left: auto;
+}
+
+.lf-pill .lf-dots i {
+  width: 0.42em;
+  height: 0.42em;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 45%);
+}
+
+.lf-pill .lf-dots i.lf-on {
+  background: #fff;
+}
+
+.lf-pill .lf-tg {
+  flex: none;
+  padding: 0.3em 0.42em;
+  border-radius: 0.4em;
+  background: var(--lf-route);
+  font-size: 0.82em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lf-pill .lf-tg.lf-ok {
+  background: var(--lf-ok);
+}
+
+.lf-chip {
+  position: absolute;
+  top: 4.7em;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  align-items: center;
+  padding: 0.45em 0.8em;
+  border-radius: 0.8em;
+  opacity: 0;
+  background: var(--lf-ok);
+  color: #fff;
+  font: 700 0.86em/1 var(--lf-sans);
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+/* the found tour's second line: where it opened */
+.lf-chip span {
+  font-size: 0.86em;
+  font-weight: 600;
+}
+
+.lf-sheet {
+  position: absolute;
+  right: 0.45em;
+  bottom: 0.45em;
+  left: 0.45em;
+  padding: 0.65em 0.7em 0.7em;
+  border: 1px solid var(--lf-ink);
+  border-radius: 1em;
+  opacity: 0;
+  background: rgb(251 248 239 / 97%);
+  color: var(--lf-ink);
+}
+
+.lf-sheet .lf-hint2 {
+  color: var(--lf-ink-2);
+  font-size: 0.92em;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.lf-sbtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.45em;
+  margin-top: 0.5em;
+  border-radius: 999px;
+  background: var(--lf-route);
+  color: #fff;
+  font: 700 0.9em/1 var(--lf-sans);
+}
+
+.lf-tools {
+  display: flex;
+  gap: 0.4em;
+}
+
+.lf-tool {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.25em;
+  align-items: center;
+  padding: 0.42em 0.2em 0.38em;
+  border: 1.5px solid var(--lf-line);
+  border-radius: 0.8em;
+  background: #fff;
+  color: var(--lf-ink-2);
+  font: 600 0.9em/1 var(--lf-sans);
+}
+
+.lf-tool svg {
+  width: 1.45em;
+  height: 1.45em;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.lf-tool.lf-sel {
+  border-color: var(--lf-route);
+  background: var(--lf-route-soft);
+  color: var(--lf-route-dark);
+}
+
+.lf-share-row {
+  display: flex;
+  gap: 0.55em;
+  align-items: center;
+}
+
+.lf-share-row .lf-qr {
+  flex: none;
+  width: 3.3em;
+  height: 3.3em;
+}
+
+.lf-share-row b {
+  display: block;
+  font: 700 1em/1.15 var(--lf-serif);
+}
+
+.lf-share-row span {
+  display: block;
+  margin-top: 0.15em;
+  color: var(--lf-ink-2);
+  font-size: 0.9em;
+  line-height: 1.26;
+}
+
+.lf-share-btns {
+  display: flex;
+  gap: 0.4em;
+  margin-top: 0.5em;
+}
+
+.lf-share-btns span {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  height: 2.25em;
+  border: 1.5px solid var(--lf-ink);
+  border-radius: 999px;
+  font: 700 0.86em/1 var(--lf-sans);
+  white-space: nowrap;
+}
+
+.lf-share-btns span.lf-p {
+  border-color: var(--lf-route);
+  background: var(--lf-route);
+  color: #fff;
+}
+
+/* a narrow screen (a phone held sideways, a 360 px phone) keeps the
+   essentials only: the prototype's container query below 158 px, set by the film */
+.lf-mscreen.lf-narrow .lf-tcard .lf-b,
+.lf-mscreen.lf-narrow .lf-share-row span,
+.lf-mscreen.lf-narrow .lf-share-btns span + span,
+.lf-mscreen.lf-narrow .lf-pill .lf-dots,
+.lf-mscreen.lf-narrow .lf-hud-x,
+.lf-mscreen.lf-narrow .lf-pic .lf-pcap,
+.lf-mscreen.lf-narrow .lf-callout .lf-callout-b {
+  display: none;
+}
+
+/* a narrow screen is also a short one: the found-tour chip stays inside it */
+.lf-mscreen.lf-narrow .lf-chip {
+  padding: 0.4em 0.6em;
+  font-size: 0.74em;
+}
+
+.lf-mscreen.lf-narrow .lf-pic {
+  padding-bottom: calc(var(--lf-sw, 160px) * 0.014);
+}
+
+.lf-mscreen.lf-narrow .lf-share-row .lf-qr {
+  width: 2.8em;
+  height: 2.8em;
+}
+
+/* the old photo the story starts with: lies where the phone will be */
+.lf-polaroid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  width: 170px;
+  margin: 0;
+  padding: 8px 8px 0;
+  border: 1px solid var(--lf-ink);
+  opacity: 0;
+  background: #fff;
+  box-shadow: 5px 6px 0 rgb(42 40 36 / 18%);
+  pointer-events: none;
+}
+
+.lf-polaroid svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.lf-polaroid figcaption {
+  margin: 0;
+  padding: 8px 2px 10px;
+  color: var(--lf-ink-2);
+  font: italic 15px/1.2 var(--lf-serif);
+  text-align: center;
+}
+
+/* ---------- the bar: one segment per part, and the play/pause button ---------- */
+.lf-controls {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0 0;
+  padding-inline: var(--lf-inset, 0);
+}
+
+.lf-play {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1.5px solid var(--lf-ink);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--lf-ink);
+  font: 600 14px/1 var(--lf-sans);
+  cursor: pointer;
+}
+
+.lf-play:focus-visible {
+  outline: 3px solid var(--lf-route);
+  outline-offset: 2px;
+}
+
+.lf-play svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: currentcolor;
+}
+
+.lf-play .lf-play-text {
+  display: none;
+}
+
+.lf-film.lf-finished .lf-play {
+  padding: 0 14px 0 11px;
+  border-color: var(--lf-route);
+  background: var(--lf-route);
+  color: #fff;
+}
+
+.lf-film.lf-finished .lf-play .lf-play-text {
+  display: inline;
+}
+
+.lf-segs {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 3px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lf-segs li {
+  display: flex;
+  min-width: 0;
+  margin: 0;
+}
+
+/* each segment is a button whose hit area is at least 24 px tall, however
+   thin the visible track */
+.lf-seg {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 12px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.lf-seg:focus-visible {
+  outline: 3px solid var(--lf-route);
+  outline-offset: 2px;
+}
+
+.lf-seg-track {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: var(--lf-bar-h);
+  overflow: hidden;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--lf-track-line);
+}
+
+.lf-seg-fill {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: var(--lf-route);
+  transform: scaleX(var(--lf-fill, 0));
+  transform-origin: 0 50%;
+}
+
+.lf-seg-seen .lf-seg-track {
+  background: var(--lf-seen);
+}
+
+.lf-seg-seen .lf-seg-fill {
+  display: none;
+}
+
+/* the current part: a red outline from its first moment, filling red as it
+   plays; never the empty look of a part still to come */
+.lf-seg-current .lf-seg-track {
+  box-shadow: inset 0 0 0 1px var(--lf-route);
+}
+
+/* paused: the current part solid red, with a pause mark above it */
+.lf-film.lf-paused .lf-seg-current .lf-seg-fill {
+  transform: none;
+}
+
+.lf-film.lf-paused .lf-seg-current::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: calc(50% - 4px);
+  width: 2px;
+  height: 7px;
+  border-right: 2px solid var(--lf-route);
+  border-left: 2px solid var(--lf-route);
+}
+
+/* ---------- the caption under the scene ---------- */
+.lf-caption {
+  flex: none;
+  min-height: 2.7em;
+  margin: 8px 0 0;
+  padding-inline: var(--lf-inset, 0);
+  color: var(--lf-ink);
+  font: 600 17px/1.35 var(--lf-serif);
+}
+
+.lf-captions {
+  flex: none;
+  margin: 8px 0 0;
+  padding: 0 var(--lf-inset, 0) 0 calc(1.5em + var(--lf-inset, 0px));
+  color: var(--lf-ink-2);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.lf-captions li {
+  margin: 0;
+}
+
+.lf-captions li + li {
+  margin-top: 2px;
+}
+
+.lf-captions[hidden],
+.lf-caption[hidden] {
+  display: none;
+}
+
+/* the frame readout, with ?debug=1 only */
+.lf-debug {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 6;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgb(42 40 36 / 80%);
+  color: #fff;
+  font:
+    11px/1.3 ui-monospace,
+    monospace;
+  white-space: pre;
+  pointer-events: none;
+}
+
+@media (width <= 480px) {
+  .lf-caption {
+    min-height: 4.05em;
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lf-gl,
+  .lf-floor,
+  .lf-tag,
+  .lf-mphone,
+  .lf-mphone.lf-on {
+    transition: none;
+  }
+}

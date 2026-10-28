@@ -22,13 +22,13 @@ import {
 import { Matrix4, Quaternion, Vector3 } from "three";
 
 import { combineCodeVisits } from "./code-visit-combine.js";
+import { deviceSamples } from "./device-gps-quality.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import { odomNueFromWebXr, throughAlignment } from "./visit-anchoring.js";
 import {
   buildVisitLogEntry,
   codeVisitPoses,
   createVisitLog,
-  deviceSamples,
   maxHorizontalExtentM,
   newVisitId,
   parseVisitLogEntry,

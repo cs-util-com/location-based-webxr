@@ -9,24 +9,35 @@
 
 import { describe, expect, it } from "vitest";
 import { Group, Object3D, Texture } from "three";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourObject,
+  TourPicture,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { wireCreatorPreviews } from "./creator-previews.js";
 import type { AuthoringObject } from "./object-editing.js";
 import type { TourSession } from "./tour-session.js";
 import {
   createTourViewerSession,
   createTourViewerStore,
+  type TourViewerStore,
 } from "./tour-viewer-session.js";
 
 const ZERO = { lat: 47.5, lon: 8.7 };
 
-function photo(id: string): TourObject {
+function photo(id: string): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-10-06T00:00:00.000Z",
     geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
   };
@@ -52,7 +63,7 @@ function harness(objects: readonly AuthoringObject[]) {
   const arStore = {
     ...real,
     getState: () => ({ ...real.getState(), gpsData: { zero: ZERO } }) as never,
-  } as unknown as ReturnType<typeof createTourViewerStore>;
+  } as unknown as TourViewerStore;
   const scene = new Group();
   const decoded: Blob[] = [];
   const previews = wireCreatorPreviews({

@@ -2,12 +2,11 @@
 
 **Purpose:** the checks for a tour's details - `description`, `cover` and
 `contact` (tour editor plan 2026-10-17-1816, W2, decision D15) - shared by
-the manifest's reader and writer (`tour-manifest.ts`, minor 3) and by an
+the manifest's reader and writer (`tour-manifest.ts`) and by an
 app's own fields (the Tour Viewer editor's "Tour details" dialog), so what
 an editor accepts is exactly what a reader keeps (DEC-H3). Kept apart from
-`tour-manifest.ts` so a later format version (stations as parents, the
-plan's W3, version 3) reads the same fields with the same parsers
-unchanged (plan review 2 #10).
+`tour-manifest.ts` so every format version reads the same fields with
+the same parsers unchanged.
 
 ## Public API
 
@@ -39,12 +38,14 @@ unchanged (plan review 2 #10).
   typed an `<a href>` resolved it against the page itself, M4a review
   #4), null for a value the check refuses. A page shows the same value as
   the link's text.
-- `tourImageIds(tour): Set<string>` - the ids a cover may name: the
-  placed photos' (`kind: 'photo'`) and the image assets' (`kind:
-'image'`). `tour` is structural (`TourImages`: `objects`, `assets`), so a
-  later format version passes its own records.
+- `tourImageIds(tour): Set<string>` - the ids a cover or a station's card
+  image may name: the tour's image assets (`kind: 'image'`, a captured
+  photo's among them) and the image asset a picture of `objects` carries
+  inline (`imageAsset`: a page that captured a photo holds it before any
+  tour lists it). `tour` is structural (`TourImages`: `objects`,
+  `assets`).
 - `tourCoverEntry(tour): string | null` - the archive entry the cover
-  shows (a photo's `image`, an asset's `path`), or null without a cover
+  shows (that image asset's `path`), or null without a cover
   that names an image (the visitor's start page falls back to its own
   choice then).
 - `parseTourDetails(data, { imageIds }): { details, dropped }` - the three
@@ -73,8 +74,8 @@ cause? }`. Never throws.
   and `!#$%&'*+-/=?^_\`{|}~.`), not a quoted one, and a dotted domain of
   letters (any script), digits and hyphens with a final label of two or
   more. Not a full RFC validator: a mistyped but well-formed address passes.
-- `imageIds` is the caller's: `tour-manifest.ts` passes its placed photos'
-  ids and its image assets' ids. A later version passes its own.
+- `imageIds` is the caller's: `tour-manifest.ts` passes its image assets'
+  ids.
 
 ## Examples
 
@@ -92,8 +93,9 @@ parseTourDetails({ cover: 'gone' }, { imageIds: new Set(['f1']) });
   contact's script, data, ftp, user-name and query forms among them), the
   character count by code point, the href forms and the escaping of `&`
   and `?`, a document without details, and a failing value dropped with
-  its reason beside the kept ones; the image ids (photos and image assets,
-  never a pin or an audio asset) and the cover's entry; the title's 80
+  its reason beside the kept ones; the image ids (image assets and a
+  picture's inline asset, never a pin or an audio asset) and the cover's
+  entry; the title's 80
   characters by code point (80 emoji kept, 81 refused).
 - `tour-details.property.test.ts` - over any input: never throws, every
   given field is kept or dropped, a kept value passes its check unchanged;
@@ -102,4 +104,4 @@ parseTourDetails({ cover: 'gone' }, { imageIds: new Set(['f1']) });
   when its trimmed text is non-empty and at most 80 characters, and a kept
   name passes again unchanged.
 - `tour-manifest.test.ts` / `tour-manifest.property.test.ts` - the fields
-  in `tour.json` (minor 3).
+  in `tour.json`.

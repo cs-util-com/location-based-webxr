@@ -1,21 +1,33 @@
 /**
  * A station's scene, step by step (tour kit plan K4, §4.2): the steps in
- * order, a scene choice that jumps to its target step, and the end. Pure:
- * which step is showing, nothing about how (`scene-view.ts` renders it, and
- * owns the tap and the timer of an auto step).
+ * order, a scene choice that jumps to its option's step (or, for an option
+ * that names none, goes on to the next step), and the end. Pure: which
+ * step is showing, nothing about how (`scene-view.ts` renders it, and owns
+ * the tap and the timer of an auto step).
  *
- * K4 plays text, image, character, audio, video (as its transcript: video
- * itself is later) and model steps, and scene choices. A QUIZ step is K5's:
- * it is skipped here, as a lenient reader skips what it cannot show (K1
- * review R4), so a K4 visitor meets the rest of the scene instead of a
- * dead end.
+ * It plays `show` steps (the block each names, rendered by the view) and
+ * scene choices. A QUIZ step is not played yet: it is skipped here, as a
+ * lenient reader skips what it cannot show, so a visitor meets the rest
+ * of the scene instead of a dead end.
  */
 
-import type { TourStep } from "gps-plus-slam-app-framework/ar/tour-stations";
+import type { TourStep } from "gps-plus-slam-app-framework/ar/tour-story";
 
 /** Whether this build shows the step (quizzes arrive with K5). */
 export function isPlayableInK4(step: TourStep): boolean {
-  return step.block.kind !== "quiz";
+  return step.action.kind !== "quiz";
+}
+
+/**
+ * How many steps a choice-free scene shows (the story card's dots): its playable steps, quizzes left out. Null for a scene
+ * with a choice, whose path - and so its number of steps - the visitor's
+ * answers decide.
+ */
+export function playableStepCount(steps: readonly TourStep[]): number | null {
+  const playable = steps.filter(isPlayableInK4);
+  return playable.some((s) => s.action.kind === "choice")
+    ? null
+    : playable.length;
 }
 
 export interface ScenePlayer {
@@ -25,8 +37,9 @@ export interface ScenePlayer {
    *  choice is not continued: it waits for an answer. Returns the new
    *  current step. */
   next(): TourStep | null;
-  /** Answer the current choice: jump to its option's target step. An
-   *  unknown option, or a call while no choice shows, changes nothing. */
+  /** Answer the current choice: jump to its option's step, or to the next
+   *  step for an option that names none. An unknown option, or a call
+   *  while no choice shows, changes nothing. */
   choose(optionId: string): TourStep | null;
   ended(): boolean;
 }
@@ -47,15 +60,17 @@ export function createScenePlayer(steps: readonly TourStep[]): ScenePlayer {
     current,
     next() {
       const step = current();
-      if (step === null || step.block.kind === "choice") return step;
+      if (step === null || step.action.kind === "choice") return step;
       index = playableFrom(index + 1);
       return current();
     },
     choose(optionId) {
       const step = current();
-      if (step === null || step.block.kind !== "choice") return step;
-      const option = step.block.options.find((o) => o.id === optionId);
-      const target = option === undefined ? undefined : byId.get(option.goto);
+      if (step === null || step.action.kind !== "choice") return step;
+      const option = step.action.options.find((o) => o.id === optionId);
+      if (option === undefined) return step;
+      const target =
+        option.goto === undefined ? index + 1 : byId.get(option.goto);
       if (target === undefined) return step;
       index = playableFrom(target);
       return current();

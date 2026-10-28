@@ -8,9 +8,20 @@ downloading the whole file first.
 
 ## Two pages in one
 
-- **The plain page is the creator's guided setup.** Four steps, one open
-  at a time: host a zip and paste its link, print the code, hang it, and
-  measure it in AR and place content - after Finish the same step saves
+- **The plain page is the creator's: a landing, then the guided setup.**
+  The landing comes first: one line for a visitor who came for a tour
+  (scan its code, or open its link further down), what the app is for and
+  that tours run on Android phones with Chrome, the hero, five step cards
+  whose pictures play while in view (a tap pauses one; "Show again"
+  restarts it; nothing moves by itself under reduced motion), a short
+  "Make your own tour" and examples of what people make. Its "Make your
+  tour" buttons bring the setup into view. A device that used the setup
+  before (a stored storage choice or link) opens scrolled to the setup;
+  a reload or a link to a place in the page keeps the browser's own
+  position. A visitor's page downloads none of the landing's moving parts.
+  The setup has six steps, one open at a time (they open in any order):
+  where the tour lives, its link, print the code, hang it, and create it
+  in AR - after Finish the same step saves
   the rebuilt zip to the phone by itself (a button saves it again) and
   shows the recipe for replacing the hosted file. The link last opened and the step reached with it are
   remembered on the device: after a reload (the AR session, the print
@@ -21,6 +32,12 @@ downloading the whole file first.
   first, so the button counts "1 of 2" and "2 of 2"), enters AR, and
   places nothing until the phone has recognised the hung code. After 10 s
   without a lock the page offers "Continue with GPS only (less accurate)".
+  A tour that is not finished yet - a zip without `tour.json` (the
+  starter zip, a recording) or a tour without stations, hosted before
+  its first Finish - opens to a start page that says "This tour is not
+  finished yet." (with the tour's contact, when it names one) and offers
+  no Start: no location is asked for, no AR session opens, and the page
+  stops downloading the file, of which a visitor reads nothing.
 
 The mode is the launch parameter's presence and nothing else; there is no
 author flag.
@@ -54,6 +71,10 @@ author flag.
    of where it lands, else starts a new one there; "New station here" makes
    the next one start its own station even within that radius (for places
    closer together than any radius can separate; a second tap cancels it).
+   "Undo", above them, takes back the last delete, or the last automatic
+   change of a code's saved position together with the pins and stations
+   it moved, and says which ("Undo: delete "Gate"", "Undo: the code's
+   improvement"); it stays until something else changes the tour.
    "Finish"
    ends the session, and the same step then saves and shows:
    - **the rebuilt zip** - the page rebuilds the archive in the browser:
@@ -90,9 +111,9 @@ sentence on it and the GPS-only skip at the bottom after 10 s; it closes
 by itself once the code is read. Once it locks and its votes have
 corrected the placement, the tour's
 `tour.json` content appears (pins as labels, photos as planes at their
-capture spots), and a tour that carries a recording also places its
-photos at the spots they were taken. A tour whose zip carries no measured
-code is placed by GPS at once, and says so.
+capture spots). The frames a recording captured by itself are debug data:
+a visitor never sees them. A tour whose zip carries no measured code is
+placed by GPS at once, and says so.
 
 A sample station tour ships with the app: `/tour/samples/marienplatz-tour.zip`
 (three stations at Marienplatz in Munich, a knight, a choice, an arch).
@@ -146,6 +167,31 @@ Module map: `src/main.ts` is the composition root; `mode.ts` (the split),
 `tour.json` records and their rendering), `scan-gate.ts` and
 `viewer-placement.ts` (the visitor's gate and placement), `tour-flow.ts`
 (the status line). Every module has a sidecar `.md` next to it.
+
+The workspace's globe package (`gps-plus-slam-globe`) is a dependency, for
+the 3D editor's building blocks (`import ... from
+"gps-plus-slam-globe/editor"`; nothing in the app imports it yet).
+`src/globe-dependency.test.ts` builds those blocks with Vite and fails if
+the build holds two copies of three.
+
+The app ships the licence of every third-party package it bundles,
+verbatim, in `public/third-party-licenses/` (copied into the site as
+`third-party-licenses/`): `<name>-LICENSE.txt`, and `<name>-NOTICE.txt`
+for a package that has a NOTICE, the name being the npm name with `@`
+dropped and `/` written as `-`. `src/third-party-licenses.test.ts` derives
+the list from the module ids of two builds (the app's own, and an entry
+importing the globe's editor blocks; `src/test-support/bundled-packages.ts`),
+never from `package.json`, and fails when a bundled package has no licence
+file of its own, when a licence or NOTICE file is not shipped verbatim,
+when a shipped file belongs to no bundled package, when `NOTICE` does not
+name a bundled package, or when it does not say that a patched package
+(`patchedDependencies` in `pnpm-workspace.yaml`) is modified and by which
+patch (Apache License 2.0, sections 4(a), 4(b) and 4(d)). The app's own
+`NOTICE` ships too, as `third-party-licenses/NOTICE.txt`, and the test
+fails when that copy differs from it. A build's virtual modules (the
+build tools' runtime glue) belong to no package: the known ones are
+listed in `bundled-packages.ts` with the reason no licence ships for
+them, and an unknown one fails the test until someone decides.
 
 ## Where the design lives
 

@@ -42,8 +42,8 @@
  *   correction of the position (which only makes it better).
  *
  * THE JUDGED PATH (r881): the last block drives the shipped decision end to
- * end - the station run's `observe` with the accuracy `judgedAccuracy`
- * hands it - for raw accuracies 3-500 m, with and without a code that lined
+ * end - the station run's `observe` with the precision the framework's
+ * shared rule (`position-precision`) gives the position - for raw accuracies 3-500 m, with and without a code that lined
  * the position up, at the 5 m sample radius and the 25 m default. Without a
  * code the raw accuracy judges (above the 25 m ceiling nothing latches);
  * with one, the position is the code's (modelled as the `fused` noise at a
@@ -67,7 +67,9 @@ import {
 
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-stations";
 
-import { judgedAccuracy, stationBands } from "./station-bands";
+import { positionPrecision } from "gps-plus-slam-app-framework/state/position-precision";
+
+import { stationBands } from "./station-bands";
 import { STATION_RADIUS_M } from "./station-assign";
 import { createStationRun } from "./station-run";
 
@@ -158,7 +160,7 @@ const JUDGED_RADII = [5, STATION_RADIUS_M];
 const CODE_ACCURACIES = [1, 3, 5];
 const JUDGED_STEP = {
   id: "s",
-  block: { kind: "text", text: "Hi" },
+  action: { kind: "show", block: "hi" },
   advance: { mode: "tap" },
 } as const;
 
@@ -171,12 +173,13 @@ function judgedStation(foundRadiusM: number): TourStation {
     foundRadiusM,
     hint: "arrow",
     steps: [JUDGED_STEP],
-    items: [],
+    blocks: [],
   };
 }
 
 /** Whether the shipped run latches "found" on these distances, judged by
- *  the accuracy `judgedAccuracy` gives for this raw accuracy and code. */
+ *  the precision the shared rule gives an aligned position with this raw
+ *  accuracy (one device fix stating it), held by a code or not. */
 function latches(
   distances: readonly number[],
   foundR: number,
@@ -184,16 +187,21 @@ function latches(
   codeLinedUp: boolean,
 ): boolean {
   const run = createStationRun({
+    assets: new Set(),
     stations: [judgedStation(foundR)],
     order: "fixed",
     nowMs: 0,
   });
-  const accuracyM = judgedAccuracy(rawAccuracyM, codeLinedUp);
+  const precision = positionPrecision({
+    position: "aligned",
+    codeHold: codeLinedUp,
+    gpsPoints: [{ latLongAccuracy: rawAccuracyM }],
+  });
   for (const [i, d] of distances.entries()) {
     const events = run.observe({
       distances: new Map([["st", d]]),
       nowMs: i * 1000,
-      accuracyM,
+      precision,
     });
     if (events.some((e) => e.kind === "found")) return true;
   }
@@ -319,7 +327,7 @@ describe(
     // Why this test matters (r881): every position in a live session is
     // "aligned" from its first fix, so the trust a code earns must come
     // from the code and nothing else. This runs the shipped judgement - the
-    // run's `observe` fed by `judgedAccuracy` - across raw accuracies the
+    // run's `observe` fed by the shared precision rule - across raw accuracies the
     // phone really reports (3 m open sky to a 500 m cold start), and pins
     // what each side buys: without a code a fix above the ceiling latches
     // nothing, standing on the spot or passing it; with a code the raw

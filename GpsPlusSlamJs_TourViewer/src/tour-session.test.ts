@@ -16,18 +16,19 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 import {
   createEmptyTourManifest,
-  tourItems,
   serializeTourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   archiveFileName,
   openTourFile,
   openTourSession,
   readArchiveInSlices,
+  tourFileKeyOfFile,
   tourLabel,
 } from "./tour-session.js";
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 
 /**
  * Why these tests matter: this module is the viewer's whole data path — if
@@ -253,7 +254,7 @@ describe("openTourSession", () => {
 // Why these tests matter (geo-join M-B): the join's inputs come through
 // these two accessors, and BOTH are null-tolerant by contract — a
 // hand-built tour zip (no recording) and a corrupt stream must read as
-// "keep the ring", never as a broken archive.
+// "no walk to bake", never as a broken archive.
 /** Exactly the given entries - no defaults; the recording tests need to
  *  control session.json themselves. */
 async function buildExactZip(
@@ -310,9 +311,47 @@ describe("loadRecordingActions / loadSessionMeta", () => {
       ),
     });
     expect(wrapped.hasRecording).toBe(true);
+    // A sibling folder whose name only ends in it is not the stream the
+    // framework's parser replays, nor is a non-JSON file under actions/.
+    const sibling = await openTourSession("https://x/sibling.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({
+          "myactions/000001.json": "{}",
+          "actions/README.txt": "notes",
+        }),
+      ),
+    });
+    expect(sibling.hasRecording).toBe(false);
   });
 
-  it("returns null for a hand-built zip without a recording — the ring path, not an error", async () => {
+  // Why: the framework reads `session.json` as a whole path segment
+  // (`isSessionJsonEntryName`); a look-alike sorting first
+  // (`backup-session.json`) is not the session, so its era is not the
+  // recording's.
+  it("reads session meta only from a session.json path segment", async () => {
+    const session = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({
+          "backup-session.json": '{"version":1,"odomCoordVersion":1}',
+          "walk/session.json": '{"version":1,"odomCoordVersion":5}',
+          "walk/actions/000001.json": "{}",
+        }),
+      ),
+    });
+    await expect(session.loadSessionMeta()).resolves.toMatchObject({
+      odomCoordVersion: 5,
+    });
+    const only = await openTourSession("https://x/only.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({
+          "backup-session.json": '{"version":1,"odomCoordVersion":1}',
+        }),
+      ),
+    });
+    await expect(only.loadSessionMeta()).resolves.toBeNull();
+  });
+
+  it("returns null for a hand-built zip without a recording - nothing to bake, not an error", async () => {
     const fetchImpl = rangeServer(
       await buildExactZip({ "qr/1.json": LEVEL_JSON }),
     );
@@ -441,12 +480,19 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
     // looks half-placed rather than broken.
     const photo: TourObject = {
       id: "ab12ab12ab12ab12",
-      kind: "photo",
-      image: "content/ab12ab12ab12ab12.jpg",
+      kind: "picture",
+      view: "plane",
+      image: "ab12ab12ab12ab12",
+      widthM: 1,
+      imageAsset: {
+        id: "ab12ab12ab12ab12",
+        path: "content/ab12ab12ab12ab12.jpg",
+        kind: "image",
+        width: 1024,
+        height: 768,
+      },
       geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
       createdAtIso: "2026-09-08T12:00:00.000Z",
-      imageWidth: 1024,
-      imageHeight: 768,
     };
     const wrapped = await openTourSession("https://x/wrapped.zip", {
       fetchImpl: rangeServer(
@@ -458,7 +504,7 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
     });
     expect(wrapped.manifestWrap).toBe("mytour/");
     const manifest = await wrapped.loadTourManifest();
-    expect(tourItems(manifest!)[0]?.id).toBe(photo.id);
+    expect(tourObjects(manifest!)[0]?.id).toBe(photo.id);
     // The reader asks with the name the MANIFEST carries; the session joins
     // the prefix it found the manifest under.
     await expect(
@@ -974,6 +1020,52 @@ describe("openTourFile (K0)", () => {
     const a = await openTourFile(await tourFile("tour.zip"));
     const b = await openTourFile(await tourFile("tour (2).zip"));
     expect(a.archive.url).toBe(b.archive.url);
+  });
+
+  // Why (debug-captures plan, Q-I): a tour of the tour kit's files alone
+  // was keyed by its content, which each save rewrites. A tour.json that
+  // carries the tour's own id keys the file by it, whatever else changed;
+  // one that does not read (or carries no id) keeps the content key.
+  it("keys a file whose tour carries its own id by that id, whatever its content", async () => {
+    const withId = async (title: string): Promise<File> => {
+      const manifest = {
+        ...createEmptyTourManifest(),
+        tourId: "TourId123",
+        title,
+      };
+      const bytes = await buildZip({
+        "tour.json": serializeTourManifest(manifest),
+      });
+      return new File([bytes as BlobPart], "t.zip", {
+        type: "application/zip",
+      });
+    };
+    const a = await openTourFile(await withId("First"));
+    const b = await openTourFile(await withId("Second"));
+    expect(a.archive.url).toBe("local-file:tour:TourId123");
+    expect(b.archive.url).toBe(a.archive.url);
+    expect(await tourFileKeyOfFile(await withId("Third"))).toBe(a.archive.url);
+    for (const text of ['{"version":3,"tourId":"bad id"}', "{not json"]) {
+      const bytes = await buildZip({ "tour.json": text });
+      const file = new File([bytes as BlobPart], "t.zip");
+      expect(await tourFileKeyOfFile(file)).toMatch(
+        /^local-file:[0-9a-f]{32}$/,
+      );
+    }
+    await a.close();
+    await b.close();
+  });
+
+  // Why (B2a review finding 1): a version-3 file's draft lives under
+  // `local-file:tour:<id>`. The key must be read from the raw `tourId`,
+  // never from a 4.0 parse of the whole tour - that parse refuses an
+  // older format, and the key fell back to the content key, so the
+  // refusal deleted no draft (or another tour's on the same recording).
+  it("keys an older-format file by its raw tourId, without parsing the tour", async () => {
+    const text = JSON.stringify({ version: 3, tourId: "OldTour_7", items: [] });
+    const bytes = await buildZip({ "tour.json": text });
+    const file = new File([bytes as BlobPart], "old.zip");
+    expect(await tourFileKeyOfFile(file)).toBe("local-file:tour:OldTour_7");
   });
 
   it("says in plain words when the file is not a zip", async () => {

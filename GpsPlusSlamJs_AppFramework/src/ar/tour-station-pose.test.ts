@@ -1,7 +1,6 @@
 /**
- * Why these tests matter: in `tour.json` version 3 a pin or photo is
- * stored relative to its station (tour editor plan 2026-10-17-1816, W3),
- * while the creator placed it - and the viewer places it - in the world.
+ * Why these tests matter: in `tour.json` a block is stored relative to
+ * its station, while the creator placed it - and the viewer places it - in the world.
  * The conversion both ways must agree with the station's frame (its
  * position, altitude and turn against north), and a geo pose converted to
  * local and back must land where it was, or every saved tour would move
@@ -18,7 +17,8 @@ import {
   geoPoseRotation,
   itemGeoPose,
   localPoseOf,
-  tourCaptureGeos,
+  tourFreeBlocks,
+  tourObjectBlock,
   tourObjects,
 } from './tour-station-pose';
 
@@ -239,8 +239,9 @@ describe('the round trip (properties)', () => {
 describe('the world view', () => {
   const pin = {
     id: 'p1',
-    kind: 'pin' as const,
-    label: 'Well',
+    kind: 'shortText' as const,
+    view: 'pin' as const,
+    caption: 'Well',
     createdAtIso: '2026-10-18T06:00:00.000Z',
     pose: {
       position: [3, 0, 4] as [number, number, number],
@@ -249,15 +250,30 @@ describe('the world view', () => {
   };
   const photo = {
     id: 'f1',
-    kind: 'photo' as const,
-    image: 'content/f1.jpg',
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: 'picture' as const,
+    view: 'plane' as const,
+    image: 'f1',
+    widthM: 1,
     createdAtIso: '2026-10-18T06:00:00.000Z',
     pose: {
       position: [0, 1.5, 0] as [number, number, number],
       rotation: yaw(45),
     },
+  };
+  const card = {
+    id: 'intro',
+    kind: 'longText' as const,
+    view: 'card' as const,
+    title: 'Intro',
+    body: 'Hello',
+    pose: pin.pose,
+  };
+  const asset = {
+    id: 'f1',
+    path: 'content/f1.jpg',
+    kind: 'image' as const,
+    width: 4,
+    height: 3,
   };
   const stations = [
     {
@@ -266,8 +282,14 @@ describe('the world view', () => {
       activateRadiusM: 30,
       foundRadiusM: 25,
       hint: 'arrow' as const,
-      steps: [],
-      items: [pin],
+      blocks: [pin, card],
+      steps: [
+        {
+          id: 's',
+          action: { kind: 'show' as const, block: 'intro' },
+          advance: { mode: 'tap' as const },
+        },
+      ],
     },
     {
       id: 'b',
@@ -275,40 +297,34 @@ describe('the world view', () => {
       activateRadiusM: 30,
       foundRadiusM: 25,
       hint: 'arrow' as const,
+      blocks: [photo],
       steps: [],
-      items: [photo],
     },
   ];
 
-  it('tourObjects: every item in the world, naming its station, in station order', () => {
-    const objects = tourObjects({ stations });
+  it('tourObjects: every free block in the world, naming its station, in station order', () => {
+    const objects = tourObjects({ stations, assets: [asset] });
     expect(objects.map((o) => [o.id, o.station])).toEqual([
       ['p1', 'a'],
       ['f1', 'b'],
     ]);
-    expect(objects[0]).toMatchObject({ kind: 'pin', label: 'Well' });
+    expect(objects[0]).toMatchObject({ kind: 'shortText', caption: 'Well' });
     expect(objects[0]).not.toHaveProperty('pose');
     expect(apart(objects[0]!.geo, at(STATION, 3, 4, 400))).toBeLessThan(1e-6);
     expect(objects[1]!.geo).toEqual(itemGeoPose(photo.pose, stations[1]!.geo));
   });
 
-  it('tourCaptureGeos: the recorded photos in the world, in capture order; none without spots', () => {
-    expect(tourCaptureGeos({ stations })).toEqual([]);
-    const captures = tourCaptureGeos({
-      stations,
-      captureSpots: {
-        fixes: 3,
-        gpsAccuracyMedianM: null,
-        captures: [
-          { image: 'images/2.jpg', station: 'b', pose: photo.pose },
-          { image: 'images/1.jpg', station: 'a', pose: pin.pose },
-        ],
-      },
-    });
-    expect(captures.map((c) => [c.image, c.station])).toEqual([
-      ['images/2.jpg', 'b'],
-      ['images/1.jpg', 'a'],
-    ]);
-    expect(captures[0]!.geo).toEqual(itemGeoPose(photo.pose, stations[1]!.geo));
+  it('a picture in the world carries its image asset, and a story block is not in the world', () => {
+    // Why: the page that draws or saves a picture needs the file it names;
+    // a block a step shows appears only when that step is reached.
+    const objects = tourObjects({ stations, assets: [asset] });
+    expect(objects[1]).toMatchObject({ kind: 'picture', imageAsset: asset });
+    expect(objects.map((o) => o.id)).not.toContain('intro');
+    expect(tourFreeBlocks(stations[0]!).map((b) => b.id)).toEqual(['p1']);
+  });
+
+  it('tourObjectBlock: an object at a local pose is the block it was', () => {
+    const [, picture] = tourObjects({ stations, assets: [asset] });
+    expect(tourObjectBlock(picture!, photo.pose)).toEqual(photo);
   });
 });

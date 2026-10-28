@@ -24,6 +24,14 @@ carrying the two review-ordered guardrails and the deferred negative cache.
   fade", M0c). Each constant's doc comment names what would reverse it.
 - `createViewerKeepAlive()` - the code keep-alive (`qr-vote-keep-alive.ts`)
   with these constants.
+- `CodeVoteDeps` / `CodeVoteOptions` - the vote half of
+  `ViewerPipelineDeps` (dispatch, zero check, stable-pose gate,
+  keep-alive, budget, ignored-code memory and hooks, level and lock
+  callbacks, plus `noteDetection`) and what a pipeline decides for it
+  (`resolvePose`: the stable pose a frame votes from, null for none;
+  `live`: the pipeline is still the session's). The viewer placement
+  builds one for the visitor's pipeline and one for a creator's at a
+  stored code (`storedCodeVotes`), so both vote through this config.
 - `buildViewerControllerConfig(deps: ViewerPipelineDeps)` — `onLocked(level,
 hasVoted)` is forwarded from every controller lock (no detected-text
   guard, M5 review #4), with whether the locked code has cast votes in
@@ -85,8 +93,6 @@ hasVoted)` is forwarded from every controller lock (no detected-text
   without a phase for the locked code it only says the batches were cast.
   It used to say "placement holds" unconditionally while the votes faded
   out of the solve (authoring plan §2.2 B1).
-- `imagePlaneRingNue(centerNue, count, radiusM?)` — ring positions in
-  GPS-world NUE at the anchor's height.
 
 ## A code the moved-code check ignores (D20, M5c)
 
@@ -104,7 +110,9 @@ hasVoted)` is forwarded from every controller lock (no detected-text
 - `IGNORED_CODE_LINE` and `viewerStatusLine({ ..., ignoredCode })`: "This
   code seems to have been moved, so its position is not used. Showing the
   tour by GPS." replaces every lock and hold line (no "Relocalized", no
-  "Scan the code again", which the veto would ignore).
+  "Scan the code again", which the veto would ignore). Its first sentence
+  is `MOVED_CODE_SENTENCE`, which the creator's panel shows too
+  (`creator-setup.ts`), followed there by "Placing goes by GPS.".
 
 ## Invariants & assumptions
 
@@ -131,9 +139,6 @@ hasVoted)` is forwarded from every controller lock (no detected-text
   app calls `qrController.reset()` whenever `loadQrLevels` installs or the
   tour closes, or a late-arriving tour could never relocalize (and a
   closed one would keep voting).
-- **V1 deviation, deliberate:** recording zips carry no per-image GPS
-  (images store odom pose only), so the image ring sits around the anchor
-  instead of at capture positions — a capture-time geo join is future work.
 
 ## Examples
 
@@ -160,6 +165,6 @@ code re-arms after a stop and after another code took over, and stays
 spent without a keep-alive), the hold and fade pins, the hold lines, level resolution by
 detected code, the placeholder + `onUnknownCode`, the per-code budget
 (stops exactly at the cap, other codes unaffected, detections keep
-recording), the status-line table, and the ring geometry. The composed
-loop (real vote builder → real store, budget spend, marker, image ring) is
+recording) and the status-line table. The composed
+loop (real vote builder → real store, budget spend, marker, the tour's photos) is
 proven by `playwright-tests/ar-mode.spec.js`'s viewer specs.

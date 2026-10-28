@@ -1,0 +1,1547 @@
+<!doctype html>
+<html lang="en" data-ar="0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Make an AR Tour</title>
+<script type="importmap">
+  { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.min.js" } }
+</script>
+<style>
+:root {
+  --paper: #f4eedf;
+  --paper-2: #ebe3cf;
+  --paper-3: #ddd2b6;
+  --card: #fbf8ef;
+  --ink: #2a2824;
+  --ink-2: #57534a;
+  --ink-3: #8c8577;
+  --line: #c9bea3;
+  --route: #cf4428;
+  --route-dark: #b03a22;
+  --route-soft: #f5d9cd;
+  --olive: #6c7a4a;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --gut: 16px;
+  --hh: 300px;
+  --pt: 14px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); -webkit-text-size-adjust: 100%; }
+body { overflow-x: hidden; }
+p, h1, h2, h3, h4, ol, ul, figure { margin: 0; }
+button, input { font: inherit; color: inherit; }
+a { color: inherit; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+html[data-ar="1"] .ar-no, html[data-ar="0"] .ar-yes { display: none; }
+
+/* ---------- top bar: prototype label and the AR switch ---------- */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 40px; padding: 0 var(--gut); max-width: 1200px; margin: 0 auto; }
+.proto-label { font: 600 11px/1 var(--sans); letter-spacing: .02em; background: var(--ink); color: var(--paper); padding: 5px 9px; border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ar-toggle { display: flex; flex: none; border: 1.5px solid var(--ink); border-radius: 999px; padding: 2px; background: #fff; }
+.ar-toggle button { border: 0; background: none; border-radius: 999px; padding: 5px 9px; font: 600 12px/1 var(--sans); cursor: pointer; min-height: 26px; }
+.ar-toggle button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+/* ---------- a visitor's way in ---------- */
+.visit { max-width: 1200px; margin: 0 auto; padding: 2px var(--gut) 0; }
+.visit form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.visit label { flex: 1 1 100%; font: 600 13.5px/1.3 var(--sans); color: var(--ink-2); }
+.visit label b { color: var(--ink); }
+.visit input { flex: 1 1 150px; max-width: 460px; min-width: 0; min-height: 40px; padding: 8px 10px; border: 1.5px solid var(--ink); border-radius: 8px; background: #fff; font-size: 15px; }
+.visit input:focus { outline: 3px solid var(--route-soft); border-color: var(--route); }
+.visit .btn { min-height: 40px; padding: 8px 16px; font-size: 14px; }
+.visit .msg { flex-basis: 100%; font-size: 13.5px; line-height: 1.4; color: var(--ink-2); }
+.visit .msg:empty { display: none; }
+@media (min-width: 700px) { .visit label { flex: none; } }
+
+/* ---------- buttons, toast ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; font: 600 15px/1.1 var(--sans); min-height: 46px; padding: 11px 20px; border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; color: var(--ink); cursor: pointer; }
+.btn.primary { background: var(--route); border-color: var(--route); color: #fff; }
+.btn.primary:hover { background: var(--route-dark); border-color: var(--route-dark); }
+.btn:active { transform: translateY(1px); }
+.linkish { background: none; border: 0; padding: 6px 2px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font-size: 14px; }
+.btn:focus-visible, .linkish:focus-visible, .ar-toggle button:focus-visible, summary:focus-visible, .again:focus-visible { outline: 3px solid var(--route); outline-offset: 2px; }
+.toast { position: fixed; left: 50%; bottom: 18px; z-index: 90; transform: translate(-50%, 30px); opacity: 0; background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 14px; font-size: 14px; line-height: 1.4; width: max-content; max-width: calc(100vw - 32px); text-align: center; transition: opacity .25s, transform .3s; pointer-events: none; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- hero: the motivation, then the route, still or drawn once ---------- */
+.hero { max-width: 1200px; margin: 0 auto; padding: 18px var(--gut) 8px; display: grid; gap: 14px; }
+.kicker { font: 700 12px/1.25 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--route-dark); }
+.hero h1 { font: 600 clamp(29px, 7.8vw, 56px)/1.06 var(--serif); letter-spacing: -.01em; margin: 7px 0 10px; }
+h1 em, h2 em { color: var(--route); font-style: italic; }
+.lede { font-size: 16.5px; line-height: 1.48; color: var(--ink-2); max-width: 31em; }
+.make-line { font-size: 16.5px; line-height: 1.45; color: var(--ink-2); margin-top: 10px; max-width: 31em; }
+.make-line b { color: var(--ink); }
+.req { display: flex; gap: 8px; align-items: baseline; margin-top: 8px; font-size: 14px; line-height: 1.4; color: var(--ink-2); max-width: 34em; }
+.req::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--ink-3); transform: translateY(1px); }
+html[data-ar="1"] .req::before { background: var(--route); border-color: var(--route); }
+.req b { color: var(--ink); font-weight: 600; }
+.cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+
+.hero-fig { min-width: 0; }
+.art { position: relative; height: var(--hh); overflow: hidden; }
+.art > svg, .art > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#gl { opacity: 0; transition: opacity .6s ease; }
+#gl.on { opacity: 1; }
+#floorA { transition: opacity .5s ease; }
+.art[data-floor="off"] #floorA { opacity: 0; }
+.tags { position: absolute; inset: 0; pointer-events: none; }
+.tag { position: absolute; left: 0; top: 0; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font: italic 600 12.5px/1 var(--serif); color: var(--ink); background: rgba(251, 248, 239, .93); border: 1px solid var(--ink); border-radius: 999px; padding: 2px 8px 2px 2px; opacity: 0; transition: opacity .5s; will-change: transform; }
+.tag b { font: 700 11px/1 var(--sans); font-style: normal; background: var(--route); color: #fff; border-radius: 50%; width: 18px; height: 18px; display: grid; place-items: center; }
+.tag.start { padding-left: 8px; background: var(--ink); color: var(--paper); }
+.tag.on { opacity: 1; }
+.again { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: rgba(251, 248, 239, .94); border-radius: 999px; padding: 5px 11px 5px 9px; font: 600 12.5px/1 var(--sans); color: var(--ink-2); cursor: pointer; min-height: 30px; }
+.again svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.again[hidden] { display: none; }
+.art .again { position: absolute; right: 6px; bottom: 6px; z-index: 3; }
+.hero-fig figcaption { font-size: 14px; line-height: 1.45; color: var(--ink-2); margin-top: 6px; max-width: 36em; }
+.hero-fig figcaption b { color: var(--ink); font-weight: 600; }
+.ease { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 7px; font-size: 15px; line-height: 1.4; color: var(--ink); }
+.ease li { display: flex; gap: 9px; align-items: baseline; }
+.ease li::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--route); transform: translateY(-2px); }
+.ease span { color: var(--ink-2); }
+
+/* ---------- sections ---------- */
+.sec { max-width: 1200px; margin: 0 auto; padding: 46px var(--gut) 30px; }
+.sec-head { max-width: 40em; margin: 0 0 20px; }
+.sec h2 { font: 600 clamp(27px, 6.8vw, 40px)/1.08 var(--serif); margin: .22em 0 .3em; letter-spacing: -.01em; }
+.sec-sub { font-size: 16.5px; line-height: 1.5; color: var(--ink-2); }
+.route-rule { height: 4px; max-width: 1168px; margin: 0 auto; background: radial-gradient(circle, var(--route) 1.6px, transparent 2px) 0 50% / 9px 4px repeat-x; opacity: .55; }
+
+/* ---------- the three cards, each with a drawn phone that plays once ---------- */
+.steps3 { list-style: none; padding: 0; margin: 0; display: grid; gap: 18px; position: relative; }
+.steps3::before { content: ""; position: absolute; left: 29px; top: 20px; bottom: 20px; width: 4px; background: radial-gradient(circle, var(--route) 1.6px, transparent 2px) 50% 0 / 4px 9px repeat-y; }
+.step3 { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-content: start; background: var(--card); border: 1.5px solid var(--ink); border-radius: 6px; box-shadow: 4px 4px 0 var(--paper-3); padding: 14px 14px 16px; }
+.s3-head { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; align-items: start; }
+.badge { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--route); color: #fff; font: 700 14px var(--sans); }
+.step3 h3 { font: 600 20px/1.2 var(--serif); padding-top: 2px; }
+.step3 p { font-size: 15px; line-height: 1.45; color: var(--ink-2); }
+.s3-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 30px; }
+.s3-foot .fine { font-size: 13px; color: var(--ink-3); }
+.make-foot { margin-top: 22px; max-width: 46em; }
+.need { padding: 12px 14px; border-left: 3px solid var(--route); background: var(--paper-2); border-radius: 0 6px 6px 0; font-size: 15px; line-height: 1.45; }
+.need span { display: block; margin-top: 6px; color: var(--ink-2); font-size: 14px; }
+@media (min-width: 900px) {
+  .steps3 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+  .steps3::before { left: 20px; right: 20px; top: 29px; bottom: auto; width: auto; height: 4px; background-size: 9px 4px; background-repeat: repeat-x; background-position: 0 50%; }
+  .step3 { grid-template-rows: auto auto 1fr auto; }
+}
+@media (orientation: landscape) and (max-height: 560px) {
+  .step3 { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto 1fr; column-gap: 18px; }
+  .step3 .ph-wrap { grid-column: 1; grid-row: 1 / span 3; }
+  .s3-head, .step3 p, .s3-foot { grid-column: 2; }
+  .s3-foot { align-self: end; }
+}
+
+/* the drawn phone: a place behind, the phone in front; inside the phone the same place with the tour in it */
+.ph-wrap { position: relative; width: calc(300px * var(--k, 1)); height: calc(380px * var(--k, 1)); justify-self: center; }
+.ph-art { position: absolute; left: 0; top: 0; width: 300px; height: 380px; transform: scale(var(--k, 1)); transform-origin: 0 0; overflow: hidden; border-radius: 8px; background: #e6e9de; font-size: var(--pt); }
+.ph-art .bd { position: absolute; inset: 0; }
+.ph-art .bd > svg, .win > svg.w { position: absolute; left: -100px; top: 0; width: 500px; height: 380px; display: block; }
+.ph-art .bd::after { content: ""; position: absolute; inset: 0; background: rgba(244, 238, 223, .58); }
+.ph { position: absolute; left: 50px; top: 7px; width: 200px; height: 366px; border: 8px solid var(--ink); border-radius: 30px; background: var(--ink); box-shadow: 5px 6px 0 rgba(42, 40, 36, .2); }
+.scr { position: absolute; inset: 0; border-radius: 22px; overflow: hidden; isolation: isolate; }
+.win { position: absolute; left: -58px; top: -15px; width: 300px; height: 380px; }
+.win > svg.ar { position: absolute; left: 0; top: 0; width: 300px; height: 380px; overflow: visible; }
+.notch { position: absolute; left: 50%; top: 5px; width: 40px; height: 6px; margin-left: -20px; border-radius: 3px; background: var(--ink); }
+.st { position: absolute; left: 0; right: 0; top: 0; height: 22px; display: flex; align-items: center; justify-content: space-between; padding: 0 17px; font: 600 10px/1 var(--sans); color: var(--ink); }
+.st i { width: 16px; height: 8px; border: 1.3px solid var(--ink); border-radius: 2px; position: relative; }
+.st i::after { content: ""; position: absolute; left: 1px; top: 1px; bottom: 1px; width: 9px; background: var(--ink); }
+.hud { position: absolute; top: 26px; left: 8px; right: 8px; height: 2.15em; border-radius: 999px; background: rgba(42, 40, 36, .8); color: #fff; display: flex; align-items: center; gap: .45em; padding: 0 .75em 0 .4em; font: 600 .92em/1 var(--sans); white-space: nowrap; overflow: hidden; }
+.hud .tg { flex: none; font-size: .9em; letter-spacing: .05em; text-transform: uppercase; background: var(--route); padding: .3em .45em; border-radius: .45em; }
+.hud .tg.ok { background: var(--olive); }
+.hud .dots { display: flex; gap: .28em; margin-left: auto; }
+.hud .dots i { width: .42em; height: .42em; border-radius: 50%; background: rgba(255, 255, 255, .45); }
+.hud .dots i.on { background: #fff; }
+.hud .swap-b { display: none; }
+.sheet { position: absolute; left: 8px; right: 8px; bottom: 8px; background: rgba(251, 248, 239, .97); color: var(--ink); border: 1px solid var(--ink); border-radius: 14px; padding: .6em .65em .65em; box-shadow: 3px 3px 0 rgba(42, 40, 36, .18); transition: transform .45s cubic-bezier(.3, .8, .25, 1), opacity .3s; }
+.sheet .sh-t { font-size: .95em; line-height: 1.3; color: var(--ink-2); text-align: center; }
+.pbtn { display: flex; align-items: center; justify-content: center; margin-top: .5em; height: 2.4em; border-radius: 999px; background: var(--route); color: #fff; font: 700 1em/1 var(--sans); }
+.tools { display: flex; gap: .4em; }
+.tool { flex: 1; display: flex; align-items: center; justify-content: center; gap: .35em; height: 2.4em; border-radius: .7em; border: 1.3px solid var(--line); font: 600 .95em/1 var(--sans); color: var(--ink-2); background: #fff; transition: border-color .3s, background .3s, color .3s; }
+.tool svg { width: 1.2em; height: 1.2em; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.tool.on { border-color: var(--route); color: var(--route-dark); background: var(--route-soft); }
+.share { display: flex; gap: .6em; align-items: center; }
+.share svg { width: 1.25em; height: 1.25em; vertical-align: -.22em; margin-right: .35em; }
+.share b { display: block; font: 700 1em/1.15 var(--serif); }
+.share span { display: block; font-size: .92em; line-height: 1.3; color: var(--ink-2); margin-top: .15em; }
+.nextp { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; align-items: center; gap: .4em; white-space: nowrap; background: rgba(251, 248, 239, .97); border: 1px solid var(--ink); border-radius: 999px; padding: .42em .8em .42em .5em; font: 600 .92em/1 var(--sans); box-shadow: 2px 2px 0 rgba(42, 40, 36, .18); }
+.nextp svg { width: 1.15em; height: 1.15em; flex: none; }
+/* AR content: world-anchored, inside the window */
+.arc { position: absolute; left: 0; top: 0; transform: translate(-50%, -100%); width: 10.4em; background: #fff; border: 1px solid var(--ink); border-radius: 6px; padding: .5em .6em .55em; box-shadow: 3px 3px 0 rgba(42, 40, 36, .18); }
+.arc .t { font: 700 1.08em/1.15 var(--serif); min-height: 1.15em; }
+.arc .b { font-size: .95em; line-height: 1.3; color: var(--ink-2); margin-top: .2em; }
+.arc .b1 { display: none; }
+.caret { display: none; width: 1.5px; height: 1em; background: var(--route); vertical-align: -.12em; margin-left: 1px; }
+.pic { position: absolute; left: 0; top: 0; width: 5em; background: #fff; border: 1px solid var(--ink); padding: .28em .28em 0; transform: rotate(-4deg); box-shadow: 2px 3px 0 rgba(42, 40, 36, .18); }
+.pic svg { display: block; width: 100%; height: auto; }
+.pic .pc { font: italic .9em/1 var(--serif); text-align: center; padding: .3em 0 .32em; white-space: nowrap; }
+.ghost { position: absolute; left: 0; top: 0; width: 5em; height: 4.6em; border: 1.5px dashed var(--route); border-radius: 4px; background: rgba(251, 248, 239, .7); display: grid; place-items: center; color: var(--route-dark); font: 700 .92em/1 var(--sans); transform: rotate(-4deg); opacity: 0; transition: opacity .3s; }
+.callout { position: absolute; left: 0; top: 0; transform: translate(-100%, -100%); width: 9.6em; background: #fff; border: 1px solid var(--ink); border-radius: 6px; padding: .45em .55em; font-size: .92em; line-height: 1.3; color: var(--ink-2); box-shadow: 3px 3px 0 rgba(42, 40, 36, .18); opacity: 0; transition: opacity .35s, translate .35s; translate: 0 6px; }
+.callout b { display: block; color: var(--ink); font: 700 1.05em/1.15 var(--serif); }
+
+/* the steps of each phone: classes s1, s2... are added in turn; all of them at once is the final picture */
+.ph-art .ret { opacity: 0; transform: translate(46px, 34px); }
+.ph-art.s1 .ret { opacity: 1; transform: none; transition: transform 1s cubic-bezier(.4, 0, .2, 1), opacity .3s; }
+.ph-art.s3 .ret { opacity: 0; transition: opacity .3s; }
+.ph-art.s2:not(.s3) .pbtn { animation: press .35s both; }
+.ph-art .pin { opacity: 0; transform: translateY(-24px); }
+.ph-art.s3 .pin, .k-words .pin { opacity: 1; transform: none; transition: opacity .25s, transform .55s cubic-bezier(.3, 1.2, .5, 1); }
+.k-visit .pin { opacity: 0; transform: translateY(-24px); }
+.k-visit.s1 .pin { opacity: 1; transform: none; transition: opacity .25s, transform .55s cubic-bezier(.3, 1.2, .5, 1); }
+.rip { opacity: 0; transform-box: fill-box; transform-origin: 50% 50%; }
+.ph-art.s4:not(.final) .rip { animation: rip .9s ease-out both; }
+.pin, .ret, .halo { transform-box: fill-box; transform-origin: 50% 100%; }
+.k-place.s4 .hud .swap-a { display: none; }
+.k-place.s4 .hud .swap-b { display: contents; }
+.k-place.s4 .sheet { opacity: .0; transform: translateY(115%); }
+.k-place .arc, .k-place .pic, .k-place .ghost, .k-place .callout, .k-place .halo, .k-visit .ghost, .k-visit .callout, .k-visit .halo { display: none; }
+.poster { opacity: 0; }
+.k-visit .poster, .hung .poster { opacity: 1; transition: opacity .5s; }
+/* making words and a picture, then hanging the code */
+.k-words .arc { opacity: 0; translate: 0 6px; border: 1.5px dashed var(--route); transition: opacity .3s, translate .3s; }
+.k-words.s1 .arc { opacity: 1; translate: 0 0; }
+.k-words:not(.s2) .caret { display: inline-block; }
+.k-words:not(.s2) .arc .b1 { color: var(--ink-3); }
+.k-words:not(.s2) .arc .b1 { display: block; }
+.k-words:not(.s2) .arc .b2 { display: none; }
+.k-words.s3:not(.s4) .ghost { opacity: 1; }
+.k-words .pic { opacity: 0; transform: rotate(-4deg) scale(.85); transition: opacity .35s, transform .45s cubic-bezier(.3, 1.2, .5, 1); }
+.k-words.s4 .pic { opacity: 1; transform: rotate(-4deg); }
+.k-words.s3 .t-pic { border-color: var(--route); color: var(--route-dark); background: var(--route-soft); }
+.k-words.s3 .t-text { border-color: var(--line); color: var(--ink-2); background: #fff; }
+.k-words.s5 .arc { border: 1px solid var(--ink); }
+.k-words.s5 .pin { opacity: .4; transition: opacity .4s; }
+.k-words.s5 .arc.made, .k-words.s5 .pic.made { opacity: 0; transition: opacity .4s; }
+.k-words .sh-share { opacity: 0; transform: translateY(115%); }
+.k-words.s5 .sh-tools { opacity: 0; transform: translateY(115%); }
+.k-words.s5 .sh-share { opacity: 1; transform: none; }
+.k-words.s5 .hud .swap-a { display: none; }
+.k-words.s5 .hud .swap-b { display: contents; }
+.halo { opacity: 0; }
+.k-words.s6 .halo { opacity: 1; transition: opacity .4s; }
+.k-words.s7 .callout { opacity: 1; translate: 0 0; }
+/* a visitor sees it */
+.k-visit .arc, .k-visit .pic, .k-visit .nextp { opacity: 0; translate: 0 6px; transition: opacity .35s, translate .35s; }
+.k-visit.s2 .arc, .k-visit.s3 .pic, .k-visit.s4 .nextp { opacity: 1; translate: 0 0; }
+.ph, .win { will-change: transform; }
+@keyframes press { 0%, 100% { transform: none; } 50% { transform: scale(.94); background: var(--route-dark); } }
+@keyframes rip { 0% { opacity: .9; transform: scale(.7); } 100% { opacity: 0; transform: scale(2.2); } }
+
+/* ---------- the way, in story order: stacked sections, not boxes ---------- */
+.flow { list-style: none; padding: 0; margin: 0; position: relative; max-width: 46em; }
+.flow::before { content: ""; position: absolute; left: 14px; top: 18px; bottom: 30px; width: 4px; background: radial-gradient(circle, var(--route) 1.6px, transparent 2px) 50% 0 / 4px 9px repeat-y; opacity: .7; }
+.part { position: relative; padding: 0 0 34px 52px; }
+.part .num { position: absolute; left: 0; top: 0; width: 32px; height: 32px; border-radius: 50%; background: var(--paper); border: 2px solid var(--route); color: var(--route-dark); font: 700 15px/28px var(--sans); text-align: center; }
+.part h3 { font: 600 clamp(22px, 5.6vw, 28px)/1.15 var(--serif); padding-top: 1px; }
+.part .line { font-size: 16.5px; line-height: 1.5; color: var(--ink-2); margin-top: 6px; max-width: 34em; }
+.part details { margin-top: 8px; }
+.part summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; font: 600 14.5px/1.3 var(--sans); color: var(--route-dark); padding: 6px 0; min-height: 32px; }
+.part summary::-webkit-details-marker { display: none; }
+.part summary::before { content: "+"; display: grid; place-items: center; width: 18px; height: 18px; border: 1.5px solid currentColor; border-radius: 50%; font: 700 13px/1 var(--sans); }
+.part details[open] summary::before { content: "-"; }
+.more { margin: 6px 0 2px; padding-left: 14px; border-left: 2px solid var(--line); display: grid; gap: 12px; max-width: 36em; }
+.more h4 { font: 700 15px/1.3 var(--sans); color: var(--ink); }
+.more p { font-size: 15px; line-height: 1.5; color: var(--ink-2); margin-top: 2px; }
+.more .ar-note { color: var(--ink); }
+.start-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 6px; padding-left: 52px; }
+
+/* ---------- ideas: at the end, optional ---------- */
+.ideas { list-style: none; padding: 0; margin: 0; display: grid; gap: 20px; }
+.idea { display: grid; grid-template-columns: 124px minmax(0, 1fr); gap: 14px; align-items: start; }
+.idea svg { display: block; width: 100%; height: auto; border: 1.5px solid var(--ink); border-radius: 6px; background: #e6e9de; }
+.idea .who { font: 700 11.5px/1.3 var(--sans); letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+.idea h3 { font: 600 19px/1.2 var(--serif); margin: 3px 0 4px; }
+.idea p { font-size: 15px; line-height: 1.45; color: var(--ink-2); }
+@media (min-width: 700px) { .ideas { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 28px; } }
+@media (min-width: 1000px) { .ideas { grid-template-columns: repeat(3, minmax(0, 1fr)); } .idea { grid-template-columns: minmax(0, 1fr); gap: 10px; } }
+
+/* ---------- footer and notes ---------- */
+footer { max-width: 1200px; margin: 0 auto; padding: 30px var(--gut) 44px; font-size: 14px; color: var(--ink-3); }
+footer nav { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 18px; }
+footer nav a { color: var(--ink-2); }
+details.notes { border: 1px dashed var(--line); border-radius: 10px; background: #fff; }
+details.notes summary { cursor: pointer; padding: 12px 14px; font: 600 14px var(--sans); color: var(--ink-2); }
+details.notes .nb { padding: 0 16px 16px; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+details.notes h3 { font: 700 13px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--ink); margin: 14px 0 4px; }
+details.notes ul { padding-left: 18px; }
+details.notes li { margin: 3px 0; }
+
+/* ---------- wider screens ---------- */
+@media (min-width: 900px) {
+  .hero { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); column-gap: 40px; align-items: center; padding-top: 26px; }
+  .hero-copy { grid-column: 1; grid-row: 1; }
+  .hero-fig { grid-column: 2; grid-row: 1 / span 2; }
+  .ease { grid-column: 1; grid-row: 2; align-self: start; }
+  .art { height: min(62vh, 560px); }
+  .lede, .make-line { font-size: 18px; }
+  .req { font-size: 15px; }
+  .sec { padding-top: 60px; }
+}
+@media (orientation: landscape) and (max-height: 560px) {
+  .hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 24px; align-items: start; padding-top: 10px; }
+  .hero-copy { grid-column: 1; grid-row: 1; }
+  .hero-fig { grid-column: 2; grid-row: 1 / span 2; }
+  .ease { grid-column: 1; grid-row: 2; margin-top: 4px; }
+  .art { height: calc(100svh - 70px); }
+  .top { height: 34px; }
+  .visit form { padding: 5px 8px; }
+  .visit input, .visit .btn { min-height: 36px; padding-top: 6px; padding-bottom: 6px; }
+  .hero h1 { font-size: 27px; margin: 5px 0 6px; }
+  .lede, .make-line { font-size: 14.5px; line-height: 1.4; }
+  .make-line { margin-top: 6px; }
+  .req { font-size: 13px; margin-top: 5px; }
+  .cta { margin-top: 10px; }
+  .btn { min-height: 42px; padding: 9px 16px; font-size: 14px; }
+  .ease { font-size: 13.5px; gap: 4px; }
+  .sec { padding-top: 34px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<svg class="defs" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="cSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#cdd9d8"/><stop offset=".78" stop-color="#e6e9de"/><stop offset="1" stop-color="#eeeadb"/></linearGradient>
+  </defs>
+</svg>
+
+<div class="top">
+  <span class="proto-label">Prototype R3-5 - Calm route, cards below</span>
+  <div class="ar-toggle" role="group" aria-label="Fake this device's AR support">
+    <button type="button" data-ar-set="auto" id="arAuto" aria-pressed="true">Device</button>
+    <button type="button" data-ar-set="1" aria-pressed="false">AR phone</button>
+    <button type="button" data-ar-set="0" aria-pressed="false">No AR</button>
+  </div>
+</div>
+
+<div class="visit" id="visit">
+  <form id="visitForm" novalidate>
+    <label for="visitIn"><b>Visiting a tour?</b> Scan its code, or paste its link:</label>
+    <input id="visitIn" type="url" inputmode="url" placeholder="https://" autocomplete="off" spellcheck="false">
+    <button type="submit" class="btn">Open</button>
+    <p class="msg" id="visitMsg" role="status" aria-live="polite"></p>
+  </form>
+</div>
+
+<main>
+<section class="hero" aria-labelledby="heroH">
+  <div class="hero-copy">
+    <p class="kicker">AR tours, on site, on your phone</p>
+    <h1 id="heroH">You have a story to tell. <em>Tell it where it happened.</em></h1>
+    <p class="lede">Or something to show. These are the tools to put it on site: your visitors hold up their phone at the real spots and see your words and pictures there.</p>
+    <p class="make-line"><b>Make a tour yourself, without programming.</b> Walk the route once and place what you want to show.</p>
+    <p class="req"><span>Needs an Android phone with Chrome (AR support). <b class="ar-yes">This phone has it.</b><b class="ar-no">This device does not, but you can read on and set up a tour here.</b></span></p>
+    <div class="cta">
+      <a class="btn primary" href="#how" id="makeBtn">Make your tour</a>
+      <button type="button" class="btn" id="tryBtn">Try it here</button>
+    </div>
+  </div>
+  <figure class="hero-fig">
+    <div class="art" id="art" data-floor="on">
+      <svg id="floorA" role="img" aria-label="A small model park with a mill, a pond and trees. A dotted route links a code on a post with five numbered stations."></svg>
+      <canvas id="gl" aria-hidden="true"></canvas>
+      <div class="tags" id="tags" aria-hidden="true"></div>
+      <button type="button" class="again" id="heroAgain" hidden><svg viewBox="0 0 12 12"><path d="M10 6a4 4 0 1 1-1.2-2.85M10 1.5V4H7.5"/></svg>Draw the route again</button>
+    </div>
+    <figcaption><b>Mill Park, a made-up tour:</b> a code on a post where the walk begins, then five stations. At each one, visitors hold up the phone and see what was put there.</figcaption>
+  </figure>
+  <ul class="ease" aria-label="Easy to start">
+    <li>Nothing to install.</li>
+    <li>It all runs in the browser.</li>
+    <li><span><b style="color:var(--ink);font-weight:inherit">No need to print a code while you build.</b> Print it and hang it when the tour is ready.</span></li>
+  </ul>
+</section>
+
+<div class="route-rule" aria-hidden="true"></div>
+<section class="sec" id="how" aria-labelledby="howH">
+  <div class="sec-head">
+    <p class="kicker">What making it looks like</p>
+    <h2 id="howH">Make your own tour, <em>in three steps.</em></h2>
+    <p class="sec-sub">Drawn on a phone like yours. Each picture plays once when it comes into view, then holds still.</p>
+  </div>
+  <ol class="steps3" id="cards">
+    <li class="step3" data-kind="place">
+      <div class="s3-head"><span class="badge">1</span><h3>Stand there and place a station</h3></div>
+      <div class="ph-wrap" aria-hidden="true"></div>
+      <p>Walk to the spot with your phone, aim and tap. The station stays on that spot.</p>
+      <div class="s3-foot"><span class="fine">On site, on the phone</span><button type="button" class="again" hidden><svg viewBox="0 0 12 12"><path d="M10 6a4 4 0 1 1-1.2-2.85M10 1.5V4H7.5"/></svg>Show again</button></div>
+    </li>
+    <li class="step3" data-kind="words">
+      <div class="s3-head"><span class="badge">2</span><h3>Add words and a picture, then hang the code</h3></div>
+      <div class="ph-wrap" aria-hidden="true"></div>
+      <p>Type a few lines and add a photo. When the tour is ready, print its code and hang it where the walk begins.</p>
+      <div class="s3-foot"><span class="fine">Words can be changed later, on a computer</span><button type="button" class="again" hidden><svg viewBox="0 0 12 12"><path d="M10 6a4 4 0 1 1-1.2-2.85M10 1.5V4H7.5"/></svg>Show again</button></div>
+    </li>
+    <li class="step3" data-kind="visit">
+      <div class="s3-head"><span class="badge">3</span><h3>A visitor sees it there</h3></div>
+      <div class="ph-wrap" aria-hidden="true"></div>
+      <p>They scan the code and hold up the phone. Your words and picture wait on the spot, even when the phone moves.</p>
+      <div class="s3-foot"><span class="fine">What every visitor sees</span><button type="button" class="again" hidden><svg viewBox="0 0 12 12"><path d="M10 6a4 4 0 1 1-1.2-2.85M10 1.5V4H7.5"/></svg>Show again</button></div>
+    </li>
+  </ol>
+  <div class="make-foot">
+    <p class="need"><b>Placing stations needs an Android phone with Chrome (AR support).</b> Choosing where the tour's file is stored, printing the code and changing words work on any computer.
+      <span class="ar-yes">This phone can do every step.</span>
+      <span class="ar-no">This device cannot show AR: set the tour up here and do the walk with an Android phone.</span>
+    </p>
+  </div>
+</section>
+
+<div class="route-rule" aria-hidden="true"></div>
+<section class="sec" id="story" aria-labelledby="storyH">
+  <div class="sec-head">
+    <p class="kicker">Step by step</p>
+    <h2 id="storyH">From a story you know <em>to your first visitor.</em></h2>
+    <p class="sec-sub">The same tour, in the order you will do it. A short line each; open one for the details.</p>
+  </div>
+  <ol class="flow">
+    <li class="part">
+      <span class="num">1</span>
+      <h3>Start with a story you know.</h3>
+      <p class="line">A few spots, a few lines for each, an old photo if you have one. That is enough for a first tour.</p>
+      <details><summary>What you set up first, at any computer</summary>
+        <div class="more">
+          <div><h4>Where your tour's file is stored</h4><p>Your tour is one small file. Keep it in storage you already have: Google Drive, Dropbox, OneDrive, GitHub or your own server. It stays yours.</p></div>
+          <div><h4>The link that opens your tour</h4><p>Paste the file's share link. That link is what your printed code will open later.</p></div>
+        </div>
+      </details>
+    </li>
+    <li class="part">
+      <span class="num">2</span>
+      <h3>Walk there with your phone.</h3>
+      <p class="line">Open the page on site, walk the route and tap to place each station where it belongs.</p>
+      <details><summary>Walk the route and place your stations</summary>
+        <div class="more">
+          <div><h4>What you need on the walk</h4><p>An Android phone with Chrome (AR support). <span class="ar-note ar-yes">This phone can do it.</span><span class="ar-note ar-no">This device cannot; take an Android phone along.</span></p></div>
+          <div><h4>No printed code needed yet</h4><p>Placing works without the code, anywhere along the walk. You print it when the tour is ready.</p></div>
+        </div>
+      </details>
+    </li>
+    <li class="part">
+      <span class="num">3</span>
+      <h3>Add words and pictures.</h3>
+      <p class="line">At each station, a few lines and a photo. Change the words later at a computer if you like.</p>
+      <details><summary>Writing, changing and saving</summary>
+        <div class="more">
+          <div><h4>On site or at your desk</h4><p>Write while you stand there, or fix the text afterwards in the editor on a computer, where you can also move or delete a station.</p></div>
+          <div><h4>Save the tour and put the file back</h4><p>Saving updates the one file in your storage. The link and the printed code stay the same.</p></div>
+        </div>
+      </details>
+    </li>
+    <li class="part">
+      <span class="num">4</span>
+      <h3>Hang a code where the walk begins.</h3>
+      <p class="line">When the tour is ready, print its code and hang it. This can wait until after your walk.</p>
+      <details><summary>Print the code and hang it</summary>
+        <div class="more">
+          <div><h4>Print the code</h4><p>The page makes it for you, ready to print. One code per poster.</p></div>
+          <div><h4>Hang it where the walk begins</h4><p>Flat, at about chest height, where people stop anyway. Visitors start here: the code opens the tour.</p></div>
+        </div>
+      </details>
+    </li>
+    <li class="part">
+      <span class="num">5</span>
+      <h3>Visitors scan it. Your stations appear.</h3>
+      <p class="line">Through their phone's camera, at the real spots, one after another as they walk.</p>
+      <details><summary>What visitors need</summary>
+        <div class="more">
+          <div><h4>A phone, nothing else</h4><p>An Android phone with Chrome (AR support). Nothing to install, no sign-up, no account.</p></div>
+          <div><h4>Once loaded</h4><p>The tour keeps working once it has loaded.</p></div>
+        </div>
+      </details>
+    </li>
+  </ol>
+  <div class="start-row">
+    <button type="button" class="btn primary" id="beginBtn">Start with the first step</button>
+    <a class="linkish" href="../../">Open today's setup page</a>
+  </div>
+</section>
+
+<div class="route-rule" aria-hidden="true"></div>
+<section class="sec" id="ideas" aria-labelledby="ideasH">
+  <div class="sec-head">
+    <p class="kicker">Ideas, if you want some</p>
+    <h2 id="ideasH">What people <em>make with it.</em></h2>
+    <p class="sec-sub">Six examples, each shown the way a visitor sees it. The places and people are made up.</p>
+  </div>
+  <ul class="ideas">
+    <li class="idea">
+      <svg viewBox="0 0 200 130" role="img" aria-label="Through the phone: a broken castle tower on a hill stands whole again.">
+        <rect width="200" height="130" fill="url(#cSky)"/>
+        <path d="M0 96 L40 74 L90 66 L150 70 L200 84 V130 H0Z" fill="#d3cfa6"/><path d="M0 96 L40 74 L62 92 L20 130 H0Z" fill="#c4bf95"/><path d="M150 70 L200 84 V130 H170Z" fill="#c4bf95"/>
+        <path d="M58 70 V56 h6 v-4 h6 v4 h6 v-4 h6 v4 h6 V70Z M96 70 V58 h30 V70Z" fill="#d8cfba"/><path d="M58 70 V60 H64 V70Z" fill="#c3b9a2"/>
+        <path d="M122 70 V40 L127 44 L131 36 L136 42 L140 38 V70Z" fill="#c3b9a2"/>
+        <g class="aradd"><path d="M120 70 V22 h-3 v-8 h6 v4 h5 v-4 h6 v4 h5 v-4 h6 v8 h-3 V70Z" fill="#e3dac4" stroke="#cf4428" stroke-width="1.3" stroke-linejoin="round"/><path d="M134 22 V70 H142 V22Z" fill="#d2c8b0"/><rect x="127" y="32" width="5" height="8" rx="2.5" fill="#6c665b"/><rect x="127" y="50" width="5" height="8" rx="2.5" fill="#6c665b"/></g>
+        <g transform="translate(26 22)"><rect x="3" y="3" width="56" height="24" fill="rgba(42,40,36,.18)"/><rect width="56" height="24" fill="#fff" stroke="#2a2824" stroke-width=".9"/><rect x="5" y="6" width="34" height="3.6" fill="#2a2824"/><rect x="5" y="13" width="44" height="2.6" fill="#c9bea3"/><rect x="5" y="18" width="30" height="2.6" fill="#c9bea3"/></g>
+        <path d="M82 34 L117 30" stroke="#2a2824" stroke-width=".8" stroke-dasharray="2 2"/>
+        <path d="M10 22V10H22M178 10H190V22M190 108V120H178M22 120H10V108" fill="none" stroke="#2a2824" stroke-width="1.6"/>
+      </svg>
+      <div><p class="who">By the volunteers of an old castle</p><h3>The tower stands again</h3><p>Where only a stump of the tower is left, visitors see it whole again, as it stood before it fell.</p></div>
+    </li>
+    <li class="idea">
+      <svg viewBox="0 0 200 130" role="img" aria-label="Through the phone: a clue card with a star floats over a park bench under a tree.">
+        <rect width="200" height="130" fill="url(#cSky)"/>
+        <rect y="80" width="200" height="50" fill="#d3cfa6"/><path d="M0 80 L60 80 L20 130 H0Z" fill="#cbc69b"/>
+        <rect x="35" y="50" width="6" height="34" fill="#8a735a"/>
+        <path d="M38 22 L58 32 L38 46Z" fill="#a9b07e"/><path d="M38 46 L58 32 L56 56Z" fill="#939a6b"/><path d="M38 46 L56 56 L36 64Z" fill="#7f875c"/><path d="M38 46 L36 64 L18 54Z" fill="#8d9466"/><path d="M38 46 L18 54 L18 32Z" fill="#a3aa79"/><path d="M38 46 L18 32 L38 22Z" fill="#b9bf8e"/>
+        <rect x="104" y="86" width="56" height="5" fill="#a88c6c"/><rect x="104" y="78" width="56" height="4" fill="#a88c6c"/><rect x="108" y="91" width="3" height="12" fill="#6c665b"/><rect x="153" y="91" width="3" height="12" fill="#6c665b"/>
+        <path d="M60 116 l8 -5 M60 111 l8 5" stroke="#cf4428" stroke-width="2.4" stroke-linecap="round"/>
+        <g transform="translate(96 26)"><rect x="3" y="3" width="70" height="34" fill="rgba(42,40,36,.18)"/><rect width="70" height="34" fill="#fff" stroke="#2a2824" stroke-width=".9"/><rect width="70" height="8" fill="#cf4428"/><path d="M12 14 l2 4.3 4.6 .5 -3.4 3.2 1 4.6 -4.2 -2.4 -4.2 2.4 1 -4.6 -3.4 -3.2 4.6 -.5z" fill="#cf4428"/><rect x="24" y="15" width="38" height="3" fill="#2a2824"/><rect x="24" y="22" width="30" height="2.6" fill="#c9bea3"/></g>
+        <path d="M132 60 V76" stroke="#2a2824" stroke-width=".8" stroke-dasharray="2 2"/>
+        <path d="M10 22V10H22M178 10H190V22M190 108V120H178M22 120H10V108" fill="none" stroke="#2a2824" stroke-width="1.6"/>
+      </svg>
+      <div><p class="who">By a parent, for a ninth birthday</p><h3>A birthday treasure hunt</h3><p>Six clues float over benches and trees in the park. Each answer says where to find the next one.</p></div>
+    </li>
+    <li class="idea">
+      <svg viewBox="0 0 200 130" role="img" aria-label="Through the phone: three empty shop windows, each with a painting in it.">
+        <rect width="200" height="130" fill="#e6e9de"/>
+        <rect x="0" y="16" width="200" height="90" fill="#efe7d4"/><rect x="0" y="16" width="200" height="10" fill="#d6ccb4"/>
+        <rect x="16" y="38" width="44" height="60" fill="#6c665b"/><rect x="78" y="38" width="44" height="60" fill="#6c665b"/><rect x="140" y="38" width="44" height="60" fill="#6c665b"/>
+        <rect y="106" width="200" height="24" fill="#ebe3cf"/>
+        <g stroke="#2a2824" stroke-width=".9"><rect x="22" y="46" width="32" height="42" fill="#fff"/><rect x="84" y="46" width="32" height="42" fill="#fff"/><rect x="146" y="46" width="32" height="42" fill="#fff"/></g>
+        <rect x="25" y="49" width="26" height="36" fill="#b8cbc3"/><circle cx="38" cy="62" r="6" fill="#cf4428"/><path d="M25 78 q7 -5 13 0 t13 0 V85 H25Z" fill="#7f875c"/>
+        <rect x="87" y="49" width="26" height="36" fill="#f5d9cd"/><path d="M90 85 V64 L96 56 V85Z M99 85 V52 L105 60 V85Z M107 85 V66 L111 62 V85Z" fill="#a49a86"/>
+        <rect x="149" y="49" width="26" height="36" fill="#d3cfa6"/><path d="M149 85 C158 68 166 74 175 58 V85Z" fill="#cf4428"/>
+        <path d="M10 22V10H22M178 10H190V22M190 108V120H178M22 120H10V108" fill="none" stroke="#2a2824" stroke-width="1.6"/>
+      </svg>
+      <div><p class="who">By a painter, as a street exhibition</p><h3>Paintings in empty shop windows</h3><p>Each empty window holds one painting, there for everyone who looks through a phone.</p></div>
+    </li>
+    <li class="idea">
+      <svg viewBox="0 0 200 130" role="img" aria-label="Through the phone, in a gallery room: next to a painting, a card with its story and the first sketch.">
+        <rect width="200" height="130" fill="#f4eedf"/>
+        <path d="M0 96 H200 V130 H0Z" fill="#ddd2b6"/><path d="M0 96 H200" stroke="#c9bea3" stroke-width="1.5"/>
+        <rect x="18" y="34" width="54" height="42" fill="#a88c6c"/><rect x="22" y="38" width="46" height="34" fill="#b8cbc3"/><path d="M22 72 L36 54 L46 62 L56 50 L68 72Z" fill="#7f875c"/><circle cx="56" cy="46" r="4" fill="#efe7d4"/>
+        <rect x="150" y="40" width="36" height="46" fill="#a88c6c"/><rect x="153" y="43" width="30" height="40" fill="#f5d9cd"/><circle cx="168" cy="58" r="8" fill="#a49a86"/><path d="M156 83 q12 -16 24 0Z" fill="#a49a86"/>
+        <g transform="translate(84 24)"><rect x="3" y="3" width="54" height="56" fill="rgba(42,40,36,.18)"/><rect width="54" height="56" fill="#fff" stroke="#2a2824" stroke-width=".9"/><rect x="5" y="5" width="44" height="22" fill="#ebe3cf"/><path d="M8 24 L18 12 L25 18 L32 10 L46 24" fill="none" stroke="#57534a" stroke-width="1"/><rect x="5" y="32" width="34" height="3.4" fill="#2a2824"/><rect x="5" y="39" width="44" height="2.6" fill="#c9bea3"/><rect x="5" y="45" width="38" height="2.6" fill="#c9bea3"/></g>
+        <path d="M84 52 L72 54" stroke="#2a2824" stroke-width=".8" stroke-dasharray="2 2"/>
+        <path d="M10 22V10H22M178 10H190V22M190 108V120H178M22 120H10V108" fill="none" stroke="#2a2824" stroke-width="1.6"/>
+      </svg>
+      <div><p class="who">By a small museum, indoors</p><h3>More about every painting</h3><p>Beside each painting on the wall, the story of how it was made and the sketch that came first.</p></div>
+    </li>
+    <li class="idea">
+      <svg viewBox="0 0 200 130" role="img" aria-label="Through the phone: a river bend with a bench, and a card with a few lines of a poem above the water.">
+        <rect width="200" height="130" fill="url(#cSky)"/>
+        <rect y="70" width="200" height="60" fill="#d3cfa6"/>
+        <path d="M200 76 C150 78 120 88 110 100 C98 114 60 120 0 122 V130 H200Z" fill="#b8cbc3"/><path d="M150 84 h24 M120 100 h18 M70 118 h26" stroke="#e3ece6" stroke-width="1.6" stroke-linecap="round"/>
+        <rect x="22" y="62" width="5" height="22" fill="#8a735a"/><path d="M24 30 L40 40 L24 52Z" fill="#a9b07e"/><path d="M24 52 L40 40 L40 62Z" fill="#939a6b"/><path d="M24 52 L40 62 L22 68Z" fill="#7f875c"/><path d="M24 52 L22 68 L8 60Z" fill="#8d9466"/><path d="M24 52 L8 60 L8 40Z" fill="#a3aa79"/><path d="M24 52 L8 40 L24 30Z" fill="#b9bf8e"/>
+        <rect x="52" y="86" width="40" height="4" fill="#a88c6c"/><rect x="52" y="80" width="40" height="3" fill="#a88c6c"/><rect x="55" y="90" width="2.5" height="8" fill="#6c665b"/><rect x="87" y="90" width="2.5" height="8" fill="#6c665b"/>
+        <g transform="translate(104 20)"><rect x="3" y="3" width="66" height="40" fill="rgba(42,40,36,.18)"/><rect width="66" height="40" fill="#fff" stroke="#2a2824" stroke-width=".9"/><path d="M7 11 q5 -3 10 0 t10 0 t10 0 M7 20 q5 -3 10 0 t10 0 t10 0 t10 0 M7 29 q5 -3 10 0 t10 0" fill="none" stroke="#57534a" stroke-width="1.3"/></g>
+        <g transform="translate(138 80)"><path d="M0 0 C-3 -4 -5 -6 -5 -9 A5 5 0 1 1 5 -9 C5 -6 3 -4 0 0Z" fill="#cf4428"/><circle cy="-9" r="1.8" fill="#fff"/></g>
+        <path d="M10 22V10H22M178 10H190V22M190 108V120H178M22 120H10V108" fill="none" stroke="#2a2824" stroke-width="1.6"/>
+      </svg>
+      <div><p class="who">By a poet and a writing group</p><h3>A poem along the river</h3><p>One verse waits at each bend of the river path. At the bridge, the poem is complete.</p></div>
+    </li>
+    <li class="idea">
+      <svg viewBox="0 0 200 130" role="img" aria-label="Through the phone: on a path where the old tracks were, an old photo of a steam train at the station.">
+        <rect width="200" height="130" fill="url(#cSky)"/>
+        <rect y="74" width="200" height="56" fill="#d3cfa6"/>
+        <path d="M92 74 H108 L150 130 H50Z" fill="#f6f1e3"/>
+        <g fill="#a88c6c"><rect x="86" y="96" width="28" height="3"/><rect x="80" y="106" width="40" height="3.4"/><rect x="72" y="118" width="56" height="4"/></g>
+        <path d="M54 74 V60 H80 V74Z" fill="#d8cfba"/><path d="M50 62 L67 52 L84 62Z" fill="#a49a86"/>
+        <path d="M150 48 L166 74 H134Z" fill="#8c9a6c"/><path d="M180 44 L196 74 H164Z" fill="#7e8b61"/>
+        <g transform="rotate(-3 132 40)"><rect x="104" y="14" width="66" height="54" fill="rgba(42,40,36,.18)" transform="translate(3 3)"/><rect x="104" y="14" width="66" height="54" fill="#fff" stroke="#2a2824" stroke-width=".9"/><rect x="108" y="18" width="58" height="38" fill="#ddd2b6"/><path d="M112 50 V38 H128 V34 H134 V38 H150 V50Z M120 34 V28 h5 v6Z" fill="#57534a"/><circle cx="118" cy="51" r="3.2" fill="#2a2824"/><circle cx="130" cy="51" r="3.2" fill="#2a2824"/><circle cx="144" cy="51" r="3.2" fill="#2a2824"/><path d="M122 27 c6 -6 14 -4 20 -9" fill="none" stroke="#f4eedf" stroke-width="3" stroke-linecap="round"/><rect x="118" y="60" width="38" height="2.4" fill="#c9bea3"/></g>
+        <path d="M10 22V10H22M178 10H190V22M190 108V120H178M22 120H10V108" fill="none" stroke="#2a2824" stroke-width="1.6"/>
+      </svg>
+      <div><p class="who">By a local history group</p><h3>Where the old railway ran</h3><p>On the path where the tracks once lay, the station and its train appear in photos from back then, each at its spot.</p></div>
+    </li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <nav aria-label="More">
+    <a href="../../../">For developers: build your own AR app</a>
+    <a href="../../legal.html">Legal notice</a>
+    <a href="../../legal.html#privacy">Privacy</a>
+    <a href="../../">The real start page</a>
+  </nav>
+  <details class="notes" id="notes">
+    <summary>About this prototype</summary>
+    <div class="nb">
+      <h3>Direction</h3>
+      <p>The quietest page of the set: a small model of the tour's route as a still, or drawn once and slowly, with no scroll-driven camera; below it three cards, each with a drawn phone that plays once (place a station; add words and a picture, then hang the code; a visitor sees it); then the whole way in story order as stacked sections; then six ideas.</p>
+      <h3>Why it should work for this audience</h3>
+      <ul>
+        <li>The model shows "a route with stations in a real place" at a glance; the three phones then show, concretely, what making it and seeing it look like.</li>
+        <li>Only one thing moves at a time: the route draws while it is in view, and the phones play one after another, each once, then hold. Text is never next to something moving for long.</li>
+        <li>The model and the phones share one palette, one ink line and one hard paper shadow, so the two drawing styles read as one page.</li>
+      </ul>
+      <h3>Load-bearing details (check a build against these)</h3>
+      <ul>
+        <li>Shared look: paper #f4eedf, ink #2a2824, route red #cf4428 only for the route, pins, badges and the main button; the phone world uses the model's own colours (grass #d3cfa6, path #f6f1e3, walls #efe7d4, roof #a49a86, faceted crowns); AR cards are white with a 1 px ink border and a 3 px hard shadow, like the model's labels; the phone body is 8 px ink with the model's 5/6 px hard shadow.</li>
+        <li>The hero model never follows the scroll; it draws once in <span data-n="draw"></span> s while at least a quarter of it is in view, then stops rendering. "Draw the route again" replays it.</li>
+        <li>Each phone starts when <span data-n="start"></span> of it is in view and no other picture is moving; the next waits. The visitor's phone ends with a single sideways movement of <span data-n="sway"></span> px in which the station stays on its spot.</li>
+        <li>Text in the phones: base size <span data-n="pt"></span>, smallest readable text <span data-n="minpt"></span> at 390 px (the clock in the status bar is decoration).</li>
+        <li>The setup is told in story order (story, walk, words and pictures, the code, visitors), with the setup page's six steps named inside the five parts; printing comes after the walk.</li>
+        <li>Paragraph and list margins are zeroed here and every gap is set explicitly, so a port into the design system keeps them.</li>
+      </ul>
+      <h3>Measured cost (desktop machine under other load, not a phone)</h3>
+      <ul>
+        <li>JS: page script about <span data-n="ownjs"></span> kB gzip; three.js 0.185.1 minified about 187.5 kB gzip, loaded after the first paint; together about <span data-n="totaljs"></span> kB of the 250 kB budget.</li>
+        <li>Frames: <span data-n="frames"></span></li>
+      </ul>
+      <h3>Known weaknesses</h3>
+      <ul>
+        <li>three.js costs most of the budget for one picture that draws once; the drawn floor is almost as good and costs nothing.</li>
+        <li>The phones wait their turn: a reader who scrolls past a phone quickly sees its first frame, and it plays when they come back to it. On a wide screen the third phone starts about eight seconds after the first.</li>
+        <li>Card 2 shows two things (words and picture, then the code), so it is the longest picture, about five seconds.</li>
+        <li>On a phone the three cards stack, so the page is long before the setup; the cards are the reason to scroll.</li>
+        <li>The code is a pattern, not a real code. Nothing was measured on a phone.</li>
+      </ul>
+      <h3>Parameters it rests on</h3>
+      <ul>
+        <li><code>?hero=still</code> or a drawn route with <code>?draw=</code> seconds (3, 6, 10 tried); <code>?hh=</code> hero height on a portrait phone in px (260, 300, 340 tried).</li>
+        <li><code>?pt=</code> text size inside the phones in px (12, 13, 14, 15 tried; at 15 the code's sheet starts to cover the notice board); <code>?sway=</code> the visitor phone's movement in px (0, 4, 6, 8, 12 tried; the station stays on its spot at every value); <code>?start=</code> how much of a phone must be in view before it plays (0.3, 0.6, 0.85, 0.9 tried).</li>
+        <li><code>?ar=1</code> / <code>?ar=0</code> fake the device's AR support; <code>?gl=0</code> forces the drawing without 3D.</li>
+      </ul>
+    </div>
+  </details>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var $$ = function (s) { return Array.prototype.slice.call(document.querySelectorAll(s)); };
+  var html = document.documentElement;
+  var qs = new URLSearchParams(location.search);
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function num(k, d, lo, hi) { var v = parseFloat(qs.get(k)); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function smooth(a, b, x) { var t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
+  var DEG = Math.PI / 180;
+
+  /* ---------- one moving thing at a time: whoever animates holds this, the rest wait ---------- */
+  var Calm = window.__calm = {
+    holder: null,
+    claim: function (id) { if (Calm.holder && Calm.holder !== id) return false; Calm.holder = id; return true; },
+    release: function (id) { if (Calm.holder === id) { Calm.holder = null; setTimeout(pump, 60); } }
+  };
+  function pump() {
+    if (Calm.holder) return;
+    for (var i = 0; i < cards.length; i++) { var c = cards[i]; if (c.state === 'pending' && c.inView) { play(c); return; } }
+    if (H.resume) H.resume();
+  }
+
+  /* ---------- toast ---------- */
+  var toastEl = $('#toast'), toastT = 0;
+  function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(function () { toastEl.classList.remove('show'); }, 3600); }
+
+  /* ---------- AR support: detected, or faked by ?ar=1 / ?ar=0 and the switch ---------- */
+  var detected = null;
+  var arMode = qs.get('ar') === '1' || qs.get('ar') === '0' ? qs.get('ar') : 'auto';
+  function applyAr() {
+    var on = arMode === '1' ? true : arMode === '0' ? false : detected === true;
+    html.dataset.ar = on ? '1' : '0';
+    $$('[data-ar-set]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.arSet === arMode)); });
+    $('#arAuto').textContent = detected === null ? 'Device' : (detected ? 'Device: AR' : 'Device: no AR');
+    $('#visitMsg').textContent = '';
+  }
+  $$('[data-ar-set]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      arMode = b.dataset.arSet;
+      var u = new URL(location.href);
+      if (arMode === 'auto') u.searchParams.delete('ar'); else u.searchParams.set('ar', arMode);
+      try { history.replaceState(null, '', u); } catch (e) { /* file: or sandboxed */ }
+      applyAr();
+    });
+  });
+  applyAr();
+  (function detect() {
+    var xr = navigator.xr;
+    if (!xr || typeof xr.isSessionSupported !== 'function') { detected = false; applyAr(); return; }
+    var settled = false;
+    var t = setTimeout(function () { if (!settled) { settled = true; detected = false; applyAr(); } }, 1500);
+    try {
+      xr.isSessionSupported('immersive-ar').then(function (ok) { if (settled) return; settled = true; clearTimeout(t); detected = !!ok; applyAr(); },
+        function () { if (settled) return; settled = true; clearTimeout(t); detected = false; applyAr(); });
+    } catch (e) { settled = true; clearTimeout(t); detected = false; applyAr(); }
+  })();
+
+  /* ================= the hero: the park model of the earlier route page, calm ================= */
+  /* ================= the park (one data set for the drawing and the 3D model) ================= */
+  // World units: 1 unit is about 2.5 m. x east, y up, z south (towards the viewer).
+  function cr(p0, p1, p2, p3, t) {
+    var t2 = t * t, t3 = t2 * t;
+    return [0, 1].map(function (i) {
+      return 0.5 * (2 * p1[i] + (-p0[i] + p2[i]) * t + (2 * p0[i] - 5 * p1[i] + 4 * p2[i] - p3[i]) * t2 + (-p0[i] + 3 * p1[i] - 3 * p2[i] + p3[i]) * t3);
+    });
+  }
+  function spline(ctrl, per) {
+    var out = [];
+    for (var i = 0; i < ctrl.length - 1; i++) {
+      var p0 = ctrl[Math.max(0, i - 1)], p1 = ctrl[i], p2 = ctrl[i + 1], p3 = ctrl[Math.min(ctrl.length - 1, i + 2)];
+      for (var k = 0; k < per; k++) out.push(cr(p0, p1, p2, p3, k / per));
+    }
+    out.push(ctrl[ctrl.length - 1].slice());
+    return out;
+  }
+  function measured(pts) {
+    var cum = [0];
+    for (var i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    var len = cum[cum.length - 1];
+    function at(s) {
+      s = clamp(s, 0, len);
+      var lo = 0, hi = cum.length - 1;
+      while (hi - lo > 1) { var m = (lo + hi) >> 1; if (cum[m] <= s) lo = m; else hi = m; }
+      var seg = cum[hi] - cum[lo] || 1, f = (s - cum[lo]) / seg, a = pts[lo], b = pts[hi];
+      var dx = b[0] - a[0], dz = b[1] - a[1], dl = Math.hypot(dx, dz) || 1;
+      return { x: a[0] + dx * f, z: a[1] + dz * f, tx: dx / dl, tz: dz / dl };
+    }
+    return { pts: pts, cum: cum, len: len, at: at };
+  }
+
+  var PER = 12;
+  var ROUTE_CTRL = [[-7.4, -5.3], [-10.0, -5.1], [-12.0, -4.4], [-12.3, -1.0], [-11.4, 3.0], [-9.4, 5.6], [-6.4, 6.5], [-2.5, 8.4], [2.0, 8.5], [5.0, 7.0], [9.5, 7.4], [12.2, 5.0], [11.6, 1.6], [8.0, 0.2], [3.8, -1.4], [1.0, -3.0], [0.4, -5.0], [2.8, -5.9], [6.5, -6.6], [10.0, -7.2], [12.8, -6.0]];
+  var route = measured(spline(ROUTE_CTRL, PER));
+  var STATIONS = [
+    { n: 1, name: 'Mill wheel', ctrl: 2, pin: [-13.1, -6.3] },
+    { n: 2, name: 'Old oak', ctrl: 6, pin: [-5.2, 5.0] },
+    { n: 3, name: 'Pond', ctrl: 9, pin: [5.3, 5.2] },
+    { n: 4, name: 'Fountain', ctrl: 16, pin: [-1.4, -6.0] },
+    { n: 5, name: 'Viewpoint', ctrl: 20, pin: [14.4, -4.9] }
+  ];
+  STATIONS.forEach(function (s) { s.s = route.cum[s.ctrl * PER]; });
+  var streamCtrl = [[-14.5, -13.9], [-14.2, -9], [-14.8, -3.5], [-14.1, 2.5], [-14.9, 8.5], [-14.5, 13.9]];
+  var stream = spline(streamCtrl.map(function (p) { return [p[1], p[0]]; }), 8).map(function (p) { return [p[1], p[0]]; });
+  function streamX(z) {
+    for (var i = 1; i < stream.length; i++) if (stream[i][1] >= z) {
+      var a = stream[i - 1], b = stream[i], f = (z - a[1]) / ((b[1] - a[1]) || 1);
+      return a[0] + (b[0] - a[0]) * f;
+    }
+    return stream[stream.length - 1][0];
+  }
+
+  var AZ = num('az', 72, -80, 100);
+  var PARK = {
+    slab: { w: 36, d: 28, r: 2.6, grass: 0.3, earth: 0.9 },
+    mill: { x0: -12.6, x1: -6.2, z0: -11.6, z1: -6.8, h: 2.6, roof: 1.7 },
+    barn: { x0: 6.6, x1: 11.2, z0: -13.0, z1: -10.2, h: 2.0, roof: 1.3 },
+    yard: { x0: -3.6, x1: 4.6, z0: -10.4, z1: -4.0 },
+    fountain: { x: 0.2, z: -7.4 },
+    pond: { x: 6.6, z: 3.6, rx: 3.3, rz: 2.0 },
+    oak: { x: -3.4, z: 2.6, r: 2.1, h: 2.4 },
+    lookout: { x: 14.3, z: -5.6, s: 2.6, h: 0.45 },
+    poster: { x: -6.2, z: -5.6 },
+    wheel: { x: -12.95, z: -9.2, y: 1.15, r: 1.45, w: 0.45 },
+    streamW: 2.2, stream: stream, pathW: 0.9,
+    route: route, stations: STATIONS,
+    pinH: 2.2,
+    light: null, // set from the camera azimuth below: the sun stays front-left of the viewer
+    eye: { pos: [-11.9, 0.68, 0.4], target: [-13.0, 1.85, -6.6] },
+    colors: {
+      grass: '#d3cfa6', grassSide: '#bdb68c', earth: '#b59f7e', path: '#f6f1e3', water: '#b8cbc3', waterLine: '#e3ece6',
+      wall: '#efe7d4', roof: '#a49a86', roof2: '#b8a48a', dark: '#6c665b', paving: '#e7dfc9', tree: '#a7ae7c', conifer: '#8c9a6c',
+      trunk: '#8a735a', ink: '#2a2824', paper: '#f4eedf', route: '#cf4428', stone: '#d8cfba', wood: '#a88c6c'
+    }
+  };
+
+  (function () { var la = (AZ - 55) * DEG, c = Math.sqrt(1 - 0.82 * 0.82); PARK.light = [Math.sin(la) * c, 0.82, Math.cos(la) * c]; })();
+  // the horizontal direction from a point towards the camera: whatever stands on that side hides what is behind it
+  var CAMX = Math.sin(AZ * DEG), CAMZ = Math.cos(AZ * DEG);
+
+  // trees: deterministic scatter, kept off paths, buildings, water, and out of the way of the route as seen from the camera
+  (function () {
+    var s = 7;
+    function rnd() { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }
+    function inBox(b, x, z, m) { return x > b.x0 - m && x < b.x1 + m && z > b.z0 - m && z < b.z1 + m; }
+    var near = function (x, z, d) {
+      for (var i = 0; i < route.pts.length; i += 2) if (Math.hypot(route.pts[i][0] - x, route.pts[i][1] - z) < d) return true;
+      return false;
+    };
+    var trees = [];
+    for (var gx = -16.5; gx <= 16.5; gx += 2.4) for (var gz = -12.6; gz <= 12.6; gz += 2.4) {
+      var x = gx + (rnd() - 0.5) * 1.8, z = gz + (rnd() - 0.5) * 1.8, kind = rnd() < 0.32 ? 1 : 0, sc = 0.78 + rnd() * 0.42;
+      var P = PARK;
+      if (Math.abs(x) > 16.9 || Math.abs(z) > 12.9) continue;
+      if (Math.abs(x) > 15.4 && Math.abs(z) > 10.4) continue;
+      if (near(x, z, 1.7)) continue;
+      if (near(x - CAMX * 1.9, z - CAMZ * 1.9, 1.55)) continue; // would hide the route behind it
+      if (inBox(P.mill, x, z, 1.0) || inBox(P.barn, x, z, 0.9) || inBox(P.yard, x, z, 0.6)) continue;
+      if (x < -12.6 && z > -11 && z < -7.5) continue; // the wheel
+      if (Math.abs(x - streamX(z)) < 2.1) continue;
+      if (Math.pow((x - P.pond.x) / (P.pond.rx + 1), 2) + Math.pow((z - P.pond.z) / (P.pond.rz + 1), 2) < 1) continue;
+      if (Math.hypot(x - P.oak.x, z - P.oak.z) < 3.2 || Math.hypot(x - P.lookout.x, z - P.lookout.z) < 2.6 || Math.hypot(x - P.poster.x, z - P.poster.z) < 1.6) continue;
+      var bad = STATIONS.some(function (st) { return Math.hypot(x - st.pin[0], z - st.pin[1]) < 1.6 || Math.hypot(x - CAMX * 2.2 - st.pin[0], z - CAMZ * 2.2 - st.pin[1]) < 2.0; });
+      if (bad) continue;
+      trees.push({ x: x, z: z, kind: kind, s: sc });
+    }
+    PARK.trees = trees;
+  })();
+
+  var art = $('#art');
+  var EL_P = num('el', 56, 20, 75), EL_W = num('elw', 40, 20, 75), FOV = num('fov', 15, 6, 50);
+  function view() {
+    var w = art.clientWidth || 1, h = art.clientHeight || 1, aspect = w / h;
+    return { w: w, h: h, aspect: aspect, az: AZ * DEG, el: (aspect < 1.5 ? EL_P : EL_W) * DEG, fov: FOV };
+  }
+  if (qs.get('hh')) document.documentElement.style.setProperty('--hh', num('hh', 300, 200, 480) + 'px');
+
+  /* ================= the drawing: the same park, drawn flat in SVG (no-WebGL and reduced-motion floor) ================= */
+  function hex(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; }
+  function shade(c, k) { var v = hex(c).map(function (x) { return clamp(Math.round(x * k), 0, 255); }); return 'rgb(' + v.join(',') + ')'; }
+  function hull(pts) {
+    pts = pts.slice().sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+    function cross(o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); }
+    var lo = [], up = [];
+    pts.forEach(function (p) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); });
+    for (var i = pts.length - 1; i >= 0; i--) { var p = pts[i]; while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+    up.pop(); lo.pop();
+    return lo.concat(up);
+  }
+  function slabOutline(S, inset) {
+    var w = S.w / 2 - inset, d = S.d / 2 - inset, r = S.r - inset, out = [];
+    [[w - r, d - r, 0], [-(w - r), d - r, 90], [-(w - r), -(d - r), 180], [w - r, -(d - r), 270]].forEach(function (c) {
+      for (var k = 0; k <= 6; k++) { var a = (c[2] + k * 15) * DEG; out.push([c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r]); }
+    });
+    return out;
+  }
+
+  function drawFloor(complete) {
+    var V = view(), P = PARK, C = P.colors;
+    var ca = Math.cos(V.az), sa = Math.sin(V.az), ce = Math.cos(V.el), se = Math.sin(V.el);
+    var B = [sa * ce, se, ca * ce], Lt = P.light;
+    var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+    function pr(x, y, z, keep) {
+      var X = x * ca - z * sa, Y = se * sa * x - ce * y + se * ca * z;
+      if (keep !== false) { minX = Math.min(minX, X); maxX = Math.max(maxX, X); minY = Math.min(minY, Y); maxY = Math.max(maxY, Y); }
+      return [X, Y];
+    }
+    function depth(x, y, z) { return x * B[0] + y * B[1] + z * B[2]; }
+    function ptsStr(arr, keep) { return arr.map(function (p) { var q = pr(p[0], p[1], p[2], keep); return q[0].toFixed(2) + ',' + q[1].toFixed(2); }).join(' '); }
+    function poly(arr, fill, extra) { return '<polygon points="' + ptsStr(arr) + '" fill="' + fill + '"' + (extra || '') + '/>'; }
+    function face(arr, n, base) {
+      var l = Math.hypot(n[0], n[1], n[2]); n = [n[0] / l, n[1] / l, n[2] / l];
+      if (n[0] * B[0] + n[1] * B[1] + n[2] * B[2] <= 0.0005) return null;
+      var k = 0.64 + 0.4 * Math.max(0, n[0] * Lt[0] + n[1] * Lt[1] + n[2] * Lt[2]);
+      var col = shade(base, k), d = 0;
+      arr.forEach(function (p) { d += depth(p[0], p[1], p[2]); });
+      return { d: d / arr.length, s: poly(arr, col, ' stroke="' + col + '" stroke-width=".05" stroke-linejoin="round"') };
+    }
+    function faces(list) { return list.filter(Boolean).sort(function (a, b) { return a.d - b.d; }).map(function (f) { return f.s; }).join(''); }
+    function box(x0, x1, y0, y1, z0, z1, c) {
+      return [
+        face([[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], [0, 1, 0], c),
+        face([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 1], c),
+        face([[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]], [0, 0, -1], c),
+        face([[x1, y0, z0], [x1, y0, z1], [x1, y1, z1], [x1, y1, z0]], [1, 0, 0], c),
+        face([[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], [-1, 0, 0], c)
+      ];
+    }
+    function roof(b, c) {
+      var o = 0.3, xa = b.x0 - o, xb = b.x1 + o, za = b.z0 - o, zb = b.z1 + o, zm = (b.z0 + b.z1) / 2, y0 = b.h, y1 = b.h + b.roof, a = zb - zm;
+      return [
+        face([[xa, y0, zb], [xb, y0, zb], [xb, y1, zm], [xa, y1, zm]], [0, a, b.roof], c),
+        face([[xa, y0, za], [xb, y0, za], [xb, y1, zm], [xa, y1, zm]], [0, a, -b.roof], c),
+        face([[b.x0, y0, za + o], [b.x0, y0, zb - o], [b.x0, y1, zm]], [-1, 0, 0], C.wall),
+        face([[b.x1, y0, za + o], [b.x1, y0, zb - o], [b.x1, y1, zm]], [1, 0, 0], C.wall)
+      ];
+    }
+    function prism(x, z, r, y0, y1, n, c, top) {
+      var out = [], i;
+      for (i = 0; i < n; i++) {
+        var a0 = i / n * 2 * Math.PI, a1 = (i + 1) / n * 2 * Math.PI, am = (a0 + a1) / 2;
+        out.push(face([[x + Math.cos(a0) * r, y0, z + Math.sin(a0) * r], [x + Math.cos(a1) * r, y0, z + Math.sin(a1) * r], [x + Math.cos(a1) * r, y1, z + Math.sin(a1) * r], [x + Math.cos(a0) * r, y1, z + Math.sin(a0) * r]], [Math.cos(am), 0, Math.sin(am)], c));
+      }
+      var cap = []; for (i = 0; i < n; i++) cap.push([x + Math.cos(i / n * 2 * Math.PI) * r, y1, z + Math.sin(i / n * 2 * Math.PI) * r]);
+      out.push(face(cap, [0, 1, 0], top || c));
+      return out;
+    }
+    function cone(x, z, r, y0, h, n, c) {
+      var out = [];
+      for (var i = 0; i < n; i++) {
+        var a0 = i / n * 2 * Math.PI, a1 = (i + 1) / n * 2 * Math.PI, am = (a0 + a1) / 2;
+        out.push(face([[x + Math.cos(a0) * r, y0, z + Math.sin(a0) * r], [x + Math.cos(a1) * r, y0, z + Math.sin(a1) * r], [x, y0 + h, z]], [Math.cos(am) * h, r, Math.sin(am) * h], c));
+      }
+      return out;
+    }
+    var ICO = (function () {
+      var t = (1 + Math.sqrt(5)) / 2;
+      var v = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]].map(function (p) { var l = Math.hypot(p[0], p[1], p[2]); return [p[0] / l, p[1] / l, p[2] / l]; });
+      var f = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]];
+      return { v: v, f: f };
+    })();
+    function blob(x, y, z, r, sy, c) {
+      return ICO.f.map(function (f) {
+        var pts = f.map(function (i) { var p = ICO.v[i]; return [x + p[0] * r, y + p[1] * r * sy, z + p[2] * r]; });
+        var n = [0, 1, 2].map(function (k) { return (ICO.v[f[0]][k] + ICO.v[f[1]][k] + ICO.v[f[2]][k]) / 3; });
+        return face(pts, [n[0], n[1] / sy, n[2]], c);
+      });
+    }
+    function shadowOf(pts3) { // pts3: [x, y, z] above the ground; returns the hull of their ground shadow
+      var g = [];
+      pts3.forEach(function (p) { g.push([p[0], p[2]]); g.push([p[0] - Lt[0] / Lt[1] * p[1], p[2] - Lt[2] / Lt[1] * p[1]]); });
+      return poly(hull(g).map(function (q) { return [q[0], 0.03, q[1]]; }), 'rgba(70,56,30,.17)');
+    }
+    function ring(x, z, rx, rz, y, n) { var o = []; for (var i = 0; i < n; i++) { var a = i / n * 2 * Math.PI; o.push([x + Math.cos(a) * rx, y, z + Math.sin(a) * rz]); } return o; }
+    function ribbon(pts, w, y) {
+      var L = [], R = [];
+      for (var i = 0; i < pts.length; i++) {
+        var a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1;
+        var nx = -dz / l * w / 2, nz = dx / l * w / 2;
+        L.push([pts[i][0] + nx, y, pts[i][1] + nz]); R.unshift([pts[i][0] - nx, y, pts[i][1] - nz]);
+      }
+      return L.concat(R);
+    }
+
+    var S = P.slab, out = [], i;
+    // the slab on the table: shadow, sides (grass band over earth), top
+    var ol = slabOutline(S, 0);
+    var top = -S.grass - S.earth;
+    out.push(poly(hull(ol.concat(ol.map(function (q) { return [q[0] - Lt[0] / Lt[1] * 1.6, q[1] - Lt[2] / Lt[1] * 1.6]; }))).map(function (q) { return [q[0], top, q[1]]; }), 'rgba(70,56,30,.12)'));
+    var sides = [];
+    for (i = 0; i < ol.length; i++) {
+      var a = ol[i], b = ol[(i + 1) % ol.length], mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
+      var nx = b[1] - a[1], nz = -(b[0] - a[0]); if (nx * mx + nz * mz < 0) { nx = -nx; nz = -nz; }
+      sides.push(face([[a[0], -S.grass, a[1]], [b[0], -S.grass, b[1]], [b[0], top, b[1]], [a[0], top, a[1]]], [nx, 0, nz], C.earth));
+      sides.push(face([[a[0], 0, a[1]], [b[0], 0, b[1]], [b[0], -S.grass, b[1]], [a[0], -S.grass, a[1]]], [nx, 0, nz], C.grassSide));
+    }
+    out.push(faces(sides));
+    out.push(poly(ol.map(function (q) { return [q[0], 0, q[1]]; }), C.grass));
+    // ground decals
+    out.push(poly(ribbon(P.stream, P.streamW, 0.01), C.water));
+    out.push('<polyline points="' + ptsStr(P.stream.map(function (q) { return [q[0] + 0.25, 0.02, q[1]]; })) + '" fill="none" stroke="' + C.waterLine + '" stroke-width=".18" stroke-dasharray=".9 1.4" stroke-linecap="round"/>');
+    var Y = P.yard;
+    out.push(poly([[Y.x0, 0.01, Y.z0], [Y.x1, 0.01, Y.z0], [Y.x1, 0.01, Y.z1], [Y.x0, 0.01, Y.z1]], C.paving, ' stroke="' + C.stone + '" stroke-width=".12"'));
+    out.push(poly(ring(P.pond.x, P.pond.z, P.pond.rx, P.pond.rz, 0.012, 36), C.water, ' stroke="' + C.stone + '" stroke-width=".18"'));
+    out.push(poly(ribbon(route.pts, P.pathW, 0.02), C.path));
+    // shadows
+    [P.mill, P.barn].forEach(function (b) { out.push(shadowOf([[b.x0, b.h + b.roof * .6, b.z0], [b.x1, b.h + b.roof * .6, b.z0], [b.x1, b.h + b.roof * .6, b.z1], [b.x0, b.h + b.roof * .6, b.z1]])); });
+    P.trees.forEach(function (t) { var hc = (t.kind ? 1.6 : 2.0) * t.s, r = (t.kind ? 0.75 : 0.95) * t.s; out.push(shadowOf(ring(t.x, t.z, r, r, hc, 8))); });
+    out.push(shadowOf(ring(P.oak.x, P.oak.z, P.oak.r * 0.95, P.oak.r * 0.95, P.oak.h + 1.2, 10)));
+    if (complete) {
+      for (var sd = 0.3; sd < route.len; sd += 0.62) { var q = route.at(sd), pp = pr(q.x, 0.05, q.z); out.push('<ellipse cx="' + pp[0].toFixed(2) + '" cy="' + pp[1].toFixed(2) + '" rx=".17" ry="' + (0.17 * se).toFixed(3) + '" fill="' + C.route + '"/>'); }
+    }
+    // objects, far to near
+    var objs = [];
+    function add(x, z, s) { objs.push({ d: depth(x, 0, z), s: s }); }
+    var M = P.mill;
+    add((M.x0 + M.x1) / 2, (M.z0 + M.z1) / 2, faces(box(M.x0, M.x1, 0, M.h, M.z0, M.z1, C.wall).concat(roof(M, C.roof), box(-8.9, -8.1, 0, 1.3, M.z1, M.z1 + 0.05, C.dark), box(-11.4, -10.6, 1.2, 1.9, M.z1, M.z1 + 0.05, C.dark), box(-7.4, -6.8, 1.2, 1.9, M.z1, M.z1 + 0.05, C.dark))));
+    var W = P.wheel, wr = [];
+    for (i = 0; i <= 16; i++) { var aw = i / 16 * 2 * Math.PI; wr.push([W.x - W.w, W.y + Math.cos(aw) * W.r, W.z + Math.sin(aw) * W.r]); }
+    var spokes = '';
+    for (i = 0; i < 4; i++) { var as = i / 8 * 2 * Math.PI, p1 = pr(W.x - W.w, W.y + Math.cos(as) * W.r, W.z + Math.sin(as) * W.r), p2 = pr(W.x - W.w, W.y - Math.cos(as) * W.r, W.z - Math.sin(as) * W.r); spokes += '<line x1="' + p1[0].toFixed(2) + '" y1="' + p1[1].toFixed(2) + '" x2="' + p2[0].toFixed(2) + '" y2="' + p2[1].toFixed(2) + '" stroke="' + C.wood + '" stroke-width=".14"/>'; }
+    add(W.x, W.z + 2.5, '<polygon points="' + ptsStr(wr) + '" fill="none" stroke="' + shade(C.wood, .8) + '" stroke-width=".26"/>' + spokes);
+    var Bn = P.barn;
+    add((Bn.x0 + Bn.x1) / 2, (Bn.z0 + Bn.z1) / 2, faces(box(Bn.x0, Bn.x1, 0, Bn.h, Bn.z0, Bn.z1, C.wall).concat(roof(Bn, C.roof2), box(8.5, 9.3, 0, 1.2, Bn.z1, Bn.z1 + 0.05, C.dark))));
+    var F = P.fountain;
+    add(F.x, F.z, faces(prism(F.x, F.z, 1.0, 0, 0.38, 12, C.stone, C.water).concat(prism(F.x, F.z, 0.18, 0.38, 1.1, 6, C.stone), prism(F.x, F.z, 0.45, 1.1, 1.22, 8, C.stone, C.water))));
+    var LK = P.lookout, hs = LK.s / 2;
+    add(LK.x, LK.z, faces(box(LK.x - hs, LK.x + hs, 0, LK.h, LK.z - hs, LK.z + hs, C.stone).concat(box(LK.x + hs - 0.12, LK.x + hs, LK.h, LK.h + 0.8, LK.z - hs, LK.z + hs, C.wood), box(LK.x - hs, LK.x + hs, LK.h, LK.h + 0.8, LK.z - hs, LK.z - hs + 0.12, C.wood))));
+    P.trees.forEach(function (t) {
+      var trunk = prism(t.x, t.z, 0.13 * t.s, 0, (t.kind ? 0.5 : 0.9) * t.s, 5, C.trunk);
+      var crown = t.kind ? cone(t.x, t.z, 0.75 * t.s, 0.4 * t.s, 2.6 * t.s, 7, C.conifer) : blob(t.x, (0.9 + 0.85) * t.s, t.z, 0.95 * t.s, 0.9, C.tree);
+      add(t.x, t.z, faces(trunk) + faces(crown));
+    });
+    var O = P.oak;
+    add(O.x, O.z, faces(prism(O.x, O.z, 0.32, 0, O.h, 6, C.trunk)) + faces(blob(O.x - 0.5, O.h + 0.9, O.z, O.r * 0.8, 0.85, C.tree).concat(blob(O.x + 0.7, O.h + 0.7, O.z + 0.3, O.r * 0.75, 0.85, C.tree), blob(O.x, O.h + 1.4, O.z - 0.4, O.r * 0.8, 0.85, C.tree))));
+    var PO = P.poster;
+    if (complete) {
+      add(PO.x, PO.z, faces(box(PO.x - 0.06, PO.x + 0.06, 0, 1.0, PO.z - 0.06, PO.z + 0.06, C.wood).concat(box(PO.x - 0.5, PO.x + 0.5, 0.9, 2.1, PO.z + 0.06, PO.z + 0.12, '#ffffff'))));
+      var wq = route.at(STATIONS[1].s + (STATIONS[2].s - STATIONS[1].s) * 0.45), wp = pr(wq.x, 0, wq.z), wh = pr(wq.x, 0.62, wq.z);
+      add(wq.x, wq.z, '<line x1="' + wp[0].toFixed(2) + '" y1="' + (wp[1] - 0.15).toFixed(2) + '" x2="' + wh[0].toFixed(2) + '" y2="' + (wh[1] + 0.3).toFixed(2) + '" stroke="' + C.ink + '" stroke-width=".36" stroke-linecap="round"/><circle cx="' + wh[0].toFixed(2) + '" cy="' + wh[1].toFixed(2) + '" r=".17" fill="' + C.paper + '" stroke="' + C.ink + '" stroke-width=".06"/>');
+    }
+    objs.sort(function (a, b) { return a.d - b.d; }).forEach(function (o) { out.push(o.s); });
+
+    // pins and labels last: they float above everything, like the AR content they stand for
+    var pxPerUnit = 8;
+    var labels = [];
+    if (complete) {
+      STATIONS.forEach(function (st) {
+        var x = st.pin[0], z = st.pin[1], g = pr(x, 0, z), hd = pr(x, P.pinH, z), tip = pr(x, P.pinH - 0.85, z);
+        out.push('<ellipse cx="' + g[0].toFixed(2) + '" cy="' + g[1].toFixed(2) + '" rx=".42" ry="' + (0.42 * se).toFixed(2) + '" fill="rgba(42,40,36,.22)"/>');
+        out.push('<line x1="' + g[0].toFixed(2) + '" y1="' + g[1].toFixed(2) + '" x2="' + tip[0].toFixed(2) + '" y2="' + tip[1].toFixed(2) + '" stroke="' + C.ink + '" stroke-width=".07"/>');
+        out.push('<path d="M' + tip[0].toFixed(2) + ' ' + tip[1].toFixed(2) + ' L' + (hd[0] - 0.5).toFixed(2) + ' ' + (hd[1] + 0.28).toFixed(2) + ' L' + (hd[0] + 0.5).toFixed(2) + ' ' + (hd[1] + 0.28).toFixed(2) + ' Z" fill="' + shade(C.route, .85) + '"/>');
+        out.push('<circle cx="' + hd[0].toFixed(2) + '" cy="' + hd[1].toFixed(2) + '" r=".6" fill="' + C.route + '"/><circle cx="' + (hd[0] - 0.06).toFixed(2) + '" cy="' + (hd[1] - 0.05).toFixed(2) + '" r=".23" fill="#fff"/>');
+        labels.push({ x: hd[0], y: hd[1] - 0.75, n: String(st.n), t: st.name });
+      });
+      var pt = pr(PO.x, 2.4, PO.z);
+      labels.push({ x: pt[0], y: pt[1] - 0.2, n: '', t: 'Start: the poster' });
+    }
+    // fit: the drawing's own bounding box, padded so labels stay inside
+    var pad = 1.2, padTop = complete ? 2.4 : 1.2;
+    var vb = [minX - pad, minY - padTop, maxX - minX + 2 * pad, maxY - minY + pad + padTop];
+    pxPerUnit = Math.min(V.w / vb[2], V.h / vb[3]);
+    var fs = 12 / pxPerUnit, lab = '';
+    labels.forEach(function (l) {
+      var w = (l.t.length * 0.5 + (l.n ? 1.9 : 1.2)) * fs, h = 1.55 * fs, x0 = l.x - w / 2, y0 = l.y - h;
+      lab += '<g class="lb" data-x="' + l.x.toFixed(2) + '" data-h="' + h.toFixed(3) + '" data-fs="' + fs.toFixed(3) + '" data-n="' + (l.n ? 1 : 0) + '"><rect x="' + x0.toFixed(2) + '" y="' + y0.toFixed(2) + '" width="' + w.toFixed(2) + '" height="' + h.toFixed(2) + '" rx="' + (h / 2).toFixed(2) + '" fill="' + (l.n ? 'rgba(251,248,239,.94)' : C.ink) + '" stroke="' + C.ink + '" stroke-width="' + (1 / pxPerUnit).toFixed(3) + '"/>' +
+        (l.n ? '<circle cx="' + (x0 + h / 2).toFixed(2) + '" cy="' + (y0 + h / 2).toFixed(2) + '" r="' + (h / 2 - 1.6 / pxPerUnit).toFixed(2) + '" fill="' + C.route + '"/><text x="' + (x0 + h / 2).toFixed(2) + '" y="' + (y0 + h / 2).toFixed(2) + '" font-family="system-ui, sans-serif" font-weight="700" font-size="' + (fs * 0.9).toFixed(2) + '" fill="#fff" text-anchor="middle" dominant-baseline="central">' + l.n + '</text>' : '') +
+        '<text x="' + (l.n ? x0 + h + 0.3 * fs : l.x).toFixed(2) + '" y="' + (y0 + h / 2).toFixed(2) + '" font-family="Georgia, serif" font-style="italic" font-weight="600" font-size="' + fs.toFixed(2) + '" fill="' + (l.n ? C.ink : C.paper) + '"' + (l.n ? '' : ' text-anchor="middle"') + ' dominant-baseline="central" class="nm">' + l.t + '</text></g>';
+    });
+    var svg = $('#floorA');
+    svg.setAttribute('viewBox', vb.map(function (v) { return v.toFixed(2); }).join(' '));
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svg.innerHTML = out.join('') + lab;
+    // size each label's pill to its real text width (fonts differ per device)
+    Array.prototype.forEach.call(svg.querySelectorAll('.lb'), function (g) {
+      var t = g.querySelector('.nm'), r = g.querySelector('rect'), c = g.querySelector('circle'), num = g.querySelector('text:not(.nm)');
+      var len; try { len = t.getComputedTextLength(); } catch (e) { return; }
+      if (!len) return;
+      var h = +g.dataset.h, f = +g.dataset.fs, x = +g.dataset.x, isN = g.dataset.n === '1';
+      var w = len + (isN ? h + 0.3 * f + 0.7 * f : 1.4 * f), x0 = x - w / 2;
+      r.setAttribute('x', x0.toFixed(2)); r.setAttribute('width', w.toFixed(2));
+      if (isN) { c.setAttribute('cx', (x0 + h / 2).toFixed(2)); num.setAttribute('x', (x0 + h / 2).toFixed(2)); t.setAttribute('x', (x0 + h + 0.3 * f).toFixed(2)); }
+    });
+    floorComplete = complete;
+  }
+
+  var floorComplete = false;
+  function hasWebGL() {
+    try {
+      var c = document.createElement('canvas'), g = c.getContext('webgl2') || c.getContext('webgl');
+      if (!g) return false;
+      var ext = g.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext();
+      return true;
+    } catch (e) { return false; }
+  }
+  var still = reduced || qs.get('hero') === 'still';
+  var want3d = qs.get('gl') !== '0' && hasWebGL();
+  var H = window.__hero = {
+    park: PARK, view: view, want3d: want3d, still: still, drawS: num('draw', 6, 1, 20), ready: false, failed: '', scene: null, resume: null,
+    fail: function (why) {
+      H.failed = why || 'failed';
+      art.dataset.floor = 'on'; $('#tags').innerHTML = ''; $('#gl').classList.remove('on'); $('#heroAgain').hidden = true;
+      drawFloor(true); Calm.release('hero');
+    },
+    onReady: function () { H.ready = true; art.dataset.floor = 'off'; }
+  };
+  drawFloor(!want3d || still);
+  var lastKey = '';
+  function onResize() {
+    var V = view(), key = Math.round(V.w) + 'x' + Math.round(V.h);
+    if (key === lastKey) return; lastKey = key;
+    if (!H.ready) drawFloor(floorComplete);
+  }
+  if ('ResizeObserver' in window) new ResizeObserver(onResize).observe(art); else addEventListener('resize', onResize);
+
+  /* ================= the drawn phones in the three cards ================= */
+  var PT = num('pt', 14, 10, 18), SWAY = num('sway', 6, 0, 20), START = num('start', 0.85, 0.05, 1);
+  html.style.setProperty('--pt', PT + 'px');
+  var LEAF = ['#a9b07e', '#939a6b', '#7f875c', '#8d9466', '#a3aa79', '#b9bf8e'];
+  var FAR = ['#cbcfae', '#bfc3a1', '#b3b894', '#b8bd99', '#c4c8a6', '#d0d3b4'];
+  // a low-poly crown: six facets lit from the upper left, like the model's trees
+  function crown(cx, cy, r, sh) {
+    var out = '', pts = [], i;
+    for (i = 0; i < 6; i++) { var a = (i * 60 - 90) * DEG; pts.push([cx + Math.cos(a) * r * (i % 2 ? 0.94 : 1), cy + Math.sin(a) * r * 0.9]); }
+    for (i = 0; i < 6; i++) { var p = pts[i], q = pts[(i + 1) % 6]; out += '<path d="M' + cx + ' ' + cy + 'L' + p[0].toFixed(1) + ' ' + p[1].toFixed(1) + 'L' + q[0].toFixed(1) + ' ' + q[1].toFixed(1) + 'Z" fill="' + sh[i] + '"/>'; }
+    return out;
+  }
+  // the place at eye height: the mill of Mill Park, the path, the stream, a notice board for the code
+  var WORLD = (function () {
+    var s = '<rect x="-100" y="0" width="500" height="210" fill="url(#cSky)"/>', x;
+    for (x = -96; x < 404; x += 21) s += crown(x, 197 - (Math.abs(Math.sin(x * 0.7)) * 5), 12 + Math.abs(Math.sin(x)) * 4, FAR);
+    s += '<rect x="-100" y="204" width="500" height="176" fill="#d3cfa6"/>';
+    s += '<path d="M-100 250L30 230L-40 300Z" fill="#cbc69b"/><path d="M250 236L400 226L400 290Z" fill="#cbc69b"/><path d="M200 330L310 300L340 380H240Z" fill="#dad6b0"/>';
+    s += '<path d="M92 204H114L22 380H-34Z" fill="#b8cbc3"/><path d="M101 216L62 292M86 262L58 318" stroke="#e3ece6" stroke-width="2" stroke-dasharray="7 9" stroke-linecap="round"/>';
+    s += '<path d="M141 204H159L252 380H40Z" fill="#f6f1e3"/><path d="M141 204L40 380M159 204L252 380" stroke="#d8cfba" stroke-width="2"/>';
+    s += '<path d="M188 204V150L226 146V201Z" fill="#d6ccb4"/><path d="M112 204V150L150 118L188 150V204Z" fill="#efe7d4"/><path d="M150 118L188 150L226 146L190 114Z" fill="#a49a86"/>';
+    s += '<path d="M108 153L150 116L192 153" fill="none" stroke="#8d8471" stroke-width="3" stroke-linejoin="round"/><rect x="112" y="200" width="114" height="4" fill="#c9bea3"/>';
+    s += '<g fill="#6c665b"><rect x="122" y="160" width="10" height="13"/><rect x="168" y="160" width="10" height="13"/><rect x="196" y="161" width="8" height="12"/><rect x="212" y="159" width="8" height="12"/><circle cx="150" cy="138" r="4.5"/></g>';
+    s += '<path d="M143 204V188A7 7 0 0 1 157 188V204Z" fill="#8a735a"/>';
+    s += '<g fill="none" stroke="#8f7457"><circle cx="104" cy="187" r="17" stroke-width="3"/><path d="M104 170V204M87 187H121M92 175L116 199M116 175L92 199" stroke-width="1.6"/></g><circle cx="104" cy="187" r="3" fill="#8f7457"/>';
+    s += '<rect x="26" y="176" width="7" height="36" fill="#8a735a"/>' + crown(30, 150, 34, LEAF) + crown(-62, 168, 30, LEAF) + crown(352, 164, 32, LEAF);
+    s += '<rect x="265" y="194" width="5" height="16" fill="#8a735a"/><path d="M267 118L246 198H267Z" fill="#9aa87a"/><path d="M267 118L288 198H267Z" fill="#7e8b61"/>';
+    s += '<rect x="217" y="240" width="4" height="42" fill="#8a735a"/><rect x="201" y="212" width="36" height="34" fill="#a88c6c"/><rect x="204" y="215" width="30" height="28" fill="#ebe3cf"/>';
+    s += '<g class="poster"><rect x="209" y="217" width="20" height="24" fill="#fff"/><rect x="209" y="217" width="20" height="4" fill="#cf4428"/><path d="M212 223h6v6h-6zM220 223h6v6h-6zM212 231h6v6h-6zM221 232h2v2h-2zM224 235h2v2h-2zM221 236h2v2h-2zM224 231h2v2h-2z" fill="#2a2824"/></g>';
+    return '<svg class="w" viewBox="-100 0 500 380" aria-hidden="true" focusable="false">' + s + '</svg>';
+  })();
+  var PIN = '<g class="made"><g class="pin"><ellipse cx="150" cy="263" rx="8" ry="2.6" fill="rgba(42,40,36,.28)"/><path d="M150 262V236" stroke="#2a2824" stroke-width="1.5"/><path d="M144.4 231L150 241L155.6 231Z" fill="#b03a22"/><circle cx="150" cy="226" r="8.5" fill="#cf4428"/><circle cx="147.6" cy="224" r="3.1" fill="#fff"/></g></g>';
+  var PHOTO = '<svg viewBox="0 0 120 90"><rect width="120" height="90" fill="#ddd2b6"/><rect width="120" height="40" fill="#ebe3cf"/><path d="M28 78V40L60 18L92 40V78Z" fill="#c9bea3"/><path d="M24 42L60 15L96 42" fill="none" stroke="#8c8577" stroke-width="4"/><path d="M53 78V64A7 7 0 0 1 67 64V78Z" fill="#8c8577"/><g fill="#8c8577"><rect x="36" y="47" width="8" height="10"/><rect x="76" y="47" width="8" height="10"/><circle cx="60" cy="31" r="4"/></g><circle cx="20" cy="62" r="13" fill="none" stroke="#8c8577" stroke-width="3"/><rect y="78" width="120" height="12" fill="#c9bea3"/></svg>';
+  var QR = '<svg viewBox="-1 -1 23 23" aria-hidden="true"><rect x="-1" y="-1" width="23" height="23" fill="#fff" stroke="#2a2824" stroke-width=".6"/><path fill="#2a2824" fill-rule="evenodd" d="M0 0h7v7H0zM1 1v5h5V1zM2 2h3v3H2zM14 0h7v7h-7zM15 1v5h5V1zM16 2h3v3h-3zM0 14h7v7H0zM1 15v5h5v-5zM2 16h3v3H2zM9 1h2v2H9zM9 5h3v2H9zM8 9h3v2H8zM13 9h2v3h-2zM17 9h3v2h-3zM9 13h2v2H9zM12 14h3v2h-3zM16 13h2v3h-2zM9 17h2v3H9zM13 18h3v2h-3zM18 17h3v2h-3zM0 9h2v3H0zM4 10h2v2H4z"/></svg>';
+  var ICON_T = '<svg viewBox="0 0 24 24"><path d="M5 6h14M12 6v13M9 19h6"/></svg>';
+  var ICON_P = '<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4 3 2.5 3-3 5 4"/></svg>';
+  var ARROW = '<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="10" fill="#cf4428"/><path d="M6 10h7M10 6.5 13.5 10 10 13.5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var AR_SVG = {
+    place: '<svg class="ar" viewBox="0 0 300 380"><g class="ret"><ellipse cx="150" cy="262" rx="22" ry="7" fill="rgba(207,68,40,.12)" stroke="#2a2824" stroke-width="1.6" stroke-dasharray="5 4"/><path d="M122 262h6M172 262h6M150 251v4M150 269v4" stroke="#2a2824" stroke-width="1.8" stroke-linecap="round"/></g><ellipse class="rip" cx="150" cy="262" rx="16" ry="5" fill="none" stroke="#cf4428" stroke-width="2"/>' + PIN + '</svg>',
+    words: '<svg class="ar" viewBox="0 0 300 380">' + PIN + '<rect class="halo" x="205.5" y="213.5" width="27" height="31" rx="3" fill="none" stroke="#cf4428" stroke-width="2.2"/></svg>',
+    visit: '<svg class="ar" viewBox="0 0 300 380">' + PIN + '</svg>'
+  };
+  var CARD = '<div class="arc made" style="left:158px;top:212px"><div class="t"><span class="tt">The old mill</span><span class="caret"></span></div><div class="b b1">Add a line or two...</div><div class="b b2">Built in 1820. The stream still turns its wheel.</div></div>';
+  var PICT = '<div class="pic made" style="left:64px;top:218px">' + PHOTO + '<div class="pc">In 1910</div></div>';
+  var UI = {
+    place: '<div class="hud"><span class="swap-a"><span class="tg">Making</span>Station 1</span><span class="swap-b"><span class="tg ok">Placed</span>Station 1</span></div>' +
+      '<div class="sheet"><p class="sh-t">Aim at the spot, then tap.</p><span class="pbtn">Place here</span></div>',
+    words: '<div class="hud"><span class="swap-a"><span class="tg">Making</span>Station 1</span><span class="swap-b"><span class="tg ok">Saved</span>5 stations</span></div>' +
+      '<div class="sheet sh-tools"><div class="tools"><span class="tool t-text on">' + ICON_T + 'Text</span><span class="tool t-pic">' + ICON_P + 'Picture</span></div></div>' +
+      '<div class="sheet sh-share"><div class="share"><div><b>' + QR + 'Mill Park is ready</b><span>Print its code and hang it where the walk begins.</span></div></div></div>',
+    visit: '<div class="hud"><span>Mill Park</span><span class="dots"><i class="on"></i><i></i><i></i><i></i><i></i></span></div>' +
+      '<span class="nextp">' + ARROW + 'Next: the footbridge</span>'
+  };
+  function phoneHtml(kind) {
+    var content = AR_SVG[kind];
+    if (kind !== 'place') content += CARD + PICT;
+    if (kind === 'words') content += '<div class="ghost" style="left:64px;top:218px">+ Picture</div><div class="callout" style="left:236px;top:208px"><b>Your tour\'s code</b>Visitors scan it here.</div>';
+    return '<div class="ph-art k-' + kind + '"><div class="bd">' + WORLD + '</div><div class="ph"><div class="scr"><div class="win">' + WORLD + content + '</div>' +
+      '<div class="st"><span>10:24</span><i></i></div><div class="notch"></div>' + UI[kind] + '</div></div></div>';
+  }
+
+  var STEPS = {
+    // [ms, class to add]; the end time is when the phone holds still
+    place: { at: [[200, 's1'], [1300, 's2'], [1680, 's3'], [2180, 's4']], end: 3000, all: ['s1', 's2', 's3', 's4'] },
+    words: { at: [[200, 's1'], [1500, 's2'], [2100, 's3'], [2700, 's4'], [3500, 's5'], [4100, 's6', 'hung'], [4500, 's7']], end: 5200, all: ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 'hung'] },
+    visit: { at: [[200, 's1'], [650, 's2'], [1050, 's3'], [1450, 's4']], end: 1900, sway: 3000, all: ['s1', 's2', 's3', 's4'] }
+  };
+  var TITLE = 'The old mill';
+  var cards = $$('#cards .step3').map(function (li, i) {
+    var kind = li.dataset.kind, wrap = li.querySelector('.ph-wrap');
+    wrap.innerHTML = phoneHtml(kind);
+    var c = { i: i, kind: kind, li: li, wrap: wrap, art: wrap.firstChild, again: li.querySelector('.again'), state: 'pending', inView: false, timers: [], raf: 0 };
+    c.ph = c.art.querySelector('.ph'); c.win = c.art.querySelector('.win'); c.tt = c.art.querySelector('.tt');
+    c.again.addEventListener('click', function () { reset(c); c.state = 'pending'; c.again.hidden = true; if (!Calm.holder) play(c); });
+    return c;
+  });
+  function reset(c) {
+    c.timers.forEach(clearTimeout); c.timers = [];
+    if (c.raf) cancelAnimationFrame(c.raf); c.raf = 0; pose(c, 0, 0);
+    c.art.className = 'ph-art k-' + c.kind;
+    if (c.tt) c.tt.textContent = c.kind === 'words' ? '' : TITLE;
+    if (Calm.holder === c) Calm.release(c);
+  }
+  function pose(c, x, y) {
+    c.ph.style.transform = x || y ? 'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0)' : '';
+    c.win.style.transform = x || y ? 'translate3d(' + (-x).toFixed(2) + 'px,' + (-y).toFixed(2) + 'px,0)' : '';
+  }
+  function finalState(c) {
+    reset(c);
+    STEPS[c.kind].all.concat('final').forEach(function (k) { c.art.classList.add(k); });
+    if (c.tt) c.tt.textContent = TITLE;
+    c.state = 'done';
+  }
+  function play(c) {
+    if (Calm.holder && Calm.holder !== c) return;
+    reset(c);
+    if (!Calm.claim(c)) return;
+    c.state = 'playing';
+    var S = STEPS[c.kind];
+    S.at.forEach(function (st) { c.timers.push(setTimeout(function () { st.slice(1).forEach(function (k) { c.art.classList.add(k); }); }, st[0])); });
+    if (c.kind === 'words') for (var n = 1; n <= TITLE.length; n++) (function (n) { c.timers.push(setTimeout(function () { c.tt.textContent = TITLE.slice(0, n); }, 520 + n * 70)); })(n);
+    c.timers.push(setTimeout(function () {
+      if (S.sway && SWAY > 0) sway(c, S.sway, done); else done();
+    }, S.end));
+    function done() { c.state = 'done'; c.art.classList.add('final'); c.again.hidden = false; Calm.release(c); }
+  }
+  // the visitor's phone moves once, sideways; the window inside moves back, so the station stays on its spot
+  function sway(c, D, done) {
+    var t0 = performance.now();
+    function f(t) {
+      var k = (t - t0) / D;
+      if (k >= 1) { c.raf = 0; pose(c, 0, 0); done(); return; }
+      var env = Math.sin(Math.PI * k);
+      pose(c, SWAY * env * Math.sin(k * 2 * Math.PI * 1.5), 0.3 * SWAY * env * Math.sin(k * 2 * Math.PI));
+      c.raf = requestAnimationFrame(f);
+    }
+    c.raf = requestAnimationFrame(f);
+  }
+  if (reduced) cards.forEach(function (c) { finalState(c); c.again.hidden = true; });
+  else if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { var c = cards.filter(function (k) { return k.wrap === e.target; })[0]; if (c) c.inView = e.intersectionRatio >= START - 0.001; });
+      pump();
+    }, { threshold: [0, START, 1] });
+    cards.forEach(function (c) { io.observe(c.wrap); });
+  } else cards.forEach(finalState);
+  // phone scale: 1 where it fits; smaller where the card or the screen is too small for 300 x 380
+  function fit() {
+    cards.forEach(function (c) {
+      var w = c.li.clientWidth - 28, k = Math.min(1, w / 300);
+      if (window.matchMedia('(orientation: landscape) and (max-height: 560px)').matches) k = Math.min(1, (innerHeight - 30) / 380);
+      c.wrap.style.setProperty('--k', Math.max(0.6, k).toFixed(3));
+    });
+  }
+  fit();
+  addEventListener('resize', fit);
+
+  /* ---------- buttons ---------- */
+  $('#makeBtn').addEventListener('click', function (e) { e.preventDefault(); $('#how').scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' }); });
+  $('#tryBtn').addEventListener('click', function () {
+    toast(html.dataset.ar === '1'
+      ? 'Here the page would put an example station in front of you: place it yourself, then walk up to it as a visitor would.'
+      : 'Trying it needs an Android phone with Chrome (AR support). Open this page on one.');
+  });
+  $('#beginBtn').addEventListener('click', function () { toast('Here the real page would ask where your tour\'s file is stored.'); });
+  $('#visitForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var v = $('#visitIn').value.trim(), msg = $('#visitMsg');
+    if (!v) { msg.textContent = 'Paste the link first. It starts with https://'; $('#visitIn').focus(); return; }
+    if (!/^https?:\/\/[^\s/]+\.[^\s]+/i.test(v)) { msg.textContent = 'That does not look like a link yet. It should start with https://'; return; }
+    msg.textContent = html.dataset.ar === '1' ? 'Here the real page would open this tour and start the camera.' : 'That looks like a tour link. Open it on an Android phone with Chrome to walk the tour.';
+  });
+
+  /* ---------- numbers in the notes ---------- */
+  var NOTE = { draw: String(H.drawS), start: Math.round(START * 100) + ' %', sway: String(SWAY), pt: PT + ' px', minpt: (Math.round(PT * 0.828 * 10) / 10) + ' px', ownjs: '21', totaljs: '208', frames: 'at 390x844, pixel ratio 1, two runs each unthrottled and with the CPU slowed 4x and 6x, over the route drawing (5 s), the three phones playing and a 5 s scroll: p99 16.8 to 33.4 ms, worst single frames 50 to 100 ms (one to three per run, also unthrottled, so machine load). One 4x run had a burst of slow frames in every phase including the idle one, while the machine was busy with other work; the 6x runs were clean. When nothing plays, the page requests no animation frames at all.' };
+  $$('[data-n]').forEach(function (el) { el.textContent = NOTE[el.dataset.n] || ''; });
+
+  window.__landing = {
+    ready: true, cards: cards,
+    play: function (i) { var c = cards[i]; reset(c); c.state = 'pending'; Calm.holder = null; play(c); },
+    final: function () { cards.forEach(finalState); },
+    states: function () { return cards.map(function (c) { return c.state; }); },
+    holder: function () { return Calm.holder ? (Calm.holder === 'hero' ? 'hero' : 'card' + Calm.holder.i) : null; }
+  };
+})();
+</script>
+
+<script type="module">
+const H = window.__hero, Calm = window.__calm;
+if (H && H.want3d) boot();
+
+async function boot() {
+  // three.js never blocks the first paint: wait for load, the first contentful paint, then an idle moment
+  if (document.readyState !== 'complete') await new Promise((r) => addEventListener('load', r, { once: true }));
+  await new Promise((r) => {
+    const done = () => { clearTimeout(t); r(); };
+    const t = setTimeout(done, 1500);
+    try {
+      if (performance.getEntriesByName('first-contentful-paint').length) return done();
+      const po = new PerformanceObserver((list) => { if (list.getEntriesByName('first-contentful-paint').length) { po.disconnect(); done(); } });
+      po.observe({ type: 'paint', buffered: true });
+    } catch (e) { requestAnimationFrame(() => requestAnimationFrame(done)); }
+  });
+  await new Promise((r) => ('requestIdleCallback' in window ? requestIdleCallback(r, { timeout: 600 }) : setTimeout(r, 100)));
+  let THREE;
+  try { THREE = await import('three'); } catch (e) { H.fail('three.js could not be loaded'); return; }
+  try { start(THREE); } catch (e) { H.fail('3D could not start: ' + (e && e.message)); }
+}
+
+function start(THREE) {
+  const L = H, P = H.park, C = P.colors, route = P.route;
+  const canvas = document.getElementById('gl'), art = document.getElementById('art');
+  const tagsEl = document.getElementById('tags'), again = document.getElementById('heroAgain');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x000000, 0);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.autoUpdate = false;
+  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); running = false; L.scene = null; L.fail('WebGL context lost'); }, false);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(15, 1, 1, 2000);
+  scene.add(new THREE.HemisphereLight(0xfff7e8, 0xb6a684, 1.55));
+  const sun = new THREE.DirectionalLight(0xfff0d8, 2.0);
+  sun.position.set(P.light[0] * 40, P.light[1] * 40, P.light[2] * 40);
+  sun.castShadow = true;
+  const small = Math.min(innerWidth, innerHeight) < 700;
+  sun.shadow.mapSize.set(small ? 1024 : 2048, small ? 1024 : 2048);
+  Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 5, far: 90 });
+  sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.03; sun.shadow.radius = 3;
+  scene.add(sun);
+
+  const mats = {};
+  const mat = (c, extra) => {
+    const k = c + (extra ? JSON.stringify(extra) : '');
+    return mats[k] || (mats[k] = new THREE.MeshLambertMaterial(Object.assign({ color: c }, extra || {})));
+  };
+  const mesh = (geo, m, x = 0, y = 0, z = 0, cast = true, recv = true) => {
+    const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = cast; o.receiveShadow = recv; scene.add(o); return o;
+  };
+
+  // --- the slab: a rounded tile of grass on a band of earth, on a table that catches its shadow
+  const S = P.slab;
+  const shape = (inset) => {
+    const w = S.w / 2 - inset, d = S.d / 2 - inset, r = S.r - inset, s = new THREE.Shape();
+    s.moveTo(-w + r, -d); s.lineTo(w - r, -d); s.quadraticCurveTo(w, -d, w, -d + r); s.lineTo(w, d - r); s.quadraticCurveTo(w, d, w - r, d);
+    s.lineTo(-w + r, d); s.quadraticCurveTo(-w, d, -w, d - r); s.lineTo(-w, -d + r); s.quadraticCurveTo(-w, -d, -w + r, -d);
+    return s;
+  };
+  const slab = (inset, depth, bev, top, capC, sideC) => {
+    const g = new THREE.ExtrudeGeometry(shape(inset + bev), { depth, bevelEnabled: true, bevelThickness: bev, bevelSize: bev, bevelSegments: 2, curveSegments: 6 });
+    g.rotateX(-Math.PI / 2);
+    const m = new THREE.Mesh(g, [mat(capC), mat(sideC)]);
+    m.position.y = top - depth - bev; m.receiveShadow = true; m.castShadow = true; scene.add(m); return m;
+  };
+  slab(0, S.grass - 0.1, 0.05, 0, C.grass, C.grassSide);
+  slab(0.04, S.earth - 0.1, 0.05, -S.grass, C.earth, C.earth);
+  const table = new THREE.Mesh(new THREE.PlaneGeometry(140, 140).rotateX(-Math.PI / 2), new THREE.ShadowMaterial({ opacity: 0.13, color: 0x46381e }));
+  table.position.y = -S.grass - S.earth - 0.01; table.receiveShadow = true; scene.add(table);
+
+  // --- ground decals
+  const ribbonGeo = (pts, w, y) => {
+    const pos = [], idx = [];
+    pts.forEach((p, i) => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+      const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = -dz / l * w / 2, nz = dx / l * w / 2;
+      pos.push(p[0] + nx, y, p[1] + nz, p[0] - nx, y, p[1] - nz);
+      if (i) { const k = i * 2; idx.push(k - 2, k, k - 1, k - 1, k, k + 1); }
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+    g.setIndex(idx);
+    return g;
+  };
+  const flat = (c) => mat(c, { side: THREE.DoubleSide });
+  mesh(ribbonGeo(P.stream, P.streamW, 0.012), flat(C.water), 0, 0, 0, false);
+  mesh(ribbonGeo(P.stream.map((q) => [q[0] + 0.25, q[1]]), 0.14, 0.02), flat(C.waterLine), 0, 0, 0, false);
+  const Y = P.yard;
+  mesh(new THREE.PlaneGeometry(Y.x1 - Y.x0, Y.z1 - Y.z0).rotateX(-Math.PI / 2), mat(C.paving), (Y.x0 + Y.x1) / 2, 0.01, (Y.z0 + Y.z1) / 2, false);
+  const pondRim = mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), mat(C.stone), P.pond.x, 0.008, P.pond.z, false);
+  pondRim.scale.set(P.pond.rx + 0.2, 1, P.pond.rz + 0.2);
+  const pond = mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), mat(C.water), P.pond.x, 0.016, P.pond.z, false);
+  pond.scale.set(P.pond.rx, 1, P.pond.rz);
+  mesh(ribbonGeo(route.pts, P.pathW, 0.022), flat(C.path), 0, 0, 0, false);
+
+  // --- buildings
+  const roofGeo = (b) => {
+    const o = 0.3, xa = b.x0 - o, xb = b.x1 + o, za = b.z0 - o, zb = b.z1 + o, zm = (b.z0 + b.z1) / 2, y0 = b.h, y1 = b.h + b.roof;
+    const v = [xa, y0, zb, xb, y0, zb, xb, y1, zm, xa, y0, zb, xb, y1, zm, xa, y1, zm,
+      xb, y0, za, xa, y0, za, xa, y1, zm, xb, y0, za, xa, y1, zm, xb, y1, zm,
+      xa + o, y0, zb - o, xa + o, y1, zm, xa + o, y0, za + o, xb - o, y0, za + o, xb - o, y1, zm, xb - o, y0, zb - o,
+      xa, y0 - 0.02, za, xb, y0 - 0.02, za, xb, y0 - 0.02, zb, xa, y0 - 0.02, za, xb, y0 - 0.02, zb, xa, y0 - 0.02, zb];
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+    g.computeVertexNormals();
+    return g;
+  };
+  const house = (b, roofC, details) => {
+    mesh(new THREE.BoxGeometry(b.x1 - b.x0, b.h, b.z1 - b.z0), mat(C.wall), (b.x0 + b.x1) / 2, b.h / 2, (b.z0 + b.z1) / 2);
+    const r = new THREE.Mesh(roofGeo(b), mat(roofC, { side: THREE.DoubleSide }));
+    r.castShadow = true; r.receiveShadow = true; scene.add(r);
+    details.forEach((d) => mesh(new THREE.BoxGeometry(d[1] - d[0], d[3] - d[2], 0.06), mat(C.dark), (d[0] + d[1]) / 2, (d[2] + d[3]) / 2, b.z1 + 0.03, false, false));
+  };
+  house(P.mill, C.roof, [[-8.9, -8.1, 0, 1.3], [-11.4, -10.6, 1.2, 1.9], [-7.4, -6.8, 1.2, 1.9]]);
+  house(P.barn, C.roof2, [[8.5, 9.3, 0, 1.2]]);
+
+  // --- the mill wheel (turns slowly)
+  const W = P.wheel, wheel = new THREE.Group();
+  wheel.position.set(W.x - W.w / 2, W.y, W.z);
+  const wood = mat(C.wood), woodD = mat('#8f7457');
+  [-W.w / 2, W.w / 2].forEach((dx) => { const t = new THREE.Mesh(new THREE.TorusGeometry(W.r, 0.08, 5, 28).rotateY(Math.PI / 2), woodD); t.position.x = dx; t.castShadow = true; wheel.add(t); });
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const paddle = new THREE.Mesh(new THREE.BoxGeometry(W.w + 0.1, 0.06, 0.42), wood);
+    paddle.position.set(0, Math.cos(a) * (W.r - 0.1), Math.sin(a) * (W.r - 0.1)); paddle.rotation.x = -a; paddle.castShadow = true; wheel.add(paddle);
+    if (i % 3 === 0) { const sp = new THREE.Mesh(new THREE.BoxGeometry(0.08, W.r * 2, 0.08), woodD); sp.rotation.x = a; wheel.add(sp); }
+  }
+  wheel.add(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, W.w + 0.4, 10).rotateZ(Math.PI / 2), woodD));
+  scene.add(wheel);
+
+  // --- fountain, lookout, poster
+  const F = P.fountain;
+  mesh(new THREE.CylinderGeometry(1.0, 1.05, 0.38, 20), mat(C.stone), F.x, 0.19, F.z);
+  mesh(new THREE.CylinderGeometry(0.86, 0.86, 0.02, 20), mat(C.water), F.x, 0.37, F.z, false);
+  mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.75, 8), mat(C.stone), F.x, 0.74, F.z);
+  mesh(new THREE.CylinderGeometry(0.45, 0.3, 0.12, 12), mat(C.stone), F.x, 1.14, F.z);
+  const LK = P.lookout, hs = LK.s / 2;
+  mesh(new THREE.BoxGeometry(LK.s, LK.h, LK.s), mat(C.stone), LK.x, LK.h / 2, LK.z);
+  mesh(new THREE.BoxGeometry(0.12, 0.8, LK.s), wood, LK.x + hs - 0.06, LK.h + 0.4, LK.z);
+  mesh(new THREE.BoxGeometry(LK.s, 0.8, 0.12), wood, LK.x, LK.h + 0.4, LK.z - hs + 0.06);
+  const posterG = new THREE.Group();
+  posterG.position.set(P.poster.x, 0, P.poster.z);
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.0, 0.12), wood); post.position.y = 0.5; post.castShadow = true;
+  const board = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.2, 0.08), mat('#ffffff')); board.position.set(0, 1.5, 0.08); board.castShadow = true;
+  const qr = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), mat(C.ink)); qr.position.set(0, 1.58, 0.125);
+  const qr2 = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.4), mat('#ffffff')); qr2.position.set(0, 1.58, 0.13);
+  const qr3 = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.2), mat(C.ink)); qr3.position.set(0, 1.58, 0.135);
+  posterG.add(post, board, qr, qr2, qr3); posterG.scale.setScalar(0.001); scene.add(posterG);
+
+  // --- trees (instanced)
+  const T = P.trees, round = T.filter((t) => !t.kind), conif = T.filter((t) => t.kind);
+  const icoGeo = new THREE.IcosahedronGeometry(1, 0), coneGeo = new THREE.ConeGeometry(1, 1, 7).translate(0, 0.5, 0), trunkGeo = new THREE.CylinderGeometry(0.1, 0.14, 1, 6).translate(0, 0.5, 0);
+  const inst = (geo, m, list, setter) => {
+    const im = new THREE.InstancedMesh(geo, m, list.length), o = new THREE.Object3D();
+    list.forEach((t, i) => { setter(o, t); o.updateMatrix(); im.setMatrixAt(i, o.matrix); });
+    im.castShadow = true; im.receiveShadow = true; scene.add(im); return im;
+  };
+  inst(icoGeo, mat(C.tree, { flatShading: true }), round, (o, t) => { o.position.set(t.x, 1.75 * t.s, t.z); o.scale.set(0.95 * t.s, 0.86 * t.s, 0.95 * t.s); o.rotation.set(0, t.x * 3.1, 0); });
+  inst(coneGeo, mat(C.conifer, { flatShading: true }), conif, (o, t) => { o.position.set(t.x, 0.4 * t.s, t.z); o.scale.set(0.75 * t.s, 2.6 * t.s, 0.75 * t.s); o.rotation.set(0, t.z * 2.3, 0); });
+  inst(trunkGeo, mat(C.trunk), T, (o, t) => { o.position.set(t.x, 0, t.z); o.scale.set(t.s, (t.kind ? 0.5 : 0.95) * t.s, t.s); o.rotation.set(0, 0, 0); });
+  const O = P.oak;
+  mesh(new THREE.CylinderGeometry(0.26, 0.38, O.h, 7).translate(0, O.h / 2, 0), mat(C.trunk), O.x, 0, O.z);
+  [[-0.5, O.h + 0.9, 0, 0.8], [0.7, O.h + 0.7, 0.3, 0.75], [0, O.h + 1.4, -0.4, 0.8]].forEach((c) => {
+    const m = mesh(icoGeo, mat(C.tree, { flatShading: true }), O.x + c[0], c[1], O.z + c[2]); m.scale.set(O.r * c[3], O.r * c[3] * 0.85, O.r * c[3]);
+  });
+
+  // --- the route: dots that draw themselves
+  const dotPos = [];
+  for (let s = 0.3; s < route.len; s += 0.62) dotPos.push(s);
+  const dotMat = new THREE.MeshBasicMaterial({ color: C.route, transparent: true, opacity: 1 });
+  const dots = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.16, 0.04, 10), dotMat, dotPos.length);
+  { const o = new THREE.Object3D(); dotPos.forEach((s, i) => { const q = route.at(s); o.position.set(q.x, 0.05, q.z); o.updateMatrix(); dots.setMatrixAt(i, o.matrix); }); }
+  dots.count = 0; scene.add(dots);
+
+  // --- pins with blob shadows, and their labels
+  const blobGeo = new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2);
+  const blobMat = new THREE.MeshBasicMaterial({ color: 0x2a2824, transparent: true, opacity: 0.2, depthWrite: false });
+  const red = mat(C.route), ink = mat(C.ink), white = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const pins = P.stations.map((st) => {
+    const g = new THREE.Group(); g.position.set(st.pin[0], 0, st.pin[1]);
+    const head = new THREE.Group();
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.44, 18, 12), red);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.33, 0.66, 16).rotateX(Math.PI), red); tip.position.y = -0.42;
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 8), white);
+    head.add(ball, tip, eye);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 6).translate(0, 0.5, 0), ink);
+    const blob = new THREE.Mesh(blobGeo, blobMat); blob.position.y = 0.03; blob.scale.setScalar(0.45);
+    g.add(head, pole, blob); scene.add(g);
+    const tag = document.createElement('span'); tag.className = 'tag'; tag.innerHTML = '<b>' + st.n + '</b>' + st.name; tagsEl.appendChild(tag);
+    return { st, g, head, pole, blob, eye, tag, rise: 0, pulse: 0 };
+  });
+  const startTag = document.createElement('span'); startTag.className = 'tag start'; startTag.textContent = 'Start: the poster'; tagsEl.appendChild(startTag);
+  const setPin = (p, k) => {
+    p.rise = k;
+    const h = P.pinH * Math.max(0, k);
+    p.head.position.y = h; p.base = Math.min(1, Math.max(0.001, k * 1.3)) * (1 + 0.25 * p.pulse);
+    p.pole.scale.y = Math.max(0.001, h - 0.75); p.pole.visible = h > 0.8;
+    p.blob.scale.setScalar(0.45 * Math.min(1, Math.max(0.001, k)));
+    p.g.visible = k > 0.001;
+  };
+  pins.forEach((p) => setPin(p, 0));
+
+  // --- the camera: a narrow-angle overview fitted to the real frustum, and an eye-height shot at stop 1
+  const keyPts = [];
+  (() => {
+    const w = S.w / 2, d = S.d / 2;
+    for (const [x, z] of [[-w, -d], [w, -d], [w, d], [-w, d], [0, -d], [0, d], [-w, 0], [w, 0]]) { keyPts.push([x, 0, z], [x, -S.grass - S.earth, z]); }
+    const m = P.mill, b = P.barn;
+    keyPts.push([m.x0, m.h + m.roof, (m.z0 + m.z1) / 2], [m.x1, m.h + m.roof, (m.z0 + m.z1) / 2], [b.x0, b.h + b.roof, (b.z0 + b.z1) / 2], [b.x1, b.h + b.roof, (b.z0 + b.z1) / 2]);
+    T.forEach((t) => keyPts.push([t.x, 2.7 * t.s, t.z]));
+    P.stations.forEach((st) => keyPts.push([st.pin[0], P.pinH + 1.9, st.pin[1]]));
+    keyPts.push([P.poster.x, 3.6, P.poster.z]);
+  })();
+  const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+  const dirOf = (az, el) => V3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+  let A = null, Bv = null, azOff = 0;
+  function fitAerial(V) {
+    const az = V.az + azOff, el = V.el, fov = V.fov * Math.PI / 180, tv = Math.tan(fov / 2), th = tv * V.aspect;
+    const dir = dirOf(az, el), up = V3(0, 1, 0);
+    const r = new THREE.Vector3().crossVectors(up, dir).normalize(); // camera right
+    const u = new THREE.Vector3().crossVectors(dir, r).normalize();
+    const target = V3(0, 0.4, 0), MX = 0.91, MY = 0.9, tmp = new THREE.Vector3();
+    const ndc = (d) => {
+      const cam = target.clone().addScaledVector(dir, d); let x0 = 9, x1 = -9, y0 = 9, y1 = -9;
+      for (const k of keyPts) {
+        tmp.set(k[0], k[1], k[2]).sub(cam);
+        const z = -tmp.dot(dir), x = tmp.dot(r) / (z * th), y = tmp.dot(u) / (z * tv);
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+      }
+      return [x0, x1, y0, y1];
+    };
+    let d = 100;
+    for (let it = 0; it < 4; it++) {
+      let lo = 10, hi = 4000;
+      for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2, b = ndc(mid); if (Math.max(-b[0], b[1]) <= MX && Math.max(-b[2], b[3]) <= MY) hi = mid; else lo = mid; }
+      d = hi;
+      const b = ndc(d), cx = (b[0] + b[1]) / 2, cy = (b[2] + b[3]) / 2;
+      target.addScaledVector(r, cx * d * th).addScaledVector(u, cy * d * tv);
+    }
+    return { az, el, d, fov: V.fov, target };
+  }
+
+  // --- a fixed camera: the overview, fitted to the picture; it never follows the scroll
+  let W0 = 0, H0 = 0;
+  function placeCamera() {
+    camera.fov = A.fov;
+    camera.position.copy(A.target).addScaledVector(dirOf(A.az, A.el), A.d);
+    camera.near = Math.max(0.05, A.d * 0.04); camera.far = A.d * 4 + 80;
+    camera.lookAt(A.target); camera.updateProjectionMatrix();
+  }
+  function resize() {
+    const V = H.view(); if (V.w < 2 || V.h < 2) return;
+    W0 = V.w; H0 = V.h;
+    renderer.setSize(V.w, V.h, false);
+    camera.aspect = V.aspect;
+    A = fitAerial(V);
+    dirty = true; kick();
+  }
+
+  // --- one slow drawing of the route, then nothing moves
+  const DRAW = H.drawS, DRAW0 = 0.7, RISE = 0.8, END = DRAW0 + DRAW + RISE + 0.3;
+  const soft = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+  pins.forEach((p) => {
+    const f = p.st.s / route.len; let lo = 0, hi = 1;
+    for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (m * m * (3 - 2 * m) < f) lo = m; else hi = m; }
+    p.riseT = DRAW0 + DRAW * hi;
+  });
+  let clock = H.still ? END : 0, playing = !H.still, dirty = true, running = true, visible = true, last = performance.now(), raf = 0;
+  function update() {
+    posterG.scale.setScalar(Math.max(0.001, soft((clock - 0.1) / 0.5)));
+    startTag.classList.toggle('on', clock > 0.45);
+    const sDrawn = route.len * soft((clock - DRAW0) / DRAW);
+    dots.count = dotPos.filter((s) => s <= sDrawn).length;
+    pins.forEach((p) => {
+      const k = Math.min(1, Math.max(0, (clock - p.riseT) / RISE));
+      setPin(p, soft(k));
+      p.tag.classList.toggle('on', k > 0.6);
+    });
+  }
+  const pv = new THREE.Vector3();
+  function place(el, x, y, z, dy) {
+    pv.set(x, y, z).project(camera);
+    const px = (pv.x + 1) / 2 * W0, py = (1 - pv.y) / 2 * H0 - dy;
+    el.style.transform = 'translate(' + px.toFixed(1) + 'px,' + py.toFixed(1) + 'px) translate(-50%,-100%)';
+  }
+  function render() {
+    placeCamera();
+    pins.forEach((p) => p.head.scale.setScalar((p.base || 0.001) * 1.45));
+    const cd = camera.position;
+    pins.forEach((p) => { const v = cd.clone().sub(p.g.position); v.y = 0; v.normalize().multiplyScalar(0.33); p.eye.position.set(v.x, 0.04, v.z); });
+    renderer.render(scene, camera);
+    pins.forEach((p) => place(p.tag, p.g.position.x, P.pinH * Math.max(p.rise, 0.6) + 0.75, p.g.position.z, 4));
+    place(startTag, P.poster.x, 2.2, P.poster.z, 6);
+  }
+  function finish() {
+    playing = false; renderer.shadowMap.needsUpdate = true; dirty = true;
+    if (!H.still) again.hidden = false;
+    Calm.release('hero');
+  }
+  function frame(now) {
+    raf = 0;
+    if (!running) return;
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    let wait = false;
+    if (playing) {
+      if (visible && Calm.claim('hero')) {
+        clock += dt; update(); dirty = true;
+        if (clock >= END) { clock = END; update(); finish(); }
+      } else { wait = true; if (!visible) Calm.release('hero'); }
+    }
+    if (dirty) { dirty = false; render(); }
+    if (playing && !wait) kick();
+  }
+  function kick() { if (!raf && running) raf = requestAnimationFrame(frame); }
+  H.resume = () => { if (playing && visible && !Calm.holder) { last = performance.now(); kick(); } };
+  again.addEventListener('click', () => {
+    if (Calm.holder && Calm.holder !== 'hero') return;
+    clock = 0; playing = true; again.hidden = true; update(); dirty = true; last = performance.now(); kick();
+  });
+
+  if ('IntersectionObserver' in window) new IntersectionObserver((es) => {
+    visible = es[0].intersectionRatio >= 0.25;
+    if (!visible) Calm.release('hero');
+    H.resume();
+  }, { threshold: [0, 0.25, 0.5, 1] }).observe(art);
+  if ('ResizeObserver' in window) new ResizeObserver(resize).observe(art); else addEventListener('resize', resize);
+
+  resize();
+  update();
+  renderer.shadowMap.needsUpdate = true;
+  render();
+  canvas.classList.add('on');
+  H.onReady();
+  if (playing) { last = performance.now(); kick(); } else finish();
+
+  H.scene = {
+    setClock(c) { clock = c; playing = false; update(); dirty = true; kick(); },
+    state() { return { clock: +clock.toFixed(2), end: END, playing, visible, rafs: raf ? 1 : 0 }; },
+    framing() {
+      const pts = keyPts.map((k) => { const v = new THREE.Vector3(k[0], k[1], k[2]).project(camera); return [(v.x + 1) / 2 * W0, (1 - v.y) / 2 * H0]; });
+      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+      return { w: W0, h: H0, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+    },
+    info() { const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info'); return { renderer: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'n/a', calls: renderer.info.render.calls, dpr: renderer.getPixelRatio() }; }
+  };
+}
+</script>
+</body>
+</html>

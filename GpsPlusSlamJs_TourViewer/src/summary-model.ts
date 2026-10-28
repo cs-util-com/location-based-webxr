@@ -327,11 +327,14 @@ function diagonalM(points: readonly MapPoint[]): number {
 }
 
 function summaryObject(object: TourObject): SummaryObject | null {
+  // Pins and photos only: a placed 3D model (format minor 1) is not drawn
+  // here, and stays in the tour untouched.
+  if (object.kind === "model") return null;
   const point = { lat: object.geo.lat, lng: object.geo.lon };
   if (!readablePoint(point)) return null;
   return {
     id: object.id,
-    kind: object.kind,
+    kind: object.kind === "shortText" ? "pin" : "photo",
     label: objectTitle(object),
     ...point,
   };

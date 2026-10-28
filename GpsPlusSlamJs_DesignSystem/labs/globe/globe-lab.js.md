@@ -7,8 +7,13 @@
   `<details>`, built with `textContent` only). A loading label ("Loading
   Earth imagery: n of m") shows while tiles are pending, and the error box
   names tiles that could not load ("a coarser level shows there") and global
-  maps that could not load. The label counts the two global maps too, so
-  it ends only when the clouds (the largest file) have arrived.
+  maps that could not load. The label counts the two global maps too:
+  the clouds at their preview (round-3 plan 2026-10-08-2345 §18; the
+  full map comes after it in the background, its own stage in
+  `state().cloudMap`, so the label neither waits for its 4 MB nor comes
+  back after a context loss). A sharp map that could not be made (a
+  piece failed after its retries, or the GPU step threw) adds "The sharp
+  cloud map could not load: the coarser one shows." (the preview stays).
 - Round 2 (plan 2026-09-26-2055 M3 c-f; round-3 plan 2026-09-27-0532 §4 F):
   the lab owns a pinnable clock that drives the sun and the clouds' drift;
   a background pass (`/globe/globe-sky.js`) draws the sun's disc and glow
@@ -49,10 +54,51 @@
   `turnMs` (0-10000), `diveMs` (the pin's dive, 1000-60000, default
   15000; set in the hash it fixes the dive's length by hand, otherwise
   the arrival prefetch paces it), `prefetch` (the arrival prefetch, on
-  unless 0; no panel control), `handOverKm` (the hand-over altitude, 1-5000, default 150; the
-  plate offers 20, 50, 150), `handOver` (1 opens the city, 0 holds),
+  unless 0; no panel control), `landKm` (where the dive lands, km above the
+  ellipsoid, 1-5000, default 2; the plate offers 2, 5, 20), `land` (1 with
+  an `at=` link flies the dive to that place; the city plan 2026-10-05-0040
+  §12.4 R15; the dive starts on the first frame, from the camera's first
+  placed view, never at load, when the camera has no pose and a dive set
+  off from the ground), `flight` (1 today's dive, the default; 2 the
+  continuous flight of the continuous-flight plan 2026-10-07-0941, CF4:
+  the pin's press starts `/globe/pin-flight.js` at once, holding above about
+  2,000 km until the fix (DEC-CF-4b), then one path to the landing whose
+  clock is gated just above 100 km until the arrival prefetch is ready
+  (DEC-CF-3b, 60 s cap DEC-CF-5); the prefetch's progress and the landing's
+  floor (`diveFloorM`, a rise over 50 m replans) feed it every frame; a
+  denied position ends at the hold; a touch or a hidden page cancels it in
+  every moving phase (the intro's `yieldToUser` calls `pinTouch`, so its
+  phase reads `cancelled`), and the pin says "Finding you, descending";
+  with the prefetch off (`prefetch=0`) its progress reads 1, so nothing
+  waits at the gate; the distance-to-target readout shows once the place
+  is known (`aimPin`); a `flight=1` dive drops any pin flight left from a
+  `flight=2` one (the hash switches modes without a restart); the world frame follows the camera during it;
+  `land=1` flies it to its link's place; `holdDiveAt` and `diveAltitudeAt` read its path at its own clock,
+  and `state().pin.flight` reports its phase, clock, rate, landing,
+  progress, gate and end), `flightStartKm` (0-100,000, default 65,000: a
+  `land=1&flight=2` link's flight starts this far up over the camera's
+  first view, round-2 plan DEC-FR2-3; 0 from the camera as placed; the
+  pin's press always flies from where the camera is),
   `nightGain` (0-4, default 0.7), `waterRoughness`,
-  `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default 0.5),
+  `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of the clock's drift time,
+  default 0.375 by the owner's choice, DEC-G6-5, now the FAR rate; in
+  real time while `time=` holds the hour, round-5 plan C1), and the drift
+  by the camera's altitude (round-5 plan §9, DEC-R5-3,
+  `/globe/globe-cloud-drift.js`): `cloudDrift` from `cloudDriftFarKm`
+  (20,000) up, proportional to the altitude below it, never under
+  `cloudWindMps` (10 m/s over the ground); the offset summed per frame,
+  seeded with rate x time on the first frame, a new clock or a new
+  `cloudDrift`; the state's `cloudDriftNow` the rate this frame,
+  `cloudShell` (1, the default: the clouds move onto their own shell above
+  the ground as the relief takes the pixels, the band's share, so the
+  orbit keeps the painted look and the relief keeps its colour under a
+  cloud; 0 paints them into the ground everywhere, as before; round-6 plan
+  G6-2), `cloudShellKm` (the shell's height, default 3, times the relief's
+  exaggeration E, set every frame), `cloudShadow` (the soft shadow on the
+  ground with the shell, 0-1, default 0.6, scaled by the shell's share;
+  `globe-clouds.smoke.spec.mjs` checks the ground keeps its colour, the
+  shadow only darkens, and the orbit is unchanged; the test hook
+  `hideCloudShell(on)` hides the shell),
   `sky` (0 turns the background pass off, default 1), `sunSize` (the disc's
   apparent diameter, 0.1-10°, default 1°, about twice the real 0.533°),
   `sunGlow` (0-4, default 0.95), `stars` (0 hides the procedural stars,
@@ -124,6 +170,11 @@
   up by `deg` about its own right axis and HOLDS it there (the controls
   stop running until a reload), so a smoke can look at the sky from inside
   the air; the dive itself always looks straight down.
+  `__globeLab.placeView({ lat, lng, altitudeKm, headingDeg, pitchDeg })`
+  holds the camera at a Debug export's pose the same way, so a smoke can
+  stand where the owner stood. `__globeLab.shiftCamera(eastM, northM)` moves the
+  camera along the ground without taking it from the controls, so a smoke
+  can fly it far during a press.
 - The cost probe (round-4 plan DEC-GL4-2/4): `__globeLab.timeFrames(n)`
   draws n frames back to back, reads one pixel so the GPU has finished,
   and returns the wall time in ms. Under SwiftShader it is relative only:
@@ -218,6 +269,10 @@
   - The fitted distance is computed at `fovY` (the disc filling 90 % of
     the narrower side), not at the camera's field of view, which the
     fly-in varies.
+  - A view: `#view=<lat>,<lng>,<altitude km>,<heading>,<pitch>` (the Debug
+    export's `link`; volume-cloud plan §16) opens at that pose: the frame
+    moved under it, the intro skipped, the camera handed to the controls
+    (`applyView`); a new `view=` in the hash does the same.
   - The target: `#at=<lat>,<lng>` if given; else a position, but only
     where the geolocation permission is ALREADY granted
     (`geolocationPermissionState` from the framework's import-free
@@ -309,6 +364,14 @@
         of a dive and of a zoom out: 0 holes with the gate and the fill,
         and holes with the old rule (the positive controls). It also logs
         the fill's cost at the hold (1.61-1.68 x under SwiftShader).
+      - A drain frees the relief's imagery and meshes, but its decoded
+        heights stay (`keepHeightsMiB`, default 16, read at start, 0 for
+        none; `createGlobeTerrain`'s `keepHeightsBytes`, owner decision
+        2026-10-04 DEC-N1), so a return into the band fetches almost none:
+        1 height tile against 30 without it in the hand-over smoke. The
+        state's `relief.keptHeights` and `relief.heightRequests` (the
+        synthetic heights' request count) and the Debug panel's "heights
+        kept" line show it.
       - A drain keeps a carrier's coarsest tiles (depth 1) and the tiles its
         last update used, so the globe can fill at once when the view
         widens.
@@ -340,20 +403,96 @@
     page builds the terrain lab's 256 km region around the target
     (`globe-detail-region.js`, loaded with the relief only) and hands its
     grid of factors to the tiles; it applies at the next pin press.
-  - `handOverKm` goes up to 5,000 km since F1, so a smoke can hold inside
+  - `landKm` goes up to 5,000 km since F1, so a smoke can hold inside
     the band. `reliefHeights=synthetic` serves heights generated
-    in the page (`../globe-terrain/synthetic-heights.js`; the smokes),
+    in the page (the Globe package's `src/test-utils/synthetic-heights.ts`; the smokes),
     otherwise the live Terrarium tiles, credited in the credits line.
+  - The relief's source (G1 step 2, read at start; tour editor plan
+    `2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md` §13):
+    `reliefSource=aws` (the default: AWS Terrarium, 256 px, z12) or
+    `mapterhorn` (512 px, z14 where a national model exists; where it
+    answers 404, its own nearest ancestor cropped and upsampled,
+    `/globe/globe-relief-fallback.js`). URLs and credits are the Osm
+    library's constants, described by `/globe/globe-relief-source.js`;
+    the credits line names Mapterhorn and Copernicus GLO-30 with their
+    links. The city's heights and the landing's ground read the same
+    source at its global zoom (12; the relief draws z14 where it can, an
+    unmeasured difference, `globe-city-heights.js.md`); the detail
+    colour stays on AWS z8.
+    `reliefDevice=phone|desktop` (without it, from the input: phone for a
+    coarse pointer, desktop otherwise; the state's `relief.device` and
+    the Debug line show which; assuming phone put a desktop on
+    Mapterhorn's phone budget, which stalls) sets the relief cache's
+    budget for the source's tile size (`reliefCacheBudget`: 64 MiB for
+    AWS on a phone, about 151 MiB for Mapterhorn; desktop 256 and about
+    604 MiB, from the 2026-10-18 sweep in `globe-relief-cache.ts.md`), which
+    becomes `reliefCacheMiB`'s default. `reliefMeshLevel` (0-24, unset
+    by default) deepens the relief's tree (`meshMaxLevel`): 17 draws
+    Mapterhorn z14 at about 6.5 m between vertices near the camera.
+    The phone's 64 MiB does not hold every view: at a 3 km oblique view
+    (2026-10-18, 256 px synthetic heights) the relief's whole tree took
+    about 130 MiB, so 64 and 128 MiB stayed full and missed tiles (the
+    state's `relief.cache.stalled` and the Debug line say so), 256 MiB
+    did not. A defect found in the same sweep, since fixed: a first view
+    looking steeply down from below about 300 m (30 m at pitch -45 or
+    -70, 1.7 m at -70) never handed over to the relief: the band share
+    stayed 0 and the globe drew its own two tiles. `view=`'s height is
+    over the ellipsoid, so those views over Munich started under the
+    ground, below the relief's tile volumes; a steep view there sees none
+    of the relief, and the band gate read that as "not ready", while the
+    clearance lifts the camera only where the relief draws. The gate now
+    reads a carrier with nothing in view as ready (`globe-band-gate.ts.md`),
+    and `globe-editor-blocks.smoke.spec.mjs` starts first person from
+    such a view.
+  - First person (G1 step 5, read at start): `eye=1` keeps the camera
+    1.7 m over the drawn ground (`GLOBE_EYE.clearanceM`, not the
+    flight's 100 m), lowers the controls' limits to it
+    (`applyEyeControls`) and fits the near plane to 0.3 x the clearance
+    or half the distance to the nearest item, at least 0.1 m
+    (`eyeClipPlanes`). `depth=reversed` asks three for a reversed
+    depth buffer (where the context has EXT_clip_control; the state's
+    `eye.depth` says what three gave); the default is standard, never
+    logarithmic. The scene-depth readers (the cloud volume, the space
+    pass) assume standard depth: with `depth=reversed` keep the cloud
+    volume off. Test hooks: `placeEyeItem(distanceM, radiusM,
+register = true)` (a red sphere ahead, which the near plane follows
+    unless unregistered), `clearEyeItems()`, and `groundHitAt(u, v)`
+    (the ground under a screen point as the editor picks it:
+    `groundHit` over the relief's sampled heights, with a reach to the
+    camera's horizon, `groundReachM`; a miss names its reason). State: `eye`
+    (`on`, `near`, `depth`, `items`).
+  - The OSM map (G1 step 6): `osm=1` (off by default; a select in
+    "Tiles and memory") attaches `createGlobeOsmOverlay` with the
+    framework's `osm-tiles.ts` constants the first time it is on, and
+    adds its credit with the copyright link. Tiles z15 and finer within
+    `osmFadeM` (default 300, a slider) of the camera, faded out by that
+    distance, only at or below 200 m over the ground and 50 m/s, at most
+    about 150 requests a minute. The relief must reach z15 near the
+    camera for any tile to be asked for: with the default mesh it stops
+    at z13, so use `reliefMeshLevel` 15 or more (17 is the editor's
+    about 6.5 m mesh). State: `osm` (`attached`, `pose` (the
+    `aboveGroundM` and `speedMps` it was given last), `enabled`,
+    `active`, `requests`, `requestsLastMinute`, `unpatchedShaders`,
+    locks, `finestLevel`).
+  - The editor's blocks come through their one entry module,
+    `/globe/globe-editor.js` (`GpsPlusSlamJs_Globe/src/globe-editor.ts`).
   - Every frame the relief's exaggeration is `exaggerationAt` of the
     camera's altitude (`/globe/globe-flight.js`: 1 at globe scale, the
-    near value `reliefNear` (default 3, DEC-GL5-5) from 20 km down, 2.2 at
-    the 150 km hold), in steps of 0.1.
+    near value `reliefNear` from 20 km down: default 1, true heights at
+    every altitude since the owner's D-K1 (city plan 2026-10-05-0040
+    §11); 3 was DEC-GL5-5, and `reliefNear=3` draws it, 2.2 at
+    150 km), in steps of 0.1. `reliefGround` above 0 adds the
+    third band (city plan 2026-10-05-0040 K1): E eases from the near value
+    at 8 km to `reliefGround` (capped at the near value) at 2 km and
+    below, so a city can stand on true heights (1); the dive's floor reads
+    the same law, and so does the cloud shell (3 km x E), which then sinks
+    with it.
   - The pin's dive is the oblique approach (`planDive`'s pitch law; the
     `pitchLow` key, 30-90, default 45; 90 flies the old straight-down
-    dive), ending at the hand-over altitude or the clearance rule's floor
-    over the target (`minimumAltitudeM` of the ground under it, read from
-    the plugin's height sampler, at the hold's exaggeration), whichever is
-    higher. `handOver` stays default 1 (DEC-GL5-8).
+    dive), ending at `landKm` or the clearance rule's floor over the
+    target (`minimumAltitudeM` of the ground under it, read from the
+    plugin's height sampler, at the landing's exaggeration), whichever is
+    higher.
   - The clearance every frame (review 2026-10-03-1835 major 1): wherever
     the relief draws, the camera is raised to the clearance over the drawn
     ground under it (`clearedAltitudeM` of the plugin's
@@ -365,8 +504,14 @@
     placement smoke).
   - `state()` adds `relief` (`{ heightScale, litTiles, visibleTiles,
 heights, share, groundUnderCameraM, clearanceLifts, settled, stats,
-cachedBytes, globeCachedBytes, releasedBytes, globeDrawn, reliefDrawn,
-globeTiles, detail }` or null; `detail` is the region's state, with its
+cachedBytes, cache, globeCachedBytes, releasedBytes, globeDrawn, reliefDrawn,
+globeTiles, detail, device, source, fallback, meshMaxLevel }` or null; `cache` is
+    the terrain's `reliefCache()` (full, refusals, stalled; G1 1c);
+    `device` the device class its budget is for;
+    `source` the heights' source id (or `synthetic`), `fallback` its 404
+    fallback's counts (`reliefFallback()`: tiles drawn from an ancestor
+    and failures; null without it) and
+    `meshMaxLevel` the tree's set depth (G1 2); `detail` is the region's state, with its
     height tiles and bytes once ready) and `cameraDepressionDeg`.
   - Not yet (the F2 plan 2026-10-03-1922): the re-oriented frame, the
     planes from the exaggerated relief, the atmosphere hand-over and the
@@ -406,32 +551,72 @@ globeTiles, detail }` or null; `detail` is the region's state, with its
   - `diving` and `landed`: the pin's dive (below), from the camera's
     current pose, distance and rotation (the rotation fades out over the
     first fifth, so a camera the controls had tilted turns smoothly
-    instead of snapping), then held at the hand-over altitude.
+    instead of snapping), then held at the landing altitude.
 
+- The city in the globe's scene (globe city plan 2026-10-05-0040 §12.5 C4,
+  §14; `globe-city.js`, `globe-city-worker.js`): `city` (default 1, read at
+  start; 0 turns it off) and `cityKm` (30). The pin's warm-up IS the
+  city's load (above, round-4 plan 2026-10-11-0122 §5); once a place is
+  known (the pin's located target or the link's `at=`) and no warm-up runs
+  for it, the frame loop asks for it too, once per place (a load of the
+  place that runs or ran is reused, so nothing downloads twice); without
+  any warm-up (`cityWarm=0`, `prefetch=0`) only once the camera is below
+  `cityKm`, so a link that names a place for its view loads no city data
+  from orbit. It is
+  loaded and built in a worker from the Osm library alone (the first ring
+  drawn first, the rest replacing it as it arrives; buildings with their
+  walls, trees, and with `cityRoads` (default 1) the roads and paths,
+  lifted `roadLiftM` (2 m) along the city's up and pulled forward by a
+  `roadOffset` polygon offset (0), all three read at start), drawn through
+  `gps-plus-slam-osm/three` (loaded with
+  the first city, so the boot graph stays free of the library), placed on
+  `globe.group` through `ecefFromCityAt`, and faded in by
+  `cityShareAt(altitude, cityKm)`: nothing at and above `cityKm`, all of it
+  below two thirds of it, dithered between. It is off (fade 0, never asked
+  for) while the relief near the ground is exaggerated (`reliefNear` above
+  1, R14), and drawn only where the relief is drawn at true heights at the
+  current altitude (with `reliefGround` the relief is exaggerated above
+  2-8 km). The library's loader asks again for a failed tile or missing
+  heights after 10, 30 and 60 s; a city that still failed is asked for
+  again after 10 s, three times at most. The pin's landing message says "km above sea level" (the altitude
+  is above the ellipsoid, not the ground). The scene-depth pass draws it with the relief, so the space pass
+  and the cloud volume end at buildings too. `state().city` carries its
+  phase, place, counts, ground height and fade. Test hooks:
+  `__globeLab.cityProbe(max)` (the state, whether the root is drawn, and
+  building vertices in ECEF metres), `__globeLab.cityExpected(lat, lng,
+heightM)` (the ECEF point of a place, for an independent placement check)
+  and `__globeLab.reliefHeightAt(lat, lng)` (the relief's own height there,
+  from its sampler, for the vertical check).
 - The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6 step 1), wired
   into the pin:
-  - at the fix, the lab loads `/osm/arrival-prefetch.js` (OsmDemo) with a
-    literal dynamic `import()` and starts it for the target, so the city
-    opens on a warm cache after the hand-over. Its graph (the Osm library,
-    about 1.1 MB of source, and H3, 0.55 MB) loads only then: the import
-    map's `h3-js`, `gps-plus-slam-osm` and
-    `gps-plus-slam-app-framework/osm-bridge` entries are unused at boot,
-    and `build-lookdev.test.mjs` fails if the lab's static graph reaches
-    them. Only `/globe/flight-pace.js` and `/globe/globe-arrival.js`
-    (small, no dependencies) load at boot;
+  - at the fix (or from load for an `at=` link, `cityWarm`), the lab starts
+    the city's own load for the target (`startCityLoad`: `globe-city.js`'s
+    `load` with `fresh`, the Osm library's `loadCityData` in the city's
+    worker; round-4 plan 2026-10-11-0122 §5). The warm-up and the build are
+    ONE load: the flight paces on exactly the tiles and heights the city
+    reads (the relief's Terrarium z12, R13; validation finding F6 closed),
+    the city is drawn after the first ring and again as the rest arrives,
+    and the 21 MB JSON parse runs in the worker, never on the main thread.
+    Without a city to load (`city=0`, no relief, the relief not at true
+    heights near the ground) nothing is waited for. The worker's graph (the
+    Osm library and H3) loads only then: the import map's `h3-js`,
+    `gps-plus-slam-osm` and `gps-plus-slam-app-framework/osm-bridge`
+    entries are unused at boot, and `build-lookdev.test.mjs` fails if the
+    lab's static graph reaches them. Only `/globe/flight-pace.js` and
+    `/globe/globe-arrival.js` (small, no dependencies) load at boot;
   - the dive's clock (`createDiveClock`): paced by the prefetch's
     progress (`stepPace`: the cold pace until the data is in, the whole
     path over at most the 30 s cap of DEC-GL5-6; about 8.6 s when the data
     is already stored), mapped onto `diveMs` so the dive keeps its easing.
     `diveMs` in the hash keeps the fixed dive as a manual override;
-    `prefetch=0` turns the prefetch off (and the fixed dive with it). A
-    module that does not load counts as done: nothing can be warmed, so
-    the dive does not wait;
+    `prefetch=0` turns the prefetch off (and the fixed dive with it); the
+    city then loads when the frame loop asks for it. No city to load, or a
+    worker that fails, counts as done: the dive does not wait;
   - every way a flight stops (a press of the pin, a touch on the globe, a
-    hidden page, the hand-over) aborts the prefetch;
-  - the hand-over does not wait past the dive: the paced dive lands when
-    the data is in or at the cap, and hands over at once. Holding longer
-    is an open decision (the round-5 results, Q2), not built;
+    hidden page) aborts the load (the frame loop asks for the place's city
+    again afterwards, which then reads what was stored);
+  - the landing does not wait past the dive: the paced dive lands when
+    the data is in or at the cap;
   - the status line `#globe-arrival-status` (left of the pin's own,
     hidden when idle, `aria-live="polite"`): the tiles warmed of the
     total, cold or warm, while it runs, then how it ended
@@ -450,7 +635,7 @@ globeTiles, detail }` or null; `detail` is the region's state, with its
   glyph), with a status line to its left. Its phases and labels are
   `/globe/globe-pin.js`'s; the button carries them in `aria-label`,
   `title`, `aria-busy`, `disabled` and `data-state` (`locating`
-  pulses; flying and handing over use the engaged look):
+  pulses; flying uses the engaged look):
   - idle ("Fly to my location") -> a press asks for the position ONCE,
     only then (the framework's `locateOnce` from
     `/fw/utils/locate-state.js`, 15 s as OsmDemo; no prompt on load,
@@ -465,29 +650,18 @@ globeTiles, detail }` or null; `detail` is the region's state, with its
     try again.") and the pin is idle again;
   - flying ("Flying to you - tap to stop"): the intro's `dive`
     (`planDive` / `diveStep` in `/globe/globe-dive.js`) turns over the
-    first 40 % and descends log-evenly over `diveMs` to `handOverKm` above
+    first 40 % and descends log-evenly over `diveMs` to `landKm` above
     the fix, the height taken along the camera's own direction, and a
     tilted start's offset fading out over the first fifth; a press of the
     pin, a touch on the globe, or the page being hidden (another tab, a
-    locked phone: the flight would otherwise run on and hand over the
-    moment it is seen again) stops it and leaves the camera to the
+    locked phone: the flight would otherwise run on out of sight) stops it and leaves the camera to the
     controls; the replay button or a new target ends it too;
-  - handing over ("Opening the city..."): once landed, the page goes to
-    `handOverUrl` (`/globe/globe-handover.js`): OsmDemo beside the lab
-    (`<root>osm/` for a lab at `<root>lookdev/labs/globe/` on the site;
-    on the design system's dev server `/osm/` is only its route to
-    OsmDemo's source files, not the app), `lat`/`lng` and `clat`/`clng`
-    at the fix, `cdist=1800` (the hand-over distance, well inside
-    OsmDemo's fog: the sweep is in `globe-handover.ts.md`), and the globe clock's instant as OsmDemo's `date` (solar
-    date at the fix) and `time` (apparent solar time) when the sun there
-    is at or above -6°; otherwise no time, and OsmDemo boots at its own
-    afternoon sun (the jump is part of the cut). With `handOver=0` the dive
-    holds at the hand-over altitude instead and the pin is idle again
-    ("Arrived 150 km above you (the hand-over is off)."). Back from the
-    city, the browser may restore the lab from its back-forward cache as
-    it was left, handing over: `pageshow` with `persisted` makes the pin
-    idle again ("Back from the city."), and a press flies again from where
-    the view is.
+  - landed: the dive holds `landKm` up over the place, in the globe's own
+    city, and the pin is idle again ("Arrived, 2 km up."). The page used
+    to hand over to OsmDemo's city here (`handOverUrl`, the `handingOver`
+    phase, a `pageshow` return); all of that was removed with the city in
+    the scene (§12.5 C6, the owner's D-K3). `pin.diveTo(place)` flies the
+    same dive to a given place (a `land=1` link).
   - After a failure the button keeps the failure's `data-state`
     (`denied`, `timeout`, `unavailable`: the locate atom's warning dot)
     until the next press.
@@ -498,20 +672,25 @@ globeTiles, detail }` or null; `detail` is the region's state, with its
 - Test API, `window.__globeLab`: `ready`, `error`, `state()`
   (`{ models, tileErrors, cachedBytes, pendingTiles, loadedTiles, phase,
 target, source, history, runs, spinMs, turnMs, centreLatLon, timeMs, clock,
-cloudDrift, cloudLonOffsetRad, sky, device, deviceLine,
+cloudDrift, cloudLonOffsetRad, cloudMap, sky, device, deviceLine,
 sunEcef, tuning, sunIntensity, fovY, pixelRatio, errorTarget,
 bytesDownloaded, tileRequestsByLevel, rendererMemory, appliedHash, radiusM, activeSources,
 loadingShown, loadingVisible, cacheBudgetBytes, cacheFloorBytes,
 creditShorts, mapsLoaded, mapErrors, mapsTotal, refusedTiles, distance,
 cameraOwner, cameraDistanceM, altitudeM, near, far, pin }`;
-  `pin` is `{ phase, label, status, located, handOverUrl }`;
+  `pin` is `{ phase, label, status, located, arrival }`;
   `cameraOwner` is `intro` or `controls`, `altitudeM` the camera's height
   above the ellipsoid, `near`/`far` the camera's clip planes;
   `tuning` is what the shader reads (the uniforms), not the hash;
   `hourLabel` is the hour label's text;
   `timeMs` is the clock's instant and `clock` its `{ startMs, scale }`
   (the pin or null, and the effective scale); `cloudLonOffsetRad` is the
-  drift the shader reads; `sky` is `{ on, sunDiameterDeg, glow,
+  drift the shader reads; `cloudMap` is the surface's
+  `cloudMap.state()` (`{ stage, width, height, preview, full,
+piecesFailed, rebuilds, fullAtMs, bitmap }`, `globe-cloud-map.ts`) with
+  `red`: the cloud map the shaders read (the 1,024 preview, then the
+  8,192 x 4,096 map once its pieces are drawn, one channel, decoded off
+  the main thread where the browser can: round-3 plan M1, §18); `sky` is `{ on, sunDiameterDeg, glow,
 sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   null behind the camera); `device` is `{ floatLinear }`;
   `sky.stars` is `{ on, magLimit, count, procedural }`, `sky.milkyWay` the
@@ -538,6 +717,258 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     latitude exactly found no tile, or at a tile corner the far side of the
     Earth (the cause, shared vertices or three's triangle test, is not
     established). A hit beyond the Earth's centre reads as null.
+- The global maps are decoded off the main thread where the browser can
+  (`/globe/globe-map-loader.js`, round-3 plan 2026-10-08-2345 M1; the
+  element loader comes through `/globe/globe-surface.js`);
+  `mapBitmap=0`, read at load, takes the plain image element, so a smoke
+  can compare the two paths pixel for pixel. `cloudCubic` (1) reads the
+  cloud map through the B-spline in every reader (`/globe/globe-cloud-filter.js`);
+  `cloudCubic=0` is the bilinear look before, live, to compare.
+- The relief is the default since F2a (DEC-GL5-15); `relief=0` keeps the
+  plain globe. The smokes that measure the plain globe pin it: the
+  pre-round-4 look pin (`withPreRound4Look`) carries `relief=0`, and
+  `bootGlobe` and every direct page load go through `plainGlobe(hash)`,
+  which adds `relief=0` to a hash that names no relief.
+- The cloud volume (volume-cloud plan 2026-10-05-0016, C2;
+  `globe-cloud-volume.js`): `cloudVolume` 0 the shell only, 1 the volume
+  within the disc and the shell outside it, 2 (default, the owner's choice
+  of 2026-10-05) the volume over the shell; `cloudVolumeKm` (80; 20 until 2026-10-06) the disc, which the slab's reach follows,
+  `cloudVolumeCeilingKm` (40) the ceiling it fades in under over
+  `cloudVolumeFadeKm` (25); `cloudVolumeCover` (1, the owner 2026-10-06;
+  0.5 before, chosen where the volume drew almost nothing) the gain on the
+  map's cover. Each frame after the sky hand-over its share and disc are
+  set and, in variant 1, the shell's hole matches the disc; after the Earth
+  it draws the slab from the ground sky, ending at the relief's depth. The state's `cloudVolume` carries its share, disc, lift
+  and drawn frames. `cloudFlat` (1, the default; 0 the look before) fades
+  the flat cloud layer with the camera's altitude (round-2 plan DEC-FR2-5,
+  `/globe/globe-cloud-flat-fade.js`): full from `cloudFlatTopKm` (5,000)
+  up, weakening to `cloudFlatWeak` (0.3) by 100 km, then handing over to
+  the volume through its own fade (only weakening when the volume is off);
+  its shell shadow follows, and the state reports it as `cloudFlat`.
+  `cloudShellVolume` (0, the default; 1 on; round-4 plan 2026-10-11-0122
+  R4d, `globe-cloud-shell-volume.js`) draws the clouds from
+  `cloudShellTopKm` (700) down to the slab's ceiling as one ray-marched
+  shell, faded in over `cloudShellBandKm` (300) above its top and mixed
+  with the slab below its ceiling (the slab then drawn whole, its share the
+  mix's weight inside its disc, the shell weighted per pixel by that disc:
+  R4d review, finding 1; one composite); its law's stations
+  (`cloudShellStationsFor`) at `cloudShellTopKm` and `cloudShellMidKm`
+  (200) take `cloudShellCell` (4), `cloudShellThick` (4) and
+  `cloudShellNoise` (0.35, the column's rise per unit of noise) and their
+  square roots, the bottom one the slab's at the slab's ceiling or 30 km
+  (findings 9 and 11: the knobs never make the law throw);
+  `cloudShellFields` (3) the noise's morphs from 1,050 km down to the slab's
+  set (round-5 plan 2026-10-12-0612 C2, `cloudShellNoiseCascade`);
+  `cloudHigh` (0; 1 A, round-5 plan §11: a persistent high layer),
+  `cloudHighKm` (9; 3-20), `cloudHighCell` (6; 1-16), `cloudHighCover`
+  (0.35; 0-1.5) and `cloudHighShare` (0.3; 0.05-1, lower is wispier);
+  `cloudShellShadow` (0, off; 0-1: the shell's own cloud shadow and the
+  high layer's, the cloud-shadows plan 2026-10-13-1951, M2/M3, and M1:
+  the shell's to the ground, in its own target under both cloud layers;
+  the map shadow steps back where the shell draws,
+  `cloudShellShadowStrengths`); the alpha grid adds `high` and `shadow`;
+  `cloudFlatOutFromKm` (900) and `cloudFlatOutToKm` (700) the texture's own
+  fade with the shell (C5: the volume already strong when the texture
+  goes; clamped above the slab's ceiling and falling);
+  `cloudShellRes` (0.5) the march's share of the buffer (half by default:
+  the pass alone was 0.59-0.70 of a frame at full resolution on
+  SwiftShader, about 0.28 of that at half). The flat layer
+  gives the shell what it takes (the drawers share 1), its ground shadow
+  keeps the share without the shell (the volume casts none). Only with the
+  cloud volume, a frame target and `cloudNoise=live` (the field the shell
+  reads; with the tile or hex noise the old layers draw). The state's `cloudShellVolume`;
+  `cloudShellReadBack(bands)` and `timeCloudShell(n)` for the smokes. The
+  state's `firstLook` (`{ ready, shown }`, round-2 plan DEC-FR2-6) reports
+  the globe's first look: its images in, and its sphere drawn.
+  `dust` (0, the default; 1 on) draws the speed dust (round-3 plan
+  2026-10-08-2345 D1, `/globe/globe-speed-dust.js`, drawn by
+  `globe-speed-dust-pass.js`): streaks pouring past the camera, faster and
+  longer with its speed (log scale, 1 km/s to 5,000 km/s), gone when it
+  stops and below 300 km, in ECEF axes so a frame recentre never spins
+  them. Drawn before the Earth (which covers them) at 1 - `dustOver` and
+  after it at `dustOver` (0.25); `dustExposureMs` (60) and `dustWidthPx`
+  (1.5) shape the streaks. The panel's "Speed streaks" section tunes them
+  live (D1b, DEC-R3-11): `dust` on or off, `dustCount` (2,500), `dustGain`
+  (2; 2,500 and 60 ms the owner's pick of four A/B looks, DEC-R3-17),
+  `dustFar` (0.5; 0-1, the streaks' share far out where the whole Earth
+  is in view, round-5 plan: the owner found them a bit strong at the
+  start; 1 the r823 look), `dustColor` (0 bluish white, 1 white, 2 warm), `dustLoKmS` (1; 0.1-10) and
+  `dustHiKmS` (5,000; 500-20,000), the speed range in km/s on linear
+  sliders over ranges that never cross, and `dustDriftMin` (0.2)
+  and `dustDriftMax` (6), how fast they pour at its ends; a tuned look
+  comes back as a link in the debug export (it copies the hash). A placed view (`applyView`) resets the speed.
+  The state's `dust` reports the count, `speedMps`, `share`, `opacity`,
+  `drift`, `direction` and `shown`; `dustSample(n)` the first n visible
+  streaks projected and the focus of expansion
+  (`globe-dust.smoke.spec.mjs`).
+  `meteorDeg` (30, DEC-R3-8; 90 is round 2's R1) flies the meteor
+  (round-3 plan 2026-10-08-2345 F1, F1b, `flight=2` only): one straight line
+  looked along at every altitude, no horizon floor, landing at its own
+  angle (DEC-R3-9, -10); a `land=1` link starts on the line, looking along
+  it (`meteorLinkStart`: placed by its arc, the sweep from `flightStartKm`
+  plus the landing's look-back, on the side the camera already is), so the
+  camera never turns to its line; a press flies the flattest line its arc
+  allows and eases to the asked angle near the ground (DEC-R3-12). The
+  state adds `cameraForward` (where the camera looks, ECEF) and
+  `frameRecentres` (a count). `paceLagMs` (5,000) and `paceStages` (2: the owner's pick, DEC-R4-3) set how
+  gently the flight speeds up when its data is in or its gate opens (the
+  pin's rate lag; 2 stages is an S-curve with no acceleration at its start;
+  the panel's "Flight speed-up" section; 800 and 1 are the flight before).
+  `dustMotion` (1) says which motion makes streaks (DEC-R4-4): the distance
+  only while the user's controls move the camera, the whole motion in a
+  flight; 2 the distance only everywhere; 0 the whole motion always. The
+  volume's noise is `live` by default (DEC-R4-6) unless `cloudNoise` or
+  `cloudHex=1` says otherwise. A placement resets the dust's speed.
+  `landAglM` (150, 100-10,000, the clearance its least value; round-4 plan 2026-10-11-0122 DEC-R4-1, R4b)
+  is where `flight=2` lands: that many metres above the GROUND at its
+  place, not above sea level (`landKm` stays the old dive's and the
+  smokes' hold altitude above the ellipsoid; no panel control). The
+  place's ground is read EARLY (`/globe/landing-ground.js`, one Terrarium
+  tile at the relief's own zoom from the relief's own source through the
+  Osm library's `TerrariumProvider`, synthetic heights included; a 5 s
+  deadline; with `relief=0` or a failed read the ellipsoid): from load for
+  an `at=` link, at the fix for a press. The press would take it if read
+  (`pressPin`'s `groundM`, `meteorLinkStart`'s), but in practice a link's
+  press comes on the first frame, before the read returns, so its ground
+  always arrives through `pinGround`, at about 65,000 km, where the
+  replan is harmless (the R4b milestone review, finding 5). Per frame while flying, the relief's own
+  FINEST height at the place (`finestElevationAt`) revises it only past
+  the 25 m margin (`groundRevisionM`), through `pinGround` (the replan
+  path, never a jump; a raise only while the camera stands well over the
+  new ground). The flight aims at the ground as DRAWN at the landing
+  (`drawnGroundM`: the true height times the relief's exaggeration there,
+  1 by default; with `reliefNear` above 1 a true height was aimed under
+  the drawn relief, the R4b milestone review's finding 9). The old landing floor (a raise of more than 50 m
+  through `pinLanding`) is gone for `flight=2`: the target is lifted to
+  its ground instead. The LAW is 150 m above the place's own ground; the
+  landed line says what the readout says, the camera's height above the
+  drawn ground UNDER it, once the frame's clearance has acted
+  (`afterFrame`): "Arrived, 158 m above the ground." (over a slope the
+  clearance may hold it at 100 m behind the place; the R4b milestone
+  review, finding 2). It says "Arrived." while it waits for the relief's
+  height under the camera, at most `GLOBE_READOUT.landedWaitMs` (8 s);
+  then "Arrived, 568 m above sea level." meanwhile, replaced by the height
+  above the ground once the relief has one, until anything else writes
+  the line (`landedLineText`; r816's city
+  flight landed while the relief still had about 300 tiles to parse and
+  no share of the frame, and the bare "Arrived." stayed for good); "above
+  sea level" at once without a relief. The readout adds
+  " · 150 m above ground" below 100 km, from the drawn ground under the
+  camera, and measures "to the target" to the target at its ground. The
+  state's `pin.flight` adds `groundM`, `groundSource` ("tile" or
+  "fallback"), `groundRevisions`, `reliefGroundM` (the relief's finest
+  height at the place now) and `meteorDeg`; `relief.clearanceM` is the
+  page's clearance (100 m since round 4, `GLOBE_FLIGHT.clearanceM`).
+  `__globeLab.drawnGroundUnderCamera()` gives the DRAWN relief's height
+  straight under the camera (a ray to the Earth's centre against the
+  relief's meshes), to set against the plugin's sampled field (the R4b
+  milestone review, finding 3). Smokes: `globe-landing-ground.smoke.spec.mjs`.
+  Measured (`globe-meteor.smoke.spec.mjs`, F1 at beta 45): 73.8 degrees
+  below the horizontal at 9,718 km, 64.4 at 4,060, 52.3 at 1,003 (the
+  line: 73.7, 64.4, 52.3); F1b re-measures it at beta 30 and 45.
+  `cloudNoiseCoordAt(lat, lng)` (a test hook) returns the cloud noise
+  coordinate a ground point reads under the current frame; a recentre must
+  leave it unchanged (`globe-cloud-volume.smoke.spec.mjs`).
+  `cloudHex` (0, the default until the owner's phone run; hex-tiling plan
+  2026-10-07-0919, H2) hex-tiles the volume's big-shape octave so its
+  clouds no longer repeat every 24 km (`globe-cloud-volume.js` `setHex`;
+  the state's `cloudVolume.hex`).
+  `cloudNoise=tile|hex|live` (a text key; round-3 plan 2026-10-08-2345,
+  N1) picks the noise the volume's clouds read and wins over `cloudHex`:
+  `live` is the framework's per-octave noise that never repeats in view
+  (`cloud-live-noise.ts`), anchored to the ground across recentres and
+  the drift (`globe-cloud-volume.js` `setNoise`; the state's
+  `cloudVolume.noise`). Absent or unknown, `cloudHex` decides (tile by
+  default). `cloudFineGain` (0.3-0.85, 0.5 by default; round-3 plan §19
+  item 2) is the live noise's fine gain, more detail at the cloud edges
+  above 0.5 (`setFineGain`; the state's `cloudVolume.fineGain`). `cloudLiveProbe(points, anchors)` (a test hook) renders the
+  live noise's shader twin at local points (km, with an optional footprint
+  in km as the third number) for each anchor and reads it back beside the
+  CPU twin (`globe-cloud-noise.smoke.spec.mjs`), the twin without its
+  finest octave (so a bound can be shown to see it) and the WebGL
+  renderer's name. `cloudLivePeriods()` (a test hook; round-3 plan §19
+  item 4) gives each live octave's two period vectors on the noise plane.
+  `timeCloudVolume(n)` (§19 item 5) times the cloud volume's pass alone,
+  `setCloudMarchOctaves(n)` sets the octaves the live march reads. `cloudVolumeRows(bands)`
+  (a test hook; round-3 plan §19 item 1) reads the volume's last frame by
+  horizontal bands: each band's mean alpha and share over 0.5, the
+  elevation of its middle ray and where that ray meets the deck (km), the
+  drawn cover by distance.
+  `cloudShadowFrom` (C3) picks the ground's cloud shadow:
+  0 the shell's soft one (the default, as before), 1 the volume's (the
+  shell's then off). Measured at the 12 km hold: the shell's darkens by a
+  mean 0.93 levels, the volume's by 0.07 in sparse patches up to 9.5, and
+  the two patterns do not correlate (-0.03); whether the volume's shadow
+  is placed right is not yet verified, and these numbers were taken where
+  the volume drew almost nothing (at 46.5 N 9 E, gain 0.5, the same clear
+  noise patch under every target), so they are to be measured again.
+- The sky hand-over (F2 plan 2026-10-03-1922 F2b; `globe-ground-sky.js`):
+  each frame, before the sky pass, the observer's height over the
+  ellipsoid's image (`observerAltitudeKm`) feeds the ground sky
+  (`groundSky=1`, the default; 0 keeps the space pass all the way down),
+  which returns its weight (0 above `skyEdgeKm`, 80, to 1 at
+  `skyEdgeKm - skyWidthKm`, 40 below) and the eased exposure, the sun's
+  scale in the scene from `sunIntensity` (space) to the ground sky's
+  automatic exposure; it IS the globe's sun intensity. The ground sky draws over
+  the space sky's pixels before the Earth, the space pass's sky light is
+  scaled by `1 - weight`, its veil over the ground is kept (`atmoGround=1`,
+  the default; `atmoGround=0` fades it with the sky's, a comparison that
+  breaks the hand-over's continuity), and below the edge its rays end at
+  the drawn relief: the scene depth (`globe-scene-depth.js`, volume-cloud
+  plan §17) is drawn once a frame while the weight is above 0 and the pass
+  is on, and shared with the cloud volume, which draws it itself when only
+  it needs it; the pass weighs it by the hand-over's weight, so it grows
+  from nothing at the 80 km edge. Before, the rays ended at the ellipsoid and relief above
+  its limb stood unveiled, a hard edge at the horizon. The halo's
+  thickness eases from `atmoThickness` above 2,000 km to 1x below 300 km
+  (`atmoRamp=1`, DEC-GL5-13; `shellThicknessAt`). The ground sky
+  rebuilds in stages, one a frame, its observer quantised in
+  `skyStepPct` (5 %) steps; it works only in the target's local frame.
+  The state's `groundSky` carries its weight, exposure, quantised
+  observer, rebuild counts and the observer's height it is fed from.
+- The clip planes over the relief (F2a, M4): `reliefPlanes()` gives
+  `clipPlanes` the distance to the nearest drawn ground (`reliefClearanceM`
+  over the relief's sampler at the camera's ground point and on a ring of
+  eight points as far out as the camera stands above it), and the highest
+  real peak (8,850 m) times E, whoever owns the camera: after the
+  intro places it and after the controls' own update. The controls' rays
+  hit only the carrier drawing most of the frame (`pickFrom`, the
+  library's `setScene`), not the cloud shell or the other carrier.
+  `reliefPlanes=0` keeps the planes over the ellipsoid (the planes smoke's
+  positive control), and `__globeLab.planeProbe({ jitterM, levels })`
+  measures the held view: the pixels that change under a 1 mm camera move
+  (z-fighting) and the clear colour in the frame's lower two thirds (a
+  clipped ground).
+- The world frame (F2 plan 2026-10-03-1922 F2a, M3; `/globe/globe-frame.js`):
+  `globe.group` carries one matrix from ECEF to a local frame at the target
+  (x east, y up, the origin on the ground), set at the pin's press and at
+  load or replay with an `at=` target, the identity (ECEF) otherwise. The
+  switch keeps the view (`setFrameTarget` re-applies the camera's ECEF
+  pose) and releases the controls' drag state. Every camera write goes
+  through `placeCameraEcef` (the intro's orbit pose, the dive, the
+  clearance's radial lift, the recorder's placement) and every read
+  through `ecefCamera` or the tiles' `worldToLocal` (the dive's start, the
+  state's `cameraDistanceM`, `cameraDirection` and `cameraDepressionDeg`).
+  Two test hooks were missed at first and caught by the full globe run
+  (2026-10-05): `project(lat, lng)` now takes the ECEF point through the
+  frame, and `celestialToEcef(v)` gives the smokes that turn a celestial
+  direction into a latitude and longitude its ECEF form
+  (`celestialToWorld` stays in the world, compared with the sky's own sun). The Earth's centre for the space sky
+  and the far-side test is the group's world position. `worldFrame=0`
+  keeps ECEF, for a before/after; the state's `worldFrame` is the frame's
+  target, and `__globeLab.reframe(target)` switches it for
+  `globe-frame.smoke.spec.mjs` (0.00 levels and 0 m across a switch at the
+  hold). **The frame follows the user** (volume-cloud plan §14): while the
+  controls own the camera, `recentreFrame` moves it under the camera
+  once the camera's ground point is more than 20 km from its origin,
+  below 150 km (`frameRecentreTarget`). A frame left on the link's target
+  while the owner flew 244 km by hand stood 4.7 km off the curved ground
+  there, and the cloud deck, flat in the frame, floated above the 11 km
+  camera (2026-10-06); the volume's noise is anchored to the ground, so
+  its clouds stay put across a move. It never moves under a gesture: a move releases
+  the controls (ending a drag), so it waits while `controls.busy()` (a
+  pointer down, a gesture state, or momentum left); the owner's drags died
+  a second in on r785 before this guard.
 - The Debug panel (round-6 plan 2026-10-04-1050 G6-0, DEC-G6-6;
   `globe-debug.js`): always there, a small button at the left edge. The
   page's event log (`globe-debug-log.js`, from the first line, so boot
@@ -562,10 +993,49 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     (`ocean`, `alps`, `pole`, `city`; default `alps`), and `perfDrive`
     (`controls` drives every run through the controls' wheel input;
     absent, each cell says).
+  - The fixed-view sweep (`globe-perf-views.js`, `globe-perf-items.js`,
+    loaded with the recorder): the text key `perfItems` (item counts,
+    e.g. `5,20,50`; malformed reads as no sweep) replaces the zoom's
+    runs by held views (space, 100 km, 10 km, 1 km over the ground, and
+    street level at an eye height, 30 m south of the items looking at
+    them) at the link's place (`at=`, else `perfPlace`), each count held
+    `perfHoldS` (1-60, default 5) after a settle of at most
+    `perfViewSettleS` (1-300, default 20), the whole sweep `perfRepeats`
+    times (1-10, default 3), after a discarded warm-up pass per view
+    (`perfWarmup`, 0-1, default 1); before each held run a quiet wait of
+    at most `perfQuietS` (1-300, default 10) until the view is ready
+    again. Before the first move the sweep waits at most `perfCityWaitS`
+    (0-1800, default 300; 0 does not wait) for the city's load to end,
+    its retries included; a sweep with no frame for `perfWatchdogS`
+    (1-600, default 60: a healthy but slow device draws single frames
+    of several seconds) while the page is on screen ends with what it
+    has. Street level needs `eye=1` and is left out without it. The
+    items stand on the drawn ground on the globe's Earth-centred group
+    and are registered with the eye camera's near plane. `perfAuto=1`
+    starts the recorder's run without a press (any sweep), so one link
+    is a whole phone test. The handle gains `viewPlace`, `placeView`,
+    `setItems`, `bytesDownloaded`, `setPaused(paused)` (the frame calls
+    the recorder's hooks and renders nothing: the refresh calibration),
+    `eyeMode` and `viewReadiness()` (`{ band, release, city, osm }`: the
+    band's drawn share at the altitude's; no band cache release pending
+    or draining; the city not loading and its arrival fade done, or no
+    city (a delivery inside a held run voids it, so a run does not wait
+    for the load's end); the OSM map off, or its ramp done with no
+    re-evaluation backlog and no drawn tile waiting but the failed ones,
+    which are never asked for again), `cityDelivered()` (the city's
+    deliveries drawn, 0 without a city), `cityGate()` (`off`, `idle`,
+    `loading`, `ended` or `gave-up`: no data for the place, or failed
+    with every retry spent), `cityDrawn()` (the city's root visible, null
+    without one), `itemsInView()` (the sweep's items inside the camera's
+    frustum) and `osmCoverage()` (`{ waiting, failed }`, null without
+    the map); `placeCamera` takes an optional ECEF pose
+    in place of the pitch law. `window.__globeLab.perfItem(k)` reports
+    item `k`'s `{ inView, footOverGroundM }` (`globe-perf-items.js`).
   - The factors it varies, also hash keys that apply live:
     `adjustHeight` (the controls' height adjustment, its two raycasts a
     frame, default 1), `reliefCacheMiB` (the relief's cache cap, 8-4096,
-    default 64; its floor keeps the same ratio), `parseJobs` (1-32,
+    default the source's budget, 64 for AWS on a phone; its floor keeps
+    the same ratio), `parseJobs` (1-32,
     default 5) and `downloadsPerOrigin` (1-64, default 25), the relief's
     own queues.
   - While a path runs the recorder owns the camera (ahead of the fly-in,
@@ -666,17 +1136,13 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   cancel" (busy, pulsing), then back to idle with the fix named; a second
   tap while it waits cancels, and the late answer changes nothing; with a granted,
   mocked position (Playwright's geolocation) the dive runs under the
-  intro with the near plane falling, and the page goes to the site-relative
-  `/osm/` (answered by the test, since the dev server serves no OsmDemo
-  app there) with the fix, `cdist=1800` and the pinned time as `date=2026-03-20` and an
-  11:2x solar time; with `handOver=0` the dive lands within 500 m of 50 km
-  and 0.01° of the fix and the pin reads "Arrived"; a press on the globe
-  during a 20 s dive stops it (controls own the camera, no hand-over); a
-  press of the pin, a hidden page and a new `at` each stop a 30 s flight
-  without a hand-over (the request is caught with a 204, which keeps the
-  page); at 23:00 UTC in Cologne the link carries no `date` or `time`,
-  and a `pageshow` with `persisted` makes the handing-over pin idle, after
-  which a press flies again.
+  intro with the near plane falling, and it lands about 2 km up and holds,
+  the page never leaving; the dive at `landKm=50` lands within 500 m of
+  50 km and 0.01° of the fix and the pin reads "Arrived, 50 km up"; a
+  press on the globe during a 20 s dive stops it (controls own the
+  camera); a press of the pin, a hidden page and a new `at` each stop a
+  30 s flight, and no navigation to OsmDemo ever happens (one would be
+  caught with a 204). The night hand-over test went with the hand-over.
 - `globe-atmosphere.smoke.spec.mjs` (round-4 DEC-GL4-4/11): against the
   pass off, the lit limb brighter inside and just outside, the night limb
   unchanged, the day side bluer, far space untouched (floors at x0.5-x2);

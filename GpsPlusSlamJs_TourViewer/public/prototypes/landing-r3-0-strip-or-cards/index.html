@@ -1,0 +1,1081 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Strip or Cards</title>
+<style>
+:root {
+  --paper: #f5f1e8;
+  --paper-2: #ebe4d4;
+  --paper-3: #ddd3bd;
+  --card: #fbf9f3;
+  --ink: #23211d;
+  --ink-2: #534f47;
+  --ink-3: #807a6e;
+  --line: #cfc5ae;
+  --route: #cf4428;
+  --route-dark: #b43a21;
+  --route-soft: #f6dbd0;
+  --ok: #2f7a4c;
+  --place: #dfe2d4;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --gut: 16px;
+  --fmin: 13px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); -webkit-text-size-adjust: 100%; }
+body { overflow-x: hidden; }
+button, input { font: inherit; color: inherit; }
+a { color: inherit; }
+p, ul, ol, h1, h2, h3, figure { margin: 0; }
+[hidden] { display: none !important; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 0 var(--gut); max-width: 1240px; margin: 0 auto; }
+.proto-label { font: 600 11px/1 var(--sans); letter-spacing: .02em; background: var(--ink); color: var(--paper); padding: 5px 9px; border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.proto-label .long { display: none; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: 600 15px/1.1 var(--sans); min-height: 46px; padding: 11px 20px; border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; color: var(--ink); cursor: pointer; text-decoration: none; transition: transform .12s, background .2s; }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--route); border-color: var(--route); color: #fff; }
+.btn.primary:hover { background: var(--route-dark); border-color: var(--route-dark); }
+.btn.ghost { background: transparent; }
+.btn.small { min-height: 40px; padding: 8px 15px; font-size: 14px; }
+.btn svg { width: 18px; height: 18px; flex: none; }
+.btn:focus-visible, .linkish:focus-visible, summary:focus-visible, .snav button:focus-visible, .frame:focus-visible { outline: 3px solid var(--route); outline-offset: 2px; }
+.kicker { font: 700 12px/1.25 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--route-dark); }
+
+/* ---------- the page head: a decision aid, nothing more ---------- */
+.page-head h1 { font: 600 clamp(28px, 7.4vw, 46px)/1.08 var(--serif); letter-spacing: -.01em; margin: 6px 0 10px; }
+.page-head .sec-sub { max-width: 36em; }
+.page-head .fine { margin-top: 8px; font-size: 13.5px; color: var(--ink-3); }
+.jump { display: flex; flex-wrap: wrap; gap: 8px 10px; margin-top: 14px; }
+.jump a { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 14px 6px 6px; border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; font: 600 14.5px/1 var(--sans); text-decoration: none; }
+.jump a b { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--ink); color: var(--paper); font: 700 15px/1 var(--serif); }
+.jump a:focus-visible { outline: 3px solid var(--route); outline-offset: 2px; }
+
+/* ---------- each option: a big letter, a name, one line ---------- */
+.opt-head { display: flex; gap: 14px; align-items: flex-start; max-width: 46em; margin-bottom: 18px; }
+.opt-label { flex: none; width: 52px; height: 52px; border-radius: 12px; background: var(--ink); color: var(--paper); display: grid; place-items: center; font: 700 30px/1 var(--serif); }
+.opt h2 { font: 600 clamp(24px, 6.2vw, 34px)/1.1 var(--serif); letter-spacing: -.01em; margin: 1px 0 6px; }
+.opt-line { font-size: 16px; line-height: 1.45; color: var(--ink-2); }
+.opt-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 18px; }
+
+/* ---------- drawn phones in a dock (shared by A and B) ---------- */
+/* ---------- a dock: the place drawn pale, a phone held up in it ---------- */
+.dock { position: relative; overflow: hidden; background: var(--place); --pw: 200px; height: calc(var(--pw) * 2 + 28px); -webkit-user-select: none; user-select: none; }
+.dock > .back { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+/* outside the phone the place is paler: the phone is where the tour is */
+.dock > .pale { position: absolute; inset: 0; background: rgba(245, 241, 232, .5); }
+.phone {
+  position: absolute; left: 50%; top: 50%; z-index: 2;
+  width: var(--pw); aspect-ratio: 1 / 2;
+  margin-left: calc(var(--pw) / -2); margin-top: calc(var(--pw) * -1);
+  border-radius: 15% / 7.5%;
+  background: #17181b;
+  box-shadow: 0 0 0 1px #4a4b50 inset, 0 0 0 2px #0d0d0f, 0 24px 44px -18px rgba(38, 30, 18, .55), 0 6px 14px rgba(38, 30, 18, .2);
+  transform-origin: 50% 50%;
+}
+.screen {
+  position: absolute; inset: 1.7% 3.4%;
+  border-radius: 12.7% / 6.1%; overflow: hidden;
+  background: #cfd9dd; container-type: inline-size;
+  isolation: isolate;
+}
+.screen > * { font-size: clamp(var(--fmin), 6.6cqw, 17px); }
+.cam { position: absolute; inset: 0; transform-origin: 50% 50%; }
+.cam > .world { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; overflow: visible; will-change: transform; }
+/* the place and the AR marks are separate layers, so an animated mark never repaints the drawn place */
+.grain { position: absolute; inset: -20px; pointer-events: none; opacity: .5; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .45 0 0 0 0 .4 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"); }
+.vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(30, 24, 14, .26) 100%); }
+
+/* screen chrome: moves with the phone, never with the place */
+.ui { position: absolute; inset: 0; pointer-events: none; }
+.status { position: absolute; left: 0; right: 0; top: 0; height: 2em; display: flex; align-items: center; justify-content: space-between; padding: 0 1.3em; font: 600 .74em/1 var(--sans); color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .35); }
+.status svg { height: .95em; width: auto; fill: #fff; }
+.punch { position: absolute; left: 50%; top: .62em; width: .72em; height: .72em; margin-left: -.36em; border-radius: 50%; background: #0c0c0e; }
+.hud { position: absolute; left: .6em; right: .6em; top: 2.2em; display: flex; align-items: center; gap: .45em; }
+.hud-x { flex: none; width: 2.1em; height: 2.1em; border-radius: 50%; background: rgba(16, 18, 22, .52); display: grid; place-items: center; }
+.hud-x svg { width: .85em; height: .85em; stroke: #fff; stroke-width: 2.4; fill: none; stroke-linecap: round; }
+.pill { display: none; min-width: 0; flex: 1; height: 2.1em; border-radius: 999px; background: rgba(16, 18, 22, .55); color: #fff; align-items: center; gap: .5em; padding: 0 .8em; font: 600 .9em/1 var(--sans); white-space: nowrap; overflow: hidden; }
+.pill .dots { display: flex; gap: .28em; margin-left: auto; }
+.pill .dots i { width: .42em; height: .42em; border-radius: 50%; background: rgba(255, 255, 255, .45); }
+.pill .dots i.on { background: #fff; }
+.pill .tag { flex: none; font-size: .84em; letter-spacing: .06em; text-transform: uppercase; background: var(--route); padding: .3em .45em; border-radius: .4em; }
+.pill .tag.ok { background: var(--ok); }
+.chip { position: absolute; left: 50%; top: 5em; transform: translateX(-50%); display: none; align-items: center; gap: .4em; padding: .45em .8em; border-radius: 999px; background: var(--ok); color: #fff; font: 700 .86em/1 var(--sans); white-space: nowrap; box-shadow: 0 .3em .9em rgba(0, 0, 0, .25); opacity: 0; }
+
+.sheet { display: none; position: absolute; left: .5em; right: .5em; bottom: .5em; background: rgba(251, 249, 243, .97); color: var(--ink); border-radius: 1.2em; padding: .75em .8em .8em; box-shadow: 0 .6em 1.6em rgba(0, 0, 0, .28); }
+.sheet .hint { font-size: .92em; line-height: 1.3; color: var(--ink-2); text-align: center; }
+.tools { display: flex; gap: .4em; }
+.tool { flex: 1; display: flex; flex-direction: column; align-items: center; gap: .25em; padding: .45em .2em .4em; border-radius: .8em; border: 1.5px solid var(--line); font: 600 .9em/1 var(--sans); color: var(--ink-2); background: #fff; }
+.tool svg { width: 1.5em; height: 1.5em; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tool.on { border-color: var(--route); color: var(--route-dark); background: var(--route-soft); }
+.sbtn { display: flex; align-items: center; justify-content: center; margin-top: .55em; height: 2.5em; border-radius: 999px; background: var(--route); color: #fff; font: 700 .9em/1 var(--sans); }
+.share-row { display: flex; gap: .6em; align-items: center; }
+.share-row .qr { width: 3.6em; height: 3.6em; flex: none; }
+.share-row b { display: block; font: 700 1em/1.15 var(--serif); }
+.share-row span { display: block; font-size: .84em; line-height: 1.28; color: var(--ink-2); margin-top: .15em; }
+.share-btns { display: flex; gap: .4em; margin-top: .55em; }
+.share-btns span { flex: 1; display: flex; align-items: center; justify-content: center; height: 2.3em; border-radius: 999px; font: 700 .82em/1 var(--sans); border: 1.5px solid var(--ink); }
+.share-btns span.p { background: var(--route); border-color: var(--route); color: #fff; }
+
+/* AR content, fixed to the place (HTML, positioned by the script) */
+.anchors { position: absolute; inset: 0; }
+.anc { position: absolute; left: 0; top: 0; width: 0; height: 0; display: none; }
+.tcard { position: absolute; left: 0; bottom: 0; transform: translateX(-50%); width: min(10.4em, 84cqw); background: rgba(251, 249, 243, .96); border-radius: .85em; padding: .58em .7em .62em; box-shadow: 0 .5em 1.4em rgba(20, 16, 8, .28), 0 0 0 1px rgba(0, 0, 0, .05); }
+.tcard .t { font: 700 1.08em/1.15 var(--serif); color: var(--ink); min-height: 1.15em; }
+.tcard .b { font-size: .94em; line-height: 1.3; color: var(--ink-2); margin-top: .2em; }
+.tcard .k { display: none; font: 700 .72em/1 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--route-dark); margin-bottom: .3em; }
+.caret { display: none; width: 1.5px; height: 1em; background: var(--route); vertical-align: -.12em; margin-left: 1px; }
+.pic { position: absolute; left: 0; top: 0; width: 30cqw; background: #fff; padding: 1.3cqw 1.3cqw 0; border-radius: 3px; box-shadow: 0 .4em 1.1em rgba(20, 16, 8, .3); }
+.pic svg { display: block; width: 100%; height: auto; }
+.pic .pcap { font: italic .72em/1 var(--serif); color: var(--ink-2); text-align: center; padding: .35em 0 .4em; white-space: nowrap; }
+.pic-ghost { position: absolute; left: 0; top: 0; width: 30cqw; height: 25cqw; border: 1.5px dashed #fff; border-radius: 4px; background: rgba(28, 26, 22, .42); display: grid; place-items: center; color: #fff; font: 700 .8em/1 var(--sans); text-shadow: 0 1px 2px rgba(0, 0, 0, .5); opacity: 0; }
+.nextlbl { position: absolute; left: 0; top: 0; transform: translateX(-50%); display: flex; align-items: center; gap: .4em; white-space: nowrap; background: rgba(251, 249, 243, .96); color: var(--ink); border-radius: 999px; padding: .42em .7em .42em .5em; font: 600 .88em/1 var(--sans); box-shadow: 0 .35em 1em rgba(20, 16, 8, .25); }
+.nextlbl svg { width: 1.2em; height: 1.2em; flex: none; }
+/* a very small screen keeps the arrows and drops their label rather than cutting it */
+@container (max-width: 140px) { .nextlbl { display: none; } }
+/* below about 160 px of screen the card keeps its title only, so it never covers the picture */
+@container (max-width: 160px) {
+  .tcard .b, .share-row span, .share-btns span + span, .hud-x, .pill .dots { display: none; }
+  .share-row .qr { width: 3em; height: 3em; }
+}
+.callout { position: absolute; left: 0; bottom: 0; transform: translateX(-50%); width: min(9.6em, 80cqw); background: rgba(251, 249, 243, .97); border-radius: .8em; padding: .5em .65em; font-size: .9em; line-height: 1.28; color: var(--ink-2); box-shadow: 0 .4em 1.1em rgba(20, 16, 8, .28); }
+.callout b { display: block; color: var(--ink); font: 700 1.05em/1.15 var(--serif); }
+.callout::after { content: ""; position: absolute; left: 50%; bottom: -.4em; width: .8em; height: .8em; margin-left: -.4em; background: inherit; transform: rotate(45deg); }
+
+/* what each kind of phone shows (final states; entries below) */
+.world .o { display: none; }
+.dock[data-kind="hero"] :is(.o-chevs, .o-leader, .o-mk, .o-poster),
+.dock[data-kind="see"] :is(.o-chevs, .o-leader, .o-mk, .o-ripple, .o-poster),
+.dock[data-kind="place"] :is(.o-mk, .o-ripple, .o-retic),
+.dock[data-kind="add"] :is(.o-mk, .o-leader),
+.dock[data-kind="hang"] :is(.o-poster, .o-halo) { display: inline; }
+.dock:is([data-kind="hero"], [data-kind="see"]) :is(.a-card, .a-pic, .a-next),
+.dock[data-kind="add"] :is(.a-card, .a-pic),
+.dock[data-kind="hang"] .a-callout { display: block; }
+.dock:is([data-kind="hero"], [data-kind="see"]) .p-visit,
+.dock:is([data-kind="place"], [data-kind="add"]) .p-make,
+.dock[data-kind="hang"] .p-saved { display: flex; }
+.dock[data-kind="see"] .chip { display: flex; }
+.dock[data-kind="place"] .s-place, .dock[data-kind="add"] .s-add, .dock[data-kind="hang"] .s-share { display: block; }
+.dock[data-kind="add"] .tcard { border: 1.5px dashed var(--route); background: rgba(251, 249, 243, .92); }
+.dock[data-kind="add"] .tcard .k { display: block; }
+.dock[data-kind="add"].play .caret { display: inline-block; }
+.o-retic, .o-ripple { opacity: 0; }
+.dock .back .bposter { display: none; }
+.dock:is([data-kind="hero"], [data-kind="see"], [data-kind="hang"]) .back .bposter { display: inline; }
+.t-pic { border-color: var(--route); color: var(--route-dark); background: var(--route-soft); }
+
+/* entries: one short sequence per phone, never looping by themselves */
+.o-mk, .o-retic, .o-chev, .o-ripple, .o-posterg, .o-halo { transform-box: fill-box; transform-origin: 50% 50%; }
+.o-posterg { transform-origin: 50% 0; }
+.dock[data-kind="hero"].play .o-mk { animation: mkDrop .7s .2s cubic-bezier(.3, 1.5, .5, 1) both; }
+.dock[data-kind="hero"].play .o-leader { animation: fadeIn .3s .7s both; }
+.dock[data-kind="hero"].play .tcard { animation: cardIn .5s .75s cubic-bezier(.3, 1.3, .5, 1) both; }
+.dock[data-kind="hero"].play .pic { animation: picIn .6s 1.15s cubic-bezier(.3, 1.3, .5, 1) both; }
+.dock[data-kind="hero"].play .o-chev:nth-child(1) { animation: fadeIn .45s 1.6s both; }
+.dock[data-kind="hero"].play .o-chev:nth-child(2) { animation: fadeIn .45s 1.75s both; }
+.dock[data-kind="hero"].play .o-chev:nth-child(3) { animation: fadeIn .45s 1.9s both; }
+.dock[data-kind="hero"].play .nextlbl { animation: fadeIn .4s 2.1s both; }
+
+.dock[data-kind="place"].play .o-retic { animation: retic 1.9s cubic-bezier(.4, 0, .2, 1) both; }
+.dock[data-kind="place"].play .sbtn { animation: press .32s 1.15s both; }
+.dock[data-kind="place"].play .o-mk { animation: mkDrop .6s 1.3s cubic-bezier(.3, 1.5, .5, 1) both; }
+.dock[data-kind="place"].play .o-ripple { animation: ripple 1s 1.55s ease-out both; }
+
+.dock[data-kind="add"].play .tcard { animation: cardIn .45s .15s cubic-bezier(.3, 1.3, .5, 1) both; }
+.dock[data-kind="add"].play .tcard .b { animation: fadeIn .4s 1.45s both; }
+.dock[data-kind="add"].play .t-text { animation: toolOff .25s 2.1s both; }
+.dock[data-kind="add"].play .t-pic { animation: toolOn .25s 2.1s both; }
+.dock[data-kind="add"].play .pic-ghost { animation: ghost 1.1s 1.9s both; }
+.dock[data-kind="add"].play .pic { animation: picIn .6s 2.6s cubic-bezier(.3, 1.3, .5, 1) both; }
+
+.dock[data-kind="hang"].play .o-posterg { animation: hang .9s .3s cubic-bezier(.3, 1.2, .5, 1) both; }
+.dock[data-kind="hang"].play .o-halo { animation: fadeIn .4s 1.25s both; }
+.dock[data-kind="hang"].play .callout { animation: cardIn .45s 1.5s cubic-bezier(.3, 1.3, .5, 1) both; }
+.dock[data-kind="hang"].play .s-share { animation: fadeIn .4s 2.1s both; }
+
+.dock[data-kind="see"].play .chip { animation: chip 1.5s .1s both; }
+.dock[data-kind="see"].play .o-mk { animation: mkDrop .6s 1.15s cubic-bezier(.3, 1.5, .5, 1) both; }
+.dock[data-kind="see"].play .o-ripple { animation: ripple 1s 1.4s ease-out both; }
+.dock[data-kind="see"].play .o-leader { animation: fadeIn .3s 1.55s both; }
+.dock[data-kind="see"].play .tcard { animation: cardIn .5s 1.6s cubic-bezier(.3, 1.3, .5, 1) both; }
+.dock[data-kind="see"].play .pic { animation: picIn .6s 2s cubic-bezier(.3, 1.3, .5, 1) both; }
+.dock[data-kind="see"].play .o-chev:nth-child(1) { animation: fadeIn .45s 2.4s both; }
+.dock[data-kind="see"].play .o-chev:nth-child(2) { animation: fadeIn .45s 2.55s both; }
+.dock[data-kind="see"].play .o-chev:nth-child(3) { animation: fadeIn .45s 2.7s both; }
+.dock[data-kind="see"].play .nextlbl { animation: fadeIn .4s 2.9s both; }
+
+@keyframes mkDrop { 0% { opacity: 0; transform: translateY(-46px) scale(1.25); } 60% { opacity: 1; } 100% { opacity: 1; transform: none; } }
+@keyframes ripple { 0% { opacity: .9; transform: scale(.7); } 100% { opacity: 0; transform: scale(2.1); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cardIn { from { opacity: 0; transform: translateX(-50%) translateY(.8em) scale(.94); } to { opacity: 1; transform: translateX(-50%); } }
+@keyframes picIn { from { opacity: 0; transform: scale(.82) rotate(-3deg); } to { opacity: 1; transform: none; } }
+@keyframes retic { 0% { opacity: 0; transform: translate(70px, 50px); } 12% { opacity: 1; } 55% { transform: none; } 70% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
+@keyframes press { 0%, 100% { transform: none; } 50% { transform: scale(.94); background: var(--route-dark); } }
+@keyframes toolOn { from { border-color: var(--line); color: var(--ink-2); background: #fff; } to { border-color: var(--route); color: var(--route-dark); background: var(--route-soft); } }
+@keyframes toolOff { from { border-color: var(--route); color: var(--route-dark); background: var(--route-soft); } to { border-color: var(--line); color: var(--ink-2); background: #fff; } }
+@keyframes ghost { 0% { opacity: 0; } 25%, 70% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes hang { 0% { opacity: 0; transform: translateY(-34px) rotate(9deg); } 35% { opacity: 1; } 60% { transform: rotate(-4deg); } 80% { transform: rotate(1.5deg); } 100% { opacity: 1; transform: none; } }
+@keyframes chip { 0% { opacity: 0; transform: translateX(-50%) translateY(-.4em); } 15%, 75% { opacity: 1; transform: translateX(-50%); } 100% { opacity: 0; transform: translateX(-50%); } }
+
+/* ---------- sections ---------- */
+.sec { max-width: 1240px; margin: 0 auto; padding: 52px var(--gut) 20px; }
+.sec-head { max-width: 40em; margin-bottom: 20px; }
+.sec h2 { font: 600 clamp(27px, 6.8vw, 42px)/1.08 var(--serif); margin: 6px 0 8px; letter-spacing: -.01em; }
+.sec h2 em { color: var(--route); font-style: italic; }
+.sec-sub { font-size: 16.5px; line-height: 1.5; color: var(--ink-2); }
+.rule { height: 4px; max-width: 1208px; margin: 34px auto 0; background: radial-gradient(circle, var(--route) 1.6px, transparent 2px) 0 50% / 9px 4px repeat-x; opacity: .5; }
+
+/* ---------- A: the strip, exactly as on the drawn-phone strip page ---------- */
+/* ---------- the strip: four numbered drawn phones, one lit at a time ---------- */
+.snav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0 0 12px; }
+.snav button { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; padding: 7px 4px 0; border: 0; background: none; cursor: pointer; text-align: left; font: 600 13px/1.15 var(--sans); color: var(--ink-3); min-height: 44px; }
+.snav button .n { color: inherit; }
+.snav button[aria-current="step"] { color: var(--ink); }
+.snav button[aria-current="step"] .n { color: var(--route); }
+.snav .bar { display: block; align-self: stretch; height: 3px; background: var(--paper-3); border-radius: 2px; overflow: hidden; margin-top: auto; }
+.snav .bar i { display: block; height: 100%; width: 100%; background: var(--route); transform: scaleX(0); transform-origin: 0 50%; }
+.snav button.done .bar i { transform: none; background: var(--ink-3); }
+.strip { list-style: none; padding: 0 var(--gut); margin: 0 calc(-1 * var(--gut)); display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding: 0 var(--gut); scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.strip::-webkit-scrollbar { display: none; }
+.strip > li { flex: 0 0 min(80%, 340px); scroll-snap-align: start; }
+.frame { cursor: pointer; -webkit-tap-highlight-color: transparent; outline: none; }
+.fart { position: relative; border: 1.5px solid var(--line); border-radius: 12px; overflow: hidden; transition: border-color .3s, box-shadow .3s, opacity .3s; }
+.fart .dock { --pw: min(206px, 62vw); }
+.frame.active .fart { border-color: var(--ink); box-shadow: 4px 4px 0 var(--paper-3); }
+.strip.playing .frame:not(.active) .fart { opacity: .62; }
+.fbar { height: 3px; background: var(--paper-2); }
+.fbar i { display: block; height: 100%; width: 100%; background: var(--route); transform: scaleX(0); transform-origin: 0 50%; }
+.strip.playing .frame.active .fbar i, .snav.playing button[aria-current="step"] .bar i { animation: bar var(--frame, 5s) linear both; }
+@keyframes bar { from { transform: scaleX(0); } to { transform: none; } }
+.fcap { padding: 10px 2px 0; font-size: 15px; line-height: 1.4; color: var(--ink-2); }
+.fcap b { display: block; font: 600 18px/1.2 var(--serif); color: var(--ink); margin-bottom: 3px; }
+.n { font: 700 14px var(--sans); color: var(--route); margin-right: 6px; }
+.strip-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 18px; }
+.fine { font-size: 13.5px; color: var(--ink-3); }
+
+/* ---------- B: three cards on a dotted route, each carrying a drawn phone ---------- */
+.steps3 { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; position: relative; }
+.steps3::before {
+  content: ""; position: absolute; left: 29px; top: 20px; bottom: 20px; width: 4px;
+  background: radial-gradient(circle, var(--route) 1.6px, transparent 2px) 50% 0 / 4px 9px repeat-y;
+}
+.step3 { position: relative; display: flex; flex-direction: column; background: var(--card); border: 1.5px solid var(--ink); border-radius: 6px; box-shadow: 4px 4px 0 var(--paper-3); overflow: hidden; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.step3:focus-visible { outline: 3px solid var(--route); outline-offset: 2px; }
+.st-text { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 2px 12px; align-items: start; padding: 16px; }
+.badge { grid-row: 1 / span 2; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--route); color: #fff; font: 700 14px var(--sans); }
+.step3 h3 { font: 600 20px/1.2 var(--serif); margin: 2px 0 4px; }
+.step3 p { font-size: 15px; line-height: 1.45; color: var(--ink-2); }
+.scenes { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.scenes button { min-height: 36px; padding: 6px 12px; border-radius: 999px; border: 1.5px solid var(--line); background: #fff; font: 600 13.5px/1 var(--sans); color: var(--ink-2); cursor: pointer; }
+.scenes button[aria-pressed="true"] { border-color: var(--route); color: var(--route-dark); background: var(--route-soft); }
+.scenes button:focus-visible { outline: 3px solid var(--route); outline-offset: 2px; }
+.cdock { margin-top: auto; border-top: 1.5px solid var(--line); }
+.cdock .dock { --pw: min(206px, 62vw); }
+
+/* ---------- notes ---------- */
+footer { max-width: 1240px; margin: 0 auto; padding: 44px var(--gut) 40px; font-size: 14px; color: var(--ink-3); }
+details.notes { border: 1px dashed var(--line); border-radius: 10px; background: #fff; }
+details.notes summary { cursor: pointer; padding: 12px 14px; font: 600 14px var(--sans); color: var(--ink-2); }
+details.notes .nb { padding: 0 16px 16px; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+details.notes h3 { font: 700 13px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--ink); margin: 14px 0 4px; }
+details.notes ul { padding-left: 18px; }
+details.notes li { margin: 3px 0; }
+
+/* ---------- wider screens ---------- */
+/* a mid-width screen: one card per row, the phone beside the words, never smaller than on a phone */
+@media (min-width: 560px) and (max-width: 819px) {
+  .step3 { flex-direction: row; align-items: stretch; }
+  .st-text { flex: 1; align-content: center; }
+  .cdock { margin: 0; border-top: 0; border-left: 1.5px solid var(--line); flex: none; }
+  .cdock .dock { --pw: 206px; width: calc(var(--pw) + 60px); }
+}
+@media (min-width: 820px) {
+  .steps3 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+  .steps3::before { left: 20px; right: 20px; top: 29px; bottom: auto; width: auto; height: 4px; background: radial-gradient(circle, var(--route) 1.6px, transparent 2px) 0 50% / 9px 4px repeat-x; }
+  /* the same phone size as A's row: 232 px at most */
+  .cdock .dock { --pw: min(232px, calc((min(100vw, 1240px) - 32px - 36px) / 3 - 34px)); }
+}
+@media (min-width: 900px) {
+  .proto-label .long { display: inline; }
+  .proto-label .short { display: none; }
+  .sec { padding-top: 72px; }
+  .sec-sub { font-size: 18px; }
+  .opt-line { font-size: 17px; }
+}
+@media (min-width: 1000px) {
+  .snav { display: none; }
+  .strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; overflow: visible; margin: 0; padding: 0; }
+  .fart .dock { --pw: min(232px, calc((min(100vw, 1240px) - 32px - 54px) / 4 - 34px)); }
+}
+/* a phone held sideways: A's frames and B's cards both put the phone beside the words */
+@media (orientation: landscape) and (max-height: 560px) {
+  .top { min-height: 36px; }
+  .sec { padding-top: 36px; }
+  .strip > li { flex-basis: min(78%, 560px); }
+  .strip > li > figure { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; align-items: center; }
+  .fart .dock { --pw: calc((100svh - 70px) / 2 - 14px); width: calc(var(--pw) + 40px); }
+  .fcap { padding: 0; }
+  .steps3 { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .steps3::before { left: 29px; right: auto; top: 20px; bottom: 20px; width: 4px; height: auto; background: radial-gradient(circle, var(--route) 1.6px, transparent 2px) 50% 0 / 4px 9px repeat-y; }
+  .step3 { flex-direction: row; align-items: stretch; }
+  .st-text { flex: 1; align-content: center; }
+  .cdock { margin: 0; border-top: 0; border-left: 1.5px solid var(--line); flex: none; }
+  .cdock .dock { --pw: calc((100svh - 70px) / 2 - 14px); width: calc(var(--pw) + 40px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .strip { scroll-behavior: auto; }
+}
+</style>
+</head>
+<body>
+
+<!-- shared drawing: the place, drawn once and shown in every phone and behind it -->
+<svg class="defs" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="gSky" x1="0" y1="-250" x2="0" y2="470" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#86abc6"/><stop offset=".5" stop-color="#b9cfdc"/><stop offset=".86" stop-color="#e9e3d2"/><stop offset="1" stop-color="#f2e0bf"/>
+    </linearGradient>
+    <radialGradient id="gSun" cx="980" cy="40" r="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff7de" stop-opacity=".95"/><stop offset=".35" stop-color="#fff1cf" stop-opacity=".42"/><stop offset="1" stop-color="#fff1cf" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="gCloud"><stop offset="0" stop-color="#fff" stop-opacity=".85"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <linearGradient id="gFacade" x1="330" y1="0" x2="690" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a69176"/><stop offset=".55" stop-color="#c6b292"/><stop offset="1" stop-color="#dac8a5"/>
+    </linearGradient>
+    <linearGradient id="gFacadeV" x1="0" y1="118" x2="0" y2="474" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2e2214" stop-opacity=".1"/><stop offset=".33" stop-color="#2e2214" stop-opacity=".34"/><stop offset=".42" stop-color="#2e2214" stop-opacity="0"/><stop offset=".86" stop-color="#2e2214" stop-opacity="0"/><stop offset="1" stop-color="#2e2214" stop-opacity=".28"/>
+    </linearGradient>
+    <linearGradient id="gRoof" x1="0" y1="96" x2="0" y2="244" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5c5a60"/><stop offset="1" stop-color="#3b3a40"/></linearGradient>
+    <linearGradient id="gGrass" x1="0" y1="466" x2="0" y2="1000" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b3ba84"/><stop offset=".3" stop-color="#97a764"/><stop offset="1" stop-color="#6a8044"/>
+    </linearGradient>
+    <linearGradient id="gPath" x1="0" y1="470" x2="0" y2="1000" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e3d8be"/><stop offset=".45" stop-color="#d3c19e"/><stop offset="1" stop-color="#c0a983"/>
+    </linearGradient>
+    <linearGradient id="gWin" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#55606a"/><stop offset=".45" stop-color="#2c3237"/><stop offset="1" stop-color="#3c444b"/></linearGradient>
+    <linearGradient id="gWood" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4f3a28"/><stop offset="1" stop-color="#6e5238"/></linearGradient>
+    <radialGradient id="gShadow"><stop offset="0" stop-color="#26301a" stop-opacity=".42"/><stop offset="1" stop-color="#26301a" stop-opacity="0"/></radialGradient>
+    <clipPath id="cFacade"><path d="M330 474 V232 L510 118 L690 232 V474 Z"/></clipPath>
+    <pattern id="pStone" width="34" height="17" patternUnits="userSpaceOnUse"><path d="M0 16.5H34M0 8H34M9 0V8M26 8V17" stroke="#4e3c28" stroke-opacity=".2" stroke-width="1" fill="none"/></pattern>
+    <pattern id="pGravel" width="16" height="13" patternUnits="userSpaceOnUse"><g fill="#8b7756" fill-opacity=".35"><circle cx="2" cy="3" r="1"/><circle cx="9" cy="1.5" r=".8"/><circle cx="13" cy="8" r="1.1"/><circle cx="5" cy="10" r=".7"/></g><g fill="#fff" fill-opacity=".35"><circle cx="6" cy="5" r=".8"/><circle cx="12" cy="12" r=".7"/></g></pattern>
+    <symbol id="qrSym" viewBox="-2 -2 25 25"><rect x="-2" y="-2" width="25" height="25" fill="#fff"/><path id="qrPath" fill="#2a2824" fill-rule="evenodd"/></symbol>
+    <g id="poster">
+      <rect x="838" y="480" width="48" height="66" fill="#fffdf6"/>
+      <rect x="838" y="480" width="48" height="10" fill="#cf4428"/>
+      <use href="#qrSym" x="843" y="494" width="38" height="38"/>
+      <rect x="844" y="538" width="36" height="3" fill="#3a3630" opacity=".55"/>
+      <circle cx="841" cy="483" r="1.6" fill="#333"/><circle cx="883" cy="483" r="1.6" fill="#333"/>
+    </g>
+    <g id="scene">
+      <rect x="-600" y="-500" width="2400" height="980" fill="url(#gSky)"/>
+      <rect x="-600" y="-500" width="2400" height="980" fill="url(#gSun)"/>
+      <g>
+        <ellipse cx="180" cy="30" rx="190" ry="24" fill="url(#gCloud)"/>
+        <ellipse cx="330" cy="62" rx="120" ry="15" fill="url(#gCloud)" opacity=".7"/>
+        <ellipse cx="760" cy="10" rx="220" ry="26" fill="url(#gCloud)" opacity=".8"/>
+        <ellipse cx="1180" cy="70" rx="160" ry="18" fill="url(#gCloud)" opacity=".7"/>
+      </g>
+      <path d="M-600 446 C -300 410 -60 426 160 414 S 620 392 860 410 S 1300 396 1800 418 V 520 H -600 Z" fill="#b6c3ae"/>
+      <g id="farTrees"></g>
+      <g>
+        <rect x="836" y="300" width="18" height="182" fill="#5a4a3a"/>
+        <g class="canopy" data-c="870,232,150,128"><ellipse cx="870" cy="236" rx="140" ry="118" fill="#5d7342"/></g>
+      </g>
+      <g>
+        <path d="M330 474 V232 L510 118 L690 232 V474 Z" fill="url(#gFacade)"/>
+        <g id="stones" clip-path="url(#cFacade)"></g>
+        <path d="M330 474 V232 L510 118 L690 232 V474 Z" fill="url(#pStone)"/>
+        <path d="M330 474 V232 L510 118 L690 232 V474 Z" fill="url(#gFacadeV)"/>
+        <path d="M312 246 L510 106 L708 246" fill="none" stroke="url(#gRoof)" stroke-width="20" stroke-linejoin="miter"/>
+        <path d="M318 252 L510 116 L702 252" fill="none" stroke="#2a2420" stroke-opacity=".25" stroke-width="4"/>
+        <rect x="684" y="236" width="6" height="238" fill="#efe1c0" opacity=".55"/>
+        <circle cx="510" cy="192" r="21" fill="url(#gWin)" stroke="#ece4d2" stroke-width="5"/>
+        <path d="M489 192 H531 M510 171 V213" stroke="#ece4d2" stroke-width="2.4"/>
+        <rect x="500" y="134" width="20" height="10" fill="#4a3a2a"/>
+        <g stroke="#ede6d4" stroke-width="4" fill="url(#gWin)">
+          <rect x="352" y="292" width="40" height="52"/><rect x="420" y="292" width="40" height="52"/>
+          <rect x="562" y="292" width="40" height="52"/><rect x="628" y="292" width="40" height="52"/>
+          <rect x="352" y="380" width="40" height="52"/><rect x="628" y="380" width="40" height="52"/>
+        </g>
+        <path d="M372 292 V344 M352 318 H392 M440 292 V344 M420 318 H460 M582 292 V344 M562 318 H602 M648 292 V344 M628 318 H668 M372 380 V432 M352 406 H392 M648 380 V432 M628 406 H668" stroke="#ede6d4" stroke-width="2"/>
+        <g fill="#fff" opacity=".18"><path d="M354 294 L376 294 L354 320 Z"/><path d="M564 294 L586 294 L564 320 Z"/><path d="M630 294 L652 294 L630 320 Z"/></g>
+        <path d="M474 474 V404 A36 36 0 0 1 546 404 V474 Z" fill="#8f7c62"/>
+        <path d="M480 474 V406 A30 30 0 0 1 540 406 V474 Z" fill="url(#gWood)"/>
+        <path d="M510 376 V474 M492 384 V474 M528 384 V474" stroke="#3b2b1d" stroke-width="1.4"/>
+        <circle cx="504" cy="438" r="2.4" fill="#c9b27a"/><circle cx="516" cy="438" r="2.4" fill="#c9b27a"/>
+        <rect x="326" y="456" width="368" height="20" fill="#8d7b61"/>
+        <rect x="326" y="456" width="368" height="3" fill="#000" opacity=".12"/>
+        <g fill="#566c37"><circle cx="336" cy="452" r="12"/><circle cx="346" cy="436" r="10"/><circle cx="338" cy="418" r="9"/><circle cx="350" cy="404" r="7"/><circle cx="341" cy="392" r="6"/><circle cx="356" cy="458" r="10"/></g>
+        <g fill="#7f9852"><circle cx="340" cy="446" r="5"/><circle cx="350" cy="430" r="4"/><circle cx="344" cy="412" r="3.6"/></g>
+        <ellipse cx="596" cy="478" rx="34" ry="6" fill="#1f2614" opacity=".28"/>
+        <circle cx="594" cy="446" r="29" fill="#a3998a"/>
+        <circle cx="594" cy="446" r="29" fill="none" stroke="#6f675b" stroke-width="2"/>
+        <circle cx="594" cy="446" r="7" fill="#5f574b"/>
+        <path d="M572 430 A28 28 0 0 1 612 424" fill="none" stroke="#d4cbbb" stroke-width="2" opacity=".7"/>
+        <ellipse cx="680" cy="472" rx="30" ry="16" fill="#5c7539"/><ellipse cx="690" cy="466" rx="16" ry="9" fill="#7e9850"/>
+      </g>
+      <rect x="-600" y="466" width="2400" height="760" fill="url(#gGrass)"/>
+      <g id="grassPatches"></g>
+      <path d="M300 476 L720 476 L640 506 L230 520 Z" fill="#26301a" opacity=".16"/>
+      <ellipse cx="840" cy="500" rx="190" ry="24" fill="url(#gShadow)"/>
+      <ellipse cx="190" cy="610" rx="250" ry="46" fill="url(#gShadow)"/>
+      <path d="M645 676 L1300 596 L1300 646 L700 770 Z" fill="url(#gPath)"/>
+      <path d="M485 472 L535 472 L833 1100 L188 1100 Z" fill="url(#gPath)"/>
+      <path d="M485 472 L535 472 L833 1100 L188 1100 Z M645 676 L1300 596 L1300 646 L700 770 Z" fill="url(#pGravel)"/>
+      <g id="edgeStones"></g>
+      <g id="tufts"></g>
+      <g>
+        <path d="M150 600 C 158 520 170 430 168 330 L 196 330 C 196 430 196 520 206 600 Z" fill="#5d4a37"/>
+        <path d="M188 600 C 192 520 194 430 192 340 L 196 330 C 197 430 198 520 206 600 Z" fill="#8a7357" opacity=".6"/>
+        <g class="canopy" data-c="160,250,180,160"><ellipse cx="160" cy="256" rx="168" ry="150" fill="#566d3b"/></g>
+      </g>
+      <g>
+        <ellipse cx="350" cy="618" rx="56" ry="7" fill="#1f2614" opacity=".25"/>
+        <rect x="300" y="586" width="100" height="7" rx="1.5" fill="#7a5b3c"/>
+        <rect x="300" y="596" width="100" height="6" rx="1.5" fill="#6a4e33"/>
+        <rect x="300" y="568" width="100" height="6" rx="1.5" fill="#7a5b3c"/>
+        <g fill="#3c3530"><rect x="306" y="574" width="4" height="44"/><rect x="390" y="574" width="4" height="44"/></g>
+      </g>
+      <g>
+        <ellipse cx="860" cy="664" rx="70" ry="9" fill="#1f2614" opacity=".25"/>
+        <rect x="808" y="520" width="9" height="144" fill="#5a4330"/><rect x="903" y="520" width="9" height="144" fill="#5a4330"/>
+        <path d="M786 470 L860 446 L934 470 Z" fill="#4c4a50"/>
+        <rect x="794" y="468" width="132" height="94" rx="2" fill="#6e5136"/>
+        <rect x="802" y="476" width="116" height="78" fill="#cdb791"/>
+        <rect x="808" y="482" width="26" height="20" fill="#f3efe4" transform="rotate(-4 821 492)"/>
+        <rect x="892" y="500" width="20" height="26" fill="#ece7dc" transform="rotate(5 902 513)"/>
+      </g>
+      <g id="foreTufts"></g>
+    </g>
+  </defs>
+</svg>
+
+<!-- one drawn phone; the script clones it into every dock, and each dock's kind decides what shows -->
+<template id="tplPhone">
+  <div class="phone">
+    <div class="screen">
+      <div class="cam">
+        <svg class="world" preserveAspectRatio="xMidYMid slice">
+          <use href="#scene"/>
+        </svg>
+        <svg class="world ar" preserveAspectRatio="xMidYMid slice">
+          <g class="o o-poster"><g class="o-posterg"><use href="#poster"/></g></g>
+          <g class="o o-halo">
+            <rect x="826" y="470" width="72" height="86" rx="6" fill="none" stroke="#fff" stroke-width="4" opacity=".95"/>
+            <rect x="826" y="470" width="72" height="86" rx="6" fill="none" stroke="#cf4428" stroke-width="2"/>
+          </g>
+          <g class="o o-chevs" transform="translate(-30 4)">
+            <path class="o-chev" d="M592 731 L618 723 L604 712 L618 710 L640 722 L612 737 L602 737 Z" fill="#fff" fill-opacity=".97" stroke="#cf4428" stroke-width="2.4" stroke-linejoin="round"/>
+            <path class="o-chev" d="M646 717 L670 710 L657 700 L670 698 L690 708 L664 722 L655 722 Z" fill="#fff" fill-opacity=".93" stroke="#cf4428" stroke-width="2.2" stroke-linejoin="round"/>
+            <path class="o-chev" d="M695 704 L717 698 L705 689 L717 687 L735 696 L711 709 L703 709 Z" fill="#fff" fill-opacity=".88" stroke="#cf4428" stroke-width="2" stroke-linejoin="round"/>
+          </g>
+          <line class="o o-leader" x1="515" y1="592" x2="515" y2="616" stroke="#fff" stroke-width="2.4" stroke-linecap="round" opacity=".9"/>
+          <ellipse class="o o-ripple" cx="515" cy="622" rx="44" ry="12" fill="none" stroke="#fff" stroke-width="3"/>
+          <g class="o o-mk">
+            <ellipse cx="515" cy="625" rx="50" ry="13" fill="#20160a" opacity=".22"/>
+            <ellipse cx="515" cy="622" rx="44" ry="12" fill="#fff" fill-opacity=".9" stroke="#cf4428" stroke-width="4"/>
+            <ellipse cx="515" cy="622" rx="28" ry="7.6" fill="#cf4428"/>
+            <text x="515" y="622" transform="translate(0 622) scale(1 .42) translate(0 -622)" text-anchor="middle" dominant-baseline="central" font-family="system-ui,sans-serif" font-weight="800" font-size="26" fill="#fff">1</text>
+          </g>
+          <g class="o o-retic">
+            <ellipse cx="515" cy="622" rx="50" ry="13.5" fill="rgba(255,255,255,.18)" stroke="#fff" stroke-width="2.6" stroke-dasharray="7 6"/>
+            <path d="M459 622 h10 M561 622 h-10 M515 606 v6 M515 638 v-6" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+            <circle cx="515" cy="622" r="3" fill="#fff"/>
+          </g>
+        </svg>
+        <div class="anchors">
+          <div class="anc a-pic" data-wx="318" data-wy="226">
+            <div class="pic">
+              <svg viewBox="0 0 120 90" aria-hidden="true">
+                <rect width="120" height="90" fill="#d8c19c"/>
+                <rect width="120" height="44" fill="#e6d6b8"/>
+                <path d="M28 76 V38 L60 18 L92 38 V76 Z" fill="#b59c74"/>
+                <path d="M24 40 L60 15 L96 40" fill="none" stroke="#6b5538" stroke-width="3"/>
+                <path d="M54 76 V62 A6 6 0 0 1 66 62 V76 Z" fill="#5d4a33"/>
+                <g fill="#6f5a3c"><rect x="36" y="46" width="7" height="9"/><rect x="77" y="46" width="7" height="9"/><rect x="36" y="61" width="7" height="9"/><circle cx="60" cy="32" r="3.5"/></g>
+                <rect x="0" y="76" width="120" height="14" fill="#c6ab82"/>
+                <g fill="#4e3d29"><rect x="80" y="66" width="22" height="9" rx="1"/><circle cx="84" cy="77" r="4"/><circle cx="98" cy="77" r="4"/><path d="M102 70 h8 l3 -6 h3 v12 h-2 v-4 h-8 v4 h-2 Z"/><rect x="70" y="60" width="3" height="16"/><circle cx="71.5" cy="57.5" r="2.5"/><rect x="45" y="62" width="3" height="14"/><circle cx="46.5" cy="59.5" r="2.4"/></g>
+                <rect width="120" height="90" fill="none" stroke="#000" stroke-opacity=".08" stroke-width="6"/>
+              </svg>
+              <div class="pcap">The mill, 1910</div>
+            </div>
+            <div class="pic-ghost">+ Picture</div>
+          </div>
+          <div class="anc a-card" data-wx="515" data-wy="592">
+            <div class="tcard">
+              <div class="k">Text</div>
+              <div class="t"><span class="ct">The old mill</span><span class="caret"></span></div>
+              <div class="b">Built in 1820. The stream still runs below.</div>
+            </div>
+          </div>
+          <div class="anc a-next" data-wx="548" data-wy="752">
+            <div class="nextlbl"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="10" fill="#cf4428"/><path d="M6 10h7M10 6.5 13.5 10 10 13.5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Next: the bridge</div>
+          </div>
+          <div class="anc a-callout" data-wx="862" data-wy="440">
+            <div class="callout"><b>Your tour's code</b>Hung where the walk begins.</div>
+          </div>
+        </div>
+      </div>
+      <div class="grain"></div>
+      <div class="vignette"></div>
+      <div class="ui">
+        <div class="status"><span>10:24</span><span><svg viewBox="0 0 34 12"><path d="M0 9h3v3H0zM5 6h3v6H5zM10 3h3v9h-3zM15 0h3v12h-3z"/><rect x="21" y="1" width="11" height="10" rx="2" fill="none" stroke="#fff" stroke-width="1.4"/><rect x="23" y="3" width="6.5" height="6" rx=".8"/></svg></span></div>
+        <div class="punch"></div>
+        <div class="hud">
+          <span class="hud-x"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8"/></svg></span>
+          <span class="pill p-visit">Mill Park<span class="dots"><i class="on"></i><i></i><i></i><i></i><i></i><i></i></span></span>
+          <span class="pill p-make"><span class="tag">Making</span>Station 1</span>
+          <span class="pill p-saved"><span class="tag ok">Saved</span>6 stations</span>
+        </div>
+        <div class="chip">Tour found</div>
+        <div class="sheet s-place">
+          <p class="hint">Stand where it happened</p>
+          <span class="sbtn">Place here</span>
+        </div>
+        <div class="sheet s-add">
+          <div class="tools">
+            <span class="tool t-text"><svg viewBox="0 0 24 24"><path d="M5 6h14M12 6v13M9 19h6"/></svg>Text</span>
+            <span class="tool t-pic"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4 3 2.5 3-3 5 4"/></svg>Picture</span>
+          </div>
+        </div>
+        <div class="sheet s-share">
+          <div class="share-row"><svg class="qr" viewBox="0 0 25 25" aria-hidden="true"><use href="#qrSym" width="25" height="25"/></svg><div><b>Mill Park is ready</b><span>Print the code. Hang it where the walk begins.</span></div></div>
+          <div class="share-btns"><span class="p">Print the code</span><span>Copy link</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<div class="top">
+  <span class="proto-label"><span class="short">Prototype R3-0</span><span class="long">Prototype R3-0 - Strip or cards</span></span>
+</div>
+
+<main>
+<header class="sec page-head">
+  <p class="kicker">Making a tour, shown two ways</p>
+  <h1>Two ways to show the steps</h1>
+  <p class="sec-sub">Both show the same thing with the same drawn phone: place a station, add text and a picture, hang the code, and a visitor sees it. Only the layout differs. Which one reads better?</p>
+  <p class="fine">Drawn pictures, not a recording.</p>
+  <nav class="jump" aria-label="The two layouts">
+    <a href="#optA"><b>A</b>A numbered strip</a>
+    <a href="#optB"><b>B</b>Three cards</a>
+  </nav>
+</header>
+
+<div class="rule" aria-hidden="true"></div>
+
+<section class="sec opt" id="optA" aria-labelledby="aH">
+  <div class="opt-head">
+    <span class="opt-label" aria-hidden="true">A</span>
+    <div>
+      <h2 id="aH"><span class="vh">A: </span>A numbered strip</h2>
+      <p class="opt-line">Four phones, one playing at a time with a bar under it. On a phone you swipe from one to the next.</p>
+    </div>
+  </div>
+  <div class="snav" id="snav" role="group" aria-label="Choose a picture">
+    <button type="button" data-go="0" aria-current="step"><span><span class="n">1</span>Place</span><span class="bar"><i></i></span></button>
+    <button type="button" data-go="1"><span><span class="n">2</span>Add</span><span class="bar"><i></i></span></button>
+    <button type="button" data-go="2"><span><span class="n">3</span>Hang</span><span class="bar"><i></i></span></button>
+    <button type="button" data-go="3"><span><span class="n">4</span>See</span><span class="bar"><i></i></span></button>
+  </div>
+  <ol class="strip" id="strip" aria-label="Making a tour, in four pictures">
+    <li class="frame" data-i="0" tabindex="0">
+      <figure>
+        <div class="fart"><div class="dock" data-kind="place" data-look="510" aria-hidden="true"></div><div class="fbar"><i></i></div></div>
+        <figcaption class="fcap"><b><span class="n">1</span>Place a station</b>Stand on the spot where it happened and tap. The station drops right there.</figcaption>
+      </figure>
+    </li>
+    <li class="frame" data-i="1" tabindex="0">
+      <figure>
+        <div class="fart"><div class="dock" data-kind="add" data-look="510" aria-hidden="true"></div><div class="fbar"><i></i></div></div>
+        <figcaption class="fcap"><b><span class="n">2</span>Add text and a picture</b>Type a few lines, add an old photo. They stay on that spot.</figcaption>
+      </figure>
+    </li>
+    <li class="frame" data-i="2" tabindex="0">
+      <figure>
+        <div class="fart"><div class="dock" data-kind="hang" data-look="862" aria-hidden="true"></div><div class="fbar"><i></i></div></div>
+        <figcaption class="fcap"><b><span class="n">3</span>Hang the code</b>When the tour is ready, print its code and hang it where the walk begins.</figcaption>
+      </figure>
+    </li>
+    <li class="frame" data-i="3" tabindex="0">
+      <figure>
+        <div class="fart"><div class="dock" data-kind="see" data-look="510" aria-hidden="true"></div><div class="fbar"><i></i></div></div>
+        <figcaption class="fcap"><b><span class="n">4</span>A visitor sees it</b>They scan the code, hold up the phone, and your station appears on its spot.</figcaption>
+      </figure>
+    </li>
+  </ol>
+  <div class="opt-foot">
+    <button type="button" class="btn small" id="stripPause" aria-pressed="false">Pause</button>
+  </div>
+</section>
+
+<div class="rule" aria-hidden="true"></div>
+
+<section class="sec opt" id="optB" aria-labelledby="bH">
+  <div class="opt-head">
+    <span class="opt-label" aria-hidden="true">B</span>
+    <div>
+      <h2 id="bH"><span class="vh">B: </span>Three cards</h2>
+      <p class="opt-line">Three cards that read on their own, each phone playing once as its card comes into view. The last card holds two pictures: the code, and what a visitor then sees.</p>
+    </div>
+  </div>
+  <ol class="steps3" id="cards" aria-label="Making a tour, in three cards">
+    <li class="step3" data-i="0" tabindex="0">
+      <div class="st-text"><span class="badge">1</span><h3>Place a station</h3><p>Stand on the spot where it happened and tap. The station drops right there.</p></div>
+      <div class="cdock"><div class="dock" data-kind="place" data-look="510" aria-hidden="true"></div></div>
+    </li>
+    <li class="step3" data-i="1" tabindex="0">
+      <div class="st-text"><span class="badge">2</span><h3>Add text and a picture</h3><p>Type a few lines, add an old photo. They stay on that spot.</p></div>
+      <div class="cdock"><div class="dock" data-kind="add" data-look="510" aria-hidden="true"></div></div>
+    </li>
+    <li class="step3" data-i="2" tabindex="0">
+      <div class="st-text">
+        <span class="badge">3</span><h3>Hang the code, and a visitor sees it</h3>
+        <p>When the tour is ready, print its code and hang it where the walk begins. Visitors scan it, hold up the phone, and your station appears on its spot.</p>
+        <div class="scenes" role="group" aria-label="This card's two pictures">
+          <button type="button" data-scene="hang" aria-pressed="true">The code</button>
+          <button type="button" data-scene="see" aria-pressed="false">The visitor</button>
+        </div>
+      </div>
+      <div class="cdock"><div class="dock" data-kind="hang" data-look="862" aria-hidden="true"></div></div>
+    </li>
+  </ol>
+  <div class="opt-foot">
+    <button type="button" class="btn small" id="cardsAgain">Play again</button>
+  </div>
+</section>
+</main>
+
+<footer>
+  <details class="notes" id="notes">
+    <summary>About this prototype</summary>
+    <div class="nb">
+      <h3>Direction</h3>
+      <p>A decision aid, not a landing page: the two candidate layouts for "how making a tour looks" one after the other, with the same drawn phone, the same pictures and the same words, so a reader can say which one they prefer. A is the numbered strip of the drawn-phone strip page, copied unchanged. B is the three-card layout of the earlier extended setup page, with each small icon replaced by the same animated drawn phone.</p>
+      <h3>How the four moments fit into three cards</h3>
+      <p>Card 1 is "Place a station", card 2 "Add text and a picture", and card 3 joins "Hang the code" and "A visitor sees it", because hanging the code is what lets a visitor see the tour. Card 3's phone plays both pictures in turn (5 s each), and its two small buttons show which one is on screen and switch between them. The words are A's captions, the last two joined.</p>
+      <h3>What a reader should notice</h3>
+      <ul>
+        <li>On a phone held upright, A takes about one screen and is swiped sideways, one phone at a time; B is a column about two and a half screens tall that is read by scrolling, each card complete on its own.</li>
+        <li>On a desktop, A shows four smaller pictures in a row and plays them in a loop; B shows three cards with more room for words, each played once.</li>
+        <li>A carries progress bars, numbered tabs and a Pause button; B carries a dotted route between its numbered cards and a "Play again" button.</li>
+      </ul>
+      <h3>Load-bearing details (check a build against these)</h3>
+      <ul>
+        <li>The phones in A and B are the same drawing at the same size: 206 px wide on a phone, at most 232 px on a desktop. B goes to three columns only from 820 px, so its phones never shrink below A's; between 560 and 819 px a card puts its phone beside its words.</li>
+        <li>Text inside every phone has a 13 px base size: at 390 px wide the card text is 12.2 px and the card title 14 px; only the clock and the small upper-case tags are smaller (9.4 to 9.6 px).</li>
+        <li>One layout plays at a time: the one that fills more of the screen. A plays as on the strip page (5 s a frame, from a quarter on screen, stops on Pause, on a tap or a swipe). B plays each card once, in order, when 60 % of its phone is on screen; a card that leaves the screen plays again when it comes back; a tap plays that card alone.</li>
+        <li>The place and the AR marks are separate layers in every phone; the progress bars animate a transform.</li>
+        <li>Reduced motion: nothing plays, every phone shows its final picture, and card 3's buttons switch its two pictures without motion.</li>
+      </ul>
+      <h3>Technique</h3>
+      <p>Layered SVG and HTML with CSS transforms; the place is drawn once and reused in all seven phones and their pale backdrops. No WebGL, no canvas, no library, so the page is its own no-WebGL floor.</p>
+      <h3>Measured cost (desktop machine under other load, not a phone)</h3>
+      <ul>
+        <li>JS: inline only, about 18.5 kB raw, 6.1 kB gzip; no external script. The whole page is about 69 kB raw, 18 kB gzip.</li>
+        <li>Frames at 390x844 over 5 s each (A playing, B playing, a scroll through the page), two runs each with the CPU slowed 1, 4 and 6 times: no frame over 50 ms at 4x (worst 50 ms); at 6x A has 5 to 6 frames over 50 ms per 5 s (worst 100 ms) and B 0 to 1 (worst 50 ms). One stall of 0.8 s happened only in the first page of a freshly started browser (warm-up).</li>
+      </ul>
+      <h3>Known weaknesses</h3>
+      <ul>
+        <li>The two layouts play differently because their shapes ask for it (a looping row against a column of cards played once); a reader may judge the motion rather than the layout.</li>
+        <li>Card 3 carries two pictures and a pair of buttons, so it is busier than the other two cards and than any of A's frames.</li>
+        <li>On a desktop, B's cards 1 and 2 have empty room under their short text, because the phones line up at the bottom.</li>
+        <li>At 1000 px, A's photo slightly overlaps its text card in the "add" frame, as on the strip page it is copied from.</li>
+        <li>The fake codes are patterns, not real codes.</li>
+      </ul>
+      <h3>Parameters it rests on</h3>
+      <ul>
+        <li>Base text size inside the phones: 13 px (?fs=12 / 13 / 14). At 14 the photo overlaps the text card in both layouts at 390 px; 12 fits but is smaller.</li>
+        <li>Frame and scene length: 5 s (?frame=3.5 / 5 / 6.5), the same for A's frames and B's pictures.</li>
+        <li>How much of a card's phone must be on screen before it plays: 60 % (?cv=0.4 / 0.6 / 0.8).</li>
+      </ul>
+    </div>
+  </details>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+  var root = document.documentElement;
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var params = new URLSearchParams(location.search);
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var NS = 'http://www.w3.org/2000/svg';
+  function num(name, lo, hi, dflt) {
+    var v = parseFloat(params.get(name));
+    return isFinite(v) && v >= lo && v <= hi ? v : dflt;
+  }
+  var FRAME_S = num('frame', 2, 12, 5);
+  var FMIN = num('fs', 10, 18, 13);
+  // how much of a card's phone must be on screen before it plays
+  var CARD_VIS = num('cv', 0.2, 1, 0.6);
+  root.style.setProperty('--fmin', FMIN + 'px');
+
+  /* ---------- deterministic fake code (a pattern, not a real code) ---------- */
+  function rng(seed) {
+    var s = (seed >>> 0) || 123456789;
+    return function () { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+  }
+  (function qr() {
+    var n = 21, r = rng(Math.imul(8, 2654435761)), d = '';
+    function finder(x, y) { return (x < 8 && y < 8) || (x > n - 9 && y < 8) || (x < 8 && y > n - 9); }
+    for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) if (!finder(x, y) && r() < 0.47) d += 'M' + x + ' ' + y + 'h1v1h-1z';
+    [[0, 0], [n - 7, 0], [0, n - 7]].forEach(function (f) {
+      d += 'M' + f[0] + ' ' + f[1] + 'h7v7h-7z' + 'M' + (f[0] + 1) + ' ' + (f[1] + 1) + 'v5h5v-5z' + 'M' + (f[0] + 2) + ' ' + (f[1] + 2) + 'h3v3h-3z';
+    });
+    $('#qrPath').setAttribute('d', d);
+  })();
+
+  /* ---------- the place's texture, generated once into the shared drawing ---------- */
+  function el(name, attrs, parent) {
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    parent.appendChild(e); return e;
+  }
+  var R = rng(20261025);
+  function leftEdge(y) { return 485 - 297 * (y - 472) / 628; }
+  function rightEdge(y) { return 535 + 298 * (y - 472) / 628; }
+  function ell(x, y, rx, ry) { return 'M' + (x - rx).toFixed(1) + ' ' + y.toFixed(1) + 'a' + rx.toFixed(1) + ' ' + ry.toFixed(1) + ' 0 1 0 ' + (2 * rx).toFixed(1) + ' 0a' + rx.toFixed(1) + ' ' + ry.toFixed(1) + ' 0 1 0 ' + (-2 * rx).toFixed(1) + ' 0z'; }
+  function foliage(g, cx, cy, rx, ry, n, palette) {
+    var buckets = palette.map(function () { return ''; });
+    for (var i = 0; i < n; i++) {
+      var a = R() * Math.PI * 2, d = Math.sqrt(R()) * .9;
+      var x = cx + Math.cos(a) * d * rx, y = cy + Math.sin(a) * d * ry;
+      var r = rx * (.13 + R() * .16);
+      var light = .5 + .55 * ((x - cx) / rx) * .5 - .55 * ((y - cy) / ry) * .6 + (R() - .5) * .45;
+      var k = Math.max(0, Math.min(palette.length - 1, Math.round(light * (palette.length - 1))));
+      buckets[k] += ell(x, y, r, r);
+    }
+    buckets.forEach(function (b, k) { if (b) el('path', { d: b, fill: palette[k] }, g); });
+  }
+  var LEAF = ['#3c522d', '#4d6636', '#61793f', '#7a934e', '#97ad63', '#b5c47e'];
+  $$('#scene .canopy').forEach(function (g) {
+    var c = g.getAttribute('data-c').split(',').map(Number);
+    foliage(g, c[0], c[1], c[2], c[3], 90, LEAF);
+  });
+  (function farTrees() {
+    var g = $('#farTrees');
+    for (var x = -600; x < 1800; x += 40 + R() * 40) {
+      var h = 22 + R() * 26;
+      foliage(g, x, 440 - h * .4, h * 1.1, h, 9, ['#8c9e84', '#9aab90', '#a9b89e', '#b6c3aa']);
+    }
+  })();
+  (function stones() {
+    var g = $('#stones'), dark = [], light = [];
+    for (var row = 0, y = 232; y < 474; y += 17, row++) {
+      for (var x = 330 - (row % 2) * 17; x < 690; x += 34) {
+        var v = R();
+        if (v < .3) dark.push('M' + x + ' ' + y + 'h34v8.5h-34z');
+        else if (v > .72) light.push('M' + (x + 9) + ' ' + (y + 8.5) + 'h17v8.5h-17z');
+      }
+    }
+    el('path', { d: dark.join(''), fill: '#3b2b18', opacity: '.07' }, g);
+    el('path', { d: light.join(''), fill: '#fff6e2', opacity: '.13' }, g);
+  })();
+  (function grassPatches() {
+    var g = $('#grassPatches');
+    ['#6f8546', '#a6b277', '#86995a'].forEach(function (c) {
+      var d = '';
+      for (var i = 0; i < 26; i++) {
+        var y = 480 + Math.pow(R(), 1.3) * 560, k = (y - 466) / 534, x = -300 + R() * 1600;
+        var rx = 20 + 90 * k * (.5 + R()), ry = rx * (.12 + .1 * k);
+        d += ell(x, y, rx, ry);
+      }
+      el('path', { d: d, fill: c, opacity: '.32' }, g);
+    });
+  })();
+  (function edgeStones() {
+    var d = '';
+    for (var i = 0; i < 70; i++) {
+      var t = Math.pow(i / 70, 1.5), y = 474 + t * 600, k = (y - 466) / 534;
+      var w = 3 + 11 * k, h = w * .45;
+      [leftEdge(y) + (R() - .5) * 4 * k, rightEdge(y) + (R() - .5) * 4 * k].forEach(function (x) { d += ell(x, y, w, h); });
+    }
+    el('path', { d: d, fill: '#b3a283', stroke: '#8a7a5d', 'stroke-width': '.8' }, $('#edgeStones'));
+  })();
+  function tuftPath(x, y, h, w) {
+    return 'M' + (x - w).toFixed(1) + ' ' + y.toFixed(1) + 'q' + (w * .2).toFixed(1) + ' ' + (-h * .6).toFixed(1) + ' ' + (-w * .6).toFixed(1) + ' ' + (-h).toFixed(1) +
+      'M' + x.toFixed(1) + ' ' + y.toFixed(1) + 'q' + (w * .3).toFixed(1) + ' ' + (-h * .6).toFixed(1) + ' ' + (w * .1).toFixed(1) + ' ' + (-h * 1.15).toFixed(1) +
+      'M' + (x + w).toFixed(1) + ' ' + y.toFixed(1) + 'q' + (w * .1).toFixed(1) + ' ' + (-h * .6).toFixed(1) + ' ' + (w * .8).toFixed(1) + ' ' + (-h * .9).toFixed(1);
+  }
+  (function tufts() {
+    var dark = '', light = '';
+    for (var i = 0; i < 260; i++) {
+      var y = 478 + Math.pow(R(), 1.6) * 560, x = -300 + R() * 1600, k = (y - 466) / 534;
+      if (x > leftEdge(y) - 8 && x < rightEdge(y) + 8) continue;
+      var p = tuftPath(x, y, 4 + 16 * k, 1.5 + 4 * k);
+      if (R() < .55) dark += p; else light += p;
+    }
+    el('path', { d: dark, fill: 'none', stroke: '#4f6532', 'stroke-width': '1.6', 'stroke-linecap': 'round', opacity: '.75' }, $('#tufts'));
+    el('path', { d: light, fill: 'none', stroke: '#c3cc8e', 'stroke-width': '1.3', 'stroke-linecap': 'round', opacity: '.7' }, $('#tufts'));
+    var fore = '';
+    for (var j = 0; j < 40; j++) {
+      var fy = 900 + R() * 160, fx = R() < .5 ? 120 + R() * 240 : 700 + R() * 300;
+      fore += tuftPath(fx, fy, 30 + R() * 30, 6 + R() * 5);
+    }
+    el('path', { d: fore, fill: 'none', stroke: '#465c2c', 'stroke-width': '3', 'stroke-linecap': 'round', opacity: '.8' }, $('#foreTufts'));
+  })();
+
+  /* ---------- docks: a pale backdrop and a phone, built from the template ---------- */
+  var tpl = $('#tplPhone');
+  var docks = $$('.dock[data-kind]').map(function (dock) {
+    var back = el('svg', { 'class': 'back', 'aria-hidden': 'true' }, dock);
+    el('use', { href: '#scene' }, back);
+    el('use', { href: '#poster', 'class': 'bposter' }, back);
+    var pale = document.createElement('div'); pale.className = 'pale'; dock.appendChild(pale);
+    dock.appendChild(tpl.content.cloneNode(true));
+    return {
+      dock: dock, kind: dock.dataset.kind, look: +dock.dataset.look || 510,
+      back: back, phone: $('.phone', dock), screen: $('.screen', dock), cam: $('.cam', dock),
+      worlds: $$('.world', dock), anchors: $$('.anc', dock), title: $('.ct', dock)
+    };
+  });
+
+  /* framing: the screen shows 440 world units across, centred on the dock's look point;
+     spare height goes mostly above the station (sky and roof under the status bar) */
+  var FOCUS = { w: 440, y0: 250, y1: 760 };
+  function layout(d) {
+    var sw = d.screen.clientWidth, sh = d.screen.clientHeight;
+    if (!sw || !sh) return;
+    var vb = { w: FOCUS.w, h: FOCUS.w * sh / sw };
+    vb.x = d.look - vb.w / 2;
+    vb.y = FOCUS.y0 - (vb.h - (FOCUS.y1 - FOCUS.y0)) * .62;
+    var s = sw / vb.w;
+    d.worlds.forEach(function (w) { w.setAttribute('viewBox', vb.x.toFixed(2) + ' ' + vb.y.toFixed(2) + ' ' + vb.w.toFixed(2) + ' ' + vb.h.toFixed(2)); });
+    var ox = d.phone.offsetLeft + d.screen.offsetLeft, oy = d.phone.offsetTop + d.screen.offsetTop;
+    var dw = d.dock.clientWidth, dh = d.dock.clientHeight;
+    d.back.setAttribute('viewBox', (vb.x - ox / s).toFixed(2) + ' ' + (vb.y - oy / s).toFixed(2) + ' ' + (dw / s).toFixed(2) + ' ' + (dh / s).toFixed(2));
+    d.anchors.forEach(function (a) {
+      a.style.left = ((+a.dataset.wx - vb.x) * s).toFixed(1) + 'px';
+      a.style.top = ((+a.dataset.wy - vb.y) * s).toFixed(1) + 'px';
+    });
+    d.vb = vb; d.s = s;
+  }
+  function layoutAll() { docks.forEach(layout); }
+
+  /* ---------- playing one phone's short sequence (typing kept per phone, so A and B never share it) ---------- */
+  var TITLE = 'The old mill';
+  function stopTyping(d) { (d.typing || []).forEach(clearTimeout); d.typing = []; }
+  function play(d) {
+    if (reduced) return;
+    d.dock.classList.remove('play'); void d.dock.offsetWidth; d.dock.classList.add('play');
+    if (d.kind === 'add') {
+      stopTyping(d);
+      d.title.textContent = '';
+      for (var i = 1; i <= TITLE.length; i++) {
+        (function (n) { d.typing.push(setTimeout(function () { d.title.textContent = TITLE.slice(0, n); }, 520 + n * 65)); })(i);
+      }
+    }
+  }
+  function settle(d) {
+    d.dock.classList.remove('play');
+    if (d.kind === 'add') { stopTyping(d); d.title.textContent = TITLE; }
+  }
+
+  /* ---------- the strip: one lit frame at a time ---------- */
+  var strip = $('#strip'), frames = $$('.frame', strip), snav = $('#snav'), tabs = $$('button', snav), pauseBtn = $('#stripPause');
+  var frameDocks = frames.map(function (f) { var dk = $('.dock', f); return docks.filter(function (d) { return d.dock === dk; })[0]; });
+  strip.style.setProperty('--frame', FRAME_S + 's');
+  snav.style.setProperty('--frame', FRAME_S + 's');
+  var active = 0, timer = 0, userPaused = false, stopped = false, seen = false, progScroll = 0;
+  var rowMQ = window.matchMedia('(min-width: 1000px)');
+  function mark(i) {
+    active = (i + frames.length) % frames.length;
+    frames.forEach(function (f, k) { f.classList.toggle('active', k === active); });
+    tabs.forEach(function (b, k) { if (k === active) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current'); b.classList.toggle('done', k < active); });
+  }
+  function scrollToFrame(i, smooth) {
+    if (rowMQ.matches) return;
+    var f = frames[i];
+    var left = f.offsetLeft - strip.offsetLeft - parseFloat(getComputedStyle(strip).paddingLeft);
+    progScroll = performance.now();
+    strip.scrollTo({ left: left, behavior: smooth && !reduced ? 'smooth' : 'auto' });
+  }
+  function restartBars() {
+    [strip, snav].forEach(function (c) { c.classList.remove('playing'); });
+    void strip.offsetWidth;
+  }
+  function show(i, smooth) {
+    var prev = frameDocks[active];
+    mark(i);
+    frameDocks.forEach(function (d, k) { if (k !== active) settle(d); });
+    if (prev && prev !== frameDocks[active]) settle(prev);
+    scrollToFrame(active, smooth);
+    restartBars();
+    if (!reduced) {
+      if (!stopped && !userPaused) { strip.classList.add('playing'); snav.classList.add('playing'); }
+      // in a sideways row the frame waits until its slide has settled: one moving thing at a time
+      var wait = rowMQ.matches || !smooth ? 0 : 420;
+      var d = frameDocks[active];
+      setTimeout(function () { if (frameDocks[active] === d) play(d); }, wait);
+    }
+  }
+  function schedule() {
+    clearTimeout(timer);
+    if (reduced || userPaused || stopped || !seen || document.hidden) return;
+    timer = setTimeout(function () { show(active + 1, true); schedule(); }, FRAME_S * 1000);
+  }
+  function halt() { clearTimeout(timer); strip.classList.remove('playing'); snav.classList.remove('playing'); }
+  function resume() {
+    if (reduced || userPaused || stopped || !seen || document.hidden) { halt(); return; }
+    show(active, false); schedule();
+  }
+  function takeOver(i) {
+    // the reader chose a frame: it plays once and the strip stops advancing by itself
+    stopped = true; clearTimeout(timer);
+    show(i, true);
+    strip.classList.remove('playing'); snav.classList.remove('playing');
+    pauseBtn.textContent = 'Play'; pauseBtn.setAttribute('aria-pressed', 'true');
+  }
+  frames.forEach(function (f, k) {
+    f.addEventListener('click', function () { if (!reduced) takeOver(k); });
+    f.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && !reduced) { e.preventDefault(); takeOver(k); } });
+  });
+  tabs.forEach(function (b, k) { b.addEventListener('click', function () { if (reduced) { mark(k); scrollToFrame(k, false); } else takeOver(k); }); });
+  pauseBtn.addEventListener('click', function () {
+    if (userPaused || stopped) {
+      userPaused = false; stopped = false;
+      pauseBtn.textContent = 'Pause'; pauseBtn.setAttribute('aria-pressed', 'false');
+      resume();
+    } else {
+      userPaused = true; halt();
+      pauseBtn.textContent = 'Play'; pauseBtn.setAttribute('aria-pressed', 'true');
+    }
+  });
+  // a swipe in the sideways row: the frame it lands on becomes the lit one
+  var swipeT = 0;
+  strip.addEventListener('scroll', function () {
+    if (rowMQ.matches || performance.now() - progScroll < 900) return;
+    clearTimeout(swipeT);
+    swipeT = setTimeout(function () {
+      var sl = strip.scrollLeft, best = 0, bd = 1e9;
+      frames.forEach(function (f, k) { var dd = Math.abs(f.offsetLeft - strip.offsetLeft - parseFloat(getComputedStyle(strip).paddingLeft) - sl); if (dd < bd) { bd = dd; best = k; } });
+      if (best !== active || !stopped) {
+        stopped = true; clearTimeout(timer); mark(best);
+        frameDocks.forEach(settle); strip.classList.remove('playing'); snav.classList.remove('playing');
+        if (!reduced) play(frameDocks[best]);
+        pauseBtn.textContent = 'Play'; pauseBtn.setAttribute('aria-pressed', 'true');
+      }
+    }, 140);
+  }, { passive: true });
+  if (reduced) { pauseBtn.hidden = true; }
+  mark(0);
+
+  /* ---------- B: the cards play once each, in order, while they are on screen ---------- */
+  var cards = $$('.step3', $('#cards')), againBtn = $('#cardsAgain'), sceneBtns = $$('[data-scene]');
+  var cardDocks = cards.map(function (c) { var dk = $('.dock', c); return docks.filter(function (d) { return d.dock === dk; })[0]; });
+  // four moments folded into three cards: the last card shows hanging the code, then the visitor
+  var SCENES = [['place'], ['add'], ['hang', 'see']];
+  var LOOK = { place: 510, add: 510, hang: 862, see: 510 };
+  var cvis = cards.map(function () { return false; }), played = cards.map(function () { return false; });
+  var current = -1, cardT = 0, focus = '';
+  function setScene(k, kind) {
+    var d = cardDocks[k];
+    if (d.kind !== kind) {
+      settle(d);
+      d.kind = kind; d.dock.dataset.kind = kind; d.look = LOOK[kind];
+      layout(d);
+    }
+    if (SCENES[k].length > 1) sceneBtns.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.scene === kind)); });
+  }
+  function stopCard() {
+    clearTimeout(cardT);
+    if (current !== -1) { settle(cardDocks[current]); current = -1; }
+  }
+  function runCard(k, from, only) {
+    stopCard();
+    current = k;
+    var list = SCENES[k], i = from;
+    (function step() {
+      setScene(k, list[i]);
+      play(cardDocks[k]);
+      cardT = setTimeout(function () {
+        i++;
+        if (i < list.length && !only) { step(); return; }
+        played[k] = true; current = -1;
+        nextCard();
+      }, FRAME_S * 1000);
+    })();
+  }
+  function nextCard() {
+    if (reduced || focus !== 'B' || document.hidden || current !== -1) return;
+    for (var k = 0; k < cards.length; k++) if (cvis[k] && !played[k]) { runCard(k, 0, false); return; }
+  }
+  cards.forEach(function (c, k) {
+    function go() { if (!reduced) { played = played.map(function () { return true; }); runCard(k, 0, false); } }
+    c.addEventListener('click', go);
+    c.addEventListener('keydown', function (e) { if (e.target === c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); go(); } });
+  });
+  sceneBtns.forEach(function (b) {
+    b.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var k = cards.indexOf(b.closest('.step3'));
+      if (reduced) { setScene(k, b.dataset.scene); return; }
+      played = played.map(function () { return true; });
+      runCard(k, SCENES[k].indexOf(b.dataset.scene), true);
+    });
+  });
+  againBtn.addEventListener('click', function () {
+    stopCard();
+    // the last card goes back to its first picture, the code
+    setScene(2, 'hang');
+    played = played.map(function () { return false; });
+    nextCard();
+  });
+  if (reduced) againBtn.hidden = true;
+
+  /* ---------- one layout plays at a time: the one that fills more of the screen ---------- */
+  var secA = $('#optA'), secB = $('#optB');
+  function visible(el) { var r = el.getBoundingClientRect(); return Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)); }
+  var mT = 0;
+  function measure() {
+    mT = 0;
+    var a = visible(secA), b = visible(secB);
+    var f = a === 0 && b === 0 ? '' : (a >= b ? 'A' : 'B');
+    var sr = visible(strip) / (strip.getBoundingClientRect().height || 1);
+    cards.forEach(function (c, k) {
+      var dk = cardDocks[k].dock, fr = visible(dk) / (dk.getBoundingClientRect().height || 1);
+      cvis[k] = fr >= CARD_VIS;
+      // a card that has left the screen plays again when it comes back
+      if (fr === 0) { played[k] = false; if (current === k) stopCard(); }
+    });
+    var on = f === 'A' && sr >= 0.25;
+    if (on !== seen) { seen = on; if (on) resume(); else halt(); }
+    if (f !== focus) { focus = f; if (f !== 'B') stopCard(); }
+    nextCard();
+  }
+  function poke() { if (!mT) mT = requestAnimationFrame(measure); }
+  window.addEventListener('scroll', poke, { passive: true });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { halt(); stopCard(); } else { if (seen) resume(); nextCard(); }
+  });
+
+  /* ---------- start ---------- */
+  var resizeT = 0;
+  window.addEventListener('resize', function () { clearTimeout(resizeT); resizeT = setTimeout(function () { layoutAll(); scrollToFrame(active, false); poke(); }, 80); });
+  layoutAll();
+  measure();
+  window.__landing = {
+    show: function (i) { takeOver(i); },
+    active: function () { return active; },
+    card: function (k, from, only) { runCard(k, from || 0, !!only); },
+    current: function () { return current; },
+    focus: function () { return focus; },
+    framing: function () { return docks.map(function (d) { return { kind: d.kind, vb: d.vb, s: d.s }; }); },
+    params: { frame: FRAME_S, fs: FMIN, cv: CARD_VIS },
+    ready: true
+  };
+})();
+</script>
+</body>
+</html>

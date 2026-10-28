@@ -61,6 +61,32 @@ describe("locationPermissionWithoutFix", () => {
     ).resolves.toEqual(noApi);
   });
 
+  // Why: a creator's failed start blames the location only when its own
+  // request was refused; a permission read denied cannot say that, since
+  // it stays denied after a refusal in an earlier visit.
+  it("tells of a refusal, and of nothing else", async () => {
+    const onRefused = vi.fn();
+    const answers = [
+      { supported: true, granted: true },
+      { supported: true, granted: null },
+      { supported: false, granted: null },
+      { supported: true, granted: false },
+    ];
+    for (const answer of answers) {
+      await locationPermissionWithoutFix({
+        query: () => Promise.resolve("prompt"),
+        request: () => Promise.resolve(answer),
+        onRefused,
+      })();
+    }
+    await locationPermissionWithoutFix({
+      query: () => Promise.resolve("granted"),
+      request: () => Promise.resolve({ supported: true, granted: false }),
+      onRefused,
+    })();
+    expect(onRefused).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back to the request when the query throws", async () => {
     const request = vi.fn(() =>
       Promise.resolve({ supported: true, granted: true }),

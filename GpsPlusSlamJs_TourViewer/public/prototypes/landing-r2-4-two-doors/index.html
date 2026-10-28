@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="en" data-ar="0" data-door="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Take or Make a Tour</title>
+<style>
+:root {
+  --ink: #111317;
+  --ink-2: #4a4d55;
+  --paper: #f5f4ef;
+  --white: #ffffff;
+  --blue: #1e40e6;
+  --blue-deep: #1631b8;
+  --blue-soft: #dfe5ff;
+  --yellow: #ffd23a;
+  --yellow-deep: #e9b800;
+  --yellow-soft: #fff3c4;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --gut: 16px;
+  /* the door-title scale; ?type=s|m|l sweeps it (see the notes) */
+  --door-title: clamp(42px, 12.4vw, 104px);
+  --strip: 76px;
+  --ease: cubic-bezier(.3, .7, .2, 1);
+}
+html[data-type="s"] { --door-title: clamp(34px, 10vw, 84px); }
+html[data-type="l"] { --door-title: clamp(50px, 14.6vw, 124px); }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); -webkit-text-size-adjust: 100%; }
+body { overflow-x: hidden; }
+p, ul, ol, h1, h2, h3, figure { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+button, input { font: inherit; color: inherit; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+.take :focus-visible { outline-color: var(--yellow); }
+.take .blk :focus-visible { outline-color: var(--blue); }
+
+/* ---------- top bar ---------- */
+.bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-height: 48px; padding: 6px var(--gut); background: var(--ink); color: var(--paper);
+}
+.mark { display: flex; align-items: baseline; gap: 8px; min-width: 0; text-decoration: none; }
+.mark b { font-weight: 900; font-size: 17px; letter-spacing: -.01em; white-space: nowrap; }
+.mark b i { font-style: normal; color: var(--yellow); }
+.mark small { font-size: 11px; color: #a7aab2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arsw { display: flex; align-items: center; gap: 6px; flex: none; }
+.arsw > span { font-size: 11px; color: #a7aab2; }
+.seg { display: flex; border: 1.5px solid #5b5e66; }
+.seg button {
+  border: 0; background: transparent; color: var(--paper); cursor: pointer;
+  font-size: 12px; font-weight: 700; padding: 0 9px; min-height: 36px; white-space: nowrap;
+}
+.seg button + button { border-left: 1.5px solid #5b5e66; }
+.seg button[aria-pressed="true"] { background: var(--paper); color: var(--ink); }
+.seg button:focus-visible { outline-color: var(--yellow); outline-offset: -3px; }
+@media (max-width: 400px) { .mark small { display: none; } .arsw > span { display: none; } }
+
+/* ---------- intro ---------- */
+.intro { padding: 18px var(--gut) 18px; max-width: 1440px; margin: 0 auto; }
+.intro h1 { font-weight: 850; font-size: clamp(27px, 7.4vw, 60px); line-height: 1.04; letter-spacing: -.025em; max-width: 19em; }
+.intro h1 .hl { background: var(--ink); color: var(--paper); padding: 0 .12em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.intro .sub { margin-top: 10px; font-size: clamp(16px, 4.3vw, 21px); line-height: 1.35; font-weight: 600; max-width: 40em; }
+.req { margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 14px; line-height: 1.35; color: var(--ink-2); }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 12.5px; padding: 4px 9px; background: var(--ink); color: var(--paper); white-space: nowrap; }
+.chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #ff6b5a; }
+html[data-ar="1"] .chip::before { background: #4be08a; }
+html[data-ar="1"] .ar-no, html[data-ar="0"] .ar-yes { display: none !important; }
+
+/* ---------- the doors ---------- */
+.doors { display: flex; flex-direction: column; max-width: 1440px; margin: 0 auto; }
+.door { position: relative; display: flex; flex-direction: column; min-width: 0; }
+.take { background: var(--blue); color: var(--white); }
+.make { background: var(--yellow); color: var(--ink); }
+.face {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto 1fr auto; column-gap: 12px;
+  padding: 18px var(--gut) 18px; min-height: 212px; text-decoration: none; cursor: pointer;
+}
+.face:active .t { transform: translateY(1px); }
+.face .k { grid-column: 1; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; opacity: .85; }
+.face .t { grid-column: 1; font-weight: 900; font-size: var(--door-title); line-height: .92; letter-spacing: -.045em; margin-top: 6px; }
+.face .p { grid-column: 1; margin-top: 10px; font-size: 16.5px; line-height: 1.3; font-weight: 600; max-width: 24em; align-self: end; }
+.face .pic { grid-column: 2; grid-row: 1 / 4; align-self: center; width: clamp(96px, 28vw, 150px); }
+.face .pic svg { display: block; width: 100%; height: auto; }
+.face .go {
+  position: absolute; right: var(--gut); bottom: 14px; width: 44px; height: 44px; display: grid; place-items: center;
+  background: var(--ink); color: var(--paper);
+}
+.make .face .go { background: var(--ink); }
+.take .face .go { background: var(--yellow); color: var(--ink); }
+.face .go svg { width: 22px; height: 22px; }
+.face .p { padding-right: 52px; }
+.face:hover .go { transform: translateX(3px); }
+.go { transition: transform .2s var(--ease); }
+.back { display: none; }
+.path { display: none; }
+/* warm-up: a closed path is laid out once, off screen and invisible, while the page is idle */
+.door .path.warm { display: block; position: absolute; left: -10000px; top: 0; width: 100%; visibility: hidden; pointer-events: none; }
+.strip-label { display: none; }
+
+/* one-shot pin drop on load (skipped under reduced motion) */
+.pin-drop { animation: pinDrop .7s .35s var(--ease) both; transform-box: fill-box; transform-origin: 50% 100%; }
+.pin-drop.late { animation-delay: .55s; }
+@keyframes pinDrop { from { opacity: 0; transform: translateY(-14px); } 70% { opacity: 1; transform: translateY(1px); } to { opacity: 1; transform: none; } }
+
+/* ---------- a door is open ---------- */
+html:not([data-door=""]) .intro { display: none; }
+.face-wrap { position: relative; }
+.door.open .face-wrap { display: flex; align-items: center; gap: 12px; padding-right: var(--gut); }
+.door.open .face { flex: 1; min-width: 0; min-height: 0; display: block; padding: 14px var(--gut); cursor: default; pointer-events: none; }
+.door.open .face .k, .door.open .face .p, .door.open .face .pic, .door.open .face .go { display: none; }
+.door.open .face .t { font-size: clamp(34px, 9vw, 64px); margin: 0; }
+.door.open .back {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  min-height: 44px; padding: 0 12px; font-size: 14px; font-weight: 800; text-decoration: none;
+  border: 2px solid currentColor;
+}
+.door.open .back svg { width: 16px; height: 16px; }
+.door.open .path { display: block; }
+
+/* portrait: the closed door becomes a quiet bar pinned to the bottom of the screen */
+.door.closed { order: 2; position: sticky; bottom: 0; z-index: 20; box-shadow: 0 -2px 0 rgba(17, 19, 23, .9); }
+.door.closed .face { min-height: 0; padding: 0 var(--gut); height: 58px; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto; align-items: center; }
+.door.closed .face .k, .door.closed .face .p, .door.closed .face .pic, .door.closed .face .t { display: none; }
+.door.closed .face .go { position: static; grid-column: 2; width: 36px; height: 36px; }
+.door.closed .strip-label { display: block; grid-column: 1; font-weight: 800; font-size: 16px; }
+.door.closed .strip-label b { font-weight: 900; }
+
+/* ---------- paths ---------- */
+.path { padding: 4px var(--gut) 28px; }
+.path-in { max-width: 980px; }
+.path h2 { font-size: 15px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; margin: 18px 0 10px; outline: none; }
+.lead { font-size: 18px; line-height: 1.38; font-weight: 600; max-width: 36em; }
+.need { margin-top: 12px; display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; font-size: 15px; line-height: 1.4; }
+.take .need { background: var(--blue-deep); }
+.make .need { background: var(--yellow-deep); }
+.need svg { flex: none; width: 22px; height: 22px; margin-top: 1px; }
+.need b { font-weight: 800; }
+.blk { background: var(--white); color: var(--ink); padding: 16px; margin-top: 12px; }
+.blk h3 { font-size: 22px; font-weight: 850; letter-spacing: -.015em; line-height: 1.12; }
+.blk h3 .n { display: inline-grid; place-items: center; width: 30px; height: 30px; margin-right: 8px; font-size: 16px; vertical-align: 3px; }
+.take .blk h3 .n { background: var(--blue); color: var(--white); }
+.make .blk h3 .n { background: var(--ink); color: var(--yellow); }
+.blk p { margin-top: 6px; font-size: 15.5px; line-height: 1.45; color: var(--ink-2); }
+.blk .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 12px 20px;
+  border: 0; background: var(--ink); color: var(--white); font-weight: 800; font-size: 16px; cursor: pointer; text-decoration: none;
+}
+.btn.alt { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
+.btn.blue { background: var(--blue); }
+.btn:disabled { opacity: .7; cursor: default; }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 2.5px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.field { display: flex; gap: 0; margin-top: 12px; }
+.field input { flex: 1; min-width: 0; min-height: 52px; padding: 12px; border: 2px solid var(--ink); border-right: 0; background: var(--white); font-size: 16px; }
+.field input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--blue); }
+.msg { margin-top: 10px; font-size: 15px; line-height: 1.4; font-weight: 600; }
+.msg:empty { display: none; }
+.msg.bad { color: #b3261e; }
+.msg.ok { color: var(--blue-deep); }
+.mini-pic { float: right; width: 92px; margin: 0 0 6px 12px; }
+.mini-pic svg { display: block; width: 100%; height: auto; }
+
+/* the Mill Park example */
+.stations { max-width: 600px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.stn { background: var(--paper); padding: 8px; }
+.stn svg { display: block; width: 100%; height: auto; }
+.stn b { display: block; margin-top: 6px; font-size: 13.5px; line-height: 1.2; }
+.stn span { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.3; margin-top: 2px; }
+.made-up { font-size: 12.5px !important; margin-top: 8px !important; }
+
+/* handoff to a phone (no-AR state on a computer) */
+.handoff { display: none; gap: 12px; align-items: center; margin-top: 12px; padding: 12px; background: var(--paper); }
+.handoff svg { width: 84px; height: 84px; flex: none; }
+.handoff p { margin: 0; font-size: 14px; }
+@media (hover: hover) and (pointer: fine) { html[data-ar="0"] .handoff { display: flex; } }
+
+/* maker: what you will do */
+.todo { display: grid; gap: 10px; margin-top: 12px; }
+.todo li { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 12px; align-items: center; background: var(--ink); color: var(--paper); padding: 14px; }
+.todo li svg { width: 56px; height: 56px; display: block; }
+.todo li b { display: block; font-size: 19px; font-weight: 850; line-height: 1.15; letter-spacing: -.01em; }
+.todo li span { display: block; margin-top: 3px; font-size: 14.5px; line-height: 1.4; color: #c9cbd1; }
+.todo li .when { display: inline-block; margin-top: 6px; font-size: 11.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--yellow); }
+.facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.facts li { font-size: 13.5px; font-weight: 800; padding: 6px 10px; background: var(--ink); color: var(--yellow); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 12px; }
+.tile {
+  display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 10px 12px; text-align: left;
+  border: 2px solid var(--ink); background: var(--white); font-weight: 800; font-size: 15px; cursor: pointer;
+}
+.tile svg { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+.tile[aria-pressed="true"] { background: var(--ink); color: var(--yellow); }
+.howto { margin-top: 12px; padding: 12px 14px; border-left: 6px solid var(--ink); background: var(--yellow-soft); }
+.howto[hidden] { display: none; }
+.howto ol { list-style: decimal; padding-left: 20px; font-size: 15px; line-height: 1.45; }
+.howto li + li { margin-top: 3px; }
+.small-links { margin-top: 18px; font-size: 14.5px; line-height: 1.5; }
+.small-links a, .linkish { font-weight: 700; text-underline-offset: 3px; background: none; border: 0; padding: 4px 0; cursor: pointer; text-decoration: underline; font-size: inherit; }
+
+/* ---------- footer + notes ---------- */
+.foot { padding: 22px var(--gut) 90px; max-width: 1440px; margin: 0 auto; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+.foot .links { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.foot .links a { font-weight: 700; text-underline-offset: 3px; }
+.notes { margin-top: 16px; border-top: 2px solid var(--ink); padding-top: 4px; }
+.notes summary { cursor: pointer; font-weight: 800; color: var(--ink); padding: 10px 0; min-height: 44px; }
+.notes h4 { margin: 14px 0 4px; color: var(--ink); font-size: 14px; letter-spacing: .06em; text-transform: uppercase; }
+.notes p, .notes li { font-size: 14px; line-height: 1.5; margin: 0 0 6px; }
+.notes ul { list-style: disc; padding-left: 20px; }
+
+/* ---------- toast ---------- */
+.toast {
+  position: fixed; left: 50%; bottom: 74px; z-index: 90; transform: translate(-50%, 16px); opacity: 0;
+  background: var(--ink); color: var(--paper); padding: 12px 16px; font-size: 14.5px; font-weight: 600; line-height: 1.35;
+  width: max-content; max-width: calc(100vw - 32px); text-align: center; transition: opacity .2s, transform .25s; pointer-events: none;
+  box-shadow: 0 0 0 2px var(--paper);
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- wide: phone landscape, tablet, desktop ---------- */
+@media (min-width: 900px), (orientation: landscape) and (min-width: 600px) {
+  .doors { flex-direction: row; align-items: stretch; }
+  .door { flex: 1 1 0px; transition: flex-grow .35s var(--ease), flex-basis .35s var(--ease); }
+  .face { min-height: 380px; padding: 26px 28px 26px; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr auto; }
+  .face .pic { grid-column: 1; grid-row: 3; align-self: center; justify-self: start; width: clamp(130px, 20vw, 280px); margin: 18px 0 8px; }
+  .face .p { grid-row: 4; font-size: 19px; }
+  .face .go { right: 28px; bottom: 26px; width: 56px; height: 56px; }
+  .door.closed { order: 0; position: relative; bottom: auto; flex: 0 0 var(--strip); box-shadow: none; }
+  .door.closed .face-wrap { position: sticky; top: 0; }
+  .door.closed .face { height: auto; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 18px; padding: 22px 0; }
+  .door.closed .strip-label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 22px; white-space: nowrap; }
+  .door.closed .face .go { width: 44px; height: 44px; }
+  .door.open .face { padding: 18px 28px; }
+  .door.open .face-wrap { padding-right: 28px; }
+  .path { padding: 6px 28px 40px; }
+  .split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; align-items: start; }
+  .todo { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .todo li { grid-template-columns: 1fr; align-content: start; }
+}
+@media (min-width: 1100px) {
+  .intro { padding: 34px 28px 30px; }
+  .face { min-height: 520px; padding: 34px 40px; }
+  .face .go { right: 40px; bottom: 34px; }
+  .door.open .face, .path { padding-left: 40px; padding-right: 40px; }
+  .door.open .face-wrap { padding-right: 40px; }
+}
+/* phone landscape: the intro and both doors must share 390 px of height */
+@media (orientation: landscape) and (max-height: 500px) {
+  .bar { min-height: 40px; padding-top: 4px; padding-bottom: 4px; }
+  .intro { padding: 10px var(--gut) 10px; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 4px 18px; align-items: end; }
+  html[data-door=""] .intro { display: grid; }
+  .intro h1 { font-size: 26px; grid-row: 1 / 3; }
+  .intro .sub { margin: 0; font-size: 15px; }
+  .req { margin: 0; font-size: 13px; }
+  .face { min-height: 0; padding: 14px 20px; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto 1fr; }
+  .face .t { font-size: clamp(38px, 6.6vw, 56px); }
+  .face .pic { grid-column: 2; grid-row: 1 / 4; width: 96px; margin: 0; }
+  .face .p { grid-row: 3; font-size: 15px; margin-top: 8px; padding-right: 0; }
+  .face .go { position: static; grid-column: 2; grid-row: 4; justify-self: end; width: 40px; height: 40px; margin-top: -40px; }
+  .door.closed .face { padding: 14px 0; gap: 12px; }
+  .door.closed .face .go { margin-top: 0; }
+  .door.closed .strip-label { font-size: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  .pin-drop { opacity: 1 !important; transform: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <a class="mark" href="./" aria-label="AR Tours, prototype: two doors"><b>AR <i>Tours</i></b><small>prototype R2-4 &middot; two doors</small></a>
+  <div class="arsw" role="group" aria-label="Fake this device's AR support">
+    <span>Device:</span>
+    <div class="seg">
+      <button type="button" data-ar-set="auto" aria-pressed="false">Auto</button>
+      <button type="button" data-ar-set="1" aria-pressed="false">AR phone</button>
+      <button type="button" data-ar-set="0" aria-pressed="false">No AR</button>
+    </div>
+  </div>
+</header>
+
+<section class="intro" id="intro">
+  <h1>Stories that appear <span class="hl">at real places,</span> through your phone's camera.</h1>
+  <p class="sub">Walk a tour where you are, or make your own. No code, no sign-up, no account.</p>
+  <p class="req">
+    <span>AR tours need an Android phone with Chrome.</span>
+    <span class="chip ar-yes">This phone can run them</span>
+    <span class="chip ar-no">This device cannot run AR</span>
+  </p>
+</section>
+
+<main class="doors" id="doors">
+
+  <!-- ================= DOOR 1: TAKE A TOUR ================= -->
+  <section class="door take" id="take" aria-label="Take a tour">
+    <div class="face-wrap">
+    <a class="face" href="#take" data-door-open="take" aria-controls="take-path">
+      <span class="k">I am at a place</span>
+      <span class="t">Take a&nbsp;tour</span>
+      <span class="p">You have a code or a link, or want to try the example.</span>
+      <span class="strip-label">Or: <b>take a tour</b></span>
+      <span class="pic" aria-hidden="true">
+        <svg viewBox="0 0 150 150">
+          <rect x="18" y="16" width="64" height="84" fill="#ffffff"/>
+          <rect x="28" y="26" width="44" height="44" fill="#111317"/>
+          <rect x="33" y="31" width="13" height="13" fill="#ffffff"/><rect x="36" y="34" width="7" height="7" fill="#111317"/>
+          <rect x="54" y="31" width="13" height="13" fill="#ffffff"/><rect x="57" y="34" width="7" height="7" fill="#111317"/>
+          <rect x="33" y="52" width="13" height="13" fill="#ffffff"/><rect x="36" y="55" width="7" height="7" fill="#111317"/>
+          <rect x="52" y="50" width="6" height="6" fill="#ffffff"/><rect x="60" y="58" width="7" height="7" fill="#ffffff"/>
+          <rect x="28" y="78" width="44" height="5" fill="#111317"/><rect x="28" y="88" width="30" height="4" fill="#1e40e6"/>
+          <rect x="66" y="48" width="66" height="96" rx="9" fill="#111317"/>
+          <rect x="71" y="56" width="56" height="80" rx="3" fill="#1631b8"/>
+          <path d="M71 118 L127 108 V136 H71 Z" fill="#0f2690"/>
+          <g class="pin-drop">
+            <path d="M99 104 C 94 97 90 92 90 86 A 9 9 0 1 1 108 86 C 108 92 104 97 99 104 Z" fill="#ffd23a"/>
+            <circle cx="99" cy="86" r="3.4" fill="#111317"/>
+          </g>
+          <g class="pin-drop late">
+            <rect x="76" y="62" width="46" height="15" fill="#ffffff"/>
+            <rect x="80" y="66" width="30" height="3" fill="#111317"/><rect x="80" y="71" width="20" height="2.4" fill="#4a4d55"/>
+          </g>
+        </svg>
+      </span>
+      <span class="go" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"><path d="M4 12h15M13 6l6 6-6 6"/></svg></span>
+    </a>
+      <a class="back" href="#" data-door-close>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"><path d="M20 12H5M11 6l-6 6 6 6"/></svg>Both doors
+      </a>
+    </div>
+
+    <div class="path" id="take-path">
+      <div class="path-in">
+        <h2 tabindex="-1" id="take-h">Three ways in</h2>
+        <p class="lead">A tour starts at a printed code. Your phone's camera reads it, the tour opens in Chrome, and stories appear around you as you walk.</p>
+        <p class="need">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="6" y="2.5" width="12" height="19" rx="2"/><path d="M10.5 18.5h3"/></svg>
+          <span class="ar-yes"><b>This phone is ready.</b> It is an Android phone with Chrome, so it can show the tour in AR.</span>
+          <span class="ar-no"><b>You need an Android phone with Chrome.</b> This device cannot show AR, so a tour will not open here. You can still look at the example below.</span>
+        </p>
+        <p class="handoff" style="color:var(--ink)">
+          <svg viewBox="-2 -2 25 25" aria-hidden="true" id="handoffQr"></svg>
+          <span><b>On a computer?</b> Scan this with your Android phone to open this page there. (Prototype: a placeholder, not a real code.)</span>
+        </p>
+
+        <div class="split">
+          <div class="blk" id="opt-scan">
+            <span class="mini-pic" aria-hidden="true">
+              <svg viewBox="0 0 92 78">
+                <rect width="92" height="78" fill="#dfe5ff"/>
+                <rect x="10" y="10" width="40" height="52" fill="#ffffff"/>
+                <rect x="16" y="16" width="28" height="28" fill="#111317"/>
+                <rect x="19" y="19" width="8" height="8" fill="#ffffff"/><rect x="33" y="19" width="8" height="8" fill="#ffffff"/><rect x="19" y="33" width="8" height="8" fill="#ffffff"/>
+                <rect x="16" y="50" width="28" height="4" fill="#111317"/>
+                <rect x="46" y="22" width="36" height="52" rx="6" fill="none" stroke="#111317" stroke-width="5"/>
+                <path d="M52 40 H76" stroke="#1e40e6" stroke-width="3"/>
+              </svg>
+            </span>
+            <h3><span class="n">1</span>At a poster? Scan its code.</h3>
+            <p>Open your phone's camera and point it at the code on the poster. Tap the link it shows; the tour opens in Chrome. Then hold the phone up and look around.</p>
+            <div class="row">
+              <button class="btn blue" type="button" id="scanBtn">Scan a code</button>
+            </div>
+            <p class="msg" id="scanMsg" role="status" aria-live="polite"></p>
+          </div>
+
+          <div class="blk" id="opt-link">
+            <h3><span class="n">2</span>Got a link?</h3>
+            <p>Someone sent you a tour. Paste its link here.</p>
+            <form class="field" id="linkForm" novalidate>
+              <label for="linkIn" class="sr" style="position:absolute;left:-9999px">Tour link</label>
+              <input id="linkIn" type="url" inputmode="url" placeholder="https://" autocomplete="off" spellcheck="false">
+              <button class="btn" type="submit" id="linkBtn">Open</button>
+            </form>
+            <p class="msg" id="linkMsg" role="status" aria-live="polite"></p>
+          </div>
+        </div>
+
+        <div class="blk" id="opt-example">
+          <h3><span class="n">3</span>No code at hand? Try Mill Park.</h3>
+          <p>A short made-up example: three stops along a mill stream, each with a little story where it happened.</p>
+          <ol class="stations" aria-label="The three stops of the Mill Park example">
+            <li class="stn">
+              <svg viewBox="0 0 90 60" aria-hidden="true"><rect width="90" height="60" fill="#dfe5ff"/><rect x="40" y="22" width="34" height="30" fill="#ffffff"/><path d="M36 23 L57 8 L78 23 Z" fill="#111317"/><circle cx="30" cy="40" r="13" fill="none" stroke="#111317" stroke-width="3"/><path d="M30 27 V53 M17 40 H43" stroke="#111317" stroke-width="2"/><path d="M58 18 C 55 14 53 12 53 9 A 5 5 0 1 1 63 9 C 63 12 61 14 58 18 Z" fill="#1e40e6"/></svg>
+              <b>The mill wheel</b><span>A text pin: turning since 1820.</span>
+            </li>
+            <li class="stn">
+              <svg viewBox="0 0 90 60" aria-hidden="true"><rect width="90" height="60" fill="#dfe5ff"/><rect x="0" y="40" width="90" height="20" fill="#c6d0fb"/><g transform="rotate(-6 46 28)"><rect x="26" y="10" width="40" height="36" fill="#ffffff"/><rect x="30" y="14" width="32" height="22" fill="#111317"/><path d="M30 36 L40 26 L46 31 L52 24 L62 36 Z" fill="#ffd23a"/></g></svg>
+              <b>The courtyard</b><span>A photo: the same spot in 1910.</span>
+            </li>
+            <li class="stn">
+              <svg viewBox="0 0 90 60" aria-hidden="true"><rect width="90" height="60" fill="#dfe5ff"/><ellipse cx="45" cy="42" rx="32" ry="11" fill="#1e40e6"/><path d="M26 41 q5 -3 10 0 t10 0 M44 46 q5 -3 10 0 t10 0" stroke="#ffffff" stroke-width="2" fill="none"/><rect x="18" y="8" width="54" height="16" fill="#ffffff"/><rect x="22" y="12" width="34" height="3" fill="#111317"/><rect x="22" y="17" width="24" height="2.4" fill="#4a4d55"/></svg>
+              <b>The pond</b><span>A note on what lives in it.</span>
+            </li>
+          </ol>
+          <div class="row">
+            <button class="btn blue ar-yes" type="button" id="exampleArBtn">Walk the example</button>
+            <button class="btn blue ar-no" type="button" id="examplePeekBtn">Look at the example</button>
+          </div>
+          <p class="msg" id="exampleMsg" role="status" aria-live="polite"></p>
+          <p class="made-up">Mill Park is made up. It shows what a tour can hold; no real place is behind it.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= DOOR 2: MAKE A TOUR ================= -->
+  <section class="door make" id="make" aria-label="Make a tour">
+    <div class="face-wrap">
+    <a class="face" href="#make" data-door-open="make" aria-controls="make-path">
+      <span class="k">I want to create one</span>
+      <span class="t">Make a&nbsp;tour</span>
+      <span class="p">Put text and pictures at real places. No code needed.</span>
+      <span class="strip-label">Or: <b>make a tour</b></span>
+      <span class="pic" aria-hidden="true">
+        <svg viewBox="0 0 150 150">
+          <path d="M6 128 C 40 116 70 132 104 118 S 140 110 148 112" fill="none" stroke="#111317" stroke-width="5" stroke-dasharray="1 10" stroke-linecap="round"/>
+          <rect x="10" y="20" width="62" height="40" fill="#ffffff"/>
+          <rect x="18" y="29" width="40" height="5" fill="#111317"/><rect x="18" y="39" width="46" height="3.4" fill="#4a4d55"/><rect x="18" y="46" width="30" height="3.4" fill="#4a4d55"/>
+          <path d="M36 60 L42 70 L48 60 Z" fill="#ffffff"/>
+          <g class="pin-drop">
+            <path d="M42 112 C 36 103 31 97 31 90 A 11 11 0 1 1 53 90 C 53 97 48 103 42 112 Z" fill="#1e40e6"/>
+            <circle cx="42" cy="90" r="4" fill="#ffffff"/>
+          </g>
+          <rect x="80" y="40" width="58" height="90" rx="9" fill="#111317"/>
+          <rect x="85" y="48" width="48" height="66" rx="3" fill="#ffffff"/>
+          <circle cx="109" cy="81" r="15" fill="none" stroke="#1e40e6" stroke-width="3"/>
+          <path d="M109 72 V90 M100 81 H118" stroke="#1e40e6" stroke-width="3"/>
+          <rect x="99" y="119" width="20" height="4" rx="2" fill="#4a4d55"/>
+        </svg>
+      </span>
+      <span class="go" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"><path d="M4 12h15M13 6l6 6-6 6"/></svg></span>
+    </a>
+      <a class="back" href="#" data-door-close>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"><path d="M20 12H5M11 6l-6 6 6 6"/></svg>Both doors
+      </a>
+    </div>
+
+    <div class="path" id="make-path">
+      <div class="path-in">
+        <h2 tabindex="-1" id="make-h">What you will do</h2>
+        <p class="lead">A tour is a walk with stories on it. You make it by walking it once, with your phone, placing each story where it belongs.</p>
+        <p class="need">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="6" y="2.5" width="12" height="19" rx="2"/><path d="M10.5 18.5h3"/></svg>
+          <span class="ar-yes"><b>This phone can place stories.</b> Plan here or on a computer; the walk itself happens with this phone, on site.</span>
+          <span class="ar-no"><b>Start planning on this device.</b> To place the stories on site you need an Android phone with Chrome.</span>
+        </p>
+
+        <ol class="todo">
+          <li>
+            <svg viewBox="0 0 56 56" aria-hidden="true"><rect width="56" height="56" fill="#ffd23a"/><rect x="14" y="8" width="28" height="36" fill="#ffffff"/><rect x="19" y="13" width="18" height="18" fill="#111317"/><rect x="22" y="16" width="5" height="5" fill="#ffffff"/><rect x="29" y="16" width="5" height="5" fill="#ffffff"/><rect x="22" y="23" width="5" height="5" fill="#ffffff"/><circle cx="17" cy="11" r="2.4" fill="#1e40e6"/><circle cx="39" cy="11" r="2.4" fill="#1e40e6"/><rect x="0" y="48" width="56" height="8" fill="#111317" opacity=".25"/></svg>
+            <div><b>Print a code and hang it</b><span>where the walk starts. It is the door to your tour.</span><em class="when">On any device</em></div>
+          </li>
+          <li>
+            <svg viewBox="0 0 56 56" aria-hidden="true"><rect width="56" height="56" fill="#ffd23a"/><path d="M4 46 C 16 40 26 50 52 40" fill="none" stroke="#111317" stroke-width="3" stroke-dasharray="1 6" stroke-linecap="round"/><path d="M20 38 C 16 32 13 29 13 25 A 7 7 0 1 1 27 25 C 27 29 24 32 20 38 Z" fill="#1e40e6"/><circle cx="20" cy="25" r="2.6" fill="#ffffff"/><rect x="30" y="10" width="20" height="16" fill="#ffffff"/><rect x="33" y="13" width="14" height="10" fill="#111317"/></svg>
+            <div><b>Walk and place</b><span>text and pictures at the spots they belong to, through the camera.</span><em class="when">On site, Android + Chrome</em></div>
+          </li>
+          <li>
+            <svg viewBox="0 0 56 56" aria-hidden="true"><rect width="56" height="56" fill="#ffd23a"/><rect x="8" y="10" width="22" height="36" rx="4" fill="#111317"/><rect x="11" y="15" width="16" height="24" fill="#ffffff"/><path d="M34 22 H48 M42 16 l6 6 -6 6" fill="none" stroke="#111317" stroke-width="3.4" stroke-linecap="square"/><circle cx="44" cy="40" r="6" fill="#1e40e6"/></svg>
+            <div><b>Share it</b><span>Whoever scans the code, or opens your link, walks your tour.</span><em class="when">From anywhere</em></div>
+          </li>
+        </ol>
+        <ul class="facts" aria-label="Good to know">
+          <li>No sign-up, no account</li>
+          <li>Lives in your own storage</li>
+          <li>Keeps working without signal once loaded</li>
+        </ul>
+
+        <div class="blk" id="setupStart">
+          <h3><span class="n">1</span>Where will your tour live?</h3>
+          <p>Your tour is one small file in storage you already have. Pick one; you can change it later.</p>
+          <div class="tiles" role="group" aria-label="Storage options">
+            <button class="tile" type="button" data-p="drive" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M8 3h8l6 11-4 7H6l-4-7z"/><path d="M8 3l6 11H2M16 3l-8 18M14 14h8"/></svg>Google Drive</button>
+            <button class="tile" type="button" data-p="dropbox" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M3 8l9-4 9 4-9 4z"/><path d="M3 8v8l9 4 9-4V8M12 12v8"/></svg>Dropbox</button>
+            <button class="tile" type="button" data-p="onedrive" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M7 18h11a4 4 0 0 0 .5-8 6 6 0 0 0-11.3-1.6A4.8 4.8 0 0 0 7 18z"/></svg>OneDrive</button>
+            <button class="tile" type="button" data-p="github" aria-pressed="false"><svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 7.2v9.6M18 10.2c0 4-6 3-11 6.8"/></svg>GitHub</button>
+            <button class="tile" type="button" data-p="server" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6"/></svg>Your own server</button>
+          </div>
+          <div class="howto" id="howto" hidden>
+            <ol id="howtoSteps"></ol>
+            <div class="row">
+              <button class="btn" type="button" id="starterBtn">Download the starter file</button>
+              <a class="btn alt" href="../../" id="nextLink">Next: paste the share link</a>
+            </div>
+            <p class="msg" id="starterMsg" role="status" aria-live="polite"></p>
+          </div>
+        </div>
+
+        <p class="small-links">
+          Already made a tour? <button class="linkish" type="button" id="editorBtn">Open the editor</button> to change it.
+        </p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="links">
+    <a href="../../../">Building an app with this? The developer page</a>
+    <a href="../../">The real tour start page</a>
+    <a href="../">All prototypes</a>
+  </div>
+  <details class="notes" id="notes">
+    <summary>Notes on this prototype</summary>
+    <h4>Direction</h4>
+    <p>Two doors: the first screen asks one question, take a tour or make one, and each answer opens its own short path on the same page while the other door stays one tap away.</p>
+    <h4>Why it should work for this audience</h4>
+    <ul>
+      <li>Two kinds of people arrive at the same address: someone standing at a poster who wants the tour now, and someone (a guide, a teacher, a museum) who wants to make one. A single story has to serve both and serves neither first; two doors let each self-select in one tap.</li>
+      <li>The visitor never reads a word about storage or posters; the maker never hunts for "scan".</li>
+      <li>Visual language: flat colour blocks and very big system type, like wayfinding signs. A door is a sign you choose by colour from across a room. Blue means "taking", yellow means "making", and the colour stays with you through the whole path, so you always know which door you are in. High contrast reads in sunlight on a phone, where visitors use it. It is deliberately unlike the light paper look of the setup page.</li>
+    </ul>
+    <h4>Load-bearing details (check a build against these)</h4>
+    <ul>
+      <li>Both doors fully above the fold on a 390 x 844 phone, together with the headline and the Android line; side by side in landscape and on desktop.</li>
+      <li>Each door is one link the full width of its block (a big touch target), with a one-line promise, a picture and an arrow square.</li>
+      <li>Door colours: blue #1e40e6 with white text, yellow #ffd23a with near-black text; square corners, no shadows, no gradients.</li>
+      <li>Door title weight 900, tight letter spacing (-0.045em), line height 0.92, scale clamp(42px, 12.4vw, 104px).</li>
+      <li>Opened door: the intro hides, the door face shrinks to a title bar with "Both doors", and the other door becomes a 58 px bar pinned to the bottom (portrait) or a 76 px vertical strip (wide). URL hash #take / #make, so the browser back button closes a door and a link can open one directly.</li>
+      <li>The AR line is said three times, each where it matters: under the headline, in the visitor path, in the maker path (with "on any device" vs "on site, Android + Chrome" on each step).</li>
+      <li>Motion: only a one-shot pin drop on the two door pictures (0.7 s, never repeats) and a 0.35 s door widening on wide screens; none under reduced motion.</li>
+      <li>The design system's paragraph and list resets are already applied here (all margins 0), so spacing comes from the blocks' own padding and gaps.</li>
+    </ul>
+    <h4>Measured cost</h4>
+    <p id="costLine">JS: about 11 kB inline, about 4 kB gzip; no external scripts, no WebGL, no web fonts; the whole page is about 14 kB gzip. Frames, measured on a desktop under other load, not on a phone: a 5 s scroll at 390 x 844 never over 16.8 ms, also with the CPU slowed 4x and 6x; 5 s idle never over 16.8 ms except the one warm-up frame (83 ms at 4x, 233 ms at 6x). The heaviest moment is the first opening of a door (laying out its path for the first time): 33 to 67 ms with the CPU slowed 4x, thanks to the idle warm-up (150 to 250 ms without it). The warm-up itself is one task of about 120 ms at 4x, 1.4 s after load, when nothing moves.</p>
+    <h4>Known weaknesses</h4>
+    <ul>
+      <li>It explains AR with two small pictures, not by showing it; a first-time visitor who has never seen AR may not get it from a pin on a phone.</li>
+      <li>The maker's path ends after step 1 and hands over to the full setup page; the six steps are not redesigned here.</li>
+      <li>Two equal doors make the visitor door as loud as the maker door, even though the maker is this page's main audience. A visitor with a code usually arrives straight in the tour, not here.</li>
+      <li>"Scan a code" in a web page can only start the camera inside the page; most visitors will use their camera app anyway, which the copy says first.</li>
+    </ul>
+    <h4>Parameters it rests on</h4>
+    <ul>
+      <li>Door title size (try ?type=s, ?type=m, ?type=l): both doors stay above the fold at 390 x 844 with all three (bottom of the second door at 715, 734, 765 px); at 360 x 740 "l" misses by 1 px; on a 1440 x 900 desktop "l" wraps "Make a tour" onto two lines and pushes that door below the fold, so m (104 px there) is the largest that holds. Phone landscape uses its own fixed size and ignores the setting.</li>
+      <li>Door face height 212 px on a phone; the 58 px bottom bar; breakpoint to side by side at 900 px wide or any landscape at least 600 px wide.</li>
+      <li>?ar=1 / ?ar=0 fake the device's AR support (the toggle at the top does the same; Auto asks the browser).</li>
+      <li>The idle warm-up: each closed path is laid out once, off screen, 1.4 s after load, so the first tap on a door does not pay for it. ?warm=0 switches it off to compare.</li>
+    </ul>
+  </details>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var $$ = function (s) { return Array.prototype.slice.call(document.querySelectorAll(s)); };
+  var root = document.documentElement;
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var params;
+  try { params = new URLSearchParams(location.search); } catch (e) { params = { get: function () { return null; } }; }
+
+  /* ---------- type scale sweep: ?type=s|m|l ---------- */
+  var type = params.get('type');
+  if (type === 's' || type === 'l') root.dataset.type = type;
+
+  /* ---------- toast ---------- */
+  var toastEl = $('#toast'), toastT;
+  function toast(msg) {
+    toastEl.textContent = String(msg);
+    toastEl.classList.add('show');
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { toastEl.classList.remove('show'); }, 3200);
+  }
+
+  /* ---------- fake QR (a deterministic placeholder pattern, not a real code) ---------- */
+  function qrPath(seed) {
+    var n = 21, s = (Math.imul(seed + 1, 2654435761) >>> 0) || 1, d = '';
+    function r() { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }
+    function finder(x, y) { return (x < 8 && y < 8) || (x > n - 9 && y < 8) || (x < 8 && y > n - 9); }
+    for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) if (!finder(x, y) && r() < 0.47) d += 'M' + x + ' ' + y + 'h1v1h-1z';
+    [[0, 0], [n - 7, 0], [0, n - 7]].forEach(function (f) {
+      d += 'M' + f[0] + ' ' + f[1] + 'h7v7h-7z' + 'M' + (f[0] + 1) + ' ' + (f[1] + 1) + 'v5h5v-5z' + 'M' + (f[0] + 2) + ' ' + (f[1] + 2) + 'h3v3h-3z';
+    });
+    return d;
+  }
+  $('#handoffQr').innerHTML = '<rect x="-2" y="-2" width="25" height="25" fill="#fff"/><path d="' + qrPath(4) + '" fill="#111317" fill-rule="evenodd"/>';
+
+  /* ---------- AR support: faked by ?ar=1 / ?ar=0 or the toggle; Auto asks the browser ---------- */
+  var arMode = params.get('ar') === '1' ? '1' : params.get('ar') === '0' ? '0' : 'auto';
+  var autoAr = '0';
+  function applyAr() {
+    root.dataset.ar = arMode === 'auto' ? autoAr : arMode;
+    $$('[data-ar-set]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.arSet === arMode)); });
+  }
+  function setAr(mode) {
+    arMode = mode === '1' || mode === '0' ? mode : 'auto';
+    try {
+      var u = new URL(location.href);
+      if (arMode === 'auto') u.searchParams.delete('ar'); else u.searchParams.set('ar', arMode);
+      history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+    } catch (e) { /* the URL stays as it is; the page state still changes */ }
+    applyAr();
+  }
+  $$('[data-ar-set]').forEach(function (b) { b.addEventListener('click', function () { setAr(b.dataset.arSet); }); });
+  applyAr();
+  // The honest check: only a positive answer to immersive-ar counts as "this phone can".
+  try {
+    if (navigator.xr && typeof navigator.xr.isSessionSupported === 'function') {
+      navigator.xr.isSessionSupported('immersive-ar').then(function (ok) { autoAr = ok ? '1' : '0'; applyAr(); }, function () { /* unknown: stay at no */ });
+    }
+  } catch (e) { /* no WebXR: stay at no */ }
+
+  /* ---------- doors: #take / #make in the URL, browser back closes ---------- */
+  var DOORS = ['take', 'make'];
+  function readDoor() { var h = (location.hash || '').replace('#', ''); return DOORS.indexOf(h) >= 0 ? h : ''; }
+  function applyDoor(door, focus) {
+    root.dataset.door = door;
+    DOORS.forEach(function (d) {
+      var el = document.getElementById(d);
+      el.classList.toggle('open', d === door);
+      el.classList.toggle('closed', !!door && d !== door);
+      var face = el.querySelector('.face');
+      face.setAttribute('aria-expanded', String(d === door));
+      if (d === door) face.setAttribute('tabindex', '-1'); else face.removeAttribute('tabindex');
+    });
+    if (door) {
+      window.scrollTo(0, 0);
+      if (focus) { var h = document.getElementById(door + '-h'); try { h.focus({ preventScroll: true }); } catch (e) { /* older browsers */ } }
+    }
+  }
+  function openDoor(door) {
+    if (DOORS.indexOf(door) < 0) return;
+    // door to door replaces the entry, so one Back (or 'Both doors') always lands on both doors
+    var from = readDoor();
+    // 'pushed' records whether this page added the entry; only then may closing go Back
+    var pushed = !!(history.state && history.state.pushed);
+    if (from && from !== door) history.replaceState({ door: door, pushed: pushed }, '', '#' + door);
+    else if (from !== door) history.pushState({ door: door, pushed: true }, '', '#' + door);
+    applyDoor(door, true);
+  }
+  function closeDoor() {
+    if (history.state && history.state.pushed) history.back();
+    else { history.replaceState(null, '', location.pathname + location.search); applyDoor('', false); }
+  }
+  $$('[data-door-open]').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      // inside an open door the face is a title bar; only its "Both doors" link acts
+      if (e.target.closest('[data-door-close]')) return;
+      e.preventDefault();
+      var d = a.dataset.doorOpen;
+      if (root.dataset.door === d) return;
+      openDoor(d);
+    });
+  });
+  $$('[data-door-close]').forEach(function (a) {
+    a.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); closeDoor(); });
+  });
+  window.addEventListener('popstate', function () { applyDoor(readDoor(), false); });
+  applyDoor(readDoor(), false);
+
+  /* ---------- small helpers for async-looking actions (in-progress, then a final state) ---------- */
+  function busy(btn, label) {
+    var old = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin" aria-hidden="true"></span>' + label;
+    return function done(final) { btn.disabled = false; btn.textContent = final || old; };
+  }
+  var wait = function (ms) { return reduced ? 150 : ms; };
+  function isAr() { return root.dataset.ar === '1'; }
+
+  /* ---------- take: scan ---------- */
+  $('#scanBtn').addEventListener('click', function () {
+    var msg = $('#scanMsg');
+    if (!isAr()) { msg.className = 'msg bad'; msg.textContent = 'This device cannot show AR tours. Scan the code with an Android phone with Chrome.'; return; }
+    var done = busy(this, 'Opening the camera...');
+    msg.textContent = '';
+    setTimeout(function () { done(); msg.className = 'msg ok'; msg.textContent = 'Here the camera would open and read the code. (Prototype: nothing opens.)'; }, wait(900));
+  });
+
+  /* ---------- take: link ---------- */
+  function judgeLink(v) {
+    if (typeof v !== 'string' || !v.trim()) return 'empty';
+    var u;
+    try { u = new URL(v.trim()); } catch (e) { return 'bad'; }
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return 'bad';
+    if (!/\./.test(u.hostname)) return 'bad';
+    return 'ok';
+  }
+  $('#linkForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var input = $('#linkIn'), msg = $('#linkMsg'), btn = $('#linkBtn');
+    var j = judgeLink(input.value);
+    if (j === 'empty') { msg.className = 'msg bad'; msg.textContent = 'Paste the link first. It starts with https://'; input.focus(); return; }
+    if (j === 'bad') { msg.className = 'msg bad'; msg.textContent = 'That does not look like a link yet. It should start with https://'; input.focus(); return; }
+    if (!isAr()) { msg.className = 'msg bad'; msg.textContent = 'The link looks right, but it opens only on an Android phone with Chrome. Send it to one.'; return; }
+    var done = busy(btn, 'Opening...');
+    msg.textContent = '';
+    setTimeout(function () { done(); msg.className = 'msg ok'; msg.textContent = 'The tour would open now. (Prototype: nothing is loaded.)'; }, wait(1000));
+  });
+
+  /* ---------- take: the example ---------- */
+  $('#exampleArBtn').addEventListener('click', function () {
+    var msg = $('#exampleMsg');
+    var done = busy(this, 'Opening Mill Park...');
+    msg.textContent = '';
+    setTimeout(function () { done(); msg.className = 'msg ok'; msg.textContent = 'The example would start here. (Prototype: nothing opens.)'; }, wait(1000));
+  });
+  $('#examplePeekBtn').addEventListener('click', function () {
+    toast('Here a preview of the three stops would open, without AR. (Prototype)');
+  });
+
+  /* ---------- make: storage tiles ---------- */
+  var HOW = {
+    drive: ['Download the starter file below.', 'Upload it to your Google Drive.', 'Share it with "Anyone with the link".', 'Copy the link: that is your tour\'s address.'],
+    dropbox: ['Download the starter file below.', 'Upload it to your Dropbox.', 'Share, then "Copy link" for anyone with the link.', 'Copy the link: that is your tour\'s address.'],
+    onedrive: ['Download the starter file below.', 'Upload it to your OneDrive.', 'Share it so anyone with the link can view.', 'Copy the link: that is your tour\'s address.'],
+    github: ['Download the starter file below.', 'Upload it to a public repository.', 'Copy the file\'s address from the browser bar.'],
+    server: ['Download the starter file below.', 'Put it on your site, served over https.', 'Allow other sites to read it (cross-origin).', 'Copy the file\'s full address.']
+  };
+  $$('.tile').forEach(function (t) {
+    t.addEventListener('click', function () {
+      var key = t.dataset.p;
+      if (!HOW[key]) return;
+      $$('.tile').forEach(function (o) { o.setAttribute('aria-pressed', String(o === t)); });
+      var ol = $('#howtoSteps');
+      ol.textContent = '';
+      HOW[key].forEach(function (s) { var li = document.createElement('li'); li.textContent = s; ol.appendChild(li); });
+      $('#howto').hidden = false;
+      $('#starterMsg').textContent = '';
+    });
+  });
+  $('#starterBtn').addEventListener('click', function () {
+    var msg = $('#starterMsg');
+    var done = busy(this, 'Preparing...');
+    setTimeout(function () { done('Downloaded'); msg.className = 'msg'; msg.textContent = 'starter-tour.zip, an empty tour of a few KB. (Prototype: no real file.)'; }, wait(800));
+  });
+  $('#editorBtn').addEventListener('click', function () { toast('The editor would open here. (Prototype)'); });
+
+  /* ---------- warm-up: lay out each closed path once while idle, so the first open is cheap ---------- */
+  var idle = window.requestIdleCallback || function (cb) { return setTimeout(cb, 300); };
+  var warmQueue = params.get('warm') === '0' ? [] : ['take-path', 'make-path'];
+  function warmNext() {
+    var id = warmQueue.shift();
+    if (!id) { window.__warmDone = true; return; }
+    var el = document.getElementById(id);
+    if (el && !el.parentNode.classList.contains('open')) {
+      el.classList.add('warm');
+      void el.offsetHeight;
+      requestAnimationFrame(function () { el.classList.remove('warm'); idle(warmNext); });
+    } else idle(warmNext);
+  }
+  // starts after the one-shot pin drop (the later pin ends at 0.55 s delay + 0.7 s = 1.25 s), so it cannot stall that animation
+  window.addEventListener('load', function () { setTimeout(function () { idle(warmNext); }, reduced ? 0 : 1400); });
+
+  /* ---------- hooks for the screenshot script ---------- */
+  window.__landing = {
+    ready: true,
+    open: function (d) { if (d) openDoor(d); else closeDoor(); },
+    door: function () { return root.dataset.door; },
+    setAr: setAr,
+    ar: function () { return root.dataset.ar; }
+  };
+})();
+</script>
+</body>
+</html>

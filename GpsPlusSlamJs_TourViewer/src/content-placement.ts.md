@@ -11,13 +11,15 @@ the creator's live preview and the visitor's session share.
 - `newObjectId(random?)` - 12 base-36 characters; the manifest id and the
   content file's stem.
 - `mintPin({ id, label, worldNuePosition, zero, nowIso }): TourPin | null` -
-  from the reticle's GPS-world NUE position (identity rotation). Null
-  without a zero.
+  a short text in its `pin` view, `label` its caption, from the reticle's
+  GPS-world NUE position (identity rotation). Null without a zero.
 - `mintPhoto({ id, cameraPose, alignmentMatrix, zero, imageWidth,
-imageHeight, nowIso }): TourPhoto | null` - the camera's RAW odometry pose
+imageHeight, nowIso }): TourPicture | null` - the camera's RAW odometry pose
   composed through `alignment · WEBXR_TO_NUE · pose` (`qrWorldPoseFromOdom`)
-  then minted; `image` is `content/<id>.jpg`. Null without an alignment or a
-  zero.
+  then minted: a picture in its `plane` view, `CAPTURED_PICTURE_WIDTH_M` (module-internal)
+  (1 m, the photo plane's own width) wide, whose `image` is its own id and
+  whose inline `imageAsset` is the new file, `content/<id>.jpg` at the
+  frame's pixel size. Null without an alignment or a zero.
 - `objectPoseNue(geo, zero)` - an object's position and rotation in a
   session's NUE frame; a heading-only pose (hand-edited `tour.json`) keeps
   its facing through `rotationFromHeading` (the framework's -heading about
@@ -28,27 +30,49 @@ imageHeight, nowIso }): TourPhoto | null` - the camera's RAW odometry pose
   decoded (photos decode one at a time - memory), so a session ending
   mid-run owns no stray labels; `dispose` removes the group.
   Details:
-  Promise<RenderedTourObjects>` - pins as label objects, photos as capture
-planes (`placeCapturedImagePlanes`), all at the scene root; a photo whose
-texture fails is skipped and named in `skipped`; `dispose()`removes and
+  Promise<RenderedTourObjects>` - pins (short texts) as label objects,
+pictures as capture planes (`placeCapturedImagePlanes`, from each
+picture's inline `imageAsset`), all at the scene root; a picture whose
+texture fails is skipped and named in `skipped`; a placed 3D model
+here (a world-view object, the creator's previews) is not drawn - it never
+reaches the photo loader and
+is left out quietly, NOT named in `skipped`("could not load" would claim a
+download failed; a lenient read leaves out what it cannot show the same
+way). The visitor's models are drawn by `renderTourStation` (below);`dispose()`removes and
 frees everything.`root` is the one group every rendered object hangs
 under - what a tap in AR is cast against to name the object
 (`object-pick.ts`, authoring plan 2026-09-28-0953 M4).
-- `renderTourStation(station, { scene, zero, makeLabel, loadPhotoTexture, alive? })
--> Promise<RenderedTourObjects>` - the visitor's playback of ONE station of
-  a version 3 tour (tour editor plan 2026-10-17-1816, W3; one call per
-  station since visitor plan 2026-10-18-2349 M2, so each station is drawn
-  and freed on its own, `station-content.ts`): a `Group` at the station's
-  geo pose in the session's NUE (`objectPoseNue`), its pins and photos as
-  children at their LOCAL poses (`[north, up, east]` and a rotation
-  relative to the station), added to `scene` once every photo decoded;
-  `root` is that group. A station without items gives an empty one. The
+- `renderTourStation(station, { scene, zero, assets, makeLabel, loadPhotoTexture, alive?, loadModel? })
+-> Promise<RenderedTourObjects>` - the visitor's playback of ONE station
+  (one call per station, so each station is drawn and freed on its own,
+  `station-content.ts`): a `Group` at the station's geo pose in the
+  session's NUE (`objectPoseNue`), its free blocks (`tourFreeBlocks`: the
+  blocks no step shows) as children at their LOCAL poses
+  (`[north, up, east]` and a rotation relative to the station), added to
+  `scene` once every picture decoded; `root` is that group. A `pin` short
+  text is a label, a `plane` picture a photo plane whose file is the
+  tour's asset of its `image` (from `assets`; a picture whose asset the
+  tour lacks is named in `skipped`, as one whose file fails), a `placed`
+  model (station blocks plan B2b) the scene `loadModel` gives for its
+  asset's entry, scaled so its largest side is its `sizeM` by the one
+  shared rule (`model-scale.ts` `modelScale`, the 3D editor's), at its
+  local pose, `userData.objectId` its id, freed with the station
+  (`disposeObject3D`); a model whose asset the tour lacks or whose load
+  fails (null or a rejection) is named in `skipped`; without
+  `loadModel` (the 3D editor, which draws its own) a model is left out
+  quietly as before. Models are added after the planes, so the planes'
+  order behind the labels holds. A station's story blocks (shown by its
+  steps) are the story's, never drawn here. A station without free blocks gives an empty
+  one. The
   same rendering (`renderContent`) as `renderTourObjects`, so labels,
   photo planes, `skipped` and `dispose` behave the same. `alive()`
   turning false stops the decode loop: no further photo is decoded, and the
   caller disposes what came back. A throw part-way (a label or plane
   constructor) frees the labels and decoded photos made so far, then goes
   on (the caller gets the rejection and nothing to dispose).
+- Every rendered pin's label and photo's plane carries its object's id in
+  `userData.objectId`, so a pointer over the 3D editor can say which item
+  it is over (`editor3d-stations.ts`, `pick`).
 
 ## Invariants & assumptions
 
@@ -70,7 +94,7 @@ under - what a tap in AR is cast against to name the object
   (a Blob in memory) and the visitor (an archive entry).
 
 - **A station's frame against the session's.** A station's group stands
-  in the session's tangent plane, its items in the station's own. The two
+  in the session's tangent plane, its free blocks in the station's own. The two
   differ by the Earth's curvature between the session's zero and the
   station. Measured: 0 at the zero, 0.7 mm at 100 m, 6.9 mm at 1 km,
   3.4 cm at 5 km, growing linearly. The test asserts 1 mm + 12 mm per km
@@ -111,11 +135,28 @@ and 0.1 m, measured 24 mm).
 `content-placement.test.ts` - the pin round trip (mint → NUE) as a property
 over positions; the photo's frame direction pinned by bearing against the
 framework's basis constant; refusals without zero/alignment; the id shape
-(property); rendering with a fake scene: counts, a skipped photo, disposal,
-what a throw part-way frees (the decoded photo and the label made so far), and a
+(property); rendering with a fake scene: counts, a skipped photo, a placed
+model left out quietly (the photo loader never asked, no "could not
+load" in the status segment), a station's placed model drawn at its
+`sizeM` by `modelScale` at its local pose, a failed one in `skipped`,
+its geometry freed with the station, none drawn without `loadModel`
+(B2b), disposal, what a throw part-way frees (the
+decoded photo and the label made so far), and a
 caller's own pose and frame (`poseOf`) for pins and photos. For
-`renderTourStation`: the group structure (the station's group, the items
-as its children), no further decode once `alive()` is false, and the
+`renderTourStation`: the group structure (the station's group, its free
+blocks as its children, each tagged with its block's id; its story blocks
+not drawn; a picture's file read from the tour's assets), no further decode once `alive()` is false, and the
 property that the local poses
 taken from the settled geo reproduce each object's direct AR pose within
 the stated bound, swept over zero distances of 0, 100, 1000 and 5000 m.
+
+## Given blocks (B2b)
+
+- `renderStationBlocks(station, blocks, deps)`: `blocks` of the station
+  drawn as `renderTourStation` draws its free blocks (a group at the
+  station's geo pose, each block at its local pose). `renderTourStation`
+  is `renderStationBlocks(station, tourFreeBlocks(station), deps)`. The
+  visitor draws each reached story world block this way, one part per
+  block.
+- Tests: `content-placement.test.ts` "draws exactly the given blocks of a
+  station, in its frame".

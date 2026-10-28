@@ -175,3 +175,75 @@ describe('the sun through clouds in the sky (round-3 plan 2026-09-27-0532, DEC-F
     );
   });
 });
+
+describe('the cloud chunk’s hex-tiled big shapes (hex-tiling plan H1)', () => {
+  // WHY: one switch, `atmCloudHex`, hex-tiles the first octave in every
+  // consumer of the shared chunk; the implicit read takes the CONTINUOUS
+  // uv's gradients (cold review finding 1), the march an explicit level.
+  it('reads the first octave hex-tiled when atmCloudHex is on', () => {
+    expect(ATMOSPHERE_CLOUD_GLSL).toContain('uniform float atmCloudHex;');
+    expect(ATMOSPHERE_CLOUD_GLSL).toContain('#ifndef ATM_CLOUD_HEX_GLSL');
+    const plain = ATMOSPHERE_CLOUD_GLSL.slice(
+      ATMOSPHERE_CLOUD_GLSL.indexOf('float atmCloudNoise(')
+    );
+    const plainBody = plain.slice(0, plain.indexOf('}'));
+    expect(plainBody).toContain('atmCloudHex > 0.5');
+    expect(plainBody).toContain(
+      'atmCloudHexGrad(atmCloudTexture, uv, dFdx(uv), dFdy(uv), ATM_CLOUD_MEAN)'
+    );
+    const lod = ATMOSPHERE_CLOUD_GLSL.slice(
+      ATMOSPHERE_CLOUD_GLSL.indexOf('float atmCloudNoiseLod(')
+    );
+    const lodBody = lod.slice(0, lod.indexOf('}'));
+    expect(lodBody).toContain(
+      'atmCloudHexLod(atmCloudTexture, uv, lod, ATM_CLOUD_MEAN)'
+    );
+  });
+});
+
+describe('the cloud chunk’s live noise (round-3 plan N1)', () => {
+  // WHY: one switch, `atmCloudLive`, puts every reader of the shared chunk
+  // (the dome, the sheet, the slab, the sun disc) on the live per-octave
+  // noise, live (a uniform, no new program); the implicit read takes its
+  // footprint from the screen derivatives, the explicit-level read from the
+  // level, and the slab's march its own footprint (the anti-aliasing,
+  // cold review item 5). Each branch is an early return before the tile's.
+  const body = (name: string) => {
+    const fn = ATMOSPHERE_CLOUD_GLSL.slice(ATMOSPHERE_CLOUD_GLSL.indexOf(name));
+    return fn.slice(0, fn.indexOf('}'));
+  };
+
+  it('declares the switch, the lattice and the basis, and includes the chunk', () => {
+    expect(ATMOSPHERE_CLOUD_GLSL).toContain('uniform float atmCloudLive;');
+    expect(ATMOSPHERE_CLOUD_GLSL).toContain(
+      'uniform sampler2D atmCloudLattice;'
+    );
+    expect(ATMOSPHERE_CLOUD_GLSL).toContain(
+      'uniform vec4 atmCloudLiveBasis[ATM_LIVE_OCTAVES];'
+    );
+    expect(ATMOSPHERE_CLOUD_GLSL).toContain('#ifndef ATM_CLOUD_LIVE_GLSL');
+  });
+
+  it('reads live first in every noise entry point, then the tile as before', () => {
+    expect(body('float atmCloudNoise(')).toContain(
+      'if (atmCloudLive > 0.5) return atmCloudLiveGrad(atmCloudLattice, atmCloudLiveBasis, atmCloudLiveAmp, uv, atmCloudOffset);'
+    );
+    expect(body('float atmCloudNoiseLod(')).toContain(
+      'if (atmCloudLive > 0.5) return atmCloudLiveAt(atmCloudLattice, atmCloudLiveBasis, atmCloudLiveAmp, uv, atmCloudOffset, lod > 0.0 ? exp2(lod) * ATM_CLOUD_TEXEL_KM : 0.0, float(ATM_LIVE_OCTAVES));'
+    );
+    const footprint = body('float atmCloudNoiseFootprint(');
+    expect(footprint).toContain(
+      'if (atmCloudLive > 0.5) return atmCloudLiveAt(atmCloudLattice, atmCloudLiveBasis, atmCloudLiveAmp, uv, atmCloudOffset, footprintKm, atmCloudLiveMarchOctaves);'
+    );
+    // Off live, the same level the slab took before (twin of cloudSlabLod).
+    expect(footprint).toContain(
+      'return atmCloudNoiseLod(uv, footprintKm > 0.0 ? max(0.0, log2(footprintKm / ATM_CLOUD_TEXEL_KM)) : 0.0);'
+    );
+  });
+
+  it('names the mode the coverage tables are picked by: 0 tile, 1 hex, 2 live', () => {
+    expect(body('float atmCloudNoiseMode(')).toContain(
+      'return atmCloudLive > 0.5 ? 2.0 : atmCloudHex;'
+    );
+  });
+});

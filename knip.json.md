@@ -48,7 +48,15 @@ entirely after confirming they were only transitively pulled in.
   and would otherwise flag them as unused files (an `error`-severity
   gate). There is intentionally **no** `src/ref-points/index.ts` entry —
   that module does not exist in this package; a stale entry produced a
-  "no matches" configuration hint. `dpdm` is in `ignoreDependencies` because the framework's
+  "no matches" configuration hint. The single-file entries
+  (`src/state/position-precision.ts`, `src/utils/format-distance.ts` and the
+  like) are deep-import public modules: apps import them through the
+  package's `exports` map, which points at `dist/`, so knip never sees that
+  use and would report their public exports as unused. The version 4
+  block and story readers (`src/ar/tour-blocks.ts`, `src/ar/tour-story.ts`)
+  are such entries: their member types
+  (`TourPictureBlock`, `TourStoryStep` and the like) are the public API a
+  renderer narrows to. `dpdm` is in `ignoreDependencies` because the framework's
   `check:cycles` command moved from an inline package.json script into
   `scripts/test-timing/projects.mjs` (2026-07-21 gate wiring), where
   knip's package.json-script analysis cannot see it — the standard
@@ -112,6 +120,13 @@ entirely after confirming they were only transitively pulled in.
   makes that import 404 and the smoke fail at once, so the ignore hides
   nothing; it is an exact string, so a second such import must be added on
   purpose. Found by the root dead-code check before the r759 publish.
+  The page paths `/globe/sky-level.js` (the terrain lab's sun test),
+  `/fw/visualization/atmosphere/cloud-live-noise.js` and
+  `/globe/globe-cloud-shell-volume.js` (the spherical cloud volume's field
+  test) and `/globe/globe-sources.js` (its smoke, the cloud map's file)
+  are imported by lab tests through `test-route-loader.mjs`, which
+  resolves them with the dev server's route table; knip has no such
+  mapping. Each is an exact string and fails its test at once if moved.
 - **GpsPlusSlamJs_TourViewer** - `src/editor/edit-main.ts` is an entry:
   knip follows `index.html` to `src/main.ts` but not the second Vite input,
   `edit.html` (the desktop editor, M6 E1), so without it the whole editor

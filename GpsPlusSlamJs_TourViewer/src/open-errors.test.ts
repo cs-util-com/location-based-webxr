@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { TourManifestOlderFormatError } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
   ArchiveLimitError,
@@ -12,6 +13,7 @@ import {
   isDriveUrl,
   OPEN_FILE_ADVICE_LABEL,
   offersFileOpen,
+  olderFormatRefusal,
 } from "./open-errors.js";
 
 /**
@@ -188,6 +190,27 @@ describe("describeOpenError - a refused Drive file for a visitor (U1 milestone r
     );
     expect(text).not.toMatch(/shared publicly/);
     expect(text).toMatch(/tell the person who put up the poster/i);
+  });
+});
+
+/**
+ * Why these tests matter: a tour of an older format is refused, never
+ * converted, so the refusal is the whole answer a creator gets: which
+ * format, that the tour has to be made again, and - only when this device
+ * held a draft for it, which the refusal deleted - that its unsaved
+ * changes are gone too.
+ */
+describe("olderFormatRefusal", () => {
+  it("names the format and says the tour has to be made again", () => {
+    expect(olderFormatRefusal(new TourManifestOlderFormatError(3), false)).toBe(
+      "This tour is in an older format (version 3) that this version of the app no longer opens; it has to be made again.",
+    );
+  });
+
+  it("adds that its unsaved changes cannot be restored when its draft was deleted", () => {
+    expect(olderFormatRefusal(new TourManifestOlderFormatError(2), true)).toBe(
+      "This tour is in an older format (version 2) that this version of the app no longer opens; it has to be made again, and its unsaved changes cannot be restored.",
+    );
   });
 });
 

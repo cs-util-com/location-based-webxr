@@ -14,9 +14,12 @@ import type {
   TourManifest,
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { tourCaptureGeos } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { horizontalM } from "../move-with-code.js";
-import { codeDistanceLine, objectTitle } from "../object-describe.js";
+import {
+  BLOCK_KIND_LABEL,
+  codeDistanceLine,
+  objectTitle,
+} from "../object-describe.js";
 import { stationTitle } from "../station-run.js";
 import {
   buildSummaryModel,
@@ -30,7 +33,7 @@ export type EditorItemKind = "code" | "pin" | "photo" | "station";
 export interface EditorItem {
   readonly id: string;
   readonly kind: EditorItemKind;
-  /** "Code 1" / a pin's text / a photo's caption or "Photo". Text, never
+  /** "Code 1" / an object's name (`objectTitle`). Text, never
    *  markup: it comes from a zip anyone can write. */
   readonly title: string;
   /** The row's second line. */
@@ -39,12 +42,8 @@ export interface EditorItem {
   readonly at: MapPoint | null;
   /** A code's number (1-based) in the phone's numbering. */
   readonly number?: number;
-  /** A photo's image entry: the content path of a placed photo, the
-   *  recording's frame of a recorded one. */
+  /** A photo's image: its content path inside the tour's folder. */
   readonly image?: string;
-  /** A recorded photo (`captureSpots`), placed for visitors at the Finish
-   *  and not editable as a note. */
-  readonly recorded?: boolean;
   /** A station standing at a code's point (within {@link ON_CODE_M}): the
    *  map draws it beside the code, never under it (PR #609 review). */
   readonly onCode?: true;
@@ -64,16 +63,15 @@ export interface EditorModel {
   readonly fitPoints: readonly MapPoint[];
 }
 
-/** A recorded photo's id: its frame's entry name, which is unique. */
-const RECORDED_PREFIX = "recorded:";
-
 /** A station's id in the editor: stations and objects have separate id
  *  spaces in the manifest. */
-const STATION_PREFIX = "station:";
+export const STATION_PREFIX = "station:";
 
 function noteMeta(object: TourObject, codes: readonly QrGeoPose[]): string {
   const distance = codeDistanceLine(object, codes);
-  const kind = object.kind === "pin" ? "Text note" : "Photo note";
+  // The kind in the one rule's words (`object-describe.ts`), so no kind
+  // is ever labelled as another.
+  const kind = BLOCK_KIND_LABEL[object.kind];
   return distance === "" ? kind : `${kind} · ${distance}`;
 }
 
@@ -85,7 +83,7 @@ function noteMeta(object: TourObject, codes: readonly QrGeoPose[]): string {
 export function buildEditorModel(input: {
   readonly manifest: TourManifest;
   /** The tour's pins and photos in the world, with the page's edits
-   *  (version 3 keeps them in stations; `tour-content.ts`). */
+   *  (the stations keep them as free blocks; `tour-content.ts`). */
   readonly objects: readonly TourObject[];
   readonly levels: ReadonlyMap<string, QrLevel>;
   readonly fileName: string;
@@ -119,38 +117,28 @@ export function buildEditorModel(input: {
   // list without a mark, so it can still be found (E1 review #9). The
   // summary keeps only the drawable ones.
   const drawable = new Map(summary.objects.map((s) => [s.id, s]));
-  const notes: EditorItem[] = objects.map((object) => {
+  // Pins and photos only: this 2D editor lists no placed 3D model (format
+  // minor 1) rather than a mislabelled note; the tour keeps it untouched.
+  const notes: EditorItem[] = objects.flatMap((object): EditorItem[] => {
+    if (object.kind === "model") return [];
     const mark = drawable.get(object.id);
-    return {
-      id: object.id,
-      kind: object.kind,
-      title: objectTitle(object),
-      meta:
-        mark === undefined
-          ? `${object.kind === "pin" ? "Text note" : "Photo note"} · no position`
-          : noteMeta(object, stored),
-      at: mark === undefined ? null : { lat: mark.lat, lng: mark.lng },
-      ...(object.kind === "photo" ? { image: object.image } : {}),
-    };
+    return [
+      {
+        id: object.id,
+        kind: object.kind === "shortText" ? "pin" : "photo",
+        title: objectTitle(object),
+        meta:
+          mark === undefined
+            ? `${BLOCK_KIND_LABEL[object.kind]} · no position`
+            : noteMeta(object, stored),
+        at: mark === undefined ? null : { lat: mark.lat, lng: mark.lng },
+        ...(object.kind === "picture" ? { image: object.imageAsset.path } : {}),
+      },
+    ];
   });
-  const recorded: EditorItem[] = tourCaptureGeos(manifest)
-    .map((c) => ({ capture: c, at: { lat: c.geo.lat, lng: c.geo.lon } }))
-    // A fix that cannot be drawn keeps its row, as a note's does (E1 review
-    // #9, PR #609 review): off the map, still findable and counted.
-    .map(({ capture, at }) => {
-      const onMap = readablePoint(at);
-      return {
-        id: `${RECORDED_PREFIX}${capture.image}`,
-        kind: "photo",
-        title: "Recorded photo",
-        meta: onMap
-          ? "Photo · recorded on the walk"
-          : "Photo · recorded on the walk · no position",
-        at: onMap ? at : null,
-        image: capture.image,
-        recorded: true,
-      };
-    });
+  // The walk's debug camera captures are never items: they are debug
+  // data, not the tour's content (the map's debug layer draws them,
+  // `debug-capture-layer.ts`).
   // The stations (tour kit plan K4; version 3: each at its own position,
   // the frame of its pins and photos, D9). A story tour may carry nothing
   // else (the committed sample).
@@ -173,7 +161,7 @@ export function buildEditorModel(input: {
       };
     },
   );
-  const items = [...codes, ...notes, ...recorded, ...stations];
+  const items = [...codes, ...notes, ...stations];
   const count = (kind: EditorItemKind): number =>
     items.filter((i) => i.kind === kind).length;
   const title = manifest.title?.trim() ?? "";
@@ -190,8 +178,20 @@ export function buildEditorModel(input: {
   };
 }
 
-/** The rail's rows for a search: every item whose title or second line
- *  contains `query` (case-insensitive, trimmed); all for an empty query. */
+/** The words a search finds an item by besides its own lines: "note"
+ *  (the search box's word for a pin or a photo), and the words the 3D
+ *  editor once used for those kinds, which a creator may still type.
+ *  The kind's own word is in its second line already. */
+const KIND_SEARCH_WORDS: Readonly<Record<EditorItemKind, string>> = {
+  code: "",
+  pin: "note short text",
+  photo: "note picture",
+  station: "",
+};
+
+/** The rail's rows for a search: every item whose title, second line or
+ *  kind's words (`KIND_SEARCH_WORDS`) contain `query` (case-insensitive,
+ *  trimmed); all for an empty query. */
 export function filterItems(
   items: readonly EditorItem[],
   query: string,
@@ -200,20 +200,16 @@ export function filterItems(
   if (q === "") return [...items];
   return items.filter(
     (i) =>
-      i.title.toLowerCase().includes(q) || i.meta.toLowerCase().includes(q),
+      i.title.toLowerCase().includes(q) ||
+      i.meta.toLowerCase().includes(q) ||
+      KIND_SEARCH_WORDS[i.kind].includes(q),
   );
 }
 
-/** Where a photo item's bytes are (E1 review #1): a placed photo's image
- *  is a content path inside the tour's folder (`TourSession
- *  .loadContentEntry`), a recorded one's the archive's own entry name
- *  (`loadEntry`, as the viewer reads it); null without a photo. */
-export function photoSource(
-  item: EditorItem,
-): { kind: "content" | "entry"; path: string } | null {
+/** Where a photo item's bytes are (E1 review #1): its image, a content
+ *  path inside the tour's folder (`TourSession.loadContentEntry`); null
+ *  without a photo. */
+export function photoSource(item: EditorItem): string | null {
   if (item.kind !== "photo" || item.image === undefined) return null;
-  return {
-    kind: item.recorded === true ? "entry" : "content",
-    path: item.image,
-  };
+  return item.image;
 }

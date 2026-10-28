@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import {
+  setZeroPos,
+  type RecordGpsEventPayload,
+} from "gps-plus-slam-app-framework/state";
 
 import type { TourViewerSeams } from "./seams.js";
 import {
@@ -61,10 +65,11 @@ function harness(input: {
       listeners.push(fn);
     },
   } as unknown as HTMLButtonElement;
+  const arStore = createTourViewerStore();
   const placement = createViewerPlacement({
     ctx,
     mode: input.mode ?? "visitor",
-    arStore: createTourViewerStore(),
+    arStore,
     arController: {
       getState: () => ({ status }),
     } as never,
@@ -76,9 +81,32 @@ function harness(input: {
   // The app starts the pipeline (which learns whether a detector exists)
   // before it derives the gate; the harness follows that order.
   placement.startViewerPipeline();
+  let fixes = 0;
   return {
     ctx,
     placement,
+    arStore,
+    /** One device fix through the page's own path (the coordinator sets
+     *  the zero first when the session has none). */
+    deviceFix: () => {
+      if (arStore.getState().gpsData?.zero == null) {
+        arStore.dispatch(setZeroPos({ lat: 47.5, lon: 8.7 }));
+      }
+      fixes += 1;
+      const fix: RecordGpsEventPayload = {
+        odomPosition: [fixes, 0, 0],
+        odomRotation: [0, 0, 0, 1],
+        rawGpsPoint: {
+          id: `fix-${String(fixes)}`,
+          latitude: 47.5,
+          longitude: 8.7 + fixes * 1e-5,
+          altitude: 400,
+          latLongAccuracy: 6,
+          timestamp: 1_790_000_000_000 + fixes * 1000,
+        },
+      };
+      placement.recordDeviceFix(fix);
+    },
     escapeButton,
     timers,
     cancelled,
@@ -114,6 +142,8 @@ describe("viewer-placement - the scan gate driver (M5)", () => {
   it("the clock offers the escape; the tap passes the gate as skipped, once", () => {
     const h = harness({});
     h.placement.startScanGate();
+    // GPS to continue with: a device fix arrived in this AR entry.
+    h.deviceFix();
     h.timers[0]?.();
     expect(h.ctx.scanGate).toEqual({ kind: "scanning", escapeOffered: true });
     expect(h.escapeButton.hidden).toBe(false);
@@ -169,6 +199,70 @@ describe("viewer-placement - the scan gate driver (M5)", () => {
     h.placement.reconsiderScanGate(new Map([["b", LOCKABLE]]));
     expect(h.ctx.scanGate).toEqual({ kind: "scanning", escapeOffered: false });
     expect(h.timers).toHaveLength(2);
+  });
+
+  // Why these matter: "Continue with GPS only" promises a placement by GPS.
+  // Indoors a phone may hold the location permission and never get a fix;
+  // the escape then led to a screen that could place nothing. It waits for
+  // a device fix of THIS AR entry - the session origin survives an AR exit,
+  // so "an origin exists" says nothing about GPS being here now.
+  it("no device fix when the clock runs out: no escape; the first fix after it offers the escape", () => {
+    const h = harness({});
+    h.placement.startScanGate();
+    h.timers[0]?.(); // 10 s, no fix yet
+    expect(h.ctx.scanGate).toEqual({ kind: "scanning", escapeOffered: false });
+    expect(h.escapeButton.hidden).toBe(true);
+    h.deviceFix(); // 15 s: the first fix
+    expect(h.ctx.scanGate).toEqual({ kind: "scanning", escapeOffered: true });
+    expect(h.escapeButton.hidden).toBe(false);
+    h.tapEscape();
+    expect(h.ctx.scanGate).toEqual({ kind: "passed", via: "skipped" });
+  });
+
+  it("a fix before the clock runs out does not offer the escape early", () => {
+    const h = harness({});
+    h.placement.startScanGate();
+    h.deviceFix();
+    expect(h.ctx.scanGate).toEqual({ kind: "scanning", escapeOffered: false });
+    expect(h.escapeButton.hidden).toBe(true);
+    h.timers[0]?.();
+    expect(h.escapeButton.hidden).toBe(false);
+  });
+
+  it("an origin kept from an earlier AR entry is not a fix of this one: no escape", () => {
+    const h = harness({});
+    // The origin of an earlier entry survives the AR exit; this entry's
+    // GPS history is empty.
+    h.arStore.dispatch(setZeroPos({ lat: 47.5, lon: 8.7 }));
+    h.placement.startScanGate();
+    h.timers[0]?.();
+    expect(h.ctx.scanGate).toEqual({ kind: "scanning", escapeOffered: false });
+    expect(h.escapeButton.hidden).toBe(true);
+  });
+
+  it("a start without location arms no escape clock, and a fix changes nothing (codes only)", () => {
+    const h = harness({});
+    h.ctx.codesOnly = true;
+    h.placement.startScanGate();
+    expect(h.timers).toHaveLength(0);
+    h.deviceFix();
+    expect(h.ctx.scanGate).toEqual({ kind: "scanning", escapeOffered: false });
+    expect(h.escapeButton.hidden).toBe(true);
+  });
+
+  it("a fix after the gate passed or was torn down offers nothing", () => {
+    const h = harness({});
+    h.placement.startScanGate();
+    h.timers[0]?.();
+    h.placement.reconsiderScanGate(new Map([["a", SIZE_ONLY]]));
+    h.deviceFix();
+    expect(h.escapeButton.hidden).toBe(true);
+    expect(h.ctx.scanGate.kind).toBe("not-required");
+    // A new entry's gate has its own clock: an elapsed clock of the old
+    // one does not offer the escape on its first fix.
+    h.placement.startScanGate();
+    h.deviceFix();
+    expect(h.ctx.scanGate).toEqual({ kind: "scanning", escapeOffered: false });
   });
 
   it("a browser without a detector is waived at once (DEC-N13)", () => {

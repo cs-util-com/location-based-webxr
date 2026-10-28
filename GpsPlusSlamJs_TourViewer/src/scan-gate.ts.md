@@ -18,10 +18,15 @@ clock, the escape button).
   escape clock for the same outcome.
 - `SCAN_GATE_ESCAPE_MS = 10_000` - after this long in `scanning` the escape
   is offered (DEC-N3; 45 s until the owner's S1 scan card offered the skip
-  after 10 s, polish round M4b, Q-Scan).
-- `scanCardShown(mode, arStatus, gate): boolean` - the visitor's scan card
-  (S1) shows for a visitor's `running` session whose gate is `scanning`,
-  and closes by itself on any pass (`ar-entry.ts` renders it).
+  after 10 s, polish round M4b, Q-Scan) - once the AR entry has had a
+  device fix; with none yet, at its first fix (the driver,
+  `viewer-placement.ts`).
+- `scanCardShown(mode, arStatus, gate, unfinished = false): boolean` - the
+  visitor's scan card (S1) shows for a visitor's `running` session whose
+  gate is `scanning`, and closes by itself on any pass (`ar-entry.ts`
+  renders it). Never for a tour not finished yet (`unfinished`): a tour
+  without stations may carry its code, and the card would hide the line
+  that says the tour is not finished.
 - `isLockableLevel(level)` - a printed size AND a geo pose: a size-less
   level never solves, a geo-less one never votes, and neither can lock.
 - `scanGateAtSessionStart({ mode, hasDetector, levels, ignoredLevelIds? })` - creator and
@@ -79,4 +84,5 @@ if (gateAllowsPlacement(ctx.scanGate)) tryPlaceTour();
 
 `scan-gate.test.ts` - the lockable rule as a property, the session-start
 cases, the reconsideration as a property over gates and level sets, the
-placement rule and every copy branch.
+placement rule and every copy branch, and the scan card (never for a
+creator, outside a session, after a pass, or for a tour not finished yet).

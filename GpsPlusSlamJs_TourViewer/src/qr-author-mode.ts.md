@@ -29,7 +29,7 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
 - `MIN_ALIGNMENT_SAMPLES = 3` — the mint gate's alignment floor. A non-null
   matrix is VACUOUS (the store ships an identity matrix from the first GPS
   fix), so the gate counts solved-in fixes (milestone review #1).
-- `authorStatusLine(detectedText, fused: QrFusedPose | null, alignment: AuthorAlignmentInfo)`
+- `authorStatusLine(detectedText, fused: QrFusedPose | null, alignment: AuthorAlignmentInfo, sizeCheckPending?, ready?, codeVoted?)`
   → `{ text; canMint }` — the mint gate's only UI; each blocked state names
   what is missing, including the fix count. Since QR near-frontal pose plan
   §60 it reads the FUSED pose: while it is not stable the line names what it
@@ -39,6 +39,10 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   "hold steady" - moving the camera is what resolves the tilt (§61 #11). The copy is the creator
   setup's guidance since the guided-setup plan M3 ("Hold the phone on the
   printed code…"; since UI round 1 U3 the ready line is "Code measured." - it is measured on its own).
+  With `codeVoted` (a stored code voted in this visit) and a matrix but too
+  few fixes, the line says the code places the creator and that measuring a
+  NEW code needs GPS ("N of 3 fixes"); `canMint` stays false - a vote-only
+  visit mints nothing.
 - `entryHint({ tourOpen, codeSeen })` - the AR visit's first hint (authoring
   plan 2026-09-28-0953 §3.2a, decision D5): "First, point the camera at
   this tour's printed code: pins and photos placed before it is seen are
@@ -112,10 +116,13 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
     is legitimate and only the creator knows whether the measurement was
     worth keeping. What they must not have is silence.
 - `FINISH_LABELS` - the finish step's copy through its async cycle
-  (reading, placing photos, rebuilding N of M, failed) and the save's
+  (reading, rebuilding N of M, failed) and the save's
   (`savingTour(bytes)` while the Finish saves the zip by itself, the button's
   `saveAgain` and `saving`, `saved`, `savedToPhone`, `notSaved`,
-  `saveFailed(reason)`). Since the
+  `saveFailed(reason)`), `scanLeftOut(files)` (the copy left the walk out;
+  names "Save the debug data") and `leanCopy(files)` (its first sentence
+  alone, which the desktop's lean download toast puts before its own next
+  step, `editor/save-toast.ts`). Since the
   2026-10-08 field test (F4; owner decisions D-F4a, D-F4b) the Finish saves
   the rebuilt zip itself and the one button saves it again the same way:
   no share route, no "press the button" ready line. `saved` and

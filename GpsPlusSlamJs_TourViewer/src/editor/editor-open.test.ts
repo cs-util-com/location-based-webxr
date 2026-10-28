@@ -6,17 +6,23 @@
  * plan review #8). Real zips, the viewer's real opener.
  */
 import { describe, expect, it } from "vitest";
-import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
+import {
+  packFilesAsZip,
+  rebuildZipWithEntries,
+} from "gps-plus-slam-app-framework/storage";
+import { sampleRecordingBytes } from "../test-support/sample-recording.js";
 import {
   createEmptyTourManifest,
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   droppedDetailsLine,
+  droppedStationFieldsLine,
   NOT_A_TOUR,
   NOT_A_ZIP,
   openTourForEditing,
 } from "./editor-open.js";
+import { createEditorSession } from "./editor-session.js";
 
 async function zipFile(
   entries: { path: string; data: string }[],
@@ -54,7 +60,7 @@ describe("openTourForEditing", () => {
       {
         path: "tour.json",
         data: JSON.stringify({
-          version: 3,
+          version: 4,
           minor: 0,
           stations: [],
           description: "Fine.",
@@ -67,13 +73,86 @@ describe("openTourForEditing", () => {
     expect(out.kind).toBe("opened");
     if (out.kind !== "opened") return;
     expect(out.manifest.description).toBe("Fine.");
-    expect(out.dropped.map((d) => d.field)).toEqual(["cover", "contact"]);
+    expect(out.dropped.map((d) => ("field" in d ? d.field : d.kind))).toEqual([
+      "cover",
+      "contact",
+    ]);
     expect(droppedDetailsLine(out.dropped)).toBe(
       "This tour's cover and contact could not be read, so the editor left them out: the next save writes the tour without them. Set them again in the tour's details.",
     );
     expect(droppedDetailsLine([])).toBeNull();
     expect(droppedDetailsLine(out.dropped.slice(1))).toBe(
       "This tour's contact could not be read, so the editor left it out: the next save writes the tour without it. Set it again in the tour's details.",
+    );
+    await out.session.close();
+  });
+
+  it("names the stations whose description or card image the reader dropped, by their names, apart from the details (G2 build plan M1a)", async () => {
+    // Why: a station's card image (format minor 2) whose photo or image
+    // is gone, or a description or image a hand edit broke, is dropped by
+    // the reader instead of failing the tour (Q14). It must be said like a
+    // dropped detail - never lost silently by the next save - but it is no
+    // tour detail, so it is neither counted as one nor told to be set again
+    // in the tour's details. A station is named as the rail names it (its
+    // title, else "Station N"), never by the random id a creator never
+    // sees.
+    const at = { lat: 48.1, lon: 11.5, alt: 520, rotation: [0, 0, 0, 1] };
+    const bare = (id: string, extra: Record<string, unknown>) => ({
+      id,
+      geo: at,
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      steps: [],
+      blocks: [],
+      ...extra,
+    });
+    const file = await zipFile([
+      {
+        path: "tour.json",
+        data: JSON.stringify({
+          version: 4,
+          minor: 0,
+          stations: [
+            bare("k3f9", { title: "The old well", image: "gone" }),
+            bare("q7x2", { image: "lost" }),
+            bare("z1m8", { description: 42 }),
+          ],
+          cover: "gone",
+        }),
+      },
+    ]);
+    const out = await openTourForEditing(file);
+    expect(out.kind).toBe("opened");
+    if (out.kind !== "opened") return;
+    expect(out.dropped.map((d) => ("field" in d ? d.field : d.kind))).toEqual([
+      "image",
+      "image",
+      "description",
+      "cover",
+    ]);
+    expect(droppedDetailsLine(out.dropped)).toBe(
+      "This tour's cover could not be read, so the editor left it out: the next save writes the tour without it. Set it again in the tour's details.",
+    );
+    expect(droppedStationFieldsLine(out.dropped, out.manifest)).toBe(
+      'The card images of "The old well" and "Station 2" name pictures this tour no longer has. The description of "Station 3" could not be read. The editor left them out: the next save writes those stations without them.',
+    );
+    expect(droppedStationFieldsLine(out.dropped.slice(1), out.manifest)).toBe(
+      'The card image of "Station 2" names a picture this tour no longer has. The description of "Station 3" could not be read. The editor left them out: the next save writes those stations without them.',
+    );
+    expect(droppedStationFieldsLine(out.dropped.slice(2), out.manifest)).toBe(
+      'The description of "Station 3" could not be read. The editor left it out: the next save writes the station without it.',
+    );
+    // A malformed card image (no cause) is unreadable, not gone.
+    expect(
+      droppedStationFieldsLine(
+        [{ field: "image", station: "z1m8", reason: "not an id" }],
+        out.manifest,
+      ),
+    ).toBe(
+      'The card image of "Station 3" could not be read. The editor left it out: the next save writes the station without it.',
+    );
+    expect(droppedStationFieldsLine(out.dropped.slice(3), out.manifest)).toBe(
+      null,
     );
     await out.session.close();
   });
@@ -94,6 +173,27 @@ describe("openTourForEditing", () => {
     expect(out.reason).toMatch(/^This tour cannot be read: /);
   });
 
+  // Why: a tour of an older format is refused, never converted, in the
+  // words the phone uses; the page needs the file's key to delete the
+  // draft this browser kept for it.
+  it("refuses a tour of an older format in its own words, with the file's key", async () => {
+    const file = await zipFile([
+      {
+        path: "tour.json",
+        data: JSON.stringify({ version: 3, minor: 0, stations: [] }),
+      },
+    ]);
+    const out = await openTourForEditing(file);
+    expect(out).toMatchObject({
+      kind: "refused",
+      reason:
+        "This tour is in an older format (version 3) that this version of the app no longer opens; it has to be made again.",
+    });
+    if (out.kind !== "refused") return;
+    expect(out.olderFormat?.fileKey).toMatch(/^local-file:/);
+    expect(out.olderFormat?.error.version).toBe(3);
+  });
+
   it("refuses a file that is not a zip before reading it", async () => {
     const open = () => Promise.reject(new Error("must not be called"));
     await expect(
@@ -108,5 +208,56 @@ describe("openTourForEditing", () => {
       new File(["not a zip at all"], "broken.zip", { type: "application/zip" }),
     );
     expect(out.kind).toBe("refused");
+  });
+});
+
+describe("openTourForEditing starts no station for the walk's debug camera captures", () => {
+  // Why this test matters: the walk's camera captures are debug data, not
+  // part of the tour. The open put them into stations once (a bake that
+  // started an automatic walk-N station for every frame no station held),
+  // so a save published them as the tour's content. A tour carrying a
+  // recording now opens as its file has it - the same on the desktop as on
+  // the phone - and the document the editor session opens holds no
+  // captures and no station for them.
+  it("opens a tour carrying a recording with no station and no captures", async () => {
+    const zip = await rebuildZipWithEntries(
+      new Blob([sampleRecordingBytes()]),
+      [
+        {
+          path: "tour.json",
+          data: serializeTourManifest(createEmptyTourManifest()),
+        },
+      ],
+    );
+    const out = await openTourForEditing(
+      new File([zip], "walked.zip", { type: "application/zip" }),
+    );
+    if (out.kind !== "opened") throw new Error(out.reason);
+    expect(out.manifest).toEqual(createEmptyTourManifest());
+    const editor = createEditorSession({
+      session: out.session,
+      manifest: out.manifest,
+      levels: out.levels,
+    });
+    expect(editor.model().items.filter((i) => i.kind === "station")).toEqual(
+      [],
+    );
+    const saved = await editor.save({ keepScan: true });
+    expect(saved.written.stations).toEqual([]);
+    expect("captureSpots" in saved.written).toBe(false);
+    await out.session.close();
+  });
+
+  it("opens a tour without a recording as it is", async () => {
+    const file = await zipFile([
+      {
+        path: "tour.json",
+        data: serializeTourManifest(createEmptyTourManifest()),
+      },
+    ]);
+    const out = await openTourForEditing(file);
+    if (out.kind !== "opened") throw new Error(out.reason);
+    expect(out.manifest).toEqual(createEmptyTourManifest());
+    await out.session.close();
   });
 });

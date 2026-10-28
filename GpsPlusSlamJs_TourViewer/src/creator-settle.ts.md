@@ -13,7 +13,7 @@ M4 settles every code of the book, not only the one in hand.
 
 ## Public API
 
-- `wireCreatorSettle({ ctx, arStore, seams, previews, alignmentPicks, draft, codes, visitLog, pageId, summary?, alignmentInfo, sizeOf }): CreatorSettle` - `sizeOf(text)`: the size a
+- `wireCreatorSettle({ ctx, arStore, seams, previews, alignmentPicks, draft, codes, visitLog, pageId, summary?, alignmentInfo, sizeOf, offerUndo?, withdrawUndo? }): CreatorSettle` - `sizeOf(text)`: the size a
   code is solved at (`creator-measuring.ts`); a replaced or moved stored
   code is re-minted at its sighting's size, not the field's (M4 milestone
   review #2)
@@ -24,7 +24,8 @@ M4 settles every code of the book, not only the one in hand.
   - `record(visit)` - what a settled visit settled through (a late photo
     is minted through it); `lateArrival(visit, photo)` logs such a photo
     as that settle's; `unsettle(visit)` forgets the running visit's settle
-    (a Finish that wrote nothing, so the session end settles it again).
+    (a Finish that wrote nothing, so the session end settles it again)
+    and withdraws that settle's offer (`withdrawUndo`).
   - `refusalLead()`, `judgeRefusal()`, `judgeOnNewFix()`,
     `placeEarlierObjects()` - the refused correction's line (naming its
     code by `codes.numbering()` when the tour has several), its re-judge,
@@ -45,6 +46,24 @@ M4 settles every code of the book, not only the one in hand.
   - `showSummary()` - the summary after Finish.
   - `endVisit()` / `reset()` - a visit ended (its refusal goes); a tour
     closed (its move boundaries and decisions go).
+  - `settleUndone(visit)` - the AR strip's Undo took `visit`'s settle
+    back (`creator-undo.ts`): that settle's per-code
+    outcomes (the result line), move boundaries and applied decisions go,
+    so the Finish's result does not report a change the creator took back.
+  - `finishesWritten()` - how many Finishes wrote the tour since it
+    opened (`afterFinish` counts them, `reset` clears): a settle's undo
+    compares it with the count at its offer to say that the next Finish
+    saves the undo.
+- `offerUndo(target, visit)` (optional dep) - told right after a settle's
+  step when it changed a stored code automatically: each code of the step
+  (`nextStep(...).codes`) is named by the decision that changed it (an
+  applied `replace` an improvement, `move` a move, else null - also a
+  decision re-applied after a failed Finish) and `settleUndoTarget` names
+  the step; no automatic change, no offer. A code-spot undo (the move
+  back) is written by `saveLevel` before the settle's step, outside the
+  history, so it is never offered.
+- `withdrawUndo(visit)` (optional dep) - told when `unsettle` forgets
+  `visit`'s settle: its offer goes (the re-settle re-applies it).
 
 ## Invariants & assumptions
 
@@ -72,7 +91,8 @@ M4 settles every code of the book, not only the one in hand.
   replace the tap-time ones
   in the tour document (`move`, the AR placement kept) and the code
   module's book, each settled object's draft
-  record and the meta are REWRITTEN (the per-object file design already
+  record and the draft's codes record are REWRITTEN (the settle writes
+  no meta: the codes have a record of their own since plan M3b) (the per-object file design already
   keys by id; no format change - so a page reload keeps the settled geo,
   while a killed tab keeps the tap-time geo, accepted in the plan), and
   `tourAuthoring/settled` is logged. The input carries the end alignment's
@@ -196,13 +216,10 @@ M4 settles every code of the book, not only the one in hand.
       sighting's pose, the print size the visit solved at, the chosen
       pick), so it is re-minted as if measured here and this visit's
       objects settle relative to it.
-    - An IMPROVED position moves the tour's other objects within 40 m of
-      the code's old position, and no nearer to another of the tour's
-      codes (M4b, `takesAlong`), with it (`moveEarlierWithCode`,
-      `move-with-code.ts`: yaw and position only, as the code correction;
-      hosted, restored and earlier visits' objects, as edits by id; a pin
-      keeps its orientation). A real MOVE leaves them (D19) and marks the
-      visit's move boundary.
+    - An IMPROVED position moves the tour's other objects with it - by
+      their stations, below (`moveEarlierWithCode`; hosted, restored and
+      earlier visits' objects, as edits by id). A real MOVE leaves them
+      and marks the visit's move boundary.
     - **Version 3: whole stations** (tour editor plan D17). The rule picks
       STATIONS by their anchor (`station-code-move.ts`), and each moves
       rigidly as the tour document's `stationMoved` (`moveStation`), the
@@ -210,9 +227,40 @@ M4 settles every code of the book, not only the one in hand.
       the frame, edited ones included. This visit's own objects in a moved
       station are put back where the visit's settle put them (`move`). An
       object in a station that does not move stays, whatever its own
-      distance. Only objects not yet in a station (placed on this device,
-      not yet written) are judged one by one. Claims are per object id
-      and per `station:<id>`.
+      distance: every object stands in a station (the tour document's
+      station rule), so none is judged on its own any more. Claims are per
+      object id and per `station:<id>`; the stations this visit started
+      are claimed from the start (below).
+    - **A station this visit started settles with it.** Its anchor is the
+      AR placement of the item it was started for
+      (`stationPlacements()` of `creator-document.ts`), and the settle
+      hands it to `planVisitSettle` (`stations`), which settles it
+      through that item's own choice. The settle moves each such station
+      to its settled anchor FIRST (`moveStation`: its items rigidly with
+      it), then puts each of the visit's objects at its own settled spot,
+      so no item is shifted twice and the station stays anchored at its
+      first item, whatever the correction (a 10 m shift and a 10 degree
+      turn are pinned). The code move leaves such a station alone: it was
+      settled through the improved code already. An item of such a station
+      that this visit did not place (earlier work moved into it, a
+      restored draft) is put back where it stood before the settle, as the
+      code move's `stay` does: the visit's correction says nothing about
+      it. Put back by a move, so it stays in the station while the
+      item stays within the moved station's found radius (25 m by
+      default); further off, the move re-seats it by the station rule.
+    - **One settle is one step** (plan M3b, Q-D): every station and
+      object move of the settle, the code move's included, is collected in
+      the document's `settleBatch()` (each reading the document as the
+      moves before it left it), and reaches the document with the codes
+      the settle re-minted as ONE `settleApplied` at the end
+      (`codes.applySettle`): one undo takes the whole settle back, the
+      codes' improved texts included, and the draft follows it in one
+      write round. That round is still several writes (each moved
+      object's record, the settings record, the codes record), so a
+      crash inside it can leave part of the settle on disk; what the step
+      removed is the write round per station and object. The
+      automatic code spots' undo and confirmation stay saved before the
+      settle reads the codes (`saveLevel`), outside that step.
     - **The draft keeps the station's move** (tour editor plan §19 #1):
       the document's listener writes the moved poses into the draft's
       settings record (`creator-draft.ts`), and a restore moves the frame
@@ -271,7 +319,14 @@ M4 settles every code of the book, not only the one in hand.
 
 Composed, through `wireCreatorSetup`: `authoring-settle.test.ts` (the
 settle, each object's pick, the code's saved position, the refusal line,
-the earlier visits' frame, the visit log), `creator-finish.test.ts` (a
+the earlier visits' frame, the visit log; a station the visit started
+staying anchored at its first item after a 10 m and a 10 degree
+correction with no item moved twice, an earlier visit's station left
+alone, and the code move leaving this visit's station where the settle
+put it; an undo of the settle's station move putting the station back,
+and, as a known divergence marked `it.fails` until the codes-in-store
+plan's M3b, the same undo leaving the improved code in place),
+`creator-finish.test.ts` (a
 Finish's settle and the summary) and the e2e authoring specs; the decisions
 themselves in `visit-settle.test.ts`, `code-position-settle.test.ts` and
 `visit-settle.golden.test.ts` (the one-code oracle). The sampled mutants
@@ -360,3 +415,79 @@ a known limitation.
 - **A sighting without a fit, live and at the settle,** belongs to
   another known spot only within half the floor of it (`spotByAlignment`,
   review #6). After a frame change the fit classifies nothing (review #5).
+
+## A visit a stored code's votes still line up
+
+A stored code seen in a visit casts votes: synthetic GPS fixes saying the
+phone is where the stored code says. They are re-cast with every device
+fix while the code is held (a 120 s hold and a 120 s fade), and only the
+moved-code check withdraws them. When any vote is still in the GPS history
+at the settle, the store's alignment and every pick are held by the code:
+seen through them, the code sits where it is stored by construction. Read
+as a measurement, that once replaced a code with its own stored spot,
+stamped it with the walk's quality and logged a perfect agreement, so a
+stored error of 10-15 m became permanent.
+
+`settleVisit` therefore builds a device view (`deviceViewOf`) for such a
+visit: the visit's device fixes and their rigid fit
+(`code-device-fit.ts`, `codeDeviceFit`), gated on at least 3 device fixes
+(after fixes far worse than the median are left out), a walk reliable for
+their accuracy by the GPS spread and by the phone's own tracking, and no
+tracking restart. The view's quality - what a code is judged and stamped
+with through it - is the shorter of the two walks, with the median
+accuracy.
+
+- **With a fit:** every stored code is judged by the keep-or-replace rule
+  and the code-spot rule through the fit (`planCodePosition`'s
+  `deviceFit`), read at the pose `codeFitPose` picks from the code's
+  sightings (`codeFitSightings`: those solved at a replaced print size
+  left out) - between its first and last look, at the share of the way its
+  fixes carry on average (the loop closure: it removes the AR drift the end
+  look carries) - else at the creator's own sighting. A change is
+  re-minted through the fit and stamped with the fit's quality, so the geo
+  and its stamp come from the same fit. A turn alone (the rule's turned
+  branch) replaces a code stamped by a better walk than the fit's only
+  through a fit at least as good (`code-position-settle.ts`). A code the
+  fit sees closer to its saved spot than 0.75 times the fit's accuracy is
+  kept (`keep` / `stored-good`, no re-mint, no new stamp): that offset is
+  mostly the fit's own GPS error. It is still logged through the fit.
+- **The visit's own objects, stations and late photos** settle through the
+  fit too (`throughDevice`: every object's pick, and the end alignment,
+  are the fit), so they move with the codes corrected through it. Objects
+  near a look at a code are still placed relative to that code (the code
+  event rule), at its new spot when it was corrected. A visit whose code
+  stayed (well stamped, or too far for a silent replace) also places
+  objects far from every look through the fit - the rule every visit has
+  for them, its own GPS.
+- **New codes** measured in the visit are minted through the fit and
+  stamped with its quality.
+- **Without a fit:** each stored code is kept as stored
+  (`keep` / `code-placed`, with `walkMoreM` when a short walk was the
+  cause, for the result line), nothing is re-minted or stamped, and the
+  code-spot rule gets no candidate (it judges nothing, as for a walk too
+  short to judge). Objects keep the vote-held frame - nothing better
+  exists - and a new code minted through it claims no quality (its stamp
+  has no accuracy and no walk, so later visits may improve it).
+- **The visit log** reads every code through the fit, at the fit's pose,
+  and draws the path through the fit, or logs no code at all (the fixes
+  and the odometry are still logged); never through the vote-held
+  alignment.
+- **A visit without votes** - one that never voted, or one whose votes the
+  moved-code check withdrew (a code moved 20 m or more) - has no device
+  view and settles exactly as before.
+- **Height** is kept from the vote-held alignment: the fit is horizontal.
+
+Tests: `creator-code-votes.test.ts` - a mixed visit (votes, then a walk
+with GPS, then the code seen again) correcting a code stored 10 or 14 m
+off; no stamp, no logged code and the walk hint when the walk cannot
+judge; the same for a short walk whose fixes jump; an indoor-only visit
+inventing nothing; the loop closure at 3 % drift, also with fixes on the
+way back and at the end look; the visit's pins near a look and far from
+both settling with the corrected code; the path through the fit; a new
+code through the fit, and with no claim of quality without one; a stamped
+code kept; an unstamped code stored 0 or 3 m off kept within the fit's
+error; a vetoed code at 25 m moving as before; no automatic
+measurement while the code is out of view; and the sweep (walk 24/38/60 m,
+accuracy 5/8/15 m, stored error 0-25 m, drift 0-3 %): a property that the
+visit's own view of a code does not depend on where it is stored, with the
+full table behind `CREATOR_INDOOR_SWEEP_OUT`.

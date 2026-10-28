@@ -87,6 +87,46 @@ button:disabled {
   background: #e8e6df;
 }
 
+/* The 3D view, over the map while it shows (the panels stay above it). */
+#view3d {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: #232427;
+}
+
+#view3d[hidden] {
+  display: none;
+}
+
+.view3d-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  touch-action: none;
+}
+
+.view3d-credits {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  margin: 0;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: rgba(24, 25, 28, 0.72);
+  color: rgba(230, 232, 236, 0.85);
+  font-size: 11px;
+}
+
+.view3d-credits a {
+  color: inherit;
+}
+
+#view-switch[data-state="loading"] {
+  cursor: progress;
+}
+
 /* A muted, paper-toned base map, so the tour's own markers carry the colour. */
 .leaflet-tile-pane {
   filter: saturate(0.35) sepia(0.12) brightness(1.03) contrast(0.95);
@@ -116,6 +156,12 @@ button:disabled {
 .leaflet-control-attribution {
   background: rgb(250 249 246 / 82%) !important;
   border-top-left-radius: 8px;
+}
+
+/* The bottom bar (the save status, `editor-shell.css`) is shown over the
+ * map too: what sits at the map's foot stays above it. */
+body:not([data-view="3d"]) .leaflet-bottom {
+  bottom: var(--s-bar-h);
 }
 
 .panel {
@@ -259,7 +305,8 @@ button:disabled {
   z-index: 800;
   top: calc(var(--top-h) + var(--gap) * 2);
   left: var(--gap);
-  bottom: var(--gap);
+  /* Above the bottom bar (the save status, editor-shell.css). */
+  bottom: calc(var(--gap) + var(--s-bar-h));
   width: var(--rail-w);
   display: flex;
   flex-direction: column;
@@ -686,6 +733,19 @@ button:disabled {
   color: var(--danger);
 }
 
+/* A pin text's count under its field: marked past the limit. */
+.note-line.text-count {
+  display: block;
+  margin-top: 4px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.note-line.text-count[data-over] {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .card-foot {
   margin-top: 10px;
   padding-top: 8px;
@@ -719,7 +779,7 @@ kbd {
 #toasts {
   position: fixed;
   z-index: 1200;
-  bottom: 24px;
+  bottom: calc(var(--s-bar-h) + 18px);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -1031,29 +1091,6 @@ kbd {
   color: var(--ink-dim);
 }
 
-#save-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--panel-lo);
-  font-size: 13px;
-  color: var(--ink-dim);
-  white-space: nowrap;
-}
-
-#save-status[data-state="error"] {
-  background: rgb(200 50 43 / 12%);
-  color: var(--danger);
-}
-
-#save-status[data-state="pending"],
-#save-status[data-state="saving"] {
-  background: var(--accent-soft);
-  color: var(--accent-ink);
-}
-
 /* The tour-level settings at the top of the rail (QR-first M1b-2). */
 .rail-settings {
   margin: 0 12px 10px;
@@ -1095,13 +1132,60 @@ kbd {
   font-size: 12px;
 }
 
-.keep-walk {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+/* The debug layer: the walk's camera captures, debug data only. A dot
+   until its thumbnail is decoded; centred on its point; never under the
+   pointer (its pane takes no events either). */
+.debug-panel {
+  position: fixed;
+  right: 12px;
+  bottom: calc(var(--s-bar-h) + 28px);
+  /* Under the card (850): shown for every open tour since "Add debug
+     data…", it must never cover the card it shares the corner with. */
+  z-index: 840;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 8px 12px;
   font-size: 13px;
   color: var(--ink-dim);
-  white-space: nowrap;
+}
+
+.debug-panel[hidden] {
+  display: none;
+}
+
+.debug-panel.over {
+  outline: 2px dashed var(--ink-dim);
+}
+
+.debug-add {
+  align-self: flex-start;
+}
+
+.mk-debug {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 85%);
+  border: 1px solid rgb(0 0 0 / 55%);
+  pointer-events: none;
+}
+
+.mk-debug.has-thumb {
+  width: auto;
+  height: auto;
+  border-radius: 2px;
+  background: none;
+  line-height: 0;
+  opacity: 0.85;
+}
+
+.mk-debug img {
+  display: block;
+  height: auto;
 }
 
 .toast {
@@ -1118,26 +1202,13 @@ kbd {
   min-height: 30px;
 }
 
-/* A phone: the top bar keeps every control inside the window (E2a review
- * #11) - the status line shortens, "Open another tour" says "Open". */
-.label-short {
-  display: none;
-}
-
+/* A phone: the top bar's gaps narrow (E2a review #11), so it fits a wide
+ * platform face too (Linux's DejaVu Sans is about 7 % wider than Windows'
+ * Segoe UI). */
 @media (width <= 720px) {
-  #save-status {
-    min-width: 0;
-    max-width: 32vw;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .label-long {
-    display: none;
-  }
-
-  .label-short {
-    display: inline;
+  #topbar {
+    gap: 8px;
+    padding: 0 8px 0 12px;
   }
 }
 

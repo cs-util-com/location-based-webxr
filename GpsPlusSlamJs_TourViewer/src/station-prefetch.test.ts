@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
   TourAsset,
+  TourBlock,
   TourStation,
-} from "gps-plus-slam-app-framework/ar/tour-stations";
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import {
   createStationPrefetch,
@@ -33,14 +34,24 @@ function station(id: string, assetIds: string[]): TourStation {
   return {
     id,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    items: [],
+    blocks: assetIds.map((asset, i) => ({
+      id: `b${String(i)}`,
+      kind: "picture" as const,
+      view: "card" as const,
+      image: asset,
+      widthM: 1,
+      pose: {
+        position: [0, 0, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+      },
+    })),
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
-    steps: assetIds.map((asset, i) => ({
+    steps: assetIds.map((_asset, i) => ({
       id: `s${String(i)}`,
-      block: { kind: "image", asset },
-      advance: { mode: "tap" },
+      action: { kind: "show" as const, block: `b${String(i)}` },
+      advance: { mode: "tap" as const },
     })),
   };
 }
@@ -75,61 +86,167 @@ function harness(budgetBytes = 1000, sizes: Record<string, number> = {}) {
 }
 
 describe("stationAssetIds", () => {
-  it("lists what a story reads, in step order, once each: figures and voices, pictures, sounds, models", () => {
-    const s: TourStation = {
+  const POSE = {
+    position: [0, 0, 0] as [number, number, number],
+    rotation: [0, 0, 0, 1] as [number, number, number, number],
+  };
+  /** `station` with these blocks, each shown by a step in this order. */
+  function told(blocks: TourBlock[]): TourStation {
+    return {
       ...station("gate", []),
-      steps: [
-        {
-          id: "a",
-          block: {
-            kind: "character",
-            name: "K",
-            image: "knight",
-            caption: "c",
-            voice: "voice",
-          },
-          advance: { mode: "tap" },
-        },
-        {
-          id: "b",
-          block: { kind: "text", text: "t" },
-          advance: { mode: "tap" },
-        },
-        {
-          id: "c",
-          block: { kind: "model", asset: "arch" },
-          advance: { mode: "tap" },
-        },
-        {
-          id: "d",
-          block: {
-            kind: "character",
-            name: "K",
-            image: "knight",
-            caption: "c",
-          },
-          advance: { mode: "tap" },
-        },
-      ],
+      blocks,
+      steps: blocks.map((b) => ({
+        id: `s-${b.id}`,
+        action: { kind: "show", block: b.id },
+        advance: { mode: "tap" },
+      })),
     };
+  }
+
+  it("lists what a story reads, in step order, once each: figures and voices, pictures, sounds, models", () => {
+    const s = told([
+      {
+        id: "a",
+        kind: "character",
+        view: "stage",
+        name: "K",
+        image: "knight",
+        caption: "c",
+        voice: "voice",
+        pose: POSE,
+      },
+      {
+        id: "b",
+        kind: "longText",
+        view: "card",
+        title: "t",
+        body: "t",
+        pose: POSE,
+      },
+      { id: "c", kind: "model", view: "stage", asset: "arch", pose: POSE },
+      {
+        id: "d",
+        kind: "character",
+        view: "stage",
+        name: "K",
+        image: "knight",
+        caption: "c",
+        pose: POSE,
+      },
+    ]);
     expect(stationAssetIds(s)).toEqual(["knight", "voice", "arch"]);
+  });
+
+  // Why: the story draws a figure or a model only in its stage view
+  // (`scene-view.ts`); reading one shown in the card would spend a phone's
+  // data and memory on a file nothing draws. A voice plays in either view.
+  it("reads a figure or a model only for its stage view, and a voice in either", () => {
+    const s = told([
+      {
+        id: "a",
+        kind: "character",
+        view: "card",
+        name: "K",
+        image: "knight",
+        caption: "c",
+        voice: "voice",
+        pose: POSE,
+      },
+      { id: "c", kind: "model", view: "card", asset: "arch", pose: POSE },
+    ]);
+    expect(stationAssetIds(s)).toEqual(["voice"]);
   });
 
   it("never lists a video: K4 shows its transcript, and a video may be 256 MiB (R3)", () => {
     // Why this test matters (K4 review R3): the prefetch read video files
     // nothing played, up to the K0 entry cap each, over a phone's data.
+    const base = station("gate", ["knight"]);
     const s: TourStation = {
-      ...station("gate", ["knight"]),
-      steps: [
+      ...base,
+      blocks: [
         {
           id: "v",
-          block: { kind: "video", asset: "film", transcript: "t" },
+          kind: "video",
+          view: "card",
+          video: "film",
+          poster: "big",
+          transcript: "t",
+          pose: {
+            position: [0, 0, 0] as [number, number, number],
+            rotation: [0, 0, 0, 1] as [number, number, number, number],
+          },
+        },
+        ...base.blocks,
+      ],
+      steps: [
+        {
+          id: "sv",
+          action: { kind: "show", block: "v" },
           advance: { mode: "tap" },
         },
-        ...station("gate", ["knight"]).steps,
+        ...base.steps,
       ],
     };
     expect(stationAssetIds(s)).toEqual(["knight"]);
+  });
+});
+
+describe("stationAssetIds and the world (B2b)", () => {
+  // Why (station blocks plan B2b step 1, G2 follow-up 9): a placed model
+  // is now drawn for the visitor with its station, so its file is read
+  // ahead with the station's story media - else the model pops in after
+  // the station's other content, read from the archive on arrival.
+  it("reads a free placed model's file with its station, after the story's", () => {
+    const POSE = {
+      position: [0, 0, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    };
+    const base = station("gate", ["knight"]);
+    const s: TourStation = {
+      ...base,
+      blocks: [
+        ...base.blocks,
+        {
+          id: "m",
+          kind: "model",
+          view: "placed",
+          asset: "arch",
+          sizeM: 2,
+          pose: POSE,
+        },
+      ],
+    };
+    expect(stationAssetIds(s)).toEqual(["knight", "arch"]);
+  });
+
+  // Why (B2b step 2): a placed model a story step reaches stands in the
+  // world from then on, so its file is read ahead like a staged one's.
+  it("reads a placed story model's file, as a staged one's", () => {
+    const POSE = {
+      position: [0, 0, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    };
+    const s: TourStation = {
+      ...station("gate", []),
+      blocks: [
+        {
+          id: "m",
+          kind: "model",
+          view: "placed",
+          asset: "arch",
+          sizeM: 2,
+          pose: POSE,
+        },
+      ],
+      steps: [
+        {
+          id: "s-m",
+          action: { kind: "show", block: "m" },
+          advance: { mode: "tap" },
+        },
+      ],
+    };
+    expect(stationAssetIds(s)).toEqual(["arch"]);
   });
 });
 
@@ -308,6 +425,37 @@ describe("createStationPrefetch", () => {
     // c replaced a; a's picture is read again if ever needed.
     void h.prefetch.load("content/knight.png");
     expect(h.reads.at(-1)).toBe("content/knight.png");
+  });
+
+  // Why this test matters: a skipped
+  // station can be brought back at any time, after its skip settled and
+  // told the prefetch it was done. Without `undone` it stayed "done" for
+  // good: the first to be released although the visitor now walks to it.
+  it("a station brought back is no longer released first, and one already released is read again", async () => {
+    const h = harness(100);
+    h.prefetch.approach(station("a", ["knight"]), 10, 38);
+    await h.land(60);
+    h.prefetch.done("a");
+    h.prefetch.undone("a");
+    // a waits again: c does not fit without releasing it, and is not kept.
+    h.prefetch.approach(station("c", ["big"]), 10, 38);
+    await h.land(60);
+    expect(h.prefetch.heldBytes()).toBe(60);
+    void h.prefetch.load("content/knight.png");
+    expect(h.reads).toEqual(["content/knight.png", "content/big.png"]);
+    // Done again and released for d; brought back once more, its approach
+    // reads it again and holds it ahead of the done d.
+    h.prefetch.done("a");
+    h.prefetch.approach(station("d", ["arch"]), 10, 38);
+    await h.land(60);
+    h.prefetch.done("d");
+    h.prefetch.undone("a");
+    h.prefetch.approach(station("a", ["knight"]), 10, 38);
+    expect(h.reads.at(-1)).toBe("content/knight.png");
+    await h.land(60);
+    expect(h.prefetch.heldBytes()).toBe(60);
+    void h.prefetch.load("content/knight.png");
+    expect(h.reads.filter((p) => p === "content/knight.png")).toHaveLength(2);
   });
 
   it("a tour change drops everything, and a read landing after it is not kept", async () => {

@@ -13,9 +13,13 @@ import type { MintAlignmentInfo } from "gps-plus-slam-app-framework/ar/qr/qr-min
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type {
   TourObject,
-  TourPhoto,
+  TourPicture,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import type { LatLong } from "gps-plus-slam-app-framework/core";
+import {
+  GPS_POINT_SOURCE_SYNTHETIC_QR,
+  gpsPointSourceOf,
+  type LatLong,
+} from "gps-plus-slam-app-framework/core";
 import {
   selectAlignmentMatrix,
   selectGpsPositions,
@@ -30,8 +34,16 @@ import {
 import {
   planCodePosition,
   type CodePositionPlan,
+  type CodePositionSettleInput,
 } from "./code-position-settle.js";
-import { isReliable } from "./code-position-rule.js";
+import {
+  codeDeviceFit,
+  codeFitPose,
+  codeFitSightings,
+  deviceWalkMoreM,
+  type DeviceFit,
+} from "./code-device-fit.js";
+import { isReliable, type PositionQuality } from "./code-position-rule.js";
 import {
   displacementSamples,
   MOVED_CODE_FLOOR_M,
@@ -64,14 +76,15 @@ import type { CreatorAlignmentPicks } from "./creator-alignment-picks.js";
 import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorCodes } from "./creator-codes.js";
 import type { CreatorPreviews } from "./creator-previews.js";
-import { moveWithCode, takesAlong } from "./move-with-code.js";
 import { moveStationsWithCode } from "./station-code-move.js";
-import type { DocumentChange } from "./creator-document.js";
+import type { DocumentChange, SettleBatch } from "./creator-document.js";
 import { correctionRefusedLine } from "./qr-author-mode.js";
 import type { TourViewerSeams } from "./seams.js";
 import { buildSummaryModel, codeLabel } from "./summary-model.js";
 import type { SummaryPanel } from "./summary-panel.js";
 import { visitSettled } from "./tour-authoring-actions.js";
+import { manifestNow, nextStep } from "./tour-document.js";
+import { settleUndoTarget, type SettleCodeChange } from "./creator-undo.js";
 import type {
   TourViewerSession,
   TourViewerStore,
@@ -90,6 +103,7 @@ import {
   type SettleBasis,
   type SettleChoice,
   readAlignment,
+  type TimedAlignment,
   type VisitAlignmentPicks,
 } from "./visit-settle.js";
 
@@ -154,6 +168,60 @@ interface SpotVisit {
    *  (the store resets its lists at every session end, after the settle). */
   readonly samples: readonly DisplacementSample[];
   readonly frameChanged: boolean;
+  /** The visit's device-only view of a code when its alignment is held by
+   *  a stored code's votes (`deviceViewOf`); null otherwise. */
+  readonly device: DeviceView | null;
+}
+
+/**
+ * A visit whose alignment a stored code's votes still hold at its end -
+ * they are re-cast with every device fix while the code is held, and only
+ * the moved-code check withdraws them. Through that alignment the code
+ * sits where it is stored by construction, so the settle reads every code
+ * through the visit's own device fixes instead (`code-device-fit.ts`).
+ */
+interface DeviceView {
+  /** The device-only fit; null when the walk cannot judge a code (too few
+   *  fixes, too short a walk for their accuracy, a tracking restart): the
+   *  visit then changes, stamps and logs no code, and its new codes claim
+   *  no quality. */
+  readonly fit: DeviceFit | null;
+  /** The visit's device fixes. */
+  readonly samples: readonly DisplacementSample[];
+  /** The fit's own walk - the shorter of the GPS spread and the phone's
+   *  tracking - and its accuracy: what a code judged or minted through
+   *  the fit is judged and stamped with. */
+  readonly quality: PositionQuality;
+  /** Without a fit: how much farther the walk had to go, when a short
+   *  walk was the cause (the result line's hint). */
+  readonly walkMoreM?: number;
+}
+
+/** A plan for a stored code in a visit its votes lined up whose own GPS
+ *  cannot judge it: kept as stored, nothing to re-mint or stamp. */
+function linedUpByCode(
+  plan: CodePositionPlan | null,
+  walkMoreM: number | undefined,
+): CodePositionPlan | null {
+  return plan === null
+    ? null
+    : {
+        ...plan,
+        decision: {
+          kind: "keep",
+          reason: "code-placed",
+          ...(walkMoreM === undefined ? {} : { walkMoreM }),
+        },
+        measurement: null,
+        pick: null,
+      };
+}
+
+/** The mint gate's view without its accuracy: a level minted through it
+ *  claims no quality (`qualityOfLevel` reads it as unknown). */
+function withoutAccuracy(info: MintAlignmentInfo): MintAlignmentInfo {
+  const { gpsAccuracyM: _dropped, ...rest } = info;
+  return rest;
 }
 
 /** One kept sighting as the fit reads it: its time, its odometry pose, and
@@ -217,7 +285,7 @@ export interface CreatorSettle {
   record(visit: number): VisitSettleRecord | undefined;
   /** A photo minted through its settled visit's record: logged as that
    *  settle's late arrival. */
-  lateArrival(visit: number, photo: TourPhoto): void;
+  lateArrival(visit: number, photo: TourPicture): void;
   /** Forget the running visit's settle (a Finish that wrote nothing). */
   unsettle(visit: number | null): void;
   /** The refused correction's line as the live line's lead, or "". */
@@ -241,6 +309,14 @@ export interface CreatorSettle {
   endVisit(): void;
   /** A tour closed: its move boundaries and decisions go. */
   reset(): void;
+  /** The strip's Undo took `visit`'s settle back (the persistent Undo):
+   *  what that settle decided per code goes with it -
+   *  the result line's outcomes, the move boundaries, the decisions a
+   *  re-settle would re-apply. */
+  settleUndone(visit: number): void;
+  /** How many Finishes wrote the tour since it opened: a settle's undo
+   *  compares it with the count at its offer (the zip has the change). */
+  finishesWritten(): number;
 }
 
 export function wireCreatorSettle(deps: {
@@ -249,7 +325,7 @@ export function wireCreatorSettle(deps: {
   seams: Pick<TourViewerSeams, "getScene">;
   previews: Pick<CreatorPreviews, "inVisit" | "placeEarlier" | "sync">;
   alignmentPicks: Pick<CreatorAlignmentPicks, "sync" | "picks" | "gpsExtent">;
-  draft: Pick<CreatorDraft, "saveMeta" | "warnNoBackup" | "recordVisit">;
+  draft: Pick<CreatorDraft, "warnNoBackup" | "recordVisit">;
   /** The codes: in hand, its measurement and sightings, every stored
    *  pose, the visit's stored-code sightings. */
   codes: Pick<
@@ -258,6 +334,7 @@ export function wireCreatorSettle(deps: {
     | "measurement"
     | "sighting"
     | "saveLevel"
+    | "applySettle"
     | "visitCodes"
     | "references"
     | "numbering"
@@ -273,6 +350,15 @@ export function wireCreatorSettle(deps: {
   /** The printed size a code's text is solved at (`creator-measuring`'s
    *  `sizeOf`, M4c-3). */
   sizeOf: (text: string) => number;
+  /** A settle of `visit` just took a step that changed a stored code
+   *  automatically: the AR strip's persistent Undo offers it, named
+   *  `target` (`creator-undo.ts`).
+   *  Absent: nothing offers it. */
+  offerUndo?: (target: string, visit: number) => void;
+  /** `visit`'s settle was forgotten (a Finish that wrote nothing): its
+   *  offer goes - the re-settle re-applies its decisions, so there is
+   *  nothing new to take back. */
+  withdrawUndo?: (visit: number) => void;
 }): CreatorSettle {
   const { ctx, arStore, seams } = deps;
   /** Codes moved to a new spot, or back by an undo (the automatic
@@ -281,8 +367,12 @@ export function wireCreatorSettle(deps: {
    *  boundary: every visit saw that one poster. */
   const movedInVisit = new Map<string, number>();
   /** What each settle since the last Finish decided, per code (M5c): the
-   *  result screen's line (`positionSentence`). */
-  let codePositionOutcomes: (CodePositionOutcome & { levelId: string })[] = [];
+   *  result screen's line (`positionSentence`); `visit`, the settle's, so
+   *  the strip's Undo of that settle takes its outcomes back. */
+  let codePositionOutcomes: (CodePositionOutcome & {
+    levelId: string;
+    visit: number;
+  })[] = [];
   /** By level: the visit whose settle CHANGED that code's saved position,
    *  and the plan it applied - re-applied when a failed Finish settles it
    *  again (M5c: one per code). */
@@ -298,6 +388,8 @@ export function wireCreatorSettle(deps: {
     string,
     { visit: number; result: CodeSpotResult }
   >();
+  /** Finishes that wrote the tour since it opened (`finishesWritten`). */
+  let finishes = 0;
 
   /** The code correction this visit's latest sighting would make, when
    *  the plausibility bound refused it (M2c review #2): the panel says so
@@ -592,6 +684,9 @@ export function wireCreatorSettle(deps: {
       extentM: alignmentGpsExtentM ?? null,
       accuracyM: gpsAccuracyM ?? null,
     };
+    // A visit whose alignment a stored code's votes still hold reads every
+    // code through its own device fixes instead (`DeviceView`).
+    const device = deviceViewOf(state, zero, visitAlignment, endQuality);
     // The automatic code spots (code book plan M6 v5.1) come FIRST: an undo
     // rewrites a code's level, which everything below reads.
     const spots = settleCodeSpots(
@@ -601,6 +696,7 @@ export function wireCreatorSettle(deps: {
       zero,
       visitAlignment,
       endQuality,
+      device,
     );
     // A sighting of a second print corrects nothing in this settle.
     const picks =
@@ -645,24 +741,30 @@ export function wireCreatorSettle(deps: {
         picks.sightings.filter((s) => s.sighting.levelId === code.id).at(-1)
           ?.sighting ??
         null;
+      const fit = deviceFitFor(device, code.id, picks, sighting);
+      const plan = planCodePosition({
+        visit,
+        mintedLevel: code,
+        measurement,
+        sighting,
+        picks,
+        alignment: visitAlignment,
+        zero,
+        endQuality,
+        // The size the code was solved at in this visit: its
+        // measurement's, else its sighting's - a stored code is solved at
+        // the size the tour stores for it, not the field's (M4 milestone
+        // review #2).
+        sizeM: measurement?.sizeM ?? sizeOfSighting(seen),
+        // The automatic code-spot rule's move (M6), re-minted here.
+        automaticMove: spots.moves.has(code.id),
+        ...(fit === null ? {} : { deviceFit: fit }),
+      });
       return {
-        plan: planCodePosition({
-          visit,
-          mintedLevel: code,
-          measurement,
-          sighting,
-          picks,
-          alignment: visitAlignment,
-          zero,
-          endQuality,
-          // The size the code was solved at in this visit: its
-          // measurement's, else its sighting's - a stored code is solved at
-          // the size the tour stores for it, not the field's (M4 milestone
-          // review #2).
-          sizeM: measurement?.sizeM ?? sizeOfSighting(seen),
-          // The automatic code-spot rule's move (M6), re-minted here.
-          automaticMove: spots.moves.has(code.id),
-        }),
+        plan:
+          device !== null && fit === null
+            ? linedUpByCode(plan, device.walkMoreM)
+            : plan,
         reapplied: false,
       };
     };
@@ -760,24 +862,44 @@ export function wireCreatorSettle(deps: {
       }
     }
     const remint = position?.measurement ?? null;
+    // A visit whose votes still hold its alignment settles its own
+    // objects, stations and new codes through its device fit as well, so
+    // they stay with the codes corrected through it (`throughDevice`);
+    // without a fit they keep the vote-held frame, and a new code minted
+    // through it claims no quality.
+    const settleEnd = device?.fit?.alignment ?? visitAlignment;
+    const settlePicks = device === null ? picks : throughDevice(picks, device);
+    const unclaimed = device !== null && device.fit === null;
+    // The stations this visit started: they settle with its objects.
+    const stations = [...ctx.tourDocument.stationPlacements()].flatMap(
+      ([id, { visit: at, local, item }]) =>
+        at === visit ? [{ id, placement: { visit: at, local }, item }] : [],
+    );
     const input = {
       visit,
       placed: ctx.tourDocument.entries(),
-      alignment: visitAlignment,
+      stations,
+      alignment: settleEnd,
       zero,
       mintedLevel: level,
       measurement: remint ?? deps.codes.measurement(),
       sighting: inHandSighting,
-      alignmentInfo: deps.alignmentInfo(),
-      alignmentGpsExtentM,
+      alignmentInfo: unclaimed
+        ? withoutAccuracy(deps.alignmentInfo())
+        : deps.alignmentInfo(),
+      alignmentGpsExtentM: unclaimed
+        ? undefined
+        : device?.fit
+          ? (device.quality.extentM ?? undefined)
+          : alignmentGpsExtentM,
       gpsAccuracyM,
       nowIso: new Date().toISOString(),
       // Each object at its own moment (D33); a re-minted stored code at its
       // sighting's.
       picks:
         remint === null || position === null
-          ? picks
-          : { ...picks, measurement: position.pick },
+          ? settlePicks
+          : { ...settlePicks, measurement: position.pick },
     };
     // The visit's codes (M4c-2): the code in hand first - with this
     // settle's re-mint when its position changed - then every other code
@@ -795,7 +917,7 @@ export function wireCreatorSettle(deps: {
       visit,
       level,
       input.measurement,
-      picks,
+      settlePicks,
       remint !== null && position !== null ? position.pick : undefined,
       otherRemints,
     );
@@ -841,6 +963,7 @@ export function wireCreatorSettle(deps: {
         decision: { kind: "undo" },
         applied: true,
         levelId,
+        visit,
       });
     }
     // How far the visit's own alignment was turned to fit the code it was
@@ -850,8 +973,8 @@ export function wireCreatorSettle(deps: {
       choice !== null &&
       choice.basis === "code-corrected" &&
       choice.level?.id === levelId &&
-      visitAlignment !== null
-        ? { turnDeg: alignmentTurnDeg(choice.alignment, visitAlignment) }
+      settleEnd !== null
+        ? { turnDeg: alignmentTurnDeg(choice.alignment, settleEnd) }
         : {};
     for (const d of decisions) {
       // A real move is the visit log's boundary (§7j #12), set before the
@@ -865,6 +988,7 @@ export function wireCreatorSettle(deps: {
           decision: d.plan.decision,
           applied: d.applied,
           levelId: d.code.id,
+          visit,
           ...turnOf(d.code.id),
         });
       }
@@ -872,9 +996,12 @@ export function wireCreatorSettle(deps: {
     logVisit(
       visit,
       state,
-      choice?.alignment ?? null,
+      // The path through the fit its codes are logged through.
+      device?.fit?.alignment ?? choice?.alignment ?? null,
       plan?.levels ?? [],
       spots.excluded,
+      device,
+      picks,
     );
     if (choice === null || zero === null) return;
     const record: VisitSettleRecord = {
@@ -918,14 +1045,47 @@ export function wireCreatorSettle(deps: {
       }
       return;
     }
+    // The visit's own stations first, each to where its first item
+    // settles: a station moves its items rigidly, and each of the visit's
+    // items is then put at its own settled spot - so none is moved by the
+    // settle twice, and a station stays anchored at its first item. An
+    // item of such a station that this visit did not place (earlier work
+    // moved into it, a restored draft) is put back where it stood: the
+    // visit's correction says nothing about it (as the code move's `stay`).
+    // Every move and the codes re-minted reach the document as ONE step at
+    // the end (plan M3b, Q-D): one undo takes the settle back, and the
+    // draft follows it in one write round (several writes, not atomic).
+    const batch = ctx.tourDocument.settleBatch();
+    const settling = new Set(plan.stations.map((s) => s.id));
+    const stay = batch
+      .objects()
+      .filter(
+        (o) =>
+          o.placed?.placement?.visit !== visit &&
+          o.object.station !== undefined &&
+          settling.has(o.object.station),
+      );
+    const reposed = new Set<string>();
+    for (const { id, at } of plan.stations) {
+      const frame = batch.state().stations.find((s) => s.id === id);
+      if (frame === undefined) continue;
+      const { lat, lon, alt } = frame.geo;
+      if (lat === at.lat && lon === at.lon && alt === at.alt) continue;
+      reposed.add(id);
+      batch.moveStation(id, { ...frame.geo, ...at });
+    }
+    for (const o of stay) {
+      if (o.object.station === undefined || !reposed.has(o.object.station)) {
+        continue;
+      }
+      batch.move(o.object);
+    }
     for (const { index, object } of plan.objects) {
       const entry = input.placed[index];
       if (entry === undefined || entry.object === object) continue;
       // Its AR placement is kept: a later settle of this visit recomputes
       // it from there (a Finish's tap settle, then the visit's end).
-      noteUnlanded(
-        ctx.tourDocument.move(object, `the settle of ${nameOf(object)}`),
-      );
+      batch.move(object);
     }
     // Every code's pose BEFORE this settle re-mints any: each earlier
     // object belongs to one code, judged against these (M5 design review
@@ -980,17 +1140,22 @@ export function wireCreatorSettle(deps: {
       plan.level !== null && plan.level.id === level?.id
         ? levelOf(plan.level)
         : null;
-    if (inHandLevel !== null) deps.codes.saveLevel(inHandLevel);
-    // The visit's other measured codes, re-minted too (M4c-2).
-    for (const other of levels) {
-      if (other.id !== inHandLevel?.id) deps.codes.saveLevel(other);
-    }
-    if (levels.length > 0) void deps.draft.saveMeta();
+    // Saved with the moves, at the end: the code in hand first, then the
+    // visit's other measured codes, re-minted too (M4c-2).
+    const settledLevels = [
+      ...(inHandLevel === null ? [] : [inHandLevel]),
+      ...levels.filter((other) => other.id !== inHandLevel?.id),
+    ];
     // An IMPROVED position takes the pins and photos near it along, so
     // they keep their place next to the poster (owner decision
     // 2026-10-06); a real move leaves them where they are (D19). Each
     // object goes with ONE code at most.
-    const claimed = new Set<string>();
+    // The stations this visit started were settled with it, through the
+    // improved code already: no code moves them again.
+    const claimed = new Set<string>(
+      stations.map((s) => `${STATION_CLAIM}${s.id}`),
+    );
+    let movedWithCodes = false;
     decisions.forEach((d, i) => {
       if (!d.applied || d.reapplied || d.plan.decision.kind !== "replace") {
         return;
@@ -998,6 +1163,7 @@ export function wireCreatorSettle(deps: {
       const after = levels.find((l) => l.id === d.code.id);
       if (after === undefined) return;
       const moved = moveEarlierWithCode(
+        batch,
         visit,
         d.code.id,
         d.code.json,
@@ -1006,8 +1172,32 @@ export function wireCreatorSettle(deps: {
         claimed,
         elsewhere,
       );
+      if (moved.length > 0) movedWithCodes = true;
       logged[i]?.movedWithCode.push(...moved);
     });
+    const taken = deps.codes.applySettle(
+      batch,
+      settledLevels,
+      "the settle of this visit",
+    );
+    noteUnlanded(taken);
+    if (taken !== null) {
+      // The step's codes, each named by the automatic decision that
+      // changed it: offered only when one is among them. A decision
+      // re-applied after a failed Finish is no new change (its first
+      // settle's offer went with the unsettle).
+      const changes = (
+        nextStep(ctx.tourDocument.state(), "undo")?.codes ?? []
+      ).map((c): SettleCodeChange => {
+        const d = decisions.find((x) => x.applied && x.code.id === c.id);
+        if (d === undefined || d.reapplied) return null;
+        if (d.plan.decision.kind === "replace") return "improvement";
+        return d.plan.decision.kind === "move" ? "move" : null;
+      });
+      const target = settleUndoTarget(changes);
+      if (target !== null) deps.offerUndo?.(target, visit);
+    }
+    if (movedWithCodes) deps.previews.sync();
     logSettle(
       visit,
       trigger,
@@ -1047,6 +1237,7 @@ export function wireCreatorSettle(deps: {
     zero: LatLong | null,
     visitAlignment: ReturnType<typeof selectAlignmentMatrix>,
     endQuality: { extentM: number | null; accuracyM: number | null },
+    device: DeviceView | null,
   ): VisitSpots {
     const out: VisitSpots = {
       moves: new Map(),
@@ -1068,10 +1259,6 @@ export function wireCreatorSettle(deps: {
         .filter((c) => c.measurement === null && c.level.id !== inHand?.id)
         .map((c) => c.level),
     ];
-    const start = ctx.gpsSamplesAtSessionStart;
-    // Read defensively: a store without the QR slice has no frame changes.
-    const qrSlice = (state as { qrDetected?: { frameEpoch?: number } })
-      .qrDetected;
     const shared: SpotVisit = {
       visit,
       picks,
@@ -1080,12 +1267,9 @@ export function wireCreatorSettle(deps: {
       end: readAlignment(visitAlignment),
       endQuality,
       inHandId: inHand?.id ?? null,
-      samples: displacementSamples({
-        gpsPositions: selectGpsPositions(state).slice(start),
-        odometryPositions: selectOdometryPositions(state).slice(start),
-        zero,
-      }),
-      frameChanged: (qrSlice?.frameEpoch ?? 0) !== ctx.frameEpochAtSessionStart,
+      samples: device?.samples ?? visitSamples(state, zero),
+      frameChanged: frameChangedIn(state),
+      device,
     };
     for (const code of stored) {
       const done = spotDecisions.get(code.id);
@@ -1110,12 +1294,160 @@ export function wireCreatorSettle(deps: {
             ),
           ),
         });
-        void deps.draft.saveMeta();
       }
       spotDecisions.set(code.id, { visit, result });
       recordSpots(out, visit, code.id, result, false);
     }
     return out;
+  }
+
+  /** THIS visit's device fixes, sliced at its start: defensive, because
+   *  the store resets its lists at every session end (after the settle),
+   *  and an earlier visit's odometry has another origin. */
+  function visitSamples(
+    state: ReturnType<typeof arStore.getState>,
+    zero: LatLong | null,
+  ): DisplacementSample[] {
+    const start = ctx.gpsSamplesAtSessionStart;
+    return displacementSamples({
+      gpsPositions: selectGpsPositions(state).slice(start),
+      odometryPositions: selectOdometryPositions(state).slice(start),
+      zero,
+    });
+  }
+
+  /** The tracking restarted in this visit: its odometry is two frames. */
+  function frameChangedIn(state: ReturnType<typeof arStore.getState>): boolean {
+    // Read defensively: a store without the QR slice has no frame changes.
+    const qrSlice = (state as { qrDetected?: { frameEpoch?: number } })
+      .qrDetected;
+    return (qrSlice?.frameEpoch ?? 0) !== ctx.frameEpochAtSessionStart;
+  }
+
+  /** The visit's device-only view (`DeviceView`) when a stored code's
+   *  votes are still in its GPS history - and so in its alignment - at
+   *  the settle; null for a visit without votes (one that never voted, or
+   *  whose votes the moved-code check withdrew): its alignment is its own
+   *  GPS already, and it settles as it always did. */
+  function deviceViewOf(
+    state: ReturnType<typeof arStore.getState>,
+    zero: LatLong | null,
+    visitAlignment: ReturnType<typeof selectAlignmentMatrix>,
+    endQuality: { extentM: number | null; accuracyM: number | null },
+  ): DeviceView | null {
+    const voted = selectGpsPositions(state).some(
+      (p) => gpsPointSourceOf(p) === GPS_POINT_SOURCE_SYNTHETIC_QR,
+    );
+    if (!voted) return null;
+    const samples = visitSamples(state, zero);
+    const frameChanged = frameChangedIn(state);
+    const fit =
+      visitAlignment === null
+        ? null
+        : codeDeviceFit({
+            samples,
+            reference: visitAlignment,
+            // Device fixes only, both of them: the extent tracker and the
+            // mint gate's accuracy skip the votes.
+            quality: endQuality,
+            frameChanged,
+          });
+    if (fit !== null) {
+      return {
+        fit,
+        samples,
+        quality: {
+          extentM: Math.min(endQuality.extentM ?? 0, fit.walkM),
+          accuracyM: endQuality.accuracyM,
+        },
+      };
+    }
+    const walkMoreM = frameChanged
+      ? null
+      : deviceWalkMoreM(samples, endQuality);
+    return {
+      fit,
+      samples,
+      quality: endQuality,
+      ...(walkMoreM !== null && walkMoreM > 0 ? { walkMoreM } : {}),
+    };
+  }
+
+  /**
+   * The visit's picks for settling its own objects, stations and new codes
+   * when votes hold its alignment: with a fit, every object's and
+   * measurement's pick goes through the fit (the measurements stamped with
+   * the fit's quality); without one, a measurement's pick keeps its
+   * alignment but claims no quality. Sightings are left alone: they place
+   * objects relative to a code, whatever frame they were seen in.
+   */
+  function throughDevice(
+    picks: VisitAlignmentPicks,
+    device: DeviceView,
+  ): VisitAlignmentPicks {
+    const { fit } = device;
+    const info = deps.alignmentInfo();
+    const extentM = device.quality.extentM ?? undefined;
+    const viaFit = (t: TimedAlignment): TimedAlignment =>
+      fit === null
+        ? t
+        : {
+            ...t,
+            alignment: [...fit.alignment],
+            alignmentInfo: info,
+            gpsExtentM: extentM,
+          };
+    const minted = (t: TimedAlignment): TimedAlignment =>
+      fit !== null
+        ? viaFit(t)
+        : {
+            ...t,
+            alignmentInfo:
+              t.alignmentInfo === undefined
+                ? undefined
+                : withoutAccuracy(t.alignmentInfo),
+            gpsExtentM: undefined,
+          };
+    return {
+      ...picks,
+      objects: new Map([...picks.objects].map(([id, t]) => [id, viaFit(t)])),
+      measurement:
+        picks.measurement === null ? null : minted(picks.measurement),
+      ...(picks.measurements === undefined
+        ? {}
+        : {
+            measurements: new Map(
+              [...picks.measurements].map(([id, t]) => [id, minted(t)]),
+            ),
+          }),
+    };
+  }
+
+  /** Where the device view reads code `levelId`: its fit, at the pose
+   *  `codeFitPose` picks from the visit's kept sightings of it (the
+   *  loop's midpoint, or the latest), else at the creator's own sighting.
+   *  Null without a device fit or any sighting of the code. */
+  function deviceFitFor(
+    device: DeviceView | null,
+    levelId: string,
+    picks: VisitAlignmentPicks,
+    hand: CodeSighting | null,
+  ): NonNullable<CodePositionSettleInput["deviceFit"]> | null {
+    if (device === null || device.fit === null) return null;
+    const kept = codeFitSightings(picks.sightings, levelId);
+    const seen =
+      kept.length > 0 || hand?.levelId !== levelId
+        ? kept
+        : [{ atMs: Number.NaN, odomPose: hand.odomPose }];
+    const at = codeFitPose(seen, device.fit.fixes);
+    return at === null
+      ? null
+      : {
+          alignment: device.fit.alignment,
+          codeOdomPose: at.pose,
+          alignmentInfo: deps.alignmentInfo(),
+          quality: device.quality,
+        };
   }
 
   /** One stored code's spot judgement in the visit; null when the code has
@@ -1131,18 +1463,25 @@ export function wireCreatorSettle(deps: {
     if (memory === null || seen.length === 0) return null;
     const known = knownSpotsNue(memory, v.zero);
     // Where a move would mint the code, and how reliable that walk is: the
-    // keep-or-replace rule's own candidate (`planCodePosition`).
-    const first = planCodePosition({
+    // keep-or-replace rule's own candidate (`planCodePosition`) - through
+    // the visit's device-only fit when votes hold its alignment, and none
+    // when that walk cannot judge the code.
+    const inHandSighting =
+      code.id === v.inHandId ? deps.codes.sighting() : null;
+    const fit = deviceFitFor(v.device, code.id, v.picks, inHandSighting);
+    const planned = planCodePosition({
       visit: v.visit,
       mintedLevel: code,
       measurement: null,
-      sighting: code.id === v.inHandId ? deps.codes.sighting() : null,
+      sighting: inHandSighting,
       picks: v.picks,
       alignment: v.visitAlignment,
       zero: v.zero,
       endQuality: v.endQuality,
       sizeM: sizeOfSighting(seen.at(-1)?.sighting ?? null),
+      ...(fit === null ? {} : { deviceFit: fit }),
     });
+    const first = v.device !== null && fit === null ? null : planned;
     const home = known[0]!.pose.position;
     // The clock runs from the current spot's mint. A re-mint at that spot
     // (an improvement) restamps it and so defers the confirmation by up to
@@ -1223,19 +1562,6 @@ export function wireCreatorSettle(deps: {
     ];
   }
 
-  /** A pose moved with its code; a pin keeps its orientation (it has
-   *  none: `mintPin` writes the identity). */
-  function withCode(
-    object: TourObject,
-    from: QrGeoPose,
-    to: QrGeoPose,
-  ): QrGeoPose {
-    const turned = moveWithCode(object.geo, from, to);
-    return object.kind === "pin"
-      ? { ...object.geo, lat: turned.lat, lon: turned.lon, alt: turned.alt }
-      : turned;
-  }
-
   /**
    * Move the earlier objects within reach of an improved code with it
    * (`move-with-code.ts`), as edits by id the Finish writes like any move.
@@ -1248,11 +1574,13 @@ export function wireCreatorSettle(deps: {
    *   their local poses; each becomes an edit at exactly the place its
    *   moved station now gives it, so the Finish writes its pose verbatim.
    *   An item this session already moved goes along rigidly instead.
-   * - **An object not yet in a station** (placed on this device, not yet
-   *   written) moves on its own when it is within 40 m of the code's OLD
-   *   position and no nearer another code (`takesAlong`).
+   * - Every object stands in a station (the tour document's station
+   *   rule), so nothing moves on its own; a station this visit started is
+   *   claimed before (`claimed`): the visit's settle moved it already.
    */
   function moveEarlierWithCode(
+    /** The settle's changes so far, which this one joins. */
+    batch: SettleBatch,
     visit: number,
     levelId: string,
     beforeJson: string,
@@ -1281,66 +1609,47 @@ export function wireCreatorSettle(deps: {
     const moved: { id: string; before: QrGeoPose; after: QrGeoPose }[] = [];
     // The objects as they stand BEFORE any station moves: where the code's
     // move starts from, and what the log names as before.
-    const entries = ctx.tourDocument.objects();
-    const take = (entry: (typeof entries)[number], after: QrGeoPose) => {
-      claimed.add(entry.object.id);
-      const object = { ...entry.object, geo: after };
-      noteUnlanded(
-        ctx.tourDocument.move(
-          object,
-          `the move of ${nameOf(object)} with its code`,
-        ),
-      );
-      moved.push({ id: object.id, before: entry.object.geo, after });
-    };
-    const homes = moveStationsAlong(from, to, others, claimed, visit);
+    const entries = batch.objects();
+    const homes = moveStationsAlong(batch, from, to, others, claimed, visit);
     /** Where the moved stations' frames put their objects now. */
     const now = new Map(
-      ctx.tourDocument.objects().map((o) => [o.object.id, o.object.geo]),
+      batch.objects().map((o) => [o.object.id, o.object.geo]),
     );
     for (const entry of entries) {
       if (entry.placed?.placement?.visit === visit) continue;
       if (claimed.has(entry.object.id)) continue;
       const home = entry.object.station;
-      if (home !== undefined && homes.stations.has(home)) {
-        // Moved with its station's frame (the document's `stationMoved`):
-        // rigidly, its local pose kept - an item this page had moved
-        // already too. Only logged here.
-        const after = now.get(entry.object.id);
-        if (after === undefined) continue;
-        claimed.add(entry.object.id);
-        moved.push({ id: entry.object.id, before: entry.object.geo, after });
-        continue;
-      }
-      if (home !== undefined && homes.known.has(home)) continue;
-      if (!takesAlong(entry.object.geo, from, others)) continue;
-      take(entry, withCode(entry.object, from, to));
+      if (home === undefined || !homes.has(home)) continue;
+      // Moved with its station's frame (the document's `stationMoved`):
+      // rigidly, its local pose kept - an item this page had moved already
+      // too. Only logged here.
+      const after = now.get(entry.object.id);
+      if (after === undefined) continue;
+      claimed.add(entry.object.id);
+      moved.push({ id: entry.object.id, before: entry.object.geo, after });
     }
-    if (moved.length > 0) deps.previews.sync();
     return moved;
   }
 
   /**
    * Move the stations an improved code takes along, in the tour document
    * (D17, `stationMoved`: each frame moves, its items rigidly with it):
-   * their ids, and the ids of every station the tour has (an object in one
-   * of those is the station's to move, never its own). This visit's own
+   * the ids of those moved. This visit's own
    * objects in a moved station stay where they are: their spots came from
    * this visit's settle, through the improved code already.
    */
   function moveStationsAlong(
+    batch: SettleBatch,
     from: QrGeoPose,
     to: QrGeoPose,
     others: readonly QrGeoPose[],
     claimed: Set<string>,
     visit: number,
-  ): {
-    stations: ReadonlySet<string>;
-    known: ReadonlySet<string>;
-  } {
-    const manifest = ctx.tourDocument.manifest();
-    const known = new Set(manifest?.stations.map((s) => s.id) ?? []);
-    const none = { stations: new Set<string>(), known };
+  ): ReadonlySet<string> {
+    // The document as it stands, also before any tour file opened: its
+    // objects stand in its stations then too, and move with them.
+    const manifest = manifestNow(batch.state());
+    const none = new Set<string>();
     if (manifest === null) return none;
     const result = moveStationsWithCode(manifest.stations, {
       from,
@@ -1356,7 +1665,7 @@ export function wireCreatorSettle(deps: {
     });
     if (result.moved.length === 0) return none;
     const movedIds = new Set(result.moved);
-    const stay = ctx.tourDocument
+    const stay = batch
       .objects()
       .filter(
         (o) =>
@@ -1366,26 +1675,11 @@ export function wireCreatorSettle(deps: {
       );
     for (const station of result.stations) {
       if (!movedIds.has(station.id)) continue;
-      noteUnlanded(
-        ctx.tourDocument.moveStation(
-          station.id,
-          station.geo,
-          `the move of ${station.title === undefined ? "a station" : `"${station.title}"`} with its code`,
-        ),
-      );
+      batch.moveStation(station.id, station.geo);
       claimed.add(`${STATION_CLAIM}${station.id}`);
     }
-    for (const o of stay) {
-      noteUnlanded(
-        ctx.tourDocument.move(o.object, `the settle of ${nameOf(o.object)}`),
-      );
-    }
-    return { stations: movedIds, known };
-  }
-
-  /** How a log of the document names `object`. */
-  function nameOf(object: TourObject): string {
-    return object.kind === "pin" ? `"${object.label}"` : "a photo";
+    for (const o of stay) batch.move(o.object);
+    return movedIds;
   }
 
   /** A change's draft writes, a failure said once (as a placement's). */
@@ -1443,6 +1737,11 @@ export function wireCreatorSettle(deps: {
     savedLevels: readonly { id: string; json: string }[],
     /** Sightings at a second print (M6 v5.1): never a pose of the code. */
     excluded: ReadonlySet<CodeSighting> = new Set(),
+    /** The visit's device-only view when votes hold its alignment: every
+     *  code goes through its fit, at the fit's pose, or is not logged. */
+    device: DeviceView | null = null,
+    /** The visit's kept sightings (second prints left out). */
+    picks: VisitAlignmentPicks | null = null,
   ): void {
     const codes: { levelId: string; odomPose: CodeSighting["odomPose"] }[] = [];
     // Every code measured in this visit (M4e), not only the code in hand.
@@ -1468,12 +1767,25 @@ export function wireCreatorSettle(deps: {
     if (sighting !== null && !excluded.has(sighting)) {
       codes.push({ levelId: sighting.levelId, odomPose: sighting.odomPose });
     }
+    // Votes hold the visit's alignment: through it every code would sit
+    // where a stored code's votes put it, an agreement the visit never
+    // measured. Each code is logged through the visit's own device fit,
+    // at the pose that fit is read at, or none is.
+    if (device !== null && picks !== null) {
+      for (const levelId of new Set(codes.map((c) => c.levelId))) {
+        const fit = deviceFitFor(device, levelId, picks, null);
+        if (fit !== null) codes.push({ levelId, odomPose: fit.codeOdomPose });
+      }
+    }
     const entry = buildVisitLogEntry({
       visitId: newVisitId(deps.pageId, visit),
       atMs: Date.now(),
       gpsPositions: selectGpsPositions(state),
       odometryPositions: selectOdometryPositions(state),
-      alignment: selectAlignmentMatrix(state),
+      alignment:
+        device === null
+          ? selectAlignmentMatrix(state)
+          : (device.fit?.alignment ?? null),
       pathAlignment,
       zero: selectZeroReference(state),
       storeAccuracyM: deps.alignmentInfo().gpsAccuracyM ?? null,
@@ -1536,6 +1848,7 @@ export function wireCreatorSettle(deps: {
   function unsettleRunningVisit(visit: number | null): void {
     if (visit !== null && visit === ctx.arSessionGeneration) {
       visitSettles.delete(visit);
+      deps.withdrawUndo?.(visit);
     }
   }
 
@@ -1632,6 +1945,7 @@ export function wireCreatorSettle(deps: {
     positionSentence,
     afterFinish: () => {
       codePositionOutcomes = [];
+      finishes += 1;
     },
     showSummary,
     endVisit: () => {
@@ -1642,6 +1956,22 @@ export function wireCreatorSettle(deps: {
       codePositionOutcomes = [];
       appliedCodes.clear();
       spotDecisions.clear();
+      finishes = 0;
+    },
+    finishesWritten: () => finishes,
+    settleUndone: (visit) => {
+      codePositionOutcomes = codePositionOutcomes.filter(
+        (o) => o.visit !== visit,
+      );
+      for (const [levelId, at] of movedInVisit) {
+        if (at === visit) movedInVisit.delete(levelId);
+      }
+      for (const [levelId, done] of appliedCodes) {
+        if (done.visit === visit) appliedCodes.delete(levelId);
+      }
+      for (const [levelId, done] of spotDecisions) {
+        if (done.visit === visit) spotDecisions.delete(levelId);
+      }
     },
   };
 }

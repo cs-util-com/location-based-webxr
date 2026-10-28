@@ -22,10 +22,43 @@ saved exactly as a chosen file is.
     (`OpenArchive`, injected by the unit test); called with `warm: false`.
   - `options.sliceBytes` - for the unit test; the page reads in the
     viewer's default slices (`readArchiveInSlices`).
-  - Resolves a `File` of type `application/zip`, named by
-    `archiveFileName` (the link's `.zip` name, else `tour.zip`).
+  - Resolves a `File` of type `application/zip`, named by the link's
+    `.zip` name (`archiveFileName`); a Drive link without one
+    (`driveFileId`, the framework's one parser) gives
+    `tour-<the first 12 characters of its file id>.zip` (r955 review #1:
+    every Drive link suggested `tour.zip`, so a second Drive tour's save
+    dialog offered the first one's file, a "Replace?" away from writing
+    the original over an edited tour); any other link `tour.zip`.
   - Rejects with the transport's `OpenRemoteArchiveError` or a read's own
     error.
+- `linkFileName(link): string | null` - the name the fetched file will
+  carry (the same rule, of the trimmed link), worked out before any
+  request: the save dialog asked for in the open's click suggests it,
+  dated to the second (`editor-session.ts` `datedFileName`): one name per
+  link would let a reopen's Enter plus Replace write the original over
+  the edited tour.
+  Null for text that is not an http(s) link (the open refuses it and no
+  dialog is asked for).
+- `linkHostedName(link): string | null` - the name of the file at the
+  link as the host keeps it: the link's own `.zip` name. Null for text
+  that is not a link and for a link that names no file (a Drive link by
+  its id), whose `linkFileName` is a stand-in no host knows. Done tells
+  the creator to upload the saved file under it.
+- `isLinkStandInName(name): boolean` - whether `name` has the shape of a
+  name `fetchTourFile` makes up for a link that names no file
+  (`tour-<up to 12 Drive id characters>.zip`, or `tour.zip`). A hosted
+  file really called `tour.zip` matches too, and is then said to be
+  unknown rather than named: the safe side of the guess.
+- `doneHostedName(savedName, { linkHosted, sampleName })` - the name Done
+  tells the creator to upload under (`DoneFacts.hostedName`). In the
+  session the tour was opened from its link, `linkHosted` as it is - a
+  name, or null for a link that names none (never the made-up name the
+  save carries: on Drive an upload under it makes a second file). Without
+  a link in this session, a dated save (`editor-session.ts`
+  `datedFileName`, also reopened or restored from a draft) is undated;
+  null when that gives a made-up link name or the sample's name, which no
+  host knows. Undefined for a tour neither from a link nor saved under a
+  dated name. Pure.
 - `linkOpenErrorText(err, link): string` - the dialog's sentence: the
   viewer's `describeOpenError`, except for `cors`, whose viewer text names
   the viewer's "Open the downloaded file" button; here the viewer's first
@@ -46,8 +79,8 @@ saved exactly as a chosen file is.
   the editor's Save downloads the new copy (as for a dropped file).
 - The file name a `Content-Disposition` header carries is not read (the
   viewer reads it, `content-disposition.ts`): a Drive link's file is named
-  `tour.zip` in the editor's Save. A candidate follow-up, not a defect of
-  the open.
+  after the start of its id in the editor's Save. Reading the header is a
+  candidate follow-up, not a defect of the open.
 
 ## Examples
 
@@ -62,8 +95,12 @@ await openFile(file);
 
 - `editor-link.test.ts` - over a fake transport: every byte in order and
   in slices, the name, `warm: false`, the download stopped after a read
-  failure, text that is not a link refused before any request, and the
-  wording of a refusal.
+  failure, text that is not a link refused before any request, the
+  wording of a refusal, and `linkFileName` (the fetched file's name, a
+  Drive link's after its id, null for text that is not a link);
+  `doneHostedName` (the link's name in its session, null for a link that
+  names none, a reopened dated save undated - null for a made-up name or
+  the sample's) and `isLinkStandInName`.
 - `playwright-tests/editor-entry.spec.js` - in the real page against the
   e2e archive server: a linked sample tour opens with the dialog busy
   meanwhile, a host that blocks browsers is explained, and text that is

@@ -7,16 +7,17 @@
  * `tour-document-draft.test.ts`).
  */
 import { describe, expect, it } from "vitest";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { TourPin } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import { draftObjectWrites } from "./draft-actions.js";
 import { deletedKey, objectKey } from "./draft-persistence.js";
 
-function pin(id: string): TourObject {
+function pin(id: string): TourPin {
   return {
     id,
-    kind: "pin",
-    label: id,
+    kind: "shortText",
+    view: "pin",
+    caption: id,
     createdAtIso: "2026-10-14T00:00:00.000Z",
     geo: { lat: 48.5, lon: 9.0, alt: 340, headingDeg: 0 },
   };

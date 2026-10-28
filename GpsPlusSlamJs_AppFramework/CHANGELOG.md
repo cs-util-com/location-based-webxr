@@ -2,13 +2,154 @@
 
 ## [Unreleased]
 
+> ⚠️ **This MINOR carries breaking changes.** It is numbered 1.31.0 rather
+> than 2.0.0 (owner decision, 2026-10-28), as 1.22.0 was. The cost is stated
+> plainly: a consumer on `^1.x` gets these changes with no version-level
+> warning, among them a `tour.json` reader that refuses versions 1-3.
+> **Pin `1.30.0`** if you need the previous tour format.
+
+### ⚠️ Breaking changes
+
+- **`tour.json` version 4: station blocks** (`ar/tour-manifest`,
+  `ar/tour-stations`, `ar/tour-blocks`, `ar/tour-story`, new
+  `ar/tour-assets` and `ar/tour-fields`). A station holds `blocks` (short text, long text,
+  picture, video, audio, model, character, each in a view and at a local
+  pose) and `steps` (`show` a block, `choice`, `quiz`); a block no step
+  shows is free and stands in the world (`pin`, `plane`, `placed`).
+  Every media file is an asset, a captured photo's too, and block ids
+  and asset ids are separate namespaces. Removed: `TourItem` and its
+  kinds, `tourItems`, `parseTourContentFields`, `parseTourItems`,
+  `parseTourQuiz`, `parseTourStepAdvance`, `tourStationRecord`,
+  `tourManifestRecord`, `TourStepRecord`, `TourPhoto`,
+  `serializeTourStationContent`; `TOUR_MODEL_MIN_SIZE_M` and
+  `TOUR_MODEL_MAX_SIZE_M` moved to `ar/tour-blocks`, `parseTourAssets` and
+  `TourAsset` to `ar/tour-assets`, and the step, quiz and advance types to
+  `ar/tour-story` (all still re-exported by `ar/tour-manifest`). The world
+  view (`tourObjects`) is every free block with its geo pose (`TourPin`,
+  `TourPicture` with its image asset inline, `TourModel`); a creator's
+  draft stores one as a `TourObjectRecord` of format 4
+  (`tourObjectRecord`, `parseTourObject`). Versions 1, 2 and 3 are refused
+  with `TourManifestOlderFormatError` (the file's `version` on it): no
+  migration.
+- **No more routing: `order: "branch"`, a station's `next` and a quiz's
+  `route` are gone** (`ar/tour-stations`, `ar/tour-manifest`). `TourOrder`
+  is `'fixed' | 'any'`; `TourStation.next`, `TourQuiz.route` and the
+  `TourQuizRoute` type are removed. A file of a minor this reader knows
+  that carries `"order": "branch"` is refused in a sentence a creator can
+  act on (the tour lets answers choose the next station, which this
+  version no longer does; change its order to fixed or any); from a newer
+  minor an unknown order still reads as `any`. A station's `next` and a
+  quiz's `route` are unknown fields now: ignored whatever they name, and
+  never written. Until a later version brings rules that decide where a
+  walk goes, no tour can branch its walk by an answer.
+- **A step's content is `TourStep.action`, typed `TourStepAction`**: it
+  was `TourStep.block`, typed `TourBlock`. In version 4 the file stores it
+  under `action` too, so nothing maps a step on the way in or out.
+- **`captureSpots` and its types**: `TourManifest.captureSpots`,
+  `TourCaptureSpots`, `TourCapture`, `TourCaptureGeo` and
+  `tourCaptureGeos` (all since 1.27.0). A walk's camera captures are debug
+  data, never tour content, and no app writes them any more. The reader
+  now ignores a file's `captureSpots` like any unknown field (whatever its
+  shape), and the writer never writes it.
+- **`TourManifestReadOptions.onDropped` hears a `TourManifestDrop`**
+  (`TourDetailsDrop | TourStationDrop | TourBlockDrop`) instead of a
+  `TourDetailsDrop`: a reader now also reports a station description or
+  card image it left out (below), and a block or block field. A handler
+  typed for `TourDetailsDrop` alone no longer compiles; narrow on
+  `'station' in drop` or `'block' in drop`.
+
+### Added
+
+- **`ar/xr-select-listener`** (deep import; also through `ar`), a new
+  module: `startXrSelectListener(onSelect)` hands over every WebXR `select`
+  with the tap's target ray, without a hit-test reticle (the Tour Viewer's
+  pin taps). `targetRayOf` moved there from the reticle driver, which now
+  imports it; its behaviour is unchanged.
+
+- **A placed 3D model**: a free block of kind `model` in the `placed` view
+  (`TourModelBlock`; in the world view `TourModel`) names a model asset of
+  the tour (a `.glb`) and carries its size in metres, `sizeM`: the scaled
+  model's largest side, from `TOUR_MODEL_MIN_SIZE_M` (0.05) to
+  `TOUR_MODEL_MAX_SIZE_M` (500), both inclusive. A size outside the bound
+  is refused, never clamped; a lenient read (a newer minor) leaves out a
+  model whose positive size lies beyond the bound, and nothing that is not
+  a positive finite number is a size at any minor.
+- **A station's description and card image**: `TourStation.description`
+  (the tour description's rule: trimmed, at most 2000 characters; blank
+  reads as none) and `TourStation.image` (the id of an image asset of the
+  tour, a captured photo's among them). An image whose asset is gone is
+  left out and reported through `onDropped` as a `TourStationDrop`
+  (`cause: 'station-image-gone'`), and the writer accepts that drop as it
+  does the cover's `image-gone`. An image that is not an id, or a
+  description that is not text or too long, is left out and reported with
+  no cause, as a malformed tour detail is, and the writer refuses it.
+  Neither ever fails a read.
+- **`TourManifest.tourId`**: an optional id a tour carries in its
+  `tour.json`, minted once by the app that first saves the tour and kept
+  by every save, so a tour opened from a file keeps one key across saves.
+  Read when it follows the one id rule (`TOUR_ID_PATTERN`) and dropped
+  otherwise, at every minor; the writer refuses a bad one.
+- **`state/position-precision`** (deep import): one judgement, for every
+  app, of how precise the position it works with is now.
+  `positionPrecision(input)` takes the position the app judges
+  (`'aligned'`, `'lone-fix'` or null), `codeHold`, the store's GPS points
+  and optionally the lone fix's accuracy and a ceiling, and gives
+  `{ source, accuracyM, tooWeak }`: `'code'` (no number) for an aligned
+  position a code holds by the app's own statement, `'gps'` with the median accuracy of the latest
+  10 DEVICE fixes (a code's synthetic readings never count; a lone fix is
+  judged by the worse of that and its own), `'none'` with no position or
+  no evidence. Too weak above 25 m (`POSITION_PRECISION_CEILING_M`), and
+  always for `'none'` (a fail-safe, not a GPS verdict: branch on
+  `source` first). An undefined position reads as null; an unknown kind
+  throws. `canTellApart(precision, spacingM, { factor? })` says whether
+  it can tell apart two targets that far apart: factor x error length
+  within half the spacing, `TELL_APART_FACTOR` 1.5 from a sweep (every
+  yes at least 90 % right on an honest raw-fix accuracy report, in a row,
+  a square grid and a hex grid of targets), a code judged as 1 m
+  (`CODE_HELD_ERROR_M`). Reads no clock.
+- **`ar/tour-blocks`** (deep import): the station blocks of `tour.json`
+  version 4. Seven kinds (`shortText`, `longText`, `picture`, `video`,
+  `audio`, `model`, `character`), each with a `view` from
+  `TOUR_BLOCK_VIEWS` and a local pose; caps per text in
+  `TOUR_BLOCK_TEXT_RULES`, all counted by one function, `tourTextCount`
+  (code points after trimming and collapsing whitespace; UTF-16 units for
+  a long text's body), the one count an editor's counter shows.
+  `readTourBlocks`, `placeTourBlocks`, `checkTourBlockText`,
+  `tourFloorView`, `checkTourBlockIdsUnique`.
+- **`ar/tour-story`** (deep import): a version 4 station's story - `show`
+  a block, a `choice` whose options jump to a step or continue, a `quiz`
+  with no route - read together with its blocks
+  (`parseTourStationContent`), and `tourShownBlockIds`, a station's story
+  blocks.
+- **`ar/tour-station-pose`**: `tourFreeBlocks(station)` and
+  `tourObjectBlock(object, pose)`, the free blocks of a station and the
+  block a world-view object is.
+- **`test-utils/tour-arbitraries`** (deep import): fast-check generators
+  of valid tour content (texts at every cap, blocks of every kind and
+  view, station contents, version 4 manifests). `fast-check` is not
+  bundled: a consumer brings its own.
+
+### Fixed
+
+- **`fast-check` and `vitest` are declared optional peer dependencies**:
+  the published `test-utils/tour-arbitraries` imports fast-check and
+  `test-utils/browser-mocks` imports vitest, both declared only as dev
+  dependencies, so a consumer importing those helpers without them
+  installed failed at import. An app that never imports `test-utils/*`
+  needs neither. The floors are the versions the framework's own tests run
+  on: fast-check 4.9 and vitest 5.
+- **The NOTICE links the public repository**: it pointed at a repository a
+  public reader cannot open; it now names
+  https://github.com/cs-util-com/location-based-webxr, the repository the
+  package's `repository` field names.
+
 ## [1.30.0] - 2026-10-20
 
 ### ⚠️ Breaking changes
 
 - **`tour.json` format version 3** (`ar/tour-manifest`): every pin and
   photo is now an item of a station. `TOUR_MANIFEST_VERSION` is 3 and
-  `TOUR_MANIFEST_MINOR` starts again at 0. Version 1 and 2 files are not
+  version 3 starts at minor 0. Version 1 and 2 files are not
   migrated: the reader refuses them with words ("this tour is in an older
   format ... it has to be made again"), and a version 2 reader refuses a
   version 3 file the same way ("update the app"), so neither opens the
@@ -55,9 +196,96 @@
   exports `TOUR_ID_PATTERN`, the one id rule of the manifest's ids, its
   content files and the cover.
 
+- **The cloud slab's aerial strength**, opt-in:
+  `SkyAtmosphere.setCloudAerial(strength | null)` and
+  `setCloudSlabAerial(slab, strength | null)` (0..1): how much of the
+  slab's aerial fade (alpha x exp(-distance / 60 km)) applies, for a page
+  that draws the same clouds with another drawer; `cloudSlabMarch` takes
+  `aerial` too. The default (1, or null) is unchanged.
+
+- **The clouds' noise evaluated live, per octave**, opt-in:
+  `SkyAtmosphere.configure({ cloudNoise: 'tile' | 'hex' | 'live' })` and
+  `setCloudNoiseAnchor({ originKm, rotationRad })` / `cloudNoiseAnchor`
+  (`visualization/atmosphere/cloud-live-noise.ts`), so no pattern repeats
+  within thousands of kilometres. The default stays the baked tile;
+  `cloudHex` keeps its meaning. Each octave fades to its mean by the
+  footprint (from half a cell to four) while the field keeps its spread,
+  so the drawn cover holds to a 16 km footprint.
+
+- **The live noise's fine gain**: `configure({ cloudNoiseFineGain })` and
+  the `cloudNoiseFineGain` getter, the amplitude ratio from octave 2 on
+  (0.5 by default); more detail at the cloud edges above it, the spread
+  and the cover kept.
+
+- **Uniforms** `atmCloudLive`, `atmCloudLattice`, `atmCloudLiveBasis`,
+  `atmCloudLiveAmp` and `atmCloudLiveMarchOctaves` in `cloudUniforms`;
+  `CloudShadow.sync` follows them; the coverage chunk carries a third
+  table (`atmCoverThresholdsLive`) and its fourth argument is now the
+  noise mode (0 tile, 1 hex, 2 live).
+
+- **The cloud disc's centre**, opt-in: `setCloudSlabDiscCentre(slab,
+{ x, z } | null)`, `SkyAtmosphere.setCloudDiscCentre` and
+  `CloudShadow.setDiscCentre` centre the disc on a world point instead of
+  the camera (the default, unchanged), so a page can put the volume where
+  the view looks. `CloudDiscCentre` and `writeCloudDiscCentre` are
+  exported.
+
+- **The cloud slab's reach**, opt-in: `setCloudSlabReach(slab, reach |
+null)` and `SkyAtmosphere.setCloudReach(reach | null)` move the slab's
+  far fade and march cap out (and scale its mesh to match), so a camera
+  high over a wide deck sees the volume toward the horizon, not only
+  around itself. The default is the old fixed 14 to 21 km, so a page that
+  never calls it draws exactly what it drew. `cloudSlabInterval`,
+  `cloudSlabFarWeight` and `cloudSlabMarch` take the reach too;
+  `CLOUD_SLAB_REACH` and `assertCloudSlabReach` are exported.
+
+- **`SkyAtmosphere.setObserverAltitudeKm(km)`** and the `observerAltitudeKm`
+  getter: the sky follows the observer's height (0 to 100 km) after
+  construction, synchronously like `setSun` (globe F2 plan, F2b).
+
+- **`SkyAtmosphere`'s staged rebuild**: the constructor option
+  `rebuild: 'staged'`, `stepRebuild()` (returns a `RebuildStage`) and
+  `rebuildPending`, for a page that renders every frame. A setter records
+  the change and each `stepRebuild()` does one stage (the tables, an
+  asynchronous read, the bake into one reused target), so no frame carries
+  a whole rebuild. The default `'immediate'` path is unchanged.
+
+- **The cloud slab ends at the scene's depth**, opt-in:
+  `setCloudSlabSceneDepth(slab, depth | null)` and
+  `SkyAtmosphere.setCloudSceneDepth(depth | null)`; with a depth the march
+  stops at the scene and the slab's depth test is off, so a ridge in front
+  of a cloud deck no longer hides the cloud in front of it. Without one the
+  slab is unchanged. `cloudSlabInterval` gains an optional `sceneM`.
+
+- **The cloud slab and the cloud shadow can take their clouds from a map
+  and fade by distance**, opt-in: `setCloudSlabCoverage(slab, coverage |
+null)` (the caller defines `float atmCloudCoverageAt(vec2 xz)`; the local
+  cover becomes the column's threshold through the noise's quantiles),
+  `setCloudSlabRadius(slab, r | null)` (the clouds fade to clear from 0.7 r
+  to r around the camera), the matching `SkyAtmosphere.setCloudCoverage`
+  and `setCloudDiscRadius`, `CloudShadow.configureMap`, `setLiftM`,
+  `setDiscRadiusM` and `setCover`, the shared module `cloud-coverage.ts`
+  (`cloudCoverThresholds`, `cloudThresholdForCover`, `cloudDiscThreshold`,
+  `CLOUD_COVERAGE_GLSL`, `withCloudCoverage`), and `cloudSlabMarch`'s
+  optional `thresholdAt`. Without them the slab and the shadow are
+  unchanged.
+
+- **`AtmosphereDevice` gains two OPTIONAL members**,
+  `beginSkyViewRead()` (with the `SkyViewRead` type) and
+  `bakeEnvironmentReused(scene)`; an existing implementation keeps
+  compiling, and the staged rebuild falls back to the synchronous read and
+  a new target per bake without them.
+
 ### Changed
 
 - Requires `gps-plus-slam-js` ^1.26.2. In 1.26.2 a solve that stores a QR code sighting's votes keeps the code's rotation against the compass cold start when those votes span 5 m or more (see that package's changelog). `buildQrGpsVotes` stamps each call with `Date.now()`, and the core treats votes sharing one timestamp as one sighting: give each code's sighting its own call.
+
+- **The slab reads its noise through its footprint**
+  (`atmCloudNoiseFootprint`); the tile's level of detail is unchanged,
+  and live, the march reads the five coarsest octaves (the two finest
+  cost 7 % of the volume pass for 0.09 % of the variance).
+  `cloudCoverThresholds` and `cloudThresholdForCover` take a
+  `CloudNoiseMode` as well as the old boolean.
 
 ## [1.29.0] - 2026-10-15
 

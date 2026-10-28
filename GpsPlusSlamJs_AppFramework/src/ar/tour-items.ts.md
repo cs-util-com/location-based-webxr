@@ -2,56 +2,50 @@
 
 ## Purpose
 
-A station's ITEMS in `tour.json` version 3 (tour editor plan
-`GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md`,
-W3): the text pins and captured photos placed at a station, each at a LOCAL
-pose relative to it. Also the kind-specific field rules shared with the
-world-view object of `tour-manifest.ts`, so the two can never disagree about
-what a pin or a photo is (DEC-H3).
+Where a station's blocks stand in `tour.json` version 4: a LOCAL pose
+relative to the station, which carries the geo pose. A station moves
+rigidly with everything it holds: moving it changes its own geo pose,
+never its blocks' local poses (`tour-station-pose.ts` converts both
+ways). What a block is lives in `tour-blocks.ts`; this module keeps only
+the pose and its sanity bound (the file name is the one version 3 gave
+it, when a station held "items").
 
 ## Public API
 
-- Types: `TourLocalPose` (= `qr-pose.ts` `Pose`: `position` metres along
-  the station's rotated North, Up, East axes; `rotation` a unit quaternion
-  `[x, y, z, w]` relative to the station's), `TourPinFields`,
-  `TourPhotoFields`, `TourContentFields`, `TourPinItem`, `TourPhotoItem`,
-  `TourItem` (fields plus `pose`).
+- `TourLocalPose` (= `qr-pose.ts` `Pose`): `position` metres along the
+  station's rotated North, Up, East axes; `rotation` a unit quaternion
+  `[x, y, z, w]` relative to the station's.
 - `TOUR_ITEM_MAX_OFFSET_M` (10 000) - the sanity bound per axis.
-- `parseTourContentFields(value, at, { fail, lenient? }): TourContentFields | null`
-  - a pin (`id`, `createdAtIso`, non-blank `label`) or a photo (`image`
-    `content/<its id>.<image ext>`, positive integer `imageWidth` /
-    `imageHeight`, optional `label`); null when a lenient read meets an
-    unknown kind or image type.
 - `parseTourLocalPose(value, at, fail): TourLocalPose` - three finite
-  offsets within the bound (-0 read as 0) and a unit rotation renormalized
-  by the level files' one rule (`renormalizeUnitQuaternion`).
-- `parseTourItems(value, at, { fail, lenient? }): TourItem[]` - an array
-  of items in order; lenient leaves out what it cannot show.
+  offsets within the bound (-0 read as 0) and a unit rotation
+  renormalized by the level files' one rule (`renormalizeUnitQuaternion`).
+  Throws through `fail` naming `at.position` or `at.rotation`.
 
 ## Invariants & assumptions
 
 - The caller's `fail` throws its own error (the manifest's), so this
   module needs no error class and no import of its parent.
-- Ids are unique per station here (`tour-stations.ts`) and across the
-  tour in `tour-manifest.ts`.
+- **A pose is structural: a bad one fails at EVERY minor.** Beyond 10 km
+  a station's flat frame means nothing, so no later revision can make
+  such an offset valid and a lenient reader still refuses it (unlike a
+  model's size bound, `tour-blocks.ts`, which a later minor may widen).
 - The bound is a sanity check, not a design limit: the editor keeps
-  stations far smaller (the plan's 40 m); a station's flat frame means
-  nothing kilometres away.
+  stations far smaller.
 - Reading is exact: a pose reads back as the same numbers (no
-  recomputation), which the version 3 round-trip property relies on.
+  recomputation), which the manifest's round-trip property relies on.
 
 ## Examples
 
 ```ts
-const items = parseTourItems(station.items, 'stations[0].items', { fail });
-// [{ id: 'p1', kind: 'pin', label: 'Gate', createdAtIso, pose: {...} }]
+const pose = parseTourLocalPose(block.pose, 'stations[0].blocks[1].pose', fail);
+// { position: [1, 0.5, -2], rotation: [0, 0, 0, 1] }
 ```
 
 ## Tests
 
-- `tour-items.test.ts` - the local pose (exact, -0, renormalized; each
-  refusal), the shared fields (pin and photo, nothing of a placement), the
-  lenient read leaving out a newer kind or image type and the strict read
-  refusing it, the order kept.
-- Through the manifest and station tests (`tour-manifest.test.ts`,
+- `tour-items.test.ts` - the local pose: exact, -0 read as 0, a near-unit
+  rotation renormalized; each refusal (no object, two offsets, a
+  non-finite offset, beyond the bound, a rotation far from unit length or
+  of three numbers).
+- Through the block, station and manifest tests (`tour-blocks.test.ts`,
   `tour-stations.test.ts`, `tour-manifest.property.test.ts`).

@@ -14,6 +14,12 @@ import {
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 
+import {
+  positionPrecision,
+  type PositionPrecision,
+  type PrecisionGpsPoint,
+} from "gps-plus-slam-app-framework/state/position-precision";
+
 import { judgedStationBands, stationBands } from "./station-bands";
 import { skipSuggestAfterMs } from "./station-run";
 import {
@@ -45,13 +51,29 @@ import {
  * leaving AR and coming back.
  */
 
+/** The store's GPS readings as the shared precision rule reads them: one
+ *  device fix stating `accuracyM` (its median), or none for null. */
+function fixesAt(accuracyM: number | null): PrecisionGpsPoint[] {
+  return accuracyM === null ? [] : [{ latLongAccuracy: accuracyM }];
+}
+
+/** A GPS position's precision at this accuracy (within the ceiling). */
+function gps(accuracyM: number): PositionPrecision {
+  return { source: "gps", accuracyM, tooWeak: false };
+}
+const CODE: PositionPrecision = {
+  source: "code",
+  accuracyM: null,
+  tooWeak: false,
+};
+
 // The core's geodesy needs an activated store (the framework's factory).
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
 const zero = { lat: 47.5, lon: 8.7 };
 const step = {
   id: "s",
-  block: { kind: "text", text: "Hi" },
+  action: { kind: "show", block: "hi" },
   advance: { mode: "tap" },
 } as const;
 
@@ -71,7 +93,7 @@ function station(
     foundRadiusM: 5,
     hint: "arrow",
     steps: [step],
-    items: [],
+    blocks: [],
     ...extra,
   };
 }
@@ -83,7 +105,7 @@ function harness(
   let now = 1_000;
   let visitor: VisitorPosition = {
     nue: [0, 401.5, 0],
-    accuracyM: 4,
+    gpsPoints: fixesAt(4),
     fixNue: [0, 400, 0],
     aligned: true,
     fixAtMs: now,
@@ -121,7 +143,11 @@ function harness(
       },
       hidden: true,
     },
-    skip: { textContent: "" as string, hidden: true },
+    skip: {
+      textContent: "" as string,
+      hidden: true,
+      dataset: {} as DOMStringMap,
+    },
   };
   let tour: StationTour | null = tourValue;
   const guide = wireStationGuide({
@@ -186,7 +212,7 @@ function harness(
     at: (north: number, east: number, accuracyM: number | null = 4) => {
       visitor = {
         nue: [north, 401.5, east],
-        accuracyM,
+        gpsPoints: fixesAt(accuracyM),
         fixNue: [north, 400, east],
         aligned: true,
         fixAtMs: now,
@@ -207,7 +233,7 @@ function harness(
     ) => {
       visitor = {
         nue: [north, 401.5, east],
-        accuracyM,
+        gpsPoints: fixesAt(accuracyM),
         fixNue: [fixN, 400, fixE],
         aligned: true,
         fixAtMs: now,
@@ -226,7 +252,7 @@ function harness(
     ) => {
       visitor = {
         nue: null,
-        accuracyM,
+        gpsPoints: fixesAt(accuracyM),
         fixNue: [north, 400, east],
         aligned: false,
         fixAtMs: now - ageMs,
@@ -239,7 +265,7 @@ function harness(
     trackingLost: (fixN: number, fixE: number, accuracyM = 4) => {
       visitor = {
         nue: null,
-        accuracyM,
+        gpsPoints: fixesAt(accuracyM),
         fixNue: [fixN, 400, fixE],
         aligned: true,
         fixAtMs: now,
@@ -252,7 +278,7 @@ function harness(
       lined = true;
       visitor = {
         nue: [north, 401.5, east],
-        accuracyM: null,
+        gpsPoints: fixesAt(null),
         fixNue: null,
         aligned: true,
         fixAtMs: null,
@@ -262,7 +288,7 @@ function harness(
     lost: () => {
       visitor = {
         nue: null,
-        accuracyM: 4,
+        gpsPoints: fixesAt(4),
         fixNue: null,
         aligned: false,
         fixAtMs: null,
@@ -283,6 +309,7 @@ function harness(
 describe("wireStationGuide", () => {
   it("waits for the scan gate, then guides to the next station and finds it on the spot", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 50, 0)],
       order: "fixed",
     });
@@ -302,6 +329,7 @@ describe("wireStationGuide", () => {
   it("points the HUD at each offered station at the visitor's height, its arrival band the found band", () => {
     const s = station("gate", 50, 20);
     const h = harness({
+      assets: new Set(),
       stations: [s, station("well", -30, 0)],
       order: "any",
     });
@@ -312,7 +340,7 @@ describe("wireStationGuide", () => {
     expect(gate.position.x).toBeCloseTo(50, 1);
     expect(gate.position.y).toBe(401.5);
     expect(gate.position.z).toBeCloseTo(20, 1);
-    const bands = judgedStationBands(s, 6, false);
+    const bands = judgedStationBands(s, gps(6));
     expect([gate.distanceMin, gate.distanceMax]).toEqual([
       bands.foundM,
       bands.foundExitM,
@@ -324,6 +352,7 @@ describe("wireStationGuide", () => {
 
   it("says when it has no position yet, or the GPS is too weak to guide", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 50, 0)],
       order: "fixed",
     });
@@ -352,11 +381,12 @@ describe("wireStationGuide", () => {
 
   it("skip: on demand in two taps, suggested in one after its clock, and the order moves on", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 100, 0), station("well", 0, 100)],
       order: "fixed",
     });
     h.at(0, 0);
-    expect(h.dom.skip).toEqual({
+    expect(h.dom.skip).toMatchObject({
       hidden: false,
       textContent: "Can't get there?",
     });
@@ -383,6 +413,7 @@ describe("wireStationGuide", () => {
     // lost a station to one stray tap. The confirmation and the undo are
     // the async-feedback rule's final state for this (synchronous) action.
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 100, 0), station("well", 0, 100)],
       order: "fixed",
     });
@@ -414,6 +445,7 @@ describe("wireStationGuide", () => {
     // Why this test matters (K4 review R14): every clock started at the
     // tour's start, so two minutes in every new focus was a one-tap skip.
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 30, 0), station("well", -40, 0)],
       order: "any",
     });
@@ -431,6 +463,7 @@ describe("wireStationGuide", () => {
 
   it("a tap acts on the station and the action its label showed, even when the clock ran out since (R14)", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 100, 0), station("well", 0, 100)],
       order: "fixed",
     });
@@ -443,38 +476,18 @@ describe("wireStationGuide", () => {
     expect(h.dom.line.textContent).toBe("Next: GATE, 100 m");
   });
 
-  it("under branch order the completion line says the path was completed, not that every station was visited", () => {
-    // Why this test matters (K4 review R16): a branch tour ends when the
-    // visitor's path ends, with stations of the other branches never
-    // offered; "every station visited" would be a false claim.
-    const h = harness({
-      stations: [
-        station("gate", 0, 0, { next: "tower" }),
-        station("well", 0, 80),
-        station("tower", 0, 0),
-      ],
-      order: "branch",
-    });
-    h.at(0, 0);
-    h.guide.storyEnded("gate");
-    h.at(0, 0);
-    h.guide.storyEnded("tower");
-    expect(h.dom.line.textContent).toBe(
-      "Tour complete - you reached the end of your path.",
-    );
-  });
-
   it("a found station's story can be ended in two taps, so a story that never ends cannot block the tour (R9)", () => {
     // Why this test matters (K4 review R9): a found station could not be
     // skipped, and a story whose choices all loop back never ends - under
     // a fixed order the tour stopped there for good.
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 0, 0), station("well", 0, 80)],
       order: "fixed",
     });
     h.at(0, 0);
     expect(h.found).toEqual(["gate"]);
-    expect(h.dom.skip).toEqual({
+    expect(h.dom.skip).toMatchObject({
       hidden: false,
       textContent: "End this story?",
     });
@@ -487,6 +500,7 @@ describe("wireStationGuide", () => {
 
   it("a story's end makes the station done and offers the next", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 0, 0), station("well", 0, 80)],
       order: "fixed",
     });
@@ -496,10 +510,41 @@ describe("wireStationGuide", () => {
     expect(h.dom.line.textContent).toBe("Next: WELL, 80 m");
   });
 
+  // Why: a station made on the phone has no story; with only a card
+  // picture it must stay found, its card open until Continue, and not be
+  // done the moment it is found. The guide judges that against the tour's
+  // assets, so a guide that dropped them would close the card in the frame
+  // it opened. A picture the tour does not hold is no card: that station
+  // is done at once.
+  it("a storyless station with only a card picture the tour holds waits for its story's end", () => {
+    const picture = station("gate", 0, 0, { steps: [], image: "photo" });
+    const next = station("well", 0, 80);
+    const h = harness({
+      stations: [picture, next],
+      order: "fixed",
+      assets: new Set(["photo"]),
+    });
+    h.at(0, 0);
+    expect(h.found).toEqual(["gate"]);
+    expect(h.dom.line.textContent).toMatch(/found/);
+    h.guide.storyEnded("gate");
+    expect(h.dom.line.textContent).toBe("Next: WELL, 80 m");
+
+    const missing = harness({
+      stations: [picture, next],
+      order: "fixed",
+      assets: new Set(),
+    });
+    missing.at(0, 0);
+    expect(missing.found).toEqual(["gate"]);
+    expect(missing.dom.line.textContent).toBe("Next: WELL, 80 m");
+  });
+
   it("keeps the progress across AR entries; a different tour starts again", () => {
     const tour = {
       stations: [station("gate", 0, 0), station("well", 0, 80)],
       order: "fixed" as const,
+      assets: new Set<string>(),
     };
     const h = harness(tour);
     h.at(0, 0);
@@ -510,7 +555,10 @@ describe("wireStationGuide", () => {
     h.at(0, 0);
     expect(h.huds).toHaveLength(2);
     expect(h.dom.line.textContent).toBe("Next: WELL, 80 m");
-    h.setTour({ ...tour, stations: [station("tower", 0, 30)] });
+    h.setTour({
+      ...tour,
+      stations: [station("tower", 0, 30)],
+    });
     h.at(0, 0);
     expect(h.dom.line.textContent).toBe("Next: TOWER, 30 m");
     h.setTour(null);
@@ -523,6 +571,7 @@ describe("wireStationGuide", () => {
     // station stays found, so without a replay a fixed-order tour could
     // never get past it.
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 0, 0), station("well", 0, 80)],
       order: "fixed",
     });
@@ -540,6 +589,7 @@ describe("wireStationGuide", () => {
     // the run was created, so a second AR session guided and found
     // stations before its scan gate had passed.
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 50, 0), station("well", 0, 0)],
       order: "fixed",
     });
@@ -563,6 +613,7 @@ describe("wireStationGuide", () => {
     // new session, before the zero was set, mounted the figure with no
     // pose, and the story said "could not be loaded" for good.
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 0, 0), station("well", 0, 80)],
       order: "fixed",
     });
@@ -587,6 +638,7 @@ describe("wireStationGuide", () => {
     // line after the story must still give the next station's distance,
     // not "waiting".
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 0, 0), station("well", 0, 80)],
       order: "fixed",
     });
@@ -602,12 +654,13 @@ describe("wireStationGuide", () => {
   it("tells the prefetch how far each offered station is, and which stations are done (skipped or finished)", () => {
     const s = station("gate", 0, 0);
     const h = harness({
+      assets: new Set(),
       stations: [s, station("well", 0, 80), station("tower", 0, 300)],
       order: "fixed",
     });
     h.at(0, 0);
     expect(h.approaches).toEqual([
-      ["gate", 0, judgedStationBands(s, 4, false).activateM],
+      ["gate", 0, judgedStationBands(s, gps(4)).activateM],
     ]);
     h.guide.storyEnded("gate");
     h.at(0, 0);
@@ -622,6 +675,7 @@ describe("wireStationGuide", () => {
 
   it("names the next station in order to the prefetch as soon as the current one is found (R5)", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 0, 0), station("well", 0, 30)],
       order: "fixed",
     });
@@ -633,12 +687,13 @@ describe("wireStationGuide", () => {
   it("lays the breadcrumbs towards the nearest unfound station, stopping at its arrival band, and none once it is found", () => {
     const s = station("well", 0, 80);
     const h = harness({
+      assets: new Set(),
       stations: [s, station("tower", 0, 300)],
       order: "fixed",
     });
     h.at(0, 0);
     expect(h.guides.at(-1)).toBe(
-      `well@0,80/${judgedStationBands(s, 4, false).foundExitM}`,
+      `well@0,80/${judgedStationBands(s, gps(4)).foundExitM}`,
     );
     h.at(0, 79);
     expect(h.guides.at(-1)).toBeNull();
@@ -652,6 +707,7 @@ describe("wireStationGuide", () => {
     // camera frame, and each tick repeated the geodesy several times per
     // offered station.
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 50, 0), station("well", -30, 0)],
       order: "any",
     });
@@ -667,6 +723,7 @@ describe("wireStationGuide", () => {
 
   it("finds nothing that is not offered, and calls onFound once per station", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 100, 0), station("well", 0, 0)],
       order: "fixed",
     });
@@ -690,6 +747,7 @@ describe("wireStationGuide", () => {
 describe("arrival by the station radius alone (D16)", () => {
   it("codes only: reached after a scan, by the distance the scan gives", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("well", 30, 0)],
       order: "fixed",
     });
@@ -709,6 +767,7 @@ describe("arrival by the station radius alone (D16)", () => {
 
   it("poor GPS: a weak fix never widens the radius, and a RAW fix too weak to guide by finds nothing until the GPS recovers", () => {
     const weak = harness({
+      assets: new Set(),
       stations: [station("well", 30, 0)],
       order: "fixed",
     });
@@ -725,7 +784,7 @@ describe("arrival by the station radius alone (D16)", () => {
     expect(weak.found).toEqual(["well"]);
   });
 
-  // Why (M5c review #1): `accuracyM` is the raw fixes' median and says
+  // Why (M5c review #1): the raw fixes' median says
   // nothing about a position a code lined up. An indoor or courtyard tour
   // placed by one code with a ±40-60 m Wi-Fi fix was never found and was
   // told to step into the open, though its position was the code's.
@@ -736,6 +795,7 @@ describe("arrival by the station radius alone (D16)", () => {
   // case). Only a code earns the trust now.
   it("a visitor a code lined up is found inside the radius however weak the raw fix; one without a code is not", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("well", 30, 0)],
       order: "fixed",
     });
@@ -744,6 +804,7 @@ describe("arrival by the station radius alone (D16)", () => {
     expect(h.found).toEqual(["well"]);
     expect(h.dom.line.textContent).not.toMatch(/too weak/);
     const gpsOnly = harness({
+      assets: new Set(),
       stations: [station("well", 30, 0)],
       order: "fixed",
     });
@@ -762,11 +823,15 @@ describe("arrival by the station radius alone (D16)", () => {
   // stopped. One rule decides all of them. Swept over the raw accuracy
   // (and none at all), with a code, without one, and with no alignment.
   // Changed (r881): "aligned" used to be the condition; a code is now.
-  it("widens nothing for a visitor a code lined up however weak the raw fix; any other position keeps the raw accuracy's band", () => {
+  it("widens nothing for a visitor a code lined up however weak the raw fix; any other position keeps the raw accuracy's band, and one with no accuracy shows nothing", () => {
     // An activation radius inside the widest band, so the prefetch shows it.
     const s = station("gate", 50, 0, { activateRadiusM: 6, foundRadiusM: 5 });
-    const tour: StationTour = { stations: [s], order: "fixed" };
-    const coded = judgedStationBands(s, null, true);
+    const tour: StationTour = {
+      assets: new Set(),
+      stations: [s],
+      order: "fixed",
+    };
+    const coded = judgedStationBands(s, CODE);
     expect(coded.foundExitM).toBe(5 + 1.5);
     for (const accuracyM of [5, 25, 40, 100, null]) {
       const h = harness(tour);
@@ -779,17 +844,22 @@ describe("arrival by the station radius alone (D16)", () => {
         coded.foundM,
         coded.foundExitM,
       ]);
+    }
+    for (const accuracyM of [5, 25, 40, 100]) {
       // Aligned with no code: the raw accuracy's band, as a raw fix's.
       const own = stationBands(s, accuracyM);
       const gpsOnly = harness(tour);
       gpsOnly.at(0, 0, accuracyM);
       expect(gpsOnly.approaches.at(-1)).toEqual(["gate", 50, own.activateM]);
       expect(gpsOnly.guides.at(-1)).toBe(`gate@50,0/${own.foundExitM}`);
-      const [own0] = gpsOnly.huds[0]!.getTargets();
-      expect([own0!.distanceMin, own0!.distanceMax]).toEqual([
-        own.foundM,
-        own.foundExitM,
-      ]);
+      // Above the ceiling no HUD target at all (the no-distance rule:
+      // each marker carries a distance label the line does not show).
+      expect(
+        gpsOnly.huds[0]!.getTargets().map((t) => [
+          t.distanceMin,
+          t.distanceMax,
+        ]),
+      ).toEqual(accuracyM <= 25 ? [[own.foundM, own.foundExitM]] : []);
       // No alignment: the raw fix IS the position, and its accuracy its band.
       const raw = harness(tour);
       raw.fixOnly(0, 0, accuracyM);
@@ -798,10 +868,24 @@ describe("arrival by the station radius alone (D16)", () => {
       // The HUD needs a camera position: none from a raw fix alone.
       expect(raw.huds[0]?.getTargets() ?? []).toEqual([]);
     }
+    // No code and no accuracy at all (`'none'`), aligned or a raw fix
+    // alone: nothing points or measures on that position - no approach, no
+    // HUD target, no trail from the visitor (shared position-precision
+    // plan, §13).
+    const gpsOnly = harness(tour);
+    gpsOnly.at(0, 0, null);
+    const raw = harness(tour);
+    raw.fixOnly(0, 0, null);
+    for (const h of [gpsOnly, raw]) {
+      expect(h.approaches).toEqual([]);
+      expect(h.crumbsFrom.at(-1)).toBeNull();
+      expect(h.huds[0]?.getTargets() ?? []).toEqual([]);
+    }
   });
 
   it("none before any position: no fix, no alignment, nothing is reached, a code lock included", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 0, 0)],
       order: "fixed",
     });
@@ -816,6 +900,7 @@ describe("arrival by the station radius alone (D16)", () => {
 
   it("before any alignment the device fix decides; once aligned, the alignment's position does", () => {
     const early = harness({
+      assets: new Set(),
       stations: [station("gate", 30, 0)],
       order: "fixed",
     });
@@ -824,6 +909,7 @@ describe("arrival by the station radius alone (D16)", () => {
     // Aligned 30 m away while the raw fix stands on the station: the
     // aligned position is the better one, and it is not there.
     const aligned = harness({
+      assets: new Set(),
       stations: [station("gate", 30, 0)],
       order: "fixed",
     });
@@ -843,6 +929,7 @@ describe("arrival by the station radius alone (D16)", () => {
   // must agree: no arrival on a fix the line calls too weak.
   it("a ±500 m fix inside a 10 m station says the GPS is too weak and finds nothing; a ±5 m one finds it", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 3, 0, { foundRadiusM: 10 })],
       order: "fixed",
     });
@@ -855,6 +942,7 @@ describe("arrival by the station radius alone (D16)", () => {
 
   it("a tracking drop in an aligned session does not find a station on the raw fix", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 30, 0)],
       order: "fixed",
     });
@@ -880,6 +968,7 @@ describe("arrival by the station radius alone (D16)", () => {
   it("a stale fix is ignored before any alignment: no arrival, and the line waits", () => {
     expect(FIX_MAX_AGE_MS).toBe(5_000);
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 30, 0)],
       order: "fixed",
     });
@@ -901,19 +990,31 @@ describe("arrival by the station radius alone (D16)", () => {
     "the fix's age decides at a limit of %i ms",
     (limitMs) => {
       const fresh = harness(
-        { stations: [station("gate", 30, 0)], order: "fixed" },
+        {
+          assets: new Set(),
+          stations: [station("gate", 30, 0)],
+          order: "fixed",
+        },
         { fixMaxAgeMs: limitMs },
       );
       fresh.fixOnly(29, 0, 4, limitMs);
       expect(fresh.found).toEqual(["gate"]);
       const stale = harness(
-        { stations: [station("gate", 30, 0)], order: "fixed" },
+        {
+          assets: new Set(),
+          stations: [station("gate", 30, 0)],
+          order: "fixed",
+        },
         { fixMaxAgeMs: limitMs },
       );
       stale.fixOnly(29, 0, 4, limitMs + 1);
       expect(stale.found).toEqual([]);
       const ahead = harness(
-        { stations: [station("gate", 30, 0)], order: "fixed" },
+        {
+          assets: new Set(),
+          stations: [station("gate", 30, 0)],
+          order: "fixed",
+        },
         { fixMaxAgeMs: limitMs },
       );
       ahead.fixOnly(29, 0, 4, -500);
@@ -967,11 +1068,15 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
     const guides: (string | null)[] = [];
     const dom = {
       line: { textContent: "" as string, hidden: true },
-      skip: { textContent: "" as string, hidden: true },
+      skip: {
+        textContent: "" as string,
+        hidden: true,
+        dataset: {} as DOMStringMap,
+      },
     };
     const guide = wireStationGuide({
       dom,
-      tour: () => ({ stations, order: "fixed" }),
+      tour: () => ({ assets: new Set(), stations, order: "fixed" }),
       placementAllowed: () => true,
       zero: () => selectZeroReference(store.getState()),
       visitor: () =>
@@ -1013,7 +1118,15 @@ describe("a cold start's first fix (the library's identity alignment)", () => {
     });
     expect(visitor.aligned).toBe(true);
     expect(visitor.nue).not.toBeNull();
-    expect(visitor.accuracyM).toBe(500);
+    // Changed (shared position-precision plan, M2): the median is the
+    // framework's rule now, read from the points the visitor carries.
+    expect(
+      positionPrecision({
+        position: "aligned",
+        codeHold: false,
+        gpsPoints: visitor.gpsPoints,
+      }),
+    ).toEqual({ source: "gps", accuracyM: 500, tooWeak: true });
   });
 
   it("a ±500 m first fix inside a 10 m station finds nothing and says the GPS is too weak, ready or not", () => {
@@ -1107,9 +1220,9 @@ describe("a visitor without a code while tracking is not ready (real store)", ()
     const guide = wireStationGuide({
       dom: {
         line: { textContent: "", hidden: true },
-        skip: { textContent: "", hidden: true },
+        skip: { textContent: "", hidden: true, dataset: {} },
       },
-      tour: () => ({ stations: [target], order: "fixed" }),
+      tour: () => ({ assets: new Set(), stations: [target], order: "fixed" }),
       placementAllowed: () => true,
       zero: () => selectZeroReference(store.getState()),
       visitor: () =>
@@ -1213,6 +1326,7 @@ describe("review findings on the guide (r881)", () => {
   // position is the code's. The trust is the code's, not the frame's.
   it("a tracking drop in a code-placed session waits for the position; it never says the GPS is too weak", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("well", 30, 0)],
       order: "fixed",
     });
@@ -1231,6 +1345,7 @@ describe("review findings on the guide (r881)", () => {
   // told to skip. The clock starts with the first distance, sized by it.
   it("the skip clock waits for a distance: no suggestion while there is no position, then sized by the first distance", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("tower", 300, 0)],
       order: "fixed",
     });
@@ -1257,12 +1372,17 @@ describe("re-review findings on the guide (r881)", () => {
   // and that one fix could latch a station found. A lone fix is judged by
   // the worse of the median and its own accuracy.
   it("a lone weak fix after a run of good ones finds nothing and says the GPS is too weak", () => {
-    const h = harness({ stations: [station("gate", 0, 0)], order: "fixed" });
+    const h = harness({
+      assets: new Set(),
+      stations: [station("gate", 0, 0)],
+      order: "fixed",
+    });
     h.fixOnly(0, 0, 5, 0, 60);
     expect(h.found).toEqual([]);
     expect(h.dom.line.textContent).toContain(tooWeak(60));
     // The same on an aligned session that is not ready yet (a cold start).
     const cold = harness({
+      assets: new Set(),
       stations: [station("gate", 0, 0)],
       order: "fixed",
     });
@@ -1279,7 +1399,11 @@ describe("re-review findings on the guide (r881)", () => {
   // position is the alignment's, fed by every fix, and one outlier fix
   // says nothing about it: the median judges, as before.
   it("a ready alignment is judged by the median, not by the latest fix's own accuracy", () => {
-    const h = harness({ stations: [station("gate", 0, 0)], order: "fixed" });
+    const h = harness({
+      assets: new Set(),
+      stations: [station("gate", 0, 0)],
+      order: "fixed",
+    });
     h.atFix(0, 0, 30, 0, 5, 60);
     expect(h.found).toEqual(["gate"]);
   });
@@ -1288,7 +1412,11 @@ describe("re-review findings on the guide (r881)", () => {
   // A lone raw fix (no camera position) took the code's trust too, so a
   // ±60 m fix was judged with no accuracy at all.
   it("a code's trust stays with the aligned position: a lone ±60 m fix still says the GPS is too weak", () => {
-    const h = harness({ stations: [station("gate", 0, 0)], order: "fixed" });
+    const h = harness({
+      assets: new Set(),
+      stations: [station("gate", 0, 0)],
+      order: "fixed",
+    });
     h.lined(true);
     h.fixOnly(0, 0, 60);
     expect(h.found).toEqual([]);
@@ -1299,7 +1427,11 @@ describe("re-review findings on the guide (r881)", () => {
   // alignment and the raw fix can lie far apart. The find must follow the
   // fix, never the headingless camera position.
   it("before readiness the find follows the fix, not the aligned camera", () => {
-    const h = harness({ stations: [station("gate", 30, 0)], order: "fixed" });
+    const h = harness({
+      assets: new Set(),
+      stations: [station("gate", 30, 0)],
+      order: "fixed",
+    });
     h.ready(false);
     h.atFix(30, 0, 0, 0);
     expect(h.found).toEqual([]);
@@ -1315,6 +1447,7 @@ describe("re-review findings on the guide (r881)", () => {
   // the first play was found on.
   it("a story cut short replays in a session that never becomes ready, on the fresh fix", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("gate", 0, 0), station("well", 0, 80)],
       order: "fixed",
     });
@@ -1334,7 +1467,11 @@ describe("re-review findings on the guide (r881)", () => {
   // with the dip. They wait for the first readiness of each AR entry. The
   // find re-reads readiness every tick, so in a dip it judges by the fix.
   it("a dip in readiness keeps the arrows, the breadcrumbs and the figure's turn; the find falls back to the fix", () => {
-    const h = harness({ stations: [station("gate", 30, 0)], order: "fixed" });
+    const h = harness({
+      assets: new Set(),
+      stations: [station("gate", 30, 0)],
+      order: "fixed",
+    });
     h.ready(false);
     h.at(0, 0);
     expect(h.huds.at(-1)!.getTargets()).toEqual([]);
@@ -1379,7 +1516,11 @@ describe("re-review findings on the guide (r881)", () => {
   // first readiness of the AR entry (the stage parks the figure and
   // retries); the caption and the voice play as before.
   it("the figure's pose waits for readiness; the station's own pose does not", () => {
-    const h = harness({ stations: [station("gate", 0, 0)], order: "fixed" });
+    const h = harness({
+      assets: new Set(),
+      stations: [station("gate", 0, 0)],
+      order: "fixed",
+    });
     h.ready(false);
     h.at(0, 0);
     expect(h.found).toEqual(["gate"]);
@@ -1401,6 +1542,7 @@ describe("re-review findings on the guide (r881)", () => {
   // never get past the station.
   it("the two-tap skip works when no distance ever arrives", () => {
     const h = harness({
+      assets: new Set(),
       stations: [station("tower", 300, 0), station("well", 0, 80)],
       order: "fixed",
     });
@@ -1418,7 +1560,11 @@ describe("re-review findings on the guide (r881)", () => {
   // alignment with no heading again - the arrows and the figure must go
   // with it. A heading tracking earned stays (the dip test above).
   it("a heading that only a code gave goes when the code is lifted while tracking is not ready", () => {
-    const h = harness({ stations: [station("gate", 30, 0)], order: "fixed" });
+    const h = harness({
+      assets: new Set(),
+      stations: [station("gate", 30, 0)],
+      order: "fixed",
+    });
     // The page's readiness is tracking OR a code: here the code alone.
     h.ready(false);
     h.lined(true);
@@ -1446,7 +1592,11 @@ describe("re-review findings on the guide (r881)", () => {
   // taken then would keep a heading only the code gave after a veto
   // takes its votes back - the case the code-only test above forbids.
   it("tracking ready only while a code was lined up does not latch: the veto that drops the report takes the heading", () => {
-    const h = harness({ stations: [station("gate", 30, 0)], order: "fixed" });
+    const h = harness({
+      assets: new Set(),
+      stations: [station("gate", 30, 0)],
+      order: "fixed",
+    });
     // A code locks and votes; tracking is not ready yet.
     h.ready(false);
     h.lined(true);
@@ -1467,7 +1617,11 @@ describe("re-review findings on the guide (r881)", () => {
   // Once the veto has taken the votes back, a report still `ok` is
   // tracking's own, and it latches on that tick, kept through a later dip.
   it("a report still ok after the veto latches the heading on the next tick", () => {
-    const h = harness({ stations: [station("gate", 30, 0)], order: "fixed" });
+    const h = harness({
+      assets: new Set(),
+      stations: [station("gate", 30, 0)],
+      order: "fixed",
+    });
     h.ready(false);
     h.lined(true);
     h.at(0, 0);
@@ -1497,7 +1651,11 @@ describe("re-review findings on the guide (r881)", () => {
   // A heading tracking latched before any code locked is tracking's own,
   // and neither the lock nor a veto that lands in a dip may take it.
   it("a heading tracking latched before any code locked stays through the lock and a veto in a dip", () => {
-    const h = harness({ stations: [station("gate", 30, 0)], order: "fixed" });
+    const h = harness({
+      assets: new Set(),
+      stations: [station("gate", 30, 0)],
+      order: "fixed",
+    });
     h.ready(true);
     h.at(0, 0);
     // A code locks and votes.
@@ -1545,7 +1703,11 @@ describe("wireStationGuide: the present station", () => {
   it("enters at the found radius, leaves past the found exit, and dispatches only on a change", () => {
     const { store, guideStore, guideActions } = countingStore();
     const h = harness(
-      { stations: [station("a", 20, 0), station("b", -20, 0)], order: "any" },
+      {
+        assets: new Set(),
+        stations: [station("a", 20, 0), station("b", -20, 0)],
+        order: "any",
+      },
       { guideStore },
     );
     h.at(0, 0);
@@ -1558,7 +1720,10 @@ describe("wireStationGuide: the present station", () => {
     expect(selectPresentStationId(store.getState())).toBe("a");
     h.at(10.9, 0);
     expect(selectPresentStationId(store.getState())).toBeNull();
+    // The precision kind is published once too, on
+    // its first change, and never again while it stays GPS.
     expect(guideActions).toEqual([
+      "visitorGuide/precisionKindSet",
       "visitorGuide/presenceJudged",
       "visitorGuide/presenceJudged",
     ]);
@@ -1567,7 +1732,7 @@ describe("wireStationGuide: the present station", () => {
   it("one gate with the arrival: a fix too weak to guide by neither finds nor makes present, and no position holds", () => {
     const { store, guideStore } = countingStore();
     const h = harness(
-      { stations: [station("a", 20, 0)], order: "fixed" },
+      { assets: new Set(), stations: [station("a", 20, 0)], order: "fixed" },
       { guideStore },
     );
     h.at(20, 0, 30);
@@ -1594,7 +1759,11 @@ describe("wireStationGuide: the present station", () => {
   it("a station present by a code ends when the code goes and nothing else can judge (a moved poster's veto)", () => {
     const { store, guideStore } = countingStore();
     const h = harness(
-      { stations: [station("a", 20, 0), station("b", -20, 0)], order: "any" },
+      {
+        assets: new Set(),
+        stations: [station("a", 20, 0), station("b", -20, 0)],
+        order: "any",
+      },
       { guideStore },
     );
     // Indoors: tracking never ready, the raw fixes ±40 m; the moved code
@@ -1622,7 +1791,7 @@ describe("wireStationGuide: the present station", () => {
   it("without location, a frame change ending the code's trust ends the code's station where the visitor stands", () => {
     const { store, guideStore } = countingStore();
     const h = harness(
-      { stations: [station("a", 20, 0)], order: "fixed" },
+      { assets: new Set(), stations: [station("a", 20, 0)], order: "fixed" },
       { guideStore },
     );
     h.ready(false);
@@ -1644,7 +1813,7 @@ describe("wireStationGuide: the present station", () => {
   it("a code's station holds through a tracking drop while the code stays lined up, and ends with no position once it goes", () => {
     const { store, guideStore } = countingStore();
     const h = harness(
-      { stations: [station("a", 20, 0)], order: "fixed" },
+      { assets: new Set(), stations: [station("a", 20, 0)], order: "fixed" },
       { guideStore },
     );
     h.ready(false);
@@ -1664,7 +1833,11 @@ describe("wireStationGuide: the present station", () => {
   it("a fix too weak to guide by still ends presence past the exit by its accuracy, and never enters", () => {
     const { store, guideStore } = countingStore();
     const h = harness(
-      { stations: [station("a", 20, 0), station("b", 140, 0)], order: "any" },
+      {
+        assets: new Set(),
+        stations: [station("a", 20, 0), station("b", 140, 0)],
+        order: "any",
+      },
       { guideStore },
     );
     h.at(20, 0, 4);
@@ -1684,7 +1857,7 @@ describe("wireStationGuide: the present station", () => {
   it("keeps a 'show all' set before the first tick", () => {
     const { store, guideStore } = countingStore();
     const h = harness(
-      { stations: [station("a", 20, 0)], order: "fixed" },
+      { assets: new Set(), stations: [station("a", 20, 0)], order: "fixed" },
       { guideStore },
     );
     store.dispatch(showAllContentSet(true));
@@ -1695,7 +1868,7 @@ describe("wireStationGuide: the present station", () => {
   it("takes a code's band when a code lined the position up (the found exit 1.5 m past the radius)", () => {
     const { store, guideStore } = countingStore();
     const h = harness(
-      { stations: [station("a", 20, 0)], order: "fixed" },
+      { assets: new Set(), stations: [station("a", 20, 0)], order: "fixed" },
       { guideStore },
     );
     h.lined(true);
@@ -1711,6 +1884,7 @@ describe("wireStationGuide: the present station", () => {
     const { store, guideStore } = countingStore();
     const h = harness(
       {
+        assets: new Set(),
         stations: [station("first", 50, 0), station("second", 0, 10)],
         order: "fixed",
       },
@@ -1724,7 +1898,7 @@ describe("wireStationGuide: the present station", () => {
   it("clears at the AR session's end; another tour starts with nothing present and 'show all' off", () => {
     const { store, guideStore } = countingStore();
     const h = harness(
-      { stations: [station("a", 20, 0)], order: "fixed" },
+      { assets: new Set(), stations: [station("a", 20, 0)], order: "fixed" },
       { guideStore },
     );
     h.at(18, 0);
@@ -1733,7 +1907,11 @@ describe("wireStationGuide: the present station", () => {
     expect(selectPresentStationId(store.getState())).toBeNull();
     h.at(18, 0);
     store.dispatch(showAllContentSet(true));
-    h.setTour({ stations: [station("z", -40, 0)], order: "fixed" });
+    h.setTour({
+      assets: new Set(),
+      stations: [station("z", -40, 0)],
+      order: "fixed",
+    });
     h.at(0, 0);
     expect(selectShowAllContent(store.getState())).toBe(false);
     expect(selectPresentStationId(store.getState())).toBeNull();
@@ -1751,7 +1929,7 @@ describe("wireStationGuide: the wait for a heading (D34)", () => {
   it("says so while there are stations and no heading, and stops once tracking earns one", () => {
     const { store, guideStore, guideActions } = countingStore();
     const h = harness(
-      { stations: [station("a", 40, 0)], order: "fixed" },
+      { assets: new Set(), stations: [station("a", 40, 0)], order: "fixed" },
       { guideStore },
     );
     h.ready(false);
@@ -1775,7 +1953,7 @@ describe("wireStationGuide: the wait for a heading (D34)", () => {
   it("a code lined up gives the heading at once: no wait", () => {
     const { store, guideStore } = countingStore();
     const h = harness(
-      { stations: [station("a", 40, 0)], order: "fixed" },
+      { assets: new Set(), stations: [station("a", 40, 0)], order: "fixed" },
       { guideStore },
     );
     h.ready(false);
@@ -1787,7 +1965,11 @@ describe("wireStationGuide: the wait for a heading (D34)", () => {
   it("is false at the session's end, behind the scan gate, and once the tour is complete", () => {
     const { store, guideStore } = countingStore();
     const h = harness(
-      { stations: [station("a", 40, 0, { steps: [] })], order: "fixed" },
+      {
+        assets: new Set(),
+        stations: [station("a", 40, 0, { steps: [] })],
+        order: "fixed",
+      },
       { guideStore },
     );
     h.ready(false);
@@ -1819,7 +2001,11 @@ describe("the HUD marks the five nearest stations still to find", () => {
     );
 
   it("marks the nearest five in the offer's order, and the next one once one is found", () => {
-    const h = harness({ stations: [...line(8)].reverse(), order: "any" });
+    const h = harness({
+      assets: new Set(),
+      stations: [...line(8)].reverse(),
+      order: "any",
+    });
     h.at(0, 0);
     expect(h.huds[0]!.getTargets().map((t) => t.id)).toEqual([
       "s5",
@@ -1856,7 +2042,7 @@ describe("the HUD marks the five nearest stations still to find", () => {
         40 * (i % 10) + 10,
       ),
     );
-    const h = harness({ stations, order: "any" });
+    const h = harness({ assets: new Set(), stations, order: "any" });
     h.at(0, 0);
     const ids = h.huds[0]!.getTargets().map((t) => t.id);
     expect(ids).toHaveLength(5);

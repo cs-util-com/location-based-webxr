@@ -12,6 +12,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MESH_DEPTH } from "./mesh-surface.js";
 import type { EnableGpsArConfig } from "gps-plus-slam-app-framework/ar";
+import { createWalkToast } from "./walk-toast.js";
 import { wireArEntry, type ArEntryDom } from "./ar-entry.js";
 import {
   createTourViewerSession,
@@ -25,8 +26,13 @@ import {
   presenceCleared,
   presenceJudged,
   selectPresentStationId,
+  selectWalkChipKind,
+  trackingLostSet,
 } from "./visitor-guide-slice.js";
 import { RECORDING_DEPTH } from "./authoring-recording.js";
+import { tourDocumentActions } from "./tour-document.js";
+import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourOf } from "./test-support/tour-of.js";
 import {
   endSession,
   recordGpsEvent,
@@ -59,6 +65,18 @@ function el() {
   };
 }
 
+/** A tour with one station: finished (`tour-unfinished.ts`). */
+const FINISHED_TOUR = tourOf([
+  {
+    id: "p1",
+    kind: "shortText",
+    view: "pin",
+    caption: "Gate",
+    geo: { lat: 47, lon: 8, alt: 400, rotation: [0, 0, 0, 1] },
+    createdAtIso: "2026-10-20T00:00:00.000Z",
+  } as unknown as TourObject,
+]);
+
 async function settle(): Promise<void> {
   for (let i = 0; i < 12; i += 1) await Promise.resolve();
 }
@@ -72,8 +90,19 @@ function harness(
     locationPending?: () => boolean;
     codesOnly?: () => boolean;
     recheck?: () => Promise<void>;
+    request?: () => Promise<unknown>;
     copyText?: (text: string) => Promise<void>;
     meshCursor?: boolean;
+    progressKept?: boolean;
+    sheetShown?: () => boolean;
+    debugLines?: () => string[];
+    /** What the browser's location permission reads. */
+    permission?: string;
+    /** The tour stores a code that can start a creator without location. */
+    codeCanStart?: boolean;
+    /** A failed start's location request was refused (the page's
+     *  requester counts it): the permission reads denied from then on. */
+    refusesLocation?: boolean;
   } = {},
 ) {
   // The entry flags a running session on `document.body.dataset`; the
@@ -81,10 +110,15 @@ function harness(
   vi.stubGlobal("document", { body: { dataset: {} } });
   vi.stubGlobal("location", { href: "https://example.test/tour/?qr=abc" });
   const ctx = createTourViewerSession();
+  // A finished tour (one station) unless a test closes it: a visitor's
+  // line about an open tour assumes one with something to show.
+  ctx.tourDocument.open(FINISHED_TOUR);
   const dispose = vi.fn();
   let enabled: EnableGpsArConfig | null = null;
   /** The controller's status, settable so a test can walk a session. */
   const ar = { status: options.arStatus ?? "ready" };
+  /** The location refusals the page's requester counted. */
+  const refusals = { count: 0 };
   const arController = {
     getState: () => ({ status: ar.status }),
     subscribe: () => () => undefined,
@@ -93,6 +127,10 @@ function harness(
       enabled = config;
       // By default report a failed start: the session callbacks are already
       // handed over, and nothing after the enable needs a scene.
+      if (options.enableOk !== true && options.refusesLocation === true) {
+        refusals.count += 1;
+        permission.state = "denied";
+      }
       return Promise.resolve({ ok: options.enableOk === true });
     }),
     disable: vi.fn(() => Promise.resolve()),
@@ -107,6 +145,8 @@ function harness(
     return true;
   };
   hooks.startAuthorPipeline = () => true;
+  hooks.creatorCanStartOnCodes = () => options.codeCanStart === true;
+  const permission = { state: options.permission ?? "granted" };
   const dom = {
     arRoot: el(),
     arStatus: el(),
@@ -119,7 +159,21 @@ function harness(
     arStatusLive: el(),
     scanCard: el(),
     scanCardLine: el(),
+    scanCardTitle: el(),
+    coach: { root: el(), text: el() },
+    codeTail: el(),
   };
+  /** What the walk's toast was asked to say, and its resets. */
+  const toasts: string[] = [];
+  const toastResets = vi.fn();
+  // The walk's own toast over a stand-in of the framework's: `toasts` is
+  // what the screen showed, one entry per toast.
+  const walkToast = createWalkToast({
+    show: (text: string) => {
+      toasts.push(text);
+    },
+    clear: toastResets,
+  });
   const arStore = createTourViewerStore();
   const seams = {
     stopCameraFrameCapture: () => undefined,
@@ -140,7 +194,12 @@ function harness(
       dispose: () => undefined,
     })),
     startMeshSurface: vi.fn(() => meshSurface),
+    startXrSelect: vi.fn((_onSelect: (tap: unknown) => void) => ({
+      dispose: xrSelectDispose,
+    })),
+    queryGeolocationPermission: vi.fn(() => Promise.resolve(permission.state)),
   };
+  const xrSelectDispose = vi.fn();
   const meshSurface = {
     pick: vi.fn(() => ({ position: "the mesh point" })),
     stats: () => ({
@@ -162,16 +221,27 @@ function harness(
       busy: () => false,
       codesOnly: options.codesOnly ?? (() => false),
       recheck: options.recheck ?? (() => Promise.resolve()),
-      request: () => Promise.resolve(),
+      request: options.request ?? (() => Promise.resolve()),
     } as never,
     dom: dom as unknown as ArEntryDom,
     hooks,
+    locationRefusals: () => refusals.count,
     ...(options.records === undefined
       ? {}
       : { recording: { beginOnArEntry: () => options.records === true } }),
     ...(options.meshCursor === undefined
       ? {}
       : { meshCursor: options.meshCursor }),
+    walk: {
+      toast: walkToast,
+      progressKept: () => options.progressKept === true,
+      ...(options.sheetShown === undefined
+        ? {}
+        : { sheetShown: options.sheetShown }),
+      ...(options.debugLines === undefined
+        ? {}
+        : { debugLines: options.debugLines }),
+    },
   });
   return {
     ctx,
@@ -181,8 +251,13 @@ function harness(
     dispose,
     arStore,
     seams,
+    xrSelectDispose,
     arController,
+    toasts,
+    toastResets,
     enabledConfig: () => enabled,
+    permission,
+    refusals,
     meshSurface,
     setArStatus(status: string) {
       ar.status = status;
@@ -258,6 +333,28 @@ describe("wireArEntry session end", () => {
     expect(attempts).toBe(0);
     expect(ticks).toBe(0);
     expect(h.ctx.placementUnsubscribe).toBeNull();
+  });
+
+  // Why this test matters: the visitor's placement trigger answers EVERY
+  // dispatch of the session. A tour's close mid-session (a late integrity
+  // failure, `archive-open.ts`) dispatches `codesForgotten`, which for a
+  // visitor (an empty code book) changes only the creator's code slice; a
+  // filter on "only the creator's codes changed" (r902 review #1, removed
+  // in r904) skipped exactly that dispatch, so this pins that none does.
+  it("a tour's close mid-session still reaches the placement trigger and the stations", async () => {
+    const h = harness({ enableOk: true });
+    await h.enter();
+    let attempts = 0;
+    let ticks = 0;
+    h.hooks.tryPlaceTour = () => {
+      attempts += 1;
+    };
+    h.hooks.tickStations = () => {
+      ticks += 1;
+    };
+    h.arStore.dispatch(tourDocumentActions.codesForgotten());
+    expect(attempts).toBe(1);
+    expect(ticks).toBe(1);
   });
 
   // Why this test matters (code book plan M6 v5.1): the settle compares the
@@ -399,6 +496,21 @@ describe("wireArEntry QR readout and visitor hint", () => {
     );
   });
 
+  // Why: the radar is judged on the phone by
+  // its draw time and the frame time; the ?debug=1 block carries the
+  // walk's two lines after the QR and GPS lines.
+  it("ends the block with the walk's radar and frame lines", () => {
+    const h = harness({
+      debugLines: () => ["radar draw: 0.30 ms", "frame: 16.7 ms"],
+    });
+    h.ctx.debug = true;
+    h.entry.renderArStatus();
+    expect(h.dom.arDebug.textContent.split("\n").slice(-2)).toEqual([
+      "radar draw: 0.30 ms",
+      "frame: 16.7 ms",
+    ]);
+  });
+
   // Milestone review of b4c #2: the creator pipeline never writes the
   // viewer's status, so the block reads the running controller's own.
   it("heads the block with the running controller's status", () => {
@@ -407,6 +519,30 @@ describe("wireArEntry QR readout and visitor hint", () => {
     h.ctx.qrController = { status: "tracking" } as never;
     h.entry.renderArStatus();
     expect(h.dom.arDebug.textContent.split("\n")[0]).toBe("qr: tracking");
+  });
+
+  it("tells a visitor of a tour not finished yet so, without the scan card", () => {
+    // Why: a tour without stations may carry its measured code; the line
+    // says the tour is not finished (with the contact the tour names) and
+    // the scan card, which would ask for the code, stays closed.
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.tourDocument.open({
+      ...tourOf([]),
+      contact: "guide@example.org",
+    });
+    h.ctx.scanGate = { kind: "scanning", escapeOffered: false };
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).toBe(
+      "This tour is not finished yet. Questions about this tour? Contact its maker: guide@example.org",
+    );
+    expect(h.dom.scanCard.hidden).toBe(true);
+    expect(h.dom.arStatus.hidden).toBe(false);
+    // A zip without tour.json is not finished either.
+    h.ctx.tourDocument.close();
+    h.ctx.tourDocument.open(null);
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).toBe("This tour is not finished yet.");
   });
 
   it("shows the fused pose's hint from the last evaluation while tracking", () => {
@@ -625,6 +761,74 @@ describe("the visitor's step marker (polish round M4a, the owner's V4)", () => {
   it("carries no marker when the location was already allowed", () => {
     const h = harness();
     expect(h.dom.enterArButton.dataset["step"]).toBeUndefined();
+  });
+});
+
+describe("a visitor of a tour not finished yet gets no Start", () => {
+  // Why: such a tour has nothing to show. A Start there asked for the
+  // location (and, denied on a tour without codes, told the visitor to
+  // change a browser setting) and opened an empty AR session; the start
+  // page's sentence is the visitor's whole answer.
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function unfinishedVisitor(manifest: "no stations" | "no tour.json") {
+    const request = vi.fn(() => Promise.resolve("granted"));
+    const h = harness({ locationPending: () => true, request });
+    h.ctx.session = {} as never;
+    h.ctx.tourDocument.close();
+    h.ctx.tourDocument.open(manifest === "no stations" ? tourOf([]) : null);
+    h.entry.renderArEntry();
+    return { h, request };
+  }
+
+  it.each(["no stations", "no tour.json"] as const)(
+    "hides the button and its hint (%s), and a tap asks for nothing",
+    async (manifest) => {
+      const { h, request } = unfinishedVisitor(manifest);
+      expect(h.dom.enterArButton.hidden).toBe(true);
+      expect(h.dom.arHint.hidden).toBe(true);
+      // The page hides "What happens?" by this mark (index.html): it
+      // describes a session the visitor cannot start.
+      expect(h.dom.enterArButton.dataset["start"]).toBe("withheld");
+      await h.enter();
+      expect(request).not.toHaveBeenCalled();
+      expect(h.arController.enable).not.toHaveBeenCalled();
+    },
+  );
+
+  it("shows them while the tour.json is still being read, and for a finished tour", () => {
+    // Tapped before the manifest settles, the session's status line says
+    // the tour is not finished (`unfinishedTour`).
+    const { h } = unfinishedVisitor("no tour.json");
+    h.ctx.tourManifestStatus = "pending";
+    h.entry.renderArEntry();
+    expect(h.dom.enterArButton.hidden).toBe(false);
+    expect(h.dom.arHint.hidden).toBe(false);
+    h.ctx.tourManifestStatus = "settled";
+    h.ctx.tourDocument.close();
+    h.ctx.tourDocument.open(FINISHED_TOUR);
+    h.entry.renderArEntry();
+    expect(h.dom.enterArButton.hidden).toBe(false);
+    expect(h.dom.arHint.hidden).toBe(false);
+    expect(h.dom.enterArButton.dataset["start"]).toBe("offered");
+  });
+
+  it("keeps the button while a session runs: it is the way out", () => {
+    const { h } = unfinishedVisitor("no stations");
+    h.setArStatus("running");
+    h.entry.renderArEntry();
+    expect(h.dom.enterArButton.hidden).toBe(false);
+  });
+
+  it("never hides a creator's button: the tour is the one being made", () => {
+    const h = harness({ mode: "creator" });
+    h.ctx.session = {} as never;
+    h.ctx.tourDocument.close();
+    h.ctx.tourDocument.open(tourOf([]));
+    h.entry.renderArEntry();
+    expect(h.dom.enterArButton.hidden).toBe(false);
   });
 });
 
@@ -950,6 +1154,32 @@ describe("the creator's mesh cursor (polish round M5; main.ts's default unless ?
     expect(h.seams.stopDepthCapture).toHaveBeenCalledTimes(1);
   });
 
+  // Why (station blocks plan B2b step 5): a visitor's tap in AR is how a
+  // pin opens its sheet, so a visitor's session hears the XR select (with
+  // no reticle) and hands each tap to `hooks.visitorTap`; the session's
+  // end stops it, or a tap of the next session would reach two listeners.
+  // A creator's taps are the reticle's.
+  it("hears a visitor's taps for the session and hands them to the pin sheet; a creator's are the reticle's", async () => {
+    const h = harness({ enableOk: true });
+    const taps: unknown[] = [];
+    h.hooks.visitorTap = (tap) => {
+      taps.push(tap);
+    };
+    await h.enter();
+    expect(h.seams.startXrSelect).toHaveBeenCalledTimes(1);
+    expect(h.seams.startHitTestReticle).not.toHaveBeenCalled();
+    const onSelect = h.seams.startXrSelect.mock.calls[0]![0];
+    onSelect(null);
+    expect(taps).toEqual([null]);
+    h.enabledConfig()!.callbacks?.onSessionEnd?.({ requestedByApp: false });
+    expect(h.ctx.visitorSelect).toBeNull();
+    expect(h.xrSelectDispose).toHaveBeenCalledTimes(1);
+
+    const creator = harness({ mode: "creator", enableOk: true });
+    await creator.enter();
+    expect(creator.seams.startXrSelect).not.toHaveBeenCalled();
+  });
+
   // Why (M5 review #11): a mesh that cannot be built must cost the creator
   // nothing but the mesh - the ring still runs on the hit-test.
   it("keeps the hit-test ring when the mesh cannot be built", async () => {
@@ -1020,6 +1250,101 @@ describe("a visitor without location starts on codes alone (QR-first M1b-1)", ()
   });
 });
 
+// Why: indoors a creator may refuse location, or get none. A tour that
+// stores a code can start on it, as a visitor's does - its votes line the
+// session up. A tour that stores none cannot: the start asks for location
+// as before, and its failure says to allow it and step outside.
+describe("a creator whose location is refused starts on the tour's stored code", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("starts without location when the permission is refused and a stored code can start the visit", async () => {
+    const h = harness({
+      mode: "creator",
+      permission: "denied",
+      codeCanStart: true,
+      enableOk: true,
+    });
+    await h.enter();
+    expect(h.enabledConfig()?.location).toBe("none");
+    expect(h.ctx.codesOnly).toBe(true);
+  });
+
+  it("asks for location as before when the tour stores no code that can start it", async () => {
+    const h = harness({ mode: "creator", permission: "denied" });
+    await h.enter();
+    expect(h.enabledConfig()?.location).toBeUndefined();
+    expect(h.ctx.codesOnly).toBe(false);
+  });
+
+  it("asks for location as before when location is allowed, a stored code or not", async () => {
+    const h = harness({ mode: "creator", codeCanStart: true, enableOk: true });
+    await h.enter();
+    expect(h.enabledConfig()?.location).toBeUndefined();
+    expect(h.ctx.codesOnly).toBe(false);
+  });
+
+  it("says, after a start the refused location failed, to allow it and step outside when no code can start it", async () => {
+    const h = harness({
+      mode: "creator",
+      permission: "denied",
+      refusesLocation: true,
+    });
+    await h.enter();
+    h.setArStatus("error");
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).toMatch(
+      /step outside for a first GPS fix/,
+    );
+  });
+
+  it("says, after a prompt refused at the tap, that a stored code can start the next try", async () => {
+    // The permission still asked when tapped; refused in its prompt, the
+    // start failed - the next tap starts on the code.
+    const h = harness({
+      mode: "creator",
+      codeCanStart: true,
+      permission: "prompt",
+    });
+    h.arController.enable.mockImplementationOnce(() => {
+      h.permission.state = "denied";
+      h.refusals.count += 1;
+      return Promise.resolve({ ok: false });
+    });
+    await h.enter();
+    h.setArStatus("error");
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).toMatch(
+      /Try again to start on the tour's printed code/,
+    );
+  });
+
+  // Why: a permission refused in an earlier visit still reads denied when
+  // this start fails for another reason (no AR, the camera refused). Told
+  // to allow location and step outside, the creator would chase the wrong
+  // cause - the hint is for a start the location request itself failed.
+  it("gives no location hint when the start failed with no location refused in it", async () => {
+    const h = harness({ mode: "creator", permission: "denied" });
+    await h.enter();
+    h.setArStatus("error");
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).not.toMatch(
+      /step outside for a first GPS fix/,
+    );
+  });
+
+  it("starts no visitor differently: a visitor's refused location is the location gate's", async () => {
+    const h = harness({
+      permission: "denied",
+      codeCanStart: true,
+      enableOk: true,
+    });
+    await h.enter();
+    expect(h.enabledConfig()?.location).toBeUndefined();
+  });
+});
+
 // Why (D34 of the tour editor plan 2026-10-17-1816): the visitor's line
 // asks for a few steps while the guide waits for a heading, read from the
 // store the guide writes; once the heading exists the placed line is back.
@@ -1070,12 +1395,9 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
       shown: () => ({ count: 0, skipped: [] }),
       showsAny: () => showsAny,
     } as never;
-    h.ctx.placement = {
-      kind: "placed",
-      placedKind: "ring",
-      count: 0,
-      atStations: 3,
-    };
+    // (The walk's recorded photos were placed here too; a visitor no
+    // longer sees them, and the content in the side table is what places
+    // the tour.)
     h.entry.renderArStatus();
     expect(h.dom.arStatus.dataset["state"]).toBe("to-station");
     expect(h.dom.arStatus.textContent).toBe(
@@ -1097,17 +1419,13 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
       shown: () => ({ count: 0, skipped: [] }),
       showsAny: () => false,
     } as never;
-    h.ctx.placement = {
-      kind: "placed",
-      placedKind: "ring",
-      count: 0,
-      atStations: 3,
-    };
+    // (The walk's recorded photos were placed here too; a visitor no
+    // longer sees them, and the content in the side table is what places
+    // the tour.)
     h.arStore.dispatch(
       presenceJudged({
         candidates: [{ id: "a", distanceM: 1, foundM: 5, foundExitM: 9 }],
-        accuracyM: 4,
-        codeLinedUp: false,
+        precision: { source: "gps", accuracyM: 4, tooWeak: false },
       }),
     );
     expect(selectPresentStationId(h.arStore.getState())).toBe("a");
@@ -1140,6 +1458,33 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
     expect(h.dom.arStatus.dataset["state"]).toBe("placed");
   });
 
+  // Why: the chip's "Paused - tracking lost"
+  // and the radar's frozen grey read the store's trackingLost, published
+  // here from the readiness phase the visitor's sentence already uses - on
+  // a change only (this runs per camera frame), never for a creator.
+  it("publishes the tracking loss from the readiness phase, on a change only", () => {
+    const h = placedVisitor();
+    const dispatch = vi.spyOn(h.arStore, "dispatch");
+    const losses = () =>
+      dispatch.mock.calls.filter(([a]) => a.type === trackingLostSet.type);
+    h.arStore.dispatch(reportUpdated(trackingReport("ar-lost")));
+    for (let i = 0; i < 5; i += 1) h.entry.renderArStatus();
+    expect(selectWalkChipKind(h.arStore.getState())).toBe("lost");
+    expect(losses()).toHaveLength(1);
+    h.arStore.dispatch(reportUpdated(trackingReport("warming-up")));
+    for (let i = 0; i < 5; i += 1) h.entry.renderArStatus();
+    expect(selectWalkChipKind(h.arStore.getState())).toBe("pending");
+    expect(losses()).toHaveLength(2);
+  });
+
+  it("never publishes a tracking loss for a creator", () => {
+    const h = harness({ arStatus: "running", mode: "creator" });
+    h.ctx.session = {} as never;
+    h.arStore.dispatch(reportUpdated(trackingReport("ar-lost")));
+    h.entry.renderArStatus();
+    expect(selectWalkChipKind(h.arStore.getState())).toBe("pending");
+  });
+
   it("never says it to a creator", () => {
     const h = harness({ arStatus: "running", mode: "creator" });
     h.ctx.session = {} as never;
@@ -1148,3 +1493,158 @@ describe("wireArEntry: the wait for a heading (D34)", () => {
     expect(h.dom.arStatus.textContent).not.toContain("Walk a few steps");
   });
 });
+
+describe("the walk's surfaces in AR", () => {
+  // Why: the prototype has no status line over the camera. Each state of the
+  // visitor's sentence goes to one surface - the coach, the scan card,
+  // a toast said once, the peek's code line - and the sentence itself stays
+  // on #ar-status (data-state, the tests) and its live copy. A wrong route
+  // leaves the visitor without a word, or says news sixty times a second.
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function placedVisitor(gate: TourViewerSessionGate) {
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.scanGate = gate;
+    h.ctx.stationContent = {
+      has: () => true,
+      shown: () => ({ count: 2, skipped: [] }),
+      showsAny: () => true,
+    } as never;
+    return h;
+  }
+
+  it("a short wait is the coach's, with its spinner, and the coach goes when the walk speaks", () => {
+    const h = harness({ arStatus: "starting" });
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("starting");
+    expect(h.dom.coach.root.hidden).toBe(false);
+    expect(h.dom.coach.root.dataset["look"]).toBe("spinner");
+    expect(h.dom.coach.text.textContent).toBe("Starting AR…");
+    // The sentence is still announced whole.
+    expect(h.dom.arStatusLive.textContent).toBe("Starting AR…");
+    const placed = placedVisitor({ kind: "passed", via: "code" });
+    placed.ctx.viewerLockedText = "c";
+    placed.ctx.viewerVotedLocks = 3;
+    placed.entry.renderArStatus();
+    expect(placed.dom.arStatus.dataset["state"]).toBe("placed");
+    expect(placed.dom.coach.root.hidden).toBe(true);
+    expect(placed.dom.coach.text.textContent).toBe("");
+  });
+
+  it("a code that passed the gate turns the card to its found look until the tour is placed", () => {
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.scanGate = { kind: "passed", via: "code" };
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("locking");
+    expect(h.dom.scanCard.hidden).toBe(false);
+    expect(h.dom.scanCard.dataset["look"]).toBe("found");
+    expect(h.dom.scanCardTitle.textContent).toBe(
+      "Code found - placing the tour…",
+    );
+    expect(h.dom.scanCardLine.textContent).toBe("");
+    expect(h.dom.coach.root.hidden).toBe(true);
+    // The gate waiting again (a new entry) is the scan look, its title kept.
+    h.ctx.scanGate = { kind: "scanning", escapeOffered: false };
+    h.entry.renderArStatus();
+    expect(h.dom.scanCard.dataset["look"]).toBe("scan");
+    expect(h.dom.scanCardTitle.textContent).toBe(
+      "Scan the code again so the tour can start",
+    );
+  });
+
+  it("a GPS placement's reason is a toast said once per entry, its code request the peek's line", () => {
+    const h = placedVisitor({ kind: "passed", via: "skipped" });
+    h.entry.renderArStatus();
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("placed-gps");
+    expect(h.toasts).toEqual(["Tour placed by GPS (less exact)"]);
+    expect(h.dom.codeTail.hidden).toBe(false);
+    expect(h.dom.codeTail.textContent).toBe(
+      "Find the poster's code to line it up.",
+    );
+    expect(h.dom.coach.root.hidden).toBe(true);
+  });
+
+  it("news is said in AR only, never on the start page", () => {
+    const h = placedVisitor({ kind: "passed", via: "skipped" });
+    h.setArStatus("ready");
+    h.entry.renderArStatus();
+    expect(h.toasts).toEqual([]);
+    expect(h.dom.coach.root.hidden).toBe(true);
+  });
+
+  it("a creator keeps the line: no coach, no toast", () => {
+    const h = harness({ arStatus: "starting", mode: "creator" });
+    h.entry.renderArStatus();
+    expect(h.dom.coach.root.dataset["look"]).toBeUndefined();
+    expect(h.dom.coach.text.textContent).toBe("");
+    expect(h.toasts).toEqual([]);
+  });
+
+  it("the toast goes with the session, so the next entry may say its news again", async () => {
+    const h = harness({ arStatus: "ready" });
+    await h.enterAndEnd();
+    expect(h.toastResets).toHaveBeenCalledTimes(1);
+  });
+
+  it("a running walk is a placed tour: a tour of stories places nothing, yet its sentence moves on", () => {
+    // Why: `contentStatus` reads "placed" only when station content
+    // stands in the scene, so a tour whose stations hold only stories
+    // stayed at "Code found - placing the tour…" for good - the found card
+    // over the walk, the live region saying it - and once the sheet hid
+    // that wait, a GPS placement's reason went unsaid.
+    let sheet = false;
+    const h = harness({ arStatus: "running", sheetShown: () => sheet });
+    h.ctx.session = {} as never;
+    h.ctx.scanGate = { kind: "passed", via: "code" };
+    h.ctx.viewerLockedText = "c";
+    h.ctx.viewerVotedLocks = 3;
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("locking");
+    expect(h.dom.scanCard.hidden).toBe(false);
+    sheet = true;
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset["state"]).toBe("placed");
+    expect(h.dom.arStatusLive.textContent).toBe("Tour placed. Look around.");
+    expect(h.dom.scanCard.hidden).toBe(true);
+    expect(h.dom.coach.root.hidden).toBe(true);
+    // Placed by GPS: its reason is the walk's news.
+    const gps = harness({ arStatus: "running", sheetShown: () => true });
+    gps.ctx.session = {} as never;
+    gps.ctx.scanGate = { kind: "passed", via: "skipped" };
+    gps.entry.renderArStatus();
+    expect(gps.dom.arStatus.dataset["state"]).toBe("placed-gps");
+    expect(gps.toasts).toEqual(["Tour placed by GPS (less exact)"]);
+  });
+
+  it("one render's news is ONE toast: a second would replace the first unread, and it would count as said", () => {
+    const h = placedVisitor({ kind: "passed", via: "skipped" });
+    h.ctx.stationContent = {
+      has: () => true,
+      shown: () => ({ count: 2, skipped: ["x"] }),
+      showsAny: () => true,
+    } as never;
+    h.entry.renderArStatus();
+    h.entry.renderArStatus();
+    expect(h.toasts).toEqual([
+      "Tour placed by GPS (less exact) 1 item could not load.",
+    ]);
+  });
+
+  it("a visitor who left AR with progress is offered 'Back to the tour'", () => {
+    expect(harness({ progressKept: true }).dom.enterArButton.textContent).toBe(
+      "Back to the tour",
+    );
+    expect(harness({ progressKept: false }).dom.enterArButton.textContent).toBe(
+      "Start the tour",
+    );
+  });
+});
+
+type TourViewerSessionGate = ReturnType<
+  typeof createTourViewerSession
+>["scanGate"];

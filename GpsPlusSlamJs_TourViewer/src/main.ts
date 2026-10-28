@@ -47,6 +47,8 @@ import { meshCursorFromSearch, viewerModeFromSearch } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { wireHostPicker } from "./host-picker.js";
 import { wireSetupStage } from "./setup-stage.js";
+import { mountLanding, watchArStarting } from "./landing/landing-mount.js";
+import { holdLandingSkip } from "./landing/landing-skip.js";
 import { readTourHost } from "./tour-host.js";
 import { checkLink } from "./link-check.js";
 import { wirePrintPanel } from "./print-panel.js";
@@ -60,6 +62,11 @@ import { createSaveGuard, wireRecordingPanel } from "./recording-panel.js";
 import { createSummaryPanel } from "./summary-panel.js";
 import { getSeams } from "./seams.js";
 import {
+  cancelsXrSelect,
+  createPinSheet,
+  tourBlocksById,
+} from "./pin-sheet.js";
+import {
   createTourViewerSession,
   createTourViewerStore,
   createUnwiredHooks,
@@ -67,6 +74,8 @@ import {
 import { createViewerPlacement } from "./viewer-placement.js";
 import { createViewingLog } from "./viewing-log.js";
 import { wireVisitorStations } from "./visitor-stations.js";
+import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
+import { createWalkToast } from "./walk-toast.js";
 import { relocationRequested } from "./tour-relocation.js";
 import { tourCodesUsable, wireVisitorScreen } from "./visitor-screen.js";
 import { wireVisitorStart } from "./visitor-start.js";
@@ -86,6 +95,11 @@ import {
 } from "./visitor-guide-slice.js";
 import { wireTourNameField } from "./tour-name-field.js";
 import { renderTourContact } from "./tour-contact.js";
+import {
+  NOT_FINISHED,
+  tourUnfinished,
+  unfinishedNote,
+} from "./tour-unfinished.js";
 
 /** Keep at most this many archives cached (LRU) — see BoundedLocalCacheStore. */
 const MAX_CACHED_ARCHIVES = 5;
@@ -102,6 +116,13 @@ function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
   if (found === null) throw new Error(`missing #${id}`);
   return found as T;
+}
+
+/** An SVG element by id (the walk's direction arrow). */
+function svgElement(id: string): SVGElement {
+  const found = document.getElementById(id);
+  if (!(found instanceof SVGElement)) throw new Error(`missing svg #${id}`);
+  return found;
 }
 
 const errorBox = element<HTMLDivElement>("error");
@@ -122,6 +143,43 @@ const cacheStore =
 // DEV Playwright run.
 const mode = viewerModeFromSearch(location.search);
 const seams = getSeams();
+/** Read on each use: the reader can change it while the page is open. */
+const reducedMotion = (): boolean =>
+  typeof matchMedia === "function" &&
+  matchMedia("(prefers-reduced-motion: reduce)").matches;
+// The landing's moving parts (src/landing/landing-mount.ts): dynamic
+// imports, for a creator only; its text and still are static markup.
+{
+  const film = document.getElementById("landing-film");
+  const cards = document.querySelector<HTMLElement>(".landing-cards");
+  const uses = document.getElementById("landing-uses");
+  const landing = mountLanding({
+    mode,
+    dom:
+      film === null || cards === null || uses === null
+        ? null
+        : { film, cards, uses },
+    reducedMotion: reducedMotion(),
+    watchReducedMotion: (onChange) => {
+      if (typeof matchMedia !== "function") return () => undefined;
+      const query = matchMedia("(prefers-reduced-motion: reduce)");
+      const changed = (): void => {
+        onChange(query.matches);
+      };
+      query.addEventListener("change", changed);
+      return () => {
+        query.removeEventListener("change", changed);
+      };
+    },
+    onArStarting: watchArStarting(document),
+  });
+  // A returning device's page was scrolled to the setup before the
+  // parts revealed below (and the landing's pictures) showed: it is kept
+  // there while they settle. Called here, before the rest of the wiring,
+  // so a throw further down cannot skip it; its ResizeObserver sees the
+  // reveals that come later.
+  holdLandingSkip(document, { until: landing.ready });
+}
 // `?debug=1` (the apps' shared reader): the QR readout in the AR overlay
 // (plan §66), the visitor's troubleshooting recording (M1b); the visitor
 // link carries it on.
@@ -157,6 +215,9 @@ if (showAllStationsFromSearch(location.search)) {
 // The location permission enable() asks for is settled without waiting for
 // a fix (QR-first M1b-1 review #1): indoors a visitor who allowed location
 // got none, and the framework's requester failed enable() on every tap.
+/** Location requests refused in this page: a creator's failed start names
+ *  the location only when its own request was among them (`ar-entry.ts`). */
+let locationRefusals = 0;
 const arController = createEnableGpsArController({
   ...seams.controllerDeps,
   requestGeolocationPermission: locationPermissionWithoutFix({
@@ -164,6 +225,9 @@ const arController = createEnableGpsArController({
     request:
       seams.controllerDeps.requestGeolocationPermission ??
       requestGeolocationPermission,
+    onRefused: () => {
+      locationRefusals += 1;
+    },
   }),
 });
 const ctx = createTourViewerSession(arStore);
@@ -413,10 +477,13 @@ if (mode === "visitor") {
     line: element("error-contact"),
     link: element<HTMLAnchorElement>("error-contact-link"),
   };
+  /** The open tour is not finished yet (`tour-unfinished.ts`): its
+   *  contact shows under the start page's sentence too. */
+  let unfinished = false;
   const renderContact = (): void => {
     renderTourContact(
       contactDom,
-      errorBox.textContent ?? "",
+      errorBox.textContent || (unfinished ? NOT_FINISHED : ""),
       ctx.tourDocument.manifest()?.contact,
     );
   };
@@ -425,9 +492,10 @@ if (mode === "visitor") {
     characterData: true,
     subtree: true,
   });
-  hooks.presentTourInfo = (manifest, loadImage) => {
-    if (manifest === null) visitorStart.clear();
-    else visitorStart.present(manifest, loadImage);
+  hooks.presentTourInfo = (tour) => {
+    if (tour === null) visitorStart.clear();
+    else visitorStart.present(tour.manifest, tour.loadImage);
+    unfinished = tour !== null && tourUnfinished(tour.manifest);
     renderContact();
     visitor.tourChanged();
   };
@@ -474,9 +542,12 @@ if (mode === "creator") {
       nav: element("setup-nav"),
       back: element("setup-back"),
       next: element("setup-next"),
-      begin: element("setup-begin"),
+      begins: Array.from(
+        document.querySelectorAll<HTMLButtonElement>(".landing-begin"),
+      ),
       stage: element("setup-stage"),
     },
+    reducedMotion,
     openStep: (step) => {
       wizard.openStep(step);
     },
@@ -560,11 +631,17 @@ const tourNameField = wireTourNameField(
   },
 );
 if (mode === "creator") {
-  hooks.presentTourInfo = (manifest) => {
+  const visitorLinkNote = element("visitor-link-note");
+  hooks.presentTourInfo = (tour) => {
+    const manifest = tour?.manifest ?? null;
     tourNameField.present(
       manifest?.title ?? null,
       manifest === null ? null : (ctx.session?.archive.url ?? null),
     );
+    // What a visitor of the hosted file reads while it is not finished.
+    const note = tour === null ? null : unfinishedNote(tour.manifest);
+    visitorLinkNote.textContent = note ?? "";
+    visitorLinkNote.hidden = note === null;
   };
 }
 
@@ -584,6 +661,9 @@ const setup = wireCreatorSetup({
   renderArEntry: () => {
     hooks.renderArEntry();
   },
+  // A code the tour stores votes for a creator as for a visitor: through
+  // the viewer placement, wired after the setup.
+  codeVotes: (options) => hooks.storedCodeVotes(options),
   // Step 6 names the host chosen in step 1 (polish round M2).
   host: () => readTourHost(stepStore),
   codeTour: {
@@ -621,12 +701,19 @@ const setup = wireCreatorSetup({
     replaceHelpGeneric: element("replace-help-generic"),
     replaceHelpDrive: element("replace-help-drive"),
     replaceDriveCopy: element("replace-drive-copy"),
+    debugSave: element("debug-save"),
+    debugSaveText: element("debug-save-text"),
+    debugSaveButton: element("debug-save-btn"),
+    debugSaveStatus: element("debug-save-status"),
     pinButton: element("setup-pin"),
     pinLabel: element("pin-label"),
+    pinLabelCount: element("pin-label-count"),
     pinSave: element("pin-save"),
     pinCancel: element("pin-cancel"),
     photoButton: element("setup-photo"),
     newStationButton: element<HTMLButtonElement>("setup-new-station"),
+    undoButton: element<HTMLButtonElement>("setup-undo"),
+    undoLabel: element("setup-undo-label"),
     draftOffer: element("draft-offer"),
     draftOfferText: element("draft-offer-text"),
     draftRestore: element("draft-restore"),
@@ -646,6 +733,7 @@ const setup = wireCreatorSetup({
 });
 hooks.renderAuthorReadout = setup.renderAuthorReadout;
 hooks.startAuthorPipeline = setup.startAuthorPipeline;
+hooks.creatorCanStartOnCodes = setup.creatorCanStartOnCodes;
 hooks.resetFinishStep = setup.resetFinishStep;
 // The save cannot be forgotten (UI round 1, U2): another tour, or leaving
 // the page, asks first while a rebuilt tour file was not saved.
@@ -662,6 +750,7 @@ hooks.presentNoTour = () => {
   print.presentNoTour();
 };
 hooks.presentDraftForTour = setup.presentDraftForTour;
+hooks.forgetRefusedDraft = setup.forgetRefusedDraft;
 
 // The recording's controls: a `?debug=1` creator's or visitor's (M1b;
 // polish round M3, Q-Data); wired before the AR entry that asks them at
@@ -814,12 +903,24 @@ const viewer = createViewerPlacement({
       }),
 });
 hooks.startViewerPipeline = viewer.startViewerPipeline;
+hooks.storedCodeVotes = viewer.storedCodeVotes;
 hooks.tryPlaceTour = viewer.tryPlaceTour;
 hooks.startScanGate = viewer.startScanGate;
 hooks.resetScanGate = viewer.resetScanGate;
 hooks.reconsiderScanGate = viewer.reconsiderScanGate;
 
-// The visitor's stations and their stories (tour kit plan K4).
+// The visitor's toast in AR: the
+// framework's one toast, its news said once per AR entry.
+const walkToast = createWalkToast(
+  createToast(element("walk-toast-root"), {
+    className: "walk-toast",
+    id: "walk-toast",
+  }),
+  element("walk-live"),
+);
+
+// The visitor's stations and their stories (tour kit plan K4), and the
+// walk's sheet.
 const stations = wireVisitorStations({
   ctx,
   mode,
@@ -829,14 +930,19 @@ const stations = wireVisitorStations({
     guide: {
       line: element("station-line"),
       skip: element("station-skip"),
+      // The end of a story is the story card's control.
+      end: element("walk-story-end"),
     },
     scene: {
       panel: element("scene-panel"),
       title: element("scene-title"),
+      description: element("scene-description"),
       speaker: element("scene-speaker"),
       text: element("scene-text"),
       status: element("scene-status"),
       image: element<HTMLImageElement>("scene-image"),
+      stationImage: element<HTMLImageElement>("scene-station-image"),
+      video: element<HTMLVideoElement>("scene-video"),
       choices: element("scene-choices"),
       continueButton: element("scene-continue"),
       playNext: element("scene-play-next"),
@@ -848,6 +954,61 @@ const stations = wireVisitorStations({
   },
   now: () => Date.now(),
   schedule: (fn, ms) => seams.schedule(fn, ms),
+  walk: {
+    dom: {
+      doc: document,
+      root: element("walk-sheet"),
+      grab: element("walk-grab"),
+      peek: element("walk-peek"),
+      segments: element("walk-segments"),
+      eyebrow: element("walk-eyebrow"),
+      title: element("walk-title"),
+      distance: element("walk-distance"),
+      distanceText: element("walk-distance-text"),
+      distanceArrow: svgElement("walk-distance-arrow"),
+      tail: element("walk-tail"),
+      tailArrow: svgElement("walk-tail-arrow"),
+      quick: element("station-skip"),
+      story: element("walk-story"),
+      dots: element("walk-dots"),
+      storyEnd: element("walk-story-end"),
+      keepListening: element("walk-keep-listening"),
+      list: element("walk-list"),
+      listTitle: element("walk-list-title"),
+      chip: element("walk-chip"),
+      close: element("walk-close"),
+      done: element("walk-done"),
+      doneTitle: element("walk-done-title"),
+      doneText: element("walk-done-text"),
+      progress: element("walk-progress"),
+      hint: element("walk-hint"),
+      rows: element("walk-rows"),
+      away: {
+        root: element("walk-away"),
+        text: element("walk-away-text"),
+        segments: element("walk-away-segments"),
+        rows: element("walk-away-rows"),
+      },
+    },
+    toast: walkToast,
+    onShownChange: () => {
+      hooks.renderArStatus();
+    },
+    // The radar and the precision chip.
+    radar: {
+      wrap: element("walk-radar-wrap"),
+      button: element("walk-radar"),
+      canvas: element<HTMLCanvasElement>("walk-radar-canvas"),
+      chip: element("walk-precision"),
+      chipText: element("walk-precision-text"),
+      rangeLabel: element("walk-range"),
+    },
+    edgePill: {
+      root: element("walk-edge-pill"),
+      text: element("walk-edge-pill-text"),
+      arrow: svgElement("walk-edge-pill-arrow"),
+    },
+  },
   // The test switch ?relocate=here (tour-relocation.ts, owner decision S-D9).
   ...(relocationRequested(location.search)
     ? {
@@ -866,10 +1027,42 @@ hooks.tickStations = () => {
   setup.tickStations();
   // The present station's content follows the guide's verdict at once.
   viewer.syncContent();
+  // A pin's sheet goes with its pin.
+  pinSheet.sync();
 };
 hooks.stationCodeLocked = stations.codeLocked;
 hooks.unlockStationAudio = stations.unlockAudio;
-hooks.stopStations = stations.stop;
+// A pin's whole text on a tap in AR (station blocks plan B2b): the
+// overlay's own taps (its controls, its sheets) are no select.
+const pinSheet = createPinSheet({
+  dom: {
+    sheet: element("pin-sheet"),
+    title: element("pin-sheet-title"),
+    text: element("pin-sheet-text"),
+  },
+  scene: () => seams.getScene(),
+  blocks: () => tourBlocksById(ctx.tourDocument.manifest()),
+  pick: (targets, tap) => seams.pickObjectInView(targets, tap),
+});
+element("pin-sheet-close").addEventListener("click", () => {
+  pinSheet.close();
+});
+if (mode === "visitor") {
+  element("ar-root").addEventListener("beforexrselect", (event) => {
+    if (
+      cancelsXrSelect(event.target instanceof Element ? event.target : null)
+    ) {
+      event.preventDefault();
+    }
+  });
+}
+hooks.visitorTap = (tap) => {
+  pinSheet.tapped(tap);
+};
+hooks.stopStations = () => {
+  stations.stop();
+  pinSheet.close();
+};
 // Every device fix goes through the viewer placement: while a scanned code's
 // keep-alive holds, the fix and its ring reach the store as ONE batch, one
 // solve (authoring plan 2026-09-28-0953 D18); otherwise as before.
@@ -891,6 +1084,7 @@ const arEntry = wireArEntry({
   gpsHandler,
   seams,
   locationGate: visitor.locationGate,
+  locationRefusals: () => locationRefusals,
   dom: {
     arRoot: element("ar-root"),
     arStatus: element("ar-status"),
@@ -903,8 +1097,20 @@ const arEntry = wireArEntry({
     arStatusLive: element("ar-status-live"),
     scanCard: element("scan-card"),
     scanCardLine: element("scan-card-line"),
+    scanCardTitle: element("scan-card-title"),
+    coach: {
+      root: element("walk-coach"),
+      text: element("walk-coach-text"),
+    },
+    codeTail: element("walk-code-tail"),
   },
   hooks,
+  walk: {
+    toast: walkToast,
+    progressKept: () => mode === "visitor" && stations.progressKept(),
+    sheetShown: () => stations.walkShown(),
+    debugLines: () => stations.debugLines(),
+  },
   ...(recordingPanel === null ? {} : { recording: recordingPanel }),
 });
 hooks.renderArStatus = arEntry.renderArStatus;

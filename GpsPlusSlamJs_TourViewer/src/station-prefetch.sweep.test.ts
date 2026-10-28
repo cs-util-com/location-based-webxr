@@ -49,7 +49,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import type {
   TourAsset,
   TourStation,
-} from "gps-plus-slam-app-framework/ar/tour-stations";
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import {
   createStationPrefetch,
@@ -83,14 +83,26 @@ function stationOf(
   return {
     id,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    items: [],
+    blocks: ["figure", "voice", "picture"]
+      .map((kind) => `${prefix}-${kind}`)
+      .map((asset, i) => ({
+        id: `b${String(i)}`,
+        kind: "picture" as const,
+        view: "card" as const,
+        image: asset,
+        widthM: 1,
+        pose: {
+          position: [0, 0, 0] as [number, number, number],
+          rotation: [0, 0, 0, 1] as [number, number, number, number],
+        },
+      })),
     activateRadiusM,
     foundRadiusM,
     hint: "arrow",
-    steps: ["figure", "voice", "picture"].map((kind, i) => ({
+    steps: ["figure", "voice", "picture"].map((_asset, i) => ({
       id: `s${String(i)}`,
-      block: { kind: "image", asset: `${prefix}-${kind}` },
-      advance: { mode: "tap" },
+      action: { kind: "show" as const, block: `b${String(i)}` },
+      advance: { mode: "tap" as const },
     })),
   };
 }

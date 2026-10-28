@@ -9,12 +9,13 @@ view" chip.
 ## Public API
 
 - `createEditorCard(dom, { loadImage, onClose, onReveal }): EditorCard`
-  - `show(item)` - the kind ("Code 1", "Pin note", "Photo note",
-    "Recorded photo"), a note's text, a photo (see below), the precision
+  - `show(item)` - the kind ("Code 1", "Pin", "Photo" - one word per kind,
+    `object-describe.ts` `BLOCK_KIND_LABEL` -
+    "Station"), a note's text, a photo (see below), the precision
     line, the item's meta, "Esc close".
-  - `place(anchor | null, free)` - positions the card with
+  - `place(anchor | null, free, avoid?)` - positions the card with
     `placePopover` (a note's lift 24 px, gap 30; a code's or station's 0
-    and 26), or, for a marker out of view, hides it and shows the chip
+    and 26; `avoid` the box it keeps clear of, the page's debug panel), or, for a marker out of view, hides it and shows the chip
     ("<title> is off the map view", "Show it" calls `onReveal`). An item
     with no position (`anchor` null) gets the card at the free area's
     corner, without arrow or chip (E1 review #3). The card is as wide as
@@ -31,7 +32,11 @@ view" chip.
     `commit()` - commits the field's typing (a Save and a new selection
     do it first); `dirty()` - typing not yet committed (the leave guard).
   - The pin's text field is kept across re-renders of the same item, its
-    typing too (a save ending mid-typing).
+    typing too (a save ending mid-typing). Its count follows it
+    (`#card-text-count`, an `<output>` the field is described by,
+    `pin-text.ts`): "12 / 40" as it is typed, marked `data-over` past
+    the 40 characters the edit refuses (`object-edits.ts`, the refusal
+    shown as the card's message).
 - `CARD_RESIZED` - the event the card fires when its content changed
   size (a photo landed, its error line), so the page places it again.
 - `CardView`.
@@ -52,8 +57,7 @@ view" chip.
   (a file changed on disk throws on a later read).
 - A photo read that lands after the card moved on is dropped (a
   generation counter).
-- A code's card says it is measured on site; a recorded photo's that it
-  was placed for visitors at the Finish.
+- A code's card says it is measured on site.
 
 ## Tests
 

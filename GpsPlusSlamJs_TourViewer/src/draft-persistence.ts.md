@@ -8,16 +8,28 @@ are the framework's.
 
 ## Public API
 
-- `writeDraftMeta(store, { tourUrl, sizeM, level, levels?, rejected? })` - the
-  tour, the printed size, the measured level and the ids the creator has
-  thrown away. (Metas written before code book plan M6 also carry the move
-  prompt's answers; they are read as if absent.) **This write is the commit point for a rejection** - see the
-  invariant below. `rejected` is optional and absent from every meta file
-  written before 2026-09-10. `levels` (code book plan M4c-1) is every code
-  the hosted zip does not hold yet, `level` (the code in hand) among them;
-  optional, and `readDraft` returns the one `level` as the list for a meta
-  written before it. Each entry is checked like `level`; one that does not
-  read costs itself (`draft.levels`).
+- `writeDraftMeta(store, { tourUrl, sizeM, rejected? })` - the tour, the
+  printed size and the ids the creator has thrown away. (Metas written
+  before code book plan M6 also carry the move prompt's answers; they are
+  read as if absent.) **This write is the commit point for a rejection** -
+  see the invariant below. `rejected` is optional and absent from every
+  meta file written before 2026-09-10. The stored meta also carries
+  `format: TOUR_OBJECT_RECORD_FORMAT` (4), the version that wrote it, which
+  `isOlderVersionDraft` reads; `readDraft` ignores it.
+- `CODES_KEY` (`"codes"`), `DraftCodes` `{ level, levels }`,
+  `writeDraftCodes(store, codes)`, `readDraftCodes(store)` (plan M3b) -
+  the draft's codes in a file of their own: the code in hand (`level`)
+  and every code the hosted zip does not hold yet (`levels`, code book
+  plan M4c-1, `level` among them), written whole by the tour document's
+  listener whenever they change (`tour-document-draft.ts`'s
+  `codesRecord`). Not in the meta: the meta is a rejection's commit
+  point, and the codes change with every measurement and settle. Read
+  field by field: a `level` that does not read costs the measurement,
+  never the walk (`null`); an entry of `levels` that does not read costs
+  itself; a value without `levels` keeps its one `level` as the list.
+  With no codes file there are no codes: the code fields a meta written
+  before M3b carried are not read (plan M3b, D5: no old drafts to carry
+  over), so the codes have one source.
 - `writeDraftEdit(store, object, blob, seen)` (M6 E2p) - a placement or
   an edit, and, when `seen` is given, that version added to the object's
   base as seen hosted (`creator-draft.ts` passes the tour as opened). Both
@@ -131,6 +143,23 @@ are the framework's.
   minus rejected ones; a tombstoned id's record and bytes are skipped.
   `storedIds` includes tombstone ids, so a discard or a spent draft sweeps
   them too.
+- `isOlderVersionDraft(store)` - true only when the draft is PROVED to be
+  written by an older version of this app: a meta without this version's
+  `format` stamp (`writeDraftMeta`; work on a draft that placed no new
+  object leaves only older records, and the stamp keeps it - not every
+  such write writes the meta (a deletion writes its tombstone only), so
+  the phone's draft stamps it once per open, `creator-draft.ts`
+  `present`, and the desktop editor's writes it at every open), at least one
+  object record, and every one reads as a JSON object whose `format` is
+  absent or lower than `TOUR_OBJECT_RECORD_FORMAT` (the field came with
+  format 4.0, so a 3.x record has none). Anything else - a stamped meta, a
+  record of this format or a newer one, no object records, a record that
+  does not read - is not decidable and reads false. The refusal of an
+  older-format tour deletes a draft only on true (`creator-draft.ts`
+  `forgetRefused`, `editor/editor-draft.ts` `forget`). Tests:
+  `creator-setup.test.ts` and `editor/editor-draft.test.ts` ("a refused
+  older ... draft"), `draft-persistence.test.ts` ("a meta this version
+  wrote").
 - `parseDraftObject(text)`, `objectKey(id)`, `photoKey(id)`,
   `deletedKey(id)`, `visitKey(visitId)`.
 - **Why a deletion is a FILE and not a list in the meta**: the meta is
@@ -195,12 +224,14 @@ are the framework's.
   shuffle between restores would produce a different `tour.json` each time
   for no reason a reader could see.
 - **A draft holds world poses, never a tour file** (tour kit plan K1, §8
-  D7; tour editor plan W3). A draft object is validated by the framework's
-  world-view reader (`parseTourObject`), whose pin and photo shapes have
-  not changed since version 1. So a draft written by a pre-K1 app loads
-  unchanged and needs no migration, and its Finish writes version 3, with
-  every object in a station (`draft-persistence.test.ts` loads one from
-  the files the old app wrote).
+  D7; tour editor plan W3). A draft object is the framework's `format: 4`
+  record (`tourObjectRecord`: the block without its local pose, a
+  picture's image asset entry, the geo pose and the station), validated by
+  the framework's world-view reader (`parseTourObject`). A record an
+  earlier app wrote (a pin with a `label`, a photo with its image path)
+  reads as nothing: its tour is in an older format, which the app refuses,
+  deleting that tour's draft with it. The Finish writes version 4, with
+  every object in a station (`draft-persistence.test.ts`).
 
 ## Examples
 
@@ -216,7 +247,11 @@ if (store !== undefined) {
 ## Tests
 
 `draft-persistence.test.ts`, against an in-memory store with the same
-contract. The ones that carry it: a corrupt record costing only itself, a
+contract. The codes (plan M3b moved their seeding from the meta to the
+codes record, each rule unchanged): an unreadable level costing the
+measurement and not the walk, the two shapes a level has, several codes
+kept, an unreadable entry costing itself, none without codes, and an
+older meta's code fields not read (D5; it still reads for its size). The ones that carry it: a corrupt record costing only itself, a
 photo record dropped with its missing bytes, no meta yielding nothing, and
 a property that the order is stable and is the order things were placed in.
 Plus the rejection set: an object the meta rejects is refused though its

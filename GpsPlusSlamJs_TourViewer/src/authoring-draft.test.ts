@@ -19,13 +19,17 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
+  parseTourManifest,
+  serializeTourManifest,
   type TourManifest,
   type TourObject,
+  type TourPicture,
+  type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import {
   applyObjectChanges,
-  contentEntriesToRemove,
   draftDeletionsNotYetHosted,
   draftHasUnhostedLevel,
   draftIsSpent,
@@ -44,13 +48,15 @@ import {
   DRAFT_BASE_MAX_KEYS,
   withBaseKey,
 } from "./authoring-draft.js";
-import { asHosted, tourOf } from "./test-support/v3-tour.js";
+import { finishedManifest } from "./finish-rebuild.js";
+import { asHosted, tourOf, withCaption } from "./test-support/tour-of.js";
 
-function pin(id: string): TourObject {
+function pin(id: string): TourPin {
   return {
     id,
-    kind: "pin",
-    label: id,
+    kind: "shortText",
+    view: "pin",
+    caption: id,
     createdAtIso: "2026-09-09T00:00:00.000Z",
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
   };
@@ -69,13 +75,20 @@ function draftOf(
   };
 }
 
-function photo(id: string): TourObject {
+function photo(id: string): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-09-09T00:00:00.000Z",
     geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
   };
@@ -83,7 +96,7 @@ function photo(id: string): TourObject {
 
 /** A pin with the same id and a new text: an edit. */
 function edited(object: TourObject, label: string): TourObject {
-  return object.kind === "pin" ? { ...object, label } : object;
+  return object.kind === "shortText" ? { ...object, caption: label } : object;
 }
 
 function manifestOf(objects: readonly TourObject[]): TourManifest {
@@ -128,10 +141,11 @@ describe("draftObjectsNotYetHosted", () => {
     // fields in different orders; the same pin must still be the same pin.
     const reordered = JSON.parse(
       JSON.stringify({
-        label: "a",
+        caption: "a",
         geo: { headingDeg: 0, alt: 400, lon: 8.7, lat: 47.5 },
         createdAtIso: "2026-09-09T00:00:00.000Z",
-        kind: "pin",
+        view: "pin",
+        kind: "shortText",
         id: "a",
       }),
     ) as TourObject;
@@ -337,16 +351,29 @@ describe("applyObjectChanges (the Finish: replace and filter, plan §3.4)", () =
   });
 });
 
-describe("contentEntriesToRemove (a deleted photo takes its jpg with it)", () => {
-  it("names each deleted photo's content entry under the zip's wrap, and nothing else", () => {
-    expect(
-      contentEntriesToRemove(
-        [photo("p1"), photo("p2"), pin("a")],
-        ["p1", "a", "absent"],
-        "mytour/",
-      ),
-    ).toEqual(["mytour/content/p1.jpg"]);
-    expect(contentEntriesToRemove([photo("p1")], [], "")).toEqual([]);
+describe("a deleted model leaves a shared asset", () => {
+  // Why: placed 3D models (format minor 1) name a SHARED model asset, not a
+  // file of their own. Deleting one model must never remove that asset's
+  // file - the other model still draws from it - and the tour written
+  // after the delete must still name a model asset that exists.
+  it("removes no file when one of two models sharing an asset is deleted, and the rebuilt tour still validates", () => {
+    const model = (id: string, lat: number): TourObject => ({
+      id,
+      kind: "model",
+      view: "placed",
+      asset: "statue",
+      sizeM: 4,
+      createdAtIso: "2026-10-19T00:00:00.000Z",
+      geo: { lat, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+    });
+    const both = [model("m1", 48.52), model("m2", 48.5201)];
+    const manifest = tourOf(both, {
+      assets: [{ id: "statue", path: "content/statue.glb", kind: "model" }],
+    });
+    const written = finishedManifest({ manifest, placed: [], deleted: ["m1"] });
+    const read = parseTourManifest(JSON.parse(serializeTourManifest(written)));
+    expect(tourObjects(read).map((i) => i.id)).toEqual(["m2"]);
+    expect(read.assets.map((a) => a.path)).toEqual(["content/statue.glb"]);
   });
 });
 
@@ -468,10 +495,8 @@ describe("a newer edit elsewhere wins over the phone's draft (M6 E2p)", () => {
   // phone draft that still held an older edit of the same object offered
   // it back ("1 change. Add it back?"), and a yes reverted the desktop's
   // edit; a pin the desktop deleted came back as "1 thing you placed".
-  const relabel = (o: TourObject, label: string): TourObject => ({
-    ...o,
-    label,
-  });
+  const relabel = (o: TourObject, label: string): TourObject =>
+    withCaption(o, label);
   /** A base that saw these versions hosted: as the hosted file reads
    *  them back (version 3: in their station, with a minted rotation). */
   const seen = (...objects: TourObject[]): DraftBase => ({

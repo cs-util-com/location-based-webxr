@@ -24,6 +24,7 @@ import {
 
 import type { ViewerMode } from "./mode.js";
 import { IGNORED_CODE_LINE, viewerStatusLine } from "./qr-viewer-mode.js";
+import { notFinishedSentence } from "./tour-unfinished.js";
 import type { KeepAlivePhase } from "./qr-vote-keep-alive.js";
 import { gateSegment, type ScanGate } from "./scan-gate.js";
 
@@ -35,10 +36,14 @@ type TourFlowTour =
       kind: "open";
       /** Authored `qr/<id>.json` count; null while the levels still load. */
       levelCount: number | null;
+      /** Present for a visitor's tour that is not finished yet
+       *  (`tour-unfinished.ts`), with the tour's contact (absent: none). */
+      unfinished?: { readonly contact: string | undefined };
     };
 
-/** What the photo placement did or is doing. The strings are rendered by
- *  {@link placementSegment} - callers never compose copy. */
+/** Whether the placement still waits for the tracking to be ready. The
+ *  strings are rendered by {@link placementSegment} - callers never compose
+ *  copy. */
 export type PlacementState =
   | { kind: "idle" }
   | {
@@ -46,47 +51,6 @@ export type PlacementState =
        *  `ready` (flows plan M4, DEC-F3) - the segment shows the phase's
        *  coaching hint. */
       kind: "waiting-ready";
-    }
-  | {
-      /** The tour has neither a recording (capture spots) nor printed
-       *  codes (the ring) - said plainly instead of "Scanning…". */
-      kind: "nothing-to-place";
-    }
-  | {
-      /** `loading-photos`: the photos no station holds, decoded up front
-       *  (`done` of `total` decoded so far). */
-      kind: "placing";
-      phase: "reading-walk" | "loading-photos";
-      done: number;
-      total: number;
-    }
-  | {
-      /** `count`: the photos standing (decoded and drawn, held by no
-       *  station); `atStations`: the photos waiting at their stations,
-       *  drawn only while one shows (absent: 0). */
-      kind: "placed";
-      placedKind: "capture-spots";
-      count: number;
-      atStations?: number;
-      fixes: number;
-      gpsAccuracyMedianM: number | null;
-    }
-  | {
-      /** The ring around a locked code - the fallback for a tour without
-       *  a recording (milestone review #2: a placed ring used to keep the
-       *  decline copy, indistinguishable from "a ring is pending").
-       *  `count` and `atStations` as for the capture spots: a ring is
-       *  either standing or held by the code's station. */
-      kind: "placed";
-      placedKind: "ring";
-      count: number;
-      atStations?: number;
-    }
-  | {
-      /** The join declined (taxonomy reason) - the ring is the fallback and
-       *  the reason stays visible while it stands. */
-      kind: "declined";
-      reason: string;
     };
 
 export interface ArStatusInput {
@@ -99,6 +63,10 @@ export interface ArStatusInput {
   /** The session runs without location (QR-first M1b-1): the codes place
    *  the tour, no GPS fix will come. Absent: false. */
   codesOnly?: boolean;
+  /** A creator's start failed with the location permission refused
+   *  (`ar-entry.ts`): whether a code the tour stores can start the next
+   *  try without location. Absent or null: no such failure. */
+  locationRefusal?: LocationRefusal | null;
   tour: TourFlowTour;
   qr: {
     status: QrTrackingStatus | null;
@@ -124,8 +92,6 @@ export interface ArStatusInput {
    *  slice produced a report (or in author mode, which never reads it). */
   readiness: OnboardingGuidance | null;
   placement: PlacementState;
-  /** A failed image-plane placement (the Drive-aware open error text). */
-  planesError: string | null;
   /** A failed `tour.json` content render (its own channel, M5 review #5). */
   contentError: string | null;
   /** The visitor's scan gate (M5); `idle` outside a session. */
@@ -142,6 +108,12 @@ export interface ArStatusInput {
    *  not shown now (`StationContent.showsAny` false): nothing is in view,
    *  so the visitor's line asks for a station. Absent: false. */
   awayFromStations?: boolean;
+  /** The visitor's walk runs (its sheet shows): the
+   *  guide runs only once the tour's zero is known, so its stations are
+   *  placed and the tour counts as placed, even with no content standing
+   *  (a tour whose stations hold only stories places none). Absent:
+   *  false. */
+  walkRuns?: boolean;
 }
 
 /** The content segment: how many of the tour's objects stand. */
@@ -178,8 +150,8 @@ export function codeLinedUp(
 }
 
 /** Whether a code's votes placed this tour: the gate passed on a voted
- *  lock of a trusted code (M5). The walk's placement trigger then runs
- *  whatever the tracking-quality phase reads (`viewer-placement.ts`, §7
+ *  lock of a trusted code (M5). The placement trigger then ends the wait
+ *  for readiness whatever the tracking-quality phase reads (`viewer-placement.ts`, §7
  *  #9). The voted count goes back to 0 when a veto takes every vote back
  *  (r881 review M1), so a gate another code passed no longer counts, and
  *  when an odometry-frame change ends the code's trust
@@ -200,13 +172,13 @@ export function codePlacedTour(ctx: {
  * Whether the visitor's stations may be judged on the session's alignment
  * - its position found by, the HUD's arrows and the breadcrumbs pointed on
  * it: tracking ready (`isPlacementReady`) or a code lined it up
- * (`codeLinedUp`; a voted lock after the gate's escape too, which places
- * the walk's photos by itself, `onVotedLock`). Before it the alignment is
+ * (`codeLinedUp`; a voted lock after the gate's escape too, which ends
+ * the wait for readiness by itself, `onVotedLock`). Before it the alignment is
  * the identity at the first fix, which can be 180° wrong. The guide's
  * find re-reads this each tick, and while it is false judges by the fresh
  * device fix instead (r881 review H1); what needs a heading (the arrows,
  * the breadcrumbs, the figure) latches its first `true` per AR entry, as
- * the photos' trigger does, so a degraded dip does not take it away (r881
+ * the placement trigger does, so a degraded dip does not take it away (r881
  * re-review L-B).
  */
 export function alignmentReady(
@@ -251,38 +223,6 @@ export function placementSegment(
       return readiness === null
         ? "Waiting for tracking to warm up…"
         : readiness.hint;
-    case "nothing-to-place":
-      return "nothing to place: this tour has no recording and no printed codes";
-    case "placing":
-      return placement.phase === "reading-walk"
-        ? `reading the walk ${String(placement.done)}/${String(placement.total)}…`
-        : `loading photos ${String(placement.done)}/${String(placement.total)}…`;
-    case "placed": {
-      const atStations = placement.atStations ?? 0;
-      if (placement.placedKind === "ring") {
-        return atStations > 0
-          ? `${String(atStations)} photos in a ring around the code, at its station`
-          : `${String(placement.count)} photos in a ring around the code`;
-      }
-      // HONEST label (geo-join review, finding 5): fixes and their median
-      // GPS accuracy are what the numbers are - never a claimed placement
-      // error.
-      const accuracy =
-        placement.gpsAccuracyMedianM === null
-          ? ""
-          : `, median GPS ±${placement.gpsAccuracyMedianM.toFixed(1)}m`;
-      // Standing photos and photos waiting at their stations, each named
-      // only when there are some (a tour of loose photos reads as before).
-      const where =
-        atStations === 0
-          ? `${String(placement.count)} photos at capture spots`
-          : placement.count === 0
-            ? `${String(atStations)} photos at their stations`
-            : `${String(placement.count)} photos at capture spots and ${String(atStations)} at their stations`;
-      return `${where} (${String(placement.fixes)} fixes${accuracy})`;
-    }
-    case "declined":
-      return `photo ring (${placement.reason})`;
   }
 }
 
@@ -295,35 +235,39 @@ export function clearCacheLabel(removed: number): string {
   return `Cache cleared - ${String(removed)} stored ${removed === 1 ? "tour" : "tours"} removed`;
 }
 
+/** Why a creator's start failed on a refused location, for what to say. */
+export type LocationRefusal = "code-can-start" | "no-code";
+
+/** What a creator whose refused location failed the start does next. */
+const LOCATION_REFUSAL_HINT: Readonly<Record<LocationRefusal, string>> = {
+  "code-can-start":
+    "Tap Try again to start on the tour's printed code instead.",
+  "no-code":
+    "This tour has no measured code to start from without GPS: allow location for this page, then step outside for a first GPS fix.",
+};
+
 /** The whole `#ar-status` text for a state. */
 export function arStatusLine(input: ArStatusInput): string {
   const mode = input.mode === "creator" ? "Creator mode" : "Visitor mode";
   if (input.arStatus !== "running") {
     // The cause of a failed start, for the creator and ?debug=1: the button
     // only says "Try again" since UI round 1 (U1 milestone review #1).
-    return input.arStatus === "error" && input.arError != null
-      ? `${mode} — error: ${input.arError}`
-      : `${mode} — ${input.arStatus}`;
+    if (input.arStatus !== "error") return `${mode} — ${input.arStatus}`;
+    const cause =
+      input.arError == null
+        ? `${mode} — error`
+        : `${mode} — error: ${input.arError}`;
+    const refusal = input.locationRefusal ?? null;
+    return refusal === null
+      ? cause
+      : `${cause} ${LOCATION_REFUSAL_HINT[refusal]}`;
   }
-  // A declined join on a tour that also has no printed codes is the
-  // "nothing to place" case - derived here so the caller never has to
-  // re-evaluate it when the levels arrive after the decline. A decline
-  // already means the recording path is out, whether or not the zip had a
-  // recording (a walk without GPS, an era mismatch): the ring needs a code,
-  // and with zero codes "photo ring (reason)" would promise one forever -
-  // the exact shape of feedback F3 (milestone review #1).
-  // A tour whose level file could not be read has no usable codes either,
-  // and its `levelCount` stays null forever (PR #434 review): without this
-  // the ring kept promising a code that can never arrive.
-  const noUsableCodes =
-    input.tour.kind === "open" &&
-    (input.tour.levelCount === 0 ||
-      (input.gate.kind === "not-required" &&
-        input.gate.reason === "levels-unavailable"));
-  const placement: PlacementState =
-    input.placement.kind === "declined" && noUsableCodes
-      ? { kind: "nothing-to-place" }
-      : input.placement;
+  // A tour that is not finished yet has nothing to scan for or place: the
+  // sentence stands alone after the prefix.
+  if (input.tour.kind === "open" && input.tour.unfinished !== undefined) {
+    return `${mode} — AR running · ${String(input.cameraFrames)} camera frames · ${notFinishedSentence(input.tour.unfinished.contact)}`;
+  }
+  const placement = input.placement;
   // While the gate scans, the placement's coaching hint ("walk around")
   // would contradict "stay at the code": the gate's line stands alone.
   const gateScanning = input.gate.kind === "scanning";
@@ -356,7 +300,6 @@ export function arStatusLine(input: ArStatusInput): string {
       : gateSegment(input.gate, input.codesOnly === true),
     gateScanning ? "" : placementSegment(placement, input.readiness),
     contentSegment(input.content),
-    input.planesError === null ? "" : `images failed: ${input.planesError}`,
     input.contentError === null
       ? ""
       : `placed content failed: ${input.contentError}`,

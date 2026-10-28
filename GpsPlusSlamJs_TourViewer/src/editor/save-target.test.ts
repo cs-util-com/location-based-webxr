@@ -8,14 +8,19 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  adoptsSavedFile,
   createSaveTarget,
   holdEditorDraftLock,
   holdEditorLock,
   pickSaveFile,
   pickTourFile,
+  releaseUnusedPick,
   saveFinePrint,
   InPlaceRefusal,
+  type PickerWindow,
+  type SavePickerWindow,
   type WritableFileHandle,
+  isSameFile,
 } from "./save-target.js";
 
 /** A file on a fake disk: its bytes and modified time, and the calls. */
@@ -25,6 +30,10 @@ function fakeHandle(initial: string, name = "tour.zip") {
     modified: 1000,
     gone: false,
     failWrite: false,
+    /** The read right after a write still sees the old bytes (with the
+     *  new time): a lagging read of what was just written. */
+    lagging: false,
+    staleNext: null as string | null,
     calls: [] as string[],
     permission: "granted" as PermissionState | "throws",
   };
@@ -36,8 +45,10 @@ function fakeHandle(initial: string, name = "tour.zip") {
       if (state.gone) {
         return Promise.reject(new DOMException("gone", "NotFoundError"));
       }
+      const bytes = state.staleNext ?? state.bytes;
+      state.staleNext = null;
       return Promise.resolve(
-        new File([state.bytes], name, { lastModified: state.modified }),
+        new File([bytes], name, { lastModified: state.modified }),
       );
     },
     createWritable: () => {
@@ -49,6 +60,7 @@ function fakeHandle(initial: string, name = "tour.zip") {
           pending += await (data as Blob).text();
         },
         close: () => {
+          if (state.lagging) state.staleNext = state.bytes;
           state.bytes = pending;
           state.modified += 1;
           return Promise.resolve();
@@ -193,6 +205,18 @@ describe("createSaveTarget", () => {
     expect(state.bytes).toBe("fits");
   });
 
+  it("takes the written size from the bytes it wrote, as the tail, so a lagging read back is no change", async () => {
+    // Why: the baseline after a write read the size (and time) back from
+    // the file but the tail from the bytes written. A read back that still
+    // saw the old size left a baseline that described no file, and the
+    // next save was refused as "changed" though nothing else wrote it.
+    const { handle, state } = fakeHandle("version one");
+    const target = await createSaveTarget(handle, await handle.getFile());
+    state.lagging = true;
+    await target.write(new Blob(["version two, longer"]));
+    expect(await target.check()).toBe("same");
+  });
+
   it("keeps its baseline when a write fails, so the next check is honest", async () => {
     const { handle, state } = fakeHandle("version one");
     const target = await createSaveTarget(handle, await handle.getFile());
@@ -259,6 +283,36 @@ describe("SaveTarget.isSame", () => {
     );
     expect(await throwing.isSame(named("castle.zip"))).toBe(true);
     expect(await throwing.isSame(named("castle-walk.zip"))).toBe(false);
+  });
+});
+
+describe("isSameFile", () => {
+  // Why (r901 review #5): "Save the debug data" reads the opened file, so
+  // a bundle written over it loses the walk from both. A file opened
+  // without a handle (the file input, a drop) can only be told by its
+  // name - which then decides, as for the move's target.
+  const named = (name: string) => ({ kind: "file", name }) as FileSystemHandle;
+
+  it("is the browser's answer where the opened file has a handle that gives one", async () => {
+    const handle = Object.assign(named("castle.zip"), {
+      isSameEntry: (other: FileSystemHandle) =>
+        Promise.resolve(other.name === "elsewhere.zip"),
+    });
+    const opened = { name: "castle.zip", handle };
+    expect(await isSameFile(opened, named("castle.zip"))).toBe(false);
+    expect(await isSameFile(opened, named("elsewhere.zip"))).toBe(true);
+  });
+
+  it("counts the same name as the same file without a handle, or with one that cannot tell", async () => {
+    const cannotTell = Object.assign(named("castle.zip"), {
+      isSameEntry: () =>
+        Promise.reject(new DOMException("no", "SecurityError")),
+    }) as FileSystemHandle;
+    for (const handle of [null, named("castle.zip"), cannotTell]) {
+      const opened = { name: "castle.zip", handle };
+      expect(await isSameFile(opened, named("castle.zip"))).toBe(true);
+      expect(await isSameFile(opened, named("castle-debug.zip"))).toBe(false);
+    }
   });
 });
 
@@ -430,5 +484,106 @@ describe("pickSaveFile", () => {
         "w.zip",
       ),
     ).resolves.toEqual({ kind: "unavailable" });
+  });
+});
+
+/**
+ * Why: a tour opened from a link or the sample used to be saved as a new
+ * copy at every Save, which the creator then had to put in place by hand
+ * - and nothing saved by itself. Where the browser has both file dialogs,
+ * it asks for a file (as it opens, or at its first Save) and keeps saving
+ * into it. Android was held back until a check on a phone (Chrome 155,
+ * Android 10, the file-access check page) showed its picked files behave
+ * as a desktop's: saved under a new name, kept across a reload with one tap
+ * to grant the permission again, and a rewrite cut short by closing the tab
+ * leaves the old file whole (the new bytes are swapped in only when the
+ * write closes). So the platform decides nothing any more; these tests pin
+ * that, and that the fine print says what each browser does.
+ */
+describe("adoptsSavedFile", () => {
+  // Never called: the check reads only whether the dialogs exist.
+  const pickers: PickerWindow & SavePickerWindow = {
+    showOpenFilePicker: () => Promise.resolve([]),
+    showSaveFilePicker: () => Promise.reject(new Error("not opened")),
+  };
+
+  it("adopts wherever the browser has both file dialogs, Android included", () => {
+    expect(adoptsSavedFile(pickers)).toBe(true);
+  });
+
+  it("does not adopt without either file dialog", () => {
+    expect(
+      adoptsSavedFile({ showOpenFilePicker: () => Promise.resolve([]) }),
+    ).toBe(false);
+    expect(
+      adoptsSavedFile({
+        showSaveFilePicker: () => Promise.reject(new Error("not opened")),
+      }),
+    ).toBe(false);
+    expect(adoptsSavedFile({})).toBe(false);
+  });
+
+  // Why: a tour from a link or the sample asks where to save it as it
+  // opens (and a dismissed dialog leaves the first Save to ask), so the
+  // fine print says so where the browser adopts the file, and nowhere else.
+  it("the fine print says a link's tour asks for its file as it opens, only where it is", () => {
+    const adopting = saveFinePrint(pickers);
+    expect(adopting).toContain(
+      "asks where to save it as it opens (or at its first Save)",
+    );
+    expect(adopting).not.toContain("new copy");
+    const openOnly = saveFinePrint({
+      showOpenFilePicker: () => Promise.resolve([]),
+    });
+    expect(openOnly).toContain("saved as a new copy");
+    expect(openOnly).not.toContain("asks where to save it");
+  });
+});
+
+// Why: the open from a link or the sample asks for its file IN the click,
+// before the fetch (the dialog needs the click), so a fetch or an open
+// can fail after the creator picked a file. By then the browser has made
+// that file - and if it was an existing file, Chromium has already
+// emptied it (the spec's save dialog clears a chosen file before it
+// returns). So the page can never tell a new empty file from a tour the
+// creator chose to replace: it must never delete a picked file, and the
+// one sentence it says must be true in both cases.
+describe("releaseUnusedPick", () => {
+  const SAID =
+    "Nothing of the tour was written into linked.zip. The browser may have emptied it when it was chosen, so if it was an existing file, do not rely on it.";
+
+  function picked(size: number | "unreadable") {
+    const calls: string[] = [];
+    const handle = {
+      kind: "file",
+      name: "linked.zip",
+      getFile: () =>
+        size === "unreadable"
+          ? Promise.reject(new Error("gone"))
+          : Promise.resolve(new File([new Uint8Array(size)], "linked.zip")),
+      remove: () => {
+        calls.push("remove");
+        return Promise.resolve();
+      },
+    } as unknown as FileSystemFileHandle;
+    return {
+      pick: Promise.resolve({ kind: "picked", handle } as const),
+      calls,
+    };
+  }
+
+  it("never removes a picked file, empty or not, and says the same true sentence", async () => {
+    for (const size of [0, 5, "unreadable"] as const) {
+      const { pick, calls } = picked(size);
+      expect(await releaseUnusedPick(pick)).toBe(SAID);
+      expect(calls).toEqual([]);
+    }
+  });
+
+  it("says nothing for a dismissed or unavailable dialog, or none at all", async () => {
+    expect(await releaseUnusedPick(null)).toBeNull();
+    for (const kind of ["cancelled", "unavailable"] as const) {
+      expect(await releaseUnusedPick(Promise.resolve({ kind }))).toBeNull();
+    }
   });
 });

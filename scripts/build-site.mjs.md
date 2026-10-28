@@ -7,6 +7,8 @@ output directory (`dist-site/`) that Cloudflare serves as static assets:
 
 - `dist-site/index.html` + `dist-site/assets/` — the Landing app
   (`GpsPlusSlamJs_Landing`, a Vite build at `base=/`).
+- `dist-site/legal/` - the site-wide legal notice and privacy page, the
+  Landing app's second Vite entry (`GpsPlusSlamJs_Landing/legal/index.html`).
 - `dist-site/recorder/` — `GpsPlusSlamJs_RecorderApp`, built with `base=/recorder/`.
 - `dist-site/starter/` — `GpsPlusSlamJs_AnchorStarter`, built with `base=/starter/`.
 - `dist-site/minimal/` — `GpsPlusSlamJs_MinimalExample`, built with `base=/minimal/`.
@@ -76,6 +78,14 @@ debugging workflow are unchanged.
   starts with its base `/`), which is why the landing has its own
   `assertLandingHtml` instead: demo-link presence (the "demos remain
   launchable" requirement) + referenced-asset existence.
+- **Site-wide pages are the one exemption** (`SITE_WIDE_PAGES`, today only
+  `/legal/`, the legal notice and privacy page built as the Landing app's
+  second entry into `dist-site/legal/`). Every app links it by its
+  root-absolute path, so the guard accepts exactly those paths (with or
+  without a `#section`); `assertSiteTree` requires `legal/index.html` and
+  `assertLandingHtml` requires the landing page to link it.
+  `tests/repo-config/legal-page.test.js` checks that every app the script
+  builds links it.
 - **The blog step must fail the build when the wiki is missing or
   unreachable.** It is deliberately not wrapped in a `try`/`catch`: emitting an
   empty `/blog/` and deploying it over a working one would unpublish every

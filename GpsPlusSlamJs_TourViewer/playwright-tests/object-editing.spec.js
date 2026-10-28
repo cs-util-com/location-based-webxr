@@ -67,7 +67,9 @@ test("the list edits a hosted pin on the page - no AR needed - and the Finish wr
   const pins = zip.manifest.objects.filter((o) => o.id === FIXTURE_PIN);
   // Replaced in place: one record, the new text.
   expect(pins).toHaveLength(1);
-  expect(pins[0]?.kind === "pin" && pins[0].label).toBe("The renamed pin");
+  expect(pins[0]?.kind === "shortText" && pins[0].caption).toBe(
+    "The renamed pin",
+  );
 });
 
 test("the tour's name typed in step 3 is the title the Finish writes", async ({
@@ -152,7 +154,9 @@ test("a desk edit is finished without entering AR, and the hosted code's level i
   const zip = await downloadedZip(page, 0);
   const pins = zip.manifest.objects.filter((o) => o.id === FIXTURE_PIN);
   expect(pins).toHaveLength(1);
-  expect(pins[0]?.kind === "pin" && pins[0].label).toBe("Renamed at the desk");
+  expect(pins[0]?.kind === "shortText" && pins[0].caption).toBe(
+    "Renamed at the desk",
+  );
   const hosted = await page.evaluate(async (url) => {
     const response = await fetch(url);
     return Array.from(new Uint8Array(await response.arrayBuffer()));
@@ -176,19 +180,26 @@ test("a deleted photo leaves the zip with its jpg, and a deleted hosted pin leav
   );
   await finishAndDownload(page, 0);
   const first = await downloadedZip(page, 0);
-  const photo = first.manifest.objects.find((o) => o.kind === "photo");
+  const photo = first.manifest.objects.find((o) => o.kind === "picture");
   expect(photo, "the photo is in the first zip").toBeDefined();
-  const jpg = photo?.kind === "photo" ? photo.image : "";
+  const jpg = photo?.kind === "picture" ? photo.imageAsset.path : "";
   expect(first.names).toContain(jpg);
 
   // On the page now (the Finish ended the session): delete both. The list
   // is step 5's; the Finish lands on step 6 (polish round M2, B9), and
   // editing means going back to step 5 (the owner's words).
   await page.getByTestId("station-measure").click();
-  await row(page, "Photo").getByTestId("object-delete").click();
-  await expect(page.getByTestId("object-list-note")).toHaveText(
-    /Deleted the photo - it leaves the zip when you save the tour/,
-  );
+  // The fixture's station holds three photos of its own, beside the one
+  // just taken: every photo goes, one at a time.
+  const photos = row(page, "Photo");
+  await expect(photos).toHaveCount(4);
+  for (let left = 3; left >= 0; left -= 1) {
+    await photos.first().getByTestId("object-delete").click();
+    await expect(page.getByTestId("object-list-note")).toHaveText(
+      /Deleted the photo - it leaves the zip when you save the tour/,
+    );
+    await expect(photos).toHaveCount(left);
+  }
   await row(page, "Fixture pin").getByTestId("object-delete").click();
   await expect(row(page, "Fixture pin")).toHaveCount(0);
 
@@ -294,4 +305,61 @@ test("Delete offers Undo beside its outcome, which brings a hosted pin back; the
   );
   await expect(page.getByTestId("object-undo")).toBeHidden();
   await expect(row(page, "Fixture pin")).toHaveCount(0);
+});
+
+test("in AR a delete is taken back by the strip's persistent Undo, which names it and outlives the note's hold", async ({
+  page,
+}) => {
+  // The persistent Undo: the phone's only Undo used to
+  // be the note's, for 8 s. In AR the strip's Undo is the one Undo: the
+  // note says what happened, the strip says what it will take back, and it
+  // stays until the document moves on.
+  await openTour(page);
+  await enterArAndMeasure(page);
+  const chip = page.getByTestId("setup-undo");
+  await expect(chip).toBeDisabled();
+  await expect(chip).toHaveText("Undo");
+  await page.evaluate(
+    ([key, id]) => {
+      /** @type {any} */ (window)[key].pickId = id;
+      /** @type {any} */ (window)[key].tapXr();
+    },
+    [TEST_KEY, FIXTURE_PIN],
+  );
+  await page
+    .locator('[data-testid="object-row"][data-selected="true"]')
+    .getByTestId("object-delete")
+    .click();
+  await expect(page.getByTestId("object-list-note")).toHaveText(
+    /Deleted "Fixture pin"/,
+  );
+  await expect(page.getByTestId("object-undo")).toBeHidden();
+  await expect(chip).toBeEnabled();
+  await expect(chip).toHaveText('Undo: delete "Fixture pin"');
+  // The note's hold runs out; the strip's Undo stays.
+  await page.evaluate(
+    (key) => /** @type {any} */ (window)[key].fireTimers(),
+    TEST_KEY,
+  );
+  await expect(chip).toBeEnabled();
+
+  await chip.click();
+  await expect(page.getByTestId("object-list-note")).toHaveText(
+    /Restored "Fixture pin"/,
+  );
+  await expect(chip).toBeDisabled();
+  await expect(chip).toHaveText("Undo");
+  // Back in the tour: a tap selects it again.
+  await page.evaluate(
+    ([key, id]) => {
+      /** @type {any} */ (window)[key].pickId = id;
+      /** @type {any} */ (window)[key].tapXr();
+    },
+    [TEST_KEY, FIXTURE_PIN],
+  );
+  await expect(
+    page
+      .locator('[data-testid="object-row"][data-selected="true"]')
+      .getByTestId("object-title"),
+  ).toHaveText("Fixture pin");
 });

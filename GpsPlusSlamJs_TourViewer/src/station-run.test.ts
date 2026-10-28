@@ -6,13 +6,24 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-stations";
 
 import {
+  applyWalkStep,
   createStationRun,
+  startWalk,
+  walkFinished,
+  walkFinishWaitId,
+  walkOffered,
+  stationHasCard,
+  walkRoute,
+  walkStatus,
   SKIP_SUGGEST_BASE_MS,
   SKIP_SUGGEST_SLOW_MPS,
   skipSuggestAfterMs,
   stationTitle,
 } from "./station-run";
-import { ACCURACY_CEILING_M } from "./station-bands";
+import {
+  POSITION_PRECISION_CEILING_M,
+  type PositionPrecision,
+} from "gps-plus-slam-app-framework/state/position-precision";
 
 /**
  * Why these tests matter: the station run is the tour's whole game state on
@@ -26,7 +37,7 @@ import { ACCURACY_CEILING_M } from "./station-bands";
 
 const step = {
   id: "s1",
-  block: { kind: "text", text: "Hello" },
+  action: { kind: "show", block: "hi" },
   advance: { mode: "tap" },
 } as const;
 
@@ -34,7 +45,7 @@ function station(id: string, extra: Partial<TourStation> = {}): TourStation {
   return {
     id,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    items: [],
+    blocks: [],
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
@@ -48,6 +59,7 @@ const at = (pairs: Record<string, number>) => new Map(Object.entries(pairs));
 describe("createStationRun: states", () => {
   it("waits, is found by GPS inside the found radius, and is done when its steps finish", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a")],
       order: "fixed",
       nowMs: 0,
@@ -74,6 +86,7 @@ describe("createStationRun: states", () => {
     // claimed it showed figures and fetched media. The activation radius
     // now only sets where the prefetch starts (`station-prefetch.ts`).
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a")],
       order: "fixed",
       nowMs: 0,
@@ -89,6 +102,7 @@ describe("createStationRun: states", () => {
     // on the tour's settings, how close one must be - no accuracy widens
     // the radius and no floor narrows it.
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a", { foundRadiusM: 2 }), station("b")],
       order: "any",
       nowMs: 0,
@@ -102,6 +116,15 @@ describe("createStationRun: states", () => {
     ]);
   });
 
+  /** A GPS position's precision at this accuracy. */
+  function gps(accuracyM: number): PositionPrecision {
+    return {
+      source: "gps",
+      accuracyM,
+      tooWeak: accuracyM > POSITION_PRECISION_CEILING_M,
+    };
+  }
+
   // Why (PR #640 review): D16 forbids WIDENING the radius by the accuracy,
   // not judging on a fix the guide itself calls too weak. A ±500 m
   // cold-start fix inside a 10 m station latched "found" while the line
@@ -109,16 +132,17 @@ describe("createStationRun: states", () => {
   // ceiling the line uses, so the line and the latch agree.
   it("does not judge on a fix too weak to guide by: ±500 m inside a 10 m station is no arrival, ±5 m is", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a", { foundRadiusM: 10 })],
       order: "fixed",
       nowMs: 0,
     });
     expect(
-      run.observe({ distances: at({ a: 3 }), nowMs: 1, accuracyM: 500 }),
+      run.observe({ distances: at({ a: 3 }), nowMs: 1, precision: gps(500) }),
     ).toEqual([]);
     expect(run.status("a")?.state).toBe("waiting");
     expect(
-      run.observe({ distances: at({ a: 3 }), nowMs: 2, accuracyM: 5 }),
+      run.observe({ distances: at({ a: 3 }), nowMs: 2, precision: gps(5) }),
     ).toEqual([{ kind: "found", id: "a" }]);
   });
 
@@ -126,30 +150,52 @@ describe("createStationRun: states", () => {
     "at ±%d m a position inside the radius finds the station exactly while the accuracy is within the ceiling",
     (accuracyM) => {
       const run = createStationRun({
+        assets: new Set(),
         stations: [station("a", { foundRadiusM: 10 })],
         order: "fixed",
         nowMs: 0,
       });
-      run.observe({ distances: at({ a: 3 }), nowMs: 1, accuracyM });
+      run.observe({
+        distances: at({ a: 3 }),
+        nowMs: 1,
+        precision: gps(accuracyM),
+      });
       expect(run.status("a")?.state).toBe(
-        accuracyM <= ACCURACY_CEILING_M ? "found" : "waiting",
+        accuracyM <= POSITION_PRECISION_CEILING_M ? "found" : "waiting",
       );
     },
   );
 
-  it("judges an unknown accuracy (a position by a code alone) by the radius alone (D16)", () => {
+  // Changed (shared position-precision plan, M2): the run reads the
+  // framework's precision. A code's position (no number) is judged by the
+  // radius alone, as an unknown accuracy was; nothing to judge by
+  // (`'none'`) judges nothing, as a fix too weak to guide by.
+  it("judges a code's position by the radius alone (D16), and nothing on no precision at all", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a")],
       order: "fixed",
       nowMs: 0,
     });
     expect(
-      run.observe({ distances: at({ a: 4 }), nowMs: 1, accuracyM: null }),
+      run.observe({
+        distances: at({ a: 4 }),
+        nowMs: 1,
+        precision: { source: "none", accuracyM: null, tooWeak: true },
+      }),
+    ).toEqual([]);
+    expect(
+      run.observe({
+        distances: at({ a: 4 }),
+        nowMs: 2,
+        precision: { source: "code", accuracyM: null, tooWeak: false },
+      }),
     ).toEqual([{ kind: "found", id: "a" }]);
   });
 
   it("judges nothing it has no distance for, and no non-finite distance", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a")],
       order: "fixed",
       nowMs: 0,
@@ -163,6 +209,7 @@ describe("createStationRun: states", () => {
 
   it("a station whose every step was left out (a newer minor) is done the moment it is found", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a", { steps: [] }), station("b")],
       order: "fixed",
       nowMs: 0,
@@ -178,6 +225,7 @@ describe("createStationRun: states", () => {
 describe("createStationRun: offering", () => {
   it("fixed: one station at a time, in list order; a station not offered is never found", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b")],
       order: "fixed",
       nowMs: 0,
@@ -191,6 +239,7 @@ describe("createStationRun: offering", () => {
 
   it("any: every station not done is offered at once", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b"), station("c")],
       order: "any",
       nowMs: 0,
@@ -201,36 +250,13 @@ describe("createStationRun: offering", () => {
     expect(run.offered()).toEqual(["a", "c"]);
   });
 
-  it("branch: follows each station's default next, else the list order; a done target falls through", () => {
-    const run = createStationRun({
-      stations: [
-        station("a", { next: "c" }),
-        station("b"),
-        station("c", { next: "a" }),
-        station("d"),
-      ],
-      order: "branch",
-      nowMs: 0,
-    });
-    expect(run.offered()).toEqual(["a"]);
-    run.skip("a", 1);
-    expect(run.offered()).toEqual(["c"]);
-    // c points back at a, which is done: the first undone after it in
-    // list order is b.
-    run.skip("c", 2);
-    expect(run.offered()).toEqual(["b"]);
-    run.skip("b", 3);
-    expect(run.offered()).toEqual(["d"]);
-    run.skip("d", 4);
-    expect(run.isComplete()).toBe(true);
-  });
-
-  it("names the station that comes next while the current one's story plays (fixed and branch; R5)", () => {
+  it("names the station that comes next while the current one's story plays (R5)", () => {
     // Why this test matters (K4 review R5): under a fixed order the next
     // station is offered only once the current is done, so a prefetch keyed
     // on the offer started it with the visitor already on the way; the run
     // names it as soon as the current station is found.
     const fixed = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b"), station("c")],
       order: "fixed",
       nowMs: 0,
@@ -240,15 +266,9 @@ describe("createStationRun: offering", () => {
     expect(fixed.upcoming()).toBe("b");
     fixed.finish("a", 2);
     expect(fixed.upcoming()).toBeNull();
-    const branch = createStationRun({
-      stations: [station("a", { next: "c" }), station("b"), station("c")],
-      order: "branch",
-      nowMs: 0,
-    });
-    branch.observe({ distances: at({ a: 1 }), nowMs: 1 });
-    expect(branch.upcoming()).toBe("c");
     // Under "any" every station not done is offered already.
     const any = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b")],
       order: "any",
       nowMs: 0,
@@ -259,6 +279,7 @@ describe("createStationRun: offering", () => {
 
   it("skip: a labelled way past a station nobody can reach, recorded as skipped (plan §8 D5)", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b")],
       order: "fixed",
       nowMs: 0,
@@ -279,6 +300,7 @@ describe("skip suggestion clock", () => {
     // at the tour's start, so after about two minutes every focus became a
     // one-tap skip.
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b")],
       order: "any",
       nowMs: 0,
@@ -297,9 +319,10 @@ describe("skip suggestion clock", () => {
   });
 
   it("a skip can be undone: the station is offered again, unskipped, with a fresh clock (R14)", () => {
-    for (const order of ["fixed", "any", "branch"] as const) {
+    for (const order of ["fixed", "any"] as const) {
       const run = createStationRun({
-        stations: [station("a", { next: "b" }), station("b"), station("c")],
+        assets: new Set(),
+        stations: [station("a"), station("b"), station("c")],
         order,
         nowMs: 0,
       });
@@ -328,6 +351,7 @@ describe("skip suggestion clock", () => {
 
   it("is suggested only for an offered station not yet found, once its clock ran out", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b")],
       order: "fixed",
       nowMs: 0,
@@ -344,6 +368,7 @@ describe("skip suggestion clock", () => {
 
   it("restarts for the next station at the moment it becomes the focus", () => {
     const run = createStationRun({
+      assets: new Set(),
       stations: [station("a"), station("b")],
       order: "fixed",
       nowMs: 0,
@@ -359,19 +384,15 @@ describe("skip suggestion clock", () => {
   });
 });
 
-const ORDERS: readonly TourOrder[] = ["fixed", "any", "branch"];
+const ORDERS: readonly TourOrder[] = ["fixed", "any"];
 
-/** Generated tours: 1-8 stations with random default-next links (cycles included). */
+/** Generated tours: 1-8 stations under either order, with arbitrary actions. */
+const stationsOf = (n: number): TourStation[] =>
+  Array.from({ length: n }, (_, i) => station(`s${i}`));
+
 const tourArb = fc.integer({ min: 1, max: 8 }).chain((n) =>
   fc.tuple(
     fc.constant(n),
-    fc.array(
-      fc.option(fc.integer({ min: 0, max: n - 1 }), { nil: undefined }),
-      {
-        minLength: n,
-        maxLength: n,
-      },
-    ),
     fc.constantFrom(...ORDERS),
     fc.array(fc.tuple(fc.nat(), fc.constantFrom("skip", "find")), {
       maxLength: 40,
@@ -382,11 +403,14 @@ const tourArb = fc.integer({ min: 1, max: 8 }).chain((n) =>
 describe("createStationRun: properties", () => {
   it("never deadlocks: always offering something until complete, and completing within one action per station", () => {
     fc.assert(
-      fc.property(tourArb, ([n, nexts, order, actions]) => {
-        const stations = nexts.map((next, i) =>
-          station(`s${i}`, next === undefined ? {} : { next: `s${next}` }),
-        );
-        const run = createStationRun({ stations, order, nowMs: 0 });
+      fc.property(tourArb, ([n, order, actions]) => {
+        const stations = stationsOf(n);
+        const run = createStationRun({
+          assets: new Set(),
+          stations,
+          order,
+          nowMs: 0,
+        });
         let t = 1;
         let completions = 0;
         // Arbitrary actions on offered stations first, then drain.
@@ -410,21 +434,23 @@ describe("createStationRun: properties", () => {
         expect(run.isComplete()).toBe(true);
         expect(completions).toBeLessThanOrEqual(n);
         expect(run.offered()).toEqual([]);
-        // fixed and any visit every station; branch may leave stations off
-        // its path, but never one that is still offered.
+        // Both orders visit every station.
         const undone = run.statuses().filter((s) => s.state !== "done");
-        expect(order === "branch" || undone.length === 0).toBe(true);
+        expect(undone).toEqual([]);
       }),
     );
   });
 
   it("never offers a done station, and a done station never changes again", () => {
     fc.assert(
-      fc.property(tourArb, ([, nexts, order, actions]) => {
-        const stations = nexts.map((next, i) =>
-          station(`s${i}`, next === undefined ? {} : { next: `s${next}` }),
-        );
-        const run = createStationRun({ stations, order, nowMs: 0 });
+      fc.property(tourArb, ([n, order, actions]) => {
+        const stations = stationsOf(n);
+        const run = createStationRun({
+          assets: new Set(),
+          stations,
+          order,
+          nowMs: 0,
+        });
         let t = 1;
         for (const [pick, how] of actions) {
           const offered = run.offered();
@@ -443,6 +469,196 @@ describe("createStationRun: properties", () => {
           run.skip(id, t++);
           expect(run.status(id)).toEqual(before);
         }
+      }),
+    );
+  });
+});
+
+describe("finishing the tour: done is progress, finished is the visitor's", () => {
+  // Why these tests matter: "done" moves the order on, so it cannot wait
+  // for the visitor to look at a station's content. Finishing the tour is
+  // separate: every station done AND the visitor left the last one (its
+  // presence ended) or tapped "Finish the tour". Until then the completion
+  // card and the list wait. A skipped last station is never entered, so a
+  // skip that completes the tour finishes it at once. Without this split
+  // the completion card covered the last station's content the moment its
+  // story ended.
+  const two = () =>
+    createStationRun({
+      assets: new Set(),
+      stations: [station("a"), station("b")],
+      order: "fixed",
+      nowMs: 0,
+    });
+  const doneByVisit = (run: ReturnType<typeof two>, id: string) => {
+    run.observe({ distances: at({ [id]: 0 }), nowMs: 1 });
+    return run.finish(id, 2);
+  };
+
+  it("completes on the last station's end and waits there to finish", () => {
+    const run = two();
+    doneByVisit(run, "a");
+    expect(run.finishWait()).toBeNull();
+    const events = doneByVisit(run, "b");
+    expect(events.map((e) => e.kind)).toEqual(["done", "offered", "complete"]);
+    expect(run.isComplete()).toBe(true);
+    expect(run.isFinished()).toBe(false);
+    expect(run.finishWait()).toBe("b");
+  });
+
+  it("finishes when the visitor leaves the last station, not another", () => {
+    const run = two();
+    doneByVisit(run, "a");
+    doneByVisit(run, "b");
+    expect(run.left("a")).toEqual([]);
+    expect(run.isFinished()).toBe(false);
+    expect(run.left("b")).toEqual([{ kind: "finished" }]);
+    expect(run.isFinished()).toBe(true);
+    expect(run.finishWait()).toBeNull();
+    // Once finished, nothing finishes it again.
+    expect(run.left("b")).toEqual([]);
+    expect(run.finishTour()).toEqual([]);
+  });
+
+  it("finishes on the visitor's tap, and never before the tour is complete", () => {
+    const run = two();
+    doneByVisit(run, "a");
+    expect(run.finishTour()).toEqual([]);
+    expect(run.left("a")).toEqual([]);
+    expect(run.isFinished()).toBe(false);
+    doneByVisit(run, "b");
+    expect(run.finishTour()).toEqual([{ kind: "finished" }]);
+    expect(run.isFinished()).toBe(true);
+  });
+
+  it("a skip that completes the tour finishes it at once: a skipped station is never entered", () => {
+    const run = two();
+    doneByVisit(run, "a");
+    const events = run.skip("b", 3);
+    expect(events.map((e) => e.kind)).toEqual([
+      "done",
+      "offered",
+      "complete",
+      "finished",
+    ]);
+    expect(run.isFinished()).toBe(true);
+    expect(run.finishWait()).toBeNull();
+  });
+
+  it("a station brought back unfinishes the tour; completing again follows the same rules", () => {
+    const run = two();
+    run.skip("a", 1);
+    doneByVisit(run, "b");
+    run.finishTour();
+    expect(run.isFinished()).toBe(true);
+    run.unskip("a", 4);
+    expect(run.isComplete()).toBe(false);
+    expect(run.isFinished()).toBe(false);
+    expect(run.finishWait()).toBeNull();
+    doneByVisit(run, "a");
+    expect(run.isFinished()).toBe(false);
+    expect(run.finishWait()).toBe("a");
+  });
+
+  it("a stepless station is still done the moment it is found, and as the last one it waits too", () => {
+    const run = createStationRun({
+      assets: new Set(),
+      stations: [station("a"), station("b", { steps: [] })],
+      order: "fixed",
+      nowMs: 0,
+    });
+    doneByVisit(run, "a");
+    run.observe({ distances: at({ b: 0 }), nowMs: 3 });
+    expect(run.status("b")?.state).toBe("done");
+    expect(run.isComplete()).toBe(true);
+    expect(run.finishWait()).toBe("b");
+  });
+
+  // Why: a station with no story but a description or a card picture shows
+  // its card until Continue. Were it done the moment it is found, the walk
+  // would end the card in the same frame, and its words and picture would
+  // never be seen.
+  it("a station with no story but a card waits for its card to be read", () => {
+    const route = walkRoute(
+      [
+        station("words", { steps: [], description: "The main gate." }),
+        station("picture", { steps: [], image: "knight" }),
+        station("bare", { steps: [], description: "" }),
+      ],
+      new Set(["knight"]),
+    );
+    expect(route.map((r) => r.stepless)).toEqual([false, false, true]);
+    const p0 = startWalk(route, "any");
+    const found = applyWalkStep(p0, { kind: "found", id: "words" }).progress;
+    expect(walkStatus(found, "words")?.state).toBe("found");
+    const done = applyWalkStep(found, { kind: "finish", id: "words" });
+    expect(walkStatus(done.progress, "words")?.state).toBe("done");
+  });
+
+  // Why: the card shows a picture only when the tour holds its asset
+  // (`scene-view.ts`). A station whose picture names a missing asset shows
+  // no card, so the walk must not wait for one: it is stepless, done when
+  // found, by the same rule the card uses (`stationHasCard`).
+  it("a station whose card picture names a missing asset has no card to wait for", () => {
+    const lost = station("lost", { steps: [], image: "gone" });
+    const assets = new Set(["knight"]);
+    expect(stationHasCard(lost, assets)).toBe(false);
+    expect(stationHasCard({ image: "knight" }, assets)).toBe(true);
+    expect(walkRoute([lost], assets).map((r) => r.stepless)).toEqual([true]);
+  });
+
+  it("the pure reads agree with the run, and a walk starts unfinished", () => {
+    const p0 = startWalk(walkRoute([station("a")], new Set()), "any");
+    expect(walkFinished(p0)).toBe(false);
+    expect(walkFinishWaitId(p0)).toBeNull();
+    const found = applyWalkStep(p0, { kind: "found", id: "a" }).progress;
+    const done = applyWalkStep(found, { kind: "finish", id: "a" }).progress;
+    expect(walkFinishWaitId(done)).toBe("a");
+    const left = applyWalkStep(done, { kind: "left", id: "a" });
+    expect(walkFinished(left.progress)).toBe(true);
+    expect(left.events).toEqual([{ kind: "finished" }]);
+    // A step that changes nothing returns the same progress.
+    expect(applyWalkStep(p0, { kind: "finish-tour" }).progress).toBe(p0);
+  });
+
+  it("every tour finishes within one action more than it takes to complete, whatever the order and the actions", () => {
+    fc.assert(
+      fc.property(tourArb, fc.boolean(), ([n, order, actions], leave) => {
+        const stations = stationsOf(n);
+        const run = createStationRun({
+          assets: new Set(),
+          stations,
+          order,
+          nowMs: 0,
+        });
+        let t = 1;
+        let lastSkipped = false;
+        for (const [pick, how] of actions) {
+          const offered = run.offered();
+          if (offered.length === 0) break;
+          const id = offered[pick % offered.length]!;
+          if (how === "skip") run.skip(id, t++);
+          else {
+            run.observe({ distances: new Map([[id, 0]]), nowMs: t++ });
+            run.finish(id, t++);
+          }
+          lastSkipped = how === "skip";
+          // Never finished before complete.
+          expect(run.isFinished() && !run.isComplete()).toBe(false);
+        }
+        for (let guard = 0; guard < n + 1 && !run.isComplete(); guard += 1) {
+          run.skip(run.offered()[0]!, t++);
+          lastSkipped = true;
+        }
+        expect(run.isComplete()).toBe(true);
+        // A skip that completed it finished it; otherwise one action does.
+        expect(run.isFinished()).toBe(lastSkipped);
+        const wait = run.finishWait();
+        expect(wait === null).toBe(lastSkipped);
+        if (wait !== null && leave) run.left(wait);
+        if (wait !== null && !leave) run.finishTour();
+        expect(run.isFinished()).toBe(true);
+        expect(run.finishWait()).toBeNull();
       }),
     );
   });
@@ -468,5 +684,25 @@ describe("stationTitle (plan 2026-10-15-0348 M0: one rule for the visitor and th
     expect(stationTitle({})).toBe("the next station");
     expect(stationTitle({ title: "" })).toBe("the next station");
     expect(stationTitle({ title: " 	 " })).toBe("the next station");
+  });
+});
+
+describe("the walk's derived reads", () => {
+  // Why: the guide reads the offered list several times per camera frame
+  // (each station's arrival, the line, the skip), and a walk's progress is
+  // replaced only when a step changes something. Derived once per progress,
+  // a frame with nothing happening allocates no list; a step that changes
+  // the walk reads anew.
+  it("derives the offered list once per progress, and anew after a step that changes it", () => {
+    const p = startWalk(
+      walkRoute([station("a"), station("b")], new Set()),
+      "any",
+    );
+    const offered = walkOffered(p);
+    expect(walkOffered(p)).toBe(offered);
+    expect(offered).toEqual(["a", "b"]);
+    const { progress } = applyWalkStep(p, { kind: "skip", id: "a" });
+    expect(walkOffered(progress)).toEqual(["b"]);
+    expect(walkOffered(p)).toBe(offered);
   });
 });

@@ -66,9 +66,12 @@ DOM glue, its own module since the flows plan M6.
     the origin says which form submitted, so an open started in step 4
     does not answer by collapsing step 4 - load the
     levels (with a `.catch`). Once the manifest settles,
-    `hooks.presentTourInfo(manifest, loadImage)` gets it with a loader
-    that reads an archive path from the open zip, and `null` when the
-    session is torn down (the visitor's start page, polish round M4a). It resolves an `OpenOutcome` (`opened`,
+    `hooks.presentTourInfo({ manifest, loadImage })` gets it as the file
+    has it (`manifest` null for a zip without `tour.json`) with a loader that
+    reads an
+    archive path from the open zip, and `null` when the session is torn
+    down (the visitor's start page, which leads with the tour's name and
+    cover). It resolves an `OpenOutcome` (`opened`,
     `superseded`, or `failed` with the reject cause) and keeps a real
     in-flight flag; a successful open sets `ctx.tourLabel`.
   - `ArchiveOpen.openLink(url)` / `ArchiveOpen.openFile(file)` - the
@@ -109,8 +112,17 @@ DOM glue, its own module since the flows plan M6.
   reaches the gate either way (`hooks.reconsiderScanGate(levels)` or
   `"unavailable"` on a failed read, M5 review #1), and the visitor screen
   either way (`hooks.presentTourLevels()`, r857 review #5); a failed read
-  sets `ctx.levelsUnreadable` (no code of this tour can place it, r857
-  review #4);
+  says the levels unreadable (no code of this tour can place it, r857
+  review #4); the level texts, the parsed levels and that failure go into
+  the tour document as `levelsArrived` / `levelsParsed` /
+  `levelsUnreadable` with this open's generation (`currentLevels` is a
+  view of the parsed ones, plan M3b), and the teardown dispatches
+  `levelsParsed(null)` and `levelsCleared` itself, handing them to the
+  open that runs it (debug-captures plan M3a: an older open's late answer
+  is dropped in the store too; the teardown of a late integrity failure
+  runs inside the same open, so its own `levelsParsed(null)` is what takes
+  the removed tour's parsed levels away, pinned in
+  `archive-open-file.test.ts`);
   `teardownSession` clears tour state ONLY when a tour was open at its
   start (scan-to-open plan §9 #1): with none, nothing tour-scoped exists,
   and the creator's pre-open work (a measured level, placements, the
@@ -131,14 +143,10 @@ DOM glue, its own module since the flows plan M6.
   code's vote budget starts again, so a reopened tour's gate waits for a
   real vote - M2b review #6) and the placement fields the
   closing tour owned (`stationContent`, disposed with every station's
-  parts, `imagePlanes`, `imagePlanesLoading`,
-  `planesRunGeneration` bump, `placementAttempted`, `joinDeclined`,
-  `placement`) and the QR controller's level cache (the compass wait it
+  parts, `placementAttempted`, `placement`) and the QR controller's level cache (the compass wait it
   also ended, r857 review #9, is gone since r863), `levelsUnreadable`,
   and a failed
-  finish (`finishError`, which keeps Save off - scan-to-open plan §9 #8),
-  and `walkDecidedFor` (a reopened tour hedges its stations again, PR #642
-  review).
+  finish (`finishError`, which keeps Save off - scan-to-open plan §9 #8).
   The measured level goes with the tour, and so does its measurement (the
   settle's raw inputs, authoring plan 2026-09-28-0953 M2c) - a closing
   tour's measurement must never be re-minted into the next tour's level:
@@ -163,26 +171,60 @@ DOM glue, its own module since the flows plan M6.
   photo on every open, for nothing.
 - The gallery streams SEQUENTIALLY; a newer open supersedes an in-flight
   fill per entry; object URLs are revoked on teardown.
+- **A creator's recording is a tour from the moment it opens.** A zip
+  without `tour.json` opens the creator's tour document on an empty
+  manifest (an unnamed tour), not as "no tour", so every object placed in
+  it belongs to a station of the document at once; a visitor's opens as
+  "no tour" (null). The gallery, the scan entries and the tour info still
+  read the file's own (null) manifest. Tests: `archive-open-file.test.ts`
+  ("a recording without tour.json").
+- **No bake at open**: the walk's camera captures are debug data (plan
+  `2026-10-20-1159-debug-captures-and-codes-in-store-plan`, M1). A
+  creator's open settles as soon as `tour.json` is read, starts no
+  station for a frame and replays no walk; an earlier file's capture
+  spots are an unknown field to the framework's reader, which ignores
+  them. (Until M1 the open
+  replayed the walk and seated its frames in stations, `walk-N` ones
+  where no station held them, before it settled.) Tests:
+  `archive-open-file.test.ts` ("a creator's recording opens without its
+  debug camera captures").
+- **A tour of an older format is refused, and a creator's draft for it
+  deleted** (versions 1 to 3, `TourManifestOlderFormatError`): the
+  manifest status is `broken` as for any unreadable `tour.json`, and the
+  error box says `olderFormatRefusal` (`open-errors.ts`) instead of the
+  reader's message. A creator's page then asks
+  `hooks.forgetRefusedDraft(tourKeyOf(...))` to delete the draft it kept
+  for that tour (it has nothing left to be restored into, and is never
+  presented); once one was deleted, and the tour is still the open one,
+  the box adds that its unsaved changes cannot be restored. A visitor kept
+  no draft: nothing is looked for. Tests: `archive-open-file.test.ts` ("a
+  tour in an older format"), `playwright-tests/older-format.spec.js`.
 - **The gallery waits for `tour.json` and leaves out the creator's walk**
   (scan-pass plan S1, `tour-read-set.ts`): the settle sets
   `ctx.scanEntries` (empty without a manifest, as before) and then fills
   the gallery; a broken manifest fills it unfiltered. A copy that kept the
   walk therefore never decodes its frames; every other file still shows.
-- **A visitor's page stops the background download of a BAKED copy that
-  kept the walk** (`stopsVisitorDownload`, visitor mode only; an unbaked
-  one replays its walk and keeps the download): `archive.dispose()`
-  aborts the warm, and the tour reads its entries by range instead. The
+- **A visitor's page stops the background download of a copy that kept
+  the walk, and of a tour not finished yet** (`stopsVisitorDownload`,
+  visitor mode only, judged on the manifest as the document opens it at
+  the settle - a tour whose only stations were kept by debug camera
+  captures is not finished; a
+  zip without `tour.json` is such a tour, so a creator's recording hosted
+  before its first Finish is not fetched whole by every visitor):
+  `archive.dispose()` aborts the warm, and the tour reads its entries by
+  range instead. The
   costs, for that copy only: tier 3 (the whole-archive check), the offline
   copy, and - because dispose aborts the archive's one controller - the
   recovery download for a host that stops honouring ranges mid-session
   (S1 milestone review #5).
+  Tests: `archive-open-file.test.ts` ("stops a visitor's download of a
+  recording without tour.json").
 - **Another tour asks before replacing one with an unsaved rebuilt file**
   (UI round 1, U2): `openTour` returns `{ kind: "cancelled" }` when
   `hooks.confirmLeaveTour()` is false.
 - **The manifest is marked pending BEFORE the open's placement trigger**
   (S1 milestone review #4): a tour opened into a running AR session would
-  otherwise be judged before its `tour.json` (with the baked photo spots)
-  was read, and declined for the whole session.
+  otherwise be judged before its `tour.json` was read, and declined for the whole session.
   `archive-open-order.test.ts` pins the order.
 - **Clear-cache settles once the store is durably empty, without waiting
   for the warm download** (flows plan M2): `size()` is read FIRST (the open
@@ -225,7 +267,9 @@ auto-check on paste and change, once per link; its `openLink` / `openFile`
 block pins the outcome each returns, the link of record `openLink` writes,
 and that a link that did not open (offline, missing) is never handed on. `archive-open.test.ts` drives the real submit handler through
 a failed open: the tour switch clears the fused-pose hint state, the
-failed levels read and the voted-lock count (r857 review #9). Its "the levels' settle reaches the visitor
+failed levels read and the voted-lock count (r857 review #9). It also holds that
+a closing tour stops the stations once (`hooks.stopStations`: the walk's
+views start anew with the next tour), and never with no tour open. Its "the levels' settle reaches the visitor
 screen" block (in `archive-open-file.test.ts`) holds `presentTourLevels`
 on a read and on a failed read, and `levelsUnreadable`. The logic
 beneath: `tour-session.test.ts`,

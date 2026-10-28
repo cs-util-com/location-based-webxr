@@ -1,0 +1,857 @@
+<!doctype html>
+<html lang="en" data-ar="0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Make an AR Tour</title>
+<style>
+:root {
+  --paper: #f4eedf;
+  --paper-2: #ebe3cf;
+  --paper-3: #ddd2b6;
+  --card: #fbf8ef;
+  --ink: #2a2824;
+  --ink-2: #57534a;
+  --ink-3: #7d776a;
+  --line: #c9bea3;
+  --route: #cf4428;
+  --route-dark: #b43a21;
+  --route-soft: #f5d9cd;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --gut: 16px;
+  --k: 3.9;   /* in-phone text: 1em = k % of the screen's width (13 px on a 390 px wide phone) */
+  --sp: 1;    /* length of each step's short animation */
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); -webkit-text-size-adjust: 100%; }
+body { overflow-x: hidden; }
+p, h1, h2, h3, ol, ul, figure { margin: 0; }
+ol, ul { padding: 0; }
+button, input { font: inherit; color: inherit; }
+a { color: inherit; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---------- top bar ---------- */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 40px; padding: 0 var(--gut); max-width: 1240px; margin: 0 auto; }
+.proto-label { font: 600 11px/1 var(--sans); letter-spacing: .02em; background: var(--ink); color: var(--paper); padding: 6px 9px; border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.proto-label .long { display: none; }
+@media (min-width: 560px) { .proto-label .long { display: inline; } .proto-label .short { display: none; } }
+.ar-toggle { display: flex; flex: none; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 2px; }
+.ar-toggle button { border: 0; background: none; border-radius: 999px; padding: 6px 9px; font: 600 12px/1 var(--sans); color: var(--ink-2); cursor: pointer; min-height: 28px; }
+.ar-toggle button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+html[data-ar="1"] .ar-no, html[data-ar="0"] .ar-yes { display: none; }
+
+/* ---------- a visitor's way in ---------- */
+.visit { max-width: 1240px; margin: 0 auto; padding: 4px var(--gut) 0; }
+.visit-line { font-size: 14px; line-height: 1.4; color: var(--ink-2); padding: 8px 12px; border: 1px dashed var(--line); border-radius: 10px; background: rgba(251, 248, 239, .6); }
+.visit-line b { color: var(--ink); font-weight: 600; }
+.visit form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.visit form[hidden] { display: none; }
+.visit input { flex: 1 1 200px; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1.5px solid var(--ink); border-radius: 8px; background: #fff; font-size: 15px; }
+.visit .msg { font-size: 13.5px; color: var(--ink-2); margin-top: 6px; }
+.visit .msg:empty { display: none; }
+
+/* ---------- hero: the motivation first ---------- */
+.hero { max-width: 1240px; margin: 0 auto; padding: 20px var(--gut) 8px; display: grid; gap: 18px; }
+.kicker { font: 700 12px/1.25 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--route-dark); }
+.hero h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(29px, 7.8vw, 58px); line-height: 1.05; letter-spacing: -.01em; margin: 8px 0 12px; }
+.hero h1 em { color: var(--route); font-style: italic; }
+.lede { font-size: 16.5px; line-height: 1.45; color: var(--ink-2); max-width: 33em; }
+.lede b { color: var(--ink); font-weight: 600; }
+.req { margin-top: 10px; font-size: 14px; line-height: 1.4; color: var(--ink-2); display: flex; gap: 8px; align-items: baseline; max-width: 34em; }
+.req::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--ink-3); transform: translateY(1px); }
+html[data-ar="1"] .req::before { background: var(--route); border-color: var(--route); }
+.req b { color: var(--ink); font-weight: 600; }
+.cta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 16px; }
+.ease { list-style: none; display: grid; gap: 7px; font-size: 14.5px; line-height: 1.35; color: var(--ink-2); align-content: start; }
+.ease li { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: start; }
+.ease svg { width: 18px; height: 18px; margin-top: 1px; }
+.ease b { color: var(--ink); font-weight: 600; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; font: 600 15px/1.1 var(--sans); min-height: 46px; padding: 11px 18px; border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; color: var(--ink); cursor: pointer; }
+.btn.primary { background: var(--route); border-color: var(--route); color: #fff; }
+.btn:active { transform: translateY(1px); }
+.btn svg { width: 16px; height: 16px; flex: none; }
+.linkish { background: none; border: 0; padding: 2px 1px; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font-weight: 600; }
+.btn:focus-visible, .linkish:focus-visible, .ar-toggle button:focus-visible, summary:focus-visible, input:focus-visible { outline: 3px solid var(--route); outline-offset: 2px; }
+
+/* ---------- the story: two phones, one station ---------- */
+.story { position: relative; margin-top: 18px; }
+.stage { position: sticky; top: 0; z-index: 4; background: var(--paper); padding: 10px var(--gut) 8px; }
+/* text scrolling up under the phones fades out instead of being cut */
+.stage::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 22px; background: linear-gradient(var(--paper), rgba(244, 238, 223, 0)); pointer-events: none; }
+.duo { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+.side { min-width: 0; }
+.who { display: flex; align-items: baseline; gap: 7px; font: 600 13px/1.2 var(--sans); color: var(--ink-2); margin: 0 0 6px 2px; }
+.who b { font: 700 11.5px/1 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: #fff; background: var(--ink); padding: 4px 7px 3px; border-radius: 999px; }
+.m .who b { background: var(--route); }
+
+.phone { position: relative; background: var(--ink); border-radius: 6.5% / 14%; padding: 1.9% 3.4%; box-shadow: 5px 6px 0 rgba(42, 40, 36, .18); }
+.phone::before { content: ""; position: absolute; left: 1.3%; top: 50%; width: .9%; aspect-ratio: 1; margin-top: -.45%; border-radius: 50%; background: #4a4740; }
+.scr { position: relative; aspect-ratio: 21 / 10; border-radius: 4.2% / 8.8%; overflow: hidden; background: #e6ebe4; container-type: inline-size; isolation: isolate; }
+/* the base size of everything in a screen; more specific than the pieces below, whose font shorthands would otherwise reset it to the page size */
+.stage .scr > * { font-size: calc(var(--k) * 1cqw); }
+.scr > svg.world { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* the link between the two phones: it is the same spot */
+.link { display: flex; align-items: center; justify-content: center; gap: 8px; height: 30px; font: 600 12.5px/1 var(--sans); color: var(--ink-2); }
+.link::before, .link::after { content: ""; flex: 1; max-width: 80px; border-top: 1.5px dashed var(--route); opacity: .55; }
+.link svg { width: 14px; height: 18px; flex: none; }
+
+/* in-phone pieces (all sizes in em of the screen: they scale with the phone, never with the page) */
+.pill { position: absolute; left: 2.2%; top: 4%; display: flex; align-items: center; gap: .45em; height: 1.85em; padding: 0 .75em 0 .3em; border-radius: 999px; background: rgba(251, 248, 239, .94); border: 1px solid var(--ink); font: 600 .92em/1 var(--sans); color: var(--ink); white-space: nowrap; }
+.pill .tg { font: 700 1em/1 var(--sans); color: #fff; background: var(--route); border-radius: 999px; padding: .3em .55em; }
+.pill .tg.ok { background: var(--ink); }
+.pill .dots { display: flex; gap: .28em; margin-left: .2em; }
+.pill .dots i { width: .42em; height: .42em; border-radius: 50%; background: var(--line); }
+.pill .dots i.on { background: var(--route); }
+.v .pill { padding-left: .75em; }
+.m .pill { padding: 0 .3em; }
+.pill .sv { display: none; }
+.f-done .m .pill .sv { display: inline; }
+.f-done .m .pill .mk { display: none; }
+
+.card { position: absolute; left: 62%; bottom: 53.5%; transform: translateX(-50%); width: 10.2em; padding: .5em .65em .55em; background: #fff; border: 1px solid var(--ink); border-radius: .45em; box-shadow: .22em .22em 0 rgba(42, 40, 36, .16); color: var(--ink); }
+.card .t { display: block; font: 700 1.06em/1.15 var(--serif); min-height: 1.15em; white-space: nowrap; }
+.card .b { display: block; font-size: .92em; line-height: 1.3; color: var(--ink-2); margin-top: .15em; }
+.caret { display: none; width: 1.5px; height: 1em; background: var(--route); vertical-align: -.12em; margin-left: 1px; }
+.f-edit .m .card { border: 1.5px dashed var(--route); box-shadow: none; }
+.f-edit .m .caret { display: inline-block; }
+.photo { position: absolute; left: 2.2%; top: 23.5%; width: 5em; padding: .3em .3em 0; background: #fff; border: 1px solid var(--ink); box-shadow: .2em .2em 0 rgba(42, 40, 36, .16); transform: rotate(-4deg); }
+.photo svg { display: block; width: 100%; height: auto; }
+.photo span { display: block; text-align: center; font: italic .92em/1 var(--serif); color: var(--ink); padding: .28em 0 .32em; white-space: nowrap; }
+.f-edit .m .photo { outline: 1.5px dashed var(--route); outline-offset: .18em; }
+.ghost { position: absolute; left: 2.2%; top: 23.5%; width: 5em; height: 5.1em; border: 1.5px dashed var(--route); border-radius: .3em; background: rgba(251, 248, 239, .7); display: grid; place-items: center; font: 700 .92em/1 var(--sans); color: var(--route-dark); transform: rotate(-4deg); }
+
+/* the maker's controls along the bottom, one set per step */
+.ub { position: absolute; left: 50%; bottom: 3.5%; transform: translateX(-50%); display: flex; align-items: center; gap: .45em; height: 2.2em; padding: 0 .35em; border-radius: 999px; background: rgba(42, 40, 36, .82); color: #fff; font: 600 .92em/1 var(--sans); white-space: nowrap; }
+.ub .bt { display: inline-flex; align-items: center; gap: .35em; height: 1.65em; padding: 0 .75em; border-radius: 999px; background: rgba(255, 255, 255, .14); }
+.ub .bt.p { background: var(--route); }
+.ub .bt svg { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ub .thumb { width: 1.65em; height: 1.65em; border-radius: .25em; overflow: hidden; flex: none; border: 1px solid rgba(255, 255, 255, .6); }
+.ub .thumb svg { display: block; width: 100%; height: 100%; }
+.ub .txt { padding-right: .55em; }
+.sheet { position: absolute; left: 2.2%; bottom: 3.5%; width: 72%; display: flex; gap: .6em; align-items: center; padding: .4em .5em; border-radius: .7em; background: rgba(251, 248, 239, .97); border: 1px solid var(--ink); color: var(--ink); }
+.sheet .qr { width: 2.8em; height: 2.8em; flex: none; display: block; }
+.sheet > div { flex: 1; min-width: 0; }
+.sheet b { display: block; font: 700 1em/1.15 var(--serif); }
+.sheet .sm { display: block; font-size: .92em; line-height: 1.25; color: var(--ink-2); margin-top: .15em; white-space: nowrap; }
+.sheet .print { flex: none; display: inline-flex; align-items: center; height: 1.6em; padding: 0 .8em; border-radius: 999px; background: var(--route); color: #fff; font: 700 .92em/1 var(--sans); }
+
+/* the visitor's chips */
+.chip { position: absolute; right: 2.2%; bottom: 4%; display: flex; align-items: center; gap: .4em; height: 1.95em; padding: 0 .8em 0 .35em; border-radius: 999px; background: rgba(251, 248, 239, .96); border: 1px solid var(--ink); font: 600 .92em/1 var(--sans); color: var(--ink); white-space: nowrap; }
+.chip svg { width: 1.3em; height: 1.3em; flex: none; }
+.chip.c1 { right: auto; left: 50%; transform: translateX(-50%); padding-left: .8em; color: var(--ink-2); font-weight: 500; font-style: italic; }
+
+/* what each step shows: flags set by the script from the step number */
+.scr .pin, .scr .card, .scr .photo, .scr .poster, .scr .reticle, .scr .ghost, .scr .ub, .scr .sheet, .scr .chip, .scr .brk, .scr .rip { opacity: 0; transition: opacity .3s; }
+.f-pin .pin, .f-words .card, .f-words .photo, .f-code .poster { opacity: 1; }
+.stage[data-beat="2"] .m .reticle { opacity: 1; }
+.stage[data-beat="1"] .m .ub1, .stage[data-beat="2"] .m .ub2, .stage[data-beat="3"] .m .ub3, .stage[data-beat="4"] .m .sheet,
+.stage[data-beat="5"] .m .ub5, .stage[data-beat="0"] .m .ub5 { opacity: 1; }
+.stage[data-beat="1"] .v .c1, .stage[data-beat="4"] .v .c4, .stage[data-beat="4"] .v .brk,
+.stage[data-beat="5"] .v .c5, .stage[data-beat="0"] .v .c5 { opacity: 1; }
+
+/* each step plays one short entry, in both phones at once, then holds still; nothing loops */
+.pin, .reticle, .rip, .brk { transform-box: fill-box; transform-origin: 50% 100%; }
+.rip, .brk { transform-origin: 50% 50%; }
+.stage.go[data-beat="1"] .m .ub1, .stage.go[data-beat="1"] .v .c1 { animation: up calc(.45s * var(--sp)) calc(.25s * var(--sp)) ease-out both; }
+.stage.go[data-beat="2"] .m .ub2 { animation: up calc(.4s * var(--sp)) calc(.05s * var(--sp)) ease-out both; }
+.stage.go[data-beat="2"] .m .reticle { animation: glide calc(.9s * var(--sp)) cubic-bezier(.4, 0, .2, 1) both; }
+.stage.go[data-beat="2"] .m .ub2 .p { animation: press calc(.3s * var(--sp)) calc(1s * var(--sp)) both; }
+.stage.go[data-beat="2"] .pin { animation: drop calc(.6s * var(--sp)) calc(1.15s * var(--sp)) cubic-bezier(.3, 1.4, .5, 1) both; }
+.stage.go[data-beat="2"] .rip { animation: ripple calc(1s * var(--sp)) calc(1.45s * var(--sp)) ease-out both; }
+.stage.go[data-beat="3"] .m .ub3 { animation: up calc(.4s * var(--sp)) calc(.05s * var(--sp)) ease-out both; }
+.stage.go[data-beat="3"] .m .card { animation: fade calc(.3s * var(--sp)) calc(.2s * var(--sp)) both; }
+.stage.go[data-beat="3"] .m .ghost { animation: ghost calc(1.9s * var(--sp)) calc(.3s * var(--sp)) both; }
+.stage.go[data-beat="3"] .m .photo { animation: pic calc(.5s * var(--sp)) calc(2s * var(--sp)) cubic-bezier(.3, 1.3, .5, 1) both; }
+.stage.go[data-beat="3"] .v .card { animation: card calc(.5s * var(--sp)) calc(1.45s * var(--sp)) cubic-bezier(.3, 1.3, .5, 1) both; }
+.stage.go[data-beat="3"] .v .photo { animation: pic calc(.5s * var(--sp)) calc(2s * var(--sp)) cubic-bezier(.3, 1.3, .5, 1) both; }
+.stage.go[data-beat="4"] .m .sheet { animation: up calc(.45s * var(--sp)) calc(.15s * var(--sp)) ease-out both; }
+.stage.go[data-beat="4"] .poster { animation: fade calc(.5s * var(--sp)) calc(.9s * var(--sp)) both; }
+.stage.go[data-beat="4"] .v .brk { animation: frame calc(.5s * var(--sp)) calc(1.3s * var(--sp)) ease-out both; }
+.stage.go[data-beat="4"] .v .c4 { animation: up calc(.4s * var(--sp)) calc(1.8s * var(--sp)) ease-out both; }
+.stage.go[data-beat="5"] .m .ub5 { animation: up calc(.4s * var(--sp)) calc(.2s * var(--sp)) ease-out both; }
+.stage.go[data-beat="5"] .v .c5 { animation: up calc(.4s * var(--sp)) calc(.2s * var(--sp)) ease-out both; }
+@keyframes up { from { opacity: 0; translate: 0 .6em; } to { opacity: 1; translate: 0 0; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes glide { 0% { opacity: 0; transform: translate(26px, 14px); } 25% { opacity: 1; } 100% { opacity: 1; transform: none; } }
+@keyframes press { 0%, 100% { transform: none; } 50% { transform: scale(.92); background: var(--route-dark); } }
+@keyframes drop { 0% { opacity: 0; transform: translateY(-34%) scale(1.15); } 55% { opacity: 1; } 100% { opacity: 1; transform: none; } }
+@keyframes ripple { 0% { opacity: .9; transform: scale(.6); } 100% { opacity: 0; transform: scale(2.2); } }
+@keyframes ghost { 0%, 100% { opacity: 0; } 12%, 88% { opacity: 1; } }
+@keyframes pic { from { opacity: 0; scale: .85; } to { opacity: 1; scale: 1; } }
+@keyframes card { from { opacity: 0; translate: 0 .5em; } to { opacity: 1; translate: 0 0; } }
+@keyframes frame { from { opacity: 0; transform: scale(1.35); } to { opacity: 1; transform: none; } }
+
+/* captions: one per step, scrolled under the phones */
+.caps { max-width: 1240px; margin: 0 auto; padding: 0 var(--gut) 18svh; }
+.cap { min-height: var(--capH, 52svh); padding-top: 22px; transition: opacity .35s; }
+.cap .num { font: 700 12px/1.2 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--route-dark); }
+.cap h2 { font: 600 clamp(24px, 6.4vw, 38px)/1.1 var(--serif); margin: 6px 0 12px; max-width: 22em; }
+.cap .lead { font-size: 16px; line-height: 1.5; color: var(--ink-2); max-width: 36em; }
+.pair { display: grid; gap: 10px; }
+.pair p { font-size: 15.5px; line-height: 1.45; color: var(--ink-2); padding-left: 12px; border-left: 3px solid var(--line); }
+.pair p.y { border-left-color: var(--route); }
+.pair p.t { border-left-color: var(--ink); }
+.pair p > b:first-child { display: block; font: 700 11.5px/1.2 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink); margin-bottom: 3px; }
+.cap .note { margin-top: 10px; font-size: 14px; line-height: 1.4; color: var(--ink-2); }
+.cap .note b { color: var(--ink); }
+.wid { display: none; }
+
+/* ---------- setup: sections one under another ---------- */
+.setup { max-width: 920px; margin: 0 auto; padding: 40px var(--gut) 18px; }
+.setup > h2, .ideas > h2 { font: 600 clamp(28px, 7vw, 42px)/1.08 var(--serif); }
+.setup > .sub, .ideas > .sub { font-size: 16px; line-height: 1.5; color: var(--ink-2); margin-top: 8px; max-width: 36em; }
+.steps { list-style: none; margin-top: 22px; border-top: 1.5px solid var(--ink); }
+.steps > li { border-bottom: 1px solid var(--line); }
+.steps details > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 34px minmax(0, 1fr) 22px; gap: 3px 12px; align-items: start; padding: 16px 2px 15px; }
+.steps details > summary::-webkit-details-marker { display: none; }
+.steps .sn { grid-row: 1 / span 3; width: 32px; height: 32px; border-radius: 50%; background: var(--route); color: #fff; font: 700 15px/32px var(--sans); text-align: center; }
+.steps .later .sn { background: #fff; color: var(--route-dark); border: 1.5px solid var(--route); line-height: 29px; }
+.steps h3 { font: 600 19px/1.25 var(--serif); padding-top: 4px; }
+.steps .chev { width: 20px; height: 20px; margin-top: 6px; stroke: var(--ink-2); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .2s; }
+.steps details[open] .chev { transform: rotate(180deg); }
+.steps .short { grid-column: 2; font-size: 15.5px; line-height: 1.45; color: var(--ink-2); }
+.steps .where { grid-column: 2; font-size: 13.5px; line-height: 1.35; color: var(--ink-3); }
+.steps .where.need { color: var(--route-dark); }
+.steps .tag { display: inline-block; font: 700 11px/1 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--route-dark); border: 1px solid var(--route); border-radius: 999px; padding: 3px 7px 2px; margin-left: 6px; vertical-align: 3px; }
+.steps .body { padding: 0 2px 18px 46px; display: grid; gap: 8px; font-size: 15px; line-height: 1.5; color: var(--ink-2); max-width: 44em; }
+.steps .body b { color: var(--ink); }
+.steps .divider { list-style: none; padding: 12px 2px 10px 46px; font-size: 14px; line-height: 1.4; color: var(--ink-2); border-bottom: 1px solid var(--line); background: linear-gradient(90deg, var(--route-soft), rgba(245, 217, 205, 0)); }
+.setup .go-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 22px; }
+.setup .go-row a { font-size: 14px; color: var(--ink-2); }
+
+/* ---------- ideas (optional, at the end) ---------- */
+.ideas { max-width: 1240px; margin: 0 auto; padding: 48px var(--gut) 24px; }
+.ideas .grid { list-style: none; display: grid; gap: 22px 22px; margin-top: 22px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 640px) { .ideas .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1040px) { .ideas .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.idea .mini { position: relative; background: var(--ink); border-radius: 6.5% / 14%; padding: 1.9% 3.4%; box-shadow: 4px 5px 0 rgba(42, 40, 36, .16); }
+.idea .mini svg { display: block; width: 100%; height: auto; aspect-ratio: 21 / 10; border-radius: 4.2% / 8.8%; }
+.idea .by { margin-top: 12px; font: 700 11.5px/1.2 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+.idea h3 { font: 600 20px/1.2 var(--serif); margin: 4px 0 5px; }
+.idea p.sees { font-size: 15px; line-height: 1.45; color: var(--ink-2); }
+
+/* ---------- footer, notes, toast ---------- */
+footer { max-width: 1240px; margin: 0 auto; padding: 28px var(--gut) 40px; font-size: 14px; color: var(--ink-3); }
+footer nav { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 18px; }
+footer nav a { color: var(--ink-2); }
+details.notes { border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+details.notes summary { cursor: pointer; padding: 12px 14px; font: 600 14px var(--sans); color: var(--ink-2); }
+details.notes .nb { padding: 0 16px 16px; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+details.notes h3 { font: 700 13px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--ink); margin: 14px 0 4px; }
+details.notes ul { padding-left: 18px; }
+details.notes li { margin: 3px 0; }
+.toast { position: fixed; left: 50%; bottom: 18px; z-index: 90; transform: translate(-50%, 30px); opacity: 0; background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 14px; font-size: 14px; line-height: 1.35; width: max-content; max-width: calc(100vw - 32px); text-align: center; transition: opacity .25s, transform .3s; pointer-events: none; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- wider: the phones side by side ---------- */
+@media (min-width: 700px) {
+  .duo { grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr); align-items: end; }
+  .link { flex-direction: column; height: auto; align-self: center; gap: 6px; text-align: center; line-height: 1.2; padding-top: 22px; }
+  .link::before, .link::after { flex: none; width: 0; height: 22px; max-width: none; border-top: 0; border-left: 1.5px dashed var(--route); }
+  .pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 64px; }
+  .wid { display: inline; }
+  .nar { display: none; }
+}
+@media (min-width: 1000px) {
+  .hero { grid-template-columns: minmax(0, 1.35fr) minmax(260px, .65fr); column-gap: 56px; align-items: end; padding-top: 34px; }
+  .hero h1 { font-size: clamp(44px, 4.4vw, 62px); }
+  .lede { font-size: 18.5px; }
+  .req { font-size: 15px; }
+  .ease { font-size: 15.5px; gap: 10px; padding-bottom: 6px; }
+  .duo { max-width: 1180px; }
+  .caps { max-width: 1180px; }
+  .cap h2 { font-size: clamp(32px, 2.8vw, 40px); }
+  .pair p { font-size: 17px; }
+  .cap .lead { font-size: 17.5px; }
+}
+/* a phone held sideways: short screen, so the page tightens */
+@media (orientation: landscape) and (max-height: 560px) {
+  .top { height: 36px; }
+  .hero { padding-top: 12px; grid-template-columns: minmax(0, 1.3fr) minmax(0, .7fr); column-gap: 28px; align-items: end; }
+  .hero h1 { font-size: 30px; margin: 4px 0 8px; }
+  .lede { font-size: 15px; }
+  .req { font-size: 13px; margin-top: 6px; }
+  .ease { font-size: 13.5px; gap: 5px; }
+  .cta { margin-top: 10px; }
+  .btn { min-height: 42px; padding: 9px 15px; font-size: 14px; }
+  .stage { padding-top: 6px; padding-bottom: 6px; }
+  .who { font-size: 12px; margin-bottom: 4px; }
+  .who b { font-size: 10.5px; }
+  .duo { max-width: 760px; }
+  .caps { max-width: 760px; }
+  .cap { padding-top: 12px; }
+  .cap h2 { font-size: 22px; margin: 3px 0 7px; }
+  .cap .num { font-size: 11px; }
+  .pair p { font-size: 13.5px; line-height: 1.38; }
+  .cap .lead { font-size: 14px; }
+  .cap .note { font-size: 12.5px; margin-top: 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- shared drawings: one park, used by both phones -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="gSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d3e0dd"/><stop offset="1" stop-color="#ecebdd"/></linearGradient>
+    <symbol id="park" viewBox="0 0 420 200">
+      <rect width="420" height="124" fill="url(#gSky)"/>
+      <!-- far hills, faceted -->
+      <polygon points="0,106 46,93 92,101 140,89 190,99 236,88 284,97 332,86 380,95 420,90 420,124 0,124" fill="#c8cca6"/>
+      <polygon points="46,93 92,101 68,124" fill="#bdc29a"/><polygon points="140,89 190,99 158,124" fill="#bdc29a"/>
+      <polygon points="236,88 284,97 258,124" fill="#bdc29a"/><polygon points="332,86 380,95 352,124" fill="#bdc29a"/>
+      <!-- the ground -->
+      <rect y="114" width="420" height="86" fill="#d3cfa6"/>
+      <polygon points="0,114 140,114 0,152" fill="#cdc89c"/>
+      <polygon points="250,114 420,114 420,146" fill="#dad6b0"/>
+      <polygon points="0,200 100,200 0,156" fill="#c3be90"/>
+      <polygon points="350,200 420,200 420,162" fill="#c9c497"/>
+      <!-- conifers at the back -->
+      <polygon points="40,116 52,80 64,116" fill="#8c9a6c"/><polygon points="52,80 64,116 52,116" fill="#7b885c"/>
+      <polygon points="62,118 72,90 82,118" fill="#97a476"/><polygon points="72,90 82,118 72,118" fill="#849163"/>
+      <polygon points="396,116 406,86 416,116" fill="#8c9a6c"/><polygon points="406,86 416,116 406,116" fill="#7b885c"/>
+      <!-- the mill stream -->
+      <polygon points="186,124 212,124 246,200 150,200" fill="#b8cbc3"/>
+      <polygon points="196,124 202,124 214,200 192,200" fill="#cbdad3"/>
+      <!-- the path -->
+      <polygon points="262,116 276,116 392,200 296,200" fill="#f6f1e3"/>
+      <polygon points="262,116 266,116 312,200 296,200" fill="#e9e1cc"/>
+      <!-- the mill: gable lit, side in shade, faceted roof -->
+      <polygon points="92,124 92,72 124,44 156,72 156,124" fill="#efe7d4"/>
+      <polygon points="156,124 156,72 214,77 214,124" fill="#d8cdb5"/>
+      <polygon points="124,44 182,49 198,63 140,58" fill="#b4aa95"/>
+      <polygon points="140,58 198,63 214,77 156,72" fill="#a49a86"/>
+      <polygon points="88,74 124,41 160,74 156,74 124,46 92,74" fill="#8c8270"/>
+      <g fill="#6c665b">
+        <rect x="101" y="84" width="11" height="13"/><rect x="136" y="84" width="11" height="13"/><rect x="117" y="103" width="14" height="21"/>
+        <polygon points="164,86 175,86.6 175,99 164,98.4"/>
+      </g>
+      <rect x="92" y="120" width="122" height="4" fill="#b9ad94"/>
+      <!-- the wheel -->
+      <polygon points="215,107 211.75,117 203.25,123.17 192.75,123.17 184.25,117 181,107 184.25,97 192.75,90.83 203.25,90.83 211.75,97" fill="none" stroke="#8a6f52" stroke-width="3.4" stroke-linejoin="round"/>
+      <path d="M215 107H181M211.75 117L184.25 97M203.25 123.17L192.75 90.83M192.75 123.17L203.25 90.83M184.25 117L211.75 97" stroke="#a88c6c" stroke-width="1.5"/>
+      <circle cx="198" cy="107" r="2.6" fill="#6c5a46"/>
+      <!-- the old oak -->
+      <polygon points="369,152 375,152 374,104 370,104" fill="#8a735a"/>
+      <polygon points="344,88 356,60 372,82" fill="#b8bf8c"/><polygon points="356,60 384,54 372,82" fill="#a7ae7c"/>
+      <polygon points="384,54 402,80 372,82" fill="#939a69"/><polygon points="402,80 392,104 372,82" fill="#899060"/>
+      <polygon points="392,104 354,106 372,82" fill="#9aa16f"/><polygon points="354,106 344,88 372,82" fill="#aab17f"/>
+      <ellipse cx="372" cy="153" rx="20" ry="3.5" fill="rgba(70,56,30,.14)"/>
+      <!-- the post the code will hang on -->
+      <rect x="339" y="112" width="3" height="44" fill="#8a735a"/>
+      <ellipse cx="340.5" cy="156" rx="6" ry="1.6" fill="rgba(70,56,30,.18)"/>
+    </symbol>
+    <!-- an old photo of the mill, sepia -->
+    <symbol id="old" viewBox="0 0 60 44">
+      <rect width="60" height="44" fill="#d9cba9"/>
+      <rect y="30" width="60" height="14" fill="#bfa982"/>
+      <polygon points="10,32 10,18 20,10 30,18 30,32" fill="#a48d68"/>
+      <polygon points="30,32 30,18 46,19.5 46,32" fill="#8f7958"/>
+      <polygon points="20,10 37,11.5 46,19.5 30,18" fill="#7b6648"/>
+      <circle cx="44" cy="28" r="6" fill="none" stroke="#6a5639" stroke-width="1.4"/>
+      <path d="M38 28h12M44 22v12" stroke="#6a5639" stroke-width=".8"/>
+      <rect x="18" y="25" width="4" height="7" fill="#6a5639"/>
+      <rect width="60" height="44" fill="none" stroke="#000" stroke-opacity=".08" stroke-width="3"/>
+    </symbol>
+    <symbol id="qr" viewBox="-2 -2 25 25"></symbol>
+    <symbol id="pinIc" viewBox="0 0 14 18"><path d="M7 17C4.5 13.3 1 10.6 1 7A6 6 0 0 1 13 7C13 10.6 9.5 13.3 7 17Z" fill="#cf4428"/><circle cx="7" cy="7" r="2.3" fill="#fff"/></symbol>
+  </defs>
+</svg>
+
+<div class="top">
+  <span class="proto-label"><span class="short">Prototype R3-3</span><span class="long">Prototype R3-3 - Two phones, one station</span></span>
+  <div class="ar-toggle" role="group" aria-label="Fake this device's AR support">
+    <button type="button" data-ar-set="auto" id="arAuto" aria-pressed="true">Device</button>
+    <button type="button" data-ar-set="1" aria-pressed="false">AR phone</button>
+    <button type="button" data-ar-set="0" aria-pressed="false">No AR</button>
+  </div>
+</div>
+
+<main>
+<div class="visit" id="visit">
+  <p class="visit-line"><b>Here to walk a tour?</b> Scan its code with your phone's camera, or <button type="button" class="linkish" id="visitToggle" aria-expanded="false" aria-controls="visitForm">paste the tour's link</button>.</p>
+  <form id="visitForm" novalidate hidden>
+    <label class="vh" for="visitIn">Tour link</label>
+    <input id="visitIn" type="url" inputmode="url" placeholder="https://" autocomplete="off" spellcheck="false">
+    <button type="submit" class="btn">Open the tour</button>
+  </form>
+  <p class="msg" id="visitMsg" role="status" aria-live="polite"></p>
+</div>
+
+<header class="hero">
+  <div>
+    <p class="kicker">AR tours, on site, on your phone</p>
+    <h1>You have a story to tell, <em>or something to show.</em></h1>
+    <p class="lede">Turn it into a tour. Your visitors see your words and pictures in the real world, right at the spot, through their phone's camera. <b>You make it yourself, without programming.</b></p>
+    <p class="req"><span>Needs an Android phone with Chrome (AR support). <b class="ar-yes">This phone has it.</b><b class="ar-no">This device does not, but you can start the setup here.</b></span></p>
+    <div class="cta">
+      <a class="btn primary" href="#setup" id="makeBtn">Make your tour</a>
+      <button type="button" class="btn" id="tryBtn">Try it here</button>
+    </div>
+  </div>
+  <ul class="ease" aria-label="Why it is easy">
+    <li><svg viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="8" fill="#f5d9cd"/><path d="M5 9.3l2.6 2.6L13 6.4" fill="none" stroke="#b43a21" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>Nothing to install.</b> Not for you, not for your visitors.</span></li>
+    <li><svg viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="8" fill="#f5d9cd"/><path d="M5 9.3l2.6 2.6L13 6.4" fill="none" stroke="#b43a21" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>It all runs in the browser.</b> No sign-up, no account.</span></li>
+    <li><svg viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="8" fill="#f5d9cd"/><path d="M5 9.3l2.6 2.6L13 6.4" fill="none" stroke="#b43a21" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>No need to print a code while you build.</b> Print it and hang it when the tour is ready.</span></li>
+  </ul>
+</header>
+
+<section class="story" id="story" aria-label="Making a station and seeing it, side by side">
+  <div class="stage" id="stage" data-beat="0">
+    <div class="duo">
+      <figure class="side m" aria-label="Your phone while you make the station">
+        <figcaption class="who"><b>You</b>making it</figcaption>
+        <div class="phone"><div class="scr" aria-hidden="true">
+          <svg class="world" viewBox="0 0 420 200" preserveAspectRatio="xMidYMid slice">
+            <use href="#park"/>
+            <g class="poster"><rect x="327" y="94" width="27" height="31" fill="#fff" stroke="#2a2824" stroke-width=".8"/><rect x="327" y="94" width="27" height="6" fill="#cf4428"/><use href="#qr" x="332.5" y="102.5" width="16" height="16"/></g>
+            <g class="reticle"><ellipse cx="250" cy="150" rx="19" ry="5.6" fill="rgba(255,255,255,.25)" stroke="#fff" stroke-width="1.6" stroke-dasharray="4 3.4"/><path d="M226 150h7M274 150h-7M250 141v4M250 159v-4" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></g>
+            <ellipse class="rip" cx="250" cy="152" rx="14" ry="4.2" fill="none" stroke="#fff" stroke-width="1.8"/>
+            <g class="pin"><ellipse cx="250" cy="152" rx="10" ry="3" fill="rgba(42,40,36,.24)"/><path d="M250 152V117" stroke="#2a2824" stroke-width="1.4"/><path d="M241.5 109L258.5 109L250 121Z" fill="#b03a22"/><circle cx="250" cy="104" r="11" fill="#cf4428"/><text x="250" y="104.5" text-anchor="middle" dominant-baseline="central" font-family="system-ui,sans-serif" font-weight="700" font-size="13" fill="#fff">1</text></g>
+          </svg>
+          <div class="ghost">+ Picture</div>
+          <div class="photo"><svg viewBox="0 0 60 44"><use href="#old"/></svg><span>here, 1910</span></div>
+          <div class="card"><span class="t"><span class="ct">The mill wheel</span><span class="caret"></span></span><span class="b cb">Built in 1820.</span></div>
+          <div class="pill"><span class="tg mk">Making</span><span class="tg ok sv">Saved</span></div>
+          <div class="ub ub1"><span class="thumb"><svg viewBox="0 0 60 44" preserveAspectRatio="xMidYMid slice"><use href="#old"/></svg></span><span class="txt">Your photo of the mill</span></div>
+          <div class="ub ub2"><span class="bt p"><svg viewBox="0 0 16 16"><path d="M8 14.5C6 11.7 3.5 9.7 3.5 7A4.5 4.5 0 0 1 12.5 7C12.5 9.7 10 11.7 8 14.5Z"/></svg>Place here</span></div>
+          <div class="ub ub3"><span class="bt"><svg viewBox="0 0 16 16"><path d="M3 4h10M8 4v9"/></svg>Text</span><span class="bt"><svg viewBox="0 0 16 16"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M3 11l3.5-3 2.5 2 2-1.5 2.5 2"/></svg>Picture</span><span class="bt p">Done</span></div>
+          <div class="sheet"><svg class="qr" viewBox="-2 -2 25 25"><rect x="-2" y="-2" width="25" height="25" fill="#fff"/><use href="#qr" x="-2" y="-2" width="25" height="25"/></svg><div><b>Your tour's code</b><span class="sm">Print it when ready.</span></div><span class="print">Print</span></div>
+          <div class="ub ub5"><span class="bt"><svg viewBox="0 0 16 16"><path d="M3.5 8.4l3 3L12.5 5"/></svg>Saved</span><span class="txt">Exactly what visitors see</span></div>
+        </div></div>
+      </figure>
+
+      <div class="link" aria-hidden="true"><svg viewBox="0 0 14 18"><use href="#pinIc"/></svg><span>the same spot</span></div>
+
+      <figure class="side v" aria-label="A visitor's phone at the same spot, later">
+        <figcaption class="who"><b>A visitor</b>later, at the same spot</figcaption>
+        <div class="phone"><div class="scr" aria-hidden="true">
+          <svg class="world" viewBox="0 0 420 200" preserveAspectRatio="xMidYMid slice">
+            <use href="#park"/>
+            <g class="poster"><rect x="327" y="94" width="27" height="31" fill="#fff" stroke="#2a2824" stroke-width=".8"/><rect x="327" y="94" width="27" height="6" fill="#cf4428"/><use href="#qr" x="332.5" y="102.5" width="16" height="16"/></g>
+            <path class="brk" d="M321 96v-8h8M352 88h8v8M360 124v8h-8M329 132h-8v-8" fill="none" stroke="#cf4428" stroke-width="2.4" stroke-linecap="round"/>
+            <ellipse class="rip" cx="250" cy="152" rx="14" ry="4.2" fill="none" stroke="#fff" stroke-width="1.8"/>
+            <g class="pin"><ellipse cx="250" cy="152" rx="10" ry="3" fill="rgba(42,40,36,.24)"/><path d="M250 152V117" stroke="#2a2824" stroke-width="1.4"/><path d="M241.5 109L258.5 109L250 121Z" fill="#b03a22"/><circle cx="250" cy="104" r="11" fill="#cf4428"/><text x="250" y="104.5" text-anchor="middle" dominant-baseline="central" font-family="system-ui,sans-serif" font-weight="700" font-size="13" fill="#fff">1</text></g>
+          </svg>
+          <div class="photo"><svg viewBox="0 0 60 44"><use href="#old"/></svg><span>here, 1910</span></div>
+          <div class="card"><span class="t">The mill wheel</span><span class="b">Built in 1820.</span></div>
+          <div class="pill">Mill Park<span class="dots"><i class="on"></i><i></i><i></i><i></i><i></i></span></div>
+          <div class="chip c1">Nothing here yet</div>
+          <div class="chip c4"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="10" fill="#cf4428"/><path d="M5.5 10.3l3 3 6-6.3" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Tour found: Mill Park</div>
+          <div class="chip c5"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="10" fill="#cf4428"/><path d="M6 10h7M10 6.5 13.5 10 10 13.5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Next: the old oak</div>
+        </div></div>
+      </figure>
+    </div>
+  </div>
+
+  <div class="caps" id="caps">
+    <article class="cap" data-beat="0">
+      <p class="num">One station, two phones</p>
+      <h2>What you do is what they see.</h2>
+      <p class="lead"><span class="wid">On the left</span><span class="nar">At the top</span>, your phone while you make a station at the old mill in Mill Park. <span class="wid">On the right</span><span class="nar">Below it</span>, a visitor's phone at the same spot, later. Scroll on, and both phones go through the five steps together.</p>
+    </article>
+    <article class="cap" data-beat="1">
+      <p class="num">1 of 5</p>
+      <h2>Start with a story you know.</h2>
+      <div class="pair">
+        <p class="y"><b>You</b>The mill wheel turned here for a hundred years, and you have a photo of it from 1910.</p>
+        <p class="t"><b>A visitor</b>Today they see an old mill, and nothing more.</p>
+      </div>
+    </article>
+    <article class="cap" data-beat="2">
+      <p class="num">2 of 5</p>
+      <h2>Walk there with your phone.</h2>
+      <div class="pair">
+        <p class="y"><b>You</b>Stand at the spot and tap Place here. A station drops onto the ground.</p>
+        <p class="t"><b>A visitor</b>The station waits on that same spot, fixed to the place.</p>
+      </div>
+      <p class="note"><span class="ar-no">This step happens on site, with an Android phone with Chrome.</span><span class="ar-yes">This phone can do this step, on site.</span></p>
+    </article>
+    <article class="cap" data-beat="3">
+      <p class="num">3 of 5</p>
+      <h2>Add words and pictures.</h2>
+      <div class="pair">
+        <p class="y"><b>You</b>Type a title and a line or two, and add your old photo. You can change the words later, on a computer.</p>
+        <p class="t"><b>A visitor</b>Your words and the photo appear right there: then and now, side by side.</p>
+      </div>
+    </article>
+    <article class="cap" data-beat="4">
+      <p class="num">4 of 5</p>
+      <h2>Hang a code where the walk begins.</h2>
+      <div class="pair">
+        <p class="y"><b>You</b>When the tour is ready, print its code and hang it at the start. You do not need it while you build.</p>
+        <p class="t"><b>A visitor</b>They scan it with the phone's camera, and the tour opens in the browser. Nothing to install.</p>
+      </div>
+    </article>
+    <article class="cap" data-beat="5">
+      <p class="num">5 of 5</p>
+      <h2>Visitors see it.</h2>
+      <div class="pair">
+        <p class="y"><b>You</b>Your tour is saved. What you placed is now exactly what they see.</p>
+        <p class="t"><b>A visitor</b>Your station appears at the real spot, then the phone points on to the next one.</p>
+      </div>
+    </article>
+  </div>
+</section>
+
+<section class="setup" id="setup" aria-labelledby="setupH">
+  <h2 id="setupH">Set up your tour, step by step</h2>
+  <p class="sub">Six steps, in the order you will do them. Open any step for more. The code comes last: you can build and walk the whole tour before you print anything.</p>
+  <ol class="steps">
+    <li><details>
+      <summary><span class="sn">1</span><h3>Where your tour's file is stored</h3><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="short">Your tour is one small file, kept in storage you already have.</span><span class="where">On any computer</span></summary>
+      <div class="body"><p>Choose Google Drive, Dropbox, OneDrive, GitHub or your own web server. The file stays yours, in your own storage.</p><p>Nothing is uploaded until you choose to put the file there.</p></div>
+    </details></li>
+    <li><details>
+      <summary><span class="sn">2</span><h3>The link that opens your tour</h3><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="short">Paste the file's share link once.</span><span class="where">On any computer</span></summary>
+      <div class="body"><p>This link is what your printed code will open later. It stays the same when you change the tour, so a code you have hung never needs replacing.</p></div>
+    </details></li>
+    <li><details>
+      <summary><span class="sn">3</span><h3>Walk the route and place your stations</h3><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="short">At each spot: stand there, tap to place, add a few lines and a picture.</span><span class="where need"><span class="ar-no">On site, with an Android phone with Chrome</span><span class="ar-yes">On site: this phone can do it</span></span></summary>
+      <div class="body"><p>This is the part the two phones above show. Open the tour on your phone, walk to the first spot and tap <b>Place here</b>. Then add a title, a line or two and a photo.</p><p>You do not need a printed code for this: placing works anywhere along the walk.</p><p>Words can be changed later on a computer, where the editor shows your tour on a map.</p></div>
+    </details></li>
+    <li><details>
+      <summary><span class="sn">4</span><h3>Save the tour and put it back</h3><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="short">The saved tour replaces the file in your storage.</span><span class="where">From your phone or a computer</span></summary>
+      <div class="body"><p>The link stays the same, so everything that points to it keeps working.</p></div>
+    </details></li>
+    <li class="divider">Printing and hanging come last. Do them when the tour is ready.</li>
+    <li class="later"><details>
+      <summary><span class="sn">5</span><h3>Print your tour's code <span class="tag">When ready</span></h3><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="short">A PDF poster with your tour's code, ready to print.</span><span class="where">On any computer, then a printer</span></summary>
+      <div class="body"><p>One code per poster. Print a few, in case one gets damaged.</p></div>
+    </details></li>
+    <li class="later"><details>
+      <summary><span class="sn">6</span><h3>Hang it where the walk begins <span class="tag">When ready</span></h3><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="short">Flat on a wall or a post, at about chest height.</span><span class="where">On site</span></summary>
+      <div class="body"><p>Choose a place where people stop anyway. Visitors scan it with the phone's camera, and the tour starts there.</p></div>
+    </details></li>
+  </ol>
+  <div class="go-row">
+    <button type="button" class="btn primary" id="beginBtn">Start with step 1</button>
+    <a href="../../">Open today's setup page</a>
+  </div>
+</section>
+
+<section class="ideas" id="ideas" aria-labelledby="ideasH">
+  <h2 id="ideasH">Ideas: who makes tours like this</h2>
+  <p class="sub">Optional reading. Each picture is what a visitor sees on the phone. The makers and places are made up.</p>
+  <ul class="grid">
+    <li class="idea">
+      <div class="mini"><svg viewBox="0 0 210 100" role="img" aria-label="A castle ruin on a hill; through the phone, the fallen tower stands again on its stump">
+        <rect width="210" height="66" fill="#dde6e1"/>
+        <polygon points="0,72 40,60 92,52 140,54 180,62 210,66 210,100 0,100" fill="#cfcb9f"/>
+        <polygon points="92,52 140,54 122,100 62,100" fill="#c6c193"/><polygon points="0,100 60,100 0,78" fill="#bdb88a"/>
+        <polygon points="54,64 54,52 60,49 63,54 70,48 76,53 76,64" fill="#d8cfba"/><polygon points="70,48 76,53 76,64 70,64" fill="#c3b9a1"/>
+        <polygon points="128,62 128,48 134,46 137,51 142,47 146,50 146,62" fill="#d8cfba"/>
+        <polygon points="86,62 86,52 112,52 112,62" fill="#c9bfa7"/>
+        <g opacity=".95">
+          <polygon points="88,52 88,16 110,16 110,52" fill="#f2ebda"/><polygon points="110,16 118,19 118,54 110,52" fill="#ddd2b6"/>
+          <polygon points="85,17 85,8 90,8 90,12 95,12 95,8 100,8 100,12 105,12 105,8 113,8 113,17" fill="#f2ebda"/>
+          <polygon points="113,8 120,11 120,20 113,17" fill="#ddd2b6"/>
+          <g fill="#8c8577"><rect x="97" y="24" width="3" height="8"/><rect x="97" y="38" width="3" height="8"/></g>
+          <path d="M88 52V16M110 16V52M85 8h28" stroke="#cf4428" stroke-width=".9" fill="none" stroke-dasharray="2.5 2"/>
+        </g>
+        <rect x="134" y="22" width="56" height="17" rx="3" fill="#fff" stroke="#2a2824" stroke-width=".6"/>
+        <text x="139" y="33.5" font-family="Georgia,serif" font-size="8.5" font-weight="700" fill="#2a2824">As it stood</text>
+      </svg></div>
+      <p class="by">By a heritage society</p>
+      <h3>The tower stands again</h3>
+      <p class="sees">At the castle ruin, a visitor holds up the phone and the tower that fell long ago stands on its stump again, at full height.</p>
+    </li>
+    <li class="idea">
+      <div class="mini"><svg viewBox="0 0 210 100" role="img" aria-label="A park with a tree and a bench; through the phone, a clue card and a gift box float by the bench">
+        <rect width="210" height="58" fill="#dde6e1"/>
+        <rect y="56" width="210" height="44" fill="#d3cfa6"/><polygon points="0,56 90,56 0,80" fill="#cdc89c"/><polygon points="150,100 210,100 210,74" fill="#c6c194"/>
+        <polygon points="36,84 40,84 39.5,50 36.5,50" fill="#8a735a"/>
+        <polygon points="16,52 26,28 38,46" fill="#b8bf8c"/><polygon points="26,28 48,24 38,46" fill="#a7ae7c"/><polygon points="48,24 60,46 38,46" fill="#939a69"/><polygon points="60,46 50,62 38,46" fill="#899060"/><polygon points="50,62 22,62 38,46" fill="#9aa16f"/><polygon points="22,62 16,52 38,46" fill="#aab17f"/>
+        <g fill="#a88c6c"><rect x="100" y="70" width="40" height="3"/><rect x="100" y="64" width="40" height="3"/><rect x="103" y="73" width="2.5" height="9"/><rect x="134.5" y="73" width="2.5" height="9"/></g>
+        <g transform="translate(150 46)"><polygon points="0,10 22,10 22,28 0,28" fill="#cf4428"/><polygon points="22,10 28,7 28,25 22,28" fill="#a8371f"/><polygon points="0,10 6,7 28,7 22,10" fill="#e06a4f"/><rect x="9.5" y="10" width="3" height="18" fill="#fbf8ef"/><path d="M11 10c-4-7-9-3-5 0M11 10c4-7 9-3 5 0" stroke="#fbf8ef" stroke-width="1.6" fill="none"/></g>
+        <rect x="62" y="14" width="88" height="30" rx="3" fill="#fff" stroke="#2a2824" stroke-width=".6"/>
+        <text x="68" y="26" font-family="Georgia,serif" font-size="8.5" font-weight="700" fill="#2a2824">Clue 3 of 5</text>
+        <text x="68" y="37" font-family="system-ui,sans-serif" font-size="7" fill="#57534a">Look under the bench</text>
+      </svg></div>
+      <p class="by">By a parent</p>
+      <h3>A birthday treasure hunt</h3>
+      <p class="sees">Five clues hidden around the park. Each one floats where the last answer pointed; the last one shows where the presents are.</p>
+    </li>
+    <li class="idea">
+      <div class="mini"><svg viewBox="0 0 210 100" role="img" aria-label="A street of shops; through the phone, an empty shop window holds a framed painting">
+        <rect width="210" height="100" fill="#dde6e1"/>
+        <polygon points="0,10 120,10 120,86 0,86" fill="#efe7d4"/><polygon points="120,10 170,18 170,86 120,86" fill="#d8cdb5"/>
+        <rect x="0" y="6" width="122" height="6" fill="#a49a86"/>
+        <rect x="12" y="26" width="76" height="52" fill="#6c665b"/><rect x="96" y="40" width="16" height="38" fill="#8c8270"/>
+        <polygon points="132,30 158,33 158,78 132,78" fill="#8c8270"/>
+        <rect y="86" width="210" height="14" fill="#e7dfc9"/><polygon points="0,86 210,86 210,90 0,92" fill="#d8cfba"/>
+        <rect x="180" y="40" width="3" height="46" fill="#57534a"/><circle cx="181.5" cy="38" r="5" fill="#f1e6c4"/>
+        <rect x="22" y="31" width="56" height="42" fill="#a88c6c"/><rect x="25" y="34" width="50" height="36" fill="#efdcae"/>
+        <polygon points="25,70 25,56 40,47 52,55 63,46 75,54 75,70" fill="#a7ae7c"/><polygon points="40,47 52,55 46,70 25,70 25,56" fill="#939a69"/><circle cx="64" cy="41" r="4.5" fill="#cf4428"/>
+      </svg></div>
+      <p class="by">By a group of painters</p>
+      <h3>Paintings in empty shop windows</h3>
+      <p class="sees">Down a street of empty shops, each window holds a painting on the phone, with the painter's name beside it.</p>
+    </li>
+    <li class="idea">
+      <div class="mini"><svg viewBox="0 0 210 100" role="img" aria-label="A gallery room with a painting and a jug on a plinth; through the phone, a card tells the story beside the painting">
+        <rect width="210" height="72" fill="#efe7d4"/><polygon points="160,0 210,0 210,100 160,72" fill="#ddd3bc"/>
+        <polygon points="0,72 160,72 210,100 0,100" fill="#d8cfba"/><polygon points="0,72 70,72 30,100 0,100" fill="#cfc5ad"/>
+        <rect x="22" y="14" width="46" height="40" fill="#8a6f52"/><rect x="26" y="18" width="38" height="32" fill="#c9d3cf"/>
+        <polygon points="26,50 26,38 38,30 50,38 64,32 64,50" fill="#93a172"/><circle cx="38" cy="25" r="3.4" fill="#e9d29a"/>
+        <polygon points="120,60 120,88 140,88 140,60" fill="#fbf8ef"/><polygon points="140,60 146,57 146,85 140,88" fill="#e4dccb"/><polygon points="120,60 126,57 146,57 140,60" fill="#f6f1e3"/>
+        <polygon points="124,57 126,44 130,40 136,40 140,44 142,57" fill="#5d7a8c"/><polygon points="130,40 136,40 140,44 142,57 133,57" fill="#4d6879"/>
+        <rect x="76" y="16" width="90" height="34" rx="3" fill="#fff" stroke="#2a2824" stroke-width=".6"/>
+        <text x="82" y="28" font-family="Georgia,serif" font-size="8.5" font-weight="700" fill="#2a2824">Painted in a barn</text>
+        <rect x="82" y="34" width="58" height="2.4" rx="1.2" fill="#c9bea3"/><rect x="82" y="40" width="42" height="2.4" rx="1.2" fill="#c9bea3"/>
+      </svg></div>
+      <p class="by">By a small museum</p>
+      <h3>More about each painting</h3>
+      <p class="sees">Indoors, beside each painting or object on show, a card tells what the label leaves out, with a photo of where it was found.</p>
+    </li>
+    <li class="idea">
+      <div class="mini"><svg viewBox="0 0 210 100" role="img" aria-label="Fields in stripes and a barn; through the phone, a card and a photo of the harvest stand at the field's edge">
+        <rect width="210" height="46" fill="#dde6e1"/>
+        <polygon points="150,46 150,30 166,22 182,30 182,46" fill="#d6b48a"/><polygon points="182,46 182,30 200,32 200,46" fill="#b9966d"/>
+        <polygon points="0,44 210,44 210,58 0,62" fill="#a7ae7c"/><polygon points="0,62 210,58 210,72 0,80" fill="#e2cf8f"/><polygon points="0,80 210,72 210,86 0,100" fill="#b59f7e"/><polygon points="0,100 210,86 210,100" fill="#a7ae7c"/>
+        <path d="M0 70l210-12M0 90l210-18" stroke="#c2ac78" stroke-width="1" opacity=".7"/>
+        <g fill="#8a735a"><rect x="10" y="58" width="2.5" height="18"/><rect x="40" y="56" width="2.5" height="18"/><rect x="70" y="54" width="2.5" height="18"/><rect x="0" y="62" width="76" height="2"/></g>
+        <rect x="80" y="12" width="98" height="30" rx="3" fill="#fff" stroke="#2a2824" stroke-width=".6"/>
+        <text x="86" y="24" font-family="Georgia,serif" font-size="8.5" font-weight="700" fill="#2a2824">Potatoes grow here</text>
+        <rect x="86" y="30" width="56" height="2.4" rx="1.2" fill="#c9bea3"/>
+        <g transform="rotate(-5 40 26)"><rect x="22" y="10" width="36" height="32" fill="#fff" stroke="#2a2824" stroke-width=".6"/><rect x="25" y="13" width="30" height="22" fill="#b59f7e"/><g fill="#d9b27a"><circle cx="32" cy="27" r="4"/><circle cx="40" cy="24" r="4.4"/><circle cx="47" cy="28" r="3.8"/><circle cx="37" cy="31" r="3.4"/></g></g>
+      </svg></div>
+      <p class="by">By a farming family</p>
+      <h3>An open day on the farm</h3>
+      <p class="sees">At the edge of each field, a card says what grows there and when, with a photo of last year's harvest.</p>
+    </li>
+    <li class="idea">
+      <div class="mini"><svg viewBox="0 0 210 100" role="img" aria-label="A school building and a yard; through the phone, signs point the way to the canteen and the sports hall">
+        <rect width="210" height="60" fill="#dde6e1"/>
+        <polygon points="20,64 20,22 130,22 130,64" fill="#efe7d4"/><polygon points="130,22 176,28 176,64 130,64" fill="#d8cdb5"/><polygon points="16,22 66,8 134,22" fill="#a49a86"/>
+        <g fill="#6c665b"><rect x="30" y="30" width="12" height="10"/><rect x="52" y="30" width="12" height="10"/><rect x="74" y="30" width="12" height="10"/><rect x="96" y="30" width="12" height="10"/><rect x="30" y="46" width="12" height="10"/><rect x="96" y="46" width="12" height="10"/><rect x="58" y="46" width="22" height="18"/></g>
+        <rect y="62" width="210" height="38" fill="#e7dfc9"/><polygon points="0,62 60,62 0,84" fill="#ddd3bc"/>
+        <rect x="58" y="72" width="62" height="16" rx="8" fill="#fff" stroke="#2a2824" stroke-width=".6"/><circle cx="67" cy="80" r="5" fill="#cf4428"/><path d="M64.5 80h5M67.5 77.6 69.8 80l-2.3 2.4" stroke="#fff" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+        <text x="75" y="83" font-family="system-ui,sans-serif" font-size="8" font-weight="600" fill="#2a2824">Canteen</text>
+        <rect x="134" y="40" width="68" height="16" rx="8" fill="#fff" stroke="#2a2824" stroke-width=".6"/><circle cx="143" cy="48" r="5" fill="#cf4428"/><path d="M140.5 48h5M143.5 45.6 145.8 48l-2.3 2.4" stroke="#fff" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+        <text x="151" y="51" font-family="system-ui,sans-serif" font-size="8" font-weight="600" fill="#2a2824">Sports hall</text>
+      </svg></div>
+      <p class="by">By a school, for new pupils</p>
+      <h3>A welcome walk round the school</h3>
+      <p class="sees">Before the first day, new pupils and their parents follow signs across the grounds: the canteen, the sports hall, the bus stop, each with a photo of inside.</p>
+    </li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <nav aria-label="More">
+    <a href="../../../">For developers: build your own AR app</a>
+    <a href="../../legal.html">Legal notice</a>
+    <a href="../../legal.html#privacy">Privacy</a>
+    <a href="../../">The real start page</a>
+  </nav>
+  <details class="notes" id="notes">
+    <summary>About this prototype</summary>
+    <div class="nb">
+      <h3>Direction</h3>
+      <p>One station, shown twice side by side (one above the other on a phone): your phone while you make it, and a visitor's phone at the same spot, later. Scrolling takes both phones through the five steps of making a tour together, so "what you do" and "what they see" are one picture.</p>
+      <h3>Why it should work for this audience</h3>
+      <ul>
+        <li>The question a first-time maker has is "if I do this, what will people see?". Each step answers it at once, in the phone next to it.</li>
+        <li>The same place in both phones, drawn the same way, makes "fixed to the spot" visible without the word.</li>
+        <li>The last step makes the two screens identical: the end of the story is a picture, not a sentence.</li>
+      </ul>
+      <h3>Load-bearing details (check a build against these)</h3>
+      <ul>
+        <li>The phones are held sideways in the drawing. That is what lets two of them stack on a phone screen with the text inside still readable; upright phones would need about twice the height.</li>
+        <li>Phone portrait: the two phones stack in a sticky band at the top (about 440 px at 390x844); the step texts scroll in the space below. From 700 px wide they sit side by side, and each step's two lines sit under their own phone.</li>
+        <li>Everything inside a phone is sized in em of the screen's width (1em = <span data-n="k"></span> % of it, about <span data-n="px"></span> px on a 390 px phone), so it scales with the phone and never reflows differently from the drawing.</li>
+        <li>Motion: each step plays one short entry (up to about 2.5 s) in both phones at once, with the same timing, then holds still. Nothing loops, nothing moves on load, nothing moves outside the phones. Reduced motion: every step shows its final state.</li>
+        <li>Palette and shapes of the earlier 3D route page (paper, ink, one route red; faceted low-poly hills, mill, wheel and oak), drawn flat in SVG. No WebGL, no canvas, no library.</li>
+        <li>Setup: six sections with rules between them, not boxes; a short line each, more on opening; printing and hanging are marked "when ready" and come after the walk.</li>
+        <li>Paragraph and list margins are zeroed and every gap set explicitly, so a port into the design system keeps them.</li>
+      </ul>
+      <h3>Measured cost (desktop machine under other load, not a phone)</h3>
+      <ul>
+        <li>JS: inline only, about 8 kB raw, 3.1 kB gzip; no CDN script, no WebGL, no canvas. The whole page is about 19 kB gzip.</li>
+        <li>Frames at 390x844, two runs each at 1x, 4x and 6x CPU throttling, over a 5 s idle, the entries of steps 2 to 4 and a 5 s scroll through the page: the entries stayed at 16.8 ms unthrottled (worst 45 ms at 4x, 88 to 114 ms once per run at 6x). Unthrottled scrolling had one long frame per run (0.5 and 0.75 s) that did not come back at 4x or 6x. A second set, taken with the machine at 94 % load from other work, had frames of 0.3 to 1 s everywhere, including the idle where nothing on the page moves, so those are the machine's, not the page's. Desktop Chromium, not a phone; a phone measurement is still owed.</li>
+        <li>In-phone text at 390 px wide: smallest text 12.0 px, card title 13.8 px (11.0 px on a 360 px phone).</li>
+      </ul>
+      <h3>Known weaknesses</h3>
+      <ul>
+        <li>The sideways phones are a drawing choice: a real maker probably holds the phone upright while placing.</li>
+        <li>On a phone the two phones take about half the screen while the steps are read; the step texts have the lower half.</li>
+        <li>Steps 2 and 3 show the visitor's phone before the code is hung (step 4): it shows what a visitor will see, not the order a visitor lives it in.</li>
+        <li>The fake codes are patterns, not real codes. The scene is a drawing of a made-up park, not a camera image.</li>
+      </ul>
+      <h3>Parameters it rests on</h3>
+      <ul>
+        <li>In-phone text size <code>?k=</code> (percent of the screen width per em). Compared at 390 px: 3.5 gives 10.8 px, no better than the earlier drawn phone; 3.9 (the default) gives 12.0 px with nothing overlapping; 4.3 gives 13.2 px but the visitor's card runs into the top bar. From about 4.2 up the card has to move.</li>
+        <li>Scroll per step <code>?cap=</code> (svh per step). 40 shortens the story by about 600 px on a phone, but on a 360x740 phone and on a phone held sideways the next step's text arrives before the current one has left; 52 (the default) keeps one step in view; 65 adds about 660 px of scrolling for nothing.</li>
+        <li>Animation length: <code>?sp=</code> (a factor on every step's entry; 1 is about 2.5 s at most).</li>
+        <li><code>?ar=1</code> / <code>?ar=0</code> fake the device's AR support; the toggle at the top does the same.</li>
+      </ul>
+    </div>
+  </details>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  var root = document.documentElement;
+  var $ = function (s) { return document.querySelector(s); };
+  var $$ = function (s) { return Array.prototype.slice.call(document.querySelectorAll(s)); };
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var params = new URLSearchParams(location.search);
+  function num(k, d, lo, hi) { var v = parseFloat(params.get(k)); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; }
+
+  /* ---------- parameters ---------- */
+  var K = num('k', 3.9, 2.5, 6), SP = num('sp', 1, .4, 3), CAP = num('cap', 52, 30, 90);
+  root.style.setProperty('--k', String(K));
+  root.style.setProperty('--sp', String(SP));
+  root.style.setProperty('--capH', CAP + 'svh');
+
+  /* ---------- toast ---------- */
+  var toastEl = $('#toast'), toastT = 0;
+  function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(function () { toastEl.classList.remove('show'); }, 3600); }
+
+  /* ---------- AR support: detected, or faked by ?ar=1 / ?ar=0 and the toggle ---------- */
+  var detected = null;
+  var arMode = params.get('ar') === '1' || params.get('ar') === '0' ? params.get('ar') : 'auto';
+  function arOn() { return arMode === '1' ? true : arMode === '0' ? false : detected === true; }
+  function applyAr() {
+    root.dataset.ar = arOn() ? '1' : '0';
+    $$('[data-ar-set]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.arSet === arMode)); });
+    $('#arAuto').textContent = detected === null ? 'Device' : (detected ? 'Device: AR' : 'Device: no AR');
+  }
+  $$('[data-ar-set]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      arMode = b.dataset.arSet;
+      var u = new URL(location.href);
+      if (arMode === 'auto') u.searchParams.delete('ar'); else u.searchParams.set('ar', arMode);
+      try { history.replaceState(null, '', u); } catch (e) { /* file: or sandboxed */ }
+      applyAr();
+    });
+  });
+  applyAr();
+  (function detect() {
+    var xr = navigator.xr;
+    if (!xr || typeof xr.isSessionSupported !== 'function') { detected = false; applyAr(); return; }
+    var settled = false;
+    var t = setTimeout(function () { if (!settled) { settled = true; detected = false; applyAr(); } }, 1500);
+    try {
+      xr.isSessionSupported('immersive-ar').then(function (ok) { if (settled) return; settled = true; clearTimeout(t); detected = !!ok; applyAr(); },
+        function () { if (settled) return; settled = true; clearTimeout(t); detected = false; applyAr(); });
+    } catch (e) { settled = true; clearTimeout(t); detected = false; applyAr(); }
+  })();
+
+  /* ---------- a fake code (a pattern, not a real code), drawn once and used everywhere ---------- */
+  (function qr() {
+    var s = 2654435761 >>> 0, n = 21, d = '';
+    function r() { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }
+    function finder(x, y) { return (x < 8 && y < 8) || (x > n - 9 && y < 8) || (x < 8 && y > n - 9); }
+    for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) if (!finder(x, y) && r() < 0.47) d += 'M' + x + ' ' + y + 'h1v1h-1z';
+    [[0, 0], [n - 7, 0], [0, n - 7]].forEach(function (f) { d += 'M' + f[0] + ' ' + f[1] + 'h7v7h-7z' + 'M' + (f[0] + 1) + ' ' + (f[1] + 1) + 'v5h5v-5z' + 'M' + (f[0] + 2) + ' ' + (f[1] + 2) + 'h3v3h-3z'; });
+    var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', d); p.setAttribute('fill', '#2a2824'); p.setAttribute('fill-rule', 'evenodd');
+    $('#qr').appendChild(p);
+  })();
+
+  /* ---------- the five steps: both phones always show the same step ---------- */
+  var stage = $('#stage'), caps = $$('.cap'), cur = -1;
+  var TITLE = 'The mill wheel', BODY = 'Built in 1820.';
+  var mTitle = $('.m .ct'), mBody = $('.m .cb'), typing = [];
+  function clearTyping() { typing.forEach(clearTimeout); typing = []; }
+  function setBeat(b, force) {
+    b = Math.max(0, Math.min(5, b | 0));
+    if (b === cur && !force) return;
+    var first = cur === -1;
+    cur = b;
+    stage.dataset.beat = String(b);
+    var all = b === 0;
+    stage.classList.toggle('f-pin', all || b >= 2);
+    stage.classList.toggle('f-words', all || b >= 3);
+    stage.classList.toggle('f-edit', b === 3);
+    stage.classList.toggle('f-code', all || b >= 4);
+    stage.classList.toggle('f-done', all || b === 5);
+    clearTyping();
+    mTitle.textContent = TITLE; mBody.textContent = BODY;
+    var animate = !reduced && !first && b !== 0;
+    if (b === 3 && animate) {
+      mTitle.textContent = ''; mBody.textContent = '';
+      for (var i = 1; i <= TITLE.length; i++) {
+        (function (n) { typing.push(setTimeout(function () { mTitle.textContent = TITLE.slice(0, n); }, (450 + n * 55) * SP)); })(i);
+      }
+      typing.push(setTimeout(function () { mBody.textContent = BODY; }, 1300 * SP));
+    }
+    stage.classList.remove('go');
+    if (animate) { void stage.offsetWidth; stage.classList.add('go'); }
+  }
+
+  /* the caption whose top has passed a line in the free space under the phones wins */
+  function line() {
+    var sb = stage.getBoundingClientRect().bottom;
+    return sb + (innerHeight - sb) * 0.2;
+  }
+  var pending = false;
+  function pick() {
+    pending = false;
+    var l = line(), b = 0;
+    caps.forEach(function (c) { if (c.getBoundingClientRect().top < l) b = +c.dataset.beat; });
+    setBeat(b);
+  }
+  addEventListener('scroll', function () { if (!pending) { pending = true; requestAnimationFrame(pick); } }, { passive: true });
+  addEventListener('resize', function () { if (!pending) { pending = true; requestAnimationFrame(pick); } });
+  addEventListener('pageshow', pick);
+
+  /* ---------- buttons and the visitor's way in ---------- */
+  function smoothTo(el) { el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' }); }
+  $('#makeBtn').addEventListener('click', function (e) { e.preventDefault(); smoothTo($('#setup')); });
+  $('#tryBtn').addEventListener('click', function () {
+    toast(arOn()
+      ? 'Prototype: an example station would now appear in front of you. Place it yourself, then walk up to it as a visitor.'
+      : 'Trying it needs an Android phone with Chrome (AR). Open this page on one to place an example station.');
+  });
+  $('#beginBtn').addEventListener('click', function () { toast('Prototype: step 1 would open here: where your tour\'s file is stored.'); });
+  $('#visitToggle').addEventListener('click', function () {
+    var f = $('#visitForm'), open = f.hidden;
+    f.hidden = !open; this.setAttribute('aria-expanded', String(open));
+    if (open) $('#visitIn').focus();
+  });
+  $('#visitForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var v = $('#visitIn').value.trim(), msg = $('#visitMsg');
+    if (!v) { msg.textContent = 'Paste the link first. It starts with https://'; $('#visitIn').focus(); return; }
+    if (!/^https?:\/\/[^\s/]+\.[^\s]+/i.test(v)) { msg.textContent = 'That does not look like a link yet. It should start with https://'; return; }
+    msg.textContent = arOn() ? 'Prototype: the tour would open here and start the camera.' : 'That looks like a tour link. Open it on an Android phone with Chrome to walk the tour.';
+  });
+
+  /* ---------- notes: numbers ---------- */
+  /* a 390 px wide page gives a 334 px wide screen */
+  var NOTE = { k: String(K), px: (K * 3.34).toFixed(1) };
+  $$('[data-n]').forEach(function (el) { el.textContent = NOTE[el.dataset.n] || ''; });
+
+  setBeat(0, true);
+  pick();
+  window.__landing = {
+    ready: true,
+    beat: function () { return cur; },
+    /* scroll so that step b's caption is the one in charge (used by the screenshot script) */
+    show: function (b) {
+      var c = caps[b]; if (!c) return;
+      var h = stage.offsetHeight, l = h + (innerHeight - h) * 0.2;
+      window.scrollTo(0, c.getBoundingClientRect().top + scrollY - l + 12);
+      pick();
+    }
+  };
+})();
+</script>
+</body>
+</html>

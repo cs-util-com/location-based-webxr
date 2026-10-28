@@ -10,13 +10,16 @@ through `wizard.openStep`. Plan: polish-round plan, "M2b - the L5 look".
 
 ## Public API
 
-- `wireSetupStage<T>({ dom, openStep, createElement, map? }): SetupStage`
+- `wireSetupStage<T>({ dom, openStep, createElement, map?, reducedMotion? }): SetupStage`
   - `dom.steps` - the six step `<details>` (their `toggle` re-renders);
     `dom.summaries` - their `<summary>`s, whose click is cancelled so a tap
     on the open step's heading cannot collapse it;
   - `dom.badge`, `dom.of`, `dom.dots`, `dom.nav`, `dom.back`, `dom.next`;
-  - `dom.begin` / `dom.stage` - the intro's "Follow the route" scrolls to
-    the stage;
+  - `dom.begins` / `dom.stage` - each of the landing's "Make your tour"
+    buttons scrolls the stage to the top (smoothly, or at once when
+    `reducedMotion()` says so) and moves focus to the open step's
+    `<summary>` (`preventScroll`: the scroll is the button's). The stage
+    has no heading of its own; the open step's is what the reader acts on;
   - `openStep` - `wizard.openStep`; `createElement` - for the dots
     (injected so the tests run in node);
   - `map` (optional) - `{ route, reveal, stations, start?, endFlag? }`:
@@ -61,6 +64,7 @@ wireSetupStage<HTMLButtonElement>({
 - `setup-stage.test.ts` - a dot per step and the open step's number, a dot
   and Back/Next opening steps through the wizard, the row's rules on steps
   1, 5 and 6, the heading that cannot collapse its step, a re-render when
-  the wizard opens a step by itself, and the intro's scroll.
+  the wizard opens a step by itself, and every "Make your tour" button's
+  scroll (instant under reduced motion) and focus on the open step.
 - `playwright-tests/setup-flow.spec.js` - the page in a browser (the map's
   stations, the one-step card, the widths).

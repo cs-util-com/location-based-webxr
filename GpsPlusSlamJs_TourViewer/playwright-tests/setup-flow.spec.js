@@ -183,7 +183,8 @@ test.describe("the L5 look (polish round M2b)", () => {
     page,
   }) => {
     await page.goto("/?nocache=1");
-    await expect(page.getByTestId("setup-intro")).toBeVisible();
+    // The landing sits above the stage, on the same page.
+    await expect(page.getByTestId("landing")).toBeVisible();
     await expect(page.getByTestId("map-station-host")).toBeVisible();
     const openSteps = page.locator("#setup-card .step[open]");
     await expect(openSteps).toHaveCount(1);
@@ -233,7 +234,7 @@ test.describe("the L5 look (polish round M2b)", () => {
       `/?qr=${encodeURIComponent("http://127.0.0.1:5197/ranges-ok/tour.zip")}`,
     );
     await expect(page.getByTestId("visitor-screen")).toBeVisible();
-    await expect(page.getByTestId("setup-intro")).toBeHidden();
+    await expect(page.getByTestId("landing")).toBeHidden();
     await expect(page.getByTestId("setup-map")).toBeHidden();
     const paper = () =>
       page.evaluate(() =>
@@ -339,51 +340,7 @@ test.describe("step 3 on a phone (the owner's r819 screenshot)", () => {
   });
 });
 
-// Why (r820 feedback R1): the intro reached the owner with the prototype's
-// spacing gone (the design system zeroes paragraph and list margins) and
-// its four "why" bullets wrapping raggedly; every test passed, because
-// they asserted presence and fit. These pin the arrangement the owner
-// chose in the L5 prototype: four bullets, two per row, and room between
-// the text, the bullets and the button - at a phone, a phone held across,
-// and a desktop.
-for (const viewport of [
-  { width: 412, height: 915 },
-  { width: 915, height: 412 },
-  { width: 1366, height: 900 },
-]) {
-  test.describe(`the intro at ${String(viewport.width)}x${String(viewport.height)}`, () => {
-    test.use({ viewport });
-
-    test("lays the four reasons out two per row, with room around them", async ({
-      page,
-    }) => {
-      await page.goto("/?nocache=1");
-      await expect(page.getByTestId("setup-intro")).toBeVisible();
-      const box = async (selector) => {
-        const found = await page.locator(selector).boundingBox();
-        if (found === null) throw new Error(`no box for ${selector}`);
-        return found;
-      };
-      const items = await page.locator(".setup-why li").evaluateAll((els) =>
-        els.map((el) => {
-          const r = el.getBoundingClientRect();
-          return { top: Math.round(r.top), left: Math.round(r.left) };
-        }),
-      );
-      expect(items).toHaveLength(4);
-      const rows = [...new Set(items.map((i) => i.top))];
-      expect(rows).toHaveLength(2);
-      for (const top of rows) {
-        expect(items.filter((i) => i.top === top)).toHaveLength(2);
-      }
-      // The two columns line up.
-      expect(items[0]?.left).toBe(items[2]?.left);
-      expect(items[1]?.left).toBe(items[3]?.left);
-      const lede = await box(".setup-lede");
-      const why = await box(".setup-why");
-      const cta = await box(".setup-cta");
-      expect(why.y - (lede.y + lede.height)).toBeGreaterThanOrEqual(12);
-      expect(cta.y - (why.y + why.height)).toBeGreaterThanOrEqual(16);
-    });
-  });
-}
+// The intro's spacing (the design system zeroes margins) and its phone's
+// loop are pinned for the landing in landing.spec.js: positions and gaps at
+// three viewports, the cards' pictures playing, pausing and holding still
+// under reduced motion.

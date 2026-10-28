@@ -691,7 +691,8 @@ describe(
 // wiring stubbed the clock away, so nothing proved a vote-less lock does
 // not cancel it. Since QR-first M1 "no GPS zero yet" is no cause any more
 // (a stable code sets the zero itself), so both cases are a pose that never
-// converges - before any fix and after one.
+// converges - before any fix and after one. Before any fix the escape waits
+// for the first device fix (GPS to continue with), then appears.
 describe(
   "the gate's escape is offered to a code that locks but never votes (M2b review #8)",
   { timeout: 30_000 },
@@ -716,6 +717,10 @@ describe(
       });
       expect(v.escapeButton.hidden).toBe(true);
       v.scheduled[0]!.run(); // the escape clock elapsed
+      // With no device fix in this entry yet there is nothing to continue
+      // with by GPS: the escape waits for the first fix.
+      expect(v.escapeButton.hidden).toBe(!withZero);
+      if (!withZero) v.fix(T0 + 15_000);
       expect(v.ctx.scanGate).toEqual({
         kind: "scanning",
         escapeOffered: true,
@@ -773,12 +778,13 @@ describe(
           reprojectionErrorPx: null,
         },
         readiness: null,
-        placement: { kind: "placed", placedKind: "ring", count: 3 },
-        planesError: null,
+        // The tour placed: its content (the walk's recorded photos stood
+        // here once; a visitor no longer sees them).
+        placement: { kind: "idle" },
         contentError: null,
         gate: v.ctx.scanGate,
         codesOnly: v.ctx.codesOnly,
-        content: { kind: "none" },
+        content: { kind: "placed", count: 3, skipped: 0 },
       }).text;
 
     it("ends the line-up: no code lines the tour up, and neither line says it places the tour", () => {

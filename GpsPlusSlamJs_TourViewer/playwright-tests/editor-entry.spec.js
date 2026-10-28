@@ -1,10 +1,18 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
+import { save, startOnMap } from "./editor-menus.js";
+
 /**
  * The desktop editor's small fixes and its way in (tour editor plan
  * 2026-10-17-1816, W1; plan 2026-10-15-0348 M0 and M5).
  */
+
+// On the 2D map: nothing here is about the view, and the 3D view (the
+// default) would ask the relief and map hosts for tiles.
+test.beforeEach(async ({ context }) => {
+  await startOnMap(context);
+});
 
 test("Save with nothing changed says so in a toast, and saves nothing", async ({
   page,
@@ -22,7 +30,7 @@ test("Save with nothing changed says so in a toast, and saves nothing", async ({
   page.on("download", () => {
     downloads += 1;
   });
-  await page.locator("#save-btn").click();
+  await save(page);
   await expect(
     page.locator(".toast", { hasText: "Nothing to save" }),
   ).toBeVisible();

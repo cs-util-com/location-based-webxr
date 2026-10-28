@@ -60,6 +60,67 @@ describe("nearestOf", () => {
   });
 });
 
+describe("nearestOf with an item always kept (the walk's focus)", () => {
+  // Why: the HUD marks the station the walk is about in its own look. A
+  // target the visitor chose beyond the nearest five had no marker at all,
+  // so the one station the walk guides to was the one not shown. The kept
+  // item is always in, and the others fill the rest of the count.
+  it("keeps the focus beyond the nearest, with the nearest others filling the count", () => {
+    const d = new Map([
+      ["a", 10],
+      ["b", 20],
+      ["c", 30],
+      ["far", 90],
+    ]);
+    const pick = (ids: string[], n: number, focus: string | null) =>
+      nearestOf(
+        ids,
+        n,
+        (id) => d.get(id),
+        (id) => id === focus,
+      );
+    expect(pick(["a", "b", "c", "far"], 2, "far")).toEqual(["a", "far"]);
+    expect(pick(["far", "a", "b", "c"], 3, "far")).toEqual(["far", "a", "b"]);
+    // A focus among the nearest changes nothing; no focus is nearestOf.
+    expect(pick(["a", "b", "c", "far"], 2, "b")).toEqual(["a", "b"]);
+    expect(pick(["a", "b", "c", "far"], 2, null)).toEqual(["a", "b"]);
+    expect(pick(["a", "far"], 0, "far")).toEqual([]);
+  });
+
+  it("property: at most the count, the kept item in whenever it is listed, the rest the nearest others", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: 0, max: 50 }), { maxLength: 20 }),
+        fc.integer({ min: 0, max: 8 }),
+        fc.integer({ min: -1, max: 19 }),
+        (distances, count, focusIndex) => {
+          const items = distances.map((d, i) => ({ i, d }));
+          const kept = nearestOf(
+            items,
+            count,
+            (x) => x.d,
+            (x) => x.i === focusIndex,
+          );
+          expect(kept.length).toBe(Math.min(count, items.length));
+          expect(kept.map((x) => x.i)).toEqual(
+            [...kept.map((x) => x.i)].sort((a, b) => a - b),
+          );
+          const listed = focusIndex >= 0 && focusIndex < items.length;
+          expect(kept.some((x) => x.i === focusIndex)).toBe(
+            listed && count > 0,
+          );
+          const others = kept.filter((x) => x.i !== focusIndex);
+          const worst = Math.max(-Infinity, ...others.map((x) => x.d));
+          const dropped = items.filter(
+            (x) => x.i !== focusIndex && !kept.includes(x),
+          );
+          expect(dropped.every((x) => x.d >= worst)).toBe(true);
+        },
+      ),
+    );
+  });
+});
+
 /** 225 stations: a 15 x 15 grid 10 m apart, or scattered over the same
  *  140 m square by a fixed seed (the grid's regular bearings flatter it). */
 function layout(kind: "grid" | "scattered"): [number, number][] {

@@ -44,36 +44,38 @@ function tourOf(count: number): TourStation[] {
       foundRadiusM: 10,
       hint: "arrow",
       steps: [],
-      items: [
+      blocks: [
         {
           id: `p${String(i)}a`,
-          kind: "pin",
-          label: "A",
+          kind: "shortText",
+          view: "pin",
+          caption: "A",
           createdAtIso: NOW,
           pose: pose(1),
         },
         {
           id: `p${String(i)}b`,
-          kind: "pin",
-          label: "B",
+          kind: "shortText",
+          view: "pin",
+          caption: "B",
           createdAtIso: NOW,
           pose: pose(2),
         },
         {
           id: `f${String(i)}a`,
-          kind: "photo",
-          image: `content/f${String(i)}a.jpg`,
-          imageWidth: 4,
-          imageHeight: 3,
+          kind: "picture",
+          view: "plane",
+          image: `f${String(i)}a`,
+          widthM: 1,
           createdAtIso: NOW,
           pose: pose(3),
         },
         {
           id: `f${String(i)}b`,
-          kind: "photo",
-          image: `content/f${String(i)}b.jpg`,
-          imageWidth: 4,
-          imageHeight: 3,
+          kind: "picture",
+          view: "plane",
+          image: `f${String(i)}b`,
+          widthM: 1,
           createdAtIso: NOW,
           pose: pose(4),
         },
@@ -93,9 +95,19 @@ function harness() {
   });
   for (const station of tourOf(STATIONS)) {
     const part: ContentPart = {
-      kind: "content",
       render: (parent, alive) =>
         renderTourStation(station, {
+          assets: station.blocks.flatMap((b) =>
+            b.kind === "picture"
+              ? [
+                  {
+                    id: b.image,
+                    path: `content/${b.image}.jpg`,
+                    kind: "image" as const,
+                  },
+                ]
+              : [],
+          ),
           scene: parent,
           zero: ZERO,
           alive,
@@ -150,7 +162,7 @@ describe("a generated 100-station tour in the scene", () => {
     expect(h.groups()).toBe(1);
     expect(one).toBe(7);
     expect(h.live.size).toBe(2);
-    expect(h.content.shown("content").count).toBe(4);
+    expect(h.content.shown().count).toBe(4);
 
     // Walking on: the left station fades out first, then the next mounts;
     // never two groups, and the left station's textures are freed. The next

@@ -10,10 +10,15 @@ troubleshooting recording's record of each placement. Split out of
 
 ## Public API
 
-- `wireCreatorPlacement({ ctx, arStore, arController, seams, dom, alignmentPicks, draft, previews, alignmentInfo, sizeOf, settledVisit, lateArrival, stationOf?, render }): CreatorPlacement`
+- `wireCreatorPlacement({ ctx, arStore, arController, seams, dom, alignmentPicks, draft, previews, alignmentInfo, codeVoted?, sizeOf, settledVisit, lateArrival, stationOf?, render }): CreatorPlacement`
+  - `codeVoted()` (optional, default false): a code the tour stores voted
+    in this visit (`creator-setup.ts`: `ctx.viewerVotedLocks > 0`).
   - `dom` (`CreatorPlacementDom`): `pinButton`, `pinLabel`, `pinSave`,
     `pinCancel`, `photoButton`, `newStationButton?` ("New station
-    here", D8, below), whose clicks this module handles.
+    here", D8, below), whose clicks this module handles; `pinLabelCount?`,
+    the pin text's "12 / 40" beside the field (`pin-text.ts`), counted as
+    it is typed, marked `data-over` past the limit, shown and hidden with
+    the field and recounted when the page clears it.
   - `seams`: `getArWorldGroup` (the odometry frame a placement is kept
     in), `encodeFrameJpeg` (the photo's bytes).
   - `settledVisit(visit)` - the settle record of a visit that already
@@ -42,26 +47,39 @@ troubleshooting recording's record of each placement. Split out of
 
 ## Invariants & assumptions
 
+- A new pin's text is taken in NFC (`inputText`) before it is trimmed
+  and counted (B2a review 6).
 - **The gate:** allowed only under THIS session's GPS alignment (a
   matrix and at least `MIN_ALIGNMENT_SAMPLES` fixes since the session
   started, M4 review #2), a running session and no rebuild in flight;
   re-checked at every tap.
-- **Never a code** (field test 2, F5; owner, 2026-10-09): placing an
-  object is GPS and tracking only, so a tour builder with no codes places
-  exactly as this one does, and the module has no access to the codes. The
+  - **Or a stored code's votes:** in a visit with no device fix a code the
+    tour stores lines the session up by its votes (`creator-measuring.ts`),
+    and the gate accepts "a stored code voted in this visit" in place of
+    the three fixes - the matrix is still required. The fix count stays
+    device fixes only (`device-gps-quality.ts`), so the votes never pass
+    for GPS. This is an alternative, never a requirement: a visit without
+    codes places by GPS exactly as below.
+- **Never a measured code** (field test 2, F5; owner, 2026-10-09):
+  placing an object is GPS and tracking (or a stored code's votes, above)
+  only, so a tour builder with no codes places exactly as this one does;
+  the module never reads a code, only whether a stored code voted in this
+  visit. The
   gate used to need a measured code too: adopting a new print size
   mid-walk emptied the hand and greyed the buttons for the rest of the
   loop. An object placed with no code in the visit is settled through the
   visit's own alignment (`visit-settle.ts`, basis `visit-alignment`). "Place a pin
   here" reads the hit-test reticle (a surface must be under it, else the
   panel says so), opens the overlay label input (with a Cancel), and Save
-  mints a `pin` record from the reticle's GPS-world position
+  (refused with the field kept while the text is past a pin's 40
+  characters, `pin-text.ts`: the tour file would refuse it at the Finish)
+  mints a pin (a short text in its `pin` view) from the reticle's GPS-world position
   (`content-placement.ts`; the reticle rides the lerped visual alignment,
   which converges within ~0.3 s of a correction - the one frame difference
   to the photo's target-matrix mint, accepted);
   "Capture a photo here" encodes the latest camera frame's pixels
   (`ctx.latestFrame.image`) through `seams.encodeFrameJpeg` and mints a
-  `photo` record from THAT frame's raw capture pose
+  picture (its `plane` view, its own image asset) from THAT frame's raw capture pose
   (`ctx.latestFrame.cameraPose`) through the session alignment, keeping the
   JPEG for the rebuild. One photo is in flight at a time: its button
   stays disabled from the tap until the encode lands or fails, through
@@ -117,8 +135,11 @@ troubleshooting recording's record of each placement. Split out of
     can try again: a failed encode, no usable alignment, or a refusal by
     the document's guard - but only into the visit it was taken in (a
     visit that ended disarmed it for good). Checks that fail before the
-    commit never take it: no text typed, the label input cancelled, no
-    surface under the ring, no GPS fix, no camera frame.
+    commit never take it: no text typed, a text too long, the label input cancelled, no
+    surface under the ring, no GPS fix, no camera frame. A refusal by the
+    document's guard is named by its reason (`placeRefusal`): an id the
+    tour deleted, one it carries already, or a spot too far from its
+    station.
   - **The late arrival is logged with the photo as the document took
     it** (naming its own station). The settle's log records each object's
     id and geo only, so the station itself is not in that record.

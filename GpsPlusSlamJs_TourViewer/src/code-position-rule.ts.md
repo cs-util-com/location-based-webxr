@@ -34,7 +34,10 @@ buttons and the replace's confirm (the code is measured on its own:
     heading is the wrong one, whatever the walk or the stored quality;
   - candidate not reliable: `keep` / `not-walked` with `walkMoreM`;
   - stored position reliable itself: `keep` / `stored-good` (no churn per
-    visit);
+    visit). The settle also sets `stored-good` for a code a device fit
+    sees closer to its saved spot than the fit's own error
+    (`code-position-settle.ts`): the same no-churn meaning, read from this
+    visit rather than from the stamp;
   - otherwise `replace`.
 - `CodePositionOutcome { decision, applied, turnDeg? }` and
   `codePositionSentence(outcomes)` - the result screen's line after Finish
@@ -119,3 +122,15 @@ speaks, because that is where the code now is.
   not tell whether the poster moved: walk with the code in view for a
   minute or more." An automatic move also needs the floor
   (`MOVED_CODE_FLOOR_M`), even when re-planned (review #9).
+
+## Kept because the code placed the visit
+
+`keep` / `code-placed` is set by the settle, never decided here: the
+visit was lined up by a stored code's votes, still in its alignment at
+the settle, and its own GPS could not judge the code (too few device
+fixes, too short a walk for their accuracy, or a tracking restart). The
+code keeps its stored position and stamp. When a short walk was the
+cause the settle passes `walkMoreM`, and the result line says how much
+farther to walk ("... about N m too short for the GPS accuracy to check
+it."); otherwise it says nothing. `walkMoreM(q)` is exported for that
+figure.

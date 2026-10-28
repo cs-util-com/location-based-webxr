@@ -7,7 +7,7 @@
  *
  * Two triggers: `approach` (an offered station within its activation
  * radius plus `PREFETCH_LEAD_M`) and `ahead` (K4 review R5: the station
- * that comes next in a fixed or branch order, from the moment the current
+ * that comes next in a fixed order, from the moment the current
  * station is found, so its story is read while the current one plays).
  *
  * Bounded, because a long tour must not fill a phone's memory:
@@ -30,10 +30,11 @@
 
 import type {
   TourAsset,
+  TourBlock,
   TourStation,
-  TourStep,
-} from "gps-plus-slam-app-framework/ar/tour-stations";
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
+import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { imageInfoOfBlob } from "gps-plus-slam-app-framework/utils/image-header";
 
 /**
@@ -91,37 +92,65 @@ export async function decodeFigure<T>(
   return decode(blob, decodeDivisor(info));
 }
 
-/** The asset ids a station's story reads, in step order, deduplicated.
- *  Never a video (K4 review R3): K4 shows a video step's transcript, and a
- *  video may be as large as the tour's entry cap allows. */
-export function stationAssetIds(station: TourStation): string[] {
-  const ids = station.steps.flatMap((step: TourStep): string[] => {
-    const block = step.block;
-    switch (block.kind) {
-      case "image":
-      case "audio":
-      case "model":
-        return [block.asset];
-      case "character":
-        return block.voice === undefined
-          ? [block.image]
-          : [block.image, block.voice];
-      default:
-        return [];
-    }
+/** The asset ids a station's story reads: the blocks its `show` steps
+ *  name, in step order, deduplicated - what the story draws
+ *  (`scene-view.ts`): a figure only in its stage view, a model in its
+ *  stage or placed view (a reached placed model stands in the world, B2b), a
+ *  character's voice in either. Never a video (K4 review R3): a video
+ *  block shows its transcript, and a video may be as large as the tour's
+ *  entry cap allows; nor its poster, which nothing draws yet. Then the
+ *  files of the station's free PLACED models (station blocks plan B2b,
+ *  G2 follow-up 9): drawn with the station, they would otherwise be read
+ *  from the archive on arrival. Free pictures are read on their own. */
+export function stationAssetIds(
+  station: Pick<TourStation, "blocks" | "steps">,
+): string[] {
+  const blocks = new Map(station.blocks.map((b) => [b.id, b]));
+  const ids = station.steps.flatMap((step): readonly string[] => {
+    if (step.action.kind !== "show") return [];
+    const block = blocks.get(step.action.block);
+    return block === undefined ? [] : storyAssetIds(block);
   });
-  return [...new Set(ids)];
+  const models = tourFreeBlocks(station).flatMap((b) =>
+    b.kind === "model" && b.view === "placed" ? [b.asset] : [],
+  );
+  return [...new Set([...ids, ...models])];
+}
+
+/** The assets the story reads to show `block`. */
+function storyAssetIds(block: TourBlock): readonly string[] {
+  switch (block.kind) {
+    case "picture":
+      return [block.image];
+    case "audio":
+      return [block.audio];
+    case "model":
+      // On the stage, or placed in the world once reached (B2b).
+      return block.view === "card" ? [] : [block.asset];
+    case "character": {
+      const figure = block.view === "stage" ? [block.image] : [];
+      return block.voice === undefined ? figure : [...figure, block.voice];
+    }
+    case "shortText":
+    case "longText":
+    case "video":
+      return [];
+  }
 }
 
 export interface StationPrefetch {
   /** The visitor is `distanceM` from this offered station; prefetch it when
    *  inside its prefetch radius (`activateM + PREFETCH_LEAD_M`). */
   approach(station: TourStation, distanceM: number, activateM: number): void;
-  /** The station that comes next in a fixed or branch order, while the
+  /** The station that comes next in a fixed order, while the
    *  current story plays: prefetch it from any distance (K4 review R5). */
   ahead(station: TourStation): void;
   /** A station is done: the media only it needed may be released. */
   done(stationId: string): void;
+  /** A done station was brought back: it waits
+   *  again, so its media are no longer releasable for it, and a path
+   *  released meanwhile is read again on its next approach. */
+  undone(stationId: string): void;
   /** Read an asset: from the cache, joining a read in flight, or now. */
   load(path: string): Promise<Blob>;
   /** Bytes held (for the budget's test). */
@@ -301,6 +330,10 @@ export function createStationPrefetch(deps: {
     done(stationId) {
       sync();
       if (!doneSeq.has(stationId)) doneSeq.set(stationId, (doneCount += 1));
+    },
+    undone(stationId) {
+      sync();
+      doneSeq.delete(stationId);
     },
     load(path) {
       sync();

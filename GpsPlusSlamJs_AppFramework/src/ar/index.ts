@@ -153,6 +153,12 @@ export {
   startHitTestReticle,
 } from './hit-test-reticle-driver.js';
 
+// --- xr-select-listener ---
+export {
+  type XrSelectListener,
+  startXrSelectListener,
+} from './xr-select-listener.js';
+
 // --- enable-gps-ar ---
 export {
   type EnableGpsArStatus,
@@ -259,45 +265,67 @@ export {
 export {
   TOUR_MANIFEST_VERSION,
   TOUR_MANIFEST_MINOR,
+  TOUR_OBJECT_RECORD_FORMAT,
   type TourManifest,
   type TourAsset,
   type TourAssetKind,
+  type TourAudioBlock,
   type TourBlock,
+  type TourBlockDrop,
+  type TourBlockKind,
+  type TourBlockView,
+  type TourCharacterBlock,
   type TourChoiceOption,
+  type TourLongTextBlock,
+  type TourModelBlock,
   type TourOrder,
+  type TourPictureBlock,
+  type TourQuiz,
   type TourQuizAnswer,
   type TourQuizOption,
-  type TourQuizRoute,
+  type TourShortTextBlock,
   type TourStation,
   type TourStep,
+  type TourStepAction,
   type TourStepAdvance,
+  type TourVideoBlock,
   type TourObject,
+  type TourObjectRecord,
   type TourPin,
-  type TourPhoto,
+  type TourPicture,
+  type TourModel,
   type TourObjectKind,
-  type TourCapture,
-  type TourCaptureSpots,
-  type TourItem,
   type TourLocalPose,
-  type TourPhotoItem,
-  type TourPinItem,
+  TourManifestOlderFormatError,
   TourManifestValidationError,
   createEmptyTourManifest,
   parseTourManifest,
   parseTourObject,
   serializeTourManifest,
-  tourItems,
+  tourObjectRecord,
+  type TourManifestDrop,
   type TourManifestReadOptions,
+  type TourStationDrop,
 } from './tour-manifest.js';
 export {
   geoPoseRotation,
   itemGeoPose,
   localPoseOf,
-  tourCaptureGeos,
+  tourFreeBlocks,
+  tourObjectBlock,
   tourObjects,
-  type TourCaptureGeo,
 } from './tour-station-pose.js';
 export { TOUR_ITEM_MAX_OFFSET_M } from './tour-items.js';
+export {
+  TOUR_BLOCK_TEXT_RULES,
+  TOUR_BLOCK_VIEWS,
+  TOUR_MODEL_MAX_SIZE_M,
+  TOUR_MODEL_MIN_SIZE_M,
+  TOUR_PICTURE_MAX_WIDTH_M,
+  TOUR_PICTURE_MIN_WIDTH_M,
+  tourTextCount,
+} from './tour-blocks.js';
+export { tourShownBlockIds } from './tour-story.js';
 export {
   TOUR_CONTACT_MAX_CHARS,
   TOUR_DESCRIPTION_MAX_CHARS,

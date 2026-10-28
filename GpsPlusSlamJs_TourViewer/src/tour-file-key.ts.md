@@ -20,7 +20,16 @@ cold-review G3: "open a file" needs its own cache and draft key).
   origin); the open reports that like any failure.
 - `tourSeriesFileKey(seriesId)` - `local-file:series:<seriesId>`, the key
   of a file-opened tour that carries `manifest.json` (tour kit plan K1).
-- `isTourFileKey(key)` - true for a key made here (both forms).
+- `tourIdFileKey(tourId)` - `local-file:tour:<tourId>`, the key of a
+  file-opened tour whose `tour.json` carries its own id and no
+  `manifest.json` names a series (debug-captures plan, Q-I).
+- `newTourId()` - a new tour id: 128 random bits as 32 hex digits
+  (`crypto.getRandomValues`), within the manifest's id rule. The tour
+  document's open mints one for a tour without an id (`tour-document.ts`).
+- `isTourFileKey(key)` - true for a key made here (all three forms).
+- `isTourContentKey(key)` - true for the bare content key only (neither
+  `series:` nor `tour:`). It names the recording, not the tour, so a
+  refusal never deletes a draft by it (B2a review 4).
 - The prefix (`"local-file:"`) is module-private; `isTourFileKey` reads it.
 - `interface TourFileKeyEntry { filename; directory?; uncompressedSize; crc32? }`
   (zip.js `Entry` satisfies it).
@@ -64,6 +73,30 @@ Consequences:
   signature) when the session is built and fails the open if it lies. A
   manifest that does not parse falls back to the content key (tier 1 then
   reports it).
+- **A tour whose `tour.json` carries its own id is keyed by it**
+  (debug-captures plan, Q-I): `local-file:tour:<tourId>`
+  (`tourIdFileKey`), read in `tour-session.ts` after the series id and
+  before the content key. A tour of the tour kit's files alone had a key
+  that every save changed (the fallback above), and with a walk-free save
+  a recording tour's copies lose the walk that named them too. The id is
+  minted once, at the open of a tour without one (`newTourId`, random so
+  two tours made from the same starter file never share one), and every
+  save writes it: from the first save on, every copy has one key. A file
+  without an id keeps its content key; the save that writes the id takes
+  the draft to the id's key once (`editor-draft.ts` `landed`/`moved`,
+  `creator-draft.ts` `follow`), and a download leaves the opened file's
+  draft as it was. Named cost: the opened id-less file, opened again after
+  that save, offers only what its draft held then.
+  - **Two copies of one tour share one draft on one browser** (r901
+    review #8): the id is the tour's, not the file's, so every file that
+    carries it - a duplicated template, a co-author's copy, a backup next
+    to the working file - opens under the same key and offers the same
+    draft. The draft is offered against the open manifest (only what it
+    does not already carry), never applied silently, so an edit made in
+    one copy can be offered in the other; nothing is lost, but a creator
+    who keeps two copies apart on one browser sees both copies' work.
+    Filed for a decision if it bites (the debug-captures plan's
+    follow-ups).
   - **One gap until K2:** a Finish drops `manifest.json` (the rewritten
     files would no longer match it), so the FINISHED zip opened from a
     file is keyed by content, and the draft made under the series key is
@@ -92,4 +125,8 @@ entries not mattering, any changed CRC, size, name or file count changing
 the key, and a property that two lists differing only in size never share
 a key; stable across a Finish (a new `tour.json`, a level and photos) and
 a re-zip into a folder, two recordings still apart, and the fallback for a
-tour of only the tour kit's files (K0 milestone review R7).
+tour of only the tour kit's files (K0 milestone review R7); the id key's
+shape apart from the other two, and a property that minted ids are
+distinct and follow the manifest's id rule. The id key read from a file:
+`tour-session.test.ts` (`openTourFile`); the series key winning over it:
+`tour-integrity.test.ts`.

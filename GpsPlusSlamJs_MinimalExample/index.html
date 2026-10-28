@@ -51,6 +51,16 @@
         border-radius: 8px;
         cursor: pointer;
       }
+      /* The site-wide legal notice and privacy page. Outside #ar-root on
+         purpose: it is for the page before AR starts, not for the AR view. */
+      #legal-link {
+        position: fixed;
+        left: 12px;
+        bottom: 8px;
+        z-index: 1;
+        font-size: 12px;
+        color: #9db8ff;
+      }
       #enter-ar:disabled {
         background: #333;
         border-color: #444;
@@ -72,6 +82,9 @@
       <pre id="status" data-testid="status">loading…</pre>
       <button id="enter-ar" type="button" disabled>Checking AR support…</button>
     </div>
+    <a id="legal-link" href="/legal/" data-testid="legal-link"
+      >Legal notice and privacy</a
+    >
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

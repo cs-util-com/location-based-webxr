@@ -10,7 +10,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import {
   createEmptyTourManifest,
   type TourManifest,
-  type TourObject,
+  type TourPicture,
+  type TourPin,
   type TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
@@ -48,26 +49,34 @@ function level(northM: number | null): QrLevel {
   };
 }
 
-function pin(id: string, label: string, lat = AT.lat): TourObject {
+function pin(id: string, label: string, lat = AT.lat): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-10-13T00:00:00.000Z",
     geo: { ...AT, lat, headingDeg: 0 },
   };
 }
 
-function photo(id: string, label?: string): TourObject {
+function photo(id: string, label?: string): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-10-13T00:00:00.000Z",
     geo: { ...AT, rotation: [0, 0, 0, 1] },
-    ...(label === undefined ? {} : { label }),
+    ...(label === undefined ? {} : { caption: label }),
   };
 }
 
@@ -85,30 +94,11 @@ function stationAt(id: string, geo: QrGeoPose, title?: string): TourStation {
     foundRadiusM: 5,
     hint: "arrow",
     steps: [],
-    items: [],
+    blocks: [],
   };
 }
 
-/** The walk's recorded photos, each at a station of its own at `geo`
- *  (version 3 keeps them in stations, tour editor plan W3). */
-function walk(
-  captures: readonly { image: string; geo: QrGeoPose }[],
-): Partial<TourManifest> {
-  return {
-    stations: captures.map((c, i) => stationAt(`w${String(i)}`, c.geo)),
-    captureSpots: {
-      fixes: 3,
-      gpsAccuracyMedianM: 4,
-      captures: captures.map((c, i) => ({
-        image: c.image,
-        station: `w${String(i)}`,
-        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-      })),
-    },
-  };
-}
-
-/** The items besides the stations the recorded photos sit in. */
+/** The items besides the stations. */
 function notStations(m: EditorModel) {
   return m.items.filter((i) => i.kind !== "station");
 }
@@ -156,68 +146,20 @@ describe("buildEditorModel", () => {
     const [p, f] = m.items.filter((i) => i.kind !== "code");
     expect(p).toMatchObject({
       title: "The town hall",
-      meta: "Text note · 4 m from the code",
+      meta: "Pin · 4 m from the code",
     });
     expect(f).toMatchObject({
       title: "Photo",
-      meta: "Photo note · 4 m from the code",
+      meta: "Photo · 4 m from the code",
       image: "content/f.jpg",
     });
     expect(m.counts).toEqual({ code: 1, pin: 1, photo: 1, station: 0 });
   });
 
-  it("lists the walk's recorded photos with the placed ones, marked as recorded", () => {
-    const m = buildEditorModel({
-      manifest: manifest(
-        walk([
-          {
-            image: "images/frame-000002.jpg",
-            geo: { ...AT, rotation: [0, 0, 0, 1] },
-          },
-        ]),
-      ),
-      objects: [],
-      levels: new Map(),
-      fileName: "tour.zip",
-    });
-    expect(notStations(m)).toEqual([
-      expect.objectContaining({
-        kind: "photo",
-        title: "Recorded photo",
-        image: "images/frame-000002.jpg",
-        recorded: true,
-      }),
-    ]);
-    expect(m.counts.photo).toBe(1);
-  });
-
-  // Why (PR #609 review): a recorded photo whose fix cannot be drawn was
-  // dropped from the list and the counts; like a note's, its row stays so
-  // the creator can see the walk produced a photo the map cannot place.
-  it("keeps a recorded photo whose fix cannot be drawn, without a position", () => {
-    const m = buildEditorModel({
-      manifest: manifest(
-        walk([
-          {
-            image: "images/frame-000003.jpg",
-            geo: { ...AT, lat: 123, rotation: [0, 0, 0, 1] },
-          },
-        ]),
-      ),
-      objects: [],
-      levels: new Map(),
-      fileName: "tour.zip",
-    });
-    expect(notStations(m)).toEqual([
-      expect.objectContaining({
-        kind: "photo",
-        at: null,
-        recorded: true,
-        meta: expect.stringMatching(/no position/),
-      }),
-    ]);
-    expect(m.counts.photo).toBe(1);
-  });
+  // (A test that a file's capture spots gave no item and counted as no
+  // photo stood here: the walk's camera captures were once listed as
+  // "Recorded photo" items. The field that carried them is gone from the
+  // format, so nothing can list them; the debug layer draws the frames.)
 
   it("lists the story's stations at their own positions (version 3, D9)", () => {
     // Why: a story tour (the committed sample) may carry no pins or photos
@@ -290,10 +232,35 @@ describe("buildEditorModel", () => {
       expect.objectContaining({
         id: "bad",
         at: null,
-        meta: "Text note · no position",
+        meta: "Pin · no position",
       }),
     ]);
     expect(m.fitPoints).toEqual([]);
+  });
+
+  // Why: this 2D editor knows pins and photos only; a placed 3D model
+  // (format minor 1) is listed nowhere here rather than as a mislabelled
+  // note. The tour keeps it untouched; the 3D editor is where it shows.
+  it("lists no placed 3D model, and counts none as a pin or a photo", () => {
+    const m = buildEditorModel({
+      manifest: manifest(),
+      objects: [
+        pin("p", "The town hall"),
+        {
+          id: "m",
+          kind: "model",
+          view: "placed",
+          asset: "statue",
+          sizeM: 3,
+          createdAtIso: "2026-10-19T00:00:00.000Z",
+          geo: { ...AT, headingDeg: 0 },
+        },
+      ],
+      levels: new Map(),
+      fileName: "tour.zip",
+    });
+    expect(m.items.map((i) => i.id)).toEqual(["p"]);
+    expect(m.counts).toEqual({ code: 0, pin: 1, photo: 0, station: 0 });
   });
 
   it("titles the tour with its own name, else the file's", () => {
@@ -329,7 +296,25 @@ describe("filterItems", () => {
     expect(filterItems(model().items, "  town ").map((i) => i.id)).toEqual([
       "p",
     ]);
-    expect(filterItems(model().items, "text note")).toHaveLength(2);
+  });
+
+  // Why: the search box says "Find a code or note", and a creator looks
+  // for a kind by the word a page showed them - "note", "pin", "photo", or
+  // the words the 3D editor used before ("short text", "picture"). An
+  // item whose own text carries none of them must still be found.
+  it("finds pins and photos by their kind's words, old and new, and by 'note'", () => {
+    const m = buildEditorModel({
+      manifest: manifest(),
+      objects: [pin("p", "The Town Hall"), photo("f", "Market day")],
+      levels: new Map(),
+      fileName: "tour.zip",
+    });
+    const ids = (q: string) => filterItems(m.items, q).map((i) => i.id);
+    expect(ids("pin")).toEqual(["p"]);
+    expect(ids("short text")).toEqual(["p"]);
+    expect(ids("photo")).toEqual(["f"]);
+    expect(ids("Picture")).toEqual(["f"]);
+    expect(ids("note")).toEqual(["p", "f"]);
   });
 
   it("shows everything for an empty search", () => {
@@ -339,32 +324,18 @@ describe("filterItems", () => {
 
 describe("photoSource (E1 review #1)", () => {
   // Why: a placed photo's image is a content path inside the tour's
-  // folder; a recorded photo's is already the archive's entry name. Joining
-  // the folder to both read every recorded photo from the wrong path in a
-  // zip made by compressing a folder.
-  it("reads a placed photo as content and a recorded one by its entry name", () => {
+  // folder, read through it (`loadContentEntry`). (A recorded photo's was
+  // the archive's own entry name, and joining the folder to both read it
+  // from the wrong path; no item is a recorded photo now, so every photo
+  // source is content.)
+  it("reads a placed photo as content", () => {
     const m = buildEditorModel({
-      manifest: manifest(
-        walk([
-          {
-            image: "mytour/images/frame-000002.jpg",
-            geo: { ...AT, rotation: [0, 0, 0, 1] },
-          },
-        ]),
-      ),
+      manifest: manifest(),
       objects: [photo("f")],
       levels: new Map(),
       fileName: "tour.zip",
     });
-    const [placed, recorded] = notStations(m);
-    expect(photoSource(placed!)).toEqual({
-      kind: "content",
-      path: "content/f.jpg",
-    });
-    expect(photoSource(recorded!)).toEqual({
-      kind: "entry",
-      path: "mytour/images/frame-000002.jpg",
-    });
+    expect(photoSource(notStations(m)[0]!)).toBe("content/f.jpg");
   });
 
   it("is null for an item without a photo", () => {

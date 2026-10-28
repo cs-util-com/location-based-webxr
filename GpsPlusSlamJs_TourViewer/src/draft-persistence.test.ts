@@ -18,15 +18,19 @@ import {
   createEmptyTourManifest,
   parseTourManifest,
   serializeTourManifest,
+  tourObjectRecord,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import {
   deletedKey,
+  isOlderVersionDraft,
+  META_KEY,
   objectKey,
   visitKey,
   writeDraftVisit,
+  CODES_KEY,
   parseDraftObject,
   photoKey,
   readDraft,
@@ -37,13 +41,17 @@ import {
   writeDraftEdit,
   writeDraftDeletion,
   writeDraftLiveRecord,
+  writeDraftCodes,
   writeDraftMeta,
   writeDraftObject,
 } from "./draft-persistence.js";
-import "./test-support/v3-tour.js";
-import { withTourContent } from "./tour-content.js";
+import "./test-support/tour-of.js";
+import { createCreatorDocument } from "./creator-document.js";
+import { manifestToWrite } from "./tour-document.js";
+import { createTourViewerStore } from "./tour-viewer-session.js";
 import type { VisitLogEntry } from "./visit-log.js";
 import { objectContentKey } from "./authoring-draft.js";
+import { withCaption } from "./test-support/tour-of.js";
 
 /** An in-memory store with the same contract as the OPFS one. */
 function memoryStore(): DraftFileStore & { files: Map<string, Blob | string> } {
@@ -84,8 +92,9 @@ function pin(
 ): TourObject {
   return {
     id,
-    kind: "pin",
-    label: id,
+    kind: "shortText",
+    view: "pin",
+    caption: id,
     createdAtIso,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
   };
@@ -97,16 +106,23 @@ function photo(
 ): TourObject {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    imageWidth: 4,
-    imageHeight: 3,
   };
 }
 
-const META = { tourUrl: "https://h/t.zip", sizeM: 0.16, level: null };
+const META = { tourUrl: "https://h/t.zip", sizeM: 0.16 };
 
 describe("readDraft", () => {
   it("round-trips the meta and every placed object", async () => {
@@ -194,7 +210,9 @@ describe("parseDraftObject", () => {
     // Validation is the manifest's own, on purpose: a draft must never
     // hold something the finish would later reject, and a second validator
     // here is how the two would come to disagree.
-    expect(parseDraftObject(JSON.stringify(pin("a")))?.id).toBe("a");
+    expect(
+      parseDraftObject(JSON.stringify(tourObjectRecord(pin("a"))))?.id,
+    ).toBe("a");
     for (const bad of ["", "null", "{}", '{"id":"a"}', "[1,2]"]) {
       expect(parseDraftObject(bad), bad).toBeNull();
     }
@@ -249,7 +267,8 @@ describe("the meta's own validation", () => {
       { id: "", json: "{}" },
     ]) {
       const store = memoryStore();
-      store.files.set("meta", JSON.stringify({ ...META, level }));
+      store.files.set("meta", JSON.stringify(META));
+      store.files.set(CODES_KEY, JSON.stringify({ level }));
       await writeDraftObject(store, pin("a"));
       const read = await readDraft(store);
       expect(read, JSON.stringify(level)).toBeDefined();
@@ -260,9 +279,10 @@ describe("the meta's own validation", () => {
 
   it("accepts the two shapes a level really has", async () => {
     const withLevel = memoryStore();
-    await writeDraftMeta(withLevel, {
-      ...META,
+    await writeDraftMeta(withLevel, META);
+    await writeDraftCodes(withLevel, {
       level: { id: "abc", json: "{}" },
+      levels: [],
     });
     expect((await readDraft(withLevel))?.draft.level).toEqual({
       id: "abc",
@@ -274,42 +294,38 @@ describe("the meta's own validation", () => {
   });
 });
 
-describe("a meta written before the code book (one level) stays readable (code book plan M1)", () => {
-  // Why: M4 writes several codes (`levels`); a draft a creator left behind
-  // before that must still restore its one measured code, its size, its
-  // rejections and its move answers. This is the meta EXACTLY as the
-  // creator setup writes it today (`recordMeta`), frozen as text.
-  const BEFORE_M4 =
-    '{"tourUrl":"https://h/t.zip","sizeM":0.2,"level":{"id":"a1b2c3d4e5f6","json":"{\\"version\\":1}"},"rejected":["gone"],"moveAnswers":[{"levelId":"a1b2c3d4e5f6","northM":40,"eastM":0,"answer":"not-now","savedKey":"k1"}]}';
+describe("the codes an older meta carried are not read (debug-captures plan M3b, D5)", () => {
+  // Why: the codes have a record of their own (`CODES_KEY`), and the
+  // phone's old meta fields are not read - no tours exist yet, so there
+  // is no old draft to carry over (D5). Reading them as a fallback was a
+  // second source of codes: after a claim of a rejected id rewrote the
+  // meta, an old draft's codes were lost anyway. A meta with code fields
+  // still reads for what the meta holds today, its size.
+  const BEFORE_M3B =
+    '{"tourUrl":"https://h/t.zip","sizeM":0.2,"level":{"id":"a1b2c3d4e5f6","json":"{\\"version\\":1}"},"levels":[{"id":"a1b2c3d4e5f6","json":"{\\"version\\":1}"}]}';
 
-  // Its move answers belong to the prompt M6 removed: they are ignored.
-  it("reads its level, size and rejections, ignoring the removed prompt's answers", async () => {
+  it("reads its size, and no codes", async () => {
     const store = memoryStore();
-    await store.put("meta", BEFORE_M4);
+    await store.put("meta", BEFORE_M3B);
+    await writeDraftObject(store, pin("a"));
     const read = await readDraft(store);
-    expect(read?.draft.level).toEqual({
-      id: "a1b2c3d4e5f6",
-      json: '{"version":1}',
-    });
     expect(read?.draft.sizeM).toBe(0.2);
-    // Since M4c-1 the codes are a list; the one level of an older meta is
-    // that list's only entry.
-    expect(read?.draft.levels).toEqual([
-      { id: "a1b2c3d4e5f6", json: '{"version":1}' },
-    ]);
+    expect(read?.draft.level).toBeNull();
+    expect(read?.draft.levels).toEqual([]);
   });
 });
 
-describe("several codes in the meta (code book plan M4c-1)", () => {
+describe("several codes in the draft (code book plan M4c-1)", () => {
   // Why these tests matter: a meta held ONE level, so a crash after a
   // Finish but before its upload lost every other code measured on the
-  // page. `levels` keeps them all; `level` (the code in hand) is still
-  // written, so an older build reading the draft keeps its one code.
-  it("keeps every code, and the code in hand as the legacy level", async () => {
+  // page. `levels` keeps them all, and `level` the code in hand. Kept in
+  // the draft's codes record since plan M3b (`CODES_KEY`).
+  it("keeps every code, and the code in hand", async () => {
     const store = memoryStore();
     const a = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
     const b = { id: "bbbbbbbbbbb2", json: '{"b":1}' };
-    await writeDraftMeta(store, { ...META, level: b, levels: [a, b] });
+    await writeDraftMeta(store, META);
+    await writeDraftCodes(store, { level: b, levels: [a, b] });
     const read = await readDraft(store);
     expect(read?.draft.level).toEqual(b);
     expect(read?.draft.levels).toEqual([a, b]);
@@ -318,10 +334,10 @@ describe("several codes in the meta (code book plan M4c-1)", () => {
   it("drops a code that does not read and keeps the others", async () => {
     const store = memoryStore();
     const a = { id: "aaaaaaaaaaa1", json: "{}" };
+    store.files.set("meta", JSON.stringify(META));
     store.files.set(
-      "meta",
+      CODES_KEY,
       JSON.stringify({
-        ...META,
         level: null,
         levels: [a, { id: "../escape", json: "{}" }, { id: 5 }, 7],
       }),
@@ -629,18 +645,16 @@ describe("an AR visit's log is its own file (authoring plan 2026-09-28-0953 M3b)
   });
 });
 
-describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", () => {
-  // Why this matters: drafts live on the creator's phone across app
-  // updates. A draft written by the pre-K1 app (format version 1) must load
-  // with every object and photo - a draft that silently stopped loading
-  // after an update would cost the creator a walk they cannot repeat. A
-  // draft holds world poses, not a tour file, so it needs no migration: its
-  // Finish writes version 3 with every object in a station (tour editor
-  // plan W3).
-  it("loads a v1 draft from the files the old app wrote, and finishes it as version 3", async () => {
+describe("object records of an earlier format", () => {
+  // Why this matters: an object record is the framework's `format: 4`
+  // record (a block, a picture's asset entry, the geo pose). A record an
+  // earlier app wrote (a `kind: "pin"` object with a `label`, or a photo
+  // with its image path) belongs to a tour of an earlier format, which the
+  // app now refuses, deleting its draft with it. Until then such a record
+  // must read as nothing, never as a half-read object the Finish would
+  // write wrongly.
+  it("reads a record an earlier app wrote as nothing, and the draft's own records as the objects they were", async () => {
     const store = memoryStore();
-    // The files exactly as the pre-K1 app wrote them (literal keys and
-    // records, not this version's writers).
     store.files.set(
       "meta",
       JSON.stringify({
@@ -650,9 +664,9 @@ describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", (
       }),
     );
     store.files.set(
-      "object:p1",
+      "object:old",
       JSON.stringify({
-        id: "p1",
+        id: "old",
         kind: "pin",
         label: "The old gate",
         createdAtIso: "2026-09-20T10:00:00.000Z",
@@ -660,40 +674,80 @@ describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", (
       }),
     );
     store.files.set(
-      "object:f1",
+      "object:oldphoto",
       JSON.stringify({
-        id: "f1",
+        id: "oldphoto",
         kind: "photo",
-        image: "content/f1.jpg",
+        image: "content/oldphoto.jpg",
         imageWidth: 640,
         imageHeight: 480,
         createdAtIso: "2026-09-20T10:01:00.000Z",
         geo: { lat: 47.5, lon: 8.7, alt: 401, rotation: [0, 0, 0, 1] },
       }),
     );
-    store.files.set("photo:f1", new Blob(["jpeg"]));
+    store.files.set("photo:oldphoto", new Blob(["jpeg"]));
+    // The draft's own records, as this app writes them.
+    await writeDraftObject(store, withCaption(pin("p1"), "The new gate"));
+    await writeDraftObject(store, photo("f1"), new Blob(["jpeg"]));
     const stored = await readDraft(store);
-    expect(stored?.draft.objects.map((o) => o.id)).toEqual(["p1", "f1"]);
+    expect(stored?.draft.objects.map((o) => o.id).sort()).toEqual(["f1", "p1"]);
     expect(stored?.photos.has("f1")).toBe(true);
+    expect(stored?.photos.has("oldphoto")).toBe(false);
+    // As the page does: the draft restored into the tour it opened (here
+    // one without tour.json), then written - at version 4, reading back as
+    // the objects the draft held.
+    const tourStore = createTourViewerStore();
+    const doc = createCreatorDocument(tourStore);
+    doc.open(createEmptyTourManifest());
+    doc.restore(
+      {
+        objects: stored?.draft.objects ?? [],
+        deleted: [],
+        pictures: stored?.photos ?? new Map(),
+      },
+      "the draft",
+    );
     const finished: unknown = JSON.parse(
       serializeTourManifest(
-        withTourContent(createEmptyTourManifest(), {
-          objects: [...(stored?.draft.objects ?? [])],
-        }),
+        manifestToWrite(tourStore.getState().tourDocument)!,
       ),
     );
-    expect(finished).toMatchObject({ version: 3, minor: 0 });
+    expect(finished).toMatchObject({ version: 4, minor: 0 });
     const read = tourObjects(parseTourManifest(finished));
-    expect(read.map((o) => [o.id, o.kind])).toEqual([
-      ["p1", "pin"],
-      ["f1", "photo"],
+    expect(read.map((o) => [o.id, o.kind]).sort()).toEqual([
+      ["f1", "picture"],
+      ["p1", "shortText"],
     ]);
-    for (const [i, o] of read.entries()) {
-      const draft = stored!.draft.objects[i]!;
+    for (const o of read) {
+      const draft = stored!.draft.objects.find((d) => d.id === o.id)!;
       expect(o.geo.lat).toBeCloseTo(draft.geo.lat, 9);
       expect(o.geo.lon).toBeCloseTo(draft.geo.lon, 9);
       expect(o.geo.alt).toBeCloseTo(draft.geo.alt, 6);
     }
+  });
+});
+
+describe("isOlderVersionDraft: a meta this version wrote", () => {
+  // Why this matters: a refused older copy of a tour shares its draft with
+  // the current copy (the same tour id). A draft this version worked on -
+  // restored, a code measured, an object deleted - without placing a new
+  // object holds only the older version's records, and read as an older
+  // version's draft: the refusal of the older copy deleted the current
+  // copy's work. The meta this version writes says which version wrote it.
+  it("is false once this version wrote the meta, whatever its object records", async () => {
+    const store = memoryStore();
+    store.files.set(
+      objectKey("old"),
+      JSON.stringify({ id: "old", kind: "pin", label: "The old gate" }),
+    );
+    store.files.set(META_KEY, JSON.stringify(META));
+    expect(await isOlderVersionDraft(store), "an older version's meta").toBe(
+      true,
+    );
+    await writeDraftMeta(store, META);
+    expect(await isOlderVersionDraft(store)).toBe(false);
+    // The meta still reads as the draft's: the stamp is no field of it.
+    expect((await readDraft(store))?.draft.tourUrl).toBe(META.tourUrl);
   });
 });
 
@@ -737,22 +791,22 @@ describe("writeDraftEdit (M6 E2p)", () => {
     const store = memoryStore();
     await writeDraftMeta(store, META);
     const hosted = pin("a");
-    const later = { ...hosted, label: "a later version" };
+    const later = { ...hosted, caption: "a later version" };
     await writeDraftEdit(
       store,
-      { ...hosted, label: "one" },
+      withCaption(hosted, "one"),
       undefined,
       objectContentKey(hosted),
     );
     await writeDraftEdit(
       store,
-      { ...hosted, label: "two" },
+      withCaption(hosted, "two"),
       undefined,
       objectContentKey(later),
     );
     await writeDraftEdit(
       store,
-      { ...hosted, label: "three" },
+      withCaption(hosted, "three"),
       undefined,
       undefined,
     );
@@ -761,7 +815,7 @@ describe("writeDraftEdit (M6 E2p)", () => {
       objectContentKey(hosted),
       objectContentKey(later),
     ]);
-    expect(read?.draft.objects[0]).toMatchObject({ label: "three" });
+    expect(read?.draft.objects[0]).toMatchObject({ caption: "three" });
     await writeDraftEdit(store, pin("new"), undefined, undefined);
     expect((await readDraft(store))?.draft.bases?.has("new")).toBe(false);
   });

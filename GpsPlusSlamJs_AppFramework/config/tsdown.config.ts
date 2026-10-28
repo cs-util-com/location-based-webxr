@@ -71,17 +71,31 @@ const entryFiles = [
   // The v2 game content, the signed manifest and its signature (tour kit
   // plan K1), deep-imported by the Tour Viewer the same way.
   'src/ar/tour-stations.ts',
-  // Version 3's station items and the station frame (tour editor plan
-  // W3), deep-imported by the Tour Viewer the same way.
+  // A block's local pose and the station frame, deep-imported by the Tour
+  // Viewer the same way.
   'src/ar/tour-items.ts',
   'src/ar/tour-station-pose.ts',
+  // Version 4's media assets, station blocks and the story that shows
+  // them, deep-imported by the Tour Viewer the same way.
+  'src/ar/tour-assets.ts',
+  // The field checks every reader of tour.json shares (the CHANGELOG
+  // names it a new module), deep-imported the same way.
+  'src/ar/tour-fields.ts',
+  'src/ar/tour-blocks.ts',
+  'src/ar/tour-story.ts',
   'src/ar/tour-signed-manifest.ts',
   'src/ar/tour-signature.ts',
+  // The station text's Markdown subset, its plain text and that text's
+  // hash, deep-imported by the Tour Viewer the same way.
+  'src/ar/tour-markdown.ts',
   'src/ar/frame-loop.ts',
   // Shared hit-test reticle driver (2026-07-18 promotion of the three
   // app-local copies) — deep-imported by consumer apps via the `./ar/*`
   // wildcard, so it must be a per-file dist entry.
   'src/ar/hit-test-reticle-driver.ts',
+  // WebXR select taps with their target ray - a deep-import subpath the
+  // CHANGELOG advertises, so a per-file dist entry.
+  'src/ar/xr-select-listener.ts',
   'src/ar/image-capture.ts',
   // Pure blur/blackness metrics + verdict policy — deep-imported by the
   // recorder's image-quality.worker.ts (NOT via the `/ar` barrel). The `./ar/*`
@@ -132,6 +146,7 @@ const entryFiles = [
   // osm-bridge/ — wires the optional gps-plus-slam-osm peer to OPFS
   'src/osm-bridge/index.ts',
   'src/osm-bridge/opfs-osm-blob-store.ts',
+  'src/osm-bridge/open-osm-store.ts',
 
   'src/geo/index.ts',
   'src/geo/h3-proximity.ts',
@@ -179,6 +194,10 @@ const entryFiles = [
   // The maturity floor and the first-mature-alignment pick (D28 revised,
   // D33), deep-imported by the Tour Viewer's authoring settle.
   'src/state/alignment-maturity.ts',
+  // One judgement of position precision for every app ("code", GPS with a
+  // number, or none) and whether it can tell two targets apart; deep-
+  // imported by apps via the `./state/*` wildcard.
+  'src/state/position-precision.ts',
 
   // storage/
   'src/storage/index.ts',
@@ -242,6 +261,10 @@ const entryFiles = [
   // left-behind sweep measured D28 with, shared with the Tour Viewer's
   // authoring-settle sweep so both measure the same drift.
   'src/test-utils/integrated-slam-drift.ts',
+  // Generators of valid tours (texts at every cap, blocks of every kind
+  // and view, version 3 manifests), shared with the Tour Viewer's property
+  // tests so both packages test against the same notion of a valid file.
+  'src/test-utils/tour-arbitraries.ts',
 
   // types/
   'src/types/index.ts',
@@ -477,6 +500,15 @@ export default defineConfig({
   clean: true,
   outExtensions: () => ({ js: '.js', dts: '.d.ts' }),
   deps: {
-    neverBundle: ['three', 'leaflet', 'h3-js', '@zip.js/zip.js', 'vitest'],
+    neverBundle: [
+      'three',
+      'leaflet',
+      'h3-js',
+      '@zip.js/zip.js',
+      'vitest',
+      // The shipped test generators (test-utils/tour-arbitraries) use the
+      // consumer's fast-check, never a private copy.
+      'fast-check',
+    ],
   },
 });

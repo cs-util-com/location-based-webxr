@@ -18,18 +18,25 @@ far the visitor is from each offered station. Plan:
   the cache)
   - `approach(station, distanceM, activateM)` - inside
     `activateM + PREFETCH_LEAD_M`, queue the station's assets;
-  - `ahead(station)` - the station that comes next in a fixed or branch
+  - `ahead(station)` - the station that comes next in a fixed
     order, while the current story plays: queue its assets from any
     distance (K4 review R5; the guide's `onUpcoming`);
   - `done(stationId)` - the media only done stations need may be
     released;
+  - `undone(stationId)` - a done station was brought back: it counts as not done again, so its media are
+    not releasable for it, and a path released meanwhile is read again on
+    its next approach (it is no longer held, so `approach` asks anew);
   - `load(path)` - the story's read: the cache, a read in flight, or a
     fresh read (kept only while a station asked for it);
   - `heldBytes()`; `sync()` - drop everything now if the tour changed or
     closed (every other call checks too).
-- `stationAssetIds(station)` - the asset ids a story reads, in step order,
-  once each (figures and voices, pictures, sounds, models; never a video,
-  K4 review R3).
+- `stationAssetIds(station)` - the asset ids a story reads: the blocks
+  its `show` steps name, in step order, once each (pictures, sounds,
+  voices; a figure only in its `stage` view, a model in its `stage` or
+  `placed` view - a reached placed model stands in the world from its
+  step on, B2b; never a video nor its poster, K4 review R3), then the files of
+  the station's free PLACED models (B2b, G2 follow-up 9: drawn with the
+  station, so read ahead with it). Free pictures are read on their own.
 - `decodeDivisor(size)` - the divisor that brings a figure of this size
   within `MAX_DECODE_SIDE_PX` (a size is required: K4 review R17 removed
   the "no size: 1" case).
@@ -108,10 +115,15 @@ const blob = await prefetch.load(asset.path); // a hit when it was prefetched
   never over the cap or unmeasured (R2); the asset list, the decode
   divisor, the
   radius, one read at a time, joining and hitting, a story-only read not
-  kept, a failed read not kept, never a video (R3), offline not retried for
+  kept, a failed read not kept, never a video nor its poster (R3), a
+  figure only in its stage view, a model in its stage or placed view
+  (B2b) and a voice in either, offline
+  not retried for
   the same station (R4), a shared asset held until both stations are done
   (R11), kept across a session end and dropped at a tour close (R15), the
-  budget and its release order, a full budget not re-read, a tour change.
+  budget and its release order, a full budget not re-read, a station
+  brought back not released first and a released one read again (seen
+  red before `undone`), a tour change.
 - `station-prefetch.property.test.ts` - random approaches, dones, answers
   and failures: in budget, one read per path at a time, no retry for a
   station a read failed for.

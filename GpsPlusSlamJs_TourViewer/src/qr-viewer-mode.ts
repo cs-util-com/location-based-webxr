@@ -220,6 +220,42 @@ export interface ViewerPipelineDeps {
   now?: () => number;
 }
 
+/**
+ * The vote half of a pipeline's deps: one AR entry's vote sink, keep-alive,
+ * vote budget and moved-code checks, owned by the viewer placement
+ * (`viewer-placement.ts`). The visitor's pipeline and a creator's at a code
+ * the tour stores both take it, so a code votes by one path.
+ */
+export type CodeVoteDeps = Required<
+  Pick<
+    ViewerPipelineDeps,
+    | "dispatchVotes"
+    | "canAcceptVotes"
+    | "resolveStablePose"
+    | "keepAlive"
+    | "voteBudget"
+    | "isIgnored"
+    | "onIgnoredLock"
+    | "onVotedPose"
+    | "onVotedLock"
+    | "onLevelResolved"
+  >
+> & {
+  /** Every detection, before the pipeline's own handling of it: the code
+   *  and pose a lock reports on. */
+  noteDetection(event: QrDetectionEvent): void;
+};
+
+/** What a pipeline hands the vote half (`CodeVoteDeps`). */
+export interface CodeVoteOptions {
+  /** The stable pose a frame's votes are built from; null: this frame
+   *  casts none (still converging, or the pipeline's own rule says no). */
+  resolvePose: (text: string) => Pose | null;
+  /** Whether the pipeline these deps were made for is still the
+   *  session's: a late callback of an ended one changes nothing. */
+  live: () => boolean;
+}
+
 /** The viewer's keep-alive, with the measured schedule (M0b/M0c). */
 export function createViewerKeepAlive(): QrVoteKeepAlive {
   return createQrVoteKeepAlive({
@@ -409,11 +445,15 @@ export function buildViewerControllerConfig(
   };
 }
 
+/** What a code the moved-code check ignores means, for a visitor and a
+ *  creator alike. */
+export const MOVED_CODE_SENTENCE =
+  "This code seems to have been moved, so its position is not used.";
+
 /** The line for a code the moved-code check ignores (D20, M5c; §7j #4):
  *  no "Relocalized", no invitation to scan again - the veto would ignore
  *  it. */
-export const IGNORED_CODE_LINE =
-  "This code seems to have been moved, so its position is not used. Showing the tour by GPS.";
+export const IGNORED_CODE_LINE = `${MOVED_CODE_SENTENCE} Showing the tour by GPS.`;
 
 /** What the viewer's status line shows — pure, plain-language. */
 export function viewerStatusLine(input: {
@@ -500,30 +540,4 @@ function holdLine(
     case "ended":
       return "The code's hold has ended - GPS places the tour now. Scan the code again to hold it.";
   }
-}
-
-/**
- * Ring positions (GPS-world NUE) for the tour's image planes around the
- * relocalized code (QD-3) — placed ONCE at the scene root in raw NUE (the
- * framework's built-once parenting rule), at the anchor's height.
- * V1 deviation, deliberate: recording zips carry no per-image GPS (images
- * store odom pose only), so the ring around the anchor is the honest
- * placement until a capture-time geo join exists.
- */
-export function imagePlaneRingNue(
-  centerNue: readonly [number, number, number],
-  count: number,
-  radiusM = 1.5,
-): [number, number, number][] {
-  const [n, u, e] = centerNue;
-  const positions: [number, number, number][] = [];
-  for (let i = 0; i < count; i += 1) {
-    const angle = (2 * Math.PI * i) / Math.max(1, count);
-    positions.push([
-      n + radiusM * Math.cos(angle),
-      u,
-      e + radiusM * Math.sin(angle),
-    ]);
-  }
-  return positions;
 }

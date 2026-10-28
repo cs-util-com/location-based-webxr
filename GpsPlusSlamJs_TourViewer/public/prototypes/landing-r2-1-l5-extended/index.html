@@ -1,0 +1,1827 @@
+<!doctype html>
+<html lang="en" data-ar="0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Make Your Own Tour</title>
+<script>
+/* First paint: the faked AR state is known before the body renders, so the
+   AR-dependent lines never flash the wrong text. ?ar=1 / ?ar=0 wins; without
+   it the page starts as "no AR" and the real check may switch it later. */
+(function () {
+  try {
+    var q = new URLSearchParams(location.search).get('ar');
+    if (q === '1' || q === '0') document.documentElement.setAttribute('data-ar', q);
+  } catch (e) { /* keep the default */ }
+})();
+</script>
+<style>
+:root {
+  --paper: #f4eedf;
+  --paper-2: #ebe3cf;
+  --paper-3: #ddd2b6;
+  --card: #fbf8ef;
+  --ink: #2a2824;
+  --ink-2: #57534a;
+  --ink-3: #8c8577;
+  --line: #c9bea3;
+  --route: #cf4428;
+  --route-soft: #f5d9cd;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); -webkit-text-size-adjust: 100%; }
+body { overflow-x: hidden; }
+button { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+.proto-label {
+  position: fixed; top: 6px; left: 6px; z-index: 100;
+  font: 600 11px/1 var(--sans); letter-spacing: .02em;
+  background: var(--ink); color: var(--paper);
+  padding: 5px 9px; border-radius: 999px; opacity: .92; pointer-events: none;
+}
+
+/* ---------- Fake AR support (prototype control) ---------- */
+.ar-fake {
+  position: fixed; top: 4px; right: 6px; z-index: 100;
+  display: flex; align-items: center; gap: 2px; padding: 2px;
+  background: var(--card); border: 1.5px solid var(--ink); border-radius: 999px;
+  box-shadow: 2px 2px 0 var(--paper-3); font: 600 11px/1 var(--sans);
+}
+.ar-fake > span { padding: 0 4px 0 8px; color: var(--ink-2); }
+.ar-fake button { border: 0; background: none; border-radius: 999px; padding: 6px 9px; min-height: 26px; cursor: pointer; font: inherit; }
+.ar-fake button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.ar-fake button:focus-visible { outline: 3px solid var(--route); outline-offset: 1px; }
+[data-ar="1"] .ar-no, [data-ar="0"] .ar-yes { display: none !important; }
+
+/* ---------- Hero (L5, unchanged apart from the requirement line and the second button) ---------- */
+.hero {
+  display: grid; gap: 14px; align-items: center;
+  max-width: 1200px; margin: 0 auto; padding: 48px 18px 26px;
+}
+.kicker { font: 700 12px/1.2 var(--sans); letter-spacing: .16em; text-transform: uppercase; color: var(--ink-2); margin: 0; }
+.hero h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(32px, 8.4vw, 58px); line-height: 1.04; margin: .22em 0 .32em; letter-spacing: -.01em; }
+.hero h1 em { color: var(--route); font-style: italic; }
+.lede { font-size: 17px; line-height: 1.5; color: var(--ink-2); max-width: 33em; margin: 0 0 10px; }
+.req { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 16px; font-size: 14.5px; line-height: 1.35; color: var(--ink); }
+.req-main { display: flex; align-items: flex-start; gap: 8px; }
+.req svg { width: 13px; height: 18px; flex: none; margin-top: 1px; }
+.ar-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); padding: 3px 10px 3px 8px; border-radius: 999px; background: var(--paper-2); }
+.ar-chip::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--route); }
+[data-ar="0"] .ar-chip::before { width: 5px; height: 5px; background: transparent; border: 1.5px solid var(--ink-3); }
+.why { list-style: none; padding: 0; margin: 0 0 20px; max-width: 36em; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; font-size: 14px; line-height: 1.35; color: var(--ink-2); }
+.why li { display: flex; align-items: baseline; gap: 7px; }
+.why li::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--route); transform: translateY(-2px); }
+.hero-cta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.hero-cta .cta-note { font-size: 13px; color: var(--ink-3); flex-basis: 100%; }
+.visit { margin: 18px 0 0; font-size: 14px; line-height: 1.45; color: var(--ink-2); }
+.visit .linkish { font-size: 14px; padding: 2px; }
+.visit-form { display: flex; gap: 8px; margin-top: 8px; max-width: 30em; }
+.visit-form input { flex: 1; min-width: 0; font: 14px var(--mono); padding: 10px; border: 1.5px solid var(--ink); border-radius: 8px; background: #fff; color: var(--ink); min-height: 44px; }
+.visit-form input:focus { outline: 3px solid var(--route-soft); border-color: var(--route); }
+.hero-art svg { display: block; width: 100%; max-width: 300px; height: auto; margin: 0 auto; max-height: 62svh; }
+@media (min-width: 720px), (orientation: landscape) and (min-width: 600px) {
+  .hero { grid-template-columns: 1.3fr 1fr; min-height: 100svh; padding-top: 36px; }
+  .hero-art svg { max-height: 80svh; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .hero { padding-top: 30px; padding-bottom: 18px; }
+  .hero h1 { font-size: 32px; margin: .14em 0 .24em; }
+  .lede { font-size: 14.5px; line-height: 1.45; margin-bottom: 8px; }
+  .req { margin-bottom: 10px; font-size: 13.5px; gap: 4px 8px; }
+  .why { margin-bottom: 12px; font-size: 13px; gap: 3px 14px; }
+}
+
+/* hero phone animation: the L5 prototype's keyframes, restored (7 s loop) */
+.h-pin { animation: hPin 7s ease-out infinite; }
+.h-label { animation: hLabel 7s ease-out infinite; }
+.h-photo { animation: hPhoto 7s ease-out infinite; }
+.h-dots { stroke-dasharray: 0.1 7; }
+.h-dots-mask { stroke-dasharray: 100 100; animation: hDots 7s linear infinite; }
+@keyframes hDots { 0% { stroke-dashoffset: 100; } 22%, 88% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 0; } }
+@keyframes hPin { 0%, 20% { opacity: 0; transform: translateY(-26px); } 28% { opacity: 1; transform: translateY(0); } 31% { transform: translateY(-4px); } 34%, 88% { opacity: 1; transform: translateY(0); } 96%, 100% { opacity: 0; transform: translateY(0); } }
+@keyframes hLabel { 0%, 33% { opacity: 0; transform: translateY(4px); } 40%, 88% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes hPhoto { 0%, 45% { opacity: 0; transform: scale(.6) rotate(-14deg); } 54%, 88% { opacity: 1; transform: scale(1) rotate(-6deg); } 96%, 100% { opacity: 0; transform: scale(1) rotate(-6deg); } }
+.h-pin, .h-label, .h-photo { transform-box: fill-box; transform-origin: 50% 100%; }
+/* off screen the loop stops: nothing repaints that nobody sees */
+.hero.off .h-pin, .hero.off .h-label, .hero.off .h-photo, .hero.off .h-dots-mask { animation-play-state: paused; }
+
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font: 600 15px/1.1 var(--sans); min-height: 44px; padding: 11px 18px;
+  border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; color: var(--ink);
+  cursor: pointer; transition: transform .12s, background .2s;
+}
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--route); border-color: var(--route); color: #fff; }
+.btn.ink { background: var(--ink); color: var(--paper); }
+.btn.ghost { background: transparent; }
+.btn.wide { width: 100%; }
+.btn:disabled { opacity: .65; cursor: default; }
+.btn:focus-visible, .tile:focus-visible, .linkish:focus-visible, .dots button:focus-visible { outline: 3px solid var(--route); outline-offset: 2px; }
+.linkish { background: none; border: 0; padding: 6px 2px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font-size: 14px; }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Stage: map + docked card ---------- */
+.stage { position: relative; }
+.map-pane {
+  position: sticky; top: 0; z-index: 5; background: var(--paper);
+  padding: 28px 10px 8px; border-bottom: 1px solid var(--line);
+  display: flex; flex-direction: column;
+}
+.map-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 6px; }
+.map-title { font: 600 12px/1.2 var(--serif); letter-spacing: .14em; text-transform: uppercase; }
+.map-title i { font-weight: 400; letter-spacing: .02em; text-transform: none; color: var(--ink-2); margin-left: 4px; }
+.map-head .scale { width: 74px; height: 14px; flex: none; }
+.map-frame {
+  position: relative; overflow: hidden; background: var(--paper);
+  border: 1.5px solid var(--ink); outline: 1px solid var(--ink); outline-offset: 3px; margin: 4px;
+}
+.map-frame svg { display: block; width: 100%; height: auto; max-height: 42svh; overflow: visible; }
+.card-pane { padding: 16px 14px 28px; }
+
+@media (orientation: landscape) and (min-width: 640px), (min-width: 1024px) {
+  .stage { display: grid; grid-template-columns: minmax(0, 1.42fr) minmax(300px, 1fr); height: 100svh; max-width: 1440px; margin: 0 auto; }
+  .map-pane { position: relative; height: 100svh; border-bottom: 0; padding: 28px 8px 10px 12px; }
+  .map-frame { flex: 1; min-height: 0; }
+  .map-frame svg { position: absolute; inset: 0; width: 100%; height: 100%; max-height: none; }
+  .card-pane { height: 100svh; overflow-y: auto; padding: 30px 14px 16px 12px; overscroll-behavior: contain; }
+}
+
+/* map styling */
+.lbl-place { font: italic 7px var(--serif); fill: var(--ink-2); paint-order: stroke; stroke: var(--paper); stroke-width: 2.4px; stroke-linejoin: round; }
+.lbl-caps { font: 600 7.4px var(--serif); letter-spacing: .18em; fill: var(--ink); paint-order: stroke; stroke: var(--paper-3); stroke-width: 2.4px; }
+.lbl-road { font: 600 6.4px var(--sans); letter-spacing: .32em; fill: var(--ink-3); }
+.st { cursor: pointer; outline: none; }
+.st .dot { fill: var(--card); stroke: var(--ink); stroke-width: 1.4; transition: fill .3s, stroke .3s; }
+.st .num { font: 700 9px var(--sans); fill: var(--ink); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.st .lbl { font: italic 600 8.4px var(--serif); fill: var(--ink); paint-order: stroke; stroke: var(--paper); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.st .ring { fill: none; stroke: var(--route); stroke-width: 1.4; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.st.done .dot { fill: var(--route); stroke: var(--route); }
+.st.done .num { fill: #fff; }
+.st.current .dot { stroke: var(--route); stroke-width: 2.4; }
+.st.current .ring { animation: ring 1.8s ease-out infinite; }
+.st.current .lbl { fill: var(--route); }
+.st:hover .dot, .st:focus-visible .dot { stroke-width: 3; }
+@keyframes ring { 0% { opacity: .85; transform: scale(1); } 100% { opacity: 0; transform: scale(2.3); } }
+
+#routeReveal { transition: stroke-dashoffset 1.4s cubic-bezier(.45, .05, .25, 1); }
+
+/* start (poster) */
+#start .empty { fill: var(--card); stroke: var(--ink); stroke-width: 1; stroke-dasharray: 2 1.6; }
+#start .qrmini { opacity: 0; transition: opacity .5s; }
+#start.printed .qrmini { opacity: 1; }
+#start.printed .empty { stroke-dasharray: none; }
+#start .tack { opacity: 0; transform: translateY(-8px); transition: opacity .3s, transform .45s cubic-bezier(.3, 1.6, .5, 1); transform-box: fill-box; }
+#start.hung .tack { opacity: 1; transform: none; }
+#start .halo { fill: none; stroke: var(--route); stroke-width: 1.4; opacity: 0; transform-box: fill-box; transform-origin: center; }
+#start.focus .halo { animation: ring 1.8s ease-out infinite; }
+#start .lbl-start { font: italic 600 8px var(--serif); fill: var(--ink); paint-order: stroke; stroke: var(--paper); stroke-width: 3px; }
+#start.focus .lbl-start { fill: var(--route); }
+
+.place-inner { opacity: 0; transform: scale(.2); transform-box: fill-box; transform-origin: 50% 100%; transition: opacity .3s, transform .5s cubic-bezier(.3, 1.6, .5, 1); }
+.place.on .place-inner { opacity: 1; transform: none; }
+#walker { opacity: 0; transition: opacity .3s; }
+#walker.on { opacity: 1; }
+#endFlag { opacity: 0; transition: opacity .4s; }
+#endFlag.on { opacity: 1; }
+
+/* ---------- Card ---------- */
+.card {
+  position: relative; background: var(--card); border: 1.5px solid var(--ink); border-radius: 6px;
+  box-shadow: 4px 4px 0 var(--paper-3); padding: 16px 16px 14px;
+  --notch-x: 40px; --notch-y: 60px;
+}
+.card::before {
+  content: ""; position: absolute; width: 14px; height: 14px; background: var(--card);
+  border-left: 1.5px solid var(--ink); border-top: 1.5px solid var(--ink);
+  top: -8.6px; left: var(--notch-x); transform: rotate(45deg); transition: left .4s, top .4s;
+}
+@media (orientation: landscape) and (min-width: 640px), (min-width: 1024px) {
+  .card::before { top: var(--notch-y); left: -8.6px; transform: rotate(-45deg); }
+}
+.card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.badge { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--route); color: #fff; font: 700 14px var(--sans); flex: none; }
+.of { font: 600 12px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); }
+.dots { margin-left: auto; display: flex; gap: 2px; }
+.dots button { width: 22px; height: 26px; padding: 0; border: 0; background: none; cursor: pointer; display: grid; place-items: center; }
+.dots button::after { content: ""; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--ink-3); background: transparent; }
+.dots button.done::after { background: var(--route); border-color: var(--route); }
+.dots button[aria-current="step"]::after { border-color: var(--route); box-shadow: 0 0 0 2.5px var(--route-soft); }
+.panel h2 { font: 600 clamp(23px, 6vw, 28px)/1.12 var(--serif); margin: 2px 0 6px; outline: none; }
+.panel .sub { margin: 0 0 14px; color: var(--ink-2); line-height: 1.45; font-size: 15.5px; }
+.panel h3 { font: 600 17px var(--serif); margin: 0 0 6px; }
+.fine { font-size: 13px; color: var(--ink-3); line-height: 1.4; margin: 8px 0 0; }
+.row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.card-foot { display: flex; gap: 10px; justify-content: space-between; margin-top: 18px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.card-foot .btn { min-width: 0; }
+.card-foot #nextBtn { flex: 1; max-width: 70%; }
+.pane-note { font-size: 12px; color: var(--ink-3); text-align: center; margin: 14px 0 0; }
+
+/* station 1 */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.tile {
+  display: flex; align-items: center; gap: 9px; text-align: left;
+  min-height: 52px; padding: 9px 10px; border: 1.5px solid var(--line); border-radius: 8px; background: #fff;
+  cursor: pointer; font: 600 14px/1.15 var(--sans); transition: border-color .2s, background .2s;
+}
+.tile svg { width: 24px; height: 24px; flex: none; stroke: var(--ink); fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.tile[aria-pressed="true"] { border-color: var(--route); background: var(--route-soft); }
+.tile[aria-pressed="true"] svg { stroke: var(--route); }
+.instr { margin-top: 14px; padding: 14px; border: 1.5px dashed var(--ink-3); border-radius: 8px; background: #fff; animation: rise .35s ease-out; }
+.instr ol { margin: 0 0 12px; padding-left: 20px; line-height: 1.45; font-size: 15px; }
+.instr li { margin-bottom: 5px; }
+.instr pre { font: 12px/1.45 var(--mono); background: var(--paper-2); padding: 8px 10px; border-radius: 6px; overflow-x: auto; margin: 0 0 12px; white-space: pre; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* station 2 */
+.field { display: block; margin-bottom: 10px; }
+.field span { display: block; font: 600 13px var(--sans); color: var(--ink-2); margin-bottom: 5px; }
+.field input { width: 100%; font: 15px var(--mono); padding: 12px; border: 1.5px solid var(--ink); border-radius: 8px; background: #fff; color: var(--ink); min-height: 46px; }
+.field input:focus { outline: 3px solid var(--route-soft); border-color: var(--route); }
+.result { margin-top: 12px; }
+.result:empty { display: none; }
+.res { display: flex; gap: 10px; align-items: flex-start; padding: 11px 12px; border-radius: 8px; line-height: 1.4; font-size: 15px; animation: rise .3s ease-out; }
+.res svg { width: 20px; height: 20px; flex: none; margin-top: 1px; }
+.res.ok { background: #fff; border: 1.5px solid var(--route); }
+.res.later { background: #fff; border: 1.5px dashed var(--ink-3); }
+.res.bad { background: var(--paper-2); }
+.l2q { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.l2q .pill { font: 12px var(--mono); background: var(--paper-2); padding: 6px 10px; border-radius: 999px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; animation: shrink 1.4s ease-in-out forwards; }
+.l2q .arrow { flex: none; width: 26px; height: 2px; background: repeating-linear-gradient(90deg, var(--route) 0 3px, transparent 3px 6px); }
+.l2q .qr { width: 58px; height: 58px; flex: none; color: var(--ink); animation: qrIn .8s .6s ease-out both; }
+@keyframes shrink { from { max-width: 100%; } to { max-width: 52%; } }
+@keyframes qrIn { from { opacity: 0; transform: scale(.4) rotate(-20deg); } to { opacity: 1; transform: none; } }
+
+/* station 3 */
+.controls { display: grid; gap: 12px; margin-bottom: 12px; }
+.ctl-l { display: block; font: 600 13px var(--sans); color: var(--ink-2); margin-bottom: 6px; }
+.stepper { display: inline-flex; align-items: center; border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; }
+.stepper button { width: 44px; height: 42px; border: 0; background: none; font: 600 20px var(--sans); cursor: pointer; }
+.stepper output { min-width: 34px; text-align: center; font: 700 17px var(--sans); }
+.size { display: flex; align-items: center; gap: 12px; }
+.size input { flex: 1; accent-color: var(--route); min-height: 32px; }
+.size output { font: 700 16px var(--sans); min-width: 52px; text-align: right; }
+.qr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 8px; margin-bottom: 14px; max-height: 236px; overflow-y: auto; padding: 2px; }
+.qr-tile { background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 5px 5px 4px; text-align: center; animation: rise .25s ease-out; }
+.qr-tile .qr { width: 100%; height: auto; display: block; color: var(--ink); }
+.qr-tile span { display: block; font: 600 10px var(--sans); color: var(--ink-2); margin-top: 3px; }
+.hint { margin: 10px 0 0; padding: 10px 12px; border-left: 3px solid var(--route); background: var(--paper-2); font-size: 14px; line-height: 1.45; border-radius: 0 6px 6px 0; }
+
+/* station 4 */
+.wall svg { display: block; width: 100%; height: auto; max-height: 190px; margin: 0 0 10px; }
+.checks { list-style: none; padding: 0; margin: 0 0 14px; display: grid; gap: 6px; font-size: 15px; }
+.checks li { display: flex; gap: 8px; align-items: baseline; }
+.checks li::before { content: ""; flex: none; width: 9px; height: 9px; border: 1.5px solid var(--route); border-radius: 50%; transform: translateY(1px); }
+.wall .poster { transform-box: fill-box; transform-origin: 50% 0; }
+.wall.hung .poster { animation: swing 1s ease-out; }
+@keyframes swing { 0% { transform: rotate(9deg) translateY(-6px); } 45% { transform: rotate(-4deg); } 75% { transform: rotate(1.5deg); } 100% { transform: none; } }
+
+/* station 5 */
+.scan-demo svg { display: block; width: 100%; max-width: 330px; height: auto; margin: 0 auto 6px; }
+.sd-phone { animation: sdPhone 5s ease-in-out infinite; }
+.sd-scan { animation: sdScan 5s linear infinite; }
+.sd-ok { animation: sdOk 5s ease-out infinite; }
+.sd-pin { animation: sdPin 5s ease-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+@keyframes sdPhone { 0% { transform: translate(140px, 12px) rotate(10deg); } 28%, 78% { transform: none; } 100% { transform: translate(140px, 12px) rotate(10deg); } }
+@keyframes sdScan { 0%, 30% { transform: translateY(0); opacity: 0; } 32% { opacity: 1; } 50% { transform: translateY(58px); opacity: 1; } 52%, 100% { opacity: 0; transform: translateY(58px); } }
+@keyframes sdOk { 0%, 50% { opacity: 0; } 55%, 76% { opacity: 1; } 82%, 100% { opacity: 0; } }
+@keyframes sdPin { 0%, 56% { opacity: 0; transform: translateY(-14px); } 64% { opacity: 1; transform: none; } 82% { opacity: 1; } 88%, 100% { opacity: 0; } }
+.steps { margin: 4px 0 14px; padding-left: 20px; line-height: 1.45; font-size: 15px; }
+.steps li { margin-bottom: 5px; }
+.on-desktop { display: none; gap: 12px; align-items: center; margin-top: 14px; padding: 10px; border: 1px dashed var(--line); border-radius: 8px; }
+.on-desktop .qr { width: 64px; height: 64px; flex: none; color: var(--ink); }
+.on-desktop p { margin: 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.4; }
+.count { font-weight: 700; color: var(--route); }
+
+/* station 6 */
+.replace details { border: 1px solid var(--line); border-radius: 8px; background: #fff; margin-bottom: 6px; }
+.replace details[open] { border-color: var(--ink-3); }
+.replace summary { cursor: pointer; padding: 10px 12px; font: 600 14.5px var(--sans); list-style-position: inside; }
+.replace p { margin: 0; padding: 0 12px 12px; font-size: 14.5px; line-height: 1.45; color: var(--ink-2); }
+.replace .mine { font: 600 10.5px var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--route); margin-left: 6px; }
+.keep { margin: 14px 0 14px; padding: 12px; background: var(--route-soft); border-radius: 8px; font-size: 15px; line-height: 1.45; }
+
+/* toast */
+.toast {
+  position: fixed; left: 50%; bottom: 18px; z-index: 90; transform: translate(-50%, 30px); opacity: 0;
+  background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 999px; font-size: 14px;
+  max-width: calc(100vw - 32px); text-align: center; transition: opacity .25s, transform .3s; pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- Added sections share one frame ---------- */
+.sec { max-width: 1200px; margin: 0 auto; padding: 46px 18px 42px; }
+.sec + .sec { padding-top: 26px; }
+.sec-head { max-width: 40em; margin: 0 0 20px; }
+.sec h2 { font: 600 clamp(27px, 6.8vw, 40px)/1.08 var(--serif); margin: .22em 0 .3em; letter-spacing: -.01em; }
+.sec h2 em { color: var(--route); font-style: italic; }
+.sec-sub { font-size: 16.5px; line-height: 1.5; color: var(--ink-2); margin: 0; }
+.route-rule { height: 4px; max-width: 1164px; margin: 0 auto; background: radial-gradient(circle, var(--route) 1.6px, transparent 2px) 0 50% / 9px 4px repeat-x; opacity: .55; }
+
+/* ---------- (b) What a visitor sees ---------- */
+.strip { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px; }
+.vs { margin: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.vs-art { position: relative; background: var(--card); border: 1.5px solid var(--line); border-radius: 8px; padding: 6px 6px 0; overflow: hidden; transition: border-color .3s, box-shadow .3s, opacity .3s; }
+.vs-art svg { display: block; width: 100%; height: auto; }
+.strip.playing .vs:not(.active) .vs-art { opacity: .6; }
+.vs.active .vs-art { border-color: var(--ink); box-shadow: 4px 4px 0 var(--paper-3); }
+.vs-bar { height: 3px; margin: 6px -6px 0; background: var(--paper-2); }
+.vs-bar i { display: block; height: 100%; width: 0; background: var(--route); }
+.strip.playing .vs.active .vs-bar i { animation: vsBar var(--frame, 3.2s) linear both; }
+.vs figcaption { padding: 9px 2px 0; font-size: 14px; line-height: 1.38; color: var(--ink-2); }
+.vs figcaption b { display: block; font: 600 17px/1.2 var(--serif); color: var(--ink); margin-bottom: 2px; }
+.vs figcaption .n { font: 700 13px var(--sans); color: var(--route); margin-right: 5px; }
+.strip-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 20px; }
+.strip-foot .fine { margin: 0; }
+@media (min-width: 720px), (orientation: landscape) and (min-width: 600px) {
+  .strip { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .vs-art svg { max-height: 54svh; }
+  .vs figcaption { font-size: 13px; }
+}
+/* the frame's own content: final state by default, played when the frame is the active one */
+.fx-pin, .fx-photo, .fx-found, .fx-next, .fx-card, .fx-label { transform-box: fill-box; transform-origin: 50% 100%; }
+.fx-scan { opacity: 0; }
+.fx-dots-mask { stroke-dasharray: 100 100; stroke-dashoffset: 0; }
+.strip.playing .vs.active .fx-scan { animation: vsScan 1.5s .15s ease-in-out both; }
+.strip.playing .vs.active .fx-found { animation: vsPop .45s 1.55s ease-out both; }
+.strip.playing .vs.active .fx-next { animation: vsPop .45s .15s ease-out both; }
+.strip.playing .vs.active .fx-dots-mask { animation: vsDraw 1.7s .35s ease-out both; }
+.strip.playing .vs.active .fx-pin { animation: vsPin .75s .25s ease-out both; }
+.strip.playing .vs.active .fx-label { animation: vsFade .5s .95s ease-out both; }
+.strip.playing .vs.active .fx-photo { animation: vsPhoto .7s .3s ease-out both; }
+.strip.playing .vs.active .fx-card { animation: vsUp .5s 1.05s ease-out both; }
+@keyframes vsBar { from { width: 0; } to { width: 100%; } }
+@keyframes vsScan { 0% { opacity: 0; transform: translateY(0); } 12%, 88% { opacity: 1; } 100% { opacity: 0; transform: translateY(30px); } }
+@keyframes vsPop { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: none; } }
+@keyframes vsDraw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes vsPin { 0% { opacity: 0; transform: translateY(-22px); } 65% { opacity: 1; transform: translateY(0); } 80% { transform: translateY(-3px); } 100% { opacity: 1; transform: none; } }
+@keyframes vsFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes vsPhoto { from { opacity: 0; transform: scale(.6) rotate(-8deg); } to { opacity: 1; transform: none; } }
+@keyframes vsUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* ---------- (d) Make your own tour: three steps on a dotted route ---------- */
+.steps3 { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; position: relative; }
+.steps3::before {
+  content: ""; position: absolute; left: 29px; top: 20px; bottom: 20px; width: 4px;
+  background: radial-gradient(circle, var(--route) 1.6px, transparent 2px) 50% 0 / 4px 9px repeat-y;
+}
+.step3 {
+  position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 2px 12px; align-items: start;
+  background: var(--card); border: 1.5px solid var(--ink); border-radius: 6px; box-shadow: 4px 4px 0 var(--paper-3); padding: 16px 16px 16px 16px;
+}
+.step3 .badge { grid-row: 1 / span 2; }
+.step3 h3 { font: 600 20px/1.2 var(--serif); margin: 2px 0 4px; }
+.step3 p { margin: 0; font-size: 15px; line-height: 1.45; color: var(--ink-2); }
+.step3 .ic { position: absolute; right: 12px; top: 12px; width: 38px; height: 38px; fill: none; stroke: var(--ink-3); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.step3 h3 { padding-right: 40px; }
+@media (min-width: 720px), (orientation: landscape) and (min-width: 600px) {
+  .steps3 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+  .steps3::before { left: 20px; right: 20px; top: 29px; bottom: auto; width: auto; height: 4px; background-size: 9px 4px; background-repeat: repeat-x; background-position: 0 50%; }
+}
+.make-foot { margin-top: 22px; display: grid; gap: 14px; max-width: 46em; }
+.need { margin: 0; padding: 12px 14px; border-left: 3px solid var(--route); background: var(--paper-2); border-radius: 0 6px 6px 0; font-size: 15px; line-height: 1.45; }
+.need .ar-yes, .need .ar-no { display: block; margin-top: 6px; color: var(--ink-2); font-size: 14px; }
+.to-phone { display: flex; gap: 12px; align-items: center; padding: 10px; border: 1px dashed var(--line); border-radius: 8px; max-width: 30em; }
+.to-phone .qr { width: 64px; height: 64px; flex: none; color: var(--ink); }
+.to-phone p { margin: 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.4; }
+.make-cta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.make-cta .cta-note { font-size: 13px; color: var(--ink-3); }
+.on-desktop { display: none; }
+[data-ar="0"] .on-desktop { display: flex; }
+
+/* ---------- (c) See an example: the Mill Park preview ---------- */
+dialog.ex {
+  padding: 0; border: 1.5px solid var(--ink); border-radius: 8px; background: var(--paper); color: var(--ink);
+  width: min(1100px, calc(100vw - 24px)); max-width: none; max-height: calc(100svh - 24px); overflow: hidden;
+  box-shadow: 6px 6px 0 rgba(42, 40, 36, .2);
+}
+dialog.ex::backdrop { background: rgba(42, 40, 36, .45); }
+dialog.ex[open] { display: flex; flex-direction: column; }
+.ex-top { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 16px; border-bottom: 1px solid var(--line); flex: none; }
+.ex-top h2 { flex: 1; min-width: 0; margin: 0; font: 600 19px/1.2 var(--serif); }
+.ex-top h2 i { display: block; font: 400 13px/1.3 var(--sans); color: var(--ink-2); font-style: normal; }
+.ex-body { overflow-y: auto; overscroll-behavior: contain; min-height: 0; flex: 1; }
+.ex-map { padding: 10px 10px 4px; }
+.ex .map-frame { flex: none; }
+.ex .map-frame svg { position: static; width: 100%; height: auto; max-height: 40svh; }
+.ex-side { padding: 8px 16px 18px; }
+.ex-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.ex-list button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 4px 10px 4px 4px; border: 1.5px solid var(--line); border-radius: 999px; background: #fff; cursor: pointer; font: 600 13px var(--sans); }
+.ex-list button span { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; border: 1.4px solid var(--ink); font: 700 12px var(--sans); }
+.ex-list button[aria-current="true"] { border-color: var(--route); background: var(--route-soft); }
+.ex-list button[aria-current="true"] span { background: var(--route); border-color: var(--route); color: #fff; }
+.ex-list button:focus-visible, .ex-top .btn:focus-visible { outline: 3px solid var(--route); outline-offset: 2px; }
+.ex-card { background: var(--card); border: 1.5px solid var(--ink); border-radius: 6px; box-shadow: 4px 4px 0 var(--paper-3); padding: 14px; }
+.ex-card .ex-k { font: 600 11.5px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); margin: 0 0 4px; }
+.ex-card h3 { font: 600 22px/1.15 var(--serif); margin: 0 0 8px; }
+.ex-card .ex-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; align-items: start; }
+.ex-card .ex-row svg { width: 92px; height: auto; display: block; transform: rotate(-3deg); }
+.ex-card p { margin: 0; font-size: 15px; line-height: 1.45; color: var(--ink-2); }
+.ex-card .ex-holds { margin-top: 10px; font-size: 12.5px; color: var(--ink-3); }
+.ex-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.ex-act { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); display: grid; gap: 10px; }
+.ex-act .row { gap: 8px 12px; }
+.ex-act > .btn { justify-self: start; }
+@media (min-width: 720px), (orientation: landscape) and (min-width: 600px) {
+  .ex-body { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(290px, 1fr); }
+  .ex-map { position: sticky; top: 0; align-self: start; }
+  .ex .map-frame svg { max-height: calc(100svh - 120px); }
+  .ex-side { padding-top: 14px; }
+}
+@media (max-width: 719px) and (orientation: portrait) {
+  dialog.ex { width: 100vw; height: 100svh; max-height: 100svh; margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+}
+
+html:has(dialog[open]) { overflow: hidden; }
+
+/* ---------- Returning creators, foot, notes ---------- */
+.have { max-width: 1200px; margin: 0 auto; padding: 34px 18px 10px; }
+.have h2 { font: 600 22px/1.2 var(--serif); margin: 0 0 6px; }
+.have p { margin: 0 0 12px; font-size: 15px; line-height: 1.45; color: var(--ink-2); max-width: 36em; }
+.foot { max-width: 1200px; margin: 0 auto; padding: 20px 18px 40px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-3); }
+.foot .row { gap: 6px 18px; }
+.foot a, .foot .linkish { color: var(--ink-2); font-size: 13px; }
+.notes { margin-top: 18px; border: 1px dashed var(--line); border-radius: 8px; background: var(--card); }
+.notes summary { cursor: pointer; padding: 10px 12px; font: 600 13.5px var(--sans); color: var(--ink-2); }
+.notes .notes-in { padding: 0 14px 12px; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); max-width: 52em; }
+.notes h4 { font: 600 14px var(--sans); color: var(--ink); margin: 12px 0 4px; }
+.notes ul { margin: 0; padding-left: 18px; }
+.notes li { margin-bottom: 4px; }
+.notes p { margin: 0 0 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .h-pin, .h-label, .h-photo, .sd-phone, .sd-ok, .sd-pin { opacity: 1 !important; }
+  .h-photo { transform: rotate(-6deg) !important; }
+  .h-dots-mask { stroke-dashoffset: 0 !important; }
+  .sd-scan { opacity: 0 !important; }
+  .sd-phone { transform: none !important; }
+  .fx-scan { opacity: 0 !important; }
+  .strip .vs .vs-art { opacity: 1 !important; }
+  .vs-bar { display: none; }
+}
+
+</style>
+</head>
+<body>
+<div class="proto-label">Prototype R2-1 - L5 extended</div>
+<div class="ar-fake" role="group" aria-label="Pretend this device's AR support">
+  <span>Device</span>
+  <button type="button" data-ar-set="1" aria-pressed="false">AR phone</button>
+  <button type="button" data-ar-set="0" aria-pressed="true">No AR</button>
+</div>
+
+<!-- ============ HERO ============ -->
+<header class="hero" id="hero">
+  <div class="hero-text">
+    <p class="kicker">Make your own tour</p>
+    <h1>Put stories <em>where they happened.</em></h1>
+    <p class="lede">A tour shows notes and photos at real places, through a visitor's phone camera, in AR. You make it yourself, on site and without code. Visitors scan the code you hung, and it opens in their phone's browser, nothing to install.</p>
+    <p class="req">
+      <span class="req-main"><svg viewBox="0 0 14 18" aria-hidden="true"><rect x="1.5" y="1" width="11" height="16" rx="2.4" fill="none" stroke="#2a2824" stroke-width="1.4"/><path d="M5.5 14.2h3" stroke="#2a2824" stroke-width="1.4" stroke-linecap="round"/></svg><span>Needs Android with Chrome (AR support).</span></span>
+      <span class="ar-chip" role="status"><span class="ar-yes">This phone can run tours</span><span class="ar-no">Not this device: plan here, walk with the phone</span></span>
+    </p>
+    <ul class="why" aria-label="Why it works this way">
+      <li>Lives in your own storage</li>
+      <li>No app to install</li>
+      <li>Keeps working without signal once a tour has loaded</li>
+      <li>No sign-up, no account</li>
+    </ul>
+    <div class="hero-cta">
+      <button class="btn primary" id="beginBtn">Follow the route</button>
+      <button class="btn ghost" id="exampleOpen" aria-haspopup="dialog">See an example</button>
+      <span class="cta-note">Six steps, then your walk.</span>
+    </div>
+    <p class="visit">Here to walk a tour? Scan its poster with your phone's camera, or <button class="linkish" id="visitToggle" aria-expanded="false" aria-controls="visitForm">paste a tour link</button>.</p>
+    <form class="visit-form" id="visitForm" novalidate hidden>
+      <label for="visitIn" style="position:absolute;left:-9999px">Tour link</label>
+      <input id="visitIn" type="url" inputmode="url" placeholder="https://" autocomplete="off" spellcheck="false">
+      <button class="btn ink" type="submit">Open</button>
+    </form>
+  </div>
+
+  <figure class="hero-art" aria-hidden="true" style="margin:0">
+    <svg viewBox="0 0 240 280">
+      <defs>
+        <clipPath id="hScr"><rect x="58" y="32" width="124" height="220" rx="13"/></clipPath>
+        <mask id="hDotMask" maskUnits="userSpaceOnUse" x="0" y="0" width="240" height="280">
+          <path class="h-dots-mask" d="M121 250 L121 158" pathLength="100" stroke="#fff" stroke-width="8" fill="none"/>
+        </mask>
+      </defs>
+      <!-- world outside the phone, sketched -->
+      <g stroke="#8c8577" stroke-width="1.1" fill="none" stroke-linecap="round">
+        <path d="M6 168 H54 M186 166 H234"/>
+        <circle cx="26" cy="146" r="14"/><path d="M26 160 V170"/>
+        <circle cx="214" cy="140" r="17"/><path d="M214 157 V168"/>
+        <path d="M0 230 Q 40 222 54 226 M186 228 Q 210 224 240 232" stroke-dasharray="2 4"/>
+      </g>
+      <!-- phone -->
+      <rect x="50" y="18" width="140" height="248" rx="22" fill="#2a2824"/>
+      <g clip-path="url(#hScr)">
+        <rect x="58" y="32" width="124" height="220" fill="#e9e2cf"/>
+        <rect x="58" y="152" width="124" height="100" fill="#d9cdae"/>
+        <polygon points="96,252 148,252 124,153 118,153" fill="#f4eedf" stroke="#8c8577" stroke-width=".8"/>
+        <!-- mill building -->
+        <rect x="70" y="112" width="34" height="41" fill="#ebe3cf" stroke="#2a2824" stroke-width="1"/>
+        <path d="M66 113 L87 96 L108 113 Z" fill="#ddd2b6" stroke="#2a2824" stroke-width="1"/>
+        <rect x="83" y="133" width="8" height="20" fill="#ddd2b6" stroke="#2a2824" stroke-width=".8"/>
+        <circle cx="69" cy="140" r="11" fill="none" stroke="#2a2824" stroke-width="1"/>
+        <path d="M69 129 V151 M58 140 H80 M61 132 L77 148 M77 132 L61 148" stroke="#2a2824" stroke-width=".6"/>
+        <!-- trees -->
+        <circle cx="164" cy="132" r="15" fill="#ddd2b6" stroke="#57534a"/><path d="M164 147 V156" stroke="#57534a"/>
+        <circle cx="143" cy="142" r="8" fill="#ddd2b6" stroke="#57534a"/><path d="M143 150 V155" stroke="#57534a"/>
+        <!-- dotted tour route drawing up the path -->
+        <path class="h-dots" d="M121 250 L121 158" stroke="#cf4428" stroke-width="3.2" stroke-linecap="round" fill="none" mask="url(#hDotMask)"/>
+        <!-- AR pin -->
+        <g class="h-pin">
+          <path d="M100 116 C 96 110 92 106 92 101 A 8 8 0 1 1 108 101 C 108 106 104 110 100 116 Z" fill="#cf4428"/>
+          <circle cx="100" cy="101" r="3" fill="#fff"/>
+        </g>
+        <g class="h-label">
+          <rect x="94" y="64" width="80" height="22" rx="4" fill="#fff" stroke="#2a2824" stroke-width=".8"/>
+          <text x="100" y="74" font-family="Georgia, serif" font-size="8" font-weight="700" fill="#2a2824">The mill wheel</text>
+          <text x="100" y="82.5" font-family="system-ui, sans-serif" font-size="6.4" fill="#57534a">Turning since 1820</text>
+        </g>
+        <!-- AR photo -->
+        <g class="h-photo">
+          <rect x="132" y="176" width="40" height="38" fill="#fff" stroke="#2a2824" stroke-width=".8"/>
+          <rect x="135" y="179" width="34" height="25" fill="#c9bea3"/>
+          <path d="M135 204 L146 192 L153 198 L160 189 L169 204 Z" fill="#8c8577"/>
+          <circle cx="162" cy="184" r="2.6" fill="#f4eedf"/>
+          <text x="152" y="211" text-anchor="middle" font-family="Georgia, serif" font-size="5.4" font-style="italic" fill="#2a2824">here, 1910</text>
+        </g>
+      </g>
+      <rect x="104" y="24" width="32" height="4" rx="2" fill="#4a4740"/>
+    </svg>
+  </figure>
+</header>
+
+<!-- shared drawing parts of the visitor strip -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <clipPath id="vsScr"><rect x="31" y="16" width="68" height="146" rx="8"/></clipPath>
+    <g id="vsWorld" stroke="#8c8577" stroke-width="1" fill="none" stroke-linecap="round">
+      <path d="M2 112 H24 M106 110 H128"/>
+      <circle cx="12" cy="94" r="8.5"/><path d="M12 102.5 V112"/>
+      <circle cx="118" cy="88" r="10"/><path d="M118 98 V110"/>
+      <path d="M0 150 Q 14 146 24 148 M106 150 Q 118 146 130 152" stroke-dasharray="2 4"/>
+    </g>
+    <g id="vsBody">
+      <rect x="24" y="4" width="82" height="168" rx="15" fill="#2a2824"/>
+    </g>
+    <g id="vsScreen">
+      <rect x="31" y="16" width="68" height="146" fill="#e9e2cf"/>
+      <rect x="31" y="100" width="68" height="62" fill="#d9cdae"/>
+      <polygon points="54,162 80,162 68,101 64,101" fill="#f4eedf" stroke="#8c8577" stroke-width=".7"/>
+      <rect x="36" y="74" width="20" height="27" fill="#ebe3cf" stroke="#2a2824" stroke-width=".9"/>
+      <path d="M33.5 75 L46 64 L58.5 75 Z" fill="#ddd2b6" stroke="#2a2824" stroke-width=".9"/>
+      <rect x="43" y="88" width="5" height="13" fill="#ddd2b6" stroke="#2a2824" stroke-width=".6"/>
+      <circle cx="36" cy="92" r="7" fill="none" stroke="#2a2824" stroke-width=".9"/>
+      <path d="M36 85 V99 M29 92 H43 M31 87 L41 97 M41 87 L31 97" stroke="#2a2824" stroke-width=".5"/>
+      <circle cx="88" cy="86" r="10" fill="#ddd2b6" stroke="#57534a" stroke-width=".9"/><path d="M88 96 V102" stroke="#57534a"/>
+      <circle cx="75" cy="94" r="5" fill="#ddd2b6" stroke="#57534a" stroke-width=".8"/><path d="M75 99 V102" stroke="#57534a"/>
+    </g>
+    <g id="vsPinShape">
+      <path d="M52 70 C 48.5 65 45 61.5 45 57 A 7 7 0 1 1 59 57 C 59 61.5 55.5 65 52 70 Z" fill="#cf4428"/>
+      <circle cx="52" cy="57" r="2.6" fill="#fff"/>
+    </g>
+  </defs>
+</svg>
+
+<!-- ============ (b) WHAT A VISITOR SEES ============ -->
+<div class="route-rule" aria-hidden="true"></div>
+<section class="sec" id="visitor" aria-labelledby="visitorH">
+  <div class="sec-head">
+    <p class="kicker">On site, through the phone</p>
+    <h2 id="visitorH">What a visitor <em>sees.</em></h2>
+    <p class="sec-sub">The phone's camera shows the real place. Your stations appear in it, right where you put them.</p>
+  </div>
+  <ol class="strip" id="strip" aria-label="What a visitor sees, in four pictures">
+    <li><figure class="vs" data-i="0">
+      <div class="vs-art"><svg viewBox="0 0 130 176" role="img" aria-label="A phone pointed at a poster on a post; the phone says the tour was found">
+        <use href="#vsWorld"/><use href="#vsBody"/>
+        <g clip-path="url(#vsScr)">
+          <use href="#vsScreen"/>
+          <path d="M86 162 V130" stroke="#57534a" stroke-width="2.2"/>
+          <rect x="73" y="104" width="26" height="30" fill="#fff" stroke="#2a2824" stroke-width=".8"/>
+          <g id="vsQr"></g>
+          <path d="M69 106 V100 H75 M97 100 H103 V106 M103 132 V138 H97 M75 138 H69 V132" fill="none" stroke="#cf4428" stroke-width="1.6" stroke-linecap="round"/>
+          <rect class="fx-scan" x="71" y="103" width="30" height="1.6" fill="#cf4428"/>
+          <g class="fx-found">
+            <rect x="40" y="141" width="50" height="13" rx="6.5" fill="#cf4428"/>
+            <text x="65" y="149.8" text-anchor="middle" font-family="system-ui, sans-serif" font-size="6.4" font-weight="700" fill="#fff">Tour found</text>
+          </g>
+        </g>
+      </svg><div class="vs-bar"><i></i></div></div>
+      <figcaption><b><span class="n">1</span>Scan the poster</b>The tour opens in the browser. Nothing to install.</figcaption>
+    </figure></li>
+    <li><figure class="vs" data-i="1">
+      <div class="vs-art"><svg viewBox="0 0 130 176" role="img" aria-label="Through the phone, a dotted line leads along the path to the old mill">
+        <defs>
+          <mask id="vsDotMask" maskUnits="userSpaceOnUse" x="0" y="0" width="130" height="176">
+            <path class="fx-dots-mask" d="M66 160 C 66 136 60 116 47 103" pathLength="100" stroke="#fff" stroke-width="8" fill="none"/>
+          </mask>
+        </defs>
+        <use href="#vsWorld"/><use href="#vsBody"/>
+        <g clip-path="url(#vsScr)">
+          <use href="#vsScreen"/>
+          <path d="M66 160 C 66 136 60 116 47 103" stroke="#cf4428" stroke-width="2.8" stroke-linecap="round" fill="none" stroke-dasharray="0.1 6" mask="url(#vsDotMask)"/>
+          <g class="fx-next">
+            <rect x="33" y="24" width="64" height="14" rx="7" fill="#fff" stroke="#2a2824" stroke-width=".6"/>
+            <path d="M37.5 31 h4 m-1.6 -1.8 l1.8 1.8 l-1.8 1.8" fill="none" stroke="#cf4428" stroke-width=".9" stroke-linecap="round" stroke-linejoin="round"/>
+            <text x="44" y="33" font-family="system-ui, sans-serif" font-size="5.2" font-weight="600" fill="#2a2824">Next: The mill wheel</text>
+          </g>
+        </g>
+      </svg><div class="vs-bar"><i></i></div></div>
+      <figcaption><b><span class="n">2</span>Walk on</b>The phone shows the way to the next station.</figcaption>
+    </figure></li>
+    <li><figure class="vs" data-i="2">
+      <div class="vs-art"><svg viewBox="0 0 130 176" role="img" aria-label="A red pin appears over the old mill, with the label The mill wheel">
+        <use href="#vsWorld"/><use href="#vsBody"/>
+        <g clip-path="url(#vsScr)">
+          <use href="#vsScreen"/>
+          <g class="fx-pin"><use href="#vsPinShape"/></g>
+          <g class="fx-label">
+            <rect x="40" y="24" width="56" height="22" rx="3" fill="#fff" stroke="#2a2824" stroke-width=".7"/>
+            <text x="44.5" y="33" font-family="Georgia, serif" font-size="6.6" font-weight="700" fill="#2a2824">The mill wheel</text>
+            <text x="44.5" y="41" font-family="system-ui, sans-serif" font-size="5.2" fill="#57534a">Turning since 1820</text>
+          </g>
+        </g>
+      </svg><div class="vs-bar"><i></i></div></div>
+      <figcaption><b><span class="n">3</span>A station appears</b>Right where it happened, fixed to the place.</figcaption>
+    </figure></li>
+    <li><figure class="vs" data-i="3">
+      <div class="vs-art"><svg viewBox="0 0 130 176" role="img" aria-label="An old photo of the mill appears beside the path, with a text card below">
+        <use href="#vsWorld"/><use href="#vsBody"/>
+        <g clip-path="url(#vsScr)">
+          <use href="#vsScreen"/>
+          <use href="#vsPinShape"/>
+          <g transform="rotate(-6 75 112)"><g class="fx-photo">
+            <rect x="58" y="96" width="34" height="32" fill="#fff" stroke="#2a2824" stroke-width=".7"/>
+            <rect x="61" y="99" width="28" height="20" fill="#c9bea3"/>
+            <path d="M61 119 L69 109 L74 114 L80 106 L89 119 Z" fill="#8c8577"/>
+            <circle cx="83" cy="103" r="2.2" fill="#f4eedf"/>
+            <text x="75" y="125.5" text-anchor="middle" font-family="Georgia, serif" font-size="4.8" font-style="italic" fill="#2a2824">here, 1910</text>
+          </g></g>
+          <g class="fx-card">
+            <rect x="33" y="134" width="64" height="24" rx="3" fill="#fff" stroke="#2a2824" stroke-width=".7"/>
+            <text x="37" y="142.5" font-family="Georgia, serif" font-size="5" font-weight="700" fill="#2a2824">1 of 5 - The mill wheel</text>
+            <rect x="38" y="146" width="52" height="2" rx="1" fill="#c9bea3"/>
+            <rect x="38" y="151" width="38" height="2" rx="1" fill="#c9bea3"/>
+          </g>
+        </g>
+      </svg><div class="vs-bar"><i></i></div></div>
+      <figcaption><b><span class="n">4</span>Look closer</b>Text and photos, then and now. Then on to the next.</figcaption>
+    </figure></li>
+  </ol>
+  <div class="strip-foot">
+    <button class="btn" id="stripPause" type="button" aria-pressed="false">Pause</button>
+    <button class="btn ghost" id="exampleOpen2" aria-haspopup="dialog">See an example tour</button>
+    <p class="fine">Drawn pictures, not a recording.</p>
+  </div>
+</section>
+
+<!-- ============ (d) MAKE YOUR OWN TOUR ============ -->
+<section class="sec" id="make" aria-labelledby="makeH">
+  <div class="sec-head">
+    <p class="kicker">For guides, museums, teachers, towns</p>
+    <h2 id="makeH">Make your own tour, <em>in three steps.</em></h2>
+    <p class="sec-sub">No code, no sign-up, no account. The route below takes you through it, one short step at a time.</p>
+  </div>
+  <ol class="steps3">
+    <li class="step3">
+      <span class="badge">1</span>
+      <h3>Walk and place</h3>
+      <p>Take your phone to the place, walk the route you have in mind and tap to put each station where it belongs.</p>
+      <svg class="ic" viewBox="0 0 38 38" aria-hidden="true"><path d="M19 28 C 15 23.5 11.5 20 11.5 15.5 A 7.5 7.5 0 1 1 26.5 15.5 C 26.5 20 23 23.5 19 28 Z"/><circle cx="19" cy="15.5" r="2.8"/><path d="M6 34 h3 M13 34 h3 M20 34 h3 M27 34 h3"/></svg>
+    </li>
+    <li class="step3">
+      <span class="badge">2</span>
+      <h3>Add text and pictures</h3>
+      <p>Write what visitors should know at each station and add your photos. Change the words later, on a computer if you like.</p>
+      <svg class="ic" viewBox="0 0 38 38" aria-hidden="true"><rect x="4" y="6" width="19" height="16" rx="1.5"/><path d="M4 19 l6 -6 4 4 3 -3 6 6"/><path d="M27 9 h7 M27 14 h7 M27 19 h5 M4 28 h30 M4 33 h21"/></svg>
+    </li>
+    <li class="step3">
+      <span class="badge">3</span>
+      <h3>Share a code</h3>
+      <p>Print the tour's code and hang it where the walk begins. Visitors scan it, and the tour opens in their browser.</p>
+      <svg class="ic" viewBox="0 0 38 38" aria-hidden="true"><rect x="5" y="5" width="11" height="11"/><rect x="8.5" y="8.5" width="4" height="4"/><rect x="22" y="5" width="11" height="11"/><rect x="25.5" y="8.5" width="4" height="4"/><rect x="5" y="22" width="11" height="11"/><rect x="8.5" y="25.5" width="4" height="4"/><path d="M22 22 h4 v4 M30 22 h3 v4 M22 30 h4 M30 30 h3 v3 M26 33 h-4"/></svg>
+    </li>
+  </ol>
+  <div class="make-foot">
+    <p class="need"><b>Walking and placing need an Android phone with Chrome (AR support).</b> Choosing storage, printing and editing work on any computer.
+      <span class="ar-yes">This phone can do every step.</span>
+      <span class="ar-no">This device cannot show AR: do the first steps here and the walk on the phone.</span>
+    </p>
+    <div class="to-phone on-desktop"><span id="makeQr"></span><p>To carry on with a phone later, scan this: it opens this page there.</p></div>
+    <div class="make-cta">
+      <button class="btn primary" id="beginBtn2">Follow the route</button>
+      <span class="cta-note">Six steps, then your walk.</span>
+    </div>
+  </div>
+</section>
+<div class="route-rule" aria-hidden="true"></div>
+
+
+<!-- ============ STAGE ============ -->
+<main class="stage" id="stage">
+  <div class="map-pane" id="mapPane">
+    <div class="map-head">
+      <span class="map-title">Mill Park<i>your tour route</i></span>
+      <svg class="scale" viewBox="0 0 74 14" aria-label="Scale: 25 metres">
+        <rect x="1" y="3" width="18" height="3.4" fill="#2a2824"/>
+        <rect x="19" y="3" width="18" height="3.4" fill="none" stroke="#2a2824" stroke-width=".9"/>
+        <text x="1" y="13" font-family="system-ui,sans-serif" font-size="6" fill="#57534a">0</text>
+        <text x="37" y="13" text-anchor="middle" font-family="system-ui,sans-serif" font-size="6" fill="#57534a">25 m</text>
+        <path d="M60 12 L64 2 L68 12 L64 9.5 Z" fill="#2a2824"/>
+      </svg>
+    </div>
+    <div class="map-frame">
+      <svg id="map" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Illustrated map of a park with a tour route and six stations">
+        <defs>
+          <pattern id="grid" width="25" height="25" patternUnits="userSpaceOnUse">
+            <path d="M25 0 H0 V25" fill="none" stroke="#c9bea3" stroke-width=".45" opacity=".7"/>
+          </pattern>
+          <pattern id="hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="4" stroke="#57534a" stroke-width=".7" opacity=".55"/>
+          </pattern>
+          <pattern id="paving" width="9" height="9" patternUnits="userSpaceOnUse">
+            <rect x=".6" y=".6" width="7.8" height="7.8" fill="none" stroke="#c9bea3" stroke-width=".6"/>
+          </pattern>
+          <g id="tree">
+            <circle r="7" fill="#ddd2b6" stroke="#57534a" stroke-width=".75"/>
+            <path d="M-3.6 -1.5 A4.2 4.2 0 0 1 1.5 -4.2 M-1 3 A3 3 0 0 0 3.6 0.6" fill="none" stroke="#57534a" stroke-width=".55"/>
+            <circle r=".9" fill="#57534a"/>
+          </g>
+          <mask id="routeMask" maskUnits="userSpaceOnUse" x="-50" y="-50" width="500" height="400">
+            <path id="routeReveal" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
+          </mask>
+        </defs>
+
+        <!-- paper, extended beyond the viewBox so letterboxing still looks like map -->
+        <rect x="-400" y="-300" width="1200" height="900" fill="#f4eedf"/>
+        <rect x="-400" y="-300" width="1200" height="900" fill="url(#grid)"/>
+
+        <!-- stream -->
+        <path d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360" fill="none" stroke="#8c8577" stroke-width="8.5"/>
+        <path d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360" fill="none" stroke="#ebe3cf" stroke-width="6.6"/>
+        <path d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360" fill="none" stroke="#8c8577" stroke-width=".5" stroke-dasharray="5 7"/>
+        <text class="lbl-place" transform="translate(5 228) rotate(-82)">Mill Stream</text>
+
+        <!-- road -->
+        <path id="lane" d="M-60 286 C 120 274 280 292 460 268" fill="none" stroke="#57534a" stroke-width="22"/>
+        <path d="M-60 286 C 120 274 280 292 460 268" fill="none" stroke="#ebe3cf" stroke-width="20"/>
+        <text class="lbl-road"><textPath href="#lane" startOffset="47%">MILL LANE</textPath></text>
+
+        <!-- footpaths (cased) -->
+        <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <g stroke="#8c8577" stroke-width="10">
+            <path id="pathMain"/>
+            <path d="M58 262 L58 284"/>
+            <path d="M226 212 C 232 240 240 258 246 284"/>
+            <path d="M286 46 C 292 26 298 10 302 -20"/>
+            <path d="M222 132 C 222 160 226 190 226 212"/>
+            <path d="M150 106 L162 106"/>
+          </g>
+          <g stroke="#f4eedf" stroke-width="8.2">
+            <path id="pathMainIn"/>
+            <path d="M58 262 L58 284"/>
+            <path d="M226 212 C 232 240 240 258 246 284"/>
+            <path d="M286 46 C 292 26 298 10 302 -20"/>
+            <path d="M222 132 C 222 160 226 190 226 212"/>
+            <path d="M150 106 L162 106"/>
+          </g>
+        </g>
+
+        <!-- old mill building -->
+        <rect x="22" y="26" width="128" height="94" fill="#ddd2b6"/>
+        <rect x="22" y="26" width="128" height="94" fill="url(#hatch)" stroke="#2a2824" stroke-width="1.3"/>
+        <rect x="30" y="34" width="112" height="78" fill="none" stroke="#2a2824" stroke-width=".5"/>
+        <text class="lbl-caps" x="86" y="76" text-anchor="middle">OLD MILL</text>
+        <g transform="translate(16 74)">
+          <circle r="10" fill="#f4eedf" stroke="#2a2824" stroke-width="1.1"/>
+          <path d="M0 -10 V10 M-10 0 H10 M-7 -7 L7 7 M7 -7 L-7 7" stroke="#2a2824" stroke-width=".6"/>
+          <circle r="2" fill="#2a2824"/>
+        </g>
+
+        <!-- courtyard -->
+        <rect x="172" y="40" width="100" height="92" fill="#ebe3cf"/>
+        <rect x="172" y="40" width="100" height="92" fill="url(#paving)" stroke="#57534a" stroke-width=".9" stroke-dasharray="4 2"/>
+        <circle cx="216" cy="104" r="9.5" fill="#f4eedf" stroke="#2a2824" stroke-width="1"/>
+        <circle cx="216" cy="104" r="4" fill="none" stroke="#2a2824" stroke-width=".7"/>
+        <circle cx="216" cy="104" r="1.2" fill="#2a2824"/>
+        <rect x="248" y="112" width="12" height="12" fill="#ddd2b6" stroke="#57534a" stroke-width=".6"/>
+        <rect x="184" y="112" width="12" height="12" fill="#ddd2b6" stroke="#57534a" stroke-width=".6"/>
+        <text class="lbl-place" x="216" y="127" text-anchor="middle">Courtyard</text>
+
+        <!-- pond -->
+        <ellipse cx="316" cy="140" rx="21" ry="12.5" fill="#ebe3cf" stroke="#57534a" stroke-width=".9"/>
+        <path d="M304 137 q4 -2 8 0 t8 0 M310 144 q4 -2 8 0 t8 0" fill="none" stroke="#8c8577" stroke-width=".6"/>
+        <text class="lbl-place" x="312" y="178" text-anchor="middle">Mill Park</text>
+
+        <!-- trees -->
+        <g id="trees"></g>
+
+        <!-- benches -->
+        <g fill="#57534a">
+          <rect x="246" y="199" width="9" height="2.4" transform="rotate(-6 250 200)"/>
+          <rect x="374" y="96" width="2.4" height="9"/>
+          <rect x="140" y="222" width="9" height="2.4" transform="rotate(8 144 223)"/>
+        </g>
+
+        <!-- viewpoint -->
+        <g transform="translate(38 246)">
+          <path d="M0 -6 L5.5 4 H-5.5 Z" fill="none" stroke="#2a2824" stroke-width=".9"/>
+          <text class="lbl-place" x="0" y="-9" text-anchor="middle">Viewpoint</text>
+        </g>
+
+        <!-- compass -->
+        <g transform="translate(382 236)">
+          <circle r="9" fill="none" stroke="#8c8577" stroke-width=".6"/>
+          <path d="M0 -12 L3 0 L0 -2 L-3 0 Z" fill="#2a2824"/>
+          <path d="M0 12 L3 0 L0 2 L-3 0 Z" fill="none" stroke="#2a2824" stroke-width=".6"/>
+          <text x="0" y="-14.5" text-anchor="middle" font-family="Georgia,serif" font-size="6.5" font-weight="700" fill="#2a2824">N</text>
+        </g>
+
+        <!-- the tour route: faint plan + dotted line revealed by the mask -->
+        <path id="routeGhost" fill="none" stroke="#2a2824" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="0.1 7" opacity=".22"/>
+        <path id="route" fill="none" stroke="#cf4428" stroke-width="3.6" stroke-linecap="round" stroke-dasharray="0.1 7" mask="url(#routeMask)"/>
+
+        <!-- content created in AR -->
+        <g id="places"></g>
+
+        <!-- start point: the poster -->
+        <g id="start" transform="translate(157 92)">
+          <circle class="halo" cx="0" cy="0" r="11"/>
+          <rect class="empty" x="-7" y="-8.5" width="14" height="17" rx="1"/>
+          <g class="qrmini" id="startQr"></g>
+          <g class="tack"><circle cx="0" cy="-8.5" r="2.4" fill="#cf4428" stroke="#fff" stroke-width=".7"/></g>
+          <text class="lbl-start" x="0" y="-14" text-anchor="middle" id="startLabel">Start: your poster</text>
+        </g>
+
+        <!-- end flag -->
+        <g id="endFlag">
+          <path d="M0 0 V-18" stroke="#2a2824" stroke-width="1.1"/>
+          <path d="M0 -18 L11 -14 L0 -10 Z" fill="#cf4428"/>
+        </g>
+
+        <!-- station markers -->
+        <g id="stations"></g>
+
+        <!-- walker -->
+        <g id="walker">
+          <circle r="5.4" fill="#2a2824" stroke="#fff" stroke-width="1.4"/>
+          <rect x="-1.6" y="-2.6" width="3.2" height="5.2" rx=".7" fill="#fff"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <div class="card-pane" id="cardPane">
+    <div class="card" id="card">
+      <div class="card-top">
+        <span class="badge" id="badge">1</span>
+        <span class="of" id="ofLabel">Station 1 of 6</span>
+        <nav class="dots" id="dots" aria-label="Stations"></nav>
+      </div>
+
+      <!-- Station 1 -->
+      <section class="panel" data-st="1">
+        <h2 tabindex="-1">Where will your tour live?</h2>
+        <p class="sub">Your tour is one small zip file in your own storage. Visitors' phones load it from there; once it has loaded, it keeps working without signal.</p>
+        <div class="tiles" role="group" aria-label="Storage options">
+          <button class="tile" data-p="drive" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M8 3h8l6 11-4 7H6l-4-7z"/><path d="M8 3l6 11H2M16 3l-8 18M14 14h8"/></svg>Google Drive</button>
+          <button class="tile" data-p="dropbox" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M3 8l9-4 9 4-9 4z"/><path d="M3 8v8l9 4 9-4V8M12 12v8"/></svg>Dropbox</button>
+          <button class="tile" data-p="onedrive" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M7 18h11a4 4 0 0 0 .5-8 6 6 0 0 0-11.3-1.6A4.8 4.8 0 0 0 7 18z"/></svg>OneDrive</button>
+          <button class="tile" data-p="github" aria-pressed="false"><svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 7.2v9.6M18 10.2c0 4-6 3-11 6.8"/></svg>GitHub</button>
+          <button class="tile" data-p="server" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6"/></svg>Your own server</button>
+        </div>
+        <div class="instr" id="instr" hidden>
+          <h3 id="instrTitle"></h3>
+          <ol id="instrSteps"></ol>
+          <pre id="instrCode" hidden></pre>
+          <button class="btn" id="zipBtn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Download empty starter zip</button>
+          <p class="fine">An empty tour, about 3 KB. You fill it later, on site.</p>
+        </div>
+      </section>
+
+      <!-- Station 2 -->
+      <section class="panel" data-st="2" hidden>
+        <h2 tabindex="-1">Paste your tour's share link</h2>
+        <p class="sub">This is the address your printed code will point to.</p>
+        <label class="field"><span>Share link to your tour file</span>
+          <input id="linkIn" type="url" inputmode="url" placeholder="https://" autocomplete="off" spellcheck="false">
+        </label>
+        <div class="row">
+          <button class="btn primary" id="checkBtn">Check link</button>
+          <button class="linkish" id="exampleBtn">Use an example link</button>
+          <button class="linkish" id="laterBtn">Try one not uploaded yet</button>
+        </div>
+        <div class="result" id="linkResult" role="status" aria-live="polite"></div>
+      </section>
+
+      <!-- Station 3 -->
+      <section class="panel" data-st="3" hidden>
+        <h2 tabindex="-1">Print your posters</h2>
+        <p class="sub">One code per poster. Hang one wherever a walk can begin.</p>
+        <div class="controls">
+          <div>
+            <span class="ctl-l" id="countLbl">Posters to print</span>
+            <div class="stepper" role="group" aria-labelledby="countLbl">
+              <button id="minusBtn" aria-label="Fewer posters">&minus;</button>
+              <output id="countOut">3</output>
+              <button id="plusBtn" aria-label="More posters">+</button>
+            </div>
+          </div>
+          <div>
+            <label class="ctl-l" for="sizeIn">Printed code size</label>
+            <div class="size"><input type="range" id="sizeIn" min="8" max="30" step="1" value="16"><output id="sizeOut">16 cm</output></div>
+            <p class="fine" id="sizeNote"></p>
+          </div>
+        </div>
+        <div class="qr-grid" id="qrGrid" aria-label="Poster preview"></div>
+        <button class="btn primary wide" id="pdfBtn">Download PDF</button>
+        <p class="hint"><b>Print at 100 %</b> ("actual size"), not "fit to page". The phone uses the code's real size to place your content exactly.</p>
+      </section>
+
+      <!-- Station 4 -->
+      <section class="panel" data-st="4" hidden>
+        <h2 tabindex="-1">Hang it where the tour starts</h2>
+        <p class="sub">The poster is the tour's anchor. Visitors begin here, so put it where the walk begins. On the map, that is the start.</p>
+        <figure class="wall" id="wallFig" style="margin:0" aria-hidden="true">
+          <svg viewBox="0 0 280 160">
+            <defs>
+              <pattern id="brick" width="24" height="12" patternUnits="userSpaceOnUse">
+                <path d="M0 12 H24 M0 6 H24 M6 0 V6 M18 6 V12" stroke="#c9bea3" stroke-width=".8" fill="none"/>
+              </pattern>
+            </defs>
+            <rect width="280" height="136" fill="#ebe3cf"/>
+            <rect width="280" height="136" fill="url(#brick)"/>
+            <rect y="136" width="280" height="24" fill="#ddd2b6"/>
+            <path d="M0 136 H280" stroke="#2a2824" stroke-width="1.2"/>
+            <g class="poster">
+              <rect x="116" y="38" width="46" height="58" fill="#fff" stroke="#2a2824" stroke-width="1"/>
+              <g id="wallQr"></g>
+              <text x="139" y="90" text-anchor="middle" font-family="system-ui,sans-serif" font-size="5" fill="#2a2824">Scan to start</text>
+              <circle cx="120" cy="41" r="1.8" fill="#cf4428"/><circle cx="158" cy="41" r="1.8" fill="#cf4428"/>
+            </g>
+            <!-- height marker -->
+            <g stroke="#cf4428" stroke-width="1" fill="#cf4428">
+              <path d="M98 136 V68" fill="none"/>
+              <path d="M98 66 l-3 5 h6 z" stroke="none"/>
+              <path d="M94 67 H112" fill="none" stroke-dasharray="2 2"/>
+            </g>
+            <text x="92" y="104" text-anchor="end" font-family="Georgia,serif" font-style="italic" font-size="9" fill="#cf4428">about</text>
+            <text x="92" y="115" text-anchor="end" font-family="Georgia,serif" font-style="italic" font-size="9" fill="#cf4428">1.3 m</text>
+            <!-- person for scale -->
+            <g fill="none" stroke="#57534a" stroke-width="1.6" stroke-linecap="round">
+              <circle cx="214" cy="56" r="8"/>
+              <path d="M214 64 V102 M214 102 L206 136 M214 102 L222 136 M214 74 L202 94 M214 74 L224 84 L216 78"/>
+            </g>
+          </svg>
+        </figure>
+        <ul class="checks">
+          <li>Flat surface: not curved, not behind glass</li>
+          <li>Chest height, about 1.3 m</li>
+          <li>Good light, out of the rain</li>
+          <li>Somewhere people naturally stop</li>
+        </ul>
+        <button class="btn primary wide" id="hungBtn">It's on the wall</button>
+      </section>
+
+      <!-- Station 5 -->
+      <section class="panel" data-st="5" hidden>
+        <h2 tabindex="-1">Create it on site, in AR</h2>
+        <p class="sub">Take your phone to the poster. The tour is made by walking it.</p>
+        <div class="scan-demo" aria-hidden="true">
+          <svg viewBox="0 0 260 124">
+            <rect x="0" y="0" width="260" height="124" fill="#ebe3cf" rx="8"/>
+            <rect x="34" y="14" width="66" height="84" fill="#fff" stroke="#2a2824"/>
+            <g id="demoQr"></g>
+            <text x="67" y="91" text-anchor="middle" font-family="system-ui,sans-serif" font-size="6" fill="#2a2824">Scan to start</text>
+            <g class="sd-pin">
+              <path d="M146 64 C 142 58 138 54 138 49 A 8 8 0 1 1 154 49 C 154 54 150 58 146 64 Z" fill="#cf4428"/>
+              <circle cx="146" cy="49" r="3" fill="#fff"/>
+            </g>
+            <path d="M120 106 Q 160 96 200 104 T 250 100" fill="none" stroke="#cf4428" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="0.1 6"/>
+            <g class="sd-phone">
+              <rect x="44" y="8" width="46" height="92" rx="6" fill="none" stroke="#2a2824" stroke-width="8"/>
+              <rect x="44" y="12" width="46" height="84" rx="4" fill="#f4eedf" fill-opacity=".22"/>
+              <rect class="sd-scan" x="44" y="22" width="46" height="2" fill="#cf4428"/>
+              <g class="sd-ok">
+                <rect x="47" y="76" width="40" height="13" rx="6.5" fill="#cf4428"/>
+                <text x="67" y="85" text-anchor="middle" font-family="system-ui,sans-serif" font-size="6.4" font-weight="700" fill="#fff">Found</text>
+              </g>
+            </g>
+          </svg>
+        </div>
+        <ol class="steps">
+          <li><b>Scan the poster</b> so the phone knows exactly where it is.</li>
+          <li><b>Walk the route</b> you have in mind.</li>
+          <li><b>Tap to place</b> text pins and photos where they belong.</li>
+        </ol>
+        <button class="btn primary wide" id="createBtn">Start creating</button>
+        <div class="result" id="createStatus" role="status" aria-live="polite"></div>
+        <div class="on-desktop">
+          <span id="phoneQr"></span>
+          <p>This device cannot show AR, so the button above only shows what happens on the phone. Scan this to carry on there, on Android with Chrome.</p>
+        </div>
+      </section>
+
+      <!-- Station 6 -->
+      <section class="panel" data-st="6" hidden>
+        <h2 tabindex="-1">Put the saved tour in place</h2>
+        <p class="sub">The updated tour zip is on your phone. Put it back where the starter was:</p>
+        <div class="replace" id="replaceBox"></div>
+        <p class="keep"><b>The link and the printed code stay the same.</b> Come back any time to add more. Nothing to reprint.</p>
+        <div class="row">
+          <button class="btn primary" id="previewBtn">Walk it as a visitor</button>
+          <button class="btn" id="againBtn">Start over</button>
+        </div>
+      </section>
+
+      <div class="card-foot">
+        <button class="btn ghost" id="backBtn">Back</button>
+        <button class="btn ink" id="nextBtn">Next</button>
+      </div>
+    </div>
+    <p class="pane-note">Prototype: nothing here is uploaded, saved or sent.</p>
+  </div>
+</main>
+
+<!-- ============ RETURNING CREATORS (as on the current page, shortened) ============ -->
+<section class="have" aria-labelledby="haveH">
+  <h2 id="haveH">You already have a tour?</h2>
+  <p class="ar-no">On a computer, open it in the editor to change its words and pictures.</p>
+  <p class="ar-yes">Play it from this phone, or carry on setting it up.</p>
+  <div class="row">
+    <button class="btn ar-no" data-toast="Would open the editor (edit.html).">Open the editor</button>
+    <button class="btn ar-yes" data-toast="Would open a tour saved on this phone.">Play it</button>
+    <button class="btn ghost ar-yes" data-toast="Would continue at the step you left.">Continue setting it up</button>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="row">
+    <button class="linkish" data-toast="Would open the legal notice.">Legal notice</button>
+    <button class="linkish" data-toast="Would open the privacy page.">Privacy</button>
+    <a href="../../">The real tour page</a>
+  </div>
+  <details class="notes" id="notes">
+    <summary>Notes on this prototype</summary>
+    <div class="notes-in">
+      <h4>Direction</h4>
+      <p>The current setup page in its light paper look, extended rather than replaced: the intro picture moves again, a looping strip shows what a visitor sees, "See an example" opens the made-up Mill Park tour, and a calm three-step "Make your own tour" path leads into the unchanged six-step route.</p>
+      <h4>Why it should work for this audience</h4>
+      <p>A guide, a teacher or a town office never has to leave the page they would build on: first what it is (the intro and the strip), then a finished example to look at, then three plain steps in their own words, then the route that does it. Nothing here asks the reader to know what AR or a QR code is before they see one.</p>
+      <h4>Load-bearing details (check a build against these)</h4>
+      <ul>
+        <li>Intro art: the L5 keyframes hPin, hLabel, hPhoto, hDots, one 7 s loop; transform-box fill-box, origin 50% 100%. The current app has the classes but no rules for them, so its picture stands still.</li>
+        <li>Reduced motion: no autoplay anywhere. The intro shows its final frame (pin, label, photo tilted -6 degrees, route drawn); the strip shows all four frames side by side, unlit, with no progress bar; the preview's walk button is hidden.</li>
+        <li>Strip: 2 x 2 frames on a phone, 4 in a row from 720 px or in landscape; one active frame at a time, 3.2 s each (?frame= changes it), the others at 60% opacity; it pauses off screen and when the tab is hidden, and has a Pause button.</li>
+        <li>Spacing set here, not inherited: lede 10 px, requirement line 16 px, reasons 20 px below; sections 46 px on top, 18 px side gutter; step cards 16 px apart with a dotted route behind them.</li>
+        <li>Copy: the Android line sits directly under the lede, before the reasons; the four reasons are the current page's honest ones.</li>
+        <li>The example map is the stage map itself, cloned, so the two can never drift apart.</li>
+      </ul>
+      <h4>Measured cost (desktop, a loaded machine; not phone numbers)</h4>
+      <ul id="notesCost">
+        <li>JS: all inline, 38.6 kB, 11.8 kB gzip; no library, no CDN, no WebGL. The whole page is 114 kB, 30.2 kB gzip.</li>
+        <li>Frames at 390 x 844 in headless Chromium on a loaded desktop: 5 s idle and 5 s scroll, worst frame 17 ms. With the CPU slowed 4 times, 50 to 67 ms for single frames; 6 times, 50 to 100 ms, with one run at 150 ms. One long frame right after load (170 to 650 ms) also appears with the unchanged L5 page. Not phone numbers.</li>
+      </ul>
+      <h4>Known weaknesses</h4>
+      <ul>
+        <li>The page gets long: on a phone the route starts about three and a half screens down. The hero button skips straight to it.</li>
+        <li>The three plain steps are not the setup order (the poster is printed before the walk in the route); they describe what a maker does, not the order the route does it in.</li>
+        <li>No 3D: AR is explained by drawings only. If a first-time visitor needs to see depth to "get" AR, this variant cannot show it.</li>
+        <li>On a phone in portrait, the moving intro picture sits below the first screen, as in L5.</li>
+      </ul>
+      <h4>Parameters it rests on</h4>
+      <ul>
+        <li>Strip frame length 3.2 s. At 2.4 s the label and the card finish only about half a second before the next frame lights, too quick to read; at 4.5 s it reads calmly, but one round takes 18 s.</li>
+        <li>Intro loop 7 s, as in L5.</li>
+        <li>First screen: at 390 x 844 the Android line ends at 335 px and the first button at 515 px; at 360 x 740, 358 and 539 px. In landscape (844 x 390) the button ends at 383 px of 390: a landscape screen under about 385 px tall pushes it below the first screen.</li>
+      </ul>
+    </div>
+  </details>
+</footer>
+
+<!-- ============ (c) SEE AN EXAMPLE ============ -->
+<dialog class="ex" id="exDlg" aria-labelledby="exH">
+  <div class="ex-top">
+    <h2 id="exH">Mill Park<i>A made-up example tour: 5 stations, a short walk</i></h2>
+    <button class="btn" id="exClose" type="button">Close</button>
+  </div>
+  <div class="ex-body">
+    <div class="ex-map"><div class="map-frame" id="exFrame"></div></div>
+    <div class="ex-side">
+      <ol class="ex-list" id="exList" aria-label="Stations"></ol>
+      <article class="ex-card" id="exCard" aria-live="polite">
+        <p class="ex-k" id="exK">Station 1 of 5</p>
+        <h3 id="exTitle"></h3>
+        <div class="ex-row"><span id="exPic"></span><p id="exText"></p></div>
+        <p class="ex-holds" id="exHolds"></p>
+      </article>
+      <div class="ex-nav">
+        <button class="btn ghost" id="exPrev" type="button">Back</button>
+        <button class="btn ink" id="exNext" type="button">Next station</button>
+      </div>
+      <div class="ex-act">
+        <div class="row">
+          <button class="btn primary ar-yes" type="button" data-toast="Would open the tour. On site you start at its poster.">Walk it in AR</button>
+          <button class="btn" id="exPlay" type="button">Play the walk on the map</button>
+        </div>
+        <p class="fine ar-no">Walking it needs an Android phone with Chrome. Here you can look at its route and stations.</p>
+        <p class="fine">This is what a visitor's tour holds. Yours is made the same way, in the six steps on this page.</p>
+        <button class="btn ghost" id="exMake" type="button">Make one like it</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+
+<script>
+(function () {
+  'use strict';
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var wideMQ = window.matchMedia('(orientation: landscape) and (min-width: 640px), (min-width: 1024px)');
+  var $ = function (s) { return document.querySelector(s); };
+  var $$ = function (s) { return Array.prototype.slice.call(document.querySelectorAll(s)); };
+  var NS = 'http://www.w3.org/2000/svg';
+
+  /* ---------- fake QR (deterministic pattern, not a real code) ---------- */
+  function rng(seed) {
+    var s = (seed >>> 0) || 123456789;
+    return function () { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+  }
+  function hash(str) { var h = 2166136261; for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  function qrPath(seed, n) {
+    n = n || 21;
+    var r = rng(Math.imul(seed + 1, 2654435761));
+    var d = '';
+    function finder(x, y) { return (x < 8 && y < 8) || (x > n - 9 && y < 8) || (x < 8 && y > n - 9); }
+    for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) {
+      if (!finder(x, y) && r() < 0.47) d += 'M' + x + ' ' + y + 'h1v1h-1z';
+    }
+    [[0, 0], [n - 7, 0], [0, n - 7]].forEach(function (f) {
+      var fx = f[0], fy = f[1];
+      d += 'M' + fx + ' ' + fy + 'h7v7h-7z' + 'M' + (fx + 1) + ' ' + (fy + 1) + 'v5h5v-5z' + 'M' + (fx + 2) + ' ' + (fy + 2) + 'h3v3h-3z';
+    });
+    return d;
+  }
+  function qrSvg(seed, cls) {
+    return '<svg class="' + (cls || 'qr') + '" viewBox="-2 -2 25 25" aria-hidden="true"><rect x="-2" y="-2" width="25" height="25" fill="#fff"/><path d="' + qrPath(seed) + '" fill="currentColor" fill-rule="evenodd"/></svg>';
+  }
+  function qrNested(seed, x, y, size) {
+    return '<svg x="' + x + '" y="' + y + '" width="' + size + '" height="' + size + '" viewBox="-2 -2 25 25"><rect x="-2" y="-2" width="25" height="25" fill="#fff"/><path d="' + qrPath(seed) + '" fill="#2a2824" fill-rule="evenodd"/></svg>';
+  }
+
+  /* ---------- toast ---------- */
+  var toastEl = $('#toast'), toastT;
+  function toast(msg) {
+    toastEl.textContent = msg; toastEl.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(function () { toastEl.classList.remove('show'); }, 2800);
+  }
+
+  /* ---------- map geometry ---------- */
+  var ROUTE = 'M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262';
+  ['#route', '#routeGhost', '#routeReveal', '#pathMain', '#pathMainIn'].forEach(function (s) { $(s).setAttribute('d', ROUTE); });
+  var route = $('#route'), reveal = $('#routeReveal');
+  var L = route.getTotalLength();
+  reveal.style.strokeDasharray = L + ' ' + L;
+  reveal.style.transition = 'none';
+  reveal.style.strokeDashoffset = L;
+  function pointAt(f) { return route.getPointAtLength(Math.max(0, Math.min(1, f)) * L); }
+  function drawTo(f, instant) {
+    if (instant || reduced) {
+      reveal.style.transition = 'none';
+      reveal.style.strokeDashoffset = L * (1 - f);
+      void reveal.getBoundingClientRect();
+      reveal.style.transition = '';
+    } else {
+      reveal.style.transition = '';
+      reveal.style.strokeDashoffset = L * (1 - f);
+    }
+  }
+
+  // trees, placed by hand off the paths
+  var TREES = [
+    [300, 72, 1], [322, 66, .85], [344, 82, 1.05], [300, 98, .8], [282, 122, .9], [296, 168, .8], [270, 160, 1], [250, 180, .85], [270, 190, .7],
+    [190, 18, 1], [214, 14, .85], [240, 22, 1], [262, 12, .8], [318, 18, 1.05], [340, 24, .8], [362, 16, 1], [386, 34, .9], [392, 64, .8],
+    [390, 122, 1], [394, 152, .8], [386, 190, .9], [368, 214, 1], [392, 210, .7],
+    [300, 242, .9], [320, 234, .8], [276, 246, .75], [190, 242, 1], [166, 250, .8], [140, 240, .9], [100, 242, .85],
+    [36, 146, 1], [60, 160, .85], [90, 150, 1], [120, 160, .8], [48, 186, .9], [80, 182, .8], [184, 156, .9], [196, 180, .75], [158, 140, .7], [150, 174, .85]
+  ];
+  var treesG = $('#trees');
+  TREES.forEach(function (t) {
+    var u = document.createElementNS(NS, 'use');
+    u.setAttribute('href', '#tree');
+    u.setAttribute('transform', 'translate(' + t[0] + ' ' + t[1] + ') scale(' + t[2] + ')');
+    treesG.appendChild(u);
+  });
+
+  // stations
+  var STATIONS = [
+    { name: 'Storage', full: 'Choose storage', f: 0.085, dx: 0, dy: 21, a: 'middle' },
+    { name: 'Link', full: 'Paste the link', f: 0.24, dx: 0, dy: -14, a: 'middle' },
+    { name: 'Print', full: 'Print posters', f: 0.40, dx: -14, dy: 3, a: 'end' },
+    { name: 'Hang', full: 'Hang the poster', f: 0.565, dx: -14, dy: 3, a: 'end' },
+    { name: 'Create', full: 'Create in AR', f: 0.745, dx: 0, dy: 21, a: 'middle' },
+    { name: 'Done', full: 'Done', f: 1, dx: 13, dy: 3, a: 'start' }
+  ];
+  var stG = $('#stations');
+  var markers = STATIONS.map(function (s, i) {
+    var p = pointAt(s.f);
+    var g = document.createElementNS(NS, 'g');
+    g.setAttribute('class', 'st');
+    g.setAttribute('transform', 'translate(' + p.x.toFixed(1) + ' ' + p.y.toFixed(1) + ')');
+    g.setAttribute('role', 'button');
+    g.setAttribute('tabindex', '0');
+    g.setAttribute('aria-label', 'Station ' + (i + 1) + ': ' + s.full);
+    g.innerHTML = '<circle class="ring" r="9"/><circle class="dot" r="9"/><text class="num">' + (i + 1) + '</text>' +
+      '<text class="lbl" x="' + s.dx + '" y="' + s.dy + '" text-anchor="' + s.a + '">' + s.name + '</text>';
+    g.addEventListener('click', function () { goTo(i + 1, { scroll: true }); });
+    g.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goTo(i + 1, { scroll: true }); } });
+    stG.appendChild(g);
+    return g;
+  });
+
+  // end flag at the route's end
+  var endP = pointAt(1);
+  $('#endFlag').setAttribute('transform', 'translate(' + (endP.x + 6) + ' ' + (endP.y - 6) + ')');
+
+  // content placed in AR (pins + photos), offset sideways from the route
+  var PLACES = [
+    { f: 0.15, t: 'pin', side: -1 }, { f: 0.31, t: 'photo', side: 1 }, { f: 0.48, t: 'pin', side: 1 },
+    { f: 0.66, t: 'photo', side: -1 }, { f: 0.84, t: 'pin', side: 1 }, { f: 0.93, t: 'photo', side: 1 }
+  ];
+  var placesG = $('#places');
+  var placeEls = PLACES.map(function (pl) {
+    var a = pointAt(pl.f - 0.004), b = pointAt(pl.f + 0.004), p = pointAt(pl.f);
+    var dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+    var nx = -dy / len * pl.side, ny = dx / len * pl.side;
+    var x = p.x + nx * 13, y = p.y + ny * 13;
+    var g = document.createElementNS(NS, 'g');
+    g.setAttribute('class', 'place');
+    g.setAttribute('transform', 'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ')');
+    var inner = pl.t === 'pin'
+      ? '<path d="M0 0 C -3 -4 -5.5 -7 -5.5 -10.5 A5.5 5.5 0 1 1 5.5 -10.5 C 5.5 -7 3 -4 0 0 Z" fill="#cf4428" stroke="#fff" stroke-width=".6"/><circle cy="-10.5" r="2" fill="#fff"/>'
+      : '<g transform="rotate(' + (pl.side * 6) + ')"><rect x="-7.5" y="-15" width="15" height="14" fill="#fff" stroke="#2a2824" stroke-width=".7"/><rect x="-6" y="-13.5" width="12" height="8.5" fill="#c9bea3"/><path d="M-6 -5 L-2 -10 L1 -7.5 L3 -10 L6 -5 Z" fill="#8c8577"/></g>';
+    g.innerHTML = '<g class="place-inner">' + inner + '</g>';
+    g.dataset.l = String(pl.f * L);
+    placesG.appendChild(g);
+    return g;
+  });
+  function showPlaces(on) { placeEls.forEach(function (g) { g.classList.toggle('on', on); }); }
+
+  // start poster QR + other code illustrations
+  $('#startQr').innerHTML = qrNested(7, -5.5, -6.5, 11);
+  $('#wallQr').innerHTML = qrNested(7, 123, 45, 32);
+  $('#demoQr').innerHTML = qrNested(7, 41, 20, 52);
+  $('#phoneQr').innerHTML = qrSvg(99);
+
+  var walker = $('#walker');
+  function walk(duration, onStep, done) {
+    if (reduced) { onStep(L); if (done) done(); return; }
+    walker.classList.add('on');
+    var t0 = performance.now();
+    function frame(t) {
+      var k = Math.min(1, (t - t0) / duration);
+      var e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      var l = e * L, p = route.getPointAtLength(l);
+      walker.setAttribute('transform', 'translate(' + p.x.toFixed(1) + ' ' + p.y.toFixed(1) + ')');
+      onStep(l);
+      if (k < 1) requestAnimationFrame(frame);
+      else { setTimeout(function () { walker.classList.remove('on'); }, 500); if (done) done(); }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------- providers ---------- */
+  var P = {
+    drive: {
+      name: 'Google Drive',
+      steps: ['Download the empty starter zip below.', 'Upload it to any folder in your Google Drive.', 'Open Share on the file and set General access to "Anyone with the link".', 'Copy the link. That is your tour\'s address.'],
+      example: 'https://drive.google.com/file/d/1Qx7mStarterTour/view?usp=sharing',
+      replace: 'Open the tour file\'s page in Google Drive, upload the new zip and choose "Replace existing file".'
+    },
+    dropbox: {
+      name: 'Dropbox',
+      steps: ['Download the empty starter zip below.', 'Upload it to your Dropbox.', 'Choose Share, then "Copy link" with "Anyone with the link can view".', 'Copy the link. That is your tour\'s address.'],
+      example: 'https://www.dropbox.com/scl/fi/k2x9starter/tour.zip?dl=0',
+      replace: 'On your phone, share the saved zip into the Dropbox app and save it over the old file: same name, same folder.'
+    },
+    onedrive: {
+      name: 'OneDrive',
+      steps: ['Download the empty starter zip below.', 'Upload it to your OneDrive.', 'Choose Share and set "Anyone with the link can view".', 'Copy the link. That is your tour\'s address.'],
+      example: 'https://1drv.ms/u/s!Ak7starterTour',
+      replace: 'On your phone, share the saved zip into the OneDrive app and replace the old file: same name, same folder.'
+    },
+    github: {
+      name: 'GitHub',
+      steps: ['Download the empty starter zip below.', 'In a public repository, use "Add file", then "Upload files", and commit the zip.', 'Open the file on GitHub and copy its address from the browser bar.'],
+      example: 'https://github.com/your-name/mill-tour/blob/main/tour.zip',
+      replace: 'Upload the saved zip to the same path in your repository, replacing the old one, and commit.'
+    },
+    server: {
+      name: 'Your own server',
+      steps: ['Download the empty starter zip below.', 'Put it anywhere on your site that is served over https.', 'Allow cross-origin reads for the file, so the tour page may load it.', 'Allow range requests, so big tours load in pieces.', 'Copy the file\'s full address.'],
+      code: 'Access-Control-Allow-Origin: *\nAccess-Control-Expose-Headers: Content-Range, Accept-Ranges\nAccept-Ranges: bytes',
+      example: 'https://tours.example-museum.net/mill/tour.zip',
+      replace: 'Upload the saved zip over the old file, at the same address.'
+    }
+  };
+  var provider = null;
+
+  /* ---------- state ---------- */
+  var cur = 1, created = false, done = {};
+  var panels = $$('.panel');
+  var dotsNav = $('#dots');
+  var dotBtns = STATIONS.map(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', 'Station ' + (i + 1) + ': ' + s.full);
+    b.addEventListener('click', function () { goTo(i + 1, { scroll: true }); });
+    dotsNav.appendChild(b);
+    return b;
+  });
+  var startG = $('#start'), stage = $('#stage'), card = $('#card'), cardPane = $('#cardPane');
+
+  function markDone(n) { done[n] = true; refresh(); }
+
+  function refresh() {
+    markers.forEach(function (g, i) {
+      g.classList.toggle('done', !!done[i + 1]);
+      g.classList.toggle('current', i + 1 === cur);
+    });
+    dotBtns.forEach(function (b, i) {
+      b.classList.toggle('done', !!done[i + 1]);
+      if (i + 1 === cur) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
+    });
+    startG.classList.toggle('printed', !!done[3]);
+    startG.classList.toggle('hung', !!done[4]);
+    startG.classList.toggle('focus', cur === 4);
+    $('#startLabel').textContent = done[4] ? 'Start' : 'Start: your poster';
+    $('#endFlag').classList.toggle('on', cur === 6 || !!done[6]);
+    showPlaces(created);
+    var lbl = markers[0].querySelector('.lbl');
+    lbl.textContent = provider ? P[provider].name.replace('Your own server', 'Server').replace('Google ', '') : 'Storage';
+  }
+
+  function goTo(n, opts) {
+    opts = opts || {};
+    cur = Math.max(1, Math.min(6, n));
+    panels.forEach(function (p) { p.hidden = +p.dataset.st !== cur; });
+    $('#badge').textContent = cur;
+    $('#ofLabel').textContent = 'Station ' + cur + ' of 6';
+    $('#backBtn').disabled = cur === 1;
+    var next = $('#nextBtn');
+    next.hidden = cur === 6;
+    if (cur < 6) next.textContent = 'Next: ' + STATIONS[cur].full;
+    refresh();
+    drawTo(created ? 1 : STATIONS[cur - 1].f);
+    if (cur === 6) { renderReplace(); markDone(6); }
+    if (wideMQ.matches) cardPane.scrollTop = 0;
+    if (opts.scroll) {
+      var top = stage.getBoundingClientRect().top + window.scrollY;
+      if (Math.abs(window.scrollY - top) > 4) window.scrollTo({ top: top, behavior: reduced ? 'auto' : 'smooth' });
+    }
+    if (opts.focus !== false) {
+      var h = panels[cur - 1].querySelector('h2');
+      if (h && opts.scroll) { try { h.focus({ preventScroll: true }); } catch (e) { /* older browsers */ } }
+    }
+    requestAnimationFrame(positionNotch);
+    setTimeout(positionNotch, 700);
+  }
+
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function positionNotch() {
+    var m = markers[cur - 1]; if (!m) return;
+    var r = m.querySelector('.dot').getBoundingClientRect(), c = card.getBoundingClientRect();
+    if (wideMQ.matches) {
+      var maxY = Math.max(18, Math.min(c.height, window.innerHeight - c.top) - 32);
+      card.style.setProperty('--notch-y', clamp(r.top + r.height / 2 - c.top - 7, 18, maxY) + 'px');
+    } else {
+      card.style.setProperty('--notch-x', clamp(r.left + r.width / 2 - c.left - 7, 18, c.width - 32) + 'px');
+    }
+  }
+  window.addEventListener('resize', positionNotch);
+  cardPane.addEventListener('scroll', positionNotch, { passive: true });
+  window.addEventListener('scroll', function () { if (wideMQ.matches) positionNotch(); }, { passive: true });
+
+  $('#backBtn').addEventListener('click', function () { goTo(cur - 1, { scroll: true }); });
+  $('#nextBtn').addEventListener('click', function () { markDone(cur); goTo(cur + 1, { scroll: true }); });
+  $('#beginBtn').addEventListener('click', function () { goTo(1, { scroll: true }); });
+
+  // the route draws itself the first time the map scrolls into view
+  var firstDraw = false;
+  function firstReveal() { if (firstDraw) return; firstDraw = true; setTimeout(function () { drawTo(created ? 1 : STATIONS[cur - 1].f); }, 250); }
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { firstReveal(); io.disconnect(); } }); }, { threshold: 0.35 });
+    io.observe($('#map'));
+  } else { firstReveal(); }
+
+  /* ---------- station 1 ---------- */
+  $$('.tile').forEach(function (t) {
+    t.addEventListener('click', function () {
+      provider = t.dataset.p;
+      $$('.tile').forEach(function (o) { o.setAttribute('aria-pressed', String(o === t)); });
+      var p = P[provider];
+      $('#instrTitle').textContent = p.name;
+      $('#instrSteps').innerHTML = p.steps.map(function (s) { return '<li>' + s + '</li>'; }).join('');
+      var code = $('#instrCode');
+      code.hidden = !p.code; code.textContent = p.code || '';
+      var box = $('#instr'); box.hidden = false;
+      box.style.animation = 'none'; void box.offsetWidth; box.style.animation = '';
+      $('#linkIn').placeholder = p.example.replace(/[^/]+$/, '...');
+      markDone(1);
+    });
+  });
+  $('#zipBtn').addEventListener('click', function () { toast('starter-tour.zip downloaded (prototype, no real file)'); });
+
+  /* ---------- station 2 ---------- */
+  var linkIn = $('#linkIn'), linkRes = $('#linkResult'), checkBtn = $('#checkBtn');
+  var ICON_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="#cf4428" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M7 12.5l3.2 3.2L17 9"/></svg>';
+  var ICON_WAIT = '<svg viewBox="0 0 24 24" fill="none" stroke="#57534a" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10" stroke-dasharray="3 3"/><path d="M12 7v5l3 2"/></svg>';
+  function judge(v) {
+    if (!/^https?:\/\/[^\s/]+\.[^\s]+/i.test(v)) return 'bad';
+    if (/example\.(org|com)|later|not-?yet/i.test(v)) return 'later';
+    if (/drive\.google\.com|dropbox\.com|1drv\.ms|onedrive\.live\.com|sharepoint\.com|github\.com|githubusercontent\.com|\.zip([?#]|$)/i.test(v)) return 'found';
+    return 'later';
+  }
+  function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function checkLink() {
+    var v = linkIn.value.trim();
+    if (!v) { linkRes.innerHTML = '<div class="res bad">Paste the link first. It starts with https://</div>'; linkIn.focus(); return; }
+    checkBtn.disabled = true; checkBtn.innerHTML = '<span class="spin"></span>Checking...';
+    linkRes.innerHTML = '';
+    setTimeout(function () {
+      checkBtn.disabled = false; checkBtn.textContent = 'Check again';
+      var j = judge(v);
+      if (j === 'bad') {
+        linkRes.innerHTML = '<div class="res bad">That does not look like a link yet. It should start with https://</div>';
+        return;
+      }
+      if (j === 'found') {
+        var extra = provider === 'server' ? '<br>Cross-origin reads and range requests: both fine.' : '';
+        linkRes.innerHTML = '<div class="res ok">' + ICON_OK + '<div><b>Found it.</b> starter-tour.zip, 3 KB, an empty tour ready to fill.' + extra + '</div></div>' +
+          '<div class="l2q"><span class="pill">' + esc(v.replace(/^https?:\/\//, '')) + '</span><span class="arrow"></span>' + qrSvg(hash(v)) + '</div>' +
+          '<p class="fine">This link becomes the code on your posters.</p>';
+      } else {
+        var srv = provider === 'server' ? ' If it stays unreachable after uploading, check cross-origin reads and range requests.' : '';
+        linkRes.innerHTML = '<div class="res later">' + ICON_WAIT + '<div><b>Not reachable yet.</b> That is fine if you upload later: the code points to this link either way.' + srv + '</div></div>';
+      }
+      markDone(2);
+    }, reduced ? 200 : 1100);
+  }
+  checkBtn.addEventListener('click', checkLink);
+  linkIn.addEventListener('keydown', function (e) { if (e.key === 'Enter') checkLink(); });
+  $('#exampleBtn').addEventListener('click', function () { linkIn.value = P[provider || 'drive'].example; checkLink(); });
+  $('#laterBtn').addEventListener('click', function () { linkIn.value = 'https://example.org/my-tour/tour.zip'; checkLink(); });
+
+  /* ---------- station 3 ---------- */
+  var count = 3, size = 16;
+  var grid = $('#qrGrid');
+  function renderPosters() {
+    $('#countOut').textContent = count;
+    $('#sizeOut').textContent = size + ' cm';
+    var paper = size <= 18 ? 'A4' : size <= 26 ? 'A3' : 'A2';
+    var dist = (size / 10).toFixed(1).replace(/\.0$/, '');
+    $('#sizeNote').textContent = 'Prints on ' + paper + '. Scans from about ' + dist + ' m away.';
+    while (grid.children.length < count) {
+      var i = grid.children.length;
+      var d = document.createElement('div');
+      d.className = 'qr-tile';
+      d.innerHTML = qrSvg(i * 31 + 5) + '<span>Poster ' + (i + 1) + '</span>';
+      grid.appendChild(d);
+    }
+    while (grid.children.length > count) grid.removeChild(grid.lastChild);
+    $('#minusBtn').disabled = count <= 1;
+    $('#plusBtn').disabled = count >= 24;
+    $('#pdfBtn').textContent = 'Download PDF (' + count + ' poster' + (count > 1 ? 's' : '') + ')';
+  }
+  $('#minusBtn').addEventListener('click', function () { count = Math.max(1, count - 1); renderPosters(); });
+  $('#plusBtn').addEventListener('click', function () { count = Math.min(24, count + 1); renderPosters(); });
+  $('#sizeIn').addEventListener('input', function (e) { size = +e.target.value; renderPosters(); });
+  $('#pdfBtn').addEventListener('click', function () {
+    var b = $('#pdfBtn');
+    b.disabled = true; b.innerHTML = '<span class="spin"></span>Making PDF...';
+    setTimeout(function () {
+      b.disabled = false; b.textContent = 'Saved tour-posters.pdf';
+      toast(count + ' poster' + (count > 1 ? 's' : '') + ', ' + size + ' cm codes (prototype, no real file)');
+      markDone(3);
+      setTimeout(renderPosters, 2600);
+    }, reduced ? 200 : 1300);
+  });
+  renderPosters();
+
+  /* ---------- station 4 ---------- */
+  $('#hungBtn').addEventListener('click', function () {
+    var fig = $('#wallFig');
+    fig.classList.remove('hung'); void fig.offsetWidth; fig.classList.add('hung');
+    $('#hungBtn').textContent = 'On the wall. The start is set.';
+    markDone(4);
+  });
+
+  /* ---------- station 5 ---------- */
+  var createBtn = $('#createBtn'), createStatus = $('#createStatus'), busy = false;
+  function placedText(pins, photos) {
+    return '<div class="res ok">' + ICON_OK + '<div><span class="count">' + pins + '</span> pin' + (pins === 1 ? '' : 's') + ' and <span class="count">' + photos + '</span> photo' + (photos === 1 ? '' : 's') + ' placed along the route.</div></div>';
+  }
+  createBtn.addEventListener('click', function () {
+    if (busy) return;
+    if (created) { markDone(5); goTo(6, { scroll: true }); return; }
+    busy = true;
+    createBtn.disabled = true; createBtn.innerHTML = '<span class="spin"></span>Opening the camera...';
+    setTimeout(function () {
+      createBtn.innerHTML = '<span class="spin"></span>Scanning the poster...';
+      setTimeout(function () {
+        createBtn.innerHTML = 'Found the poster. Walking...';
+        showPlaces(false);
+        drawTo(STATIONS[4].f, true);
+        var pins = 0, photos = 0;
+        walk(5200, function (l) {
+          drawTo(Math.max(STATIONS[4].f, l / L), true);
+          placeEls.forEach(function (g, i) {
+            if (!g.classList.contains('on') && l >= +g.dataset.l) {
+              g.classList.add('on');
+              if (PLACES[i].t === 'pin') pins++; else photos++;
+              createStatus.innerHTML = placedText(pins, photos);
+            }
+          });
+        }, function () {
+          created = true; busy = false;
+          createStatus.innerHTML = placedText(3, 3);
+          createBtn.disabled = false; createBtn.textContent = 'Finish and save';
+          refresh();
+        });
+      }, reduced ? 100 : 900);
+    }, reduced ? 100 : 900);
+  });
+
+  /* ---------- station 6 ---------- */
+  function renderReplace() {
+    var keys = Object.keys(P);
+    var order = provider ? [provider].concat(keys.filter(function (k) { return k !== provider; })) : keys;
+    $('#replaceBox').innerHTML = order.map(function (k, i) {
+      return '<details' + (i === 0 ? ' open' : '') + '><summary>' + P[k].name + (k === provider ? '<span class="mine">your choice</span>' : '') + '</summary><p>' + P[k].replace + '</p></details>';
+    }).join('');
+  }
+  $('#previewBtn').addEventListener('click', function () {
+    if (busy) return;
+    if (!created) { toast('Nothing placed yet. Station 5 first.'); return; }
+    busy = true;
+    toast('A visitor sees each pin and photo as they reach it.');
+    placeEls.forEach(function (g) { g.classList.remove('on'); });
+    walk(5200, function (l) {
+      placeEls.forEach(function (g) { if (l >= +g.dataset.l) g.classList.add('on'); });
+    }, function () { busy = false; });
+  });
+  $('#againBtn').addEventListener('click', function () {
+    done = {}; created = false; provider = null; count = 3; size = 16;
+    $('#sizeIn').value = 16; renderPosters();
+    $$('.tile').forEach(function (o) { o.setAttribute('aria-pressed', 'false'); });
+    $('#instr').hidden = true; linkIn.value = ''; linkRes.innerHTML = ''; checkBtn.textContent = 'Check link';
+    createStatus.innerHTML = ''; createBtn.textContent = 'Start creating';
+    $('#pdfBtn').disabled = false; $('#hungBtn').textContent = "It's on the wall";
+    goTo(1, { scroll: true });
+  });
+
+  goTo(1, { focus: false });
+  drawTo(0, true);
+  wideMQ.addEventListener ? wideMQ.addEventListener('change', positionNotch) : wideMQ.addListener(positionNotch);
+
+  /* ================= Added for round 2: everything below extends L5 ================= */
+
+  /* ---------- AR support, faked: ?ar=1 / ?ar=0 or the toggle; else the real check ---------- */
+  var root = document.documentElement;
+  var arBtns = $$('[data-ar-set]');
+  var arByUser = false;
+  function setAr(v, fromUser) {
+    var s = v ? '1' : '0';
+    root.setAttribute('data-ar', s);
+    arBtns.forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-ar-set') === s)); });
+    if (fromUser) {
+      arByUser = true;
+      try { var u = new URL(location.href); u.searchParams.set('ar', s); history.replaceState(null, '', u.href); } catch (e) { /* file:// or sandboxed: the toggle still works */ }
+    }
+    requestAnimationFrame(positionNotch);
+  }
+  arBtns.forEach(function (b) { b.addEventListener('click', function () { setAr(b.getAttribute('data-ar-set') === '1', true); }); });
+  var params;
+  try { params = new URLSearchParams(location.search); } catch (e) { params = { get: function () { return null; } }; }
+  var qAr = params.get('ar');
+  if (qAr === '1' || qAr === '0') setAr(qAr === '1');
+  else {
+    setAr(false);
+    try {
+      if (navigator.xr && typeof navigator.xr.isSessionSupported === 'function') {
+        navigator.xr.isSessionSupported('immersive-ar').then(function (ok) { if (!arByUser) setAr(!!ok); }, function () { /* stays "no AR" */ });
+      }
+    } catch (e) { /* stays "no AR" */ }
+  }
+
+  /* ---------- small wiring ---------- */
+  $$('[data-toast]').forEach(function (b) { b.addEventListener('click', function () { toast(b.getAttribute('data-toast')); }); });
+  $('#beginBtn2').addEventListener('click', function () { goTo(1, { scroll: true }); });
+  $('#makeQr').innerHTML = qrSvg(42);
+  $('#vsQr').innerHTML = qrNested(7, 75, 106, 22);
+
+  var visitToggle = $('#visitToggle'), visitForm = $('#visitForm'), visitIn = $('#visitIn');
+  visitToggle.addEventListener('click', function () {
+    var open = visitForm.hidden;
+    visitForm.hidden = !open;
+    visitToggle.setAttribute('aria-expanded', String(open));
+    if (open) visitIn.focus();
+  });
+  visitForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var v = visitIn.value.trim();
+    if (!/^https?:\/\/[^\s/]+\.[^\s]+/i.test(v)) { toast('Paste the whole link. It starts with https://'); visitIn.focus(); return; }
+    toast('Would open that tour, as a visitor.');
+  });
+
+  function watch(el, cb, threshold) {
+    if (!('IntersectionObserver' in window)) { cb(true); return; }
+    new IntersectionObserver(function (es) { es.forEach(function (e) { cb(e.isIntersecting); }); }, { threshold: threshold || 0 }).observe(el);
+  }
+
+  /* ---------- (a) the intro picture: CSS does the loop; pause it off screen ---------- */
+  var hero = $('#hero');
+  watch($('.hero-art'), function (on) { hero.classList.toggle('off', !on); });
+
+  /* ---------- (b) what a visitor sees: one lit frame at a time ---------- */
+  var strip = $('#strip'), frames = $$('.vs'), pauseBtn = $('#stripPause');
+  var frameS = 3.2;
+  var qf = parseFloat(params.get('frame'));
+  if (isFinite(qf) && qf >= 1 && qf <= 10) frameS = qf;
+  strip.style.setProperty('--frame', frameS + 's');
+  var active = 0, stripTimer = null, userPaused = false, stripSeen = false;
+  function setActive(i) {
+    active = (i + frames.length) % frames.length;
+    frames.forEach(function (f, k) { f.classList.toggle('active', k === active); });
+  }
+  function replay() { var f = frames[active]; f.classList.remove('active'); void f.getBoundingClientRect(); f.classList.add('active'); }
+  function schedule() { clearTimeout(stripTimer); stripTimer = setTimeout(function () { setActive(active + 1); schedule(); }, frameS * 1000); }
+  function stopStrip() { clearTimeout(stripTimer); strip.classList.remove('playing'); }
+  function playStrip() {
+    if (reduced || userPaused || !stripSeen || document.hidden) { stopStrip(); return; }
+    if (!strip.classList.contains('playing')) { strip.classList.add('playing'); replay(); schedule(); }
+  }
+  if (reduced) { pauseBtn.hidden = true; }
+  else { setActive(0); }
+  frames.forEach(function (f, k) {
+    f.addEventListener('click', function () {
+      if (reduced) return;
+      setActive(k);
+      if (strip.classList.contains('playing')) { replay(); schedule(); }
+    });
+  });
+  pauseBtn.addEventListener('click', function () {
+    userPaused = !userPaused;
+    pauseBtn.textContent = userPaused ? 'Play' : 'Pause';
+    pauseBtn.setAttribute('aria-pressed', String(userPaused));
+    if (userPaused) stopStrip(); else playStrip();
+  });
+  watch(strip, function (on) { stripSeen = on; if (on) playStrip(); else stopStrip(); }, 0.25);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) stopStrip(); else playStrip(); });
+
+  /* ---------- (c) See an example: the made-up Mill Park tour on the stage's own map ---------- */
+  var EX = [
+    { f: 0, name: 'The mill wheel', short: 'Mill wheel', text: 'Start here, at the poster by the old mill. The wheel turned on this spot for a hundred years; listen for the stream.', holds: 'Text and a photo from 1910', glyph: 'wheel', cap: 'here, 1910', dx: 0, dy: 22, a: 'middle' },
+    { f: 0.12, name: 'The courtyard well', short: 'Well', text: 'The mill families drew their water here. Look down: the stone rim is the old one.', holds: 'Text and a then-and-now photo', glyph: 'well', cap: 'then', dx: 0, dy: -14, a: 'middle' },
+    { f: 0.37, name: 'The old oaks', short: 'Oaks', text: 'These oaks were planted the year the mill closed. One of them has a story carved into it.', holds: 'Text and two photos', glyph: 'tree', cap: 'today', dx: -14, dy: 3, a: 'end' },
+    { f: 0.52, name: 'The pond', short: 'Pond', text: 'The mill pond kept water back for dry summers. Today it belongs to the ducks.', holds: 'Text and a photo', glyph: 'pond', cap: 'the pond', dx: 13, dy: 3, a: 'start' },
+    { f: 1, name: 'The viewpoint', short: 'Viewpoint', text: 'The walk ends with the whole park below you. Turn around: you can see where you started.', holds: 'Text and a wide photo', glyph: 'view', cap: 'the view', dx: 13, dy: 3, a: 'start' }
+  ];
+  var GLYPH = {
+    wheel: '<circle cx="46" cy="36" r="19" fill="none" stroke="#2a2824" stroke-width="1.4"/><path d="M46 17 V55 M27 36 H65 M32.6 22.6 L59.4 49.4 M59.4 22.6 L32.6 49.4" stroke="#2a2824" stroke-width=".9"/><circle cx="46" cy="36" r="3" fill="#2a2824"/><path d="M6 58 H86" stroke="#8c8577" stroke-width="1.2"/>',
+    well: '<path d="M28 30 L46 16 L64 30 Z" fill="#ddd2b6" stroke="#2a2824" stroke-width="1.2"/><path d="M32 30 V44 M60 30 V44" stroke="#2a2824" stroke-width="1.2"/><ellipse cx="46" cy="46" rx="18" ry="5" fill="#f4eedf" stroke="#2a2824" stroke-width="1.2"/><path d="M28 46 V56 Q 46 62 64 56 V46" fill="#ddd2b6" stroke="#2a2824" stroke-width="1.2"/>',
+    tree: '<circle cx="34" cy="30" r="14" fill="#ddd2b6" stroke="#57534a" stroke-width="1.2"/><path d="M34 44 V60" stroke="#57534a" stroke-width="2"/><circle cx="62" cy="26" r="16" fill="#ddd2b6" stroke="#57534a" stroke-width="1.2"/><path d="M62 42 V60" stroke="#57534a" stroke-width="2"/><path d="M6 60 H86" stroke="#8c8577" stroke-width="1.2"/>',
+    pond: '<ellipse cx="46" cy="42" rx="34" ry="14" fill="#f4eedf" stroke="#57534a" stroke-width="1.2"/><path d="M24 40 q5 -3 10 0 t10 0 M48 46 q5 -3 10 0 t10 0" fill="none" stroke="#8c8577" stroke-width="1"/><path d="M58 33 q4 -6 8 -2 l4 -1 l-3 3 q0 4 -6 4 h-5 z" fill="#ebe3cf" stroke="#2a2824" stroke-width=".9"/>',
+    view: '<circle cx="66" cy="20" r="6" fill="#f4eedf" stroke="#8c8577" stroke-width="1"/><path d="M6 50 L26 30 L40 42 L56 24 L86 52 V64 H6 Z" fill="#ddd2b6" stroke="#57534a" stroke-width="1.2"/><path d="M6 58 Q 30 50 46 56 T 86 54" fill="none" stroke="#8c8577" stroke-width="1" stroke-dasharray="2 3"/>'
+  };
+  function exPicture(s) {
+    return '<svg viewBox="0 0 92 84" aria-hidden="true"><rect x="1" y="1" width="90" height="82" fill="#fff" stroke="#2a2824" stroke-width="1"/><rect x="6" y="6" width="80" height="58" fill="#ebe3cf"/>' +
+      '<svg x="6" y="6" width="80" height="58" viewBox="6 6 80 58">' + GLYPH[s.glyph] + '</svg>' +
+      '<text x="46" y="76" text-anchor="middle" font-family="Georgia, serif" font-size="8" font-style="italic" fill="#2a2824">' + s.cap + '</text></svg>';
+  }
+  function cloneMap() {
+    var c = $('#map').cloneNode(true);
+    ['#stations', '#places', '#start', '#walker', '#endFlag', '#routeGhost'].forEach(function (s) { var n = c.querySelector(s); if (n) n.parentNode.removeChild(n); });
+    var r = c.querySelector('#route'); if (r) r.removeAttribute('mask');
+    Array.prototype.forEach.call(c.querySelectorAll('[id]'), function (el) { el.id = 'ex-' + el.id; });
+    Array.prototype.forEach.call(c.querySelectorAll('*'), function (el) {
+      ['fill', 'stroke', 'mask', 'clip-path'].forEach(function (a) {
+        var v = el.getAttribute(a);
+        if (v && v.indexOf('url(#') === 0) el.setAttribute(a, v.replace('url(#', 'url(#ex-'));
+      });
+      var h = el.getAttribute('href');
+      if (h && h.charAt(0) === '#') el.setAttribute('href', '#ex-' + h.slice(1));
+    });
+    c.id = 'exMap';
+    c.setAttribute('aria-label', 'Map of Mill Park with the example route and its five stations');
+    return c;
+  }
+  var dlg = $('#exDlg'), exSvg = cloneMap();
+  $('#exFrame').appendChild(exSvg);
+  var exStG = document.createElementNS(NS, 'g');
+  exSvg.appendChild(exStG);
+  var exWalker = document.createElementNS(NS, 'g');
+  exWalker.setAttribute('class', 'ex-walker');
+  exWalker.style.opacity = '0';
+  exWalker.innerHTML = '<circle r="5.4" fill="#2a2824" stroke="#fff" stroke-width="1.4"/><rect x="-1.6" y="-2.6" width="3.2" height="5.2" rx=".7" fill="#fff"/>';
+  exSvg.appendChild(exWalker);
+  var exCur = 0, exSeen = {};
+  var exMarks = EX.map(function (s, i) {
+    var p = pointAt(s.f);
+    var g = document.createElementNS(NS, 'g');
+    g.setAttribute('class', 'st');
+    g.setAttribute('transform', 'translate(' + p.x.toFixed(1) + ' ' + p.y.toFixed(1) + ')');
+    g.setAttribute('role', 'button');
+    g.setAttribute('tabindex', '0');
+    g.setAttribute('aria-label', 'Station ' + (i + 1) + ': ' + s.name);
+    g.innerHTML = '<circle class="ring" r="9"/><circle class="dot" r="9"/><text class="num">' + (i + 1) + '</text>' +
+      '<text class="lbl" x="' + s.dx + '" y="' + s.dy + '" text-anchor="' + s.a + '">' + s.short + '</text>';
+    g.addEventListener('click', function () { showEx(i); });
+    g.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showEx(i); } });
+    exStG.appendChild(g);
+    return g;
+  });
+  var exList = $('#exList');
+  var exBtns = EX.map(function (s, i) {
+    var li = document.createElement('li');
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = '<span>' + (i + 1) + '</span>' + s.short;
+    b.setAttribute('aria-label', 'Station ' + (i + 1) + ': ' + s.name);
+    b.addEventListener('click', function () { showEx(i); });
+    li.appendChild(b); exList.appendChild(li);
+    return b;
+  });
+  function showEx(i) {
+    exCur = Math.max(0, Math.min(EX.length - 1, i));
+    exSeen[exCur] = true;
+    var s = EX[exCur];
+    exMarks.forEach(function (g, k) { g.classList.toggle('current', k === exCur); g.classList.toggle('done', !!exSeen[k] && k !== exCur); });
+    exBtns.forEach(function (b, k) { b.setAttribute('aria-current', String(k === exCur)); });
+    $('#exK').textContent = 'Station ' + (exCur + 1) + ' of ' + EX.length;
+    $('#exTitle').textContent = s.name;
+    $('#exText').textContent = s.text;
+    $('#exHolds').textContent = 'Holds: ' + s.holds;
+    $('#exPic').innerHTML = exPicture(s);
+    $('#exPrev').disabled = exCur === 0;
+    $('#exNext').textContent = exCur === EX.length - 1 ? 'Back to the start' : 'Next station';
+  }
+  var exWalking = false, exWalkId = 0;
+  function exWalk() {
+    if (reduced || exWalking) return;
+    exWalking = true; var id = ++exWalkId;
+    exSeen = {}; showEx(0);
+    var playBtn = $('#exPlay'); playBtn.disabled = true;
+    exWalker.style.opacity = '1';
+    var t0 = performance.now(), dur = 9000, next = 1;
+    function frame(t) {
+      if (id !== exWalkId) return;
+      var k = Math.min(1, (t - t0) / dur), l = k * L, p = route.getPointAtLength(l);
+      exWalker.setAttribute('transform', 'translate(' + p.x.toFixed(1) + ' ' + p.y.toFixed(1) + ')');
+      while (next < EX.length && l >= EX[next].f * L - 0.5) { showEx(next); next++; }
+      if (k < 1) requestAnimationFrame(frame);
+      else { exWalking = false; playBtn.disabled = false; setTimeout(function () { if (!exWalking) exWalker.style.opacity = '0'; }, 600); }
+    }
+    requestAnimationFrame(frame);
+  }
+  function exStop() { exWalkId++; exWalking = false; exWalker.style.opacity = '0'; $('#exPlay').disabled = false; }
+  if (reduced) $('#exPlay').hidden = true;
+  $('#exPlay').addEventListener('click', exWalk);
+  $('#exPrev').addEventListener('click', function () { exStop(); showEx(exCur - 1); });
+  $('#exNext').addEventListener('click', function () { exStop(); showEx(exCur === EX.length - 1 ? 0 : exCur + 1); });
+  function openEx() {
+    showEx(exCur);
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+  }
+  $('#exampleOpen').addEventListener('click', openEx);
+  $('#exampleOpen2').addEventListener('click', openEx);
+  $('#exClose').addEventListener('click', function () { dlg.close(); });
+  dlg.addEventListener('close', exStop);
+  dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+  $('#exMake').addEventListener('click', function () { dlg.close(); goTo(1, { scroll: true }); });
+  showEx(0);
+  exSeen = {};
+
+  /* test and screenshot hook (prototype only) */
+  window.__landing = { setAr: function (v) { setAr(!!v, true); }, openExample: openEx, showEx: showEx, frameS: frameS, exPoints: EX.map(function (s) { var p = pointAt(s.f); return [s.name, Math.round(p.x), Math.round(p.y)]; }) };
+
+})();
+</script>
+</body>
+</html>

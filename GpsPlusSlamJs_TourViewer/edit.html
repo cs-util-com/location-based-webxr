@@ -8,10 +8,14 @@
          arrives with the module, so the page painted unstyled until then
          (tour editor plan 2026-10-17-1816, W1). -->
     <link rel="stylesheet" href="/src/editor/editor.css" />
+    <!-- The 3D view's studio shell (editor-shell.ts): applied while the
+         3D view shows. -->
+    <link rel="stylesheet" href="/src/editor/editor-shell/editor-shell.css" />
   </head>
   <body>
-    <div id="map" aria-label="Tour map"></div>
-
+    <!-- The top bar first: the keyboard reaches it before the map, the 3D
+         view and the panels below it (it is fixed, so the order draws
+         nothing differently). -->
     <header id="topbar" class="panel" hidden>
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">T</div>
@@ -27,38 +31,392 @@
           <div class="tour-file" id="tour-file"></div>
         </div>
       </div>
+      <!-- The File and View menus (menu-button.ts): every command of the
+           file and of the view, each with its words. Both views have them. -->
+      <div class="grp menus">
+        <div class="menu-wrap">
+          <!-- Described by the save status: on a keyboard the menu says
+               whether the changes are saved. -->
+          <button
+            class="tbtn menu-btn"
+            id="file-menu-btn"
+            type="button"
+            aria-describedby="save-status"
+          >
+            <i data-icon="folder"></i><span class="lbl">File</span
+            ><i data-icon="down"></i>
+          </button>
+          <div class="menu" id="file-menu">
+            <button role="menuitem" type="button" id="file-open">Open…</button>
+            <button
+              role="menuitem"
+              type="button"
+              id="file-save"
+              aria-disabled="true"
+              aria-keyshortcuts="Control+S"
+            >
+              Save<kbd aria-hidden="true">Ctrl+S</kbd>
+            </button>
+            <button
+              role="menuitem"
+              type="button"
+              id="file-save-copy"
+              aria-disabled="true"
+            >
+              Save a copy…
+            </button>
+            <div role="separator"></div>
+            <button
+              role="menuitem"
+              type="button"
+              id="file-details"
+              aria-haspopup="dialog"
+              aria-disabled="true"
+            >
+              Tour details…
+            </button>
+            <button role="menuitem" type="button" id="file-debug-add">
+              Add debug data…
+            </button>
+            <!-- Only for a tour whose file carries its walk, until the
+                 first save (the phone's rule). -->
+            <button
+              role="menuitemcheckbox"
+              type="button"
+              id="file-keep-walk"
+              aria-checked="false"
+              hidden
+            >
+              Keep the debug data in the tour file
+            </button>
+            <div role="separator"></div>
+            <!-- Saves what is pending, then says where the changes are and
+                 what is left to do (done-dialog.ts). -->
+            <button
+              role="menuitem"
+              type="button"
+              id="file-publish"
+              aria-haspopup="dialog"
+              aria-disabled="true"
+            >
+              Share and publish…
+            </button>
+          </div>
+        </div>
+        <!-- The one warning against losing work in the bar itself: the
+             save status's words are in the bottom bar, and in its title. -->
+        <span class="unsaved-mark" id="unsaved-mark" hidden
+          ><span class="dot" aria-hidden="true"></span
+          ><span class="lbl">Not saved</span></span
+        >
+        <!-- At a phone's width the bar has no room for Undo and Redo in
+             words: they fold into this menu (editor-shell.css). -->
+        <div class="menu-wrap studio" id="edit-menu-wrap">
+          <button class="tbtn menu-btn" id="edit-menu-btn" type="button">
+            <span class="lbl">Edit</span><i data-icon="down"></i>
+          </button>
+          <div class="menu" id="edit-menu">
+            <button
+              role="menuitem"
+              type="button"
+              id="edit-undo"
+              aria-disabled="true"
+              aria-keyshortcuts="Control+Z"
+            >
+              Undo<kbd aria-hidden="true">Ctrl+Z</kbd>
+            </button>
+            <button
+              role="menuitem"
+              type="button"
+              id="edit-redo"
+              aria-disabled="true"
+              aria-keyshortcuts="Control+Shift+Z"
+            >
+              Redo<kbd aria-hidden="true">Ctrl+Shift+Z</kbd>
+            </button>
+          </div>
+        </div>
+        <div class="menu-wrap">
+          <button class="tbtn menu-btn" id="view-menu-btn" type="button">
+            <i data-icon="eye"></i><span class="lbl">View</span
+            ><i data-icon="down"></i>
+          </button>
+          <div class="menu" id="view-menu">
+            <button
+              role="menuitemcheckbox"
+              type="button"
+              class="studio"
+              id="studio-top"
+              aria-checked="false"
+              aria-keyshortcuts="T"
+              title="Look straight down (T)"
+            >
+              Top view<kbd aria-hidden="true">T</kbd>
+            </button>
+            <button
+              role="menuitem"
+              type="button"
+              class="studio"
+              id="studio-frame"
+              aria-keyshortcuts="F"
+              title="Frame the selection, or the whole tour (F; Home frames the tour)"
+            >
+              Frame<kbd aria-hidden="true">F</kbd>
+            </button>
+            <!-- Only while there is debug data to show (the debug layer). -->
+            <button
+              role="menuitemcheckbox"
+              type="button"
+              id="view-debug"
+              aria-checked="true"
+              hidden
+            >
+              Show debug data
+            </button>
+            <div role="separator"></div>
+            <!-- The view switch: the 2D map or the 3D view of the same
+                 tour (view-switch.ts); its load is said in the bottom bar. -->
+            <button role="menuitem" type="button" id="view-switch">
+              3D view
+            </button>
+          </div>
+        </div>
+      </div>
+      <!-- The 3D view's studio controls (editor-shell.ts); the map page
+           hides them. -->
+      <div class="studio grp">
+        <button
+          class="tbtn"
+          id="studio-details"
+          type="button"
+          aria-haspopup="dialog"
+          title="Tour details: name, cover, description"
+        >
+          <i data-icon="pencil"></i><span class="lbl">Details</span>
+        </button>
+        <button
+          class="tbtn"
+          id="studio-undo"
+          type="button"
+          aria-label="Undo"
+          disabled
+        >
+          <i data-icon="undo"></i><span class="lbl">Undo</span>
+        </button>
+        <button
+          class="tbtn"
+          id="studio-redo"
+          type="button"
+          aria-label="Redo"
+          disabled
+        >
+          <i data-icon="redo"></i><span class="lbl">Redo</span>
+        </button>
+      </div>
       <div class="topbar-spacer"></div>
-      <label class="keep-walk" id="keep-walk" hidden>
-        <input type="checkbox" id="keep-walk-input" />
-        Keep the walk recording in the saved file
-      </label>
+      <div class="studio grp" id="studio-help-group">
+        <button
+          class="tbtn"
+          id="studio-help"
+          type="button"
+          aria-expanded="false"
+          title="Keyboard, mouse and touch"
+        >
+          <i data-icon="help"></i><span class="lbl">Help</span>
+        </button>
+      </div>
+    </header>
+
+    <div id="map" aria-label="Tour map"></div>
+
+    <!-- The 3D view (view-switch.ts, src/editor3d/): over the map while it
+         shows, its code loaded only when the switch asks for it. The
+         panels stay above it; the credits (the relief's and the map's) close it. -->
+    <div id="view3d" aria-label="The tour in 3D" tabindex="-1" hidden>
+      <!-- The studio shell's docks over the scene (editor-shell.ts): the
+           tree at the left, the selection's inspector at the right. -->
+      <aside class="dock" id="shell-tree" aria-label="Stations and codes">
+        <div class="dhead">
+          <button
+            class="sech"
+            id="tree-stations"
+            type="button"
+            title="Fold or unfold the stations"
+          ></button>
+          <span class="sp"></span>
+          <button
+            class="ib add"
+            id="tree-add"
+            type="button"
+            title="Add a station at the centre of the view"
+            aria-label="Add a station at the centre of the view"
+          >
+            <i data-icon="plus"></i>
+          </button>
+          <button class="ib" id="tree-fold" type="button"></button>
+        </div>
+        <div class="dbody" id="tree-body"></div>
+      </aside>
+      <aside
+        class="dock"
+        id="shell-inspector"
+        aria-label="The selection"
+        hidden
+      >
+        <div class="dhead" id="inspector-head"></div>
+        <div class="dbody" id="inspector-body"></div>
+      </aside>
+      <div id="map-controls">
+        <div class="pill">
+          <button
+            id="compass"
+            type="button"
+            title="Turn north up"
+            aria-label="Turn north up"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+              <g id="compass-needle">
+                <path d="M12 3 15 12H9z" fill="#e5483f" />
+                <path d="M12 21 9 12h6z" fill="#9aa0a6" />
+              </g>
+            </svg>
+          </button>
+        </div>
+        <div class="pill">
+          <button
+            id="zoom-in"
+            type="button"
+            title="Zoom in"
+            aria-label="Zoom in"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+          <button
+            id="zoom-out"
+            type="button"
+            title="Zoom out"
+            aria-label="Zoom out"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M5 12h14" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div id="shell-help" role="note" aria-label="Keyboard and mouse">
+        <span>Mouse</span
+        ><span
+          >left orbit, right pan, wheel zoom; in the top view left pans and
+          right tilts</span
+        >
+        <span>Touch</span
+        ><span>one finger orbits; two fingers pinch and pan</span>
+        <span>Select</span
+        ><span
+          >click a station card, an item or a code; click it again to
+          deselect</span
+        >
+        <span>Right click</span
+        ><span
+          >on the ground: a new station there (a long press on a touch
+          screen)</span
+        >
+        <span><kbd>T</kbd></span
+        ><span>top view on / off</span> <span><kbd>F</kbd></span
+        ><span>frame the selection, <kbd>Home</kbd> the tour</span>
+        <span><kbd>Esc</kbd></span
+        ><span>deselect</span> <span><kbd>Ctrl</kbd>+<kbd>Z</kbd></span
+        ><span>undo, add <kbd>Shift</kbd> to redo</span>
+      </div>
+      <!-- What a keyboard reorder did, said to a screen reader (the
+           inspector's Earlier and Later). -->
+      <p id="shell-said" class="said" role="status" aria-live="polite"></p>
+      <!-- The ground menu (scene-menu.ts): a right click or a long press on
+           the scene opens it where it was pressed. -->
+      <div id="scene-menu" class="menu" hidden>
+        <button
+          role="menuitem"
+          type="button"
+          id="scene-new-station"
+          tabindex="-1"
+        >
+          <i data-icon="plus"></i>
+          New station here
+        </button>
+      </div>
+      <!-- Last in the view: its links come after the docks in the Tab order,
+           and it paints under them (they carry a z-index). -->
+      <p class="view3d-credits" id="view3d-credits"></p>
+    </div>
+
+    <!-- The bottom bar (editor-shell.ts): the save status in both views;
+         in the 3D view also the view, a hint, and the debug readout behind
+         its toggle. Shown with the top bar, once a tour is open. -->
+    <footer id="shell-bar" aria-label="The editor's status" hidden>
       <span id="save-status" role="status" aria-live="polite" data-state="clean"
         >No changes</span
       >
-      <button class="btn primary" id="save-btn" type="button" disabled>
-        Save
-      </button>
-      <!-- "Done" (W2 of the tour editor plan): saves what is pending, then
-           says where the changes are and what is left to do (done-dialog.ts). -->
+      <span id="view-loading" role="status" aria-live="polite" hidden></span>
+      <div id="shell-view"></div>
+      <!-- The selection's power actions (bar-actions.ts), drawn by the
+           shell: Duplicate, Align to station, Copy position. -->
+      <div id="shell-acts" role="group" aria-label="The selection"></div>
+      <div id="shell-hint"></div>
+      <div id="shell-history" class="mono dbg"></div>
+      <div id="shell-calls" class="mono dbg"></div>
+      <div id="shell-frame" class="mono dbg wide"></div>
       <button
-        class="btn"
-        id="done-btn"
+        id="shell-debug"
         type="button"
-        aria-haspopup="dialog"
-        disabled
+        aria-pressed="false"
+        title="Show or hide the debug readout (history, draw calls, frame time)"
       >
-        Done
+        debug
       </button>
-      <button
-        class="btn"
-        id="open-another"
-        type="button"
-        aria-label="Open another tour"
-      >
-        <span class="label-long">Open another tour</span
-        ><span class="label-short">Open</span>
+    </footer>
+
+    <!-- The debug layer (debug-capture-layer.ts): the walk's camera
+         captures on the map, for a tour whose file carries a walk or with
+         debug data added beside it ("Add debug data…", a file input or a
+         drop on this panel; added-debug-data.ts). Debug data, never the
+         tour's content: an added file is never saved, drafted or kept
+         across a reload. Its switch is the View menu's "Show debug data",
+         there only while the layer shows something. -->
+    <div
+      id="debug-panel"
+      class="panel debug-panel"
+      aria-label="Debug data"
+      hidden
+    >
+      <span id="debug-status" role="status" aria-live="polite"></span>
+      <button class="btn debug-add" id="debug-add" type="button">
+        Add debug data…
       </button>
-    </header>
+      <input
+        type="file"
+        id="debug-add-input"
+        accept=".zip,application/zip"
+        hidden
+      />
+    </div>
 
     <aside id="rail" class="panel" hidden aria-label="Objects in this tour">
       <div class="rail-head">
@@ -209,16 +567,14 @@
         </div>
         <!-- Said per browser by edit-main.ts (saveFinePrint): this text is
              the one for a browser that cannot write a chosen file. The
-             privacy page beside it (W6, legal.html). -->
+             privacy page beside it (the site-wide /legal/). -->
         <p class="fineprint">
           <span id="open-fineprint"
             >The tour file stays on this computer. The map comes from
             OpenStreetMap. Save gives you a new copy of the tour to put in place
             of the old one.</span
           >
-          <a href="legal.html#privacy" target="_blank" rel="noopener"
-            >Privacy</a
-          >
+          <a href="/legal/#privacy" target="_blank" rel="noopener">Privacy</a>
         </p>
       </div>
     </div>
@@ -284,9 +640,9 @@
       </form>
     </div>
 
-    <!-- "Done" (W2 of the tour editor plan, D18, D19): where the changes
+    <!-- "Share and publish…" (W2 of the tour editor plan, D18, D19): where the changes
          are, how the tour at its link is updated, that a file at a link is
-         public, and - while the file carries the walk - "Move the walk out"
+         public, and - while the file carries the walk - "Move the debug data out"
          (done-dialog.ts). The Drive-mount tip is off until the owner's
          check (DRIVE_MOUNT_TIP_SHOWN). -->
     <div class="backdrop" id="done-modal" hidden>
@@ -296,7 +652,7 @@
         aria-modal="true"
         aria-labelledby="done-title"
       >
-        <h1 id="done-title">Done editing</h1>
+        <h1 id="done-title">Share and publish</h1>
         <p class="lede" id="done-where"></p>
         <h2>Update the tour at its link</h2>
         <label for="done-host">Where the tour lives</label>
@@ -304,17 +660,18 @@
         <p id="done-update"></p>
         <p class="note-line" id="done-public"></p>
         <p class="note-line" id="done-drive-tip" hidden></p>
-        <section id="done-walk" aria-label="The walk recording" hidden>
+        <section id="done-walk" aria-label="The debug data" hidden>
           <p class="note-line warn" id="done-walk-text"></p>
           <button class="btn" id="done-move" type="button">
-            Move the walk out
+            Move the debug data out
+          </button>
+          <button class="btn" id="done-save-debug" type="button" hidden>
+            Save the debug data
           </button>
           <p id="done-move-status" role="status" aria-live="polite"></p>
         </section>
         <p class="fineprint">
-          <a href="legal.html#privacy" target="_blank" rel="noopener"
-            >Privacy</a
-          >
+          <a href="/legal/#privacy" target="_blank" rel="noopener">Privacy</a>
         </p>
         <div class="modal-actions">
           <button class="btn primary" id="done-close" type="button">

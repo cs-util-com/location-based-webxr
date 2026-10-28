@@ -5,10 +5,11 @@ import {
   downloadedZip,
   finishAndDownload,
   installTourViewerArFakes,
+  levelTexts,
   openFixtureTour,
   tapFinish,
 } from "./ar-fakes.js";
-import { E2E_QR_TEXT } from "./qr-fixture.mjs";
+import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
 
 /**
  * The automatic move of a stored code, end to end (code book plan M6 v5.1;
@@ -105,11 +106,19 @@ async function lookAtTheCode(page) {
  * Enter AR at the fixture's code under the shifted GPS, see it far from its
  * saved spot, walk on with it in view, and end the visit.
  *
+ * Either order a creator outdoors takes: the fixes before the code, or the
+ * code first. A visit with no fix yet waits for one before the stored code
+ * may line it up (the page's timers fire only on demand here, so the wait
+ * never runs out): the code is then measured against the shifted
+ * alignment once the fixes come, as when they came first.
+ *
  * @param {import("@playwright/test").Page} page
+ * @param {"gps-first" | "code-first"} order
  */
-async function walkUnderShiftedGps(page) {
+async function walkUnderShiftedGps(page, order = "gps-first") {
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
   await page.getByTestId("enter-ar").click();
+  if (order === "gps-first") await shiftedFixes(page, 0, 3);
   await page.evaluate(
     ({ text, key }) => {
       /** @type {any} */ (window)[key].armQrDetection(text);
@@ -124,12 +133,18 @@ async function walkUnderShiftedGps(page) {
       },
       { timeout: 15000 },
     )
-    .toMatch(/waiting for GPS alignment/i);
-  await shiftedFixes(page, 0, 3);
-  await expect(page.getByTestId("setup-status")).toContainText(
-    /Code seen \d+ m from its saved position/,
-    { timeout: 10000 },
-  );
+    .toMatch(
+      order === "gps-first"
+        ? /Code seen \d+ m from its saved position/
+        : /waiting for GPS alignment/i,
+    );
+  if (order === "code-first") {
+    await shiftedFixes(page, 0, 3);
+    await expect(page.getByTestId("setup-status")).toContainText(
+      /Code seen \d+ m from its saved position/,
+      { timeout: 10000 },
+    );
+  }
   // No question any more: the visit just goes on.
   for (let i = 3; i < 3 + WALK; i += 10) {
     await shiftedFixes(page, i, 10);
@@ -158,7 +173,7 @@ test("a code seen 36 m from its saved spot after a reliable walk is moved at the
   page,
 }) => {
   await openFixtureTour(page);
-  await walkUnderShiftedGps(page);
+  await walkUnderShiftedGps(page, "code-first");
   // The result line stands between the Finish and the save (the save's own
   // line replaces it).
   await tapFinish(page);
@@ -203,3 +218,58 @@ test("the moved spot survives a reload: the draft restores it and the Finish wri
     0.0003,
   );
 });
+
+test("the next visit's strip offers the automatic move in its Undo, and one tap takes it back", async ({
+  page,
+}) => {
+  // Q-D and the persistent Undo: the settle's automatic
+  // code change is one undo step, and the strip's persistent Undo is its
+  // button. The settle lands at the visit's end, so the next visit offers
+  // it, named by what it takes back; the tap says what was undone.
+  await openFixtureTour(page);
+  await walkUnderShiftedGps(page);
+  await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
+  await page.getByTestId("enter-ar").click();
+  const chip = page.getByTestId("setup-undo");
+  await expect(chip).toBeEnabled({ timeout: 10000 });
+  await expect(chip).toHaveText("Undo: the code's move");
+  // The code's saved spot as the fixture zip carries it, and as the page's
+  // tour document holds it now (moved about 44 m North: the more than
+  // 0.0003 degrees of latitude this spec's other tests read).
+  const fixture = await page.request.get(E2E_QR_ARCHIVE);
+  const texts = Object.values(
+    await levelTexts(new Uint8Array(await fixture.body())),
+  );
+  expect(texts).toHaveLength(1);
+  const original = JSON.parse(/** @type {string} */ (texts[0])).qr.geo;
+  const moved = await savedCodeGeo(page);
+  expect(moved.lat - original.lat).toBeGreaterThan(0.0003);
+
+  await chip.click();
+  await expect(page.getByTestId("object-list-note")).toHaveText(
+    /^Undone: the code's move - the code and everything that moved with it are back where they were\./,
+  );
+  await expect(chip).toBeDisabled();
+  await expect(chip).toHaveText("Undo");
+  // The code is back at its saved spot, exactly.
+  const back = await savedCodeGeo(page);
+  expect(Math.abs(back.lat - original.lat)).toBeLessThan(1e-7);
+  expect(Math.abs(back.lon - original.lon)).toBeLessThan(1e-7);
+});
+
+/**
+ * The geo of the one code the page's tour document holds, from its saved
+ * level text. The fakes hand the page's store over when AR starts.
+ * @param {import("@playwright/test").Page} page
+ */
+async function savedCodeGeo(page) {
+  const texts = await page.evaluate(
+    (key) =>
+      /** @type {any} */ (window)[key].alignmentStore
+        .getState()
+        .tourDocument.codes.book.map((/** @type {any} */ c) => c.saved),
+    TEST_KEY,
+  );
+  expect(texts).toHaveLength(1);
+  return JSON.parse(texts[0]).qr.geo;
+}

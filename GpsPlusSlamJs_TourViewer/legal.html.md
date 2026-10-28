@@ -1,51 +1,48 @@
-# `legal.html` - the legal notice and the privacy page
+# `legal.html` - forwards to the site-wide legal page
 
 ## Purpose
 
-The site's legal notice (Impressum) and privacy page (tour editor plan
-2026-10-17-1816, W6, D13, D24), in English (D14). The texts are the first
-drafts of
-`GpsPlusSlamJs_Docs/docs/2026-10-17-2047-tour-viewer-legal-pages-design.md`
-(§2, §3), built for the owner's review: the bracketed operator
-placeholders stay visible until the owner fills them in, and the page says
-"Draft" at its top (`data-testid="legal-draft"`).
+The legal notice and the privacy page used to live here, for the Tour
+Viewer alone. They are now one page for the whole site, at `/legal/`
+(source: `GpsPlusSlamJs_Landing/legal/index.html`, with its own sidecar),
+because every app on the site needs the same notice and the privacy text
+has to cover every app's data flows. This file stays as a forwarder so that
+a saved or shared link to `/tour/legal.html#privacy` still arrives at the
+right section.
 
-## Structure
+## Why a forwarder and not a deletion
 
-- ONE static page with two sections, `#notice` and `#privacy`, rather than
-  two pages: every link names its section (`legal.html#privacy`), the two
-  texts refer to each other, and there is one file to keep current and one
-  Vite entry (`vite.config.ts`, `legal`). Deployed at `/tour/legal.html`.
-- No script. `/design.css` (the verbatim shared sheet) and a small style
-  block; `body.page` opts into the document ground, light when the device
-  asks.
+The page reached the deployed site before the move, so links to it may
+exist outside the code. Deleting it would turn those into a 404 from the
+site worker; a forwarder costs one small file.
+
+## Behaviour
+
+- An inline script calls `location.replace("/legal/" + location.hash)`, so
+  `#notice` and `#privacy` are kept and the forwarder leaves no entry in the
+  history.
+- Without script, `<meta http-equiv="refresh">` goes to `/legal/` (the
+  section is lost, the page is still found), and the body carries a plain
+  link.
+- Still a Vite entry (`vite.config.ts`, `legal`), so it is built and
+  deployed at `/tour/legal.html`.
+- `/legal/` is root-absolute on purpose: the page is not part of the Tour
+  Viewer's base. `scripts/build-site.mjs` exempts exactly the site-wide
+  pages from its bare-absolute-URL guard.
 
 ## Linked from
 
-- the visitor's "What happens?" (`index.html`, `#visitor-privacy`);
-- the setup page's footer (`index.html`, `#setup-foot`: both sections);
-- the editor's open dialog fine print and its Done dialog (`edit.html`).
-
-## Invariants & assumptions
-
-- Nothing on the page claims more than the code does; the facts it rests
-  on are listed in the design doc's §1. Corrected after the M4b milestone
-  review (#5): no offline copy of the app (no service worker) and a tour
-  still carrying its walk only partly kept (`stopsVisitorDownload`); the
-  clear control's real name ("Other settings"); every local item
-  (`tour-viewer.wizard.*`, `tour-viewer.poster.*`, `tour-viewer.tour-name.*`,
-  `tour-viewer.hud.folded.*`); the trust records (`tour-viewer.trust.v1`:
-  signer and first/last seen per link, code and series) said to be a local
-  visit history; "sets no cookies" (a server in the path may); the walk
-  kept by the phone only when the photos need it (`creator-finish.ts`). A change of what the app sends or
-  stores changes this page in the same commit.
-- `wrangler.toml` logging and the referrer policy are the owner's open
-  questions (design doc §5 Q2, Q3); the page states the logging as it is.
-- The operator's jurisdiction is never written into the page or the repo:
-  the placeholders stay generic.
+Nothing in the app links here any more: the visitor's "What happens?", the
+setup page's footer (`#setup-foot`) and the editor link `/legal/` directly.
+The facts the Tour Viewer's part of the privacy text rests on are listed in
+the legal pages design doc (section 1) and in the earlier history of this file; a
+change of what the app sends or stores changes `/legal/` in the same
+commit.
 
 ## Tests
 
-- `playwright-tests/legal.spec.js` - the page loads with both sections,
-  the Draft mark and the placeholders, and the links from the visitor's
-  "What happens?", the setup footer and the editor reach it.
+- `playwright-tests/legal.spec.js` - the forwarder lands on `/legal/` with
+  the section kept; the app's links point at `/legal/`. On the dev server
+  `/legal/` is not this app's page, so the spec checks the address, not the
+  text; the text is tested where it lives (`GpsPlusSlamJs_Landing`,
+  `playwright-tests/legal.spec.js`).

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -9,12 +10,17 @@ import {
 } from "@zip.js/zip.js";
 import { describe, expect, it } from "vitest";
 
-import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  parseTourManifest,
+  serializeTourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   checkGlbInert,
   checkImageWithinCap,
   tourMediaTypeOfEntry,
 } from "gps-plus-slam-app-framework/ar/tour-media";
+import { drawnHeightM } from "gps-plus-slam-globe/editor";
+import { egm96Geoid } from "gps-plus-slam-osm/elevation/egm96";
 
 // Why these tests matter: the sample tour (owner decision S-D9) is the
 // owner's first phone test of stations before in-app authoring exists. It is
@@ -51,14 +57,14 @@ function metres(
 }
 
 describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
-  it("is a valid version 3 tour with three geo stations in a fixed order", async () => {
+  it("is a valid version 4 tour with three geo stations in a fixed order", async () => {
     const files = await entries();
     const raw = files.get("tour.json");
     expect(raw).toBeDefined();
     const json = JSON.parse(new TextDecoder().decode(raw)) as unknown;
-    // Written at version 3 (tour editor plan W3): an older build refuses
-    // it with "update the app" rather than misreading it.
-    expect(json).toMatchObject({ version: 3, minor: 0 });
+    // Written at version 4: an older build refuses it with "update the
+    // app" rather than misreading it.
+    expect(json).toMatchObject({ version: 4, minor: 0 });
     const manifest = parseTourManifest(json);
     expect(manifest.order).toBe("fixed");
     expect(manifest.stations.map((s) => s.id)).toEqual([
@@ -92,6 +98,42 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     }
   });
 
+  // Why: a station's `alt` is ellipsoidal (a phone's GPS height); the 3D
+  // view draws it at alt - N over a relief of orthometric heights. Written
+  // as 519 m (about the square's height above sea level), every station
+  // stood about 45 m under the drawn ground. The ground below is measured
+  // independently of the 3D view: Mapterhorn's z14 tile 14/8718/5685
+  // (fetched 2026-10-22), Terrarium-decoded and read bilinearly between
+  // pixel centres at each station (the design system's globe lab drew
+  // 515.9 m at the column on the same data). The tolerance is swept: the
+  // verdict holds from 0.5 m to 2 m.
+  it.each([0.5, 1, 2])(
+    "stands each station within %s m of the ground the 3D view draws",
+    async (toleranceM) => {
+      const files = await entries();
+      const manifest = parseTourManifest(
+        JSON.parse(new TextDecoder().decode(files.get("tour.json"))) as unknown,
+      );
+      const groundM: Record<string, number> = {
+        column: 515.83,
+        gate: 514.17,
+        steps: 516.23,
+      };
+      const geoid = egm96Geoid();
+      for (const station of manifest.stations) {
+        const geo = station.geo;
+        const drawn = drawnHeightM(
+          geo.alt,
+          { lat: geo.lat, lng: geo.lon },
+          geoid,
+        );
+        expect(Math.abs(drawn - groundM[station.id]!), station.id).toBeLessThan(
+          toleranceM,
+        );
+      }
+    },
+  );
+
   it("carries every asset it names, each allowed, capped and inert", async () => {
     const files = await entries();
     const manifest = parseTourManifest(
@@ -117,5 +159,23 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     }
     // TextWriter keeps the import honest for a text entry read.
     expect(TextWriter).toBeDefined();
+  });
+
+  it("is written back by today's writer to exactly the recorded bytes", async () => {
+    // Why: the editor re-saves a tour it opened through this writer. A
+    // change to the reader's in-memory model (a renamed field, a reshaped
+    // type) must not change one written byte; this pins the writer's
+    // output for a real tour, beside the generated ones in the framework.
+    // Re-recorded when the tour moved to format 4 (its script writes it
+    // through this writer, so the file is the writer's own bytes).
+    const files = await entries();
+    const json = JSON.parse(
+      new TextDecoder().decode(files.get("tour.json")),
+    ) as unknown;
+    const written = serializeTourManifest(parseTourManifest(json));
+    expect(written.length).toBe(5354);
+    expect(createHash("sha256").update(written).digest("hex")).toBe(
+      "c6399b32d9dc36776231c1f158c4848e4b072e07259e9ee521c324c23c8aeefe",
+    );
   });
 });

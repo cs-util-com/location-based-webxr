@@ -22,6 +22,9 @@ import { describe, expect, it } from "vitest";
 import {
   type TourManifest,
   type TourObject,
+  type TourPicture,
+  type TourPin,
+  tourObjectRecord,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import { META_KEY, objectKey, readDraft } from "../draft-persistence.js";
@@ -33,8 +36,9 @@ import {
   type NoBackupReason,
 } from "./editor-draft.js";
 import type { EditorLock } from "./save-target.js";
-import { tourOf } from "../test-support/v3-tour.js";
+import { captionOf, tourOf } from "../test-support/tour-of.js";
 import { hostedObjects } from "../authoring-draft.js";
+import { parseSettingsRecord } from "../tour-document-draft.js";
 
 /** One browser's draft directories: namespace -> files. `failIn` makes
  *  one namespace's writes refuse; `holdPuts` holds every write until
@@ -178,23 +182,31 @@ function draftIn(
   return Object.assign(draft, { said });
 }
 
-function pin(id: string, label = id): TourObject {
+function pin(id: string, label = id): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-10-14T00:00:00.000Z",
     geo: { lat: 48.5, lon: 9.0, alt: 340, headingDeg: 0 },
   };
 }
 
-function photo(id: string, lat = 48.5): TourObject {
+function photo(id: string, lat = 48.5): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-10-14T00:00:00.000Z",
     geo: { lat, lon: 9.0, alt: 340, rotation: [0, 0, 0, 1] },
   };
@@ -206,6 +218,89 @@ function tour(...objects: TourObject[]): TourManifest {
 
 const K1 = "local-file:00000000000000000000000000000001";
 const K2 = "local-file:00000000000000000000000000000002";
+
+/**
+ * Why these tests matter: a file of an older format is refused, never
+ * converted, so the draft this browser kept for it has nothing left to be
+ * restored into. The refusal deletes that draft, and only that file's,
+ * under the draft's lock: a tab still editing it keeps it.
+ */
+describe("a refused older file's draft", () => {
+  // A refused file is keyed by its own tour id; a bare content key is
+  // shared by every tour on the same recording (see the last test).
+  const T1 = "local-file:tour:OlderTour1";
+  const T2 = "local-file:tour:OlderTour2";
+  async function seed(b: ReturnType<typeof browser>, fileKey: string) {
+    const store = (await b.open(editorDraftKey(fileKey)))!;
+    await store.put(META_KEY, "{}");
+    await store.put(objectKey("a"), "{}");
+  }
+
+  it("is deleted, another file's is left, and whether one was there is said", async () => {
+    const b = browser();
+    await seed(b, T1);
+    await seed(b, T2);
+    const draft = draftIn(b);
+    await expect(draft.forget(T1)).resolves.toBe(true);
+    expect([...(b.spaces.get(editorDraftKey(T1))?.keys() ?? [])]).toEqual([]);
+    expect(b.spaces.get(editorDraftKey(T2))?.size).toBe(2);
+    await expect(draft.forget(T1), "nothing is left").resolves.toBe(false);
+    // The lock went with it: the file's draft can be held again.
+    expect((await draft.open(T1, tour(pin("a")))).backedUp).toBe(true);
+  });
+
+  // Why: a refused 3.x copy and the 4.0 copy of the same tour carry the
+  // same tour id, so they share a draft. Only a draft PROVED to be from an
+  // older version may go - a record this version reads is the newer
+  // copy's unsaved work, and a draft that says nothing either way stays.
+  it("is kept when it holds a record this version reads (the newer copy's work)", async () => {
+    const b = browser();
+    const store = (await b.open(editorDraftKey(T1)))!;
+    await store.put(META_KEY, "{}");
+    await store.put(objectKey("a"), JSON.stringify(tourObjectRecord(pin("a"))));
+    await expect(draftIn(b).forget(T1)).resolves.toBe(false);
+    expect(b.spaces.get(editorDraftKey(T1))?.size).toBe(2);
+  });
+
+  it("is kept when nothing in it says which version wrote it", async () => {
+    const b = browser();
+    const store = (await b.open(editorDraftKey(T1)))!;
+    await store.put(META_KEY, "{}");
+    await expect(draftIn(b).forget(T1)).resolves.toBe(false);
+    expect(b.spaces.get(editorDraftKey(T1))?.size).toBe(1);
+  });
+
+  it("is kept while another tab holds it", async () => {
+    const b = browser();
+    await seed(b, T1);
+    const held = locks();
+    const tab = draftIn(b, held);
+    await tab.open(T1, tour(pin("a")));
+    const other = draftIn(b, held);
+    await expect(other.forget(T1)).resolves.toBe(false);
+    expect(b.spaces.get(editorDraftKey(T1))?.has(META_KEY)).toBe(true);
+  });
+
+  it("is none where the browser keeps no drafts", async () => {
+    const draft = createEditorDraft({
+      openStore: () => Promise.resolve(undefined),
+      holdLock: locks(),
+      noBackup: () => undefined,
+    });
+    await expect(draft.forget(T1)).resolves.toBe(false);
+  });
+
+  // Why (B2a review finding 4): a content key names the recording, not
+  // the tour - the tour kit's own files are left out of it - so another
+  // tour built on the same recording may keep its draft under it.
+  // Deleting by such a key could empty that tour's unsaved work.
+  it("is kept when the refused file is known only by its content key", async () => {
+    const b = browser();
+    await seed(b, K1);
+    await expect(draftIn(b).forget(K1)).resolves.toBe(false);
+    expect(b.spaces.get(editorDraftKey(K1))?.size).toBe(2);
+  });
+});
 
 describe("createEditorDraft", () => {
   it("backs an edit up under the editor's own namespace, with the opened version as seen", async () => {
@@ -266,7 +361,7 @@ describe("createEditorDraft", () => {
     await draft.idle();
     draft.close();
     expect(
-      (await draftIn(b).open(K1, original)).offer?.objects.map((o) => o.label),
+      (await draftIn(b).open(K1, original)).offer?.objects.map(captionOf),
     ).toEqual(["edited"]);
     // The copy put in place (a recording tour keeps its key): spent, and
     // its record goes.
@@ -292,7 +387,7 @@ describe("createEditorDraft", () => {
     draft.close();
     const opened = await draftIn(b).open(K1, written);
     expect(opened.superseded).toBeNull();
-    expect(opened.offer?.objects.map((o) => o.label)).toEqual(["second"]);
+    expect(opened.offer?.objects.map(captionOf)).toEqual(["second"]);
   });
 
   it("a save built but never put in place: both the original and the built copy offer the later edit", async () => {
@@ -309,7 +404,7 @@ describe("createEditorDraft", () => {
     for (const file of [original, built]) {
       const opened = await draftIn(b).open(K1, file);
       expect(opened.superseded).toBeNull();
-      expect(opened.offer?.objects.map((o) => o.label)).toEqual(["second"]);
+      expect(opened.offer?.objects.map(captionOf)).toEqual(["second"]);
     }
   });
 
@@ -368,8 +463,69 @@ describe("createEditorDraft", () => {
     expect(old?.size ?? 0).toBe(0);
     expect(old?.has(META_KEY) ?? false).toBe(false);
     const opened = await draftIn(b).open(K2, written);
-    expect(opened.offer?.objects.map((o) => o.label)).toEqual(["after"]);
+    expect(opened.offer?.objects.map(captionOf)).toEqual(["after"]);
     expect(opened.offer?.deleted).toEqual([]);
+  });
+
+  it("a download whose bytes have another key moves the draft there: the edit after it is offered under the new key, the original still offers what it did", async () => {
+    // Why (debug-captures plan, Q-I): the first save of a tour without an
+    // id writes one, so the file it makes - downloaded, not written in
+    // place - opens under the id's key. The draft must follow it there, or
+    // an edit made after the download is lost to the file the creator
+    // opens next. A download clears nothing (as since E2c): the
+    // original opened again still offers the edit made before it.
+    const b = browser();
+    const draft = draftIn(b);
+    const original = tour(pin("a"), pin("b"));
+    await draft.open(K1, original);
+    void draft.saveObject(pin("a", "saved"));
+    const written = tour(pin("a", "saved"), pin("b"));
+    draft.writes().built(written);
+    draft.writes().moved(K2);
+    void draft.saveObject(pin("b", "after"));
+    await draft.idle();
+    draft.close();
+    const opened = await draftIn(b).open(K2, written);
+    expect(opened.offer?.objects.map(captionOf)).toEqual(["after"]);
+    const before = await draftIn(b).open(K1, original);
+    expect(before.offer?.objects.map(captionOf)).toEqual(["saved"]);
+  });
+
+  it("a download's move spends nothing: a download never put anywhere leaves every edit offered", async () => {
+    // Why: unlike an in-place write, a download is not known to be the
+    // file anyone opens - the creator may never use it. So the move takes
+    // every record along as it is; only an open of a file that carries an
+    // edit spends it.
+    const b = browser();
+    const draft = draftIn(b);
+    const original = tour(pin("a"), pin("b"));
+    await draft.open(K1, original);
+    void draft.saveObject(pin("a", "saved"));
+    draft.writes().built(tour(pin("a", "saved"), pin("b")));
+    draft.writes().moved(K2);
+    void draft.saveObject(pin("b", "after"));
+    await draft.idle();
+    draft.close();
+    const opened = await draftIn(b).open(K2, original);
+    expect(opened.offer?.objects.map(captionOf).sort()).toEqual([
+      "after",
+      "saved",
+    ]);
+  });
+
+  it("a download to the key the draft has already moves nothing", async () => {
+    // Why: every save after the first carries the same id, so most
+    // downloads land on the draft's own key - and must leave it be.
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    void draft.saveObject(pin("a", "saved"));
+    draft.writes().moved(K1);
+    await draft.idle();
+    draft.close();
+    expect([...(b.spaces.get(editorDraftKey(K1))?.keys() ?? [])]).toContain(
+      objectKey("a"),
+    );
   });
 
   it("a key move carries an edit made while the save ran, and an offer not yet answered", async () => {
@@ -394,7 +550,7 @@ describe("createEditorDraft", () => {
     await draft.idle();
     draft.close();
     const reopened = await draftIn(b).open(K2, written);
-    expect(reopened.offer?.objects.map((o) => o.label).sort()).toEqual([
+    expect(reopened.offer?.objects.map(captionOf).sort()).toEqual([
       "during",
       "from an earlier visit",
     ]);
@@ -426,7 +582,7 @@ describe("createEditorDraft", () => {
     draft.close();
     const reopened = await draftIn(b).open(K2, written);
     expect(reopened.offer?.deleted).toEqual([]);
-    expect(reopened.offer?.objects.map((o) => o.label)).toEqual(["during"]);
+    expect(reopened.offer?.objects.map(captionOf)).toEqual(["during"]);
   });
 
   it("Delete it takes the offer's records, never one edited since the open, and a later edit of a deleted one is kept", async () => {
@@ -450,7 +606,7 @@ describe("createEditorDraft", () => {
     await draft.idle();
     draft.close();
     const reopened = await draftIn(b).open(K1, original);
-    expect(reopened.offer?.objects.map((o) => o.label)).toEqual(["live a"]);
+    expect(reopened.offer?.objects.map(captionOf)).toEqual(["live a"]);
     expect(reopened.offer?.deleted).toEqual(["c"]);
   });
 
@@ -474,7 +630,7 @@ describe("createEditorDraft", () => {
     draft.close();
     const reopened = await draftIn(b).open(K1, original);
     expect(reopened.offer?.deleted).toEqual([]);
-    expect(reopened.offer?.objects.map((o) => o.label)).toEqual(["live b"]);
+    expect(reopened.offer?.objects.map(captionOf)).toEqual(["live b"]);
   });
 
   it("a rejected id whose files are gone is dropped from the meta at the next open, so a later edit of it is not hidden", async () => {
@@ -497,7 +653,7 @@ describe("createEditorDraft", () => {
     await later.idle();
     later.close();
     expect(
-      (await draftIn(b).open(K1, original)).offer?.objects.map((o) => o.label),
+      (await draftIn(b).open(K1, original)).offer?.objects.map(captionOf),
     ).toEqual(["new"]);
   });
 
@@ -530,7 +686,7 @@ describe("createEditorDraft", () => {
     await later.idle();
     later.close();
     expect(
-      (await draftIn(b).open(K1, original)).offer?.objects.map((o) => o.label),
+      (await draftIn(b).open(K1, original)).offer?.objects.map(captionOf),
     ).toEqual(["new"]);
   });
 
@@ -580,7 +736,7 @@ describe("createEditorDraft", () => {
     await draft.forgetDeletion("a");
     draft.close();
     const { offer } = await draftIn(b).open(K1, tour(pin("a")));
-    expect(offer?.objects.map((o) => o.label)).toEqual(["edited"]);
+    expect(offer?.objects.map(captionOf)).toEqual(["edited"]);
     expect(offer?.deleted).toEqual([]);
   });
 
@@ -777,7 +933,7 @@ describe("createEditorDraft", () => {
     old.landed(written, K3);
     b.releaseOpens();
     const opened = await opening;
-    expect(opened.offer?.objects.map((o) => o.label)).toEqual([
+    expect(opened.offer?.objects.map(captionOf)).toEqual([
       "from an earlier visit",
     ]);
     expect(await draft.writes().saveObject(pin("b", "new"))).toBe(true);
@@ -791,7 +947,7 @@ describe("createEditorDraft", () => {
     // file's: it is offered, not called replaced.
     const again = await draftIn(b).open(K2, second);
     expect(again.superseded).toBeNull();
-    expect(again.offer?.objects.map((o) => o.label)).toEqual(["new"]);
+    expect(again.offer?.objects.map(captionOf)).toEqual(["new"]);
   });
 
   // Why (review #6): the hold was released before the closed tour's
@@ -1275,10 +1431,12 @@ describe("restoredLine (M1b-2 milestone review #6)", () => {
   // Why: Restore's "nothing restored" line spoke of notes even when the
   // offer was the setting alone.
   const notes = { objects: [pin("a")], deleted: [] };
+  // As the open hands it over: a settings part names itself.
   const setting = {
     objects: [],
     deleted: [],
     settings: { needsNoGps: true },
+    settingsWhat: `this tour's "needs no GPS" setting`,
   };
 
   it("counts what came back", () => {
@@ -1302,6 +1460,12 @@ describe("restoredLine (M1b-2 milestone review #6)", () => {
     );
     expect(restoredLine(0, { ...setting, objects: [pin("a")] })).toBe(
       "Nothing was restored: the notes and the setting those changes were for are changed here already.",
+    );
+    // A record that names nothing (only stations the page created) speaks
+    // of the notes alone.
+    const { settingsWhat: _named, ...unnamed } = setting;
+    expect(restoredLine(0, { ...unnamed, objects: [pin("a")] })).toBe(
+      "Nothing was restored: the notes those changes were for are edited here already.",
     );
   });
 });
@@ -1488,5 +1652,143 @@ describe("createEditorDraft, the tour's details (W2)", () => {
         JSON.stringify({ needsNoGps: false, details: { title: 7 } }),
       );
     expect((await draftIn(b).open(K1, opened)).offer).toBeNull();
+  });
+});
+
+describe("createEditorDraft, the stations the page created", () => {
+  // Why these tests matter: a note moved beyond its station's radius starts
+  // a station the opened file lacks, and the note's record names it. A
+  // settings record holding nothing but that station is still work: if it
+  // is dropped (or not offered), a reload seats the note again by the rule
+  // under a NEW station id, and the station the creator saw is gone.
+  const SETTINGS = "settings";
+  const frame = (id: string, lat = 48.5205) => ({
+    id,
+    geo: { lat, lon: 9.0, alt: 340, rotation: [0, 0, 0, 1] as const },
+    activateRadiusM: 50,
+    foundRadiusM: 25,
+    hint: "arrow" as const,
+    blocks: [],
+    steps: [],
+  });
+  const movedA = (): TourObject => ({
+    ...pin("a"),
+    geo: { lat: 48.5205, lon: 9.0, alt: 340, headingDeg: 0 },
+    station: "s-new",
+  });
+
+  it("stores a frame with a story step in the file's shape: the stored record reads back with its step", async () => {
+    // Why: the settings writer is the page's own (`settingsRecordText`);
+    // a writer that stored the frame as the page holds it would store a
+    // record the reader drops without a word, and the station's story
+    // would be gone on the next open.
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    const story = {
+      ...frame("s-new"),
+      blocks: [
+        {
+          id: "hello-text",
+          kind: "shortText" as const,
+          view: "card" as const,
+          caption: "Hello there.",
+          pose: {
+            position: [0, 0, 0] as [number, number, number],
+            rotation: [0, 0, 0, 1] as [number, number, number, number],
+          },
+        },
+      ],
+      steps: [
+        {
+          id: "hello",
+          action: { kind: "show" as const, block: "hello-text" },
+          advance: { mode: "tap" as const },
+        },
+      ],
+    };
+    void draft.saveSettings({ needsNoGps: false, frames: [story] });
+    await draft.idle();
+    const stored = b.spaces.get(editorDraftKey(K1))?.get(SETTINGS);
+    expect(typeof stored).toBe("string");
+    expect(parseSettingsRecord(stored as string)?.frames).toEqual([story]);
+  });
+
+  it("a record holding only created stations is kept, and offered with the note that names them", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = tour(pin("a"), pin("b"));
+    await first.open(K1, opened);
+    void first.saveObject(movedA());
+    void first.saveSettings({
+      needsNoGps: false,
+      createdStations: [frame("s-new")],
+    });
+    await first.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(true);
+    first.close();
+    const { offer } = await draftIn(b).open(K1, opened);
+    expect(offer?.settings?.createdStations).toEqual([frame("s-new")]);
+    expect(offer?.objects.map((o) => o.id)).toEqual(["a"]);
+    // The created station is not a change of its own, and no setting is
+    // named that did not change.
+    expect(offer?.text).toContain("1 change");
+    expect(offer?.text).not.toContain("GPS");
+  });
+
+  it("a created station moved since keeps its moved pose", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = tour(pin("a"), pin("b"));
+    await first.open(K1, opened);
+    void first.saveObject(movedA());
+    void first.saveSettings({
+      needsNoGps: false,
+      createdStations: [frame("s-new")],
+    });
+    void first.saveSettings({
+      needsNoGps: false,
+      createdStations: [frame("s-new", 48.5207)],
+    });
+    await first.idle();
+    first.close();
+    const { offer } = await draftIn(b).open(K1, opened);
+    expect(offer?.settings?.createdStations).toEqual([frame("s-new", 48.5207)]);
+  });
+
+  it("a file that carries the created station spends the record", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = tour(pin("a"), pin("b"));
+    await first.open(K1, opened);
+    void first.saveSettings({
+      needsNoGps: false,
+      createdStations: [frame("s-new")],
+    });
+    await first.idle();
+    const carried: TourManifest = {
+      ...opened,
+      stations: [...opened.stations, { ...frame("s-new"), blocks: [] }],
+    };
+    first.writes().landed(carried, K1);
+    await first.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
+  });
+
+  it("created stations with no note left to offer are no offer, and go", async () => {
+    const b = browser();
+    const first = draftIn(b);
+    const opened = tour(pin("a"), pin("b"));
+    await first.open(K1, opened);
+    void first.saveSettings({
+      needsNoGps: false,
+      createdStations: [frame("s-new")],
+    });
+    await first.idle();
+    first.close();
+    const again = draftIn(b);
+    expect((await again.open(K1, opened)).offer).toBeNull();
+    await again.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
   });
 });

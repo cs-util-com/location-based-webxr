@@ -19,15 +19,29 @@ import type {
   TourBlock,
   TourStation,
   TourStep,
-} from "gps-plus-slam-app-framework/ar/tour-stations";
+  TourStepAction,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { createScenePlayer, type ScenePlayer } from "./scene-player.js";
-import { stationTitle } from "./station-run.js";
+import {
+  createScenePlayer,
+  isPlayableInK4,
+  playableStepCount,
+  type ScenePlayer,
+} from "./scene-player.js";
+import {
+  parseTourMarkdown,
+  plainTextOf,
+} from "gps-plus-slam-app-framework/ar/tour-markdown";
+import { worldBlockReachedBy } from "./shown-blocks.js";
+import { stationHasCard, stationTitle } from "./station-run.js";
 
 /** The story panel's elements, all inside `#ar-root` (the DOM overlay). */
 export interface SceneViewDom {
   readonly panel: Pick<HTMLElement, "hidden">;
   readonly title: Pick<HTMLElement, "textContent">;
+  /** The station's description under its name (B2b step 6); hidden for a
+   *  station without one. */
+  readonly description: Pick<HTMLElement, "textContent" | "hidden">;
   /** A character's name; hidden for other steps. */
   readonly speaker: Pick<HTMLElement, "textContent" | "hidden">;
   /** Text, caption or transcript: every step has words (captions always). */
@@ -35,10 +49,22 @@ export interface SceneViewDom {
   /** Loading and failures of this step's media, `aria-live`. */
   readonly status: Pick<HTMLElement, "textContent">;
   readonly image: Pick<HTMLImageElement, "src" | "alt" | "hidden">;
+  /** The station's card picture under its name, over its whole story;
+   *  hidden for a station without one. */
+  readonly stationImage: Pick<HTMLImageElement, "src" | "alt" | "hidden">;
+  /** The video card's player (B2b): a `<video controls playsinline>`
+   *  above the transcript. */
+  readonly video: SceneVideo;
   readonly choices: Pick<HTMLElement, "replaceChildren">;
   readonly continueButton: Pick<HTMLElement, "hidden">;
   readonly playNext: Pick<HTMLElement, "textContent" | "hidden">;
 }
+
+/** What the story card uses of its `<video>` element. */
+type SceneVideo = Pick<
+  HTMLVideoElement,
+  "src" | "poster" | "hidden" | "pause" | "removeAttribute" | "load"
+>;
 
 /** The sound of a step (one channel: a new clip stops the previous). */
 export interface SceneAudio {
@@ -84,6 +110,24 @@ export interface SceneViewDeps {
   };
   /** A story played to its end: the station is done. */
   onStoryEnd(stationId: string): void;
+  /** The story started, moved to another step, ended or stopped, or the
+   *  queue changed: what the sheet draws of it (`progress`) may differ. */
+  onChange?(): void;
+  /** A step reached a block with a world view (a pin, a plane, a placed
+   *  model): it stands in the station's world from now on (station
+   *  blocks plan B2b, `shown-blocks.ts`). Its words show in the card as
+   *  before. */
+  onBlockShown?(stationId: string, blockId: string): void;
+}
+
+/** Where a choice-free story is (the story card's dots). */
+export interface StoryProgress {
+  /** The step showing, from 0. */
+  readonly index: number;
+  /** The scene's steps (`playableStepCount`). */
+  readonly count: number;
+  /** The step's own timer (an auto step), ms; null for a tap step. */
+  readonly autoMs: number | null;
 }
 
 export interface SceneView {
@@ -102,16 +146,31 @@ export interface SceneView {
   stopAll(): void;
   /** The station whose story plays, or null. */
   playing(): string | null;
+  /** Where the story playing is; null with none, or for a scene with a
+   *  choice (no fixed number of steps). */
+  progress(): StoryProgress | null;
+  /** Hold the step while the visitor is asked whether to end the story:
+   *  an auto step's timer stops (its `autoMs`
+   *  reads null); released, it starts again from its full length. A new
+   *  story starts unheld. */
+  holdStep(held: boolean): void;
 }
 
 export function createSceneView(deps: SceneViewDeps): SceneView {
   const { dom } = deps;
-  let story: { station: TourStation; player: ScenePlayer } | null = null;
+  let story: {
+    station: TourStation;
+    player: ScenePlayer;
+    count: number | null;
+  } | null = null;
   const queue: TourStation[] = [];
   /** Bumped per rendered step: a load that lands later is dropped. */
   let renderToken = 0;
   let cancelTimer: (() => void) | null = null;
-  let liveUrl: string | null = null;
+  /** The step held (`holdStep`): no timer runs. */
+  let held = false;
+  /** The step's object URLs (a picture; a clip and its poster). */
+  const liveUrls: string[] = [];
   /** The step's media share one status line (r881 re-review M1: one
    *  asset's settle blanked another's line). What it says, per step: */
   /** The figure or model the stage holds back for the visitor's position. */
@@ -120,14 +179,22 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   const loading: string[] = [];
   /** What went wrong with the step's media: true until the step changes. */
   let notice: string | null = null;
+  /** The station's card picture's object URL, freed when its story ends. */
+  let stationUrl: string | null = null;
+  /** Bumped when the card picture goes: a read that lands later is dropped. */
+  let stationToken = 0;
+  /** Why the card picture is not shown: kept over every step of the
+   *  story, gone with the picture. */
+  let stationNotice: string | null = null;
 
   /** The status line from the step's media: a parked figure, else what
-   *  still loads; then what went wrong, which outlives both. */
+   *  still loads; then what went wrong, which outlives both; then why the
+   *  card picture is missing. */
   function showStatus(): void {
     const current = loading.at(-1);
     const now =
       figureWait ?? (current === undefined ? null : `Loading the ${current}…`);
-    dom.status.textContent = [now, notice]
+    dom.status.textContent = [now, notice, stationNotice]
       .filter((part) => part !== null)
       .join(" ");
   }
@@ -137,17 +204,34 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     cancelTimer?.();
     cancelTimer = null;
     deps.audio.stop();
-    if (liveUrl !== null) {
-      deps.objectUrls.revoke(liveUrl);
-      liveUrl = null;
-    }
+    for (const url of liveUrls.splice(0)) deps.objectUrls.revoke(url);
     dom.image.hidden = true;
     dom.image.src = "";
+    stopVideo();
     figureWait = null;
     loading.length = 0;
     notice = null;
-    dom.status.textContent = "";
+    showStatus();
     dom.choices.replaceChildren();
+  }
+
+  /** The player stops and lets its clip go (removing `src` and `load()`
+   *  is how a media element drops its resource; `src = ""` would ask
+   *  for the page's own URL). */
+  function stopVideo(): void {
+    const { video } = dom;
+    video.pause();
+    video.removeAttribute("src");
+    video.removeAttribute("poster");
+    video.load();
+    video.hidden = true;
+  }
+
+  /** An object URL for this step, freed when the step changes. */
+  function stepUrl(blob: Blob): string {
+    const url = deps.objectUrls.create(blob);
+    liveUrls.push(url);
+    return url;
   }
 
   function renderQueue(): void {
@@ -223,56 +307,105 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     });
   }
 
-  /** Show one step's block: its words at once, its media as they load. */
+  /** Show one `show` step's block, as the step kinds of earlier versions
+   *  showed it: its words at once, its media as they load. A `stage`
+   *  figure or model stands at the station (with its voice); every other view shows in
+   *  the card; a world view (pin, plane, placed model) also stands in the
+   *  station's world from this step on (`onBlockShown`, B2b). */
   function showBlock(station: TourStation, block: TourBlock): void {
     switch (block.kind) {
-      case "text":
-        dom.text.textContent = block.text;
+      case "shortText":
+        dom.text.textContent = block.caption;
         return;
-      case "image":
+      case "longText":
+        // Its plain text P (S0): paragraphs a blank line apart, shown as
+        // breaks (`white-space: pre-line`), no markup characters (B2b).
+        dom.text.textContent = plainTextOf(parseTourMarkdown(block.body)).text;
+        return;
+      case "picture": {
         dom.text.textContent = block.caption ?? "";
-        withAsset(block.asset, "picture", async (blob) => {
+        const alt = block.alt ?? block.caption ?? "";
+        withAsset(block.image, "picture", async (blob) => {
           const token = renderToken;
           if ((await deps.checkPicture(blob)) !== null) {
             return "The picture is too large to show here - the words are below.";
           }
           if (token !== renderToken) return undefined;
-          liveUrl = deps.objectUrls.create(blob);
-          dom.image.src = liveUrl;
-          dom.image.alt = block.caption ?? "";
+          dom.image.src = stepUrl(blob);
+          dom.image.alt = alt;
           dom.image.hidden = false;
           return undefined;
         });
         return;
+      }
       case "character":
         dom.text.textContent = block.caption;
-        withAsset(block.image, "figure", (blob) =>
-          stageFigure("figure", (onWaiting) =>
-            deps.stage.showCharacter(station.id, blob, onWaiting),
-          ),
-        );
+        if (block.view === "stage") {
+          withAsset(block.image, "figure", (blob) =>
+            stageFigure("figure", (onWaiting) =>
+              deps.stage.showCharacter(station.id, blob, onWaiting),
+            ),
+          );
+        }
         if (block.voice !== undefined) playSound(block.voice);
         return;
       case "audio":
         dom.text.textContent = block.transcript;
-        playSound(block.asset);
+        playSound(block.audio);
         return;
-      case "video":
-        // Video is later (plan §5 K4): its transcript stands in.
+      case "video": {
+        // The card plays it: the browser's controls, so a tap plays it (a
+        // gesture, so its sound may play); the transcript below. The
+        // player shows only with its clip, so its play control always has
+        // something to play; until then - and for good when the clip
+        // cannot be read, which the status line says (`withAsset`) - the
+        // poster stands as a still picture.
         dom.text.textContent = block.transcript;
+        let clipShown = false;
+        if (block.poster !== undefined) {
+          withAsset(block.poster, "poster", (blob) => {
+            const url = stepUrl(blob);
+            dom.video.poster = url;
+            if (clipShown) return;
+            dom.image.src = url;
+            dom.image.alt = "";
+            dom.image.hidden = false;
+          });
+        }
+        withAsset(block.video, "video", (blob) => {
+          clipShown = true;
+          dom.video.src = stepUrl(blob);
+          dom.image.hidden = true;
+          dom.image.src = "";
+          dom.video.hidden = false;
+        });
         return;
+      }
       case "model":
-        dom.text.textContent = block.caption ?? "";
+        dom.text.textContent = block.title ?? "";
+        if (block.view !== "stage") return;
         withAsset(block.asset, "3D model", (blob) =>
           stageFigure("3D model", (onWaiting) =>
             deps.stage.showModel(station.id, blob, onWaiting),
           ),
         );
         return;
+    }
+  }
+
+  /** Show one step's action: a block, or a choice's buttons. */
+  function showAction(station: TourStation, action: TourStepAction): void {
+    switch (action.kind) {
+      case "show": {
+        const block = station.blocks.find((b) => b.id === action.block);
+        // The reader resolved every `show`: none names a missing block.
+        if (block !== undefined) showBlock(station, block);
+        return;
+      }
       case "choice":
-        dom.text.textContent = block.prompt;
+        dom.text.textContent = action.prompt;
         dom.choices.replaceChildren(
-          ...block.options.map((option) =>
+          ...action.options.map((option) =>
             deps.createChoiceButton(option.label, () => {
               if (story !== null) render(story.player.choose(option.id));
             }),
@@ -285,6 +418,13 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     }
   }
 
+  /** The block a step shows, or null for a choice or a quiz. */
+  function shownBlock(station: TourStation, step: TourStep): TourBlock | null {
+    const { action } = step;
+    if (action.kind !== "show") return null;
+    return station.blocks.find((b) => b.id === action.block) ?? null;
+  }
+
   function render(step: TourStep | null): void {
     releaseStep();
     if (story === null) return;
@@ -292,26 +432,115 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       endStory();
       return;
     }
-    const block = step.block;
-    dom.speaker.hidden = block.kind !== "character";
-    dom.speaker.textContent = block.kind === "character" ? block.name : "";
-    dom.continueButton.hidden = block.kind === "choice";
-    showBlock(story.station, block);
-    if (step.advance.mode === "auto" && block.kind !== "choice") {
-      cancelTimer = deps.schedule(() => {
-        cancelTimer = null;
-        if (story !== null) render(story.player.next());
-      }, step.advance.afterS * 1000);
+    const block = shownBlock(story.station, step);
+    dom.speaker.hidden = block?.kind !== "character";
+    dom.speaker.textContent = block?.kind === "character" ? block.name : "";
+    dom.continueButton.hidden = step.action.kind === "choice";
+    const reached = worldBlockReachedBy(story.station, step);
+    if (reached !== null) deps.onBlockShown?.(story.station.id, reached.id);
+    showAction(story.station, step.action);
+    armTimer(step);
+    deps.onChange?.();
+  }
+
+  /** An auto step's timer, from its full length; none while held. */
+  function armTimer(step: TourStep): void {
+    if (held || step.advance.mode !== "auto" || step.action.kind === "choice") {
+      return;
     }
+    cancelTimer = deps.schedule(() => {
+      cancelTimer = null;
+      if (story !== null) render(story.player.next());
+    }, step.advance.afterS * 1000);
   }
 
   function start(station: TourStation): void {
+    held = false;
     deps.stage.clear();
-    story = { station, player: createScenePlayer(station.steps) };
+    story = {
+      station,
+      player: createScenePlayer(station.steps),
+      count: playableStepCount(station.steps),
+    };
     dom.panel.hidden = false;
     dom.title.textContent = stationTitle(station);
+    showDescription(station.description ?? "");
+    showStationImage(station);
     renderQueue();
-    render(story.player.current());
+    const first = story.player.current();
+    if (first === null && hasCard(station)) {
+      // No story, but a card to read: it stays until Continue, which ends
+      // it (the player's `next()` of an empty story is its end).
+      releaseStep();
+      dom.speaker.hidden = true;
+      dom.speaker.textContent = "";
+      dom.text.textContent = "";
+      dom.continueButton.hidden = false;
+      deps.onChange?.();
+      return;
+    }
+    render(first);
+  }
+
+  /** A station has something to read without a story (`stationHasCard`,
+   *  the walk's own rule). */
+  function hasCard(station: TourStation): boolean {
+    return stationHasCard(station, deps.assets);
+  }
+
+  /** The station's card picture: read and measured like a step's picture,
+   *  shown under its name for the whole story. A picture that cannot be
+   *  read or is too large is left out, and the status line says so; the
+   *  name and the words stay. */
+  function showStationImage(station: TourStation): void {
+    hideStationImage();
+    const asset =
+      station.image === undefined ? undefined : deps.assets.get(station.image);
+    if (asset === undefined) return;
+    const token = stationToken;
+    const alt = stationTitle(station);
+    const missing = (why: string): void => {
+      if (token !== stationToken) return;
+      stationNotice = why;
+      showStatus();
+    };
+    deps
+      .loadAsset(asset.path)
+      .then(async (blob) => {
+        if (token !== stationToken) return;
+        if ((await deps.checkPicture(blob)) !== null) {
+          missing("The station's picture is too large to show here.");
+          return;
+        }
+        if (token !== stationToken) return;
+        stationUrl = deps.objectUrls.create(blob);
+        dom.stationImage.src = stationUrl;
+        dom.stationImage.alt = alt;
+        dom.stationImage.hidden = false;
+      })
+      .catch(() => {
+        missing("The station's picture could not be loaded.");
+      });
+  }
+
+  /** The card picture goes, its status with it, and a read still in
+   *  flight lands on nothing. */
+  function hideStationImage(): void {
+    stationToken += 1;
+    if (stationUrl !== null) deps.objectUrls.revoke(stationUrl);
+    stationUrl = null;
+    dom.stationImage.hidden = true;
+    dom.stationImage.src = "";
+    if (stationNotice !== null) {
+      stationNotice = null;
+      showStatus();
+    }
+  }
+
+  /** The station's description under its name; none hides the line. */
+  function showDescription(text: string): void {
+    dom.description.textContent = text;
+    dom.description.hidden = text === "";
   }
 
   function endStory(): void {
@@ -320,10 +549,13 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     releaseStep();
     deps.stage.clear();
     dom.panel.hidden = true;
+    showDescription("");
+    hideStationImage();
     if (ended !== null) deps.onStoryEnd(ended.station.id);
     const next = queue.shift();
     if (next !== undefined) start(next);
     else renderQueue();
+    deps.onChange?.();
   }
 
   return {
@@ -365,10 +597,33 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       queue.length = 0;
       story = null;
       releaseStep();
+      hideStationImage();
       deps.stage.clear();
       dom.panel.hidden = true;
       renderQueue();
+      deps.onChange?.();
     },
     playing: () => story?.station.id ?? null,
+    progress() {
+      const step = story?.player.current() ?? null;
+      if (story === null || story.count === null || step === null) return null;
+      const playable = story.station.steps.filter(isPlayableInK4);
+      return {
+        index: playable.indexOf(step),
+        count: story.count,
+        autoMs:
+          step.advance.mode === "auto" && !held
+            ? step.advance.afterS * 1000
+            : null,
+      };
+    },
+    holdStep(hold) {
+      if (hold === held) return;
+      held = hold;
+      cancelTimer?.();
+      cancelTimer = null;
+      const step = story?.player.current() ?? null;
+      if (!hold && step !== null) armTimer(step);
+    },
   };
 }

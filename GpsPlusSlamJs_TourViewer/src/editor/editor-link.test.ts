@@ -14,7 +14,15 @@ import { OpenRemoteArchiveError } from "gps-plus-slam-app-framework/storage";
 import { describe, expect, it, vi } from "vitest";
 
 import { HOST_REFUSED_TEXT, describeOpenError } from "../open-errors.js";
-import { NOT_A_LINK, fetchTourFile, linkOpenErrorText } from "./editor-link.js";
+import {
+  NOT_A_LINK,
+  doneHostedName,
+  fetchTourFile,
+  isLinkStandInName,
+  linkFileName,
+  linkHostedName,
+  linkOpenErrorText,
+} from "./editor-link.js";
 
 function fakeArchive(bytes: Uint8Array, url: string) {
   return {
@@ -53,13 +61,22 @@ describe("fetchTourFile", () => {
     expect(archive.dispose).toHaveBeenCalledTimes(1);
   });
 
-  it("names a link without a .zip name tour.zip (a Drive id says nothing)", async () => {
-    const drive = "https://drive.google.com/file/d/abc123/view";
+  // Why: every Drive link used to suggest the bare `tour.zip`, so a second
+  // tour opened from Drive offered the first one's file, and Enter plus
+  // the system's "Replace?" wrote the original over an edited tour (r955
+  // review #1). A Drive link's file carries the start of its file id.
+  it("names a Drive link after the start of its file id, any other link without a .zip name tour.zip", async () => {
+    const drive = "https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQ/view";
     const archive = fakeArchive(new Uint8Array([1]), drive);
     const file = await fetchTourFile(drive, {
       open: () => Promise.resolve(archive),
     });
-    expect(file.name).toBe("tour.zip");
+    expect(file.name).toBe("tour-1AbCdEfGhIjK.zip");
+    const other = "https://example.test/share?file=7";
+    const plain = await fetchTourFile(other, {
+      open: () => Promise.resolve(fakeArchive(new Uint8Array([1]), other)),
+    });
+    expect(plain.name).toBe("tour.zip");
   });
 
   it("stops the download when a read fails, and rejects", async () => {
@@ -79,6 +96,48 @@ describe("fetchTourFile", () => {
       await expect(fetchTourFile(text, { open })).rejects.toThrow(NOT_A_LINK);
     }
     expect(open).not.toHaveBeenCalled();
+  });
+});
+
+// Why: a tour opened from its link asks where to save it in the click,
+// before the fetch - so the save dialog's suggested name must be the name
+// the fetched file will carry, worked out from the link alone; and text
+// that is not a link opens no dialog at all (the open refuses it).
+// Why: Done tells the creator to upload the saved file under the hosted
+// file's name; only a name the link itself carries is that name, never
+// a stand-in made up for a link without one.
+describe("linkHostedName", () => {
+  it("is the link's own zip name, and null where the link names none", () => {
+    expect(linkHostedName(LINK)).toBe("Castle walk.zip");
+    expect(linkHostedName(`  ${LINK}  `)).toBe("Castle walk.zip");
+    expect(linkHostedName("https://drive.google.com/open?id=abc")).toBeNull();
+    expect(
+      linkHostedName("https://drive.example.test/file/d/abc/view"),
+    ).toBeNull();
+  });
+});
+
+describe("linkFileName", () => {
+  it("is the name the fetched file carries, before any request", async () => {
+    expect(linkFileName(LINK)).toBe("Castle walk.zip");
+    expect(linkFileName(`  ${LINK}  `)).toBe("Castle walk.zip");
+    expect(linkFileName("https://drive.example.test/file/d/abc/view")).toBe(
+      "tour.zip",
+    );
+    expect(linkFileName("https://drive.google.com/open?id=abc")).toBe(
+      "tour-abc.zip",
+    );
+    const file = await fetchTourFile(LINK, {
+      open: () => Promise.resolve(fakeArchive(new Uint8Array([1, 2]), LINK)),
+    });
+    expect(file.name).toBe(linkFileName(LINK));
+  });
+
+  it("is null for what is not a web link", () => {
+    for (const text of ["", "   ", "castle.zip", "ftp://example.test/a.zip"]) {
+      expect(linkFileName(text)).toBeNull();
+      expect(linkHostedName(text)).toBeNull();
+    }
   });
 });
 
@@ -106,5 +165,81 @@ describe("linkOpenErrorText", () => {
     expect(linkOpenErrorText(new Error("network gone"), LINK)).toBe(
       "network gone",
     );
+  });
+});
+
+/**
+ * Why these tests matter: Done tells the creator to rename the saved file
+ * to the hosted file's name before uploading it over the file at the
+ * link. A wrong name there is worse than none: on Drive an upload under
+ * another name makes a second file, and the link keeps showing the old
+ * tour. For a link that names no file the editor saves under a stand-in
+ * (`tour-<start of the Drive id>.zip`, or `tour.zip`) that the host never
+ * knew, so neither that name nor the sample's may be offered.
+ */
+describe("doneHostedName", () => {
+  const SAMPLE = "marienplatz-tour.zip";
+
+  it("gives the link's own name in the session the tour was opened from its link", () => {
+    expect(
+      doneHostedName("Castle walk-2026-10-07-090500.zip", {
+        linkHosted: "Castle walk.zip",
+        sampleName: SAMPLE,
+      }),
+    ).toBe("Castle walk.zip");
+  });
+
+  it("says the name is unknown for a link that names no file, never the stand-in the save was named after", () => {
+    for (const saved of [
+      "tour-1AbCdEfGhIjK-2026-10-07-090500.zip",
+      "tour-2026-10-07-090500.zip",
+    ]) {
+      expect(
+        doneHostedName(saved, { linkHosted: null, sampleName: SAMPLE }),
+      ).toBeNull();
+    }
+  });
+
+  it("undates a reopened dated save, except one dated from a stand-in or the sample", () => {
+    const reopened = (saved: string) =>
+      doneHostedName(saved, { linkHosted: undefined, sampleName: SAMPLE });
+    expect(reopened("Castle walk-2026-10-07-090500.zip")).toBe(
+      "Castle walk.zip",
+    );
+    expect(reopened("tour-1AbCdEfGhIjK-2026-10-07-090500.zip")).toBeNull();
+    expect(reopened("tour-2026-10-07-090500.zip")).toBeNull();
+    expect(reopened("marienplatz-tour-2026-10-07-090500.zip")).toBeNull();
+  });
+
+  it("has nothing to say for a tour neither fetched from a link nor saved under a dated name", () => {
+    expect(
+      doneHostedName("castle.zip", {
+        linkHosted: undefined,
+        sampleName: SAMPLE,
+      }),
+    ).toBeUndefined();
+  });
+});
+
+/**
+ * Why this test matters: the stand-in predicate is what keeps a reopened
+ * stand-in save from being offered as a hosted name; it must match every
+ * name the stand-in's maker produces and no ordinary one.
+ */
+describe("isLinkStandInName", () => {
+  it("knows the names the editor stands in with for a link that names no file", () => {
+    const drive = linkFileName(
+      "https://drive.google.com/open?id=1AbCdEfGhIjKlMnOp",
+    );
+    expect(drive).toBe("tour-1AbCdEfGhIjK.zip");
+    expect(isLinkStandInName("tour-1AbCdEfGhIjK.zip")).toBe(true);
+    expect(linkFileName("https://example.test/tours/latest")).toBe("tour.zip");
+    expect(isLinkStandInName("tour.zip")).toBe(true);
+    expect(isLinkStandInName("Castle walk.zip")).toBe(false);
+    expect(isLinkStandInName("tour-of-the-old-town.zip")).toBe(false);
+    expect(isLinkStandInName("tour-1AbCdEfGhIjK.zip.bak")).toBe(false);
+    // The dot before "zip" is literal: a name with any other character
+    // there is a real file's, never the stand-in.
+    expect(isLinkStandInName("tour-1AbCdEfGhIjK_zip")).toBe(false);
   });
 });

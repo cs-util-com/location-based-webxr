@@ -78,12 +78,43 @@ test("the page boots without console errors", async ({ page }) => {
     if (message.type() === "error") errors.push(message.text());
   });
   await page.goto("/");
-  // The creator's page opens on the intro since polish round M2b (the
-  // "Tour Viewer" header is the visitor's).
+  // The creator's page opens with the landing (the "Tour Viewer" header is
+  // the visitor's); a returning device is scrolled past it, so the heading
+  // is checked as present, not in view.
   await expect(
-    page.getByRole("heading", { name: /Put stories/ }),
+    page.getByRole("heading", { level: 1, name: /You know a story/ }),
   ).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+// The suite's default storage makes every spec a returning device, which
+// skips the landing; a first visit sees it from the top, with its moving
+// parts mounted, and must boot as clean.
+test.describe("a first visit", () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test("boots the landing without console errors", async ({ page }) => {
+    /** @type {string[]} */
+    const errors = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto("/");
+    await expect(page.locator(".landing-cards")).toHaveAttribute(
+      "data-mount",
+      "ready",
+    );
+    await expect(page.getByTestId("landing-film")).toHaveAttribute(
+      "data-mount",
+      "ready",
+    );
+    await expect(page.getByTestId("landing-uses")).toHaveAttribute(
+      "data-mount",
+      "ready",
+    );
+    expect(errors).toEqual([]);
+  });
 });
 
 /**

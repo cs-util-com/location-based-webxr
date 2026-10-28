@@ -27,11 +27,17 @@
  * THIS visit sit under the AR world group at their odometry pose, so they
  * stay rigid while GPS re-solves (authoring plan 2026-09-28-0953 §3.2, M2c).
  *
- * A version 3 tour (tour editor plan 2026-10-17-1816, W3) is played one
- * station at a time by `renderTourStation`: a group at the station's geo
- * pose, its pins and photos children at their LOCAL poses, so a station
- * moves them all. The visitor's page renders a station only while its
- * content shows (visitor plan 2026-10-18-2349 M2, `station-content.ts`).
+ * A tour is played one station at a time by `renderTourStation`: a group
+ * at the station's geo pose, its FREE blocks (pins, pictures' planes,
+ * placed models when the caller can load one) children at their LOCAL
+ * poses, so a station moves them all. A block a
+ * story step shows is the story's, never drawn here. The visitor's page
+ * renders a station only while its content shows (visitor plan
+ * 2026-10-18-2349 M2, `station-content.ts`).
+ *
+ * A pin is a short text in the `pin` view; a captured photo is a picture
+ * in the `plane` view plus an image asset of the picture's own id (its
+ * bytes at `content/<id>.jpg`), carried inline until a tour lists it.
  */
 
 import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
@@ -39,18 +45,22 @@ import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-min
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import { tourContentEntryName } from "gps-plus-slam-app-framework/ar/tour-archive";
-import type { TourContentFields } from "gps-plus-slam-app-framework/ar/tour-items";
 import type {
+  TourAsset,
+  TourBlock,
   TourObject,
-  TourPhoto,
+  TourPicture,
   TourPin,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
+import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
 import { Group, type Object3D, type Texture } from "three";
 
 import { placeCapturedImagePlanes } from "./image-planes.js";
+import { modelScale } from "./model-scale.js";
 
 /** Ids are file stems (`content/<id>.jpg`) and must be unique in the
  *  manifest: 12 base-36 characters of randomness, path-safe by construction. */
@@ -62,6 +72,10 @@ export function newObjectId(random: () => number = Math.random): string {
   }
   return id;
 }
+
+/** A captured photo's width in the world: the photo plane's own
+ *  (`image-planes.ts`), so a capture looks as it always did. */
+const CAPTURED_PICTURE_WIDTH_M = 1;
 
 /** The identity: a pin has no facing of its own. */
 const NO_ROTATION: readonly [number, number, number, number] = [0, 0, 0, 1];
@@ -80,7 +94,8 @@ export function rotationFromHeading(
 }
 
 /**
- * A pin record from the reticle's GPS-world NUE position.
+ * A pin (a short text in the `pin` view, `label` its caption) from the
+ * reticle's GPS-world NUE position.
  *
  * @returns null when the zero is missing (no GPS fix yet) or the pose
  *   cannot be minted - the caller refuses the placement with a reason.
@@ -101,10 +116,11 @@ export function mintPin(input: {
     });
     return {
       id: input.id,
-      kind: "pin",
+      kind: "shortText",
+      view: "pin",
       geo,
       createdAtIso: input.nowIso,
-      label: input.label,
+      caption: input.label,
     };
   } catch {
     return null;
@@ -112,7 +128,10 @@ export function mintPin(input: {
 }
 
 /**
- * A photo record from the camera's RAW odometry pose at the capture.
+ * A captured photo from the camera's RAW odometry pose at the capture: a
+ * picture in the `plane` view, `CAPTURED_PICTURE_WIDTH_M` wide, whose
+ * image asset (inline, `imageAsset`) has the picture's own id and the
+ * JPEG's entry `content/<id>.jpg`.
  *
  * @returns null without an alignment or a zero, or when the pose cannot
  *   be minted.
@@ -125,7 +144,7 @@ export function mintPhoto(input: {
   imageWidth: number;
   imageHeight: number;
   nowIso: string;
-}): TourPhoto | null {
+}): TourPicture | null {
   if (input.zero === null || input.alignmentMatrix === null) return null;
   try {
     const world = qrWorldPoseFromOdom(input.cameraPose, input.alignmentMatrix);
@@ -136,12 +155,19 @@ export function mintPhoto(input: {
     });
     return {
       id: input.id,
-      kind: "photo",
+      kind: "picture",
+      view: "plane",
       geo,
       createdAtIso: input.nowIso,
-      image: tourContentEntryName(input.id, "jpg"),
-      imageWidth: input.imageWidth,
-      imageHeight: input.imageHeight,
+      image: input.id,
+      widthM: CAPTURED_PICTURE_WIDTH_M,
+      imageAsset: {
+        id: input.id,
+        path: tourContentEntryName(input.id, "jpg"),
+        kind: "image",
+        width: input.imageWidth,
+        height: input.imageHeight,
+      },
     };
   } catch {
     return null;
@@ -212,49 +238,77 @@ export function renderTourObjects(
   deps: TourObjectRendererDeps,
 ): Promise<RenderedTourObjects> {
   const { poseOf } = deps;
-  return renderContent(objects, {
-    ...deps,
-    poseOf: (object) =>
-      poseOf?.(object) ?? objectPoseNue(object.geo, deps.zero),
-  });
+  return renderContent(
+    objects.map((object) => ({
+      drawn: drawnObject(object),
+      pose: poseOf?.(object) ?? objectPoseNue(object.geo, deps.zero),
+    })),
+    deps,
+  );
 }
 
 /** What `renderTourStation` needs: the renderer's, without a pose rule
- *  (a station's items carry their own), and whether the result is still
- *  wanted: once `alive()` turns false the photos left are not decoded (the
- *  caller disposes what came back). */
+ *  (a station's blocks carry their own), the tour's assets (a picture
+ *  names its image asset), and whether the result is still wanted: once
+ *  `alive()` turns false the pictures left are not decoded (the caller
+ *  disposes what came back). */
 export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
+  readonly assets: readonly TourAsset[];
   readonly alive?: () => boolean;
+  /**
+   * A placed model's `.glb` by its archive entry, as a three scene (the
+   * visitor: the open tour's read and `loadGlbModel`, station blocks plan
+   * B2b). Absent: a placed model is left out quietly, as before (the 3D
+   * editor draws its own models on the group).
+   */
+  readonly loadModel?: (entryName: string) => Promise<Object3D | null>;
 };
 
 /**
- * Play one station of a version 3 tour (tour editor plan W3): a group at
- * the station's geo pose in the session's NUE (`objectPoseNue`), its pins
- * and photos as children at their local poses, added to `deps.scene` once
- * every photo decoded (M5 review #6's rule). The result's `root` is that
- * group; a station without items gives an empty one.
+ * Play one station of a tour: a group at the station's geo pose in the
+ * session's NUE (`objectPoseNue`), its free blocks (pins and pictures) as
+ * children at their local poses, added to `deps.scene` once every picture
+ * decoded (M5 review #6's rule). The result's `root` is that group; a
+ * station without free blocks gives an empty one. A picture whose asset
+ * the tour lacks is named in `skipped`, as one whose file fails.
  *
- * The station's group stands in the session's tangent plane, the items in
- * the station's: for a zero within a kilometre the two agree to well under
- * a centimetre (`content-placement.test.ts`, swept).
+ * The station's group stands in the session's tangent plane, the blocks
+ * in the station's: for a zero within a kilometre the two agree to well
+ * under a centimetre (`content-placement.test.ts`, swept).
  */
-export async function renderTourStation(
-  station: TourStation,
+export function renderTourStation(
+  station: Pick<TourStation, "geo" | "blocks" | "steps">,
+  deps: TourStationRendererDeps,
+): Promise<RenderedTourObjects> {
+  return renderStationBlocks(station, tourFreeBlocks(station), deps);
+}
+
+/**
+ * `blocks` of `station` as `renderTourStation` draws its free blocks: a
+ * group at the station's geo pose, each block at its local pose. The
+ * visitor draws a story block its story reached this way (station blocks
+ * plan B2b, `shown-blocks.ts`).
+ */
+export async function renderStationBlocks(
+  station: Pick<TourStation, "geo">,
+  blocks: readonly TourBlock[],
   deps: TourStationRendererDeps,
 ): Promise<RenderedTourObjects> {
   const frame = new Group();
   const at = objectPoseNue(station.geo, deps.zero);
   frame.position.set(...at.positionNue);
   frame.quaternion.set(...at.rotationNue);
-  const poses = new Map(station.items.map((item) => [item.id, item.pose]));
-  const part = await renderContent(station.items, {
-    ...deps,
-    scene: frame,
-    poseOf: (item) => {
-      const pose = poses.get(item.id)!;
-      return { positionNue: pose.position, rotationNue: pose.rotation };
-    },
-  });
+  const paths = new Map(deps.assets.map((a) => [a.id, a.path]));
+  const part = await renderContent(
+    blocks.map((block) => ({
+      drawn: drawnBlock(block, paths),
+      pose: {
+        positionNue: block.pose.position,
+        rotationNue: block.pose.rotation,
+      },
+    })),
+    { ...deps, scene: frame },
+  );
   deps.scene.add(frame);
   return {
     count: part.count,
@@ -268,17 +322,73 @@ export async function renderTourStation(
   };
 }
 
-/** The one renderer: pins as labels, photos as planes, each at `poseOf`
- *  in `scene`'s frame, under one group added once everything decoded. */
-async function renderContent<T extends TourContentFields>(
-  objects: readonly T[],
+/** What the renderer draws of one free block: a label with its text, a
+ *  plane with its picture's archive entry, a placed model with its file's
+ *  entry and its size (null entry: the tour lacks its asset), or nothing. */
+type Drawn =
+  | { readonly id: string; readonly as: "label"; readonly text: string }
+  | { readonly id: string; readonly as: "plane"; readonly entry: string | null }
+  | {
+      readonly id: string;
+      readonly as: "model";
+      readonly entry: string | null;
+      readonly sizeM: number;
+    }
+  | { readonly id: string; readonly as: "none" };
+
+/** A world-view object as drawn: a picture's file is its inline asset. */
+function drawnObject(object: TourObject): Drawn {
+  switch (object.kind) {
+    case "shortText":
+      return { id: object.id, as: "label", text: object.caption };
+    case "picture":
+      return { id: object.id, as: "plane", entry: object.imageAsset.path };
+    case "model":
+      return { id: object.id, as: "none" };
+  }
+}
+
+/** A station's free block as drawn: a picture's file is the tour's asset
+ *  of its `image`. A block in a view no world drawing has is nothing. */
+function drawnBlock(
+  block: TourBlock,
+  paths: ReadonlyMap<string, string>,
+): Drawn {
+  if (block.kind === "shortText" && block.view === "pin") {
+    return { id: block.id, as: "label", text: block.caption };
+  }
+  if (block.kind === "picture" && block.view === "plane") {
+    return { id: block.id, as: "plane", entry: paths.get(block.image) ?? null };
+  }
+  if (
+    block.kind === "model" &&
+    block.view === "placed" &&
+    block.sizeM !== undefined
+  ) {
+    return {
+      id: block.id,
+      as: "model",
+      entry: paths.get(block.asset) ?? null,
+      sizeM: block.sizeM,
+    };
+  }
+  return { id: block.id, as: "none" };
+}
+
+/** The one renderer: pins as labels, pictures as planes, placed models at
+ *  their size (`modelScale`), each at its pose in `scene`'s frame, under
+ *  one group added once everything decoded. */
+async function renderContent(
+  objects: readonly { readonly drawn: Drawn; readonly pose: ObjectPoseNue }[],
   deps: Omit<TourObjectRendererDeps, "poseOf"> & {
-    poseOf: (object: T) => ObjectPoseNue;
     alive?: () => boolean;
+    loadModel?: TourStationRendererDeps["loadModel"];
   },
 ): Promise<RenderedTourObjects> {
   const labels: { object: Object3D; dispose(): void }[] = [];
+  const models: Object3D[] = [];
   const photoPoses: ObjectPoseNue[] = [];
+  const photoIds: string[] = [];
   const textures: Texture[] = [];
   const skipped: string[] = [];
   // One group, added to the scene only once everything decoded (M5 review
@@ -289,26 +399,57 @@ async function renderContent<T extends TourContentFields>(
   const group = new Group();
   let planes: ReturnType<typeof placeCapturedImagePlanes>;
   try {
-    for (const object of objects) {
+    for (const { drawn, pose } of objects) {
       // Dropped meanwhile (the station's content no longer shows): decode
       // nothing more; the caller disposes what came back.
       if (deps.alive?.() === false) break;
-      const pose = deps.poseOf(object);
-      if (object.kind === "pin") {
-        const label = deps.makeLabel(object.label);
+      if (drawn.as === "label") {
+        const label = deps.makeLabel(drawn.text);
         label.object.position.set(...pose.positionNue);
+        // Names its block: the 3D editor picks and previews by it.
+        label.object.userData["objectId"] = drawn.id;
         group.add(label.object);
         labels.push(label);
         continue;
       }
-      const texture = await deps
-        .loadPhotoTexture(object.image)
-        .catch((): Texture | null => null);
+      if (drawn.as === "none" || (drawn.as === "model" && !deps.loadModel)) {
+        // Nothing this renderer draws (or a model with no loader: the 3D
+        // editor draws its own): left out quietly, as a lenient read
+        // leaves out what it cannot show. Not in `skipped`: "could not
+        // load" would claim a download failed.
+        continue;
+      }
+      if (drawn.as === "model") {
+        const model =
+          drawn.entry === null
+            ? null
+            : await deps
+                .loadModel?.(drawn.entry)
+                .catch((): Object3D | null => null);
+        if (model === null || model === undefined) {
+          skipped.push(drawn.id);
+          continue;
+        }
+        // The size the tour names, by the one rule every page shares.
+        model.scale.setScalar(modelScale(model, drawn.sizeM));
+        model.position.set(...pose.positionNue);
+        model.quaternion.set(...pose.rotationNue);
+        model.userData["objectId"] = drawn.id;
+        models.push(model);
+        continue;
+      }
+      const texture =
+        drawn.entry === null
+          ? null
+          : await deps
+              .loadPhotoTexture(drawn.entry)
+              .catch((): Texture | null => null);
       if (texture === null) {
-        skipped.push(object.id);
+        skipped.push(drawn.id);
         continue;
       }
       photoPoses.push(pose);
+      photoIds.push(drawn.id);
       textures.push(texture);
     }
     planes = placeCapturedImagePlanes({
@@ -316,17 +457,25 @@ async function renderContent<T extends TourContentFields>(
       poses: photoPoses,
       textures,
     });
+    // The planes follow the labels, one per photo in order.
+    group.children.slice(labels.length).forEach((plane, i) => {
+      const id = photoIds[i];
+      if (id !== undefined) plane.userData["objectId"] = id;
+    });
+    // The models after the planes, so the planes' order above holds.
+    for (const model of models) group.add(model);
   } catch (error) {
     // A constructor that throws half way (a label without a canvas) must
     // not strand what was made before it: a station is drawn and freed
     // again as the visitor walks.
     for (const label of labels) label.dispose();
     for (const texture of textures) texture.dispose();
+    for (const model of models) disposeObject3D(model);
     throw error;
   }
   deps.scene.add(group);
   return {
-    count: labels.length + planes.count,
+    count: labels.length + planes.count + models.length,
     root: group,
     skipped,
     dispose: () => {
@@ -337,6 +486,7 @@ async function renderContent<T extends TourContentFields>(
       deps.scene.remove(group);
       for (const label of labels) label.dispose();
       planes.dispose();
+      for (const model of models) disposeObject3D(model);
     },
   };
 }

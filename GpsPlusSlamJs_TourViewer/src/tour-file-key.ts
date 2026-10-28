@@ -29,6 +29,14 @@
  * own, its series id - the same for every version, every Finish, every
  * re-zip - and is keyed by it instead (`tourSeriesFileKey`); this content
  * key is the fallback for every other tour.
+ *
+ * A tour WITHOUT `manifest.json` may carry an id of its own in
+ * `tour.json` (`tourId`, debug-captures plan Q-I): minted once by the tour
+ * document when a file without one opens (`newTourId`), written by every
+ * save, so it is keyed by that id (`tourIdFileKey`) from its first save
+ * on - a tour of the tour kit's files alone, whose content key every save
+ * changed, keeps its draft. A file without one keeps its content key; the
+ * save that writes the id moves the draft to the id's key once.
  */
 
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
@@ -56,9 +64,35 @@ export function tourSeriesFileKey(seriesId: string): string {
   return `${TOUR_FILE_KEY_PREFIX}series:${seriesId}`;
 }
 
-/** True for a key made by {@link tourFileKey} or {@link tourSeriesFileKey}. */
+/** The key of a file-opened tour whose `tour.json` carries its own id
+ *  (debug-captures plan, Q-I) and no `manifest.json` names a series. */
+export function tourIdFileKey(tourId: string): string {
+  return `${TOUR_FILE_KEY_PREFIX}tour:${tourId}`;
+}
+
+/** A new tour id: 128 random bits as 32 hex digits - within the manifest's
+ *  id rule, and as unlikely to repeat as a content key. */
+export function newTourId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** True for a key made by {@link tourFileKey}, {@link tourSeriesFileKey} or
+ *  {@link tourIdFileKey}. */
 export function isTourFileKey(key: string): boolean {
   return typeof key === "string" && key.startsWith(TOUR_FILE_KEY_PREFIX);
+}
+
+/** True for a bare content key ({@link tourFileKey}): a file known by
+ *  neither a series nor a tour id. Such a key names the RECORDING, not the
+ *  tour (the tour kit's files are left out of it), so two tours on one
+ *  recording share it - nothing may be deleted by it (B2a review 4). */
+export function isTourContentKey(key: string): boolean {
+  return (
+    isTourFileKey(key) &&
+    !key.startsWith(`${TOUR_FILE_KEY_PREFIX}series:`) &&
+    !key.startsWith(`${TOUR_FILE_KEY_PREFIX}tour:`)
+  );
 }
 
 /** The folder every name sits in (`"mytour/"`), or `""` when they do not

@@ -9,7 +9,11 @@
  */
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourObject,
+  TourPicture,
+  TourPin,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
@@ -24,23 +28,31 @@ import {
 // construction activates it (the same activation main.ts performs at boot).
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
-function pin(id: string, lat = 47.5): TourObject {
+function pin(id: string, lat = 47.5): TourPin {
   return {
     id,
-    kind: "pin",
-    label: `pin ${id}`,
+    kind: "shortText",
+    view: "pin",
+    caption: `pin ${id}`,
     createdAtIso: "2026-09-30T00:00:00.000Z",
     geo: { lat, lon: 8.7, alt: 400, headingDeg: 0 },
   };
 }
 
-function photo(id: string): TourObject {
+function photo(id: string): TourPicture {
   return {
     id,
-    kind: "photo",
-    image: `content/${id}.jpg`,
-    imageWidth: 4,
-    imageHeight: 3,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id: id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
     createdAtIso: "2026-09-30T00:00:00.000Z",
     geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
   };
@@ -115,10 +127,10 @@ describe("objectListModel on the page", () => {
   });
 
   it("names a photo whose caption is only blanks 'Photo', as the summary map does (object-describe.ts)", () => {
-    // Why: the list showed a blank title where the map said "Photo" (M6 E1
-    // plan review #3); one rule names an object on every page.
+    // Why: the list showed a blank title where the map named the photo
+    // (M6 E1 plan review #3); one rule names an object on every page.
     const blank = objectListModel(
-      state({ entries: [entry({ ...photo("p"), label: "   " })] }),
+      state({ entries: [entry({ ...photo("p"), caption: "   " })] }),
     );
     expect(blank.rows[0]?.title).toBe("Photo");
   });

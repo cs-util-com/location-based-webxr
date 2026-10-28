@@ -31,12 +31,17 @@ listed in `index.html.md`. The concerns and their modules:
   `presentTourLevels`, r857 review #5).
 - `location-permission.ts` - wraps the AR controller's location request
   (`locationPermissionWithoutFix`) so a granted permission with no fix yet
-  starts AR (M1b-1 review #1).
+  starts AR (M1b-1 review #1), and counts the refused requests
+  (`onRefused`), handed to `wireArEntry` as `locationRefusals`.
 - `creator-setup.ts` - the creator's AR setup panel: measuring, finish
   (the zip rebuild), the download (`wireCreatorSetup`); `main.ts` builds
   the object list's DOM view (`createObjectListView` over `#object-list`,
   authoring plan 2026-09-28-0953 M4) and hands it in, and binds
   `hooks.selectInView`.
+- `pin-sheet.ts` - the visitor's pin sheet (B2b): `main.ts` builds it over
+  `#pin-sheet`, binds `hooks.visitorTap` to it, closes it with
+  `hooks.stopStations`, and in visitor mode cancels `beforexrselect` on
+  `#ar-root` for the overlay's own taps (`cancelsXrSelect`).
 - `viewer-placement.ts` - the viewer pipeline and the photo placement
   (`createViewerPlacement`).
 - `ar-entry.ts` - the AR entry, the runtime start/end, the status line
@@ -126,6 +131,9 @@ listed in `index.html.md`. The concerns and their modules:
   cross-module entry points to the `hooks` object (`renderArStatus`,
   `renderArEntry`, `renderAuthorReadout`,
   `tryPlaceTour`, `startAuthorPipeline`, `startViewerPipeline`,
+  `storedCodeVotes` (the viewer placement's vote half for a creator's
+  pipeline at a stored code; null until wired), `creatorCanStartOnCodes`
+  (whether a creator may start AR without location; false until wired),
   `presentTourForPrint`, and `presentLocalTour` - a FILE-opened tour, tour
   kit plan K0: the print step keeps asking for a link and a creator's
   wizard opens step 3, or stays in step 5, without remembering a link;
@@ -137,7 +145,10 @@ listed in `index.html.md`. The concerns and their modules:
   (with `URL.createObjectURL` and `pictureProblem` for the cover) and the
   contact line under `#error` (`tour-contact.ts`, also re-rendered by a
   `MutationObserver` on the error box: W2 of the tour editor plan
-  2026-10-17-1816); for a creator, step 3's "Tour name" field
+  2026-10-17-1816), shown too while the open tour is not finished yet
+  (`tour-unfinished.ts`: the start page says so); for a creator, the note
+  under the visitor link (`#visitor-link-note`, `unfinishedNote`: what a
+  visitor of the hosted file reads while it is not finished) and step 3's "Tour name" field
   (`tour-name-field.ts`), which renames the tour through
   `setup.renameTour` when it is left - and at every Finish's start
   (`beforeFinish`), since that tap may not fire "change" - and says a
@@ -181,3 +192,9 @@ sidecars name the unit tests beneath each concern.
 before another tour replaces the open one while the creator's rebuilt file
 was not saved, and a `beforeunload` handler asks the browser's own question
 before the page goes (partial on Android; the draft survives the rest).
+
+## The radar
+
+- Hands the stations the radar's elements (`walk.radar`) and the peek's
+  arrow and text (`distanceArrow` through `svgElement`, `distanceText`),
+  and the AR entry the walk's `debugLines`.

@@ -12,12 +12,12 @@ import { describe, expect, it } from "vitest";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type {
-  TourItem,
+  TourBlock,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
-import "./test-support/v3-tour.js";
+import "./test-support/tour-of.js";
 import { moveWithCode, takesAlong } from "./move-with-code.js";
 import { moveStationsWithCode } from "./station-code-move.js";
 
@@ -58,10 +58,11 @@ const item = fc
     e: metresArb(20),
     turn: metresArb(180),
   })
-  .map(({ n, u, e, turn }) => (id: string): TourItem => ({
+  .map(({ n, u, e, turn }) => (id: string): TourBlock => ({
     id,
-    kind: "pin",
-    label: "x",
+    kind: "shortText",
+    view: "pin",
+    caption: "x",
     createdAtIso: "2026-10-18T00:00:00.000Z",
     pose: { position: [n, u, e], rotation: yaw(turn) },
   }));
@@ -119,7 +120,7 @@ describe("moveStationsWithCode (property, D17)", () => {
           foundRadiusM: 25,
           hint: "arrow",
           steps: [],
-          items: s.items.map((it, j) => it(`i${String(i)}-${String(j)}`)),
+          blocks: s.items.map((it, j) => it(`i${String(i)}-${String(j)}`)),
         }));
         const claimed = new Set(t.claimFirst ? ["s0"] : []);
         const out = moveStationsWithCode(stations, {
@@ -142,7 +143,7 @@ describe("moveStationsWithCode (property, D17)", () => {
         const movedIds = new Set(expected);
         // Never an item: the same array, the same objects.
         for (const { before, after } of pairs) {
-          expect(after.items).toBe(before.items);
+          expect(after.blocks).toBe(before.blocks);
         }
         for (const { before, after } of pairs.filter(
           (p) => !movedIds.has(p.before.id),
@@ -154,7 +155,7 @@ describe("moveStationsWithCode (property, D17)", () => {
         )) {
           expect({ ...after, geo: before.geo }).toEqual(before);
           // Rigid: each item where the code's correction puts it.
-          for (const it of before.items) {
+          for (const it of before.blocks) {
             const was = itemGeoPose(it.pose, before.geo);
             const is = itemGeoPose(it.pose, after.geo);
             expect(metres(is, moveWithCode(was, from, to))).toBeLessThan(0.002);

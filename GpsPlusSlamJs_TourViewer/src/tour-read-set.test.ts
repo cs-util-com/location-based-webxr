@@ -4,7 +4,7 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { tourOf } from "./test-support/v3-tour.js";
+import { tourOf } from "./test-support/tour-of.js";
 
 import {
   entriesForVisitor,
@@ -26,12 +26,19 @@ const GEO = { lat: 48, lon: 11, alt: 500, rotation: [0, 0, 0, 1] } as const;
 
 const photo: TourObject = {
   id: "f1",
-  kind: "photo",
+  kind: "picture",
+  view: "plane",
   geo: GEO,
   createdAtIso: "2026-10-05T10:00:00.000Z",
-  image: "content/f1.jpg",
-  imageWidth: 4,
-  imageHeight: 3,
+  image: "f1",
+  widthM: 1,
+  imageAsset: {
+    id: "f1",
+    path: "content/f1.jpg",
+    kind: "image",
+    width: 4,
+    height: 3,
+  },
 };
 
 /** A version 3 tour: each of `objects` in a station of its own. */
@@ -40,35 +47,6 @@ function manifest(
 ): TourManifest {
   const { objects = [], ...rest } = extra;
   return tourOf(objects, rest);
-}
-
-/** A walk's baked photos, in a station of their own (version 3). */
-function walk(
-  images: readonly string[],
-  gpsAccuracyMedianM: number | null,
-): Partial<TourManifest> {
-  return {
-    stations: [
-      {
-        id: "walk",
-        geo: GEO,
-        activateRadiusM: 50,
-        foundRadiusM: 25,
-        hint: "arrow",
-        steps: [],
-        items: [],
-      },
-    ],
-    captureSpots: {
-      fixes: 9,
-      gpsAccuracyMedianM,
-      captures: images.map((image) => ({
-        image,
-        station: "walk",
-        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-      })),
-    },
-  };
 }
 
 const RECORDING = [
@@ -80,7 +58,11 @@ const RECORDING = [
 ];
 
 describe("visitorEntryNames", () => {
-  it("keeps the manifest, every code level, the signed list and the content the manifest names", () => {
+  it("keeps the manifest, every code level, the signed list and the content the manifest names - never a recorded frame", () => {
+    // Why: a frame a file's capture spots named was read as the tour's
+    // content, so the published copy kept it for every visitor. The
+    // frames are debug data now, and the field that named them is gone
+    // from the format: a visitor reads none.
     const names = [
       "tour.json",
       "qr/abc123.json",
@@ -95,15 +77,14 @@ describe("visitorEntryNames", () => {
       manifest({
         objects: [photo],
         assets: [{ id: "knight", path: "content/knight.png" } as never],
-        ...walk(["images/frame-000002.jpg"], 3),
       }),
       "",
     );
+    // (Was with "images/frame-000002.jpg", the frame the spots name.)
     expect([...read].sort()).toEqual(
       [
         "content/f1.jpg",
         "content/knight.png",
-        "images/frame-000002.jpg",
         "manifest.json",
         "manifest.sig.json",
         "qr/abc123.json",
@@ -112,15 +93,11 @@ describe("visitorEntryNames", () => {
     );
   });
 
-  it("without baked spots keeps every image, so the photo ring still has its photos", () => {
+  it("reads no recorded frame of a tour that names no content", () => {
+    // Why: the zip's images were once all read for a ring around the code;
+    // a visitor now reads only what the tour names.
     const read = visitorEntryNames(["tour.json", ...RECORDING], manifest(), "");
-    expect([...read].sort()).toEqual(
-      [
-        "images/frame-000001.jpg",
-        "images/frame-000002.jpg",
-        "tour.json",
-      ].sort(),
-    );
+    expect([...read]).toEqual(["tour.json"]);
   });
 
   it("joins a wrapped tour's folder onto the names the manifest carries", () => {
@@ -157,15 +134,12 @@ describe("scanEntryNames", () => {
   // licence file is never the walk, and dropping it from the published copy
   // would lose it silently (the first milestone browser run caught exactly
   // that).
-  const baked = walk(["images/frame-000002.jpg"], null);
-
-  it("is the recording's own files a visitor never reads: the walk and its unbaked frames", () => {
+  it("is the recording's own files, every frame", () => {
     const names = ["tour.json", ...RECORDING, "frames/frame-000009.jpg"];
-    expect(scanEntryNames(names, manifest(baked), "")).toEqual([
-      "session.json",
-      "actions/000001.json",
-      "actions/000002.json",
-      "images/frame-000001.jpg",
+    // (Was without "images/frame-000002.jpg": the frame the spots named
+    // stayed the tour's. No frame is the tour's now.)
+    expect(scanEntryNames(names, manifest(), "")).toEqual([
+      ...RECORDING,
       "frames/frame-000009.jpg",
     ]);
   });
@@ -181,15 +155,15 @@ describe("scanEntryNames", () => {
           "depth/000001.bin",
           "images/poster.jpg",
         ],
-        manifest(baked),
+        manifest(),
         "",
       ),
     ).toEqual([]);
   });
 
-  it("keeps a recording's frames for a tour without baked spots: the ring shows them", () => {
+  it("is the whole recording for a tour of no content: no visitor shows its frames", () => {
     expect(scanEntryNames(["tour.json", ...RECORDING], manifest(), "")).toEqual(
-      ["session.json", "actions/000001.json", "actions/000002.json"],
+      RECORDING,
     );
   });
 
@@ -200,7 +174,7 @@ describe("scanEntryNames", () => {
     expect(
       scanEntryNames(
         ["tour.json", "session.json", "images/frame-000001.jpg"],
-        manifest(baked),
+        manifest(),
         "",
       ),
     ).toEqual([]);
@@ -214,12 +188,12 @@ describe("scanEntryNames", () => {
 });
 
 describe("recordingEntryNames", () => {
-  // Why (the M4b milestone review #8): the editor's "Move the walk out"
-  // puts the walk into a file of its own, and that file must be the whole
-  // recording - also the frames a baked tour keeps for its visitors, which
-  // `scanEntryNames` rightly leaves in the tour. Without them the moved-out
-  // walk is a recording with photos missing.
-  it("is every entry the recording wrote, the frames a visitor sees included, in archive order", () => {
+  // Why (the M4b milestone review #8): the debug bundle (the editor's
+  // "Move the debug data out") puts the walk into a file of its own, and that file must be the whole
+  // recording, every frame included (frames a tour kept for its visitors
+  // once among them). Without them the moved-out walk is a recording with
+  // frames missing.
+  it("is every entry the recording wrote, every frame included, in archive order", () => {
     expect(
       recordingEntryNames([
         "tour.json",
@@ -254,7 +228,7 @@ describe("recordingEntryNames", () => {
 });
 
 describe("what a visitor's page shows and downloads", () => {
-  // Why: the gallery, the photo ring and the background download used to
+  // Why: the gallery and the background download used to
   // read every entry. For a copy that kept the walk (S-D10, for a
   // co-author) that is the creator's frames on every visitor's screen and
   // the whole walk on every visitor's data plan (cold review R1).
@@ -275,14 +249,39 @@ describe("what a visitor's page shows and downloads", () => {
     ]);
   });
 
-  it("stops a visitor's background download only for a baked copy that carries a walk", () => {
-    expect(stopsVisitorDownload("visitor", scan, true)).toBe(true);
-    expect(stopsVisitorDownload("visitor", new Set(), true)).toBe(false);
+  /** A tour with something to show (`tour-unfinished.ts`). */
+  const finished = manifest({ objects: [photo] });
+
+  it("stops a visitor's background download for every copy that carries a walk", () => {
+    expect(stopsVisitorDownload("visitor", finished, scan)).toBe(true);
+    // A copy without a walk is all visitor content: stopping would only
+    // lose the offline copy.
+    expect(stopsVisitorDownload("visitor", finished, new Set())).toBe(false);
     // The creator's working copy is theirs to cache whole.
-    expect(stopsVisitorDownload("creator", scan, true)).toBe(false);
-    // Without baked spots the viewer replays the walk, by range reads of
-    // every action entry: stopping the download would only make it slower
-    // and lose the offline copy (S1 milestone review #1).
-    expect(stopsVisitorDownload("visitor", scan, false)).toBe(false);
+    expect(stopsVisitorDownload("creator", finished, scan)).toBe(false);
+  });
+
+  it("stops it for a tour whose walk is its whole recording: no visitor replays a walk", () => {
+    // Why: the download was kept for such a tour while a visitor replayed
+    // its walk by range reads; a visitor never reads the walk now.
+    const walk = new Set(
+      scanEntryNames(["tour.json", ...RECORDING], finished, ""),
+    );
+    expect(stopsVisitorDownload("visitor", finished, walk)).toBe(true);
+  });
+
+  it("stops it for a tour not finished yet, with or without a walk", () => {
+    // Why: a visitor of such a tour reads nothing of it (the start page
+    // says it is not finished). A zip without tour.json has no read set
+    // to compute a walk from, so the walk's rule never stopped it and
+    // every visitor downloaded a creator's whole recording.
+    for (const unfinished of [null, manifest()]) {
+      expect(stopsVisitorDownload("visitor", unfinished, new Set())).toBe(true);
+      expect(stopsVisitorDownload("visitor", unfinished, scan)).toBe(true);
+      // The creator is making it: their copy is cached whole.
+      expect(stopsVisitorDownload("creator", unfinished, new Set())).toBe(
+        false,
+      );
+    }
   });
 });

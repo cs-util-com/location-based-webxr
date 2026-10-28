@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tour Viewer</title>
+    <!-- A returning device's page is scrolled to the setup by #landing-skip
+         (right below the stage): on a document that arrives in several
+         network chunks the first paint waits until that script is parsed,
+         so the landing is never painted before the jump. -->
+    <link rel="expect" href="#landing-skip" blocking="render" />
     <!--
       design.css is a VERBATIM copy of GpsPlusSlamJs_DesignSystem/design.css,
       written by `pnpm run vendor` there and held byte-identical by
@@ -371,11 +376,15 @@
       /* The framework's AR canvas (window-sized, inserted as #ar-root's
          first child by initAR) must be out of the flow: in it, it pushed
          the whole panel a screen height down, below the edge of the DOM
-         overlay - every control unreachable (owner's r750 field test;
-         the RecorderApp's #app > canvas rule, app.css). The XR layer
-         draws the camera; this canvas only needs to exist. */
+         overlay - every control unreachable (seen on a phone; the
+         RecorderApp's #app > canvas rule, app.css). The XR layer
+         draws the camera; this canvas only needs to exist. Fixed, not
+         absolute: a window-sized box laid out at #ar-root's offset made
+         the page wider than the window (17 px on a phone), and a page
+         wider than the screen pans under a swipe meant for the sheet; a
+         fixed box adds nothing to the page's scrollable width. */
       #ar-root > canvas {
-        position: absolute;
+        position: fixed;
         top: 0;
         left: 0;
         pointer-events: none;
@@ -416,47 +425,6 @@
         margin-left: var(--space-2);
         background: none;
         box-shadow: none;
-      }
-      /* The visitor's stations (tour kit plan K4): over the camera, so the
-         line and the story's words wear the status line's halo. The skip
-         is the quiet choice, flat like the gate's escape. */
-      #station-line,
-      #scene-panel {
-        text-shadow: var(--halo-text);
-      }
-      #station-line {
-        font-weight: 600;
-        margin: 0 0 var(--space-2);
-      }
-      #station-skip {
-        background: none;
-        box-shadow: none;
-      }
-      #scene-panel {
-        display: grid;
-        gap: var(--space-2);
-        max-width: 48rem;
-        margin: var(--space-2) 0;
-      }
-      #scene-panel h3,
-      #scene-panel p {
-        margin: 0;
-      }
-      #scene-speaker {
-        font-weight: 600;
-      }
-      #scene-status {
-        font-size: var(--size-hint);
-      }
-      #scene-image {
-        max-width: 100%;
-        max-height: 40vh;
-        object-fit: contain;
-      }
-      #scene-choices {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-2);
       }
       /* The one link on the page. The UA default is a blue that belongs to
          no palette here and reads as an artefact on the dark ground. */
@@ -733,98 +701,860 @@
         display: none;
       }
 
-      /* The intro (P2, P3). */
-      .setup-intro {
-        display: grid;
-        gap: var(--space-3);
-        align-items: center;
-        max-width: 75rem;
-        margin: 0 auto;
-        padding: var(--space-4);
+      /* ===== The landing (index.html.md, "The landing") =====
+         A creator's page opens with it; .creator-only hides it for a
+         visitor. Revealed here by body[data-mode], which the first-paint
+         script sets, so it shows before main.ts has run. The design system
+         zeroes every margin, so every gap below is set explicitly (and
+         pinned by landing.spec.js). The prototype's clamp() and min()
+         sizes become steps at fixed widths: the csstree validator rejects
+         both. */
+      .landing {
+        display: none;
+
+        --landing-route-dark: #b43a21;
+        --landing-band: #ebe4d4;
+        --landing-place: #dfe2d4;
       }
-      .setup-intro h1 {
+      /* The landing's column, shared with the setup stage below it. */
+      body {
+        --landing-wide: 1128px;
+      }
+      body[data-mode="creator"] .landing {
+        display: block;
+      }
+      .landing-hero,
+      .landing-story,
+      .landing-make,
+      .landing-uses {
+        max-width: calc(var(--landing-wide) + 32px);
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+
+      /* A visitor's way in: one line, first. */
+      .landing-way {
+        padding: 9px 16px;
+        background: var(--landing-band);
+        border-bottom: 1px solid var(--map-line);
+        font-size: 14.5px;
+        line-height: 1.4;
+        color: var(--ink-dim);
+      }
+      .landing-way b,
+      .landing-way a {
+        color: var(--ink);
+      }
+      .landing-way a {
+        font-weight: 600;
+        text-underline-offset: 3px;
+      }
+
+      .landing-kicker {
+        font: 700 12px/1.25 var(--font-ui);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--landing-route-dark);
+      }
+      .landing h1,
+      .landing-h2,
+      .landing-card h3 {
         font-family: var(--map-serif);
         font-weight: 600;
-        font-size: 2.2rem;
-        line-height: 1.04;
-        margin: 0.2em 0 0.3em;
         text-transform: none;
-        letter-spacing: normal;
+        letter-spacing: -0.01em;
+        color: var(--ink);
       }
-      .setup-intro h1 em {
+      .landing h1 em,
+      .landing .landing-h2 em {
+        font-style: italic;
         color: var(--map-route);
       }
-      .setup-kicker {
-        font-weight: 700;
-        font-size: 0.75rem;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        color: var(--ink-dim);
-        margin: 0;
+
+      /* The hero: the reason, the first five seconds, then the film. */
+      .landing-hero {
+        padding-top: 16px;
+        container-type: inline-size;
       }
-      /* The intro's spacing is set here, not inherited: the design system
-         zeroes paragraph and list margins, and the L5 prototype's gaps
-         between the lede, the reasons and the button vanished in the port
-         (r820 feedback R1; setup-flow.spec.js pins them). */
-      .setup-lede {
-        font-size: 1.06rem;
+      .landing h1 {
+        font-size: 29px;
+        line-height: 1.08;
+        margin-top: 8px;
+      }
+      .landing-lede,
+      .landing-make-line {
+        font-size: 17px;
         line-height: 1.5;
         color: var(--ink-dim);
-        max-width: 33em;
-        margin: 0 0 var(--space-3);
+        max-width: 31em;
+        margin-top: 10px;
       }
-      /* Four reasons, two per row (the owner's L5 choice), each wrapping
-         under its own text. */
-      .setup-why {
-        list-style: none;
-        padding: 0;
-        margin: 0 0 var(--space-4);
-        max-width: 36em;
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: var(--space-2) var(--space-4);
-        color: var(--ink-dim);
+      .landing-make-line {
+        line-height: 1.45;
+        margin-top: 12px;
       }
-      #setup-intro .setup-why li {
+      .landing-make-line b {
+        color: var(--ink);
+      }
+      .landing-needs {
         display: flex;
         align-items: baseline;
         gap: 7px;
+        margin-top: 7px;
+        font-size: 14px;
+        line-height: 1.35;
+        color: var(--ink-dim);
       }
-      #setup-intro .setup-why li::before {
+      .landing-needs::before {
         content: "";
         flex: none;
-        width: 6px;
-        height: 6px;
+        width: 8px;
+        height: 8px;
         border-radius: 50%;
-        background: var(--map-route);
-        transform: translateY(-2px);
+        background: var(--map-ink-3);
+        transform: translateY(-1px);
       }
-      .setup-cta {
+      .landing-cta {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: var(--space-2) var(--space-3);
-        margin: 0;
+        gap: 10px;
+        margin-top: 14px;
       }
-      .setup-intro-art {
-        margin: 0;
+
+      /* The film's box, reserved before the film or its still arrives:
+         the picture at the film's proportion (9:10 upright, the whole
+         width; 3:2 on a phone held sideways and 16:9 from 900 px wide,
+         its picture and bar never taller than the view) and, under it, the room for the bar and a caption of three
+         lines (two from 481 px). The still is drawn at the same
+         proportion. A reduced-motion list grows the box below. */
+      .landing-film {
+        --film-chrome: 133px;
+        --lf-inset: 16px;
+
+        position: relative;
+        overflow: hidden;
+        height: calc((100cqw + 32px) * 10 / 9 + var(--film-chrome));
+        max-height: calc(100svh - 66px + var(--film-chrome));
+        margin: 18px -16px 0;
+        background: var(--paper);
+        border-block: 1px solid var(--map-line);
       }
-      .setup-intro-art svg {
+      .landing-film:has(> .lf-list) {
+        height: auto;
+        max-height: none;
+      }
+      /* Under reduced motion the film opens with its captions as a list,
+         which grows the box by 119 to 195 px when the film mounts (the
+         list wraps more on a narrow phone). A page restored mid-setup
+         (the wizard reloads on purpose) must not be pushed down by that,
+         so the growth is reserved below the box until the film mounts: a
+         lower bound of the measured growth (system face; index.html.md).
+         It goes in the same style change as the list arrives, so the box
+         changes once (a net few px) instead of growing by the whole list
+         and then shrinking by the margin: a reload restored at the stage
+         was, now and then, left that margin past it. */
+
+      @media (prefers-reduced-motion: reduce) {
+        .landing-film:not([data-mount], :has(> .lf-list)) {
+          margin-bottom: 156px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) and (width > 480px) {
+        .landing-film:not([data-mount], :has(> .lf-list)) {
+          margin-bottom: 118px;
+        }
+      }
+      .landing-film picture {
+        display: block;
+        aspect-ratio: 9 / 10;
+      }
+      .landing-still {
         display: block;
         width: 100%;
-        max-width: 300px;
-        height: auto;
-        max-height: 62svh;
-        margin: 0 auto;
+        height: 100%;
+        object-fit: contain;
       }
 
-      @media (width >= 720px), (orientation: landscape) and (width >= 600px) {
-        .setup-intro {
-          grid-template-columns: 1.3fr 1fr;
+      /* How it goes: the five cards, one under another, joined by the
+         walk (a dotted line behind every mark). */
+      .landing-story {
+        padding-top: 56px;
+      }
+      .landing-head {
+        max-width: 36em;
+        margin-bottom: 26px;
+      }
+      .landing-h2 {
+        font-size: 28px;
+        line-height: 1.08;
+        margin-top: 6px;
+      }
+      .landing-sub {
+        font-size: 17px;
+        line-height: 1.5;
+        color: var(--ink-dim);
+        margin-top: 10px;
+      }
+      .landing-cards {
+        position: relative;
+        list-style: none;
+        padding: 0;
+      }
+      .landing-cards::before {
+        content: "";
+        position: absolute;
+        left: 17.5px;
+        top: 20px;
+        bottom: -36px;
+        width: 3px;
+        background: radial-gradient(
+            circle,
+            var(--map-route) 1.4px,
+            transparent 1.8px
+          )
+          50% 0 / 3px 9px repeat-y;
+        opacity: 0.55;
+      }
+      .landing-card {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        padding: 0 0 52px 50px;
+      }
+      .landing-card-text {
+        position: relative;
+      }
+      .landing-mark {
+        position: absolute;
+        left: -50px;
+        top: -2px;
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        background: var(--paper);
+        border: 2px solid var(--map-route);
+        display: grid;
+        place-items: center;
+      }
+      .landing-mark svg {
+        width: 20px;
+        height: 20px;
+        stroke: var(--landing-route-dark);
+        fill: none;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .landing-card-kicker {
+        font: 700 12px/1.3 var(--font-ui);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--ink-dim);
+        padding-top: 9px;
+      }
+      .landing-card h3 {
+        font-size: 25px;
+        line-height: 1.14;
+        margin-top: 6px;
+      }
+      .landing-say {
+        font-size: 17.5px;
+        line-height: 1.58;
+        color: var(--ink-dim);
+        margin-top: 12px;
+        max-width: 31em;
+      }
+      .landing-say + .landing-say {
+        margin-top: 10px;
+      }
+      .landing-say b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .landing-fig {
+        margin-top: 20px;
+
+        --pw: 206px;
+      }
+      /* The picture's box: a phone's height and a margin, reserved before
+         its drawing arrives. */
+      .landing-pic {
+        position: relative;
+        overflow: hidden;
+        height: calc(var(--pw) * 2 + 28px);
+        border-radius: 14px;
+        background: var(--landing-place);
+      }
+      /* The pause control is the picture itself: a real button over it,
+         so a keyboard reaches it too; paused, a small mark in its corner. */
+      .landing-hold {
+        position: absolute;
+        inset: 0;
+        z-index: 3;
+        width: 100%;
+        height: 100%;
+        padding: 0;
+        border: 0;
+        border-radius: 14px;
+        background: none;
+        cursor: pointer;
+      }
+      .landing-hold:focus-visible {
+        outline: 3px solid var(--map-route);
+        outline-offset: -3px;
+      }
+      .landing-pause-mark {
+        position: absolute;
+        right: 10px;
+        top: 10px;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: rgb(35 33 29 / 72%);
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+      .landing-pause-mark::before,
+      .landing-pause-mark::after {
+        content: "";
+        position: absolute;
+        top: 11px;
+        width: 4px;
+        height: 12px;
+        border-radius: 1px;
+        background: #fff;
+      }
+      .landing-pause-mark::before {
+        left: 12px;
+      }
+      .landing-pause-mark::after {
+        right: 12px;
+      }
+      .landing-hold[aria-pressed="true"] .landing-pause-mark {
+        opacity: 1;
+      }
+      .landing-caption {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 9px;
+        font-size: 14.5px;
+        line-height: 1.4;
+        color: var(--ink-dim);
+      }
+      .landing-caption b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      /* A 44 px tap target (the page's --tap) that takes no more of the
+         caption's line than its text: the negative margin gives back the
+         height beyond the line. */
+      .landing-again {
+        flex: none;
+        min-height: 44px;
+        padding: 6px 2px;
+        margin: -12px 0;
+        border: 0;
+        background: none;
+        font: 600 14px/1 var(--font-ui);
+        color: var(--landing-route-dark);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        cursor: pointer;
+      }
+      /* Invisible (and unreachable) until the cards' module makes it work,
+         but in the layout from the start, so the caption does not grow
+         when it appears. */
+      .landing-again:not([data-ready]) {
+        visibility: hidden;
+      }
+      .landing-again:focus-visible {
+        outline: 3px solid var(--map-route);
+        outline-offset: 2px;
+      }
+      .landing-coda {
+        position: relative;
+        padding: 0 0 0 50px;
+      }
+      .landing-mark-done {
+        top: 0;
+        left: 0;
+        background: var(--map-route);
+      }
+      .landing-mark-done svg {
+        stroke: #fff;
+        stroke-width: 2.4;
+      }
+      .landing-coda-line {
+        font: italic 500 21px/1.32 var(--map-serif);
+        color: var(--ink);
+        max-width: 24em;
+        padding-top: 4px;
+      }
+
+      /* Make your own tour, short: why it is easy, one button. */
+      .landing-make {
+        padding-top: 56px;
+      }
+      .landing-why {
+        list-style: none;
+        padding: 0;
+        margin-top: 14px;
+        max-width: 40em;
+        display: grid;
+        gap: 8px 24px;
+        color: var(--ink-dim);
+        font-size: 16px;
+        line-height: 1.4;
+      }
+      .landing-reason {
+        display: flex;
+        gap: 9px;
+        align-items: baseline;
+      }
+      .landing-reason::before {
+        content: "";
+        flex: none;
+        width: 13px;
+        height: 7px;
+        border-left: 2px solid #2f7a4c;
+        border-bottom: 2px solid #2f7a4c;
+        transform: translateY(-3px) rotate(-45deg);
+      }
+      .landing-order {
+        margin-top: 14px;
+        max-width: 36em;
+        font-size: 16px;
+        line-height: 1.45;
+        color: var(--ink-dim);
+      }
+
+      /* The use cases' host: a short list until their section replaces
+         it. The host keeps the landing's rhythm and gutters, so the
+         section's own outer padding is dropped here. */
+      .landing-uses {
+        padding-top: 56px;
+        padding-bottom: 40px;
+        /* The mounted section's height, reserved before its chunk arrives:
+           the wizard reloads the page mid-setup on purpose, and a section
+           that grew by about 1 500 px after the browser restored the
+           scroll would leave the creator that far past the stage. A lower
+           bound of the measured heights (system face; the wide face is
+           taller) per column count (use-cases.css), so it never leaves a
+           gap below the section; index.html.md lists the measurements. */
+        min-height: calc(1259px + 210.5vw);
+      }
+      /* A section that failed to load keeps its short list, unpadded. */
+      .landing-uses[data-mount="failed"] {
+        min-height: 0;
+      }
+      .landing-uses > .uc {
+        max-width: none;
+        padding: 0;
+      }
+      /* Its heading and line read as the landing's other sections do. */
+      .landing-uses .uc-heading {
+        font-size: 28px;
+        line-height: 1.08;
+        letter-spacing: -0.01em;
+      }
+      .landing-uses .uc-sub {
+        font-size: 17px;
+      }
+      .landing-uses-list {
+        list-style: none;
+        padding: 0;
+        margin-top: 14px;
+        display: grid;
+        gap: 12px;
+        max-width: 40em;
+        font-size: 16px;
+        line-height: 1.45;
+        color: var(--ink-dim);
+      }
+      .landing-uses-list b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      @media (width >= 640px) {
+        .landing-uses:not([data-mount="failed"]) {
+          min-height: calc(764px + 51.4vw);
+        }
+      }
+
+      @media (width >= 900px) {
+        .landing-uses:not([data-mount="failed"]) {
+          min-height: calc(937px + 38vw);
+        }
+      }
+
+      @media (width >= 1040px) {
+        .landing-uses:not([data-mount="failed"]) {
+          min-height: calc(699px + 16.25vw);
+        }
+      }
+
+      @media (width >= 1160px) {
+        .landing-uses:not([data-mount="failed"]) {
+          min-height: 907px;
+        }
+      }
+
+      @media (width < 368px) {
+        .landing-fig {
+          --pw: 56vw;
+        }
+      }
+
+      @media (width >= 600px) {
+        .landing h1 {
+          font-size: 44px;
         }
 
-        .setup-intro h1 {
-          font-size: 3.4rem;
+        .landing-h2,
+        .landing-uses .uc-heading {
+          font-size: 40px;
+        }
+
+        .landing-card h3 {
+          font-size: 32px;
+        }
+
+        .landing-coda-line {
+          font-size: 26px;
+        }
+
+        .landing-why {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (width > 480px) {
+        .landing-film {
+          --film-chrome: 114px;
+        }
+      }
+
+      /* Not upright: the picture is 3:2 inside a framed box (16:9 from
+         900 px wide, below); on a short window its width follows the
+         view's height, so the picture keeps its proportion and the bar
+         stays in view with it. */
+      @media (orientation: landscape), (width >= 900px) {
+        .landing-film {
+          --lf-inset: 12px;
+          --film-chrome: 110px;
+
+          max-width: calc((100svh - 66px) * 3 / 2 + 2px);
+          height: calc((100cqw - 2px) * 2 / 3 + var(--film-chrome));
+          margin-inline: auto;
+          border: 1px solid var(--map-line);
+          border-radius: 14px;
+        }
+        .landing-film picture {
+          aspect-ratio: 3 / 2;
+        }
+      }
+
+      @media (width >= 900px) {
+        .landing h1 {
+          font-size: 56px;
+        }
+
+        .landing-h2,
+        .landing-uses .uc-heading {
+          font-size: 44px;
+        }
+
+        .landing-hero {
+          padding-top: 34px;
+        }
+
+        .landing-lede,
+        .landing-make-line {
+          font-size: 19px;
+        }
+
+        .landing-make-line {
+          margin-top: 20px;
+        }
+
+        .landing-needs {
+          font-size: 15px;
+        }
+
+        /* 16:9 on a wide screen, the same short-window rule. The film
+           fills whatever box it is given; the 3:2 still is letterboxed. */
+        .landing-film {
+          max-width: calc((100svh - 66px) * 16 / 9 + 2px);
+          height: calc((100cqw - 2px) * 9 / 16 + var(--film-chrome));
+          margin-top: 28px;
+          border-radius: 24px;
+        }
+        .landing-film picture {
+          aspect-ratio: 16 / 9;
+        }
+
+        .landing-story,
+        .landing-make,
+        .landing-uses {
+          padding-top: 80px;
+        }
+
+        .landing-sub,
+        .landing-uses .uc-sub {
+          font-size: 19px;
+        }
+
+        /* Text on the left carries the step; its one picture stands
+           beside it, a little wider than on a phone. */
+        .landing-cards::before {
+          left: 24.5px;
+          top: 30px;
+          bottom: -48px;
+        }
+
+        .landing-card {
+          grid-template-columns: minmax(0, 1fr) minmax(0, 440px);
+          /* 5 % of the view, at most 72 px (from 1440 px). */
+          column-gap: 5vw;
+          padding: 0 0 76px 76px;
+          align-items: center;
+        }
+
+        .landing-mark {
+          left: -76px;
+          top: -12px;
+          width: 52px;
+          height: 52px;
+        }
+
+        .landing-mark svg {
+          width: 26px;
+          height: 26px;
+        }
+
+        .landing-card-kicker {
+          padding-top: 6px;
+        }
+
+        .landing-card h3 {
+          font-size: 34px;
+        }
+
+        .landing-say {
+          font-size: 19px;
+        }
+
+        .landing-fig {
+          margin-top: 0;
+
+          --pw: 214px;
+        }
+
+        .landing-coda {
+          padding-left: 76px;
+        }
+
+        .landing-mark-done {
+          top: -8px;
+          left: 0;
+        }
+
+        .landing-coda-line {
+          font-size: 30px;
+        }
+      }
+
+      @media (width >= 1440px) {
+        .landing-card {
+          column-gap: 72px;
+        }
+      }
+
+      @media (width >= 1160px) {
+        .landing-way {
+          padding-inline: calc((100% - var(--landing-wide)) / 2);
+        }
+
+        .landing-card h3 {
+          font-size: 38px;
+        }
+      }
+
+      /* ===== The landing on a wide screen (index.html.md, "The landing
+         on a wide screen"). Each rule has a height guard or a width no
+         phone has, so a phone, upright or held sideways, keeps its
+         layout (landing.spec.js pins both). */
+
+      /* From tablet width up, the reading text and the main buttons are
+         larger, under the large headlines. */
+      @media (width >= 768px) and (height > 560px) {
+        .landing-way,
+        .landing-caption {
+          font-size: 16px;
+        }
+
+        .landing-why,
+        .landing-order {
+          font-size: 17.5px;
+        }
+
+        .landing-uses .uc-sentence {
+          font-size: 17px;
+        }
+
+        .landing .landing-begin {
+          min-height: 52px;
+          padding-inline: 26px;
+          font-size: 17px;
+        }
+      }
+
+      @media (width >= 900px) and (height > 560px) {
+        /* The six reasons across the whole column, three to a row. */
+        .landing-why {
+          max-width: none;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        /* Each step's picture starts at its kicker's line (the kicker's
+           6 px top padding), and the cards sit a little closer. */
+        .landing-card {
+          align-items: start;
+          padding-bottom: 56px;
+        }
+
+        .landing-fig {
+          margin-top: 6px;
+        }
+      }
+
+      /* From 1000 px wide the hero's text and film stand side by side
+         (swept 1000, 1100 and 1200: below 1000 the text column gets
+         narrower than about 380 px; stacked, a 1000 to 1199 px window
+         showed only the film's top). The film takes 58 % of the row less
+         the gap (swept 0.52, 0.58, 0.64), its top on the kicker's, its
+         height capped so the whole film stays on the first screen: it
+         starts about 73 px down and 96 px leaves about 23 px below it
+         (swept 72, 96, 120: 72 let it run past a 500 px window). */
+      @media (width >= 1000px) {
+        .landing-hero {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          column-gap: 48px;
+          align-items: start;
+        }
+
+        .landing-film {
+          --hero-film-w: calc((100cqw - 48px) * 0.58);
+
+          width: var(--hero-film-w);
+          max-width: calc((100svh - 96px - var(--film-chrome)) * 16 / 9 + 2px);
+          height: calc(
+            (var(--hero-film-w) - 2px) * 9 / 16 + var(--film-chrome)
+          );
+          max-height: calc(100svh - 96px);
+          margin: 0;
+        }
+
+        .landing h1 {
+          font-size: 48px;
+        }
+      }
+
+      /* Beside the film the headline is 40 px where the text column is
+         narrow (under 1160 px wide) or the window under 740 px high, and
+         the film takes half the row instead of 58 % where the column is
+         narrow or the window under 680 px high. At 48 px a wide face (the
+         CI's Linux face, DejaVu Sans Bold) wraps the headline to five
+         lines beside a 58 % film (a 454 px text column), and the button
+         ended 25 px below a 1280x680 window and 5 px below a 1280x700 one;
+         at 40 px it takes three lines there and the button stays 104 px
+         clear (61 px in DejaVu spaced 0.06em wider). Half the row with
+         48 px would fit too, but narrows the film from 626 to 540 px, and
+         the drawn phone's chip in its last part no longer fits that
+         film's screen. With half the row the text column is 460 px at
+         1000 px wide, 510 px at 1100 and 540 px from 1160 (the column's
+         cap). The headline is 34 px under 580 px high, and under 620 px
+         below 1100 px wide: at 40 px it took three lines in DejaVu Sans
+         and ended the button 14 px below a 1000x561 window, and four
+         lines in DejaVu spaced 0.04em wider, 19 px below a 1000x600 one.
+         Swept in the system face, Verdana and DejaVu Sans, each spaced up
+         to 0.06em wider, at 1000 to 1920 px wide and 561 to 800 px high:
+         no size puts the button below the window (index.html.md, "On a
+         wide screen"). */
+      @media (width >= 1000px) and (width < 1160px),
+        (width >= 1000px) and (height < 740px) {
+        .landing h1 {
+          font-size: 40px;
+        }
+      }
+
+      @media (width >= 1000px) and (width < 1160px),
+        (width >= 1000px) and (height < 680px) {
+        .landing-film {
+          --hero-film-w: calc((100cqw - 48px) * 0.5);
+        }
+      }
+
+      @media (width >= 1000px) and (height < 580px),
+        (width >= 1000px) and (width < 1100px) and (height < 620px) {
+        .landing h1 {
+          font-size: 34px;
+        }
+      }
+
+      /* A phone held sideways: each step's text beside its picture, the
+         picture sized to the view's height. */
+      @media (orientation: landscape) and (height <= 560px) {
+        .landing h1 {
+          font-size: 25px;
+        }
+
+        .landing-lede,
+        .landing-make-line {
+          font-size: 15px;
+          margin-top: 6px;
+        }
+
+        .landing-needs {
+          font-size: 13px;
+          margin-top: 4px;
+        }
+
+        .landing-cta {
+          margin-top: 10px;
+        }
+
+        .landing-card {
+          grid-template-columns: minmax(0, 1fr) auto;
+          column-gap: 22px;
+          padding-bottom: 40px;
+          align-items: center;
+        }
+
+        .landing-card h3 {
+          font-size: 24px;
+        }
+
+        .landing-say {
+          font-size: 15.5px;
+          line-height: 1.5;
+          margin-top: 8px;
+        }
+
+        .landing-fig {
+          margin-top: 0;
+          width: calc(var(--pw) * 1.6);
+
+          --pw: calc((100svh - 74px) / 2 - 14px);
+        }
+
+        .landing-caption {
+          font-size: 13px;
         }
       }
 
@@ -832,6 +1562,30 @@
       body[data-mode="creator"] .setup-stage {
         max-width: 90rem;
         margin: 0 auto;
+      }
+      /* At least a view tall on a page that skipped the landing: it is
+         scrolled to the stage's top before the rest of the page is parsed
+         (#landing-skip, below the stage), and the top must be reachable
+         then. A first visit keeps the stage's own height. */
+      html[data-landing-skip] body[data-mode="creator"] .setup-stage {
+        min-height: 100vh;
+      }
+      /* The skip makes the stage the keyboard's start point (focus, no
+         scroll); it is not a control, so it draws no focus ring. */
+      #setup-stage:focus {
+        outline: none;
+      }
+      /* The steps need main.ts; until it has revealed them, a page that
+         opened at the stage says so instead of showing an empty card. */
+      .setup-loading {
+        display: none;
+      }
+      html[data-landing-skip]
+        body[data-mode="creator"]
+        #setup-card:has(> #wizard[hidden])
+        > .setup-loading {
+        display: block;
+        color: var(--ink-dim);
       }
       .setup-map {
         padding: var(--space-3) var(--space-2) var(--space-2);
@@ -1000,11 +1754,49 @@
         padding: var(--space-3);
         margin: var(--space-3) var(--space-3) var(--space-4);
       }
+
+      /* On a wide screen the stage stands on the landing's centred column
+         (--landing-wide, 1128 px, and its 16 px gutters): the map's frame
+         and the card's edges on the column's edges, and the step card in
+         view beside the map while the map is (not during AR, whose panel
+         lives inside the card). */
+      @media (width >= 900px) and (height > 560px) {
+        body[data-mode="creator"] .setup-stage {
+          max-width: calc(var(--landing-wide) + 32px);
+          padding-inline: 16px;
+        }
+
+        body[data-mode="creator"] .setup-map {
+          padding-inline: 0;
+        }
+
+        /* Its outline sits 4 px outside it (1 px line, 3 px offset). */
+        body[data-mode="creator"] .setup-map-frame {
+          margin-inline: 4px;
+        }
+
+        body[data-mode="creator"] .setup-card {
+          margin-inline: 0;
+        }
+
+        body[data-mode="creator"]:not([data-ar-active="true"]) .setup-card {
+          position: sticky;
+          top: 16px;
+        }
+      }
       .setup-card-top {
         display: flex;
         align-items: center;
         gap: var(--space-2);
         margin-bottom: var(--space-2);
+      }
+      /* The map and the card's step line are static markup: shown by CSS
+         for a creator from the first paint, so a page that opens at the
+         stage shows them before main.ts has run (main.ts hides them for a
+         visitor, as every .creator-only part). */
+      body:not([data-mode="creator"]) .setup-map,
+      body:not([data-mode="creator"]) .setup-card-top {
+        display: none;
       }
       .setup-badge {
         width: 28px;
@@ -1179,7 +1971,9 @@
         flex-direction: column;
       }
       body[data-mode="visitor"]:not([data-ar-active="true"]) #visitor-screen {
+        display: flex;
         flex: 1;
+        flex-direction: column;
       }
       .visitor-kicker {
         display: flex;
@@ -1462,8 +2256,11 @@
       }
 
       /* A phone without AR loses "What happens?": it describes a session
-         this phone cannot start (V4's recovery states). */
+         this phone cannot start (V4's recovery states). So does a tour
+         not finished yet, whose Start is withheld (`ar-entry.ts`). */
       body[data-mode="visitor"]:has(#enter-ar[data-ar-state="unsupported"])
+        #visitor-what,
+      body[data-mode="visitor"]:has(#enter-ar[data-start="withheld"])
         #visitor-what {
         display: none;
       }
@@ -1621,6 +2418,26 @@
       #scan-card #scan-escape[hidden] {
         display: none;
       }
+      /* The found look: the code
+         passed the gate, the tour is being placed - a green check, no
+         phone, no escape. */
+      .scan-card-ok {
+        opacity: 0;
+      }
+      #scan-card[data-look="found"] .scan-card-panel {
+        border-color: rgb(74 222 128 / 80%);
+        background: rgb(8 40 22 / 58%);
+      }
+      #scan-card[data-look="found"] .scan-card-phone {
+        opacity: 0;
+        animation: none;
+      }
+      #scan-card[data-look="found"] .scan-card-ok {
+        opacity: 1;
+      }
+      #scan-card[data-look="found"] #scan-escape {
+        display: none;
+      }
       /* A phone held sideways: the animation beside the words. */
       @media (orientation: landscape) and (height <= 520px) {
         .scan-card-panel {
@@ -1650,6 +2467,1208 @@
         .scan-card-brackets {
           animation: none;
         }
+      }
+
+      /* ===== The visitor's walk in AR =====
+         The prototype's look (public/prototypes/visitor-walk-4-radar-and-list/):
+         the coach, the toast's place, the sheet with its peek, the story
+         card and the list, and Exit AR as a round button. In AR only; the
+         design system zeroes paragraph and list margins (the L5 lesson),
+         so every gap of the prototype is restated here and pinned by
+         playwright-tests/visitor-walk-layout.spec.js. The walk's own
+         colours are app-local tokens (plan §6 Q2); design.css's .radar,
+         .toast and .hint classes are not used (plan §1.2). */
+      html {
+        --walk-accent: #fb923c;
+        --walk-accent-ink: #1f1105;
+        --walk-found: #2dd4bf;
+        --walk-found-ink: #04201c;
+        --walk-skip: #9aa4ae;
+        --walk-left: #f3f5f7;
+        --walk-ink: #f3f5f7;
+        --walk-muted: #b3bcc6;
+        --walk-surface: rgb(12 16 21 / 80%);
+        --walk-surface-2: rgb(255 255 255 / 7%);
+        --walk-line: rgb(255 255 255 / 15%);
+        --walk-danger: #f87171;
+        /* The position's precision (M3): GPS blue, too weak amber; the
+           radar's canvas draws the same (walk-radar.test.ts holds them). */
+        --walk-gps: #93c5fd;
+        --walk-weak: #fbbf24;
+        --walk-radar: 132px;
+        /* The away block's segments on the start page (the prototype's paper). */
+        --walk-away-found: #0f766e;
+        --walk-away-left: #ddd6c7;
+        --walk-away-row: #fff;
+      }
+      .walk-sheet,
+      .walk-coach,
+      #walk-toast-root {
+        display: none;
+      }
+      /* The prototype's figures stand on the line: the design system's font sets
+         old-style numerals, which shrink a row's number and a distance. */
+      .walk-sheet,
+      .walk-coach,
+      #walk-toast-root,
+      .walk-away {
+        font-variant-numeric: lining-nums;
+      }
+      #scene-panel h3,
+      #scene-panel p {
+        margin: 0;
+      }
+      #scene-image,
+      #scene-station-image,
+      #scene-video {
+        max-width: 100%;
+        max-height: 30vh;
+        object-fit: contain;
+      }
+      #scene-video[hidden] {
+        display: none;
+      }
+      /* The station's description under its name (B2b step 6). */
+      #scene-description {
+        color: var(--walk-muted);
+        font-size: 14px;
+        white-space: pre-line;
+      }
+      /* A long text's paragraphs (B2b): P keeps them a blank line apart. */
+      #scene-text {
+        white-space: pre-line;
+      }
+      #scene-choices {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+      }
+      #scene-choices:empty {
+        display: none;
+      }
+
+      /* The visitor's sentence stays in #ar-status for data-state and the
+         tests, read by no one in AR: the coach, the scan card, the toast
+         or the peek carry it (walk-status-routing.ts). ?debug=1 keeps
+         the technical line visible. */
+      body[data-mode="visitor"][data-ar-active="true"]:not([data-debug="true"])
+        #ar-status {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+
+      /* Exit AR: a 44 px round button with a cross, top left; its
+         words stay its text (the e2e and the accessible name). */
+      body[data-mode="visitor"][data-ar-active="true"] #ar-root #enter-ar {
+        position: fixed;
+        top: calc(30px + env(safe-area-inset-top));
+        left: calc(12px + env(safe-area-inset-left));
+        z-index: 30;
+        display: block;
+        width: 44px;
+        min-width: 44px;
+        height: 44px;
+        min-height: 44px;
+        padding: 0;
+        overflow: hidden;
+        border: 1px solid var(--walk-line);
+        border-radius: 50%;
+        background: rgb(10 14 19 / 55%);
+        color: transparent;
+        font-size: 0;
+        box-shadow: none;
+        transform: none;
+        backdrop-filter: blur(6px);
+      }
+      body[data-mode="visitor"][data-ar-active="true"]
+        #ar-root
+        #enter-ar::before,
+      body[data-mode="visitor"][data-ar-active="true"]
+        #ar-root
+        #enter-ar::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 17px;
+        height: 2px;
+        border-radius: 1px;
+        background: #fff;
+        transform: translate(-50%, -50%) rotate(45deg);
+      }
+      body[data-mode="visitor"][data-ar-active="true"]
+        #ar-root
+        #enter-ar::after {
+        transform: translate(-50%, -50%) rotate(-45deg);
+      }
+
+      /* The coach: centred, its centre at 44 % of the height. */
+      body[data-mode="visitor"][data-ar-active="true"]
+        .walk-coach:not([hidden]) {
+        position: fixed;
+        top: 44%;
+        left: 50%;
+        z-index: 15;
+        display: block;
+        width: max-content;
+        /* stylelint-disable-next-line csstree/validator -- valid CSS; the bundled css-tree grammar predates it. */
+        max-width: min(320px, calc(100vw - 40px));
+        padding: 12px 16px;
+        border: 1px solid var(--walk-line);
+        border-radius: 16px;
+        background: rgb(10 14 19 / 66%);
+        color: var(--walk-ink);
+        font-size: 15px;
+        font-weight: 600;
+        line-height: 1.35;
+        text-align: center;
+        transform: translate(-50%, -50%);
+        backdrop-filter: blur(6px);
+        pointer-events: none;
+      }
+      .walk-coach-spin,
+      .walk-coach-sway {
+        display: none;
+      }
+      .walk-coach[data-look="spinner"] .walk-coach-spin {
+        display: block;
+        width: 26px;
+        height: 26px;
+        margin: 0 auto 8px;
+        border: 3px solid rgb(255 255 255 / 25%);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: walk-spin 0.9s linear infinite;
+      }
+      .walk-coach[data-look="sway"] .walk-coach-sway {
+        display: block;
+        width: 34px;
+        height: 34px;
+        margin: 0 auto 6px;
+      }
+      .walk-coach-sway rect {
+        transform-box: view-box;
+        transform-origin: 17px 30px;
+        animation: walk-sway 2.2s ease-in-out infinite;
+      }
+
+      @keyframes walk-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes walk-sway {
+        0%,
+        100% {
+          transform: rotate(-14deg);
+        }
+
+        50% {
+          transform: rotate(14deg);
+        }
+      }
+
+      /* The radar and the precision chip:
+         the top right, the chip under the radar, right-aligned with it.
+         The radar is a canvas (walk-radar.ts); frozen (no position,
+         tracking lost) it goes grey. */
+      body[data-mode="visitor"][data-ar-active="true"]
+        .walk-radar-wrap:not([hidden]) {
+        position: fixed;
+        top: calc(30px + env(safe-area-inset-top));
+        right: calc(12px + env(safe-area-inset-right));
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+        width: var(--walk-radar);
+        color: var(--walk-ink);
+        font-family: system-ui, sans-serif;
+        font-variant-numeric: lining-nums;
+      }
+      .walk-radar-wrap[hidden] {
+        display: none;
+      }
+      .walk-radar {
+        display: block;
+        width: var(--walk-radar);
+        height: var(--walk-radar);
+        margin: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        box-shadow: 0 6px 18px rgb(0 0 0 / 28%);
+        cursor: pointer;
+        appearance: none;
+        backdrop-filter: blur(5px);
+      }
+      .walk-radar-canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        transition: filter 0.5s;
+      }
+      .walk-radar-wrap[data-mode="frozen"] .walk-radar-canvas {
+        filter: grayscale(1) brightness(0.85);
+      }
+
+      /* The focus's edge pill (the prototype's "on the way" and
+         "behind you"): at 42 % of the height, 8 px in from the
+         edge on the station's side, its chevron pointing out. Never a
+         tap target: the HUD's markers and the list are. */
+      body[data-mode="visitor"][data-ar-active="true"]
+        .walk-edge-pill:not([hidden]) {
+        position: fixed;
+        top: 42%;
+        z-index: 14;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        max-width: 44vw;
+        padding: 7px 11px;
+        border: 1px solid rgb(251 146 60 / 70%);
+        border-radius: 999px;
+        background: rgb(10 14 19 / 72%);
+        color: var(--walk-ink);
+        font-family: system-ui, sans-serif;
+        font-size: 13px;
+        font-weight: 600;
+        white-space: nowrap;
+        pointer-events: none;
+      }
+      .walk-edge-pill[hidden] {
+        display: none;
+      }
+      .walk-edge-pill span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .walk-edge-pill svg {
+        flex: none;
+        width: 14px;
+        height: 14px;
+        color: var(--walk-accent);
+      }
+      .walk-edge-pill[data-side="left"] {
+        left: calc(8px + env(safe-area-inset-left));
+      }
+      .walk-edge-pill[data-side="right"] {
+        right: calc(8px + env(safe-area-inset-right));
+        flex-direction: row-reverse;
+      }
+      /* The range label after a tap wears the chip's pill. */
+      .walk-range[hidden] {
+        display: none;
+      }
+      .walk-precision,
+      .walk-range {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        width: max-content;
+        max-width: calc(var(--walk-radar) + 36px);
+        margin: 0;
+        padding: 5px 9px;
+        border: 1px solid var(--walk-line);
+        border-radius: 14px;
+        background: rgb(10 14 19 / 72%);
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.2;
+        text-align: right;
+      }
+      .walk-precision[hidden] {
+        display: none;
+      }
+      .walk-precision-mark {
+        flex: none;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--walk-gps);
+        box-shadow: 0 0 0 3px rgb(147 197 253 / 25%);
+      }
+      .walk-precision[data-kind="code"] .walk-precision-mark {
+        border-radius: 2px;
+        background: #fff;
+        box-shadow: 0 0 0 2px var(--walk-found);
+      }
+      .walk-precision[data-kind="weak"] {
+        border-color: rgb(251 191 36 / 55%);
+      }
+      .walk-precision[data-kind="weak"] .walk-precision-mark {
+        background: var(--walk-weak);
+        box-shadow: 0 0 0 4px rgb(251 191 36 / 25%);
+      }
+      .walk-precision[data-kind="none"] .walk-precision-mark,
+      .walk-precision[data-kind="lost"] .walk-precision-mark {
+        background: #6b7480;
+        box-shadow: none;
+      }
+      .walk-precision[data-kind="pending"] .walk-precision-mark {
+        border: 2px solid var(--walk-gps);
+        background: transparent;
+        box-shadow: none;
+        animation: walk-pulse 1.2s ease-in-out infinite;
+      }
+
+      @keyframes walk-pulse {
+        50% {
+          transform: scale(0.6);
+          opacity: 0.5;
+        }
+      }
+
+      /* The direction arrows (M3, §1.5): turned to the station, hidden
+         without an angle (walk-sheet.ts setArrow). */
+      .walk-arrow {
+        flex: none;
+        width: 15px;
+        height: 15px;
+        transition: transform 0.3s;
+      }
+      .walk-arrow:not([data-deg]) {
+        display: none;
+      }
+
+      /* The toast (the prototype's place, the framework's toast in the design
+         system's toast look, restated here: design.css's .toast class is
+         not used, plan §1.2). Below the radar's top at the left; its right
+         edge clear of the radar (M3). */
+      body[data-mode="visitor"][data-ar-active="true"] #walk-toast-root {
+        position: fixed;
+        top: calc(84px + env(safe-area-inset-top));
+        left: calc(12px + env(safe-area-inset-left));
+        z-index: 30;
+        display: block;
+        max-width: calc(100vw - 24px - 132px - 8px);
+        pointer-events: none;
+      }
+      .walk-toast {
+        width: max-content;
+        max-width: 100%;
+        padding: var(--space-2) var(--space-4);
+        border-radius: var(--radius);
+        background: var(--surface-inverse);
+        color: var(--paper);
+        box-shadow: var(--raise-light);
+        font-weight: var(--weight-strong);
+        line-height: 1.35;
+        animation: enter-rise var(--t-enter) var(--ease-out);
+      }
+
+      /* A pin's whole text on a tap (B2b): docked to the bottom edge
+         above the walk's sheet, as it is. */
+      .pin-sheet[hidden] {
+        display: none;
+      }
+      body[data-mode="visitor"][data-ar-active="true"]
+        .pin-sheet:not([hidden]) {
+        position: fixed;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-width: 520px;
+        max-height: 50vh;
+        margin: 0 auto;
+        padding: 18px 18px 24px;
+        overflow-y: auto;
+        border-top: 1px solid var(--walk-line);
+        border-radius: 22px 22px 0 0;
+        background: var(--walk-surface);
+        color: var(--walk-ink);
+        font-size: 15px;
+        line-height: 1.45;
+        text-shadow: none;
+        box-shadow: 0 -10px 30px rgb(0 0 0 / 25%);
+      }
+      #pin-sheet-title,
+      #pin-sheet-text {
+        margin: 0;
+      }
+      #pin-sheet-text {
+        white-space: pre-line;
+      }
+
+      /* The sheet: docked to the bottom edge, the design
+         system's .sheet atom as its base. */
+      body[data-mode="visitor"][data-ar-active="true"]
+        .walk-sheet:not([hidden]) {
+        position: fixed;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 25;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        max-width: 520px;
+        max-height: 66vh;
+        margin: 0 auto;
+        /* stylelint-disable-next-line csstree/validator -- valid CSS; the bundled css-tree grammar predates it. */
+        padding: 0 0 env(safe-area-inset-bottom);
+        border-top: 1px solid var(--walk-line);
+        border-radius: 22px 22px 0 0;
+        background: var(--walk-surface);
+        color: var(--walk-ink);
+        font-size: 15px;
+        line-height: 1.4;
+        text-shadow: none;
+        box-shadow: 0 -10px 30px rgb(0 0 0 / 25%);
+        backdrop-filter: blur(14px) saturate(1.2);
+      }
+      /* stylelint-disable no-descending-specificity -- the creator's .btn
+         rule never matches inside #ar-root (its :not), so the order of the
+         two cannot matter. */
+      .walk-sheet .btn,
+      .walk-sheet .btn:hover,
+      .walk-sheet .btn:active {
+        transform: none;
+        box-shadow: none;
+      }
+      /* stylelint-enable no-descending-specificity */
+      .walk-grab {
+        position: relative;
+        display: block;
+        flex: none;
+        width: 100%;
+        height: 22px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        cursor: grab;
+        touch-action: none;
+        user-select: none;
+      }
+      /* A 44 px target around the 5 px pill: 11 px above
+         the sheet's edge and 11 px into the segments, clear of the peek's
+         row and its quick action. The layout stays the prototype's. */
+      .walk-grab::before {
+        position: absolute;
+        inset: -11px 0;
+        content: "";
+      }
+      .walk-grab .sheet-handle {
+        display: block;
+        width: 40px;
+        height: 5px;
+        margin: 8px auto 0;
+        border-radius: 3px;
+        background: rgb(255 255 255 / 40%);
+      }
+      .walk-peek {
+        flex: none;
+        padding: 0 16px 12px;
+        cursor: pointer;
+        touch-action: none;
+        /* A drag that starts on selected text would be the browser's
+           drag of that text, and its pointer events would stop. */
+        user-select: none;
+      }
+      .walk-segments {
+        display: flex;
+        gap: 4px;
+        margin: 2px 0 10px;
+      }
+      .walk-segments > i {
+        flex: 1;
+        height: 6px;
+        border-radius: 3px;
+        background: rgb(255 255 255 / 22%);
+      }
+      .walk-segments > i[data-s="found"],
+      .walk-segments > i[data-s="here"] {
+        background: var(--walk-found);
+      }
+      .walk-segments > i[data-s="skipped"] {
+        background: repeating-linear-gradient(
+          135deg,
+          var(--walk-skip) 0 3px,
+          rgb(154 164 174 / 35%) 3px 6px
+        );
+      }
+      .walk-segments > i[data-s="next"] {
+        background: var(--walk-accent);
+      }
+      .walk-segments > i[data-s="later"] {
+        background: rgb(255 255 255 / 14%);
+      }
+      /* Above the segment limit: one bar, its parts by their counts. */
+      .walk-segments[data-kind="bar"] {
+        gap: 0;
+        overflow: hidden;
+        border-radius: 3px;
+      }
+      .walk-segments[data-kind="bar"] > i {
+        border-radius: 0;
+      }
+      .walk-peek-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        min-height: 56px;
+      }
+      .walk-peek-main {
+        flex: 1;
+        min-width: 0;
+      }
+      .walk-eyebrow {
+        margin: 0;
+        overflow: hidden;
+        color: var(--walk-muted);
+        font-size: 11.5px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-overflow: ellipsis;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .walk-peek-title {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        margin: 2px 0 0;
+      }
+      .walk-peek-title b {
+        min-width: 0;
+        overflow: hidden;
+        font-size: 21px;
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: -0.01em;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .walk-distance {
+        flex: none;
+        color: var(--walk-accent);
+        font-size: 17px;
+        font-weight: 700;
+        /* Both: a value set here replaces the sheet's inherited one. */
+        font-variant-numeric: lining-nums tabular-nums;
+      }
+      .walk-distance:not([hidden]) {
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+      }
+      .walk-tail {
+        margin: 3px 0 0;
+        color: var(--walk-muted);
+        font-size: 13.5px;
+        line-height: 1.35;
+      }
+      .walk-tail-row {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+      }
+      .walk-tail:empty,
+      .walk-tail-row:has(#walk-tail:empty) {
+        display: none;
+      }
+      .walk-tail-row .walk-arrow {
+        width: 13px;
+        height: 13px;
+      }
+      .walk-peek[data-position="weak"] #walk-tail {
+        color: #fde68a;
+      }
+      .walk-peek[data-position="none"] #walk-tail,
+      .walk-peek[data-position="pending"] #walk-tail {
+        color: #dbe2ea;
+      }
+      .walk-sheet .walk-quick {
+        flex: none;
+        max-width: 46%;
+        min-height: 44px;
+        padding: 9px 13px;
+        border: 1px solid rgb(255 255 255 / 30%);
+        border-radius: 14px;
+        background: var(--walk-surface-2);
+        color: var(--walk-ink);
+        font-size: 13.5px;
+        font-weight: 600;
+        line-height: 1.2;
+        text-align: center;
+      }
+      /* A suggestion or an undo wraps to its own line, full width. */
+      .walk-sheet .walk-quick[data-kind="suggested"],
+      .walk-sheet .walk-quick[data-kind="undo"] {
+        flex-basis: 100%;
+        max-width: none;
+        margin-top: 2px;
+      }
+      .walk-sheet .walk-quick[data-kind="suggested"] {
+        border-color: var(--walk-accent);
+        background: rgb(251 146 60 / 16%);
+        color: #fed7aa;
+      }
+      .walk-sheet .walk-quick[data-kind="undo"] {
+        border-color: var(--walk-found);
+        background: rgb(45 212 191 / 14%);
+      }
+
+      /* The story card: in the peek's place, today's story panel
+         inside it. */
+      .walk-story {
+        flex: none;
+        max-height: calc(66vh - 22px);
+        padding: 0 16px 14px;
+        overflow-y: auto;
+      }
+      .walk-story-eyebrow {
+        color: var(--walk-found);
+      }
+      .walk-story #scene-panel {
+        display: grid;
+        gap: 6px;
+      }
+      .walk-story #scene-title {
+        margin: 2px 0 0;
+        font-size: 20px;
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: normal;
+        text-transform: none;
+      }
+      .walk-story #scene-speaker {
+        font-weight: 600;
+      }
+      .walk-story #scene-text {
+        min-height: 3em;
+        font-size: 15.5px;
+        line-height: 1.45;
+      }
+      .walk-story #scene-status {
+        color: var(--walk-muted);
+        font-size: 13px;
+      }
+      .walk-story #scene-status:empty {
+        display: none;
+      }
+      .walk-dots {
+        display: flex;
+        gap: 5px;
+        margin: 10px 0;
+      }
+      .walk-dots:empty {
+        display: none;
+      }
+      /* stylelint-disable-next-line no-descending-specificity -- the dots and the segments are different elements. */
+      .walk-dots > i {
+        position: relative;
+        width: 22px;
+        height: 4px;
+        overflow: hidden;
+        border-radius: 2px;
+        background: rgb(255 255 255 / 22%);
+      }
+      .walk-dots > i[data-s="on"] {
+        background: var(--walk-found);
+      }
+      /* The current step fills with its timer; a tap step shows full. */
+      .walk-dots > i[data-s="now"]::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: var(--walk-found);
+        transform-origin: left;
+      }
+      .walk-dots > i[data-s="now"][data-timed="true"]::after {
+        animation: walk-dot var(--walk-dot-ms, 4000ms) linear forwards;
+      }
+
+      @keyframes walk-dot {
+        from {
+          transform: scaleX(0);
+        }
+
+        to {
+          transform: scaleX(1);
+        }
+      }
+      .walk-story-acts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      /* Without dots (a story with a choice) the buttons keep the prototype's gap
+         below the words. */
+      .walk-dots:empty + .walk-story-acts {
+        margin-top: 10px;
+      }
+      .walk-sheet .walk-btn {
+        min-height: 44px;
+        padding: 10px 16px;
+        border: 1px solid rgb(255 255 255 / 28%);
+        border-radius: 14px;
+        background: var(--walk-surface-2);
+        color: var(--walk-ink);
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.2;
+      }
+      .walk-sheet .walk-btn-primary {
+        border-color: var(--walk-found);
+        background: var(--walk-found);
+        color: var(--walk-found-ink);
+      }
+      /* The end's confirm (the prototype's warn look) beside "Keep listening", and a
+         row's Skip confirm beside its Cancel. */
+      .walk-sheet .walk-btn-warn,
+      .walk-sheet #walk-story-end[data-kind="end"] {
+        flex: 1;
+        border-color: var(--walk-danger);
+        background: rgb(248 113 113 / 16%);
+        color: #fecaca;
+      }
+      /* Under the end's question the card offers only its two answers:
+         the next step waits for "Keep listening". */
+      .walk-story-acts:has(> #walk-story-end[data-kind="end"])
+        > #scene-continue {
+        display: none;
+      }
+      .walk-story #scene-play-next {
+        margin-top: 10px;
+      }
+
+      /* The list: the sheet grows up to 66 % of the height. */
+      .walk-list {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+      .walk-list-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 4px 16px 8px;
+        border-top: 1px solid var(--walk-line);
+      }
+      #walk-list-title {
+        flex: 1;
+        font-weight: 700;
+        margin: 8px 0 0;
+        font-size: 16px;
+        letter-spacing: normal;
+        text-transform: none;
+      }
+      .walk-chip {
+        margin-top: 8px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: rgb(255 255 255 / 10%);
+        color: var(--walk-muted);
+        font-size: 11.5px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .walk-round {
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        margin-top: 8px;
+        padding: 0;
+        border: 1px solid var(--walk-line);
+        border-radius: 50%;
+        background: rgb(10 14 19 / 55%);
+        color: #fff;
+        cursor: pointer;
+      }
+      .walk-round svg {
+        width: 16px;
+        height: 16px;
+      }
+      .walk-progress {
+        margin: 0;
+        padding: 0 16px 8px;
+        color: var(--walk-muted);
+        font-size: 13.5px;
+      }
+      .walk-progress b {
+        color: var(--walk-ink);
+      }
+      /* While no station is guessed: why, and which one to skip
+         once asked. */
+      .walk-hint {
+        margin: 0 16px 10px;
+        padding: 10px 12px;
+        border: 1px solid rgb(147 197 253 / 35%);
+        border-radius: 12px;
+        background: rgb(147 197 253 / 10%);
+        font-size: 13.5px;
+        line-height: 1.4;
+      }
+      .walk-done {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 4px 16px 10px;
+        padding: 14px;
+        border: 1px solid rgb(45 212 191 / 45%);
+        border-radius: 16px;
+        background: rgb(45 212 191 / 12%);
+      }
+      .walk-done svg {
+        flex: none;
+        width: 40px;
+        height: 40px;
+      }
+      .walk-done b {
+        display: block;
+        font-size: 17px;
+      }
+      .walk-done span {
+        color: var(--walk-muted);
+        font-size: 13.5px;
+      }
+      .walk-rows {
+        margin: 0;
+        padding: 0 8px 8px;
+        list-style: none;
+      }
+      .walk-row {
+        display: grid;
+        grid-template-columns: 34px 1fr auto;
+        align-items: center;
+        gap: 6px 10px;
+        min-height: 44px;
+        padding: 6px 8px;
+        border-radius: 14px;
+      }
+      .walk-row + .walk-row {
+        margin-top: 2px;
+      }
+      .walk-row[data-state="next"] {
+        background: rgb(251 146 60 / 10%);
+      }
+      /* The visitor's chosen target. */
+      .walk-row[data-chosen="true"] {
+        box-shadow: inset 3px 0 0 var(--walk-accent);
+      }
+      .walk-glyph {
+        display: grid;
+        place-items: center;
+        justify-self: center;
+        width: 30px;
+        height: 30px;
+        border: 2px solid var(--walk-left);
+        border-radius: 50%;
+        color: var(--walk-left);
+        font-size: 13px;
+        font-weight: 800;
+      }
+      .walk-row[data-state="next"] .walk-glyph {
+        border-color: var(--walk-accent);
+        background: var(--walk-accent);
+        color: var(--walk-accent-ink);
+      }
+      .walk-row[data-state="found"] .walk-glyph,
+      .walk-row[data-state="here"] .walk-glyph {
+        border-color: var(--walk-found);
+        background: var(--walk-found);
+        color: var(--walk-found-ink);
+      }
+      .walk-row[data-state="skipped"] .walk-glyph {
+        border-style: dashed;
+        border-color: var(--walk-skip);
+        color: var(--walk-skip);
+      }
+      .walk-row[data-state="later"] .walk-glyph {
+        width: 24px;
+        height: 24px;
+        border-color: rgb(255 255 255 / 30%);
+        color: rgb(255 255 255 / 50%);
+        font-size: 11px;
+      }
+      /* The title is a button: "Guide me here" where a target can be
+         chosen, inert otherwise. */
+      .walk-row-main {
+        display: block;
+        min-width: 0;
+        min-height: 44px;
+        padding: 4px 0;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+        appearance: none;
+      }
+      .walk-row-main:disabled {
+        cursor: default;
+      }
+      .walk-row-main b {
+        display: block;
+        overflow: hidden;
+        font-size: 15.5px;
+        font-weight: 650;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .walk-row[data-state="skipped"] .walk-row-main b,
+      .walk-row[data-state="later"] .walk-row-main b {
+        color: var(--walk-muted);
+        font-weight: 600;
+      }
+      .walk-row-main small {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        margin-top: 1px;
+        color: var(--walk-muted);
+        font-size: 13px;
+      }
+      .walk-row-main small .walk-arrow {
+        width: 13px;
+        height: 13px;
+      }
+      /* A row's action: Skip, Bring back, the undo. */
+      .walk-row-act {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 8px 13px;
+        border: 1px solid rgb(255 255 255 / 28%);
+        border-radius: 12px;
+        background: var(--walk-surface-2);
+        color: var(--walk-ink);
+        font-size: 13.5px;
+        font-weight: 600;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .walk-row-act[data-k="bring"] {
+        border-color: var(--walk-found);
+        color: #99f6e4;
+      }
+      .walk-row-act[data-k="undo"] {
+        max-width: 170px;
+        border-color: var(--walk-found);
+        background: rgb(45 212 191 / 14%);
+        text-align: center;
+        white-space: normal;
+      }
+      .walk-confirm {
+        display: flex;
+        flex-wrap: wrap;
+        grid-column: 1 / -1;
+        gap: 8px;
+        padding: 2px 0 6px 44px;
+      }
+      .walk-sheet .walk-confirm .walk-btn {
+        font-size: 13.5px;
+      }
+      /* The undo's time left, run down by its own animation. */
+      .walk-undobar {
+        grid-column: 2 / -1;
+        height: 3px;
+        overflow: hidden;
+        border-radius: 2px;
+        background: rgb(255 255 255 / 12%);
+      }
+      /* stylelint-disable-next-line no-descending-specificity -- the undo's bar and the segments are different elements. */
+      .walk-undobar > i {
+        display: block;
+        height: 100%;
+        background: var(--walk-found);
+        transform-origin: left;
+        animation: walk-undo var(--walk-undo-ms, 6000ms) linear forwards;
+      }
+
+      @keyframes walk-undo {
+        from {
+          transform: scaleX(var(--walk-undo-from, 1));
+        }
+
+        to {
+          transform: scaleX(0);
+        }
+      }
+
+      /* The list open: the quick action goes (the prototype: the rows carry Skip,
+         its confirm and the undo, M4) - but "Finish the tour", which no row
+         carries, stays while the tour waits on its last station - and the
+         peek's row once the tour is complete (the card says it); the story
+         card gives the peek back. */
+      .walk-sheet[data-sheet="list"] #station-skip:not([data-kind="finish"]),
+      .walk-sheet[data-sheet="list"][data-complete="true"] #walk-peek-row {
+        display: none;
+      }
+
+      /* A phone held sideways: the sheet a card at the bottom left,
+         the coach right of centre, the toast left of the radar. */
+      @media (orientation: landscape) and (height <= 520px) {
+        body[data-mode="visitor"][data-ar-active="true"] #ar-root #enter-ar {
+          top: calc(10px + env(safe-area-inset-top));
+        }
+        body[data-mode="visitor"][data-ar-active="true"]
+          .walk-radar-wrap:not([hidden]) {
+          --walk-radar: 108px;
+          top: calc(10px + env(safe-area-inset-top));
+        }
+        body[data-mode="visitor"][data-ar-active="true"]
+          .walk-sheet:not([hidden]) {
+          right: auto;
+          bottom: calc(10px + env(safe-area-inset-bottom));
+          left: calc(10px + env(safe-area-inset-left));
+          /* stylelint-disable-next-line csstree/validator -- valid CSS; the bundled css-tree grammar predates it. */
+          width: min(370px, 48vw);
+          max-height: calc(100vh - 74px);
+          margin: 0;
+          padding-bottom: 0;
+          border: 1px solid var(--walk-line);
+          border-radius: 20px;
+        }
+        .walk-story {
+          max-height: calc(100vh - 74px - 22px);
+        }
+        .walk-peek-row {
+          min-height: 48px;
+        }
+        .walk-peek-title b {
+          font-size: 19px;
+        }
+        body[data-mode="visitor"][data-ar-active="true"]
+          .walk-coach:not([hidden]) {
+          top: 50%;
+          left: 60%;
+        }
+        /* The left pill clears the sheet's card. */
+        .walk-edge-pill[data-side="left"] {
+          left: calc(50vw + 10px);
+        }
+        body[data-mode="visitor"][data-ar-active="true"] #walk-toast-root {
+          top: calc(14px + env(safe-area-inset-top));
+          right: calc(130px + env(safe-area-inset-right));
+          left: auto;
+          max-width: 40vw;
+        }
+      }
+      /* Wider than a phone (a tablet, a desktop): the toast centred. */
+      @media (width > 520px) and (height > 520px),
+        (width > 520px) and (orientation: portrait) {
+        body[data-mode="visitor"][data-ar-active="true"] #walk-toast-root {
+          left: 50%;
+          max-width: calc(100vw - 32px - 132px);
+          transform: translateX(-50%);
+        }
+      }
+
+      /* Each animated rule of the walk is named here by its own selector:
+         a shorter one loses to the animated rule's specificity
+         (walk-sheet.test.ts holds the two lists together). */
+      @media (prefers-reduced-motion: reduce) {
+        .walk-coach[data-look="spinner"] .walk-coach-spin,
+        .walk-coach-sway rect,
+        .walk-dots > i[data-s="now"][data-timed="true"]::after,
+        .walk-precision[data-kind="pending"] .walk-precision-mark,
+        .walk-toast {
+          animation: none;
+        }
+        /* The undo's bar goes: a still bar would show a share of the time
+           that is no longer true. The row's undo button stays while the
+           undo can be made, and goes when it ends. */
+        .walk-undobar > i {
+          animation: none;
+        }
+        .walk-undobar {
+          display: none;
+        }
+        .walk-arrow,
+        .walk-radar-canvas {
+          transition: none;
+        }
+      }
+
+      /* The away block on the start page, in the page's paper
+         look: the tour's name is the page's heading; the photo, the
+         subline and the description step aside while it shows. */
+      #visitor-screen:has(#walk-away:not([hidden])) #visitor-cover,
+      #visitor-screen:has(#walk-away:not([hidden])) #visitor-subline,
+      #visitor-screen:has(#walk-away:not([hidden])) #visitor-description {
+        display: none;
+      }
+      .walk-away {
+        display: grid;
+        gap: 16px;
+        /* Nothing below: the start page's own spacing (the visitor screen's
+           end, #ar-root's 12 px) and its safety line stand between the
+           block and the start. */
+        margin: 16px 0 0;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"]) .walk-away {
+        margin-top: auto;
+        padding-top: 16px;
+      }
+      #walk-away-text {
+        margin: 0;
+        color: var(--ink-dim);
+      }
+      .walk-away .walk-segments {
+        margin: 0;
+      }
+      .walk-away .walk-segments > i {
+        height: 8px;
+        background: var(--walk-away-left);
+      }
+      .walk-away .walk-segments > i[data-s="found"],
+      .walk-away .walk-segments > i[data-s="here"] {
+        background: var(--walk-away-found);
+      }
+      .walk-away .walk-segments > i[data-s="skipped"] {
+        background: repeating-linear-gradient(
+          135deg,
+          #9aa4ae 0 3px,
+          #d9dde1 3px 6px
+        );
+      }
+      .walk-away ul {
+        display: grid;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      /* stylelint-disable-next-line no-descending-specificity -- the setup page's list is the creator's; the two never share an element. */
+      #walk-away-rows > li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 44px;
+        padding: 10px 12px;
+        /* The prototype's white cards on its paper line (not the page's map card). */
+        border: 1px solid var(--walk-away-left);
+        border-radius: 12px;
+        background: var(--walk-away-row);
+      }
+      #walk-away-rows > li b {
+        font-size: 15px;
+        font-weight: 700;
+      }
+      #walk-away-rows > li span {
+        color: var(--ink-dim);
+        font-size: 14px;
       }
 
       /* ===== The creator's HUD in AR, the owner's H1 (polish round M3) =====
@@ -1825,10 +3844,38 @@
           gap: 8px;
         }
       }
+      /* The persistent Undo: a quieter chip on its
+         own line above "New station here", in H1's dark card look. Its
+         label says what it takes back, so it gets the line's width and a
+         long pin text ends in an ellipsis rather than a second line (the
+         accessible name is the whole text). Disabled, it stays in place,
+         dimmed: the strip does not jump when an offer comes and goes. */
+      body[data-mode="creator"][data-ar-active="true"] #setup-undo {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        max-width: 100%;
+        min-height: 44px;
+        padding: 0 16px;
+        border: 1px solid rgb(255 255 255 / 30%);
+        border-radius: 999px;
+        background: rgb(20 22 26 / 66%);
+        color: #fff;
+        box-shadow: none;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: normal;
+        text-transform: none;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #setup-undo:disabled {
+        opacity: 0.55;
+      }
       body[data-mode="creator"][data-ar-active="true"] #setup-pin[hidden],
       body[data-mode="creator"][data-ar-active="true"] #setup-photo[hidden],
       body[data-mode="creator"][data-ar-active="true"]
-        #setup-new-station[hidden] {
+        #setup-new-station[hidden],
+      body[data-mode="creator"][data-ar-active="true"] #setup-undo[hidden] {
         display: none;
       }
       /* "New station here" armed (D8): the accent ring says the next pin or
@@ -1856,6 +3903,13 @@
         line-height: 1.15;
         text-align: center;
       }
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls
+        #setup-undo-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       /* Typing a new pin's text: the field and its buttons take the row. */
       body[data-mode="creator"][data-ar-active="true"]
         #setup-controls:has(#pin-label:not([hidden]))
@@ -1865,7 +3919,10 @@
         #setup-photo,
       body[data-mode="creator"][data-ar-active="true"]
         #setup-controls:has(#pin-label:not([hidden]))
-        #setup-new-station {
+        #setup-new-station,
+      body[data-mode="creator"][data-ar-active="true"]
+        #setup-controls:has(#pin-label:not([hidden]))
+        #setup-undo {
         display: none;
       }
       body[data-mode="creator"][data-ar-active="true"] #pin-label {
@@ -1873,6 +3930,18 @@
         min-width: 0;
         min-height: 48px;
         border-radius: 999px;
+      }
+      /* The pin text's count ("12 / 40"), marked past the limit. */
+      body[data-mode="creator"][data-ar-active="true"] #pin-label-count {
+        flex: none;
+        align-self: center;
+        color: #fff;
+        font-variant-numeric: tabular-nums;
+        text-shadow: 0 1px 2px rgb(0 0 0 / 70%);
+      }
+      #pin-label-count[data-over] {
+        color: #ffb4a8;
+        font-weight: 600;
       }
       /* The selected object's line, and the code's size offer: cards over
          the camera, above the strip. */
@@ -2012,242 +4081,481 @@
           data-testid="visitor-description"
           hidden
         ></p>
+        <!-- The away block: after the
+             visitor left AR with progress, read-only; the start button
+             reads "Back to the tour" meanwhile (ar-mode.ts). Written by
+             walk-sheet.ts. -->
+        <section
+          id="walk-away"
+          class="walk-away"
+          data-testid="walk-away"
+          aria-label="Your progress"
+          hidden
+        >
+          <p id="walk-away-text" data-testid="walk-away-text"></p>
+          <div
+            id="walk-away-segments"
+            class="walk-segments"
+            data-testid="walk-away-segments"
+            aria-hidden="true"
+          ></div>
+          <ul id="walk-away-rows" data-testid="walk-away-rows"></ul>
+        </section>
       </section>
-      <!-- The setup page in the L5 look (polish round M2b, the owner's
-           prototype verdict P1-P5): an intro, then the stage - the map of
-           six stations beside (wide) or above (phone) the step card. The
-           card shows ONE step; setup-stage.ts draws the stations and the
-           back/next, and every move goes through wizard.ts. -->
+      <!-- The landing, for a creator: a visitor's way in, the hero, the
+           five step cards, the short "Make your own tour" and the use
+           cases; the setup stage follows right below it. Revealed by CSS
+           on body[data-mode="creator"] (the first-paint script sets it), so
+           it shows before main.ts has run; .creator-only keeps it hidden
+           for a visitor. Its moving parts (the film, the cards' pictures,
+           the use cases) are mounted later by src/landing/landing-mount.ts;
+           every box they fill has its size reserved here. -->
       <section
-        id="setup-intro"
-        class="creator-only setup-intro"
-        data-testid="setup-intro"
-        hidden
+        id="landing"
+        class="creator-only landing"
+        data-testid="landing"
+        aria-labelledby="landing-title"
       >
-        <div>
-          <p class="setup-kicker">Make your own tour</p>
-          <h1>Put stories <em>where they happened.</em></h1>
-          <p class="setup-lede">
-            A tour can be as simple as a short walk with notes and photos - with
-            more to come. Visitors scan the code you printed and hung, and your
-            tour opens right in their phone's browser, with nothing to install.
-            Tours run on Android phones with Chrome.
-          </p>
-          <ul class="setup-why" aria-label="Why it works this way">
-            <li>Lives in your own storage</li>
-            <li>No app to install</li>
-            <li>Keeps working without signal once a tour has loaded</li>
-            <li>No sign-up, no account</li>
+        <p class="landing-way" data-testid="landing-way">
+          <b>Here to walk a tour?</b> Scan its code with your phone's camera, or
+          <a href="#have-tour">open its link</a>.
+        </p>
+        <div class="landing-hero">
+          <div class="landing-hero-text">
+            <p class="landing-kicker">AR tours, on your phone, on site</p>
+            <h1 id="landing-title">
+              You know a story about a place.
+              <em>Let people see it there.</em>
+            </h1>
+            <p class="landing-lede">
+              You have a story to tell, or something to show. Here are the tools
+              to put it on the spot, so your visitors experience it in the real
+              world, through their phone.
+            </p>
+            <p class="landing-make-line">
+              <b>Make the tour yourself, without programming.</b> Walk there
+              once with your phone and leave your words and pictures where they
+              belong.
+            </p>
+            <p class="landing-needs" data-testid="landing-needs">
+              Tours run on Android phones with Chrome.
+            </p>
+            <p class="landing-cta">
+              <button
+                type="button"
+                class="btn setup-primary landing-begin"
+                data-testid="landing-begin-top"
+              >
+                Make your tour
+              </button>
+            </p>
+          </div>
+          <!-- The film's host: its aspect is reserved (9:10 on an upright
+               phone, 3:2 held sideways, 16:9 from 900 px wide), and it shows the film's last moment
+               as a drawing until the film mounts (or for good, where it
+               cannot). -->
+          <div
+            id="landing-film"
+            class="landing-film"
+            data-testid="landing-film"
+          >
+            <picture>
+              <source
+                media="(orientation: landscape), (width >= 900px)"
+                srcset="landing/hero-still-landscape.svg"
+              />
+              <img
+                class="landing-still"
+                src="landing/hero-still-portrait.svg"
+                alt="A drawn park with a mill, a pond and trees: a dotted route links the code at the start with five numbered stations, and a visitor walks it."
+                loading="lazy"
+                decoding="async"
+                data-testid="landing-still"
+              />
+            </picture>
+          </div>
+        </div>
+
+        <section
+          class="landing-story"
+          aria-labelledby="landing-story-title"
+          data-testid="landing-story"
+        >
+          <div class="landing-head">
+            <p class="landing-kicker">How it goes</p>
+            <h2 id="landing-story-title" class="landing-h2">
+              Your story, <em>told in one walk.</em>
+            </h2>
+            <p class="landing-sub">
+              Here is the whole of it, start to finish. Each picture shows what
+              your phone, and later your visitor's phone, would show at that
+              moment.
+            </p>
+          </div>
+          <ol class="landing-cards" data-testid="landing-cards">
+            <li class="landing-card" data-testid="landing-card">
+              <div class="landing-card-text">
+                <span class="landing-mark" aria-hidden="true"
+                  ><svg viewBox="0 0 24 24">
+                    <path
+                      d="M4 5.5c2.6-1 5.4-1 8 .8 2.6-1.8 5.4-1.8 8-.8v13c-2.6-1-5.4-1-8 .8-2.6-1.8-5.4-1.8-8-.8z"
+                    />
+                    <path d="M12 6.3v13" /></svg
+                ></span>
+                <p class="landing-card-kicker">A story you know</p>
+                <h3 id="landing-step-1">It starts with something you know.</h3>
+                <p class="landing-say">
+                  The old mill at the edge of the park turned for a hundred
+                  years. You know when it was built and what the stream drove,
+                  and somewhere you have a photo of it from 1910.
+                </p>
+                <p class="landing-say">
+                  People walk past it every day and know none of this. You could
+                  tell them, right there, at the mill.
+                </p>
+              </div>
+              <figure class="landing-fig">
+                <div class="landing-pic">
+                  <div
+                    class="lc-dock"
+                    data-kind="scene"
+                    aria-hidden="true"
+                  ></div>
+                </div>
+                <figcaption class="landing-caption">
+                  <span
+                    ><b>What you start with:</b> a place, and something to tell
+                    about it.</span
+                  >
+                </figcaption>
+              </figure>
+            </li>
+            <li class="landing-card" data-testid="landing-card">
+              <div class="landing-card-text">
+                <span class="landing-mark" aria-hidden="true"
+                  ><svg viewBox="0 0 24 24">
+                    <circle cx="12" cy="4.5" r="2" />
+                    <path
+                      d="M10.5 21l1.5-6 3 3v3M8 12l2.5-4.5 3.5 1 2 3.5M12 15l-1.5-6"
+                    /></svg
+                ></span>
+                <p class="landing-card-kicker">On site</p>
+                <h3 id="landing-step-2">Walk there with your phone.</h3>
+                <p class="landing-say">
+                  Open the page on your phone and go to the mill. Stand where
+                  the story happened and hold the phone up. A ring on the ground
+                  shows the spot. Tap <b>Place here</b>, and a numbered station
+                  drops onto it.
+                </p>
+                <p class="landing-say">
+                  You do not need anything printed for this. Placing works
+                  anywhere along your walk.
+                </p>
+              </div>
+              <figure class="landing-fig">
+                <div class="landing-pic">
+                  <div
+                    class="lc-dock"
+                    data-kind="place"
+                    data-look="510"
+                    aria-hidden="true"
+                  ></div>
+                  <button
+                    type="button"
+                    class="landing-hold"
+                    aria-describedby="landing-step-2"
+                    aria-pressed="false"
+                    aria-label="Pause the picture"
+                    hidden
+                  >
+                    <span class="landing-pause-mark" aria-hidden="true"></span>
+                  </button>
+                </div>
+                <figcaption class="landing-caption">
+                  <span
+                    ><b>On your phone:</b> the ring finds the ground, the
+                    station drops onto it.</span
+                  ><button
+                    type="button"
+                    class="landing-again"
+                    aria-describedby="landing-step-2"
+                  >
+                    Show again
+                  </button>
+                </figcaption>
+              </figure>
+            </li>
+            <li class="landing-card" data-testid="landing-card">
+              <div class="landing-card-text">
+                <span class="landing-mark" aria-hidden="true"
+                  ><svg viewBox="0 0 24 24">
+                    <path d="M4 20h4L19 9l-4-4L4 16z" />
+                    <path d="M13.5 6.5l4 4" /></svg
+                ></span>
+                <p class="landing-card-kicker">Words and pictures</p>
+                <h3 id="landing-step-3">Add what you know.</h3>
+                <p class="landing-say">
+                  Type a title and a few lines. Add the old photo. They stay on
+                  that spot, standing in the air above the station, the way a
+                  sign would.
+                </p>
+                <p class="landing-say">
+                  Then walk on to the next place that has a story, and do the
+                  same there. The words can be changed later, at a computer.
+                </p>
+              </div>
+              <figure class="landing-fig">
+                <div class="landing-pic">
+                  <div
+                    class="lc-dock"
+                    data-kind="add"
+                    data-look="510"
+                    aria-hidden="true"
+                  ></div>
+                  <button
+                    type="button"
+                    class="landing-hold"
+                    aria-describedby="landing-step-3"
+                    aria-pressed="false"
+                    aria-label="Pause the picture"
+                    hidden
+                  >
+                    <span class="landing-pause-mark" aria-hidden="true"></span>
+                  </button>
+                </div>
+                <figcaption class="landing-caption">
+                  <span
+                    ><b>On your phone:</b> a few lines and a photo, fixed to the
+                    spot.</span
+                  ><button
+                    type="button"
+                    class="landing-again"
+                    aria-describedby="landing-step-3"
+                  >
+                    Show again
+                  </button>
+                </figcaption>
+              </figure>
+            </li>
+            <li class="landing-card" data-testid="landing-card">
+              <div class="landing-card-text">
+                <span class="landing-mark" aria-hidden="true"
+                  ><svg viewBox="0 0 24 24">
+                    <rect x="4" y="4" width="6" height="6" rx="1" />
+                    <rect x="14" y="4" width="6" height="6" rx="1" />
+                    <rect x="4" y="14" width="6" height="6" rx="1" />
+                    <path
+                      d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"
+                    /></svg
+                ></span>
+                <p class="landing-card-kicker">When it is ready</p>
+                <h3 id="landing-step-4">Hang a code where the walk begins.</h3>
+                <p class="landing-say">
+                  At the end of your walk the tour is saved. Print its code on a
+                  sheet of paper, whenever the tour is ready, and hang it where
+                  the walk starts: on a gate, a post, a noticeboard.
+                </p>
+                <p class="landing-say">
+                  Visitors scan it there to open the tour.
+                </p>
+              </div>
+              <figure class="landing-fig">
+                <div class="landing-pic">
+                  <div
+                    class="lc-dock"
+                    data-kind="hang"
+                    data-look="862"
+                    aria-hidden="true"
+                  ></div>
+                  <button
+                    type="button"
+                    class="landing-hold"
+                    aria-describedby="landing-step-4"
+                    aria-pressed="false"
+                    aria-label="Pause the picture"
+                    hidden
+                  >
+                    <span class="landing-pause-mark" aria-hidden="true"></span>
+                  </button>
+                </div>
+                <figcaption class="landing-caption">
+                  <span
+                    ><b>On your phone:</b> the tour is ready, and its code goes
+                    up on the noticeboard.</span
+                  ><button
+                    type="button"
+                    class="landing-again"
+                    aria-describedby="landing-step-4"
+                  >
+                    Show again
+                  </button>
+                </figcaption>
+              </figure>
+            </li>
+            <li class="landing-card" data-testid="landing-card">
+              <div class="landing-card-text">
+                <span class="landing-mark" aria-hidden="true"
+                  ><svg viewBox="0 0 24 24">
+                    <path
+                      d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"
+                    />
+                    <circle cx="12" cy="12" r="3" /></svg
+                ></span>
+                <p class="landing-card-kicker">Your visitors</p>
+                <h3 id="landing-step-5">
+                  They scan it, and your stations appear.
+                </h3>
+                <p class="landing-say">
+                  Someone stops at the noticeboard and points their camera at
+                  the code. <b>No app to install:</b> the tour opens in their
+                  phone's browser.
+                </p>
+                <p class="landing-say">
+                  They hold the phone up, and your station appears on the spot
+                  where you stood, with your words and your photo. Then the next
+                  one, as they walk.
+                </p>
+              </div>
+              <figure class="landing-fig">
+                <div class="landing-pic">
+                  <div
+                    class="lc-dock"
+                    data-kind="scan"
+                    data-look="690"
+                    aria-hidden="true"
+                  ></div>
+                  <button
+                    type="button"
+                    class="landing-hold"
+                    aria-describedby="landing-step-5"
+                    aria-pressed="false"
+                    aria-label="Pause the picture"
+                    hidden
+                  >
+                    <span class="landing-pause-mark" aria-hidden="true"></span>
+                  </button>
+                </div>
+                <figcaption class="landing-caption">
+                  <span
+                    ><b>On their phone:</b> the tour opens in the browser, and
+                    station 1 appears on the path.</span
+                  ><button
+                    type="button"
+                    class="landing-again"
+                    aria-describedby="landing-step-5"
+                  >
+                    Show again
+                  </button>
+                </figcaption>
+              </figure>
+            </li>
+          </ol>
+          <div class="landing-coda">
+            <span class="landing-mark landing-mark-done" aria-hidden="true"
+              ><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg
+            ></span>
+            <p class="landing-coda-line">
+              And at the mill they read what you wrote, beside the photo you
+              kept.
+            </p>
+          </div>
+        </section>
+
+        <section
+          class="landing-make"
+          aria-labelledby="landing-make-title"
+          data-testid="landing-make"
+        >
+          <h2 id="landing-make-title" class="landing-h2">Make your own tour</h2>
+          <ul class="landing-why" aria-label="Why it works this way">
+            <li class="landing-reason">Nothing to install</li>
+            <li class="landing-reason">It all runs in the browser</li>
+            <li class="landing-reason">
+              No need to print a code while you build
+            </li>
+            <li class="landing-reason">Lives in your own storage</li>
+            <li class="landing-reason">No sign-up, no account</li>
+            <li class="landing-reason">
+              Keeps working without signal once a tour has loaded
+            </li>
           </ul>
-          <p class="setup-cta">
+          <p class="landing-order">
+            The setup right below takes you through it, one step at a time, and
+            its steps open in any order.
+          </p>
+          <p class="landing-cta">
             <button
               type="button"
               id="setup-begin"
-              class="btn setup-primary"
+              class="btn setup-primary landing-begin"
               data-testid="setup-begin"
             >
-              Follow the route
+              Make your tour
             </button>
-            <span class="hint--dim">Six steps, then your walk.</span>
           </p>
+        </section>
+
+        <!-- The use cases' host: a short list until their section mounts
+             (it replaces this content, its heading with it). -->
+        <div id="landing-uses" class="landing-uses" data-testid="landing-uses">
+          <h2 class="landing-h2">What people make with it</h2>
+          <ul class="landing-uses-list">
+            <li>
+              <b>A walk through the town's history.</b> A local history group
+              puts the old photos back where they were taken.
+            </li>
+            <li>
+              <b>A birthday treasure hunt.</b> Parents hide the clues along the
+              way, and the children find them through the phone.
+            </li>
+            <li>
+              <b>The castle tower, as it once stood.</b> Visitors see the tower
+              that is gone, on the spot where it stood.
+            </li>
+            <li>
+              <b>More about every painting.</b> A small museum tells, beside
+              each picture, what the label leaves out.
+            </li>
+          </ul>
         </div>
-        <figure class="setup-intro-art" aria-hidden="true">
-          <svg viewBox="0 0 240 280">
-            <defs>
-              <clipPath id="intro-scr">
-                <rect x="58" y="32" width="124" height="220" rx="13" />
-              </clipPath>
-              <mask
-                id="intro-dot-mask"
-                maskUnits="userSpaceOnUse"
-                x="0"
-                y="0"
-                width="240"
-                height="280"
-              >
-                <path
-                  class="h-dots-mask"
-                  d="M121 250 L121 158"
-                  pathLength="100"
-                  stroke="#fff"
-                  stroke-width="8"
-                  fill="none"
-                />
-              </mask>
-            </defs>
-            <!-- world outside the phone, sketched -->
-            <g
-              stroke="#8c8577"
-              stroke-width="1.1"
-              fill="none"
-              stroke-linecap="round"
-            >
-              <path d="M6 168 H54 M186 166 H234" />
-              <circle cx="26" cy="146" r="14" />
-              <path d="M26 160 V170" />
-              <circle cx="214" cy="140" r="17" />
-              <path d="M214 157 V168" />
-              <path
-                d="M0 230 Q 40 222 54 226 M186 228 Q 210 224 240 232"
-                stroke-dasharray="2 4"
-              />
-            </g>
-            <!-- phone -->
-            <rect
-              x="50"
-              y="18"
-              width="140"
-              height="248"
-              rx="22"
-              fill="#2a2824"
-            />
-            <g clip-path="url(#intro-scr)">
-              <rect x="58" y="32" width="124" height="220" fill="#e9e2cf" />
-              <rect x="58" y="152" width="124" height="100" fill="#d9cdae" />
-              <polygon
-                points="96,252 148,252 124,153 118,153"
-                fill="#f4eedf"
-                stroke="#8c8577"
-                stroke-width=".8"
-              />
-              <!-- mill building -->
-              <rect
-                x="70"
-                y="112"
-                width="34"
-                height="41"
-                fill="#ebe3cf"
-                stroke="#2a2824"
-                stroke-width="1"
-              />
-              <path
-                d="M66 113 L87 96 L108 113 Z"
-                fill="#ddd2b6"
-                stroke="#2a2824"
-                stroke-width="1"
-              />
-              <rect
-                x="83"
-                y="133"
-                width="8"
-                height="20"
-                fill="#ddd2b6"
-                stroke="#2a2824"
-                stroke-width=".8"
-              />
-              <circle
-                cx="69"
-                cy="140"
-                r="11"
-                fill="none"
-                stroke="#2a2824"
-                stroke-width="1"
-              />
-              <path
-                d="M69 129 V151 M58 140 H80 M61 132 L77 148 M77 132 L61 148"
-                stroke="#2a2824"
-                stroke-width=".6"
-              />
-              <!-- trees -->
-              <circle
-                cx="164"
-                cy="132"
-                r="15"
-                fill="#ddd2b6"
-                stroke="#57534a"
-              />
-              <path d="M164 147 V156" stroke="#57534a" />
-              <circle cx="143" cy="142" r="8" fill="#ddd2b6" stroke="#57534a" />
-              <path d="M143 150 V155" stroke="#57534a" />
-              <!-- dotted tour route drawing up the path -->
-              <path
-                class="h-dots"
-                d="M121 250 L121 158"
-                stroke="#cf4428"
-                stroke-width="3.2"
-                stroke-linecap="round"
-                fill="none"
-                mask="url(#intro-dot-mask)"
-              />
-              <!-- AR pin -->
-              <g class="h-pin">
-                <path
-                  d="M100 116 C 96 110 92 106 92 101 A 8 8 0 1 1 108 101 C 108 106 104 110 100 116 Z"
-                  fill="#cf4428"
-                />
-                <circle cx="100" cy="101" r="3" fill="#fff" />
-              </g>
-              <g class="h-label">
-                <rect
-                  x="94"
-                  y="64"
-                  width="80"
-                  height="22"
-                  rx="4"
-                  fill="#fff"
-                  stroke="#2a2824"
-                  stroke-width=".8"
-                />
-                <text
-                  x="100"
-                  y="74"
-                  font-family="Georgia, serif"
-                  font-size="8"
-                  font-weight="700"
-                  fill="#2a2824"
-                >
-                  The mill wheel
-                </text>
-                <text
-                  x="100"
-                  y="82.5"
-                  font-family="system-ui, sans-serif"
-                  font-size="6.4"
-                  fill="#57534a"
-                >
-                  Turning since 1820
-                </text>
-              </g>
-              <!-- AR photo -->
-              <g class="h-photo">
-                <rect
-                  x="132"
-                  y="176"
-                  width="40"
-                  height="38"
-                  fill="#fff"
-                  stroke="#2a2824"
-                  stroke-width=".8"
-                />
-                <rect x="135" y="179" width="34" height="25" fill="#c9bea3" />
-                <path
-                  d="M135 204 L146 192 L153 198 L160 189 L169 204 Z"
-                  fill="#8c8577"
-                />
-                <circle cx="162" cy="184" r="2.6" fill="#f4eedf" />
-                <text
-                  x="152"
-                  y="211"
-                  text-anchor="middle"
-                  font-family="Georgia, serif"
-                  font-size="5.4"
-                  font-style="italic"
-                  fill="#2a2824"
-                >
-                  here, 1910
-                </text>
-              </g>
-            </g>
-            <rect x="104" y="24" width="32" height="4" rx="2" fill="#4a4740" />
-          </svg>
-        </figure>
+        <script id="landing-uses-height">
+          // The height this tab measured the mounted use cases at, at this
+          // width, reserved before the first paint: the browser restores a
+          // reload's scroll before their chunk arrives, and the CSS lower
+          // bound in the page's styles is measured in one face only. The
+          // same rule as keptUsesHeight (src/landing/uses-height.ts), held
+          // to it by uses-height.test.ts.
+          try {
+            const kept = JSON.parse(
+              sessionStorage.getItem("tour-viewer.landing.uses-height") ??
+                "null",
+            );
+            const height = kept === null ? undefined : kept.height;
+            if (
+              typeof kept === "object" &&
+              kept !== null &&
+              kept.width === window.innerWidth &&
+              typeof height === "number" &&
+              height > 0 &&
+              height < 20000
+            ) {
+              document.getElementById("landing-uses").style.minHeight =
+                `${String(height)}px`;
+            }
+          } catch {
+            // Site data blocked or nothing readable: the CSS lower bound.
+          }
+        </script>
       </section>
+      <!-- The setup stage (polish round M2b, the L5 look): the map of six
+           stations beside (wide) or above (phone) the step card. The card
+           shows ONE step; setup-stage.ts draws the stations and the
+           back/next, and every move goes through wizard.ts. -->
       <div id="setup-stage" class="setup-stage" data-testid="setup-stage">
         <div
           id="setup-map"
           class="creator-only setup-map"
           data-testid="setup-map"
-          hidden
         >
           <div class="setup-map-head">
             <span class="setup-map-title"
@@ -2794,7 +5102,7 @@
           </div>
         </div>
         <div id="setup-card" class="setup-card" data-testid="setup-card">
-          <div class="creator-only setup-card-top" hidden>
+          <div class="creator-only setup-card-top">
             <span class="setup-badge" id="setup-badge" data-testid="setup-badge"
               >1</span
             >
@@ -2808,6 +5116,9 @@
               aria-label="Steps"
             ></nav>
           </div>
+          <p class="setup-loading" data-testid="setup-loading">
+            Loading the setup...
+          </p>
           <ol id="wizard" class="creator-only" data-testid="wizard" hidden>
             <li>
               <!-- Step 1: where the tour lives (polish round M2, A6/A7). The
@@ -3198,6 +5509,14 @@
                     hidden
                     >Try this tour as a visitor on this phone</a
                   >
+                  <!-- Shown while the hosted file is not finished yet: what
+                   a visitor reads then (main.ts, tour-unfinished.ts). -->
+                  <p
+                    id="visitor-link-note"
+                    class="hint--dim"
+                    data-testid="visitor-link-note"
+                    hidden
+                  ></p>
                 </div>
               </details>
             </li>
@@ -3359,8 +5678,8 @@
             <!-- What the published copy carries (scan-pass plan S1, S-D10),
              chosen BEFORE AR (UI round 1, U2, review #6: the Finish's
              rebuild reads it, so it cannot follow the Finish), shown only
-             for a tour that carries a walk; unticked, Finish leaves it
-             out. -->
+             for a tour that carries a walk; unticked (the default, debug
+             captures plan M2, E2), Finish leaves it out. -->
             <label
               class="switch"
               id="keep-scan-row"
@@ -3369,8 +5688,8 @@
             >
               <input type="checkbox" id="keep-scan" data-testid="keep-scan" />
               <span class="switch-track"></span>
-              Keep the walk recording in the tour file (for a co-author;
-              visitors never need it)
+              Keep the debug data in the tour file (for a co-author; visitors
+              never need it)
             </label>
             <div id="recording-block" data-testid="recording-block" hidden>
               <!-- A recording a killed tab left unsaved (M1b,
@@ -3589,6 +5908,19 @@
                         stroke-linejoin="round"
                       />
                     </g>
+                    <!-- The found look: the check once the code passed
+                     the gate, the phone gone. -->
+                    <g class="scan-card-ok">
+                      <circle cx="80" cy="60" r="30" fill="#22c55e" />
+                      <path
+                        d="M67 61l9 9 17-19"
+                        fill="none"
+                        stroke="#fff"
+                        stroke-width="6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </g>
                   </svg>
                   <h2 id="scan-card-title">
                     Scan the code again so the tour can start
@@ -3605,12 +5937,17 @@
                   Continue with GPS only (less accurate)
                 </button>
               </div>
-              <!-- The visitor's stations (tour kit plan K4): the station line,
-               the labelled skip (§8 D5) and the story panel. Inside
-               #ar-root because the visitor stays in AR the whole tour
-               (K-D9); station-guide.ts and scene-view.ts show them. -->
+              <!-- The visitor's walk in AR: the coach, the toast's root and
+               the sheet - the peek, the story card holding the story panel,
+               the list - inside #ar-root because the visitor stays in AR the
+               whole tour (K-D9). walk-sheet.ts writes the sheet,
+               station-guide.ts the line and the skip, scene-view.ts the
+               story, ar-entry.ts the coach and the code's tail line.
+               #station-line keeps today's whole sentence for the screen
+               reader and the tests, visually hidden. -->
               <p
                 id="station-line"
+                class="visually-hidden"
                 data-testid="station-line"
                 aria-live="polite"
                 hidden
@@ -3625,43 +5962,410 @@
               >
                 Test mode: this tour was moved to where you are.
               </p>
-              <button
-                type="button"
-                id="station-skip"
-                class="btn btn--prose"
-                data-testid="station-skip"
+              <!-- The coach: the centred card for the coaching
+               states; data-look picks the spinner or the swaying phone.
+               Not a live region: #ar-status-live announces the sentence. -->
+              <div
+                id="walk-coach"
+                class="walk-coach"
+                data-testid="walk-coach"
+                data-look="plain"
                 hidden
               >
-                Can't get there?
-              </button>
-              <section
-                id="scene-panel"
-                data-testid="scene-panel"
-                aria-live="polite"
+                <span class="walk-coach-spin" aria-hidden="true"></span>
+                <svg
+                  class="walk-coach-sway"
+                  viewBox="0 0 34 34"
+                  aria-hidden="true"
+                >
+                  <rect
+                    x="11"
+                    y="4"
+                    width="12"
+                    height="22"
+                    rx="3"
+                    fill="none"
+                    stroke="#fff"
+                    stroke-width="2.4"
+                  />
+                </svg>
+                <span id="walk-coach-text" data-testid="walk-coach-text"></span>
+              </div>
+              <!-- The radar, its range label and the precision chip: a
+               tap on the radar steps its range (automatic, 30, 100,
+               300 m, automatic again) and shows the range and the chip
+               for 2 s. The list opens from the sheet only. -->
+              <div
+                id="walk-radar-wrap"
+                class="walk-radar-wrap"
+                data-testid="walk-radar-wrap"
+                data-mode="live"
                 hidden
               >
-                <h3 id="scene-title" data-testid="scene-title"></h3>
-                <p id="scene-speaker" data-testid="scene-speaker" hidden></p>
-                <img id="scene-image" data-testid="scene-image" alt="" hidden />
-                <p id="scene-text" data-testid="scene-text"></p>
-                <p id="scene-status" data-testid="scene-status"></p>
-                <div id="scene-choices" data-testid="scene-choices"></div>
                 <button
                   type="button"
-                  id="scene-continue"
-                  class="btn"
-                  data-testid="scene-continue"
+                  id="walk-radar"
+                  class="walk-radar"
+                  data-testid="walk-radar"
+                  aria-label="Stations around you, range automatic - tap to change the range"
                 >
-                  Continue
+                  <canvas
+                    id="walk-radar-canvas"
+                    class="walk-radar-canvas"
+                  ></canvas>
+                </button>
+                <p
+                  id="walk-range"
+                  class="walk-range"
+                  data-testid="walk-range"
+                  aria-live="polite"
+                  hidden
+                ></p>
+                <p
+                  id="walk-precision"
+                  class="walk-precision"
+                  data-testid="walk-precision"
+                  data-kind="pending"
+                >
+                  <i class="walk-precision-mark" aria-hidden="true"></i
+                  ><span
+                    id="walk-precision-text"
+                    data-testid="walk-precision-text"
+                  ></span>
+                </p>
+              </div>
+              <!-- The focus's edge pill: the station the
+               walk is about, named at the screen's edge on its side while
+               it is off screen. aria-hidden: the peek's line says the same,
+               and a pill that comes and goes with every turn would be
+               read out each time. -->
+              <div
+                id="walk-edge-pill"
+                class="walk-edge-pill"
+                data-testid="walk-edge-pill"
+                data-side="left"
+                aria-hidden="true"
+                hidden
+              >
+                <svg viewBox="0 0 14 14" aria-hidden="true">
+                  <path
+                    id="walk-edge-pill-arrow"
+                    d="M9 2L4 7l5 5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span
+                  id="walk-edge-pill-text"
+                  data-testid="walk-edge-pill-text"
+                ></span>
+              </div>
+              <!-- The framework's toast is attached here while it shows. -->
+              <!-- aria-hidden: its words are announced already, by
+                   #ar-status-live or #station-line, and the rest by
+                   #walk-live (walk-toast.ts.md). -->
+              <p
+                id="walk-live"
+                class="visually-hidden"
+                data-testid="walk-live"
+                aria-live="polite"
+              ></p>
+              <div
+                id="walk-toast-root"
+                data-testid="walk-toast-root"
+                aria-hidden="true"
+              ></div>
+              <section
+                id="pin-sheet"
+                class="sheet pin-sheet"
+                data-testid="pin-sheet"
+                role="dialog"
+                aria-labelledby="pin-sheet-title"
+                hidden
+              >
+                <h3 id="pin-sheet-title" data-testid="pin-sheet-title"></h3>
+                <p id="pin-sheet-text" data-testid="pin-sheet-text"></p>
+                <button
+                  type="button"
+                  id="pin-sheet-close"
+                  class="btn walk-btn"
+                  data-testid="pin-sheet-close"
+                >
+                  Close
                 </button>
               </section>
-              <button
-                type="button"
-                id="scene-play-next"
-                class="btn btn--prose"
-                data-testid="scene-play-next"
+              <section
+                id="walk-sheet"
+                class="sheet walk-sheet"
+                data-testid="walk-sheet"
+                data-sheet="peek"
+                aria-label="Tour progress"
                 hidden
-              ></button>
+              >
+                <button
+                  type="button"
+                  id="walk-grab"
+                  class="walk-grab"
+                  data-testid="walk-grab"
+                  aria-controls="walk-list"
+                  aria-expanded="false"
+                  aria-label="Show all stations"
+                >
+                  <span class="sheet-handle" aria-hidden="true"></span>
+                </button>
+                <div
+                  id="walk-peek"
+                  class="walk-peek"
+                  data-testid="walk-peek"
+                  data-kind="walk"
+                >
+                  <div
+                    id="walk-segments"
+                    class="walk-segments"
+                    data-testid="walk-segments"
+                    aria-hidden="true"
+                  ></div>
+                  <div
+                    id="walk-peek-row"
+                    class="walk-peek-row"
+                    data-testid="walk-peek-row"
+                  >
+                    <div class="walk-peek-main">
+                      <p
+                        id="walk-eyebrow"
+                        class="walk-eyebrow"
+                        data-testid="walk-eyebrow"
+                      ></p>
+                      <p class="walk-peek-title">
+                        <b id="walk-title" data-testid="walk-title"></b>
+                        <span
+                          id="walk-distance"
+                          class="walk-distance"
+                          data-testid="walk-distance"
+                          hidden
+                          ><svg
+                            id="walk-distance-arrow"
+                            class="walk-arrow"
+                            viewBox="0 0 16 16"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M8 2l5 11-5-3-5 3z"
+                              fill="currentColor"
+                            /></svg
+                          ><span
+                            id="walk-distance-text"
+                            data-testid="walk-distance-text"
+                          ></span
+                        ></span>
+                      </p>
+                      <!-- The tail, and on a being-there peek the arrow to
+                       the next station it names (not by the title: that
+                       is the station the visitor is at). -->
+                      <p class="walk-tail walk-tail-row">
+                        <svg
+                          id="walk-tail-arrow"
+                          class="walk-arrow"
+                          data-testid="walk-tail-arrow"
+                          viewBox="0 0 16 16"
+                          aria-hidden="true"
+                        >
+                          <path d="M8 2l5 11-5-3-5 3z" fill="currentColor" />
+                        </svg>
+                        <span id="walk-tail" data-testid="walk-tail"></span>
+                      </p>
+                      <p
+                        id="walk-code-tail"
+                        class="walk-tail"
+                        data-testid="walk-code-tail"
+                        hidden
+                      ></p>
+                    </div>
+                    <!-- The quick action (the prototype's look, today's labels and taps). -->
+                    <button
+                      type="button"
+                      id="station-skip"
+                      class="btn btn--prose walk-quick"
+                      data-testid="station-skip"
+                      hidden
+                    >
+                      Can't get there?
+                    </button>
+                  </div>
+                </div>
+                <!-- The story card takes the peek's place while a story
+                 plays; it hosts today's story panel. -->
+                <div
+                  id="walk-story"
+                  class="walk-story"
+                  data-testid="walk-story"
+                  hidden
+                >
+                  <p class="walk-eyebrow walk-story-eyebrow">
+                    Station found - its story is playing.
+                  </p>
+                  <section
+                    id="scene-panel"
+                    data-testid="scene-panel"
+                    aria-live="polite"
+                    hidden
+                  >
+                    <h3 id="scene-title" data-testid="scene-title"></h3>
+                    <p
+                      id="scene-description"
+                      data-testid="scene-description"
+                      hidden
+                    ></p>
+                    <img
+                      id="scene-station-image"
+                      data-testid="scene-station-image"
+                      alt=""
+                      hidden
+                    />
+                    <p
+                      id="scene-speaker"
+                      data-testid="scene-speaker"
+                      hidden
+                    ></p>
+                    <img
+                      id="scene-image"
+                      data-testid="scene-image"
+                      alt=""
+                      hidden
+                    />
+                    <video
+                      id="scene-video"
+                      data-testid="scene-video"
+                      controls
+                      playsinline
+                      preload="metadata"
+                      hidden
+                    ></video>
+                    <p id="scene-text" data-testid="scene-text"></p>
+                    <p id="scene-status" data-testid="scene-status"></p>
+                    <div id="scene-choices" data-testid="scene-choices"></div>
+                  </section>
+                  <div
+                    id="walk-dots"
+                    class="walk-dots"
+                    data-testid="walk-dots"
+                    aria-hidden="true"
+                  ></div>
+                  <div
+                    id="walk-story-acts"
+                    class="walk-story-acts"
+                    data-testid="walk-story-acts"
+                  >
+                    <button
+                      type="button"
+                      id="scene-continue"
+                      class="btn btn--prose walk-btn walk-btn-primary"
+                      data-testid="scene-continue"
+                    >
+                      Continue
+                    </button>
+                    <button
+                      type="button"
+                      id="walk-story-end"
+                      class="btn btn--prose walk-btn"
+                      data-testid="story-end"
+                      hidden
+                    ></button>
+                    <button
+                      type="button"
+                      id="walk-keep-listening"
+                      class="btn btn--prose walk-btn"
+                      data-testid="keep-listening"
+                      hidden
+                    >
+                      Keep listening
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    id="scene-play-next"
+                    class="btn btn--prose walk-btn"
+                    data-testid="scene-play-next"
+                    hidden
+                  ></button>
+                </div>
+                <div
+                  id="walk-list"
+                  class="walk-list"
+                  data-testid="walk-list"
+                  hidden
+                >
+                  <div class="walk-list-head">
+                    <h2 id="walk-list-title" data-testid="walk-list-title"></h2>
+                    <span
+                      id="walk-chip"
+                      class="walk-chip"
+                      data-testid="walk-chip"
+                    ></span>
+                    <button
+                      type="button"
+                      id="walk-close"
+                      class="walk-round"
+                      data-testid="walk-close"
+                      aria-label="Close the list"
+                    >
+                      <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path
+                          d="M3 6l5 5 5-5"
+                          fill="none"
+                          stroke="currentcolor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                  <div
+                    id="walk-done"
+                    class="walk-done"
+                    data-testid="walk-done"
+                    hidden
+                  >
+                    <svg viewBox="0 0 40 40" aria-hidden="true">
+                      <circle cx="20" cy="20" r="19" fill="#2dd4bf" />
+                      <path
+                        d="M11 21l6 6 12-13"
+                        fill="none"
+                        stroke="#04201c"
+                        stroke-width="3.6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                    <div>
+                      <b id="walk-done-title" data-testid="walk-done-title"></b>
+                      <span
+                        id="walk-done-text"
+                        data-testid="walk-done-text"
+                      ></span>
+                    </div>
+                  </div>
+                  <p
+                    id="walk-progress"
+                    class="walk-progress"
+                    data-testid="walk-progress"
+                  ></p>
+                  <p
+                    id="walk-hint"
+                    class="walk-hint"
+                    data-testid="walk-hint"
+                    hidden
+                  ></p>
+                  <ul
+                    id="walk-rows"
+                    class="walk-rows"
+                    data-testid="walk-rows"
+                  ></ul>
+                </div>
+              </section>
               <!-- The setup panel (guided-setup plan M3). Inside #ar-root on
                purpose: it must stay visible while the AR session composites
                the DOM overlay. Measure (save the code's position), then
@@ -3707,6 +6411,49 @@
                   hidden
                 ></p>
                 <div id="setup-controls" data-testid="setup-controls" hidden>
+                  <!-- The persistent Undo: takes back
+                   the tour's last step when it is a delete or a settle's
+                   automatic code change, and says which (creator-undo.ts).
+                   FIRST, on its own line above "New station here": its
+                   label names what it takes back and needs the width, and
+                   the reading and focus order is the order on screen. -->
+                  <button
+                    type="button"
+                    id="setup-undo"
+                    class="btn btn--prose"
+                    data-testid="setup-undo"
+                    disabled
+                  >
+                    <!-- An arrow turning back. -->
+                    <svg
+                      class="chip-icon"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M9 14 4 9l5-5"
+                        fill="none"
+                        stroke="currentcolor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                      <path
+                        d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"
+                        fill="none"
+                        stroke="currentcolor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                    <span
+                      id="setup-undo-label"
+                      class="chip-label"
+                      data-testid="setup-undo-label"
+                      >Undo</span
+                    >
+                  </button>
                   <!-- "New station here" (owner decision D8 of the editor
                    round-2 plan): a toggle - the next pin or photo starts a
                    station of its own, even within the automatic radius of
@@ -3788,8 +6535,15 @@
                       type="text"
                       autocomplete="off"
                       placeholder="The pin's text"
+                      aria-describedby="pin-label-count"
                       hidden
                     />
+                    <output
+                      id="pin-label-count"
+                      data-testid="pin-label-count"
+                      for="pin-label"
+                      hidden
+                    ></output>
                     <button
                       type="button"
                       class="btn btn--prose"
@@ -3952,6 +6706,32 @@
               >
                 Save the tour zip again
               </button>
+              <!-- The debug data the Finish left out of the tour file
+               (debug-captures plan M2, E2): saved apart on a tap, above the
+               replace steps, from the bytes the Finish read
+               (creator-debug-save.ts). -->
+              <div id="debug-save" data-testid="debug-save" hidden>
+                <p
+                  id="debug-save-text"
+                  class="step-copy"
+                  data-testid="debug-save-text"
+                ></p>
+                <button
+                  type="button"
+                  id="debug-save-btn"
+                  class="btn btn--prose"
+                  data-testid="debug-save-btn"
+                >
+                  Save the debug data
+                </button>
+                <p
+                  id="debug-save-status"
+                  class="step-copy hint--dim"
+                  data-testid="debug-save-status"
+                  role="status"
+                  aria-live="polite"
+                ></p>
+              </div>
               <!-- The summary after Finish (authoring plan 2026-09-28-0953 §3.3,
                M3b): each code's verdict, then a map of the visits, the
                codes with their facing lines, and the pins and photos -
@@ -4116,6 +6896,60 @@
           <ul id="gallery" data-testid="gallery" hidden></ul>
         </div>
       </div>
+      <!-- /setup-stage -->
+      <script id="landing-skip">
+        // A device that used the setup before opens at the setup: the same
+        // rule as skipsLanding (src/landing/landing-skip.ts), held to it by
+        // landing-skip.test.ts. It runs here, right after the stage's
+        // markup and before the first paint, with an instant scroll; on a
+        // reload or back/forward the browser restores its own position,
+        // and a hash goes where it points.
+        try {
+          const navigation = performance.getEntriesByType("navigation")[0];
+          const returning = [
+            "tour-viewer.wizard.host",
+            "tour-viewer.wizard.last-url",
+          ].some((key) => {
+            const value = localStorage.getItem(key);
+            return typeof value === "string" && value !== "";
+          });
+          if (
+            document.body.dataset.mode === "creator" &&
+            returning &&
+            location.hash === "" &&
+            navigation !== undefined &&
+            navigation.type === "navigate"
+          ) {
+            // main.ts keeps the stage at the top while the page settles
+            // (holdLandingSkip), until the reader moves the page or a
+            // moment after the landing's parts have mounted.
+            const mark = document.documentElement.dataset;
+            mark.landingSkip = "applied";
+            for (const input of [
+              "wheel",
+              "touchstart",
+              "keydown",
+              "pointerdown",
+            ]) {
+              document.addEventListener(
+                input,
+                () => {
+                  mark.landingSkip = "moved";
+                },
+                { capture: true, once: true, passive: true },
+              );
+            }
+            const stage = document.getElementById("setup-stage");
+            stage.scrollIntoView({ block: "start", behavior: "instant" });
+            // The keyboard starts where the view is: a first Tab from the
+            // top would scroll the page back and undo the skip.
+            stage.tabIndex = -1;
+            stage.focus({ preventScroll: true });
+          }
+        } catch {
+          // Site data blocked: a first visit's view, at the top.
+        }
+      </script>
       <!-- "You already have a tour?" (tour editor plan 2026-10-17-1816, W1):
            BELOW the map and the six steps, so the first-time story stays
            first. Which half shows follows the AR check on #enter-ar
@@ -4216,17 +7050,16 @@
           </div>
         </div>
       </section>
-      <!-- The legal notice and the privacy page (tour editor plan
-           2026-10-17-1816, W6, D13; legal.html.md), at the setup page's
-           foot. -->
+      <!-- The legal notice and the privacy page, at the setup page's foot:
+           the site-wide page at /legal/ (legal.html.md says why it moved). -->
       <footer
         id="setup-foot"
         class="creator-only setup-foot"
         data-testid="setup-foot"
         hidden
       >
-        <a href="legal.html#notice">Legal notice</a>
-        <a href="legal.html#privacy">Privacy</a>
+        <a href="/legal/#notice">Legal notice</a>
+        <a href="/legal/#privacy">Privacy</a>
       </footer>
       <section id="visitor-more" hidden data-testid="visitor-more">
         <details id="visitor-what">
@@ -4247,7 +7080,7 @@
                   >The app sends none of your data: no camera image, no
                   location. No sign-up, no account.
                   <a
-                    href="legal.html#privacy"
+                    href="/legal/#privacy"
                     target="_blank"
                     rel="noopener"
                     data-testid="visitor-privacy"

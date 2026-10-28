@@ -45,6 +45,9 @@ since the flows plan M6.
     the reticle under the world group once the runtime is up
     (`ctx.reticle`, disposed on session end), whose XR `select` - a tap in
     AR that the overlay did not cancel - calls `hooks.selectInView(tap)`
+    (a visitor's session starts `seams.startXrSelect` instead,
+    `ctx.visitorSelect`, disposed on session end, whose taps call
+    `hooks.visitorTap(tap)`: the pin sheet, B2b)
     with where the tap pointed (the driver's target ray, or null; M4
     review #4)
     (authoring plan 2026-09-28-0953 M4); every camera frame (a
@@ -88,7 +91,8 @@ since the flows plan M6.
       milestone review #1).
   - `renderArStatus` also renders the visitor's scan card (`dom.scanCard`,
     `dom.scanCardLine`, optional; the owner's S1, polish round M4b): shown
-    while `scanCardShown` holds, carrying the visitor's sentence, with the
+    while `scanCardShown` holds (never for a tour not finished yet,
+    whose line says so), carrying the visitor's sentence, with the
     status line hidden meanwhile (kept under `?debug=1`, whose technical
     line the card does not carry); the live region is unchanged.
   - The render also writes `data-ar-state` (the controller status, for
@@ -145,6 +149,20 @@ entry; C7).
 - `#ar-status` and `#enter-ar` must stay DOM children of `#ar-root` (the
   DOM-overlay root; `tests/repo-config/hud-overlay-nesting.test.js`). The
   hint is hidden while a session is starting/running/stopping.
+- **A visitor of a tour not finished yet gets no Start** (`startWithheld`:
+  a tour open, its manifest settled, `tourUnfinished` per
+  `tour-unfinished.ts`): outside a session `#enter-ar` and `#ar-hint` are
+  hidden, and a tap that still arrives does nothing - no location request
+  (whose denial on a tour without codes sent the visitor to the browser's
+  settings), no empty AR session. The start page's sentence says why.
+  While the manifest is still being read the button shows, so a session
+  can still start on such a tour; its status line then says the tour is
+  not finished. During a session the button stays: it is the way out.
+  The button carries `data-start` (`withheld` / `offered`), which
+  `index.html` reads to hide "What happens?" (`#visitor-what`) as well:
+  it describes a session the visitor cannot start.
+  `renderArEntry` runs again when the tour's manifest settles
+  (`visitor-screen.ts` `tourChanged`).
 - The printed-size input is disabled during a session ONLY in author mode
   (DEC-F2).
 - A refused author pipeline keeps AR unstarted; the viewer pipeline is
@@ -153,7 +171,11 @@ entry; C7).
   tracking-quality phase is fed (flows plan M4).
 - On `running`, viewer mode installs the placement subscription
   (`ctx.placementUnsubscribe`) and attempts once; author mode renders the
-  readout instead.
+  readout instead. The subscription answers every dispatch, with no
+  `onlyCreatorCodesChanged` filter: the creator's sightings, which that
+  filter exists for (`creator-setup.ts`), never dispatch for a visitor, and
+  the one visitor dispatch it matched (`codesForgotten` at a tour's close
+  mid-session, an empty book) only skipped a redundant call (r904).
 - The runtime start is all-or-nothing (`startTourArRuntime`); its failure
   surfaces in the error box and disables back to `ready`.
 
@@ -166,6 +188,22 @@ entry; C7).
   line reads the device-fix count (`deviceFixes`). Before such a start the
   gate's `recheck()` runs (M1b-1 review #3); when it leaves the gate
   pending (a dismissed prompt offered again) the tap is not a start.
+- **A creator starts without location only on a stored code:** when the
+  browser reports the location permission `denied` AND the tour stores a
+  code that can line the visit up by its votes
+  (`hooks.creatorCanStartOnCodes`, `creator-measuring.ts`
+  `canStartOnCodes`), the start is codes-only as a visitor's is. Any
+  other creator start asks for location as before. A start that then
+  fails with its OWN location request refused (the `locationRefusals` dep,
+  counted by `location-permission.ts` `onRefused` in `main.ts`, grew
+  during the start) carries `locationRefusal` into the status input - a
+  permission refused in an earlier visit still reads denied when a start
+  fails for another reason, and the hint would misname that cause: `code-can-start` (the next try starts on the code) or
+  `no-code` (allow location, step outside for a first fix); a
+  permission that cannot be read claims nothing. Reset at every start.
+- **GPS quality counts device fixes only** (`sessionGpsQuality`, through
+  `device-gps-quality.ts`): a code's votes share the GPS history and
+  never count as fixes or set the accuracy.
 
 ## Examples
 
@@ -188,7 +226,13 @@ hooks.renderArStatus = arEntry.renderArStatus;
 
 `playwright-tests/ar-mode.spec.js` - both modes booting to running, the
 frame count in the status line, the system session end + clean re-entry,
-the hint hidden during a session, the unsupported state without fakes.
+the hint hidden during a session, the unsupported state without fakes; a
+tour not finished yet: no Start and no location request, and a session
+started while its file was still being read says it is not finished.
+`ar-entry.test.ts` ("a visitor of a tour not finished yet gets no Start")
+pins the withheld button and hint (and its `data-start` mark), the tap
+that asks for nothing, the
+button while the manifest is pending, during a session and for a creator.
 `ar-entry.test.ts` drives the real `wireArEntry` through "Enter AR" and the
 session-end callback it hands the AR controller: the QR controller is
 disposed and the fused pose source dropped (QR near-frontal pose plan §64
@@ -209,3 +253,46 @@ the session end; an unrecorded one asks for none. The pure pieces: `ar-mode.test
 - The runtime start also snapshots `ctx.frameEpochAtSessionStart` (code
   book plan M6 v5.1), next to `gpsSamplesAtSessionStart`
   (`ar-entry.test.ts`, "snapshots the odometry frame's epoch").
+
+## The walk's surfaces
+
+- `renderArStatus` splits the visitor's sentence
+  (`visitorStatusParts`, `statusSentence`) and, for a visitor, renders
+  `walk-status-routing.ts`'s route:
+  - the coach (`dom.coach`: `#walk-coach`, its `data-look` spinner, sway
+    or plain, and `#walk-coach-text`);
+  - the scan card's found look (`data-look="found"`, its title
+    `SCAN_CARD_FOUND_TITLE` "Code found - placing the tour…"; the scan
+    look keeps `SCAN_CARD_TITLE`); the card shows in either look and the
+    status line steps aside as before;
+  - news said once per entry through `deps.walk.toast` (in AR only);
+  - the peek's code line (`dom.codeTail`, `#walk-code-tail`).
+- `#ar-status` keeps the whole sentence and its `data-state`; the CSS
+  hides it visually for a visitor in AR without `?debug=1`.
+  `#ar-status-live` announces the whole sentence, as before.
+- `deps.walk.progressKept()` feeds the button's "Back to the tour"; the
+  toast is reset at the session's end. `deps.walk.sheetShown?()` (the
+  guide runs) is the status input's `walkRuns`: a tour of stories places
+  no content, and the running walk makes its sentence a placed one (the
+  status, the hidden line and the live region alike). A render's news is
+  one toast (`toast.say([], route.toasts)`).
+- Optional dom and deps: a harness without them renders as before.
+- Tests: `ar-entry.test.ts` "the walk's surfaces in AR" (the coach and
+  its spinner, the found look and back, a GPS placement's toast once and
+  the code line, no news before AR, a creator untouched, the toast reset
+  at the session's end, "Back to the tour", a running walk read as a
+  placed tour (live region and toast), one render's news as one toast; a placement wait giving way
+  to the shown walk).
+
+## The radar's events and lines
+
+- `renderArStatus` publishes the visitor's tracking loss
+  (`trackingLostSet`): lost while a visitor's session runs with the
+  readiness phase `ar-lost`; dispatched only on a change, never for a
+  creator.
+- `walk.debugLines?()` - the walk's `?debug=1` lines (the radar's draw
+  time and the frame time), appended to the block after the QR, GPS and
+  mesh lines.
+- Tests: the "wait for a heading (D34)" describe (the tracking loss) and
+  "ends the block with the walk's radar and frame lines" in
+  `ar-entry.test.ts`.

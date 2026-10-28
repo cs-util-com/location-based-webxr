@@ -38,6 +38,7 @@ import {
   turnLimitDeg,
   type CodeMeasurement,
   type CodeSighting,
+  type VisitAlignmentPicks,
 } from "./visit-settle.js";
 
 // The geodesy is licence-gated; building a store activates it, as the
@@ -207,10 +208,17 @@ describe("settling the visit that measured the code (B2)", () => {
     const photo = {
       object: {
         id: "shot",
-        kind: "photo",
-        image: "content/shot.jpg",
-        imageWidth: 4,
-        imageHeight: 3,
+        kind: "picture",
+        view: "plane",
+        image: "shot",
+        widthM: 1,
+        imageAsset: {
+          id: "shot",
+          path: "content/shot.jpg",
+          kind: "image",
+          width: 4,
+          height: 3,
+        },
         createdAtIso: NOW,
         geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 401.4 },
       } as TourObject,
@@ -377,6 +385,111 @@ describe("settling the visit that measured the code (B2)", () => {
         zero: null,
       }),
     ).toBeNull();
+  });
+});
+
+describe("a station started in the visit settles with it", () => {
+  // Why these tests matter: a station a visit starts is anchored where its
+  // first item stood at the tap, through the alignment at the tap. The
+  // settle then moves that item by the visit's correction - metres, and
+  // degrees that grow with the distance from the odometry origin. A station
+  // left at the tap spot drifts off its own item, and a correction near its
+  // found radius would push the item out of the station it started. The
+  // anchor shares the item's odometry pose and its alignment, so it lands
+  // exactly where the item does.
+  const tap = yawAlignment(0, [0, 400, 0]);
+  const firstLocal: [number, number, number] = [12, 0, -5];
+
+  function settle(end: number[], picks?: VisitAlignmentPicks) {
+    const placed = [
+      placedPin("first", firstLocal, 0, tap),
+      placedPin("second", [20, 0, 3], 0, tap),
+    ];
+    const plan = planVisitSettle({
+      visit: 0,
+      placed,
+      alignment: end,
+      zero: ZERO,
+      mintedLevel: null,
+      measurement: null,
+      sighting: null,
+      alignmentInfo: INFO,
+      nowIso: NOW,
+      ...(picks === undefined ? {} : { picks }),
+      stations: [
+        { id: "started", placement: placed[0]!.placement, item: "first" },
+        // Another visit's station: that visit's settle placed it.
+        {
+          id: "earlier",
+          placement: { ...placed[1]!.placement, visit: 1 },
+          item: "second",
+        },
+      ],
+    })!;
+    return { plan, placed };
+  }
+
+  /** Where a geo lies on the earth, as a station's anchor reads it. */
+  const at = (geo: TourObject["geo"]) => ({
+    lat: geo.lat,
+    lon: geo.lon,
+    alt: geo.alt,
+  });
+
+  // Each case: a correction on one side of the found radius (25 m) and of
+  // a few degrees; the anchor must follow at every size, so none would
+  // change the verdict.
+  for (const [name, end] of [
+    ["a 10 m shift", yawAlignment(0, [10, 400, 0])],
+    ["a 10 degree turn", yawAlignment(10, [0, 400, 0])],
+    ["a 30 m shift, beyond the found radius", yawAlignment(0, [30, 400, 0])],
+    ["a 2 degree turn and a 1 m shift", yawAlignment(2, [1, 400, 0])],
+  ] as const) {
+    it(`keeps the station anchored at its first item after ${name}`, () => {
+      const { plan, placed } = settle([...end]);
+      const first = plan.objects.find((o) => o.object.id === "first")!.object;
+      expect(
+        worldOf(first).distanceTo(worldOf(placed[0]!.object)),
+        "the settle moved the item",
+      ).toBeGreaterThan(0.3);
+      expect(plan.stations).toEqual([{ id: "started", at: at(first.geo) }]);
+    });
+  }
+
+  it("settles the anchor at its first item's moment, not the visit's end", () => {
+    const own = yawAlignment(6, [4, 400, -3]);
+    const end = yawAlignment(-5, [-8, 401, 2]);
+    const { plan } = settle(end, {
+      objects: new Map([["first", { atMs: 1_000, alignment: own }]]),
+      measurement: null,
+      sightings: [],
+    });
+    const first = plan.objects.find((o) => o.object.id === "first")!.object;
+    expect(plan.stations).toEqual([{ id: "started", at: at(first.geo) }]);
+    const throughEnd = new Vector3(
+      ...throughAlignment(
+        { position: firstLocal, rotation: [0, 0, 0, 1] },
+        end,
+      )!.position,
+    );
+    expect(worldOf(first).distanceTo(throughEnd)).toBeGreaterThan(1);
+  });
+
+  it("settles a visit's station though the visit placed nothing else", () => {
+    const placement = placedPin("gone", firstLocal, 0, tap).placement;
+    const plan = planVisitSettle({
+      visit: 0,
+      placed: [],
+      alignment: yawAlignment(0, [10, 400, 0]),
+      zero: ZERO,
+      mintedLevel: null,
+      measurement: null,
+      sighting: null,
+      alignmentInfo: INFO,
+      nowIso: NOW,
+      stations: [{ id: "started", placement, item: "gone" }],
+    });
+    expect(plan?.stations.map((st) => st.id)).toEqual(["started"]);
   });
 });
 
@@ -877,7 +990,9 @@ describe("moving a pin to the reticle (M4) goes through the settle's alignment",
     expect(offset.distanceTo(expected)).toBeLessThan(1e-3);
     // The record is the same object: id, text and creation time kept.
     expect(moved!.object.id).toBe("hosted");
-    expect(moved!.object.kind === "pin" && moved!.object.label).toBe("hosted");
+    expect(moved!.object.kind === "shortText" && moved!.object.caption).toBe(
+      "hosted",
+    );
     expect(moved!.object.createdAtIso).toBe(hostedPin.createdAtIso);
   });
 

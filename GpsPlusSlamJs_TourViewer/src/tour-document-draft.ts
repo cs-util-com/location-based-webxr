@@ -11,13 +11,30 @@
  */
 
 import { parseGeoPose } from "gps-plus-slam-app-framework/ar/qr/geo-pose";
-import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  createEmptyTourManifest,
+  parseTourManifest,
+  type TourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { TOUR_ID_PATTERN } from "gps-plus-slam-app-framework/ar/tour-archive";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { objectContentKey } from "./authoring-draft.js";
 import type { DraftObjectWrites } from "./draft-actions.js";
 import type { EditEntry } from "./object-edits.js";
 import { DETAIL_FIELDS, type TourDetailFields } from "./tour-details-form.js";
-import type { StationPose, TourDocumentState } from "./tour-document.js";
+import {
+  createdStationFrames,
+  documentFrames,
+  framesOf,
+  levelsNotHosted,
+  type LevelText,
+  recordedFrames,
+  recordedOrder,
+  type StationFrame,
+  type StationPose,
+  stationsGoneSinceOpen,
+  type TourDocumentState,
+} from "./tour-document.js";
 import { sameJson } from "./same-json.js";
 
 /** The tour-level settings a draft keeps: the setting, and the details
@@ -31,6 +48,26 @@ export interface TourSettingsRecord {
    *  milestone review #1 - the objects alone came back at the moved spots
    *  inside unmoved stations). */
   readonly stations?: readonly StationPose[];
+  /** The whole frames of the stations this page created
+   *  (`createdStationFrames`): the objects' records name them, so a reload
+   *  puts them back before the objects (`restored`). Absent when none. */
+  readonly createdStations?: readonly StationFrame[];
+  /** Once a station was edited beyond its pose here (a title, a radius, a
+   *  description, a card image; added, deleted, reordered or copied:
+   *  `framesRecorded`), the stations this page edited beyond their pose or
+   *  added, whole (`recordedFrames`; empty when none). Absent: no opinion
+   *  about them. */
+  readonly frames?: readonly StationFrame[];
+  /** The stations' order, recorded with `frames` only when a restore
+   *  would not give it by itself (`recordedOrder`). */
+  readonly order?: readonly string[];
+  /** The stations of the opened or written tour the document no longer
+   *  carries, recorded with `frames`; absent when none. */
+  readonly deletedStations?: readonly string[];
+  /** The stations the next write carries that were added by hand here
+   *  (`handMade`): they keep themselves though untitled and empty.
+   *  Recorded with `frames`; absent when none. */
+  readonly handMadeStations?: readonly string[];
 }
 
 /** The settings record's file in a draft namespace, on both pages. Not a
@@ -82,6 +119,82 @@ function parseStations(value: unknown): StationPose[] | undefined | null {
   return poses;
 }
 
+/** A stored record's frames (its created stations, or every station),
+ * each read on its own as the format reads a station
+ * (`parseTourManifest`, without items): undefined when absent; of two
+ * under one id the first is kept. A frame that does not read is lost (the
+ * objects naming it are seated by the station rule as they come back). A
+ * step naming an asset reads only against `against`'s assets; without
+ * `against`, a frame with such a step is lost. */
+function parseFrames(
+  value: unknown,
+  against: TourManifest | undefined,
+): StationFrame[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const frames: StationFrame[] = [];
+  for (const entry of value as unknown[]) {
+    const frame = parseFrame(entry, against?.assets ?? []);
+    if (frame !== undefined && !frames.some((f) => f.id === frame.id)) {
+      frames.push(frame);
+    }
+  }
+  return frames;
+}
+
+/** A stored frame's id, when it is one a station may carry. */
+function idOf(entry: unknown): string | undefined {
+  if (entry === null || typeof entry !== "object") return undefined;
+  const id = (entry as { id?: unknown }).id;
+  return typeof id === "string" && TOUR_ID_PATTERN.test(id) ? id : undefined;
+}
+
+/** One frame, read with `assets` for its story; undefined when it does
+ *  not read. Its card image is read apart: the probe holds no free
+ *  blocks, so a captured photo of the station would read as gone - a well-formed id is kept,
+ *  and the document shows and writes it only while it names a picture
+ *  (its effective image). */
+function parseFrame(
+  entry: unknown,
+  assets: TourManifest["assets"],
+): StationFrame | undefined {
+  const id = idOf(entry);
+  if (id === undefined) return undefined;
+  try {
+    const probe = parseTourManifest({
+      ...createEmptyTourManifest(),
+      assets,
+      stations: [entry],
+    });
+    const frame = framesOf(probe).find((f) => f.id === id);
+    const image = (entry as { image?: unknown }).image;
+    if (
+      frame === undefined ||
+      frame.image !== undefined ||
+      typeof image !== "string" ||
+      !TOUR_ID_PATTERN.test(image)
+    ) {
+      return frame;
+    }
+    return { ...frame, image };
+  } catch {
+    return undefined;
+  }
+}
+
+/** A stored record's deleted stations or order: the well-formed ids, once
+ *  each; undefined when absent or not a list. */
+function parseIds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return [
+    ...new Set(
+      (value as unknown[]).filter(
+        (id): id is string =>
+          typeof id === "string" && TOUR_ID_PATTERN.test(id),
+      ),
+    ),
+  ];
+}
+
 /** A stored record's details: undefined when absent, null when they do
  *  not read (a known field that is not a string). */
 function parseDetails(value: unknown): TourDetailFields | undefined | null {
@@ -100,9 +213,13 @@ function parseDetails(value: unknown): TourDetailFields | undefined | null {
 
 /** A stored settings record (`SETTINGS_KEY`'s text); undefined for
  *  anything that does not read (a record that does not read costs
- *  itself, never the objects beside it). */
+ *  itself, never the objects beside it). `against`: the tour it is read
+ *  for (the one opened), whose assets a recorded frame's steps may name
+ *  (`parseFrames`). A frame list or a
+ *  deleted list that does not read costs only itself. */
 export function parseSettingsRecord(
   text: string | undefined,
+  against?: TourManifest,
 ): TourSettingsRecord | undefined {
   if (text === undefined) return undefined;
   try {
@@ -114,30 +231,87 @@ export function parseSettingsRecord(
     const stations = parseStations(record["stations"]);
     if (typeof needsNoGps !== "boolean" || details === null) return undefined;
     if (stations === null) return undefined;
+    const created = parseFrames(record["createdStations"], against);
+    const frames = parseFrames(record["frames"], against);
+    const order = parseIds(record["order"]);
+    const deletedStations = parseIds(record["deletedStations"]);
+    const handMade = parseIds(record["handMadeStations"]);
     return {
       needsNoGps,
       ...(details === undefined ? {} : { details }),
       ...(stations === undefined ? {} : { stations }),
+      ...(created === undefined || created.length === 0
+        ? {}
+        : { createdStations: created }),
+      ...(frames === undefined ? {} : { frames }),
+      ...(order === undefined || order.length === 0 ? {} : { order }),
+      ...(deletedStations === undefined || deletedStations.length === 0
+        ? {}
+        : { deletedStations }),
+      ...(handMade === undefined || handMade.length === 0
+        ? {}
+        : { handMadeStations: handMade }),
     };
   } catch {
     return undefined;
   }
 }
 
-/** Where a page backs its edits up: the objects' writes the pages share
- *  and the settings record. */
+/** A settings record as a draft stores it: the record as it is, its
+ *  frames already in the tour file's shape (the step's `action` is the
+ *  file's own key), which `parseSettingsRecord` reads as the format reads
+ *  a station. */
+export function settingsRecordText<
+  R extends Pick<
+    TourSettingsRecord,
+    "needsNoGps" | "createdStations" | "frames"
+  >,
+>(record: R): string {
+  return JSON.stringify(record);
+}
+
+/** The codes a draft keeps (plan M3b): the code in hand, and every code
+ *  whose saved text the hosted zip does not hold yet (`levelsNotHosted`),
+ *  the hand's among them. */
+export interface TourCodesRecord {
+  readonly level: LevelText | null;
+  readonly levels: readonly LevelText[];
+}
+
+/** The codes record as the document holds it now, with `hand` in hand. */
+function codesRecord(
+  state: TourDocumentState,
+  hand: LevelText | null,
+): TourCodesRecord {
+  return { level: hand, levels: levelsNotHosted(state) };
+}
+
+/** Where a page backs its edits up: the objects' writes the pages share,
+ *  the settings record, and the codes record (a page that measures codes:
+ *  the phone's). */
 export interface TourDocumentDraft extends DraftObjectWrites {
   saveSettings(settings: TourSettingsRecord): Promise<boolean>;
+  saveCodes?(codes: TourCodesRecord): Promise<boolean>;
 }
 
 /** The settings record as the document holds it now. */
 export function settingsRecord(state: TourDocumentState): TourSettingsRecord {
+  const created = createdStationFrames(state);
+  const gone = state.framesRecorded ? stationsGoneSinceOpen(state) : [];
+  const order = state.framesRecorded ? recordedOrder(state) : undefined;
+  const carried = new Set(documentFrames(state).map((f) => f.id));
+  const handMade = state.handMade.filter((id) => carried.has(id));
   return {
     needsNoGps: state.needsNoGps,
     ...(state.detailsRecorded ? { details: state.details } : {}),
     ...(state.stationsRecorded
       ? { stations: state.stations.map(({ id, geo }) => ({ id, geo })) }
       : {}),
+    ...(created.length === 0 ? {} : { createdStations: created }),
+    ...(state.framesRecorded ? { frames: recordedFrames(state) } : {}),
+    ...(order === undefined ? {} : { order }),
+    ...(gone.length === 0 ? {} : { deletedStations: gone }),
+    ...(handMade.length === 0 ? {} : { handMadeStations: handMade }),
   };
 }
 
@@ -210,13 +384,19 @@ function holderOf(manifest: TourManifest | null): (id: string) => boolean {
  * The draft follows the document from `before` to `after`: every write is
  * issued now, in order (each resolves on its own; the draft says its own
  * failures). Nothing is written across an open (`generation`): the new
- * tour's draft is not the old one's.
+ * tour's draft is not the old one's. The codes record follows too when
+ * the draft keeps one and `hands` names the code in hand before and after
+ * (the hand is the page's, not the document's).
  */
 export function followDocument(
   draft: TourDocumentDraft,
   before: TourDocumentState,
   after: TourDocumentState,
   pictureOf: (id: string) => Blob | undefined,
+  hands?: {
+    readonly before: LevelText | null;
+    readonly after: LevelText | null;
+  },
 ): void {
   if (before.generation !== after.generation) return;
   const ids = new Set([
@@ -241,7 +421,11 @@ export function followDocument(
   }
   const was = settingsRecord(before);
   const now = settingsRecord(after);
-  if (JSON.stringify(was) !== JSON.stringify(now)) {
+  if (!sameJson(was, now)) {
     void draft.saveSettings(now);
   }
+  if (draft.saveCodes === undefined || hands === undefined) return;
+  const codesWere = codesRecord(before, hands.before);
+  const codesNow = codesRecord(after, hands.after);
+  if (!sameJson(codesWere, codesNow)) void draft.saveCodes(codesNow);
 }

@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { ACCURACY_CEILING_M } from "./station-bands";
+import {
+  POSITION_PRECISION_CEILING_M,
+  type PositionPrecision,
+} from "gps-plus-slam-app-framework/state/position-precision";
+
 import {
   nextPresentStation,
+  pastFoundExit,
   presenceCandidates,
   presentAfterWeakFix,
   takeoverMarginM,
@@ -110,16 +115,32 @@ describe("nextPresentStation", () => {
   });
 });
 
+/** A GPS position's precision at this accuracy, as built by hand. */
+function gps(accuracyM: number): PositionPrecision {
+  return {
+    source: "gps",
+    accuracyM,
+    tooWeak: accuracyM > POSITION_PRECISION_CEILING_M,
+  };
+}
+const CODE: PositionPrecision = {
+  source: "code",
+  accuracyM: null,
+  tooWeak: false,
+};
+
 describe("takeoverMarginM", () => {
-  it("is the judged accuracy, at least the floor: a code's position (null) takes the floor", () => {
+  // Changed (shared position-precision plan, M2): the margin reads the
+  // framework's precision instead of an accuracy and a code flag; the
+  // numbers are the same.
+  it("is the judged accuracy, at least the floor: a code's position takes the floor", () => {
     // Why: the sweep (station-presence.sweep.test.ts) finds the margin must
     // match the position's noise - a code's AR position wanders centimetres,
     // a raw fix metres. One fixed value either flickers outdoors or shows
     // the previous exhibit too long indoors.
-    expect(takeoverMarginM(null, true)).toBe(TAKEOVER_MARGIN_MIN_M);
-    expect(takeoverMarginM(8, true)).toBe(TAKEOVER_MARGIN_MIN_M);
-    expect(takeoverMarginM(0.2, false)).toBe(TAKEOVER_MARGIN_MIN_M);
-    expect(takeoverMarginM(8, false)).toBe(8);
+    expect(takeoverMarginM(CODE)).toBe(TAKEOVER_MARGIN_MIN_M);
+    expect(takeoverMarginM(gps(0.2))).toBe(TAKEOVER_MARGIN_MIN_M);
+    expect(takeoverMarginM(gps(8))).toBe(8);
     expect(TAKEOVER_MARGIN_MIN_M).toBe(1);
   });
 
@@ -127,10 +148,13 @@ describe("takeoverMarginM", () => {
     // Why (PR review N1): an unknown raw accuracy is the widest band there
     // is (`stationBands`' clamp); a 1 m margin beside a 25 m band would
     // let a neighbour take over on noise the band itself allows for.
-    for (const nonsense of [null, 0, -3, Number.NaN]) {
-      expect(takeoverMarginM(nonsense, false)).toBe(ACCURACY_CEILING_M);
+    for (const nonsense of [0, -3, Number.NaN]) {
+      expect(takeoverMarginM(gps(nonsense))).toBe(POSITION_PRECISION_CEILING_M);
     }
-    expect(takeoverMarginM(400, false)).toBe(ACCURACY_CEILING_M);
+    expect(
+      takeoverMarginM({ source: "none", accuracyM: null, tooWeak: true }),
+    ).toBe(POSITION_PRECISION_CEILING_M);
+    expect(takeoverMarginM(gps(400))).toBe(POSITION_PRECISION_CEILING_M);
   });
 });
 
@@ -204,5 +228,28 @@ describe("presenceCandidates", () => {
 
   it("is null when no station has a distance (no position, or no zero yet): presence holds", () => {
     expect(presenceCandidates(stations, new Map(), bands)).toBeNull();
+  });
+});
+
+describe("pastFoundExit", () => {
+  // Why this test matters: the guide finishes a tour waiting on its last
+  // station by this one rule - that station's own distance past its found
+  // exit, a too-weak fix's accuracy counted nearer - so it must agree with
+  // presence's exit (`presentAfterWeakFix`) and never fire on nonsense.
+  it("a judged position: strictly beyond the exit", () => {
+    expect(pastFoundExit(at("a", 3.5), 0)).toBe(false);
+    expect(pastFoundExit(at("a", 3.6), 0)).toBe(true);
+  });
+  it("a too-weak fix: only when even its accuracy nearer is beyond", () => {
+    expect(pastFoundExit(at("a", 43.5), 40)).toBe(false);
+    expect(pastFoundExit(at("a", 43.6), 40)).toBe(true);
+  });
+  it("false on what it cannot read", () => {
+    expect(pastFoundExit(at("a", Number.NaN), 0)).toBe(false);
+    expect(pastFoundExit(at("a", 100), Number.NaN)).toBe(false);
+    expect(pastFoundExit(at("a", 100), -1)).toBe(false);
+    expect(pastFoundExit(at("a", 100, Number.POSITIVE_INFINITY), 0)).toBe(
+      false,
+    );
   });
 });

@@ -1,19 +1,16 @@
 /**
  * What a visitor of a tour reads, and the creator's walk a visitor never
- * reads (scan-pass plan S1, S-D10): the walk recording's own files minus
- * the photos a visitor sees. The Finish leaves the walk out of the
- * published copy by default, and a visitor's page leaves it out too.
+ * reads (scan-pass plan S1, S-D10): the walk recording's own files, every
+ * frame among them (debug data: a visitor sees none). A Finish leaves the
+ * walk out of the published copy unless kept, and a visitor's page leaves
+ * it out too.
  *
  * @see tour-read-set.ts.md
  */
 
 import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
-import {
-  tourItems,
-  type TourManifest,
-} from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { tourMediaTypeOfEntry } from "gps-plus-slam-app-framework/ar/tour-media";
+import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { signedManifestFilesOf } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
   LEGACY_SESSION_IMAGES_DIR,
@@ -21,13 +18,15 @@ import {
 } from "gps-plus-slam-app-framework/storage/file-system-utils";
 
 import type { ViewerMode } from "./mode.js";
+import { tourUnfinished } from "./tour-unfinished.js";
 
 /**
  * The entries of `entryNames` a visitor reads: `tour.json`, every code
- * level, the signed list and its signature, the content files the manifest
- * names (under `wrap`, the tour's folder), and the recorded photos it baked
- * spots for - or, for a tour without baked spots, every image, which is
- * what the photo ring shows.
+ * level, the signed list and its signature, and the content files the
+ * manifest's assets name (under `wrap`, the tour's folder; a captured
+ * photo's file is its picture's asset). Nothing else: a
+ * visitor never shows the zip's other images, nor a recorded frame - not
+ * even one a file's debug capture spots name.
  */
 export function visitorEntryNames(
   entryNames: readonly string[],
@@ -37,19 +36,11 @@ export function visitorEntryNames(
   const named = new Set<string>([
     `${wrap}${TOUR_MANIFEST_ENTRY}`,
     ...signedManifestFilesOf(entryNames),
-    ...tourItems(manifest).flatMap((o) =>
-      o.kind === "photo" ? [`${wrap}${o.image}`] : [],
-    ),
     ...manifest.assets.map((a) => `${wrap}${a.path}`),
-    ...(manifest.captureSpots?.captures.map((c) => c.image) ?? []),
   ]);
-  const ringPhotos = manifest.captureSpots === undefined;
   return new Set(
     entryNames.filter(
-      (name) =>
-        named.has(name) ||
-        qrLevelIdFromEntryName(name) !== null ||
-        (ringPhotos && tourMediaTypeOfEntry(name)?.kind === "image"),
+      (name) => named.has(name) || qrLevelIdFromEntryName(name) !== null,
     ),
   );
 }
@@ -60,8 +51,17 @@ const RECORDED_FRAME = new RegExp(
   String.raw`(^|/)(${SESSION_IMAGES_DIR}|${LEGACY_SESSION_IMAGES_DIR})/frame-\d+\.[A-Za-z0-9]+$`,
 );
 
-/** The recording's action stream: the walk itself. */
-const ACTION_ENTRY = /(^|\/)actions\//;
+/** The recording's action stream, the walk itself: an `actions/` path
+ *  SEGMENT, at the start or after a slash, so a sibling folder whose name
+ *  only ends in it (`myactions/`) is not it. The framework's parser
+ *  (`zip-reader.ts`) holds the same rule; it does not export it. */
+export const ACTIONS_SEGMENT = /(^|\/)actions\//;
+
+/** An action entry the framework's parser replays: under an `actions/`
+ *  segment, ending `.json`. */
+export function isActionEntryName(name: string): boolean {
+  return ACTIONS_SEGMENT.test(name) && name.endsWith(".json");
+}
 
 /**
  * The folders the Recorder's zip contributors add beside the recording:
@@ -79,7 +79,7 @@ function isRecordingEntry(name: string): boolean {
   return (
     name === "session.json" ||
     name.endsWith("/session.json") ||
-    ACTION_ENTRY.test(name) ||
+    ACTIONS_SEGMENT.test(name) ||
     RECORDED_FRAME.test(name) ||
     RECORDER_SCAN_FOLDER.test(name)
   );
@@ -87,21 +87,21 @@ function isRecordingEntry(name: string): boolean {
 
 /**
  * The walk recording's own entries in this archive, in archive order -
- * every one, the frames a visitor sees included: what makes the walk a
+ * every one, every frame included: what makes the walk a
  * complete recording in a file of its own (the editor's "Move the walk
  * out", the M4b milestone review #8). None without an action stream.
  */
 export function recordingEntryNames(entryNames: readonly string[]): string[] {
   // No action stream, no walk: a session.json or frame-named image of the
   // tour's own is then just a file.
-  if (!entryNames.some((name) => ACTION_ENTRY.test(name))) return [];
+  if (!entryNames.some((name) => ACTIONS_SEGMENT.test(name))) return [];
   return entryNames.filter(isRecordingEntry);
 }
 
 /**
  * The creator's walk in this archive, in archive order: the recording's own
  * entries (`session.json`, `actions/`, recorded frames) that a visitor
- * never reads - a baked photo, or a frame the photo ring shows, stays. What
+ * never reads. What
  * a lean Finish removes and a visitor's page leaves out. Never a file the
  * recording did not write: a README, credits or a licence file stays.
  */
@@ -126,16 +126,17 @@ export function entriesForVisitor<E extends { filename: string }>(
 
 /**
  * True when a VISITOR's background download of the whole archive should
- * stop: a copy whose photos are baked (`baked`) and that still carries a
- * walk (kept for a co-author). Without baked spots the viewer replays the
- * walk, reading every action entry: stopping the download would turn one
- * download into a range read per entry and lose the offline copy (S1
- * milestone review #1). A creator's working copy is still cached whole.
+ * stop: a tour not finished yet (`tour-unfinished.ts`: no `tour.json`,
+ * `manifest` null, or no station), of which a visitor reads nothing; or a
+ * copy that carries a walk (kept for a co-author, or never left out),
+ * which no visitor reads - every recording entry is walk. A finished
+ * copy without a walk is all visitor content, and stopping would only lose
+ * the offline copy. A creator's working copy is still cached whole.
  */
 export function stopsVisitorDownload(
   mode: ViewerMode,
+  manifest: TourManifest | null,
   scan: ReadonlySet<string>,
-  baked: boolean,
 ): boolean {
-  return mode === "visitor" && baked && scan.size > 0;
+  return mode === "visitor" && (tourUnfinished(manifest) || scan.size > 0);
 }

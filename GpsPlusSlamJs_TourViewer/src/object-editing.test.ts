@@ -10,16 +10,17 @@
  */
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { TourPin } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { applyObjectChanges } from "./authoring-draft.js";
 import { authoringObjects, upsertPlaced } from "./object-edits.js";
 
-function pin(id: string, label = `pin ${id}`): TourObject {
+function pin(id: string, label = `pin ${id}`): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-09-30T00:00:00.000Z",
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
   };

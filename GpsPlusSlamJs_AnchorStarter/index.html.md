@@ -12,6 +12,10 @@
       start AR) + `#capability-message` (E1 fallback).
     - `#placement` (bottom) — `#banner`, `#error`, `#place-button`,
       `#copy-link-button` (the reload hint went with DEC-L2-10).
+- **Legal link:** the start panel ends with a `.hint` link to the
+  site-wide legal notice and privacy page (`/legal/`,
+  `data-testid="legal-link"`), required of every app by
+  `tests/repo-config/legal-page.test.js`.
 - **Invariants & assumptions:** every element `main.ts` reads is present by
   `id`; `main.ts` throws on a missing id. `data-testid` attributes mirror the
   ids for future e2e selectors. AR/guidance/placement panels start `hidden`

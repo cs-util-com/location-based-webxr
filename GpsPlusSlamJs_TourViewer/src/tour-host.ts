@@ -129,12 +129,29 @@ export function hostReplaceText(host: TourHost): string | null {
 }
 
 /** The same on a computer (the editor's Done, tour editor plan
- *  2026-10-17-1816, W2), naming the saved file, Drive included. */
+ *  2026-10-17-1816, W2), naming the saved file, Drive included. A host
+ *  keeps the link only for a file of the hosted file's name: given that
+ *  name (`hostedName`) and it differs, the words say to rename the saved
+ *  file to it first, hedged ("or whatever the file at your link is
+ *  called"); null: the link names no file, so the creator looks
+ *  the name up; none given: the saved file carries it. */
 export function hostReplaceOnComputer(
   host: TourHost,
   fileName: string,
+  hostedName?: string | null,
 ): string {
-  return `Upload ${fileName} over the file at your tour's link, ${KEEPS_LINK} ${REPLACE_HOW[host]}`;
+  const how = `${KEEPS_LINK} ${REPLACE_HOW[host]}`;
+  if (hostedName === undefined || hostedName === fileName) {
+    return `Upload ${fileName} over the file at your tour's link, ${how}`;
+  }
+  // A name given is hedged: it is the one the link carried, or the saved
+  // one without its date, and a Dropbox link keeps the name a file had
+  // when it was shared.
+  const to =
+    hostedName === null
+      ? "the name of the file at your tour's link"
+      : `${hostedName}, or whatever the file at your link is called`;
+  return `Rename ${fileName} to ${to}, and upload it under that name over that file, ${how}`;
 }
 
 /** The hostnames each cloud host's links (share pages and their raw
@@ -179,7 +196,9 @@ export interface TourHostStore {
   setItem(key: string, value: string): void;
 }
 
-const HOST_KEY = "tour-viewer.wizard.host";
+/** The storage key of the choice; the landing reads it to tell a
+ *  returning device (`landing/landing-skip.ts`). */
+export const HOST_KEY = "tour-viewer.wizard.host";
 
 /** The stored host, or null: none chosen, an unknown value, or a store
  *  that is missing or throws (site data blocked). */

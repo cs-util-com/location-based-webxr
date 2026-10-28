@@ -12,7 +12,10 @@ M4 replaces its one code in hand with the code book.
 
 ## Public API
 
-- `wireCreatorMeasuring({ ctx, arStore, seams, dom, codes, wizard, codeTour, alignmentPicks, draft, sessionLive, alignmentInfo, placeEarlierObjects, render }): CreatorMeasuring`
+- `wireCreatorMeasuring({ ctx, arStore, seams, dom, codes, wizard, codeTour, alignmentPicks, draft, sessionLive, alignmentInfo, codeVotes?, placeEarlierObjects, render }): CreatorMeasuring`
+  - `codeVotes(options)` (optional): the vote half of the pipeline at a
+    code the tour stores - the viewer placement's `storedCodeVotes`;
+    absent or null, no code votes and the pipeline is the author's alone.
   - `dom` (`CreatorMeasuringDom`): `sizeInput`, `finishButton` (held off
     while a measurement runs), `sizeOffer`, `sizeOfferText`,
     `sizeOfferUse`, `sizeOfferKeep` (whose clicks this module handles).
@@ -29,6 +32,10 @@ M4 replaces its one code in hand with the code book.
   - `endVisit()` - the visit's tries go; `reset()` - a tour closed: the
     sizes adopted for its codes go.
   - `sizeOf(text)` - the printed size a code is solved at (M4c-3).
+  - `canStartOnCodes()` - the tour stores a code that can line a visit up
+    by its votes: one with a geo and a stored printed size, hosted or in
+    this device's code book, not ignored as moved. `ar-entry.ts` starts a
+    creator without location only then.
 - The code in hand, the stored codes' sightings and the levels a Finish
   wrote live in `creator-codes.ts` since M4a; this module reads and writes
   them through it.
@@ -66,7 +73,12 @@ M4 replaces its one code in hand with the code book.
   render classifies the code in view (`codeOutcome`), and the same answer
   feeds the line (`authorStatusLine`'s `ready`) and the measurement
   (`maybeMeasure`), so the line never claims a measurement that does not
-  happen:
+  happen. Only a code detected within the last second (`FRESH_DETECTION_MS`)
+  is measured: the render that opens the mint gate can come mid-walk, from
+  a GPS fix, with the code long out of view, and the last stable pose then
+  would be a code event at the wrong moment (the votes test "takes no
+  automatic measurement while the code is out of view"). The next detection
+  measures it:
   - the code in hand, or one measured earlier in this visit (M4c-2):
     `measured`;
   - a measurement in flight, or a code still being read: `measuring`;
@@ -143,12 +155,57 @@ M4 replaces its one code in hand with the code book.
   stable again. While the check has no answer, the ready line asks for a
   sideways step (the mint is not held).
 
+- **A stored code votes in a visit without GPS** (a creator indoors): the
+  pipeline is the viewer's controller config (`buildViewerControllerConfig`)
+  over the vote half `codeVotes` returns - the same stable-pose gate, vote
+  budget, zero check, sixteen-vote ring, entry sink (soft trim) and
+  moved-code veto the visitor votes through; there is no second voting path.
+  Its `fetchLevel` answers a code the tour stores (`codes.references()`,
+  hosted and draft) with the stored geo and the STORED printed size, which
+  the stored pose was measured at, and every other code with the author's
+  geo-less level, which never votes. No voting level (the code is then the
+  author's level, at the size it is solved at) for: a code measured in this
+  visit (its pose came from this visit's alignment, so its votes would only
+  repeat it); a code whose print size was adopted (it is solved at that size
+  from then on, in every visit); and every code once the visit is decided
+  not to vote. A visit not decided yet gets the voting level, and the
+  decision gates its votes frame by frame.
+  - **Which visits vote** (`visitVotes`): decided once per AR visit, at the
+    first frame of a stored code that can decide it. A codes-only start (the
+    location refused, `ctx.codesOnly`) votes at once. Any other visit
+    first waits for a device fix for `SCAN_GATE_ESCAPE_MS` (10 s, the
+    visitor's GPS escape wait, reused) from the visit's start
+    (`beginVisit`, through `seams.schedule`): an outdoor creator often
+    points at the code within seconds of entering AR, and a visit lined up
+    by the code can never improve its stored position. A device fix before
+    the decision makes it a GPS visit (placing by GPS exactly as before); a
+    wait that runs out without one makes the code line the visit up.
+  - **What the creator sees during the wait:** nothing votes, so the
+    placement stays closed and the readout is the plain GPS wait ("Pose
+    stable - waiting for GPS alignment (0 of 3 fixes). Walk a few metres
+    with GPS reception."); after the wait the code's votes land on its next
+    stable frames and the line says the code places the visit.
+  - **Not measured:** how long an outdoor phone takes to its first fix
+    after entering AR. 10 s is the existing escape wait, not a fitted
+    value; a phone slower than that, pointed at the code at once, is lined
+    up by the code.
+  - An adopted print size restarts the controller within the visit and
+    keeps the decision and the entry's vote pieces (only the controller is
+    disposed).
+  - Measuring is separate and unchanged: it follows the readout's
+    `canMint`, which needs three DEVICE fixes, so a vote-only visit mints
+    nothing.
+
 ## Tests
 
 Composed, through `wireCreatorSetup`: `fused-pose-wiring.test.ts` (the
 pipeline, the fused pose, the measurement and its identity, Finish held
 while one runs, a new print size), `authoring-settle.test.ts` (automatic
 measuring, the classification, the sightings) and `creator-setup.test.ts`
-(the size offer). The sampled mutants of the regions "measuring", "size
+(the size offer), `creator-code-votes.test.ts` (a stored code's votes:
+which visits vote, a draft-only code, the placement gate, the quality
+counts, the vote-only and mixed settles, the wait for a first fix with
+fix arrival swept at 1, 3 and 9 s, a GPS visit's adopted size, the
+creator's line when a stored code is ignored as moved). The sampled mutants of the regions "measuring", "size
 offer" and "sightings" (`scripts/fixtures/creator-setup.mutants.json`) are
 killed or judged equivalent.

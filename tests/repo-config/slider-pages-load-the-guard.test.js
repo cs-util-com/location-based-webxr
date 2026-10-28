@@ -1,7 +1,7 @@
 /**
  * Every page with a slider installs the framework's page-wide slider guard.
  *
- * Why this test matters (owner report 2026-09-30): on a phone, a vertical
+ * Why this test matters (a report on a phone, 2026-09-30): a vertical
  * swipe that started on a range input edited that slider instead of scrolling
  * the panel, on every demo page. The fix is ONE framework module,
  * `utils/slider-scroll-guard`, installed once per page with
@@ -14,7 +14,7 @@
  * its entry scripts reach through local imports builds one at runtime. It
  * passes when one of the module scripts the page loads DIRECTLY calls
  * `guardSlidersIn(document)`: the page's own entry is where a reader looks.
- * The call must RUN (review 2026-09-30): comments, HTML comments and string
+ * The call must RUN (hardened 2026-09-30): comments, HTML comments and string
  * contents are blanked before matching, and the call must be a top-level
  * statement or sit directly in a top-level function the module calls at top
  * level (`function main() { guardSlidersIn(document); } main();`).
@@ -67,6 +67,10 @@ const EXEMPT = new Map([
     'design prototype in the inspiration gallery, wired to nothing',
   ],
   [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/landing-r2-1-l5-extended/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
     'GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-2-walk-it/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
@@ -84,6 +88,106 @@ const EXEMPT = new Map([
   ],
   [
     'GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-4-map-r3/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-1-narrated-text/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2-short-text/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2a-ground-road-marking/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2b-ground-light-trail/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2c-ground-chevron-ribbon/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2d-ground-medallion/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2e-ground-spotlight/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2f-ground-stepping-cards/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2g-ground-laid-ribbon/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2h-ground-chevron-vanes/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2i-ground-chevron-track/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2j-ground-footprints/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2k-ground-guide-lights/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2l-ground-floor-arrow/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2m-ground-stakes/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2n-ground-runner/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2o-ground-arc/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2p-ground-styles-bend-knob/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2q-ground-styles-bend-drag/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-3-pictures/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-4-video/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-5-models/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-6-primitives/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-7-character/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-8-audio/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
 ]);
@@ -356,7 +460,7 @@ describe('every page with a slider installs the page-wide slider guard', () => {
     expect(problems.join('\n')).toContain('PhysicsDemo/index.html');
   });
 
-  // Review 2026-09-30 (A1): an install that never runs must not pass. Each
+  // Hardening of 2026-09-30: an install that never runs must not pass. Each
   // planted page has a range input and an entry that only LOOKS like it
   // installs the guard.
   const plantedPage = (script) =>

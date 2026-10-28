@@ -3,8 +3,8 @@
 ## Purpose
 
 The automatic-station rule (tour editor plan 2026-10-17-1816, W3, owner
-decisions D20 and D21): which station a new element - a pin, a photo, a
-recorded photo, later a model - belongs to. A version 3 tour has no loose
+decisions D20 and D21): which station a new element - a pin, a photo, later a
+model - belongs to. A tour has no loose
 items; each lives in a station with its pose relative to the station's
 anchor. Pure.
 
@@ -20,6 +20,15 @@ anchor. Pure.
   station whose anchor is within `radiusM` (default R) of `at`, else
   `null`. Horizontal distance (`move-with-code.ts` `horizontalM`), R itself
   inside, a tie to the earlier station.
+- `stationHolding(stations, at)` - the id of the station that holds `at`:
+  the nearest whose anchor (`geo`) is within its OWN `foundRadiusM`, else
+  `null`. Horizontal, the radius itself inside, a tie to the earlier
+  station; a radius that is not a positive finite number holds nothing (a
+  broken hand-edited file must not swallow every object). The rule the
+  tour document seats every placement and move by (`tour-document.ts`),
+  and the creator's HUD names the open station by
+  (`creator-stations.ts`): a radius the creator set is respected. Type
+  `HoldingStation` (`{ id, geo: { lat, lon }, foundRadiusM }`).
 - `assignToStations({ stations, elements, positionOf, newStationId,
 ownStationOf?, radiusM? })` - every element, in order, joins the nearest
   station within R, or starts a new one anchored at the element's own
@@ -66,7 +75,11 @@ const { stations, stationOf } = assignToStations({
 
 ## Tests
 
-- `station-assign.test.ts` - the edges: R itself, a tie, horizontal
+- `station-assign.test.ts` - `stationHolding`: its own radius itself
+  inside and 1 cm beyond it outside (at 25 m and 7 m, and at the exact
+  measured distance), a 5 m and a 40 m station, a tie and the nearer of
+  two (also against a larger radius), horizontal distance, no stations, a
+  broken radius. `assignToStations`: the edges: R itself, a tie, horizontal
   distance, a chain along a path, existing stations first, the order, a
   swept radius, refused radii and ids; an element's own station (D8):
   started within R, never taking an earlier element, joined by a second

@@ -17,9 +17,13 @@ import {
   parseTourManifest,
   serializeTourManifest,
   type TourObject,
+  type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { openTourFile, type TourSession } from "./tour-session.js";
-import { createTourViewerStore } from "./tour-viewer-session.js";
+import {
+  createTourViewerStore,
+  type TourViewerStore,
+} from "./tour-viewer-session.js";
 import {
   selectTourDocument,
   tourDocumentActions,
@@ -30,17 +34,18 @@ import {
   dispatchThunk,
   TOUR_REPLACED,
 } from "./tour-document-save.js";
-import { tourOf, withWorldObjects } from "./test-support/v3-tour.js";
+import { captionOf, tourOf, withWorldObjects } from "./test-support/tour-of.js";
 
 beforeAll(() => {
   createTourViewerStore();
 });
 
-function pin(id: string, label = `pin ${id}`): TourObject {
+function pin(id: string, label = `pin ${id}`): TourPin {
   return {
     id,
-    kind: "pin",
-    label,
+    kind: "shortText",
+    view: "pin",
+    caption: label,
     createdAtIso: "2026-10-13T00:00:00.000Z",
     geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 },
   };
@@ -48,7 +53,7 @@ function pin(id: string, label = `pin ${id}`): TourObject {
 
 async function opened(objects: readonly TourObject[]): Promise<{
   session: TourSession;
-  store: ReturnType<typeof createTourViewerStore>;
+  store: TourViewerStore;
 }> {
   const manifest = tourOf(objects);
   const zip = await packFilesAsZip([
@@ -62,15 +67,13 @@ async function opened(objects: readonly TourObject[]): Promise<{
   return { session, store };
 }
 
-function doc(
-  store: ReturnType<typeof createTourViewerStore>,
-): TourDocumentState {
+function doc(store: TourViewerStore): TourDocumentState {
   return selectTourDocument(store.getState());
 }
 
 function savesOf(
   session: TourSession,
-  store: ReturnType<typeof createTourViewerStore>,
+  store: TourViewerStore,
 ): ReturnType<typeof createTourSaves> {
   return createTourSaves({
     tour: session,
@@ -80,11 +83,7 @@ function savesOf(
   });
 }
 
-function rename(
-  store: ReturnType<typeof createTourViewerStore>,
-  id: string,
-  label: string,
-): void {
+function rename(store: TourViewerStore, id: string, label: string): void {
   store.dispatch(
     tourDocumentActions.edited({ object: pin(id, label), what: label }),
   );
@@ -97,7 +96,7 @@ async function labels(blob: Blob): Promise<string[]> {
   );
   return withWorldObjects(
     parseTourManifest(JSON.parse(new TextDecoder().decode(bytes))),
-  ).objects.map((o) => (o as { label: string }).label);
+  ).objects.map((o) => captionOf(o) ?? "");
 }
 
 describe("createTourSaves", () => {
@@ -134,15 +133,15 @@ describe("createTourSaves", () => {
     const running = dispatchThunk(store, saves.save({ keepScan: false }));
     expect(doc(store).save).toMatchObject({ status: "saving", rebuilds: 1 });
     const built = await running;
-    expect(await labels(built.finished.blob)).toEqual(["First", "pin b"]);
-    expect(doc(store).written).toEqual(built.finished.written);
+    expect(await labels(built.blob)).toEqual(["First", "pin b"]);
+    expect(doc(store).written).toEqual(built.written);
     expect(doc(store).placed).toEqual([]);
     expect(doc(store).save).toMatchObject({
       status: "idle",
       rebuilds: 0,
       error: null,
     });
-    expect(saves.newest()?.blob).toBe(built.finished.blob);
+    expect(saves.newest()?.blob).toBe(built.blob);
     expect(saves.fileName).toBe("tour.zip");
     await session.close();
   });
@@ -207,13 +206,13 @@ describe("createTourSaves", () => {
     expect(reads).toBe(1);
     release();
     const one = await first;
-    expect(await labels(one.finished.blob)).toEqual(["One", "pin b"]);
+    expect(await labels(one.blob)).toEqual(["One", "pin b"]);
     const two = await second;
-    expect(await labels(two.finished.blob)).toEqual(["One", "Three"]);
+    expect(await labels(two.blob)).toEqual(["One", "Three"]);
     expect(reads).toBe(1);
     expect(doc(store).placed).toEqual([]);
     expect(doc(store).save).toMatchObject({ status: "idle", rebuilds: 0 });
-    expect(saves.newest()?.blob).toBe(two.finished.blob);
+    expect(saves.newest()?.blob).toBe(two.blob);
     await session.close();
   });
 
@@ -231,7 +230,7 @@ describe("createTourSaves", () => {
     expect(doc(store).past).toHaveLength(0);
     // The undo is a change of its own against the file just written.
     expect(doc(store).placed.map((p) => p.object)).toMatchObject([
-      { id: "a", label: "Old" },
+      { id: "a", caption: "Old" },
     ]);
     await session.close();
   });
@@ -245,7 +244,7 @@ describe("createTourSaves", () => {
       tourDocumentActions.opened({ manifest: tourOf([pin("z")]) }),
     );
     const next = doc(store).written;
-    expect(await labels((await late).finished.blob)).toEqual(["Late"]);
+    expect(await labels((await late).blob)).toEqual(["Late"]);
     expect(doc(store).written).toBe(next);
     await expect(
       dispatchThunk(store, saves.save({ keepScan: false })),

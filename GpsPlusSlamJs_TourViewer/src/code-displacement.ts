@@ -45,7 +45,7 @@ import {
 } from "gps-plus-slam-app-framework/core";
 
 import { codeCorrection, type NuePose } from "./visit-anchoring.js";
-import { deviceSamples, type VisitLogInput } from "./visit-log.js";
+import { deviceSamples, type DeviceSampleInput } from "./device-gps-quality.js";
 
 /** One device fix as the estimators read it; horizontal only. */
 export interface DisplacementSample {
@@ -66,7 +66,7 @@ export interface DisplacementSample {
  * odometry partner is dropped: its evidence cannot be counted.
  */
 export function displacementSamples(
-  input: Pick<VisitLogInput, "gpsPositions" | "odometryPositions"> & {
+  input: DeviceSampleInput & {
     readonly zero: LatLong | null;
   },
 ): DisplacementSample[] {

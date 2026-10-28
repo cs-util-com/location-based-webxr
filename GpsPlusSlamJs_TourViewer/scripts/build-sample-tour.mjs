@@ -16,6 +16,10 @@ import {
   Uint8ArrayWriter,
   ZipWriter,
 } from "@zip.js/zip.js";
+import {
+  parseTourManifest,
+  serializeTourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const OUT = join(here, "..", "public", "samples", "marienplatz-tour.zip");
@@ -267,15 +271,22 @@ function archGlb() {
 }
 
 // --- The tour. Marienplatz, Munich: the Mariensaeule (the column) and two
-// spots about 30 m from it. Ground altitude about 519 m.
+// spots about 30 m from it.
 const COLUMN = { lat: 48.137393, lon: 11.575493 };
 const M_PER_DEG = 111_320;
-function geoAt(northM, eastM) {
+// Each station's `alt` is ELLIPSOIDAL, as a phone's GPS reports it: the
+// ground there (orthometric, about 516 m above sea level) plus the geoid's
+// undulation N (EGM96, 45.68 m here). The ground was read from Mapterhorn's
+// z14 tile 14/8718/5685 (fetched 2026-10-22, Terrarium-decoded, bilinear
+// between pixel centres): 515.83 m at the column, 514.17 m at the gate,
+// 516.23 m at the steps. The 3D editor draws a station at alt - N, so each
+// stands on the ground it draws (src/sample-tour.test.ts holds it).
+function geoAt(northM, eastM, altM) {
   return {
     lat: COLUMN.lat + northM / M_PER_DEG,
     lon:
       COLUMN.lon + eastM / (M_PER_DEG * Math.cos((COLUMN.lat * Math.PI) / 180)),
-    alt: 519,
+    alt: altM,
     headingDeg: 0,
   };
 }
@@ -283,10 +294,11 @@ function geoAt(northM, eastM) {
 export function buildSampleTour() {
   const knight = knightPng();
   return {
-    // Version 3 (tour editor plan W3): every station has a geo pose of its
-    // own and carries its items; this story places no pins or photos.
+    // Version 4: every station has a geo pose of its own, its story's
+    // blocks and the steps that show them; this story places no pins or
+    // photos in the world.
     tour: {
-      version: 3,
+      version: 4,
       minor: 0,
       title: "The knight of Marienplatz (sample)",
       order: "fixed",
@@ -304,25 +316,48 @@ export function buildSampleTour() {
         {
           id: "column",
           title: "The column",
-          geo: geoAt(0, 0),
+          geo: geoAt(0, 0, 561.5),
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
+          blocks: [
+            {
+              id: "konrad-greets",
+              kind: "character",
+              view: "stage",
+              name: "Sir Konrad",
+              image: "knight",
+              caption:
+                "Halt, traveller! I guard this square. Will you help me find the old gate?",
+              voice: "fanfare",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+            {
+              id: "konrad-sighs",
+              kind: "longText",
+              view: "card",
+              title: "The column",
+              body: "Sir Konrad sighs. Come back when you can - the gate is a few steps east.",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+            {
+              id: "konrad-thanks",
+              kind: "longText",
+              view: "card",
+              title: "The column",
+              body: "Splendid! Walk about 30 m east, to the corner of the square.",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+          ],
           steps: [
             {
               id: "greet",
-              block: {
-                kind: "character",
-                name: "Sir Konrad",
-                image: "knight",
-                caption:
-                  "Halt, traveller! I guard this square. Will you help me find the old gate?",
-                voice: "fanfare",
-              },
+              action: { kind: "show", block: "konrad-greets" },
+              advance: { mode: "tap" },
             },
             {
               id: "ask",
-              block: {
+              action: {
                 kind: "choice",
                 prompt: "Help the knight?",
                 options: [
@@ -330,62 +365,70 @@ export function buildSampleTour() {
                   { id: "no", label: "Not right now", goto: "later" },
                 ],
               },
+              advance: { mode: "tap" },
             },
             {
               id: "later",
-              block: {
-                kind: "text",
-                text: "Sir Konrad sighs. Come back when you can - the gate is a few steps east.",
-              },
+              action: { kind: "show", block: "konrad-sighs" },
+              advance: { mode: "tap" },
             },
             {
               id: "thanks",
-              block: {
-                kind: "text",
-                text: "Splendid! Walk about 30 m east, to the corner of the square.",
-              },
+              action: { kind: "show", block: "konrad-thanks" },
+              advance: { mode: "tap" },
             },
           ],
-          items: [],
         },
         {
           id: "gate",
           title: "The old gate",
-          geo: geoAt(-10, 28),
+          geo: geoAt(-10, 28, 559.9),
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
+          blocks: [
+            {
+              id: "old-arch",
+              kind: "model",
+              view: "stage",
+              asset: "arch",
+              title: "Here stood the old gate. Imagine riding through it.",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+          ],
           steps: [
             {
               id: "arch",
-              block: {
-                kind: "model",
-                asset: "arch",
-                caption: "Here stood the old gate. Imagine riding through it.",
-              },
+              action: { kind: "show", block: "old-arch" },
+              advance: { mode: "tap" },
             },
           ],
-          items: [],
         },
         {
           id: "steps",
           title: "The town hall steps",
-          geo: geoAt(25, 12),
+          geo: geoAt(25, 12, 561.9),
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
+          blocks: [
+            {
+              id: "konrad-farewell",
+              kind: "character",
+              view: "stage",
+              name: "Sir Konrad",
+              image: "knight",
+              caption: "You found every place. Farewell, and thank you!",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+          ],
           steps: [
             {
               id: "farewell",
-              block: {
-                kind: "character",
-                name: "Sir Konrad",
-                image: "knight",
-                caption: "You found every place. Farewell, and thank you!",
-              },
+              action: { kind: "show", block: "konrad-farewell" },
+              advance: { mode: "tap" },
             },
           ],
-          items: [],
         },
       ],
     },
@@ -401,9 +444,11 @@ export async function buildSampleTourZip() {
   const { tour, files } = buildSampleTour();
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
   const options = { lastModDate: FIXED_DATE };
+  // Through the format's own reader and writer: a tour the reader
+  // refuses fails the build, not the phone.
   await writer.add(
     "tour.json",
-    new TextReader(`${JSON.stringify(tour, null, 2)}\n`),
+    new TextReader(serializeTourManifest(parseTourManifest(tour))),
     options,
   );
   for (const [name, bytes] of Object.entries(files)) {

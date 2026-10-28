@@ -7,23 +7,24 @@
  */
 
 import { tourCoverEntry } from "gps-plus-slam-app-framework/ar/tour-details";
-import {
-  tourItems,
-  type TourManifest,
-} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+
+import { NOT_FINISHED, tourUnfinished } from "./tour-unfinished.js";
 
 export interface VisitorStartView {
   /** The tour's name; "An AR tour" when it has none (yet). */
   title: string;
-  /** "3 places to discover" (its stations, else its objects and recorded photos), or
-   *  null for a tour with nothing placed. */
+  /** "3 places to discover" (its stations), "This tour is not finished
+   *  yet." for a zip without tour.json or a tour without stations, or null
+   *  with no tour open. */
   subline: string | null;
   /** The tour's description (W2 of the tour editor plan), trimmed; null
    *  for none. */
   description: string | null;
   /** The cover: the one the creator chose (W2), else the tour's first
-   *  placed photo, else its first recorded photo (a baked capture spot),
-   *  as an archive path; or null. */
+   *  placed photo, as an archive path; or null - never a debug camera
+   *  capture. */
   coverPath: string | null;
   /** The tab's title, which a shared link's title shows too: the tour's
    *  name, else the app's. */
@@ -37,18 +38,27 @@ const APP_TITLE = "Tour Viewer";
 const UNNAMED = "An AR tour";
 
 /** "N places to discover": a tour counts its stations (the pins and photos
- *  they show are not places of their own - M4 review #10; since version 3
- *  every pin and photo is in one, tour editor plan W3). */
-function sublineFor(manifest: TourManifest): string | null {
+ *  they show are not places of their own; since version 3 every pin and
+ *  photo is in one). A tour without stations is not finished yet. */
+function sublineFor(manifest: TourManifest): string {
+  if (tourUnfinished(manifest)) return NOT_FINISHED;
   const count = manifest.stations.length;
-  if (count === 0) return null;
   return `${String(count)} ${count === 1 ? "place" : "places"} to discover`;
 }
 
-/** The chosen cover, else the first placed photo, else the first
- *  recorded one. */
+/** No tour open: the page's defaults, nothing said about a tour. */
+const NO_TOUR: VisitorStartView = {
+  title: UNNAMED,
+  subline: null,
+  description: null,
+  coverPath: null,
+  pageTitle: APP_TITLE,
+};
+
+/** The chosen cover, else the first placed photo; never a debug camera
+ *  capture (a visitor never sees one). */
 function coverPathOf(manifest: TourManifest): string | null {
-  const items = tourItems(manifest);
+  const items = tourObjects(manifest);
   const chosen = tourCoverEntry({
     objects: items,
     assets: manifest.assets,
@@ -56,23 +66,18 @@ function coverPathOf(manifest: TourManifest): string | null {
   });
   if (chosen !== null) return chosen;
   for (const object of items) {
-    if (object.kind === "photo") return object.image;
+    if (object.kind === "picture" && object.imageAsset !== undefined)
+      return object.imageAsset.path;
   }
-  return manifest.captureSpots?.captures[0]?.image ?? null;
+  return null;
 }
 
+/** What the start page shows for an open tour: `manifest` is its
+ *  `tour.json`, null for a zip without one (a tour not finished yet). */
 export function visitorStartView(
   manifest: TourManifest | null,
 ): VisitorStartView {
-  if (manifest === null) {
-    return {
-      title: UNNAMED,
-      subline: null,
-      description: null,
-      coverPath: null,
-      pageTitle: APP_TITLE,
-    };
-  }
+  if (manifest === null) return { ...NO_TOUR, subline: NOT_FINISHED };
   const name = manifest.title?.trim() ?? "";
   const description = manifest.description?.trim() ?? "";
   return {
@@ -99,8 +104,9 @@ export interface VisitorStartDom {
 }
 
 export interface VisitorStart {
-  /** Show this tour: the name and the subline at once, the cover once it
-   *  is read from the zip (`loadImage` takes the manifest's archive path). */
+  /** Show this tour (`manifest` null: a zip without tour.json): the name
+   *  and the subline at once, the cover once it is read from the zip
+   *  (`loadImage` takes the manifest's archive path). */
   present(
     manifest: TourManifest | null,
     loadImage: (path: string) => Promise<Blob>,
@@ -164,7 +170,7 @@ export function wireVisitorStart(deps: {
     clear() {
       generation += 1;
       releaseCover();
-      write(visitorStartView(null));
+      write(NO_TOUR);
     },
   };
 }

@@ -9,16 +9,16 @@
  * code event" (R1) and "the sighting nearest a note" (R3) in walked metres,
  * which a displacement would get wrong for every out-and-back.
  *
- * The fixes come through `deviceSamples` (`visit-log.ts`), the ONE
+ * The fixes come through `deviceSamples` (`device-gps-quality.ts`), the ONE
  * device-only filter of the store's GPS history (DEC-H3): a synthetic code
  * vote's odometry is the code's corner, not a place anybody walked.
  *
  * @see walked-distance-tracker.ts.md
  */
 
-import { deviceSamples, type VisitLogInput } from "./visit-log.js";
+import { deviceSamples, type DeviceSampleInput } from "./device-gps-quality.js";
 
-type WalkedInput = Pick<VisitLogInput, "gpsPositions" | "odometryPositions">;
+type WalkedInput = DeviceSampleInput;
 
 export interface WalkedDistanceTracker {
   /**

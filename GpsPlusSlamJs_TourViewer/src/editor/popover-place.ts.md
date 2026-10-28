@@ -8,7 +8,7 @@ as numbers: the chosen prototype's (`public/prototypes/editor-1-left-rail/`)
 
 ## Public API
 
-- `placePopover({ anchor, lift, gap, size, free }): PopoverPlacement`
+- `placePopover({ anchor, lift, gap, size, free, avoid? }): PopoverPlacement`
   - `anchor` - the marker's ground point in window pixels; `lift` - up from
     it to the marker's visual centre (a note's bubble sits above its tip);
     `gap` - between the marker and the card; `size` - the card's; `free` -
@@ -19,6 +19,14 @@ as numbers: the chosen prototype's (`public/prototypes/editor-1-left-rail/`)
     `{ visible: true, x, y, side, arrow }`: to the right of the marker,
     else to its left, else below it; `arrow` is the arrow's offset along
     the card's edge, pointing at the marker.
+  - `avoid` - a box inside `free` the card keeps clear of (the editor's
+    debug panel in the window's lower right corner, r901 review #4): a
+    card that would cover it moves up to 8 px above it where that still
+    lies inside `free`, its arrow still pointing at the marker; where it
+    does not fit above, the card stays (it is drawn on top). It never
+    hides a card. A box, not a smaller `free`: the free area minus a
+    corner is no rectangle, and shrinking it would hide the cards of
+    markers low in the window.
 - `revealPadding(viewport, free)` - the padding a marker is panned inside
   (Leaflet `panInside`): 40 px clear of the rail and the top bar, 380 px
   on the right and 60 px at the bottom where the window has room, shrunk
@@ -34,6 +42,8 @@ as numbers: the chosen prototype's (`public/prototypes/editor-1-left-rail/`)
 
 - A shown card lies inside `free` whenever the card fits in it (the
   property test sweeps anchors and card sizes).
+- A card that fits above `avoid` (inside `free`) never covers it (the
+  property test sweeps anchors, card sizes and boxes).
 - Integer pixels.
 
 ## Examples
@@ -56,5 +66,7 @@ const p = placePopover({
 ## Tests
 
 `popover-place.test.ts`: right, left, below, hidden in each direction, and
-the inside-the-free-area property; `revealPadding` on a desktop and a
+the inside-the-free-area property; a card moved up clear of the box it
+avoids with its arrow at the marker, one that does not reach the box left
+where it was, and the never-covers property; `revealPadding` on a desktop and a
 phone, and the never-inside-out property.

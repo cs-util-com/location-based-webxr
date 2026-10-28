@@ -1,0 +1,1879 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Video Block Views</title>
+<link rel="icon" href="data:,">
+<style>
+:root{
+  --ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --plate: rgba(15,17,21,.82);
+  --plate-strong: rgba(18,20,25,.94);
+  --ink: #f5f2eb;
+  --muted: #b8b2a6;
+  --faint: #8c877d;
+  --accent: #f1b45c;
+  --accent-ink: #231a0e;
+  --line: rgba(255,255,255,.12);
+  --sky: #e8ebee;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#24262a;color:var(--ink);font-family:var(--ui);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+button,input,select,textarea{font-family:inherit;color:inherit}
+button{cursor:pointer}
+#stage{position:absolute;inset:0;overflow:hidden;background:var(--sky);container-type:size;container-name:stage}
+body.phone #stage{inset:auto;left:50%;top:50%;transform:translate(-50%,-50%);border-radius:34px;box-shadow:0 0 0 9px #0d0e10,0 0 0 10px #3a3d42,0 24px 70px rgba(0,0,0,.55)}
+canvas#gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;outline:none}
+.plate{background:var(--plate);-webkit-backdrop-filter:blur(12px) saturate(1.1);backdrop-filter:blur(12px) saturate(1.1);border:1px solid var(--line)}
+svg{display:block}
+
+/* top bar */
+#topbar{position:absolute;top:max(8px,env(safe-area-inset-top));left:8px;right:8px;display:flex;align-items:center;gap:6px;z-index:30;pointer-events:none}
+#topbar>*{pointer-events:auto}
+.seg{display:flex;gap:2px;padding:3px;border-radius:12px}
+.seg button{border:0;background:transparent;color:var(--muted);font-size:12.5px;font-weight:600;letter-spacing:.01em;padding:7px 10px;border-radius:9px;line-height:1}
+.seg button[aria-pressed="true"]{background:rgba(255,255,255,.14);color:var(--ink)}
+.spacer{flex:1;pointer-events:none!important}
+.iconbtn{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;border:1px solid var(--line);background:var(--plate);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);color:var(--ink)}
+.iconbtn[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+#ft{position:absolute;right:8px;top:calc(max(8px,env(safe-area-inset-top)) + 84px);z-index:30;font:600 9.5px/1.25 ui-monospace,SFMono-Regular,Consolas,monospace;color:#1c1e22;background:rgba(255,255,255,.62);padding:3px 6px;border-radius:6px;pointer-events:none;text-align:right}
+
+/* visitor view picker */
+#viewbar{position:absolute;left:50%;transform:translateX(-50%);top:calc(max(8px,env(safe-area-inset-top)) + 44px);z-index:25;display:flex;gap:0;padding:3px;border-radius:12px;max-width:calc(100% - 16px);overflow-x:auto;scrollbar-width:none}
+#viewbar button{border:0;background:transparent;color:var(--muted);font-size:12px;font-weight:600;padding:6px 7px;border-radius:9px;white-space:nowrap;line-height:1}
+#viewbar button[aria-pressed="true"]{background:var(--ink);color:#16181c}
+#viewbar button .own{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent);margin-left:4px;vertical-align:2px}
+
+/* visitor hud */
+#hud{position:absolute;left:0;right:0;bottom:0;z-index:20;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:10px;padding:0 16px calc(max(14px,env(safe-area-inset-bottom)) + 4px)}
+#capStrip{max-width:min(560px,100%);padding:11px 16px 12px;border-radius:14px;font-size:19px;line-height:1.36;font-weight:600;text-align:center;letter-spacing:.005em;opacity:0;transform:translateY(6px);transition:opacity .35s ease,transform .35s ease;text-wrap:balance}
+#capStrip.on{opacity:1;transform:none}
+#hudRow{display:flex;gap:8px;align-items:center;pointer-events:auto}
+.pill{display:flex;align-items:center;gap:7px;height:40px;padding:0 14px 0 11px;border-radius:20px;font-size:13.5px;font-weight:600;border:1px solid var(--line);background:var(--plate);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);color:var(--ink)}
+.pill.small{padding:0 11px}
+.pill[aria-pressed="true"]{background:var(--ink);color:#15171b}
+#walkBtn{position:absolute;left:14px;bottom:calc(max(14px,env(safe-area-inset-bottom)) + 4px);z-index:21;width:46px;height:46px;border-radius:23px;display:grid;place-items:center}
+#nearChip,#guideChip{position:absolute;left:50%;top:calc(max(8px,env(safe-area-inset-top)) + 116px);transform:translateX(-50%);z-index:19;display:flex;align-items:center;gap:8px;padding:8px 13px 8px 9px;border-radius:18px;font-size:13.5px;font-weight:600;white-space:nowrap;transition:opacity .3s}
+#nearChip .arrow{width:22px;height:22px;border-radius:11px;background:var(--ink);color:#15171b;display:grid;place-items:center}
+#guideChip{top:auto;bottom:calc(max(14px,env(safe-area-inset-bottom)) + 120px)}
+#guideChip .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px rgba(241,180,92,.25)}
+.hidden{display:none!important}
+
+/* overlay player (porthole view) */
+#ovl{position:absolute;inset:0;z-index:40;background:rgba(10,11,13,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:58px 16px 22px;gap:14px;opacity:0;pointer-events:none;transition:opacity .3s}
+#ovl.on{opacity:1;pointer-events:auto}
+#ovlFrame{position:relative;width:min(100%,calc((100cqh - 250px) * .8),560px);aspect-ratio:4/5;border-radius:18px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.5)}
+#ovlCanvas{width:100%;height:100%;display:block}
+#ovlCap{min-height:3.0em;max-width:min(560px,100%);font-size:21px;line-height:1.36;font-weight:600;text-align:center;text-wrap:balance;transition:opacity .3s}
+#ovlCtrl{display:flex;align-items:center;gap:8px;width:min(560px,100%)}
+#ovlCtrl .round{width:40px;height:40px}
+#ovlCtrl .time{min-width:0;font-size:11.5px}
+#ovlClose{position:absolute;top:calc(max(8px,env(safe-area-inset-top)) + 4px);right:12px}
+.round{width:44px;height:44px;border-radius:22px;border:0;background:var(--ink);color:#15171b;display:grid;place-items:center;flex:none}
+.round.ghost{background:rgba(255,255,255,.12);color:var(--ink);border:1px solid var(--line)}
+input[type=range].scrub{flex:1;-webkit-appearance:none;appearance:none;height:28px;background:transparent;margin:0}
+input[type=range].scrub::-webkit-slider-runnable-track{height:5px;border-radius:3px;background:linear-gradient(to right,var(--accent) var(--p,0%),rgba(255,255,255,.22) var(--p,0%))}
+input[type=range].scrub::-webkit-slider-thumb{-webkit-appearance:none;width:17px;height:17px;border-radius:50%;background:#fff;margin-top:-6px;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.time{font:600 12.5px/1 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--muted);min-width:76px;text-align:center}
+
+/* creator */
+#creator{position:absolute;inset:0;z-index:20;pointer-events:none}
+#creator>*{pointer-events:auto}
+#reticle{position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;pointer-events:none!important}
+#crTop{position:absolute;left:50%;transform:translateX(-50%);top:calc(max(8px,env(safe-area-inset-top)) + 46px);display:flex;align-items:center;gap:8px;padding:7px 13px;border-radius:16px;font-size:13px;font-weight:600;white-space:nowrap}
+#crTop .tag{color:var(--accent)}
+#crSheet{position:absolute;left:12px;right:12px;bottom:calc(max(12px,env(safe-area-inset-bottom)) + 92px);max-width:520px;margin:0 auto;border-radius:20px;padding:14px 14px 15px}
+#crSheet h3{margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:rgba(255,255,255,.07);border-radius:12px;padding:9px 12px;font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px}
+.chip[aria-pressed="true"]{background:var(--ink);color:#15171b;border-color:transparent}
+.crRow{display:flex;align-items:center;gap:10px;margin-top:8px}
+.crRow .lbl{flex:1;font-size:14.5px;font-weight:600}
+.crRow .val{font:600 15px/1 ui-monospace,SFMono-Regular,Consolas,monospace;min-width:64px;text-align:center}
+.crHint{font-size:12.5px;color:var(--muted);margin-top:9px;line-height:1.4}
+.bigbtn{border:0;border-radius:14px;background:rgba(255,255,255,.12);height:44px;padding:0 16px;font-size:14.5px;font-weight:700}
+.bigbtn.primary{background:var(--accent);color:var(--accent-ink)}
+#crBar{position:absolute;left:12px;right:12px;bottom:max(12px,env(safe-area-inset-bottom));max-width:520px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+#crBar button{height:72px;border-radius:20px;border:1px solid var(--line);background:var(--plate);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;font-size:12.5px;font-weight:700;color:var(--ink)}
+#crBar button[aria-pressed="true"]{background:var(--ink);color:#15171b}
+@container stage (max-height: 460px) and (min-width: 600px){
+  #crBar{left:12px;right:auto;top:56px;bottom:12px;width:84px;margin:0;grid-template-columns:1fr;grid-template-rows:repeat(4,1fr)}
+  #crBar button{height:auto}
+  #crSheet{left:auto;right:12px;top:56px;bottom:auto;width:300px;margin:0;max-height:calc(100% - 68px);overflow:auto;padding:12px}
+  #crTop{left:auto;right:324px;transform:none}
+  #stage[data-mode=creator] #ft{top:auto;bottom:10px;right:324px}
+}
+.switch{width:46px;height:28px;border-radius:14px;border:0;background:rgba(255,255,255,.2);position:relative;flex:none}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:11px;background:#fff;transition:left .2s}
+.switch[aria-checked="true"]{background:var(--accent)}
+.switch[aria-checked="true"]::after{left:21px}
+
+/* editor */
+#editor{position:absolute;inset:0;z-index:20;pointer-events:none}
+#editor>*{pointer-events:auto}
+#edLeft{position:absolute;left:10px;top:54px;bottom:10px;width:236px;border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:6px;overflow:auto}
+#edRight{position:absolute;right:10px;top:54px;bottom:10px;width:340px;border-radius:16px;padding:14px 14px 18px;overflow:auto;background:var(--plate-strong)}
+.edH{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin:2px 2px 4px}
+.blk{display:flex;align-items:center;gap:9px;padding:8px;border-radius:11px;font-size:13px;font-weight:600;border:1px solid transparent}
+.blk.sel{background:rgba(255,255,255,.1);border-color:var(--line)}
+.blk.dim{opacity:.45}
+.blk .ic{width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,.1);display:grid;place-items:center;flex:none;overflow:hidden}
+.blk .ic canvas{width:34px;height:34px;display:block}
+.blk small{display:block;font-weight:500;color:var(--muted);font-size:11.5px;margin-top:1px}
+#edHint{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;padding:8px 13px;border-radius:14px;font-size:12px;color:var(--muted);white-space:nowrap}
+#edHint b{color:var(--ink);font-weight:600}
+.insH{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.insH h2{margin:0;font-size:16px;font-weight:700}
+.insH .tag{font-size:11px;color:var(--accent);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.field{padding:10px 0 11px;border-top:1px solid var(--line)}
+.field>label,.field .fl{display:flex;align-items:baseline;justify-content:space-between;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
+.field .use{font-size:11px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--faint);text-align:right;max-width:62%}
+.field.unused{opacity:.42}
+.field.unused .use{color:var(--accent)}
+.vrow{display:flex;gap:8px;align-items:center}
+.asset{display:flex;gap:10px;align-items:center}
+.asset canvas{width:64px;height:80px;border-radius:8px;flex:none;background:#000}
+.asset .meta{font-size:12px;line-height:1.45;color:var(--muted)}
+.asset .meta b{color:var(--ink);font-weight:600}
+.num{width:100%;background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:8px;padding:6px 7px;font:500 12.5px ui-monospace,SFMono-Regular,Consolas,monospace}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.grid4 span{display:block;font-size:10px;color:var(--faint);margin-bottom:2px;font-weight:600}
+textarea.vtt{width:100%;height:118px;resize:vertical;background:rgba(0,0,0,.28);border:1px solid var(--line);border-radius:9px;padding:8px;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;color:#e9e4d8}
+.status{font-size:11.5px;color:var(--muted);margin-top:5px}
+.status.err{color:#ff9b85}
+.segs{display:flex;gap:4px;flex-wrap:wrap}
+.segs button{border:1px solid var(--line);background:rgba(255,255,255,.06);border-radius:9px;padding:6px 9px;font-size:12px;font-weight:600}
+.segs button[aria-pressed="true"]{background:var(--ink);color:#15171b;border-color:transparent}
+.small-btn{border:1px solid var(--line);background:rgba(255,255,255,.08);border-radius:9px;padding:6px 10px;font-size:12px;font-weight:600}
+input[type=range].plain{flex:1;accent-color:var(--accent)}
+#edListToggle{display:none}
+#stage[data-mode=editor] #ft{top:auto;bottom:14px;left:258px;right:auto}
+
+@container stage (max-width: 760px){
+  #edLeft{top:52px;left:8px;right:8px;bottom:auto;width:auto;flex-direction:row;padding:6px;border-radius:14px;overflow-x:auto;gap:4px}
+  #edLeft .edH{display:none}
+  #edLeft .blk{flex:none;padding:5px 8px 5px 5px}
+  #edLeft .blk small{display:none}
+  #edLeft .blk .ic{width:28px;height:28px}
+  #edRight{left:8px;right:8px;width:auto;top:auto;bottom:8px;height:46%;border-radius:18px}
+  #edHint{display:none}
+  #stage[data-mode=editor] #ft{top:106px;bottom:auto;right:8px;left:auto}
+}
+@container stage (max-height: 460px) and (min-width: 600px){
+  #edLeft{top:52px;left:8px;bottom:8px;right:auto;width:176px;flex-direction:column;overflow:auto}
+  #edLeft .blk small{display:none}
+  #edRight{top:52px;right:8px;bottom:8px;left:auto;width:300px;height:auto}
+  #edHint{display:none}
+  #stage[data-mode=editor] #ft{top:auto;bottom:10px;left:194px;right:auto}
+}
+
+/* side panels */
+.panel{position:absolute;z-index:35;top:calc(max(8px,env(safe-area-inset-top)) + 46px);right:8px;width:min(400px,calc(100% - 16px));max-height:calc(100% - 70px);overflow:auto;border-radius:16px;padding:14px 16px 16px;background:var(--plate-strong);border:1px solid var(--line);font-size:13px;line-height:1.5}
+.panel h2{margin:0 0 8px;font-size:15px}
+.panel h3{margin:14px 0 4px;font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--accent)}
+.panel ul{margin:4px 0;padding-left:18px}
+.panel li{margin:3px 0}
+.panel code{font:12px ui-monospace,SFMono-Regular,Consolas,monospace;color:#f3dcb4}
+.panel .fu{display:grid;grid-template-columns:96px 1fr;gap:4px 10px;margin:0}
+.panel .fu dt{font:600 12px ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--ink)}
+.panel .fu dd{margin:0;color:var(--muted)}
+.panel .fu dd.no{color:var(--faint);font-style:italic}
+.panel details{border-top:1px solid var(--line);padding:6px 0}
+.panel summary{cursor:pointer;font-weight:700;color:var(--ink);padding:4px 0}
+#toast{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);z-index:45;padding:10px 16px;border-radius:14px;font-size:14px;font-weight:600;opacity:0;transition:opacity .25s;pointer-events:none}
+#toast.on{opacity:1}
+</style>
+<script type="importmap">
+  { "imports": {
+      "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+  } }
+</script>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl" tabindex="0" aria-label="3D view"></canvas>
+
+  <div id="topbar">
+    <div class="seg plate" id="modeSeg" role="group" aria-label="Mode">
+      <button data-mode="visitor">Visitor</button>
+      <button data-mode="creator">Creator</button>
+      <button data-mode="editor">Editor</button>
+    </div>
+    <div class="spacer"></div>
+    <button class="iconbtn" id="btnPhone" title="Phone frame" aria-pressed="false"><svg width="16" height="18" viewBox="0 0 16 18" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="1" width="10" height="16" rx="2.4"/><path d="M7 14.2h2"/></svg></button>
+    <button class="iconbtn" id="btnFields" title="Fields this view uses" aria-pressed="false"><svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 4h11M3 8.5h11M3 13h7"/></svg></button>
+    <button class="iconbtn" id="btnNotes" title="Designer notes" aria-pressed="false"><svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="8.5" cy="8.5" r="6.5"/><path d="M8.5 7.6v4.2" stroke-linecap="round"/><circle cx="8.5" cy="5.1" r=".6" fill="currentColor"/></svg></button>
+  </div>
+  <div id="ft">-</div>
+
+  <div id="viewbar" class="plate" role="group" aria-label="View"></div>
+
+  <!-- visitor -->
+  <div id="visitor">
+    <div id="nearChip" class="plate hidden"><span class="arrow" id="nearArrow"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 1 10.5 10 6 7.8 1.5 10z" fill="currentColor"/></svg></span><span id="nearText">Station</span></div>
+    <div id="guideChip" class="plate hidden"><span class="dot"></span><span id="guideText"></span></div>
+    <button id="walkBtn" class="iconbtn" title="Hold to walk"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><ellipse cx="7" cy="6" rx="2.6" ry="3.6"/><ellipse cx="13" cy="11.5" rx="2.6" ry="3.6"/><circle cx="7" cy="12.2" r="1.5"/><circle cx="13" cy="17.4" r="1.5"/></svg></button>
+    <div id="hud">
+      <div id="capStrip" class="plate"></div>
+      <div id="hudRow">
+        <button class="pill" id="hudSound" aria-pressed="false"></button>
+        <button class="pill small" id="hudCC" aria-pressed="true" title="Captions">CC</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- overlay player -->
+  <div id="ovl" aria-hidden="true">
+    <button class="round ghost" id="ovlClose" title="Close"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg></button>
+    <div id="ovlFrame"><canvas id="ovlCanvas" width="512" height="640"></canvas></div>
+    <div id="ovlCap"></div>
+    <div id="ovlCtrl">
+      <button class="round" id="ovlPlay" title="Play or pause"></button>
+      <input type="range" class="scrub" id="ovlScrub" min="0" max="1000" value="0" aria-label="Scrub">
+      <span class="time" id="ovlTime">0:00 / 0:12</span>
+      <button class="round ghost" id="ovlCC" title="Captions" style="font-weight:700;font-size:12px">CC</button>
+      <button class="round ghost" id="ovlSound" title="Sound"></button>
+    </div>
+  </div>
+
+  <!-- creator -->
+  <div id="creator" class="hidden">
+    <svg id="reticle" viewBox="0 0 34 34" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><circle cx="17" cy="17" r="10" stroke-opacity=".9"/><circle cx="17" cy="17" r="1.6" fill="#fff"/><circle cx="17" cy="17" r="11.5" stroke="#000" stroke-opacity=".25" stroke-width="1"/></svg>
+    <div id="crTop" class="plate"><span class="tag">Video</span><span id="crTopText">Market day</span></div>
+    <div id="crSheet" class="plate"></div>
+    <div id="crBar">
+      <button data-tab="view"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="16" height="12" rx="2.5"/><path d="M8 19h6"/></svg>View</button>
+      <button data-tab="size"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 18 18 4M12 4h6v6M4 12v6h6"/></svg>Size, turn</button>
+      <button data-tab="place"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="9" r="4.5"/><path d="M11 13.5V20M6 20h10" stroke-linecap="round"/></svg>Place</button>
+      <button data-tab="more"><svg width="22" height="22" viewBox="0 0 22 22" fill="currentColor"><circle cx="5" cy="11" r="1.8"/><circle cx="11" cy="11" r="1.8"/><circle cx="17" cy="11" r="1.8"/></svg>More</button>
+    </div>
+  </div>
+
+  <!-- editor -->
+  <div id="editor" class="hidden">
+    <div id="edLeft" class="plate"></div>
+    <div id="edRight"></div>
+    <div id="edHint" class="plate"><b>Ring</b> move &middot; <b>arc knob</b> turn &middot; <b>cone</b> height &middot; <b>cube</b> width &middot; <b>camera</b> viewpoint &middot; drag empty space to orbit, wheel to zoom</div>
+  </div>
+
+  <div id="fieldsPanel" class="panel hidden"></div>
+  <div id="notesPanel" class="panel hidden"></div>
+  <div id="toast" class="plate"></div>
+</div>
+
+<template id="notesTpl">
+  <h2>Designer notes - video in the world</h2>
+  <details open><summary>0. Second round (2026-10-25): what changed and why</summary>
+    <p>Sections 1-5 are the first round's notes, kept as written; where they disagree with this section, this section holds.</p>
+    <ul>
+      <li><b>Window: nothing over the video any more.</b> The cross bars (the mullion and the transom) and the glass sheen are gone. The opening keeps its outer frame, reveals, stone surround, sill and the warm spill, so it still reads as a window. The outer frame's 6 cm timber members still overlap the outer 6 cm of each edge of the clip; inside that border the clip is clear.</li>
+      <li><b>When the video starts is now the creator's choice</b> (<code>start.trigger</code>): on entering the circle (the default, as before), within N metres of the video (<code>start.withinM</code>, 1-20 m), when looked at (the video's centre within 15 degrees of the middle of the view for 0.6 s), or on a tap. The stand-here view ignores the trigger: it starts when its picture has developed on the viewpoint. While a video waits for its trigger, the screen, the window and the porthole show its poster and the cut-out shows the clip's first frame; for "within N m" and "on a tap" a short hint appears too.</li>
+      <li><b>Sound on or off at the start</b> is the creator's default (<code>sound</code>, "off" by default). Three rules sit on top of it:<ul>
+        <li>the visitor's own choice wins: once a visitor turns the sound on or off, that is kept on the phone and used whenever any video starts (this page has one video; the rule is meant for all of a tour's videos);</li>
+        <li>"sound on" is honoured only after the visitor has tapped the page at least once (<code>navigator.userActivation.hasBeenActive</code>); otherwise the video starts muted, with captions, and the button says "Tap for sound";</li>
+        <li>a browser without that check is treated as not tapped, so it starts muted;</li>
+        <li>if the browser still keeps the sound off after the tap (its audio stays suspended once the resume has settled, or after 1 s), the video falls back to the muted start: sound off, captions on, the button says "Tap for sound" and a toast says why. The visitor's stored choice is kept.</li></ul></li>
+      <li>The visitor's choice is stored under <code>tour-viewer.visitor.videoSound</code>, read and written inside try/catch; where storage is blocked it lasts only the visit.</li>
+      <li>To try the triggers: Creator, More, pick one, then Visitor. Switching back to the visitor now resets the clip to its start, so the trigger can fire again; the stand-here clip also plays again, after Creator and after the editor's "Look from viewpoint".</li>
+      <li>With "when looked at", the switch back to the visitor also turns the visitor 60 degrees away from the video: the making view aims straight at it, so the trigger would fire at once and could not be judged. Turn back to the video to see it start.</li>
+    </ul>
+  </details>
+  <details open><summary>1. The model</summary>
+    <p>Built exactly as given: <code>video</code>, <code>poster</code>, <code>captions</code> (WebVTT text), <code>alpha</code> ("none" | "stacked"), <code>loop</code>, <code>widthM</code>, <code>pose</code> (position relative to the station anchor plus a compass heading), <code>viewpoint</code> (optional: position, heading, pitch, horizontal field of view). The block also stores which <code>view</code> the creator picked; that is block data, not model data.</p>
+    <ul>
+      <li><b>Add <code>title</code></b> (short, at most about 40 characters). Every view needs a name for the clip (the porthole's label, the overlay's header, the editor's list, the screen reader) and there is none; the page falls back to "Video" and the clip length.</li>
+      <li><b>Add <code>credit</code></b> (free text: who made or restaged the clip). Pictures have one; a video re-enactment needs it more, because it looks like evidence.</li>
+      <li><b>Add <code>posterAtMs</code> or keep <code>poster</code> as a generated asset only.</b> The creator never paints a poster; they pick a frame. Storing the time lets the app regenerate the poster when the video is replaced.</li>
+      <li><b>Make <code>alpha</code> describe the file, not the look.</b> In this page the stacked file carries a complete colour picture in the top half (the hall behind the stall) and the matte below. Screen, window, porthole and stand-here ignore the matte; only the cut-out uses it. That is the right split, but it means a stacked file must be filmed with a real background in the colour half, or the framed views show a green screen. Say so in the creator's import step.</li>
+      <li><b>Keep <code>captions</code> as text, but add an optional <code>captionsLang</code>.</b> Captions are the main channel (video starts muted), and a creator writing in another language than the app needs the language tag for line breaking and screen readers.</li>
+      <li><b>Drop nothing.</b> <code>viewpoint</code> earns its place only through the stand-here view (and the editor preview); without that view it is dead weight.</li>
+      <li><b>One pose for all views is the model's real weak point.</b> The window view needs the pose on the wall; the cut-out needs the ground; a screen wants to float free. The page resolves it with per-view rules (screen 12 cm off the pose, cut-out on the ground under it, 0.5 m out), but a creator switching from window to cut-out gets a stall pressed against the wall. Switching view should offer to re-place.</li>
+    </ul>
+  </details>
+  <details><summary>2. Per view: what, fields, why, weakest</summary>
+    <ul>
+      <li><b>Screen</b> (required) - a dark slab with the clip, an in-world play/pause and scrub bar, captions as a lower third. Fields: video, poster, captions, loop, widthM, pose. Visitors like it because it is honest and controllable. Weakest: from more than about 4 m the in-world captions and controls are too small (the captions then move to the phone strip automatically, the controls do not); in sunlight the slab is the best backplate of all five views; 1 m of error does not matter (it floats).</li>
+      <li><b>Window</b> (required) - the clip set 38 cm deep behind drawn reveals, a timber cross frame, a faint glass sheen, a stone surround and sill, a warm spill on the pavement. Fields: video, poster, captions (plate under the sill), loop, widthM (the opening's width), pose. The most magical when it fits: the past is happening inside the guild house. Weakest: it depends on an exact fit; 0.5 m off and the real window shows beside the drawn one (the drawn surround hides about 14 cm); a dark interior clip against a sunlit facade looks like a hole, not a window, so the clip must be bright.</li>
+      <li><b>Cut-out</b> (required) - the stall and trader standing on the pavement, matte from the stacked half, a soft contact shadow, turning at most 30 degrees toward the visitor, the caption on a plate above. Fields: video, alpha (required), captions, loop, widthM (life size), pose. Visitors like it most: someone is standing in the square. Weakest: from the side it is a flat card (the turn hides it up to 30 degrees); matte edges fringe against a bright sky; a crowded square walks through her; 1 m of error is fine on open pavement and bad next to the bench.</li>
+      <li><b>Porthole</b> (own) - a round bronze-rimmed medallion with the clip cropped to the trader, a progress ring, a "Watch" label; a tap opens a full-screen player with large captions, scrub, sound and close. Fields: poster, video, captions, loop, widthM (diameter = 0.55 x widthM), pose. Visitors like it because they can lower the phone and watch comfortably; it wins in sunlight and in crowds. Weakest: it is the least "in the world"; it hides the place behind a screen.</li>
+      <li><b>Stand here</b> (own, uses viewpoint) - footprints on the pavement; as the visitor steps onto them and faces the guild house the clip develops on the facade from a faint sepia ghost into full colour, edges feathered so there is no frame to misalign. Fields: video, captions (phone strip), loop, widthM, pose, viewpoint. Visitors like the moment of arrival. Weakest: the hardest to read in sunlight (no backplate at all); the footprints are 1 m off when the station is; it needs a free spot on the pavement in a crowd.</li>
+    </ul>
+  </details>
+  <details><summary>3. Per view: cost</summary>
+    <p id="noteCost">Frame time is read from the corner readout (mean / max of the frame interval over 2 s), measured headless with software rendering, so it says little about a phone. Media is the same for every view: one 12 s clip, 512 x 1280 stacked at 25 fps, about 1.5-2.5 MB as H.264 or VP9 (estimate, not encoded here), a poster of about 40 KB, captions under 1 KB. A view costs no extra media.</p>
+    <ul id="noteCostList"><li>Measured headless (software rendering, machine at 100 % CPU from other work), 844 x 390, mean / max work per frame: screen 18 / 103 ms, window 28 / 70 ms, cut-out 41 / 149 ms, porthole 19 / 81 ms, stand here 28 / 81 ms. Load, not the views, explains the spread; an unloaded probe read about 12 ms, nearly all of it the software render, and the clip redraw about 0.5 ms.</li><li>Screen: one video texture, a slab, three small canvas textures. Creator about 2 minutes.</li><li>Window: one video texture, reveal quads, frame bars, surround, sill, sheen, spill, caption plate. Creator 4-5 minutes.</li><li>Cut-out: one video texture sampled for colour and a five-tap matte, a shadow, a caption plate. Creator about 2 minutes, but filming a keyable stacked file is the real cost.</li><li>Porthole: one video texture, a torus, a ring shader, a halo, a label; the overlay copies each frame to a 2D canvas. Creator about 1 minute.</li><li>Stand here: one video texture, footprints, a pulse. Creator about 3 minutes.</li></ul>
+  </details>
+  <details><summary>4. The creator's controls</summary>
+    <ul>
+      <li><b>Phone (creator mode):</b> four large buttons. <i>View</i> - five chips, live. <i>Size, turn</i> - width in 10 cm steps, heading in 15 degree steps. <i>Place</i> - aim the reticle at a wall or the pavement and tap; in the window view it snaps to an opening within 1.5 m. <i>More</i> - loop on or off, "use this frame as poster", "set viewpoint where I stand" (the phone's own pose becomes the viewpoint), captions shown read-only (edited on the desktop). Typical: 2 minutes for a screen or cut-out, 4-5 minutes for a window (placing on the opening), 3 minutes for stand-here (walk to the spot, set the viewpoint).</li>
+      <li><b>Desktop (editor mode):</b> the inspector lists every field, dims the ones the current view ignores and says why; the captions are an editable WebVTT box parsed live with line errors; handles in the 3D view: a ground ring to move, an arc knob to turn, a cone for height, a cube on the edge for width, a camera marker to drag the viewpoint; "Look from viewpoint" previews the stand-here view at the stored field of view.</li>
+    </ul>
+  </details>
+  <details><summary>5. Blunt self-check</summary>
+    <ul>
+      <li><b>Rules the page bends:</b> the video is not a real decoded file; frames are drawn on a canvas per frame from the clip time (a canvas-rendered clip stands in for the asset, so scrubbing works); in the app it would be a video element and a video texture, which costs a texture upload per frame. The creator mode starts a few steps from the anchor (at x 3.0, z -13.4, about 7 m from the window) rather than on it, because the guild house window is 20 m from the anchor and nothing on it could be placed from there; the creator walks. The window view's in-world controls are only a tap to play or pause.</li>
+      <li><b>Context points it breaks:</b> the window view depends on an exact fit, against the 0.5-1 m error; stand-here has no backplate, against "light text on a dark backplate"; in-world controls and captions beyond about 4 m are unreadable and only partly rescued by the phone strip.</li>
+      <li><b>Drop first:</b> the window view, as a default. It is the most beautiful when it fits and the first to look broken when it does not, and it costs the creator the most minutes. Keep it as an option for creators with a measured facade.</li>
+      <li><b>Proudest of:</b> the cut-out. A stacked file is a cheap trick, but a life-size stall with a soft shadow, turning gently toward you, reads as someone standing in the square, and it survives 1 m of error because pavement has no edges to miss.</li>
+    </ul>
+  </details>
+</template>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ======================================================================
+   Video block prototype: one model (video in the world), five views.
+   1 unit = 1 m, north = -z, up = +y. Station anchor at the origin.
+   ====================================================================== */
+
+const FAMILY = 'station-blocks-4-video';
+const $ = (s, r = document) => r.querySelector(s);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const TAU = Math.PI * 2;
+const DEG = Math.PI / 180;
+const UI_FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+const fmt = (s) => { s = Math.max(0, s); const m = Math.floor(s / 60); return m + ':' + String(Math.floor(s % 60)).padStart(2, '0'); };
+
+/* ---------- the example record (the one record every view draws) ---------- */
+const ORIGINAL_VTT = `WEBVTT
+
+00:00.400 --> 00:03.200
+Rye bread! Still warm from the oven!
+
+00:04.000 --> 00:06.900
+Apples from the lower orchards, three for a penny.
+
+00:07.600 --> 00:10.800
+Come early, friends. The hall bell rings at noon.
+`;
+
+const record = {
+  video: 'media/market-day-1880s.mp4',
+  poster: 'media/market-day-1880s-poster.webp',
+  captions: ORIGINAL_VTT,
+  alpha: 'stacked',
+  loop: true,
+  widthM: 1.6,
+  start: { trigger: 'enter', withinM: 6 },   // when playback begins: 'enter' | 'near' (within withinM metres) | 'look' | 'tap'
+  sound: 'off',                              // the creator's default at the start: 'off' | 'on'
+  pose: { position: [5, 2.0, -20.0], headingDeg: 180 },
+  viewpoint: { position: [5, 1.6, -13.6], headingDeg: 0, pitchDeg: 3, hfovDeg: 40 },
+};
+let currentView = 'screen';
+let posterAt = 1.6;
+
+/* ---------- WebVTT parsing (defensive: malformed blocks are reported, not trusted) ---------- */
+function parseTime(s) {
+  const m = /^(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{3})$/.exec(s.trim());
+  if (!m) return NaN;
+  return (+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3]) + (+m[4]) / 1000;
+}
+function parseVTT(text) {
+  const out = { cues: [], errors: [] };
+  if (typeof text !== 'string') { out.errors.push('captions are not text'); return out; }
+  const lines = text.replace(/\r/g, '').split('\n');
+  if (!/^WEBVTT/.test(lines[0] || '')) out.errors.push('line 1: must start with WEBVTT');
+  for (let i = 1; i < lines.length; i++) {
+    const l = lines[i];
+    if (!l.includes('-->')) continue;
+    const [a, b] = l.split('-->');
+    const start = parseTime(a), end = parseTime((b || '').trim().split(/\s+/)[0] || '');
+    if (!(start >= 0) || !(end > start)) { out.errors.push(`line ${i + 1}: expected 00:00.000 --> 00:00.000`); continue; }
+    const txt = [];
+    while (i + 1 < lines.length && lines[i + 1].trim() !== '') txt.push(lines[++i].replace(/<[^>]*>/g, '').trim());
+    if (txt.length) out.cues.push({ start, end, text: txt.join(' ') });
+  }
+  out.cues.sort((x, y) => x.start - y.start);
+  return out;
+}
+let cues = parseVTT(record.captions).cues;
+// The clip's own performance (the "video" file) is fixed; edited captions do not change what she does.
+const CLIP_CALLS = parseVTT(ORIGINAL_VTT).cues.map((c) => ({ ...c, words: c.text.split(/\s+/).length }));
+function activeCue(t) { for (const c of cues) if (t >= c.start && t < c.end) return c; return null; }
+
+/* ======================================================================
+   The clip: a canvas-rendered stand-in for the video asset.
+   512 x 1280, stacked: colour in the top 640 rows, matte (grey) below.
+   ====================================================================== */
+const CW = 512, CH = 640, DUR = 12, FPS = 25;
+const clipCanvas = document.createElement('canvas'); clipCanvas.width = CW; clipCanvas.height = CH * 2;
+const clipCtx = clipCanvas.getContext('2d', { willReadFrequently: true }); // CPU-backed: uploads without a GPU readback
+const posterCanvas = document.createElement('canvas'); posterCanvas.width = CW; posterCanvas.height = CH; posterCanvas.getContext('2d', { willReadFrequently: true });
+
+function callEnv(t) {
+  let e = 0;
+  for (const c of CLIP_CALLS) e = Math.max(e, smooth(c.start - 0.25, c.start + 0.35, t) * (1 - smooth(c.end - 0.35, c.end + 0.25, t)));
+  return e;
+}
+function hash(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+function drawPerson(g, x, feet, s, col, phase, load) {
+  const bob = Math.abs(Math.sin(phase)) * 4 * s;
+  g.fillStyle = col;
+  const top = feet - 165 * s - bob;
+  g.beginPath(); g.ellipse(x, top + 14 * s, 12 * s, 14 * s, 0, 0, TAU); g.fill();
+  g.beginPath(); g.roundRect(x - 23 * s, top + 30 * s, 46 * s, 82 * s, 16 * s); g.fill();
+  const st = Math.sin(phase) * 12 * s;
+  g.fillRect(x - 14 * s + st, top + 105 * s, 11 * s, 60 * s);
+  g.fillRect(x + 3 * s - st, top + 105 * s, 11 * s, 60 * s);
+  if (load) { g.beginPath(); g.ellipse(x, top - 4 * s, 26 * s, 9 * s, 0, 0, TAU); g.fill(); }
+}
+
+function drawHall(g, t) {
+  let gr = g.createLinearGradient(0, 0, 0, CH);
+  gr.addColorStop(0, '#2b2018'); gr.addColorStop(0.2, '#4c3828'); gr.addColorStop(0.55, '#8f6d48'); gr.addColorStop(0.85, '#6c5236'); gr.addColorStop(1, '#3f3023');
+  g.fillStyle = gr; g.fillRect(0, 0, CW, CH);
+  // plaster panel and the bright doorway with its glow
+  g.fillStyle = 'rgba(190,150,100,.22)'; g.fillRect(0, 132, CW, 330);
+  const glow = 0.85 + 0.15 * Math.sin(t * TAU / 6);
+  gr = g.createRadialGradient(395, 250, 10, 395, 250, 240);
+  gr.addColorStop(0, `rgba(255,236,196,${0.55 * glow})`); gr.addColorStop(1, 'rgba(255,236,196,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, CW, CH);
+  g.fillStyle = '#f7e9c6';
+  g.beginPath(); g.moveTo(348, 470); g.lineTo(348, 196); g.arc(396, 196, 48, Math.PI, 0); g.lineTo(444, 470); g.closePath(); g.fill();
+  g.fillStyle = 'rgba(170,150,110,.45)'; // the street outside, a roofline
+  g.beginPath(); g.moveTo(348, 300); g.lineTo(372, 284); g.lineTo(398, 296); g.lineTo(420, 276); g.lineTo(444, 290); g.lineTo(444, 470); g.lineTo(348, 470); g.fill();
+  // a distant stall on the left
+  g.fillStyle = 'rgba(96,104,74,.75)'; g.fillRect(70, 246, 120, 20);
+  g.fillStyle = 'rgba(80,62,44,.8)'; g.fillRect(78, 266, 104, 90);
+  for (let i = 0; i < 6; i++) { g.fillStyle = i % 2 ? 'rgba(200,190,150,.6)' : 'rgba(96,104,74,.75)'; g.beginPath(); g.arc(80 + i * 20, 266, 10, 0, Math.PI); g.fill(); }
+  // passers-by behind the stall (seamless over the 12 s loop)
+  const u1 = (t / DUR) % 1, u2 = (t / DUR + 0.5) % 1;
+  drawPerson(g, -70 + u1 * 660, 486, 1.45, 'rgba(48,34,26,.92)', t * TAU * 1.5, false);
+  drawPerson(g, 600 - u2 * 700, 482, 1.38, 'rgba(70,46,34,.9)', t * TAU * 1.25 + 1, true);
+  // timber posts and beam
+  g.fillStyle = '#2a1d14';
+  g.fillRect(4, 0, 30, CH); g.fillRect(150, 110, 22, 360); g.fillRect(478, 0, 30, CH);
+  g.fillRect(0, 104, CW, 24);
+  g.strokeStyle = '#2a1d14'; g.lineWidth = 12;
+  g.beginPath(); g.moveTo(34, 200); g.lineTo(110, 128); g.moveTo(478, 200); g.lineTo(402, 128); g.stroke();
+  // light shaft from the doorway, with drifting dust
+  g.save(); g.globalCompositeOperation = 'lighter';
+  gr = g.createLinearGradient(400, 150, 180, 640);
+  gr.addColorStop(0, `rgba(255,230,180,${0.16 * glow})`); gr.addColorStop(1, 'rgba(255,230,180,0)');
+  g.fillStyle = gr; g.beginPath(); g.moveTo(350, 150); g.lineTo(446, 150); g.lineTo(300, 640); g.lineTo(100, 640); g.closePath(); g.fill();
+  for (let i = 0; i < 28; i++) {
+    const v = (hash(i) + t / DUR) % 1; const y = 160 + v * 470;
+    const x = lerp(398, 200, v) + (hash(i + 40) - 0.5) * 140 + Math.sin(t * TAU / 6 + i) * 6;
+    g.fillStyle = `rgba(255,240,210,${0.55 * Math.sin(v * Math.PI)})`;
+    g.beginPath(); g.arc(x, y, 1.2 + hash(i + 9) * 1.4, 0, TAU); g.fill();
+  }
+  g.restore();
+  // floor with straw
+  g.fillStyle = '#47362a'; g.fillRect(0, 560, CW, 80);
+  g.fillStyle = 'rgba(214,180,110,.35)';
+  for (let i = 0; i < 60; i++) g.fillRect(hash(i + 3) * CW, 566 + hash(i + 77) * 70, 6 + hash(i) * 8, 1.4);
+}
+
+function drawTrader(g, t, F, matte) {
+  const sway = Math.sin(t * TAU / 4) * 3, turn = Math.sin(t * TAU / 6), call = callEnv(t);
+  const cx = 256 + sway, hx = cx + turn * 5, hy = 156 - call * 3;
+  // dress
+  g.fillStyle = F('#1f4c56');
+  g.beginPath(); g.moveTo(cx - 70, 218); g.quadraticCurveTo(cx, 196, cx + 70, 218);
+  g.quadraticCurveTo(cx + 86, 226, cx + 90, 262); g.lineTo(cx + 96, 352); g.lineTo(cx - 96, 352); g.lineTo(cx - 90, 262);
+  g.quadraticCurveTo(cx - 86, 226, cx - 70, 218); g.fill();
+  // apron bib
+  g.fillStyle = F('#eee6d4');
+  g.beginPath(); g.roundRect(cx - 34, 252, 68, 104, [14, 14, 0, 0]); g.fill();
+  if (!matte) { g.strokeStyle = 'rgba(120,100,80,.35)'; g.lineWidth = 2; g.beginPath(); g.moveTo(cx - 20, 300); g.lineTo(cx + 20, 300); g.stroke(); }
+  // neck and head
+  g.fillStyle = F('#d4a07b'); g.fillRect(hx - 13, 180, 26, 34);
+  g.fillStyle = F('#ddac86'); g.beginPath(); g.ellipse(hx, hy, 31, 36, 0, 0, TAU); g.fill();
+  // headscarf
+  g.fillStyle = F('#a63d2c');
+  g.beginPath(); g.ellipse(hx - turn * 2, hy - 12, 35, 30, 0, Math.PI * 1.02, Math.PI * 1.98); g.lineTo(hx + 34, hy - 4); g.quadraticCurveTo(hx, hy - 30, hx - 34, hy - 4); g.fill();
+  g.beginPath(); g.ellipse(hx - 30 - turn * 3, hy + 2, 10, 14, 0.4, 0, TAU); g.fill();
+  if (!matte) {
+    g.fillStyle = '#2a1c14';
+    g.beginPath(); g.arc(hx - 11 + turn * 3, hy - 2, 2.6, 0, TAU); g.arc(hx + 11 + turn * 3, hy - 2, 2.6, 0, TAU); g.fill();
+    g.fillStyle = 'rgba(200,90,70,.25)'; g.beginPath(); g.arc(hx - 16 + turn * 3, hy + 9, 6, 0, TAU); g.arc(hx + 16 + turn * 3, hy + 9, 6, 0, TAU); g.fill();
+    const open = 1.4 + call * 6 * (0.45 + 0.55 * Math.abs(Math.sin(t * 13)));
+    g.fillStyle = '#5c2b22'; g.beginPath(); g.ellipse(hx + turn * 4, hy + 17, 6.5, open, 0, 0, TAU); g.fill();
+  }
+  // the calling arm (hand rises beside the mouth on each call)
+  const S = [cx - 62, 228], E = [lerp(cx - 88, cx - 84, call), lerp(292, 214, call)], H = [lerp(cx - 66, hx - 30, call), lerp(332, hy + 14, call)];
+  g.strokeStyle = F('#1b434c'); g.lineWidth = 25; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.beginPath(); g.moveTo(S[0], S[1]); g.lineTo(E[0], E[1]); g.lineTo(H[0], H[1]); g.stroke();
+  g.fillStyle = F('#ddac86'); g.beginPath(); g.arc(H[0], H[1], 11, 0, TAU); g.fill();
+  // the resting arm
+  g.beginPath(); g.moveTo(cx + 62, 228); g.lineTo(cx + 86, 292); g.lineTo(cx + 68, 330); g.stroke();
+  g.beginPath(); g.arc(cx + 66, 332, 11, 0, TAU); g.fill();
+}
+
+function drawStall(g, t, F, matte) {
+  g.fillStyle = F('#5b3b23'); g.fillRect(40, 44, 12, CH - 44); g.fillRect(460, 44, 12, CH - 44);
+  if (!matte) { g.fillStyle = 'rgba(255,220,170,.28)'; g.fillRect(42, 44, 3, CH - 44); g.fillRect(462, 44, 3, CH - 44); }
+  drawTrader(g, t, F, matte);
+  // counter top
+  g.fillStyle = F('#7b5233'); g.fillRect(26, 334, 460, 22);
+  if (!matte) { g.fillStyle = '#a5774c'; g.fillRect(26, 334, 460, 4); }
+  // cloth with a scalloped hem
+  const w = (x) => Math.sin(x * 0.05 + t * TAU / 3) * 2;
+  g.beginPath(); g.moveTo(34, 356); g.lineTo(478, 356); g.lineTo(478, 556);
+  for (let x = 478; x > 34; x -= 37) g.quadraticCurveTo(x - 18.5, 574 + w(x), x - 37, 556);
+  g.closePath();
+  g.fillStyle = F('#ebdfc3'); g.fill();
+  if (!matte) {
+    g.save(); g.clip();
+    g.fillStyle = 'rgba(166,61,44,.85)'; for (let x = 50; x < 478; x += 52) g.fillRect(x, 356, 16, 230);
+    g.fillStyle = '#933826'; g.fillRect(34, 356, 444, 16);
+    const sh = g.createLinearGradient(0, 356, 0, 580); sh.addColorStop(0, 'rgba(0,0,0,.18)'); sh.addColorStop(0.3, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(0,0,0,.25)');
+    g.fillStyle = sh; g.fillRect(34, 356, 444, 230);
+    g.restore();
+  }
+  g.fillStyle = F('#4c3320'); g.fillRect(46, 556, 16, 84); g.fillRect(450, 556, 16, 84);
+  // apples in a basket
+  g.fillStyle = F('#a67b41'); g.beginPath(); g.moveTo(66, 300); g.lineTo(206, 300); g.lineTo(196, 338); g.lineTo(76, 338); g.closePath(); g.fill();
+  const apples = [[88, 297], [110, 291], [132, 296], [154, 290], [176, 297], [100, 279], [124, 274], [148, 277], [170, 282], [136, 259]];
+  for (const [x, y] of apples) {
+    g.fillStyle = F('#b9362b'); g.beginPath(); g.arc(x, y, 13, 0, TAU); g.fill();
+    if (!matte) { g.fillStyle = 'rgba(255,200,170,.45)'; g.beginPath(); g.arc(x - 4, y - 5, 4, 0, TAU); g.fill(); }
+  }
+  if (!matte) { g.strokeStyle = 'rgba(90,60,30,.6)'; g.lineWidth = 2; for (let y = 308; y < 338; y += 8) { g.beginPath(); g.moveTo(70, y); g.lineTo(202, y); g.stroke(); } }
+  // loaves on a board
+  g.fillStyle = F('#8b5d37'); g.fillRect(300, 326, 162, 12);
+  for (const [x, y] of [[332, 314], [382, 309], [432, 315]]) {
+    g.fillStyle = F('#c78c4c'); g.beginPath(); g.ellipse(x, y, 29, 17, 0, 0, TAU); g.fill();
+    if (!matte) { g.strokeStyle = '#8e5a2a'; g.lineWidth = 2.2; for (let k = -1; k <= 1; k++) { g.beginPath(); g.moveTo(x + k * 10 - 5, y - 9); g.lineTo(x + k * 10 + 5, y + 7); g.stroke(); } }
+  }
+  // awning
+  g.fillStyle = F('#4a2f1c'); g.fillRect(18, 22, 476, 10);
+  for (let i = 0; i < 12; i++) {
+    const x0 = 24 + i * 38.7, sw = Math.sin(t * TAU / 3 + i * 0.7) * 2;
+    g.fillStyle = F(i % 2 ? '#efe3c7' : '#b1412c');
+    g.beginPath(); g.moveTo(x0, 32); g.lineTo(x0 + 38.7, 32); g.lineTo(x0 + 38.7, 80);
+    g.arc(x0 + 19.35, 80 + sw, 19.35, 0, Math.PI); g.closePath(); g.fill();
+  }
+  if (!matte) { const sh = g.createLinearGradient(0, 32, 0, 100); sh.addColorStop(0, 'rgba(0,0,0,.25)'); sh.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = sh; g.fillRect(24, 32, 465, 6); }
+}
+
+function drawClip(g, t, matte) {
+  const F = matte ? () => '#ffffff' : (c) => c;
+  g.save(); g.beginPath(); g.rect(0, 0, CW, CH); g.clip();
+  if (matte) { g.fillStyle = '#000'; g.fillRect(0, 0, CW, CH); }
+  else drawHall(g, t);
+  drawStall(g, t, F, matte);
+  g.restore();
+}
+function renderClipFrame(t) {
+  clipCtx.clearRect(0, 0, CW, CH * 2);
+  drawClip(clipCtx, t, false);
+  clipCtx.save(); clipCtx.translate(0, CH); drawClip(clipCtx, t, true); clipCtx.restore();
+  clipTex.needsUpdate = true;
+}
+function renderPoster(t) {
+  const g = posterCanvas.getContext('2d');
+  drawClip(g, t, false);
+  const v = g.createRadialGradient(CW / 2, CH * 0.45, CH * 0.25, CW / 2, CH * 0.5, CH * 0.75);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.35)');
+  g.fillStyle = v; g.fillRect(0, 0, CW, CH);
+  posterTex.needsUpdate = true;
+  edThumbsDirty = true;
+}
+
+const clipTex = new THREE.CanvasTexture(clipCanvas);
+clipTex.colorSpace = THREE.NoColorSpace; clipTex.minFilter = THREE.LinearFilter; clipTex.generateMipmaps = false;
+const posterTex = new THREE.CanvasTexture(posterCanvas);
+posterTex.colorSpace = THREE.NoColorSpace; posterTex.minFilter = THREE.LinearFilter; posterTex.generateMipmaps = false;
+let edThumbsDirty = true;
+
+/* ---------- the player (clip clock) ---------- */
+const player = {
+  t: 0, paused: true, muted: true, cc: true, started: false, lastFrame: -1, soundDecided: false,
+  reset() { this.t = 0; this.paused = true; this.started = false; this.lastFrame = -1; this.soundDecided = false; },
+  play() { if (!record.loop && this.t >= DUR - 0.05) this.t = 0; this.paused = false; this.started = true; },
+  pause() { this.paused = true; },
+  toggle() { this.paused ? this.play() : this.pause(); },
+  seek(t) { this.t = clamp(t, 0, DUR - 0.001); this.started = true; this.lastFrame = -1; },
+  update(dt) {
+    if (!this.paused) {
+      this.t += dt;
+      if (this.t >= DUR) { if (record.loop) this.t %= DUR; else { this.t = DUR - 0.001; this.paused = true; } }
+    }
+    const f = Math.floor(this.t * FPS);
+    if (f !== this.lastFrame) { this.lastFrame = f; renderClipFrame(f / FPS); return true; }
+    return false;
+  },
+};
+
+/* ---------- sound: never speech; a murmur bed and a tone pattern on the clip's calls ---------- */
+const sound = {
+  ctx: null, on: false, lastT: 0, wasPlaying: false, attempt: 0,
+  ensure() {
+    if (this.ctx) return true;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return false;
+    try {
+      const c = this.ctx = new AC();
+      this.master = c.createGain(); this.master.gain.value = 0; this.master.connect(c.destination);
+      const len = c.sampleRate * 3, buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
+      let b = 0; for (let i = 0; i < len; i++) { b = 0.985 * b + 0.015 * (Math.random() * 2 - 1); d[i] = b * 5; }
+      const src = c.createBufferSource(); src.buffer = buf; src.loop = true;
+      const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 450; bp.Q.value = 0.6;
+      const g = c.createGain(); g.gain.value = 0.3;
+      src.connect(bp).connect(g).connect(this.master); src.start();
+      this.syl = [];
+      for (const call of CLIP_CALLS) {
+        const n = Math.round(call.words * 1.35), span = call.end - call.start - 0.25;
+        for (let i = 0; i < n; i++) this.syl.push({ at: call.start + 0.1 + (i / n) * span, f: 245 - (i / n) * 40 + (i % 3) * 14, len: span / n * 0.8 });
+      }
+      return true;
+    } catch (e) { console.warn('audio unavailable', e); this.ctx = null; return false; }
+  },
+  setOn(on) {
+    if (on && !this.ensure()) { toast('Sound is not available here'); return false; }
+    this.on = on; player.muted = !on;
+    if (this.ctx) { if (on && this.ctx.state !== 'running') this.confirmRunning(); this.lastT = player.t; }
+    return true;
+  },
+  /* The browser may refuse the sound even after a tap. Once the resume has settled (or after 1 s, since a refused
+     resume can stay pending), a context that is still not running falls back to the muted start: sound off,
+     captions on, and the button offers the sound again. The visitor's stored choice is left as it is. */
+  confirmRunning() {
+    const c = this.ctx, token = ++this.attempt;
+    const resumed = Promise.resolve().then(() => c.resume()).catch(() => {});
+    Promise.race([resumed, new Promise((r) => setTimeout(r, 1000))]).then(() => {
+      if (token !== this.attempt || !this.on || c.state === 'running') return;
+      this.on = false; player.muted = true; player.cc = true; soundReason = 'muted: the browser kept the sound off';
+      refreshButtons(); toast('The browser kept the sound off - captions are on');
+    });
+  },
+  voice(when, f, len) {
+    const c = this.ctx, o = c.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f, when); o.frequency.linearRampToValueAtTime(f * 0.86, when + len);
+    const f1 = c.createBiquadFilter(); f1.type = 'bandpass'; f1.frequency.value = 820; f1.Q.value = 5;
+    const f2 = c.createBiquadFilter(); f2.type = 'bandpass'; f2.frequency.value = 2300; f2.Q.value = 7;
+    const g = c.createGain(); g.gain.setValueAtTime(0, when); g.gain.linearRampToValueAtTime(0.35, when + 0.025); g.gain.exponentialRampToValueAtTime(0.001, when + len);
+    o.connect(f1).connect(g); o.connect(f2).connect(g); g.connect(this.master);
+    o.start(when); o.stop(when + len + 0.05);
+  },
+  tick() {
+    if (!this.ctx) return;
+    const playing = this.on && !player.paused && appear > 0.5;
+    if (playing !== this.wasPlaying) { this.master.gain.setTargetAtTime(playing ? 0.55 : 0, this.ctx.currentTime, 0.08); this.wasPlaying = playing; }
+    const t = player.t;
+    if (playing) {
+      const now = this.ctx.currentTime;
+      const inRange = (x) => (t >= this.lastT ? x > this.lastT && x <= t : x > this.lastT || x <= t);
+      if (Math.abs(t - this.lastT) < 0.5 || t < this.lastT) for (const s of this.syl) if (inRange(s.at)) this.voice(now + 0.01, s.f, s.len);
+    }
+    this.lastT = t;
+  },
+};
+
+/* ======================================================================
+   Renderer and the stand-in place (the camera image in the app)
+   ====================================================================== */
+const stage = $('#stage'), canvas = $('#gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.autoClear = false;
+const world = new THREE.Scene();
+world.background = new THREE.Color('#e7eaed');
+world.fog = new THREE.Fog('#e7eaed', 70, 170);
+const content = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 400);
+camera.rotation.order = 'YXZ';
+
+function addLights(s, k = 1) {
+  s.add(new THREE.HemisphereLight('#ffffff', '#b9b8b0', 2.3 * k));
+  const d = new THREE.DirectionalLight('#ffffff', 0.9 * k); d.position.set(12, 20, 18); s.add(d);
+}
+addLights(world); addLights(content, 0.9);
+
+function canvasTex(c, srgb = true) { const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; }
+function mkCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d', { willReadFrequently: true }); return c; }
+const lam = (color) => new THREE.MeshLambertMaterial({ color });
+
+function buildWorld() {
+  const gnd = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), lam('#c9cbc4')); gnd.rotation.x = -Math.PI / 2; gnd.position.y = -0.01; world.add(gnd);
+  const pc = mkCanvas(256, 256), g = pc.getContext('2d');
+  g.fillStyle = '#d8d6d0'; g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(${hash(i) > 0.5 ? '255,255,255' : '90,88,82'},${0.05 + hash(i + 5) * 0.06})`; g.fillRect(hash(i + 1) * 256, hash(i + 2) * 256, 2, 2); }
+  g.strokeStyle = 'rgba(128,124,116,.38)'; g.lineWidth = 2;
+  for (let r = 0; r < 4; r++) { const y = r * 64; g.beginPath(); g.moveTo(0, y); g.lineTo(256, y); g.stroke(); for (let x = (r % 2) * 32; x <= 256; x += 64) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 64); g.stroke(); } }
+  const pt = canvasTex(pc); pt.wrapS = pt.wrapT = THREE.RepeatWrapping; pt.repeat.set(10, 10);
+  const sq = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambertMaterial({ map: pt })); sq.rotation.x = -Math.PI / 2; world.add(sq);
+  const pathMat = lam('#cfcdc6');
+  const p1 = new THREE.Mesh(new THREE.PlaneGeometry(3, 30), pathMat); p1.rotation.x = -Math.PI / 2; p1.position.set(0, 0.002, 35); world.add(p1);
+  const p2 = new THREE.Mesh(new THREE.PlaneGeometry(70, 3), pathMat); p2.rotation.x = -Math.PI / 2; p2.position.set(55, 0.002, 0); world.add(p2);
+  // the guild house front
+  const house = new THREE.Mesh(new THREE.BoxGeometry(28, 6, 10), lam('#c6c5c1')); house.position.set(0, 3, -25); world.add(house);
+  const corn = new THREE.Mesh(new THREE.BoxGeometry(28.6, 0.32, 0.5), lam('#b5b4af')); corn.position.set(0, 6, -19.9); world.add(corn);
+  const plinth = new THREE.Mesh(new THREE.BoxGeometry(28.1, 0.45, 0.12), lam('#b3b2ad')); plinth.position.set(0, 0.22, -19.96); world.add(plinth);
+  const dark = lam('#62666d');
+  const door = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.4), dark); door.position.set(0, 1.2, -19.97); world.add(door);
+  for (const x of [-5, 5]) {
+    const w = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 2.0), dark); w.position.set(x, 2.0, -19.97); world.add(w);
+    const sill = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 0.16), lam('#b0afaa')); sill.position.set(x, 0.96, -19.92); world.add(sill);
+  }
+  // the low ruined wall (NW), with a gap
+  const ruin = lam('#b7b5ae');
+  for (const [x0, x1, h] of [[-19.5, -15.8, 1.0], [-14.3, -11.5, 0.85]]) { const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, h, 0.6), ruin); m.position.set((x0 + x1) / 2, h / 2, -15); world.add(m); }
+  for (const [x, z, s] of [[-15.2, -14.4, 0.3], [-13.8, -15.7, 0.22], [-11.1, -14.6, 0.25]]) { const m = new THREE.Mesh(new THREE.BoxGeometry(s, s * 0.8, s), ruin); m.position.set(x, s * 0.4, z); m.rotation.y = x; world.add(m); }
+  // bench and tree
+  const bm = lam('#a9a7a1');
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 0.45), bm); seat.position.set(8, 0.45, 6); world.add(seat);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.4, 0.06), bm); back.position.set(8, 0.75, 6.2); world.add(back);
+  for (const dx of [-0.8, 0.8]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 0.4), bm); l.position.set(8 + dx, 0.22, 6); world.add(l); }
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.2, 2.8, 10), lam('#9e9890')); trunk.position.set(-9, 1.4, 7); world.add(trunk);
+  const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.1, 1), new THREE.MeshLambertMaterial({ color: '#adb3a6', flatShading: true })); crown.position.set(-9, 4.0, 7); world.add(crown);
+  // station circles (faint) and the anchor
+  const ringMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, depthWrite: false });
+  for (const [x, z] of [[0, 0], [60, 0]]) { const r = new THREE.Mesh(new THREE.RingGeometry(24.93, 25.07, 160), ringMat); r.rotation.x = -Math.PI / 2; r.position.set(x, 0.01, z); world.add(r); }
+  const anc = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.36, 40), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.7 })); anc.rotation.x = -Math.PI / 2; anc.position.y = 0.012; world.add(anc);
+  // the second station with one stand-in item
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.2, 8), lam('#8f949a')); post.position.set(60, 0.6, 0); world.add(post);
+  const item = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.08), lam('#9aa0a6')); item.position.set(60, 1.45, 0); world.add(item);
+}
+buildWorld();
+
+/* ======================================================================
+   Shared content pieces
+   ====================================================================== */
+const CLIP_VERT = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+const CLIP_FRAG = `
+uniform sampler2D map; uniform sampler2D poster;
+uniform float posterMix, opacity, useMatte, ellipse, inner, circle, tone, edgeSoft;
+uniform vec2 feather; uniform vec4 crop; uniform vec3 tint;
+varying vec2 vUv;
+vec3 s2l(vec3 c){ return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
+void main(){
+  vec2 uv = crop.xy + vUv * crop.zw;
+  const float hv = 0.5 / 1280.0;
+  vec2 cu = vec2(uv.x, mix(0.5 + 2.0 * hv, 1.0 - hv, uv.y));
+  vec2 mu = vec2(uv.x, mix(hv, 0.5 - 2.0 * hv, uv.y));
+  vec3 col = s2l(texture2D(map, cu).rgb);
+  col = mix(col, s2l(texture2D(poster, uv).rgb), posterMix);
+  float a = 1.0;
+  if (useMatte > 0.5) { vec2 o = vec2(1.0 / 512.0, 1.0 / 1280.0); a = (texture2D(map, mu).r * 2.0 + texture2D(map, mu + vec2(o.x, 0.0)).r + texture2D(map, mu - vec2(o.x, 0.0)).r + texture2D(map, mu + vec2(0.0, o.y)).r + texture2D(map, mu - vec2(0.0, o.y)).r) / 6.0; }
+  vec2 d = vUv - 0.5;
+  if (ellipse > 0.5) { float r = length(d * 2.0); a *= 1.0 - smoothstep(1.0 - feather.x, 1.0, r); }
+  else if (feather.x > 0.0) { vec2 e = smoothstep(vec2(0.0), feather, vUv) * smoothstep(vec2(0.0), feather, 1.0 - vUv); a *= e.x * e.y; }
+  if (circle > 0.5) { float r = length(d) * 2.0; float aa = fwidth(r) * 1.5; a *= 1.0 - smoothstep(1.0 - aa, 1.0, r); col *= mix(0.55, 1.0, smoothstep(1.0, 0.55, r)); }
+  if (inner > 0.0) { vec2 e = smoothstep(vec2(0.0), vec2(0.2), vUv) * smoothstep(vec2(0.0), vec2(0.2), 1.0 - vUv); col *= mix(1.0 - inner, 1.0, e.x * e.y); }
+  float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  col = mix(col, vec3(l) * vec3(1.1, 0.97, 0.8), tone);
+  col *= tint;
+  gl_FragColor = vec4(col, a * opacity);
+  #include <colorspace_fragment>
+}`;
+function clipMaterial(o = {}) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      map: { value: clipTex }, poster: { value: posterTex }, posterMix: { value: 0 }, opacity: { value: 1 },
+      useMatte: { value: o.matte ? 1 : 0 }, feather: { value: new THREE.Vector2(o.feather || 0, o.featherY ?? o.feather ?? 0) },
+      ellipse: { value: o.ellipse ? 1 : 0 }, inner: { value: o.inner || 0 }, circle: { value: o.circle ? 1 : 0 },
+      tone: { value: o.tone || 0 }, edgeSoft: { value: 0 }, crop: { value: new THREE.Vector4(...(o.crop || [0, 0, 1, 1])) },
+      tint: { value: new THREE.Color(1, 1, 1) },
+    },
+    vertexShader: CLIP_VERT, fragmentShader: CLIP_FRAG, transparent: true, depthWrite: !!o.depthWrite,
+  });
+}
+function uiMat(tex, extra = {}) { return new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false, ...extra }); }
+
+function radialTex(inner, outer, stops) {
+  const c = mkCanvas(128, 128), g = c.getContext('2d');
+  const gr = g.createRadialGradient(64, 64, inner * 64, 64, 64, outer * 64);
+  for (const [o, col] of stops) gr.addColorStop(o, col);
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  return canvasTex(c);
+}
+const shadowTex = radialTex(0, 1, [[0, 'rgba(20,18,16,.62)'], [0.55, 'rgba(20,18,16,.3)'], [1, 'rgba(20,18,16,0)']]);
+const glowTex = radialTex(0, 1, [[0, 'rgba(255,214,150,1)'], [0.5, 'rgba(255,200,130,.35)'], [1, 'rgba(255,200,130,0)']]);
+
+function groundDisc(w, d, tex, opacity, additive = false) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), uiMat(tex, { opacity, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending }));
+  m.rotation.x = -Math.PI / 2; m.userData.baseOpacity = opacity; return m;
+}
+
+function wrapText(g, text, maxW) {
+  const words = text.split(/\s+/), lines = []; let cur = '';
+  for (const w of words) { const t = cur ? cur + ' ' + w : w; if (g.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t; }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+/** A caption on a dark plate, drawn into a canvas; letter height is set in metres. */
+class CaptionPlate {
+  constructor({ widthM, letterM, style = 'plate', tail = false, lines = 2 }) {
+    this.pxPerM = Math.min(900, 1400 / widthM); this.widthM = widthM; this.letterM = letterM; this.style = style; this.tail = tail; this.maxLines = lines;
+    const lineH = letterM * 1.42; this.heightM = lineH * lines + letterM * 1.4 + (tail ? letterM * 0.9 : 0);
+    this.c = mkCanvas(Math.round(widthM * this.pxPerM), Math.round(this.heightM * this.pxPerM));
+    this.tex = canvasTex(this.c);
+    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(widthM, this.heightM), uiMat(this.tex, { opacity: 0 }));
+    this.mesh.renderOrder = 5;
+    this.text = null; this.alpha = 0;
+  }
+  set(text) {
+    if (text === this.text) return; this.text = text;
+    const g = this.c.getContext('2d'), W = this.c.width, H = this.c.height, k = this.pxPerM;
+    g.clearRect(0, 0, W, H);
+    if (!text) { this.tex.needsUpdate = true; return; }
+    const fs = this.letterM * k * 1.38; // cap-height to font size
+    g.font = `600 ${fs}px ${UI_FONT}`;
+    const lines = wrapText(g, text, W - fs * 1.6).slice(0, this.maxLines);
+    const lh = this.letterM * 1.42 * k, padY = this.letterM * 0.7 * k, tailH = this.tail ? this.letterM * 0.9 * k : 0;
+    const tw = Math.max(...lines.map((l) => g.measureText(l).width)) + fs * 1.4;
+    const th = lines.length * lh + padY * 2;
+    const y0 = this.style === 'lower' ? H - th : H - th - tailH;
+    if (this.style === 'lower') {
+      const gr = g.createLinearGradient(0, y0 - th * 0.3, 0, H); gr.addColorStop(0, 'rgba(10,10,12,0)'); gr.addColorStop(0.35, 'rgba(10,10,12,.55)'); gr.addColorStop(1, 'rgba(10,10,12,.78)');
+      g.fillStyle = gr; g.fillRect(0, y0 - th * 0.3, W, H);
+    } else {
+      g.fillStyle = 'rgba(15,17,21,.86)';
+      g.beginPath(); g.roundRect((W - tw) / 2, y0, tw, th, Math.min(th / 2, fs * 0.7)); g.fill();
+      if (this.tail) { g.beginPath(); g.moveTo(W / 2 - tailH * 0.7, y0 + th - 1); g.lineTo(W / 2, H - 1); g.lineTo(W / 2 + tailH * 0.7, y0 + th - 1); g.fill(); }
+    }
+    g.fillStyle = '#f6f2ea'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    if (this.style === 'lower') { g.shadowColor = 'rgba(0,0,0,.6)'; g.shadowBlur = fs * 0.25; }
+    lines.forEach((l, i) => g.fillText(l, W / 2, y0 + padY + lh * (i + 0.5)));
+    g.shadowBlur = 0;
+    this.tex.needsUpdate = true;
+  }
+  update(dt, show, mult) {
+    this.alpha = lerp(this.alpha, show ? 1 : 0, 1 - Math.exp(-dt * 8));
+    this.mesh.material.opacity = this.alpha * mult;
+    this.mesh.visible = this.mesh.material.opacity > 0.01;
+  }
+}
+
+/** Projected letter height in device-independent px, for "can this be read from here?" */
+function letterPx(worldPos, letterM) {
+  const d = camera.position.distanceTo(worldPos);
+  const vh = stage.clientHeight;
+  return letterM / (2 * d * Math.tan(camera.fov * DEG / 2)) * vh;
+}
+
+/* ======================================================================
+   The block root and the views
+   ====================================================================== */
+const stationRoot = new THREE.Group(); content.add(stationRoot);
+const blockRoot = new THREE.Group(); stationRoot.add(blockRoot);
+function applyPose() {
+  const [x, y, z] = record.pose.position;
+  blockRoot.position.set(x, y, z);
+  blockRoot.rotation.set(0, Math.PI - record.pose.headingDeg * DEG, 0);
+  blockRoot.updateMatrixWorld(true);
+}
+function headingVec(h) { return new THREE.Vector3(Math.sin(h * DEG), 0, -Math.cos(h * DEG)); }
+function localToWorld(x, y, z) { return blockRoot.localToWorld(new THREE.Vector3(x, y, z)); }
+const clipH = (w) => w * CH / CW;
+
+function drawIcon(g, kind, x, y, s, color) {
+  g.save(); g.translate(x, y); g.fillStyle = color; g.strokeStyle = color; g.lineCap = 'round'; g.lineJoin = 'round';
+  if (kind === 'play') { g.beginPath(); g.moveTo(-s * 0.32, -s * 0.42); g.lineTo(s * 0.48, 0); g.lineTo(-s * 0.32, s * 0.42); g.closePath(); g.fill(); }
+  if (kind === 'pause') { g.beginPath(); g.roundRect(-s * 0.36, -s * 0.4, s * 0.24, s * 0.8, s * 0.06); g.roundRect(s * 0.12, -s * 0.4, s * 0.24, s * 0.8, s * 0.06); g.fill(); }
+  if (kind === 'sound' || kind === 'muted') {
+    g.beginPath(); g.moveTo(-s * 0.5, -s * 0.17); g.lineTo(-s * 0.25, -s * 0.17); g.lineTo(s * 0.05, -s * 0.42); g.lineTo(s * 0.05, s * 0.42); g.lineTo(-s * 0.25, s * 0.17); g.lineTo(-s * 0.5, s * 0.17); g.closePath(); g.fill();
+    g.lineWidth = s * 0.1;
+    if (kind === 'sound') { g.beginPath(); g.arc(s * 0.08, 0, s * 0.25, -0.8, 0.8); g.stroke(); g.beginPath(); g.arc(s * 0.08, 0, s * 0.42, -0.8, 0.8); g.stroke(); }
+    else { g.beginPath(); g.moveTo(s * 0.2, -s * 0.18); g.lineTo(s * 0.52, s * 0.18); g.moveTo(s * 0.52, -s * 0.18); g.lineTo(s * 0.2, s * 0.18); g.stroke(); }
+  }
+  g.restore();
+}
+
+/* --- view: screen in space --- */
+function buildScreen() {
+  const w = record.widthM, h = clipH(w), bar = Math.max(0.17, w * 0.13), pad = Math.max(0.035, w * 0.028);
+  const grp = new THREE.Group(); grp.position.z = 0.12;
+  const sw = w + 2 * pad, sh = h + bar + 2 * pad;
+  const shape = new THREE.Shape(); { const x = -sw / 2, y = -h / 2 - bar - pad, r = pad * 1.6; shape.moveTo(x + r, y); shape.lineTo(x + sw - r, y); shape.quadraticCurveTo(x + sw, y, x + sw, y + r); shape.lineTo(x + sw, y + sh - r); shape.quadraticCurveTo(x + sw, y + sh, x + sw - r, y + sh); shape.lineTo(x + r, y + sh); shape.quadraticCurveTo(x, y + sh, x, y + sh - r); shape.lineTo(x, y + r); shape.quadraticCurveTo(x, y, x + r, y); }
+  const slabMat = new THREE.MeshLambertMaterial({ color: '#17191d', transparent: true });
+  const slab = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.03, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.008, bevelSegments: 2, curveSegments: 6 }), slabMat);
+  slab.position.z = -0.03; grp.add(slab);
+  const vmat = clipMaterial({ depthWrite: true });
+  const video = new THREE.Mesh(new THREE.PlaneGeometry(w, h), vmat); video.position.z = 0.009; grp.add(video);
+  const lower = new CaptionPlate({ widthM: w, letterM: Math.max(0.07, w * 0.056), style: 'lower', lines: 3 });
+  lower.mesh.position.set(0, -h / 2 + lower.heightM / 2, 0.012); grp.add(lower.mesh);
+  // big play glyph while paused
+  const gc = mkCanvas(256, 256), gg = gc.getContext('2d');
+  gg.fillStyle = 'rgba(15,17,21,.72)'; gg.beginPath(); gg.arc(128, 128, 118, 0, TAU); gg.fill();
+  gg.strokeStyle = 'rgba(255,255,255,.5)'; gg.lineWidth = 4; gg.stroke(); drawIcon(gg, 'play', 136, 128, 120, '#f6f2ea');
+  const glyph = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.28, w * 0.28), uiMat(canvasTex(gc))); glyph.position.z = 0.014; grp.add(glyph);
+  // control bar
+  const bc = mkCanvas(1024, Math.round(1024 * bar / w)), btex = canvasTex(bc);
+  const barMesh = new THREE.Mesh(new THREE.PlaneGeometry(w, bar), uiMat(btex)); barMesh.position.set(0, -h / 2 - bar / 2 - pad * 0.3, 0.009); grp.add(barMesh);
+  const R = { play: [0, 0.11], track: [0.14, 0.62], cc: [0.84, 0.91], snd: [0.91, 1] };
+  let lastKey = '';
+  function drawBar() {
+    const key = [player.paused, Math.floor(player.t * 8), player.cc, player.muted].join();
+    if (key === lastKey) return; lastKey = key;
+    const g = bc.getContext('2d'), W = bc.width, H = bc.height, cy = H / 2;
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = '#f6f2ea'; g.beginPath(); g.arc(W * 0.055, cy, H * 0.33, 0, TAU); g.fill();
+    drawIcon(g, player.paused ? 'play' : 'pause', W * 0.055 + (player.paused ? H * 0.03 : 0), cy, H * 0.36, '#16181c');
+    const x0 = W * R.track[0], x1 = W * R.track[1], p = player.t / DUR;
+    g.fillStyle = 'rgba(255,255,255,.22)'; g.beginPath(); g.roundRect(x0, cy - H * 0.045, x1 - x0, H * 0.09, H * 0.045); g.fill();
+    g.fillStyle = '#f1b45c'; g.beginPath(); g.roundRect(x0, cy - H * 0.045, (x1 - x0) * p, H * 0.09, H * 0.045); g.fill();
+    for (const c of cues) { g.fillStyle = 'rgba(255,255,255,.5)'; g.fillRect(x0 + (x1 - x0) * c.start / DUR - 1, cy + H * 0.1, 2, H * 0.08); }
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(x0 + (x1 - x0) * p, cy, H * 0.13, 0, TAU); g.fill();
+    g.font = `600 ${H * 0.21}px ui-monospace, Consolas, monospace`; g.fillStyle = '#d9d4ca'; g.textBaseline = 'middle'; g.textAlign = 'left';
+    g.fillText(`${fmt(player.t)} / ${fmt(DUR)}`, W * 0.645, cy);
+    const ccx = W * 0.875;
+    g.lineWidth = 3; g.strokeStyle = '#f6f2ea'; g.fillStyle = player.cc ? '#f6f2ea' : 'transparent';
+    g.beginPath(); g.roundRect(ccx - H * 0.27, cy - H * 0.19, H * 0.54, H * 0.38, H * 0.08); g.fill(); g.stroke();
+    g.font = `800 ${H * 0.21}px ${UI_FONT}`; g.textAlign = 'center'; g.fillStyle = player.cc ? '#16181c' : '#f6f2ea'; g.fillText('CC', ccx, cy + 1);
+    drawIcon(g, player.muted ? 'muted' : 'sound', W * 0.955, cy, H * 0.44, '#f6f2ea');
+    btex.needsUpdate = true;
+  }
+  const shadow = groundDisc(w * 1.1, 0.7, shadowTex, 0.32); shadow.position.set(0, -record.pose.position[1] + 0.012, 0); grp.add(shadow);
+  video.userData.tap = () => player.toggle();
+  glyph.userData.tap = () => player.toggle();
+  barMesh.userData.tap = (uv) => {
+    if (uv.x < R.play[1]) player.toggle();
+    else if (uv.x >= R.track[0] - 0.02 && uv.x <= R.track[1] + 0.02) player.seek((uv.x - R.track[0]) / (R.track[1] - R.track[0]) * DUR);
+    else if (uv.x >= R.cc[0] && uv.x < R.cc[1]) setCC(!player.cc);
+    else if (uv.x >= R.snd[0]) setSound(!sound.on);
+  };
+  barMesh.userData.dragTest = (uv) => uv.x >= R.track[0] - 0.02 && uv.x <= R.track[1] + 0.02;
+  barMesh.userData.drag = (uv) => player.seek(clamp((uv.x - R.track[0]) / (R.track[1] - R.track[0]), 0, 1) * DUR);
+  const capWorld = new THREE.Vector3();
+  let strip = false;
+  return {
+    group: grp, tappables: [video, glyph, barMesh], bounds: { w: sw, h: sh, cy: -bar / 2, z: 0.12 },
+    stop: { dist: 3.8, side: -0.6, lookY: -0.15 },
+    update(dt, a) {
+      slabMat.opacity = a; slab.visible = a > 0.01;
+      vmat.uniforms.opacity.value = a; vmat.uniforms.posterMix.value = player.started ? 0 : 1;
+      glyph.material.opacity = a * (player.paused ? 0.95 : 0); glyph.visible = glyph.material.opacity > 0.01;
+      barMesh.material.opacity = a; shadow.material.opacity = a * shadow.userData.baseOpacity;
+      drawBar();
+      const cue = player.cc ? activeCue(player.t) : null;
+      lower.mesh.getWorldPosition(capWorld);
+      const px = letterPx(capWorld, lower.letterM);
+      strip = strip ? px < 15 : px < 13;
+      lower.set(cue && !strip ? cue.text : (lower.text && lower.alpha > 0.05 && !strip ? lower.text : ''));
+      lower.update(dt, !!cue && !strip, a);
+      return { stripCaption: strip };
+    },
+  };
+}
+
+/* --- view: video in a real opening (world-locked window) --- */
+function buildWindow() {
+  const w = record.widthM, h = clipH(w), depth = 0.38, grp = new THREE.Group();
+  const vmat = clipMaterial({ inner: 0.42, depthWrite: true });
+  const video = new THREE.Mesh(new THREE.PlaneGeometry(w, h), vmat); video.position.z = -depth; grp.add(video);
+  // reveals: four quads from the wall plane back to the clip, lit at the front edge, dark at the back
+  const mats = [];
+  const revMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, toneMapped: false, side: THREE.DoubleSide }); mats.push(revMat);
+  const pos = [], col = [], front = [0.52, 0.47, 0.42], backC = [0.09, 0.075, 0.065];
+  const quad = (x0, y0, x1, y1, shade) => {
+    const f = front.map((c) => c * shade), b = backC.map((c) => c * shade);
+    const v = [[x0, y0, 0, f], [x1, y1, 0, f], [x1, y1, -depth, b], [x0, y0, 0, f], [x1, y1, -depth, b], [x0, y0, -depth, b]];
+    for (const [x, y, z, c] of v) { pos.push(x, y, z); col.push(...c); }
+  };
+  quad(-w / 2, -h / 2, -w / 2, h / 2, 0.9);  // left
+  quad(w / 2, h / 2, w / 2, -h / 2, 0.68);   // right
+  quad(-w / 2, h / 2, w / 2, h / 2, 0.42);   // soffit
+  quad(w / 2, -h / 2, -w / 2, -h / 2, 1.15); // sill inside
+  const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); rg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  grp.add(new THREE.Mesh(rg, revMat));
+  // the timber frame round the opening; no cross bars and no glass sheen: nothing lies over the clip itself
+  const timber = new THREE.MeshLambertMaterial({ color: '#3b2d23', transparent: true }); mats.push(timber);
+  const bars = new THREE.Group(); grp.add(bars);
+  const tb = 0.06, add = (bw, bh, x, y) => { const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.06), timber); m.position.set(x, y, -0.06); bars.add(m); };
+  add(w, tb, 0, h / 2 - tb / 2); add(w, tb, 0, -h / 2 + tb / 2); add(tb, h, -w / 2 + tb / 2, 0); add(tb, h, w / 2 - tb / 2, 0);
+  // stone surround with keystone, and sill
+  const m = 0.15, outer = new THREE.Shape();
+  outer.moveTo(-w / 2 - m, -h / 2); outer.lineTo(w / 2 + m, -h / 2); outer.lineTo(w / 2 + m, h / 2 + m); outer.lineTo(-w / 2 - m, h / 2 + m); outer.closePath();
+  const hole = new THREE.Path(); hole.moveTo(-w / 2, -h / 2); hole.lineTo(-w / 2, h / 2); hole.lineTo(w / 2, h / 2); hole.lineTo(w / 2, -h / 2); hole.closePath(); outer.holes.push(hole);
+  const stone = new THREE.MeshLambertMaterial({ color: '#d9d3c6', transparent: true }); mats.push(stone);
+  const sur = new THREE.Mesh(new THREE.ExtrudeGeometry(outer, { depth: 0.05, bevelEnabled: false }), stone); sur.position.z = 0.0; grp.add(sur);
+  const key = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.26, 0.08), stone); key.position.set(0, h / 2 + m * 0.6, 0.03); grp.add(key);
+  const sill = new THREE.Mesh(new THREE.BoxGeometry(w + 2 * m + 0.12, 0.08, 0.2), stone); sill.position.set(0, -h / 2 - 0.04, 0.08); grp.add(sill);
+  // warm light spill on the pavement
+  const spill = groundDisc(w * 2.4, 3.0, glowTex, 0.16, true); spill.position.set(0, -record.pose.position[1] + 0.015, 1.4); grp.add(spill);
+  // caption plate on the wall under the sill
+  const cap = new CaptionPlate({ widthM: w + 0.5, letterM: 0.085 });
+  cap.mesh.position.set(0, -h / 2 - 0.1 - cap.heightM / 2, 0.02); grp.add(cap.mesh);
+  video.userData.tap = () => player.toggle();
+  const capWorld = new THREE.Vector3(); let strip = false;
+  return {
+    group: grp, tappables: [video], bounds: { w: w + 2 * m, h: h + m + 0.1, cy: m / 2 - 0.05, z: 0.02 },
+    stop: { dist: 5.4, side: -1.0, lookY: -0.1 },
+    update(dt, a) {
+      vmat.uniforms.opacity.value = a; vmat.uniforms.posterMix.value = player.started ? 0 : 1;
+      for (const mm of mats) mm.opacity = a;
+      spill.material.opacity = a * 0.16 * (0.85 + 0.15 * Math.sin(performance.now() / 900));
+      const cue = player.cc ? activeCue(player.t) : null;
+      cap.mesh.getWorldPosition(capWorld);
+      const px = letterPx(capWorld, cap.letterM); strip = strip ? px < 15 : px < 13;
+      if (cue && !strip) cap.set(cue.text);
+      cap.update(dt, !!cue && !strip, a);
+      return { stripCaption: strip };
+    },
+  };
+}
+
+/* --- view: cut-out figure standing in the scene (stacked alpha) --- */
+function buildCutout() {
+  const w = record.widthM, h = clipH(w), grp = new THREE.Group();
+  grp.position.set(0, -record.pose.position[1], 0.5);
+  const pivot = new THREE.Group(); grp.add(pivot);
+  const stacked = record.alpha === 'stacked';
+  const vmat = clipMaterial({ matte: stacked, ellipse: !stacked, feather: stacked ? 0 : 0.35 });
+  const fig = new THREE.Mesh(new THREE.PlaneGeometry(w, h), vmat); fig.position.y = h / 2; pivot.add(fig);
+  const shadow = groundDisc(w * 1.05, 0.62, shadowTex, 0.5); shadow.position.set(0, 0.012, 0.02); grp.add(shadow);
+  const cap = new CaptionPlate({ widthM: 2.1, letterM: 0.1, tail: true });
+  cap.mesh.position.set(0, h + 0.1 + cap.heightM / 2, 0); pivot.add(cap.mesh);
+  let note = null;
+  if (!stacked) {
+    const nc = mkCanvas(900, 90), ng = nc.getContext('2d'); ng.fillStyle = 'rgba(15,17,21,.85)'; ng.beginPath(); ng.roundRect(0, 0, 900, 90, 45); ng.fill();
+    ng.font = `600 40px ${UI_FONT}`; ng.fillStyle = '#f1b45c'; ng.textAlign = 'center'; ng.textBaseline = 'middle'; ng.fillText('Needs a stacked-alpha video', 450, 47);
+    note = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.15), uiMat(canvasTex(nc))); note.position.set(0, 0.25, 0.05); pivot.add(note);
+  }
+  fig.userData.tap = () => player.toggle();
+  const tmp = new THREE.Vector3(), capWorld = new THREE.Vector3(); let yaw = 0, strip = false;
+  return {
+    group: grp, tappables: [fig], bounds: { w, h, cy: h / 2 - record.pose.position[1], z: 0.5 },
+    stop: { dist: 4.6, side: -1.2, lookY: 0.25 },
+    update(dt, a) {
+      // turn at most 30 degrees toward the visitor, so the card never shows its edge
+      tmp.copy(camera.position); grp.worldToLocal(tmp);
+      const want = clamp(Math.atan2(tmp.x, tmp.z), -30 * DEG, 30 * DEG);
+      yaw = lerp(yaw, want, 1 - Math.exp(-dt * 3)); pivot.rotation.y = yaw;
+      vmat.uniforms.opacity.value = a; shadow.material.opacity = a * 0.5;
+      if (note) note.material.opacity = a;
+      const cue = player.cc ? activeCue(player.t) : null;
+      cap.mesh.getWorldPosition(capWorld);
+      const px = letterPx(capWorld, cap.letterM); strip = strip ? px < 15 : px < 13;
+      if (cue && !strip) cap.set(cue.text);
+      cap.update(dt, !!cue && !strip, a);
+      return { stripCaption: strip };
+    },
+  };
+}
+
+/* --- own view: porthole (a medallion in the world, a full-screen player on tap) --- */
+function buildPorthole() {
+  const D = record.widthM * 0.55, r = D / 2, grp = new THREE.Group(); grp.position.z = 0.06;
+  const crop = [0.19, 0.392, 0.62, 0.496];
+  const vmat = clipMaterial({ circle: true, crop });
+  const disc = new THREE.Mesh(new THREE.PlaneGeometry(D, D), vmat); disc.position.z = 0.012; grp.add(disc);
+  const bezelMat = new THREE.MeshLambertMaterial({ color: '#8d6c42', transparent: true });
+  const bezel = new THREE.Mesh(new THREE.TorusGeometry(r + 0.03, 0.035, 14, 96), bezelMat); bezel.position.z = 0.012; grp.add(bezel);
+  const backMat = new THREE.MeshLambertMaterial({ color: '#17191d', transparent: true });
+  const back = new THREE.Mesh(new THREE.CylinderGeometry(r + 0.09, r + 0.09, 0.04, 96), backMat); back.rotation.x = Math.PI / 2; back.position.z = -0.01; grp.add(back);
+  const progMat = new THREE.ShaderMaterial({
+    uniforms: { p: { value: 0 }, opacity: { value: 1 } }, transparent: true, depthWrite: false,
+    vertexShader: CLIP_VERT,
+    fragmentShader: `uniform float p, opacity; varying vec2 vUv; void main(){ vec2 d = vUv - 0.5; float ang = atan(d.x, d.y); float u = fract(ang / 6.2831853 + 1.0); float r = length(d) * 2.0; float w = fwidth(r) * 1.2; float ring = smoothstep(0.9, 0.9 + w, r) * (1.0 - smoothstep(0.98 - w, 0.98, r)); vec3 c = u <= p ? vec3(0.945, 0.706, 0.361) : vec3(1.0); float a = ring * (u <= p ? 1.0 : 0.25); gl_FragColor = vec4(c, a * opacity);
+#include <colorspace_fragment>
+}`,
+  });
+  const prog = new THREE.Mesh(new THREE.PlaneGeometry(D + 0.26, D + 0.26), progMat); prog.position.z = 0.03; grp.add(prog);
+  const halo = new THREE.Mesh(new THREE.PlaneGeometry(D * 2.1, D * 2.1), uiMat(glowTex, { opacity: 0, blending: THREE.AdditiveBlending })); halo.position.z = -0.03; grp.add(halo);
+  // label
+  const lc = mkCanvas(640, 150), lg = lc.getContext('2d');
+  lg.fillStyle = 'rgba(15,17,21,.88)'; lg.beginPath(); lg.roundRect(20, 15, 600, 120, 60); lg.fill();
+  lg.fillStyle = '#f6f2ea'; lg.beginPath(); lg.arc(86, 75, 38, 0, TAU); lg.fill(); drawIcon(lg, 'play', 90, 75, 40, '#16181c');
+  lg.font = `650 54px ${UI_FONT}`; lg.fillStyle = '#f6f2ea'; lg.textBaseline = 'middle'; lg.fillText('Watch', 146, 77);
+  lg.font = `500 44px ui-monospace, Consolas, monospace`; lg.fillStyle = '#c9c2b6'; lg.fillText(fmt(DUR), 330, 78);
+  lg.fillStyle = 'rgba(255,255,255,.5)'; lg.font = `700 34px ${UI_FONT}`; lg.fillText('CC', 470, 78);
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(0.96, 0.225), uiMat(canvasTex(lc))); label.position.set(0, -r - 0.27, 0.03); grp.add(label);
+  const open = () => openOverlay(true);
+  disc.userData.tap = open; label.userData.tap = open; prog.userData.tap = open;
+  return {
+    group: grp, tappables: [disc, label], bounds: { w: D + 0.26, h: D + 0.5, cy: -0.12, z: 0.06 },
+    stop: { dist: 3.2, side: -0.5, lookY: -0.15 },
+    update(dt, a) {
+      vmat.uniforms.opacity.value = a; vmat.uniforms.posterMix.value = player.started ? 0 : 1;
+      bezelMat.opacity = a; backMat.opacity = a; label.material.opacity = a;
+      progMat.uniforms.p.value = player.t / DUR; progMat.uniforms.opacity.value = a;
+      const near = camera.position.distanceTo(blockRoot.position) < 12 ? 1 : 0;
+      halo.material.opacity = a * near * (0.34 + 0.16 * Math.sin(performance.now() / 700));
+      return { stripCaption: false };
+    },
+  };
+}
+
+/* --- own view: stand here (the clip develops on the facade from the viewpoint) --- */
+function footprintTex() {
+  const c = mkCanvas(512, 512), g = c.getContext('2d');
+  g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 6; g.setLineDash([22, 16]);
+  g.beginPath(); g.arc(256, 256, 236, 0, TAU); g.stroke(); g.setLineDash([]);
+  const sole = (x, y, flip) => {
+    g.save(); g.translate(x, y); g.scale(flip ? -1 : 1, 1);
+    g.fillStyle = 'rgba(241,180,92,.95)';
+    g.beginPath(); g.ellipse(0, -40, 34, 58, 0.08, 0, TAU); g.fill();
+    g.beginPath(); g.ellipse(4, 58, 26, 34, 0.05, 0, TAU); g.fill();
+    g.restore();
+  };
+  sole(205, 250, false); sole(307, 250, true);
+  const t = canvasTex(c); return t;
+}
+const fpTex = footprintTex();
+function buildStandHere() {
+  const w = record.widthM, h = clipH(w), grp = new THREE.Group(); grp.position.z = 0.03;
+  const vmat = clipMaterial({ ellipse: true, feather: 0.42 });
+  const proj = new THREE.Mesh(new THREE.PlaneGeometry(w * 1.12, h * 1.12), vmat); grp.add(proj);
+  // footprints live in the station frame at the viewpoint
+  const fp = new THREE.Group();
+  const vp = record.viewpoint;
+  const fpMesh = groundDisc(1.2, 1.2, fpTex, 0.9); fp.add(fpMesh);
+  const pulse = groundDisc(2.2, 2.2, glowTex, 0, true); pulse.position.y = 0.002; fp.add(pulse);
+  if (vp) { fp.position.set(vp.position[0], 0.014, vp.position[2]); fp.rotation.y = -vp.headingDeg * DEG; }
+  stationRoot.add(fp);
+  let develop = 0;
+  const to = new THREE.Vector3(), fwd = new THREE.Vector3();
+  return {
+    group: grp, tappables: [proj], extra: fp, bounds: { w: w * 1.12, h: h * 1.12, cy: 0, z: 0.03 },
+    stop: vp ? { at: [vp.position[0], vp.position[2]], lookY: 0 } : { dist: 6, side: 0, lookY: 0 },
+    update(dt, a) {
+      let target = 0, dist = Infinity;
+      if (vp) {
+        dist = Math.hypot(camera.position.x - vp.position[0], camera.position.z - vp.position[2]);
+        blockRoot.getWorldPosition(to); to.sub(camera.position).normalize();
+        camera.getWorldDirection(fwd);
+        const ang = Math.acos(clamp(to.dot(fwd), -1, 1)) / DEG;
+        target = smooth(4.5, 1.0, dist) * smooth(32, 12, ang);
+      } else target = 1;
+      develop = lerp(develop, target, 1 - Math.exp(-dt * 1.6));
+      // the player's own flag, which switching back to the visitor clears, so the clip plays again after a round trip
+      if (develop > 0.6 && !player.started) { player.seek(0); player.play(); }
+      const u = vmat.uniforms;
+      u.opacity.value = a * (0.13 + 0.87 * develop); u.tone.value = 1 - develop; u.tint.value.setScalar(lerp(1.15, 1.0, develop));
+      u.feather.value.set(lerp(0.75, 0.38, develop), 0);
+      fpMesh.material.opacity = a * 0.9 * (1 - develop * 0.65);
+      pulse.material.opacity = a * (1 - develop) * (0.18 + 0.14 * Math.sin(performance.now() / 500));
+      return { stripCaption: true, guide: vp && develop < 0.55 ? (dist > 1.2 ? `Stand on the footprints · ${Math.round(dist)} m` : 'Face the guild house') : null, captionGate: develop > 0.5 };
+    },
+  };
+}
+
+const USE_START = 'when playback begins: on entering the circle, within N m, when looked at, or on a tap';
+const USE_SOUND = 'sound on or off at the start; the visitor\'s own choice wins, and a phone not yet tapped starts muted';
+const VIEW_DEFS = {
+  screen: { label: 'Screen', required: true, build: buildScreen,
+    uses: { video: 'plays in the screen (colour half)', poster: 'shown until the first play', captions: 'lower third on the screen; moves to the phone strip when too small to read', loop: 'restart or stop at the end', widthM: 'screen width; height from the clip aspect', pose: 'screen centre, 12 cm in front; heading', start: USE_START, sound: USE_SOUND },
+    ignores: { alpha: 'the matte half is not shown', viewpoint: 'not used' } },
+  window: { label: 'Window', required: true, build: buildWindow,
+    uses: { video: 'fills the opening, 38 cm deep behind drawn reveals, with nothing over it', poster: 'shown until the first play', captions: 'plate on the wall under the sill; phone strip when too small', loop: 'restart or stop at the end', widthM: 'the opening width; height from the clip aspect', pose: 'opening centre on the wall plane; heading = the wall normal', start: USE_START, sound: USE_SOUND },
+    ignores: { alpha: 'the matte half is not shown', viewpoint: 'not used' } },
+  cutout: { label: 'Cut-out', required: true, build: buildCutout,
+    uses: { video: 'the colour half', alpha: 'required: the matte half cuts out the stall', captions: 'plate above the stall; phone strip when too small', loop: 'restart or stop at the end', widthM: 'life size: 1.6 m wide makes a 2.0 m tall stall', pose: 'stands on the ground below the pose, 0.5 m out; turns at most 30 degrees toward the visitor', start: USE_START, sound: USE_SOUND },
+    ignores: { poster: 'not used (a poster has no matte)', viewpoint: 'not used' } },
+  porthole: { label: 'Porthole', required: false, build: buildPorthole,
+    uses: { poster: 'the medallion face before playing', video: 'a circular crop in the world; the full frame in the overlay', captions: 'large, in the overlay player', loop: 'restart or stop at the end', widthM: 'medallion diameter = 0.55 x widthM', pose: 'medallion centre, 6 cm in front', start: USE_START, sound: USE_SOUND },
+    ignores: { alpha: 'the matte half is not shown', viewpoint: 'not used' } },
+  'stand-here': { label: 'Stand here', required: false, build: buildStandHere,
+    uses: { video: 'projected softly on the wall', captions: 'phone strip, once the picture has developed', loop: 'restart or stop at the end', widthM: 'projection width (feathered, 12 % larger)', pose: 'projection centre on the wall', viewpoint: 'footprints on the ground; the picture develops when the visitor stands there facing the pose (pitch and field of view are used by the editor preview)', sound: USE_SOUND },
+    ignores: { poster: 'not used', alpha: 'the matte half is not shown', start: 'not used: it starts when its picture has developed on the viewpoint' } },
+};
+const VIEW_ORDER = ['screen', 'window', 'cutout', 'porthole', 'stand-here'];
+const FIELDS = ['video', 'poster', 'captions', 'alpha', 'loop', 'widthM', 'pose', 'viewpoint', 'start', 'sound'];
+const START_LABEL = { enter: 'On entering', near: 'Within N m', look: 'When looked at', tap: 'On a tap' };
+// "looked at": the video's centre within 15 degrees of the middle of the view, held for 0.6 s
+const LOOK = { deg: 15, dwellS: 0.6 };
+let lookDwell = 0;
+/** Whether the creator's start trigger has fired this frame (the visitor is inside the circle). */
+function startTriggered(dt) {
+  const s = record.start || { trigger: 'enter' };
+  if (s.trigger === 'enter') return true;
+  const c = blockCentreWorld();
+  if (s.trigger === 'near') return Math.hypot(camera.position.x - c.x, camera.position.z - c.z) <= s.withinM;
+  if (s.trigger === 'look') {
+    const to = c.sub(camera.position).normalize(), fwd = camera.getWorldDirection(new THREE.Vector3());
+    lookDwell = Math.acos(clamp(to.dot(fwd), -1, 1)) / DEG < LOOK.deg ? lookDwell + dt : 0;
+    return lookDwell >= LOOK.dwellS;
+  }
+  return false;   // 'tap': the visitor's own tap on the video starts it
+}
+/* The visitor's sound choice, kept on the device for every video (the same guarded pattern as other visitor
+   preferences): 'on' | 'off' | null when the visitor never chose. */
+const SOUND_KEY = 'tour-viewer.visitor.videoSound';
+function readSoundPref() { try { const v = window.localStorage.getItem(SOUND_KEY); return v === 'on' || v === 'off' ? v : null; } catch (e) { return null; } }
+function writeSoundPref(v) { try { if (v) window.localStorage.setItem(SOUND_KEY, v); else window.localStorage.removeItem(SOUND_KEY); return true; } catch (e) { return false; } }
+/** Sound may start only after the visitor has tapped the page; a browser without the check counts as not tapped. */
+function hasActivation() { const ua = navigator.userActivation; return !!(ua && ua.hasBeenActive); }
+let soundReason = null;
+/** Called once when a video starts for the visitor: the visitor's own choice, else the creator's default, and
+ *  "on" only after a user activation (otherwise muted, with captions, and the button offers the sound). */
+function decideStartSound() {
+  const pref = readSoundPref(), want = pref || record.sound || 'off';
+  if (want === 'on' && !hasActivation()) { sound.setOn(false); player.cc = true; soundReason = 'muted: no tap yet'; }
+  else { sound.setOn(want === 'on'); soundReason = pref ? 'the visitor\'s choice' : 'the creator\'s default'; }
+  refreshButtons();
+}
+
+let view = null;
+function disposeTree(o) { o.traverse((n) => { if (n.geometry) n.geometry.dispose(); if (n.material) { const ms = Array.isArray(n.material) ? n.material : [n.material]; ms.forEach((m) => { if (m.map && m.map !== fpTex && m.map !== shadowTex && m.map !== glowTex) m.map.dispose(); m.dispose(); }); } }); }
+function rebuildView() {
+  if (view) { blockRoot.remove(view.group); disposeTree(view.group); if (view.extra) { stationRoot.remove(view.extra); disposeTree(view.extra); } }
+  applyPose();
+  view = VIEW_DEFS[currentView].build();
+  blockRoot.add(view.group);
+  updateBrackets(); updateHandles();
+}
+
+/* ======================================================================
+   Selection brackets (creator, editor) and editor handles
+   ====================================================================== */
+const ACCENT = new THREE.Color('#f1b45c');
+const brackets = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: ACCENT, depthTest: false, transparent: true }));
+brackets.renderOrder = 999; blockRoot.add(brackets);
+function updateBrackets() {
+  if (!view) return;
+  const { w, h, cy, z } = view.bounds, x0 = -w / 2 - 0.06, x1 = w / 2 + 0.06, y0 = cy - h / 2 - 0.06, y1 = cy + h / 2 + 0.06, L = Math.min(w, h) * 0.18;
+  const p = [];
+  for (const [x, y, sx, sy] of [[x0, y0, 1, 1], [x1, y0, -1, 1], [x0, y1, 1, -1], [x1, y1, -1, -1]]) { p.push(x, y, z, x + sx * L, y, z, x, y, z, x, y + sy * L, z); }
+  brackets.geometry.dispose(); brackets.geometry = new THREE.BufferGeometry(); brackets.geometry.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+}
+
+const handles = new THREE.Group(); stationRoot.add(handles);
+const hMat = (c, o = 1) => new THREE.MeshBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: o, side: THREE.DoubleSide, toneMapped: false });
+const H = {};
+function updateHandles() {
+  while (handles.children.length) { const c = handles.children[0]; handles.remove(c); disposeTree(c); }
+  if (!view) return;
+  const [px, py, pz] = record.pose.position, hd = record.pose.headingDeg;
+  const ground = new THREE.Group(); ground.position.set(px, 0.02, pz); handles.add(ground);
+  H.move = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.8, 64), hMat('#f1b45c', 0.9)); H.move.rotation.x = -Math.PI / 2; ground.add(H.move);
+  for (let i = 0; i < 4; i++) { const a = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.2, 3), hMat('#f1b45c')); const ang = i * Math.PI / 2; a.position.set(Math.sin(ang) * 0.98, 0, Math.cos(ang) * 0.98); a.rotation.set(Math.PI / 2, ang, 0, 'YXZ'); ground.add(a); a.userData.h = 'move'; }
+  H.move.userData.h = 'move';
+  const arc = new THREE.Mesh(new THREE.RingGeometry(1.32, 1.38, 96), hMat('#ffffff', 0.55)); arc.rotation.x = -Math.PI / 2; ground.add(arc);
+  const f = headingVec(hd);
+  H.turn = new THREE.Mesh(new THREE.SphereGeometry(0.13, 20, 12), hMat('#ffffff')); H.turn.position.set(f.x * 1.35, 0.02, f.z * 1.35); ground.add(H.turn); H.turn.userData.h = 'turn';
+  const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, Math.max(0.05, py + view.bounds.h / 2 + 0.3), 6), hMat('#ffffff', 0.6));
+  stalk.position.set(px, (py + view.bounds.h / 2 + 0.3) / 2, pz); handles.add(stalk);
+  H.height = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.26, 20), hMat('#7fd3ff')); H.height.position.set(px, py + view.bounds.cy + view.bounds.h / 2 + 0.45, pz); handles.add(H.height); H.height.userData.h = 'height';
+  H.width = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), hMat('#7fd3ff'));
+  H.width.position.copy(localToWorld(view.bounds.w / 2 + 0.12, view.bounds.cy, view.bounds.z + 0.05)); handles.add(H.width); H.width.userData.h = 'width';
+  const vp = record.viewpoint;
+  if (vp) {
+    const cam = new THREE.Group(); cam.position.set(vp.position[0], vp.position[1], vp.position[2]); cam.rotation.order = 'YXZ'; cam.rotation.set(vp.pitchDeg * DEG, -vp.headingDeg * DEG, 0); handles.add(cam);
+    const half = Math.tan(vp.hfovDeg * DEG / 2) * 0.9, hv = half * 0.75, pts = [0, 0, 0, -half, -hv, -0.9, 0, 0, 0, half, -hv, -0.9, 0, 0, 0, half, hv, -0.9, 0, 0, 0, -half, hv, -0.9, -half, -hv, -0.9, half, -hv, -0.9, half, -hv, -0.9, half, hv, -0.9, half, hv, -0.9, -half, hv, -0.9, -half, hv, -0.9, -half, -hv, -0.9];
+    const fr = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pts, 3)), new THREE.LineBasicMaterial({ color: '#ffffff', depthTest: false, transparent: true, opacity: 0.85 }));
+    fr.renderOrder = 1000; cam.add(fr);
+    H.vp = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 0.14), hMat('#ffffff')); cam.add(H.vp); H.vp.userData.h = 'vp';
+    const vpRing = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.36, 40), hMat('#ffffff', 0.7)); vpRing.rotation.x = -Math.PI / 2; vpRing.position.set(vp.position[0], 0.02, vp.position[2]); handles.add(vpRing);
+  } else H.vp = null;
+  handles.traverse((o) => { o.renderOrder = 1000; });
+}
+
+/* ======================================================================
+   Modes, camera, input
+   ====================================================================== */
+let mode = 'visitor';
+const vis = { pos: new THREE.Vector3(0, 1.6, 27), heading: 0, pitch: -2 * DEG };
+const orbit = { target: new THREE.Vector3(3.5, 0.8, -15.5), az: 0.5, el: 0.68, dist: 19 };
+let motion = null, autoWalk = null;
+let appear = 0;
+const keys = new Set();
+
+function setCameraFromVis() { camera.position.copy(vis.pos); camera.rotation.set(vis.pitch, -vis.heading, 0, 'YXZ'); }
+function setCameraFromOrbit() {
+  const { target, az, el, dist } = orbit;
+  camera.position.set(target.x + dist * Math.cos(el) * Math.sin(az), target.y + dist * Math.sin(el), target.z + dist * Math.cos(el) * Math.cos(az));
+  camera.lookAt(target);
+}
+function lookHeadingPitch(from, x, y, z) {
+  const dx = x - from.x, dy = y - from.y, dz = z - from.z;
+  return { heading: Math.atan2(dx, -dz), pitch: Math.atan2(dy, Math.hypot(dx, dz)) };
+}
+function blockCentreWorld() { const b = view.bounds; return localToWorld(0, b.cy, b.z); }
+function viewStop() {
+  const s = view.stop, c = blockCentreWorld();
+  if (s.at) return { x: s.at[0], z: s.at[1], look: [c.x, c.y + (s.lookY || 0), c.z] };
+  const f = headingVec(record.pose.headingDeg), r = new THREE.Vector3(-f.z, 0, f.x);
+  const base = new THREE.Vector3(record.pose.position[0], 0, record.pose.position[2]);
+  const p = base.addScaledVector(f, s.dist).addScaledVector(r, s.side || 0);
+  return { x: p.x, z: p.z, look: [c.x, c.y + (s.lookY || 0), c.z] };
+}
+function angDiff(a, b) { let d = b - a; while (d > Math.PI) d -= TAU; while (d < -Math.PI) d += TAU; return d; }
+function startMotion(x, z, look, dur, resolve) {
+  const from = vis.pos.clone(), to = new THREE.Vector3(x, 1.6, z);
+  const h0 = vis.heading, p0 = vis.pitch;
+  let h1 = h0, p1 = p0;
+  if (look) { const hp = lookHeadingPitch(to, ...look); h1 = h0 + angDiff(h0, hp.heading); p1 = hp.pitch; }
+  if (motion && motion.resolve) motion.resolve();
+  motion = { from, to, h0, h1, p0, p1, t: 0, dur: Math.max(0.05, dur), resolve };
+}
+function stepMotion(dt) {
+  if (!motion) return;
+  motion.t += dt; const k = smooth(0, 1, motion.t / motion.dur);
+  vis.pos.lerpVectors(motion.from, motion.to, k); vis.heading = lerp(motion.h0, motion.h1, k); vis.pitch = lerp(motion.p0, motion.p1, k);
+  if (motion.t >= motion.dur) { const r = motion.resolve; motion = null; if (r) r(); }
+}
+function glideToView(resolve) {
+  const s = viewStop(), d = Math.hypot(s.x - vis.pos.x, s.z - vis.pos.z);
+  startMotion(s.x, s.z, s.look, clamp(d / 6, 0.5, 1.6), resolve);
+}
+
+function setMode(m) {
+  if (!['visitor', 'creator', 'editor'].includes(m)) throw new Error(`unknown mode "${m}"`);
+  const prev = mode; mode = m; stage.dataset.mode = m;
+  // back to the visitor from making: the clip starts over, so the creator's start trigger and sound can be tried
+  if (m === 'visitor' && prev !== 'visitor') {
+    player.reset(); lookDwell = 0;
+    // "when looked at": the making view aims straight at the video and would fire the trigger at once, so the
+    // visitor is turned 60 degrees away from it; the start is seen when they turn back
+    if (record.start && record.start.trigger === 'look' && currentView !== 'stand-here' && view) {
+      const c = blockCentreWorld(); vis.heading = lookHeadingPitch(vis.pos, c.x, c.y, c.z).heading + 60 * DEG;
+    }
+  }
+  $('#visitor').classList.toggle('hidden', m !== 'visitor');
+  $('#viewbar').classList.toggle('hidden', m !== 'visitor');
+  $('#creator').classList.toggle('hidden', m !== 'creator');
+  $('#editor').classList.toggle('hidden', m !== 'editor');
+  document.querySelectorAll('#modeSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
+  brackets.visible = m !== 'visitor'; handles.visible = m === 'editor';
+  if (m !== 'visitor') { openOverlay(false); autoWalk = null; }
+  if (m === 'creator') {
+    motion = null; vis.pos.set(3.0, 1.6, -13.4); const c = blockCentreWorld(); const hp = lookHeadingPitch(vis.pos, c.x, c.y, c.z); vis.heading = hp.heading; vis.pitch = hp.pitch;
+    if (!player.started || player.paused) player.play();
+    renderCreatorSheet();
+  }
+  if (m === 'editor') { motion = null; const P = record.pose.position; orbit.target.set(P[0], 0.9, P[2] + 1.6); renderEditor(); if (!player.started) player.play(); }
+  if (m === 'visitor') { /* keep position */ }
+  writeHash(); renderFieldsPanel(); onResize();
+}
+function setView(v) {
+  if (!VIEW_DEFS[v]) throw new Error(`unknown view "${v}"`);
+  currentView = v; rebuildView();
+  document.querySelectorAll('#viewbar button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === v)));
+  if (mode === 'creator') renderCreatorSheet();
+  if (mode === 'editor') renderEditor();
+  if (v !== 'porthole') openOverlay(false);
+  writeHash(); renderFieldsPanel();
+}
+function writeHash() { const h = `#mode=${mode}&view=${currentView}`; if (location.hash !== h) history.replaceState(null, '', h); }
+function readHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  return { mode: p.get('mode'), view: p.get('view') };
+}
+
+// pointer input
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let ptr = null;
+function pick(ev, objs) {
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  return ray.intersectObjects(objs, true)[0] || null;
+}
+function pickPlane(ev, plane) {
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const out = new THREE.Vector3(); return ray.ray.intersectPlane(plane, out) ? out : null;
+}
+canvas.addEventListener('pointerdown', (ev) => {
+  canvas.focus({ preventScroll: true });
+  ptr = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, lx: ev.clientX, ly: ev.clientY, t: performance.now(), moved: 0, kind: 'look' };
+  canvas.setPointerCapture(ev.pointerId);
+  if (mode === 'editor') {
+    const hit = pick(ev, handles.children);
+    if (hit && hit.object.userData.h) { beginHandleDrag(hit.object.userData.h, ev); ptr.kind = 'handle'; return; }
+    ptr.kind = ev.button === 2 || ev.shiftKey ? 'pan' : 'orbit';
+    return;
+  }
+  if (appear > 0.5 && view) {
+    const hit = pick(ev, view.tappables);
+    if (hit && hit.object.userData.dragTest && hit.object.userData.dragTest(hit.uv)) { ptr.kind = 'drag'; ptr.obj = hit.object; hit.object.userData.drag(hit.uv); }
+  }
+});
+canvas.addEventListener('pointermove', (ev) => {
+  if (!ptr || ev.pointerId !== ptr.id) return;
+  const dx = ev.clientX - ptr.lx, dy = ev.clientY - ptr.ly; ptr.lx = ev.clientX; ptr.ly = ev.clientY;
+  ptr.moved += Math.abs(dx) + Math.abs(dy);
+  if (ptr.kind === 'drag') { const hit = pick(ev, [ptr.obj]); if (hit) ptr.obj.userData.drag(hit.uv); return; }
+  if (ptr.kind === 'handle') { moveHandleDrag(ev); return; }
+  if (ptr.kind === 'orbit') { orbit.az -= dx * 0.006; orbit.el = clamp(orbit.el + dy * 0.005, 0.12, 1.45); return; }
+  if (ptr.kind === 'pan') { const k = orbit.dist * 0.0016; const r = new THREE.Vector3(Math.cos(orbit.az), 0, -Math.sin(orbit.az)), f = new THREE.Vector3(-Math.sin(orbit.az), 0, -Math.cos(orbit.az)); orbit.target.addScaledVector(r, -dx * k).addScaledVector(f, dy * k); return; }
+  if (ptr.kind === 'look' && ptr.moved > 4) { motion = null; autoWalk = null; vis.heading -= dx * 0.0042; vis.pitch = clamp(vis.pitch + dy * 0.0036, -1.2, 1.2); }
+});
+function endPtr(ev) {
+  if (!ptr || ev.pointerId !== ptr.id) return;
+  const tap = ptr.moved < 7 && performance.now() - ptr.t < 600;
+  if (ptr.kind === 'handle') endHandleDrag();
+  else if (tap && mode !== 'editor' && appear > 0.5 && view) {
+    const hit = pick(ev, view.tappables);
+    if (hit && hit.object.userData.tap) hit.object.userData.tap(hit.uv);
+  }
+  ptr = null;
+}
+canvas.addEventListener('pointerup', endPtr);
+canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('wheel', (ev) => { if (mode === 'editor') { ev.preventDefault(); orbit.dist = clamp(orbit.dist * Math.exp(ev.deltaY * 0.0012), 4, 90); } }, { passive: false });
+window.addEventListener('keydown', (e) => { if (e.target.closest && e.target.closest('input,textarea,select')) return; keys.add(e.key.toLowerCase()); if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase())) { autoWalk = null; motion = null; } });
+window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+window.addEventListener('blur', () => keys.clear());
+let walkHeld = false;
+$('#walkBtn').addEventListener('pointerdown', (e) => { e.preventDefault(); walkHeld = true; autoWalk = null; motion = null; });
+for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) $('#walkBtn').addEventListener(ev, () => { walkHeld = false; });
+
+// editor handle drags
+let drag = null;
+function beginHandleDrag(kind, ev) {
+  const [px, py, pz] = record.pose.position;
+  if (kind === 'move' || kind === 'turn' || kind === 'vp') {
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = pickPlane(ev, plane);
+    const base = kind === 'vp' ? record.viewpoint.position : record.pose.position;
+    drag = { kind, plane, off: hit ? [base[0] - hit.x, base[2] - hit.z] : [0, 0] };
+  } else if (kind === 'height') {
+    const n = new THREE.Vector3().subVectors(camera.position, new THREE.Vector3(px, py, pz)); n.y = 0; n.normalize();
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, new THREE.Vector3(px, py, pz)); const hit = pickPlane(ev, plane);
+    drag = { kind, plane, off: hit ? py - hit.y : 0 };
+  } else if (kind === 'width') {
+    const n = headingVec(record.pose.headingDeg); const c = blockCentreWorld();
+    drag = { kind, plane: new THREE.Plane().setFromNormalAndCoplanarPoint(n, c) };
+  }
+}
+function moveHandleDrag(ev) {
+  if (!drag) return;
+  const hit = pickPlane(ev, drag.plane); if (!hit) return;
+  const P = record.pose.position, r2 = (v) => Math.round(v * 100) / 100;
+  if (drag.kind === 'move') { P[0] = r2(clamp(hit.x + drag.off[0], -40, 80)); P[2] = r2(clamp(hit.z + drag.off[1], -40, 40)); }
+  if (drag.kind === 'turn') { let h = Math.atan2(hit.x - P[0], -(hit.z - P[2])) / DEG; h = (Math.round(h) + 360) % 360; record.pose.headingDeg = h; }
+  if (drag.kind === 'height') { P[1] = r2(clamp(hit.y + drag.off, 0, 12)); }
+  if (drag.kind === 'width') { const l = blockRoot.worldToLocal(hit.clone()); record.widthM = r2(clamp(Math.abs(l.x) * 2 - 0.2, 0.3, 6)); }
+  if (drag.kind === 'vp') { const V = record.viewpoint.position; V[0] = r2(hit.x + drag.off[0]); V[2] = r2(hit.z + drag.off[1]); }
+  rebuildView(); syncInspector();
+}
+function endHandleDrag() { drag = null; }
+
+/* ======================================================================
+   Visitor HUD, overlay, sound and captions toggles
+   ====================================================================== */
+const svgI = {
+  play: '<svg width="18" height="18" viewBox="0 0 18 18"><path d="M5 3.2 15 9 5 14.8z" fill="currentColor"/></svg>',
+  pause: '<svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor"><rect x="4" y="3" width="3.6" height="12" rx="1"/><rect x="10.4" y="3" width="3.6" height="12" rx="1"/></svg>',
+  muted: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7h2.6L9 3.8v10.4L5.1 11H2.5z" fill="currentColor"/><path d="M12 7l4 4M16 7l-4 4"/></svg>',
+  sound: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7h2.6L9 3.8v10.4L5.1 11H2.5z" fill="currentColor"/><path d="M12 6.5a3.6 3.6 0 0 1 0 5M14.2 4.5a6.4 6.4 0 0 1 0 9"/></svg>',
+};
+function setSound(on) {
+  if (!sound.setOn(on)) return;
+  refreshButtons();
+  // a visitor's own choice is kept for every video; making in creator or editor mode does not touch it
+  const kept = mode === 'visitor' && writeSoundPref(on ? 'on' : 'off');
+  toast((on ? 'Sound on' : 'Sound off') + (kept ? ' for every video' : ''));
+}
+function setCC(on) { player.cc = on; refreshButtons(); }
+function refreshButtons() {
+  $('#hudSound').innerHTML = (sound.on ? svgI.sound : svgI.muted) + `<span>${sound.on ? 'Sound on' : 'Tap for sound'}</span>`;
+  $('#hudSound').setAttribute('aria-pressed', String(sound.on));
+  $('#hudCC').setAttribute('aria-pressed', String(player.cc));
+  $('#ovlSound').innerHTML = sound.on ? svgI.sound : svgI.muted;
+  $('#ovlCC').style.background = player.cc ? 'var(--ink)' : ''; $('#ovlCC').style.color = player.cc ? '#15171b' : '';
+  $('#ovlPlay').innerHTML = player.paused ? svgI.play : svgI.pause;
+}
+$('#hudSound').addEventListener('click', () => setSound(!sound.on));
+$('#hudCC').addEventListener('click', () => setCC(!player.cc));
+$('#ovlSound').addEventListener('click', () => setSound(!sound.on));
+$('#ovlCC').addEventListener('click', () => setCC(!player.cc));
+$('#ovlPlay').addEventListener('click', () => { player.toggle(); refreshButtons(); });
+$('#ovlClose').addEventListener('click', () => openOverlay(false));
+$('#ovlScrub').addEventListener('input', (e) => { player.seek(e.target.value / 1000 * DUR); });
+
+let overlayOpen = false;
+function openOverlay(on) {
+  overlayOpen = on; $('#ovl').classList.toggle('on', on); $('#ovl').setAttribute('aria-hidden', String(!on));
+  if (on) { if (!player.started || player.paused) player.play(); drawOverlayFrame(); refreshButtons(); }
+}
+const ovlCtx = $('#ovlCanvas').getContext('2d');
+function drawOverlayFrame() { ovlCtx.drawImage(clipCanvas, 0, 0, CW, CH, 0, 0, CW, CH); }
+
+let toastTimer = 0;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 1500); }
+
+function buildViewbar() {
+  $('#viewbar').innerHTML = VIEW_ORDER.map((v) => `<button data-view="${v}" aria-pressed="${v === currentView}" title="${VIEW_DEFS[v].required ? 'Required view' : 'Own idea'}">${VIEW_DEFS[v].label}${VIEW_DEFS[v].required ? '' : '<span class="own"></span>'}</button>`).join('');
+  $('#viewbar').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { setView(b.dataset.view); if (mode === 'visitor' && inside()) glideToView(); }));
+}
+function inside() { return Math.hypot(vis.pos.x, vis.pos.z) < 25; }
+
+/* ---------- fields panel ---------- */
+function renderFieldsPanel() {
+  const d = VIEW_DEFS[currentView];
+  $('#fieldsPanel').innerHTML = `<h2>${d.label} <span style="font-weight:500;color:var(--muted);font-size:12px">${d.required ? 'required view' : 'own idea'}</span></h2>
+  <p style="margin:0 0 10px;color:var(--muted)">Fields of the video model and how this view uses them.</p>
+  <dl class="fu">${FIELDS.map((f) => d.uses[f] ? `<dt>${f}</dt><dd>${d.uses[f]}</dd>` : `<dt style="opacity:.5">${f}</dt><dd class="no">${(d.ignores && d.ignores[f]) || 'not used'}</dd>`).join('')}</dl>`;
+}
+$('#btnFields').addEventListener('click', (e) => { const on = $('#fieldsPanel').classList.toggle('hidden') === false; e.currentTarget.setAttribute('aria-pressed', String(on)); if (on) { $('#notesPanel').classList.add('hidden'); $('#btnNotes').setAttribute('aria-pressed', 'false'); } });
+$('#btnNotes').addEventListener('click', (e) => { const on = $('#notesPanel').classList.toggle('hidden') === false; e.currentTarget.setAttribute('aria-pressed', String(on)); if (on) { $('#fieldsPanel').classList.add('hidden'); $('#btnFields').setAttribute('aria-pressed', 'false'); } });
+$('#notesPanel').appendChild($('#notesTpl').content.cloneNode(true));
+$('#btnPhone').addEventListener('click', (e) => { const on = document.body.classList.toggle('phone'); e.currentTarget.setAttribute('aria-pressed', String(on)); onResize(); });
+document.querySelectorAll('#modeSeg button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+
+/* ======================================================================
+   Creator mode (phone in AR)
+   ====================================================================== */
+let crTab = 'view';
+document.querySelectorAll('#crBar button').forEach((b) => b.addEventListener('click', () => { crTab = b.dataset.tab; renderCreatorSheet(); }));
+function renderCreatorSheet() {
+  document.querySelectorAll('#crBar button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === crTab)));
+  $('#crTopText').textContent = `${VIEW_DEFS[currentView].label} · ${record.widthM.toFixed(2)} m · ${Math.round(camera.position.distanceTo(blockRoot.position) || 0)} m away`;
+  const s = $('#crSheet');
+  if (crTab === 'view') {
+    s.innerHTML = `<h3>View</h3><div class="chips">${VIEW_ORDER.map((v) => `<button class="chip" data-v="${v}" aria-pressed="${v === currentView}">${VIEW_DEFS[v].label}</button>`).join('')}</div><div class="crHint">${hintFor(currentView)}</div>`;
+    s.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.v)));
+  } else if (crTab === 'size') {
+    s.innerHTML = `<h3>Size and turn</h3>
+      <div class="crRow"><span class="lbl">Width</span><button class="round ghost" data-a="w-">&minus;</button><span class="val">${record.widthM.toFixed(2)} m</span><button class="round ghost" data-a="w+">+</button></div>
+      <div class="crRow"><span class="lbl">Turn</span><button class="round ghost" data-a="t-">&#8634;</button><span class="val">${Math.round(record.pose.headingDeg)}&deg;</span><button class="round ghost" data-a="t+">&#8635;</button></div>
+      <div class="crHint">${currentView === 'cutout' ? 'Width sets the size of the person: 1.60 m makes her life size.' : 'Steps of 10 cm and 15 degrees. Fine-tune on the desktop.'}</div>`;
+    s.querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', () => {
+      const a = b.dataset.a;
+      if (a === 'w-') record.widthM = Math.max(0.3, Math.round((record.widthM - 0.1) * 100) / 100);
+      if (a === 'w+') record.widthM = Math.min(6, Math.round((record.widthM + 0.1) * 100) / 100);
+      if (a === 't-') record.pose.headingDeg = (record.pose.headingDeg + 345) % 360;
+      if (a === 't+') record.pose.headingDeg = (record.pose.headingDeg + 15) % 360;
+      rebuildView(); renderCreatorSheet();
+    }));
+  } else if (crTab === 'place') {
+    s.innerHTML = `<h3>Place</h3><div class="crRow"><span class="lbl" style="font-weight:500;font-size:13.5px;color:var(--muted)">Aim the circle at a wall or the pavement.${currentView === 'window' ? ' Snaps to an opening within 1.5 m.' : ''}</span><button class="bigbtn primary" id="crPlace">Place here</button></div>`;
+    $('#crPlace').addEventListener('click', placeAtReticle);
+  } else {
+    s.innerHTML = `<h3>More</h3>
+      <div class="crRow" style="align-items:flex-start"><span class="lbl" style="flex:none;width:64px;padding-top:9px">Starts</span><div class="chips">${Object.keys(START_LABEL).map((k) => `<button class="chip" data-st="${k}" aria-pressed="${record.start.trigger === k}">${k === 'near' ? `Within ${record.start.withinM} m` : START_LABEL[k]}</button>`).join('')}</div></div>
+      ${record.start.trigger === 'near' ? `<div class="crRow"><span class="lbl">Distance</span><button class="round ghost" data-n="-">&minus;</button><span class="val">${record.start.withinM} m</span><button class="round ghost" data-n="+">+</button></div>` : ''}
+      <div class="crRow"><span class="lbl">Sound at start</span><button class="switch" role="switch" id="crSound" aria-checked="${record.sound === 'on'}"></button></div>
+      <div class="crHint">A visitor's own sound choice wins. Phones that have not been tapped yet start muted, with captions.${currentView === 'stand-here' ? ' Stand here starts by itself on the viewpoint.' : ''}</div>
+      <div class="crRow"><span class="lbl">Loop</span><button class="switch" role="switch" id="crLoop" aria-checked="${record.loop}"></button></div>
+      <div class="crRow"><span class="lbl">Poster</span><button class="bigbtn" id="crPoster">Use this frame</button></div>
+      <div class="crRow"><span class="lbl">Viewpoint</span><button class="bigbtn" id="crVp">Set where I stand</button></div>
+      <div class="crHint">Captions: ${cues.length} lines from the video file. Edit them in the desktop editor.</div>`;
+    s.querySelectorAll('[data-st]').forEach((b) => b.addEventListener('click', () => { setStart(b.dataset.st); renderCreatorSheet(); }));
+    s.querySelectorAll('[data-n]').forEach((b) => b.addEventListener('click', () => { setStart('near', record.start.withinM + (b.dataset.n === '+' ? 1 : -1)); renderCreatorSheet(); }));
+    $('#crSound').addEventListener('click', () => { record.sound = record.sound === 'on' ? 'off' : 'on'; renderCreatorSheet(); });
+    $('#crLoop').addEventListener('click', () => { record.loop = !record.loop; renderCreatorSheet(); });
+    $('#crPoster').addEventListener('click', () => { posterAt = player.t; renderPoster(posterAt); toast(`Poster set to ${player.t.toFixed(1)} s`); });
+    $('#crVp').addEventListener('click', () => {
+      record.viewpoint = { position: [r1(camera.position.x), 1.6, r1(camera.position.z)], headingDeg: Math.round(((vis.heading / DEG) % 360 + 360) % 360), pitchDeg: Math.round(vis.pitch / DEG), hfovDeg: 40 };
+      rebuildView(); toast('Viewpoint set where you stand');
+    });
+  }
+}
+const r1 = (v) => Math.round(v * 10) / 10;
+function setStart(trigger, withinM) {
+  if (!START_LABEL[trigger]) throw new Error(`unknown start trigger "${trigger}"`);
+  const n = Number(withinM ?? record.start.withinM);
+  record.start = { trigger, withinM: Number.isFinite(n) ? clamp(Math.round(n), 1, 20) : 6 };
+}
+function hintFor(v) {
+  return { screen: 'A screen standing in the air, with its own play and scrub bar.', window: 'Plays inside a real window. Place it exactly on the opening.', cutout: 'The stall stands on the pavement. Needs a stacked-alpha video.', porthole: 'A small medallion; visitors tap it to watch full screen.', 'stand-here': 'Footprints mark the viewpoint; the picture develops there.' }[v];
+}
+function placeAtReticle() {
+  ray.setFromCamera(new THREE.Vector2(0, 0), camera);
+  const wall = new THREE.Plane(new THREE.Vector3(0, 0, 1), 20), gnd = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const hw = new THREE.Vector3(), hg = new THREE.Vector3();
+  const okW = ray.ray.intersectPlane(wall, hw) && Math.abs(hw.x) < 14 && hw.y > 0 && hw.y < 6;
+  const okG = ray.ray.intersectPlane(gnd, hg);
+  const dW = okW ? hw.distanceTo(camera.position) : Infinity, dG = okG ? hg.distanceTo(camera.position) : Infinity;
+  if (dW === Infinity && dG === Infinity) { toast('Nothing to place on - aim lower'); return; }
+  const P = record.pose.position;
+  if (dW <= dG) {
+    let msg = 'Placed on the wall';
+    if (currentView === 'window') {
+      const win = [[-5, 2], [5, 2]].find(([x, y]) => Math.hypot(hw.x - x, hw.y - y) < 1.5);
+      if (win) { hw.x = win[0]; hw.y = win[1]; msg = 'Snapped to the window opening'; }
+    }
+    P[0] = r1(hw.x); P[1] = r1(hw.y); P[2] = -20; record.pose.headingDeg = 180; toast(msg);
+  } else {
+    P[0] = r1(hg.x); P[1] = currentView === 'cutout' ? 1.0 : 1.5; P[2] = r1(hg.z);
+    const h = Math.atan2(camera.position.x - hg.x, -(camera.position.z - hg.z)) / DEG; record.pose.headingDeg = (Math.round(h / 5) * 5 + 360) % 360;
+    toast('Placed on the pavement, facing you');
+  }
+  rebuildView(); renderCreatorSheet();
+}
+
+/* ======================================================================
+   Editor mode (desktop)
+   ====================================================================== */
+const edThumb = mkCanvas(68, 68);
+function renderEditor() {
+  const L = $('#edLeft');
+  L.innerHTML = `<div class="edH">Station 1 · Old market square</div>
+    <div class="blk sel"><span class="ic" id="edListIc"></span><span>Video<small>${VIEW_DEFS[currentView].label} · ${fmt(DUR)}</small></span></div>
+    <div class="blk dim"><span class="ic"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6"><path d="M3 4h10M8 4v9"/></svg></span><span>Short text<small>stand-in, other family</small></span></div>
+    <div class="blk dim"><span class="ic"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/><path d="M3 11l3.5-3 2.5 2 2-1.5 2.5 2.5"/></svg></span><span>Picture<small>stand-in, other family</small></span></div>
+    <div class="edH" style="margin-top:10px">Station 2 · East path</div>
+    <div class="blk dim"><span class="ic"></span><span>1 stand-in block</span></div>`;
+  $('#edListIc').appendChild(edThumb);
+  const d = VIEW_DEFS[currentView], use = (f) => d.uses[f] ? `<span class="use">${d.uses[f]}</span>` : `<span class="use">not used by ${d.label}</span>`;
+  const un = (f) => d.uses[f] ? '' : ' unused';
+  const P = record.pose.position, V = record.viewpoint;
+  $('#edRight').innerHTML = `
+    <div class="insH"><h2>Video block</h2><span class="tag">${d.required ? 'required view' : 'own idea'}</span></div>
+    <div class="field"><span class="fl">View</span><div class="segs" id="edViews">${VIEW_ORDER.map((v) => `<button data-v="${v}" aria-pressed="${v === currentView}">${VIEW_DEFS[v].label}</button>`).join('')}</div></div>
+    <div class="field${un('video')}"><span class="fl">video ${use('video')}</span>
+      <div class="asset"><canvas id="edPrev" width="128" height="160"></canvas><div class="meta"><b>${record.video.split('/').pop()}</b><br>${fmt(DUR)} · ${FPS} fps · 512 x 1280 stacked<br>about 2 MB (estimate)<div class="vrow" style="margin-top:6px"><button class="small-btn" id="edPlay">Play</button><input type="range" class="plain" id="edScrub" min="0" max="1000"></div></div></div></div>
+    <div class="field${un('poster')}"><span class="fl">poster ${use('poster')}</span>
+      <div class="asset"><canvas id="edPoster" width="128" height="160"></canvas><div class="meta"><b>${record.poster.split('/').pop()}</b><br>frame at <span id="edPosterAt">${posterAt.toFixed(1)}</span> s<div style="margin-top:6px"><button class="small-btn" id="edPosterBtn">Use current frame</button></div></div></div></div>
+    <div class="field${un('captions')}"><span class="fl">captions ${use('captions')}</span><textarea class="vtt" id="edVtt" spellcheck="false"></textarea><div class="status" id="edVttStatus"></div></div>
+    <div class="field${un('alpha')}"><span class="fl">alpha ${use('alpha')}</span><div class="segs" id="edAlpha"><button data-a="none" aria-pressed="${record.alpha === 'none'}">none</button><button data-a="stacked" aria-pressed="${record.alpha === 'stacked'}">stacked</button></div></div>
+    <div class="field${un('loop')}"><span class="fl">loop ${use('loop')}</span><button class="switch" role="switch" id="edLoop" aria-checked="${record.loop}"></button></div>
+    <div class="field${un('start')}"><span class="fl">start ${use('start')}</span><div class="segs" id="edStart">${Object.keys(START_LABEL).map((k) => `<button data-st="${k}" aria-pressed="${record.start.trigger === k}">${START_LABEL[k]}</button>`).join('')}</div>${record.start.trigger === 'near' ? `<div class="vrow" style="margin-top:7px"><span style="font-size:12px;color:var(--muted)">within</span><input class="num" style="width:76px" id="edNear" type="number" step="1" min="1" max="20" value="${record.start.withinM}"><span style="font-size:12px;color:var(--muted)">m of the video</span></div>` : ''}</div>
+    <div class="field${un('sound')}"><span class="fl">sound ${use('sound')}</span><div class="segs" id="edSound"><button data-s="off" aria-pressed="${record.sound !== 'on'}">off</button><button data-s="on" aria-pressed="${record.sound === 'on'}">on</button></div></div>
+    <div class="field${un('widthM')}"><span class="fl">widthM ${use('widthM')}</span><div class="vrow"><input type="range" class="plain" id="edW" min="0.3" max="6" step="0.05" value="${record.widthM}"><input class="num" style="width:76px" id="edWn" type="number" step="0.05" min="0.3" max="6" value="${record.widthM}"></div></div>
+    <div class="field${un('pose')}"><span class="fl">pose ${use('pose')}</span><div class="grid4">${['x', 'y', 'z'].map((k, i) => `<label><span>${k} m</span><input class="num" data-p="${i}" type="number" step="0.1" value="${P[i]}"></label>`).join('')}<label><span>heading</span><input class="num" id="edHd" type="number" step="1" value="${record.pose.headingDeg}"></label></div></div>
+    <div class="field${un('viewpoint')}"><span class="fl">viewpoint ${use('viewpoint')}</span>
+      <div class="vrow" style="margin-bottom:7px"><button class="switch" role="switch" id="edVpOn" aria-checked="${!!V}"></button><span style="font-size:12px;color:var(--muted);flex:1">${V ? 'set' : 'none'}</span>${V ? '<button class="small-btn" id="edVpLook">Look from viewpoint</button>' : ''}</div>
+      ${V ? `<div class="grid4"><label><span>x m</span><input class="num" data-v="x" type="number" step="0.1" value="${V.position[0]}"></label><label><span>z m</span><input class="num" data-v="z" type="number" step="0.1" value="${V.position[2]}"></label><label><span>heading</span><input class="num" data-v="h" type="number" step="1" value="${V.headingDeg}"></label><label><span>hfov</span><input class="num" data-v="f" type="number" step="1" value="${V.hfovDeg}"></label></div>` : ''}</div>`;
+  const R = $('#edRight');
+  $('#edVtt').value = record.captions; vttStatus();
+  R.querySelectorAll('#edViews button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.v)));
+  R.querySelectorAll('#edAlpha button').forEach((b) => b.addEventListener('click', () => { record.alpha = b.dataset.a; rebuildView(); renderEditor(); }));
+  $('#edLoop').addEventListener('click', () => { record.loop = !record.loop; renderEditor(); });
+  R.querySelectorAll('#edStart button').forEach((b) => b.addEventListener('click', () => { setStart(b.dataset.st); renderEditor(); }));
+  const en = $('#edNear'); if (en) en.addEventListener('change', () => { setStart('near', en.value); renderEditor(); });
+  R.querySelectorAll('#edSound button').forEach((b) => b.addEventListener('click', () => { record.sound = b.dataset.s === 'on' ? 'on' : 'off'; renderEditor(); }));
+  $('#edPlay').addEventListener('click', () => { player.toggle(); });
+  $('#edScrub').addEventListener('input', (e) => player.seek(e.target.value / 1000 * DUR));
+  $('#edPosterBtn').addEventListener('click', () => { posterAt = player.t; renderPoster(posterAt); $('#edPosterAt').textContent = posterAt.toFixed(1); });
+  $('#edVtt').addEventListener('input', (e) => { record.captions = e.target.value; const p = parseVTT(record.captions); if (!p.errors.length || p.cues.length) cues = p.cues; vttStatus(); });
+  const setW = (v) => { const n = Number(v); if (!Number.isFinite(n)) return; record.widthM = clamp(Math.round(n * 100) / 100, 0.3, 6); rebuildView(); syncInspector(); };
+  $('#edW').addEventListener('input', (e) => setW(e.target.value)); $('#edWn').addEventListener('change', (e) => setW(e.target.value));
+  R.querySelectorAll('[data-p]').forEach((inp) => inp.addEventListener('change', () => { const n = Number(inp.value); if (Number.isFinite(n)) { record.pose.position[+inp.dataset.p] = clamp(n, -80, 80); rebuildView(); } syncInspector(); }));
+  $('#edHd').addEventListener('change', (e) => { const n = Number(e.target.value); if (Number.isFinite(n)) { record.pose.headingDeg = ((n % 360) + 360) % 360; rebuildView(); } syncInspector(); });
+  $('#edVpOn').addEventListener('click', () => { record.viewpoint = record.viewpoint ? null : { position: [record.pose.position[0], 1.6, record.pose.position[2] + 6.4], headingDeg: (record.pose.headingDeg + 180) % 360, pitchDeg: 3, hfovDeg: 40 }; rebuildView(); renderEditor(); });
+  if (V) {
+    R.querySelectorAll('[data-v]').forEach((inp) => inp.addEventListener('change', () => {
+      const n = Number(inp.value); if (!Number.isFinite(n)) return syncInspector();
+      if (inp.dataset.v === 'x') V.position[0] = n; if (inp.dataset.v === 'z') V.position[2] = n;
+      if (inp.dataset.v === 'h') V.headingDeg = ((n % 360) + 360) % 360; if (inp.dataset.v === 'f') V.hfovDeg = clamp(n, 10, 120);
+      rebuildView();
+    }));
+    $('#edVpLook').addEventListener('click', previewViewpoint);
+  }
+  edThumbsDirty = true;
+}
+function vttStatus() {
+  const p = parseVTT(record.captions), el = $('#edVttStatus'); if (!el) return;
+  el.classList.toggle('err', p.errors.length > 0);
+  el.textContent = p.errors.length ? `${p.errors[0]} (${p.cues.length} cues kept)` : `${p.cues.length} cues · ${p.cues.reduce((s, c) => s + c.text.length, 0)} characters`;
+}
+function syncInspector() {
+  if (mode !== 'editor') return;
+  const R = $('#edRight'), P = record.pose.position;
+  R.querySelectorAll('[data-p]').forEach((inp) => { if (document.activeElement !== inp) inp.value = P[+inp.dataset.p]; });
+  const hd = $('#edHd'); if (hd && document.activeElement !== hd) hd.value = record.pose.headingDeg;
+  const w = $('#edW'), wn = $('#edWn'); if (w && document.activeElement !== w) w.value = record.widthM; if (wn && document.activeElement !== wn) wn.value = record.widthM;
+  const V = record.viewpoint;
+  if (V) R.querySelectorAll('[data-v]').forEach((inp) => { if (document.activeElement === inp) return; const k = inp.dataset.v; inp.value = k === 'x' ? V.position[0] : k === 'z' ? V.position[2] : k === 'h' ? V.headingDeg : V.hfovDeg; });
+}
+function previewViewpoint() {
+  const V = record.viewpoint; if (!V) return;
+  setMode('visitor');
+  const c = blockCentreWorld();
+  startMotion(V.position[0], V.position[2], [c.x, c.y, c.z], 0.8);
+  toast(`Viewpoint preview · field of view ${V.hfovDeg} degrees`);
+}
+function updateEditorThumbs(frameChanged) {
+  if (mode !== 'editor') return;
+  const pv = $('#edPrev'); if (pv && frameChanged) pv.getContext('2d').drawImage(clipCanvas, 0, 0, CW, CH, 0, 0, 128, 160);
+  const sc = $('#edScrub'); if (sc && document.activeElement !== sc) sc.value = Math.round(player.t / DUR * 1000);
+  const pb = $('#edPlay'); if (pb) pb.textContent = player.paused ? 'Play' : 'Pause';
+  if (edThumbsDirty) {
+    edThumbsDirty = false;
+    const ps = $('#edPoster'); if (ps) ps.getContext('2d').drawImage(posterCanvas, 0, 0, 128, 160);
+    edThumb.getContext('2d').drawImage(posterCanvas, 0, 60, 512, 512, 0, 0, 68, 68);
+  }
+}
+
+/* ======================================================================
+   Frame loop
+   ====================================================================== */
+const ft = [];
+let last = performance.now(), ftNext = 0;
+function onResize() {
+  if (document.body.classList.contains('phone')) {
+    const H = Math.min(window.innerHeight - 40, (window.innerWidth - 40) * 19.5 / 9), W = H * 9 / 19.5;
+    stage.style.width = W + 'px'; stage.style.height = H + 'px';
+  } else { stage.style.width = ''; stage.style.height = ''; }
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  if (mode === 'editor') camera.fov = 45;
+  else if (camera.aspect < 1) camera.fov = 2 * Math.atan(Math.tan(21 * DEG) / camera.aspect) / DEG; // ~42 degrees across a portrait phone
+  else camera.fov = 52;
+  // editor: centre the 3D view in the part the panels leave free
+  camera.clearViewOffset();
+  if (mode === 'editor') {
+    const narrow = w <= 760, short = h <= 460 && w >= 600;
+    if (narrow && !short) camera.setViewOffset(w, h, 0, h * 0.21, w, h);
+    else { const l = short ? 192 : 256, rr = short ? 316 : 360; camera.setViewOffset(w, h, w / 2 - (l + (w - rr)) / 2, 0, w, h); }
+    orbit.dist = narrow && !short ? 15 : short ? 17 : 19;
+  }
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', onResize);
+window.addEventListener('hashchange', () => { const h = readHash(); if (h.view && VIEW_DEFS[h.view] && h.view !== currentView) setView(h.view); if (h.mode && h.mode !== mode && ['visitor', 'creator', 'editor'].includes(h.mode)) setMode(h.mode); });
+
+let crTopTimer = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.1, (now - last) / 1000); const interval = now - last; last = now;
+  const w0 = performance.now();
+
+  // movement
+  if (mode === 'visitor' || mode === 'creator') {
+    stepMotion(dt);
+    if (autoWalk && !motion) autoWalk();
+    let fw = 0, sd = 0;
+    if (keys.has('w') || keys.has('arrowup') || walkHeld) fw += 1; if (keys.has('s') || keys.has('arrowdown')) fw -= 1;
+    if (keys.has('d')) sd += 1; if (keys.has('a')) sd -= 1;
+    if (keys.has('arrowleft')) vis.heading -= dt * 1.4; if (keys.has('arrowright')) vis.heading += dt * 1.4;
+    if (fw || sd) { const sp = 2.2 * dt; vis.pos.x += (Math.sin(vis.heading) * fw + Math.cos(vis.heading) * sd) * sp; vis.pos.z += (-Math.cos(vis.heading) * fw + Math.sin(vis.heading) * sd) * sp; }
+    setCameraFromVis();
+  } else setCameraFromOrbit();
+
+  // appearing on entering the circle
+  const isIn = mode !== 'visitor' || inside();
+  appear = lerp(appear, isIn ? 1 : 0, 1 - Math.exp(-dt * 3.2)); if (appear < 0.002) appear = 0;
+  blockRoot.visible = appear > 0.005; if (view && view.extra) view.extra.visible = appear > 0.005;
+  if (isIn && mode === 'visitor' && !player.started && currentView !== 'stand-here' && appear > 0.5 && startTriggered(dt)) { player.seek(0); player.play(); }
+
+  const frameChanged = player.update(dt);
+  let res = { stripCaption: false };
+  if (view) res = view.update(dt, appear) || res;
+  // the first time the clip runs for the visitor (any trigger, a tap, stand-here), decide its sound once
+  if (mode === 'visitor' && player.started && !player.paused && !player.soundDecided) { player.soundDecided = true; decideStartSound(); }
+  if (mode === 'visitor' && !player.started && currentView !== 'stand-here' && !res.guide) {
+    const st = record.start;
+    if (st.trigger === 'tap') res.guide = 'Tap the video to play';
+    else if (st.trigger === 'near') { const c = blockCentreWorld(), d = Math.hypot(camera.position.x - c.x, camera.position.z - c.z); res.guide = `Walk closer to start · ${Math.max(1, Math.round(d - st.withinM))} m`; }
+  }
+  sound.tick();
+
+  // visitor HUD
+  if (mode === 'visitor') {
+    const cue = player.cc && appear > 0.5 ? activeCue(player.t) : null;
+    const showStrip = !!cue && res.stripCaption && (res.captionGate !== false) && !overlayOpen;
+    const cs = $('#capStrip');
+    if (showStrip && cs.textContent !== cue.text) cs.textContent = cue.text;
+    cs.classList.toggle('on', showStrip);
+    $('#hudRow').classList.toggle('hidden', appear < 0.5 || overlayOpen);
+    const g = $('#guideChip'); g.classList.toggle('hidden', !res.guide || appear < 0.5); if (res.guide) $('#guideText').textContent = res.guide;
+    const nc = $('#nearChip'), out = !inside();
+    nc.classList.toggle('hidden', !out);
+    if (out) {
+      const d1 = Math.hypot(vis.pos.x, vis.pos.z) - 25, d2 = Math.hypot(vis.pos.x - 60, vis.pos.z) - 25;
+      const [tx, tz, d] = d1 <= d2 ? [0, 0, d1] : [60, 0, d2];
+      const bearing = Math.atan2(tx - vis.pos.x, -(tz - vis.pos.z)) - vis.heading;
+      $('#nearArrow').style.transform = `rotate(${bearing}rad)`;
+      $('#nearText').textContent = `${d1 <= d2 ? 'Old market square' : 'East path'} · ${Math.max(1, Math.round(d))} m`;
+    }
+  }
+  if (overlayOpen) {
+    if (frameChanged) drawOverlayFrame();
+    const cue = player.cc ? activeCue(player.t) : null, oc = $('#ovlCap');
+    const txt = cue ? cue.text : ''; if (oc.textContent !== txt) oc.textContent = txt;
+    const sc = $('#ovlScrub'); if (document.activeElement !== sc) { sc.value = Math.round(player.t / DUR * 1000); }
+    sc.style.setProperty('--p', (player.t / DUR * 100).toFixed(1) + '%');
+    $('#ovlTime').textContent = `${fmt(player.t)} / ${fmt(DUR)}`;
+    const want = player.paused ? 'p' : 'q'; if ($('#ovlPlay').dataset.s !== want) { $('#ovlPlay').dataset.s = want; $('#ovlPlay').innerHTML = player.paused ? svgI.play : svgI.pause; }
+  }
+  if (mode === 'creator' && now > crTopTimer) { crTopTimer = now + 400; $('#crTopText').textContent = `${VIEW_DEFS[currentView].label} · ${record.widthM.toFixed(2)} m · ${Math.round(camera.position.distanceTo(blockCentreWorld()))} m away`; }
+  updateEditorThumbs(frameChanged);
+
+  renderer.clear();
+  renderer.render(world, camera);
+  renderer.clearDepth();          // AR: content draws over the camera image
+  renderer.render(content, camera);
+
+  const work = performance.now() - w0;
+  ft.push({ t: now, i: interval, w: work });
+  while (ft.length && ft[0].t < now - 2000) ft.shift();
+  if (now > ftNext && ft.length > 2) {
+    ftNext = now + 250;
+    const iv = ft.slice(1).map((f) => f.i), wk = ft.map((f) => f.w);
+    const mean = iv.reduce((a, b) => a + b, 0) / iv.length, max = Math.max(...iv);
+    const wm = wk.reduce((a, b) => a + b, 0) / wk.length, wx = Math.max(...wk);
+    $('#ft').textContent = `frame ${mean.toFixed(1)} / ${max.toFixed(1)} ms\nwork ${wm.toFixed(1)} / ${wx.toFixed(1)} ms`;
+    $('#ft').style.whiteSpace = 'pre';
+    window.__ft = { meanMs: mean, maxMs: max, workMeanMs: wm, workMaxMs: wx, frames: iv.length };
+  }
+}
+
+/* ======================================================================
+   Start, and the script hook
+   ====================================================================== */
+renderPoster(posterAt);
+renderClipFrame(0);
+buildViewbar();
+{
+  const h = readHash();
+  if (h.view && VIEW_DEFS[h.view]) currentView = h.view;
+  rebuildView();
+  setMode(h.mode && ['visitor', 'creator', 'editor'].includes(h.mode) ? h.mode : 'visitor');
+  document.querySelectorAll('#viewbar button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === currentView)));
+}
+refreshButtons();
+setCameraFromVis();
+// automatic walk in from the south path: up the path, into the circle, to the view's spot
+if (mode === 'visitor') {
+  let stage1 = false;
+  autoWalk = () => {
+    if (!stage1) { stage1 = true; const s = viewStop(); startMotion(0, 20, s.look, 2.4); return; }
+    autoWalk = null; glideToView();
+  };
+}
+onResize();
+requestAnimationFrame((t) => { last = t; frame(t); });
+
+const drawn = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(() => res())));
+function exportRecord() {
+  return {
+    type: 'video', id: 'blk-video-market-day', view: currentView,
+    video: record.video, poster: record.poster, captions: record.captions, alpha: record.alpha, loop: record.loop, widthM: record.widthM,
+    start: { trigger: record.start.trigger, withinM: record.start.withinM }, sound: record.sound,
+    pose: { position: [...record.pose.position], headingDeg: record.pose.headingDeg },
+    viewpoint: record.viewpoint ? { position: [...record.viewpoint.position], headingDeg: record.viewpoint.headingDeg, pitchDeg: record.viewpoint.pitchDeg, hfovDeg: record.viewpoint.hfovDeg } : null,
+  };
+}
+window.__stationBlock = {
+  family: FAMILY,
+  views: VIEW_ORDER.slice(),
+  modes: ['visitor', 'creator', 'editor'],
+  async setMode(name) { setMode(name); await drawn(); },
+  async setView(name) {
+    setView(name);
+    if (mode === 'visitor' && inside()) { autoWalk = null; await new Promise((r) => glideToView(r)); }
+    await drawn();
+  },
+  async walkTo(x, z) {
+    if (!Number.isFinite(x) || !Number.isFinite(z)) throw new Error('walkTo needs two finite numbers');
+    if (mode !== 'visitor') setMode('visitor');
+    autoWalk = null;
+    const d = Math.hypot(x - vis.pos.x, z - vis.pos.z);
+    await new Promise((r) => startMotion(x, z, null, clamp(d / 8, 0.05, 1.5), r));
+    await drawn();
+  },
+  async lookAt(x, y, z) {
+    if (![x, y, z].every(Number.isFinite)) throw new Error('lookAt needs three finite numbers');
+    autoWalk = null; motion = null;
+    const hp = lookHeadingPitch(vis.pos, x, y, z); vis.heading = hp.heading; vis.pitch = hp.pitch;
+    await drawn();
+  },
+  async describe() {
+    return {
+      family: FAMILY, fields: FIELDS.slice(),
+      views: VIEW_ORDER.map((v) => ({ name: v, required: VIEW_DEFS[v].required, usesFields: FIELDS.filter((f) => VIEW_DEFS[v].uses[f]) })),
+    };
+  },
+  async exportModel() { return JSON.parse(JSON.stringify(exportRecord())); },
+  /* Round-2 hooks: the sound and start state, the creator's start trigger and sound default, and starting the
+     clip over (as switching back to the visitor does). */
+  extras: {
+    soundState() { return { on: sound.on, muted: player.muted, cc: player.cc, started: player.started, paused: player.paused, decided: player.soundDecided, reason: soundReason, pref: readSoundPref(), activation: hasActivation(), start: { ...record.start }, soundDefault: record.sound, guide: $('#guideChip').classList.contains('hidden') ? null : $('#guideText').textContent, hudSound: $('#hudSound').textContent }; },
+    async setStart(trigger, withinM) { setStart(trigger, withinM); if (mode === 'creator') renderCreatorSheet(); if (mode === 'editor') renderEditor(); await drawn(); },
+    async setSoundDefault(v) { record.sound = v === 'on' ? 'on' : 'off'; await drawn(); },
+    async resetPlayback() { player.reset(); lookDwell = 0; soundReason = null; sound.setOn(false); refreshButtons(); await drawn(); },
+    async clearSoundPref() { writeSoundPref(null); },
+    async openCreatorMore() { crTab = 'more'; renderCreatorSheet(); await drawn(); },
+  },
+};
+</script>
+</body>
+</html>

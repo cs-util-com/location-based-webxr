@@ -14,7 +14,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import type {
   TourObject,
-  TourPhoto,
+  TourPicture,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
 import {
@@ -27,19 +27,40 @@ import type { CreatorAlignmentPicks } from "./creator-alignment-picks.js";
 import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorPreviews } from "./creator-previews.js";
 import { usablePhotoFrame } from "./photo-frame.js";
+import {
+  PIN_TEXT_TOO_LONG,
+  pinTextTooLong,
+  wirePinTextCounter,
+} from "./pin-text.js";
 import type { TourViewerSeams } from "./seams.js";
 import { objectPlaced } from "./tour-authoring-actions.js";
+import { placeRefusal } from "./tour-document.js";
 import type {
   ArController,
   TourViewerSession,
   TourViewerStore,
 } from "./tour-viewer-session.js";
 import { odomNueFromWebXr } from "./visit-anchoring.js";
+import { inputText } from "./input-text.js";
+
+/** What the creator is told when the document refuses a placement, by
+ *  its reason (`placeRefusal`). */
+const PLACE_REFUSED: Readonly<
+  Record<NonNullable<ReturnType<typeof placeRefusal>>, string>
+> = {
+  deleted: "That item was deleted from this tour - nothing was placed.",
+  exists: "That item is in the tour already - nothing was placed.",
+  "too-far": "That spot is too far from its station - nothing was placed.",
+};
 
 /** The placement controls, inside `#setup-controls`. */
 export interface CreatorPlacementDom {
   pinButton: HTMLButtonElement;
   pinLabel: HTMLInputElement;
+  /** The pin text's count beside the field ("12 / 40", `pin-text.ts`),
+   *  shown and hidden with it. Absent in the node tests that do not need
+   *  it. */
+  pinLabelCount?: HTMLElement;
   pinSave: HTMLButtonElement;
   pinCancel: HTMLButtonElement;
   photoButton: HTMLButtonElement;
@@ -74,6 +95,9 @@ export function wireCreatorPlacement(deps: {
   draft: Pick<CreatorDraft, "warnNoBackup">;
   previews: Pick<CreatorPreviews, "sync">;
   alignmentInfo: () => MintAlignmentInfo;
+  /** A code the tour stores voted in this visit: its votes line the
+   *  session up where no fix has come. Absent: never. */
+  codeVoted?: () => boolean;
   /** The printed size a code text is solved at (M4c-3). */
   sizeOf: (text: string | null) => number;
   /** The settle record of a visit that already settled, if any. */
@@ -82,7 +106,7 @@ export function wireCreatorPlacement(deps: {
   ) => { readonly alignment: number[]; readonly zero: LatLong } | undefined;
   /** A photo minted through a settled visit's record: log it as that
    *  settle's late arrival. */
-  lateArrival: (visit: number, photo: TourPhoto) => void;
+  lateArrival: (visit: number, photo: TourPicture) => void;
   /** Where object `id` went among the stations, for its note ("it starts
    *  Station 3", "in Station 2"; `creator-stations.ts`), or null. Absent:
    *  the note names no station. */
@@ -93,22 +117,29 @@ export function wireCreatorPlacement(deps: {
   render: () => void;
 }): CreatorPlacement {
   const { ctx, arStore, arController, seams, dom } = deps;
+  const pinCount = dom.pinLabelCount;
+  const counter =
+    pinCount === undefined ? null : wirePinTextCounter(dom.pinLabel, pinCount);
   /** A photo is being encoded: its button stays disabled until the encode
    *  lands or fails, through every render meanwhile (one photo in flight). */
   let capturing = false;
   /**
-   * Placement needs this session's GPS alignment (its fixes solved in - the
-   * matrix alone is the identity from the first fix, M4 review #2), a live
-   * session, and no rebuild in flight. Re-checked at every tap, not only at
-   * render. Never a code: placing is GPS and tracking only, as in a tour
-   * builder with no codes (field test 2, F5; a print size adopted mid-walk
+   * Placement needs this session's alignment, a live session, and no
+   * rebuild in flight. Re-checked at every tap, not only at render. The
+   * alignment is lined up by this session's device fixes (solved in - the
+   * matrix alone is the identity from the first fix, M4 review #2), or by
+   * the votes of a code the tour stores, seen in this visit: indoors no fix
+   * may ever come, and the code is where the tour already is. The code in
+   * hand is never asked for: a tour builder with no codes places by GPS
+   * and tracking alone (field test 2, F5; a print size adopted mid-walk
    * used to grey the buttons for the rest of the loop).
    */
   function placementAllowed(): boolean {
     const alignment = deps.alignmentInfo();
     return (
       alignment.hasMatrix &&
-      alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES &&
+      (alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES ||
+        deps.codeVoted?.() === true) &&
       arController.getState().status === "running" &&
       !ctx.finishing
     );
@@ -138,6 +169,7 @@ export function wireCreatorPlacement(deps: {
 
   function hideLabelInput(): void {
     dom.pinLabel.hidden = true;
+    if (pinCount !== undefined) pinCount.hidden = true;
     dom.pinSave.hidden = true;
     dom.pinCancel.hidden = true;
   }
@@ -160,10 +192,12 @@ export function wireCreatorPlacement(deps: {
     extras: Parameters<TourViewerSession["tourDocument"]["place"]>[1],
   ): { object: TourObject; ownStation: boolean } | null {
     const what =
-      object.kind === "pin" ? `the pin "${object.label}"` : "a photo";
-    const change = ctx.tourDocument.place(object, extras, what);
+      object.kind === "shortText" ? `the pin "${object.caption}"` : "a photo";
+    const refusal = placeRefusal(ctx.tourDocument.state(), object);
+    const change =
+      refusal === null ? ctx.tourDocument.place(object, extras, what) : null;
     if (change === null) {
-      note("That spot is too far from its station - nothing was placed.");
+      note(PLACE_REFUSED[refusal ?? "too-far"]);
       return null;
     }
     void change.backedUp.then((ok) => {
@@ -282,6 +316,7 @@ export function wireCreatorPlacement(deps: {
     // an XR session). The position is read at SAVE, not now - the creator
     // may still move the phone while typing.
     dom.pinLabel.hidden = false;
+    if (pinCount !== undefined) pinCount.hidden = false;
     dom.pinSave.hidden = false;
     dom.pinCancel.hidden = false;
     dom.pinLabel.focus();
@@ -290,13 +325,14 @@ export function wireCreatorPlacement(deps: {
 
   dom.pinCancel.addEventListener("click", () => {
     dom.pinLabel.value = "";
+    counter?.update();
     hideLabelInput();
     ctx.placementNote = null;
     deps.render();
   });
 
   dom.pinSave.addEventListener("click", () => {
-    const label = dom.pinLabel.value.trim();
+    const label = inputText(dom.pinLabel.value).trim();
     const reticle = ctx.reticle;
     if (!placementAllowed()) {
       hideLabelInput();
@@ -305,6 +341,10 @@ export function wireCreatorPlacement(deps: {
     }
     if (label === "") {
       note("Type the pin's text first.");
+      return;
+    }
+    if (pinTextTooLong(label)) {
+      note(PIN_TEXT_TOO_LONG);
       return;
     }
     if (reticle === null || !reticle.isVisible()) {
@@ -353,6 +393,7 @@ export function wireCreatorPlacement(deps: {
     if (local !== null) deps.alignmentPicks.notePlaced(pin.id);
     logPlacement(placedPin.object, { reticleWorld: position });
     dom.pinLabel.value = "";
+    counter?.update();
     hideLabelInput();
     deps.previews.sync();
     note(
@@ -443,7 +484,7 @@ export function wireCreatorPlacement(deps: {
         logPlacement(placedPhoto.object, { cameraOdomPose: cameraPose });
         // Logged as the settle's late arrival, through its record: the
         // photo as the document took it (its own station, D8).
-        if (settled !== undefined && placedPhoto.object.kind === "photo") {
+        if (settled !== undefined && placedPhoto.object.kind === "picture") {
           deps.lateArrival(visit, placedPhoto.object);
         }
         deps.previews.sync();

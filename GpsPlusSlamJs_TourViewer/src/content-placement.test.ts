@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { Group, Object3D, Quaternion, Texture, Vector3 } from "three";
+import {
+  BoxGeometry,
+  Group,
+  Mesh,
+  Object3D,
+  Quaternion,
+  Texture,
+  Vector3,
+} from "three";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
@@ -10,7 +18,11 @@ import {
   deriveVerticalHeading,
   mintQrGeoPose,
 } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
-import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourAsset,
+  TourObject,
+  TourStation,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import {
@@ -20,8 +32,10 @@ import {
   objectPoseNue,
   renderTourObjects,
   renderTourStation,
+  renderStationBlocks,
   rotationFromHeading,
 } from "./content-placement";
+import { contentSegment } from "./tour-flow";
 
 /**
  * Why these tests matter: a placed object's record is what a visitor sees
@@ -112,7 +126,8 @@ describe("mintPhoto", () => {
       bearingDeg(expected.x, expected.z),
       0,
     );
-    expect(photo!.image).toBe("content/f.jpg");
+    expect(photo!.image).toBe("f");
+    expect(photo!.imageAsset.path).toBe("content/f.jpg");
     expect(photo!.geo.rotation).toHaveLength(4);
   });
 
@@ -246,7 +261,12 @@ describe("renderTourObjects", () => {
       imageHeight: 3,
       nowIso: NOW,
     })!;
-    const bad = { ...good, id: "b", image: "content/b.jpg" };
+    const bad = {
+      ...good,
+      id: "b",
+      image: "b",
+      imageAsset: { ...good.imageAsset, id: "b", path: "content/b.jpg" },
+    };
     const rendered = await renderTourObjects([pin, good, bad], {
       scene,
       zero: ZERO,
@@ -276,6 +296,52 @@ describe("renderTourObjects", () => {
     rendered.dispose();
     expect(children).toHaveLength(0);
     expect(disposed).toEqual(["Gate"]);
+  });
+
+  // Why: a placed 3D model (format minor 1) is in the format before any
+  // renderer draws it. It must not reach the photo loader (it has no
+  // image), and it is not a failure either: "could not load" would claim
+  // a download broke, so it is left out quietly, as a lenient read leaves
+  // out what it cannot show. The renderer milestone adds an honest line.
+  it("leaves a placed 3D model out quietly: no photo loader call, no 'could not load'", async () => {
+    const { scene, children } = fakeScene();
+    const pin = mintPin({
+      id: "p",
+      label: "Gate",
+      worldNuePosition: { x: 5, y: 400, z: 0 },
+      zero: ZERO,
+      nowIso: NOW,
+    })!;
+    const model: TourObject = {
+      id: "m",
+      kind: "model",
+      view: "placed",
+      asset: "statue",
+      sizeM: 3,
+      createdAtIso: NOW,
+      geo: pin.geo,
+    };
+    const asked: string[] = [];
+    const rendered = await renderTourObjects([pin, model], {
+      scene,
+      zero: ZERO,
+      makeLabel: () => ({ object: new Object3D(), dispose: () => undefined }),
+      loadPhotoTexture: (name) => {
+        asked.push(name);
+        return Promise.resolve(new Texture());
+      },
+    });
+    expect(asked).toEqual([]);
+    expect(rendered.count).toBe(1);
+    expect(rendered.skipped).toEqual([]);
+    expect(children[0]?.children).toHaveLength(1);
+    expect(
+      contentSegment({
+        kind: "placed",
+        count: rendered.count,
+        skipped: rendered.skipped.length,
+      }),
+    ).toBe("1 placed object");
   });
 
   it("places pins and photos at the caller's pose in the caller's frame when it passes one", async () => {
@@ -311,7 +377,7 @@ describe("renderTourObjects", () => {
       scene,
       zero: ZERO,
       poseOf: (object) =>
-        object.kind === "pin"
+        object.kind === "shortText"
           ? { positionNue: [2, 0, -1], rotationNue: [0, 0, 0, 1] }
           : { positionNue: [0.5, 1.4, 3], rotationNue: turned },
       makeLabel: (text) => {
@@ -371,7 +437,7 @@ describe("renderTourStation", () => {
   function stationAt(
     id: string,
     geo: TourStation["geo"],
-    items: TourStation["items"],
+    items: TourStation["blocks"],
   ): TourStation {
     return {
       id,
@@ -380,9 +446,138 @@ describe("renderTourStation", () => {
       foundRadiusM: 25,
       hint: "arrow",
       steps: [],
-      items,
+      blocks: items,
     };
   }
+
+  /** The image assets of captured photos with these ids, as a tour lists
+   *  them (`content/<id>.jpg`). */
+  function photoAssets(...ids: string[]): TourAsset[] {
+    return ids.map((id) => ({
+      id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    }));
+  }
+
+  // Why (station blocks plan B2b step 1): a placed model was left out
+  // for the visitor (B2a's rule of no visible change). Drawn now, at the
+  // size the tour names (`sizeM`, its largest side) by the one shared
+  // scale rule (`modelScale`, the 3D editor's), at its local pose in the
+  // station's frame; a model whose file fails is named in `skipped`, and
+  // a renderer given no model loader (the editor draws its own) leaves it
+  // out quietly as before.
+  it("draws a placed model at its sizeM by the shared scale rule, at its local pose", async () => {
+    const scene = new Group();
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 5, yaw(0));
+    const pose = {
+      position: [1, 0, 2] as [number, number, number],
+      rotation: yaw(30),
+    };
+    const model = (id: string, asset: string, sizeM: number) => ({
+      id,
+      kind: "model" as const,
+      view: "placed" as const,
+      asset,
+      sizeM,
+      createdAtIso: NOW,
+      pose,
+    });
+    const station = stationAt("s", stationGeo, [
+      model("m1", "horse", 3),
+      model("m2", "broken", 1),
+    ]);
+    const assets: TourAsset[] = [
+      { id: "horse", path: "content/horse.glb", kind: "model" },
+      { id: "broken", path: "content/broken.glb", kind: "model" },
+    ];
+    const loaded: string[] = [];
+    let disposed = 0;
+    const geometry = new BoxGeometry(2, 0.5, 1);
+    geometry.dispose = () => {
+      disposed += 1;
+    };
+    const rendered = await renderTourStation(station, {
+      assets,
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+      loadModel: (entry) => {
+        loaded.push(entry);
+        return entry === "content/horse.glb"
+          ? Promise.resolve(new Mesh(geometry))
+          : Promise.reject(new Error("bad glb"));
+      },
+    });
+    expect(loaded).toEqual(["content/horse.glb", "content/broken.glb"]);
+    expect(rendered.count).toBe(1);
+    expect(rendered.skipped).toEqual(["m2"]);
+    let found: Object3D | undefined;
+    rendered.root.traverse((o) => {
+      if (o.userData["objectId"] === "m1") found = o;
+    });
+    expect(found, "the model is drawn under the station").toBeDefined();
+    // Its largest side (2 m) made 3 m: the factor 1.5, the editor's rule.
+    expect(found!.scale.x).toBeCloseTo(1.5, 12);
+    expect(found!.position.toArray()).toEqual([1, 0, 2]);
+    expect(found!.quaternion.toArray()).toEqual(pose.rotation);
+    rendered.dispose();
+    expect(disposed, "its geometry is freed with the station").toBe(1);
+
+    // No loader: left out quietly, as before B2b.
+    const quiet = await renderTourStation(station, {
+      assets,
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+    });
+    expect(quiet.count).toBe(0);
+    expect(quiet.skipped).toEqual([]);
+    quiet.dispose();
+  });
+
+  // Why (B2b step 2): a story block its story reached stands with the
+  // station's own, drawn alone in the station's frame - the free blocks
+  // are another part, so only the given blocks may be drawn here.
+  it("draws exactly the given blocks of a station, in its frame", async () => {
+    const scene = new Group();
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 5, 0, 5, yaw(0));
+    const pose = {
+      position: [1, 1.5, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    };
+    const sign = {
+      id: "sign",
+      kind: "shortText" as const,
+      view: "pin" as const,
+      caption: "Old sign",
+      pose,
+    };
+    const free = { ...sign, id: "free", caption: "Free" };
+    const rendered = await renderStationBlocks(
+      stationAt("s", stationGeo, [free, sign]),
+      [sign],
+      {
+        assets: [],
+        scene,
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+      },
+    );
+    const ids: string[] = [];
+    rendered.root.traverse((o) => {
+      const id = o.userData["objectId"];
+      if (typeof id === "string") ids.push(id);
+    });
+    expect(ids).toEqual(["sign"]);
+    expect(rendered.root.parent).toBe(scene);
+    rendered.dispose();
+  });
 
   it("places each station as a group at its pose, with its pins and photos as children at their local poses", async () => {
     const scene = new Group();
@@ -396,6 +591,7 @@ describe("renderTourStation", () => {
       rotation: yaw(45),
     };
     const deps = {
+      assets: photoAssets("g"),
       scene,
       zero: ZERO,
       makeLabel: labelStub,
@@ -412,17 +608,18 @@ describe("renderTourStation", () => {
       stationAt("gate", stationGeo, [
         {
           id: "p",
-          kind: "pin",
-          label: "Gate",
+          kind: "shortText",
+          view: "pin",
+          caption: "Gate",
           createdAtIso: NOW,
           pose: pinPose,
         },
         {
           id: "g",
-          kind: "photo",
-          image: "content/g.jpg",
-          imageWidth: 4,
-          imageHeight: 3,
+          kind: "picture",
+          view: "plane",
+          image: "g",
+          widthM: 1,
           createdAtIso: NOW,
           pose: photoPose,
         },
@@ -439,6 +636,15 @@ describe("renderTourStation", () => {
     );
     const label = frame.getObjectByName("label:Gate")!;
     expect(label.position.toArray()).toEqual(pinPose.position);
+    // Each placed object names its item (`userData.objectId`): the 3D
+    // editor picks an item by it and moves its drawing while a drag runs.
+    expect(label.userData["objectId"]).toBe("p");
+    const named: string[] = [];
+    frame.traverse((o) => {
+      const id: unknown = o.userData["objectId"];
+      if (typeof id === "string") named.push(id);
+    });
+    expect(named.sort()).toEqual(["g", "p"]);
     rendered.dispose();
     expect(scene.children).toHaveLength(0);
   });
@@ -484,15 +690,16 @@ describe("renderTourStation", () => {
             stationAt("s", stationGeo, [
               {
                 id: "g",
-                kind: "photo",
-                image: "content/g.jpg",
-                imageWidth: 4,
-                imageHeight: 3,
+                kind: "picture",
+                view: "plane",
+                image: "g",
+                widthM: 1,
                 createdAtIso: NOW,
                 pose: localPoseOf(settled, stationGeo),
               },
             ]),
             {
+              assets: photoAssets("g"),
               scene,
               zero: ZERO,
               makeLabel: labelStub,
@@ -527,10 +734,10 @@ describe("renderTourStation", () => {
     // station's photos decode must not pay for the rest of them.
     const photo = (id: string) => ({
       id,
-      kind: "photo" as const,
-      image: `content/${id}.jpg`,
-      imageWidth: 4,
-      imageHeight: 3,
+      kind: "picture" as const,
+      view: "plane" as const,
+      image: id,
+      widthM: 1,
       createdAtIso: NOW,
       pose: {
         position: [0, 1.4, 3] as [number, number, number],
@@ -543,6 +750,7 @@ describe("renderTourStation", () => {
     const rendered = await renderTourStation(
       stationAt("s", geo, [photo("a"), photo("b"), photo("c")]),
       {
+        assets: photoAssets("a", "b", "c"),
         scene: new Group(),
         zero: ZERO,
         makeLabel: labelStub,
@@ -571,8 +779,9 @@ describe("renderTourStation", () => {
     let labels = 0;
     const pin = (id: string) => ({
       id,
-      kind: "pin" as const,
-      label: id,
+      kind: "shortText" as const,
+      view: "pin" as const,
+      caption: id,
       createdAtIso: NOW,
       pose: {
         position: [0, 1.5, 0] as [number, number, number],
@@ -581,10 +790,10 @@ describe("renderTourStation", () => {
     });
     const photo = {
       id: "f",
-      kind: "photo" as const,
-      image: "content/f.jpg",
-      imageWidth: 4,
-      imageHeight: 3,
+      kind: "picture" as const,
+      view: "plane" as const,
+      image: "f",
+      widthM: 1,
       createdAtIso: NOW,
       pose: {
         position: [0, 1.4, 3] as [number, number, number],
@@ -594,6 +803,7 @@ describe("renderTourStation", () => {
     const scene = new Group();
     await expect(
       renderTourStation(stationAt("s", geo, [pin("p1"), photo, pin("p2")]), {
+        assets: photoAssets("f"),
         scene,
         zero: ZERO,
         makeLabel: (text) => {

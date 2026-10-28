@@ -38,6 +38,13 @@ the image-plane loader and the AR entry (flows plan M6 pulled it out of
   end; for `newer-format` instead "made with a newer version of the app,
   reload to update" (not modified, just not checkable here).
   `describeOpenError` delegates to it.
+- `olderFormatRefusal(err: TourManifestOlderFormatError, draftDeleted):
+string` - a tour of a format this app no longer opens (versions 1 to
+  3): "This tour is in an older format (version N) that this version of
+  the app no longer opens; it has to be made again.", with ", and its
+  unsaved changes cannot be restored" before the full stop when the
+  refusal deleted the draft this device held for it (the phone's archive
+  open, `archive-open.ts`; the editor's open, `editor/edit-main.ts`).
 - `offersFileOpen(cause): boolean` - true for `cors` only: the page shows
   the "Open the downloaded file" button under the error. Offline a
   download is impossible too; a missing, broken or too-large file is not

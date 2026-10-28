@@ -1,0 +1,3820 @@
+{
+  "recordedWith": "the version 4 writer as the format switched to version 4; re-recorded only for a change meant to change the written bytes",
+  "cases": [
+    {
+      "input": {
+        "version": 4,
+        "title": " HA",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "WNsIMyGmWzUI",
+            "geo": {
+              "lat": 1.5186297444040425e-301,
+              "lon": -1.340001246653643e-108,
+              "alt": 1.6493061416372877e-100,
+              "headingDeg": 359.8999999999991
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "0-8Vlcq7_-LR2--_F_hB24W-L2--wEgX-_-3-5-a7_RU--jK-A7248YI87_-P67o",
+                "kind": "video",
+                "view": "card",
+                "pose": {
+                  "position": [5.737045445501386e-183, 0, -500],
+                  "rotation": [0, 4e-323, 0, 1]
+                },
+                "video": "clip",
+                "transcript": "aZaZaZ\n",
+                "poster": "gate"
+              },
+              {
+                "id": "-_-1y57-88j--ZIitm-5jL5---6doc6-x62__--M-t2C7if_b_9_hX_J-_s-P-_a",
+                "kind": "model",
+                "view": "placed",
+                "pose": {
+                  "position": [
+                    499.9999999999989, -8.4e-323, -8.908059244145343e-14
+                  ],
+                  "rotation": [0, 3.3328642209661136e-226, 0, 1]
+                },
+                "createdAtIso": "2068-05-18T11:21:48.367Z",
+                "asset": "arch",
+                "sizeM": 0.05000000000000011,
+                "title": " a\n"
+              }
+            ],
+            "steps": [
+              {
+                "id": "_6V_8-1-3hV9Fb_---_E_0_L_9m7_-f4-T_2w_KU-e-3___UA__c-o_7ks2u-r--",
+                "action": {
+                  "kind": "show",
+                  "block": "0-8Vlcq7_-LR2--_F_hB24W-L2--wEgX-_-3-5-a7_RU--jK-A7248YI87_-P67o"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10000000000000012
+                }
+              }
+            ],
+            "description": "Up the hill.\nThen left.",
+            "image": "knight"
+          }
+        ],
+        "description": "A walk, case 0.",
+        "cover": "gate",
+        "contact": "guide@example.org"
+      },
+      "sha256": "3c7d5fc35a9ceb40165de11891458f6320ff0283b13ffaffa87dd8081d051511",
+      "bytes": 2650
+    },
+    {
+      "input": {
+        "version": 4,
+        "title": "   htJIlt ",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "cal",
+            "geo": {
+              "lat": -2.5e-323,
+              "lon": 0.00038637505524927233,
+              "alt": 8.4e-323,
+              "headingDeg": 9e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "--4_Q_73_K-",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [
+                    2.8268383216466205e-173, -7.4e-323, 2.8124673497913862e-34
+                  ],
+                  "rotation": [0, 1e-323, 0, 1]
+                },
+                "createdAtIso": "1970-01-01T00:00:00.014Z",
+                "caption": "a a \t𠀀Z水é  a aa 𠀀Z水é \ta  aa  𠀀Z水é a \taa \t𠀀Z水\n",
+                "description": "𠀀́ééaa𠀀Zaé𠀀́ééaa𠀀Zaé𠀀́ééaa𠀀Zaé𠀀́ééaa𠀀Zaé𠀀́ééaa𠀀Zaé𠀀́ééaa𠀀Zaé𠀀́ééaa𠀀Zaé𠀀́ééaa𠀀Zaé𠀀́ééaa𠀀Zaé𠀀́ééaa𠀀Zaé𠀀́ééaa𠀀Zaé𠀀́ééaa𠀀Zaé𠀀́ééaa𠀀Zaé𠀀́ééaa𠀀Zaé𠀀́ééaa𠀀Zaé𠀀́ééaa𠀀Zaé"
+              },
+              {
+                "id": "-_0__-K----_",
+                "kind": "picture",
+                "view": "plane",
+                "pose": {
+                  "position": [0.00000839550492139455, 7e-323, 6.4e-323],
+                  "rotation": [0, 5e-324, 0, 1]
+                },
+                "createdAtIso": "2032-09-16T15:02:04.222Z",
+                "image": "gate",
+                "alt": "水\n",
+                "widthM": 0.05000000000000003
+              }
+            ],
+            "steps": [
+              {
+                "id": "__-_3--11_E__3H3L__-1-_-9-_z-4_6a_ArW_-r6W-_ceah_5_X8__Y_O-1-1_U",
+                "action": {
+                  "kind": "show",
+                  "block": "--4_Q_73_K-"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10000000000000016
+                }
+              }
+            ]
+          }
+        ],
+        "tourId": "tour-1"
+      },
+      "sha256": "8ecb70d237bc64ed9146af65e6455f4d795beff0a8a1e0dd1dd5ea4f46afa610",
+      "bytes": 2568
+    },
+    {
+      "input": {
+        "version": 4,
+        "title": "e X ",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "name",
+            "geo": {
+              "lat": -88.99999999999989,
+              "lon": 5e-324,
+              "alt": -6.103715742285328e-63,
+              "headingDeg": 1.590588918864189e-270
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "vv_2_",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [
+                    9.59160424652788e-98, -3e-323, -6.914280835592033e-146
+                  ],
+                  "rotation": [0, 0, 0, 1]
+                },
+                "createdAtIso": "2099-12-31T23:59:59.973Z",
+                "caption": " Z\n",
+                "description": " aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀aé😀\n\n"
+              }
+            ],
+            "steps": [],
+            "description": "Up the hill.\nThen left.",
+            "image": "knight"
+          },
+          {
+            "id": "s1",
+            "title": "name",
+            "geo": {
+              "lat": -1.5483219806100221e-89,
+              "lon": -178.9999999999998,
+              "alt": -9.5961687657008e-210,
+              "headingDeg": 5.4e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "-3--N_8",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [
+                    2.6909569842322164e-129, -49.99999999999991, 5e-323
+                  ],
+                  "rotation": [0, 6.46116076535222e-115, 0, 1]
+                },
+                "createdAtIso": "1970-01-01T00:00:00.000Z",
+                "caption": " a 　a \na 　a \na 　a \na 　a \na 　a \na 　a \na 　a \na 　a \na 　aa",
+                "description": "  a水a𠀀éa777𠀀 \na水a𠀀éa777𠀀 \na水a𠀀éa777𠀀 \na水a𠀀éa777𠀀 \na水a𠀀éa777𠀀 \na水a𠀀éa777"
+              },
+              {
+                "id": "90p2JFfe",
+                "kind": "video",
+                "view": "card",
+                "pose": {
+                  "position": [-8e-323, 2.5e-323, -499.99999999999915],
+                  "rotation": [0, 1.5e-323, 0, 1]
+                },
+                "createdAtIso": "1970-01-01T00:00:00.041Z",
+                "video": "clip",
+                "transcript": "水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń7𠀀水😀a水a \r\ń",
+                "title": "a😀\n",
+                "poster": "knight"
+              }
+            ],
+            "steps": [
+              {
+                "id": "x-1",
+                "action": {
+                  "kind": "show",
+                  "block": "90p2JFfe"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10000000000000021
+                }
+              },
+              {
+                "id": "3XEgcI-____--oL6--M10v_-W35l-_Dbw--___9h_j61OS--_BMpc_C8b-7_2_-d",
+                "action": {
+                  "kind": "show",
+                  "block": "-3--N_8"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 59.99999999999991
+                }
+              }
+            ]
+          }
+        ],
+        "needsNoGps": true
+      },
+      "sha256": "9c0604f7467a4e7dd5caa926646707de2d33c6178ded43868444583942e80dcd",
+      "bytes": 4694
+    },
+    {
+      "input": {
+        "version": 4,
+        "title": "r HKh  fL",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "mDdfC",
+            "geo": {
+              "lat": -9.166004503827028e-284,
+              "lon": -4.270265359754207e-95,
+              "alt": -3.528560255539072e-214,
+              "headingDeg": 9.920239279409796e-274
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "_x-W51Ad5__9X3Y-Y_Yse_-_7_-_01Ek_2c--e4-___-zv8a2-_Xap1___-b2_D0",
+                "kind": "picture",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    -6.917770029999847e-229, -4.620271520276531e-53,
+                    -1.9050586796955907e-299
+                  ],
+                  "rotation": [0, 1e-323, 0, 1]
+                },
+                "createdAtIso": "2077-01-31T23:33:30.038Z",
+                "image": "gate",
+                "title": " aé𠀀 \n𠀀😀  aé𠀀  𠀀😀 aé𠀀 𠀀😀 \taé𠀀 \t𠀀😀 \naé𠀀 \n𠀀😀  aé𠀀a\n",
+                "caption": " Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa𠀀Zéa",
+                "alt": " 𠀀水Za𠀀 \n7 \n𠀀𠀀水Za𠀀  7  𠀀𠀀水Za𠀀 \n7 \n𠀀𠀀水Za𠀀  7  𠀀𠀀水Za𠀀 \n7 \n𠀀𠀀水Za𠀀  7  𠀀𠀀水Za𠀀 \n7 \n𠀀𠀀水Za𠀀  7  𠀀𠀀水Za𠀀 \n7 \n𠀀𠀀水Za𠀀  7  𠀀𠀀\n\n",
+                "widthM": 0.19642262959049822
+              }
+            ],
+            "steps": [
+              {
+                "id": "_55K-9G",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 36,
+                  "answer": {
+                    "type": "number",
+                    "value": 1850,
+                    "tolerance": 5,
+                    "unit": "year"
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.12322771562041752
+                }
+              },
+              {
+                "id": "lyfrefb",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 4,
+                  "answer": {
+                    "type": "multiple",
+                    "options": [
+                      {
+                        "id": "a",
+                        "label": "A"
+                      },
+                      {
+                        "id": "b",
+                        "label": "B"
+                      },
+                      {
+                        "id": "c",
+                        "label": "C"
+                      }
+                    ],
+                    "correct": ["a", "c"]
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.7280748030644628
+                }
+              },
+              {
+                "id": "a",
+                "action": {
+                  "kind": "show",
+                  "block": "_x-W51Ad5__9X3Y-Y_Yse_-_7_-_01Ek_2c--e4-___-zv8a2-_Xap1___-b2_D0"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "title": "adV",
+            "geo": {
+              "lat": -1.338168712718257e-151,
+              "lon": 5.3024118477093344e-161,
+              "alt": 7999.999999999988,
+              "headingDeg": 2.8192273735128664e-139
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "_36L_Qu7wm67O_wC4____j9G-R_8d--y_-KeAzxj__tf_--9wz3_0-fA_6a4eZ-x",
+                "kind": "picture",
+                "view": "plane",
+                "pose": {
+                  "position": [
+                    2.1951915920202306e-17, 5.347227741211192e-80,
+                    2.7952550649167906e-132
+                  ],
+                  "rotation": [0, 3.4617255093220415e-233, 0, 1]
+                },
+                "image": "gate",
+                "title": " 𠀀\n\n",
+                "alt": "𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé \n𠀀aé\n",
+                "widthM": 0.05000000000000011
+              }
+            ],
+            "steps": [
+              {
+                "id": "3-_6",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "Z_b3-kO_-B-v-__-XX--0_q5_0E_-_8k9_He-C9-wre81_U33_-Bn76f-_22vxyC"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1",
+                      "goto": "3-_6"
+                    },
+                    {
+                      "id": "o2",
+                      "label": "Option 2",
+                      "goto": "3-_6"
+                    },
+                    {
+                      "id": "o3",
+                      "label": "Option 3",
+                      "goto": "3-_6"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 1.6828270408966555
+                }
+              },
+              {
+                "id": "Z_b3-kO_-B-v-__-XX--0_q5_0E_-_8k9_He-C9-wre81_U33_-Bn76f-_22vxyC",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 94,
+                  "answer": {
+                    "type": "single",
+                    "options": [
+                      {
+                        "id": "a",
+                        "label": "A"
+                      },
+                      {
+                        "id": "b",
+                        "label": "B"
+                      }
+                    ],
+                    "correct": "b"
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10000000000000024
+                }
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "geo": {
+              "lat": -7.4e-323,
+              "lon": -2e-323,
+              "alt": 3.4223340000467154e-77,
+              "headingDeg": 1.4784367147394877e-180
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [],
+            "steps": [
+              {
+                "id": "5Z_N_b_1-9f__0P-_O__-BeD-8aXC--dC_-_-d9M_x41b_v0D18-79-16I3-0_zE",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "5Z_N_b_1-9f__0P-_O__-BeD-8aXC--dC_-_-d9M_x41b_v0D18-79-16I3-0_zE"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1",
+                      "goto": "5Z_N_b_1-9f__0P-_O__-BeD-8aXC--dC_-_-d9M_x41b_v0D18-79-16I3-0_zE"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "title": "NmDG",
+            "geo": {
+              "lat": 4e-323,
+              "lon": -2.664519165407146e-97,
+              "alt": 7999.999999999998,
+              "headingDeg": 3.5e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "d-1-Y-Hd6_7M9RA1---__-N99--__O__--1__8_E--S_ei35y_-__-_YS-__7B5_",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [-4.1870986433460714e-169, 6.4e-323, -3e-323],
+                  "rotation": [0, 0, 0, 1]
+                },
+                "createdAtIso": "2099-12-31T23:59:59.973Z",
+                "caption": "  7 　😀7  😀7 　😀7  😀7 　😀7  😀7 　😀7  😀7 　😀7  😀7 　😀7  😀7 　😀",
+                "description": "  ́\n"
+              }
+            ],
+            "steps": [
+              {
+                "id": "constructor",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 94,
+                  "answer": {
+                    "type": "number",
+                    "value": 1850,
+                    "tolerance": 5,
+                    "unit": "year"
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          }
+        ],
+        "description": "A walk, case 3.",
+        "cover": "gate",
+        "contact": "guide@example.org"
+      },
+      "sha256": "cdfabbab467f0d3c2f1f88c73c04a1b5db2339b11f03ac9090f07ef055d04ab2",
+      "bytes": 9569
+    },
+    {
+      "input": {
+        "version": 4,
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "YC",
+            "geo": {
+              "lat": -6.861117287707867e-98,
+              "lon": 6e-323,
+              "alt": 3.291496114665051e-52,
+              "headingDeg": 4.875087763990159e-247
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "_5O-_B-K0_--ESN__pdM4cZ-5F_nRC3x___X3__3aQd3l_--_24_a_5_3-_Ry6iP",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [
+                    4.074288017217812e-145, -2.0999050790491197e-142, 0
+                  ],
+                  "rotation": [0, 5e-323, 0, 1]
+                },
+                "createdAtIso": "1970-01-01T00:00:00.035Z",
+                "caption": "́Zé́Zé́Zé́Zé́Zé́Zé́Zé́Zé́Zé́Zé́Zé́Zé́Zé"
+              },
+              {
+                "id": "0z-o_-_8_DY57-7560_-_o_Wf_-T5OKb__-S_7_U-7-c_-_z-_T-e_W3_i4WSK_P",
+                "kind": "picture",
+                "view": "plane",
+                "pose": {
+                  "position": [
+                    6.370711430030165e-39, -49.999999999999936,
+                    -8.503195241931742e-32
+                  ],
+                  "rotation": [0, 5.56671794634364e-96, 0, 1]
+                },
+                "createdAtIso": "2014-08-09T13:00:40.371Z",
+                "image": "gate",
+                "caption": "́ \ta水a\n",
+                "alt": "a水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀 \na水a𠀀 　a水a𠀀 \ta水a𠀀a\n\n",
+                "widthM": 0.07877864873877931
+              },
+              {
+                "id": "3M_",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [-7.4e-323, -2.2339094826638742e-35, 3.5e-323],
+                  "rotation": [0, 2.5e-323, 0, 1]
+                },
+                "createdAtIso": "2089-09-09T19:06:55.124Z",
+                "caption": "  aé水水aé水水aé水水aé水水aé水水aé水水aé水水aé水水aé水水a\n",
+                "description": " 𠀀 𠀀水́ 𠀀Z a \r\n𠀀 𠀀水́ 𠀀Z \ta 𠀀 \t𠀀水́ \t𠀀Z \r\na 𠀀 \r\n𠀀水́ \r\n𠀀Z a \t𠀀 𠀀水́ 𠀀Z a \r\n𠀀 𠀀水́ 𠀀Z \ta 𠀀 \t𠀀水́ \t𠀀Z \r\na 𠀀 \r\n𠀀水́ \r\n𠀀Z a \t𠀀 𠀀水́ 𠀀Z a \r\n𠀀 𠀀水́ 𠀀Z \ta 𠀀 \t𠀀水́ \t𠀀Z \r\na 𠀀 \r\n𠀀水́ \r\n𠀀Z a \t𠀀 𠀀水́ 𠀀Z a \r\n𠀀 𠀀水́ 𠀀Z \ta 𠀀 \t𠀀水́"
+              }
+            ],
+            "steps": [],
+            "description": "Up the hill.\nThen left.",
+            "image": "knight"
+          }
+        ]
+      },
+      "sha256": "5214e7c1348d990816f85afa92c37e182e7dd8706d53c0e9e6799a2404d2e8b0",
+      "bytes": 3514
+    },
+    {
+      "input": {
+        "version": 4,
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "oTqIc",
+            "geo": {
+              "lat": -88.99999999999993,
+              "lon": -2.1617373474757085e-14,
+              "alt": 7999.999999999991,
+              "headingDeg": 3.504135942058346e-71
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "st0",
+                "kind": "picture",
+                "view": "plane",
+                "pose": {
+                  "position": [-8.667245657934889e-231, 5.4e-323, -6.4e-323],
+                  "rotation": [0, 2.409352796695997e-233, 0, 1]
+                },
+                "createdAtIso": "1970-01-01T00:00:00.022Z",
+                "image": "knight",
+                "title": " aZ😀 　aZ😀 　aZ😀 　aZ😀 　aZ😀 　aZ😀 　aZ😀 　aZ😀 　aZ😀 　aZ😀a",
+                "caption": "  😀\n\n",
+                "alt": "Źé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \na \nŹé \naéé \naa\n",
+                "widthM": 0.07253308370401772
+              },
+              {
+                "id": "b",
+                "kind": "shortText",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    -4.742279572151871e-182, 6.8815106879979595e-161, 3e-323
+                  ],
+                  "rotation": [0, 0, 0, 1]
+                },
+                "createdAtIso": "2074-01-23T13:39:51.677Z",
+                "caption": "水\n\n",
+                "description": " 😀"
+              }
+            ],
+            "steps": [
+              {
+                "id": "ZC_dY9_C10",
+                "action": {
+                  "kind": "show",
+                  "block": "b"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10000000000000023
+                }
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "title": "yDev",
+            "geo": {
+              "lat": 89,
+              "lon": 3.0951832105255867e-207,
+              "alt": 9e-323,
+              "headingDeg": 2.4333444972309015e-305
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "32-F2o_-4onl-_T_cf3c_9_BZP4D_P8_62t-B_9LT__d_27_0-5J_I_pZ-_2xf02",
+                "kind": "picture",
+                "view": "plane",
+                "pose": {
+                  "position": [
+                    -5.594308241821091e-93, 49.99999999999992, -6e-323
+                  ],
+                  "rotation": [0, 2.4769565231369333e-253, 0, 1]
+                },
+                "image": "gate",
+                "title": "  𠀀 　a𠀀 \r\na𠀀 \na𠀀 a𠀀 　a𠀀 \r\na𠀀 \na𠀀 a𠀀 　a𠀀 \r\na𠀀 \na𠀀 a𠀀 　a",
+                "alt": " áZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZé \ńZ\n",
+                "widthM": 41.7759621768185
+              },
+              {
+                "id": "o_3_YP_9yefD63nqp_s54299kqSx3M0_4___s-L98_-af__rh95J4B_-1_-__-__",
+                "kind": "picture",
+                "view": "plane",
+                "pose": {
+                  "position": [
+                    -2.3294779948758406e-202, 49.99999999999993, -4e-323
+                  ],
+                  "rotation": [0, 1.5e-323, 0, 1]
+                },
+                "createdAtIso": "1997-06-12T11:39:02.828Z",
+                "image": "gate",
+                "title": " Z\n",
+                "caption": "  aéaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néaZ \néa",
+                "alt": " aaa\n",
+                "widthM": 0.05
+              }
+            ],
+            "steps": [
+              {
+                "id": "3_70D-aG0_3_w-_j-3CY-H---_Ad14R--__Y-_EB1_6iBYYEHoc_wxY8vLyrT--h",
+                "action": {
+                  "kind": "show",
+                  "block": "32-F2o_-4onl-_T_cf3c_9_BZP4D_P8_62t-B_9LT__d_27_0-5J_I_pZ-_2xf02"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 13.518614781893174
+                }
+              },
+              {
+                "id": "4--1_X2-___-bA-2d-_LY3VZCd5LBC_B---__-cAf-e1__z-0eHU1ACW9_-q__dd",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 2,
+                  "answer": {
+                    "type": "text",
+                    "salt": "s1",
+                    "sha256": [
+                      "0000000000000000000000000000000000000000000000000000000000000000"
+                    ]
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 59.9999999999999
+                }
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "title": "UGK",
+            "geo": {
+              "lat": -4e-323,
+              "lon": -4.405272374019044e-197,
+              "alt": -2.8765463795184604e-193,
+              "headingDeg": 8e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [],
+            "steps": [
+              {
+                "id": "7_DB8I_3-_4WaCA27_v669EDh-d2R0_DVh-_e1-uA_e3__i_-CS21---fw-_m_42",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "7_DB8I_3-_4WaCA27_v669EDh-d2R0_DVh-_e1-uA_e3__i_-CS21---fw-_m_42"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1",
+                      "goto": "7_DB8I_3-_4WaCA27_v669EDh-d2R0_DVh-_e1-uA_e3__i_-CS21---fw-_m_42"
+                    },
+                    {
+                      "id": "o2",
+                      "label": "Option 2"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 26.109809707052158
+                }
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "title": "DAkxW",
+            "geo": {
+              "lat": -2e-323,
+              "lon": 1.6398214327296453e-53,
+              "alt": 7999.999999999999,
+              "headingDeg": 8.261868242688323e-25
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "Y6_vD-_---__Z2--Z_-1e-E0Y-_b-9e-_MLa-1-3P_E-_-A5Qn_B-_X030_6__s2",
+                "kind": "character",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    -499.99999999999983, 5e-323, -1.4358761173911606e-129
+                  ],
+                  "rotation": [0, 7.371278526419459e-199, 0, 1]
+                },
+                "createdAtIso": "1970-01-01T00:00:00.016Z",
+                "name": " Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z  Z",
+                "image": "gate",
+                "caption": " Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z𠀀aé水a😀7Z水 \n𠀀Z"
+              }
+            ],
+            "steps": [
+              {
+                "id": "--aZ1Naa63_d_-X_V-0_-A_b-v9CztQ-_evmuUY-_1L-6E21Xf_Yc3-B_--A-eh-",
+                "action": {
+                  "kind": "show",
+                  "block": "Y6_vD-_---__Z2--Z_-1e-E0Y-_b-9e-_MLa-1-3P_E-_-A5Qn_B-_X030_6__s2"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          }
+        ],
+        "tourId": "tour-5"
+      },
+      "sha256": "434349b8d00885ff6c76e25e2063fcb7089cafaa0addb780866f290d77d04e8c",
+      "bytes": 9874
+    },
+    {
+      "input": {
+        "version": 4,
+        "title": " seoxrO",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "e",
+            "geo": {
+              "lat": 7.1312270424007055e-189,
+              "lon": 9e-323,
+              "alt": -6.358665886051772e-230,
+              "headingDeg": 2e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "x-1",
+                "kind": "model",
+                "view": "placed",
+                "pose": {
+                  "position": [
+                    -7.557982047207344e-80, 5.261137923711511e-211,
+                    -1.5185925093849524e-107
+                  ],
+                  "rotation": [0, 8.552940388997713e-246, 0, 1]
+                },
+                "asset": "arch",
+                "sizeM": 0.05000000000000005,
+                "title": " a"
+              },
+              {
+                "id": "su-_9___C_z--_8k5-De-_-____J-1J_V-j963_9_B_-3-8gm67b-1__0-q4SG_9",
+                "kind": "shortText",
+                "view": "card",
+                "pose": {
+                  "position": [-2.5e-323, -5e-323, -3.5e-323],
+                  "rotation": [0, 3e-323, 0, 1]
+                },
+                "createdAtIso": "1999-05-30T21:27:42.836Z",
+                "caption": "水",
+                "description": "  aŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀éaŹ𠀀\n\n"
+              }
+            ],
+            "steps": [
+              {
+                "id": "q",
+                "action": {
+                  "kind": "show",
+                  "block": "su-_9___C_z--_8k5-De-_-____J-1J_V-j963_9_B_-3-8gm67b-1__0-q4SG_9"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "description": "Up the hill.\nThen left.",
+            "image": "knight"
+          },
+          {
+            "id": "s1",
+            "geo": {
+              "lat": -8.4e-323,
+              "lon": -4.4e-323,
+              "alt": -8.4e-323,
+              "headingDeg": 5e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "-17c--_d2a--Z6_3DV-y380_z_cDT-zr_r8TrC5_U2-0z929-aF_h9w9-a_-1b_e",
+                "kind": "video",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    4.560969031025e-112, -2.555534223603573e-304,
+                    -5.603204684467966e-50
+                  ],
+                  "rotation": [0, 0, 0, 1]
+                },
+                "createdAtIso": "1994-11-17T15:58:10.652Z",
+                "video": "clip",
+                "transcript": "𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀  a𠀀Z😀𠀀  😀水Z水𠀀 ",
+                "poster": "knight"
+              },
+              {
+                "id": "Y_2",
+                "kind": "picture",
+                "view": "plane",
+                "pose": {
+                  "position": [1e-323, 5.4e-323, 8.941961010381863e-52],
+                  "rotation": [0, 5e-323, 0, 1]
+                },
+                "createdAtIso": "2072-09-08T22:29:02.471Z",
+                "image": "gate",
+                "title": " a\n",
+                "caption": " ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+                "alt": " é\n",
+                "widthM": 0.058821773595869736
+              }
+            ],
+            "steps": [
+              {
+                "id": "E_A-p_-_da6O-00--g19CBV3d_G8sZ_X--__2c8-_b_4__-3-_3_Vs0_c5-WJyv_",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1",
+                      "goto": "Y_2"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "_6-26_-__D_X-57BluH_7e_0xV__E1-F3--NwDQ_z_-dC1_-_Q5cL-b1wF_aJ_fv",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "_6-26_-__D_X-57BluH_7e_0xV__E1-F3--NwDQ_z_-dC1_-_Q5cL-b1wF_aJ_fv"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 26.81716537236686
+                }
+              },
+              {
+                "id": "Y_2",
+                "action": {
+                  "kind": "show",
+                  "block": "-17c--_d2a--Z6_3DV-y380_z_cDT-zr_r8TrC5_U2-0z929-aF_h9w9-a_-1b_e"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "title": "yD",
+            "geo": {
+              "lat": 2.413949796729916e-254,
+              "lon": -7.101762724698089e-58,
+              "alt": -2.770311633334995e-126,
+              "headingDeg": 359.89999999999975
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [],
+            "steps": []
+          },
+          {
+            "id": "s3",
+            "title": "agiIlRfZdT",
+            "geo": {
+              "lat": -2.3025438347390936e-111,
+              "lon": 7e-323,
+              "alt": 1.1380246470941043e-109,
+              "headingDeg": 8.841435861841411e-46
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "gate",
+                "kind": "audio",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    -499.999999999999, 1.2669115062580972e-246,
+                    -6.957925635050149e-302
+                  ],
+                  "rotation": [0, 2.606334710053861e-286, 0, 1]
+                },
+                "createdAtIso": "2099-12-31T23:59:59.998Z",
+                "audio": "voice",
+                "transcript": "a\n",
+                "title": " a𠀀ZZa😀7é𠀀 \t水Za𠀀ZZa😀7é𠀀 \t水Za𠀀ZZa😀7é𠀀 \t水Za𠀀ZZ\n\n"
+              }
+            ],
+            "steps": [
+              {
+                "id": "p-_--Y",
+                "action": {
+                  "kind": "show",
+                  "block": "gate"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10000000000000013
+                }
+              }
+            ]
+          }
+        ],
+        "description": "A walk, case 6.",
+        "cover": "gate",
+        "contact": "guide@example.org"
+      },
+      "sha256": "269a9fd5ee179db57e2a431d474b86a9001125f37551dbc954f181703dc8add8",
+      "bytes": 8470
+    },
+    {
+      "input": {
+        "version": 4,
+        "title": "yb ",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "toString",
+            "geo": {
+              "lat": 5.095696295614155e-44,
+              "lon": 4e-323,
+              "alt": 2e-323,
+              "headingDeg": 5.8433833865378775e-31
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "c",
+                "kind": "picture",
+                "view": "plane",
+                "pose": {
+                  "position": [-5.4e-323, -49.9999999999999, 2e-323],
+                  "rotation": [0, 4.4e-323, 0, 1]
+                },
+                "createdAtIso": "2099-12-31T23:59:59.981Z",
+                "image": "knight",
+                "title": " a",
+                "caption": " a \r\n𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé aaZ a𠀀7𠀀𠀀Zé ",
+                "alt": "  ZZ\n",
+                "widthM": 0.050000000000000044
+              },
+              {
+                "id": "8Qi-W_",
+                "kind": "model",
+                "view": "placed",
+                "pose": {
+                  "position": [
+                    -8.428815903231139e-184, -5e-324, 1.4258707961096488e-103
+                  ],
+                  "rotation": [0, 5e-324, 0, 1]
+                },
+                "createdAtIso": "1970-01-01T00:00:00.024Z",
+                "asset": "arch",
+                "sizeM": 499.9999999999992
+              },
+              {
+                "id": "-YKI81h_N",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [
+                    3.09768980965958e-105, 2e-323, -9.642301884578738e-260
+                  ],
+                  "rotation": [0, 2.8407759259333295e-105, 0, 1]
+                },
+                "createdAtIso": "1970-01-01T00:00:00.010Z",
+                "caption": "  a\n\n",
+                "description": "77 \ń😀\n"
+              }
+            ],
+            "steps": []
+          },
+          {
+            "id": "s1",
+            "title": "EYDxbF",
+            "geo": {
+              "lat": -7.179561170493794e-299,
+              "lon": -3.0524628206504343e-93,
+              "alt": -4.0891390484475564e-26,
+              "headingDeg": 359.8999999999994
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "gate",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [500, 2e-323, 0],
+                  "rotation": [0, 0.03023047650689344, 0, 0.9995429546998799]
+                },
+                "createdAtIso": "1970-01-01T00:00:00.001Z",
+                "caption": "́"
+              },
+              {
+                "id": "s1b1",
+                "kind": "model",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    499.99999999999966, 49.9999999999999,
+                    1.0371086632125097e-280
+                  ],
+                  "rotation": [0, 1e-323, 0, 1]
+                },
+                "createdAtIso": "2099-12-31T23:59:59.970Z",
+                "asset": "arch",
+                "sizeM": 500,
+                "title": " a😀é \r\na😀é \r\na😀é \r\na😀é \r\na😀é \r\na😀é \r\na😀é \r\na😀é \r\na😀é \r\na😀é \r\na😀"
+              }
+            ],
+            "steps": [
+              {
+                "id": "CAZ_-l_5AAG___v9-0g__-h3_W-0_95469_A-6___Ee_ec8E-_Y_nH1---__8-h_",
+                "action": {
+                  "kind": "show",
+                  "block": "s1b1"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10000000000000002
+                }
+              },
+              {
+                "id": "x-1",
+                "action": {
+                  "kind": "show",
+                  "block": "gate"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "title": "NdTaSOdfD",
+            "geo": {
+              "lat": 1.9702445706568583e-227,
+              "lon": 6.122899505747093e-273,
+              "alt": 1.8739040978001252e-236,
+              "headingDeg": 1e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "Q-5qb_97l-__2Y_g-_K-O--_P027_-_P_-v_N_i7f1J_b--BrZ__Rk-__--2i--9",
+                "kind": "longText",
+                "view": "card",
+                "pose": {
+                  "position": [5e-323, -8e-323, 0],
+                  "rotation": [0, 7.015282106295728e-117, 0, 1]
+                },
+                "createdAtIso": "2096-04-16T11:33:49.597Z",
+                "title": " 7́  a😀Za  a  水7́  a😀Za  a  水7́  a😀Za  a  水7́  a😀Za  a  水7́  a😀Za  a  水7́  a😀Za  a  水7́  a😀Za  a  水7́",
+                "body": "a"
+              },
+              {
+                "id": "Qfd9hBK_50d_C-HCJ_m-1-_J_l-ey_-_--bF-U93__I_---Q-7s0NH9__e0490_a",
+                "kind": "character",
+                "view": "stage",
+                "pose": {
+                  "position": [
+                    -3.5637598275547234e-210, -8.4e-323, -5.250612407401018e-148
+                  ],
+                  "rotation": [0, 5.727954494436411e-67, 0, 1]
+                },
+                "name": " é \r\n😀7\n\n",
+                "image": "gate",
+                "caption": " 7\n\n",
+                "voice": "voice"
+              }
+            ],
+            "steps": [
+              {
+                "id": "apply",
+                "action": {
+                  "kind": "show",
+                  "block": "Qfd9hBK_50d_C-HCJ_m-1-_J_l-ey_-_--bF-U93__I_---Q-7s0NH9__e0490_a"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "B-94",
+                "action": {
+                  "kind": "show",
+                  "block": "Q-5qb_97l-__2Y_g-_K-O--_P027_-_P_-v_N_i7f1J_b--BrZ__Rk-__--2i--9"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.874327885931624
+                }
+              },
+              {
+                "id": "_1_-_8U-d-E-Ay-_0-d-_--O22_-Wx__nk1_-7_2-6-96f_-_-317ZXdS_9FyCH_",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "apply"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "title": "dVwT",
+            "geo": {
+              "lat": 9.4e-323,
+              "lon": -3.5e-323,
+              "alt": 7999.999999999992,
+              "headingDeg": 1.0600525255456778e-62
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "clip",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [499.9999999999995, 49.99999999999992, -7e-323],
+                  "rotation": [0, 2.4612658275466065e-98, 0, 1]
+                },
+                "createdAtIso": "2056-03-10T09:45:08.132Z",
+                "caption": "a a a a a a a a a a a a a a a a a a a a",
+                "description": " 水a"
+              }
+            ],
+            "steps": [
+              {
+                "id": "d-7_---_0_O_---8E41-9i04G5_--0--0cO5__Yd-0_QDpBxKb-_0Z_3__k___1a",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 100,
+                  "answer": {
+                    "type": "single",
+                    "options": [
+                      {
+                        "id": "a",
+                        "label": "A"
+                      },
+                      {
+                        "id": "b",
+                        "label": "B"
+                      }
+                    ],
+                    "correct": "b"
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          }
+        ],
+        "needsNoGps": true
+      },
+      "sha256": "f4b48c652dfc0f406fbe02c0bd47982504b984c7a628cd7110d35448aaa39a1e",
+      "bytes": 9453
+    },
+    {
+      "input": {
+        "version": 4,
+        "title": "J KHT",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "SqfdZ",
+            "geo": {
+              "lat": -7.11697116384089e-58,
+              "lon": -5e-324,
+              "alt": -7.6796172535204e-22,
+              "headingDeg": 359.8999999999991
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "c",
+                "kind": "picture",
+                "view": "plane",
+                "pose": {
+                  "position": [9.4e-323, 4.064949168870155e-262, 5.4e-323],
+                  "rotation": [0, 2e-323, 0, 1]
+                },
+                "createdAtIso": "2099-12-31T23:59:59.998Z",
+                "image": "knight",
+                "title": "  Ź 　Ź 　Ź 　Ź 　Ź 　Ź 　Ź 　Ź 　Ź 　Ź 　Ź 　Ź 　Źa\n\n",
+                "caption": " Z\n",
+                "alt": "a水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ \r\n水aZZZ",
+                "widthM": 0.05000000000000008
+              }
+            ],
+            "steps": [
+              {
+                "id": "6--aEc97Fbd-_1YZYzAdX_--_p-__-e-D1_u1b_g_2B-H-_1S-n_n27CG2pJ_C30",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "xNW5_-1e_0"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1"
+                    },
+                    {
+                      "id": "o2",
+                      "label": "Option 2",
+                      "goto": "6--aEc97Fbd-_1YZYzAdX_--_p-__-e-D1_u1b_g_2B-H-_1S-n_n27CG2pJ_C30"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10000000000000009
+                }
+              },
+              {
+                "id": "xNW5_-1e_0",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "xNW5_-1e_0"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1",
+                      "goto": "xNW5_-1e_0"
+                    },
+                    {
+                      "id": "o2",
+                      "label": "Option 2",
+                      "goto": "6--aEc97Fbd-_1YZYzAdX_--_p-__-e-D1_u1b_g_2B-H-_1S-n_n27CG2pJ_C30"
+                    },
+                    {
+                      "id": "o3",
+                      "label": "Option 3",
+                      "goto": "xNW5_-1e_0"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10000000000000005
+                }
+              }
+            ],
+            "description": "Up the hill.\nThen left.",
+            "image": "knight"
+          },
+          {
+            "id": "s1",
+            "title": "vOcK",
+            "geo": {
+              "lat": -88.9999999999999,
+              "lon": -1.504651494685478e-172,
+              "alt": 2.017107496838009e-44,
+              "headingDeg": 6e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [],
+            "steps": [
+              {
+                "id": "_7_--U5v0Ubfx-b__a--1RiAA-_-281Dc__U-39-u_3--_D-_zz_-3Vc8Bt_ipUx",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 100,
+                  "answer": {
+                    "type": "number",
+                    "value": 1850,
+                    "tolerance": 5,
+                    "unit": "year"
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.1
+                }
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "title": "ref",
+            "geo": {
+              "lat": 5.824988342659911,
+              "lon": -2.8624861393293117e-255,
+              "alt": 2.5e-323,
+              "headingDeg": 4.4e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [],
+            "steps": [
+              {
+                "id": "__D2q__F6_y-B_X__00Y_c-6E__v64C_V0DvZF2_-5_6V-0JW-_6_b___fw_x2ez",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 69,
+                  "answer": {
+                    "type": "single",
+                    "options": [
+                      {
+                        "id": "a",
+                        "label": "A"
+                      },
+                      {
+                        "id": "b",
+                        "label": "B"
+                      }
+                    ],
+                    "correct": "b"
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "_0_p9_1BCDyM1DV-i8e__6xv_-B_CDzu_33W2-4--Yv_KAVmw--_dA8-Dgo-h_t-",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 95,
+                  "answer": {
+                    "type": "multiple",
+                    "options": [
+                      {
+                        "id": "a",
+                        "label": "A"
+                      },
+                      {
+                        "id": "b",
+                        "label": "B"
+                      },
+                      {
+                        "id": "c",
+                        "label": "C"
+                      }
+                    ],
+                    "correct": ["a", "c"]
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "3e26cfa3c90a1d10082c0383825ea8a8cb3aee96a313d4e0de67a606cb9cb3c0",
+      "bytes": 6418
+    },
+    {
+      "input": {
+        "version": 4,
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "valueOf",
+            "geo": {
+              "lat": 4.9968844863108417e-231,
+              "lon": 7.506229656909836e-118,
+              "alt": 7.364447262858012e-160,
+              "headingDeg": 2.2926594769488677e-268
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "w5_rO_B7-",
+                "kind": "model",
+                "view": "placed",
+                "pose": {
+                  "position": [
+                    -5.436018981530915e-47, 9.755731220354689e-63, 5.4e-323
+                  ],
+                  "rotation": [0, 1.5e-323, 0, 1]
+                },
+                "createdAtIso": "2066-06-04T03:49:08.830Z",
+                "asset": "arch",
+                "sizeM": 0.09693027517617561,
+                "title": "Z𠀀  𠀀\n\n"
+              },
+              {
+                "id": "_5_-",
+                "kind": "audio",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    6.107199445867198e-235, -49.99999999999994,
+                    3.4807095288814693e-68
+                  ],
+                  "rotation": [0, 2.1190051409801877e-308, 0, 1]
+                },
+                "createdAtIso": "2051-02-15T13:41:03.848Z",
+                "audio": "voice",
+                "transcript": "éa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\naéa𠀀 \r\n𠀀𠀀́Zé \r\na",
+                "title": " 𠀀a𠀀a𠀀a𠀀a𠀀a𠀀a𠀀a𠀀a𠀀a𠀀a𠀀a𠀀a𠀀a𠀀a𠀀a𠀀a𠀀a𠀀a𠀀a𠀀"
+              },
+              {
+                "id": "t_-wt-o0_ZK_MkRv_y__I8_3__S-_-Mq8ZOM6_ls-__6L-8-7_--5-BO8I-A0uk_",
+                "kind": "picture",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    -1.5882327679120148e-178, 1.5278406755493373e-214,
+                    499.99999999999983
+                  ],
+                  "rotation": [0, 3.312931898277064e-100, 0, 1]
+                },
+                "createdAtIso": "2043-11-24T03:55:51.293Z",
+                "image": "gate",
+                "caption": " 7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7́7",
+                "alt": " é",
+                "widthM": 0.20212832385106372
+              }
+            ],
+            "steps": [
+              {
+                "id": "st0",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "_Z9baH_R31_-4b38m_2y_Vi__2Cz3n7e-7_--t__yj--_-deAx_-4C12--acj-0-"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1",
+                      "goto": "st0"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 59.999999999999915
+                }
+              },
+              {
+                "id": "_Z9baH_R31_-4b38m_2y_Vi__2Cz3n7e-7_--t__yj--_-deAx_-4C12--acj-0-",
+                "action": {
+                  "kind": "show",
+                  "block": "t_-wt-o0_ZK_MkRv_y__I8_3__S-_-Mq8ZOM6_ls-__6L-8-7_--5-BO8I-A0uk_"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 48.809102292881015
+                }
+              },
+              {
+                "id": "_1Q40-_zW-_B2_-w1X-__dm35wH-Ola9VCt__--__E-q__Hm8TFm_-627--_-9--",
+                "action": {
+                  "kind": "show",
+                  "block": "_5_-"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10000000000000017
+                }
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "title": "xTrHtIsGGULH",
+            "geo": {
+              "lat": -88.99999999999996,
+              "lon": -9.989517021853292e-160,
+              "alt": 3.563203071062909e-116,
+              "headingDeg": 5e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [],
+            "steps": [
+              {
+                "id": "y__z7-1QO",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "y__z7-1QO"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1",
+                      "goto": "y__z7-1QO"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "title": "NdKOqOFA",
+            "geo": {
+              "lat": -4.4e-323,
+              "lon": -7.447432372692934e-136,
+              "alt": 7.152301093994758e-201,
+              "headingDeg": 8.4e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "---1",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [-2.5e-323, 2.241079208594195e-294, 5e-323],
+                  "rotation": [0, 5.374771228078358e-112, 0, 1]
+                },
+                "caption": "  水\n\n",
+                "description": " ́\n"
+              }
+            ],
+            "steps": []
+          }
+        ],
+        "description": "A walk, case 9.",
+        "cover": "gate",
+        "contact": "guide@example.org",
+        "tourId": "tour-9"
+      },
+      "sha256": "88ce0cff3f6e694c75357dda2a1e5fe89e70d02e2e6fd0239cad9eb81a99dd41",
+      "bytes": 7303
+    },
+    {
+      "input": {
+        "version": 4,
+        "title": " ",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "w",
+            "geo": {
+              "lat": 88.9999999999999,
+              "lon": -6.017662384980701e-146,
+              "alt": -1.5138867318409637e-39,
+              "headingDeg": 1.8812875103549586e-63
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "0i8-2-F_aE6_3-_LiSUFh__r66-7_65_5_5xm8J-xR_-K_7___d-3gS--_1_34__",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [1e-323, -8.4e-323, -2.4714261639405242e-107],
+                  "rotation": [0, 3.7697707757432584e-274, 0, 1]
+                },
+                "createdAtIso": "2099-12-31T23:59:59.998Z",
+                "caption": "  Z",
+                "description": "  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              },
+              {
+                "id": "c",
+                "kind": "audio",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    -499.99999999999983, 1.2619003284001598e-131, 5e-323
+                  ],
+                  "rotation": [0, 4e-323, 0, 1]
+                },
+                "audio": "voice",
+                "transcript": "a𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀 𠀀7á水 a77 😀"
+              },
+              {
+                "id": "SU5fc4AOO--NT_2pK_3X4-_cuu_h_n-__5-__--0z-T-9-9M8K-_5q--_yf9-_h_",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [
+                    2.1159871316231413e-182, 8.077272098174223e-64, 8e-323
+                  ],
+                  "rotation": [0, 5.555663212289023e-64, 0, 1]
+                },
+                "createdAtIso": "1991-07-02T08:42:58.626Z",
+                "caption": " Z水Z水  a 　𠀀ZééZ水Z水 　a 　𠀀ZééZ水Z水 　a  𠀀Zéé\n\n",
+                "description": "  á水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀 \r\ń水 \r\na𠀀"
+              }
+            ],
+            "steps": [
+              {
+                "id": "clip",
+                "action": {
+                  "kind": "show",
+                  "block": "c"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10539989151511742
+                }
+              },
+              {
+                "id": "cwEG1kcZiv-CP_-0aFDZ--g__C7D_x---WV0_b_X-zAx-0_-X1_b_3-_-Iq9w9--",
+                "action": {
+                  "kind": "show",
+                  "block": "0i8-2-F_aE6_3-_LiSUFh__r66-7_65_5_5xm8J-xR_-K_7___d-3gS--_1_34__"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.1591620990922099
+                }
+              }
+            ],
+            "description": "Up the hill.\nThen left.",
+            "image": "knight"
+          },
+          {
+            "id": "s1",
+            "title": "CmtDpmiX",
+            "geo": {
+              "lat": 6.328791294593501e-87,
+              "lon": 3.3337936266792835e-101,
+              "alt": 2.5e-323,
+              "headingDeg": 1.0048738060760018e-13
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "-V8dd_m_E_2zq_pA_-a68A__eLV06_-2F207-sc4_67D-8Z2jQ-VG_gw3e_-vz3p",
+                "kind": "shortText",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    -8.086065772617193e-181, 9.4e-323, 5.129429732109636e-280
+                  ],
+                  "rotation": [0, 3.871884157877817e-113, 0, 1]
+                },
+                "createdAtIso": "2028-02-26T07:11:35.339Z",
+                "caption": "😀7𠀀́77 7😀7𠀀́77 7😀7𠀀́77 7😀7𠀀́77 7😀7𠀀́77 7",
+                "description": "  𠀀7a7  Z𠀀7a7 Z𠀀7a7  Z𠀀7a7 Z𠀀7a7  Z𠀀7a7 Z𠀀7a7  Z𠀀7a7 Z𠀀7a7  Z𠀀7a7 Z𠀀7a7  Z𠀀7a7 Z𠀀7a7  Z𠀀7a7 Z𠀀7a7  Z𠀀7a7 Z𠀀7a7  Z𠀀7a7 Z𠀀7a7  Z𠀀7a7 Z𠀀7a7  Z𠀀7a7 Z𠀀7a7  Z𠀀7a7 Z𠀀7a7  Z𠀀7a7 Z𠀀7a"
+              }
+            ],
+            "steps": [
+              {
+                "id": "_Par",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "_Par"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "b_-W--y_--wn-_C--i__-V2A--y07r_-r--_-ax8-b_DPAN___jf_bB-YH0_W2Z-",
+                "action": {
+                  "kind": "show",
+                  "block": "-V8dd_m_E_2zq_pA_-a68A__eLV06_-2F207-sc4_67D-8Z2jQ-VG_gw3e_-vz3p"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 59.99999999999991
+                }
+              },
+              {
+                "id": "c-",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "c-"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1",
+                      "goto": "b_-W--y_--wn-_C--i__-V2A--y07r_-r--_-ax8-b_DPAN___jf_bB-YH0_W2Z-"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10000000000000021
+                }
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "title": "BDhCMzlrN",
+            "geo": {
+              "lat": -6e-323,
+              "lon": -1.5420397830886469e-180,
+              "alt": 2.255284411048981e-79,
+              "headingDeg": 1.4087702055096697e-275
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [],
+            "steps": [
+              {
+                "id": "__yca6_0qZ__-IADX-R-_e_ai_-Za_Z4--X1Z_6_-Zd9EKz-HH_-z---0Jx3_QjX",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 0,
+                  "answer": {
+                    "type": "multiple",
+                    "options": [
+                      {
+                        "id": "a",
+                        "label": "A"
+                      },
+                      {
+                        "id": "b",
+                        "label": "B"
+                      },
+                      {
+                        "id": "c",
+                        "label": "C"
+                      }
+                    ],
+                    "correct": ["a", "c"]
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10000000000000013
+                }
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "title": "cCAgs",
+            "geo": {
+              "lat": -9.657861504695545e-247,
+              "lon": -1.9899300132411985e-275,
+              "alt": 0.8506710794014533,
+              "headingDeg": 3.828380147417563e-221
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "k_-___q-l_bezQ--U_h9xPy-m_0iX-4vM_-__2q-fw_Z97N3-eC--_H_-6_j-0_K",
+                "kind": "model",
+                "view": "placed",
+                "pose": {
+                  "position": [
+                    3.875478655073487e-10, -6e-323, -2.992583441551711e-17
+                  ],
+                  "rotation": [0, 1.3071456500444251e-36, 0, 1]
+                },
+                "createdAtIso": "2058-09-05T14:03:18.956Z",
+                "asset": "arch",
+                "sizeM": 0.5296931138051139
+              }
+            ],
+            "steps": [
+              {
+                "id": "--n_7u-04z-08Z_d0zmm__A7_V776_N-J7_--45xD_-v_9C_U9G--9_A_A__9-O8",
+                "action": {
+                  "kind": "show",
+                  "block": "k_-___q-l_bezQ--U_h9xPy-m_0iX-4vM_-__2q-fw_Z97N3-eC--_H_-6_j-0_K"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 16.96541541547858
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "729231d0d67278c77db556222e896ad0264d23ebd1500db46b021f3e02b499bc",
+      "bytes": 9522
+    },
+    {
+      "input": {
+        "version": 4,
+        "title": "dZ M ",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "qUQZlOsgTtZ",
+            "geo": {
+              "lat": -5.008854431366587e-140,
+              "lon": -6e-323,
+              "alt": -3.2356396847413737e-285,
+              "headingDeg": 1e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [],
+            "steps": []
+          },
+          {
+            "id": "s1",
+            "title": "hb",
+            "geo": {
+              "lat": -1.8059852145314189e-127,
+              "lon": -1.2957764027506361e-25,
+              "alt": 1.9998910058937394e-261,
+              "headingDeg": 1.3081144858089932e-133
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "st0",
+                "kind": "audio",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    9.61838895631486e-183, 49.99999999999992,
+                    -6.951244397410885e-177
+                  ],
+                  "rotation": [0, 1.0069965059105131e-64, 0, 1]
+                },
+                "createdAtIso": "1970-01-01T00:00:00.012Z",
+                "audio": "voice",
+                "transcript": "Z\n",
+                "title": "Z\n"
+              },
+              {
+                "id": "a",
+                "kind": "video",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    5.901544031327682e-231, -1.8812026825709245e-260,
+                    9.395341587627655e-110
+                  ],
+                  "rotation": [0, 2.8679905189418125e-132, 0, 1]
+                },
+                "createdAtIso": "2081-08-21T15:28:25.483Z",
+                "video": "clip",
+                "transcript": "́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́éa 　aé́éa aé́é",
+                "title": "  水水水7𠀀水水水7𠀀水水水7𠀀水水水7𠀀水水水7𠀀水水水7𠀀水水水7𠀀水水水7𠀀\n",
+                "poster": "gate"
+              },
+              {
+                "id": "-",
+                "kind": "audio",
+                "view": "card",
+                "pose": {
+                  "position": [499.99999999999955, 50, 6.315832343667419e-299],
+                  "rotation": [0, 1.344315622275102e-26, 0, 1]
+                },
+                "createdAtIso": "1970-01-01T00:00:00.014Z",
+                "audio": "voice",
+                "transcript": " 水\n",
+                "title": "  😀 \r\n😀a7Z  aé7😀 　😀a7Z a\n"
+              }
+            ],
+            "steps": [
+              {
+                "id": "Cs_7-_n-j_",
+                "action": {
+                  "kind": "show",
+                  "block": "a"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "-tiC_6-SCApKWh---EeIcs--Q-_79_D--_Ec_5--5QHcxaJ__wyL_at_c--3U-Z_",
+                "action": {
+                  "kind": "show",
+                  "block": "-"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "XLn_52Kq",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 5,
+                  "answer": {
+                    "type": "code",
+                    "salt": "s2",
+                    "sha256": [
+                      "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                    ]
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "ob8-R1-",
+                "action": {
+                  "kind": "show",
+                  "block": "st0"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "ea0703c76c36ae736968b75585cafbb4d51a3714cd4bf0cfaac43ea808d8289d",
+      "bytes": 4785
+    },
+    {
+      "input": {
+        "version": 4,
+        "title": " Q",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "Dbbnw",
+            "geo": {
+              "lat": 5e-324,
+              "lon": -1.807329167006897e-141,
+              "alt": 1.1874350859467938e-287,
+              "headingDeg": 359.8999999999998
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "dE3C__-nr",
+                "kind": "model",
+                "view": "placed",
+                "pose": {
+                  "position": [
+                    -1.2260059984478237e-267, -1.335229628379604e-186,
+                    5.758791073462008e-294
+                  ],
+                  "rotation": [0, 4e-323, 0, 1]
+                },
+                "createdAtIso": "2095-07-07T06:46:49.493Z",
+                "asset": "arch",
+                "sizeM": 167.04863665015753,
+                "title": "aZa \nZa Za \nZa Za \nZa Za \nZa Za \nZa Za \nZa Za \nZa Za \nZa Za \nZa Za \nZa Za \nZa Za \nZa Za \nZaa"
+              },
+              {
+                "id": "ARG4Lr8YGwzNKA_h-_1-rV9So9d--7--yr_L3Zs__G_8-0MOc-Pj8__q-CT-_Q__",
+                "kind": "longText",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    -499.9999999999996, 1.9840258764971066e-246,
+                    -1.0844492379206257e-87
+                  ],
+                  "rotation": [0, 0.05784078502638396, 0, 0.998325820355024]
+                },
+                "createdAtIso": "2038-02-04T16:26:43.797Z",
+                "title": " 水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́Z水́",
+                "body": "a𠀀7😀水水😀𠀀水  "
+              },
+              {
+                "id": "x-1",
+                "kind": "picture",
+                "view": "plane",
+                "pose": {
+                  "position": [
+                    4.575504942106875e-238, 1.2535113754296452e-168,
+                    499.9999999999989
+                  ],
+                  "rotation": [0, 2.9187890026639646e-111, 0, 1]
+                },
+                "image": "knight",
+                "title": "  a\n",
+                "caption": " a😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水 \t😀éa7𠀀́水水",
+                "widthM": 0.9396974257010503
+              }
+            ],
+            "steps": [
+              {
+                "id": "b",
+                "action": {
+                  "kind": "show",
+                  "block": "ARG4Lr8YGwzNKA_h-_1-rV9So9d--7--yr_L3Zs__G_8-0MOc-Pj8__q-CT-_Q__"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 2.359083021114253
+                }
+              },
+              {
+                "id": "3in_4De876-xXa_9K-9----8___v48_7__-4__-Q-A-J__-E0--y__d3_1F_-N--",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 95,
+                  "answer": {
+                    "type": "number",
+                    "value": 1850,
+                    "tolerance": 5,
+                    "unit": "year"
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "__5ow8E__3V8-_2f-Z_y_HD-2__yz-X--57e__-Q9TK-2_vI0e_5Ca_Y8MA--0-E",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "b"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1"
+                    },
+                    {
+                      "id": "o2",
+                      "label": "Option 2",
+                      "goto": "3in_4De876-xXa_9K-9----8___v48_7__-4__-Q-A-J__-E0--y__d3_1F_-N--"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "description": "Up the hill.\nThen left.",
+            "image": "knight"
+          }
+        ],
+        "description": "A walk, case 12.",
+        "cover": "gate",
+        "contact": "guide@example.org",
+        "needsNoGps": true
+      },
+      "sha256": "96722d7d3031a075c0a1e13c8f7bae2edc25f02d15a2e085227decc7add1a4fb",
+      "bytes": 5290
+    },
+    {
+      "input": {
+        "version": 4,
+        "title": "  AYisProt",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "geo": {
+              "lat": -5.672250776834287e-114,
+              "lon": 1e-323,
+              "alt": -3.5e-323,
+              "headingDeg": 3.5e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "a",
+                "kind": "video",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    499.9999999999992, -3.275969791908859e-46, 9.4e-323
+                  ],
+                  "rotation": [0, 3.7750186386394384e-275, 0, 1]
+                },
+                "createdAtIso": "2040-07-01T10:38:53.176Z",
+                "video": "clip",
+                "transcript": " a \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r",
+                "title": " 7a \n𠀀\n",
+                "poster": "gate"
+              },
+              {
+                "id": "C4R--_GQ_7nOf3_c-Yk--_mRpKG__38D_9SHyr_WNG6dI--V3BCVC8917W4_43_r",
+                "kind": "picture",
+                "view": "plane",
+                "pose": {
+                  "position": [
+                    1.8076401059655674e-183, -3.508705360412623e-137,
+                    -5.2378694418839134e-204
+                  ],
+                  "rotation": [0, 3.468316123230868e-198, 0, 1]
+                },
+                "image": "gate",
+                "title": "a \t😀 \ta \t😀 \ta \t😀a\n",
+                "caption": " 水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z \t水Z \n水Z ",
+                "alt": "  水",
+                "widthM": 49.999999999999886
+              }
+            ],
+            "steps": [
+              {
+                "id": "O6W00-D-Y75s",
+                "action": {
+                  "kind": "show",
+                  "block": "a"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.10000000000000002
+                }
+              },
+              {
+                "id": "__-__iz",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 43,
+                  "answer": {
+                    "type": "single",
+                    "options": [
+                      {
+                        "id": "a",
+                        "label": "A"
+                      },
+                      {
+                        "id": "b",
+                        "label": "B"
+                      }
+                    ],
+                    "correct": "b"
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 20.38770498867702
+                }
+              },
+              {
+                "id": "-e---Fg",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "-e---Fg"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1",
+                      "goto": "__-__iz"
+                    },
+                    {
+                      "id": "o2",
+                      "label": "Option 2",
+                      "goto": "__-__iz"
+                    },
+                    {
+                      "id": "o3",
+                      "label": "Option 3",
+                      "goto": "O6W00-D-Y75s"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "title": "RQQu",
+            "geo": {
+              "lat": 8.821449119701034e-107,
+              "lon": -3.6314698709089e-12,
+              "alt": -5.930752226073514e-34,
+              "headingDeg": 1.9831520749102636e-170
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "b",
+                "kind": "video",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    2.036225828803491e-47, 5.2733128766298275e-169,
+                    4.662673097116327e-164
+                  ],
+                  "rotation": [0, 1.2623077161769433e-29, 0, 1]
+                },
+                "createdAtIso": "1984-01-07T15:53:27.123Z",
+                "video": "clip",
+                "transcript": "  😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́水水 　😀 　́😀Ź ́́",
+                "title": " 7 😀 𠀀é水 😀7 😀 𠀀é水 😀7 😀 𠀀é水 😀7 😀 𠀀é水 😀7 😀a\n",
+                "poster": "gate"
+              }
+            ],
+            "steps": [
+              {
+                "id": "-_fQ-r-_-_",
+                "action": {
+                  "kind": "show",
+                  "block": "b"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "title": "FORyby",
+            "geo": {
+              "lat": 5.4e-323,
+              "lon": -4.784234787972271e-308,
+              "alt": -4.1051889250446726e-44,
+              "headingDeg": 3.300138202047619e-245
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "x-1",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [
+                    -2.824811093807939e-126, -6.271783038751089e-117,
+                    -1.930275991340963e-211
+                  ],
+                  "rotation": [0, 9.79554227206397e-248, 0, 1]
+                },
+                "createdAtIso": "1970-01-01T00:00:00.019Z",
+                "caption": "😀\n",
+                "description": " aéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZaéZ\n\n"
+              }
+            ],
+            "steps": [
+              {
+                "id": "Y_2",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "Y_2"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1"
+                    },
+                    {
+                      "id": "o2",
+                      "label": "Option 2",
+                      "goto": "C-l72mAeS"
+                    },
+                    {
+                      "id": "o3",
+                      "label": "Option 3"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "C-l72mAeS",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "C-l72mAeS"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1",
+                      "goto": "Y_2"
+                    },
+                    {
+                      "id": "o2",
+                      "label": "Option 2",
+                      "goto": "C-l72mAeS"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          },
+          {
+            "id": "s3",
+            "title": "jBYFUeo",
+            "geo": {
+              "lat": 7.4e-323,
+              "lon": 1.1413254639284172e-141,
+              "alt": 7999.999999999987,
+              "headingDeg": 6.4e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "Y_2",
+                "kind": "video",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    -8.4067363398996e-243, 3.5176127582913556e-298,
+                    -1.0477714802013376e-305
+                  ],
+                  "rotation": [0, 2.3721681782579626e-252, 0, 1]
+                },
+                "video": "clip",
+                "transcript": "  aé \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \té \t",
+                "title": "  a\n"
+              }
+            ],
+            "steps": [
+              {
+                "id": "7",
+                "action": {
+                  "kind": "show",
+                  "block": "Y_2"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          }
+        ],
+        "tourId": "tour-13"
+      },
+      "sha256": "faa564ff28ffded24cdf251a625fbd6798c494dbe5e56b161b5aee8a9f5c4eeb",
+      "bytes": 11575
+    },
+    {
+      "input": {
+        "version": 4,
+        "title": "name",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "v",
+            "geo": {
+              "lat": -2.5e-323,
+              "lon": 5.4e-323,
+              "alt": 9.28227793621673e-199,
+              "headingDeg": 9.4e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [],
+            "steps": [],
+            "description": "Up the hill.\nThen left.",
+            "image": "knight"
+          }
+        ]
+      },
+      "sha256": "63d22f3d1e12f485ae0772ea1f374dfe185a8906ea1e47518121f37b103da15b",
+      "bytes": 1028
+    },
+    {
+      "input": {
+        "version": 4,
+        "title": "cPEh ETA",
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "KS",
+            "geo": {
+              "lat": 3.564506562690288e-99,
+              "lon": 3.280512610542011e-242,
+              "alt": 9e-323,
+              "headingDeg": 4.4824889072941484e-151
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "a-_Oo-5_6y-b-L_JQ7-A2_PbJ33fW-p_V_Cp-LMncZx-hoCb6-7_-7-1_X3_w--_",
+                "kind": "model",
+                "view": "placed",
+                "pose": {
+                  "position": [
+                    -6.507402374055338e-146, -6e-323, -499.9999999999989
+                  ],
+                  "rotation": [0, 3.856338675378659e-118, 0, 1]
+                },
+                "createdAtIso": "1989-02-16T17:40:22.293Z",
+                "asset": "arch",
+                "sizeM": 499.99999999999994,
+                "title": " 😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7😀水😀7\n\n"
+              }
+            ],
+            "steps": [
+              {
+                "id": "T___8bo-Z_1FVHTV16lT-_Iqb0A1967j-Tv8C44-_RA__-ePl-Z823-Ee--E9-34",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "_77FB1--2_EK"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1",
+                      "goto": "T___8bo-Z_1FVHTV16lT-_Iqb0A1967j-Tv8C44-_RA__-ePl-Z823-Ee--E9-34"
+                    },
+                    {
+                      "id": "o2",
+                      "label": "Option 2",
+                      "goto": "T___8bo-Z_1FVHTV16lT-_Iqb0A1967j-Tv8C44-_RA__-ePl-Z823-Ee--E9-34"
+                    },
+                    {
+                      "id": "o3",
+                      "label": "Option 3",
+                      "goto": "_77FB1--2_EK"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "_77FB1--2_EK",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 83,
+                  "answer": {
+                    "type": "text",
+                    "salt": "s1",
+                    "sha256": [
+                      "0000000000000000000000000000000000000000000000000000000000000000"
+                    ]
+                  }
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.11848453899962477
+                }
+              },
+              {
+                "id": "clip",
+                "action": {
+                  "kind": "show",
+                  "block": "a-_Oo-5_6y-b-L_JQ7-A2_PbJ33fW-p_V_Cp-LMncZx-hoCb6-7_-7-1_X3_w--_"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          }
+        ],
+        "description": "A walk, case 15.",
+        "cover": "gate",
+        "contact": "guide@example.org"
+      },
+      "sha256": "7fbfe08241b05becf57d039a7170ef5773d7e736a57989b741f27d3803290598",
+      "bytes": 3534
+    },
+    {
+      "input": {
+        "version": 4,
+        "title": " ",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "geo": {
+              "lat": -3.483836245237186e-109,
+              "lon": -1.1157305582084884e-89,
+              "alt": 2.5e-323,
+              "headingDeg": 9.050036766013103e-271
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [],
+            "steps": [
+              {
+                "id": "_n_-2N-Xv_Kj-__6-hF3____R-9--__Qd1BD_-_-z-06p-v_GZV46_2--7MB-_qr",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 61,
+                  "answer": {
+                    "type": "single",
+                    "options": [
+                      {
+                        "id": "a",
+                        "label": "A"
+                      },
+                      {
+                        "id": "b",
+                        "label": "B"
+                      }
+                    ],
+                    "correct": "b"
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "Y_-841E_Vk_uCH_wWs_LJ--70-_-xBJ__-X__3oCzeuhz3ICD_B__e_w4X6Y2-a_",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 3,
+                  "answer": {
+                    "type": "code",
+                    "salt": "s2",
+                    "sha256": [
+                      "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                    ]
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ],
+            "description": "Up the hill.\nThen left.",
+            "image": "knight"
+          }
+        ]
+      },
+      "sha256": "4138dbde3a12bde04a7acc1576ac0b39fa522ad3f70e0b5a6107b60e703384d0",
+      "bytes": 2175
+    },
+    {
+      "input": {
+        "version": 4,
+        "order": "any",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "GYVJNzcJAwGE",
+            "geo": {
+              "lat": -3.9906218069863115e-251,
+              "lon": -1.252653523985338e-301,
+              "alt": 2.3392675607191815e-35,
+              "headingDeg": 1.7778378995197762e-59
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "c",
+                "kind": "longText",
+                "view": "card",
+                "pose": {
+                  "position": [-2.3208332593156164e-124, 4e-323, 2e-323],
+                  "rotation": [0, 6.761406786147633e-28, 0, 1]
+                },
+                "createdAtIso": "1981-03-24T07:58:04.626Z",
+                "title": "  a😀𠀀𠀀ZZ水a😀𠀀𠀀ZZ水a😀𠀀𠀀ZZ水a😀𠀀𠀀ZZ水a😀𠀀𠀀ZZ水a😀𠀀𠀀ZZ水a😀𠀀𠀀ZZ水a😀𠀀𠀀ZZ水a😀𠀀𠀀ZZ水a😀𠀀𠀀ZZ水a😀𠀀𠀀ZZ水a😀𠀀",
+                "body": "é"
+              },
+              {
+                "id": "-S-_xU_MLul_H_q--_450FT__-_5_Ct0E_G1mb75_o-V-_olY4-K-RT_E-D_-1I1",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [
+                    500, -1.079523987743836e-23, 1.2632956004692738e-98
+                  ],
+                  "rotation": [0, 2e-323, 0, 1]
+                },
+                "createdAtIso": "2068-07-29T00:20:20.475Z",
+                "caption": "7 \nZ𠀀7 \nZ𠀀7 Z𠀀7 \nZ𠀀7 \nZ𠀀7 Z𠀀7 \nZ𠀀7 \nZ𠀀7 Z𠀀7 \nZ",
+                "description": "  Z水́𠀀𠀀水 \r\nZ𠀀Z水́𠀀𠀀水 \nZ𠀀Z水́𠀀𠀀水 \r\nZ𠀀Z水́𠀀𠀀水 \nZ𠀀Z水́𠀀𠀀水 \r\nZ𠀀Z水́𠀀𠀀水 \nZ𠀀Z水́𠀀𠀀水 \r\nZ𠀀Z水́𠀀𠀀水 \nZ𠀀Z水́𠀀𠀀水 \r\nZ𠀀Z水́𠀀𠀀水 \nZ𠀀Z水́𠀀𠀀水 \r\nZ𠀀Z水́𠀀𠀀水 \nZ𠀀Z水́𠀀𠀀水 \r\nZ𠀀Z水́𠀀𠀀水 \nZ𠀀Z水́𠀀𠀀水 \r\nZ𠀀Z水́𠀀𠀀水 \nZ𠀀Z水́𠀀𠀀水 \r\nZ𠀀Z水́𠀀𠀀水a"
+              },
+              {
+                "id": "e8_4Xz_D_",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [
+                    9.4e-323, 2.8416617499360974e-250, -2.1613412077943847e-88
+                  ],
+                  "rotation": [0, 1.8988215193149856e-15, 0, -1]
+                },
+                "caption": "水😀𠀀水😀𠀀\n\n",
+                "description": "a77 77 　77 77a\n"
+              }
+            ],
+            "steps": [
+              {
+                "id": "3",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "3"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1",
+                      "goto": "-con"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "-con",
+                "action": {
+                  "kind": "show",
+                  "block": "e8_4Xz_D_"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "Y_2",
+                "action": {
+                  "kind": "show",
+                  "block": "c"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "title": "IC",
+            "geo": {
+              "lat": -88.99999999999976,
+              "lon": 178.99999999999986,
+              "alt": -9.041627436054045e-64,
+              "headingDeg": 8.4e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "b",
+                "kind": "model",
+                "view": "placed",
+                "pose": {
+                  "position": [
+                    -4.782881152909874e-227, 1.8996169609920515e-280,
+                    -1.83039916131469e-139
+                  ],
+                  "rotation": [0, 5e-324, 0, 1]
+                },
+                "asset": "arch",
+                "sizeM": 0.2426753512412842,
+                "title": "é́Z 　́7水7𠀀7 \né́Z \ń7水7𠀀7 　é́Z 　́7水7𠀀7 \né́Z \ń7水7𠀀7 　é́Z 　́7水7𠀀7 \né́Z \ń7水7𠀀7\n"
+              },
+              {
+                "id": "7-3_D_--5W_",
+                "kind": "picture",
+                "view": "plane",
+                "pose": {
+                  "position": [
+                    6.30671601815149e-8, 9.851657554198065e-76,
+                    -2.050664345613351e-13
+                  ],
+                  "rotation": [0, 1.1109286334178867e-118, 0, 1]
+                },
+                "createdAtIso": "2048-04-28T06:09:17.475Z",
+                "image": "knight",
+                "title": "𠀀\n\n",
+                "caption": " 77  a𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77 \na𠀀a𠀀ZZ77 \r\na𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77 \na𠀀a𠀀ZZ77 \r\na𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77 \na𠀀a𠀀ZZ77 \r\na𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77 \na𠀀a𠀀ZZ77 \r\na𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77 \na𠀀a𠀀ZZ77 \r\na𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77 \na𠀀a𠀀ZZ77 \r\na𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77 \na𠀀a𠀀ZZ77 \r\na𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77 \na𠀀a𠀀ZZ77 \r\na𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77 \na𠀀a𠀀ZZ77 \r\na𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77 \na𠀀a𠀀ZZ77 \r\na𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77 \na𠀀a𠀀ZZ77 \r\na𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77 \na𠀀a𠀀ZZ77 \r\na𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77 \na𠀀a𠀀ZZ77 \r\na𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77 \na𠀀a𠀀ZZ77 \r\na𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77  a𠀀a𠀀ZZ77 \na",
+                "alt": " aZ \tZ \r\nZ  Z \tZ \r\nZ  Z \tZ \r\nZ  Z \tZ \r\nZ  Z \tZ \r\nZ  Z \tZ \r\nZ  Z \tZ \r\nZ  Z \tZ \r\nZ  Z \tZ \r\nZ  Z \tZ \r\nZ  Za\n",
+                "widthM": 49.99999999999998
+              },
+              {
+                "id": "-Q1Fy-9yK-_-97gG7E_9G_4__2-_0I60A-R__43-v3-----Yt-_1PUe-5k-lI23L",
+                "kind": "audio",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    -5.320827055984872e-203, 7.808622879942045e-268,
+                    9.751927884321295e-293
+                  ],
+                  "rotation": [0, 1.3034949684315474e-149, 0, 1]
+                },
+                "createdAtIso": "2079-02-21T21:54:25.401Z",
+                "audio": "voice",
+                "transcript": "7\n",
+                "title": "  ́a𠀀水é水a7é水Zé́a𠀀水é水a7é水Zé́a𠀀水é水a7é水Zé́a𠀀水\n"
+              }
+            ],
+            "steps": [
+              {
+                "id": "x-1",
+                "action": {
+                  "kind": "show",
+                  "block": "-Q1Fy-9yK-_-97gG7E_9G_4__2-_0I60A-R__43-v3-----Yt-_1PUe-5k-lI23L"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.42045070177270255
+                }
+              }
+            ]
+          },
+          {
+            "id": "s2",
+            "title": "Sb",
+            "geo": {
+              "lat": -88.99999999999997,
+              "lon": -6e-323,
+              "alt": 3.2309694004311875e-30,
+              "headingDeg": 5.4e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "2mx_o-Nm_W7uj--_5zn__-_y5g__98m_7u7_ih6_-Rt4_NQ-G-c_v---5U---x8F",
+                "kind": "model",
+                "view": "placed",
+                "pose": {
+                  "position": [
+                    -1.5252206253593852e-282, 3e-323, -2.3153262312508165e-304
+                  ],
+                  "rotation": [0, 3e-323, 0, 1]
+                },
+                "createdAtIso": "1996-05-07T12:05:49.646Z",
+                "asset": "arch",
+                "sizeM": 0.05000000000000007,
+                "title": "水𠀀𠀀水𠀀𠀀水𠀀𠀀水𠀀𠀀水\n\n"
+              },
+              {
+                "id": "s2b1",
+                "kind": "audio",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    499.99999999999966, 7.754803925039471e-114,
+                    9.94086922595068e-236
+                  ],
+                  "rotation": [0, 2e-323, 0, 1]
+                },
+                "audio": "voice",
+                "transcript": " ZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水éZéZa𠀀😀水水水"
+              },
+              {
+                "id": "Adx_dzn2T",
+                "kind": "picture",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    499.9999999999993, -2.928772527657616e-14,
+                    1.9859849201828402e-11
+                  ],
+                  "rotation": [0, 4.940056558542312e-166, 0, 1]
+                },
+                "createdAtIso": "1970-01-01T00:00:00.027Z",
+                "image": "gate",
+                "alt": " aa \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na \r\na\n",
+                "widthM": 0.17680514505715386
+              }
+            ],
+            "steps": [
+              {
+                "id": "c",
+                "action": {
+                  "kind": "show",
+                  "block": "Adx_dzn2T"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 50.441944255174086
+                }
+              },
+              {
+                "id": "B",
+                "action": {
+                  "kind": "quiz",
+                  "question": "How old is it?",
+                  "points": 16,
+                  "answer": {
+                    "type": "number",
+                    "value": 1850,
+                    "tolerance": 5,
+                    "unit": "year"
+                  }
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "Y_2",
+                "action": {
+                  "kind": "show",
+                  "block": "s2b1"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "98ab-_-q_7_D-Y1_N6wqpgD_1u1xS-V_n-62zCxy_23UKA-jAv909-bs_6-6___5",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "Y_2"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1"
+                    },
+                    {
+                      "id": "o2",
+                      "label": "Option 2",
+                      "goto": "c"
+                    },
+                    {
+                      "id": "o3",
+                      "label": "Option 3",
+                      "goto": "98ab-_-q_7_D-Y1_N6wqpgD_1u1xS-V_n-62zCxy_23UKA-jAv909-bs_6-6___5"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          }
+        ],
+        "tourId": "tour-17",
+        "needsNoGps": true
+      },
+      "sha256": "1784d1698a099cb95f49fb3ee7882b8cfe4e92094cbed6942f3ba8c7c84f2870",
+      "bytes": 12543
+    },
+    {
+      "input": {
+        "version": 4,
+        "title": "d",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "uvAsyRd",
+            "geo": {
+              "lat": -5.064208913375358e-195,
+              "lon": 0,
+              "alt": -5e-324,
+              "headingDeg": 3.5e-323
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [],
+            "steps": [],
+            "description": "Up the hill.\nThen left.",
+            "image": "knight"
+          }
+        ],
+        "description": "A walk, case 18.",
+        "cover": "gate",
+        "contact": "guide@example.org"
+      },
+      "sha256": "3e99c43371783b5620ee9630b499696a5d4e5069fd82edde594aca2c81d04223",
+      "bytes": 1114
+    },
+    {
+      "input": {
+        "version": 4,
+        "title": "PgFcu",
+        "order": "fixed",
+        "assets": [
+          {
+            "id": "gate",
+            "path": "content/gate.jpg",
+            "width": 800,
+            "height": 600
+          },
+          {
+            "id": "knight",
+            "path": "content/knight.png",
+            "width": 512,
+            "height": 1024
+          },
+          {
+            "id": "voice",
+            "path": "content/voice.mp3"
+          },
+          {
+            "id": "arch",
+            "path": "content/arch.glb"
+          },
+          {
+            "id": "clip",
+            "path": "content/clip.mp4"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s0",
+            "title": "KXDzI",
+            "geo": {
+              "lat": 5.153630039054334e-125,
+              "lon": -178.9999999999999,
+              "alt": 4e-323,
+              "headingDeg": 4.162777385057667e-194
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [
+              {
+                "id": "-_4_w13W_V_F",
+                "kind": "shortText",
+                "view": "pin",
+                "pose": {
+                  "position": [
+                    -4.746831433430833e-233, 1.189194001795214e-9,
+                    2.8721300697887777e-308
+                  ],
+                  "rotation": [0, 4.4e-323, 0, 1]
+                },
+                "caption": " 77 \r\ń \r\naZ77 \r\ń \r\naZ77 \r\ń \r\naZ77 \r\ń \r\naZ77 \r\ń \r\naZ77 \r\ńa\n",
+                "description": "a  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éaa  éa"
+              },
+              {
+                "id": "k_-_yfEXBzo___ROS3347-z4-Lkjt_87-Y_iy0a4OC__M-8_v-uA5_-rqO-zeiqF",
+                "kind": "longText",
+                "view": "card",
+                "pose": {
+                  "position": [
+                    -1.3199087291825577e-306, 6.490448774239279e-57, -4.4e-323
+                  ],
+                  "rotation": [0, 6.019972295510251e-200, 0, 1]
+                },
+                "createdAtIso": "1981-05-15T12:31:50.319Z",
+                "title": "  a\n",
+                "body": "𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水𠀀á7水́é𠀀́水"
+              },
+              {
+                "id": "__s_---_t_8_",
+                "kind": "character",
+                "view": "stage",
+                "pose": {
+                  "position": [
+                    4.009588477927541e-64, 49.999999999999915,
+                    4.066265297704186e-160
+                  ],
+                  "rotation": [0, 2e-323, 0, 1]
+                },
+                "createdAtIso": "1971-03-28T02:20:57.773Z",
+                "name": " 𠀀 \t😀𠀀7𠀀 \t😀𠀀7𠀀 \t😀𠀀7𠀀 \t😀𠀀7𠀀 \t😀𠀀7𠀀 \t😀𠀀7𠀀 \t😀𠀀7𠀀 \t😀𠀀7𠀀 \t😀𠀀7𠀀 \t😀𠀀7𠀀 \t😀𠀀7𠀀 \t😀𠀀7𠀀 \t😀𠀀7𠀀 \t😀𠀀7𠀀 \t😀𠀀7𠀀 \t😀𠀀7\n",
+                "image": "gate",
+                "caption": " 水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水7́ 　水aa😀水"
+              }
+            ],
+            "steps": [
+              {
+                "id": "x-1",
+                "action": {
+                  "kind": "show",
+                  "block": "__s_---_t_8_"
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              },
+              {
+                "id": "B____aS-Do-2iJ-0j-Em-0i-Z4_Nh--C__0-1uTW-2_-7K-5_5Y-_-d9__-0b-r_",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0",
+                      "goto": "B____aS-Do-2iJ-0j-Em-0i-Z4_Nh--C__0-1uTW-2_-7K-5_5Y-_-d9__-0b-r_"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1"
+                    },
+                    {
+                      "id": "o2",
+                      "label": "Option 2",
+                      "goto": "_q_0uI4"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 0.16406164926435293
+                }
+              },
+              {
+                "id": "_q_0uI4",
+                "action": {
+                  "kind": "show",
+                  "block": "k_-_yfEXBzo___ROS3347-z4-Lkjt_87-Y_iy0a4OC__M-8_v-uA5_-rqO-zeiqF"
+                },
+                "advance": {
+                  "mode": "auto",
+                  "afterS": 4.994620328059031
+                }
+              }
+            ]
+          },
+          {
+            "id": "s1",
+            "title": "xwAA",
+            "geo": {
+              "lat": 2.0494316334951838e-119,
+              "lon": 9e-323,
+              "alt": -2.5e-323,
+              "headingDeg": 3.870807422550121e-155
+            },
+            "activateRadiusM": 30,
+            "foundRadiusM": 20,
+            "hint": "arrow",
+            "blocks": [],
+            "steps": [
+              {
+                "id": "5Qv3Mtwb",
+                "action": {
+                  "kind": "choice",
+                  "prompt": "Where next?",
+                  "options": [
+                    {
+                      "id": "o0",
+                      "label": "Option 0"
+                    },
+                    {
+                      "id": "o1",
+                      "label": "Option 1",
+                      "goto": "5Qv3Mtwb"
+                    },
+                    {
+                      "id": "o2",
+                      "label": "Option 2",
+                      "goto": "5Qv3Mtwb"
+                    }
+                  ]
+                },
+                "advance": {
+                  "mode": "tap"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "sha256": "325f239a82b0403f1a8afe44637090446517729167b373566a93028a4095d3e1",
+      "bytes": 6613
+    }
+  ]
+}

@@ -240,6 +240,7 @@ ${body}
           >location-based-webxr</a
         >
         framework. <a href="/">Try the demos →</a>
+        · <a href="/legal/">Legal notice and privacy</a>
       </div>
     </footer>
   </body>
