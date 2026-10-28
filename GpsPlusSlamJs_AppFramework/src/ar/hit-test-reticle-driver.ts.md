@@ -29,7 +29,9 @@
     moment WebXR offers it. `null` when the event has no frame or input
     source, the pose is null, or the frame refuses. Backward compatible: a
     one-parameter handler (MinimalExample) behaves as before.
-- `SelectTargetRay` - `{ targetRayInViewer: readonly number[] }`.
+- `SelectTargetRay` - `{ targetRayInViewer: readonly number[] }`, re-exported
+  from `xr-select-listener.ts`, where it is defined (the listener reads it;
+  defining it here made the two modules import each other).
 - `HitTestReticleHandle` — `isVisible()`, `getWorldPosition(out)` (only
   meaningful while visible), `dispose()` (idempotent: cancels the live
   source, removes the session listeners and the mesh, unregisters the frame

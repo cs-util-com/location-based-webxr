@@ -110,4 +110,20 @@ describe("the app framework's published imports", () => {
       (importers.get('fast-check') ?? []).filter((f) => !f.startsWith('test-utils/')),
     ).toEqual([]);
   });
+
+  // Why: a peer's floor is a promise that the test helpers work with that
+  // version, and the only version the framework's own suite runs is its
+  // dev dependency. A floor below it (vitest ">=3.0.0" while every test ran
+  // on 5) promised versions nothing ever checked.
+  it('promises the test peers only from the version its own tests run on', () => {
+    const floor = (range) =>
+      /^(?:>=|\^)(\d+)\.(\d+)\.(\d+)$/.exec(range ?? '')?.slice(1).map(Number);
+    for (const name of ['fast-check', 'vitest']) {
+      const peer = floor(pkg.peerDependencies?.[name]);
+      const dev = floor(pkg.devDependencies?.[name]);
+      expect(peer, `${name} peer range reads as a floor`).toBeDefined();
+      expect(dev, `${name} dev range reads as a floor`).toBeDefined();
+      expect(peer, `${name}: the peer floor is the dev dependency's floor`).toEqual(dev);
+    }
+  });
 });

@@ -2,13 +2,6 @@
 
 ## [Unreleased]
 
-### Added
-
-- `startXrSelectListener(onSelect)` (`ar`, new `ar/xr-select-listener`):
-  every WebXR `select` with the tap's target ray, without a hit-test
-  reticle (the Tour Viewer's pin taps). `targetRayOf` moved there from the
-  reticle driver, which now imports it; its behaviour is unchanged.
-
 ### ⚠️ Breaking changes
 
 - **`tour.json` version 4: station blocks** (`ar/tour-manifest`,
@@ -61,6 +54,12 @@
   `'station' in drop` or `'block' in drop`.
 
 ### Added
+
+- **`ar/xr-select-listener`** (deep import; also through `ar`), a new
+  module: `startXrSelectListener(onSelect)` hands over every WebXR `select`
+  with the tap's target ray, without a hit-test reticle (the Tour Viewer's
+  pin taps). `targetRayOf` moved there from the reticle driver, which now
+  imports it; its behaviour is unchanged.
 
 - **A placed 3D model**: a free block of kind `model` in the `placed` view
   (`TourModelBlock`; in the world view `TourModel`) names a model asset of
@@ -132,7 +131,8 @@
   `test-utils/browser-mocks` imports vitest, both declared only as dev
   dependencies, so a consumer importing those helpers without them
   installed failed at import. An app that never imports `test-utils/*`
-  needs neither.
+  needs neither. The floors are the versions the framework's own tests run
+  on: fast-check 4.9 and vitest 5.
 - **The NOTICE links the public repository**: it pointed at a repository a
   public reader cannot open; it now names
   https://github.com/cs-util-com/location-based-webxr, the repository the

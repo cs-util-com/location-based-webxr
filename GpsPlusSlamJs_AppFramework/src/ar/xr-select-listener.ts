@@ -15,8 +15,17 @@
  * @see xr-select-listener.ts.md
  */
 
-import type { SelectTargetRay } from './hit-test-reticle-driver.js';
 import { registerXrFrameUpdate } from './xr-frame-loop.js';
+
+/**
+ * Where a tap pointed: the input source's target ray as a column-major 4x4
+ * pose RELATIVE TO THE VIEWER (the camera's own frame; the ray runs along
+ * the pose's -Z). For a screen tap it starts at the viewer and passes
+ * through the tapped point.
+ */
+export interface SelectTargetRay {
+  readonly targetRayInViewer: readonly number[];
+}
 
 /**
  * The tap's target ray relative to `viewerSpace`, read from a `select`

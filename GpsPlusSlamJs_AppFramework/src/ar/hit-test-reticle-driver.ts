@@ -34,7 +34,7 @@ import {
   updateReticleAtSurface,
 } from '../visualization/hit-test-reticle.js';
 import { registerXrFrameUpdate } from './xr-frame-loop.js';
-import { targetRayOf } from './xr-select-listener.js';
+import { targetRayOf, type SelectTargetRay } from './xr-select-listener.js';
 
 /** Live-reticle handle returned by {@link startHitTestReticle}. */
 export interface HitTestReticleHandle {
@@ -50,15 +50,9 @@ export interface HitTestReticleHandle {
   dispose(): void;
 }
 
-/**
- * Where a tap pointed: the input source's target ray as a column-major 4x4
- * pose RELATIVE TO THE VIEWER (the camera's own frame; the ray runs along
- * the pose's -Z). For a screen tap it starts at the viewer and passes
- * through the tapped point.
- */
-export interface SelectTargetRay {
-  readonly targetRayInViewer: readonly number[];
-}
+/** Where a tap pointed - defined beside the select listener that reads it,
+ *  re-exported here so this module's deep import keeps naming it. */
+export type { SelectTargetRay };
 
 /** Arguments for {@link startHitTestReticle}. */
 export interface HitTestReticleArgs {

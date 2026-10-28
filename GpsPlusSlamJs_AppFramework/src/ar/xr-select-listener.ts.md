@@ -10,6 +10,9 @@ blocks plan B2b step 5). `targetRayOf` is shared with the reticle driver
 
 ## Public API
 
+- `SelectTargetRay` - `{ targetRayInViewer: readonly number[] }`: the tap's
+  target ray as a column-major 4x4 pose relative to the viewer (along -Z).
+  Defined here; `hit-test-reticle-driver.ts` re-exports it.
 - `startXrSelectListener(onSelect)` -> `XrSelectListener` (`dispose()`,
   idempotent). `onSelect(tap)` is called on every `select` of every AR
   session from now on, with `SelectTargetRay` (the input's target ray

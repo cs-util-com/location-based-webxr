@@ -90,6 +90,9 @@ const entryFiles = [
   // app-local copies) — deep-imported by consumer apps via the `./ar/*`
   // wildcard, so it must be a per-file dist entry.
   'src/ar/hit-test-reticle-driver.ts',
+  // WebXR select taps with their target ray - a deep-import subpath the
+  // CHANGELOG advertises, so a per-file dist entry.
+  'src/ar/xr-select-listener.ts',
   'src/ar/image-capture.ts',
   // Pure blur/blackness metrics + verdict policy — deep-imported by the
   // recorder's image-quality.worker.ts (NOT via the `/ar` barrel). The `./ar/*`
