@@ -19,6 +19,7 @@ import {
   VIEW_NAMES,
   diffRgba,
   diffTrace,
+  dropRepeatedFrames,
   main,
 } from "./globe-reference-shots-compare.mjs";
 
@@ -106,6 +107,24 @@ describe("diffTrace", () => {
 
   it("reports traces of different lengths", () => {
     assert.deepEqual(diffTrace([frame(1, 0)], []), { lengths: [1, 0] });
+  });
+});
+
+describe("dropRepeatedFrames", () => {
+  // Why: the page can draw an animation frame without the clock moving,
+  // and how often depends on scheduling; two runs of the same code then
+  // differ in length only. A repeat carries no state, so dropping it loses
+  // nothing, while a frame that differs in any field stays.
+  it("drops a frame equal to the one before it, and only that", () => {
+    const f = (d, o) => ({ cameraDistanceM: d, cloudLonOffsetRad: o });
+    const t = [f(1, 0), f(1, 0), f(1, 0.1), f(2, 0.1), f(2, 0.1), f(1, 0)];
+    assert.deepEqual(dropRepeatedFrames(t), [
+      f(1, 0),
+      f(1, 0.1),
+      f(2, 0.1),
+      f(1, 0),
+    ]);
+    assert.deepEqual(dropRepeatedFrames([]), []);
   });
 });
 

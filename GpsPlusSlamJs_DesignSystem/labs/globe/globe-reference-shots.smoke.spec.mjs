@@ -299,17 +299,20 @@ test("the drift view and the intro trace on Playwright's clock", async ({
   await holdView(page, view);
   await settle(page, { timeoutMs: 900_000 });
   // From here the clock stands; only runFor moves it.
-  // The page's clock can stand ahead of its Date.now() after a long load
-  // ("Cannot fast-forward to the past" on the first capture, 2026-10-28),
-  // so the pause steps further ahead until one is in the future.
-  const now = await page.evaluate(() => Date.now());
+  // The pause lands on a FIXED instant, two hours after the install: the
+  // clouds' drift is seeded from the instant (`cloudLonOffsetRad`), so two
+  // captures paused at different instants differ in the drift view and the
+  // clouds' offset however equal their code (2026-10-28: a pause 1 s ahead
+  // of Date.now() in one run and 60 s in the other gave a constant offset
+  // of 0.2999 rad). A pause relative to Date.now() also failed with "Cannot
+  // fast-forward to the past" after a long load. Only a load past the two
+  // hours steps on, by whole hours, and the log says so.
   let paused = false;
-  for (const aheadMs of [1_000, 60_000, 600_000, 3_600_000]) {
+  for (let hours = 2; hours <= 6 && !paused; hours++) {
     try {
-      await page.clock.pauseAt(now + aheadMs);
-      console.log(`clock paused ${aheadMs} ms ahead`);
+      await page.clock.pauseAt(Date.UTC(2026, 9, 5, 11 + hours));
+      console.log(`clock paused at install + ${hours} h`);
       paused = true;
-      break;
     } catch (e) {
       if (!String(e).includes("to the past")) throw e;
     }

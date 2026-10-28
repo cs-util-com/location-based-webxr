@@ -43,6 +43,18 @@ export const VIEW_NAMES = [
 ];
 
 /**
+ * A trace without its repeated frames: a frame equal in every field to the
+ * one before it (an animation frame the page drew without the clock moving)
+ * carries no new state, and how many there are depends on the browser's
+ * scheduling, not on the code under test.
+ */
+export function dropRepeatedFrames(trace) {
+  return trace.filter(
+    (f, i) => i === 0 || JSON.stringify(f) !== JSON.stringify(trace[i - 1]),
+  );
+}
+
+/**
  * Two intro traces (one entry per frame): null when they match exactly,
  * else `{ lengths }` for traces of different lengths, or `{ fields }` with,
  * per field that differs, its first differing frame and the largest numeric
@@ -206,7 +218,13 @@ export async function main([before, after, out]) {
     console.log(`trace.json: MISSING as ${goneTrace.join(" and ")}`);
     failed = true;
   } else {
-    const [ta, tb] = traces.map((f) => JSON.parse(readFileSync(f, "utf8")));
+    const [ra, rb] = traces.map((f) => JSON.parse(readFileSync(f, "utf8")));
+    const [ta, tb] = [ra, rb].map(dropRepeatedFrames);
+    if (ta.length !== ra.length || tb.length !== rb.length) {
+      console.log(
+        `trace: ${ra.length - ta.length} and ${rb.length - tb.length} repeated frames dropped`,
+      );
+    }
     const d = diffTrace(ta, tb);
     if (d === null) console.log(`trace: ${ta.length} frames, identical`);
     else if (d.lengths) {

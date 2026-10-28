@@ -42,7 +42,10 @@
   `diffTrace(a, b)`: null for equal traces, `{ lengths }` for different
   lengths (exit 1), else `{ fields }` with each differing field's first
   frame and largest numeric difference (null when not numeric), printed
-  per field; a missing `trace.json` exits 1.
+  per field; a missing `trace.json` exits 1. Before the comparison
+  `dropRepeatedFrames(trace)` removes each frame equal in every field to
+  the one before it (a frame drawn without the clock moving; their number
+  depends on scheduling), and the script prints how many it dropped.
 - Invariants: the verdict (invisible noise or a visible change) is the
   reader's, with the pair image in front of them; the script only measures.
 - Tests: `globe-reference-shots-compare.test.mjs` (the counting per channel,
