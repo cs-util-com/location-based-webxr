@@ -46,11 +46,13 @@ Shown only while a toy's card is open. One finger drags
 (`toyDragMetres`), two pinch (`pinchedToyFactor`), a tap (under 8 px of
 travel) puts the toy down. `pin-sheet.ts` lists `.model-card` and
 `.model-gestures` among the overlay's taps, so none of them is an AR
-select. The styles are in `model-visitor.css`.
+select. The styles are in `model-visitor.css`, which stacks the layer
+(z 15) below the note leaders and discs (z 20), so a disc stays tappable
+while it is shown, and the card (z 31) above them all.
 
 ## Tests
 
 `model-visitor.test.ts` (jsdom): which models have a card, opening and
 closing on taps, note and section stepping, closing when the model goes,
 the toy's drag, pinch, reset and put-down, other views ignoring gestures,
-the overlay taps, and `stop`.
+the overlay taps, `stop`, and the stylesheet's stacking order.

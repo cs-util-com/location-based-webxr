@@ -58,6 +58,14 @@ drawn model; `model-visitor.ts` drives the handles.
   normal (a section's normal names the side that is cut away). It is
   placed again every `update`, because a station moves after its content
   is drawn (its anchor is refined).
+- The ghost shader and the extra passes (the ghost's depth child, the
+  cutaway's back-face fill) follow a rigged model: the shader is a
+  `ShaderMaterial` built from three's skinning, morph, instancing and
+  batching chunks, and `passOf` makes each pass the same kind of mesh as
+  its source - a `SkinnedMesh` bound to the same skeleton and bind matrix,
+  an `InstancedMesh` sharing the instance matrices and colours - sharing
+  the morph influences by reference. A plain `Mesh` pass would stand
+  still in the bind pose while the model moved.
 - `dispose` is idempotent; the renderer calls it before freeing the
   model's resources.
 
@@ -77,4 +85,5 @@ view.update(dtS, camera);
 `model-views.test.ts`: placed untouched; the ghost's materials and their
 return; the facing cut and its easing; sections in a rotated parent and after the parent moves; note
 points; notes after a file swap; the clip held in hotspots; the toy's
-factor, cap, move and reset.
+factor, cap, move and reset; on a rigged model, the shader's chunks and
+the skinned, morph-shared and instanced-shared passes.

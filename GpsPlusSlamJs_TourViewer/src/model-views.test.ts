@@ -441,3 +441,99 @@ describe("modelViewOf and sectionColour", () => {
     );
   });
 });
+
+/** A rigged model: a skinned bar bound to one bone, with a morph target,
+ *  beside three instances of a box. */
+function rigged() {
+  const model = new THREE.Group();
+  const bone = new THREE.Bone();
+  bone.name = "arm";
+  const geometry = new THREE.BoxGeometry(1, 0.2, 0.2);
+  const count = geometry.attributes["position"]!.count;
+  geometry.setAttribute(
+    "skinIndex",
+    new THREE.Uint16BufferAttribute(new Array<number>(count * 4).fill(0), 4),
+  );
+  geometry.setAttribute(
+    "skinWeight",
+    new THREE.Float32BufferAttribute(
+      Array.from({ length: count * 4 }, (_, i) => (i % 4 === 0 ? 1 : 0)),
+      4,
+    ),
+  );
+  geometry.morphAttributes["position"] = [
+    geometry.attributes["position"]!.clone(),
+  ];
+  const skinned = new THREE.SkinnedMesh(
+    geometry,
+    new THREE.MeshStandardMaterial(),
+  );
+  skinned.morphTargetInfluences = [0.5];
+  model.add(bone, skinned);
+  model.updateMatrixWorld(true);
+  skinned.bind(new THREE.Skeleton([bone]));
+  const instanced = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial(),
+    3,
+  );
+  model.add(instanced);
+  model.updateMatrixWorld(true);
+  return { model, skinned, instanced, bone };
+}
+
+/** The companion `name` the view hung on `mesh`. */
+function companion(mesh: THREE.Object3D, name: string): THREE.Mesh {
+  const found = mesh.children.find((c) => c.name === name);
+  if (found === undefined) throw new Error(`no ${name}`);
+  return found as THREE.Mesh;
+}
+
+// Why: a rigged model with its clip playing moves its vertices on the GPU
+// (bones, morph targets, instances). A pass drawn as a plain mesh of the
+// same geometry, or a glass shader without three's skinning and morph
+// code, stays frozen in the bind pose while the model moves - a glass
+// shell and cut faces that no longer sit on the model.
+describe("mountModelView on a rigged model", () => {
+  it("draws the ghost's glass through three's skinning, morph and instancing code", () => {
+    const { model, skinned } = rigged();
+    const view = mountModelView(model, block("ghost"), 1);
+    const glass = skinned.material as unknown as THREE.ShaderMaterial;
+    for (const chunk of [
+      "skinning_pars_vertex",
+      "morphtarget_pars_vertex",
+      "skinning_vertex",
+      "skinnormal_vertex",
+      "morphtarget_vertex",
+      "morphnormal_vertex",
+      "project_vertex",
+    ]) {
+      expect(glass.vertexShader, chunk).toContain(`#include <${chunk}>`);
+    }
+    view.dispose();
+  });
+
+  for (const [view, name] of [
+    ["ghost", "ghost-depth"],
+    ["cutaway", "cutaway-fill"],
+  ] as const) {
+    it(`keeps the ${view}'s pass on a skinned, morphed or instanced mesh moving with it`, () => {
+      const { model, skinned, instanced } = rigged();
+      const handle = mountModelView(model, block(view), 1);
+      const pass = companion(skinned, name) as THREE.SkinnedMesh;
+      expect(pass.isSkinnedMesh).toBe(true);
+      expect(pass.skeleton).toBe(skinned.skeleton);
+      expect(pass.bindMatrix.equals(skinned.bindMatrix)).toBe(true);
+      expect(pass.bindMode).toBe(skinned.bindMode);
+      // The same influences, not a copy: the clip writes them each frame.
+      expect(pass.morphTargetInfluences).toBe(skinned.morphTargetInfluences);
+      const many = companion(instanced, name) as THREE.InstancedMesh;
+      expect(many.isInstancedMesh).toBe(true);
+      expect(many.count).toBe(3);
+      expect(many.instanceMatrix).toBe(instanced.instanceMatrix);
+      handle.dispose();
+      expect(skinned.children).toHaveLength(0);
+      expect(instanced.children).toHaveLength(0);
+    });
+  }
+});

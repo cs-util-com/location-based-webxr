@@ -19,7 +19,8 @@ select.
   handle projected: surface and marker in pixels, `behind`, `facing`
   (cosine of its normal against the view direction) and its distance.
 - `layoutNoteMarkers(notes, screen, openKey)` - each disc's place: pushed
-  apart to the minimum gap (six rounds), leaders kept on the true surface
+  apart toward the minimum gap where it can (six rounds; a crowd may stay
+  closer), leaders kept on the true surface
   points; hidden when behind the camera, not finite or more than a disc
   off the screen; the title goes to the open note, else to the facing
   note nearest `(w/2, 0.45 h)` within 16 m.
@@ -34,6 +35,10 @@ camera, openKey), clear() }`. `sync` keeps one `button.note-marker`
 
 - Only views that show notes (`hotspots`) are passed in by the caller.
 - The layer's own size (`clientWidth` / `clientHeight`) is the screen.
+- A shown disc is always within the screen plus `NOTE_EDGE_SLACK_PX`
+  (20 px): "shown" is decided before the push, so a disc the push would
+  carry past that edge is held at it. Two notes with room around them
+  end at least `NOTE_MIN_GAP_PX` apart; a lone note is never moved.
 - No occlusion test: a note behind the model's own body is faded by its
   facing, not hidden.
 
@@ -41,4 +46,7 @@ camera, openKey), clear() }`. `sync` keeps one `button.note-marker`
 
 `note-markers.test.ts` (jsdom): the fade and its floor, the push-apart,
 the one title, hiding off-screen notes, the projection and facing, and the
-buttons' lifecycle.
+buttons' lifecycle. `note-markers.property.test.ts` (fast-check): every
+shown disc within the screen plus its slack, none behind the camera,
+leaders' feet kept, a lone note unmoved, two close notes parted by the
+full gap.

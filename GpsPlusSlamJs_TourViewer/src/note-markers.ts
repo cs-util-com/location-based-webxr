@@ -8,7 +8,9 @@
  * `layoutNoteMarkers` is the pure part: where each disc goes from the
  * notes' projected points - a disc whose note faces away fades (never
  * below 0.22, so the visitor still sees there is one), discs too close
- * are pushed apart (their leaders keep the true point), and the one label
+ * are pushed apart where they can (a few rounds, never past the screen
+ * plus its slack, so a crowd may stay closer than the gap; their leaders
+ * keep the true point), and the one label
  * shown is the open note's, or else the note nearest the screen's centre
  * that faces the visitor within 16 m. `createNoteMarkers` keeps one
  * button and one leader per note on the overlay and moves them each frame.
@@ -58,12 +60,18 @@ export const NOTE_MIN_OPACITY = 0.22;
 /** The farthest a note's title shows by itself (m). */
 const NOTE_LABEL_RANGE_M = 16;
 /** A disc this far past the screen's edge still counts as on it (px). */
-const EDGE_SLACK_PX = 20;
+export const NOTE_EDGE_SLACK_PX = 20;
+/** Rounds of the push: enough to part a few neighbours, not a guarantee
+ *  for a crowd (a disc held at the edge cannot give way). */
 const PUSH_ROUNDS = 6;
 
 /** The key of note `index` of `blockId`. */
 export function noteKey(blockId: string, index: number): string {
   return `${blockId}#${index}`;
+}
+
+function clamp(x: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, x));
 }
 
 /** Hermite between `a` and `b` (GLSL's smoothstep). */
@@ -95,10 +103,10 @@ export function layoutNoteMarkers(
     const on =
       finite &&
       !n.behind &&
-      n.marker.x > -EDGE_SLACK_PX &&
-      n.marker.x < w + EDGE_SLACK_PX &&
-      n.marker.y > -EDGE_SLACK_PX &&
-      n.marker.y < h + EDGE_SLACK_PX;
+      n.marker.x > -NOTE_EDGE_SLACK_PX &&
+      n.marker.x < w + NOTE_EDGE_SLACK_PX &&
+      n.marker.y > -NOTE_EDGE_SLACK_PX &&
+      n.marker.y < h + NOTE_EDGE_SLACK_PX;
     return { note: n, on, x: n.marker.x, y: n.marker.y };
   });
   // The note the visitor looks at: nearest the screen's centre (a little
@@ -134,6 +142,13 @@ export function layoutNoteMarkers(
         b.x += (dx / d) * push;
         b.y += (dy / d) * push;
       }
+    }
+    // Shown was decided before the push: a disc pushed past the edge is
+    // held at it, so a shown disc is always one the visitor can tap.
+    for (const p of placed) {
+      if (!p.on) continue;
+      p.x = clamp(p.x, -NOTE_EDGE_SLACK_PX, w + NOTE_EDGE_SLACK_PX);
+      p.y = clamp(p.y, -NOTE_EDGE_SLACK_PX, h + NOTE_EDGE_SLACK_PX);
     }
   }
   return placed.map((p) => ({

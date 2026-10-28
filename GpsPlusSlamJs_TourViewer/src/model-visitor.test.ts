@@ -271,3 +271,33 @@ describe("the toy in hand", () => {
     expect(dom.layer.querySelectorAll("button")).toHaveLength(0);
   });
 });
+
+/** The `z-index` the stylesheet gives `selector`'s own rule. */
+function zIndexOf(css: string, selector: string): number {
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const rule of bare.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    const selectors = rule[1]!.split(",").map((s) => s.trim());
+    if (!selectors.includes(selector)) continue;
+    const z = /z-index:\s*(-?\d+)/.exec(rule[2]!);
+    if (z !== null) return Number(z[1]);
+  }
+  throw new Error(`no z-index for ${selector}`);
+}
+
+describe("the overlay's stacking", () => {
+  // Why this test matters: the toy's gesture layer covers the whole screen.
+  // Stacked above the note discs it swallowed every tap on a disc whenever
+  // it was shown, so the layers' order is pinned: gestures below the
+  // leaders and discs, the card above them all.
+  it("puts the gesture layer below the notes and the card above them", async () => {
+    const { readFileSync } = await import("node:fs");
+    // vitest runs from the package root (jsdom gives no file: URL here).
+    const css = readFileSync("src/model-visitor.css", "utf8");
+    const gestures = zIndexOf(css, ".model-gestures");
+    const markers = zIndexOf(css, ".note-markers");
+    const leaders = zIndexOf(css, ".note-leaders");
+    const card = zIndexOf(css, ".model-card");
+    expect(gestures).toBeLessThan(Math.min(markers, leaders));
+    expect(card).toBeGreaterThan(Math.max(markers, leaders));
+  });
+});

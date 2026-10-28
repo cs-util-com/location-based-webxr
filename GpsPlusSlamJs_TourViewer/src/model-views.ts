@@ -106,13 +106,36 @@ const MARKER_OFFSET_MAX_M = 4;
 /** How fast the facing cut turns after the visitor (per second). */
 const CUT_TURN_RATE = 3;
 
-const GHOST_VS = `varying vec3 vN; varying vec3 vV; varying float vY;
+// Through three's own vertex chunks, so a rigged, morphed, instanced or
+// batched mesh moves under its glass as it does under its own material
+// (the renderer sets their defines for a ShaderMaterial too).
+const GHOST_VS = `#include <common>
+#include <batching_pars_vertex>
+#include <morphtarget_pars_vertex>
+#include <skinning_pars_vertex>
+varying vec3 vN; varying vec3 vV; varying float vY;
 void main() {
-  vY = (modelMatrix * vec4(position, 1.0)).y;
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  vV = -mv.xyz;
-  vN = normalize(normalMatrix * normal);
-  gl_Position = projectionMatrix * mv;
+  #include <morphinstance_vertex>
+  #include <batching_vertex>
+  #include <beginnormal_vertex>
+  #include <morphnormal_vertex>
+  #include <skinbase_vertex>
+  #include <skinnormal_vertex>
+  #include <defaultnormal_vertex>
+  #include <begin_vertex>
+  #include <morphtarget_vertex>
+  #include <skinning_vertex>
+  #include <project_vertex>
+  vec4 placed = vec4(transformed, 1.0);
+  #ifdef USE_BATCHING
+  placed = batchingMatrix * placed;
+  #endif
+  #ifdef USE_INSTANCING
+  placed = instanceMatrix * placed;
+  #endif
+  vY = (modelMatrix * placed).y;
+  vV = -mvPosition.xyz;
+  vN = normalize(transformedNormal);
 }`;
 
 const GHOST_FS = `uniform float uTime; uniform float uAppear; uniform float uGround;
@@ -164,6 +187,38 @@ function meshesOf(root: THREE.Object3D): THREE.Mesh[] {
     if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
   });
   return meshes;
+}
+
+/**
+ * A second draw of `mesh`'s geometry in `material` (a view's pass, hung
+ * on the mesh): a skinned mesh's pass is skinned by the same skeleton, an
+ * instanced mesh's draws the same instances, and both share the mesh's
+ * morph influences, so the pass moves with the mesh as its clip plays.
+ */
+function passOf(mesh: THREE.Mesh, material: THREE.Material): THREE.Mesh {
+  let pass: THREE.Mesh;
+  if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
+    const own = mesh as THREE.SkinnedMesh;
+    const skinned = new THREE.SkinnedMesh(mesh.geometry, material);
+    skinned.bindMode = own.bindMode;
+    skinned.bind(own.skeleton, own.bindMatrix);
+    pass = skinned;
+  } else if ((mesh as THREE.InstancedMesh).isInstancedMesh) {
+    const own = mesh as THREE.InstancedMesh;
+    const many = new THREE.InstancedMesh(mesh.geometry, material, own.count);
+    many.instanceMatrix = own.instanceMatrix;
+    many.instanceColor = own.instanceColor;
+    many.frustumCulled = own.frustumCulled;
+    pass = many;
+  } else {
+    pass = new THREE.Mesh(mesh.geometry, material);
+  }
+  // The same array, so the clip's writes reach the pass.
+  if (mesh.morphTargetInfluences !== undefined) {
+    pass.morphTargetInfluences = mesh.morphTargetInfluences;
+    pass.morphTargetDictionary = mesh.morphTargetDictionary;
+  }
+  return pass;
 }
 
 /** The materials of `mesh`, one or many. */
@@ -298,7 +353,7 @@ export function mountModelView(
       const order = mesh.renderOrder;
       mesh.material = ghost;
       mesh.renderOrder = 2;
-      const depth = new THREE.Mesh(mesh.geometry, depthOnly);
+      const depth = passOf(mesh, depthOnly);
       depth.name = "ghost-depth";
       depth.renderOrder = 1;
       mesh.add(depth);
@@ -340,7 +395,7 @@ export function mountModelView(
         clippingPlanes: planes,
       });
       owned.push(fill);
-      const back = new THREE.Mesh(mesh.geometry, fill);
+      const back = passOf(mesh, fill);
       back.name = "cutaway-fill";
       mesh.add(back);
       restores.push(() => back.removeFromParent());
