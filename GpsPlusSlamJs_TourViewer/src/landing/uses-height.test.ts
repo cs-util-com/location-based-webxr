@@ -196,6 +196,36 @@ describe("keepUsesHeight", () => {
     unwatch();
     expect(unlistened).toBe(1);
   });
+
+  // A real browser has a ResizeObserver, and there the unwatch is a
+  // different function from the bare unlisten: it must let go of both the
+  // observer and the window's resize, or a destroyed page keeps writing
+  // storage on every window resize.
+  it("lets go of the window's resize and the observer where there is one", () => {
+    let unlistened = 0;
+    let disconnected = 0;
+    const Real = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      observe() {}
+      disconnect() {
+        disconnected += 1;
+      }
+    } as unknown as typeof ResizeObserver;
+    try {
+      const unwatch = keepUsesHeight(hostOf(2391), {
+        storage: null,
+        width: () => 390,
+        onWindowResize: () => () => {
+          unlistened += 1;
+        },
+      });
+      unwatch();
+      expect(unlistened).toBe(1);
+      expect(disconnected).toBe(1);
+    } finally {
+      globalThis.ResizeObserver = Real;
+    }
+  });
 });
 
 describe("the landing-uses-height script in index.html", () => {

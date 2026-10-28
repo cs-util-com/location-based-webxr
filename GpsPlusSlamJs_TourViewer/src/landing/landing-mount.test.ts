@@ -292,7 +292,9 @@ describe("mountLanding", () => {
     expect(dom.film.dataset["filmFallback"]).toBeUndefined();
     expect(dom.cards.querySelector(".lc-phone")).toBeNull();
     expect(dom.uses.querySelector(".uc")).toBeNull();
-  });
+    // 20 s, not the default 5 s: it imports the three real chunks, which
+    // took longer than 5 s on a machine loaded by parallel gates.
+  }, 20_000);
 
   // A reader may turn reduced motion on while the page is open (the
   // system setting): the moving parts must follow it then, not only after

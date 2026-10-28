@@ -28,11 +28,11 @@ width, is exact in whatever face the page is set in.
   window width `width`, or null for nothing stored, another width,
   unreadable JSON, a width or height that is not a number, or a height
   that is not above 0 and below 20 000 px.
-- `keepUsesHeight(host, { storage, width, onWindowResize }): () => void`: called by
-  `landing-mount.ts` once the use cases mounted (it comes in their chunk,
-  re-exported by `use-cases.ts`; where they fail to mount,
-  `landing-mount.ts` drops the inline reservation itself). Removes the inline
-  `min-height` the page's script set (the mounted section now holds its
+- `keepUsesHeight(host, { storage, width, onWindowResize }): () => void`:
+  called by `landing-mount.ts` once the use cases mounted (it comes in
+  their chunk, re-exported by `use-cases.ts`; where they fail to mount,
+  `landing-mount.ts` drops the inline reservation itself). Removes the
+  inline `min-height` the page's script set (the mounted section now holds its
   own place), stores the host's border-box height at `width()`, and stores
   it again whenever the host resizes (a `ResizeObserver`, where there is
   one) or the window does (`onWindowResize`, which `landing-mount.ts`
@@ -41,8 +41,8 @@ width, is exact in whatever face the page is set in.
   window's resize is needed because the value is keyed by the window's
   width: on a wide window the section is capped at the column's width, so
   a width-only resize leaves its size alone, its observer never reports,
-  and the kept width would go stale. A height of 0 is not stored; storage that is null or
-  throws stores nothing.
+  and the kept width would go stale. A height of 0 is not stored; storage
+  that is null or throws stores nothing.
 
 ## Invariants
 
@@ -78,8 +78,9 @@ keptUsesHeight(sessionStorage.getItem(USES_HEIGHT_KEY), innerWidth); // 2391.5
   values, a round-trip property), the keeper (drops the inline reservation,
   stores the height, stores it again at the new width after a window
   resize that left the section's size alone, survives a throwing or
-  missing storage), and the
-  inline script held to the rule (two properties: every height valid by
+  missing storage, and its unwatch lets go of both the window's resize
+  and the `ResizeObserver` where there is one), and the inline script
+  held to the rule (two properties: every height valid by
   construction is reserved height for height, and any other stored value,
   near misses and the exact 0 and 20 000 px edges included, gets the same
   answer as `keptUsesHeight`; and its place in the page).

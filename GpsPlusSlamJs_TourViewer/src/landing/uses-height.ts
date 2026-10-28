@@ -59,8 +59,8 @@ export interface UsesHeightEnv {
  * for the next load, again whenever the host or the window resizes
  * (storage is written only when the kept value would change). The window
  * too: the value is keyed by its width, and on a wide window the capped
- * section keeps its size when only that width changes. Returns the unwatch. Storage that
- * throws (site data blocked, full) keeps nothing.
+ * section keeps its size when only that width changes. Returns the
+ * unwatch. Storage that throws (site data blocked, full) keeps nothing.
  */
 export function keepUsesHeight(
   host: HTMLElement,

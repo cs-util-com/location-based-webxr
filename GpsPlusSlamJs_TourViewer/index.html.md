@@ -277,13 +277,15 @@ its chunk fails, the hero shows its last moment as a drawing).
   between heading, list, line and button. `landing.spec.js` pins them at
   390x844, 844x390 and 1440x900, also in a wide face, the wide-screen
   layout below at 1100x700, 1280x720, 1440x900 and 1920x1080, each also in a
-  wide face, and the hero on the first screen at seven desktop sizes
-  (1000x700 to 1920x1080, short windows included) in both faces.
+  wide face, and the hero on the first screen at thirteen desktop sizes
+  (1000x570 to 1920x1080, short windows included, each cut pinned on both
+  sides) in both faces.
 - **Sizes without `clamp()` or `min()`:** the prototypes' fluid sizes are
   steps at fixed widths; the csstree validator rejects `clamp()`, `min()`
   and `max()` here. The `h1`: 29 px, 44 px from 600 px wide, 56 px from
   900 px, and beside the film from 1000 px 48 px, or 40 px where its
-  column is narrow (under 1160 px wide) or the window short (under 680 px
+  column is narrow (under 1160 px wide) or the window under 740 px high,
+  and 34 px under 580 px high or (under 1100 px wide and under 620 px
   high); 25 px on a phone held sideways (landscape, at most 560 px high).
   The prototypes' 60 px from 1160 px is not used: beside the film the
   text column is at most about 454 px wide, where 56 and 60 px gave four
@@ -321,8 +323,8 @@ its chunk fails, the hero shows its last moment as a drawing).
   - From 1000 px wide the hero's text and film stand side by side
     (`.landing-hero` a two-column grid, 48 px apart, the film's top on the
     kicker's). The film's box is 58 % of the row less the gap (half of it
-    where the headline is 40 px, below), at 16:9 plus
-    its chrome, its height capped at `100svh - 96px` (and its width with
+    under 1160 px wide or under 680 px high, below), at 16:9 plus its
+    chrome, its height capped at `100svh - 96px` (and its width with
     it), so the whole film, bar and caption included, is on the first
     screen: it starts about 73 px down, which leaves about 23 px below it.
     Swept 2026-10-27: the breakpoint at 1000, 1100 and 1200 px (1200 left a

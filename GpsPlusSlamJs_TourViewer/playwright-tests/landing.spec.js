@@ -1066,12 +1066,18 @@ test.describe("a returning device", () => {
     );
     // A reader scrolls by a wheel, a touch or a key: that input releases
     // the page from the skip's hold (a scripted scroll alone does not).
+    const start = await page.evaluate(() => Math.round(scrollY));
     await page.mouse.move(195, 400);
     await page.mouse.wheel(0, -40);
     await expect(page.locator("html")).toHaveAttribute(
       "data-landing-skip",
       "moved",
     );
+    // The wheel's own scroll lands asynchronously: a scripted scroll made
+    // before it landed could be overtaken by it.
+    await expect
+      .poll(() => page.evaluate(() => Math.round(scrollY)))
+      .toBe(start - 40);
     await page.evaluate(() => {
       window.scrollTo({ top: 300, behavior: "instant" });
     });
