@@ -196,7 +196,12 @@ function harness() {
     });
     return ids;
   };
-  return { ctx, store, placement, lock, sync, drawn, labels };
+  /** The parts the station's content group holds: one frame per drawn
+   *  part, an empty one too - a block the renderer draws as nothing (a
+   *  card) still leaves its frame, so this sees a part the ids cannot. */
+  const frames = () =>
+    scene.getObjectByName("station-content:gate")?.children.length ?? 0;
+  return { ctx, store, placement, lock, sync, drawn, frames, labels };
 }
 
 describe("a station's reached story blocks (B2b)", () => {
@@ -215,10 +220,14 @@ describe("a station's reached story blocks (B2b)", () => {
     await h.sync();
     expect(h.drawn()).toEqual(["sign"]);
     expect(h.labels).toEqual(["Old sign"]);
-    // A card is never drawn, reached or not.
+    expect(h.frames()).toBe(1);
+    // A card never stands in the world, reached or not: no part is made
+    // for it. (The ids alone cannot tell - the renderer draws a card as
+    // nothing, so a part made for it would leave the ids as they are.)
     h.store.dispatch(blockShown({ stationId: "gate", blockId: "words" }));
     await h.sync();
     expect(h.drawn()).toEqual(["sign"]);
+    expect(h.frames(), "no part for the card").toBe(1);
     // A new walk starts without it.
     h.store.dispatch(
       walkStarted({ order: "fixed", route: walkRoute([STATION]) }),

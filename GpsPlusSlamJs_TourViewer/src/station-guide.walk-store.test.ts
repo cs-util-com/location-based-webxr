@@ -277,6 +277,33 @@ describe("the station guide on the page's store", () => {
     });
   });
 
+  // Why: a reached block stands for the rest of the visit, and a visitor
+  // who leaves AR and enters it again is still on the same visit. The
+  // session's end resets the guide's own per-session state (its HUD, its
+  // heading, its presence) and a found story replays in the next session -
+  // neither may cost or double the blocks the walk keeps.
+  it("keeps a reached block across a new AR session, once, through the story's replay", () => {
+    const shown: { guide?: { blockShown(s: string, b: string): void } } = {};
+    const page = onThePage([station("a", 0, 0), station("b", 80, 0)], "fixed", {
+      onFound: (id) => shown.guide?.blockShown(id, "sign"),
+    });
+    shown.guide = page.guide;
+    page.move(0, 0);
+    page.guide.tick();
+    expect(page.found).toEqual(["a"]);
+    page.guide.endSession();
+    expect(page.store.getState().visitorWalk.shownBlocks).toEqual({
+      a: ["sign"],
+    });
+    // The next session: the cut-short story plays again at its station.
+    page.move(0, 0);
+    page.guide.tick();
+    expect(page.found).toEqual(["a", "a"]);
+    expect(page.store.getState().visitorWalk.shownBlocks).toEqual({
+      a: ["sign"],
+    });
+  });
+
   // Why: pins the reason the story's blocks go through the guide - the
   // same block dispatched straight to the store in that first call meets
   // no walk yet and is lost. Should the walk ever start earlier, this
