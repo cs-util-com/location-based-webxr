@@ -125,14 +125,22 @@ describe('framework deep imports are built entrypoints', () => {
     // browser while every check stayed green. A new module named with its
     // directory is a subpath a consumer will import, so it must be built.
     // Every phrasing the CHANGELOG uses: "new `x/y`", "New: `x/y`" and
-    // "(new, `x/y`)".
+    // "(new, `x/y`)" - and every name of a list after it ("new `ar/a`,
+    // `ar/b` and `ar/c`"): capturing only the first name let
+    // `ar/tour-fields`, the second of such a list, go without an entry.
     const changelog = readTracked('GpsPlusSlamJs_AppFramework/CHANGELOG.md');
-    const introduced = [
-      ...changelog.matchAll(/\bnew\b[,:]?\s+`([a-z0-9_-]+\/[A-Za-z0-9_./-]+)`/gi),
-    ].map(([, sub]) => sub);
-    // Five when this pattern was set (2026-10-28): fewer means the scan
+    const lists = changelog.matchAll(
+      /\bnew\b[,:]?\s+`[a-z0-9_-]+\/[A-Za-z0-9_./-]+`(?:(?:,\s+and|,|\s+and)\s+`[a-z0-9_-]+\/[A-Za-z0-9_./-]+`)*/gi
+    );
+    const introduced = [...lists].flatMap(([list]) =>
+      [...list.matchAll(/`([^`]+)`/g)].map(([, sub]) => sub)
+    );
+    // A later name of a list, so the list capture cannot quietly narrow
+    // back to the first name.
+    expect(introduced, 'the scan must see every name of a list of new modules').toContain('ar/tour-fields');
+    // Six when this pattern was set (2026-10-28): fewer means the scan
     // lost a phrasing, not that the CHANGELOG lost entries.
-    expect(introduced.length, "the scan must see the CHANGELOG's new modules").toBeGreaterThanOrEqual(5);
+    expect(introduced.length, "the scan must see the CHANGELOG's new modules").toBeGreaterThanOrEqual(6);
     const missing = introduced.filter((sub) => !built.has(sub));
     expect(
       missing,
