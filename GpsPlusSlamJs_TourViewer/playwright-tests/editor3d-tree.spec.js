@@ -60,6 +60,39 @@ async function order(page) {
   return tour.stations.map((/** @type {any} */ s) => s.id);
 }
 
+/**
+ * Wait until the camera has stopped moving: the screen point of
+ * `selection` is the same two frames apart. The orbit keeps a pan's
+ * momentum after the drag and spends it a share per frame (OrbitControls'
+ * damping counts frames, not time), so on a slow renderer a fixed number
+ * of frames after a drag can leave the camera still coasting - and then
+ * a point pressed now is no longer under the same pixel a moment later.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} selection
+ */
+async function cameraSettled(page, selection) {
+  /** @type {readonly number[] | null} */
+  let last = null;
+  await expect
+    .poll(
+      async () => {
+        await afterFrames(page, 2);
+        const now = await page.evaluate(
+          (id) => /** @type {any} */ (window).__tourEditor.view3dScreenOf(id),
+          selection,
+        );
+        const still =
+          last !== null &&
+          now !== null &&
+          Math.hypot(now[0] - last[0], now[1] - last[1]) < 0.05;
+        last = now;
+        return still;
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(true);
+}
+
 /** @param {import("@playwright/test").Page} page */
 function revision(page) {
   return page.evaluate(() =>
@@ -238,8 +271,10 @@ test("New station here: a right click on the ground starts a station where it wa
   await page.mouse.up({ button: "right" });
   await expect(menu).toBeHidden();
 
-  // A right click without a move: the station where it was pressed.
-  await afterFrames(page, 10);
+  // A right click without a move: the station where it was pressed. Once
+  // the pan has stopped coasting: the station is placed under the pixel
+  // pressed, and compared with it after the camera moved no further.
+  await cameraSettled(page, `station:${(await order(page))[0] ?? ""}`);
   await page.mouse.click(at.x, at.y, { button: "right" });
   await expect(item).not.toHaveAttribute("aria-disabled", "true");
   await item.click();
