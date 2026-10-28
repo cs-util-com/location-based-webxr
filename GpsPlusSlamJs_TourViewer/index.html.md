@@ -277,9 +277,10 @@ its chunk fails, the hero shows its last moment as a drawing).
   between heading, list, line and button. `landing.spec.js` pins them at
   390x844, 844x390 and 1440x900, also in a wide face, the wide-screen
   layout below at 1100x700, 1280x720, 1440x900 and 1920x1080, each also in a
-  wide face, and the hero on the first screen at thirteen desktop sizes
+  wide face, and the hero on the first screen at fourteen desktop sizes
   (1000x570 to 1920x1080, short windows included, each cut pinned on both
-  sides) in both faces.
+  sides, the headline's 1160 px width cut also at a tall window, 1100x800)
+  in both faces.
 - **Sizes without `clamp()` or `min()`:** the prototypes' fluid sizes are
   steps at fixed widths; the csstree validator rejects `clamp()`, `min()`
   and `max()` here. The `h1`: 29 px, 44 px from 600 px wide, 56 px from

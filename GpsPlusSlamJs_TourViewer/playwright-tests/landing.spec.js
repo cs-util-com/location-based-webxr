@@ -563,7 +563,7 @@ test.describe("the hero film on a wide screen", () => {
 });
 
 // The hero's button and the film's picture and bar end on the first
-// screen at thirteen desktop sizes, short windows included, in this
+// screen at fourteen desktop sizes, short windows included, in this
 // machine's face and in a wide one (spaced 0.02em wider, so it is at
 // least as wide as the CI's Linux face, DejaVu Sans; wide-font.js).
 // Beside the film, a 48 px headline wraps to four or five lines in a wide
@@ -575,7 +575,10 @@ test.describe("the hero film on a wide screen", () => {
 // wide) or the window under 740 px high, 34 px under 580 px high (under
 // 620 px below 1100 px wide), and 48 px elsewhere; the film takes half the
 // row where the column is narrow or the window under 680 px high, and
-// 58 % elsewhere. Both are pinned here, on both sides of each cut.
+// 58 % elsewhere. Both are pinned here, on both sides of each cut: the
+// headline's width cut at a tall window too (1100x800 is 40 px by its
+// width alone, 1280x740 48 px), or a rule that lost its width clause
+// would pass.
 for (const wide of [false, true]) {
   test.describe(`the hero on the first screen${wide ? ", in a wide face" : ""}`, () => {
     test.use({
@@ -583,7 +586,7 @@ for (const wide of [false, true]) {
       storageState: FIRST_VISIT,
     });
 
-    test("keeps the button and the film's picture and bar in view at thirteen desktop sizes", async ({
+    test("keeps the button and the film's picture and bar in view at fourteen desktop sizes", async ({
       page,
     }) => {
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -601,6 +604,7 @@ for (const wide of [false, true]) {
         [1100, 570, "34px", 0.5],
         [1100, 600, "40px", 0.5],
         [1100, 700, "40px", 0.5],
+        [1100, 800, "40px", 0.5],
         [1280, 600, "40px", 0.5],
         [1440, 680, "40px", 0.58],
         [1280, 690, "40px", 0.58],
@@ -1061,6 +1065,12 @@ test.describe("a returning device", () => {
     await page.goto("/?nocache=1");
     await expect(page.getByTestId("setup-card")).toBeVisible();
     await expect(page.getByTestId("landing-uses")).toHaveAttribute(
+      "data-mount",
+      "ready",
+    );
+    // The film too: one that settles after `start` is read lets the skip's
+    // hold re-pin the scroll, and the wheel's 40 px would never be seen.
+    await expect(page.getByTestId("landing-film")).toHaveAttribute(
       "data-mount",
       "ready",
     );
