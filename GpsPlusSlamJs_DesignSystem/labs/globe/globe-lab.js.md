@@ -993,6 +993,44 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     (`ocean`, `alps`, `pole`, `city`; default `alps`), and `perfDrive`
     (`controls` drives every run through the controls' wheel input;
     absent, each cell says).
+  - The fixed-view sweep (`globe-perf-views.js`, `globe-perf-items.js`,
+    loaded with the recorder): the text key `perfItems` (item counts,
+    e.g. `5,20,50`; malformed reads as no sweep) replaces the zoom's
+    runs by held views (space, 100 km, 10 km, 1 km over the ground, and
+    street level at an eye height, 30 m south of the items looking at
+    them) at the link's place (`at=`, else `perfPlace`), each count held
+    `perfHoldS` (1-60, default 5) after a settle of at most
+    `perfViewSettleS` (1-300, default 20), the whole sweep `perfRepeats`
+    times (1-10, default 3), after a discarded warm-up pass per view
+    (`perfWarmup`, 0-1, default 1); before each held run a quiet wait of
+    at most `perfQuietS` (1-300, default 10) until the view is ready
+    again. Before the first move the sweep waits at most `perfCityWaitS`
+    (0-1800, default 300; 0 does not wait) for the city's load to end,
+    its retries included; a sweep with no frame for `perfWatchdogS`
+    (1-600, default 60: a healthy but slow device draws single frames
+    of several seconds) while the page is on screen ends with what it
+    has. Street level needs `eye=1` and is left out without it. The
+    items stand on the drawn ground on the globe's Earth-centred group
+    and are registered with the eye camera's near plane. `perfAuto=1`
+    starts the recorder's run without a press (any sweep), so one link
+    is a whole phone test. The handle gains `viewPlace`, `placeView`,
+    `setItems`, `bytesDownloaded`, `setPaused(paused)` (the frame calls
+    the recorder's hooks and renders nothing: the refresh calibration),
+    `eyeMode` and `viewReadiness()` (`{ band, release, city, osm }`: the
+    band's drawn share at the altitude's; no band cache release pending
+    or draining; the city not loading and its arrival fade done, or no
+    city (a delivery inside a held run voids it, so a run does not wait
+    for the load's end); the OSM map off, or its ramp done with no
+    re-evaluation backlog and no drawn tile waiting but the failed ones,
+    which are never asked for again), `cityDelivered()` (the city's
+    deliveries drawn, 0 without a city), `cityGate()` (`off`, `idle`,
+    `loading`, `ended` or `gave-up`: no data for the place, or failed
+    with every retry spent), `cityDrawn()` (the city's root visible, null
+    without one), `itemsInView()` (the sweep's items inside the camera's
+    frustum) and `osmCoverage()` (`{ waiting, failed }`, null without
+    the map); `placeCamera` takes an optional ECEF pose
+    in place of the pitch law. `window.__globeLab.perfItem(k)` reports
+    item `k`'s `{ inView, footOverGroundM }` (`globe-perf-items.js`).
   - The factors it varies, also hash keys that apply live:
     `adjustHeight` (the controls' height adjustment, its two raycasts a
     frame, default 1), `reliefCacheMiB` (the relief's cache cap, 8-4096,

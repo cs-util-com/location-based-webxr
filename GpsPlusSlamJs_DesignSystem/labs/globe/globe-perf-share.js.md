@@ -9,7 +9,8 @@
     `"shown"`. Never throws: a refused or missing clipboard shows the text.
   - `downloadExport(text, name, { makeUrl, revokeUrl, clickLink, showText })`
     -> `"download"` or `"shown"`. Never throws. The blob URL is revoked
-    10 s later (the timer is `unref`ed under Node).
+    60 s later (iOS may read it only once the tester answers its download
+    sheet; the timer is `unref`ed under Node).
   - `exportFileName(sweep, epochMs)` ->
     `globe-perf-<sweep>-<UTC time with dashes>Z.json`, safe on every
     filesystem.

@@ -10,7 +10,7 @@
  * never an error.
  */
 import { strict as assert } from "node:assert";
-import { describe, it } from "node:test";
+import { describe, it, mock } from "node:test";
 
 import {
   copyExport,
@@ -62,6 +62,28 @@ describe("downloadExport", () => {
     });
     assert.equal(how, "download");
     assert.deepEqual(clicked, [["blob:2", "perf.json"]]);
+  });
+
+  // WHY: iOS Safari may read the blob URL well after the click (the
+  // download sheet waits for the tester); revoked after 10 s, a slow
+  // tap saved nothing.
+  it("revokes the blob URL only a minute after the click", () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      const revoked = [];
+      downloadExport("{}", "perf.json", {
+        makeUrl: () => "blob:1",
+        revokeUrl: (url) => revoked.push(url),
+        clickLink: () => {},
+        showText: () => {},
+      });
+      mock.timers.tick(59_000);
+      assert.deepEqual(revoked, []);
+      mock.timers.tick(1_000);
+      assert.deepEqual(revoked, ["blob:1"]);
+    } finally {
+      mock.timers.reset();
+    }
   });
 
   it("shows the text when the download cannot start", () => {

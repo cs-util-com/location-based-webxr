@@ -28,7 +28,7 @@ import { bootGlobe } from "./globe-smoke-helpers.mjs";
 // and at the default E 1 (true heights, city plan 2026-10-05-0040 §11 D-K1)
 // there are none to time.
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&reliefHeights=synthetic&reliefNear=3";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&reliefHeights=synthetic&reliefNear=3&perfWatchdogS=600";
 /**
  * The recorder's paths cross the band in seconds; with round 6's gate and
  * sharp takeover (bandGate, bandSharp, plan 2026-10-04-1050 G6-1) the
@@ -225,15 +225,11 @@ test("the overlay is usable on a phone, and Copy and Download reach the text", a
   }
   expect(out.runs).toHaveLength(1);
   expect(out.lab[0].cell.decadesPerS).toBe(8);
-  // Both readings of a missed vsync (33.3 ms at 60 Hz): over 33 and over 34,
-  // over 50 and over 51.
-  expect(Object.keys(out.runs[0].over).sort()).toEqual([
-    "100",
-    "33",
-    "34",
-    "50",
-    "51",
-  ]);
+  // The plan's 33, 50 and 100 ms, and the frames that missed 1, 2 and 3
+  // refreshes at the calibrated rate (null when the calibration fit none).
+  expect(Object.keys(out.runs[0].over).sort()).toEqual(
+    [...new Set([33, 50, 100, ...(out.missedMs ?? [])].map(String))].sort(),
+  );
 
   // Copy: the clipboard when it takes the text...
   await page.evaluate(() => {

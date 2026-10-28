@@ -200,6 +200,7 @@ import { labelFor, locateAdvice, locateOnce } from "/fw/utils/locate-state.js";
 import { createGlobeDebug } from "./globe-debug.js";
 import { createDebugLog } from "./globe-debug-log.js";
 import { deviceBlock } from "./globe-device.js";
+import { FRAME_WATCHDOG_DEFAULT_S } from "./globe-perf-guard.js";
 
 const canvas = document.getElementById("globe-canvas");
 const errorBox = document.getElementById("globe-error");
@@ -845,7 +846,36 @@ const PARAMS = {
   perfSteps: { fallback: 40, min: 1, max: 200 },
   perfSettleS: { fallback: 120, min: 1, max: 600 },
   perfSpeed: { fallback: null, min: 0.05, max: 20 },
+  // The fixed-view sweep (`globe-perf-views.js`), on with the text key
+  // `perfItems` (item counts, "5,20,50"): each view and count held
+  // `perfHoldS` after a settle of at most `perfViewSettleS`, the whole
+  // sweep `perfRepeats` times. `perfAuto` 1 starts the recorder's run by
+  // itself (any sweep), so one link is the whole phone test.
+  perfRepeats: { fallback: 3, min: 1, max: 10 },
+  perfHoldS: { fallback: 5, min: 1, max: 60 },
+  perfViewSettleS: { fallback: 20, min: 1, max: 300 },
+  perfAuto: { fallback: 0, min: 0, max: 1 },
+  // 0 leaves out the sweep's discarded warm-up pass (short smokes).
+  perfWarmup: { fallback: 1, min: 0, max: 1 },
+  // Before each held run, at most this long (s) for the view to be ready
+  // again (the items' warm-up may have queued work); a run held after it
+  // timed out is counted apart, never pooled.
+  perfQuietS: { fallback: 10, min: 1, max: 300 },
+  // Before a fixed-view sweep's first move, at most this long (s) for the
+  // city's load to end (its retries included); 0 does not wait.
+  perfCityWaitS: { fallback: 300, min: 0, max: 1800 },
+  // A sweep with no frame for this long (s) while the page is on screen
+  // ends, with what it has; a healthy but slow device draws single frames
+  // of several seconds (`FRAME_WATCHDOG_DEFAULT_S`).
+  perfWatchdogS: { fallback: FRAME_WATCHDOG_DEFAULT_S, min: 1, max: 600 },
 };
+
+/**
+ * The fixed-view sweep's street view (`globe-perf-views.js`): the camera
+ * stands this far south of the items (m) at an eye height and looks at a
+ * point this high over the ground at their middle (m).
+ */
+const PERF_STREET = Object.freeze({ backM: 30, lookAtM: 1 });
 
 /** The sweeps the recorder knows (`/globe/globe-perf-sweep.js`). */
 const PERF_SWEEPS = ["quick", "full", "overhead"];
@@ -942,6 +972,9 @@ function readHashParams() {
     // `controls` drives every recorder run through the controls' wheel
     // input; absent, each cell says (`/globe/globe-perf-sweep.js`).
     perfDrive: params.get("perfDrive") === "controls" ? "controls" : null,
+    // The fixed-view sweep's item counts, as text: the recorder parses it
+    // (`parsePerfItems`), so the page loads nothing of it without perf=1.
+    perfItems: params.get("perfItems"),
     // Which noise the volume's clouds read (round-3 plan 2026-10-08-2345,
     // N1): `tile` (the baked 24 km tile), `hex` (H1/H2) or `live` (the
     // per-octave noise that never repeats in view). Absent or unknown:
@@ -3198,9 +3231,18 @@ async function start() {
   let eOverride = null;
   /** The band's share on the frame before (the recorder's edge mark). */
   let lastShare = bandShare;
+  /**
+   * The recorder's refresh calibration: while true the frame does no work
+   * (nothing updated, nothing drawn), so its intervals are the display's.
+   */
+  let perfPaused = false;
 
   const frame = () => {
     hooks.frameStart(performance.now());
+    if (perfPaused) {
+      hooks.frameEnd(performance.now());
+      return;
+    }
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     // Both sides: a phone's URL bar changes only the height.
@@ -4937,8 +4979,35 @@ void main() {
   // only with #perf=1: its handle on the page is what it reads (cheap
   // counts, no raycasts, so it never adds to what it counts) and the few
   // things it sets.
+  /** The drawn ground at a place (m over the ellipsoid), 0 before any relief. */
+  const perfGroundM = ({ lat, lng }) =>
+    terrain?.plugin.sampleCartographicElevation(lat * DEG, lng * DEG) ?? 0;
+  /**
+   * The OSM map is ready for a held view: off, or fully faded out while
+   * inactive, or fully on with nothing near the camera waiting for its map
+   * and no gated tile left to look at again (its `coverage` walks the drawn
+   * tiles, so it is read only once the cheap counts allow it).
+   */
+  const perfOsmReady = () => {
+    if (!osm || !osmAttached || params.osm !== 1) return true;
+    const s = osm.stats();
+    if (!s.active) return s.on <= 1e-3;
+    if (s.on < 0.999 || s.reevaluateBacklog > 0) return false;
+    // A tile whose map request failed is never asked for again: waiting
+    // for it would time every run out.
+    const c = osm.coverage();
+    return c.waiting - c.failed === 0;
+  };
   if (params.perf === 1) {
     const { createGlobePerf } = await import("./globe-perf.js");
+    // The fixed-view sweep's editor-style items (`globe-perf-views.js`).
+    const { createPerfItems } = await import("./globe-perf-items.js");
+    const perfItems = createPerfItems({
+      parent: globe.group,
+      ellipsoid: globe.tiles.ellipsoid,
+      groundM: perfGroundM,
+      eyeItems,
+    });
     let tookCamera = false;
     const altitudeNow = () =>
       globe.tiles.ellipsoid.getPositionElevation(
@@ -4969,7 +5038,7 @@ void main() {
        * law (`pitchAtDeg`), as the dive places it. The first call takes
        * the camera from the fly-in and the pin, as a press would.
        */
-      placeCamera(place, altitudeM) {
+      placeCamera(place, altitudeM, pose = null) {
         const now = performance.now();
         if (!tookCamera) {
           tookCamera = true;
@@ -4978,12 +5047,14 @@ void main() {
           controls.release();
         }
         const ellipsoid = globe.tiles.ellipsoid;
-        const view = obliqueCamera(
-          ellipsoid,
-          orbitPose(ellipsoid, place),
-          altitudeM,
-          pitchAtDeg(altitudeM, { pitchLowDeg: params.pitchLow }),
-        );
+        const view =
+          pose ??
+          obliqueCamera(
+            ellipsoid,
+            orbitPose(ellipsoid, place),
+            altitudeM,
+            pitchAtDeg(altitudeM, { pitchLowDeg: params.pitchLow }),
+          );
         placeCameraEcef(view.position, view.quaternion);
         returnFov(now);
         controls.followIntro();
@@ -5036,9 +5107,128 @@ void main() {
       setEOverride(e) {
         eOverride = e;
       },
+      /** The refresh calibration: the frame does no work while paused. */
+      setPaused(paused) {
+        perfPaused = paused === true;
+      },
+      // The fixed-view sweep (`globe-perf-views.js`).
+      viewPlace: () => params.url,
+      // Street level needs eye mode (read at start, as the controls are).
+      eyeMode: startParams.eye,
+      /**
+       * Which parts of a held view are ready, beside the drawn carriers'
+       * queues (`settled`): `band`, the drawn share at the altitude's (an
+       * undrawn relief reads as idle, so a low view settled before the
+       * relief took the frame); `release`, no carrier's cache release
+       * waiting or draining (it runs `bandReleaseMs` after a move and frees
+       * hundreds of tiles); `city`, no city load or retry running and its
+       * arrival fade done; `osm`, the OSM map at its strength with no tile
+       * near the camera waiting for its map.
+       */
+      viewReadiness() {
+        const cityState = city?.state();
+        return {
+          band: !terrain || Math.abs(bandShare - bandTarget) < 1e-3,
+          release: Object.values(outOfBand).every(
+            (o) => o.since === null || o.done,
+          ),
+          // A delivery that lands inside a held run voids it
+          // (`city.arrived`), so a run need not wait for the load's end;
+          // the sweep waits for that once, before its first move
+          // (`cityGate`).
+          city:
+            !cityState ||
+            (cityState.phase !== "loading" &&
+              Math.abs(cityState.shown - cityState.fade) < 1e-3),
+          osm: perfOsmReady(),
+        };
+      },
+      /** The city's deliveries drawn so far (0 without a city). */
+      cityDelivered: () => city?.state().load?.stages.length ?? 0,
+      /**
+       * The city's load for the sweep's wait before its first move:
+       * `off` (no city), `idle` (not asked for yet), `loading`,
+       * `ended` (every stage and retry done) or `gave-up` (no data
+       * for the place, or failed with every retry spent).
+       */
+      cityGate() {
+        if (!city) return "off";
+        const s = city.state();
+        if (s.phase === "idle") return "idle";
+        if (s.load?.ended) return "ended";
+        if (
+          s.load?.outcome === "unavailable" ||
+          (s.phase === "failed" && cityTries >= CITY_RETRIES)
+        ) {
+          return "gave-up";
+        }
+        return "loading";
+      },
+      /** Whether the city draws anything this frame (null without one). */
+      cityDrawn: () => (city ? city.root.visible : null),
+      /** The sweep's items inside the camera's frustum now. */
+      itemsInView: () => perfItems.inView(camera),
+      /** The OSM map's tiles waiting and failed (null without the map). */
+      osmCoverage() {
+        if (!osm || !osmAttached || params.osm !== 1) return null;
+        const c = osm.coverage();
+        return { waiting: c.waiting, failed: c.failed };
+      },
+      placeView(place, view) {
+        const ellipsoid = globe.tiles.ellipsoid;
+        if (worldFrame.target === null) setFrameTarget(place);
+        // The controls' height rays hit the drawn surface, as when the user
+        // owns the camera: on the whole scene they hit the cloud shell and
+        // lifted a street camera about 2 km.
+        controls.pickFrom(surfaceTiles().group);
+        if (!view.street) {
+          const groundM = view.aglM === undefined ? 0 : perfGroundM(place);
+          this.placeCamera(place, view.altitudeM ?? groundM + view.aglM);
+          return;
+        }
+        // Street level: an eye height over the ground, standing back from
+        // the items (south of them) and looking at their middle.
+        const back = {
+          lat: place.lat - PERF_STREET.backM / (radius * DEG),
+          lng: place.lng,
+        };
+        const eye = ellipsoid.getCartographicToPosition(
+          back.lat * DEG,
+          back.lng * DEG,
+          perfGroundM(back) + GLOBE_EYE.clearanceM,
+          new THREE.Vector3(),
+        );
+        const look = ellipsoid.getCartographicToPosition(
+          place.lat * DEG,
+          place.lng * DEG,
+          perfGroundM(place) + PERF_STREET.lookAtM,
+          new THREE.Vector3(),
+        );
+        const up = new THREE.Vector3();
+        ellipsoid.getEastNorthUpAxes(
+          back.lat * DEG,
+          back.lng * DEG,
+          new THREE.Vector3(),
+          new THREE.Vector3(),
+          up,
+        );
+        // A camera looks down its -z: lookAt(eye, target) points -z at target.
+        const m = new THREE.Matrix4().lookAt(eye, look, up);
+        this.placeCamera(place, 0, {
+          position: eye,
+          quaternion: new THREE.Quaternion().setFromRotationMatrix(m),
+        });
+      },
+      setItems(offsets, place) {
+        perfItems.set(offsets, place);
+      },
+      bytesDownloaded: globeBytesDownloaded,
       currentE: () => terrain?.plugin.heightScale ?? null,
     });
     window.__globeLab.perf = perf.api;
+    // For the sweep's smoke: whether item `k` is in the camera's view and
+    // how far its foot stands over the drawn ground now (`globe-perf-items.js`).
+    window.__globeLab.perfItem = (k) => perfItems.probe(k, camera, perfGroundM);
   }
 }
 

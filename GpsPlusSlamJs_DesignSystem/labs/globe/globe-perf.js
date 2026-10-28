@@ -23,7 +23,24 @@ import {
   perfSweepEstimateMs,
 } from "/globe/globe-perf-sweep.js";
 import { deviceBlock } from "./globe-device.js";
+import { createContextWatch, createFrameWatchdog } from "./globe-perf-guard.js";
+import { createSweepJournal, previousSweepText } from "./globe-perf-journal.js";
 import { createPerfRecorder } from "./globe-perf-recorder.js";
+import {
+  PERF_VIEWS,
+  formatViewTable,
+  itemOffsets,
+  missedThresholdsMs,
+  parsePerfItems,
+  perfViewCells,
+  perfViewsEstimateMs,
+  perfViewsPlanText,
+  snapRefreshInterval,
+  summariseViewDownloads,
+  summariseViewRuns,
+  viewRunLabel,
+} from "./globe-perf-views.js";
+import { createWakeKeeper } from "./globe-perf-wake.js";
 import {
   browserShareEnv,
   copyExport,
@@ -53,13 +70,49 @@ export const GLOBE_PERF = Object.freeze({
   /** At most this many long-animation-frame durations in the export. */
   loafKept: 200,
   /**
-   * The thresholds counted (ms): the plan's 33, 50 and 100, and 34 and 51
-   * beside them. At 60 and 120 Hz, 33.3 and 50 ms are whole refresh
-   * multiples, so one missed vsync already counts as "over 33"; the export
-   * carries both readings, and the DEC-PERF-3 verdict keeps the plan's.
+   * The thresholds counted (ms): the plan's 33, 50 and 100, which the
+   * DEC-PERF-3 verdict reads. After the calibration each run also counts
+   * the frames that missed at least 1, 2 and 3 refreshes
+   * (`missedThresholdsMs`: 1.5, 2.5 and 3.5 intervals, halfway between
+   * the multiples a frame lands on, so jitter does not move a frame across
+   * them and they mean the same at 30, 60, 90 or 120 Hz).
    */
-  thresholdsMs: Object.freeze([33, 34, 50, 51, 100]),
+  thresholdsMs: Object.freeze([33, 50, 100]),
+  /**
+   * The fixed-view sweep (`perfItems`, `globe-perf-views.js`): frames
+   * held after the items change before a run opens, so a run measures the
+   * held view, not the items' first upload and compile; this window is
+   * recorded apart, as the run's `itemsWarm` (its frames, worst frame and
+   * the programs, textures and geometries made in it).
+   */
+  itemsWarmMs: 500,
+  /**
+   * ... and each held run takes at least this many frames after its hold,
+   * so a slow device (SwiftShader: seconds a frame) never ends a run empty.
+   */
+  viewMinFrames: 3,
+  /** How often the frame watchdog looks (ms; `perfWatchdogS` decides). */
+  watchdogCheckMs: 1_000,
+  /**
+   * The city gate before a fixed-view sweep: a city that has not begun
+   * loading after this long (ms) is not waited for (the link's view may
+   * not load one).
+   */
+  cityGateIdleMs: 10_000,
 });
+
+/**
+ * A sweep that stopped because the device dropped the page's graphics:
+ * what was measured before it is kept, nothing after it would be real.
+ */
+class SweepStopped extends Error {
+  constructor(at) {
+    super(
+      `The device dropped the page's graphics at ${at ?? "the start"}; results up to there are kept.`,
+    );
+    this.name = "SweepStopped";
+  }
+}
 
 /** The overlay's markup; the styles keep every control usable at 390 px. */
 const PANEL_HTML = `
@@ -92,32 +145,91 @@ const PANEL_HTML = `
  * `{ renderer, canvas, globe, terrain, params(), counts(), placeCamera(place,
  * altitudeM), updateControls(), altitudeM(), wheelZoom(deltaY), settled(),
  * setFactors(cell | null),
- * setEOverride(e | null), currentE() }`. Returns the hooks the lab's frame
+ * setEOverride(e | null), currentE() }`, optionally `setPaused(bool)` (the
+ * frame does no work while paused: the refresh calibration), and for the
+ * fixed-view sweep `viewPlace()` (the link's place or null), `eyeMode`
+ * (street level needs it), `viewReadiness()` (`{ band, release, city, osm }`,
+ * each true when that part is ready), `placeView(place, view)`,
+ * `setItems(offsets, place)` (`itemOffsets`: metres east and north of the
+ * place) and `bytesDownloaded()`. Returns the hooks the lab's frame
  * calls (`frameStart`, `drives`, `drive`, `frameEnd`, `mark`, `eStep`) and
  * `api` for the smokes.
  */
 export function createGlobePerf(lab) {
   const pageStart = performance.now();
+  /** The display's interval the dropped-frame counts divide by (snapped). */
   let refreshIntervalMs = null;
+  /** The calibration snapped (`snapRefreshInterval`), or null. */
+  let refresh = null;
+  /** The frames-missed thresholds after the calibration, or null. */
+  let missedMs = null;
+  /** A line every status carries while the screen is not kept awake. */
+  let statusNote = "";
+  /** The status's text without the note (it is shown again on a change). */
+  let statusText = "idle";
+  /** The screen wake lock for a run (`globe-perf-wake.js`). */
+  const wake = createWakeKeeper({
+    wakeLock: navigator.wakeLock,
+    doc: document,
+    onChange: (held) => {
+      if (!sweeping) return;
+      statusNote = held
+        ? ""
+        : "The screen is not kept on: set the screen's auto-lock to Never.";
+      setStatus(statusText);
+    },
+  });
   const rec = createPerfRecorder({
     createRun: () =>
       createFrameRun({
         refreshIntervalMs,
-        thresholdsMs: GLOBE_PERF.thresholdsMs,
+        thresholdsMs: [...GLOBE_PERF.thresholdsMs, ...(missedMs ?? [])],
       }),
+  });
+  /** Whether a sweep is running (Run pressed, not yet ended). */
+  let sweeping = false;
+  /** Where the sweep is, for a loss, a stall or a failure. */
+  let where = null;
+  /** The device dropped the page's graphics: noticed run or no run. */
+  const context = createContextWatch({
+    canvas: lab.canvas,
+    gl: lab.renderer.getContext(),
+    now: () => performance.now(),
+  });
+  const at = (label) => {
+    where = label;
+    context.setLabel(label);
+  };
+  /** The sweep's export kept after every run (a reload mid-sweep). */
+  const journal = createSweepJournal({
+    storage: () => globalThis.localStorage,
   });
   /** The current cell's hooks: off records frame intervals only. */
   let hooksOn = true;
   const mark = (kind, n = 1) => {
     if (hooksOn && rec.running()) rec.mark(kind, n);
   };
-  /** Resolvers waiting for the next frame. */
+  /** Promises waiting for the next frame: `{ resolve, reject }`. */
   let waiters = [];
+  /** Ends every wait with `error`: the sweep stops where it is. */
+  const failWaiters = (error) => {
+    const waiting = waiters;
+    waiters = [];
+    for (const w of waiting) w.reject(error);
+  };
   /** The camera's target: `{ place, altitudeM }`, a function of now, or null. */
   let driver = null;
   const finished = [];
   let status = "idle";
   let voided = false;
+  /** What voided the run in progress, in order, each kind once. */
+  let voidedBy = new Set();
+  /** How the last sweep ended: null, "done", "stopped" or "failed". */
+  let outcome = null;
+  /** The failure's message and place, or null. */
+  let failure = null;
+  /** The fixed-view sweep's wait for the city before its first move. */
+  let cityGate = null;
   let nodesWalkPending = false;
   let lastPrograms = lab.renderer.info.programs?.length ?? 0;
   let lastTextures = lab.renderer.info.memory.textures;
@@ -161,39 +273,57 @@ export function createGlobePerf(lab) {
       }
     }).observe({ type: "long-animation-frame" });
   }
-  // Memory pressure on a phone (H6), a page that leaves the screen and a
-  // touch (§4.2: the run is not touched) void the run in progress.
+  /**
+   * The device block the export carries: read at load, and again after
+   * the calibration while the context is alive (`device()`).
+   */
+  let deviceSnapshot = device();
+  // Memory pressure on a phone (H6), a page that leaves the screen, a
+  // touch anywhere but on the recorder's panel (§4.2: the run is not
+  // touched) and a resize void the run in progress (a turn of the phone
+  // changes the viewport, so it fires `resize` too).
+  // A run voided on its last frame keeps why (`voidedBy`): the frame's
+  // mark is closed only by the next frame.
   const voidRun = (kind) => {
     if (!rec.running()) return;
     rec.mark(kind);
     voided = true;
+    voidedBy.add(kind);
   };
-  lab.canvas.addEventListener("webglcontextlost", () =>
-    voidRun("context.lost"),
-  );
+  lab.canvas.addEventListener("webglcontextlost", () => {
+    voidRun("context.lost");
+    // The sweep stops at once; the lost frame is recorded with its place.
+    if (sweeping) failWaiters(new SweepStopped(where));
+  });
   lab.canvas.addEventListener("webglcontextrestored", () =>
     voidRun("context.restored"),
   );
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") voidRun("hidden");
   });
-  lab.canvas.addEventListener("pointerdown", () => voidRun("touch"));
+  window.addEventListener("resize", () => voidRun("resize"));
 
-  const nextFrame = () => new Promise((resolve) => waiters.push(resolve));
+  const nextFrame = () =>
+    new Promise((resolve, reject) => waiters.push({ resolve, reject }));
   const wait = async (ms) => {
     const t0 = performance.now();
     while (performance.now() - t0 < ms) await nextFrame();
   };
-  /** Holds until the lab's drawn carriers settle, `settleFrames` in a row. */
-  const settle = async (timeoutMs) => {
+  /**
+   * Holds until the lab's drawn carriers settle, `settleFrames` in a row,
+   * and `also()` holds too: `{ ok, ms }`, `ok` false at the timeout.
+   */
+  const settle = async (timeoutMs, also = () => true) => {
     const t0 = performance.now();
     let still = 0;
     while (performance.now() - t0 < timeoutMs) {
       await nextFrame();
-      still = lab.settled() ? still + 1 : 0;
-      if (still >= GLOBE_PERF.settleFrames) return true;
+      still = lab.settled() && also() ? still + 1 : 0;
+      if (still >= GLOBE_PERF.settleFrames) {
+        return { ok: true, ms: Math.round(performance.now() - t0) };
+      }
     }
-    return false;
+    return { ok: false, ms: Math.round(performance.now() - t0) };
   };
   const placeOf = (id) =>
     PERF_PLACES.find((p) => p.id === id) ?? PERF_PLACES[1];
@@ -230,18 +360,37 @@ export function createGlobePerf(lab) {
     };
   };
 
-  /** The refresh interval, from 2 s idle at the first place's top (§4.1). */
-  async function calibrate(place) {
-    driver = { place, altitudeM: PERF_PATH.fromM };
-    await settle(GLOBE_PERF.moveSettleMs);
-    rec.startIdle();
-    await wait(GLOBE_PERF.calibrateMs);
-    refreshIntervalMs = calibrateRefreshInterval(rec.stopIdle());
+  /**
+   * The display's refresh interval (§4.1), from 2 s of frames with the
+   * lab's frame doing no work (`lab.setPaused`), so it measures the display
+   * and not the scene, snapped to a display rate (`snapRefreshInterval`;
+   * a measurement that fits none is flagged in the export). The first
+   * frame after the pause starts is left out: it may still be a full one.
+   */
+  async function calibrate() {
+    lab.setPaused?.(true);
+    try {
+      await nextFrame();
+      rec.startIdle();
+      await wait(GLOBE_PERF.calibrateMs);
+      refresh = snapRefreshInterval(calibrateRefreshInterval(rec.stopIdle()));
+    } finally {
+      lab.setPaused?.(false);
+    }
+    refreshIntervalMs = refresh?.intervalMs ?? null;
+    missedMs = missedThresholdsMs(refreshIntervalMs);
+    // Read once here, while the context is known to be alive: a context
+    // lost later reads no GPU name and a 0x0 drawing buffer.
+    if (!context.isLost()) deviceSnapshot = device();
   }
 
   const startRun = (cell, label) => {
+    // Never a run on a GPU that draws nothing.
+    if (context.isLost()) throw new SweepStopped(where);
+    at(label);
     hooksOn = cell.hooks !== false;
     voided = false;
+    voidedBy = new Set();
     peaks = {
       globeCacheMiB: 0,
       reliefCacheMiB: 0,
@@ -249,7 +398,11 @@ export function createGlobePerf(lab) {
       lowestKm: Infinity,
     };
     rec.startRun(label);
-    return { index: finished.length, at: performance.now() };
+    return {
+      index: finished.length,
+      at: performance.now(),
+      viewport: `${window.innerWidth}x${window.innerHeight}@${window.devicePixelRatio}`,
+    };
   };
   const endRun = (cell, started, extra) => {
     const run = rec.stopRun();
@@ -260,6 +413,9 @@ export function createGlobePerf(lab) {
       // Heat (§4.1): a later run on a warmer phone.
       sincePageLoadMs: Math.round(started.at - pageStart),
       voided,
+      voidedBy: [...voidedBy],
+      viewport: started.viewport,
+      missedMs,
       hooks: hooksOn,
       peaks: {
         globePending: peaks.globePending,
@@ -271,6 +427,7 @@ export function createGlobePerf(lab) {
     });
     hooksOn = true;
     peaks = null;
+    keep("running");
   };
 
   /** One time-driven run (§4.2), at the cell's speed. */
@@ -278,7 +435,7 @@ export function createGlobePerf(lab) {
     const place = placeOf(cell.place);
     lab.setFactors(cell);
     driver = { place, altitudeM: PERF_PATH.fromM };
-    const settledBefore = await settle(GLOBE_PERF.moveSettleMs);
+    const settledBefore = (await settle(GLOBE_PERF.moveSettleMs)).ok;
     let start = null;
     let done = false;
     const controls = cell.drive === "controls";
@@ -303,7 +460,7 @@ export function createGlobePerf(lab) {
     const checkpoints = [];
     let eCheck = null;
     driver = { place, altitudeM: path[0].altitudeM };
-    const settledBefore = await settle(GLOBE_PERF.moveSettleMs);
+    const settledBefore = (await settle(GLOBE_PERF.moveSettleMs)).ok;
     const started = startRun(cell, label);
     const eCheckM = PERF_E_CHECK_KM * 1000;
     for (let i = 0; i < path.length; i++) {
@@ -320,11 +477,11 @@ export function createGlobePerf(lab) {
         step.altitudeM <= eCheckM
       ) {
         driver = { place, altitudeM: eCheckM };
-        const settledBeforeE = await settle(settleTimeoutMs());
+        const settledBeforeE = (await settle(settleTimeoutMs())).ok;
         const before = checkpointCounts(eCheckM);
         const e = lab.currentE();
         lab.setEOverride(e + GLOBE_PERF.eCheckStep);
-        const settledAfterE = await settle(settleTimeoutMs());
+        const settledAfterE = (await settle(settleTimeoutMs())).ok;
         const after = checkpointCounts(eCheckM);
         lab.setEOverride(null);
         eCheck = {
@@ -340,7 +497,7 @@ export function createGlobePerf(lab) {
       driver = { place, altitudeM: step.altitudeM };
       await nextFrame();
       if (step.checkpoint) {
-        const settled = await settle(settleTimeoutMs());
+        const settled = (await settle(settleTimeoutMs())).ok;
         checkpoints.push({ settled, ...checkpointCounts(step.altitudeM) });
       }
     }
@@ -353,13 +510,192 @@ export function createGlobePerf(lab) {
     });
   }
 
-  /** Who and what ran (§4.1, DEC-PERF-1): strings, numbers, booleans. */
+  /**
+   * The move whose settle gave up on the city (null: none). The city comes
+   * from public Overpass servers; one that delivered nothing by a move's
+   * timeout may never come, and waiting on it would leave every run timed
+   * out. The sweep then measures without it, and a run the city lands in
+   * is void (`city.arrived`).
+   */
+  let cityGaveUp = null;
+  /** The parts of the view that are not ready yet (`lab.viewReadiness`). */
+  const notReady = () => {
+    const r = lab.viewReadiness();
+    const parts = Object.keys(r).filter(
+      (k) =>
+        !r[k] &&
+        // Once it delivers, the city is waited for again (its fade).
+        !(k === "city" && cityGaveUp !== null && lab.cityDelivered() === 0),
+    );
+    return lab.settled() ? parts : ["carriers", ...parts];
+  };
+  const viewReady = () => notReady().length === 0;
+  const gpuCounts = () => ({
+    programs: lab.renderer.info.programs?.length ?? 0,
+    textures: lab.renderer.info.memory.textures,
+    geometries: lab.renderer.info.memory.geometries,
+  });
+
+  /**
+   * Before a fixed-view sweep's first move, at most `perfCityWaitS`: the
+   * city's load ended (its retries included) or given up, so a city that
+   * arrives late does not time runs out for minutes and mix scenes. A
+   * city that has not begun loading after `cityGateIdleMs` is not waited
+   * for. Returns `{ outcome, ms }`: `off` (no city), `ended`,
+   * `gave-up`, `not-requested`, `timeout` or `skipped` (a limit of 0).
+   */
+  async function waitForCity(limitMs) {
+    const t0 = performance.now();
+    const elapsed = () => performance.now() - t0;
+    const result = (outcome) => ({ outcome, ms: Math.round(elapsed()) });
+    if (limitMs <= 0) return result("skipped");
+    let shownS = -1;
+    for (;;) {
+      const state = lab.cityGate?.() ?? "off";
+      if (state === "off" || state === "ended" || state === "gave-up") {
+        return result(state);
+      }
+      if (state === "idle" && elapsed() > GLOBE_PERF.cityGateIdleMs) {
+        return result("not-requested");
+      }
+      if (elapsed() >= limitMs) return result("timeout");
+      const s = Math.floor(elapsed() / 1000);
+      if (s !== shownS) {
+        shownS = s;
+        setStatus(
+          `Waiting for the city to load: ${s} s (at most ${Math.round(limitMs / 1000)} s).`,
+        );
+      }
+      await nextFrame();
+    }
+  }
+
+  /**
+   * The items set for a cell and their warm-up (`itemsWarmMs`), recorded:
+   * the frames, the worst frame (the first one carries the build, the
+   * upload and any shader compile) and the GPU objects made in it.
+   */
+  async function warmItems(cell, place) {
+    at(`items warm-up ${viewRunLabel(cell)}`);
+    const before = gpuCounts();
+    let last = performance.now();
+    lab.setItems(itemOffsets(cell.items), place);
+    const t0 = last;
+    let frames = 0;
+    let maxFrameMs = 0;
+    while (performance.now() - t0 < GLOBE_PERF.itemsWarmMs) {
+      await nextFrame();
+      const now = performance.now();
+      maxFrameMs = Math.max(maxFrameMs, now - last);
+      last = now;
+      frames += 1;
+    }
+    const after = gpuCounts();
+    return {
+      frames,
+      maxFrameMs: +maxFrameMs.toFixed(1),
+      programs: after.programs - before.programs,
+      textures: after.textures - before.textures,
+      geometries: after.geometries - before.geometries,
+    };
+  }
+
+  /**
+   * The fixed-view sweep (`globe-perf-views.js`): for each move (a view in
+   * a repeat, the warm-up pass first) the camera placed and a settle of at
+   * most `perfViewSettleS` until the view is ready (`viewReady`: the drawn
+   * carriers idle, the band at its share, no cache release pending or
+   * draining, the city and the OSM map loaded), then for each item count
+   * the items set on the ground as it is now (after the settle, so on the
+   * refined relief), their warm-up recorded, a wait of at most `perfQuietS`
+   * for the view to be ready again, and a held run. What decides is the
+   * view right before the run: a run whose quiet wait timed out says so
+   * (`settledBefore: false`, with what was not ready) and the table keeps
+   * it out; a move whose settle timed out but whose view was ready by the
+   * run is kept (`settle.move` says it was slow). The camera is placed every frame,
+   * so the street view follows the ground as the relief refines under it.
+   * `label(cell, k)` is told each cell as it begins (k from 0).
+   */
+  async function runViews(viewCells, label) {
+    const place = lab.viewPlace() ?? placeOf(lab.params().perfPlace);
+    const settleMs = lab.params().perfViewSettleS * 1000;
+    const holdMs = lab.params().perfHoldS * 1000;
+    let move = null;
+    let moveSettled = { ok: false, ms: 0 };
+    let moveNotReady = [];
+    let bytesAtMove = 0;
+    for (const [k, cell] of viewCells.entries()) {
+      const view = PERF_VIEWS.find((v) => v.id === cell.view);
+      label(cell, k);
+      if (move !== `${cell.repeat}/${cell.view}`) {
+        move = `${cell.repeat}/${cell.view}`;
+        at(`move to ${cell.view} ${cell.warmup ? "warm" : `r${cell.repeat}`}`);
+        bytesAtMove = lab.bytesDownloaded();
+        driver = { place, view };
+        moveSettled = await settle(settleMs, viewReady);
+        moveNotReady = moveSettled.ok ? [] : notReady();
+        if (
+          cityGaveUp === null &&
+          moveNotReady.includes("city") &&
+          lab.cityDelivered() === 0
+        ) {
+          cityGaveUp = viewRunLabel(cell);
+        }
+      }
+      const itemsWarm = await warmItems(cell, place);
+      at(`quiet before ${viewRunLabel(cell)}`);
+      const quiet = await settle(lab.params().perfQuietS * 1000, viewReady);
+      const quietNotReady = quiet.ok ? [] : notReady();
+      const cityBefore = lab.cityDelivered();
+      // Right before the run: what it holds (portrait street level sees
+      // only some of the items).
+      const itemsInView = lab.itemsInView?.() ?? null;
+      const cityDrawn = lab.cityDrawn?.() ?? null;
+      const started = startRun(cell, viewRunLabel(cell));
+      await wait(holdMs);
+      for (let f = 0; f < GLOBE_PERF.viewMinFrames; f++) await nextFrame();
+      if (lab.cityDelivered() !== cityBefore) voidRun("city.arrived");
+      endRun(cell, started, {
+        settledBefore: quiet.ok,
+        settle: {
+          move: moveSettled.ok,
+          moveMs: moveSettled.ms,
+          moveNotReady,
+          quiet: quiet.ok,
+          quietMs: quiet.ms,
+          notReady: quietNotReady,
+          // The OSM tiles still waiting, and of those the failed ones the
+          // readiness no longer waits for (null without the map).
+          osm: lab.osmCoverage?.() ?? null,
+        },
+        itemsInView,
+        cityDrawn,
+        itemsWarm,
+        bytesAtMove,
+        bytes: lab.bytesDownloaded(),
+        requests: performance.getEntriesByType("resource").length,
+      });
+    }
+    lab.setItems([], place);
+  }
+
+  /**
+   * Who and what ran (§4.1, DEC-PERF-1): strings, numbers, booleans. Read
+   * at load and once after the calibration (`deviceSnapshot`): read after
+   * a lost context it names no GPU.
+   */
   function device() {
     return deviceBlock({
       renderer: lab.renderer,
       params: lab.params(),
       relief: Boolean(lab.terrain),
-      extra: { longAnimationFrame: loafSupported, refreshIntervalMs },
+      extra: {
+        longAnimationFrame: loafSupported,
+        refreshIntervalMs,
+        refreshMeasuredMs: refresh?.measuredMs ?? null,
+        refreshHz: refresh?.hz ?? null,
+        refreshMismatch: refresh?.mismatch ?? null,
+      },
     });
   }
 
@@ -377,7 +713,7 @@ export function createGlobePerf(lab) {
   /** The export: the framework's, plus the lab's counts per run (§4.3). */
   function exportText() {
     const base = buildFrameExport({
-      device: device(),
+      device: deviceSnapshot,
       runs: finished.map((r) => ({
         label: `${r.label}${r.voided ? " VOID" : ""}`,
         summary: r.summary,
@@ -392,18 +728,60 @@ export function createGlobePerf(lab) {
         cell: r.cell,
         hooks: r.hooks,
         voided: r.voided,
+        voidedBy: r.voidedBy,
+        viewport: r.viewport,
+        missedMs: r.missedMs,
         settledBefore: r.settledBefore,
+        settle: r.settle ?? null,
+        itemsWarm: r.itemsWarm ?? null,
+        itemsInView: r.itemsInView ?? null,
+        cityDrawn: r.cityDrawn ?? null,
+        bytesAtMove: r.bytesAtMove ?? null,
         counts: r.counts,
         samples: r.samples,
         work: { insideMs: Math.round(r.work.insideMs), frames: r.work.frames },
         peaks: r.peaks,
         checkpoints: r.checkpoints ?? null,
         eCheck: r.eCheck ?? null,
+        bytes: r.bytes ?? null,
+        requests: r.requests ?? null,
       })),
       overhead: overheadVerdict(),
+      // The fixed-view sweep's table and each move's download (MiB of the
+      // globe lab's assets, `/globe-assets/` only), null without it.
+      views: viewCells ? summariseViewRuns(finished) : null,
+      viewDownloads: viewCells ? summariseViewDownloads(finished) : null,
+      viewsSkipped,
+      // The move after which the sweep stopped waiting for the city (null:
+      // it never did).
+      cityGaveUp,
+      // The wait for the city before the first move (null: none ran).
+      cityGate,
+      refresh,
+      missedMs,
+      // How the sweep ended, and where a loss or a failure stopped it.
+      outcome,
+      runsPlanned: runCount,
+      failure,
+      contextLost: context.report().lost,
+      contextRestored: context.report().restored,
+      journal: journal.report(),
+      wakeLock: wake.report(),
       longAnimationFrameMs: loafDurations,
     });
   }
+  /**
+   * Keeps the export for a reload (`globe-perf-journal.js`), with the
+   * link it was measured with: only the same link's sweep blocks a start.
+   */
+  const keep = (state) =>
+    journal.save({
+      text: exportText(),
+      runs: finished.length,
+      total: runCount,
+      state,
+      link: location.hash,
+    });
 
   // ---- The overlay (§4.1: usable at phone width, DEC-PERF-1) ----
   const params = lab.params();
@@ -431,40 +809,99 @@ export function createGlobePerf(lab) {
     ...(params.perfDrive === null ? {} : { drive: params.perfDrive }),
   }));
   const pauses = cells.filter((c) => c.pauseBefore).length;
-  const estimateMs = perfSweepEstimateMs(cells) + pauses * GLOBE_PERF.pauseMs;
+  // The fixed-view sweep (`perfItems`) replaces the zoom's cells.
+  const itemCounts = parsePerfItems(params.perfItems);
+  // Street level stands at an eye height: without eye mode the controls
+  // keep the camera 100 m up, so the view is left out, never measured
+  // somewhere else under its name.
+  const views = lab.eyeMode ? PERF_VIEWS : PERF_VIEWS.filter((v) => !v.street);
+  const viewsSkipped = lab.eyeMode ? [] : ["street"];
+  const viewCells =
+    itemCounts === null
+      ? null
+      : perfViewCells({
+          items: itemCounts,
+          repeats: params.perfRepeats,
+          views,
+          warmup: params.perfWarmup === 1,
+        });
+  const estimateMs = viewCells
+    ? perfViewsEstimateMs(viewCells, {
+        holdMs: params.perfHoldS * 1000 + GLOBE_PERF.itemsWarmMs,
+        settleMs: params.perfViewSettleS * 1000,
+        calibrateMs: GLOBE_PERF.calibrateMs,
+      })
+    : perfSweepEstimateMs(cells) +
+      pauses * GLOBE_PERF.pauseMs +
+      GLOBE_PERF.calibrateMs;
   const panel = document.createElement("section");
   panel.id = "globe-perf";
   panel.setAttribute("aria-label", "Frame-time recorder");
   panel.innerHTML = PANEL_HTML;
   document.body.append(panel);
   const part = (name) => panel.querySelector(`[data-perf="${name}"]`);
+  // A touch anywhere but on the panel voids the run (the panel's own
+  // buttons are not pressed while a run holds).
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (!panel.contains(event.target)) voidRun("touch");
+    },
+    true,
+  );
   const minutes = (ms) => Math.max(1, Math.ceil(ms / 60_000));
-  const runs = `${cells.length} run${cells.length === 1 ? "" : "s"}`;
-  part("plan").textContent = stepped
-    ? `Frame-stepped path, ${runs} (counts only).`
-    : `${sweep ?? "One run"}: ${runs}, about ${minutes(estimateMs)} min. Do not touch the screen while it runs.`;
-  const setStatus = (text) => {
-    status = text;
-    part("status").textContent = text;
-  };
+  const runCount = viewCells?.length ?? cells.length;
+  const runs = `${runCount} run${runCount === 1 ? "" : "s"}`;
+  part("plan").textContent = viewCells
+    ? perfViewsPlanText({
+        items: itemCounts,
+        runs: runCount,
+        estimateMs,
+        cityWaitS: params.perfCityWaitS,
+        streetSkipped: viewsSkipped.length > 0,
+      })
+    : stepped
+      ? `Frame-stepped path, ${runs} (counts only).`
+      : `${sweep ?? "One run"}: ${runs}, about ${minutes(estimateMs)} min. Do not touch the screen while it runs.`;
+  function setStatus(text) {
+    statusText = text;
+    status = statusNote ? `${text} ${statusNote}` : text;
+    part("status").textContent = status;
+  }
   const showText = (text) => {
     const box = part("text");
     box.hidden = false;
     box.value = text;
     box.focus();
     box.select();
+    // iOS selects nothing with `select()` alone.
+    box.setSelectionRange(0, text.length);
   };
   const share = browserShareEnv(showText);
+  /**
+   * A sweep kept from an earlier page (`globe-perf-journal.js`): cut off
+   * by a reload, stopped, failed or finished, from this link or from other
+   * settings. Its export is offered until a new sweep starts.
+   */
+  let previous = journal.previous(location.hash);
+  const shareText = () => previous?.text ?? exportText();
+  const fileKind = () => {
+    const kind = viewCells ? "views" : (sweep ?? (stepped ? "step" : "run"));
+    if (!previous) return kind;
+    return previous.state === "running"
+      ? `${kind}-cut-off`
+      : `${kind}-previous`;
+  };
   part("copy").addEventListener("click", async () => {
-    const how = await copyExport(exportText(), share);
+    const how = await copyExport(shareText(), share);
     setStatus(
       how === "clipboard" ? "Copied." : "Select the text below and copy it.",
     );
   });
   part("download").addEventListener("click", () => {
     const how = downloadExport(
-      exportText(),
-      exportFileName(sweep ?? (stepped ? "step" : "run"), Date.now()),
+      shareText(),
+      exportFileName(fileKind(), Date.now()),
       share,
     );
     setStatus(
@@ -485,35 +922,35 @@ export function createGlobePerf(lab) {
     ].join(" ");
   };
 
-  /** Every cell, then the summary; the overlay shows what is left. */
-  async function runAll() {
-    part("run").disabled = true;
-    part("copy").disabled = true;
-    part("download").disabled = true;
-    finished.length = 0;
-    loafDurations.length = 0;
-    const t0 = performance.now();
-    const left = () =>
-      minutes(Math.max(0, estimateMs - (performance.now() - t0)));
-    setStatus("Calibrating the refresh rate...");
-    await calibrate(placeOf(cells[0].place));
-    for (let i = 0; i < cells.length; i++) {
-      const cell = cells[i];
-      if (cell.pauseBefore) {
-        setStatus(`Pause against heat, 1 min. About ${left()} min left.`);
-        await wait(GLOBE_PERF.pauseMs);
-      }
-      setStatus(
-        `Run ${i + 1} of ${cells.length}: ${cell.place}. About ${left()} min left.`,
-      );
-      if (stepped) await runSteps(cell, runLabel(cell));
-      else await runZoom(cell, runLabel(cell));
-    }
-    driver = null;
-    lab.setFactors(null);
-    const lines = finished.map((r) =>
-      formatFrameRunSummary(`${r.label}${r.voided ? " VOID" : ""}`, r.summary),
-    );
+  /** The summary of the runs finished so far (all of them at Done). */
+  function summaryLines() {
+    const awakeReport = wake.report();
+    const lines = viewCells
+      ? [
+          formatViewTable(summariseViewRuns(finished), {
+            refresh,
+            downloads: summariseViewDownloads(finished),
+          }),
+          awakeReport.heldThroughout
+            ? "screen kept on throughout"
+            : `screen NOT kept on throughout (lost ${awakeReport.lost}, refused ${awakeReport.refused.length})`,
+          ...(cityGate === null
+            ? []
+            : [
+                `city before the sweep: ${cityGate.outcome} after ${cityGate.ms} ms`,
+              ]),
+          ...(cityGaveUp === null
+            ? []
+            : [
+                `the city did not load by ${cityGaveUp}: measured without it from there`,
+              ]),
+        ]
+      : finished.map((r) =>
+          formatFrameRunSummary(
+            `${r.label}${r.voided ? " VOID" : ""}`,
+            r.summary,
+          ),
+        );
     const timed = finished.filter((r) => !r.voided && !r.stepped && r.hooks);
     if (timed.length > 1) {
       const passed = timed.filter(
@@ -531,22 +968,159 @@ export function createGlobePerf(lab) {
         ].join("\n"),
       );
     }
-    part("summary").textContent = lines.join("\n\n");
+    return lines;
+  }
+
+  /**
+   * The end of a sweep, however it ended: the summary of what finished,
+   * Copy and Download enabled, the export kept with its outcome, and the
+   * status saying to copy it. Run is enabled again unless the page's
+   * graphics are lost: they stay lost (`context.isLost()`), so a new sweep
+   * would wipe the kept results and stop at once; only a reload gets them
+   * back.
+   */
+  function endSweep(state, text) {
+    sweeping = false;
+    outcome = state;
+    part("summary").textContent = summaryLines().join("\n\n");
+    keep(state);
+    const lost = context.isLost();
     part("copy").disabled = false;
     part("download").disabled = false;
-    part("run").disabled = false;
-    setStatus("Done. Copy or Download the result.");
+    part("run").disabled = lost;
+    part("run").textContent = "Run";
+    statusNote = "";
+    setStatus(
+      `${text} ${lost ? "Copy or Download them, then reload the page." : "Copy or Download the result."}`,
+    );
   }
-  part("run").addEventListener("click", () => {
-    runAll().catch((error) => {
-      driver = null;
-      if (rec.running()) rec.stopRun();
-      hooksOn = true;
-      part("run").disabled = false;
-      setStatus(`Failed: ${error?.message ?? error}`);
-      console.error(error);
-    });
+
+  /** Every cell, then the summary; the overlay shows what is left. */
+  async function runAll() {
+    part("run").disabled = true;
+    part("copy").disabled = true;
+    part("download").disabled = true;
+    // A fresh sweep: what an earlier page kept is no longer offered.
+    previous = null;
+    journal.clear();
+    finished.length = 0;
+    loafDurations.length = 0;
+    outcome = null;
+    failure = null;
+    cityGate = null;
+    sweeping = true;
+    // The countdown starts after the wait for the city, which the
+    // estimate leaves out (the plan line names it apart).
+    let t0 = performance.now();
+    const left = () => {
+      const ms = estimateMs - (performance.now() - t0);
+      return ms > 0
+        ? `Estimate: about ${minutes(ms)} min left.`
+        : "Past the estimate.";
+    };
+    // The screen kept on for the whole run (a phone locks after 30 s to
+    // 2 min, which hides the page and voids the run in progress).
+    cityGaveUp = null;
+    const awake = await wake.start();
+    statusNote = awake
+      ? ""
+      : "The screen cannot be kept on: set the screen's auto-lock to Never.";
+    if (viewCells) {
+      at("city wait");
+      cityGate = await waitForCity(params.perfCityWaitS * 1000);
+      t0 = performance.now();
+    }
+    at("calibration");
+    setStatus("Calibrating the refresh rate...");
+    await calibrate();
+    if (viewCells) {
+      await runViews(viewCells, (cell, k) =>
+        setStatus(
+          `Cell ${k + 1} of ${viewCells.length}: ${cell.view} n=${cell.items} ${cell.warmup ? "warm-up" : `repeat ${cell.repeat} of ${params.perfRepeats}`}. ${left()}`,
+        ),
+      );
+    }
+    for (let i = 0; i < (viewCells ? 0 : cells.length); i++) {
+      const cell = cells[i];
+      if (cell.pauseBefore) {
+        at(`pause before ${runLabel(cell)}`);
+        setStatus(`Pause against heat, 1 min. ${left()}`);
+        await wait(GLOBE_PERF.pauseMs);
+      }
+      setStatus(`Run ${i + 1} of ${cells.length}: ${cell.place}. ${left()}`);
+      if (stepped) await runSteps(cell, runLabel(cell));
+      else await runZoom(cell, runLabel(cell));
+    }
+    driver = null;
+    lab.setFactors(null);
+    await wake.stop();
+    endSweep("done", "Done.");
+  }
+  /**
+   * A frame watchdog while a sweep runs: no frame for `perfWatchdogS`
+   * while the page is on screen ends the sweep with what it has.
+   */
+  const watchdog = createFrameWatchdog({
+    timeoutMs: params.perfWatchdogS * 1000,
   });
+  let watchdogTimer = null;
+  const start = () => {
+    watchdog.frame(performance.now());
+    watchdogTimer = setInterval(() => {
+      if (!sweeping) return;
+      const visible = document.visibilityState === "visible";
+      if (watchdog.expired(performance.now(), visible)) {
+        failWaiters(
+          new Error(
+            `no frame for over ${params.perfWatchdogS} s while the page was on screen, at ${where}`,
+          ),
+        );
+      }
+    }, GLOBE_PERF.watchdogCheckMs);
+    return runAll()
+      .catch((error) => {
+        driver = null;
+        if (rec.running()) rec.stopRun();
+        hooksOn = true;
+        // A stopped or failed sweep leaves nothing of its own behind: no
+        // items in the scene, the frame working again, the screen free to
+        // lock. What finished is kept and can be copied.
+        if (viewCells) lab.setItems([], null);
+        lab.setFactors(null);
+        lab.setPaused?.(false);
+        void wake.stop();
+        if (error instanceof SweepStopped) {
+          endSweep("stopped", error.message);
+          return;
+        }
+        failure = { message: String(error?.message ?? error), at: where };
+        endSweep(
+          "failed",
+          `Failed: ${error?.message ?? error}. Results up to there are kept.`,
+        );
+        console.error(error);
+      })
+      .finally(() => {
+        clearInterval(watchdogTimer);
+        watchdogTimer = null;
+      });
+  };
+  part("run").addEventListener("click", start);
+  if (previous) {
+    part("copy").disabled = false;
+    part("download").disabled = false;
+    setStatus(previousSweepText(previous));
+  }
+  if (previous?.sameLink) {
+    // This link's sweep was kept (a reload mid-sweep, iOS killing a tab
+    // for memory, or a reload after Done): never start over by itself, so
+    // the kept result is not wiped; Run starts a fresh sweep.
+    part("run").textContent = "Start fresh";
+  } else if (params.perfAuto === 1) {
+    // `perfAuto=1`: the run starts by itself, so one link is the whole
+    // test (a sweep kept from other settings is replaced).
+    start();
+  }
 
   return {
     /**
@@ -568,6 +1142,7 @@ export function createGlobePerf(lab) {
       lastTextures = textures;
       lastGeometries = geometries;
       rec.frameStart(now);
+      watchdog.frame(now);
       if (rec.running() && hooksOn) {
         // The relief's preprocessed nodes, on a frame after the E step, so
         // the walk never lands in the step's own frame (§4.1).
@@ -603,7 +1178,7 @@ export function createGlobePerf(lab) {
       }
       const ready = waiters;
       waiters = [];
-      for (const resolve of ready) resolve();
+      for (const w of ready) w.resolve();
     },
     /** The lab's own work for the frame is done (the rest is the gap). */
     frameEnd(now) {
@@ -618,7 +1193,10 @@ export function createGlobePerf(lab) {
      */
     drive(now) {
       const target = typeof driver === "function" ? driver(now) : driver;
-      if (target.controls) {
+      if (target.view) {
+        lab.placeView(target.place, target.view);
+        lab.updateControls();
+      } else if (target.controls) {
         lab.wheelZoom(
           perfWheelDeltaY(Math.max(1, lab.altitudeM()), target.altitudeM),
         );
@@ -636,12 +1214,21 @@ export function createGlobePerf(lab) {
       nodesWalkPending = true;
     },
     api: {
-      run: () => runAll(),
+      run: () => start(),
       status: () => status,
       runs: () => finished.length,
       exportText,
       estimateMs: () => estimateMs,
       refreshIntervalMs: () => refreshIntervalMs,
+      refresh: () => refresh,
+      wakeLock: () => wake.report(),
+      contextLost: () => context.report().lost,
+      /**
+       * Drops the page's graphics as a device would (`WEBGL_lose_context`
+       * through three's `forceContextLoss`): the smoke's and a desktop
+       * check's way to prove the sweep stops and keeps its results.
+       */
+      forceContextLoss: () => lab.renderer.forceContextLoss(),
     },
   };
 }

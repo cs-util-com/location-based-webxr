@@ -46,9 +46,10 @@ export function downloadExport(text, name, env) {
     env.showText(text);
     return "shown";
   } finally {
-    // Late, so the browser has taken the download first.
+    // Late, so the browser has taken the download first (iOS may read the
+    // URL only once the tester answers its download sheet).
     if (url !== null) {
-      const timer = setTimeout(() => env.revokeUrl(url), 10_000);
+      const timer = setTimeout(() => env.revokeUrl(url), 60_000);
       timer.unref?.();
     }
   }

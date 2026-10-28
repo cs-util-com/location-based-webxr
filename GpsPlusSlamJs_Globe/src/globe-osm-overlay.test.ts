@@ -964,8 +964,60 @@ describe("the map's diagnostics", () => {
       withMap: 1,
       coarse: 1,
       waiting: 1,
+      failed: 0,
       unprocessed: 1,
     });
+  });
+
+  // Why: a tile whose map request failed is never asked for again (the
+  // re-evaluation skips failed tiles), so it waits for its map forever. A
+  // check that waits for `waiting === 0` then never ends; it must be able
+  // to tell the failed tiles apart. They stay inside `waiting`: the drawn
+  // picture lacks their map either way.
+  it("counts the failed tiles apart, inside waiting", async () => {
+    const visible = new Set<object>();
+    const osm = createGlobeOsmOverlay({
+      url: TEMPLATE,
+      attribution: ATTRIBUTION,
+      maxZoom: 19,
+      renderer: {} as THREE.WebGLRenderer,
+      fadeM: 1000,
+    });
+    await (osm.overlay as unknown as { init(): Promise<unknown> }).init();
+    osm.attach(fakeTerrain(visible));
+    osm.setEnabled(true);
+    const lat = 48.137;
+    const lon = 11.575;
+    osm.update({
+      position: cameraAt(lat, lon, 100),
+      aboveGroundM: 100,
+      speedMps: 0,
+      nowMs: 0,
+    });
+    const projection = osm.overlay.projection as {
+      fromCartographicToNormalizedRange(r: number[]): number[];
+    };
+    const tileInfo = (
+      osm.plugin as unknown as {
+        overlayInfo: Map<object, { tileInfo: Map<object, unknown> }>;
+      }
+    ).overlayInfo.get(osm.overlay)!.tileInfo;
+    const add = (dLat: number, failed: boolean): void => {
+      const tile = {};
+      tileInfo.set(tile, {
+        range: projection.fromCartographicToNormalizedRange(
+          regionAround(lat + dLat, lon, 0.0002),
+        ),
+        target: null,
+        failed,
+        meshInfo: new Map([[1, 1]]),
+      });
+      visible.add(tile);
+    };
+    add(0, true);
+    add(0.0005, true);
+    add(0.001, false);
+    expect(osm.coverage()).toMatchObject({ near: 3, waiting: 3, failed: 2 });
   });
 
   // Why: `coverage` sorts the drawn tiles by their distance from the
@@ -1033,6 +1085,7 @@ describe("the map's diagnostics", () => {
       withMap: 0,
       coarse: 0,
       waiting: 0,
+      failed: 0,
       unprocessed: 0,
     };
     expect(osm.coverage()).toEqual(none);
