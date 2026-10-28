@@ -53,7 +53,14 @@ import {
   tourObjects,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
-import { renderTourStation } from "./content-placement.js";
+import { renderStationBlocks, renderTourStation } from "./content-placement.js";
+import { hasStoryWorldBlocks, reachedWorldBlocks } from "./shown-blocks.js";
+import { selectShownBlocks } from "./visitor-walk-slice.js";
+import type {
+  TourBlock,
+  TourStation,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { Object3D } from "three";
 import type { ViewerMode } from "./mode.js";
 import {
   createMovedCodeChecks,
@@ -989,10 +996,48 @@ export function createViewerPlacement(deps: {
   /** What the side table was last told, to tell it only changes. */
   let shownKey: string | null = null;
   let shownTo: StationContent | null = null;
+  /** A reached story block's part (B2b), made by this session's
+   *  `tryPlaceContent`; null before it ran. */
+  let storyPartOf:
+    ((station: TourStation, block: TourBlock) => ContentPart) | null = null;
+  /** The reached story blocks the side table holds a part for, by part key,
+   *  with their station; reset with the table. */
+  let storyParts = new Map<string, string>();
+  let storyPartsTo: StationContent | null = null;
+
+  /** Each reached story world block (`selectShownBlocks`) gets one part of
+   *  its station, kept while the walk keeps it; a new walk's empty set
+   *  takes them out again. */
+  function syncStoryParts(content: StationContent): void {
+    if (storyPartsTo !== content) {
+      storyPartsTo = content;
+      storyParts = new Map();
+    }
+    const partOf = storyPartOf;
+    if (partOf === null) return;
+    const state = arStore.getState();
+    const wanted = new Map<string, string>();
+    for (const station of ctx.tourDocument.manifest()?.stations ?? []) {
+      const reached = selectShownBlocks(state, station.id);
+      if (reached.length === 0) continue;
+      for (const block of reachedWorldBlocks(station, reached)) {
+        const key = `story:${block.id}`;
+        wanted.set(key, station.id);
+        if (!storyParts.has(key)) {
+          content.setPart(station.id, key, partOf(station, block));
+        }
+      }
+    }
+    for (const [key, stationId] of storyParts) {
+      if (!wanted.has(key)) content.setPart(stationId, key, null);
+    }
+    storyParts = wanted;
+  }
 
   function syncContent(): void {
     const content = ctx.stationContent;
     if (content === null) return;
+    syncStoryParts(content);
     const ids = shownStationIds();
     const key = [...ids].join("\n");
     if (key !== shownKey || content !== shownTo) {
@@ -1014,7 +1059,13 @@ export function createViewerPlacement(deps: {
   function tryPlaceContent(current: TourSession): void {
     if (ctx.contentAttempted || ctx.tourManifestStatus !== "settled") return;
     const manifest = ctx.tourDocument.manifest();
-    if (manifest === null || tourObjects(manifest).length === 0) return;
+    if (
+      manifest === null ||
+      (tourObjects(manifest).length === 0 &&
+        !manifest.stations.some(hasStoryWorldBlocks))
+    ) {
+      return;
+    }
     const zero = selectZeroReference(arStore.getState());
     const scene = seams.getScene();
     if (zero === null || scene === null) return;
@@ -1025,30 +1076,44 @@ export function createViewerPlacement(deps: {
     // while the manifest names `content/…` (PR #435 review).
     const loadContent =
       deps.loadContent ?? ((path: string) => current.loadContentEntry(path));
+    const rendererDeps = (parent: Object3D, alive: () => boolean) => ({
+      assets: manifest.assets,
+      scene: parent,
+      zero,
+      alive,
+      makeLabel: (text: string) => seams.createLabel(text),
+      // A placed model at its size (station blocks plan B2b), read
+      // through the same cache as the station's story.
+      loadModel: async (entryName: string) =>
+        seams.loadGlbModel(await loadContent(entryName)),
+      loadPhotoTexture: async (entryName: string) =>
+        // Measured before it is decoded (tour kit K4 review R2).
+        decodeFrameTexture(await loadContent(entryName), PHOTO_DECODE_DIVISOR, {
+          maxPixels: TOUR_MAX_IMAGE_PIXELS,
+        }),
+    });
     for (const station of manifest.stations) {
       if (tourFreeBlocks(station).length === 0) continue;
       // One group per station, its pins and photos as children at their
       // local poses (tour editor plan W3).
       const part: ContentPart = {
         render: (parent, alive) =>
-          renderTourStation(station, {
-            assets: manifest.assets,
-            scene: parent,
-            zero,
-            alive,
-            makeLabel: (text) => seams.createLabel(text),
-            loadPhotoTexture: async (entryName) =>
-              // Measured before it is decoded (tour kit K4 review R2).
-              decodeFrameTexture(
-                await loadContent(entryName),
-                PHOTO_DECODE_DIVISOR,
-                { maxPixels: TOUR_MAX_IMAGE_PIXELS },
-              ),
-          }),
+          renderTourStation(station, rendererDeps(parent, alive)),
       };
       partLogs.set(part, { what: "content", basis: "geo", zero });
       content.setPart(station.id, "items", part);
     }
+    // A story block its story reached stands with the station's own
+    // (B2b, `syncContent`): one part per block, in the station's frame.
+    storyPartOf = (station, block) => {
+      const part: ContentPart = {
+        render: (parent, alive) =>
+          renderStationBlocks(station, [block], rendererDeps(parent, alive)),
+      };
+      partLogs.set(part, { what: "content", basis: "geo", zero });
+      return part;
+    };
+    syncStoryParts(content);
   }
 
   return {

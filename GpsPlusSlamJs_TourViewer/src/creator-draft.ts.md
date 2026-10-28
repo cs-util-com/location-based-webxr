@@ -47,13 +47,22 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     these objects: their versions in `written` are this device's own work.
     The ids (all of this load's Finishes) are kept for `uploaded`.
   - `forgetRefused(tourUrl)` - `tourUrl` was refused as an older format
+    (a bare content key, `isTourContentKey`, deletes nothing and reads
+    false: it names the recording, which another tour may share; B2a
+    review 4)
     (`archive-open.ts`): its namespace (`draftKeyForTour`) is emptied
     with `clear(META_KEY)`, the meta first so a reload midway finds no
     draft, in the meta's queue (after any write queued for it). True when
     a draft was there (its meta); false for none or no persistence; never
     rejects. The refused tour never presented its draft, so no open
     tour's state is touched. The emptied directory itself stays (the store
-    empties in place). Tests: `creator-setup.test.ts` ("a refused older
+    empties in place). Only a draft PROVED to be an older version's is
+    emptied (`isOlderVersionDraft`): a refused older copy and the current
+    copy of the same tour share the tour id, so the draft under the key may
+    be the current copy's unsaved work. A draft holding a record this
+    version reads, or nothing that decides it (no object records, or one
+    that does not read), is kept and reads false - it stays until its own
+    tour opens; nothing deletes it. Tests: `creator-setup.test.ts` ("a refused older
     tour's draft").
   - `follow(tourUrl)` (debug-captures plan, Q-I) - the file a Finish
     delivered of a tour opened from a file opens under another key once

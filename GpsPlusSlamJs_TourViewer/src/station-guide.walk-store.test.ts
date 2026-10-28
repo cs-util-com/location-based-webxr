@@ -23,7 +23,7 @@ import {
   type TourViewerStore,
 } from "./tour-viewer-session";
 import type { VisitorPosition } from "./visitor-position";
-import { targetChosen, walkCleared } from "./visitor-walk-slice";
+import { blockShown, targetChosen, walkCleared } from "./visitor-walk-slice";
 import {
   LogLevel,
   subscribeToLogs,
@@ -254,6 +254,71 @@ describe("the station guide on the page's store", () => {
       { line: "2 stations to find - nearest: B, 29 m", foundInStore: ["a"] },
     ]);
     expect(page.dom.line.textContent).toBe(page.atBatch[0]!.line);
+  });
+
+  // Why (station blocks plan B2b step 2): a story block a step reaches
+  // is kept with the walk. The story's first step is reached inside the
+  // very call that finds the station - which, at a visitor's first tick
+  // there, is also the call that starts the walk. A block dispatched
+  // straight to the store then meets no walk (the start is still pending)
+  // and is lost; through the guide it joins the call's batch, after the
+  // start, so the first step's pin stands like any other.
+  it("keeps a block shown by the story the walk's first call starts", () => {
+    const shown: { guide?: { blockShown(s: string, b: string): void } } = {};
+    const page = onThePage([station("a", 0, 0)], "fixed", {
+      onFound: (id) => shown.guide?.blockShown(id, "sign"),
+    });
+    shown.guide = page.guide;
+    page.move(0, 0);
+    page.guide.tick();
+    expect(page.found).toEqual(["a"]);
+    expect(page.store.getState().visitorWalk.shownBlocks).toEqual({
+      a: ["sign"],
+    });
+  });
+
+  // Why: a reached block stands for the rest of the visit, and a visitor
+  // who leaves AR and enters it again is still on the same visit. The
+  // session's end resets the guide's own per-session state (its HUD, its
+  // heading, its presence) and a found story replays in the next session -
+  // neither may cost or double the blocks the walk keeps.
+  it("keeps a reached block across a new AR session, once, through the story's replay", () => {
+    const shown: { guide?: { blockShown(s: string, b: string): void } } = {};
+    const page = onThePage([station("a", 0, 0), station("b", 80, 0)], "fixed", {
+      onFound: (id) => shown.guide?.blockShown(id, "sign"),
+    });
+    shown.guide = page.guide;
+    page.move(0, 0);
+    page.guide.tick();
+    expect(page.found).toEqual(["a"]);
+    page.guide.endSession();
+    expect(page.store.getState().visitorWalk.shownBlocks).toEqual({
+      a: ["sign"],
+    });
+    // The next session: the cut-short story plays again at its station.
+    page.move(0, 0);
+    page.guide.tick();
+    expect(page.found).toEqual(["a", "a"]);
+    expect(page.store.getState().visitorWalk.shownBlocks).toEqual({
+      a: ["sign"],
+    });
+  });
+
+  // Why: pins the reason the story's blocks go through the guide - the
+  // same block dispatched straight to the store in that first call meets
+  // no walk yet and is lost. Should the walk ever start earlier, this
+  // fails and the routing can be reconsidered.
+  it("loses a block dispatched straight to the store in the call that starts the walk", () => {
+    const other: { store?: TourViewerStore } = {};
+    const page = onThePage([station("a", 0, 0)], "fixed", {
+      onFound: (id) =>
+        other.store?.dispatch(blockShown({ stationId: id, blockId: "sign" })),
+    });
+    other.store = page.store;
+    page.move(0, 0);
+    page.guide.tick();
+    expect(page.found).toEqual(["a"]);
+    expect(page.store.getState().visitorWalk.shownBlocks).toEqual({});
   });
 
   // Why: the guide's walk is the store's as it is now with

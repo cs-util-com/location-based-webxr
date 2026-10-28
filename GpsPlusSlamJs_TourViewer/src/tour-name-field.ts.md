@@ -41,6 +41,9 @@ kept the old title.
 - Untouched means null, whatever the field shows: nothing is renamed, so
   a field that was never presented a title cannot remove one.
 - An emptied name is `""`: the rename removes the title.
+- The typed name goes to the rename and out of `typed()` in Unicode NFC
+  (`input-text.ts`), as every other typed text of the creator pages; the
+  kept copy in the store holds the field as typed.
 - Every `present` starts untouched again, unless a kept name applies;
   `main.ts` presents on every open and close (`hooks.presentTourInfo`,
   creator mode).

@@ -43,6 +43,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import {
   readTourManifestFromEntries,
+  TOUR_ID_PATTERN,
   TOUR_MANIFEST_ENTRY,
   tourManifestEntryOf,
 } from "gps-plus-slam-app-framework/ar/tour-archive";
@@ -570,9 +571,17 @@ async function tourIdOf(
       "application/json",
       limits.maxTextEntryBytes,
     );
-    return (
-      parseTourManifest(JSON.parse(await blob.text()) as unknown).tourId ?? null
-    );
+    // The raw field against the id rule, never a parse of the whole tour:
+    // the parse refuses an older format, and that file's draft (the one
+    // the refusal deletes) is stored under this same id (B2a review 1).
+    const data = JSON.parse(await blob.text()) as unknown;
+    const tourId =
+      typeof data === "object" && data !== null
+        ? (data as { tourId?: unknown }).tourId
+        : undefined;
+    return typeof tourId === "string" && TOUR_ID_PATTERN.test(tourId)
+      ? tourId
+      : null;
   } catch (err) {
     if (err instanceof ArchiveLimitError) throw err;
     return null;

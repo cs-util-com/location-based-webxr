@@ -166,3 +166,16 @@ walkOffered(store.getState().visitorWalk.progress!); // the rest
   only, one batch per call (a differential against a frozen copy of the
   old guide was deleted once the sheet changed the guide's writes by
   design).
+
+## Shown story blocks (B2b)
+
+- `shownBlocks`: per station, the story blocks with a world view a step
+  reached, in the order reached (`shown-blocks.ts`). `blockShown({
+stationId, blockId })` adds one once; it is ignored with no walk.
+  Like `done`, a story's end, a stop and leaving AR keep it;
+  `walkStarted`, `walkCleared` and `guideTourChanged` start it empty.
+- `selectShownBlocks(state, stationId)` - that list, or a shared empty
+  one.
+- Not persisted (`visitorWalk/*`), as the rest of the walk.
+- Tests: `visitor-walk-slice.test.ts` "the reached story world blocks
+  (B2b)".

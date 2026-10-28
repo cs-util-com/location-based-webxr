@@ -35,6 +35,7 @@ import { STATION_PREFIX } from "../editor-model.js";
 import { eastNorthOf, placeAtEastNorth } from "../tour-origin.js";
 import { blockFields } from "../block-fields.js";
 import { headingOfRotation, ON_GROUND_M } from "./inspector-model.js";
+import { inputText } from "../../input-text.js";
 
 /** What a typed value writes. */
 export type InspectorEdit =
@@ -221,7 +222,10 @@ export function inspectorEdit(input: {
   readonly field: string;
   readonly value: string;
 }): InspectorEdit {
-  const { selected, stations, field, value } = input;
+  const { selected, stations, field } = input;
+  // Typed text becomes NFC here, the editor's text input (B2a review 6);
+  // a number is unchanged by it.
+  const value = inputText(input.value);
   if (selected.startsWith(STATION_PREFIX)) {
     const id = selected.slice(STATION_PREFIX.length);
     const station = stations.find((s) => s.id === id);

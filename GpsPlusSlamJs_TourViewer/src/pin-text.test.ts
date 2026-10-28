@@ -49,11 +49,20 @@ describe("pin text", () => {
     expect(pinTextCounterLine("")).toBe("0 / 40");
   });
 
-  it("is the format's count for any text", () => {
+  // Why (B2a review finding 6): the counter counts what is stored, the
+  // text in NFC, so a decomposed accent counts once.
+  it("counts the text in NFC, as it is stored", () => {
+    const decomposed = `e${String.fromCodePoint(0x301)}`;
+    expect(pinTextCount(decomposed)).toBe(1);
+    expect(pinTextTooLong(decomposed.repeat(40))).toBe(false);
+  });
+
+  it("is the format's count of the NFC text for any text", () => {
     fc.assert(
       fc.property(fc.string({ unit: "grapheme", maxLength: 80 }), (text) => {
-        expect(pinTextCount(text)).toBe(tourTextCount(text));
-        expect(pinTextTooLong(text)).toBe(tourTextCount(text) > 40);
+        const stored = text.normalize("NFC");
+        expect(pinTextCount(text)).toBe(tourTextCount(stored));
+        expect(pinTextTooLong(text)).toBe(tourTextCount(stored) > 40);
       }),
     );
   });

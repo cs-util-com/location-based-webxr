@@ -174,8 +174,9 @@ export interface StationRun {
 /** One station of a walk: its status, and the fact of the tour the
  *  transitions read, fixed when the walk starts. */
 interface WalkStation extends StationStatus {
-  /** No steps (a newer minor's steps all left out, K1 review R4): done the
-   *  moment it is found. */
+  /** No steps (a newer minor's steps all left out, K1 review R4) and no
+   *  card to read (no description, no card picture): done the moment it is
+   *  found. */
   readonly stepless: boolean;
 }
 
@@ -240,11 +241,16 @@ interface WalkTransition {
   readonly events: StationEvent[];
 }
 
-/** The tour facts of these stations, for `startWalk`. */
+/** The tour facts of these stations, for `startWalk`. A station with no
+ *  steps but a description or a card picture is not stepless: its card
+ *  stays until Continue (`scene-view.ts`), whose story end finishes it. */
 export function walkRoute(stations: readonly TourStation[]): WalkRoute {
   return stations.map((s) => ({
     id: s.id,
-    stepless: s.steps.length === 0,
+    stepless:
+      s.steps.length === 0 &&
+      (s.description ?? "") === "" &&
+      s.image === undefined,
   }));
 }
 

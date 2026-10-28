@@ -34,6 +34,7 @@ import {
   updateReticleAtSurface,
 } from '../visualization/hit-test-reticle.js';
 import { registerXrFrameUpdate } from './xr-frame-loop.js';
+import { targetRayOf, type SelectTargetRay } from './xr-select-listener.js';
 
 /** Live-reticle handle returned by {@link startHitTestReticle}. */
 export interface HitTestReticleHandle {
@@ -49,15 +50,9 @@ export interface HitTestReticleHandle {
   dispose(): void;
 }
 
-/**
- * Where a tap pointed: the input source's target ray as a column-major 4x4
- * pose RELATIVE TO THE VIEWER (the camera's own frame; the ray runs along
- * the pose's -Z). For a screen tap it starts at the viewer and passes
- * through the tapped point.
- */
-export interface SelectTargetRay {
-  readonly targetRayInViewer: readonly number[];
-}
+/** Where a tap pointed - defined beside the select listener that reads it,
+ *  re-exported here so this module's deep import keeps naming it. */
+export type { SelectTargetRay };
 
 /** Arguments for {@link startHitTestReticle}. */
 export interface HitTestReticleArgs {
@@ -110,32 +105,6 @@ async function requestHitTestSource(
 ): Promise<XRHitTestSource | null> {
   const source = await session.requestHitTestSource?.({ space: viewerSpace });
   return source ?? null;
-}
-
-/**
- * The tap's target ray relative to `viewerSpace`, read from a `select`
- * event - or null when the event, its frame or the pose is missing, or the
- * frame refuses (it is only active while the event is dispatched).
- */
-function targetRayOf(
-  event: unknown,
-  viewerSpace: XRReferenceSpace | null
-): SelectTargetRay | null {
-  if (viewerSpace === null || typeof event !== 'object' || event === null) {
-    return null;
-  }
-  const { frame, inputSource } = event as Partial<XRInputSourceEvent>;
-  if (typeof frame?.getPose !== 'function' || inputSource === undefined) {
-    return null;
-  }
-  try {
-    const pose = frame.getPose(inputSource.targetRaySpace, viewerSpace);
-    return pose
-      ? { targetRayInViewer: Array.from(pose.transform.matrix) }
-      : null;
-  } catch {
-    return null;
-  }
 }
 
 /**

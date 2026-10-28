@@ -13,6 +13,7 @@ import {
   walkFinishWaitId,
   walkOffered,
   walkRoute,
+  walkStatus,
   SKIP_SUGGEST_BASE_MS,
   SKIP_SUGGEST_SLOW_MPS,
   skipSuggestAfterMs,
@@ -541,6 +542,24 @@ describe("finishing the tour: done is progress, finished is the visitor's", () =
     expect(run.status("b")?.state).toBe("done");
     expect(run.isComplete()).toBe(true);
     expect(run.finishWait()).toBe("b");
+  });
+
+  // Why: a station with no story but a description or a card picture shows
+  // its card until Continue. Were it done the moment it is found, the walk
+  // would end the card in the same frame, and its words and picture would
+  // never be seen.
+  it("a station with no story but a card waits for its card to be read", () => {
+    const route = walkRoute([
+      station("words", { steps: [], description: "The main gate." }),
+      station("picture", { steps: [], image: "knight" }),
+      station("bare", { steps: [], description: "" }),
+    ]);
+    expect(route.map((r) => r.stepless)).toEqual([false, false, true]);
+    const p0 = startWalk(route, "any");
+    const found = applyWalkStep(p0, { kind: "found", id: "words" }).progress;
+    expect(walkStatus(found, "words")?.state).toBe("found");
+    const done = applyWalkStep(found, { kind: "finish", id: "words" });
+    expect(walkStatus(done.progress, "words")?.state).toBe("done");
   });
 
   it("the pure reads agree with the run, and a walk starts unfinished", () => {

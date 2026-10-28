@@ -18,8 +18,9 @@ which a visitor never sees.
   - every code level (`qrLevelIdFromEntryName`, wherever it sits: an
     unlisted tour keeps its levels at the root);
   - the signed list and its signature (`signedManifestFilesOf`);
-  - each photo item's (every station's, `tourItems`) and each asset's
-    file, under `wrap`;
+  - each asset's file (`manifest.assets`), under `wrap`: since format
+    4.0 every media file is an asset, a captured photo's file its
+    picture's image asset;
   - Nothing else: a visitor never shows the zip's other images, nor a
     recorded frame (an earlier file's `captureSpots` named some, read as
     the tour's content until M1 of the debug-captures plan; the field is
@@ -70,7 +71,7 @@ which a visitor never sees.
 - A filter over the archive: a name the manifest carries but the archive
   lacks is never returned.
 - Pure; the caller passes the manifest that will be WRITTEN (the Finish)
-  so a photo placed in this Finish counts.
+  so a photo placed in this Finish counts (its minted asset is listed).
 - A tour's whole recording is its walk, a file's capture spots or not: no
   visitor shows its frames.
 

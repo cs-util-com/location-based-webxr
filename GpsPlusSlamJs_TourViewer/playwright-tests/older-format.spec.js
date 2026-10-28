@@ -120,8 +120,12 @@ test("the editor refuses a tour of an older format and deletes its draft, and no
   // Why this test matters: the editor's draft of a file is found by the
   // file's key; the refusal is the creator's one chance to learn that the
   // unsaved work it held is gone, and why.
+  // The file carries its own id, so the draft is under that id; its
+  // content key names the RECORDING, which another tour on it may share,
+  // so a draft under the content key stays (B2a review findings 1 and 4).
   const zip = new Uint8Array(await (await fetch(V3_ARCHIVE)).arrayBuffer());
-  const key = await fileKeyOf(zip);
+  const key = "local-file:tour:OlderTour3";
+  const contentKey = await fileKeyOf(zip);
   await page.addInitScript(() => {
     // @ts-expect-error - the e2e takes the picker away on purpose: the
     // file input opens.
@@ -132,6 +136,7 @@ test("the editor refuses a tour of an older format and deletes its draft, and no
   );
   await page.goto("/edit.html");
   await seedDraft(page, `editor:${key}`);
+  await seedDraft(page, `editor:${contentKey}`);
   await seedDraft(page, "editor:local-file:00000000000000000000000000000002");
   const chooser = page.waitForEvent("filechooser");
   await page.locator("#drop").click();
@@ -146,6 +151,7 @@ test("the editor refuses a tour of an older format and deletes its draft, and no
     timeout: 15000,
   });
   expect(await draftFiles(page, `editor:${key}`)).toEqual([]);
+  expect(await draftFiles(page, `editor:${contentKey}`)).toHaveLength(2);
   expect(
     await draftFiles(
       page,

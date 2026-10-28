@@ -194,8 +194,12 @@ function harness(
       dispose: () => undefined,
     })),
     startMeshSurface: vi.fn(() => meshSurface),
+    startXrSelect: vi.fn((_onSelect: (tap: unknown) => void) => ({
+      dispose: xrSelectDispose,
+    })),
     queryGeolocationPermission: vi.fn(() => Promise.resolve(permission.state)),
   };
+  const xrSelectDispose = vi.fn();
   const meshSurface = {
     pick: vi.fn(() => ({ position: "the mesh point" })),
     stats: () => ({
@@ -247,6 +251,7 @@ function harness(
     dispose,
     arStore,
     seams,
+    xrSelectDispose,
     arController,
     toasts,
     toastResets,
@@ -1147,6 +1152,32 @@ describe("the creator's mesh cursor (polish round M5; main.ts's default unless ?
     await settle();
     expect(h.meshSurface.dispose).toHaveBeenCalledTimes(1);
     expect(h.seams.stopDepthCapture).toHaveBeenCalledTimes(1);
+  });
+
+  // Why (station blocks plan B2b step 5): a visitor's tap in AR is how a
+  // pin opens its sheet, so a visitor's session hears the XR select (with
+  // no reticle) and hands each tap to `hooks.visitorTap`; the session's
+  // end stops it, or a tap of the next session would reach two listeners.
+  // A creator's taps are the reticle's.
+  it("hears a visitor's taps for the session and hands them to the pin sheet; a creator's are the reticle's", async () => {
+    const h = harness({ enableOk: true });
+    const taps: unknown[] = [];
+    h.hooks.visitorTap = (tap) => {
+      taps.push(tap);
+    };
+    await h.enter();
+    expect(h.seams.startXrSelect).toHaveBeenCalledTimes(1);
+    expect(h.seams.startHitTestReticle).not.toHaveBeenCalled();
+    const onSelect = h.seams.startXrSelect.mock.calls[0]![0];
+    onSelect(null);
+    expect(taps).toEqual([null]);
+    h.enabledConfig()!.callbacks?.onSessionEnd?.({ requestedByApp: false });
+    expect(h.ctx.visitorSelect).toBeNull();
+    expect(h.xrSelectDispose).toHaveBeenCalledTimes(1);
+
+    const creator = harness({ mode: "creator", enableOk: true });
+    await creator.enter();
+    expect(creator.seams.startXrSelect).not.toHaveBeenCalled();
   });
 
   // Why (M5 review #11): a mesh that cannot be built must cost the creator

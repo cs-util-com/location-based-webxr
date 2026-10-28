@@ -47,6 +47,8 @@ troubleshooting recording's record of each placement. Split out of
 
 ## Invariants & assumptions
 
+- A new pin's text is taken in NFC (`inputText`) before it is trimmed
+  and counted (B2a review 6).
 - **The gate:** allowed only under THIS session's GPS alignment (a
   matrix and at least `MIN_ALIGNMENT_SAMPLES` fixes since the session
   started, M4 review #2), a running session and no rebuild in flight;

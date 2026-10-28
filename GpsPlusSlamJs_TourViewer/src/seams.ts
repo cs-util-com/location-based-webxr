@@ -27,6 +27,7 @@ import {
   startCameraFrameCapture,
   startDepthCapture,
   startHitTestReticle,
+  startXrSelectListener,
   stopCameraFrameCapture,
   stopDepthCapture,
   type EnableGpsArDeps,
@@ -205,6 +206,12 @@ export interface TourViewerSeams {
    *  under `parent` (`mesh-surface.ts`). A seam because the e2e scene has
    *  no depth to mesh. */
   startMeshSurface(parent: Object3D, store: DepthSampleStore): MeshSurface;
+  /** Hear every XR `select` (a tap in AR the overlay did not cancel)
+   *  with its target ray, without a reticle - the visitor's pin taps
+   *  (station blocks plan B2b). A seam so the e2e taps (`tapXr`). */
+  startXrSelect(onSelect: (tap: SelectTargetRay | null) => void): {
+    dispose(): void;
+  };
   /** The id of the object under the tap - through the tap's target ray,
    *  or the screen centre when `tap` is null - by a camera-ray raycast
    *  against each object's rendered root with an angular tolerance
@@ -346,6 +353,7 @@ export const realSeams: TourViewerSeams = {
           { type: "module" },
         ),
     }),
+  startXrSelect: (onSelect) => startXrSelectListener(onSelect),
   pickObjectInView: (targets, tap) => {
     const camera = getCamera();
     if (!camera) return null;

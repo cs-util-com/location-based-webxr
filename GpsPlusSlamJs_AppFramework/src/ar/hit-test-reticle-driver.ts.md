@@ -29,7 +29,9 @@
     moment WebXR offers it. `null` when the event has no frame or input
     source, the pose is null, or the frame refuses. Backward compatible: a
     one-parameter handler (MinimalExample) behaves as before.
-- `SelectTargetRay` - `{ targetRayInViewer: readonly number[] }`.
+- `SelectTargetRay` - `{ targetRayInViewer: readonly number[] }`, re-exported
+  from `xr-select-listener.ts`, where it is defined (the listener reads it;
+  defining it here made the two modules import each other).
 - `HitTestReticleHandle` — `isVisible()`, `getWorldPosition(out)` (only
   meaningful while visible), `dispose()` (idempotent: cancels the live
   source, removes the session listeners and the mesh, unregisters the frame
@@ -94,7 +96,8 @@ handle.dispose();
   dispose semantics), the three in-flight-request races, reticle driving
   through the real view-model (NUE pose check), and `onSelect` nullable-tap
   semantics, including the tap's target ray read against the viewer space
-  and `null` for an event without a usable pose. The XR frame loop is mocked to hand the tests the raw callback;
+  and `null` for an event without a usable pose (the ray is read by
+  `targetRayOf`, shared with `xr-select-listener.ts`). The XR frame loop is mocked to hand the tests the raw callback;
   three.js objects are real.
 - [hit-test-reticle-driver.property.test.ts](hit-test-reticle-driver.property.test.ts)
   — fast-check property driving arbitrary interleavings of ticks, request

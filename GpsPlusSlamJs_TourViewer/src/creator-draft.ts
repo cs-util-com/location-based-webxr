@@ -42,11 +42,13 @@ import {
   writeDraftDeletion,
   writeDraftLiveRecord,
   writeDraftMeta,
+  isOlderVersionDraft,
   writeDraftVisit,
   type DraftCodes,
 } from "./draft-persistence.js";
 import type { CreatorCodes } from "./creator-codes.js";
 import { createKeyedChain } from "./keyed-chain.js";
+import { isTourContentKey } from "./tour-file-key.js";
 import {
   createdStationFrames,
   type StationFrame,
@@ -746,12 +748,17 @@ export function wireCreatorDraft(deps: {
   }
 
   function forgetRefused(tourUrl: string): Promise<boolean> {
+    // A content key may be another tour's on the same recording.
+    if (isTourContentKey(tourUrl)) return Promise.resolve(false);
     return draftWrites
       .run(metaChainKey(tourUrl), async () => {
         const store = await deps.openDraftStore(draftKeyForTour(tourUrl));
         if (store === undefined) return false;
         const keys = await store.keys();
         if (keys.length === 0) return false;
+        // Only a draft proved to be an older version's: the same tour's
+        // current copy shares this key.
+        if (!(await isOlderVersionDraft(store))) return false;
         await store.clear(META_KEY);
         return keys.includes(META_KEY);
       })

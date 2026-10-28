@@ -22,6 +22,7 @@
 
 import {
   parseTourObject,
+  TOUR_OBJECT_RECORD_FORMAT,
   tourObjectRecord,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -334,6 +335,50 @@ export function parseDraftObject(text: string): TourObject | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether the draft in `store` was PROVED to be written by an older version
+ * of this app - the only draft the refusal of an older-format tour may
+ * delete. A refused older copy and the current copy of the same tour carry
+ * the same tour id, so they share a draft key, and the draft under it may
+ * be the current copy's unsaved work.
+ *
+ * The meta carries no format version, so the proof is the object records:
+ * each one this version writes carries `format` (`TOUR_OBJECT_RECORD_FORMAT`,
+ * `tourObjectRecord`); the field came with format 4.0, so an older
+ * version's record carries none. Proved older: at least one object record, and every
+ * one reads as a JSON object whose `format` is absent or lower. Anything
+ * else is NOT decidable and reads false - a record of this format or a
+ * newer one, a draft with no object records (a meta, visits or deletions
+ * alone), a record that does not read (truncated, or unreadable). Such a
+ * draft is never deleted by a refusal; it stays until its own tour opens.
+ */
+export async function isOlderVersionDraft(
+  store: DraftFileStore,
+): Promise<boolean> {
+  const records = (await store.keys()).filter((key) =>
+    key.startsWith(OBJECT_PREFIX),
+  );
+  if (records.length === 0) return false;
+  for (const key of records) {
+    const text = await store.getText(key);
+    if (text === undefined) return false;
+    let value: unknown;
+    try {
+      value = JSON.parse(text);
+    } catch {
+      return false;
+    }
+    if (typeof value !== "object" || value === null || Array.isArray(value))
+      return false;
+    const format = (value as Record<string, unknown>)["format"];
+    const older =
+      format === undefined ||
+      (typeof format === "number" && format < TOUR_OBJECT_RECORD_FORMAT);
+    if (!older) return false;
+  }
+  return true;
 }
 
 /** Record the tour, the printed size and the rejections. */

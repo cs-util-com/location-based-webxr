@@ -160,8 +160,8 @@ module's sidecar states them as its contract.
   offers "Replace" only for the same name (Drive replace plan §2
   decision 3).
 - **The Finish replaces and filters** (`applyObjectChanges`), removes
-  each deleted photo's content file (`contentEntriesToRemove` into the
-  rebuild's `remove`), drops `manifest.sig.json` (a signature over the
+  the file of every asset the write dropped (a deleted photo's own only
+  when no other picture still names its image; B2a review 2), drops `manifest.sig.json` (a signature over the
   old list cannot cover the files this Finish rewrites: the output is an
   honest unsigned tour until K2 re-signs on export) and, for a LISTED
   tour, writes `manifest.json` again as the series' next version

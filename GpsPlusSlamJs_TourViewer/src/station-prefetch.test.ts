@@ -191,6 +191,65 @@ describe("stationAssetIds", () => {
   });
 });
 
+describe("stationAssetIds and the world (B2b)", () => {
+  // Why (station blocks plan B2b step 1, G2 follow-up 9): a placed model
+  // is now drawn for the visitor with its station, so its file is read
+  // ahead with the station's story media - else the model pops in after
+  // the station's other content, read from the archive on arrival.
+  it("reads a free placed model's file with its station, after the story's", () => {
+    const POSE = {
+      position: [0, 0, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    };
+    const base = station("gate", ["knight"]);
+    const s: TourStation = {
+      ...base,
+      blocks: [
+        ...base.blocks,
+        {
+          id: "m",
+          kind: "model",
+          view: "placed",
+          asset: "arch",
+          sizeM: 2,
+          pose: POSE,
+        },
+      ],
+    };
+    expect(stationAssetIds(s)).toEqual(["knight", "arch"]);
+  });
+
+  // Why (B2b step 2): a placed model a story step reaches stands in the
+  // world from then on, so its file is read ahead like a staged one's.
+  it("reads a placed story model's file, as a staged one's", () => {
+    const POSE = {
+      position: [0, 0, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    };
+    const s: TourStation = {
+      ...station("gate", []),
+      blocks: [
+        {
+          id: "m",
+          kind: "model",
+          view: "placed",
+          asset: "arch",
+          sizeM: 2,
+          pose: POSE,
+        },
+      ],
+      steps: [
+        {
+          id: "s-m",
+          action: { kind: "show", block: "m" },
+          advance: { mode: "tap" },
+        },
+      ],
+    };
+    expect(stationAssetIds(s)).toEqual(["arch"]);
+  });
+});
+
 describe("decodeDivisor", () => {
   it("scales a figure above the side cap down to it, and leaves the rest alone", () => {
     expect(decodeDivisor({ width: 1000, height: 2000 })).toBe(1);

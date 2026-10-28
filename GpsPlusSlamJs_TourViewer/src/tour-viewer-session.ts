@@ -255,6 +255,9 @@ export interface TourViewerHooks {
    *  driver, or the ring's screen centre when null (authoring plan
    *  2026-09-28-0953 M4; review #4). */
   selectInView(tap: SelectTargetRay | null): void;
+  /** A visitor's tap in AR (an XR select the overlay did not cancel):
+   *  the pin sheet (station blocks plan B2b, `pin-sheet.ts`). */
+  visitorTap(tap: SelectTargetRay | null): void;
   /** No tour is open any more (one closed, or an open failed): the panels
    *  that show a tour's link go back to ASKING for one. Without this, the
    *  print step keeps showing the previous tour's link as immutable text
@@ -318,6 +321,7 @@ export function createUnwiredHooks(): TourViewerHooks {
     beginAuthorVisit: () => undefined,
     endAuthorVisit: () => undefined,
     selectInView: () => undefined,
+    visitorTap: () => undefined,
     presentNoTour: () => undefined,
     presentDraftForTour: () => undefined,
     forgetRefusedDraft: () => Promise.resolve(false),
@@ -462,6 +466,8 @@ export interface TourViewerSession {
   tourLabel: string | null;
   /** The creator's hit-test reticle for the running session. */
   reticle: HitTestReticleHandle | null;
+  /** The visitor's tap listener for the running session (B2b). */
+  visitorSelect: { dispose(): void } | null;
   /** The most recent camera frame - what "Capture a photo" encodes, with
    *  the pose it was captured at (the photo is placed with THAT pose). */
   latestFrame: CapturedCameraFrame | null;
@@ -692,6 +698,7 @@ export function createTourViewerSession(
     tourLabel: null,
     arSessionGeneration: 0,
     reticle: null,
+    visitorSelect: null,
     latestFrame: null,
     placedPreviews: new Map(),
     placementNote: null,

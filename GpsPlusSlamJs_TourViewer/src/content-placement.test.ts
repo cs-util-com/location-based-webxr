@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { Group, Object3D, Quaternion, Texture, Vector3 } from "three";
+import {
+  BoxGeometry,
+  Group,
+  Mesh,
+  Object3D,
+  Quaternion,
+  Texture,
+  Vector3,
+} from "three";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
@@ -24,6 +32,7 @@ import {
   objectPoseNue,
   renderTourObjects,
   renderTourStation,
+  renderStationBlocks,
   rotationFromHeading,
 } from "./content-placement";
 import { contentSegment } from "./tour-flow";
@@ -452,6 +461,123 @@ describe("renderTourStation", () => {
       height: 3,
     }));
   }
+
+  // Why (station blocks plan B2b step 1): a placed model was left out
+  // for the visitor (B2a's rule of no visible change). Drawn now, at the
+  // size the tour names (`sizeM`, its largest side) by the one shared
+  // scale rule (`modelScale`, the 3D editor's), at its local pose in the
+  // station's frame; a model whose file fails is named in `skipped`, and
+  // a renderer given no model loader (the editor draws its own) leaves it
+  // out quietly as before.
+  it("draws a placed model at its sizeM by the shared scale rule, at its local pose", async () => {
+    const scene = new Group();
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 5, yaw(0));
+    const pose = {
+      position: [1, 0, 2] as [number, number, number],
+      rotation: yaw(30),
+    };
+    const model = (id: string, asset: string, sizeM: number) => ({
+      id,
+      kind: "model" as const,
+      view: "placed" as const,
+      asset,
+      sizeM,
+      createdAtIso: NOW,
+      pose,
+    });
+    const station = stationAt("s", stationGeo, [
+      model("m1", "horse", 3),
+      model("m2", "broken", 1),
+    ]);
+    const assets: TourAsset[] = [
+      { id: "horse", path: "content/horse.glb", kind: "model" },
+      { id: "broken", path: "content/broken.glb", kind: "model" },
+    ];
+    const loaded: string[] = [];
+    let disposed = 0;
+    const geometry = new BoxGeometry(2, 0.5, 1);
+    geometry.dispose = () => {
+      disposed += 1;
+    };
+    const rendered = await renderTourStation(station, {
+      assets,
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+      loadModel: (entry) => {
+        loaded.push(entry);
+        return entry === "content/horse.glb"
+          ? Promise.resolve(new Mesh(geometry))
+          : Promise.reject(new Error("bad glb"));
+      },
+    });
+    expect(loaded).toEqual(["content/horse.glb", "content/broken.glb"]);
+    expect(rendered.count).toBe(1);
+    expect(rendered.skipped).toEqual(["m2"]);
+    let found: Object3D | undefined;
+    rendered.root.traverse((o) => {
+      if (o.userData["objectId"] === "m1") found = o;
+    });
+    expect(found, "the model is drawn under the station").toBeDefined();
+    // Its largest side (2 m) made 3 m: the factor 1.5, the editor's rule.
+    expect(found!.scale.x).toBeCloseTo(1.5, 12);
+    expect(found!.position.toArray()).toEqual([1, 0, 2]);
+    expect(found!.quaternion.toArray()).toEqual(pose.rotation);
+    rendered.dispose();
+    expect(disposed, "its geometry is freed with the station").toBe(1);
+
+    // No loader: left out quietly, as before B2b.
+    const quiet = await renderTourStation(station, {
+      assets,
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+    });
+    expect(quiet.count).toBe(0);
+    expect(quiet.skipped).toEqual([]);
+    quiet.dispose();
+  });
+
+  // Why (B2b step 2): a story block its story reached stands with the
+  // station's own, drawn alone in the station's frame - the free blocks
+  // are another part, so only the given blocks may be drawn here.
+  it("draws exactly the given blocks of a station, in its frame", async () => {
+    const scene = new Group();
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 5, 0, 5, yaw(0));
+    const pose = {
+      position: [1, 1.5, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    };
+    const sign = {
+      id: "sign",
+      kind: "shortText" as const,
+      view: "pin" as const,
+      caption: "Old sign",
+      pose,
+    };
+    const free = { ...sign, id: "free", caption: "Free" };
+    const rendered = await renderStationBlocks(
+      stationAt("s", stationGeo, [free, sign]),
+      [sign],
+      {
+        assets: [],
+        scene,
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+      },
+    );
+    const ids: string[] = [];
+    rendered.root.traverse((o) => {
+      const id = o.userData["objectId"];
+      if (typeof id === "string") ids.push(id);
+    });
+    expect(ids).toEqual(["sign"]);
+    expect(rendered.root.parent).toBe(scene);
+    rendered.dispose();
+  });
 
   it("places each station as a group at its pose, with its pins and photos as children at their local poses", async () => {
     const scene = new Group();

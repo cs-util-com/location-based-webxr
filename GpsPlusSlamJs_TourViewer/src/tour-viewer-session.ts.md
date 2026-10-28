@@ -79,7 +79,7 @@ lives here.
     the placement layer (M4): `placedPreviews` (a `Map` by object id - this device's
     objects AND the hosted zip's in the running visit, so an edit, a move
     or a delete finds its preview and a tap in AR names what it hit, M4),
-    `placementNote`, `reticle`,
+    `placementNote`, `reticle`, `visitorSelect` (B2b),
     `latestFrame` (a `CapturedCameraFrame | null`: the pixels the photo
     encodes plus the capture pose the photo is placed with);
   - the scan gate and the placed content (viewer-placement.ts, M5):

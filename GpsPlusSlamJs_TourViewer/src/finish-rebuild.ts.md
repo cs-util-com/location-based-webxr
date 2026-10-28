@@ -78,7 +78,11 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
 - **Edits:** records replace theirs by id in place, new ones are appended,
   deleted ones filtered out (`applyObjectChanges`; never an id twice, the
   serializer rejects duplicates). A deleted photo's content file is
-  removed (`contentEntriesToRemove`).
+  removed only with its asset: when no other picture or block still names
+  its image (`withTourContent`'s `withPictureAssets`). There is no
+  per-picture removal any more (B2a review 2: it removed a file the tour
+  still listed); the property "never drops an image another picture still
+  names" chains deletions finish on finish.
 - **Assets:** an asset nothing names any more (no step block, no placed
   model, not the cover; `withReferencedAssets` of `tour-content.ts`) leaves the
   written manifest, and its file leaves the zip - unless `keepAssets`

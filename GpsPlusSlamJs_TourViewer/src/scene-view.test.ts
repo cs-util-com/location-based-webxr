@@ -19,13 +19,33 @@ import { createSceneView, type SceneViewDom } from "./scene-view";
 
 function fakeDom() {
   const choices: { label: string; click: () => void }[][] = [];
-  const dom: SceneViewDom = {
+  /** The card's player: what it was told, and whether it was stopped. */
+  const video = {
+    src: "",
+    poster: "",
+    hidden: true as boolean | "until-found",
+    paused: false,
+    loads: 0,
+    pause() {
+      video.paused = true;
+    },
+    removeAttribute(name: string) {
+      if (name === "src" || name === "poster") video[name] = "";
+    },
+    load() {
+      video.loads += 1;
+    },
+  };
+  const dom: SceneViewDom & { video: typeof video } = {
     panel: { hidden: true },
     title: { textContent: "" },
+    description: { textContent: "", hidden: true },
     speaker: { textContent: "", hidden: true },
     text: { textContent: "" },
     status: { textContent: "" },
     image: { src: "", alt: "", hidden: true },
+    stationImage: { src: "", alt: "", hidden: true },
+    video,
     choices: {
       replaceChildren: (...nodes: (Node | string)[]) => {
         choices.push(
@@ -100,6 +120,17 @@ const assets = new Map<string, TourAsset>([
   ],
   ["voice", { id: "voice", path: "content/voice.mp3", kind: "audio" }],
   ["arch", { id: "arch", path: "content/arch.glb", kind: "model" }],
+  ["clip", { id: "clip", path: "content/clip.webm", kind: "video" }],
+  [
+    "still",
+    {
+      id: "still",
+      path: "content/still.png",
+      kind: "image",
+      width: 16,
+      height: 9,
+    },
+  ],
 ]);
 
 function harness(
@@ -112,6 +143,7 @@ function harness(
       image: Blob,
       onWaiting?: () => void,
     ) => Promise<void>;
+    onBlockShown?: (stationId: string, blockId: string) => void;
   } = {},
 ) {
   const { dom, lastChoices } = fakeDom();
@@ -164,6 +196,9 @@ function harness(
     onChange: () => {
       changes.count += 1;
     },
+    ...(overrides.onBlockShown === undefined
+      ? {}
+      : { onBlockShown: overrides.onBlockShown }),
   });
   return { view, dom, timers, ended, urls, audio, stage, lastChoices, changes };
 }
@@ -392,10 +427,52 @@ describe("createSceneView", () => {
     expect(h.stage.showModel).not.toHaveBeenCalled();
   });
 
-  // Why: this version plays no clip; a video's transcript is what the
-  // visitor gets, so a video block never leaves the card empty.
-  it("shows a video's transcript in its place", () => {
+  // Why (station blocks plan B2b step 3): the video card plays - its
+  // clip in a video element with the browser's controls (a tap plays it,
+  // a gesture, so its sound may play), its poster while it waits, its
+  // transcript below as before. The clip and the poster are object URLs
+  // of the step: the next step stops the clip and frees both, or a long
+  // walk would hold every clip it ever played.
+  it("plays a video card: its clip and poster in the video element, the transcript below, freed on the next step", async () => {
     const h = harness();
+    h.view.offer(
+      station("s", [
+        showing("v", {
+          kind: "video",
+          view: "card",
+          video: "clip",
+          poster: "still",
+          transcript: "The gate opens at dawn.",
+        }),
+        tap("next", "Next"),
+      ]),
+    );
+    expect(h.dom.text.textContent).toBe("The gate opens at dawn.");
+    await settle();
+    expect(h.dom.video.hidden).toBe(false);
+    // The still stood in for the player only until the clip was here.
+    expect(h.dom.image.hidden).toBe(true);
+    expect(h.urls.created).toHaveLength(2);
+    expect([h.dom.video.src, h.dom.video.poster].sort()).toEqual(
+      [...h.urls.created].sort(),
+    );
+    expect(h.dom.status.textContent).toBe("");
+    h.view.continueTapped();
+    expect(h.dom.video).toMatchObject({
+      hidden: true,
+      paused: true,
+      src: "",
+      poster: "",
+    });
+    expect([...h.urls.revoked].sort()).toEqual([...h.urls.created].sort());
+  });
+
+  // Why: a clip that cannot be read must say so and keep the words, like
+  // every other medium (UI async-feedback rule) - never a blank player.
+  it("says when a video cannot be read, keeps the words, and shows no player", async () => {
+    const h = harness({
+      loadAsset: () => Promise.reject(new Error("offline")),
+    });
     h.view.offer(
       station("s", [
         showing("v", {
@@ -406,7 +483,68 @@ describe("createSceneView", () => {
         }),
       ]),
     );
+    expect(h.dom.status.textContent).toBe("Loading the video…");
+    await settle();
+    expect(h.dom.status.textContent).toBe(
+      "The video could not be loaded - the words are below.",
+    );
+    expect(h.dom.video.hidden).toBe(true);
     expect(h.dom.text.textContent).toBe("The gate opens at dawn.");
+  });
+
+  // Why: a poster that loads while its clip cannot be read used to show
+  // the player with its play control, which then played nothing. Now the
+  // player shows only with its clip; the poster stands as a still picture
+  // until then, and stays one beside the line that the clip could not be
+  // loaded.
+  it("shows the poster as a still and no player when the clip cannot be read", async () => {
+    const h = harness({
+      loadAsset: (path) =>
+        path.endsWith(".webm")
+          ? Promise.reject(new Error("offline"))
+          : Promise.resolve(new Blob([path])),
+    });
+    h.view.offer(
+      station("s", [
+        showing("v", {
+          kind: "video",
+          view: "card",
+          video: "clip",
+          poster: "still",
+          transcript: "The gate opens at dawn.",
+        }),
+      ]),
+    );
+    await settle();
+    expect(h.dom.video.hidden).toBe(true);
+    expect(h.dom.image).toMatchObject({
+      src: h.urls.created[0],
+      hidden: false,
+    });
+    expect(h.dom.status.textContent).toBe(
+      "The video could not be loaded - the words are below.",
+    );
+  });
+
+  // Why (station blocks plan B2b step 4): a long text's paragraphs are
+  // the creator's, written as S0 markdown. The card shows its plain text
+  // P - paragraphs apart by a blank line, a soft line break as a space,
+  // no markup characters - instead of the raw body with its stars.
+  it("shows a long text card as its paragraphs, without the markup", () => {
+    const h = harness();
+    h.view.offer(
+      station("s", [
+        showing("t", {
+          kind: "longText",
+          view: "card",
+          title: "History",
+          body: "Built in **1400**,\nrebuilt later.\n\nThe second part.",
+        }),
+      ]),
+    );
+    expect(h.dom.text.textContent).toBe(
+      "Built in 1400, rebuilt later.\n\nThe second part.",
+    );
   });
 
   it("says when a sound is refused or a file cannot be read, and keeps the words", async () => {
@@ -625,6 +763,190 @@ describe("createSceneView", () => {
     expect(h.stage.clear).toHaveBeenCalled();
     h.view.continueTapped();
     expect(h.ended).toEqual([]);
+  });
+});
+
+describe("the station's name and description (B2b step 6)", () => {
+  // Why: at the station the visitor reads where they are - its name over
+  // the story card, and the creator's description of the place below it
+  // (the format's `station.description`). A station without one shows no
+  // empty line, and the next station's card never keeps the last one's.
+  it("shows the station's name and description over its story, none for a station without one, and hides it at the end", () => {
+    const h = harness();
+    h.view.offer({
+      ...station("gate", [tap("a", "Hello")], "The gate"),
+      description: "The castle's main gate,\nbuilt in 1400.",
+    });
+    h.view.offer(station("well", [tap("b", "Water")], "The well"));
+    expect(h.dom.title.textContent).toBe("The gate");
+    expect(h.dom.description).toEqual({
+      textContent: "The castle's main gate,\nbuilt in 1400.",
+      hidden: false,
+    });
+    h.view.continueTapped(); // the gate's end; the well's story starts
+    expect(h.dom.title.textContent).toBe("The well");
+    expect(h.dom.description).toEqual({ textContent: "", hidden: true });
+    h.view.continueTapped();
+    expect(h.dom.panel.hidden).toBe(true);
+    expect(h.dom.description.hidden).toBe(true);
+  });
+
+  // Why: a station made on the phone has no story steps - only its name,
+  // its description and its card picture. Its card used to close in the
+  // same tick it opened (an empty story ends at once), so the visitor
+  // never read the description nor saw the picture of any such station.
+  // The card now stays until the visitor taps Continue, and only then is
+  // the station done.
+  it("holds the card of a station with no story - its name, description and picture - until Continue", async () => {
+    const h = harness();
+    h.view.offer({
+      ...station("bench", [], "The bench"),
+      description: "Sit and look at the lake.",
+      image: "still",
+    });
+    expect(h.dom.panel.hidden).toBe(false);
+    expect(h.dom.title.textContent).toBe("The bench");
+    expect(h.dom.description).toEqual({
+      textContent: "Sit and look at the lake.",
+      hidden: false,
+    });
+    expect(h.dom.continueButton.hidden).toBe(false);
+    expect(h.view.playing()).toBe("bench");
+    expect(h.ended).toEqual([]);
+    await settle();
+    expect(h.dom.stationImage).toEqual({
+      src: "blob:0",
+      alt: "The bench",
+      hidden: false,
+    });
+    h.view.continueTapped();
+    expect(h.dom.panel.hidden).toBe(true);
+    expect(h.ended).toEqual(["bench"]);
+    expect(h.dom.stationImage.hidden).toBe(true);
+    expect(h.urls.revoked).toEqual(["blob:0"]);
+  });
+
+  // Why: the card picture belongs to the station, not to a step: it stays
+  // over the whole story while its steps change, and is freed at its end.
+  it("keeps the station's card picture over every step of its story", async () => {
+    const h = harness();
+    h.view.offer({
+      ...station("gate", [tap("a", "Hello"), tap("b", "Bye")], "The gate"),
+      image: "still",
+    });
+    await settle();
+    expect(h.dom.stationImage.hidden).toBe(false);
+    const url = h.dom.stationImage.src;
+    h.view.continueTapped();
+    await settle();
+    expect(h.dom.text.textContent).toBe("Bye");
+    expect(h.dom.stationImage).toMatchObject({ src: url, hidden: false });
+    expect(h.urls.revoked).not.toContain(url);
+    h.view.continueTapped();
+    expect(h.dom.stationImage.hidden).toBe(true);
+    expect(h.urls.revoked).toContain(url);
+  });
+
+  // Why: a card picture that lands after its story ended (a slow read)
+  // must not paint over the next station's card.
+  it("drops a card picture that lands after its story ended", async () => {
+    let release: (blob: Blob) => void = () => undefined;
+    const h = harness({
+      loadAsset: () =>
+        new Promise<Blob>((resolve) => {
+          release = resolve;
+        }),
+    });
+    h.view.offer({ ...station("gate", [tap("a", "Hi")]), image: "still" });
+    h.view.continueTapped();
+    release(new Blob(["late"]));
+    await settle();
+    expect(h.dom.stationImage.hidden).toBe(true);
+    expect(h.urls.created).toEqual([]);
+  });
+
+  // Why: a station with nothing to read - no story, no description, no
+  // picture - has no card to hold: it is done when found, as before.
+  it("ends a station with no story and nothing to show at once", () => {
+    const h = harness();
+    h.view.offer(station("empty", [], "Empty"));
+    expect(h.dom.panel.hidden).toBe(true);
+    expect(h.ended).toEqual(["empty"]);
+  });
+});
+
+describe("a story's world blocks (B2b)", () => {
+  // Why (station blocks plan B2b step 2, B-Q4): a story block with a
+  // world view (a pin, a plane, a placed model) stands in the world from
+  // the moment its step is reached, for the rest of the visit. The view
+  // is where a step is reached, so it says which world block it reached -
+  // after a tap, after a choice - and never a card or a stage block,
+  // whose lifetimes are the panel's and the stage's.
+  it("says each world block a step reaches, after a tap and after a choice, and no card or stage block", () => {
+    const reached: string[] = [];
+    const h = harness({
+      onBlockShown: (stationId, blockId) => {
+        reached.push(`${stationId}:${blockId}`);
+      },
+    });
+    const sign = showing("sign", {
+      kind: "shortText",
+      view: "pin",
+      caption: "The old sign",
+    });
+    const card = tap("words", "Some words");
+    const figure = showing("figure", {
+      kind: "character",
+      view: "stage",
+      name: "K",
+      image: "knight",
+      caption: "Halt",
+    });
+    const plane = showing("plane", {
+      kind: "picture",
+      view: "plane",
+      image: "knight",
+      widthM: 1,
+    });
+    const arch = showing("arch", {
+      kind: "model",
+      view: "placed",
+      asset: "arch",
+      sizeM: 2,
+    });
+    const blockOf = (step: TourStep) =>
+      step.action.kind === "show" ? step.action.block : "";
+    h.view.offer(
+      station("s", [
+        sign,
+        card,
+        figure,
+        {
+          id: "c",
+          action: {
+            kind: "choice",
+            prompt: "Which?",
+            options: [
+              { id: "p", label: "Picture", goto: "plane" },
+              { id: "m", label: "Model", goto: "arch" },
+            ],
+          },
+          advance: { mode: "tap" },
+        },
+        plane,
+        arch,
+      ]),
+    );
+    expect(reached).toEqual([`s:${blockOf(sign)}`]);
+    h.view.continueTapped(); // the card
+    h.view.continueTapped(); // the stage figure
+    expect(reached).toEqual([`s:${blockOf(sign)}`]);
+    h.view.continueTapped(); // the choice
+    h.lastChoices()[1]!.click(); // the model
+    expect(reached).toEqual([`s:${blockOf(sign)}`, `s:${blockOf(arch)}`]);
+    h.view.continueTapped(); // the end
+    expect(h.ended).toEqual(["s"]);
+    expect(reached).toHaveLength(2);
   });
 });
 

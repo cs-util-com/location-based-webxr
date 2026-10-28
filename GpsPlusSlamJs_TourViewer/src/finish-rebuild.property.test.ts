@@ -136,4 +136,84 @@ describe("rebuildFinishedTour (property)", () => {
     );
     await tour.close();
   });
+
+  // Why (B2a review finding 2): "captured photo" is decided by
+  // picture.image === picture.id, and the finish used to remove a deleted
+  // captured photo's file, and withPictureAssets drop its asset, without
+  // asking whether another picture still names that image - so a save
+  // could delete the file of an image the tour still lists, or write a
+  // tour whose picture names an asset it no longer lists (every later
+  // save refused). Over any sequence of deletions, chained finish on
+  // finish: every image a written picture names is listed, every listed
+  // asset's file is in the zip, and the zip opens again.
+  it("never drops an image another picture still names, over any sequence of deletions", async () => {
+    const CAPTURED = ["a", "b", "c"] as const;
+    // Pictures that show a captured photo's image without being it.
+    const sharer = (id: string, of: string): TourPicture => ({
+      ...photo(of),
+      id,
+    });
+    const hosted = [
+      ...CAPTURED.map((id) => photo(id)),
+      sharer("s1", "a"),
+      sharer("s2", "b"),
+    ];
+    const ids = hosted.map((o) => o.id);
+    const zip = await packFilesAsZip([
+      { path: "tour.json", data: serializeTourManifest(tourOf(hosted)) },
+      ...CAPTURED.map((id) => ({ path: `content/${id}.jpg`, data: id })),
+    ]);
+    const tour = await openTourFile(
+      new File([zip], "t.zip", { type: "application/zip" }),
+    );
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.subarray(ids, { minLength: 1 }), {
+          minLength: 1,
+          maxLength: 3,
+        }),
+        async (rounds) => {
+          let manifest = tourOf(hosted);
+          let previous: { blob: Blob } | null = null;
+          for (const deleted of rounds) {
+            const result = await rebuildFinishedTour({
+              tour,
+              manifest,
+              placed: [],
+              deleted,
+              levels: [],
+              keepScan: false,
+              previous,
+            });
+            const bytes = new Uint8Array(await result!.blob.arrayBuffer());
+            const text = new TextDecoder().decode(
+              readStoredEntryBytes(bytes, "tour.json"),
+            );
+            // Parsing checks the references: a picture naming an
+            // unlisted asset is refused here.
+            const carried = parseTourManifest(JSON.parse(text));
+            const listed = new Set(carried.assets.map((a) => a.id));
+            const unlisted = withWorldObjects(carried).objects.filter(
+              (o) => o.kind === "picture" && !listed.has(o.image),
+            );
+            expect(unlisted).toEqual([]);
+            const names = new Set(
+              readStoredCentralDirectory(bytes).map((e) => e.name),
+            );
+            for (const asset of carried.assets) {
+              expect(names.has(asset.path), asset.path).toBe(true);
+            }
+            const reopened = await openTourFile(
+              new File([result!.blob], "t.zip", { type: "application/zip" }),
+            );
+            await reopened.close();
+            manifest = result!.written;
+            previous = { blob: result!.blob };
+          }
+        },
+      ),
+      { numRuns: 30 },
+    );
+    await tour.close();
+  });
 });

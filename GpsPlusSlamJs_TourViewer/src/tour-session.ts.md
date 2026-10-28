@@ -32,8 +32,11 @@ loading with MIME types, and the poisoned-cache recovery loop.
     `archive.url` is `tour-file-key.ts`'s key: the series id when the
     zip carries `manifest.json` (tour kit plan K1, R7), else the tour's
     own id from its `tour.json` (`local-file:tour:<tourId>`,
-    debug-captures plan Q-I; read under the text cap, a `tour.json` that
-    does not parse reads as none), else the content key.
+    debug-captures plan Q-I; read under the text cap as the RAW field
+    against `TOUR_ID_PATTERN`, never a parse of the whole tour, so an
+    older format the parse refuses is still keyed by its id and its draft
+    found (B2a review 1); a `tour.json` that does not parse reads as
+    none), else the content key.
 - `tourFileKeyOfFile(file, limits?): Promise<string>` (M6 E2c) - the key
   `openTourFile` would give `file`, without opening a session: the desktop
   editor's draft follows the bytes an in-place save wrote or a download

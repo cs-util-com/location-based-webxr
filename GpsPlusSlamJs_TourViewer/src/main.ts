@@ -62,6 +62,11 @@ import { createSaveGuard, wireRecordingPanel } from "./recording-panel.js";
 import { createSummaryPanel } from "./summary-panel.js";
 import { getSeams } from "./seams.js";
 import {
+  cancelsXrSelect,
+  createPinSheet,
+  tourBlocksById,
+} from "./pin-sheet.js";
+import {
   createTourViewerSession,
   createTourViewerStore,
   createUnwiredHooks,
@@ -931,10 +936,13 @@ const stations = wireVisitorStations({
     scene: {
       panel: element("scene-panel"),
       title: element("scene-title"),
+      description: element("scene-description"),
       speaker: element("scene-speaker"),
       text: element("scene-text"),
       status: element("scene-status"),
       image: element<HTMLImageElement>("scene-image"),
+      stationImage: element<HTMLImageElement>("scene-station-image"),
+      video: element<HTMLVideoElement>("scene-video"),
       choices: element("scene-choices"),
       continueButton: element("scene-continue"),
       playNext: element("scene-play-next"),
@@ -1019,10 +1027,42 @@ hooks.tickStations = () => {
   setup.tickStations();
   // The present station's content follows the guide's verdict at once.
   viewer.syncContent();
+  // A pin's sheet goes with its pin.
+  pinSheet.sync();
 };
 hooks.stationCodeLocked = stations.codeLocked;
 hooks.unlockStationAudio = stations.unlockAudio;
-hooks.stopStations = stations.stop;
+// A pin's whole text on a tap in AR (station blocks plan B2b): the
+// overlay's own taps (its controls, its sheets) are no select.
+const pinSheet = createPinSheet({
+  dom: {
+    sheet: element("pin-sheet"),
+    title: element("pin-sheet-title"),
+    text: element("pin-sheet-text"),
+  },
+  scene: () => seams.getScene(),
+  blocks: () => tourBlocksById(ctx.tourDocument.manifest()),
+  pick: (targets, tap) => seams.pickObjectInView(targets, tap),
+});
+element("pin-sheet-close").addEventListener("click", () => {
+  pinSheet.close();
+});
+if (mode === "visitor") {
+  element("ar-root").addEventListener("beforexrselect", (event) => {
+    if (
+      cancelsXrSelect(event.target instanceof Element ? event.target : null)
+    ) {
+      event.preventDefault();
+    }
+  });
+}
+hooks.visitorTap = (tap) => {
+  pinSheet.tapped(tap);
+};
+hooks.stopStations = () => {
+  stations.stop();
+  pinSheet.close();
+};
 // Every device fix goes through the viewer placement: while a scanned code's
 // keep-alive holds, the fix and its ring reach the store as ONE batch, one
 // solve (authoring plan 2026-09-28-0953 D18); otherwise as before.

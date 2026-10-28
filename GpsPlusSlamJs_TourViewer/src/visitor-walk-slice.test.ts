@@ -35,6 +35,8 @@ import {
   walkStepped,
   welcomeSet,
   type VisitorWalkState,
+  blockShown,
+  selectShownBlocks,
 } from "./visitor-walk-slice";
 
 /**
@@ -82,6 +84,42 @@ function progress(state: VisitorWalkState) {
   return state.progress;
 }
 
+describe("the reached story world blocks (B2b)", () => {
+  // Why (station blocks plan B2b step 2, B-Q4): a reached story block in
+  // a world view stays for the rest of the visit, kept with the walk -
+  // the lifetime of `done`: the story's end and the station's leaving
+  // keep it, a new walk (another tour, or the same started anew) and no
+  // walk drop it. Each block once, in the order reached.
+  const shown = (stationId: string, blockId: string) =>
+    blockShown({ stationId, blockId });
+  it("keeps each block once per station, in order, through the story's end and the leaving", () => {
+    let state = started("fixed");
+    state = visitorWalkReducer(state, shown("a", "sign"));
+    state = visitorWalkReducer(state, shown("a", "arch"));
+    const twice = visitorWalkReducer(state, shown("a", "sign"));
+    expect(twice).toBe(state);
+    state = visitorWalkReducer(state, shown("b", "well"));
+    state = visitorWalkReducer(state, walkStepped({ kind: "found", id: "a" }));
+    state = visitorWalkReducer(state, walkStepped({ kind: "finish", id: "a" }));
+    const asStore = { visitorWalk: state };
+    expect(selectShownBlocks(asStore, "a")).toEqual(["sign", "arch"]);
+    expect(selectShownBlocks(asStore, "b")).toEqual(["well"]);
+    expect(selectShownBlocks(asStore, "c")).toEqual([]);
+  });
+
+  it("starts empty with a new walk, and keeps nothing without one", () => {
+    const state = visitorWalkReducer(started("fixed"), shown("a", "sign"));
+    const again = visitorWalkReducer(
+      state,
+      walkStarted({ order: "fixed", route: walkRoute(TOUR) }),
+    );
+    expect(again.shownBlocks).toEqual({});
+    expect(visitorWalkReducer(state, walkCleared()).shownBlocks).toEqual({});
+    const none = visitorWalkReducer(undefined, { type: "@@init" });
+    expect(visitorWalkReducer(none, shown("a", "sign"))).toBe(none);
+  });
+});
+
 describe("visitorWalkReducer", () => {
   it("starts with no walk, and a walk starts with every station waiting and the order's offer", () => {
     const empty = visitorWalkReducer(undefined, { type: "@@init" });
@@ -97,6 +135,7 @@ describe("visitorWalkReducer", () => {
       chooser: false,
       noGuess: false,
       chosenId: null,
+      shownBlocks: {},
     });
     expect(walkOffered(progress(started("any")))).toEqual(["a", "b", "c"]);
     expect(walkOffered(progress(started("fixed")))).toEqual(["a"]);

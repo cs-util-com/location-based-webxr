@@ -455,6 +455,44 @@ describe("buildInspector: the values the inspector edits", () => {
     });
   });
 
+  // Why (B2a review finding 3): a station's `image` names an ASSET. A
+  // picture that shows one of the tour's images (not a captured photo of
+  // its own) was offered under its BLOCK id, which no card can name -
+  // choosing it did nothing - and its image was listed a second time as
+  // a tour image. It is offered once, by its asset id.
+  it("offers a picture showing a tour image by that image's asset, once", () => {
+    const station = {
+      ...PHOTO_STATION,
+      image: undefined,
+      blocks: [
+        ...PHOTO_STATION.blocks,
+        {
+          id: "view-1",
+          kind: "picture",
+          view: "plane",
+          image: "img-2",
+          widthM: 1,
+          caption: "Old map",
+          createdAtIso: AT,
+          pose: { position: [1, 1.5, 1], rotation: [0, 0, 0, 1] },
+        },
+      ],
+    } as unknown as TourStation;
+    const built = buildInspector({
+      selected: "station:p",
+      stations: [station],
+      assets: ASSETS,
+      codes: [],
+    });
+    expect(built).toMatchObject({
+      images: [
+        { id: "photo-1", label: "North face" },
+        { id: "img-2", path: "content/img-2.png", label: "Old map" },
+      ],
+    });
+    expect((built as unknown as { images: unknown[] }).images).toHaveLength(2);
+  });
+
   // Why: a radius lowered under its items leaves them where they are; the
   // inspector is where the creator learns how many now stand outside.
   it("counts the items outside the circle", () => {

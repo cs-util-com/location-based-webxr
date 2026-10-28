@@ -491,6 +491,15 @@ export async function installTourViewerArFakes(page, options = {}) {
             },
           };
         },
+        // The visitor's taps (B2b): the same `tapXr` reaches them.
+        startXrSelect: (onSelect) => {
+          test.xrSelect = onSelect;
+          return {
+            dispose: () => {
+              if (test.xrSelect === onSelect) test.xrSelect = null;
+            },
+          };
+        },
         // The camera ray, scripted: the stub scene has no geometry (the
         // real raycast is object-pick.test.ts's). Only an id the app
         // actually rendered can be hit.

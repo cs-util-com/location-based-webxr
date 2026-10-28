@@ -1115,9 +1115,46 @@ describe("a refused older tour's draft", () => {
     expect([...b.files.keys()]).toEqual([]);
   });
 
+  // Why: a refused 3.x copy and the 4.0 copy of the same tour carry the
+  // same tour id, so they share a draft. Only a draft PROVED to be from an
+  // older version may go - a record this version would read is the newer
+  // copy's unsaved work.
+  it("is kept when it holds a record this version reads (the newer copy's work)", async () => {
+    const a = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [objectKey("p1")]: recordText(pin("p1")),
+      [objectKey("p2")]: "{}",
+    });
+    const { setup } = wire(a.store);
+    await expect(setup.forgetRefusedDraft(TOUR)).resolves.toBe(false);
+    expect(a.files.size).toBe(3);
+  });
+
+  it("is kept when nothing in it says which version wrote it", async () => {
+    const a = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [objectKey("p1")]: "not json",
+    });
+    const { setup } = wire(a.store);
+    await expect(setup.forgetRefusedDraft(TOUR)).resolves.toBe(false);
+    expect(a.files.size).toBe(2);
+  });
+
   it("is none where the device keeps no drafts", async () => {
     const { setup } = wire(memoryStore().store, { firstOpenFails: true });
     await expect(setup.forgetRefusedDraft(TOUR)).resolves.toBe(false);
+  });
+
+  // Why (B2a review finding 4): a file's content key names the recording,
+  // not the tour, so another tour on the same recording may keep its
+  // draft under it; a refusal must never delete by such a key.
+  it("is kept when the refused file is known only by its content key", async () => {
+    const a = memoryStore({ [META_KEY]: "{}", [objectKey("p1")]: "{}" });
+    const { setup } = wire(a.store);
+    await expect(
+      setup.forgetRefusedDraft("local-file:0123456789abcdef0123456789abcdef"),
+    ).resolves.toBe(false);
+    expect(a.files.size).toBe(2);
   });
 });
 
@@ -1180,6 +1217,22 @@ describe("a placement reaches the draft", () => {
     );
     expect(dom.pinLabelCount.attributes["data-over"]).toBeUndefined();
     expect(dom.pinLabelCount.hidden, "hidden with the field").toBe(true);
+  });
+
+  // Why (B2a review finding 6, design §3): the phone's pin field is a
+  // text input, where text becomes NFC; a decomposed accent typed there
+  // was stored as typed and counted twice toward the 40.
+  it("places a pin with its text in NFC", async () => {
+    const { store } = memoryStore();
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.pinLabel.value = `Caf${"e"}${String.fromCodePoint(0x301)}`;
+    dom.pinSave.click();
+    await settle();
+    expect(ctx.tourDocument.entries()[0]?.object).toMatchObject({
+      caption: "Caf\u00e9",
+    });
   });
 
   it("tells the creator when the store refuses the write", async () => {
