@@ -140,6 +140,42 @@ describe('framework deep imports are built entrypoints', () => {
     ).toEqual([]);
   });
 
+  it('every framework module the globe lab loads by page path is a built subpath', () => {
+    // The globe lab is a no-build page: it loads framework modules by page
+    // path (`/fw/visualization/atmosphere/cloud-layer.js`, served from the
+    // framework's source), so the consumer scan below never sees them. Its
+    // code is moving into the typed Globe package, which a Vite app bundles
+    // through the PUBLISHED framework, where only built entries resolve: a
+    // lab module that is not an entry would break that app in the browser
+    // the day it moves (15 of them did on 2026-10-27). Lab tests count too,
+    // for the reason the consumer scan includes tests.
+    const PAGE_PATH = /["']\/fw\/([A-Za-z0-9_./-]+)\.js["']/g;
+    const files = trackedFiles(
+      'GpsPlusSlamJs_DesignSystem/labs/globe/',
+      'GpsPlusSlamJs_Globe/src/'
+    ).filter((file) => /\.(m?js|ts|html)$/.test(file));
+    const loaded = new Set();
+    for (const file of files) {
+      let source;
+      try {
+        source = readTracked(file);
+      } catch {
+        continue; // deleted but not yet staged - defines no imports
+      }
+      for (const [, sub] of source.matchAll(PAGE_PATH)) {
+        loaded.add(sub.replace(/\/index$/, ''));
+      }
+    }
+    // Twenty-two distinct modules when this was set (2026-10-28): far
+    // fewer means the scan lost the lab, not that the lab lost imports.
+    expect(loaded.size, "the scan must see the globe lab's framework modules").toBeGreaterThanOrEqual(15);
+    const missing = [...loaded].filter((sub) => !built.has(sub)).sort();
+    expect(
+      missing,
+      `the globe lab loads these framework modules, but they are not entries in ${CONFIG}:\n  ${missing.join('\n  ')}`
+    ).toEqual([]);
+  });
+
   it('every consumer import of the framework names a built subpath', () => {
     const offenders = [];
     for (const file of sourceFiles()) {

@@ -68,3 +68,10 @@ No unit test (it is the part CI cannot run). Exercised by the look-dev smoke
 (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs`): every pass draws,
 readbacks feed the GPU/CPU parity check. `sky-atmosphere.test.ts` pins the
 interface with a fake.
+
+## Import path
+
+`gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-luts`, a built subpath of the published package
+(a tsdown entry since 2026-10-28): the globe lab loads it by page path, and
+the typed Globe package will import it through the package. The guard
+`tests/repo-config/framework-deep-imports-are-built.test.js` keeps it an entry.

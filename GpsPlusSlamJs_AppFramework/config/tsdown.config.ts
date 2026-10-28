@@ -156,6 +156,9 @@ const entryFiles = [
   'src/sensors/gps.ts',
   'src/sensors/gps-error-handler.ts',
   'src/sensors/permission-checker.ts',
+  // The prompt-free Permissions-API query, loaded by the globe lab's locate
+  // pin; built so the typed Globe package can import it through `./sensors/*`.
+  'src/sensors/permission-state.ts',
   'src/sensors/absolute-orientation.ts',
 
   // state/
@@ -333,6 +336,15 @@ const entryFiles = [
   // deep-imported by OsmDemo's AR sun shadow session and served to the
   // globe lab's recorder; per-file for the './utils/*' wildcard.
   'src/utils/frame-times.ts',
+  // The frame recorder's run, its phone-readable report and the frame
+  // target, loaded by the globe lab's perf panel; per-file for the
+  // './utils/*' wildcard so the typed Globe package can import them.
+  'src/utils/frame-run.ts',
+  'src/utils/frame-run-report.ts',
+  'src/utils/frame-target.ts',
+  // The GLSL float-literal formatter, for shader code that interpolates
+  // TypeScript constants (the globe lab's air and cloud passes).
+  'src/utils/glsl-float.ts',
   // The locate buttons' shared behaviour (labels, error mapping, the fix
   // each failure names, one request) - deep-imported by the OSM demo's
   // locate control and served to the globe lab's pin (round-2 plan
@@ -418,6 +430,21 @@ const entryFiles = [
   'src/visualization/atmosphere/atmosphere-fallback.ts',
   'src/visualization/atmosphere/atmosphere-haze.ts',
   'src/visualization/atmosphere/sky-atmosphere.ts',
+  // The sky's low-level building blocks (its model, CPU scattering twin,
+  // GLSL and LUT passes) and the clouds, loaded by the globe lab by page
+  // path; built per-file so the typed Globe package reaches them through
+  // the published `./visualization/*` wildcard (they are public API).
+  'src/visualization/atmosphere/atmosphere-glsl.ts',
+  'src/visualization/atmosphere/atmosphere-luts.ts',
+  'src/visualization/atmosphere/atmosphere-model.ts',
+  'src/visualization/atmosphere/atmosphere-scattering.ts',
+  'src/visualization/atmosphere/cloud-coverage.ts',
+  'src/visualization/atmosphere/cloud-hex.ts',
+  'src/visualization/atmosphere/cloud-layer.ts',
+  'src/visualization/atmosphere/cloud-live-noise.ts',
+  'src/visualization/atmosphere/cloud-shadow.ts',
+  'src/visualization/atmosphere/cloud-sheet.ts',
+  'src/visualization/atmosphere/cloud-slab.ts',
   'src/visualization/alignment-lerper.ts',
   // AR shadows on the room mesh (plan 2026-09-26-0549), deep-imported by the
   // PhysicsDemo via `./visualization/*`.

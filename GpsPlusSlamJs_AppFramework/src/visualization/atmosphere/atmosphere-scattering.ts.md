@@ -53,3 +53,10 @@ const radiance = skyRadiance(r, 1.2, 0.3, Math.sin(0.1), params, psi);
 zenith, warm sunset horizon, the Mie glow asymmetry, darkness far below the
 horizon, finite ground radiance, f_ms in (0, 1), and the multi-scattering
 share measured by a sweep (+23…80 % by day, 6–40× at −9°).
+
+## Import path
+
+`gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-scattering`, a built subpath of the published package
+(a tsdown entry since 2026-10-28): the globe lab loads it by page path, and
+the typed Globe package will import it through the package. The guard
+`tests/repo-config/framework-deep-imports-are-built.test.js` keeps it an entry.
