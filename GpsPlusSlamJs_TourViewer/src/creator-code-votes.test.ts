@@ -58,6 +58,7 @@ import {
 } from "./tour-viewer-session.js";
 import { odomNueFromWebXr, throughAlignment } from "./visit-anchoring.js";
 import { createViewerPlacement } from "./viewer-placement.js";
+import type * as QrCodeIdModule from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import type * as VisitLogModule from "./visit-log.js";
 import type { VisitLog } from "./visit-log.js";
 
@@ -65,7 +66,34 @@ const captured = vi.hoisted(() => ({
   configs: [] as QrTrackingControllerConfig[],
   /** The page-side visit logs the creator setups made, newest last. */
   visitLogs: [] as VisitLog[],
+  /** Code identities (`qrCodeId`) still being hashed. */
+  hashing: new Set<Promise<string>>(),
 }));
+// A code's identity is a WebCrypto digest, which settles on a worker thread:
+// how many event-loop turns it takes depends on the machine's load. The page
+// measures a code only once its identity lands, so a fixed number of turns
+// let a loaded machine end the visit before a new code was measured (the
+// settle then kept its mint through the votes, about 12 m off). Every hash
+// the page starts is tracked here, and each frame waits for them
+// (`pageSettled`), as a phone's frames, 30 ms apart, do.
+vi.mock(
+  "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id",
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof QrCodeIdModule>();
+    return {
+      ...actual,
+      qrCodeId: (text: string): Promise<string> => {
+        const hash = actual.qrCodeId(text);
+        captured.hashing.add(hash);
+        const done = (): void => {
+          captured.hashing.delete(hash);
+        };
+        hash.then(done, done);
+        return hash;
+      },
+    };
+  },
+);
 vi.mock("./visit-log.js", async (importOriginal) => {
   const actual = await importOriginal<typeof VisitLogModule>();
   return {
@@ -244,6 +272,16 @@ function el() {
 
 async function flush(): Promise<void> {
   for (let i = 0; i < 20; i += 1) await Promise.resolve();
+}
+
+/** The page's work after a frame has landed: every code identity it is
+ *  hashing, and what each one starts (a measurement hashes again). */
+async function pageSettled(): Promise<void> {
+  await flush();
+  while (captured.hashing.size > 0) {
+    await Promise.allSettled([...captured.hashing]);
+    await flush();
+  }
 }
 
 /** A code stored with the tour: its geo is where `alignment` puts its pose
@@ -492,7 +530,7 @@ async function indoorCreator(
       }
     }
     c.onLocked?.({} as never, level);
-    await flush();
+    await pageSettled();
   }
 
   /** Look at a code for `n` frames (stable from about the seventh),
@@ -506,9 +544,8 @@ async function indoorCreator(
     const startMs = clock.nowMs + afterMs;
     for (let i = 0; i < n; i += 1) await frame(i, origin, text, startMs);
     // The level id is an async hash: the sighting waits for it.
-    await qrCodeId(text);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    await flush();
+    await pageSettled();
   }
 
   /** One device fix where `truth` puts the phone at raw WebXR `at`, off by
@@ -659,7 +696,7 @@ describe(
       expect(c.dom.pinButton.disabled).toBe(false);
       await c.placePin("Draft", [1, 0, -3]);
       c.endVisit();
-      await flush();
+      await pageSettled();
       expect(
         c.settledAt("Draft").distanceTo(truthAt(truth, [1, 0, -3])),
       ).toBeLessThan(0.01);
@@ -716,7 +753,7 @@ describe(
             await c.look(visitOrigin);
             await c.placePin("Here", pin);
             c.endVisit();
-            await flush();
+            await pageSettled();
             expect(
               c.settledAt("Here").distanceTo(truthAt(visitTruth, pin)),
             ).toBeLessThan(0.01);
@@ -789,7 +826,7 @@ describe(
         await c.placePin("Near", [3, 0, -2]);
         walkWithGps(c, offsetNorthM);
         c.endVisit();
-        await flush();
+        await pageSettled();
         expect(
           c.settledAt("Near").distanceTo(truthAt(truth, [3, 0, -2])),
         ).toBeLessThan(0.01);
@@ -1167,7 +1204,7 @@ async function mixedVisit(v: MixedVisitCase) {
   }
   const votesAtEnd = c.votes();
   c.endVisit();
-  await flush();
+  await pageSettled();
   const truthCode = throughAlignment(
     odomNueFromWebXr(inOrigin(TRUE_CODE, MIX_ORIGIN)),
     MIX_TRUTH,
