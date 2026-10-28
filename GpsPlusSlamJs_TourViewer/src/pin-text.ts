@@ -46,11 +46,11 @@ export function textCounterLine(
   return `${String(textCount(text, unit))} / ${String(max)}`;
 }
 
-/** How much of `text` counts against its cap: the text as the page writes
- *  it, trimmed at its ends, in `unit` (a UTF-16 count is otherwise taken
+/** How much of `text` counts against its cap: the text as the page stores
+ *  it, in NFC and trimmed at its ends, in `unit` (a UTF-16 count is otherwise taken
  *  as typed, so a trailing newline would count). */
 function textCount(text: string, unit: TourTextUnit): number {
-  return tourTextCount(text.trim(), unit);
+  return tourTextCount(inputText(text).trim(), unit);
 }
 
 /** The counter's line for `text`: "12 / 40". */

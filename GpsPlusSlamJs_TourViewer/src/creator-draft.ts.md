@@ -62,8 +62,10 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     be the current copy's unsaved work. A draft holding a record this
     version reads, or nothing that decides it (no object records, or one
     that does not read), is kept and reads false - it stays until its own
-    tour opens; nothing deletes it. Tests: `creator-setup.test.ts` ("a refused older
-    tour's draft").
+    tour opens; nothing deletes it. A draft this version opened is never
+    such a draft (`present` stamps its meta). Tests:
+    `creator-setup.test.ts` ("a refused older tour's draft", among them
+    one this version opened that holds older records and a deletion).
   - `follow(tourUrl)` (debug-captures plan, Q-I) - the file a Finish
     delivered of a tour opened from a file opens under another key once
     its save wrote the tour's own id: the draft switches to that
@@ -119,7 +121,14 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     in.
   - `present(tourUrl)` - a tour opened and its manifest settled: open the
     namespace, then sweep a spent draft, offer what is not hosted yet, or
-    start one. Every continuation re-checks `ctx.openGeneration`.
+    start one. Every continuation re-checks `ctx.openGeneration`. Right
+    after the read it writes the meta once (`recordMeta`, stamped with
+    this version's format by `writeDraftMeta`), whether or not a draft was
+    there: a deletion writes only its tombstone, and a restore or a code
+    no meta, so without the stamp a draft of an older version's records
+    plus such work read as older (`isOlderVersionDraft`) and refusing an
+    older copy of the same tour cleared it, the deletion with it. That
+    write re-states the pruned rejections and rejects nothing new.
   - `reset()` - a tour closed: the offer, the namespace and the
     rejections go.
   - `saveMeta()` - rewrite the open tour's meta (tour, printed size from
