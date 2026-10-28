@@ -543,8 +543,8 @@ async function indoorCreator(
   ): Promise<void> {
     const startMs = clock.nowMs + afterMs;
     for (let i = 0; i < n; i += 1) await frame(i, origin, text, startMs);
-    // The level id is an async hash: the sighting waits for it.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The level id is an async hash: the sighting waits for it, and so
+    // does this (`pageSettled` awaits every hash the page started).
     await pageSettled();
   }
 

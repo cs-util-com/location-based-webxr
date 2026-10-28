@@ -25,6 +25,8 @@ import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import {
   deletedKey,
+  isOlderVersionDraft,
+  META_KEY,
   objectKey,
   visitKey,
   writeDraftVisit,
@@ -722,6 +724,30 @@ describe("object records of an earlier format", () => {
       expect(o.geo.lon).toBeCloseTo(draft.geo.lon, 9);
       expect(o.geo.alt).toBeCloseTo(draft.geo.alt, 6);
     }
+  });
+});
+
+describe("isOlderVersionDraft: a meta this version wrote", () => {
+  // Why this matters: a refused older copy of a tour shares its draft with
+  // the current copy (the same tour id). A draft this version worked on -
+  // restored, a code measured, an object deleted - without placing a new
+  // object holds only the older version's records, and read as an older
+  // version's draft: the refusal of the older copy deleted the current
+  // copy's work. The meta this version writes says which version wrote it.
+  it("is false once this version wrote the meta, whatever its object records", async () => {
+    const store = memoryStore();
+    store.files.set(
+      objectKey("old"),
+      JSON.stringify({ id: "old", kind: "pin", label: "The old gate" }),
+    );
+    store.files.set(META_KEY, JSON.stringify(META));
+    expect(await isOlderVersionDraft(store), "an older version's meta").toBe(
+      true,
+    );
+    await writeDraftMeta(store, META);
+    expect(await isOlderVersionDraft(store)).toBe(false);
+    // The meta still reads as the draft's: the stamp is no field of it.
+    expect((await readDraft(store))?.draft.tourUrl).toBe(META.tourUrl);
   });
 });
 

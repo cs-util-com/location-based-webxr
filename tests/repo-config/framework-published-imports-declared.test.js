@@ -113,17 +113,27 @@ describe("the app framework's published imports", () => {
 
   // Why: a peer's floor is a promise that the test helpers work with that
   // version, and the only version the framework's own suite runs is its
-  // dev dependency. A floor below it (vitest ">=3.0.0" while every test ran
-  // on 5) promised versions nothing ever checked.
-  it('promises the test peers only from the version its own tests run on', () => {
+  // dev dependency. A floor a major below it (vitest ">=3.0.0" while every
+  // test ran on 5) promised versions nothing ever checked, so the peer
+  // floor is on the dev dependency's major. Within that major it may lag:
+  // a routine dev bump must not force a peer bump, which would break the
+  // test helpers' consumers - but a peer floor above the dev floor would
+  // promise less than the suite runs on, and is refused.
+  it('promises the test peers only from the major its own tests run on', () => {
     const floor = (range) =>
       /^(?:>=|\^)(\d+)\.(\d+)\.(\d+)$/.exec(range ?? '')?.slice(1).map(Number);
+    const compare = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
     for (const name of ['fast-check', 'vitest']) {
       const peer = floor(pkg.peerDependencies?.[name]);
       const dev = floor(pkg.devDependencies?.[name]);
       expect(peer, `${name} peer range reads as a floor`).toBeDefined();
       expect(dev, `${name} dev range reads as a floor`).toBeDefined();
-      expect(peer, `${name}: the peer floor is the dev dependency's floor`).toEqual(dev);
+      if (peer === undefined || dev === undefined) continue;
+      expect(peer[0], `${name}: the peer floor is on the dev dependency's major`).toBe(dev[0]);
+      expect(
+        compare(peer, dev),
+        `${name}: the peer floor ${peer.join('.')} is not above the dev floor ${dev.join('.')}`
+      ).toBeLessThanOrEqual(0);
     }
   });
 });

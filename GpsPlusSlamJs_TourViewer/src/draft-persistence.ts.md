@@ -13,7 +13,9 @@ are the framework's.
   before code book plan M6 also carry the move prompt's answers; they are
   read as if absent.) **This write is the commit point for a rejection** -
   see the invariant below. `rejected` is optional and absent from every
-  meta file written before 2026-09-10.
+  meta file written before 2026-09-10. The stored meta also carries
+  `format: TOUR_OBJECT_RECORD_FORMAT` (4), the version that wrote it, which
+  `isOlderVersionDraft` reads; `readDraft` ignores it.
 - `CODES_KEY` (`"codes"`), `DraftCodes` `{ level, levels }`,
   `writeDraftCodes(store, codes)`, `readDraftCodes(store)` (plan M3b) -
   the draft's codes in a file of their own: the code in hand (`level`)
@@ -142,15 +144,19 @@ are the framework's.
   `storedIds` includes tombstone ids, so a discard or a spent draft sweeps
   them too.
 - `isOlderVersionDraft(store)` - true only when the draft is PROVED to be
-  written by an older version of this app: at least one object record, and
-  every one reads as a JSON object whose `format` is absent or lower than
-  `TOUR_OBJECT_RECORD_FORMAT` (the field came with format 4.0, so a 3.x
-  record has none). Anything else - a record of this format or a newer one,
-  no object records, a record that does not read - is not decidable and
-  reads false. The refusal of an older-format tour deletes a draft only on true
-  (`creator-draft.ts` `forgetRefused`, `editor/editor-draft.ts` `forget`).
-  Tests: `creator-setup.test.ts` and `editor/editor-draft.test.ts` ("a
-  refused older ... draft").
+  written by an older version of this app: a meta without this version's
+  `format` stamp (`writeDraftMeta`; work on a draft that placed no new
+  object leaves only older records, and the stamp keeps it), at least one
+  object record, and every one reads as a JSON object whose `format` is
+  absent or lower than `TOUR_OBJECT_RECORD_FORMAT` (the field came with
+  format 4.0, so a 3.x record has none). Anything else - a stamped meta, a
+  record of this format or a newer one, no object records, a record that
+  does not read - is not decidable and reads false. The refusal of an
+  older-format tour deletes a draft only on true (`creator-draft.ts`
+  `forgetRefused`, `editor/editor-draft.ts` `forget`). Tests:
+  `creator-setup.test.ts` and `editor/editor-draft.test.ts` ("a refused
+  older ... draft"), `draft-persistence.test.ts` ("a meta this version
+  wrote").
 - `parseDraftObject(text)`, `objectKey(id)`, `photoKey(id)`,
   `deletedKey(id)`, `visitKey(visitId)`.
 - **Why a deletion is a FILE and not a list in the meta**: the meta is

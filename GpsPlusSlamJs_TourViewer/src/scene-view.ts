@@ -33,7 +33,7 @@ import {
   plainTextOf,
 } from "gps-plus-slam-app-framework/ar/tour-markdown";
 import { worldBlockReachedBy } from "./shown-blocks.js";
-import { stationTitle } from "./station-run.js";
+import { stationHasCard, stationTitle } from "./station-run.js";
 
 /** The story panel's elements, all inside `#ar-root` (the DOM overlay). */
 export interface SceneViewDom {
@@ -183,14 +183,18 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   let stationUrl: string | null = null;
   /** Bumped when the card picture goes: a read that lands later is dropped. */
   let stationToken = 0;
+  /** Why the card picture is not shown: kept over every step of the
+   *  story, gone with the picture. */
+  let stationNotice: string | null = null;
 
   /** The status line from the step's media: a parked figure, else what
-   *  still loads; then what went wrong, which outlives both. */
+   *  still loads; then what went wrong, which outlives both; then why the
+   *  card picture is missing. */
   function showStatus(): void {
     const current = loading.at(-1);
     const now =
       figureWait ?? (current === undefined ? null : `Loading the ${current}…`);
-    dom.status.textContent = [now, notice]
+    dom.status.textContent = [now, notice, stationNotice]
       .filter((part) => part !== null)
       .join(" ");
   }
@@ -207,7 +211,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     figureWait = null;
     loading.length = 0;
     notice = null;
-    dom.status.textContent = "";
+    showStatus();
     dom.choices.replaceChildren();
   }
 
@@ -478,18 +482,16 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     render(first);
   }
 
-  /** A station has something to read without a story: a description or a
-   *  card picture. */
+  /** A station has something to read without a story (`stationHasCard`,
+   *  the walk's own rule). */
   function hasCard(station: TourStation): boolean {
-    return (
-      (station.description ?? "") !== "" ||
-      (station.image !== undefined && deps.assets.has(station.image))
-    );
+    return stationHasCard(station, deps.assets);
   }
 
   /** The station's card picture: read and measured like a step's picture,
    *  shown under its name for the whole story. A picture that cannot be
-   *  read or is too large is left out; the name and the words stay. */
+   *  read or is too large is left out, and the status line says so; the
+   *  name and the words stay. */
   function showStationImage(station: TourStation): void {
     hideStationImage();
     const asset =
@@ -497,27 +499,42 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     if (asset === undefined) return;
     const token = stationToken;
     const alt = stationTitle(station);
+    const missing = (why: string): void => {
+      if (token !== stationToken) return;
+      stationNotice = why;
+      showStatus();
+    };
     deps
       .loadAsset(asset.path)
       .then(async (blob) => {
         if (token !== stationToken) return;
-        if ((await deps.checkPicture(blob)) !== null) return;
+        if ((await deps.checkPicture(blob)) !== null) {
+          missing("The station's picture is too large to show here.");
+          return;
+        }
         if (token !== stationToken) return;
         stationUrl = deps.objectUrls.create(blob);
         dom.stationImage.src = stationUrl;
         dom.stationImage.alt = alt;
         dom.stationImage.hidden = false;
       })
-      .catch(() => undefined);
+      .catch(() => {
+        missing("The station's picture could not be loaded.");
+      });
   }
 
-  /** The card picture goes, and a read still in flight lands on nothing. */
+  /** The card picture goes, its status with it, and a read still in
+   *  flight lands on nothing. */
   function hideStationImage(): void {
     stationToken += 1;
     if (stationUrl !== null) deps.objectUrls.revoke(stationUrl);
     stationUrl = null;
     dom.stationImage.hidden = true;
     dom.stationImage.src = "";
+    if (stationNotice !== null) {
+      stationNotice = null;
+      showStatus();
+    }
   }
 
   /** The station's description under its name; none hides the line. */

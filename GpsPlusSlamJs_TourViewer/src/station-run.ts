@@ -241,16 +241,36 @@ interface WalkTransition {
   readonly events: StationEvent[];
 }
 
+/** A tour that holds no assets. */
+const NO_ASSETS: ReadonlySet<string> = new Set();
+
+/**
+ * Whether `station` has a card to read without a story: a description, or
+ * a card picture the tour holds (`assets`, by asset id). A picture naming
+ * an asset the tour does not hold shows nothing, so it is no card. The one
+ * rule for the walk (`walkRoute`) and the card (`scene-view.ts`).
+ */
+export function stationHasCard(
+  station: Pick<TourStation, "description" | "image">,
+  assets: { has(id: string): boolean },
+): boolean {
+  return (
+    (station.description ?? "") !== "" ||
+    (station.image !== undefined && assets.has(station.image))
+  );
+}
+
 /** The tour facts of these stations, for `startWalk`. A station with no
- *  steps but a description or a card picture is not stepless: its card
- *  stays until Continue (`scene-view.ts`), whose story end finishes it. */
-export function walkRoute(stations: readonly TourStation[]): WalkRoute {
+ *  steps but a card (`stationHasCard`, against the tour's `assets`) is not
+ *  stepless: its card stays until Continue (`scene-view.ts`), whose story
+ *  end finishes it. No `assets`: the tour holds none. */
+export function walkRoute(
+  stations: readonly TourStation[],
+  assets: { has(id: string): boolean } = NO_ASSETS,
+): WalkRoute {
   return stations.map((s) => ({
     id: s.id,
-    stepless:
-      s.steps.length === 0 &&
-      (s.description ?? "") === "" &&
-      s.image === undefined,
+    stepless: s.steps.length === 0 && !stationHasCard(s, assets),
   }));
 }
 

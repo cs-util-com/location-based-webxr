@@ -20,10 +20,17 @@ by the radius alone).
     `focusedAtMs`, `focusDistanceM`) and the one tour fact the rules read
     (`stepless`); the offer is derived, never stored. Plain, serializable
     data.
-  - `walkRoute(stations)` - that tour fact per station (`type WalkRoute`,
-    `{ id, stepless }`). Stepless means no steps AND no card to read: a
-    station with a description or a card picture keeps its card until
-    Continue (`scene-view.ts`), and that story end finishes it.
+  - `stationHasCard(station, assets)` - whether a station has a card to
+    read without a story: a non-empty description, or a card picture whose
+    asset the tour holds (`assets`, anything with `has(id)`). A picture
+    naming a missing asset shows nothing, so it is no card. The one rule
+    for the walk and the card (`scene-view.ts` uses it too).
+  - `walkRoute(stations, assets?)` - that tour fact per station (`type
+WalkRoute`, `{ id, stepless }`). Stepless means no steps AND no card
+    (`stationHasCard`; no `assets`: the tour holds none): a station with a
+    card keeps it until Continue (`scene-view.ts`), and that story end
+    finishes it. The guide passes the open tour's assets
+    (`StationTour.assets`).
   - `startWalk(route, order)` - every station waiting.
   - `applyWalkStep(progress, step): { progress, events }` - one
     `type WalkStep`: `found` (an offered waiting station; the caller
@@ -161,7 +168,8 @@ run.finish("gate", nowMs); // done, the next station offered
   finishing (completing on the last end and waiting there,
   leaving that station and not another, the tap and never before
   complete, the completing skip, a bring back, a stepless last station, a storyless
-  station with a card that is not stepless,
+  station with a card that is not stepless, a card picture naming a
+  missing asset that is no card,
   the pure reads), and a property: every tour finishes within one
   action more than it takes to complete; properties: no deadlock and
   completion within one action per station for every preset, a done station never offered and

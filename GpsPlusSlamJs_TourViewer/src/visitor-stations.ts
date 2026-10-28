@@ -372,7 +372,7 @@ export function wireVisitorStations(deps: {
     }
     const stations = relocator(manifest.stations, firstFix());
     if (stations === null) return null;
-    return { stations, order: manifest.order };
+    return { stations, order: manifest.order, assets: assetsById() };
   }
   const guide = wireStationGuide({
     dom: dom.guide,

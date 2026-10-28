@@ -344,49 +344,78 @@ export function parseDraftObject(text: string): TourObject | null {
  * the same tour id, so they share a draft key, and the draft under it may
  * be the current copy's unsaved work.
  *
- * The meta carries no format version, so the proof is the object records:
- * each one this version writes carries `format` (`TOUR_OBJECT_RECORD_FORMAT`,
- * `tourObjectRecord`); the field came with format 4.0, so an older
- * version's record carries none. Proved older: at least one object record, and every
- * one reads as a JSON object whose `format` is absent or lower. Anything
- * else is NOT decidable and reads false - a record of this format or a
- * newer one, a draft with no object records (a meta, visits or deletions
- * alone), a record that does not read (truncated, or unreadable). Such a
- * draft is never deleted by a refusal; it stays until its own tour opens.
+ * A meta this version wrote carries `format` (`writeDraftMeta`): such a
+ * draft is this version's, whatever its object records - work on a draft
+ * that placed no new object (a restore, a measured code, a deletion)
+ * leaves only the older version's records in it. Without that stamp the
+ * proof is the object records: each one this version writes carries
+ * `format` (`TOUR_OBJECT_RECORD_FORMAT`, `tourObjectRecord`); the field
+ * came with format 4.0, so an older version's record carries none. Proved
+ * older: no stamped meta, at least one object record, and every one reads
+ * as a JSON object whose `format` is absent or lower. Anything else is NOT
+ * decidable and reads false - a record of this format or a newer one, a
+ * draft with no object records (a meta, visits or deletions alone), a
+ * record that does not read (truncated, or unreadable). Such a draft is
+ * never deleted by a refusal; it stays until its own tour opens.
  */
 export async function isOlderVersionDraft(
   store: DraftFileStore,
 ): Promise<boolean> {
+  if (!isOlderFormat(parsedFormat(await store.getText(META_KEY)))) {
+    return false;
+  }
   const records = (await store.keys()).filter((key) =>
     key.startsWith(OBJECT_PREFIX),
   );
   if (records.length === 0) return false;
   for (const key of records) {
-    const text = await store.getText(key);
-    if (text === undefined) return false;
-    let value: unknown;
-    try {
-      value = JSON.parse(text);
-    } catch {
-      return false;
-    }
-    if (typeof value !== "object" || value === null || Array.isArray(value))
-      return false;
-    const format = (value as Record<string, unknown>)["format"];
-    const older =
-      format === undefined ||
-      (typeof format === "number" && format < TOUR_OBJECT_RECORD_FORMAT);
-    if (!older) return false;
+    const format = parsedFormat(await store.getText(key));
+    if (format === UNREADABLE || !isOlderFormat(format)) return false;
   }
   return true;
 }
 
-/** Record the tour, the printed size and the rejections. */
+/** A file that does not read as a JSON object (`parsedFormat`). */
+const UNREADABLE = Symbol("unreadable");
+
+/** The `format` field of a stored JSON object; `UNREADABLE` for a file
+ *  that is missing or is no JSON object. */
+function parsedFormat(text: string | undefined): unknown {
+  if (text === undefined) return UNREADABLE;
+  try {
+    const value: unknown = JSON.parse(text);
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return UNREADABLE;
+    }
+    return (value as Record<string, unknown>)["format"];
+  } catch {
+    return UNREADABLE;
+  }
+}
+
+/** Whether a `format` field (or a file that does not read) says an older
+ *  version wrote it: absent, unreadable, or a number below this one's. */
+function isOlderFormat(format: unknown): boolean {
+  return (
+    format === undefined ||
+    format === UNREADABLE ||
+    (typeof format === "number" && format < TOUR_OBJECT_RECORD_FORMAT)
+  );
+}
+
+/**
+ * Record the tour, the printed size and the rejections, stamped with this
+ * version's format (`isOlderVersionDraft`: a draft this version wrote the
+ * meta of is never an older version's).
+ */
 export async function writeDraftMeta(
   store: DraftFileStore,
   meta: DraftMeta,
 ): Promise<boolean> {
-  return store.put(META_KEY, JSON.stringify(meta));
+  return store.put(
+    META_KEY,
+    JSON.stringify({ ...meta, format: TOUR_OBJECT_RECORD_FORMAT }),
+  );
 }
 
 /** Record the draft's codes, whole. */

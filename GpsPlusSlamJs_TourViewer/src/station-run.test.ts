@@ -12,6 +12,7 @@ import {
   walkFinished,
   walkFinishWaitId,
   walkOffered,
+  stationHasCard,
   walkRoute,
   walkStatus,
   SKIP_SUGGEST_BASE_MS,
@@ -549,17 +550,32 @@ describe("finishing the tour: done is progress, finished is the visitor's", () =
   // would end the card in the same frame, and its words and picture would
   // never be seen.
   it("a station with no story but a card waits for its card to be read", () => {
-    const route = walkRoute([
-      station("words", { steps: [], description: "The main gate." }),
-      station("picture", { steps: [], image: "knight" }),
-      station("bare", { steps: [], description: "" }),
-    ]);
+    const route = walkRoute(
+      [
+        station("words", { steps: [], description: "The main gate." }),
+        station("picture", { steps: [], image: "knight" }),
+        station("bare", { steps: [], description: "" }),
+      ],
+      new Set(["knight"]),
+    );
     expect(route.map((r) => r.stepless)).toEqual([false, false, true]);
     const p0 = startWalk(route, "any");
     const found = applyWalkStep(p0, { kind: "found", id: "words" }).progress;
     expect(walkStatus(found, "words")?.state).toBe("found");
     const done = applyWalkStep(found, { kind: "finish", id: "words" });
     expect(walkStatus(done.progress, "words")?.state).toBe("done");
+  });
+
+  // Why: the card shows a picture only when the tour holds its asset
+  // (`scene-view.ts`). A station whose picture names a missing asset shows
+  // no card, so the walk must not wait for one: it is stepless, done when
+  // found, by the same rule the card uses (`stationHasCard`).
+  it("a station whose card picture names a missing asset has no card to wait for", () => {
+    const lost = station("lost", { steps: [], image: "gone" });
+    const assets = new Set(["knight"]);
+    expect(stationHasCard(lost, assets)).toBe(false);
+    expect(stationHasCard({ image: "knight" }, assets)).toBe(true);
+    expect(walkRoute([lost], assets).map((r) => r.stepless)).toEqual([true]);
   });
 
   it("the pure reads agree with the run, and a walk starts unfinished", () => {

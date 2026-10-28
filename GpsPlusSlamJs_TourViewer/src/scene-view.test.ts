@@ -847,6 +847,46 @@ describe("the station's name and description (B2b step 6)", () => {
     expect(h.urls.revoked).toContain(url);
   });
 
+  // Why: a station with no story whose card picture cannot be shown left
+  // a card with only its name and Continue, and no word of why. The status
+  // line says it, over every step of a story too, and goes with the card.
+  it("says why the station's card picture is missing, until its card ends", async () => {
+    const unreadable = harness({
+      loadAsset: () => Promise.reject(new Error("gone")),
+    });
+    unreadable.view.offer({
+      ...station("bench", [], "The bench"),
+      image: "still",
+    });
+    await settle();
+    expect(unreadable.dom.stationImage.hidden).toBe(true);
+    expect(unreadable.dom.status.textContent).toBe(
+      "The station's picture could not be loaded.",
+    );
+    unreadable.view.continueTapped();
+    expect(unreadable.dom.status.textContent).toBe("");
+
+    const large = harness({
+      checkPicture: () => Promise.resolve("too large"),
+    });
+    large.view.offer({
+      ...station("gate", [tap("a", "Hello"), tap("b", "Bye")]),
+      image: "still",
+    });
+    await settle();
+    expect(large.dom.status.textContent).toBe(
+      "The station's picture is too large to show here.",
+    );
+    large.view.continueTapped();
+    await settle();
+    expect(large.dom.text.textContent).toBe("Bye");
+    expect(large.dom.status.textContent).toBe(
+      "The station's picture is too large to show here.",
+    );
+    large.view.continueTapped();
+    expect(large.dom.status.textContent).toBe("");
+  });
+
   // Why: a card picture that lands after its story ended (a slow read)
   // must not paint over the next station's card.
   it("drops a card picture that lands after its story ended", async () => {

@@ -124,11 +124,15 @@ describe('framework deep imports are built entrypoints', () => {
     // CHANGELOG's own words would have hit a resolution failure in the
     // browser while every check stayed green. A new module named with its
     // directory is a subpath a consumer will import, so it must be built.
+    // Every phrasing the CHANGELOG uses: "new `x/y`", "New: `x/y`" and
+    // "(new, `x/y`)".
     const changelog = readTracked('GpsPlusSlamJs_AppFramework/CHANGELOG.md');
     const introduced = [
-      ...changelog.matchAll(/\bnew `([a-z0-9_-]+\/[A-Za-z0-9_./-]+)`/g),
+      ...changelog.matchAll(/\bnew\b[,:]?\s+`([a-z0-9_-]+\/[A-Za-z0-9_./-]+)`/gi),
     ].map(([, sub]) => sub);
-    expect(introduced.length, "the scan must see the CHANGELOG's new modules").toBeGreaterThan(2);
+    // Five when this pattern was set (2026-10-28): fewer means the scan
+    // lost a phrasing, not that the CHANGELOG lost entries.
+    expect(introduced.length, "the scan must see the CHANGELOG's new modules").toBeGreaterThanOrEqual(5);
     const missing = introduced.filter((sub) => !built.has(sub));
     expect(
       missing,

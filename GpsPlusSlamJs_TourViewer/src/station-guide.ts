@@ -325,6 +325,9 @@ export interface GuideView {
 export interface StationTour {
   readonly stations: readonly TourStation[];
   readonly order: TourOrder;
+  /** The tour's assets by id: a station's card picture counts only when
+   *  the tour holds it (`stationHasCard`). None: the tour holds none. */
+  readonly assets?: { has(id: string): boolean };
 }
 
 export interface StationGuideDeps {
@@ -826,7 +829,10 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       runStations = tour.stations;
       // A new walk: its last skip, note and arm start anew with it.
       change(
-        walkStarted({ order: tour.order, route: walkRoute(tour.stations) }),
+        walkStarted({
+          order: tour.order,
+          route: walkRoute(tour.stations, tour.assets),
+        }),
       );
       runView = runOver(tour.stations);
       noGuessBackAtMs = null;

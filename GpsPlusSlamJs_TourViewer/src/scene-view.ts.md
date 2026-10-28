@@ -172,13 +172,17 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   URL, alt = the station's title; it stands above the story over every
   step and goes when the story ends or stops (its URL revoked). A picture
   that lands after its story ended is dropped (a token, as a step's); a
-  picture that cannot be read is left out silently - the words carry on.
+  picture that cannot be read or is too large is left out, and the status
+  line says so ("The station's picture could not be loaded." / "... is too
+  large to show here.") over every step until the card ends - the words
+  carry on.
 - A station with NO story steps still has a card when it has something to
-  say - a non-empty description or a card picture naming a known asset: its
+  say - a non-empty description or a card picture naming a known asset
+  (`station-run.ts` `stationHasCard`, the walk's own rule): its
   name, description and picture show with Continue, which ends it. A
   station with neither ends at once, as before (the walk's sheet names it).
 - Tests: `scene-view.test.ts` "the station's name and description", "holds
   the card of a station with no story", "keeps the station's card picture
-  over every step", "drops a card picture that lands after its story
-  ended", "ends a station with no story and nothing to show at once"; the
+  over every step", "says why the station's card picture is missing",
+  "drops a card picture that lands after its story ended", "ends a station with no story and nothing to show at once"; the
   e2e `story-blocks.spec.js` at the gate and "a station with no story".
