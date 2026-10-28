@@ -104,7 +104,7 @@ function harness() {
       line: { textContent: "", hidden: true },
       skip: { textContent: "", hidden: true, dataset: {} },
     },
-    tour: () => ({ stations: TOUR, order: "any" }),
+    tour: () => ({ assets: new Set(), stations: TOUR, order: "any" }),
     placementAllowed: () => true,
     zero: () => zero,
     visitor: () =>

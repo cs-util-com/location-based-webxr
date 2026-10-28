@@ -326,8 +326,10 @@ export interface StationTour {
   readonly stations: readonly TourStation[];
   readonly order: TourOrder;
   /** The tour's assets by id: a station's card picture counts only when
-   *  the tour holds it (`stationHasCard`). None: the tour holds none. */
-  readonly assets?: { has(id: string): boolean };
+   *  the tour holds it (`stationHasCard`). Required, so a page that
+   *  forgets to pass them fails to compile instead of making every
+   *  picture-only station stepless. */
+  readonly assets: { has(id: string): boolean };
 }
 
 export interface StationGuideDeps {

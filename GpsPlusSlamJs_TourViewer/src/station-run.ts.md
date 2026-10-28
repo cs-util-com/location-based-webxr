@@ -25,12 +25,15 @@ by the radius alone).
     asset the tour holds (`assets`, anything with `has(id)`). A picture
     naming a missing asset shows nothing, so it is no card. The one rule
     for the walk and the card (`scene-view.ts` uses it too).
-  - `walkRoute(stations, assets?)` - that tour fact per station (`type
+  - `walkRoute(stations, assets)` - that tour fact per station (`type
 WalkRoute`, `{ id, stepless }`). Stepless means no steps AND no card
-    (`stationHasCard`; no `assets`: the tour holds none): a station with a
-    card keeps it until Continue (`scene-view.ts`), and that story end
-    finishes it. The guide passes the open tour's assets
-    (`StationTour.assets`).
+    (`stationHasCard`): a station with a card keeps it until Continue
+    (`scene-view.ts`), and that story end finishes it. The guide passes
+    the open tour's assets (`StationTour.assets`). `assets` is required,
+    never defaulted to "the tour holds none": a default let an omitted
+    wiring make every picture-only storyless station stepless again, its
+    card closing in the frame it opened; required, the compiler names
+    every caller that forgets it. A tour with no assets passes `new Set()`.
   - `startWalk(route, order)` - every station waiting.
   - `applyWalkStep(progress, step): { progress, events }` - one
     `type WalkStep`: `found` (an offered waiting station; the caller
@@ -55,9 +58,10 @@ WalkRoute`, `{ id, stepless }`). Stepless means no steps AND no card
     guide's store, `station-guide.ts`). `observe` judges each offered
     station's found radius here and performs `focus-distance` and
     `found`.
-- `createStationRun({ stations, order, nowMs }): StationRun` - a thin
-  adapter holding one `WalkProgress` in its closure (the run's tests, the
-  sweeps, the prefetch sweep):
+- `createStationRun({ stations, order, assets, nowMs }): StationRun` - a
+  thin adapter holding one `WalkProgress` in its closure (the run's
+  tests, the sweeps, the prefetch sweep; no page uses it), its `assets`
+  passed to `walkRoute`:
   - `offered()` - the offered station ids, in list order; empty once
     complete.
   - `status(id)` / `statuses()` - `{ id, state, skipped, focusedAtMs,
@@ -152,7 +156,12 @@ focusDistanceM }`.
 ## Examples
 
 ```ts
-const run = createStationRun({ stations, order: "fixed", nowMs: Date.now() });
+const run = createStationRun({
+  stations,
+  order: "fixed",
+  assets: new Set(),
+  nowMs: Date.now(),
+});
 run.observe({ distances: new Map([["gate", 4]]), nowMs });
 // [{ kind: "found", id: "gate" }] for a found radius of 4 m or more
 run.finish("gate", nowMs); // done, the next station offered

@@ -33,7 +33,13 @@ can't get there" (§8 D5), and hands a found station to its story. Plans:
   - `figurePoseOf(stationId)` - where the stage stands a story's figure:
     the same pose once this AR entry's alignment was ready, null before
     (no heading yet; the stage waits, r881 re-review M-B).
-- Deps: `dom` (`line`, `skip`, `end?`; the controls carry a `dataset`), `tour()` (stations, order),
+- Deps: `dom` (`line`, `skip`, `end?`; the controls carry a `dataset`), `tour()` (stations, order, assets: the open tour's
+  assets by id, anything with `has(id)`; a station's card picture counts
+  only when the tour holds it, `stationHasCard`, so a storyless station
+  with a held picture and no description stays found until its story's
+  end rather than being done the moment it is found. Required, not
+  optional: an omitted wiring would make every such station stepless
+  again, and the compiler now refuses it),
   `placementAllowed()`, `zero()`, `visitor()` (`visitor-position.ts`),
   `codeLinedUp()` (a code's votes lined the alignment up, `tour-flow.ts`;
   the guide passes it to the framework's precision rule as `codeHold`, so
@@ -492,6 +498,10 @@ store.subscribe(() => guide.tick());
   frozen run went in M4, whose bring back changed the
   run by design; its closure-against-store comparison is kept in
   `station-run.store.property.test.ts`.
+- `station-guide.test.ts` - among the rest, a storyless station with only
+  a card picture the tour holds waits for its story's end, and one whose
+  picture the tour does not hold is done at once (the guide passes
+  `StationTour.assets` to `walkRoute`).
 - `station-guide.rules.test.ts` - the no-distance rule and the no-guess rule per no-distance state
   (too weak, `'none'`, the hold), fixed order unchanged; the three tap
   paths, an armed row surviving a degradation, a story's end clearing the

@@ -140,7 +140,7 @@ describe("the walk sheet's view on the page's markup", () => {
             stations: TOUR,
             order: o,
             tourTitle: "Old town walk",
-            progress: startWalk(walkRoute(TOUR), o),
+            progress: startWalk(walkRoute(TOUR, new Set()), o),
             view: view(),
             story: null,
             sheet: "list",

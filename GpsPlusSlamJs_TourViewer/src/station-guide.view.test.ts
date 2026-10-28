@@ -68,7 +68,7 @@ function harness(
   const stations = options.stations ?? TOUR;
   const guide = wireStationGuide({
     dom,
-    tour: () => ({ stations, order }),
+    tour: () => ({ assets: new Set(), stations, order }),
     placementAllowed: () => allowed,
     zero: () => zero,
     visitor: () =>

@@ -187,6 +187,7 @@ function latches(
   codeLinedUp: boolean,
 ): boolean {
   const run = createStationRun({
+    assets: new Set(),
     stations: [judgedStation(foundR)],
     order: "fixed",
     nowMs: 0,

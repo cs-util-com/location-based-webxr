@@ -171,7 +171,10 @@ describe("a story's world (property)", () => {
         /** The walk the view's reports go to, as the page keeps them. */
         let walk = visitorWalkReducer(
           undefined,
-          walkStarted({ order: "fixed", route: walkRoute([station]) }),
+          walkStarted({
+            order: "fixed",
+            route: walkRoute([station], new Set()),
+          }),
         );
         const reached = (): string[] => [
           ...selectShownBlocks({ visitorWalk: walk }, station.id),
