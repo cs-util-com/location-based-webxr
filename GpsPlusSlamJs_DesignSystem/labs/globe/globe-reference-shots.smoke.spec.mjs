@@ -299,8 +299,22 @@ test("the drift view and the intro trace on Playwright's clock", async ({
   await holdView(page, view);
   await settle(page, { timeoutMs: 900_000 });
   // From here the clock stands; only runFor moves it.
+  // The page's clock can stand ahead of its Date.now() after a long load
+  // ("Cannot fast-forward to the past" on the first capture, 2026-10-28),
+  // so the pause steps further ahead until one is in the future.
   const now = await page.evaluate(() => Date.now());
-  await page.clock.pauseAt(now + 1000);
+  let paused = false;
+  for (const aheadMs of [1_000, 60_000, 600_000, 3_600_000]) {
+    try {
+      await page.clock.pauseAt(now + aheadMs);
+      console.log(`clock paused ${aheadMs} ms ahead`);
+      paused = true;
+      break;
+    } catch (e) {
+      if (!String(e).includes("to the past")) throw e;
+    }
+  }
+  expect(paused).toBe(true);
   // A changed far rate and back re-seeds the clouds at this instant (the
   // lab's hash reaction), so the drift no longer carries the loading's
   // real-time frames.
