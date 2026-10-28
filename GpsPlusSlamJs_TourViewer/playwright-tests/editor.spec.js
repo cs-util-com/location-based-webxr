@@ -4354,6 +4354,48 @@ test("Done stays shut and the dialog stays open while the walk is moved out", as
   await expect(page.locator("#done-walk")).toBeHidden();
 });
 
+test("a Ctrl+S pressed in a tour opened while the last tour's debug data was moved saves that tour once the move ends", async ({
+  page,
+}) => {
+  // Why: the move's end ran a queued Save only when its own tour still
+  // showed. A tour dropped mid-move (a late integrity failure) lets the
+  // creator open the next tour while the move still holds the save, and a
+  // Ctrl+S pressed there was lost without a word - a save's, a copy's and
+  // an open's end already run it for the tour that shows; a move must too.
+  await autosaveOutOfTheWay(page);
+  await doneWithWrappedTour(page);
+  await clickBoundSavePicker(page, "wrapped-debug.zip", { hold: true });
+  await page.locator("#done-move").click();
+  await expect(page.locator("#done-move")).toHaveText(
+    "Moving the debug data out…",
+  );
+  // The tour goes mid-move, as a late integrity failure takes it.
+  await page.evaluate(() => {
+    // @ts-expect-error - the dev server's test hook.
+    window.__tourEditor.dropTour("The tour file is damaged.");
+  });
+  await expect(page.locator("#done-modal")).toBeHidden();
+  await offerOpfsFile(page, await editorTour(), "second.zip");
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-file")).toHaveText("second.zip");
+  await editTownHall(page, "Saved by Ctrl+S during the move");
+  await page.keyboard.press("Control+s");
+  // Queued behind the move, which still holds the save: nothing written.
+  await expect(page.locator("#save-status")).toHaveText("Saving…");
+  expect((await readOpfsTour(page, "second.zip"))["tour.json"]).not.toContain(
+    "Saved by Ctrl+S during the move",
+  );
+  await page.evaluate(() => {
+    // @ts-expect-error - set by the stand-in.
+    window.__releaseWalkPick();
+  });
+  // The autosave is out of the way: only the Ctrl+S can save it.
+  await expect(page.locator("#save-status")).toHaveText("Saved to second.zip");
+  expect((await readOpfsTour(page, "second.zip"))["tour.json"]).toContain(
+    "Saved by Ctrl+S during the move",
+  );
+});
+
 test("the tour file itself is refused as the walk's file, before anything is written", async ({
   page,
 }) => {
