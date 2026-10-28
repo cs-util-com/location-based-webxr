@@ -337,7 +337,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     it, and so does Ctrl+S during the write at a link's or the sample's
     open (the `"open"` claim), during a copy being saved (`"copy"`) and
     during a move of the debug data (`"walk"`): every claim but an
-    explicit Save itself queues it, and the claim's end runs it
+    explicit Save of the tour that shows queues it (a Save of a tour
+    closed since does queue: an open keeps the slot's holder, so the page
+    keeps whose Save runs, `explicitSaveOf`), and the claim's end runs it
     (`runQueuedSave`); the Save button is disabled while any save
     runs, so only the key queues (E2b-2 milestone review #10). A queued
     Ctrl+S on a tour with unsaved work and no file to save into (no

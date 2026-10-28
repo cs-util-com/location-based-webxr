@@ -2654,16 +2654,23 @@ function abandon(): AutosaveOutcome {
  * tells the autosave (a landed save ends a pause, a failed one pauses it).
  * `pick`: the file its click asked for (`askSaveFile`), if any.
  */
+/** The tour whose Save (`runSave`) runs now, or null: an open keeps the
+ *  save slot's holder, so "explicit" alone cannot tell this tour's Save
+ *  from the closed tour's. */
+let explicitSaveOf: EditorSession | null = null;
+
 async function runSave(
   pick: Promise<SaveFilePick> | null = null,
 ): Promise<void> {
   if (editor === null) return;
   if (saving()) {
     const by = saveState().by;
-    if (by !== "explicit") {
+    if (by !== "explicit" || explicitSaveOf !== editor) {
       // Committed now, saved right after what holds the save (the
       // autosave, the write at the open, a copy, a move of the debug
-      // data). A second Save during a Save is the same Save.
+      // data, or a Save of a tour closed since: an open keeps the slot's
+      // holder). A second Save during this tour's own Save is the same
+      // Save.
       card.commit();
       if (ui().moving !== null) finishMove();
       store.dispatch(tourDocumentActions.saveQueued({ queued: true }));
@@ -2671,7 +2678,13 @@ async function runSave(
     return;
   }
   const mine = editor;
-  const outcome = await saveTour("explicit", pick);
+  explicitSaveOf = mine;
+  let outcome: AutosaveOutcome;
+  try {
+    outcome = await saveTour("explicit", pick);
+  } finally {
+    if (explicitSaveOf === mine) explicitSaveOf = null;
+  }
   if (editor !== mine || outcome === "held") return;
   if (outcome === "saved") autosave.saved();
   else autosave.failed();
