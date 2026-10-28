@@ -2,12 +2,17 @@
 
 ## [Unreleased]
 
+> ⚠️ **This MINOR carries breaking changes.** It is numbered 1.31.0 rather
+> than 2.0.0 (owner decision, 2026-10-28), as 1.22.0 was. The cost is stated
+> plainly: a consumer on `^1.x` gets these changes with no version-level
+> warning, among them a `tour.json` reader that refuses versions 1-3.
+> **Pin `1.30.0`** if you need the previous tour format.
+
 ### ⚠️ Breaking changes
 
 - **`tour.json` version 4: station blocks** (`ar/tour-manifest`,
   `ar/tour-stations`, `ar/tour-blocks`, `ar/tour-story`, new
-  `ar/tour-assets` and `ar/tour-fields`). The next release of this
-  package is 2.0.0. A station holds `blocks` (short text, long text,
+  `ar/tour-assets` and `ar/tour-fields`). A station holds `blocks` (short text, long text,
   picture, video, audio, model, character, each in a view and at a local
   pose) and `steps` (`show` a block, `choice`, `quiz`); a block no step
   shows is free and stands in the world (`pin`, `plane`, `placed`).
