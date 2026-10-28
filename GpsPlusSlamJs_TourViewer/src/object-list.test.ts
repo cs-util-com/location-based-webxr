@@ -123,16 +123,16 @@ describe("objectListModel on the page", () => {
     );
     const none = objectListModel(state({ entries: [entry(photo("p"))] }));
     expect(none.rows[0]?.detail).toBe("Photo · in the zip");
-    expect(none.rows[0]?.title).toBe("Photo");
+    expect(none.rows[0]?.title).toBe("Picture");
   });
 
-  it("names a photo whose caption is only blanks 'Photo', as the summary map does (object-describe.ts)", () => {
-    // Why: the list showed a blank title where the map said "Photo" (M6 E1
-    // plan review #3); one rule names an object on every page.
+  it("names a photo whose caption is only blanks 'Picture', as the summary map does (object-describe.ts)", () => {
+    // Why: the list showed a blank title where the map named the photo
+    // (M6 E1 plan review #3); one rule names an object on every page.
     const blank = objectListModel(
       state({ entries: [entry({ ...photo("p"), caption: "   " })] }),
     );
-    expect(blank.rows[0]?.title).toBe("Photo");
+    expect(blank.rows[0]?.title).toBe("Picture");
   });
 
   it("is hidden with nothing to list and nothing to say", () => {

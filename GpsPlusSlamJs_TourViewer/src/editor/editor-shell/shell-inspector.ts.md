@@ -80,7 +80,9 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     the 2D map. A pin's text typed in the head has its count at the
     top of the dock (`#inspector-pin-count`, an `<output>` the field is
     described by, `pin-text.ts`): "12 / 40", marked `data-over` past
-    the 40 characters the edit refuses.
+    the 40 characters the edit refuses. A block's other text fields
+    (`block-fields.ts`) carry the placeholder "Required" for a field the
+    block needs, else "Optional" (`blockFieldPlaceholder`).
   - A code: its line, its print size, and its position, or that none is
     stored.
 - Every field's label is tied to its value: a `<label for>` on its

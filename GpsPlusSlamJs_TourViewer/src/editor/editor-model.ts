@@ -29,7 +29,7 @@ export type EditorItemKind = "code" | "pin" | "photo" | "station";
 export interface EditorItem {
   readonly id: string;
   readonly kind: EditorItemKind;
-  /** "Code 1" / a pin's text / a photo's caption or "Photo". Text, never
+  /** "Code 1" / an object's name (`objectTitle`). Text, never
    *  markup: it comes from a zip anyone can write. */
   readonly title: string;
   /** The row's second line. */

@@ -25,20 +25,19 @@ A block's text fields as the desktop editor's inspector edits them
   - model: Title (80);
   - character: Name (80, needed), Caption (2000, needed, prose). Its
     image and voice are assets, not text: not fields here.
-- `BLOCK_KIND_LABEL` - each kind in the block model's words ("Short
-  text", "Long text", "Picture", "Video", "Audio", "3D model",
-  "Character").
-- `blockTitle(block)` - how a block is named where it is listed (the
-  tree, the inspector, the 3D view's bar): a short text's caption, a
-  character's name, else its title (a picture's caption when it has no
-  title), trimmed; its kind's words when it has none.
+- How a block is named where it is listed is not this module's: the one
+  rule is `../object-describe.ts`'s `objectTitle` (and its
+  `BLOCK_KIND_LABEL`).
+- `blockFieldPlaceholder(field)` - the empty field's hint: "Required"
+  for a field the block needs, else "Optional".
 - `blockFieldEdit(block, name, value)` - what typing `value` writes:
   - `edited` with the block, the text trimmed at its ends (inner lines
     kept); a blank text removes an optional field;
   - `unchanged` for the same text, or for a field the kind does not have
     here (a short text's caption, which `pinTextEdit` writes, included);
-  - `refused` with a sentence ("A title takes at most 40 characters.")
-    for a text over its cap, counted in the field's unit, or ("A body
+  - `refused` with a sentence ("A title takes at most 40 characters.",
+    "A body takes at most 32000 UTF-16 units." - the unit's word is the
+    rule's) for a text over its cap, counted in the field's unit, or ("A body
     cannot be empty.") for a field the block needs emptied.
 - The fields' counters are `pin-text.ts`'s `textCounterLine` and
   `wireTextCounter` (one copy for every text counter of the creator
@@ -67,8 +66,8 @@ if (out.kind === "edited")
 ## Tests
 
 - `block-fields.test.ts` - each kind's fields and caps in order, the
-  story kinds' with their unit and need; `blockTitle` per kind and its
-  fallback; a body counted in UTF-16 units; a needed field not emptied; a field
+  story kinds' with their unit and need; the refusal naming the cap's
+  unit; the placeholder by need; a body counted in UTF-16 units; a needed field not emptied; a field
   written trimmed with its lines; emptied removes it; the same text
   unchanged; a text over its cap refused in words, an emoji counted as
   one; a field the kind lacks writes nothing; `pin-text.ts`'s counter

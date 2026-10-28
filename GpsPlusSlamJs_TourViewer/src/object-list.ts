@@ -62,7 +62,7 @@ export interface ObjectListState {
 interface ObjectRowModel {
   readonly id: string;
   readonly kind: ObjectLook;
-  /** A pin's text; a photo's caption or "Photo". */
+  /** The object's name (`objectTitle`). */
   readonly title: string;
   /** On the page: kind, where it stands (in the zip, changed, new) and the
    *  distance to the code. In AR only the distance. */

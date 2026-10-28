@@ -27,7 +27,12 @@ import type {
 
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
-import { objectLook, type ObjectLook } from "../../object-describe.js";
+import {
+  BLOCK_KIND_LABEL,
+  objectLook,
+  objectTitle,
+  type ObjectLook,
+} from "../../object-describe.js";
 import { stationTitle } from "../../station-run.js";
 import {
   ownedAssetIds,
@@ -35,12 +40,7 @@ import {
   worldBlocks,
   type WorldBlock,
 } from "../../tour-document.js";
-import {
-  BLOCK_KIND_LABEL,
-  blockFields,
-  blockTitle,
-  type BlockField,
-} from "../block-fields.js";
+import { blockFields, type BlockField } from "../block-fields.js";
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
 import { stationImagePath } from "./tree-model.js";
 
@@ -64,7 +64,7 @@ interface InspectorImage {
   readonly id: string;
   /** Its content path (`content/<id>.jpg`). */
   readonly path: string;
-  /** A photo's caption, else "Photo"; "Tour image" for an asset. */
+  /** A photo's name (`objectTitle`); "Tour image" for an asset. */
   readonly label: string;
 }
 
@@ -112,7 +112,7 @@ interface StationInspector {
    *  state, `isStationLocked`): its gizmo is its radius dots alone. */
   readonly locked: boolean;
   /** The blocks its story shows, in the station's order, by kind and
-   *  name (`blockTitle`): listed, not edited, here. */
+   *  name (`objectTitle`): listed, not edited, here. */
   readonly story: readonly InspectorStoryBlock[];
 }
 
@@ -229,12 +229,6 @@ function positionOf(
   return { ...at, altM: geo.alt, headingDeg: heading };
 }
 
-/** A photo's caption, or "Photo". */
-function photoLabel(label: string | undefined): string {
-  const caption = label?.trim() ?? "";
-  return caption === "" ? "Photo" : caption;
-}
-
 /** The pictures `station`'s card may show (its photos, then the tour's
  *  image assets that are no captured photo's own, `owned`), and the one
  *  it shows (`stationImagePath`'s rule). */
@@ -251,7 +245,7 @@ function cardImages(
       )?.path;
       return path === undefined
         ? []
-        : [{ id: i.id, path, label: photoLabel(i.caption) }];
+        : [{ id: i.id, path, label: objectTitle(i) }];
     }),
     ...assets.flatMap((a) =>
       a.kind === "image" && !owned.has(a.id)
@@ -362,7 +356,7 @@ export function buildInspector(input: {
       story: storyBlocksOf(station).map((block) => ({
         id: block.id,
         kind: BLOCK_KIND_LABEL[block.kind],
-        title: blockTitle(block),
+        title: objectTitle(block),
       })),
     };
   }
@@ -373,7 +367,7 @@ export function buildInspector(input: {
     return {
       kind: "item",
       itemKind: objectLook(item.kind),
-      title: blockTitle(item),
+      title: objectTitle(item),
       sub: `${BLOCK_KIND_LABEL[item.kind]} in ${stationTitle(station, index + 1)}`,
       stationId: station.id,
       text: item.kind === "shortText" ? item.caption : null,

@@ -149,7 +149,7 @@ describe("buildEditorModel", () => {
       meta: "Text note · 4 m from the code",
     });
     expect(f).toMatchObject({
-      title: "Photo",
+      title: "Picture",
       meta: "Photo note · 4 m from the code",
       image: "content/f.jpg",
     });

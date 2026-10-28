@@ -12,7 +12,11 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 
 import { textCounterLine, wireTextCounter } from "../pin-text.js";
-import { blockFieldEdit, blockFields, blockTitle } from "./block-fields.js";
+import {
+  blockFieldEdit,
+  blockFieldPlaceholder,
+  blockFields,
+} from "./block-fields.js";
 
 const GEO = { lat: 48.1, lon: 11.5, alt: 520, headingDeg: 0 };
 const AT = "2026-10-27T10:00:00.000Z";
@@ -126,31 +130,6 @@ describe("blockFields", () => {
   });
 });
 
-describe("blockTitle", () => {
-  // The tree, the inspector and the 3D view's bar name a block the same
-  // way: its own name for it, else its kind - never "Photo" for a model.
-  it("names each kind by its own text, else by its kind", () => {
-    expect(blockTitle(PIN)).toBe("Look up");
-    expect(blockTitle(PICTURE)).toBe("The gate in 1870");
-    expect(blockTitle({ ...PICTURE, title: "Gate" } as TourObject)).toBe(
-      "Gate",
-    );
-    expect(blockTitle(MODEL)).toBe("3D model");
-    expect(blockTitle({ ...MODEL, title: " Ship " } as TourObject)).toBe(
-      "Ship",
-    );
-    expect(blockTitle(LONG)).toBe("The siege");
-    expect(blockTitle(VIDEO)).toBe("Video");
-    expect(blockTitle(AUDIO)).toBe("Audio");
-    expect(blockTitle(CHARACTER)).toBe("The watchman");
-    const { caption: _c, ...bare } = PICTURE as unknown as Record<
-      string,
-      unknown
-    >;
-    expect(blockTitle(bare as unknown as TourObject)).toBe("Picture");
-  });
-});
-
 describe("blockFieldEdit", () => {
   it("writes a field, trimmed at its ends and keeping its lines", () => {
     expect(
@@ -197,8 +176,21 @@ describe("blockFieldEdit", () => {
     expect(blockFieldEdit(LONG, "body", full).kind).toBe("edited");
     expect(blockFieldEdit(LONG, "body", `${full}a`)).toEqual({
       kind: "refused",
-      reason: "A body takes at most 32000 characters.",
+      reason: "A body takes at most 32000 UTF-16 units.",
     });
+  });
+
+  // Why: the refusal named "characters" where the cap counts UTF-16 units,
+  // so 16 001 emoji were refused as more than 32 000 "characters". The
+  // unit's word comes from the rule, as the count does.
+  it("names the unit its cap counts in, never characters for UTF-16 units", () => {
+    const refused = blockFieldEdit(LONG, "body", "😀".repeat(16_001));
+    expect(refused.kind === "refused" && refused.reason).toMatch(
+      /UTF-16 units\.$/,
+    );
+    expect(refused.kind === "refused" && refused.reason).not.toMatch(
+      /characters/,
+    );
   });
 
   it("refuses to empty a field the block needs", () => {
@@ -223,7 +215,44 @@ describe("blockFieldEdit", () => {
   });
 });
 
+describe("blockFieldPlaceholder", () => {
+  // Why: every field said "Optional", a long text's needed title and body
+  // too, which the editor then refuses to empty.
+  it("says Required for a field the block needs, else Optional", () => {
+    const [title, body] = blockFields(LONG);
+    expect(title && blockFieldPlaceholder(title)).toBe("Required");
+    expect(body && blockFieldPlaceholder(body)).toBe("Required");
+    const [pictureTitle] = blockFields(PICTURE);
+    expect(pictureTitle && blockFieldPlaceholder(pictureTitle)).toBe(
+      "Optional",
+    );
+  });
+});
+
 describe("the counter", () => {
+  // Why: the field is written trimmed, but the counter counted the text as
+  // typed: a trailing newline at a UTF-16 cap read 32001 / 32000, marked
+  // over, for a text the editor takes.
+  it("counts the text as it will be written, trimmed at its ends", () => {
+    expect(textCounterLine("abc\n", 3, "utf16")).toBe("3 / 3");
+    expect(textCounterLine("  abc ", 3, "utf16")).toBe("3 / 3");
+    const marks: [string, boolean][] = [];
+    wireTextCounter(
+      { value: "ab\n", addEventListener: () => undefined },
+      {
+        textContent: null,
+        toggleAttribute(name: string, force: boolean) {
+          marks.push([name, force]);
+          return force;
+        },
+        setAttribute: () => undefined,
+      },
+      2,
+      "utf16",
+    );
+    expect(marks.at(-1)).toEqual(["data-over", false]);
+  });
+
   it('reads "count / cap" by the format\'s count, marked while over', () => {
     expect(textCounterLine("a  b ", 160)).toBe("3 / 160");
     // A long text's body counts UTF-16 units as written: an emoji is two.

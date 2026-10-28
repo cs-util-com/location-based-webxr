@@ -32,14 +32,22 @@ export function pinTextTooLong(text: string): boolean {
   return pinTextCount(text) > PIN_TEXT_MAX_CHARS;
 }
 
-/** A counter's line for `text` against `max`, by the format's count:
- *  "12 / 160" (every text counter of the creator pages, B2a review #4). */
+/** A counter's line for `text` against `max`, by the format's count of
+ *  the text as it is written (trimmed at its ends, `textCount`): "12 /
+ *  160" (every text counter of the creator pages, B2a review #4). */
 export function textCounterLine(
   text: string,
   max: number,
   unit: TourTextUnit = "codePoints",
 ): string {
-  return `${String(tourTextCount(text, unit))} / ${String(max)}`;
+  return `${String(textCount(text, unit))} / ${String(max)}`;
+}
+
+/** How much of `text` counts against its cap: the text as the page writes
+ *  it, trimmed at its ends, in `unit` (a UTF-16 count is otherwise taken
+ *  as typed, so a trailing newline would count). */
+function textCount(text: string, unit: TourTextUnit): number {
+  return tourTextCount(text.trim(), unit);
 }
 
 /** The counter's line for `text`: "12 / 40". */
@@ -85,7 +93,7 @@ export function wireTextCounter(
 ): { update(): void } {
   const update = (): void => {
     out.textContent = textCounterLine(field.value, max, unit);
-    out.toggleAttribute("data-over", tourTextCount(field.value, unit) > max);
+    out.toggleAttribute("data-over", textCount(field.value, unit) > max);
   };
   out.setAttribute("aria-live", "off");
   field.addEventListener("input", update);

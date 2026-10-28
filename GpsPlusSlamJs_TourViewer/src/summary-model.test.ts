@@ -388,7 +388,7 @@ describe("buildSummaryModel", () => {
     });
     expect(model.objects.map((o) => [o.kind, o.label])).toEqual([
       ["pin", "Old gate"],
-      ["photo", "Photo"],
+      ["photo", "Picture"],
       ["photo", "The tower"],
     ]);
     expect(distanceM(model.objects[0]!, at(1, 2))).toBeLessThan(0.01);

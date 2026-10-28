@@ -10,9 +10,12 @@ import type {
   TourAsset,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { objectLook, type ObjectLook } from "../../object-describe.js";
+import {
+  objectLook,
+  objectTitle,
+  type ObjectLook,
+} from "../../object-describe.js";
 import { worldBlocks } from "../../tour-document.js";
-import { blockTitle } from "../block-fields.js";
 
 import { stationTitle } from "../../station-run.js";
 import type {
@@ -143,7 +146,7 @@ export function buildTree(input: TreeInput): TreeModel {
       children: worldBlocks(station).map((item) => ({
         id: item.id,
         kind: objectLook(item.kind),
-        title: blockTitle(item),
+        title: objectTitle(item),
         selected: item.id === view.selected,
       })),
     };

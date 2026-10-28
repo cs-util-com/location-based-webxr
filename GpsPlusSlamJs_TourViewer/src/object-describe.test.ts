@@ -4,9 +4,11 @@
  * the two rules had drifted: a caption of blanks read "Photo" on the map
  * and a blank title in the list. The desktop editor is the third page
  * that names objects (M6 E1 plan review #3, root CLAUDE.md DEC-H3), so
- * the rule lives once, here.
+ * the rule lives once, here - and the 3D editor's tree and inspector name
+ * blocks by it too.
  */
 import { beforeAll, describe, expect, it } from "vitest";
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type {
   TourPicture,
   TourPin,
@@ -68,10 +70,45 @@ describe("objectTitle", () => {
     expect(objectTitle(pin("The town hall"))).toBe("The town hall");
   });
 
-  it("is a photo's caption, or 'Photo' when it has none or only blanks", () => {
+  // Why: the tree and the inspector named a block by one rule and the
+  // rail, the map, the summary and the object list by another - a picture
+  // with a title and a caption was called by its caption on one page and
+  // by its title on the next, and an untitled model was a "Photo". One
+  // rule now names every block on every page: its title (a character's
+  // name), else its caption, else its kind's name, each trimmed.
+  it("is a picture's title, else its caption, else 'Picture', trimmed", () => {
     expect(objectTitle(photo("Market day"))).toBe("Market day");
-    expect(objectTitle(photo())).toBe("Photo");
-    expect(objectTitle(photo("   "))).toBe("Photo");
+    expect(objectTitle({ ...photo("Market day"), title: " Gate " })).toBe(
+      "Gate",
+    );
+    expect(objectTitle({ ...photo(" Market day "), title: "  " })).toBe(
+      "Market day",
+    );
+    expect(objectTitle(photo())).toBe("Picture");
+    expect(objectTitle(photo("   "))).toBe("Picture");
+  });
+
+  it("names every kind by its own text, else by its kind's name", () => {
+    const pose = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
+    const block = (b: Record<string, unknown>): string =>
+      objectTitle({ id: "b", pose, ...b } as unknown as TourBlock);
+    expect(block({ kind: "model", view: "placed", asset: "a" })).toBe(
+      "3D model",
+    );
+    expect(
+      block({ kind: "model", view: "placed", asset: "a", title: " Ship " }),
+    ).toBe("Ship");
+    expect(block({ kind: "longText", view: "card", title: "The siege" })).toBe(
+      "The siege",
+    );
+    expect(block({ kind: "video", view: "card", video: "v" })).toBe("Video");
+    expect(block({ kind: "audio", view: "card", audio: "s" })).toBe("Audio");
+    expect(
+      block({ kind: "character", view: "stage", name: " The watchman " }),
+    ).toBe("The watchman");
+    expect(
+      block({ kind: "shortText", view: "pin", caption: " Look up " }),
+    ).toBe("Look up");
   });
 });
 

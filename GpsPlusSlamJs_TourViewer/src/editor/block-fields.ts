@@ -7,8 +7,8 @@
  * caption. Every cap, unit and need is the format's
  * (`TOUR_BLOCK_TEXT_RULES`) and every count the format's
  * (`tourTextCount`), so the counter beside a field, the refusal and the
- * file's reader agree. Also how a block is named where it is listed
- * (`blockTitle`).
+ * file's reader agree. How a block is named where it is listed is
+ * `object-describe.ts`'s one rule (`objectTitle`).
  *
  * @see block-fields.ts.md
  */
@@ -75,17 +75,6 @@ const FIELDS: Readonly<Record<TourBlockKind, readonly FieldSpec[]>> = {
   ],
 };
 
-/** Each kind in the block model's words. */
-export const BLOCK_KIND_LABEL: Readonly<Record<TourBlockKind, string>> = {
-  shortText: "Short text",
-  longText: "Long text",
-  picture: "Picture",
-  video: "Video",
-  audio: "Audio",
-  model: "3D model",
-  character: "Character",
-};
-
 const NO_RULE: TourTextRule = { max: 0, unit: "codePoints", required: false };
 
 function ruleOf(kind: TourBlockKind, name: string): TourTextRule {
@@ -113,19 +102,6 @@ export function blockFields(block: AnyBlock): BlockField[] {
       required: rule.required,
     };
   });
-}
-
-/** The text a block is named by where it is listed: a short text's
- *  caption, a character's name, else its title (for a picture, its
- *  caption when it has no title); its kind's words when it has none. */
-export function blockTitle(block: AnyBlock): string {
-  if (block.kind === "shortText") return block.caption;
-  const own =
-    block.kind === "character"
-      ? textOf(block, "name").trim()
-      : textOf(block, "title").trim() ||
-        (block.kind === "picture" ? textOf(block, "caption").trim() : "");
-  return own === "" ? BLOCK_KIND_LABEL[block.kind] : own;
 }
 
 /**
@@ -157,13 +133,24 @@ export function blockFieldEdit<B extends AnyBlock>(
   if (tourTextCount(text, rule.unit) > rule.max) {
     return {
       kind: "refused",
-      reason: `${articleOf(spec.label)} takes at most ${String(rule.max)} characters.`,
+      reason: `${articleOf(spec.label)} takes at most ${String(rule.max)} ${UNIT_WORDS[rule.unit]}.`,
     };
   }
   const rest = { ...(block as unknown as Record<string, unknown>) };
   if (text === "") delete rest[name];
   else rest[name] = text;
   return { kind: "edited", after: rest as unknown as B };
+}
+
+/** What a cap counts, in the refusal's words. */
+const UNIT_WORDS: Readonly<Record<TourTextUnit, string>> = {
+  codePoints: "characters",
+  utf16: "UTF-16 units",
+};
+
+/** The empty field's hint: whether the block needs the field. */
+export function blockFieldPlaceholder(field: BlockField): string {
+  return field.required ? "Required" : "Optional";
 }
 
 /** "A title", "An alt text", "A description". */

@@ -19,10 +19,10 @@ codes, chips }`:
 imagePath | null, open, selected, context, children }`; `context` is
     true for the card of a selected item; `children` are its items
     (`TreeChild`);
-  - an item's title: `../block-fields.ts`'s `blockTitle`, the same as the
-    inspector's (a pin's caption, a picture's title, else its caption, a
-    model's title), else its kind in the block model's words ("Picture",
-    "3D model");
+  - an item's title: `../../object-describe.ts`'s `objectTitle`, the one
+    naming rule of every page (a pin's caption, a picture's title, else
+    its caption, a model's title), else its kind in the block model's
+    words ("Picture", "3D model");
   - `TreeCode` - a code's row; `TreeChip` - `{ layer, label, on }`, on
     unless hidden.
 - `stationImagePath(station, assets)` - the card picture's asset path: a

@@ -1,16 +1,20 @@
 /**
  * How a tour object is named on every page that lists or labels one (the
- * object list, the summary map, the desktop editor; M6 E1 plan review #3,
- * root CLAUDE.md DEC-H3): its title, and its distance to the nearest code.
- * Pure.
+ * object list, the summary map, the desktop editor's rail, map, tree and
+ * inspector; M6 E1 plan review #3, root CLAUDE.md DEC-H3): its title, and
+ * its distance to the nearest code. The one naming rule: no page names a
+ * block on its own. Pure.
  *
  * @see object-describe.ts.md
  */
 
+import type {
+  TourBlock,
+  TourBlockKind,
+} from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { horizontalM } from "./move-with-code.js";
-import type { WorldBlock } from "./tour-content.js";
 
 /** What an object in the world is, in the pages' words and icons: a short
  *  text is a pin, a picture a photo, a model a model. */
@@ -21,12 +25,32 @@ export function objectLook(kind: TourObject["kind"]): ObjectLook {
   return kind === "picture" ? "photo" : "model";
 }
 
-/** A pin's text; a photo's caption (a model's title), or "Photo" when it
- *  has none or only blanks. */
-export function objectTitle(object: TourObject | WorldBlock): string {
-  if (object.kind === "shortText") return object.caption;
-  const text = object.kind === "picture" ? object.caption : object.title;
-  return text !== undefined && text.trim().length > 0 ? text : "Photo";
+/** Each kind in the block model's words: what a block without a text of
+ *  its own is called, and the inspector's kind line. */
+export const BLOCK_KIND_LABEL: Readonly<Record<TourBlockKind, string>> = {
+  shortText: "Short text",
+  longText: "Long text",
+  picture: "Picture",
+  video: "Video",
+  audio: "Audio",
+  model: "3D model",
+  character: "Character",
+};
+
+/** The texts a block may be named by, first found first: its title (a
+ *  character's name), else its caption (a short text's own text). */
+const NAMING_FIELDS = ["title", "name", "caption"] as const;
+
+/** The one name of a block, on every page: its title (a character's
+ *  name), else its caption, else its kind's name - trimmed, so a text of
+ *  blanks names nothing. */
+export function objectTitle(object: TourObject | TourBlock): string {
+  const fields = object as unknown as Readonly<Record<string, unknown>>;
+  for (const name of NAMING_FIELDS) {
+    const value = fields[name];
+    if (typeof value === "string" && value.trim() !== "") return value.trim();
+  }
+  return BLOCK_KIND_LABEL[object.kind];
 }
 
 /** "4 m from the code" / "12 m from the nearest code"; "" without a code

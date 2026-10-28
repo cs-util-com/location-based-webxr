@@ -35,7 +35,7 @@ import {
   type InspectorPosition,
 } from "./inspector-model.js";
 import { wirePinTextCounter, wireTextCounter } from "../../pin-text.js";
-import type { BlockField } from "../block-fields.js";
+import { blockFieldPlaceholder, type BlockField } from "../block-fields.js";
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -298,9 +298,10 @@ const ITEM_WORD: Readonly<Record<string, string>> = {
 /** A block's text field to type (`block-fields.ts`), its count against
  *  the format's cap under it as it is typed. */
 function blockTextField(field: BlockField): HTMLElement[] {
+  const hint = blockFieldPlaceholder(field);
   const row = field.prose
-    ? proseField(field.label, field.name, field.value, "Optional")
-    : lineField(field.label, field.name, field.value, "Optional");
+    ? proseField(field.label, field.name, field.value, hint)
+    : lineField(field.label, field.name, field.value, hint);
   const input = row.querySelector<HTMLInputElement | HTMLTextAreaElement>(
     "input, textarea",
   );

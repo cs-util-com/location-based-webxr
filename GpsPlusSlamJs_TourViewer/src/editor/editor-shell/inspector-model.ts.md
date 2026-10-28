@@ -29,11 +29,11 @@ origin?, groundAt? })` ->
     (`InspectorStoryBlock[]`: the blocks its story shows,
     `storyBlocksOf`, in the station's order, each `{ id, kind, title }`
     with the kind in the block model's words and the name by
-    `blockTitle`; listed, not edited, here);
+    `objectTitle` (`../../object-describe.ts`, the one naming rule); listed, not edited, here);
   - `ItemInspector` - `kind: "item"`, `itemKind`, title, `sub` naming
     its kind in the block model's words and its station ("Short text in
     Market Square", "Picture in ...", "3D model in ...", `BLOCK_KIND_LABEL`; the
-    title by `blockTitle`), `stationId`, `text` (a pin's caption to edit; null for a
+    title by `objectTitle`), `stationId`, `text` (a pin's caption to edit; null for a
     photo or a model), `sizeM` (a model's, else null), `fields` (its
     other text fields to type, `blockFields` of `../block-fields.ts`:
     a short text's description, a picture's title, caption and alt text,

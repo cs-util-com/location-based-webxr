@@ -212,7 +212,9 @@ describe("buildInspector", () => {
     });
     expect(model?.kind === "station" && model.story).toEqual([
       { id: "intro", kind: "Long text", title: "The siege" },
-      { id: "guard", kind: "Character", title: "Character" },
+      // A character without a name is named by its caption (one rule,
+      // `objectTitle`).
+      { id: "guard", kind: "Character", title: "Halt!" },
     ]);
   });
 

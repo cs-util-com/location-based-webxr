@@ -30,7 +30,9 @@ counter beside the field.
   the same for any text against its cap `max`, by the same count (the
   editor inspector's block fields, `editor/block-fields.ts`),
   counted in `unit` (`codePoints` by default; `utf16` for a long
-  text's body, as the format counts it); the pin's two are these with
+  text's body, as the format counts it), always of the text trimmed at
+  its ends, as the page writes it (a trailing newline at a UTF-16 cap is
+  not "over"); the pin's two are these with
   `PIN_TEXT_MAX_CHARS`.
 
 ## Invariants & assumptions
