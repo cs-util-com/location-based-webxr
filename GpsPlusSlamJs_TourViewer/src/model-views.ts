@@ -47,7 +47,7 @@ export interface ModelViewEnv {
 }
 
 /** A note's three points in the world, for the screen's markers. */
-export interface NoteWorldPoints {
+interface NoteWorldPoints {
   /** Where the note sits on the surface. */
   readonly surface: THREE.Vector3;
   /** Where its marker floats, off the surface along its normal. */
@@ -131,7 +131,7 @@ void main() {
 }`;
 
 /** The ghost's glass material (one per model). */
-export function createGhostMaterial(): THREE.ShaderMaterial {
+function createGhostMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     name: "ghost",
     vertexShader: GHOST_VS,
@@ -468,7 +468,12 @@ export function mountModelView(
         ghost.uniforms["uAppear"]!.value = ghost.opacity;
         ghost.uniforms["uGround"]!.value = model.getWorldPosition(scratch).y;
       }
-      if (clipPlane === null || frame === null || sectionIndex >= 0) return;
+      if (clipPlane === null || frame === null) return;
+      // A section rides on the model: its station may have moved.
+      if (sectionIndex >= 0) {
+        placeSection();
+        return;
+      }
       if (camera === null) return;
       // The facing cut: a vertical plane through the model's centre,
       // turned (smoothed) toward the visitor, removing the near half.

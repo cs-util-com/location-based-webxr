@@ -42,7 +42,6 @@ drawn model; `model-visitor.ts` drives the handles.
     frame.
   - `dispose()` - gives the meshes back their own materials, removes every
     added child and frees what the view made, stops the clip.
-- `createGhostMaterial()` - the ghost shader (exported for its test).
 - `sectionColour(material)` - a material's own colour, else a warm brass.
 - `modelViewOf(object)` - the handle kept in `userData.modelView`, or null.
 
@@ -56,7 +55,9 @@ drawn model; `model-visitor.ts` drives the handles.
   `hotspots`; a missing clip name plays nothing (no error).
 - A material's clipping plane is in world space and keeps the side its
   normal points to, so a section's plane is built from the negated
-  normal (a section's normal names the side that is cut away).
+  normal (a section's normal names the side that is cut away). It is
+  placed again every `update`, because a station moves after its content
+  is drawn (its anchor is refined).
 - `dispose` is idempotent; the renderer calls it before freeing the
   model's resources.
 
@@ -74,6 +75,6 @@ view.update(dtS, camera);
 ## Tests
 
 `model-views.test.ts`: placed untouched; the ghost's materials and their
-return; the facing cut and its easing; sections in a rotated parent; note
+return; the facing cut and its easing; sections in a rotated parent and after the parent moves; note
 points; notes after a file swap; the clip held in hotspots; the toy's
 factor, cap, move and reset.

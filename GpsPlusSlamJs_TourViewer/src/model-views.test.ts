@@ -179,6 +179,33 @@ describe("mountModelView", () => {
     view.dispose();
   });
 
+  // Why: a station is moved after its content is drawn (its anchor is
+  // refined as the alignment improves); a section placed once, at mount,
+  // would keep cutting where the model used to stand.
+  it("keeps a section on the model when its station moves after mounting", () => {
+    const { parent, model, material } = standing();
+    const view = mountModelView(
+      model,
+      block("cutaway", {
+        sections: [
+          { name: "Across", position: [0.2, 0.5, 0], normal: [1, 0, 0] },
+        ],
+      }),
+      1,
+    );
+    parent.position.set(10, 0, -4);
+    parent.rotation.y = Math.PI / 2;
+    parent.updateMatrixWorld(true);
+    view.update(0.016, cameraAt([5, 1, 5], [0, 0, 0]));
+    const plane = material.clippingPlanes![0]!;
+    const at = (x: number, y: number, z: number) =>
+      plane.distanceToPoint(model.localToWorld(new THREE.Vector3(x, y, z)));
+    expect(at(0.2, 0.5, 0)).toBeCloseTo(0, 9);
+    expect(at(0.5, 0.5, 0)).toBeLessThan(0);
+    expect(at(-0.5, 0.5, 0)).toBeGreaterThan(0);
+    view.dispose();
+  });
+
   // Why: a section removes the side its normal points to, in the model's
   // own space (it turns and scales with the model), and the visitor steps
   // through the sections in a loop.
