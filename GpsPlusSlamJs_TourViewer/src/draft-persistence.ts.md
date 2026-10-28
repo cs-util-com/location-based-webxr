@@ -141,6 +141,16 @@ are the framework's.
   minus rejected ones; a tombstoned id's record and bytes are skipped.
   `storedIds` includes tombstone ids, so a discard or a spent draft sweeps
   them too.
+- `isOlderVersionDraft(store)` - true only when the draft is PROVED to be
+  written by an older version of this app: at least one object record, and
+  every one reads as a JSON object whose `format` is absent or lower than
+  `TOUR_OBJECT_RECORD_FORMAT` (the field came with format 4.0, so a 3.x
+  record has none). Anything else - a record of this format or a newer one,
+  no object records, a record that does not read - is not decidable and
+  reads false. The refusal of an older-format tour deletes a draft only on true
+  (`creator-draft.ts` `forgetRefused`, `editor/editor-draft.ts` `forget`).
+  Tests: `creator-setup.test.ts` and `editor/editor-draft.test.ts` ("a
+  refused older ... draft").
 - `parseDraftObject(text)`, `objectKey(id)`, `photoKey(id)`,
   `deletedKey(id)`, `visitKey(visitId)`.
 - **Why a deletion is a FILE and not a list in the meta**: the meta is

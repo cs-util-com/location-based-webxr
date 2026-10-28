@@ -1115,6 +1115,31 @@ describe("a refused older tour's draft", () => {
     expect([...b.files.keys()]).toEqual([]);
   });
 
+  // Why: a refused 3.x copy and the 4.0 copy of the same tour carry the
+  // same tour id, so they share a draft. Only a draft PROVED to be from an
+  // older version may go - a record this version would read is the newer
+  // copy's unsaved work.
+  it("is kept when it holds a record this version reads (the newer copy's work)", async () => {
+    const a = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [objectKey("p1")]: recordText(pin("p1")),
+      [objectKey("p2")]: "{}",
+    });
+    const { setup } = wire(a.store);
+    await expect(setup.forgetRefusedDraft(TOUR)).resolves.toBe(false);
+    expect(a.files.size).toBe(3);
+  });
+
+  it("is kept when nothing in it says which version wrote it", async () => {
+    const a = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [objectKey("p1")]: "not json",
+    });
+    const { setup } = wire(a.store);
+    await expect(setup.forgetRefusedDraft(TOUR)).resolves.toBe(false);
+    expect(a.files.size).toBe(2);
+  });
+
   it("is none where the device keeps no drafts", async () => {
     const { setup } = wire(memoryStore().store, { firstOpenFails: true });
     await expect(setup.forgetRefusedDraft(TOUR)).resolves.toBe(false);

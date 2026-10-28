@@ -114,6 +114,13 @@ editor's own namespace, one tab at a time. Design:
     released after; a tab holding the lock keeps its draft. True when a
     draft was there (its meta); false for none, a held lock, or no
     persistence; never rejects. The emptied directory itself stays.
+    Only a draft PROVED to be an older version's is
+    emptied (`isOlderVersionDraft`): a refused older copy and the current
+    copy of the same tour share the tour id, so the draft under the key may
+    be the current copy's unsaved work. A draft holding a record this
+    version reads, or nothing that decides it (no object records, or one
+    that does not read), is kept and reads false - it stays until its own
+    tour opens; nothing deletes it.
 - `restoredLine(count, offer)` - the line said once an offer was restored:
   "N earlier change(s) is/are back - not saved yet.", or, when nothing came
   back (live work won), why in the offer's own terms: the notes, this

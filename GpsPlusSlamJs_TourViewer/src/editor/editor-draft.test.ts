@@ -24,6 +24,7 @@ import {
   type TourObject,
   type TourPicture,
   type TourPin,
+  tourObjectRecord,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import { META_KEY, objectKey, readDraft } from "../draft-persistence.js";
@@ -246,6 +247,27 @@ describe("a refused older file's draft", () => {
     await expect(draft.forget(T1), "nothing is left").resolves.toBe(false);
     // The lock went with it: the file's draft can be held again.
     expect((await draft.open(T1, tour(pin("a")))).backedUp).toBe(true);
+  });
+
+  // Why: a refused 3.x copy and the 4.0 copy of the same tour carry the
+  // same tour id, so they share a draft. Only a draft PROVED to be from an
+  // older version may go - a record this version reads is the newer
+  // copy's unsaved work, and a draft that says nothing either way stays.
+  it("is kept when it holds a record this version reads (the newer copy's work)", async () => {
+    const b = browser();
+    const store = (await b.open(editorDraftKey(T1)))!;
+    await store.put(META_KEY, "{}");
+    await store.put(objectKey("a"), JSON.stringify(tourObjectRecord(pin("a"))));
+    await expect(draftIn(b).forget(T1)).resolves.toBe(false);
+    expect(b.spaces.get(editorDraftKey(T1))?.size).toBe(2);
+  });
+
+  it("is kept when nothing in it says which version wrote it", async () => {
+    const b = browser();
+    const store = (await b.open(editorDraftKey(T1)))!;
+    await store.put(META_KEY, "{}");
+    await expect(draftIn(b).forget(T1)).resolves.toBe(false);
+    expect(b.spaces.get(editorDraftKey(T1))?.size).toBe(1);
   });
 
   it("is kept while another tab holds it", async () => {

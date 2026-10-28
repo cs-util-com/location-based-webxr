@@ -89,6 +89,7 @@ import {
   writeDraftDeletion,
   writeDraftLiveRecord,
   writeDraftMeta,
+  isOlderVersionDraft,
 } from "../draft-persistence.js";
 import { createKeyedChain } from "../keyed-chain.js";
 import { isTourContentKey } from "../tour-file-key.js";
@@ -736,6 +737,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       if (store === undefined) return false;
       const keys = await store.keys();
       if (keys.length === 0) return false;
+      // Only a draft proved to be an older version's: the same tour's
+      // current copy shares this key.
+      if (!(await isOlderVersionDraft(store))) return false;
       await store.clear(META_KEY);
       return keys.includes(META_KEY);
     } catch {
