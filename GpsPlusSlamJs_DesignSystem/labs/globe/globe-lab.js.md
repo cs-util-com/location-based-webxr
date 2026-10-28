@@ -14,6 +14,25 @@
   back after a context loss). A sharp map that could not be made (a
   piece failed after its retries, or the GPU step threw) adds "The sharp
   cloud map could not load: the coarser one shows." (the preview stays).
+- The view core (full-globe editor plan 2026-10-27-1850 §3.1, a pure
+  refactor: the globe must look and perform as before): the renderer, the
+  scene, the camera, the surface, the sky pass, the clock, the world frame,
+  the drawing buffer's fit and the frame's order live in
+  `/globe/globe-view.js` (`createGlobeView`, see its sidecar). The lab
+  passes its hash values as `settings()`, the framework's
+  `solarPosition` (injected: the Globe package does not depend on the
+  framework yet), and its own work as seams: `driveCamera` (the intro, the
+  pin, the controls), `update` (the relief, the city, the OSM map, the
+  clouds, the air), `afterSky` (the ground sky), `beforeScene` and
+  `afterScene` (the dust, the depth, the cloud volumes, the atmosphere),
+  `frameStart`/`frameEnd` (the hooks, the perf sweep), `paused` and
+  `gestureBusy`. The air, the clouds, the city, the approach, the relief's
+  band and drains, the OSM step, the controls, the clip planes and the
+  credits stay here. `state()` reads the view's clock, sun, frame and
+  drift through it, unchanged in shape. The guard of the move is
+  `globe-reference-shots.smoke.spec.mjs` with
+  `globe-reference-shots-compare.mjs` (six held views, before and after,
+  side by side).
 - Round 2 (plan 2026-09-26-2055 M3 c-f; round-3 plan 2026-09-27-0532 §4 F):
   the lab owns a pinnable clock that drives the sun and the clouds' drift;
   a background pass (`/globe/globe-sky.js`) draws the sun's disc and glow
@@ -1048,6 +1067,24 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   framework's copy and `3d-tiles-renderer` (and `/plugins`) to the vendored
   library; nothing leaves the machine. The sun is real, so a view can be on
   the night side: the tests pin `#time=`.
+  - The lab's page modules (`labs/globe/*.js`) are linted for `no-undef`
+    and `no-shadow` only (`config/eslint.config.mjs`, the design system's
+    `lint` stage): the files are one no-build module split by hand, and a
+    shadowed name once fed the perf sweep the wrong world frame. A name
+    that would shadow an outer one is renamed (`startPose`, `fromPose`,
+    `cityNow`, `inView`, `cameraPose`, `fixedView`).
+  - `applyView` validates the pose, does the lab's side effects (the intro
+    yields, the pin and the dust reset, the hold) and leaves the frame
+    target and the camera to the view's own `placeView`.
+  - The frame's relief work comes from typed Globe modules, the page
+    keeping only its parameters, its DOM and its hooks: the band's gated
+    share and the carriers' release (`globe-band-step`), the clearance and
+    the relief's update with its timed E step (`globe-relief-step`), the
+    relief's clip planes (`globe-relief-planes`), the OSM map's step
+    (`globe-osm-frame`), the controls (`globe-camera-controls`, on the
+    page's canvas) and the credits line's text (`globeCreditsLine`;
+    `renderCredits` only builds the DOM). Each keeps the lab's order and
+    state, so the page's state readers and the smokes read the same values.
 - Tests: `globe.smoke.spec.mjs`:
   - on a fixed view (`#at=30,15&spinMs=0&turnMs=0`, 11:00 UTC on an
     equinox so it is day): boots, lit centre,
