@@ -129,6 +129,7 @@ import {
   copyFileName,
   createEditorSession,
   datedFileName,
+  undatedFileName,
   type EditorSave,
   type EditorSession,
 } from "./editor-session.js";
@@ -2577,6 +2578,7 @@ async function keepInChosenFile(
   }
   openWriting = handle.name;
   const ended = claimSave("open");
+  const myEnd = saveEnd;
   renderSaveState();
   let adopted = false;
   let attached = false;
@@ -2595,7 +2597,10 @@ async function keepInChosenFile(
     }
   } finally {
     openWriting = null;
-    if (editor === mine) releaseSave();
+    // Let go while the slot is still this write's - also when another tour
+    // opened meanwhile (an open keeps the slot): a claim left set would
+    // hold every save of the next tour.
+    if (saveEnd === myEnd) releaseSave();
     ended();
     renderSaveState();
     // A Save asked for (Ctrl+S) during the write runs now, into the
@@ -2676,8 +2681,22 @@ async function runSave(
 function runQueuedSave(mine: EditorSession): void {
   if (!saveState().queued || editor !== mine || saving()) return;
   store.dispatch(tourDocumentActions.saveQueued({ queued: false }));
+  // A tour with no file to save into asks where to save it, which the
+  // browser allows only within a key press or a click - long gone now.
+  // Run here, it would download the tour instead: Save asks.
+  if (
+    target === null &&
+    (openedFile?.handle ?? null) === null &&
+    adoptsSavedFile(window as unknown as PickerWindow & SavePickerWindow)
+  ) {
+    toast(PRESS_SAVE_TO_CHOOSE);
+    return;
+  }
   void runSave();
 }
+
+/** Said when a queued Ctrl+S finds no file to save into (`runQueuedSave`). */
+const PRESS_SAVE_TO_CHOOSE = "Press Save to choose where to save the tour.";
 
 /**
  * "Save a copy…": the tour as it stands, built as a save is, into a file
@@ -2702,6 +2721,7 @@ async function saveCopy(): Promise<void> {
   const source = openedFile;
   // A copy's own claim: the tour's due resave and its last error stay.
   const ended = claimSave("copy");
+  const myEnd = saveEnd;
   renderSaveState();
   try {
     const picked = await pick;
@@ -2745,7 +2765,9 @@ async function saveCopy(): Promise<void> {
       );
     }
   } finally {
-    if (editor === mine) releaseSave();
+    // Let go while the slot is still this copy's, whichever tour is open
+    // now (`keepInChosenFile`'s rule).
+    if (saveEnd === myEnd) releaseSave();
     ended();
     renderSaveState();
     // A Save asked for while the copy was built runs now.
@@ -3098,8 +3120,9 @@ linkForm.addEventListener("submit", (event) => {
         settleUnusedPick(pick);
         return;
       }
-      // Done names the host the tour was fetched from (W2).
-      linkHost = hostOfLink(link);
+      // Done names the host the tour was fetched from (W2); a link to no
+      // cloud host is an own server's (GitHub Pages included).
+      linkHost = hostOfLink(link) ?? "own";
       // ... and the name its file has there, which the saved one (dated)
       // does not carry.
       linkHosted = linkHostedName(link);
@@ -3214,8 +3237,10 @@ async function finishEditing(): Promise<void> {
   // does not (the M4b milestone review #9).
   const walk = await mine.walkEntries().catch(() => null);
   if (editor !== mine || dialogOpen()) return;
+  const saved = doneSaved();
+  const hostedName = doneHostedName(saved.name);
   done.open({
-    saved: doneSaved(),
+    saved,
     host: doneHost(),
     carriesWalk: walk === null ? "unknown" : walk.length > 0,
     // A file opened for writing keeps its walk (`keepsWalk`): only a save
@@ -3223,9 +3248,22 @@ async function finishEditing(): Promise<void> {
     debugLeftOut:
       ui().openedWalk && !ui().keepsWalk && walk !== null && walk.length === 0,
     driveMountTip: DRIVE_MOUNT_TIP_SHOWN,
-    ...(linkHosted === undefined ? {} : { hostedName: linkHosted }),
+    ...(hostedName === undefined ? {} : { hostedName }),
   });
   releaseOutside = holdOutside(element("done-modal"));
+}
+
+/**
+ * The name of the file at the tour's link, for Done's words: the name the
+ * link carries, else - when the tour was saved under a dated name
+ * (`datedFileName`) - that name without its date, which is also what a
+ * reopened save or a restored draft still knows. Undefined: no link name
+ * and no dated save; null: the link's name is unknown.
+ */
+function doneHostedName(savedName: string): string | null | undefined {
+  if (typeof linkHosted === "string") return linkHosted;
+  const undated = undatedFileName(savedName);
+  return undated === savedName ? linkHosted : undated;
 }
 
 /**

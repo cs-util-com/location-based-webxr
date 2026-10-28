@@ -15,7 +15,11 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { horizontalM } from "../move-with-code.js";
-import { codeDistanceLine, objectTitle } from "../object-describe.js";
+import {
+  BLOCK_KIND_LABEL,
+  codeDistanceLine,
+  objectTitle,
+} from "../object-describe.js";
 import { stationTitle } from "../station-run.js";
 import {
   buildSummaryModel,
@@ -65,7 +69,9 @@ export const STATION_PREFIX = "station:";
 
 function noteMeta(object: TourObject, codes: readonly QrGeoPose[]): string {
   const distance = codeDistanceLine(object, codes);
-  const kind = object.kind === "shortText" ? "Text note" : "Photo note";
+  // The kind in the one rule's words (`object-describe.ts`), so no kind
+  // is ever labelled as another.
+  const kind = BLOCK_KIND_LABEL[object.kind];
   return distance === "" ? kind : `${kind} · ${distance}`;
 }
 
@@ -123,7 +129,7 @@ export function buildEditorModel(input: {
         title: objectTitle(object),
         meta:
           mark === undefined
-            ? `${object.kind === "shortText" ? "Text note" : "Photo note"} · no position`
+            ? `${BLOCK_KIND_LABEL[object.kind]} · no position`
             : noteMeta(object, stored),
         at: mark === undefined ? null : { lat: mark.lat, lng: mark.lng },
         ...(object.kind === "picture" ? { image: object.imageAsset.path } : {}),

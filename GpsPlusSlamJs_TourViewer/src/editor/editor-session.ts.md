@@ -314,6 +314,10 @@ changes`; a label is cut at 40 characters, a label-less note is "a
   tour, a Replace away from writing the original over it. Two opens in the
   same local second (or in the hour a daylight-saving change repeats)
   still share a name.
+- `undatedFileName(name)` - the inverse: drops a trailing
+  `-YYYY-MM-DD-HHMMSS` (before `.zip`, any case, or at the end), and
+  returns any other name unchanged. Done derives the name of the file at
+  the tour's link from a dated save with it, also after a reopen.
 
 ## Invariants & assumptions
 
@@ -414,6 +418,8 @@ copy carrying the edits under "<name> copy.zip" while the change count,
 the undo and the next save are as before; `copyFileName`'s and `datedFileName`'s cases; a
 copy asked for during a save waiting for it. `editor-session.property.test.ts`:
 `datedFileName` differs for any two local seconds and keeps the name and
-its ending around the date.
+its ending around the date; `undatedFileName` undoes it for any name and
+leaves a name without the stamp as it is (`editor-session.test.ts` has its
+examples).
 
 `station-lock.property.test.ts` drives a real session with random command sequences (moves, radius, rename, delete, copy, reorder, item moves and poses, grounding, adds, and the lock itself; up to 30 at full length) and checks that no command changes a station's pose while it is locked, plus the refusal's words and the open edits.

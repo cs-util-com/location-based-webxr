@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { datedFileName } from "./editor-session.js";
+import { datedFileName, undatedFileName } from "./editor-session.js";
 
 /**
  * Why these tests matter: the save dialog at a link's or the sample's open
@@ -54,6 +54,43 @@ describe("datedFileName", () => {
         expect(dated.startsWith(`${stem}-`)).toBe(true);
         expect(dated.endsWith(end)).toBe(true);
         expect(dated.length).toBe(n.length + 18);
+      }),
+    );
+  });
+});
+
+/**
+ * Why these tests matter: Done tells the creator to upload the saved file
+ * under the hosted file's name, which a dated save does not carry. When the
+ * tour was not opened from its link in this session (the dated save
+ * reopened later, a draft restored after a reload), that name is the saved
+ * one without its date - `undatedFileName`, the inverse of `datedFileName`.
+ */
+describe("undatedFileName", () => {
+  const second = fc
+    .date({
+      min: new Date(2000, 0, 1),
+      max: new Date(2099, 11, 31),
+      noInvalidDate: true,
+    })
+    .map((d) => new Date(Math.floor(d.getTime() / 1000) * 1000));
+  const name = fc
+    .tuple(fc.string({ maxLength: 20 }), fc.constantFrom(".zip", ".ZIP", ""))
+    .map(([stem, end]) => `${stem}${end}`);
+
+  it("gives back the name a dated name was made from", () => {
+    fc.assert(
+      fc.property(name, second, (n, at) => {
+        expect(undatedFileName(datedFileName(n, at))).toBe(n);
+      }),
+    );
+  });
+
+  it("leaves a name without the date unchanged", () => {
+    fc.assert(
+      fc.property(name, (n) => {
+        fc.pre(!/-\d{4}-\d{2}-\d{2}-\d{6}(\.zip)?$/i.test(n));
+        expect(undatedFileName(n)).toBe(n);
       }),
     );
   });

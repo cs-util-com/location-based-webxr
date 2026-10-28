@@ -139,6 +139,18 @@ export function datedFileName(name: string, now: Date): string {
   return beforeZip(name, `-${day}-${time}`);
 }
 
+/** The stamp `datedFileName` puts before a name's `.zip` (or at its end). */
+const DATE_STAMP = /-\d{4}-\d{2}-\d{2}-\d{6}(\.zip)?$/i;
+
+/** The inverse of `datedFileName`: `name` without its
+ *  `-YYYY-MM-\-HHMMSS` stamp before the `.zip` (any case) or at its
+ *  end; any other name as it is. Done names the hosted file by it when the
+ *  tour was not opened from its link in this session (the dated save
+ *  reopened, a draft restored after a reload). */
+export function undatedFileName(name: string): string {
+  return name.replace(DATE_STAMP, (_stamp, zip?: string) => zip ?? "");
+}
+
 /** `name` with `insert` before its `.zip` ending (any case), else at its
  *  end: a ".zip" that is not the end is part of the name. */
 function beforeZip(name: string, insert: string): string {

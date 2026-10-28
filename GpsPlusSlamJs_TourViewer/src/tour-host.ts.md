@@ -42,8 +42,11 @@ offered). Plan:
   phone's and the computer's words cannot drift apart. With a third
   argument, `hostedName` (the name of the file at the tour's link), that
   differs from the saved file's, it starts "Rename <saved> to <hosted>,
-  the name of the file at your tour's link, and upload it under that name
-  over that file": a host keeps the link only for a file of the same name.
+  or whatever the file at your link is called, and upload it under that
+  name over that file": a host keeps the link only for a file of the same
+  name. The hedge is there because the name is a best guess - the link's
+  name, or the saved name without its date - and Dropbox keeps the name a
+  file had when it was shared.
   Null there means the link names no file (a Drive link by its id), and
   the words ask for that name without giving it.
 - `needsStarterZip(host)` - every cloud host needs a file before it gives a

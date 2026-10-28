@@ -35,6 +35,7 @@ import {
   copyFileName,
   createEditorSession,
   datedFileName,
+  undatedFileName,
   NOT_IN_TOUR,
   TOO_FAR_FROM_STATION,
   type EditorSession,
@@ -331,6 +332,22 @@ describe("createEditorSession, Save a copy", () => {
     expect(datedFileName("a.zip.bak", now)).toBe("a.zip.bak-2026-10-07-090559");
     expect(datedFileName("sample.zip", new Date(2026, 11, 31, 23, 59, 7))).toBe(
       "sample-2026-12-31-235907.zip",
+    );
+  });
+
+  it("takes the date off a dated name, and leaves any other name as it is", () => {
+    expect(undatedFileName("castle-2026-10-07-090500.zip")).toBe("castle.zip");
+    expect(undatedFileName("Old Town-2026-10-07-090559.ZIP")).toBe(
+      "Old Town.ZIP",
+    );
+    expect(undatedFileName("a.zip.bak-2026-10-07-090559")).toBe("a.zip.bak");
+    expect(undatedFileName("castle.zip")).toBe("castle.zip");
+    // Not the stamp: a date without its time, or one not before the end.
+    expect(undatedFileName("castle-2026-10-07.zip")).toBe(
+      "castle-2026-10-07.zip",
+    );
+    expect(undatedFileName("castle-2026-10-07-090500 copy.zip")).toBe(
+      "castle-2026-10-07-090500 copy.zip",
     );
   });
 

@@ -5047,7 +5047,7 @@ test("a tour opened from its link asks where to save it in the click, and is tha
   // ... and says to upload it under the name the file at the link has,
   // which the chosen file does not carry.
   await expect(page.locator("#done-update")).toContainText(
-    "Rename linked.zip to sample-tour.zip, the name of the file at your tour's link, and upload it under that name",
+    "Rename linked.zip to sample-tour.zip, or whatever the file at your link is called, and upload it under that name",
   );
 });
 
@@ -5166,7 +5166,7 @@ test("a write refused at the open says so in a toast that stays, keeps the file,
   expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(2);
 });
 
-test("while the write at the open runs, it holds the save slot: Save waits, and Ctrl+S saves right after", async ({
+test("while the write at the open runs, it holds the save slot: Save is unavailable, and Ctrl+S saves right after", async ({
   page,
 }) => {
   // Why: the write at the open holds the page's save slot, so Save shows
@@ -5306,4 +5306,153 @@ test("on Android a tour from the sample asks for its file as on a desktop, and s
   expect(tourJsonOf(await readOpfsTour(page, "phone-sample.zip"))).toContain(
     '"needsNoGps": true',
   );
+});
+
+test("Done names the hosted file by the dated save's name, in the session that opened the link and after the save is reopened", async ({
+  page,
+}) => {
+  // Why: the hosted file's name was known only to the session that opened
+  // the link. Reopened later, the dated save (sample-tour-2026-...zip) was
+  // to be uploaded "over the file at your tour's link" under its own name,
+  // which on Dropbox, OneDrive or GitHub puts a second file beside the
+  // hosted one and leaves the link on the old tour. The saved name without
+  // its date is the hosted one's, hedged in words. The link points to an
+  // own server, so the steps are an own server's - never Google Drive's.
+  const dated = "sample-tour-2026-10-07-090500.zip";
+  await withBothDialogs(page);
+  await page.clock.install({ time: new Date(2026, 9, 7, 9, 5) });
+  await page.goto("/edit.html");
+  await heldWriteSavePicker(page, dated);
+  await page.locator("#link-input").fill(LINKED_TOUR);
+  await page.locator("#link-btn").click();
+  await expect(page.locator("#save-status")).toHaveText(
+    `Saving into ${dated}…`,
+    { timeout: 15000 },
+  );
+  await page.evaluate(() => Reflect.get(window, "__releaseWrite")());
+  await expect(page.locator("#tour-file")).toHaveText(dated);
+  await publish(page);
+  const update = page.locator("#done-update");
+  await expect(update).toContainText(
+    `Rename ${dated} to sample-tour.zip, or whatever the file at your link is called, and upload it under that name`,
+  );
+  await expect(update).toContainText("Put it on your server");
+  await expect(update).not.toContainText("Google Drive");
+  // The dated save, opened again in a new visit of the page.
+  const bytes = await page.evaluate(async (fileName) => {
+    const root = await navigator.storage.getDirectory();
+    const file = await (await root.getFileHandle(fileName)).getFile();
+    return [...new Uint8Array(await file.arrayBuffer())];
+  }, dated);
+  await page.goto("/edit.html");
+  await dropOnDropBox(page, Buffer.from(bytes), dated);
+  await expect(page.locator("#tour-file")).toHaveText(dated, {
+    timeout: 15000,
+  });
+  await publish(page);
+  await expect(page.locator("#done-update")).toContainText(
+    `Rename ${dated} to sample-tour.zip, or whatever the file at your link is called, and upload it under that name`,
+  );
+});
+
+test("a write at the open still running when another tour is opened lets the save slot go: the new tour saves", async ({
+  page,
+}) => {
+  // Why: the write into the file chosen at a link's open released the
+  // page's one save slot only while its own tour was still open. Opening
+  // another tour during the write left the slot held for good, and Save
+  // stayed unavailable for the new tour.
+  await withBothDialogs(page);
+  await autosaveOutOfTheWay(page);
+  await page.goto("/edit.html");
+  await heldWriteSavePicker(page, "slow.zip");
+  await page.locator("#link-input").fill(LINKED_TOUR);
+  await page.locator("#link-btn").click();
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saving into slow.zip…",
+    { timeout: 15000 },
+  );
+  await openAnother(page);
+  await dropOnDropBox(page, await editorTour(), "editor-fixture.zip");
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await page.evaluate(() => Reflect.get(window, "__releaseWrite")());
+  await page.locator("#no-gps-input").check();
+  await expect(page.locator("#file-save")).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await save(page);
+  await expect(page.locator("#save-status")).toHaveText("Saved to slow.zip");
+  expect(tourJsonOf(await readOpfsTour(page, "slow.zip"))).toContain(
+    '"needsNoGps": true',
+  );
+});
+
+test("a Ctrl+S queued behind a copy, on a tour with no file to save into, says to press Save instead of downloading", async ({
+  page,
+}) => {
+  // Why: a tour without a file asks where to save it, and the browser
+  // opens that dialog only within a key press or a click. A Ctrl+S pressed
+  // while a copy was written ran once the copy was done - outside its key
+  // press - and downloaded the tour under its undated name. It now says to
+  // press Save, which asks where to save it.
+  await withBothDialogs(page);
+  await autosaveOutOfTheWay(page);
+  await page.goto("/edit.html");
+  await dropOnDropBox(page, await editorTour(), "editor-fixture.zip");
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await heldWriteSavePicker(page, "a-copy.zip");
+  await editTownHall(page, "Queued behind the copy");
+  let downloads = 0;
+  page.on("download", () => {
+    downloads += 1;
+  });
+  await fileCommand(page, "saveCopy");
+  await expect(page.locator("#file-save")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await page.keyboard.press("Control+s");
+  await page.evaluate(() => Reflect.get(window, "__releaseWrite")());
+  await expect(
+    page.locator(".toast", { hasText: "Saved a copy as a-copy.zip" }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".toast", {
+      hasText: "Press Save to choose where to save the tour",
+    }),
+  ).toBeVisible();
+  await expect(page.locator("#save-status")).toContainText("not saved");
+  expect(downloads).toBe(0);
+  // Only the copy's dialog was asked for.
+  expect(
+    await page.evaluate(() => Reflect.get(window, "__savePickNames")),
+  ).toHaveLength(1);
+});
+
+test("a Ctrl+S pressed while the debug data is moved out runs once the move is done", async ({
+  page,
+}) => {
+  // Why: the move holds the page's save slot, so a Ctrl+S pressed during
+  // it waits, as it does behind an autosave or a copy, and runs once the
+  // move let go - never dropped in silence. Done saved everything first,
+  // so the save it runs finds nothing to save, and says so.
+  await autosaveOutOfTheWay(page);
+  await doneWithWrappedTour(page);
+  await clickBoundSavePicker(page, "wrapped-debug.zip", { hold: true });
+  await page.locator("#done-move").click();
+  await expect(page.locator("#done-move")).toHaveText(
+    "Moving the debug data out…",
+  );
+  await page.keyboard.press("Control+s");
+  const nothing = page.locator(".toast", { hasText: "Nothing to save" });
+  await expect(nothing).toHaveCount(0);
+  await page.evaluate(() => {
+    // @ts-expect-error - set by the stand-in.
+    window.__releaseWalkPick();
+  });
+  await expect(page.locator("#done-move-status")).toContainText(
+    "The debug data is in wrapped-debug.zip",
+  );
+  await expect(nothing).toBeVisible();
 });

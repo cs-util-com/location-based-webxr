@@ -148,7 +148,9 @@ describe("hostReplaceOnComputer (tour editor plan 2026-10-17-1816, W2: Done)", (
   // Why: a host keeps the link only for a file of the same name, and the
   // file a creator saved may carry another (a dated one, from a link's
   // open): uploading it as it is would put a second file beside the
-  // hosted one and leave the link on the old tour.
+  // hosted one and leave the link on the old tour. The name is hedged: it
+  // is the one the link carried, or the saved one without its date, and a
+  // Dropbox link keeps the name a file had when it was shared.
   it("says to rename the saved file to the hosted one's name when the two differ", () => {
     for (const { id } of TOUR_HOSTS) {
       const text = hostReplaceOnComputer(
@@ -158,7 +160,7 @@ describe("hostReplaceOnComputer (tour editor plan 2026-10-17-1816, W2: Done)", (
       );
       expect(
         text.startsWith(
-          "Rename castle-2026-10-07-090500.zip to castle.zip, the name of the file at your tour's link, and upload it under that name over that file, ",
+          "Rename castle-2026-10-07-090500.zip to castle.zip, or whatever the file at your link is called, and upload it under that name over that file, ",
         ),
       ).toBe(true);
       expect(text).toMatch(/printed code - stays the same/);

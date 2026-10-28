@@ -132,7 +132,8 @@ export function hostReplaceText(host: TourHost): string | null {
  *  2026-10-17-1816, W2), naming the saved file, Drive included. A host
  *  keeps the link only for a file of the hosted file's name: given that
  *  name (`hostedName`) and it differs, the words say to rename the saved
- *  file to it first; null: the link names no file, so the creator looks
+ *  file to it first, hedged ("or whatever the file at your link is
+ *  called"); null: the link names no file, so the creator looks
  *  the name up; none given: the saved file carries it. */
 export function hostReplaceOnComputer(
   host: TourHost,
@@ -143,10 +144,13 @@ export function hostReplaceOnComputer(
   if (hostedName === undefined || hostedName === fileName) {
     return `Upload ${fileName} over the file at your tour's link, ${how}`;
   }
+  // A name given is hedged: it is the one the link carried, or the saved
+  // one without its date, and a Dropbox link keeps the name a file had
+  // when it was shared.
   const to =
     hostedName === null
       ? "the name of the file at your tour's link"
-      : `${hostedName}, the name of the file at your tour's link`;
+      : `${hostedName}, or whatever the file at your link is called`;
   return `Rename ${fileName} to ${to}, and upload it under that name over that file, ${how}`;
 }
 

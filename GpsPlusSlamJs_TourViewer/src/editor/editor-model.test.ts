@@ -146,11 +146,11 @@ describe("buildEditorModel", () => {
     const [p, f] = m.items.filter((i) => i.kind !== "code");
     expect(p).toMatchObject({
       title: "The town hall",
-      meta: "Text note · 4 m from the code",
+      meta: "Short text · 4 m from the code",
     });
     expect(f).toMatchObject({
       title: "Picture",
-      meta: "Photo note · 4 m from the code",
+      meta: "Picture · 4 m from the code",
       image: "content/f.jpg",
     });
     expect(m.counts).toEqual({ code: 1, pin: 1, photo: 1, station: 0 });
@@ -232,7 +232,7 @@ describe("buildEditorModel", () => {
       expect.objectContaining({
         id: "bad",
         at: null,
-        meta: "Text note · no position",
+        meta: "Short text · no position",
       }),
     ]);
     expect(m.fitPoints).toEqual([]);
@@ -296,7 +296,7 @@ describe("filterItems", () => {
     expect(filterItems(model().items, "  town ").map((i) => i.id)).toEqual([
       "p",
     ]);
-    expect(filterItems(model().items, "text note")).toHaveLength(2);
+    expect(filterItems(model().items, "short text")).toHaveLength(2);
   });
 
   it("shows everything for an empty search", () => {

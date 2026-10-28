@@ -339,7 +339,14 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     during a move of the debug data (`"walk"`): every claim but an
     explicit Save itself queues it, and the claim's end runs it
     (`runQueuedSave`); the Save button is disabled while any save
-    runs, so only the key queues (E2b-2 milestone review #10). A queued Ctrl+S belongs to its tour:
+    runs, so only the key queues (E2b-2 milestone review #10). A queued
+    Ctrl+S on a tour with no file to save into (no target, no opened
+    handle) in a browser that asks where to save does not run - the
+    browser allows that question only within the key press - but says
+    "Press Save to choose where to save the tour." instead of downloading.
+    The open's write and a copy let the slot go by their own claim
+    (`saveEnd` still theirs), also when another tour opened meanwhile, so
+    a claim never outlives its write. A queued Ctrl+S belongs to its tour:
     a save whose tour closed meanwhile drops it (`abandon`, milestone review
     #7). A restored draft's work is saved by itself like any edit.
   - `body[data-autosave]` is the scheduler's state (`off`, `idle`,
@@ -434,11 +441,14 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   so in a toast ("Not ready to share yet: ..."). Then `done-dialog.ts` opens with the facts: where the last
   save arrived (`delivered`: in place under the target's name, or
   downloaded; "unchanged" when nothing was saved), the host (the link's the
-  tour was fetched from, else the setup's stored choice, else Google
-  Drive; a picker of `TOUR_HOSTS`), for a tour from a link the name its
-  file has there (`linkHostedName`; null for a link that names no zip,
-  such as a Drive file id), so the update steps say to rename the saved,
-  dated file to it before uploading it over that file, whether the newest bytes carry the
+  tour was fetched from - "own" for a link to no cloud host - else the
+  setup's stored choice, else Google Drive; a picker of `TOUR_HOSTS`),
+  for a tour from a link the name its file has there (`linkHostedName`;
+  null for a link that names no zip, such as a Drive file id), else, for a
+  save under a dated name (also reopened, or restored from a draft), that
+  name without its date (`undatedFileName`), so the update steps say to
+  rename the saved, dated file to it before uploading it over that file
+  (the draft keeps no hosted name of its own), whether the newest bytes carry the
   walk (`walkEntries()`; a check that fails is `unknown`, said as "may
   carry", never as "carries none" - the M4b milestone review #9), and the
   Drive-mount tip's switch (`DRIVE_MOUNT_TIP_SHOWN`, off). The rest of the

@@ -21,7 +21,8 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
     "Code N"; `number` 1-based; `at` null without a stored position), then
     the pins and photos of `objects` (kind `pin` for a short text, `photo`
     for a picture - the page's words, not the format's; title
-    `objectTitle`, meta "Text note" / "Photo note" plus
+    `objectTitle`, meta the kind's name from the one naming rule (`BLOCK_KIND_LABEL`:
+    "Short text", "Picture", "3D model") plus
     `codeDistanceLine`, a photo's `image` the path of its image asset), then the
     stations. The walk's debug camera captures are never items (they were
     listed as "Recorded photo" until M1 of the debug-captures plan).
