@@ -9,7 +9,8 @@ view" chip.
 ## Public API
 
 - `createEditorCard(dom, { loadImage, onClose, onReveal }): EditorCard`
-  - `show(item)` - the kind ("Code 1", "Pin note", "Photo note",
+  - `show(item)` - the kind ("Code 1", "Pin", "Photo" - one word per kind,
+    `object-describe.ts` `BLOCK_KIND_LABEL` -
     "Station"), a note's text, a photo (see below), the precision
     line, the item's meta, "Esc close".
   - `place(anchor | null, free, avoid?)` - positions the card with

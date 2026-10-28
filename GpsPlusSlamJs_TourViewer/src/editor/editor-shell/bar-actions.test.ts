@@ -35,7 +35,7 @@ const item: InspectorModel = {
   kind: "item",
   itemKind: "pin",
   title: "Hello",
-  sub: "Short text in Gate",
+  sub: "Pin in Gate",
   stationId: "gate",
   text: "Hello",
   sizeM: null,

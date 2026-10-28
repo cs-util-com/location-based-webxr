@@ -14,7 +14,11 @@ import type {
   TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
-import { codeDistanceLine, objectTitle } from "./object-describe.js";
+import {
+  BLOCK_KIND_LABEL,
+  codeDistanceLine,
+  objectTitle,
+} from "./object-describe.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 
 // The geo maths is the licensed library's: it runs once a store exists.
@@ -76,7 +80,7 @@ describe("objectTitle", () => {
   // by its title on the next, and an untitled model was a "Photo". One
   // rule now names every block on every page: its title (a character's
   // name), else its caption, else its kind's name, each trimmed.
-  it("is a picture's title, else its caption, else 'Picture', trimmed", () => {
+  it("is a picture's title, else its caption, else 'Photo', trimmed", () => {
     expect(objectTitle(photo("Market day"))).toBe("Market day");
     expect(objectTitle({ ...photo("Market day"), title: " Gate " })).toBe(
       "Gate",
@@ -84,8 +88,18 @@ describe("objectTitle", () => {
     expect(objectTitle({ ...photo(" Market day "), title: "  " })).toBe(
       "Market day",
     );
-    expect(objectTitle(photo())).toBe("Picture");
-    expect(objectTitle(photo("   "))).toBe("Picture");
+    expect(objectTitle(photo())).toBe("Photo");
+    expect(objectTitle(photo("   "))).toBe("Photo");
+  });
+
+  // Why: a creator met the same kinds as "Short text" and "Picture" in the
+  // 3D editor, "Pin" and "Photo" in the lists and on the phone, and "Pin
+  // note" and "Photo note" on the map's card - three names for two
+  // things. Every creator page names a kind from this one table, in the
+  // words the phone's own buttons use ("Place a pin", "Take a photo").
+  it("names the kinds a creator places in the phone's words: a pin and a photo", () => {
+    expect(BLOCK_KIND_LABEL.shortText).toBe("Pin");
+    expect(BLOCK_KIND_LABEL.picture).toBe("Photo");
   });
 
   it("names every kind by its own text, else by its kind's name", () => {

@@ -21,8 +21,8 @@ imagePath | null, open, selected, context, children }`; `context` is
     (`TreeChild`);
   - an item's title: `../../object-describe.ts`'s `objectTitle`, the one
     naming rule of every page (a pin's caption, a picture's title, else
-    its caption, a model's title), else its kind in the block model's
-    words ("Picture", "3D model");
+    its caption, a model's title), else its kind's word
+    (`BLOCK_KIND_LABEL`: "Photo", "3D model");
   - `TreeCode` - a code's row; `TreeChip` - `{ layer, label, on }`, on
     unless hidden.
 - `stationImagePath(station, assets)` - the card picture's asset path: a

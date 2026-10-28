@@ -25,12 +25,14 @@ export function objectLook(kind: TourObject["kind"]): ObjectLook {
   return kind === "picture" ? "photo" : "model";
 }
 
-/** Each kind in the block model's words: what a block without a text of
- *  its own is called, and the inspector's kind line. */
+/** Each kind in the one word every creator page uses for it: what a block
+ *  without a text of its own is called, the inspector's kind line, the
+ *  lists' and the rail's second line. A short text and a picture are
+ *  what the phone places as a pin and takes as a photo. */
 export const BLOCK_KIND_LABEL: Readonly<Record<TourBlockKind, string>> = {
-  shortText: "Short text",
+  shortText: "Pin",
   longText: "Long text",
-  picture: "Picture",
+  picture: "Photo",
   video: "Video",
   audio: "Audio",
   model: "3D model",

@@ -191,7 +191,7 @@ test("a deleted photo leaves the zip with its jpg, and a deleted hosted pin leav
   await page.getByTestId("station-measure").click();
   // The fixture's station holds three photos of its own, beside the one
   // just taken: every photo goes, one at a time.
-  const photos = row(page, "Picture");
+  const photos = row(page, "Photo");
   await expect(photos).toHaveCount(4);
   for (let left = 3; left >= 0; left -= 1) {
     await photos.first().getByTestId("object-delete").click();

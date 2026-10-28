@@ -119,7 +119,7 @@ describe("buildTree", () => {
     expect(a?.children.map((c) => [c.kind, c.title])).toEqual([
       ["pin", "Fountain <b>1612</b>"],
       // An untitled picture is named by its kind, as the inspector names it.
-      ["photo", "Picture"],
+      ["photo", "Photo"],
       ["photo", "The square in 1900"],
       ["model", "3D model"],
     ]);

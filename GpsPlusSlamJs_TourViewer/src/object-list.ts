@@ -23,6 +23,7 @@
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
+  BLOCK_KIND_LABEL,
   codeDistanceLine,
   objectLook,
   objectTitle,
@@ -130,7 +131,7 @@ function rowOf(entry: ObjectListEntry, state: ObjectListState): ObjectRowModel {
     detail: state.inAr
       ? distance
       : [
-          object.kind === "shortText" ? "Pin" : "Photo",
+          BLOCK_KIND_LABEL[object.kind],
           standing(entry),
           ...(distance === "" ? [] : [distance]),
         ].join(" · "),

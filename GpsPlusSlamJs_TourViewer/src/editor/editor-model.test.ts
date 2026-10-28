@@ -146,11 +146,11 @@ describe("buildEditorModel", () => {
     const [p, f] = m.items.filter((i) => i.kind !== "code");
     expect(p).toMatchObject({
       title: "The town hall",
-      meta: "Short text · 4 m from the code",
+      meta: "Pin · 4 m from the code",
     });
     expect(f).toMatchObject({
-      title: "Picture",
-      meta: "Picture · 4 m from the code",
+      title: "Photo",
+      meta: "Photo · 4 m from the code",
       image: "content/f.jpg",
     });
     expect(m.counts).toEqual({ code: 1, pin: 1, photo: 1, station: 0 });
@@ -232,7 +232,7 @@ describe("buildEditorModel", () => {
       expect.objectContaining({
         id: "bad",
         at: null,
-        meta: "Short text · no position",
+        meta: "Pin · no position",
       }),
     ]);
     expect(m.fitPoints).toEqual([]);
@@ -296,7 +296,25 @@ describe("filterItems", () => {
     expect(filterItems(model().items, "  town ").map((i) => i.id)).toEqual([
       "p",
     ]);
-    expect(filterItems(model().items, "short text")).toHaveLength(2);
+  });
+
+  // Why: the search box says "Find a code or note", and a creator looks
+  // for a kind by the word a page showed them - "note", "pin", "photo", or
+  // the words the 3D editor used before ("short text", "picture"). An
+  // item whose own text carries none of them must still be found.
+  it("finds pins and photos by their kind's words, old and new, and by 'note'", () => {
+    const m = buildEditorModel({
+      manifest: manifest(),
+      objects: [pin("p", "The Town Hall"), photo("f", "Market day")],
+      levels: new Map(),
+      fileName: "tour.zip",
+    });
+    const ids = (q: string) => filterItems(m.items, q).map((i) => i.id);
+    expect(ids("pin")).toEqual(["p"]);
+    expect(ids("short text")).toEqual(["p"]);
+    expect(ids("photo")).toEqual(["f"]);
+    expect(ids("Picture")).toEqual(["f"]);
+    expect(ids("note")).toEqual(["p", "f"]);
   });
 
   it("shows everything for an empty search", () => {

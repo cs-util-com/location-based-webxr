@@ -288,10 +288,11 @@ function lockButton(locked: boolean): HTMLButtonElement {
   return b;
 }
 
-/** An item's kind in a command's words (the block model's, B2c). */
+/** An item's kind in a command's words: the one word every creator page
+ *  uses for it (`object-describe.ts` `BLOCK_KIND_LABEL`). */
 const ITEM_WORD: Readonly<Record<string, string>> = {
-  pin: "short text",
-  photo: "picture",
+  pin: "pin",
+  photo: "photo",
   model: "3D model",
 };
 
@@ -535,7 +536,7 @@ function stationParts(
   );
   const parts: HTMLElement[] = [
     actions([
-      action("add-pin", "pin", "Add short text"),
+      action("add-pin", "pin", "Add a pin"),
       action("ground-items", "ground", "Put items on the ground", {
         disabled: off === 0,
         note: off === null || off === 0 ? "" : `${String(off)} off`,

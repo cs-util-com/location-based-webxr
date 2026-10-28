@@ -13,6 +13,7 @@
 
 import { pictureProblem } from "../image-cap.js";
 import { wirePinTextCounter } from "../pin-text.js";
+import { BLOCK_KIND_LABEL } from "../object-describe.js";
 import type { EditorItem } from "./editor-model.js";
 import { placePopover, type Box } from "./popover-place.js";
 
@@ -89,7 +90,8 @@ export interface EditorCard {
 function kindLabel(item: EditorItem): string {
   if (item.kind === "code") return item.title;
   if (item.kind === "station") return "Station";
-  return item.kind === "photo" ? "Photo note" : "Pin note";
+  // The kind in the one rule's words (`object-describe.ts`).
+  return BLOCK_KIND_LABEL[item.kind === "photo" ? "picture" : "shortText"];
 }
 
 export function createEditorCard(

@@ -119,7 +119,7 @@ test("after Finish the page shows each code with its facing line and verdict, an
   // summary shows what the rebuilt zip carries.
   await expect(map.locator("path.tv-summary-pin")).toHaveCount(2);
   await expect(map.locator(".tv-summary-object-label")).toHaveText(
-    ["Fixture pin", "Picture", "Picture", "Picture", "Summary pin"],
+    ["Fixture pin", "Photo", "Photo", "Photo", "Summary pin"],
     { useInnerText: true },
   );
   await expect(map.locator(".tv-summary-code-label")).toHaveText(/^The code: /);

@@ -223,7 +223,7 @@ describe("buildInspector", () => {
       kind: "item",
       itemKind: "pin",
       title: "Fountain, 1612",
-      sub: "Short text in Market Square",
+      sub: "Pin in Market Square",
       stationId: "a",
       text: "Fountain, 1612",
       sizeM: null,

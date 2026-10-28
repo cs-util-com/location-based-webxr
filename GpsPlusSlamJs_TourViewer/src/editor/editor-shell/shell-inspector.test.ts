@@ -351,9 +351,9 @@ describe("drawInspector", () => {
 
   it("shows an item's offset in its station's frame, its height and heading to type", () => {
     draw("photo-1", true);
-    // B2c: a picture in the block model's words, its text fields first.
+    // B2c: a picture's text fields first; its kind in the creator's word.
     expect(dock.body.querySelector(".sub")?.textContent).toBe(
-      "Picture in The old gate",
+      "Photo in The old gate",
     );
     expect(fields()).toEqual([
       ["Title", ""],
@@ -367,7 +367,7 @@ describe("drawInspector", () => {
     // A picture's head is words; its title, caption and alt text are
     // typed in the body (B2c), each with its count against its cap.
     expect(dock.head.querySelector("input")).toBeNull();
-    expect(dock.head.querySelector(".ttl")?.textContent).toBe("Picture");
+    expect(dock.head.querySelector(".ttl")?.textContent).toBe("Photo");
     expect(dock.body.contains(input("title"))).toBe(true);
     const counts = [...dock.body.querySelectorAll("output.count")].map(
       (o) => o.textContent,
@@ -575,7 +575,7 @@ describe("drawInspector", () => {
       );
     draw("station:gate");
     expect(acts()).toEqual([
-      ["add-pin", "Add short text"],
+      ["add-pin", "Add a pin"],
       ["ground-items", "Put items on the ground"],
       ["delete", "Delete station"],
     ]);
@@ -587,7 +587,7 @@ describe("drawInspector", () => {
     expect(acts()).toEqual([
       ["split", "Move to a new station"],
       ["ground", "Put on the ground"],
-      ["delete", "Delete picture"],
+      ["delete", "Delete photo"],
     ]);
     // A code is read-only here: no actions.
     draw("level-1");

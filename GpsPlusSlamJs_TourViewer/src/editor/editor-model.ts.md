@@ -22,7 +22,7 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
     the pins and photos of `objects` (kind `pin` for a short text, `photo`
     for a picture - the page's words, not the format's; title
     `objectTitle`, meta the kind's name from the one naming rule (`BLOCK_KIND_LABEL`:
-    "Short text", "Picture", "3D model") plus
+    "Pin", "Photo", "3D model") plus
     `codeDistanceLine`, a photo's `image` the path of its image asset), then the
     stations. The walk's debug camera captures are never items (they were
     listed as "Recorded photo" until M1 of the debug-captures plan).
@@ -46,8 +46,13 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
 - `photoSource(item)` - where a photo item's bytes are: its content path
   (`loadContentEntry` joins the tour's folder); null without a photo (E1
   review #1).
-- `filterItems(items, query)` - the rows whose title or meta contains the
-  trimmed query, case-insensitive; all for an empty query.
+- `filterItems(items, query)` - the rows whose title, meta or kind's
+  words contain the trimmed query, case-insensitive; all for an empty
+  query. The kind's words (module-private `KIND_SEARCH_WORDS`) are "note"
+  for a pin and a photo (the search box says "Find a code or note") and
+  the words the 3D editor once showed ("short text", "picture"), so an
+  item whose own text names no kind is still found by them; the kind's
+  own word ("Pin", "Photo") is in its meta.
 - `EditorItem`, `EditorItemKind`, `EditorModel`.
 - `STATION_PREFIX` - `"station:"`, the prefix of a station's item id (the
   page and the 3D view's editing tell a station's selection by it).

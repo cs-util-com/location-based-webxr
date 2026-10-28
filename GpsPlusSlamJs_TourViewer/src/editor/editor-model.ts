@@ -178,8 +178,20 @@ export function buildEditorModel(input: {
   };
 }
 
-/** The rail's rows for a search: every item whose title or second line
- *  contains `query` (case-insensitive, trimmed); all for an empty query. */
+/** The words a search finds an item by besides its own lines: "note"
+ *  (the search box's word for a pin or a photo), and the words the 3D
+ *  editor once used for those kinds, which a creator may still type.
+ *  The kind's own word is in its second line already. */
+const KIND_SEARCH_WORDS: Readonly<Record<EditorItemKind, string>> = {
+  code: "",
+  pin: "note short text",
+  photo: "note picture",
+  station: "",
+};
+
+/** The rail's rows for a search: every item whose title, second line or
+ *  kind's words (`KIND_SEARCH_WORDS`) contain `query` (case-insensitive,
+ *  trimmed); all for an empty query. */
 export function filterItems(
   items: readonly EditorItem[],
   query: string,
@@ -188,7 +200,9 @@ export function filterItems(
   if (q === "") return [...items];
   return items.filter(
     (i) =>
-      i.title.toLowerCase().includes(q) || i.meta.toLowerCase().includes(q),
+      i.title.toLowerCase().includes(q) ||
+      i.meta.toLowerCase().includes(q) ||
+      KIND_SEARCH_WORDS[i.kind].includes(q),
   );
 }
 
