@@ -15,9 +15,19 @@ It is a Vite build entry (`vite.config.ts`), so it is built and reachable
 on a deployed branch preview at `/tour/model-views-check.html`; nothing in
 the Tour Viewer imports it. Its code is `src/checks/model-views-check.ts`.
 
+## Two modes
+
+- **Demo, for a person** (the page's plain URL): the stand-in model in
+  the `hotspots` view, with three notes, two named sections and its clip
+  `swing`, framed for a phone; a drag orbits it (not in `toy`, whose card
+  takes the drags); a bar of buttons at the top (Placed, Ghost,
+  Hotspots, Cutaway, Toy, the shown one pressed) switches the view.
+- **Hook, for tests** (`?hook=1`): an empty scene, drawn on only through
+  the hook below. The layout e2e opens the page this way.
+
 ## The hook
 
-`window.__modelViewsCheck`:
+`window.__modelViewsCheck` (installed in both modes):
 
 - `load(glbBase64 | null)` - the `.glb` to draw from now on; null (the
   default) draws a stand-in: a 2 m post with an arm and a clip "swing".
@@ -42,6 +52,7 @@ and pose chain (the model's pose is used directly) and the story.
 ## Tests
 
 `playwright-tests/model-views.spec.js` (the layout of the card and the
-discs at a phone, a phone held sideways and a desktop);
+discs at a phone, a phone held sideways and a desktop, in hook mode; the
+demo's bar and its views on a phone);
 `src/checks/model-views-check.test.ts` (the block check and the field of
 view).

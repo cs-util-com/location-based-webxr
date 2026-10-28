@@ -66,7 +66,7 @@ async function open(page, viewport, b, target = [0.3, 1.3, 0]) {
     width: viewport.width,
     height: viewport.height,
   });
-  await page.goto("/model-views-check.html");
+  await page.goto("/model-views-check.html?hook=1");
   await page.waitForFunction(() => window.__modelViewsCheck !== undefined);
   await page.evaluate(
     async ([blockValue, at]) => {
@@ -205,3 +205,61 @@ for (const viewport of VIEWPORTS) {
     expect(errors).toEqual([]);
   });
 }
+
+// Why: the owner opened the page on a phone and saw only sky and ground,
+// because it drew nothing until a test called its hook. Opened by a
+// person, it must show the model at once - in the notes' view, its discs
+// on the screen - with a bar of the five views that switches them and
+// shows which is on, inside the phone's 16 px gutters.
+test("opened by a person, it shows the stand-in and switches its views from a bar", async ({
+  page,
+}) => {
+  const errors = /** @type {string[]} */ ([]);
+  page.on("pageerror", (error) => errors.push(error.message));
+  // The stand-in's arm is a skinned mesh: a ghost or cutaway pass whose
+  // shader missed three's skinning chunks fails to compile, and three
+  // reports that only on the console.
+  page.on("console", (message) => {
+    if (
+      message.type() === "error" &&
+      /THREE|shader|WebGL/i.test(message.text())
+    )
+      errors.push(message.text());
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/model-views-check.html");
+  const bar = page.locator("nav.mvc-views");
+  const buttons = bar.locator("button.btn");
+  await expect(buttons).toHaveText([
+    "Placed",
+    "Ghost",
+    "Hotspots",
+    "Cutaway",
+    "Toy",
+  ]);
+  await expect(bar.locator('button[aria-pressed="true"]')).toHaveText(
+    "Hotspots",
+  );
+  await expect
+    .poll(() => page.evaluate(() => window.__modelViewsCheck?.state().discs))
+    .toBe(3);
+  const b = await box(bar);
+  expect(b.x).toBeGreaterThanOrEqual(16 - 0.5);
+  expect(b.x + b.width).toBeLessThanOrEqual(390 - 16 + 0.5);
+  for (const [label, view] of [
+    ["Ghost", "ghost"],
+    ["Cutaway", "cutaway"],
+    ["Toy", "toy"],
+    ["Placed", "placed"],
+  ]) {
+    await bar.getByRole("button", { name: label }).click();
+    await expect
+      .poll(() => page.evaluate(() => window.__modelViewsCheck?.state().view))
+      .toBe(view);
+    await expect(bar.locator('button[aria-pressed="true"]')).toHaveText(label);
+  }
+  expect(
+    await page.evaluate(() => window.__modelViewsCheck?.state().discs),
+  ).toBe(0);
+  expect(errors).toEqual([]);
+});
