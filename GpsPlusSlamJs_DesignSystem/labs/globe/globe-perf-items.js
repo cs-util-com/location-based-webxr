@@ -116,6 +116,20 @@ export function createPerfItems({ parent, ellipsoid, groundM, eyeItems }) {
     for (const key of keys) eyeItems.delete(key);
     keys.length = 0;
   };
+  /** The camera's frustum now, the items' world matrices brought up to date. */
+  const frustumOf = (camera) => {
+    root.updateMatrixWorld(true);
+    camera.updateMatrixWorld();
+    return new THREE.Frustum().setFromProjectionMatrix(
+      new THREE.Matrix4().multiplyMatrices(
+        camera.projectionMatrix,
+        camera.matrixWorldInverse,
+      ),
+    );
+  };
+  /** An item's pole middle in the world. */
+  const middleOf = (item) =>
+    new THREE.Vector3(0, PERF_ITEM.poleM / 2, 0).applyMatrix4(item.matrixWorld);
   return {
     set(offsets, place) {
       dispose();
@@ -154,6 +168,18 @@ export function createPerfItems({ parent, ellipsoid, groundM, eyeItems }) {
       return root.children.length;
     },
     /**
+     * How many items have their pole middle inside `camera`'s frustum
+     * now (a portrait street view sees only some of them): what a held
+     * run draws, recorded per run.
+     */
+    inView(camera) {
+      if (root.children.length === 0) return 0;
+      const frustum = frustumOf(camera);
+      return root.children.filter((item) =>
+        frustum.containsPoint(middleOf(item)),
+      ).length;
+    },
+    /**
      * Where item `k` stands for `camera` now: `{ inView, footOverGroundM }`
      * (`inView` its pole's middle inside the camera's frustum; the foot's
      * height over `groundM` at its place, negative when the drawn ground
@@ -162,17 +188,8 @@ export function createPerfItems({ parent, ellipsoid, groundM, eyeItems }) {
     probe(k, camera, groundOf) {
       const item = root.children[k];
       if (!item) return null;
-      root.updateMatrixWorld(true);
-      camera.updateMatrixWorld();
-      const middle = new THREE.Vector3(0, PERF_ITEM.poleM / 2, 0).applyMatrix4(
-        item.matrixWorld,
-      );
-      const frustum = new THREE.Frustum().setFromProjectionMatrix(
-        new THREE.Matrix4().multiplyMatrices(
-          camera.projectionMatrix,
-          camera.matrixWorldInverse,
-        ),
-      );
+      const frustum = frustumOf(camera);
+      const middle = middleOf(item);
       // The foot in the parent's Earth-centred frame (the root is at its
       // identity there), then over the ellipsoid.
       const foot = new THREE.Vector3().applyMatrix4(item.matrix);

@@ -30,6 +30,8 @@ const HASH = [
   "at=46.948,7.4474",
   // No warm-up pass (its unit tests cover the plan): it doubles the moves.
   "perf=1&perfAuto=1&perfItems=3&perfRepeats=1&perfHoldS=1&perfViewSettleS=60&perfQuietS=60&perfWarmup=0",
+  // SwiftShader takes seconds a frame: the frame watchdog would stop it.
+  "perfWatchdogS=600",
 ].join("&");
 
 const VIEWS = ["space", "100km", "10km", "1km", "street"];
@@ -121,7 +123,19 @@ test("the fixed-view sweep starts by itself and measures each view with its item
   for (const r of out.lab) {
     expect(r.work.frames).toBeGreaterThan(0);
     expect(r.bytes).toBeGreaterThan(0);
+    // What each run saw: why it was void (if it was), the viewport, the
+    // items inside the view, and how long its waits took.
+    expect(Array.isArray(r.voidedBy)).toBe(true);
+    expect(r.viewport).toMatch(/^\d+x\d+@[\d.]+$/);
+    expect(r.itemsInView).toBeGreaterThanOrEqual(0);
+    expect(r.itemsInView).toBeLessThanOrEqual(3);
+    expect(typeof r.settle.moveMs).toBe("number");
+    expect(typeof r.settle.quietMs).toBe("number");
   }
+  // Without a city (city=0) the gate does not wait; the sweep ended done.
+  expect(out.cityGate.outcome).toBe("off");
+  expect(out.outcome).toBe("done");
+  expect(out.contextLost).toBeNull();
   // One run per view, pooled or counted as timed out: under SwiftShader a
   // low view's queues may not drain within the waits, and such a run must
   // be counted, never pooled.

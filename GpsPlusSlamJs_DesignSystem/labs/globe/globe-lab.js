@@ -860,6 +860,12 @@ const PARAMS = {
   // again (the items' warm-up may have queued work); a run held after it
   // timed out is counted apart, never pooled.
   perfQuietS: { fallback: 10, min: 1, max: 300 },
+  // Before a fixed-view sweep's first move, at most this long (s) for the
+  // city's load to end (its retries included); 0 does not wait.
+  perfCityWaitS: { fallback: 300, min: 0, max: 1800 },
+  // A sweep with no frame for this long (s) while the page is on screen
+  // ends, with what it has (software rendering takes seconds a frame).
+  perfWatchdogS: { fallback: 5, min: 1, max: 600 },
 };
 
 /**
@@ -4985,7 +4991,10 @@ void main() {
     const s = osm.stats();
     if (!s.active) return s.on <= 1e-3;
     if (s.on < 0.999 || s.reevaluateBacklog > 0) return false;
-    return osm.coverage().waiting === 0;
+    // A tile whose map request failed is never asked for again: waiting
+    // for it would time every run out.
+    const c = osm.coverage();
+    return c.waiting - c.failed === 0;
   };
   if (params.perf === 1) {
     const { createGlobePerf } = await import("./globe-perf.js");
@@ -5121,16 +5130,48 @@ void main() {
           release: Object.values(outOfBand).every(
             (o) => o.since === null || o.done,
           ),
+          // A delivery that lands inside a held run voids it
+          // (`city.arrived`), so a run need not wait for the load's end;
+          // the sweep waits for that once, before its first move
+          // (`cityGate`).
           city:
             !cityState ||
             (cityState.phase !== "loading" &&
-              (cityState.load === null || cityState.load.ended) &&
               Math.abs(cityState.shown - cityState.fade) < 1e-3),
           osm: perfOsmReady(),
         };
       },
       /** The city's deliveries drawn so far (0 without a city). */
       cityDelivered: () => city?.state().load?.stages.length ?? 0,
+      /**
+       * The city's load for the sweep's wait before its first move:
+       * `off` (no city), `idle` (not asked for yet), `loading`,
+       * `ended` (every stage and retry done) or `gave-up` (no data
+       * for the place, or failed with every retry spent).
+       */
+      cityGate() {
+        if (!city) return "off";
+        const s = city.state();
+        if (s.phase === "idle") return "idle";
+        if (s.load?.ended) return "ended";
+        if (
+          s.load?.outcome === "unavailable" ||
+          (s.phase === "failed" && cityTries >= CITY_RETRIES)
+        ) {
+          return "gave-up";
+        }
+        return "loading";
+      },
+      /** Whether the city draws anything this frame (null without one). */
+      cityDrawn: () => (city ? city.root.visible : null),
+      /** The sweep's items inside the camera's frustum now. */
+      itemsInView: () => perfItems.inView(camera),
+      /** The OSM map's tiles waiting and failed (null without the map). */
+      osmCoverage() {
+        if (!osm || !osmAttached || params.osm !== 1) return null;
+        const c = osm.coverage();
+        return { waiting: c.waiting, failed: c.failed };
+      },
       placeView(place, view) {
         const ellipsoid = globe.tiles.ellipsoid;
         if (worldFrame.target === null) setFrameTarget(place);

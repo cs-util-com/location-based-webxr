@@ -10,13 +10,16 @@
   - `PERF_ITEM`: the sizes (m): a 2 m pole, a 1.2 m ring, a 0.8 m sign, a
     1.6 m label.
   - `createPerfItems({ parent, ellipsoid, groundM, eyeItems })` ->
-    `{ set(offsets, place), count }`. `set` disposes every item and builds
+    `{ set(offsets, place), count, inView(camera), probe(...) }`. `set` disposes every item and builds
     one per offset (metres east and north of `place`), each in its own
     east-up-south frame on the ellipsoid, raised to `groundM(at)`, as a
     child of `parent` (the globe's Earth-centred group, so a frame recentre
     moves nothing); `set([])` removes them all. Each is registered in
     `eyeItems` (`perf-item-<k>`) with a bounding sphere in world
     coordinates, so the eye camera's near plane follows them.
+  - `inView(camera)` -> how many items have their pole's middle inside
+    `camera`'s frustum now (0 without items): the recorder records it
+    per run, since a portrait street view sees only some of them.
   - `probe(k, camera, groundOf)` -> `{ inView, footOverGroundM }` or null
     without item `k`: whether its pole's middle is inside `camera`'s
     frustum, and its foot's height over `groundOf(place)` (negative when

@@ -1004,7 +1004,11 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     times (1-10, default 3), after a discarded warm-up pass per view
     (`perfWarmup`, 0-1, default 1); before each held run a quiet wait of
     at most `perfQuietS` (1-300, default 10) until the view is ready
-    again. Street level needs `eye=1` and is left out without it. The
+    again. Before the first move the sweep waits at most `perfCityWaitS`
+    (0-1800, default 300; 0 does not wait) for the city's load to end,
+    its retries included; a sweep with no frame for `perfWatchdogS`
+    (1-600, default 5) while the page is on screen ends with what it
+    has. Street level needs `eye=1` and is left out without it. The
     items stand on the drawn ground on the globe's Earth-centred group
     and are registered with the eye camera's near plane. `perfAuto=1`
     starts the recorder's run without a press (any sweep), so one link
@@ -1013,10 +1017,17 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     the recorder's hooks and renders nothing: the refresh calibration),
     `eyeMode` and `viewReadiness()` (`{ band, release, city, osm }`: the
     band's drawn share at the altitude's; no band cache release pending
-    or draining; the city's load ended and its arrival fade done, or no
-    city; the OSM map off, or its ramp done with no re-evaluation backlog
-    and no drawn tile waiting), `cityDelivered()` (the city's deliveries
-    drawn, 0 without a city); `placeCamera` takes an optional ECEF pose
+    or draining; the city not loading and its arrival fade done, or no
+    city (a delivery inside a held run voids it, so a run does not wait
+    for the load's end); the OSM map off, or its ramp done with no
+    re-evaluation backlog and no drawn tile waiting but the failed ones,
+    which are never asked for again), `cityDelivered()` (the city's
+    deliveries drawn, 0 without a city), `cityGate()` (`off`, `idle`,
+    `loading`, `ended` or `gave-up`: no data for the place, or failed
+    with every retry spent), `cityDrawn()` (the city's root visible, null
+    without one), `itemsInView()` (the sweep's items inside the camera's
+    frustum) and `osmCoverage()` (`{ waiting, failed }`, null without
+    the map); `placeCamera` takes an optional ECEF pose
     in place of the pitch law. `window.__globeLab.perfItem(k)` reports
     item `k`'s `{ inView, footOverGroundM }` (`globe-perf-items.js`).
   - The factors it varies, also hash keys that apply live:

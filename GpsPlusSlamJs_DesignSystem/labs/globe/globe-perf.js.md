@@ -14,10 +14,11 @@
     - the full sweep's 60 s pause;
     - the held E change of 0.1;
     - at most 200 long-animation-frame durations kept;
-    - the thresholds counted: 33, 34, 50, 51 and 100 ms. At 60 and
-      120 Hz, 33.3 and 50 ms are whole refresh multiples, so one missed
-      vsync already counts as over 33; the export carries both readings
-      and the DEC-PERF-3 verdict keeps the plan's (33 and 50).
+    - the thresholds counted: 33, 50 and 100 ms (the DEC-PERF-3
+      verdict's), and after the calibration each run's `missedMs`
+      (`missedThresholdsMs`: 1.5, 2.5 and 3.5 refresh intervals, the
+      frames that missed at least 1, 2 and 3 refreshes);
+    - the frame watchdog's 1 s look and the city gate's 10 s idle limit.
   - `createGlobePerf(lab)`. `lab` is the page's handle:
     - `renderer`, `canvas`, `globe`, `terrain` (null without the relief);
     - `params()` and `counts()`: the hash's values, and cheap counts with
@@ -31,15 +32,21 @@
       `placeView(view)`, `setPaused(paused)` (the frame renders nothing
       while true: the refresh calibration), `eyeMode` (the hash's `eye`)
       `viewReadiness()` (`{ band, release, city, osm }`, each true
-      when ready) and `cityDelivered()` (the city's deliveries drawn).
+      when ready), `cityDelivered()` (the city's deliveries drawn), and
+      optionally `cityGate()`, `cityDrawn()`, `itemsInView()` and
+      `osmCoverage()` (`globe-lab.js.md`).
   - It returns the hooks the lab's frame calls:
     - `frameStart(now)`, `frameEnd(now)`;
     - `drives()` and `drive(now)`: while a path runs, it owns the camera;
     - `mark(kind)`, `eStep(spanMs)`;
     - `api` for the smokes (`window.__globeLab.perf`): `run()`,
       `status()`, `runs()`, `exportText()`, `estimateMs()`,
-      `refreshIntervalMs()`, `refresh()` (the snapped rate) and
-      `wakeLock()` (the screen lock's report).
+      `refreshIntervalMs()`, `refresh()` (the snapped rate),
+      `wakeLock()` (the screen lock's report), `contextLost()` and
+      `forceContextLoss()` (drops the context as a device would, through
+      `WEBGL_lose_context`: the smoke's and a desktop check's way to
+      prove a sweep stops and keeps its results). `run()` starts a sweep
+      as the Run button does.
 - The overlay (§4.1): the plan (sweep, runs, estimated minutes) before
   Run, the remaining minutes while it runs, then the framework's summary
   per run (p50/p95/p99/max, the counts over each threshold, PASS or
@@ -72,8 +79,10 @@
     the camera's own above the ellipsoid (below 90 degrees of pitch the
     camera stands back over ground of another radius: about 4 km lower at
     the Alps in the band). Always placed, never through the controls.
-  - A touch on the canvas, the page leaving the screen and a lost WebGL
-    context void the run in progress (marked `VOID`).
+  - A touch anywhere but on the recorder's panel (a document listener
+    in the capture phase), the page leaving the screen, a resize or a
+    turn of the phone and a lost WebGL context void the run in progress
+    (marked `VOID`); the run's `voidedBy` lists the kinds in order.
 - The events per frame (§4.1), as kinds:
   - `globe.load`, `globe.dispose`, `relief.load`, `relief.dispose`;
   - `program.new`, `texture.new`, `geometry.new` (the renderer's deltas
@@ -85,7 +94,8 @@
     frame inside the cross-fade), `release.globe`, `release.relief`;
   - `raycast` (the relief plugin's `raycastTile`, wrapped);
   - `loaf` (long animation frames, Chrome only, 50 ms and more);
-  - `touch`, `hidden`, `context.lost`, `context.restored` (the run is void).
+  - `touch`, `hidden`, `resize`, `orientation`, `context.lost`,
+    `context.restored` (the run is void).
   - Per run also: the peaks of each carrier's cache (MiB), the globe's
     pending tiles and the lowest altitude reached (km).
 - The sweep (§4.4): `perfSweep=quick|full|overhead` runs the cells of
@@ -98,9 +108,11 @@
   hooks off (frame intervals only) on alternate runs.
 - The fixed-view sweep (`perfItems=0,5,20,50`, `globe-perf-views.js`):
   - The screen: a Screen Wake Lock is held from the start to Done
-    (`globe-perf-wake.js`) and asked for again when the page comes back;
-    when it is refused or missing the status line asks the tester to set
-    the screen's auto-lock to Never. The export's `wakeLock` says whether
+    (`globe-perf-wake.js`), asked for again at once when the browser
+    releases it while the page is visible and when the page comes back;
+    its request is raced against 3 s, so a request that never settles
+    does not hold the sweep. While it is refused, missing or lost, the
+    status line asks the tester to set the screen's auto-lock to Never. The export's `wakeLock` says whether
     it held throughout. A run the hidden page interrupted is void.
   - The calibration: the frame renders nothing (`lab.setPaused(true)`)
     for 2 s, so the median frame interval is the display's own, snapped
@@ -110,18 +122,25 @@
     interval.
   - The plan (`perfViewCells`): a discarded warm-up pass per view
     (`perfWarmup=1`, the default) and then each repeat with the counts'
-    order rotated per repeat and view. Without `eye=1` the street view is
+    order rotated per repeat and view, reversed on even repeats. Without `eye=1` the street view is
     left out (`viewsSkipped`, and said in the plan) rather than measured
     from a camera the editor never uses. The estimate includes the
-    calibration.
+    calibration and is labelled as an estimate; the status shows
+    "Cell k of N" and the estimate's minutes left, or that it is past.
+  - The city gate: before the calibration, at most `perfCityWaitS`
+    (default 300) for the city's load to end, its retries included
+    (`lab.cityGate()`); a city not asked for within 10 s is not waited
+    for. The export's `cityGate` is `{ outcome, ms }` (`off`, `ended`,
+    `gave-up`, `not-requested`, `timeout` or `skipped`).
   - Per move: the camera placed every frame (`lab.placeView`, so the
     street view follows the ground as it refines), then a settle of at
     most `perfViewSettleS`: the drawn carriers idle AND every
     `lab.viewReadiness()` key true: the band's drawn share at the
     altitude's (an undrawn relief reads as idle), no band cache release
-    pending or draining, the city's load ended (its retries included) and
-    its arrival fade done, the OSM map's ramp done with no re-evaluation
-    backlog and no drawn tile waiting.
+    pending or draining, the city not loading and its arrival fade done
+    (a delivery inside a held run voids it), the OSM map's ramp done with
+    no re-evaluation backlog and no drawn tile waiting but the failed
+    ones (never asked for again).
   - The city comes from public Overpass servers and may not come at all
     (measured 2026-10-27 on this desktop: no reply in 3 min). When a
     move's settle times out on the city and it has delivered nothing, the
@@ -138,24 +157,50 @@
     (`GLOBE_PERF.viewMinFrames`), labelled `<view> n=<count> r<repeat>`,
     with the bytes the page had needed (`bytesDownloaded`,
     `/globe-assets/` only), the bytes at the move (`bytesAtMove`) and the
-    settle's outcome (`settle: { move, moveNotReady, quiet, notReady }`).
+    settle's outcome (`settle: { move, moveMs, moveNotReady, quiet,
+quietMs, notReady, osm }`, `osm` the map's tiles waiting and failed),
+    the viewport (`viewport`, width x height @ DPR), the items inside the
+    camera's frustum right before it (`itemsInView`) and whether the
+    city drew (`cityDrawn`).
     What decides is the view right before the run: a run whose quiet wait
     timed out is kept but marked (`settledBefore: false`) and the table
     counts it and leaves it out of every number; a slow move whose view
     was ready by the run is pooled.
   - The overlay shows the pooled table (`formatViewTable`: p50, p95, max,
-    work per frame, drop, over 34 and over 51 ms, against the measured
-    rate, and the MiB each move needed) and whether the screen stayed on;
-    the export adds `views` (`summariseViewRuns`), `viewDownloads`,
-    `viewsSkipped`, `cityGaveUp`, `refresh` and `wakeLock`, and the file name says
-    `views`. A failed start removes its items and unpauses the frame.
+    work per frame, drop, and the frames that missed at least 1, 2 and 3
+    refreshes, against the measured rate, and the MiB each move needed)
+    and whether the screen stayed on; the export adds `views`
+    (`summariseViewRuns`), `viewDownloads`, `viewsSkipped`,
+    `cityGaveUp`, `cityGate`, `refresh`, `missedMs` and `wakeLock`,
+    and the file name says `views`.
+  - How a sweep ends: Done, stopped or failed, the summary of the runs
+    finished and Copy and Download enabled every time (`outcome`,
+    `failure: { message, at }`). A failed or stopped sweep removes its
+    items and unpauses the frame.
+  - A lost context (`globe-perf-guard.js`), noticed whenever it happens
+    and checked before every run, stops the sweep at once: "The device
+    dropped the page's graphics at <where>; results up to there are
+    kept." The export's `contextLost` (`{ atMs, at, by }`) and
+    `contextRestored` say when and where. The device block is read at
+    load and once after the calibration, so it names the GPU even after
+    a loss.
+  - The frame watchdog: no frame for `perfWatchdogS` (default 5) while
+    the page is on screen fails the sweep with where it was.
+  - A reload mid-sweep (`globe-perf-journal.js`): the export is kept in
+    the browser's storage after every run and at the end. A page that
+    finds an unfinished sweep there does not start by itself, even with
+    `perfAuto=1`: it shows "Previous sweep cut off after N of M runs
+    (page reloaded)" (or stopped or failed), Copy and Download give that
+    sweep's export (the file name says `cut-off`), and Run reads "Start
+    fresh". The export's `journal` reports the saves.
   - `perfAuto=1` starts any sweep without a press.
 - The export: the framework's `frame-export/1` (`buildFrameExport`: the
   device block, every run, the pooled attribution, the 20 worst frames
   with their events), plus `lab` (per run: index, time since load, cell,
   hooks, void, counts, samples, work, peaks, checkpoints, the E check),
   `overhead` (`perfOverheadVerdict`) and `longAnimationFrameMs`. The
-  device block: user agent, GPU strings where exposed, DPR, viewport,
+  device block (read at load and after the calibration): user agent,
+  GPU strings where exposed, DPR, viewport,
   drawing buffer, relief, host and path (a preview's host names its
   branch or commit), the hash, `KHR_parallel_shader_compile`,
   `OES_texture_float_linear`, `EXT_disjoint_timer_query_webgl2` (logged
@@ -177,4 +222,8 @@
   frame-stepped path's events, checkpoints and E check; the overlay and
   Copy/Download at 390 x 844 DPR 2; the overhead sweep's hooks off and on;
   a run driven through the controls reaching the bottom and counting their
-  raycasts.
+  raycasts. `globe-perf-views.smoke.spec.mjs` (the fixed-view sweep and
+  its per-run records); `globe-perf-loss.smoke.spec.mjs` (a reload
+  mid-sweep offers the cut-off sweep and does not start by itself; a
+  forced context loss stops the sweep with Copy and Download enabled, the
+  loss's place and the GPU in the export).
