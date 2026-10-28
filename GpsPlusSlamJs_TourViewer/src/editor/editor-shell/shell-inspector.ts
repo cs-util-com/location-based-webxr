@@ -30,8 +30,14 @@
 import type { ShellPictures } from "./shell-pictures.js";
 import { shellIcon, type ShellIcon } from "./shell-icons.js";
 import {
+  TOUR_MODEL_NOTE_RULES,
+  TOUR_MODEL_SECTION_RULES,
+} from "gps-plus-slam-app-framework/ar/tour-blocks";
+import {
+  MODEL_VIEW_CHOICES,
   ON_GROUND_M,
   type InspectorModel,
+  type InspectorModelParts,
   type InspectorPosition,
 } from "./inspector-model.js";
 import { wirePinTextCounter, wireTextCounter } from "../../pin-text.js";
@@ -387,6 +393,7 @@ function offText(m: number | null): string {
 type StationModel = Extract<InspectorModel, { kind: "station" }>;
 type ItemModel = Extract<InspectorModel, { kind: "item" }>;
 type CodeModel = Extract<InspectorModel, { kind: "code" }>;
+type ModelParts = InspectorModelParts;
 
 /** The card picture's choices: a button each, the shown one pressed. */
 function imagePicker(
@@ -569,6 +576,209 @@ function stationParts(
   return parts;
 }
 
+/** A line of a model's part to type (a note's title, a section's name),
+ *  its count against the format's cap beside it. */
+function partLine(
+  field: string,
+  aria: string,
+  value: string,
+  max: number,
+): HTMLElement[] {
+  const input = typed(field, value, "tfield");
+  input.setAttribute("aria-label", aria);
+  input.id = fieldId();
+  const count = el("output", "note count");
+  count.id = `${input.id}-count`;
+  input.setAttribute("aria-describedby", count.id);
+  wireTextCounter(input, count, max, "codePoints");
+  return [input, count];
+}
+
+/** A small button of a model's part (`data-act`), pressed while `on`. */
+function partButton(act: string, label: string, on = false): HTMLButtonElement {
+  const b = el("button", on ? "mini on" : "mini", label);
+  b.type = "button";
+  b.dataset["act"] = act;
+  if (on) b.setAttribute("aria-pressed", "true");
+  return b;
+}
+
+/** A model-space point as the inspector shows it. */
+function spotText(v: readonly number[]): string {
+  return v.map((x) => fixed(x, 2)).join(", ");
+}
+
+/** What a model's view does, under its choice. */
+const VIEW_NOTE: Readonly<Record<string, string>> = {
+  placed: "Stands at its place and size.",
+  ghost: "Glass, its feet fading into the ground.",
+  hotspots: "Its notes drawn on it; its animation held at rest.",
+  cutaway: "Cut open by its sections, one after the other.",
+  toy: "The visitor may move and resize it.",
+};
+
+/** A model's view, clip, notes and sections (`model-edits.ts`). */
+function modelParts(parts: ModelParts): HTMLElement[] {
+  const view = el("div", "isec mview");
+  const label = el("span", "flabel", "View");
+  label.id = fieldId();
+  const chips = el("div", "vchips");
+  chips.setAttribute("role", "group");
+  chips.setAttribute("aria-labelledby", label.id);
+  for (const choice of MODEL_VIEW_CHOICES) {
+    const on = choice.view === parts.view;
+    const b = el("button", on ? "chip on" : "chip", choice.label);
+    b.type = "button";
+    b.dataset["act"] = `view:${choice.view}`;
+    b.setAttribute("aria-pressed", String(on));
+    chips.append(b);
+  }
+  view.append(label, chips, el("div", "note", VIEW_NOTE[parts.view] ?? ""));
+
+  const clip = el("div", "isec manim");
+  const autoplay = partButton(
+    "anim-autoplay",
+    "Plays by itself",
+    parts.animation?.autoplay === true,
+  );
+  autoplay.disabled = parts.animation === null;
+  autoplay.setAttribute(
+    "aria-pressed",
+    String(parts.animation?.autoplay === true),
+  );
+  clip.append(
+    lineField(
+      "Animation",
+      "anim-name",
+      parts.animation?.name ?? "",
+      "The clip's name in the model file",
+    ),
+    autoplay,
+  );
+
+  const notes = el("div", "isec mnotes");
+  notes.append(el("div", "flabel", `Notes (${String(parts.notes.length)})`));
+  const pick = parts.pick;
+  parts.notes.forEach((n, i) => {
+    const on = parts.focus?.part === "note" && parts.focus.index === i;
+    const row = el("div", on ? "anno on" : "anno");
+    row.dataset["note"] = String(i);
+    const top = el("div", "top");
+    const badge = el("button", "badge", String(i + 1));
+    badge.type = "button";
+    badge.dataset["act"] = `note:${String(i)}`;
+    badge.setAttribute("aria-label", `Note ${String(i + 1)}`);
+    badge.setAttribute("aria-pressed", String(on));
+    top.append(
+      badge,
+      ...partLine(
+        `note-title:${String(i)}`,
+        `Note ${String(i + 1)} title`,
+        n.title,
+        TOUR_MODEL_NOTE_RULES.title.max,
+      ),
+    );
+    const text = el("textarea", "tfield");
+    text.rows = 2;
+    text.spellcheck = false;
+    text.dataset["field"] = `note-text:${String(i)}`;
+    text.placeholder = "What the visitor reads";
+    text.defaultValue = n.text.replace(/\r\n?/g, "\n");
+    text.id = fieldId();
+    text.setAttribute("aria-label", `Note ${String(i + 1)} text`);
+    const count = el("output", "note count");
+    count.id = `${text.id}-count`;
+    text.setAttribute("aria-describedby", count.id);
+    wireTextCounter(
+      text,
+      count,
+      TOUR_MODEL_NOTE_RULES.text.max,
+      TOUR_MODEL_NOTE_RULES.text.unit,
+    );
+    const picking = pick?.what === "note-place" && pick.index === i;
+    const tools = el("div", "tools");
+    tools.append(
+      partButton(
+        `note-place:${String(i)}`,
+        picking ? "Click the model..." : "Pick on model",
+        picking,
+      ),
+      partButton(`note-delete:${String(i)}`, "Delete"),
+      el("span", "pos", spotText(n.position)),
+    );
+    row.append(top, text, count, tools);
+    notes.append(row);
+  });
+  const adding = pick?.what === "note-add";
+  const add = partButton(
+    "note-add",
+    adding ? "Click the model..." : "+ Add note (click the model)",
+    adding,
+  );
+  add.disabled = parts.notesFull;
+  notes.append(add);
+  if (parts.notes.length > 0 && parts.view !== "hotspots") {
+    notes.append(
+      el("div", "note", "The visitor sees notes in the Hotspots view."),
+    );
+  }
+
+  const sections = el("div", "isec msections");
+  sections.append(
+    el("div", "flabel", `Sections (${String(parts.sections.length)})`),
+  );
+  parts.sections.forEach((c, i) => {
+    const on = parts.focus?.part === "section" && parts.focus.index === i;
+    const row = el("div", on ? "anno on" : "anno");
+    row.dataset["section"] = String(i);
+    const top = el("div", "top");
+    const badge = el("button", "badge", String(i + 1));
+    badge.type = "button";
+    badge.dataset["act"] = `section:${String(i)}`;
+    badge.setAttribute("aria-label", `Section ${String(i + 1)}`);
+    badge.setAttribute("aria-pressed", String(on));
+    top.append(
+      badge,
+      ...partLine(
+        `section-name:${String(i)}`,
+        `Section ${String(i + 1)} name`,
+        c.name,
+        TOUR_MODEL_SECTION_RULES.name.max,
+      ),
+    );
+    const picking = pick?.what === "section-place" && pick.index === i;
+    const tools = el("div", "tools");
+    tools.append(
+      partButton(
+        `section-place:${String(i)}`,
+        picking ? "Click the model..." : "Place on model",
+        picking,
+      ),
+      partButton(`section-flip:${String(i)}`, "Flip"),
+      partButton(`section-delete:${String(i)}`, "Delete"),
+      el("span", "pos", spotText(c.position)),
+    );
+    row.append(top, tools);
+    sections.append(row);
+  });
+  const cutting = pick?.what === "section-add";
+  const addCut = partButton(
+    "section-add",
+    cutting ? "Click the model..." : "+ Add section (click the model)",
+    cutting,
+  );
+  addCut.disabled = parts.sectionsFull;
+  sections.append(
+    addCut,
+    el(
+      "div",
+      "note",
+      "A section cuts the model through the point you click; the side facing you is cut away. Shown in the Cutaway view.",
+    ),
+  );
+  return [view, clip, notes, sections];
+}
+
 function itemParts(model: ItemModel, state: InspectorState): HTMLElement[] {
   const parts: HTMLElement[] = [];
   if (model.text !== null && severalLines(model.text)) {
@@ -606,6 +816,7 @@ function itemParts(model: ItemModel, state: InspectorState): HTMLElement[] {
     );
     parts.push(section);
   }
+  if (model.model !== null) parts.push(...modelParts(model.model));
   const o = model.offset;
   const heading = model.headingDeg === null ? "-" : fixed(model.headingDeg, 0);
   parts.push(

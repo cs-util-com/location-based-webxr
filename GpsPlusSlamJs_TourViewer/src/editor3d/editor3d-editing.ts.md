@@ -33,6 +33,16 @@ pure gesture maths reads (`GestureWorld`).
     `handleSizes()` - for the page's checks: CSS px on the canvas.
   - `dispose()`.
 - Type `GizmoPart`.
+- `SceneEditingDeps.models` - the store's selection, model focus and
+  model pick, and the page's model edit (true: written).
+- The selected model's parts are drawn by `editor3d-model-parts.ts`; a
+  disc's click toggles its note's focus.
+- While a pick waits on a selected model (`clickWaited`), a click answers
+  it (`answerClick`): the ray on the drawn model gives the spot
+  (`noteSpotOf` / `sectionSpotOf`), the edit is written, the wait
+  cleared and the new or placed part focused; a miss says
+  `MISSED_MODEL`; a refused edit keeps the wait.
+- `modelParts()` and `modelScreenOf(id, at)` - for the page's checks.
 
 ## Invariants & assumptions
 

@@ -125,6 +125,7 @@ function setUp() {
     station: vi.fn(),
     text: vi.fn(),
     block: vi.fn(),
+    model: vi.fn((): "written" => "written"),
     scene: vi.fn(),
     groundItems: vi.fn(),
     addPin: vi.fn(),
@@ -480,6 +481,156 @@ describe("the readout's tick", () => {
     manifests.built = 0;
     vi.advanceTimersByTime(1_000);
     expect(manifests.built).toBeGreaterThanOrEqual(5);
+    shell.hide();
+  });
+});
+
+/** The tour of `setUp` with a model in station b: two notes, one
+ *  section, a clip that does not play by itself. */
+function withModel(store: ReturnType<typeof setUp>["store"]): void {
+  const b = station("b", 0.0004);
+  store.dispatch(
+    tourDocumentActions.opened({
+      manifest: {
+        ...createEmptyTourManifest(),
+        assets: [{ id: "glb", path: "content/m.glb", kind: "model" }],
+        stations: [
+          station("a", 0),
+          {
+            ...b,
+            blocks: [
+              {
+                id: "m",
+                kind: "model",
+                view: "hotspots",
+                asset: "glb",
+                sizeM: 2,
+                createdAtIso: AT,
+                pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
+                animation: { name: "Swing", autoplay: false },
+                annotations: [
+                  { position: [0, 1, 0], normal: [0, 1, 0], title: "Top" },
+                  {
+                    position: [0.5, 0, 0],
+                    normal: [1, 0, 0],
+                    title: "Side",
+                    text: "The bell's side",
+                  },
+                ],
+                sections: [
+                  { name: "Frame", position: [0, 0.5, 0], normal: [0, 0, 1] },
+                ],
+              },
+            ],
+          } as unknown as TourStation,
+        ],
+      },
+    }),
+  );
+}
+
+function press(act: string): void {
+  const b = document.querySelector<HTMLButtonElement>(
+    `#shell-inspector [data-act="${act}"]`,
+  );
+  if (b === null) throw new Error(`no button ${act}`);
+  b.click();
+}
+
+// Why: the 3D inspector's model parts reach the page as model edits of
+// the model they were typed or pressed for, and the buttons that wait for
+// a click on the model only ask the 3D view to wait (the store's pick),
+// pressed again they stop. A wrong index here would edit another note.
+describe("the inspector's model parts", () => {
+  it("write a note's title and text, a section's name and the clip's name as model edits", () => {
+    const { store, select, edits, shell } = setUp();
+    withModel(store);
+    select("m");
+    typeInto("note-title:1", "Bell side");
+    typeInto("note-text:0", "The crown");
+    typeInto("section-name:0", "Oak frame");
+    typeInto("anim-name", "Ring");
+    select("station:a");
+    expect(edits.model.mock.calls).toEqual([
+      [
+        "m",
+        { kind: "note-text", index: 1, field: "title", value: "Bell side" },
+      ],
+      ["m", { kind: "note-text", index: 0, field: "text", value: "The crown" }],
+      ["m", { kind: "section-name", index: 0, value: "Oak frame" }],
+      ["m", { kind: "animation", name: "Ring", autoplay: false }],
+    ]);
+    shell.hide();
+  });
+
+  it("choose a view, flip a section, turn autoplay and delete parts as model edits", () => {
+    const { store, select, edits, shell } = setUp();
+    withModel(store);
+    select("m");
+    press("view:cutaway");
+    press("section-flip:0");
+    press("anim-autoplay");
+    press("note-delete:1");
+    press("section-delete:0");
+    expect(edits.model.mock.calls).toEqual([
+      ["m", { kind: "view", view: "cutaway" }],
+      [
+        "m",
+        {
+          kind: "section-place",
+          index: 0,
+          at: { position: [0, 0.5, 0], normal: [0, 0, -1] },
+        },
+      ],
+      ["m", { kind: "animation", name: "Swing", autoplay: true }],
+      ["m", { kind: "note-delete", index: 1 }],
+      ["m", { kind: "section-delete", index: 0 }],
+    ]);
+    shell.hide();
+  });
+
+  it("ask the 3D view for a click on the model, and stop asking when pressed again", () => {
+    const { store, select, edits, shell } = setUp();
+    withModel(store);
+    select("m");
+    press("note-add");
+    expect(store.getState().editorView.modelPick).toEqual({ what: "note-add" });
+    expect(
+      document.querySelector('#shell-inspector [data-act="note-add"]')
+        ?.textContent,
+    ).toBe("Click the model...");
+    press("note-add");
+    expect(store.getState().editorView.modelPick).toBeNull();
+    press("note-place:1");
+    expect(store.getState().editorView.modelPick).toEqual({
+      what: "note-place",
+      index: 1,
+    });
+    // Placing a note again brings it into focus.
+    expect(store.getState().editorView.modelFocus).toEqual({
+      part: "note",
+      index: 1,
+    });
+    press("section-add");
+    expect(store.getState().editorView.modelPick).toEqual({
+      what: "section-add",
+    });
+    expect(edits.model).not.toHaveBeenCalled();
+    shell.hide();
+  });
+
+  it("marks the note in focus, and a press of its number takes the focus away", () => {
+    const { store, select, shell } = setUp();
+    withModel(store);
+    select("m");
+    press("note:1");
+    const marked = () =>
+      [...document.querySelectorAll("#shell-inspector .anno.on")].map(
+        (e) => (e as HTMLElement).dataset["note"],
+      );
+    expect(marked()).toEqual(["1"]);
+    press("note:1");
+    expect(marked()).toEqual([]);
     shell.hide();
   });
 });

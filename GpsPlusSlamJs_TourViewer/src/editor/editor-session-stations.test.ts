@@ -231,6 +231,52 @@ describe("the editor session's station edits", () => {
     await session.close();
   });
 
+  // Why: the 3D inspector writes a model's notes, sections and view
+  // through `editModel`; each is one undo step written to the saved file,
+  // and the default view rule must give way to the creator's own choice
+  // for the rest of the session (the owner's rule: never overridden).
+  it("edits a model's notes and view as single steps, the creator's view kept", async () => {
+    const { session, manifest } = await opened();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const at = { position: [0, 1, 0], normal: [0, 1, 0] } as const;
+    expect(editor.editModel("a", { kind: "note-add", at })).toMatchObject({
+      kind: "refused",
+    });
+    expect(editor.editModel("nope", { kind: "note-add", at })).toMatchObject({
+      kind: "refused",
+    });
+    expect(editor.editModel("m", { kind: "note-add", at })).toEqual({
+      kind: "edited",
+    });
+    expect(editor.changeCount()).toBe(1);
+    let tour = await savedTour((await editor.save({ keepScan: false })).blob);
+    const block = () =>
+      tour.stations.flatMap((s) => s.blocks).find((b) => b.id === "m");
+    expect(block()).toMatchObject({
+      view: "hotspots",
+      annotations: [{ title: "Note 1", position: [0, 1, 0] }],
+    });
+    expect(editor.editModel("m", { kind: "view", view: "ghost" })).toEqual({
+      kind: "edited",
+    });
+    expect(editor.editModel("m", { kind: "note-delete", index: 0 })).toEqual({
+      kind: "edited",
+    });
+    tour = await savedTour((await editor.save({ keepScan: false })).blob);
+    expect(block()).toMatchObject({ view: "ghost" });
+    expect(block()).not.toHaveProperty("annotations");
+    const undone = editor.undo();
+    expect(undone).toMatchObject({ kind: "undone" });
+    expect(undone.kind === "undone" ? undone.what : "").toContain(
+      "the delete of note 1 of",
+    );
+    await session.close();
+  });
+
   // Why: an edit of a station a delete emptied - its radius alone - is
   // dropped by the document (the next write and a reload leave such a
   // station out, so the live tour must not list it again). Reported as

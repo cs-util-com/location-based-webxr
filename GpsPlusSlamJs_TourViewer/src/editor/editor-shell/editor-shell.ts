@@ -50,10 +50,12 @@ import {
   isStationLocked,
   pointerDragRuns,
   type EditorViewState,
+  type ModelPick,
   type ShellLayer,
   type TreeSection,
 } from "../editor-view.js";
 import { STATION_PREFIX } from "../editor-model.js";
+import type { ModelEdit } from "../model-edits.js";
 import { inField, inMenu } from "../key-target.js";
 import { closeOpenMenu, setItemDisabled } from "../menu-button.js";
 import {
@@ -137,6 +139,9 @@ interface ShellEditCommands {
   text(itemId: string, text: string): TypedEditOutcome;
   /** One of a free block's other text fields (`block-fields.ts`). */
   block(itemId: string, field: string, value: string): TypedEditOutcome;
+  /** One of a model's own edits (`model-edits.ts`): its view, a note,
+   *  a section, its clip. */
+  model(itemId: string, edit: ModelEdit): TypedEditOutcome;
   /** A pose or a size, as the 3D view's gestures write them. */
   scene(edit: GestureEdit): void;
   /** Items' heights (the ground under each, or a typed height), as one
@@ -322,6 +327,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       unlockedStations: ui.unlockedStations,
       origin: view?.origin() ?? null,
       groundAt,
+      modelFocus: ui.modelFocus,
+      modelPick: ui.modelPick,
     });
   };
 
@@ -497,12 +504,107 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       outcome = deps.edits.text(edit.id, edit.text);
     else if (edit.kind === "block") {
       outcome = deps.edits.block(edit.id, edit.field, edit.value);
+    } else if (edit.kind === "model") {
+      outcome = deps.edits.model(edit.id, edit.edit);
     } else if (edit.kind === "scene") deps.edits.scene(edit.edit);
     else if (edit.kind === "turn") view?.turn(edit.selection, edit.deg);
     else if (edit.kind === "height") {
       deps.edits.groundItems([{ id: edit.id, alt: edit.alt }]);
     }
     if (outcome === "refused") input.value = value;
+  };
+
+  /** A button of a model's own parts (`shell-inspector.ts` `modelParts`)
+   *  answered: a view chosen, a note or a section in focus, the 3D view
+   *  asked to wait for a click on the model (pressed again: not), a part
+   *  deleted or a section flipped, the clip's autoplay turned. Anything
+   *  else, or a selection that is no model, does nothing. */
+  const modelAct = (selected: string, act: string) => {
+    const model = inspectorModel(state().editorView);
+    if (model?.kind !== "item" || model.model === null) return;
+    const parts = model.model;
+    const [name = "", arg] = act.split(":");
+    const index = arg === undefined ? -1 : Number(arg);
+    const pickNow = parts.pick;
+    const ask = (pick: ModelPick) => {
+      const same =
+        pickNow?.what === pick.what &&
+        ("index" in pickNow ? pickNow.index : -1) ===
+          ("index" in pick ? pick.index : -1);
+      store.dispatch(
+        editorViewActions.modelPickAsked({ pick: same ? null : pick }),
+      );
+    };
+    const focus = (part: "note" | "section") => {
+      const on = parts.focus?.part === part && parts.focus.index === index;
+      store.dispatch(
+        editorViewActions.modelFocused({ focus: on ? null : { part, index } }),
+      );
+    };
+    switch (name) {
+      case "view":
+        if (arg !== undefined)
+          deps.edits.model(selected, { kind: "view", view: arg });
+        return;
+      case "note":
+        focus("note");
+        return;
+      case "section":
+        focus("section");
+        return;
+      case "note-add":
+      case "section-add":
+        ask({ what: name });
+        return;
+      case "note-place":
+      case "section-place":
+        ask({ what: name, index });
+        if (
+          pickNow === null ||
+          !("index" in pickNow) ||
+          pickNow.index !== index
+        ) {
+          store.dispatch(
+            editorViewActions.modelFocused({
+              focus: {
+                part: name === "note-place" ? "note" : "section",
+                index,
+              },
+            }),
+          );
+        }
+        return;
+      case "note-delete":
+      case "section-delete":
+        if (deps.edits.model(selected, { kind: name, index }) === "written") {
+          store.dispatch(editorViewActions.modelFocused({ focus: null }));
+          store.dispatch(editorViewActions.modelPickAsked({ pick: null }));
+        }
+        return;
+      case "section-flip": {
+        const section = parts.sections[index];
+        if (section === undefined) return;
+        const [x, y, z] = section.normal;
+        deps.edits.model(selected, {
+          kind: "section-place",
+          index,
+          // 0 - x, not -x: a zero stays 0, never -0.
+          at: { position: section.position, normal: [0 - x, 0 - y, 0 - z] },
+        });
+        return;
+      }
+      case "anim-autoplay":
+        if (parts.animation !== null) {
+          deps.edits.model(selected, {
+            kind: "animation",
+            name: parts.animation.name,
+            autoplay: !parts.animation.autoplay,
+          });
+        }
+        return;
+      default:
+        return;
+    }
   };
 
   /** A ground command on the selection: run at once with the ground
@@ -843,6 +945,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (act === "delete") deleteSelected(selected);
     if (act === "split") deps.stations.split(selected);
     if (act === "ground" || act === "ground-items") void runGround(act);
+    if (act !== undefined) modelAct(selected, act);
     if (act === "add-pin" && selected.startsWith(STATION_PREFIX)) {
       deps.edits.addPin(selected.slice(STATION_PREFIX.length));
     }

@@ -11,6 +11,10 @@
  * The selection's gizmo is placed each frame from the tour, or from a
  * gesture's preview while one runs; codes have none (read-only here), and
  * a locked station's is its radius dots alone.
+ * A selected model's notes and sections are drawn here too
+ * (`editor3d-model-parts.ts`), and the click on its surface the
+ * inspector waits for is answered here: a note or a section written where
+ * the ray meets the model (`SceneEditingDeps.models`).
  * Two fingers move the camera (tilt, or pinch, pan and twist); OrbitControls
  * is told to leave two fingers alone.
  *
@@ -25,6 +29,12 @@ import { groundHit } from "gps-plus-slam-globe/editor";
 
 import type { GroundPlace } from "../editor/editor-shell/scene-menu.js";
 import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
+import {
+  editorViewActions,
+  type ModelFocus,
+  type ModelPick,
+} from "../editor/editor-view.js";
+import type { ModelEdit } from "../editor/model-edits.js";
 import { worldBlocks } from "../tour-document.js";
 import { EDITOR_CAMERA } from "./editor3d-camera.js";
 import {
@@ -34,6 +44,14 @@ import {
   type OrbitPose,
 } from "./editor3d-flight.js";
 import { createGizmo, drawGizmoPictures } from "./editor3d-gizmo.js";
+import {
+  createModelParts,
+  hitModel,
+  MISSED_MODEL,
+  noteSpotOf,
+  pickedEdit,
+  sectionSpotOf,
+} from "./editor3d-model-parts.js";
 import {
   createSceneInput,
   type InputPage,
@@ -83,6 +101,17 @@ export interface SceneEditingDeps {
   /** Spend the orbit's coast at once: the camera stops moving. */
   dropMomentum(): void;
   frame(selection: string): void;
+  /** A model's own parts: the store's selection, the part in focus and
+   *  the click the inspector waits for, and the page's model edits (true:
+   *  written; a refusal is said by the page). */
+  readonly models: {
+    view(): {
+      readonly selected: string | null;
+      readonly focus: ModelFocus | null;
+      readonly pick: ModelPick | null;
+    };
+    edit(id: string, edit: ModelEdit): boolean;
+  };
 }
 
 /** The gizmo's parts a check can ask the screen position of. */
@@ -193,6 +222,66 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       };
     }
     return null;
+  };
+
+  /** A model of the tour by its id, or null. */
+  const modelOf = (id: string) => {
+    for (const station of deps.tour()?.stations ?? []) {
+      const item = worldBlocks(station).find((i) => i.id === id);
+      if (item !== undefined) return item.kind === "model" ? item : null;
+    }
+    return null;
+  };
+
+  // --- a model's notes and sections ----------------------------------------
+  const parts = createModelParts({
+    container: deps.container,
+    canvas,
+    scene: deps.scene,
+    camera,
+    view: () => deps.models.view(),
+    model: modelOf,
+    drawn: (id) => layer.modelObject(id),
+    focusNote(index) {
+      const { focus } = deps.models.view();
+      const on = focus?.part === "note" && focus.index === index;
+      deps.page.dispatch(
+        editorViewActions.modelFocused({
+          focus: on ? null : { part: "note", index },
+        }),
+      );
+    },
+  });
+
+  /** The click the inspector waited for: the note or the section written
+   *  where the ray meets the selected model (the new one in focus), or
+   *  said missed. */
+  const answerClick = (pointer: ScreenPoint) => {
+    const { selected, pick } = deps.models.view();
+    if (selected === null || pick === null) return;
+    const model = modelOf(selected);
+    const drawn = layer.modelObject(selected);
+    const hit = drawn === null ? null : hitModel(rayAt(pointer), drawn);
+    const spot =
+      drawn === null || hit === null
+        ? null
+        : pick.what.startsWith("note")
+          ? noteSpotOf(drawn, hit)
+          : sectionSpotOf(drawn, hit, camera.position);
+    if (model === null || spot === null) {
+      deps.page.say(MISSED_MODEL);
+      return;
+    }
+    if (!deps.models.edit(selected, pickedEdit(pick, spot))) return;
+    deps.page.dispatch(editorViewActions.modelPickAsked({ pick: null }));
+    const part = pick.what.startsWith("note") ? "note" : "section";
+    const index =
+      "index" in pick
+        ? pick.index
+        : ((part === "note" ? model.annotations : model.sections)?.length ?? 0);
+    deps.page.dispatch(
+      editorViewActions.modelFocused({ focus: { part, index } }),
+    );
   };
 
   // --- the gizmo -----------------------------------------------------------
@@ -364,6 +453,11 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     frame(selection) {
       deps.frame(selection);
     },
+    clickWaited() {
+      const { selected, pick } = deps.models.view();
+      return pick !== null && selected !== null && modelOf(selected) !== null;
+    },
+    answerClick,
   };
   const input = createSceneInput({
     element: deps.container,
@@ -408,6 +502,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     /** Each frame: the input's retries, then the gizmo on the selection. */
     update() {
       input.frame();
+      parts.update();
       layout = layoutNow();
       if (layout === null) {
         gizmo.update(null);
@@ -464,8 +559,23 @@ export function createSceneEditing(deps: SceneEditingDeps) {
         ringPx: (layout.ringM ?? layout.moveM) / metresPerPx,
       };
     },
+    /** For the page's checks: the selected model's note discs on the
+     *  canvas and its section planes. */
+    modelParts: () => parts.stats(),
+    /** Where a point of a drawn model (its own space) is on the screen,
+     *  or null (the page's checks click its surface there). */
+    modelScreenOf(
+      id: string,
+      at: readonly [number, number, number],
+    ): ScreenPoint | null {
+      const drawn = layer.modelObject(id);
+      if (drawn === null) return null;
+      drawn.updateMatrixWorld(true);
+      return screenOf(drawn.localToWorld(new THREE.Vector3(...at)));
+    },
     dispose() {
       input.dispose();
+      parts.dispose();
       layer.setPreview(null);
       gizmo.dispose();
     },

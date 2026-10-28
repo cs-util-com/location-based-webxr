@@ -70,6 +70,8 @@ standing`). A distance, size or focal length that is not a positive
   - `setShown({ names, codes })` - the billboards and poles, and the code
     squares, off or on (the layer chips); `codesVisible()`;
   - `dispose()` - everything out of the scene and freed.
+- `modelObject(id)` - an item's drawn model (the glb under its tour
+  pose and scale), or null while its station does not draw it.
 
 ## Invariants & assumptions
 

@@ -569,6 +569,11 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
           part: "middle" | "knob" | "dot",
         ) => readonly [number, number] | null;
         view3dGizmoSizes: () => ReturnType<Editor3dView["gizmoSizes"]>;
+        view3dModelParts: () => ReturnType<Editor3dView["modelParts"]> | null;
+        view3dModelScreen: (
+          id: string,
+          at: readonly [number, number, number],
+        ) => readonly [number, number] | null;
         manifest: () => ReturnType<typeof manifestToWrite>;
         selected: () => string | null;
       };
@@ -590,6 +595,8 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     view3dScreenOf: (selection) => shown3d?.screenOf(selection) ?? null,
     view3dHandle: (part) => shown3d?.handleScreen(part) ?? null,
     view3dGizmoSizes: () => shown3d?.gizmoSizes() ?? null,
+    view3dModelParts: () => shown3d?.modelParts() ?? null,
+    view3dModelScreen: (id, at) => shown3d?.modelScreenOf(id, at) ?? null,
     manifest: () => manifestToWrite(store.getState().tourDocument),
     selected: () => ui().selected,
   };
@@ -892,6 +899,19 @@ function renderTourName(): void {
     title === undefined ? EDITOR_TITLE : `${title} - ${EDITOR_TITLE}`;
 }
 
+/** Whether the selection `id` is still in the tour: one of the editor
+ *  model's items, or a 3D model block (which the 2D editor does not list,
+ *  `editor-model.ts`, but the 3D view selects and edits). */
+function stillInTour(id: string): boolean {
+  if (model?.items.some((i) => i.id === id) === true) return true;
+  const tour = manifestToWrite(store.getState().tourDocument);
+  return (
+    tour?.stations.some((s) =>
+      s.blocks.some((b) => b.kind === "model" && b.id === id),
+    ) ?? false
+  );
+}
+
 /** After an edit: the rail, the markers, the card and the status follow. */
 function refresh(): void {
   if (editor === null) return;
@@ -900,7 +920,7 @@ function refresh(): void {
   rail.update(model);
   map.update(model);
   const { selected } = ui();
-  if (selected !== null && !model.items.some((i) => i.id === selected)) {
+  if (selected !== null && !stillInTour(selected)) {
     store.dispatch(editorViewActions.selected({ id: null }));
   }
   map.select(ui().selected);
@@ -3678,6 +3698,7 @@ const shell = createEditorShell({
     text: (id, text) => writeInspectorEdit((e) => e.editText(id, text)),
     block: (id, field, value) =>
       writeInspectorEdit((e) => e.editBlockField(id, field, value)),
+    model: (id, edit) => writeInspectorEdit((e) => e.editModel(id, edit)),
     scene: commitSceneEdit,
     groundItems: (items) => {
       writeInspectorEdit((e) => e.groundItems(items));
@@ -3723,6 +3744,8 @@ const viewSwitch = createViewSwitch({
         groundMenu: (point, place) => {
           shell.groundMenu(point, place);
         },
+        model: (id, edit) =>
+          writeInspectorEdit((e) => e.editModel(id, edit)) === "written",
         // A field's and a menu's keys are their own (`key-target.ts`).
         keysFree: (event) =>
           !inField(event.target) &&

@@ -64,6 +64,14 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   `turn` for Align to station and a typed heading, `groundAt` and
   `origin` for the inspector); a type only, so the page's code never
   holds the 3D view's.
+- `ShellEditCommands.model(itemId, edit)` - a model's own edit, as typed
+  (`inspector-edits.ts`) or pressed (`modelAct`).
+- `modelAct` answers a model's part buttons: a view chosen; a note or a
+  section brought into focus (pressed again: out of it); the 3D view asked
+  to wait for a click on the model (`modelPickAsked`; pressed again: no
+  longer), placing a part again also focusing it; a part deleted (focus and
+  wait cleared when written); a section flipped (its normal negated, a zero
+  kept 0); the clip's autoplay turned.
 
 ## Invariants & assumptions
 

@@ -74,6 +74,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   into view (`revealPadding`). A photo is read by `photoSource`: a placed
   one by `loadContentEntry`, a recorded one by `loadEntry`. The card follows the marker on every map move and on resize;
   Esc, the card's close and a click on the map clear the selection.
+  A `refresh()` keeps a selection that is still in the tour (`stillInTour`):
+  an item of the editor model, or a 3D model block, which the model never
+  lists, so an edit of a selected model keeps it selected.
 - **Editing (M6 E2a)** through `editor-session.ts`: a pin's text (committed
   on blur or Ctrl+Enter; an empty pin is refused in the phone's words),
   Move (the marker made draggable, Done applies the drop, Cancel or Esc
@@ -736,6 +739,13 @@ view3dGizmoSizes(), manifest(), selected() }`): an e2e reaches the editor sessio
 - Once everything is wired the page sets `body[data-editor="ready"]`;
   the keyboard e2e waits for it (a press before the module ran went
   nowhere - a flaky run under load).
+
+### A model's own parts
+
+The shell's and the 3D view's `model` edits go through
+`writeInspectorEdit` to the session's `editModel` (a refusal toasted).
+The dev hook adds `view3dModelParts()` and
+`view3dModelScreen(id, at)` for `editor3d-model.spec.js`.
 
 ## Tests
 
