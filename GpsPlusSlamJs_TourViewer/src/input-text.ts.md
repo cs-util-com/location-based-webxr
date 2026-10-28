@@ -17,7 +17,8 @@ normalise; the pages do, where text is typed.
   new pin (`creator-placement.ts`), a pin's edited text (`pinTextEdit`
   in `object-edits.ts`, both pages), the 3D editor's inspector fields
   (`editor/editor-shell/inspector-edits.ts`), the editor's details dialog
-  (`editor/details-dialog.ts`).
+  (`editor/details-dialog.ts`), the phone's tour name
+  (`tour-name-field.ts`).
 - The pin counter counts the NFC text (`pin-text.ts`), so it counts what
   is stored.
 - Idempotent: NFC of NFC text is the same text.
@@ -32,4 +33,5 @@ inputText(`Cafe${String.fromCodePoint(0x301)}`); // "Café" in NFC, one code poi
 
 `input-text.test.ts` (decomposed to composed, idempotence property), and
 at the sites: `object-edits.test.ts`, `pin-text.test.ts`,
-`creator-setup.test.ts`, `editor/editor-shell/inspector-edits.test.ts`.
+`creator-setup.test.ts`, `editor/editor-shell/inspector-edits.test.ts`,
+`tour-name-field.test.ts`.

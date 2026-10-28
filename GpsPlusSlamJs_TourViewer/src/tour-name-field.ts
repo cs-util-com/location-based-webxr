@@ -12,6 +12,8 @@
  * @see tour-name-field.ts.md
  */
 
+import { inputText } from "./input-text.js";
+
 /** The field (structural, so the unit tests run in node). */
 export interface TourNameInput {
   value: string;
@@ -88,7 +90,7 @@ export function wireTourNameField(
   /** The typed name to the document, and its refusal beside the field. */
   function commit(): void {
     if (rename === undefined) return;
-    const refused = touched ? rename.apply(input.value) : null;
+    const refused = touched ? rename.apply(inputText(input.value)) : null;
     rename.error.textContent = refused ?? "";
     rename.error.hidden = refused === null;
   }
@@ -125,7 +127,7 @@ export function wireTourNameField(
       touched = false;
       commit();
     },
-    typed: () => (touched ? input.value : null),
+    typed: () => (touched ? inputText(input.value) : null),
     commit,
   };
 }

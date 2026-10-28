@@ -49,6 +49,28 @@ describe("wireTourNameField", () => {
     expect(field.typed()).toBe("");
   });
 
+  // Why: every other text a creator types is stored in Unicode NFC
+  // (`input-text.ts`), so a decomposed accent from a keyboard or a paste
+  // counts and hashes as the word it reads as. The tour's name went to the
+  // document as typed.
+  it("hands the typed name to the document and to the Finish in NFC", () => {
+    const el = input();
+    const applied: string[] = [];
+    const field = wireTourNameField(el, undefined, {
+      apply: (name) => {
+        applied.push(name);
+        return null;
+      },
+      error: { textContent: "", hidden: true },
+    });
+    field.present("The castle");
+    const decomposed = "Café walk";
+    el.type(decomposed);
+    el.leave();
+    expect(applied.at(-1)).toBe("Café walk");
+    expect(field.typed()).toBe("Café walk");
+  });
+
   it("a newly opened tour starts untouched again, and no tour clears the field", () => {
     const el = input();
     const field = wireTourNameField(el);
