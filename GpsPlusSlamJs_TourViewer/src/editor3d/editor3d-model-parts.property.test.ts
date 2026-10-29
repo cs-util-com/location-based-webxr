@@ -72,9 +72,11 @@ describe("noteSpotOf's rounding (properties)", () => {
           const step = stepOf(s);
           for (const [i, v] of (spot?.position ?? []).entries()) {
             expect(Object.is(v, -0)).toBe(false);
-            // Half a step, and a hair over it for the float's own error.
+            // Half a step, and a hair over it for the float's own error:
+            // the point's, and the step's own for a point near zero (the
+            // model's scale rounds it too).
             expect(Math.abs(v - point[i]!)).toBeLessThanOrEqual(
-              step / 2 + Math.abs(point[i]!) * 1e-12,
+              step / 2 + (Math.abs(point[i]!) + step) * 1e-12,
             );
           }
           const added = applyModelEdit(
@@ -85,6 +87,9 @@ describe("noteSpotOf's rounding (properties)", () => {
           expect(added.kind).toBe("edited");
         },
       ),
+      // A click a float's width over half a step from a near-zero
+      // coordinate: the error is the model's scale's, not the point's.
+      { examples: [[0.9999999999999988, [0, -0.000005000000000005001, 0]]] },
     );
   });
 
