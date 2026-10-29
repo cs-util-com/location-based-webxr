@@ -35,6 +35,7 @@ function fakeDom() {
     load() {
       video.loads += 1;
     },
+    onended: null as ((ev: Event) => void) | null,
   };
   const dom: SceneViewDom & { video: typeof video } = {
     panel: { hidden: true },
@@ -167,6 +168,8 @@ function harness(
     ),
     showModel: vi.fn(() => Promise.resolve()),
     clear: vi.fn(),
+    release: vi.fn(),
+    toggleBubble: vi.fn(),
     setVoice: vi.fn(),
   };
   const view = createSceneView({
@@ -1100,7 +1103,14 @@ describe("a character's story views and the advance when the line ends", () => {
   /** A step showing the knight in `view`, moving on as `advance` says. */
   function knight(
     id: string,
-    view: "stage" | "bubble" | "two-stations" | "portrait" | "card",
+    view:
+      | "stage"
+      | "bubble"
+      | "speak"
+      | "two-stations"
+      | "portrait"
+      | "popup"
+      | "card",
     advance: TourStep["advance"],
     voice = true,
   ): TourStep {
@@ -1140,6 +1150,8 @@ describe("a character's story views and the advance when the line ends", () => {
       view: "bubble",
       name: "Sir Kay",
       line: "Welcome to the castle, traveller.",
+      voiced: false,
+      pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
     });
     h.view.continueTapped();
     await settle();
@@ -1160,6 +1172,9 @@ describe("a character's story views and the advance when the line ends", () => {
       ]),
     );
     await settle();
+    expect(h.audio.play).not.toHaveBeenCalled();
+    expect(h.view.characterTapped()).toBe(true);
+    await settle();
     expect(h.stage.setVoice).toHaveBeenLastCalledWith("speaking");
     endVoice(h);
     expect(h.stage.setVoice).toHaveBeenLastCalledWith("spoken");
@@ -1173,10 +1188,11 @@ describe("a character's story views and the advance when the line ends", () => {
     const h = harness();
     h.view.offer(
       station("gate", [
-        knight("a", "bubble", { mode: "lineEnd" }),
+        knight("a", "speak", { mode: "lineEnd" }),
         tap("b", "Onwards."),
       ]),
     );
+    h.view.characterTapped();
     await settle();
     expect(h.timers.filter((t) => !t.cancelled)).toHaveLength(0);
     expect(h.view.progress()?.autoMs).toBeNull();
@@ -1206,10 +1222,11 @@ describe("a character's story views and the advance when the line ends", () => {
     const failing = harness({ play: () => Promise.reject(new Error("no")) });
     failing.view.offer(
       station("gate", [
-        knight("a", "bubble", { mode: "lineEnd" }),
+        knight("a", "speak", { mode: "lineEnd" }),
         tap("b", "Onwards."),
       ]),
     );
+    failing.view.characterTapped();
     await settle();
     await settle();
     const left = failing.timers.filter((t) => !t.cancelled);
@@ -1232,6 +1249,111 @@ describe("a character's story views and the advance when the line ends", () => {
     expect(h.timers.filter((t) => !t.cancelled)).toHaveLength(1);
   });
 
+  // Why this test matters: in the prototype his voice plays on a tap on
+  // him (the figure, the bubble, the stage, the portrait), never by
+  // itself, and the bubble view has none - a tap there opens and shuts
+  // its bubble. A tap while he speaks stops him. The stage and card views
+  // keep playing the voice with the step, as format 4.0 did.
+  it("plays a story view's voice on a tap, stops it on the next, and lets the bubble view's tap shut its bubble", async () => {
+    for (const view of [
+      "speak",
+      "two-stations",
+      "portrait",
+      "popup",
+    ] as const) {
+      const h = harness();
+      h.view.offer(station("gate", [knight("a", view, { mode: "tap" })]));
+      await settle();
+      expect(h.audio.play, view).not.toHaveBeenCalled();
+      expect(h.view.characterTapped()).toBe(true);
+      await settle();
+      expect(h.audio.play, view).toHaveBeenCalledTimes(1);
+      expect(h.stage.setVoice).toHaveBeenLastCalledWith("speaking");
+      h.audio.stop.mockClear();
+      expect(h.view.characterTapped()).toBe(true);
+      expect(h.audio.stop, view).toHaveBeenCalledTimes(1);
+      expect(h.stage.setVoice).toHaveBeenLastCalledWith("idle");
+      // A third tap plays him again.
+      h.view.characterTapped();
+      await settle();
+      expect(h.audio.play, view).toHaveBeenCalledTimes(2);
+    }
+    const b = harness();
+    b.view.offer(station("gate", [knight("a", "bubble", { mode: "tap" })]));
+    await settle();
+    expect(b.view.characterTapped()).toBe(true);
+    await settle();
+    expect(b.audio.play).not.toHaveBeenCalled();
+    expect(b.stage.toggleBubble).toHaveBeenCalledTimes(1);
+    const staged = harness();
+    staged.view.offer(station("gate", [knight("a", "stage", { mode: "tap" })]));
+    await settle();
+    expect(staged.audio.play).toHaveBeenCalledTimes(1);
+    expect(staged.view.characterTapped()).toBe(false);
+  });
+
+  // Why this test matters: a voice still loading when the visitor taps
+  // again must not start after the stop.
+  it("drops a voice that was still loading when the tap stopped it", async () => {
+    let release: (b: Blob) => void = () => undefined;
+    const h = harness({
+      loadAsset: (path) =>
+        path.endsWith(".mp3")
+          ? new Promise<Blob>((r) => {
+              release = r;
+            })
+          : Promise.resolve(new Blob([path])),
+    });
+    h.view.offer(station("gate", [knight("a", "speak", { mode: "tap" })]));
+    h.view.characterTapped();
+    h.view.characterTapped();
+    release(new Blob(["voice"]));
+    await settle();
+    await settle();
+    expect(h.audio.play).not.toHaveBeenCalled();
+  });
+
+  // Why this test matters: a lineEnd step whose voice waits for a tap
+  // moves on after the words' reading time when nobody taps, and a tap
+  // that starts the voice holds it until the voice has ended.
+  it("waits for a tapped voice on a lineEnd step, and the reading time without one", async () => {
+    const h = harness();
+    h.view.offer(
+      station("gate", [
+        knight("a", "speak", { mode: "lineEnd" }),
+        tap("b", "Onwards."),
+      ]),
+    );
+    const reading = h.timers.filter((t) => !t.cancelled);
+    expect(reading).toHaveLength(1);
+    expect(reading[0]?.ms).toBeGreaterThan(1500);
+    h.view.characterTapped();
+    await settle();
+    expect(h.timers.filter((t) => !t.cancelled)).toHaveLength(0);
+    endVoice(h);
+    expect(h.timers.filter((t) => !t.cancelled).map((t) => t.ms)).toEqual([
+      600,
+    ]);
+  });
+
+  // Why this test matters: after his step he stays in the world (the
+  // stage's release) when the story ends; a session's end still clears
+  // the stage, and a tap with no story is not his to take.
+  it("releases the stage when the story ends, clears it when everything stops", async () => {
+    const h = harness();
+    h.view.offer(
+      station("gate", [knight("a", "two-stations", { mode: "tap" })]),
+    );
+    await settle();
+    h.view.continueTapped();
+    expect(h.ended).toEqual(["gate"]);
+    expect(h.stage.release).toHaveBeenCalledTimes(1);
+    h.stage.clear.mockClear();
+    expect(h.view.characterTapped()).toBe(false);
+    h.view.stopAll();
+    expect(h.stage.clear).toHaveBeenCalled();
+  });
+
   // Why this test matters: the portrait view shows his face beside his
   // name in the card, and only for that step.
   it("shows the portrait in the card for the portrait view, and hides it on the next step", async () => {
@@ -1250,5 +1372,57 @@ describe("a character's story views and the advance when the line ends", () => {
     expect(portrait.alt).toBe("Sir Kay");
     h.view.continueTapped();
     expect(portrait.hidden).toBe(true);
+  });
+});
+
+describe("a lineEnd step on a video", () => {
+  function clip(advance: TourStep["advance"]): TourStep {
+    return {
+      ...showing("v", {
+        kind: "video",
+        view: "card",
+        video: "clip",
+        transcript: "The gate at dawn.",
+      }),
+      advance,
+    };
+  }
+
+  // Why this test matters: "when the line ends" on a video is the clip's
+  // end - a story that moved on after the transcript's reading time would
+  // cut the clip off while it plays.
+  it("waits until the clip ends, then its tail", async () => {
+    const h = harness();
+    h.view.offer(
+      station("s", [clip({ mode: "lineEnd" }), tap("b", "Onwards.")]),
+    );
+    await settle();
+    expect(h.timers.filter((t) => !t.cancelled)).toHaveLength(0);
+    expect(typeof h.dom.video.onended).toBe("function");
+    h.dom.video.onended?.(new Event("ended"));
+    const live = h.timers.filter((t) => !t.cancelled);
+    expect(live.map((t) => t.ms)).toEqual([600]);
+    live[0]?.fn();
+    expect(h.dom.text.textContent).toBe("Onwards.");
+    // The next step lets go of the clip's end.
+    expect(h.dom.video.onended).toBeNull();
+  });
+
+  // Why this test matters: a clip that cannot be read never ends, so the
+  // transcript's reading time stands in and the story does not stall.
+  it("moves on after the transcript's reading time when the clip cannot be read", async () => {
+    const h = harness({
+      loadAsset: (path) =>
+        path.endsWith(".webm")
+          ? Promise.reject(new Error("no"))
+          : Promise.resolve(new Blob([path])),
+    });
+    h.view.offer(
+      station("s", [clip({ mode: "lineEnd" }), tap("b", "Onwards.")]),
+    );
+    await settle();
+    const live = h.timers.filter((t) => !t.cancelled);
+    expect(live).toHaveLength(1);
+    expect(live[0]?.ms).toBeGreaterThanOrEqual(1500);
   });
 });

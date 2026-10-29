@@ -21,10 +21,8 @@ import {
   type CharacterLookState,
   type CharacterVoice,
 } from "../character-look.js";
-import {
-  STAGE_CHARACTER_VIEWS,
-  isStageCharacterView,
-} from "../character-views.js";
+import { TOUR_CHARACTER_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
+import { isStageCharacterView } from "../character-views.js";
 
 /** The prototype's first station: Wendel, his line and his place. */
 export const CHECK_CHARACTER = {
@@ -57,7 +55,6 @@ export interface CharacterViewsCheckState extends CharacterLookState {
     readonly pip: PartRect | null;
     readonly scroll: PartRect | null;
     readonly popup: PartRect | null;
-    readonly arrow: PartRect | null;
   };
   /** His head (0.86 of his height) projected onto the page. */
   readonly head: { readonly x: number; readonly y: number } | null;
@@ -212,7 +209,7 @@ export function startCharacterViewsCheck(host: HTMLElement): void {
   async function show(options: ShowOptions): Promise<void> {
     if (!isStageCharacterView(options.view)) {
       throw new TypeError(
-        `"view" must be one of ${STAGE_CHARACTER_VIEWS.join(", ")}`,
+        `"view" must be one of ${TOUR_CHARACTER_VIEWS.join(", ")}`,
       );
     }
     figure ??= await loadImage(FIGURE_URL);
@@ -267,7 +264,6 @@ export function startCharacterViewsCheck(host: HTMLElement): void {
           pip: rectOf(look.parts.pip),
           scroll: rectOf(look.parts.scroll),
           popup: rectOf(look.parts.popup),
-          arrow: rectOf(look.parts.arrow),
         },
         head:
           head.z > 1
@@ -303,7 +299,7 @@ export function startCharacterViewsCheck(host: HTMLElement): void {
 function mountDemoBar(host: HTMLElement, hook: CharacterViewsCheck): void {
   const bar = document.createElement("div");
   bar.className = "cvc-views";
-  const buttons = STAGE_CHARACTER_VIEWS.map((view) => {
+  const buttons = TOUR_CHARACTER_VIEWS.map((view) => {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "btn";

@@ -487,7 +487,11 @@ describe("the readout's tick", () => {
 
 /** The tour of `setUp` with a model in station b: two notes, one
  *  section, a clip that does not play by itself. */
-function withModel(store: ReturnType<typeof setUp>["store"]): void {
+function withModel(
+  store: ReturnType<typeof setUp>["store"],
+  view = "hotspots",
+  noted = true,
+): void {
   const b = station("b", 0.0004);
   store.dispatch(
     tourDocumentActions.opened({
@@ -502,21 +506,23 @@ function withModel(store: ReturnType<typeof setUp>["store"]): void {
               {
                 id: "m",
                 kind: "model",
-                view: "hotspots",
+                view,
                 asset: "glb",
                 sizeM: 2,
                 createdAtIso: AT,
                 pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
                 animation: { name: "Swing", autoplay: false },
-                annotations: [
-                  { position: [0, 1, 0], normal: [0, 1, 0], title: "Top" },
-                  {
-                    position: [0.5, 0, 0],
-                    normal: [1, 0, 0],
-                    title: "Side",
-                    text: "The bell's side",
-                  },
-                ],
+                annotations: noted
+                  ? [
+                      { position: [0, 1, 0], normal: [0, 1, 0], title: "Top" },
+                      {
+                        position: [0.5, 0, 0],
+                        normal: [1, 0, 0],
+                        title: "Side",
+                        text: "The bell's side",
+                      },
+                    ]
+                  : [],
                 sections: [
                   { name: "Frame", position: [0, 0.5, 0], normal: [0, 0, 1] },
                 ],
@@ -561,6 +567,28 @@ describe("the inspector's model parts", () => {
       ["m", { kind: "animation", name: "Ring", autoplay: false }],
     ]);
     shell.hide();
+  });
+
+  // Why this test matters: a model's notes are drawn only in the
+  // Hotspots view, so a creator who wrote notes and chose another view
+  // would otherwise wonder where they went.
+  it("tells a model with notes in another view that its notes show only in Hotspots", () => {
+    const hint = "Its notes show only in Hotspots";
+    const note = (): string =>
+      document.querySelector("#shell-inspector .mview .note")?.textContent ??
+      "";
+    for (const [view, noted, shows] of [
+      ["placed", true, true],
+      ["toy", true, true],
+      ["hotspots", true, false],
+      ["placed", false, false],
+    ] as const) {
+      const { store, select, shell } = setUp();
+      withModel(store, view, noted);
+      select("m");
+      expect(note().includes(hint), `${view} ${String(noted)}`).toBe(shows);
+      shell.hide();
+    }
   });
 
   it("choose a view, flip a section, turn autoplay and delete parts as model edits", () => {

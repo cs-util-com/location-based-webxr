@@ -45,8 +45,10 @@ listed in `index.html.md`. The concerns and their modules:
 - `model-visitor.ts` - a model's notes, its card and a toy in hand:
   `main.ts` mounts its DOM under `#ar-root` (`mountModelVisitorDom`, styles
   in `model-visitor.css`), ticks it in `hooks.tickStations`, gives
-  `hooks.visitorTap` to it first (a tap that opens no model card goes to
-  the pin sheet) and stops it in `hooks.stopStations`.
+  `hooks.visitorTap` to it after the story's character
+  (`visitor-stations.ts` `characterTapped`: a tap on his figure, bubble or
+  stage plays or stops his voice, and goes nowhere else; a tap that opens
+  no model card goes to the pin sheet) and stops it in `hooks.stopStations`.
 - `viewer-placement.ts` - the viewer pipeline and the photo placement
   (`createViewerPlacement`).
 - `ar-entry.ts` - the AR entry, the runtime start/end, the status line

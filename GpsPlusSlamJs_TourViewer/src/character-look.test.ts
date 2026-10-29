@@ -1,11 +1,14 @@
-import { PerspectiveCamera, Vector3 } from "three";
+import { Box3, PerspectiveCamera, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 
 import { createCharacterLook } from "./character-look";
 import type { StageCharacterView } from "./character-views";
 import { fakeCharacterPainters } from "./test-support/fake-character-painters";
 
-function setup(view: StageCharacterView) {
+function setup(
+  view: StageCharacterView,
+  extra: { restYaw?: number; voiced?: boolean } = {},
+) {
   const { painters, painted } = fakeCharacterPainters();
   const look = createCharacterLook({
     view,
@@ -13,6 +16,7 @@ function setup(view: StageCharacterView) {
     line: "Good day, traveller.",
     figure: { width: 100, height: 200 } as unknown as HTMLCanvasElement,
     painters,
+    ...extra,
   });
   const camera = new PerspectiveCamera(50, 1, 0.05, 600);
   /** The camera at eye height, `north` and `east` metres from him, looking
@@ -93,22 +97,37 @@ describe("createCharacterLook: the bubble and the name tag", () => {
 });
 
 describe("createCharacterLook: facing and the beckon", () => {
-  it("turns to face the camera wherever it stands", () => {
+  // Why this test matters: the prototype rests him at the creator's
+  // facing and turns him toward the visitor by at most 60 degrees, so a
+  // visitor walking round him sees him from the side and behind, not a
+  // card spinning to follow them.
+  it("turns from the creator's facing toward the camera, by at most 60 degrees", () => {
+    const cap = Math.PI / 3;
     const { look, standAt, tick } = setup("bubble");
     standAt(0, 5);
     tick(0, true);
     expect(look.state().turn).toBeCloseTo(0, 5);
     standAt(5, 0);
     tick(0, true);
-    expect(look.state().turn).toBeCloseTo(Math.PI / 2, 5);
+    expect(look.state().turn).toBeCloseTo(cap, 5);
+    standAt(0, -5);
+    tick(0, true);
+    expect(Math.abs(look.state().turn)).toBeCloseTo(cap, 5);
+    // Facing north (the creator's rotation): a camera east is 90 degrees
+    // off, so he turns 60 toward it.
+    const north = setup("speak", { restYaw: Math.PI / 2 });
+    north.standAt(0, 5);
+    north.tick(0, true);
+    expect(north.look.state().turn).toBeCloseTo(Math.PI / 2 - cap, 5);
+    north.standAt(5, 0);
+    north.tick(0, true);
+    expect(north.look.state().turn).toBeCloseTo(Math.PI / 2, 5);
   });
 
-  // Why this test matters: the beckon rule - two-stations only, once he
-  // was heard, near him - shown as the prototype shows it: gold chevrons
-  // on the ground running toward the next station, the footer naming it.
-  // He keeps facing the visitor: a flat cut-out turned away reads as a
-  // squashed card (seen side by side with the prototype).
-  it("beckons in two-stations once heard: chevrons toward the next station, the footer naming it, still facing the visitor", () => {
+  // Why this test matters: the ground arrows are the creator's own blocks
+  // (the owner's verdict), so the beckon is his frame and the footer
+  // naming the next station - nothing drawn on the ground.
+  it("beckons in two-stations once heard: the footer naming the next station, no arrow on the ground, still facing the visitor", () => {
     const { look, standAt, tick, painted } = setup("two-stations");
     look.setBeckon({ dx: 30, dz: 0, title: "East road" });
     standAt(0, 5);
@@ -121,24 +140,42 @@ describe("createCharacterLook: facing and the beckon", () => {
     tick(0, true);
     expect(look.state().beckoning).toBe(true);
     expect(look.state().turn).toBeCloseTo(0, 5);
-    expect(look.state().arrow).toBeCloseTo(0.85, 5);
     expect(look.state().footer).toBe("Next: East road");
     expect(painted.bubbles).toContain("Next: East road");
-    // The chevrons lie on the ground, ahead of him toward the next
-    // station (30 m north), not toward the visitor.
-    const arrow = look.parts.arrow;
-    expect(arrow.visible).toBe(true);
+    expect(look.state()).not.toHaveProperty("arrow");
+    expect(look.parts).not.toHaveProperty("arrow");
+    expect(look.root.getObjectByName("character-arrow")).toBeUndefined();
+    // No mesh he draws reaches out along the ground: the widest is his
+    // shadow (under 1 m), not a plane running toward the next station.
     look.root.updateWorldMatrix(true, true);
-    const at = new Vector3();
-    arrow.getWorldPosition(at);
-    expect(at.x).toBeGreaterThan(2);
-    expect(Math.abs(at.z)).toBeLessThan(1e-6);
-    expect(at.y).toBeLessThan(0.05);
+    const size = new Vector3();
+    look.root.traverse((o) => {
+      let drawn = (o as { isMesh?: boolean }).isMesh === true;
+      o.traverseAncestors((up) => {
+        if (!up.visible) drawn = false;
+      });
+      if (!drawn || !o.visible) return;
+      if (o.name === "character-bubble" || o.name === "character-pip") return;
+      new Box3().setFromObject(o).getSize(size);
+      expect(Math.max(size.x, size.z), o.name).toBeLessThan(2);
+    });
     standAt(0, 20);
     tick(0, true);
     expect(look.state().beckoning).toBe(false);
-    expect(look.state().arrow).toBe(0);
-    expect(arrow.visible).toBe(false);
+  });
+
+  // Why this test matters: the beckon waits for him to have been heard,
+  // and the story's next step sets his voice back to idle - he must still
+  // beckon then (the prototype's `spoken` stays with him).
+  it("keeps beckoning once heard, when the voice goes idle again", () => {
+    const { look, standAt, tick } = setup("two-stations");
+    look.setBeckon({ dx: 30, dz: 0, title: "East road" });
+    standAt(0, 5);
+    look.setVoice("spoken");
+    tick(16);
+    look.setVoice("idle");
+    tick(16);
+    expect(look.state().beckoning).toBe(true);
   });
 
   it("beckons after six seconds open even when the line has no voice", () => {
@@ -187,8 +224,8 @@ describe("createCharacterLook: the portrait and the pop-up", () => {
   // Why this test matters: the pop-up unfolds within 12 m, stays until
   // 16 m, shows the line on its scroll and no standing figure, and keeps
   // the facing it had when it unfolded.
-  it("unfolds the pop-up near, keeps its facing, and draws no standing figure", () => {
-    const { look, standAt, tick } = setup("popup");
+  it("unfolds the pop-up near, keeps the creator's facing, and draws no standing figure", () => {
+    const { look, standAt, tick } = setup("popup", { restYaw: 0.4 });
     standAt(0, 10);
     tick(0, true);
     expect(look.state().unfold).toBe(1);
@@ -196,6 +233,7 @@ describe("createCharacterLook: the portrait and the pop-up", () => {
     expect(look.parts.scroll.visible).toBe(true);
     expect(look.parts.figure.visible).toBe(false);
     const facing = look.state().turn;
+    expect(facing).toBeCloseTo(0.4, 12);
     standAt(10, 0);
     tick(0, true);
     expect(look.state().turn).toBe(facing);
@@ -272,5 +310,64 @@ describe("createCharacterLook: the bubble stays on the screen", () => {
       expect(maxX, `east ${east.toFixed(1)}`).toBeLessThanOrEqual(0.9701);
       expect(minX, `east ${east.toFixed(1)}`).toBeGreaterThanOrEqual(-0.9701);
     }
+  });
+});
+
+describe("createCharacterLook: the footer and the tap", () => {
+  // Why this test matters: in the prototype his voice plays on a tap, and
+  // the speak view's bubble says so ("Tap to hear him", then "Tap to hear
+  // again"); a line with no voice offers no tap. The other views name no
+  // tap in the bubble.
+  it("asks for a tap in the speak view while he is not speaking, and only with a voice", () => {
+    const { look, standAt, tick } = setup("speak", { voiced: true });
+    standAt(0, 5);
+    tick(0, true);
+    expect(look.state().footer).toBe("Tap to hear him");
+    look.setVoice("speaking");
+    tick(16);
+    expect(look.state().footer).toBe("Speaking");
+    look.setVoice("spoken");
+    tick(16);
+    expect(look.state().footer).toBe("Tap to hear again");
+    const mute = setup("speak", { voiced: false });
+    mute.standAt(0, 5);
+    mute.tick(0, true);
+    expect(mute.look.state().footer).toBeNull();
+    const two = setup("two-stations", { voiced: true });
+    two.standAt(0, 5);
+    two.tick(0, true);
+    expect(two.look.state().footer).toBeNull();
+    const bubble = setup("bubble", { voiced: true });
+    bubble.standAt(0, 5);
+    bubble.tick(0, true);
+    expect(bubble.look.state().footer).toBeNull();
+  });
+
+  // Why this test matters: the pop-up's scroll names the tap on its stage
+  // the same way.
+  it("asks for a tap on the pop-up's scroll", () => {
+    const { look, standAt, tick } = setup("popup", { voiced: true });
+    standAt(0, 5);
+    tick(0, true);
+    expect(look.state().footer).toBe("Tap the stage to hear him");
+    look.setVoice("spoken");
+    tick(16);
+    expect(look.state().footer).toBe("Tap the stage to hear him again");
+  });
+
+  // Why this test matters: the bubble view has no voice; a tap opens and
+  // shuts its bubble, as in the prototype.
+  it("shuts and opens the bubble on a tap in the bubble view", () => {
+    const { look, standAt, tick } = setup("bubble");
+    standAt(0, 5);
+    tick(0, true);
+    expect(look.state().bubble).toBe(1);
+    look.toggleBubble();
+    tick(0, true);
+    expect(look.state().bubble).toBe(0);
+    expect(look.parts.bubble.visible).toBe(false);
+    look.toggleBubble();
+    tick(0, true);
+    expect(look.state().bubble).toBe(1);
   });
 });

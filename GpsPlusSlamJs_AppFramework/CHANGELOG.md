@@ -30,7 +30,7 @@
   `onDropped` as a field drop (`annotations[i]` / `sections[i]`).
 
 - **A tour's recurring characters, five story views and the advance
-  when the line ends, `tour.json` version 4 minor 2** (`ar/tour-characters`,
+  when the line ends, `tour.json` version 4 minor 2** (new `ar/tour-characters`;
   `ar/tour-blocks`, `ar/tour-story`, `ar/tour-manifest`). A tour may
   declare `characters` (`{ id, name, image }`, at most
   32), and a `character` block may name one by its new

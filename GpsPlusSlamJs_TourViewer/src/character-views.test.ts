@@ -8,6 +8,9 @@ import {
   bubbleOpens,
   bubbleSide,
   characterViewLook,
+  facingYaw,
+  MAX_TURN_DEG,
+  restYawOf,
   isStageCharacterView,
   lineReadingMs,
   popupUnfolds,
@@ -174,5 +177,46 @@ describe("characterViewLook", () => {
       pip: false,
       turns: false,
     });
+  });
+});
+
+describe("restYawOf and facingYaw: the creator's facing and the 60 degree turn", () => {
+  const yawQ = (rad: number) =>
+    [0, Math.sin(rad / 2), 0, Math.cos(rad / 2)] as const;
+
+  // Why this test matters: the creator sets his facing as the block's
+  // rotation; read wrongly he would rest facing another way than the
+  // creator chose (the prototype's `root.rotation.y = pose yaw`).
+  it("reads the facing about Up from a block's rotation, 0 facing east", () => {
+    expect(restYawOf([0, 0, 0, 1])).toBeCloseTo(0, 12);
+    expect(restYawOf(yawQ(Math.PI / 2))).toBeCloseTo(Math.PI / 2, 12);
+    expect(restYawOf(yawQ(-2))).toBeCloseTo(-2, 12);
+    // Not normalised: the same facing.
+    expect(restYawOf([0, 2 * Math.SQRT1_2, 0, 2 * Math.SQRT1_2])).toBeCloseTo(
+      Math.PI / 2,
+      12,
+    );
+    // Malformed, or his front straight up: rest at 0.
+    expect(restYawOf([Number.NaN, 0, 0, 1])).toBe(0);
+    expect(restYawOf([0, 0, 0])).toBe(0);
+    expect(restYawOf([0, 0, 0, 0])).toBe(0);
+    expect(restYawOf([-Math.SQRT1_2, 0, 0, Math.SQRT1_2])).toBe(0);
+  });
+
+  // Why this test matters: the prototype turns him toward the visitor by
+  // at most 60 degrees from the creator's facing, so a visitor behind him
+  // sees him from the side, not a figure spinning to follow them.
+  it("turns toward the camera by at most 60 degrees, and the pop-up rests", () => {
+    const cap = (MAX_TURN_DEG * Math.PI) / 180;
+    expect(MAX_TURN_DEG).toBe(60);
+    expect(facingYaw(0, 0.5, true)).toBeCloseTo(0.5, 12);
+    expect(facingYaw(0, Math.PI / 2, true)).toBeCloseTo(cap, 12);
+    expect(facingYaw(0, -Math.PI / 2, true)).toBeCloseTo(-cap, 12);
+    // Across the wrap: rest 170 degrees, the camera at -170 is 20 away.
+    const r = (170 * Math.PI) / 180;
+    expect(facingYaw(r, -r, true)).toBeCloseTo(r + (20 * Math.PI) / 180, 12);
+    expect(facingYaw(1, 2, false)).toBe(1);
+    expect(facingYaw(Number.NaN, 0.3, true)).toBeCloseTo(0.3, 12);
+    expect(facingYaw(0.4, Number.NaN, true)).toBe(0.4);
   });
 });

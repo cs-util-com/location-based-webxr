@@ -432,6 +432,119 @@ describe("a character in a story view stands as a character look", () => {
     expect(h.frames.size).toBe(0);
   });
 
+  // Why this test matters: the creator places him with the block's pose
+  // in the station's frame - where he stands and which way he faces - and
+  // the prototype turns him from that facing toward the visitor by at most
+  // 60 degrees. A figure standing on the station's centre facing the
+  // visitor whatever the creator chose would ignore both.
+  it("stands at the block's pose in the station's frame and rests at its facing", async () => {
+    const h = looking([2, 401.6, -30]);
+    const s45 = Math.SQRT1_2;
+    const turned = createSceneStage({
+      getScene: () => h.scene,
+      // The station turned 90 degrees about Up: its +Z (east) now north.
+      poseOf: () => ({
+        positionNue: [0, 400, 0] as [number, number, number],
+        rotationNue: [0, s45, 0, s45] as [number, number, number, number],
+      }),
+      decodeTexture: () => Promise.resolve(textureOf(100, 200)),
+      loadModel: () => Promise.resolve(new Group()),
+      getCamera: () => h.camera,
+      lookPainters: fakeCharacterPainters().painters,
+    });
+    await turned.showCharacter("gate", new Blob(["png"]), undefined, {
+      ...h.look,
+      view: "speak",
+      pose: { position: [0, 0, 2], rotation: [0, 0, 0, 1] },
+    });
+    const holder = h.scene.children[0]!;
+    // 2 m along the station's +Z, which points north.
+    expect(holder.position.x).toBeCloseTo(2, 9);
+    expect(holder.position.y).toBeCloseTo(400, 9);
+    expect(holder.position.z).toBeCloseTo(0, 9);
+    expect(holder.quaternion.toArray()).toEqual([0, 0, 0, 1]);
+    // He rests facing north (pi/2); the camera due west of him (-z, a
+    // turn of pi) is 90 degrees off, so he turns 60 toward it.
+    const look = turned.characterRoot();
+    expect(look).not.toBeNull();
+    const turn = look!.children[0]!;
+    expect(turn.rotation.y).toBeCloseTo(Math.PI / 2 + Math.PI / 3, 5);
+  });
+
+  // Why this test matters: after his step he stays in the world (the plan:
+  // a story view stays, as world blocks do), idle, beckoning in two
+  // stations; he goes once his station is left and does not come back.
+  it("keeps a released look standing, beckoning, until its station is left, and never brings it back", async () => {
+    const h = looking();
+    await h.stage.showCharacter("gate", new Blob(["png"]), undefined, h.look);
+    h.stage.follow(() => true);
+    h.beckonOf.mockClear();
+    h.stage.release();
+    expect(h.scene.children).toHaveLength(1);
+    expect(h.frames.size).toBeGreaterThan(0);
+    h.frame(16);
+    expect(h.beckonOf).toHaveBeenCalledWith("gate");
+    expect(h.stage.characterRoot()).not.toBeNull();
+    // A voice set by the next story does not reach him.
+    h.stage.setVoice("speaking");
+    h.stage.follow(() => false);
+    h.clock.ms += 500;
+    h.stage.follow(() => false);
+    expect(h.scene.children).toHaveLength(0);
+    expect(h.stage.characterRoot()).toBeNull();
+    h.stage.follow(() => true);
+    h.clock.ms += 500;
+    h.stage.follow(() => true);
+    expect(h.scene.children).toHaveLength(0);
+    expect(h.frames.size).toBe(0);
+  });
+
+  it("releases a plain figure, a model or a look still waiting by clearing it", async () => {
+    const h = looking();
+    await h.stage.showCharacter("gate", new Blob(["png"]));
+    h.stage.release();
+    expect(h.scene.children).toHaveLength(0);
+    await h.stage.showModel("gate", new Blob(["glb"]));
+    h.stage.release();
+    expect(h.scene.children).toHaveLength(0);
+    const parked = createSceneStage({
+      getScene: () => h.scene,
+      poseOf: () => null,
+      decodeTexture: () => Promise.resolve(textureOf(100, 200)),
+      loadModel: () => Promise.resolve(new Group()),
+      lookPainters: fakeCharacterPainters().painters,
+    });
+    const shown = parked.showCharacter(
+      "gate",
+      new Blob(["png"]),
+      undefined,
+      h.look,
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    parked.release();
+    await shown;
+    expect(h.scene.children).toHaveLength(0);
+  });
+
+  // Why this test matters: the visitor's tap is cast against what he
+  // draws, so the stage names his root only while it stands in the scene;
+  // the bubble view's tap shuts his bubble.
+  it("names the look's root for a tap only while it stands, and shuts the bubble view's bubble", async () => {
+    const h = looking();
+    expect(h.stage.characterRoot()).toBeNull();
+    await h.stage.showCharacter("gate", new Blob(["png"]), undefined, {
+      ...h.look,
+      view: "bubble",
+    });
+    expect(h.stage.characterRoot()?.name).toBe("station-character");
+    expect(bubbleOf(h.scene)?.visible).toBe(true);
+    h.stage.toggleBubble();
+    for (let i = 0; i < 20; i++) h.frame(50);
+    expect(bubbleOf(h.scene)?.visible).toBe(false);
+    await h.stage.showModel("gate", new Blob(["glb"]));
+    expect(h.stage.characterRoot()).toBeNull();
+  });
+
   it("stands still, with no error, while there is no camera", async () => {
     const h = looking(null);
     await h.stage.showCharacter("gate", new Blob(["png"]), undefined, h.look);

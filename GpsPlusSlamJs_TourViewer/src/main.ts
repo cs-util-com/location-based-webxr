@@ -1070,9 +1070,11 @@ if (mode === "visitor") {
   });
 }
 hooks.visitorTap = (tap) => {
-  // A model's card first; a tap that opens none is the pin sheet's.
-  if (modelVisitor.tapped(tap)) pinSheet.close();
-  else pinSheet.tapped(tap);
+  // The story's character first, then a model's card; a tap that opens
+  // none is the pin sheet's.
+  if (stations.characterTapped(tap) || modelVisitor.tapped(tap)) {
+    pinSheet.close();
+  } else pinSheet.tapped(tap);
 };
 hooks.stopStations = () => {
   stations.stop();

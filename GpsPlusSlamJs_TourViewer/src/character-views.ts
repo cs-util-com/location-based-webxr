@@ -2,12 +2,18 @@
  * The RULES of a character's five world views (`bubble`, `speak`,
  * `two-stations`, `portrait`, `popup`), kept pure so the three.js look
  * (`character-look.ts`) and its tests read one table: which parts a view
- * draws, the distances it opens at, how far he turns, when he beckons and
- * how long a line takes to read. The numbers are the station-blocks-7
- * prototype's (`public/prototypes/station-blocks-7-character/`).
+ * draws, the distances it opens at, how far he turns from the creator's
+ * facing, when he beckons and how long a line takes to read. The numbers
+ * are the station-blocks-7 prototype's
+ * (`public/prototypes/station-blocks-7-character/`).
  *
  * @see character-views.ts.md
  */
+
+import {
+  TOUR_CHARACTER_VIEWS,
+  type TourCharacterView,
+} from "gps-plus-slam-app-framework/ar/tour-blocks";
 
 /** The bubble opens within this distance; farther away a name tag shows. */
 export const BUBBLE_OPEN_M = 9;
@@ -22,20 +28,57 @@ export const BECKON_WITHIN_M = 14;
 /** ...and once he has been heard, or after this long open. */
 export const BECKON_AFTER_MS = 6000;
 
-/** The views the world look draws (`card` and `stage` are not among them). */
-export const STAGE_CHARACTER_VIEWS = [
-  "bubble",
-  "speak",
-  "two-stations",
-  "portrait",
-  "popup",
-] as const;
-export type StageCharacterView = (typeof STAGE_CHARACTER_VIEWS)[number];
+/** The views the world look draws: the format's story views (`card` and
+ *  `stage` are not among them). */
+export type StageCharacterView = TourCharacterView;
 
 export function isStageCharacterView(
   view: unknown,
 ): view is StageCharacterView {
-  return (STAGE_CHARACTER_VIEWS as readonly unknown[]).includes(view);
+  return (TOUR_CHARACTER_VIEWS as readonly unknown[]).includes(view);
+}
+
+/** How far (degrees) he turns from the creator's facing toward the
+ *  visitor, as in the prototype. */
+export const MAX_TURN_DEG = 60;
+const MAX_TURN_RAD = (MAX_TURN_DEG * Math.PI) / 180;
+
+const wrapAngle = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
+
+/**
+ * The creator's facing of a block whose rotation (a quaternion [x, y, z, w]
+ * in the scene's NUE: x north, y up, z east) turns his front, +Z, to some
+ * direction: that direction's angle about Up (rad, 0 facing +Z, east;
+ * pi/2 facing +X, north). 0 for a malformed rotation or one that turns his
+ * front straight up or down.
+ */
+export function restYawOf(q: readonly number[]): number {
+  if (q.length !== 4 || !q.every(Number.isFinite)) return 0;
+  const [x, y, z, w] = q as [number, number, number, number];
+  const n2 = x * x + y * y + z * z + w * w;
+  if (!(n2 > 0)) return 0;
+  // +Z turned by the (normalised) quaternion: its x and z.
+  const vx = (2 * (x * z + w * y)) / n2;
+  const vz = 1 - (2 * (x * x + y * y)) / n2;
+  if (Math.hypot(vx, vz) < 1e-9) return 0;
+  return Math.atan2(vx, vz);
+}
+
+/**
+ * Where he faces (rad, about Up, 0 facing +Z): from his rest facing toward
+ * the camera's direction, by at most {@link MAX_TURN_DEG}; a view that does
+ * not turn (the pop-up) stays at rest. A non-finite rest reads as 0, a
+ * non-finite camera direction as no turn.
+ */
+export function facingYaw(
+  restYaw: number,
+  toCamera: number,
+  turns: boolean,
+): number {
+  const rest = Number.isFinite(restYaw) ? restYaw : 0;
+  if (!turns || !Number.isFinite(toCamera)) return rest;
+  const rel = wrapAngle(toCamera - rest);
+  return rest + Math.min(MAX_TURN_RAD, Math.max(-MAX_TURN_RAD, rel));
 }
 
 /** Which parts one view draws. */

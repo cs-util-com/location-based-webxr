@@ -22,7 +22,7 @@ Layout (wrapping and sizes) is separated from painting, so it can be tested in n
   - `bubbleLayout(content, measure)` returns `{w, h, bodyH, lines, tipX}`;
   - `bubbleTipX(w, side)`: the tail tip sits 30 px from the edge nearest the head.
 - `PIP` and `pipLayout`; `scrollLayout` (its sizes, `SCROLL`, module-internal).
-- Painters: `paintBubble`, `paintPip`, `paintScroll`, `paintStageTop`, `paintBackdrop`, `paintBlob`, `paintChevrons` (the beckon's four gold chevrons, 128 x 512, repeating along its height) and `paintFade` (their alpha, faded at both ends). Each returns `Painted {image, w, h}`, or `PaintedTail` with a `tipX`.
+- Painters: `paintBubble`, `paintPip`, `paintScroll`, `paintStageTop`, `paintBackdrop` and `paintBlob`. Each returns `Painted {image, w, h}`, or `PaintedTail` with a `tipX`.
 - `paintFigure(source)` returns `PaintedFigure {front, back, figureW, figureH, pad}`:
   - the source is scaled to at most `FIGURE_MAX_PX` (1024) high;
   - `dieCutPad(h)` = `max(3, round(14/1024 * h))`.

@@ -33,7 +33,14 @@
  * bubble, name tag, ring or pop-up stage, updated every rendered frame
  * against the viewer's camera while it shows. Its fade is the look's own
  * presence (`setSubtreeOpacity` caches material opacities the look changes
- * every frame), and its holder is never turned.
+ * every frame), and its holder is never turned. It stands at the block's
+ * pose in the station's frame and rests at the block's facing, which the
+ * look turns from toward the visitor by at most 60 degrees.
+ *
+ * After his step a look stays (`release`, the story ended): idle,
+ * beckoning in two stations, until his station stops showing; then he
+ * fades out and is let go for good, so he does not come back on a return.
+ * Any other figure or model leaves with its story, as before.
  */
 
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
@@ -51,13 +58,15 @@ import {
   type CharacterVoice,
 } from "./character-look.js";
 import type { FigureSource } from "./character-canvas.js";
-import type { StageCharacterView } from "./character-views.js";
+import { restYawOf, type StageCharacterView } from "./character-views.js";
 import {
   DoubleSide,
   Group,
   Mesh,
   MeshBasicMaterial,
   PlaneGeometry,
+  Quaternion,
+  Vector3,
   type Camera,
   type Object3D,
   type Texture,
@@ -69,6 +78,14 @@ export interface StageCharacterLook {
   readonly name: string;
   /** The step's caption: the bubble's or the scroll's line. */
   readonly line: string;
+  /** The line has a voice, which a tap plays; default false. */
+  readonly voiced?: boolean;
+  /** The block's pose in the station's frame (NUE m, a quaternion [x, y,
+   *  z, w]); absent: on the station's spot, facing its +Z. */
+  readonly pose?: {
+    readonly position: readonly [number, number, number];
+    readonly rotation: readonly [number, number, number, number];
+  };
 }
 
 /** A cut-out character's height (m): a standing adult. */
@@ -129,6 +146,15 @@ export interface SceneStage {
     onWaiting?: () => void,
   ): Promise<void>;
   clear(): void;
+  /** The story ended: a standing character look stays, heard, until its
+   *  station stops showing, then goes for good; anything else is cleared
+   *  as by `clear`. */
+  release(): void;
+  /** The standing look's root, for the visitor's tap; null while none
+   *  stands in the scene. */
+  characterRoot(): Object3D | null;
+  /** A tap on the bubble view's look: its bubble shuts, or opens again. */
+  toggleBubble(): void;
   /** Turn a standing character towards the visitor (NUE). */
   faceVisitor(visitorNue: readonly [number, number, number]): void;
   /** Which stations' content shows now (the present one, or all): the
@@ -151,6 +177,11 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     target: number;
     lastMs: number;
     look: CharacterLook | null;
+    /** The look's offset from the station's own position (NUE m), which
+     *  its beckon starts from. */
+    offset: Vector3;
+    /** Released (`release`): it goes for good once faded out. */
+    released: boolean;
   } | null = null;
   /** Which stations' content shows (`follow`); everything until told. */
   let isShown: (stationId: string) => boolean = () => true;
@@ -169,6 +200,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     root: Object3D;
     character: boolean;
     look: CharacterLook | null;
+    lookPose: StageCharacterLook["pose"];
     settle: () => void;
   } | null = null;
 
@@ -201,8 +233,19 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     if (shown === null || look === null || !shown.inScene) return;
     const camera = deps.getCamera?.() ?? null;
     if (camera === null) return;
-    look.setBeckon(deps.beckonOf?.(shown.stationId) ?? null);
+    look.setBeckon(beckonFrom(shown.stationId, shown.offset));
     look.update({ nowMs: now(), camera });
+  }
+
+  /** The station's beckon, from the look's own place (it may stand off
+   *  the station's position). */
+  function beckonFrom(
+    stationId: string,
+    offset: Vector3,
+  ): CharacterBeckon | null {
+    const b = deps.beckonOf?.(stationId) ?? null;
+    if (b === null) return null;
+    return { dx: b.dx - offset.x, dz: b.dz - offset.z, title: b.title };
   }
 
   /** Keep the look's frame registered (a session's end clears the
@@ -244,6 +287,10 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     // The page follows on every tick: a settled figure writes no material.
     if (shown.alpha !== before) applyAlpha(shown.root, shown.look, shown.alpha);
     if (target === 0 && shown.alpha <= 0 && shown.inScene) {
+      if (shown.released) {
+        clear();
+        return;
+      }
       shown.scene.remove(shown.root);
       shown.inScene = false;
     }
@@ -265,15 +312,18 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     character: boolean,
     onWaiting: (() => void) | undefined,
     look: CharacterLook | null = null,
+    lookPose?: StageCharacterLook["pose"],
   ): Promise<void> {
     if (mine !== token) {
       look?.dispose();
       disposeObject3D(root);
       return Promise.resolve();
     }
-    if (tryMount(stationId, root, character, look)) return Promise.resolve();
+    if (tryMount(stationId, root, character, look, lookPose)) {
+      return Promise.resolve();
+    }
     return new Promise((settle) => {
-      waiting = { mine, stationId, root, character, look, settle };
+      waiting = { mine, stationId, root, character, look, lookPose, settle };
       onWaiting?.();
     });
   }
@@ -284,6 +334,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     root: Object3D,
     character: boolean,
     look: CharacterLook | null,
+    lookPose?: StageCharacterLook["pose"],
   ): boolean {
     const scene = deps.getScene();
     const pose = deps.poseOf(stationId);
@@ -292,6 +343,22 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     holder.name = `station-stage:${stationId}`;
     holder.position.set(...pose.positionNue);
     if (!character) holder.quaternion.set(...pose.rotationNue);
+    // A look stands at its block's pose in the station's frame, its
+    // holder never turned (the look turns itself from its rest facing).
+    const offset = new Vector3();
+    if (look !== null) {
+      const stationQ = new Quaternion(...pose.rotationNue).normalize();
+      if (lookPose !== undefined && lookPose.position.every(Number.isFinite)) {
+        offset.set(...lookPose.position).applyQuaternion(stationQ);
+      }
+      holder.position.add(offset);
+      // He rests at the block's facing in the scene: the station's
+      // rotation, then the block's own.
+      const blockQ = new Quaternion(
+        ...(lookPose?.rotation ?? [0, 0, 0, 1]),
+      ).normalize();
+      look.setRestYaw(restYawOf(stationQ.multiply(blockQ).toArray()));
+    }
     holder.add(root);
     // At once where its station shows (the story's start); off the scene,
     // faded out, where it does not.
@@ -309,11 +376,13 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       target: visible ? 1 : 0,
       lastMs: now(),
       look,
+      offset,
+      released: false,
     };
     // The first frame snaps: the look opens where it stands, no ease-in.
     const camera = deps.getCamera?.() ?? null;
     if (look !== null && camera !== null) {
-      look.setBeckon(deps.beckonOf?.(stationId) ?? null);
+      look.setBeckon(beckonFrom(stationId, offset));
       look.update({ nowMs: now(), camera, snap: true });
     }
     keepLookTicking();
@@ -324,7 +393,9 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
   function retryWaiting(): void {
     if (waiting === null || waiting.mine !== token) return;
     const w = waiting;
-    if (!tryMount(w.stationId, w.root, w.character, w.look)) return;
+    if (!tryMount(w.stationId, w.root, w.character, w.look, w.lookPose)) {
+      return;
+    }
     waiting = null;
     w.settle();
   }
@@ -347,13 +418,22 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
           line: lookSpec.line,
           figure: texture.image as FigureSource,
           heightM: CHARACTER_HEIGHT_M,
+          voiced: lookSpec.voiced === true,
           ...(deps.lookPainters === undefined
             ? {}
             : { painters: deps.lookPainters }),
         });
         texture.dispose();
         look.root.name = "station-character";
-        await mount(mine, stationId, look.root, true, onWaiting, look);
+        await mount(
+          mine,
+          stationId,
+          look.root,
+          true,
+          onWaiting,
+          look,
+          lookSpec.pose,
+        );
         return;
       }
       const source = texture.image as
@@ -385,9 +465,28 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       await mount(mine, stationId, root, false, onWaiting);
     },
     clear,
+    release() {
+      if (waiting !== null || shown?.look == null || !shown.inScene) {
+        clear();
+        return;
+      }
+      // A late decode of this story lands on nothing; the look keeps its
+      // frames and its presence fade, heard.
+      token += 1;
+      voice = "idle";
+      shown.released = true;
+      shown.look.setVoice("spoken");
+    },
+    characterRoot() {
+      if (shown?.look == null || !shown.inScene) return null;
+      return shown.look.root;
+    },
+    toggleBubble() {
+      shown?.look?.toggleBubble();
+    },
     setVoice(next) {
       voice = next;
-      shown?.look?.setVoice(next);
+      if (shown?.released !== true) shown?.look?.setVoice(next);
     },
     faceVisitor(visitor) {
       retryWaiting();

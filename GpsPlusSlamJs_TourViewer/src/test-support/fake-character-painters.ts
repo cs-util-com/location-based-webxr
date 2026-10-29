@@ -36,8 +36,6 @@ export function fakeCharacterPainters(): {
     stageTop: () => flat(1024, 560),
     backdrop: () => flat(1024, 1080),
     blob: () => flat(256, 128),
-    chevrons: () => flat(128, 512),
-    fade: () => flat(8, 256),
   };
   return { painters, painted };
 }

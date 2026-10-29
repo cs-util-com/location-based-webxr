@@ -43,13 +43,23 @@ time. Plan:
   station's free blocks (`content-placement.ts`), never by a step.
 - **A character in a story view** (`bubble`, `speak`, `two-stations`,
   `portrait`, `popup`; tour format 4.2) goes to the stage with a look
-  spec `{ view, name, line }` (the line is the caption), which the stage
+  spec `{ view, name, line, voiced, pose }` (the line is the caption;
+  `voiced` is false in the bubble view, which has no voice), which the stage
   draws as a character look (`scene-stage.ts`, `character-look.ts`). The
   caption still shows in the card (captions always). The `portrait` view
   also shows the figure as a round portrait beside his name (`dom.portrait`,
   measured by `checkPicture` like a picture, hidden on the next step). A
   character's voice tells the stage when it speaks (`setVoice("speaking")`)
   and when it has spoken (`"spoken"`); every step change sets `"idle"`.
+  As in the prototype, a story view's voice plays only on a tap on him
+  (`characterTapped()`: the figure, bubble or stage in AR, through
+  `visitor-stations.ts`, or the portrait in the card); a tap while it
+  plays stops it, and the next plays it again; a voice still loading when
+  it was stopped is dropped. The bubble view has no voice: its tap shuts
+  or opens the bubble. The `stage` and `card` views still play the voice
+  with the step. When the story ends the stage is released
+  (`stage.release`, absent: `clear`), so he stays in the world after his
+  step.
 - A character's figure goes to the stage as it is; the stage's decoder
   measures it from its own header (the decode cap, `station-prefetch.ts`
   `decodeFigure`).
@@ -86,7 +96,11 @@ time. Plan:
   the timer. A choice never auto-advances.
 - **`lineEnd` steps** (format 4.2) advance when the step's voice or sound
   ends, after a 600 ms tail; never while it plays. With no voice, or one
-  that cannot be read or played, the words' reading time stands in
+  that cannot be read or played, or a story view's voice nobody tapped,
+  the words' reading time stands in; a tap that starts the voice holds the
+  step until it ends, and a tap that stops it counts as its end. A video's
+  `lineEnd` waits for the clip's `ended` (one that cannot be read: the
+  transcript's reading time); the next step resets `onended`
   (`character-views.ts` `lineReadingMs`, 1.5-60 s). Held, no timer runs;
   released, the wait starts again. One timer at a time: `armTimer` cancels
   any earlier one (a voice lost while its step renders arms it early).
@@ -206,4 +220,6 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   when the line ends" (a story view handed to the stage as a look, the
   plain stage view without one, a card with no figure; the voice told to
   the stage; `lineEnd` on the voice's end, never before; the reading time
-  with no voice or a failing one; the hold; the portrait).
+  with no voice or a failing one; the hold; the portrait; the voice on a
+  tap, its stop and replay, the bubble's tap, a dropped loading voice, the
+  release at the story's end) and "a lineEnd step on a video".

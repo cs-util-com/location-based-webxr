@@ -519,44 +519,6 @@ export function paintBlob(): Painted {
   return { image: c, w: 256, h: 128 };
 }
 
-/** The beckon's gold chevrons, four pointing up (the top runs toward the
- *  next station); the texture repeats along its height and scrolls. */
-export function paintChevrons(): Painted {
-  const c = canvas(128, 512);
-  const x = ctxOf(c);
-  for (let i = 0; i < 4; i++) {
-    const y = 40 + i * 128;
-    x.beginPath();
-    x.moveTo(18, y + 64);
-    x.lineTo(64, y + 16);
-    x.lineTo(110, y + 64);
-    x.lineTo(110, y + 92);
-    x.lineTo(64, y + 44);
-    x.lineTo(18, y + 92);
-    x.closePath();
-    x.fillStyle = "#f2b84b";
-    x.fill();
-    x.lineWidth = 5;
-    x.strokeStyle = "rgba(40,26,6,0.55)";
-    x.stroke();
-  }
-  return { image: c, w: 128, h: 512 };
-}
-
-/** The chevrons' alpha: faded in at the start and out at the end. */
-export function paintFade(): Painted {
-  const c = canvas(8, 256);
-  const x = ctxOf(c);
-  const g = x.createLinearGradient(0, 0, 0, 256);
-  g.addColorStop(0, "#000");
-  g.addColorStop(0.25, "#fff");
-  g.addColorStop(0.7, "#fff");
-  g.addColorStop(1, "#000");
-  x.fillStyle = g;
-  x.fillRect(0, 0, 8, 256);
-  return { image: c, w: 8, h: 256 };
-}
-
 /** The tallest die-cut figure drawn (px); a larger image is scaled down. */
 const FIGURE_MAX_PX = 1024;
 

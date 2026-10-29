@@ -1,7 +1,13 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { beckonNext, lineReadingMs, readingFloor } from "./character-views";
+import {
+  beckonNext,
+  facingYaw,
+  lineReadingMs,
+  MAX_TURN_DEG,
+  readingFloor,
+} from "./character-views";
 
 describe("character views (properties)", () => {
   /**
@@ -52,6 +58,30 @@ describe("character views (properties)", () => {
           expect(ms).toBeGreaterThanOrEqual(1500);
           expect(ms).toBeLessThanOrEqual(60_000);
           expect(readingFloor(d)).toBeGreaterThanOrEqual(1);
+        },
+      ),
+    );
+  });
+
+  /**
+   * Why this property matters: whatever the creator's facing and wherever
+   * the visitor stands, he turns at most 60 degrees from that facing, and
+   * a visitor inside that cone is faced exactly (the prototype's rule).
+   */
+  it("never turns more than 60 degrees from rest, and faces a camera inside the cone exactly", () => {
+    const cap = (MAX_TURN_DEG * Math.PI) / 180;
+    const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+    fc.assert(
+      fc.property(
+        fc.double({ min: -10, max: 10, noNaN: true }),
+        fc.double({ min: -10, max: 10, noNaN: true }),
+        (rest, toCam) => {
+          const yaw = facingYaw(rest, toCam, true);
+          expect(Math.abs(wrap(yaw - rest))).toBeLessThanOrEqual(cap + 1e-9);
+          const inside = Math.abs(wrap(toCam - rest)) <= cap - 1e-9;
+          const faced = Math.abs(wrap(yaw - toCam)) < 1e-9;
+          expect(!inside || faced).toBe(true);
+          expect(facingYaw(rest, toCam, false)).toBe(rest);
         },
       ),
     );

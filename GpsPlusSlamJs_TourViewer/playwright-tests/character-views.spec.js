@@ -6,8 +6,10 @@ import { expect, test } from "@playwright/test";
  * their prototype (`public/prototypes/station-blocks-7-character/`), and a
  * port can lose what made them work - the bubble hanging by its tail
  * beside his head, on the side toward the middle of the screen and never
- * off it; the name tag instead of the bubble far away; the beckon's
- * chevrons toward the next station once he has spoken; the pop-up's scroll above its
+ * off it; the name tag instead of the bubble far away; the beckon toward
+ * the next station once he has spoken, named in the bubble's footer and
+ * with no arrows drawn on the ground (those are the creator's own blocks);
+ * the pop-up's scroll above its
  * stage - and still pass a test that asks only whether something drew.
  * These pin those positions and gaps on a phone, a phone held sideways
  * and a desktop, through the check page `character-views-check.html`
@@ -17,7 +19,7 @@ import { expect, test } from "@playwright/test";
  * Restated here rather than read from the code under test: his place
  * (-3.2, -4.5), his height 1.85 m, the eye (-2.70, 0.27), the bubble
  * opening inside 9 m, the next station north of him (to the right of the
- * screen from the eye), and the chevrons' full opacity 0.85.
+ * screen from the eye).
  *
  * Not pinned here: how the views look (a side-by-side check against the
  * prototype, by eye), the voice's timing, and the portrait card in the
@@ -145,7 +147,7 @@ for (const viewport of VIEWPORTS) {
       expect(errors).toEqual([]);
     });
 
-    test("in two stations, once he has spoken, the chevrons run toward the next station, he still faces the visitor, and the bubble names it", async ({
+    test("in two stations, once he has spoken, he beckons toward the next station with no arrow on the ground, still faces the visitor, and the bubble names it", async ({
       page,
     }) => {
       const errors = await open(page, viewport);
@@ -161,15 +163,9 @@ for (const viewport of VIEWPORTS) {
       );
       // He keeps facing the visitor (a turned flat cut-out reads squashed).
       expect(off).toBeLessThan(0.05);
-      expect(s.arrow).toBeCloseTo(0.85, 2);
-      // The chevrons lie on the ground, below his head, running to the
-      // right of the screen: the next station is north, and the eye looks
-      // west at him.
-      const arrow = s.parts.arrow;
-      expect(arrow).not.toBeNull();
-      if (arrow === null || s.head === null) throw new Error("no arrow");
-      expect((arrow.top + arrow.bottom) / 2).toBeGreaterThan(s.head.y);
-      expect(arrow.right).toBeGreaterThan(s.head.x + viewport.width * 0.1);
+      // No arrow is drawn: the beckon is his frame and the footer.
+      expect(s).not.toHaveProperty("arrow");
+      expect(s.parts).not.toHaveProperty("arrow");
       inside(s.parts.bubble, viewport, 2);
       // While he speaks there is no beckon.
       const speaking = await stand(page, "two-stations", 4.8, {
@@ -177,7 +173,6 @@ for (const viewport of VIEWPORTS) {
         beckon: true,
       });
       expect(speaking.beckoning).toBe(false);
-      expect(speaking.parts.arrow).toBeNull();
       expect(speaking.footer).toBe("Speaking");
       expect(errors).toEqual([]);
     });

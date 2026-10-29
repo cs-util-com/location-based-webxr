@@ -26,12 +26,23 @@ tour's other content (`content-placement.ts`). Plan:
       guide's `figurePoseOf` holds the pose back until the alignment has
       a heading, r881 re-review M-B);
   - `showCharacter(stationId, imageBlob, onWaiting?, look?)` with a `look`
-    (`StageCharacterLook { view, name, line }`, a story view of tour
-    format 4.2): the decoded image is painted into a character look
-    (`character-look.ts`) and the decoded texture is freed;
+    (`StageCharacterLook { view, name, line, voiced?, pose? }`, a story
+    view of tour format 4.2): the decoded image is painted into a
+    character look (`character-look.ts`) and the decoded texture is
+    freed. He stands at the block's pose position in the station's frame
+    (its holder never turned) and rests at the yaw of the station's
+    rotation times the block's; his beckon starts from where he stands;
   - `setVoice(voice)` - `"idle" | "speaking" | "spoken"`, kept across a
     figure's replacement (the voice may start before the figure stands);
   - `clear()` - remove and dispose;
+  - `release()` - the story ended: a standing look stays, heard (so it
+    beckons in two stations), unreached by the next story's voice, until
+    its station stops showing; once faded out it is cleared for good, so
+    he does not come back on a return. A plain figure, a model or a look
+    still waiting is cleared as by `clear`;
+  - `characterRoot()` - the standing look's root for the visitor's tap,
+    null while none stands in the scene;
+  - `toggleBubble()` - the bubble view's tap;
   - `faceVisitor(nue)` - mount what waits for its position, then turn a
     standing character about the vertical.
   - `follow(isShown)` - which stations' content shows now (the present
@@ -111,4 +122,7 @@ stage.faceVisitor(visitorNue);
   character look": it stands unturned and opens at once, ticks per frame
   (the bubble closes as the camera walks off), follows a voice set before
   it stood (the beckon is asked), fades by its presence and leaves the
-  scene, `clear` stops its frames, and no camera is no error.
+  scene, `clear` stops its frames, and no camera is no error; the block's
+  pose and the 60 degree turn from its facing; a released look staying,
+  beckoning, until its station is left, never back; `release` clearing
+  anything else; `characterRoot` and `toggleBubble`.

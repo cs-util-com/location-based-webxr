@@ -10,7 +10,7 @@ The check page `character-views-check.html`: one tour character (the station-blo
   - Without `?hook=1`: a demo with a bar to switch the view.
   - With `?hook=1`: no bar; the caller drives everything.
 - The hook (`CharacterViewsCheck`):
-  - `show({view, name?, line?, heightM?})`: stands him in a world view, made afresh. A view outside `STAGE_CHARACTER_VIEWS` throws a `TypeError`.
+  - `show({view, name?, line?, heightM?})`: stands him in a world view, made afresh. A view outside `TOUR_CHARACTER_VIEWS` (the framework's) throws a `TypeError`.
   - `standAt(x, z)`, `lookAt(x, y, z)`: the visitor's eye (1.6 m) and gaze; non-finite numbers throw.
   - `setVoice(voice)`, `setBeckon(beckon | true | null)` (`true` is the page's second station, the prototype's "East road").
   - `settle()`: one frame with every ease snapped.

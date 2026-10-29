@@ -40,6 +40,7 @@ import { createSceneAudio } from "./scene-audio.js";
 import { createSceneStage } from "./scene-stage.js";
 import { createSceneView, type SceneViewDom } from "./scene-view.js";
 import type { TourViewerSeams } from "./seams.js";
+import type { SelectTargetRay } from "gps-plus-slam-app-framework/ar";
 import {
   wireStationGuide,
   type GuideView,
@@ -182,6 +183,10 @@ export interface VisitorStations {
   walkShown: () => boolean;
   /** The `?debug=1` lines: the radar's draw time and the frame time; empty without a radar. */
   debugLines: () => string[];
+  /** A visitor's tap in AR: true when it hit the standing character of a
+   *  story step (his voice plays or stops, the bubble view's bubble shuts
+   *  or opens), so no other tap target takes it. */
+  characterTapped: (tap: SelectTargetRay | null) => boolean;
 }
 
 /**
@@ -222,6 +227,7 @@ export function wireVisitorStations(deps: {
     | "createAudioElement"
     | "xrProjection0"
     | "getViewerCamera"
+    | "pickObjectInView"
   >;
   dom: {
     guide: StationGuideDom;
@@ -709,6 +715,13 @@ export function wireVisitorStations(deps: {
   dom.playNextButton.addEventListener("click", () => {
     view.playNextNow();
   });
+  // His portrait in the card is his tap target too (the portrait view).
+  const portrait = dom.scene.portrait;
+  if (portrait instanceof HTMLElement) {
+    portrait.addEventListener("click", () => {
+      view.characterTapped();
+    });
+  }
 
   return {
     tick: () => {
@@ -758,6 +771,12 @@ export function wireVisitorStations(deps: {
       win === null
         ? []
         : walkDebugLines(deps.mode, radarView, frames, win.performance.now()),
+    characterTapped: (tap) => {
+      const root = stage.characterRoot();
+      if (root === null) return false;
+      const hit = seams.pickObjectInView(new Map([["character", root]]), tap);
+      return hit !== null && view.characterTapped();
+    },
   };
 }
 

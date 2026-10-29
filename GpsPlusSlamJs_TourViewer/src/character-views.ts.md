@@ -12,7 +12,8 @@ The rules for a recurring character's five world views (`bubble`, `speak`, `two-
   - `READING_FLOOR_M` 2.4 (module-internal, read through `readingFloor`);
   - `BECKON_WITHIN_M` 14;
   - `BECKON_AFTER_MS` 6000.
-- `STAGE_CHARACTER_VIEWS`, `StageCharacterView` and `isStageCharacterView(v)`. `card` and `stage` are not world views and are not in the list.
+- `StageCharacterView` (the framework's `TourCharacterView`) and `isStageCharacterView(v)`, against the framework's `TOUR_CHARACTER_VIEWS` (`gps-plus-slam-app-framework/ar/tour-blocks`), the one list. `card` and `stage` are not world views and are not in it.
+- `MAX_TURN_DEG` 60; `restYawOf(q)`: the yaw a quaternion `[x, y, z, w]` turns +Z to (0 for a malformed or zero quaternion, or one pointing straight up or down); `facingYaw(rest, toCamera, turns)`: `rest` turned toward the camera by at most 60 degrees, or `rest` itself when the view does not turn.
 - `characterViewLook(view)` returns `CharacterViewLook`, with these flags: `figure`, `bubble`, `footer`, `pip`, `ring`, `portrait`, `popup`, `turns`, `beckons`.
 - `bubbleOpens(d)`: true when `d` is finite and under 9 m.
 - `popupUnfolds(d, unfolded)`: true under 12 m, or under 16 m once it has unfolded.
@@ -34,8 +35,8 @@ The rules for a recurring character's five world views (`bubble`, `speak`, `two-
 
 ## Tests
 
-- `character-views.test.ts`: the table, the distances, the side choice and the reading time.
+- `character-views.test.ts`: the table, the distances, the side choice, the reading time, `restYawOf` and `facingYaw`.
 - `character-views.property.test.ts`:
-  - the turn never exceeds the cap, and lands exactly on a target inside it;
+  - `facingYaw` never turns more than 60 degrees from rest, and faces a camera inside that cone exactly;
   - the beckon only points at an undone other station;
   - the reading time and the floor are bounded.

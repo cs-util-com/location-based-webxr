@@ -110,7 +110,9 @@ content` (Chromium, the editor's browser; elsewhere it stays three
 - A model's parts (`modelParts`, after Size, before Position), as the
   station blocks prototype's editor mode arranges them:
   - `.isec.mview` - the view as chips (`data-act="view:<view>"`,
-    `aria-pressed`), and a line on what the view does;
+    `aria-pressed`), and a line on what the view does; a model with notes
+    in any view but Hotspots adds "Its notes show only in Hotspots."
+    (they are drawn in no other view);
   - `.isec.manim` - the clip's name (`anim-name`) and "Plays by itself"
     (`anim-autoplay`, disabled without a clip);
   - `.isec.mnotes` - a card per note (`.anno[data-note]`, `.on` in

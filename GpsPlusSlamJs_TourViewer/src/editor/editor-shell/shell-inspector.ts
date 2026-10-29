@@ -633,7 +633,13 @@ function modelParts(parts: ModelParts): HTMLElement[] {
     b.setAttribute("aria-pressed", String(on));
     chips.append(b);
   }
-  view.append(label, chips, el("div", "note", VIEW_NOTE[parts.view] ?? ""));
+  // Notes are drawn only in the Hotspots view: say so where they would
+  // otherwise seem lost.
+  const notesHidden = parts.view !== "hotspots" && parts.notes.length > 0;
+  const viewNote =
+    (VIEW_NOTE[parts.view] ?? "") +
+    (notesHidden ? " Its notes show only in Hotspots." : "");
+  view.append(label, chips, el("div", "note", viewNote.trim()));
 
   const clip = el("div", "isec manim");
   const autoplay = partButton(
