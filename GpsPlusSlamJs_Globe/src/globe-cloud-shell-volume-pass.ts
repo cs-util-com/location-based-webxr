@@ -1,11 +1,13 @@
 /**
- * The spherical cloud volume in the globe lab (round-4 plan 2026-10-11-0122,
+ * The spherical cloud volume's drawing pass (round-4 plan 2026-10-11-0122,
  * R4d / V1; DEC-R4-5 as reconciled with DEC-R3-6 in its §6 item 8): ONE
  * full-screen ray march through a cloud shell around the Earth, from about
  * 700 km down to the slab's ceiling, so the clouds the flat layer drew
- * between 700 and 30 km are volumes; `cloudShellVolume=1`, off by default.
+ * between 700 and 30 km are volumes; the lab's `cloudShellVolume=1`, off
+ * by default. Moved out of the globe lab as a pure refactor; its
+ * arithmetic is `globe-cloud-shell-volume.ts`.
  *
- * - **The geometry**: the atmosphere pass's scaffold (`globe-atmosphere.js`):
+ * - **The geometry**: the atmosphere pass's scaffold (`globe-atmosphere.ts`):
  *   each pixel's ray in the model frame (the ellipsoid as the atmosphere's
  *   ground sphere, km), intersected analytically with the deck's top and
  *   base spheres, ending at the relief's depth when it is drawn this frame.
@@ -26,45 +28,56 @@
  * - **The light** per sample point's own sun (the shell spans the
  *   terminator): the sun's transmittance from the atmosphere pass's table
  *   at the cloud, and the zenith sky as ambient from a small table of the
- *   framework's CPU sky by the sun's cosine.
+ *   framework's CPU sky by the sun's cosine (`globe-cloud-shell-light.ts`).
  * - **The mix** with the slab: the slab drawn into its own target at its
  *   full share, then ONE composite of both, premultiplied and weighted
  *   (the shell 1 - the slab's share, the slab its share): mixed, never
  *   stacked, so the hand-over keeps the opacity.
  *
- * @see globe-cloud-shell-volume.js.md
+ * @see globe-cloud-shell-volume-pass.ts.md
  */
 import * as THREE from "three";
+import type { Ellipsoid } from "3d-tiles-renderer";
 
-import { glslFloat } from "/fw/utils/glsl-float.js";
+import { glslFloat } from "gps-plus-slam-app-framework/utils/glsl-float";
 import {
   ATMOSPHERE_COMMON_GLSL,
   ATMOSPHERE_MAX_SCENE_RADIANCE,
   ATMOSPHERE_RADIANCE_SCALE,
-} from "/fw/visualization/atmosphere/atmosphere-glsl.js";
-import { EARTH_ATMOSPHERE } from "/fw/visualization/atmosphere/atmosphere-model.js";
-import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
-import { cloudCoverThresholds } from "/fw/visualization/atmosphere/cloud-coverage.js";
+} from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-glsl";
+import { EARTH_ATMOSPHERE } from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-model";
+import { CLOUD_LAYER } from "gps-plus-slam-app-framework/visualization/atmosphere/cloud-layer";
+import { cloudCoverThresholds } from "gps-plus-slam-app-framework/visualization/atmosphere/cloud-coverage";
 import {
   CLOUD_LIVE_NOISE,
   CLOUD_LIVE_NOISE_GLSL,
+  type CloudNoiseAnchor,
   cloudLiveBasis,
-} from "/fw/visualization/atmosphere/cloud-live-noise.js";
-import { CLOUD_SHEET } from "/fw/visualization/atmosphere/cloud-sheet.js";
+} from "gps-plus-slam-app-framework/visualization/atmosphere/cloud-live-noise";
+import { CLOUD_SHEET } from "gps-plus-slam-app-framework/visualization/atmosphere/cloud-sheet";
 import {
   CLOUD_SLAB,
   cloudSlabThresholdThicknessM,
-} from "/fw/visualization/atmosphere/cloud-slab.js";
+} from "gps-plus-slam-app-framework/visualization/atmosphere/cloud-slab";
+import type { SkyAtmosphere } from "gps-plus-slam-app-framework/visualization/atmosphere/sky-atmosphere";
+
+import type { GlobeAtmosphere } from "./globe-atmosphere.js";
+import { GLOBE_CLOUD_FILTER_GLSL } from "./globe-cloud-filter.js";
+import { ZENITH_MU, ZENITH_TABLE } from "./globe-cloud-shell-light.js";
 import {
   CLOUD_HIGH_LAYER,
   CLOUD_SHELL_VOLUME,
+  type CloudShellNoiseCascade,
+  type CloudShellStation,
+  type CloudShellVolumeParams,
+  type CloudShellVolumeShares,
   GLOBE_CLOUD_SHELL_GLSL,
   cloudShellFrame,
   cloudShellVolumeLaw,
-} from "/globe/globe-cloud-shell-volume.js";
-import { GLOBE_CLOUD_FILTER_GLSL } from "/globe/globe-cloud-filter.js";
-
-import { ZENITH_MU, ZENITH_TABLE } from "./globe-cloud-shell-light.js";
+} from "./globe-cloud-shell-volume.js";
+import type { GlobeSceneDepth } from "./globe-scene-depth.js";
+import type { GlobeSurfaceUniforms } from "./globe-surface-material.js";
+import type { LatLng } from "./globe-target.js";
 
 const VERTEX = /* glsl */ `
 uniform mat4 uInverseProjection;
@@ -511,7 +524,10 @@ void main() {
 }`;
 
 /** A full-screen triangle with `material`, in its own scene. */
-function fullScreen(material) {
+function fullScreen(material: THREE.Material): {
+  scene: THREE.Scene;
+  geometry: THREE.BufferGeometry;
+} {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute(
     "position",
@@ -524,29 +540,317 @@ function fullScreen(material) {
   return { scene, geometry };
 }
 
+/** A half-float target without depth, 1 x 1 until the first frame. */
+const halfFloatTarget = () =>
+  new THREE.WebGLRenderTarget(1, 1, {
+    type: THREE.HalfFloatType,
+    depthBuffer: false,
+  });
+
+/** `target` resized to `w` x `h` when it is not already. */
+function fitTarget(target: THREE.WebGLRenderTarget, w: number, h: number) {
+  if (target.width !== w || target.height !== h) target.setSize(w, h);
+}
+
+/** The 4 x octaves floats of `cloudLiveBasis` into `out`'s vectors. */
+function copyBasis(out: THREE.Vector4[], basis: readonly number[]): void {
+  out.forEach((v, k) =>
+    v.set(
+      basis[4 * k] ?? 0,
+      basis[4 * k + 1] ?? 0,
+      basis[4 * k + 2] ?? 0,
+      basis[4 * k + 3] ?? 0,
+    ),
+  );
+}
+
 /**
- * The spherical cloud volume for `renderer`: `ellipsoid` the globe's,
- * `surfaceUniforms` the surface's (the map, its drift and opacity),
- * `groundSky` the ground sky's atmosphere (the live field: its lattice,
- * amplitudes and anchor, which the cloud volume carries), `atmosphere` the
- * space pass (its sun transmittance table), `sceneDepth` the relief's.
+ * The live basis for a field `scale` times the slab's cells, shifted by
+ * `offsetCells` (whole cells): the carried `anchor` over the scale, so the
+ * same ground-anchored lattice with larger cells, a decorrelated patch.
+ */
+function scaledBasis(
+  anchor: CloudNoiseAnchor,
+  scale: number,
+  offsetCells: readonly [number, number],
+  scratch: number[],
+  out: THREE.Vector4[],
+): void {
+  cloudLiveBasis(
+    {
+      originKm: [
+        anchor.originKm[0] / scale +
+          offsetCells[0] * CLOUD_LIVE_NOISE.baseCellKm,
+        anchor.originKm[1] / scale +
+          offsetCells[1] * CLOUD_LIVE_NOISE.baseCellKm,
+      ],
+      rotationRad: anchor.rotationRad,
+    },
+    {},
+    scratch,
+  );
+  copyBasis(out, scratch);
+}
+
+/** The high layer's knobs as a page passes them (`update`'s `highLayer`). */
+interface CloudHighLayerKnobs {
+  readonly on: boolean;
+  readonly altitudeKm?: number;
+  readonly cellScale?: number;
+  readonly cover?: number;
+  readonly noiseShare?: number;
+  readonly shadow?: number;
+}
+
+/** The high layer drawn this frame, its defaults filled in. */
+interface CloudHighLayer {
+  altitudeKm: number;
+  cellScale: number;
+  cover: number;
+  noiseShare: number;
+  shadow: number;
+}
+
+/**
+ * The high layer from the knobs (round-5 plan §11, A): null when off, else
+ * each knob or `CLOUD_HIGH_LAYER`'s default (its shadow 0; M3: not handed
+ * to the slab, it stays to the ground).
+ */
+function highLayerFrom(knobs: CloudHighLayerKnobs): CloudHighLayer | null {
+  if (!knobs.on) return null;
+  return {
+    altitudeKm: knobs.altitudeKm ?? CLOUD_HIGH_LAYER.altitudeKm,
+    cellScale: knobs.cellScale ?? CLOUD_HIGH_LAYER.cellScale,
+    cover: knobs.cover ?? CLOUD_HIGH_LAYER.cover,
+    noiseShare: knobs.noiseShare ?? CLOUD_HIGH_LAYER.noiseShare,
+    shadow: knobs.shadow ?? 0,
+  };
+}
+
+/** The deck's half thickness (km) at a thickness scale. */
+const halfDeckKm = (thicknessScale: number) =>
+  ((CLOUD_SLAB.topM - CLOUD_SLAB.baseM) / 2000) * thicknessScale;
+
+/** The globe surface's cloud uniforms the shell reads (shared, not copied). */
+type CloudSurfaceUniforms = Pick<
+  GlobeSurfaceUniforms,
+  "uClouds" | "uCloudCubic" | "uCloudLonOffset" | "uCloudOpacity"
+>;
+
+interface GlobeCloudShellVolumeOptions {
+  /** The globe's ellipsoid (the frame and the model sphere's scale). */
+  ellipsoid: Ellipsoid;
+  /** The globe surface's uniforms: the map, its drift and opacity. */
+  surfaceUniforms: CloudSurfaceUniforms;
+  /**
+   * The ground sky's framework sky: the live field (its lattice,
+   * amplitudes and basis, and the anchor the cloud volume carries).
+   */
+  groundSky: SkyAtmosphere;
+  /** The space pass: its sun transmittance table. */
+  atmosphere: Pick<GlobeAtmosphere, "transmittance">;
+  /** The relief's depth, shared with the space pass (null: none). */
+  sceneDepth: GlobeSceneDepth | null;
+}
+
+/** What `update` is told each frame. */
+export interface CloudShellVolumeFrame {
+  /** The camera's height (km). */
+  altitudeKm: number;
+  /** From `cloudShellVolumeShares` (only these three are read). */
+  shares: Pick<CloudShellVolumeShares, "shellIn" | "shell" | "slab">;
+  /** The law's stations (`cloudShellStationsFor`). */
+  stations: readonly CloudShellStation[];
+  /** The frame's target (degrees); null: nothing is drawn (no chart). */
+  target: LatLng | null;
+  /** The deck's middle over the ground (km). */
+  deckKm: number;
+  /** The volume's cover gain (default 1). */
+  cover?: number;
+  /** The noise's two fields and weights here (`cloudShellNoiseCascade`). */
+  cascade: CloudShellNoiseCascade;
+  /** The high layer (default off). */
+  highLayer?: CloudHighLayerKnobs;
+  /** The shell's own ground shadow (`cloudShellShadowStrengths`; 0 none). */
+  shadow?: number;
+}
+
+/** The slab's disc as the shell weighs it per pixel (R4d review, finding 1). */
+export interface CloudShellSlabDisc {
+  /** Its centre, world x and z (m); null: the camera's ground point. */
+  centre: { x: number; z: number } | null;
+  /** The deck's world height (m). */
+  deckY: number;
+  radiusM: number;
+}
+
+/** What `render` is told. */
+interface CloudShellVolumeRenderOptions {
+  /** The frame's placement (the tiles group's world matrix). */
+  worldFromEcef: THREE.Matrix4;
+  /** The sun, a unit vector in ECEF. */
+  sunEcef: THREE.Vector3;
+  /** The scene's sun. */
+  sunIntensity: number;
+  /** The slab drawn this frame at its full share, or null (default). */
+  slabTexture?: THREE.Texture | null;
+  /** How much the relief's depth ends the rays (the space pass's; default 0). */
+  sceneDepthWeight?: number;
+  /** The slab's disc, or null (default). */
+  disc?: CloudShellSlabDisc | null;
+  /** How much of the slab's flat deck the shell takes (C4; default 1). */
+  flatten?: number;
+}
+
+/** Which of the pass's targets `alphaGrid` reads. */
+type CloudShellTarget = "deck" | "high" | "shadow";
+
+interface GlobeCloudShellVolumeState {
+  enabled: boolean;
+  framed: boolean;
+  share: number;
+  weight: number;
+  slabWeight: number;
+  resolution: number;
+  law: CloudShellVolumeParams;
+  deckKm: [number, number];
+  drawn: number;
+  high: (CloudHighLayer & { inFront: boolean }) | null;
+}
+
+export interface GlobeCloudShellVolume {
+  /** On or off (the lab's `cloudShellVolume`); idempotent. */
+  setEnabled(on: boolean): void;
+  readonly enabled: boolean;
+  /**
+   * The march's resolution, a share of the drawing buffer (0.25-1);
+   * RangeError outside.
+   */
+  setResolution(share: number): void;
+  /**
+   * This frame's law and shares (`CloudShellVolumeFrame`). The law is
+   * taken even when off (it refuses stations the shares would). Returns
+   * `{ weight, slabWeight }` (0 when off or without a frame).
+   */
+  update(frame: CloudShellVolumeFrame): { weight: number; slabWeight: number };
+  /**
+   * Draws the shell into its target and the mix of it and the slab over
+   * the frame. Returns whether anything was drawn.
+   */
+  render(
+    camera: THREE.PerspectiveCamera,
+    options: CloudShellVolumeRenderOptions,
+  ): boolean;
+  /**
+   * The last shell target read back (debug, slow): its mean alpha and the
+   * share of its pixels over 0.05, by `bands` horizontal bands from the
+   * bottom up. Null before a frame was drawn.
+   */
+  readBack(bands?: number): { meanAlpha: number; over: number }[] | null;
+  /**
+   * A target's alpha at an `nx` x `ny` grid of pixel centres, bottom row
+   * first (debug, slow). Null before a frame. "shadow" reads zeros while
+   * the shadow is off (its target then holds an old frame).
+   */
+  alphaGrid(nx: number, ny: number, which?: CloudShellTarget): number[] | null;
+  state(): GlobeCloudShellVolumeState;
+  dispose(): void;
+}
+
+/** The alpha of `target` at every pixel (half floats, read back; slow). */
+function readAlpha(
+  renderer: THREE.WebGLRenderer,
+  target: THREE.WebGLRenderTarget,
+): { w: number; h: number; alpha: (x: number, y: number) => number } {
+  const w = target.width;
+  const h = target.height;
+  const pixels = new Uint16Array(w * h * 4);
+  renderer.readRenderTargetPixels(target, 0, 0, w, h, pixels);
+  return {
+    w,
+    h,
+    alpha: (x, y) =>
+      THREE.DataUtils.fromHalfFloat(pixels[(y * w + x) * 4 + 3] ?? 0),
+  };
+}
+
+/** Mean alpha and share over 0.05 by `bands` bands, bottom up. */
+function alphaBands(
+  read: ReturnType<typeof readAlpha>,
+  bands: number,
+): { meanAlpha: number; over: number }[] {
+  const { w, h, alpha } = read;
+  const out = [];
+  for (let band = 0; band < bands; band++) {
+    const y0 = Math.floor((band * h) / bands);
+    const y1 = Math.floor(((band + 1) * h) / bands);
+    let sum = 0;
+    let over = 0;
+    for (let y = y0; y < y1; y++) {
+      for (let x = 0; x < w; x++) {
+        const a = alpha(x, y);
+        sum += a;
+        if (a > 0.05) over += 1;
+      }
+    }
+    const n = Math.max(1, (y1 - y0) * w);
+    out.push({ meanAlpha: sum / n, over: over / n });
+  }
+  return out;
+}
+
+/** The alpha at an `nx` x `ny` grid of pixel centres, bottom row first. */
+function alphaAtGrid(
+  read: ReturnType<typeof readAlpha>,
+  nx: number,
+  ny: number,
+): number[] {
+  const { w, h, alpha } = read;
+  const out = new Array<number>(nx * ny);
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const x = Math.min(w - 1, Math.floor(((i + 0.5) * w) / nx));
+      const y = Math.min(h - 1, Math.floor(((j + 0.5) * h) / ny));
+      out[j * nx + i] = alpha(x, y);
+    }
+  }
+  return out;
+}
+
+/**
+ * The spherical cloud volume for `renderer` (`GlobeCloudShellVolumeOptions`).
  */
 export function createGlobeCloudShellVolume(
-  renderer,
-  { ellipsoid, surfaceUniforms, groundSky, atmosphere, sceneDepth },
-) {
+  renderer: THREE.WebGLRenderer,
+  {
+    ellipsoid,
+    surfaceUniforms,
+    groundSky,
+    atmosphere,
+    sceneDepth,
+  }: GlobeCloudShellVolumeOptions,
+): GlobeCloudShellVolume {
   const { x: ra, y: rb, z: rc } = ellipsoid.radius;
   const groundKm = EARTH_ATMOSPHERE.groundRadiusKm;
-  const toModel = [groundKm / ra, groundKm / rb, groundKm / rc];
+  const toModel = [groundKm / ra, groundKm / rb, groundKm / rc] as const;
   const scaleToModel = new THREE.Matrix3().set(
-    ...[toModel[0], 0, 0, 0, toModel[1], 0, 0, 0, toModel[2]],
+    toModel[0],
+    0,
+    0,
+    0,
+    toModel[1],
+    0,
+    0,
+    0,
+    toModel[2],
   );
-  const basis = [];
-  const octaveCount = groundSky.cloudUniforms.atmCloudLiveBasis.value.length;
+  const basis: number[] = [];
+  const skyClouds = groundSky.cloudUniforms;
+  const octaveCount = skyClouds.atmCloudLiveBasis.value.length;
   /** The two fields' bases (the upper station's and the lower one's). */
   const basisVectors = [0, 1].map(() =>
     Array.from({ length: octaveCount }, () => new THREE.Vector4()),
-  );
+  ) as [THREE.Vector4[], THREE.Vector4[]];
   /** The high layer's field's basis (round-5 plan §11, A). */
   const highBasis = Array.from(
     { length: octaveCount },
@@ -554,13 +858,13 @@ export function createGlobeCloudShellVolume(
   );
   const frameMatrix = new THREE.Matrix4();
   const uniforms = {
-    atmTransmittanceLut: { value: null },
+    atmTransmittanceLut: { value: null as THREE.Texture | null },
     uInverseProjection: { value: new THREE.Matrix4() },
     uViewToModel: { value: new THREE.Matrix3() },
     uCamera: { value: new THREE.Vector3() },
     uSun: { value: new THREE.Vector3(1, 0, 0) },
     uRadiance: { value: 0 },
-    uSceneDepth: { value: null },
+    uSceneDepth: { value: null as THREE.Texture | null },
     uSceneInverseProjection: { value: new THREE.Matrix4() },
     uSceneDepthWeight: { value: 0 },
     uTargetSize: { value: new THREE.Vector2(1, 1) },
@@ -587,12 +891,12 @@ export function createGlobeCloudShellVolume(
     uFlatten: { value: 0 },
     uFlatRiseKm: { value: 0 },
     uCoverThresholds: { value: [...cloudCoverThresholds("live")] },
-    uLattice: groundSky.cloudUniforms.atmCloudLattice,
+    uLattice: skyClouds.atmCloudLattice,
     uBasis: { value: basisVectors[0] },
     uBasisB: { value: basisVectors[1] },
-    uAmp: groundSky.cloudUniforms.atmCloudLiveAmp,
+    uAmp: skyClouds.atmCloudLiveAmp,
     uZenith: {
-      value: ZENITH_TABLE.map((rgb) => new THREE.Vector3().fromArray(rgb)),
+      value: ZENITH_TABLE.map((rgb) => new THREE.Vector3(...rgb)),
     },
     uShellWorldFromEcef: { value: frameMatrix },
     uShellRadii: { value: new THREE.Vector3(ra, rb, rc) },
@@ -609,24 +913,15 @@ export function createGlobeCloudShellVolume(
     blending: THREE.NoBlending,
   });
   const march = fullScreen(material);
-  const target = new THREE.WebGLRenderTarget(1, 1, {
-    type: THREE.HalfFloatType,
-    depthBuffer: false,
-  });
-  const highTarget = new THREE.WebGLRenderTarget(1, 1, {
-    type: THREE.HalfFloatType,
-    depthBuffer: false,
-  });
+  const target = halfFloatTarget();
+  const highTarget = halfFloatTarget();
   /** The shell's ground shadow, alone (the cloud-shadows plan M1). */
-  const shadowTarget = new THREE.WebGLRenderTarget(1, 1, {
-    type: THREE.HalfFloatType,
-    depthBuffer: false,
-  });
+  const shadowTarget = halfFloatTarget();
   const compositeUniforms = {
     tShell: { value: target.texture },
     tShadow: { value: shadowTarget.texture },
     uShadowOn: { value: 0 },
-    tSlab: { value: null },
+    tSlab: { value: null as THREE.Texture | null },
     uShellWeight: { value: 0 },
     uSlabWeight: { value: 0 },
     tHigh: { value: highTarget.texture },
@@ -659,387 +954,329 @@ export function createGlobeCloudShellVolume(
   let framed = false;
   const highCells = new THREE.Vector2();
   const highWeights = new THREE.Vector2(1, 0);
+  /** The high layer this frame (A): null when off. */
+  let high: CloudHighLayer | null = null;
+  let cameraKm = 0;
+  /** The shell's own shadow this frame (its pass; 0: none). */
+  let shadowStrength = 0;
+  const swappable = uniforms as unknown as Record<string, THREE.IUniform>;
+
   /**
    * The high layer's march (round-5 plan §11, A) into the bound target: the
    * same shader with the deck, the field and the column's look swapped for
    * the high layer's, then every swapped uniform put back.
    */
-  const marchHighLayer = () => {
-    const saved = [];
-    const set = (name, value) => {
-      saved.push([name, uniforms[name].value]);
-      uniforms[name].value = value;
+  const marchHighLayer = (layer: CloudHighLayer) => {
+    const saved: [string, unknown][] = [];
+    const set = (name: string, value: unknown) => {
+      const uniform = swappable[name];
+      if (uniform === undefined) throw new Error(`no uniform ${name}`);
+      saved.push([name, uniform.value]);
+      uniform.value = value;
     };
-    const half =
-      ((CLOUD_SLAB.topM - CLOUD_SLAB.baseM) / 2000) *
-      CLOUD_HIGH_LAYER.thicknessScale;
-    set("uDeckBaseKm", high.altitudeKm - half);
-    set("uDeckTopKm", high.altitudeKm + half);
+    const half = halfDeckKm(CLOUD_HIGH_LAYER.thicknessScale);
+    set("uDeckBaseKm", layer.altitudeKm - half);
+    set("uDeckTopKm", layer.altitudeKm + half);
     set("uThickness", CLOUD_HIGH_LAYER.thicknessScale);
-    set("uNoiseShare", high.noiseShare);
-    set("uCoverGain", high.cover);
-    set("uCells", highCells.set(high.cellScale, high.cellScale));
+    set("uNoiseShare", layer.noiseShare);
+    set("uCoverGain", layer.cover);
+    set("uCells", highCells.set(layer.cellScale, layer.cellScale));
     set("uFieldWeights", highWeights);
     set("uBothSides", 1);
-    set("uShadow", high.shadow);
+    set("uShadow", layer.shadow);
     set("uFlatten", 0);
     set("uAerial", 0);
     set("uSteps", law.marchSteps);
     set("uBasis", highBasis);
     renderer.render(march.scene, quadCamera);
-    for (const [name, value] of saved) uniforms[name].value = value;
+    for (const [name, value] of saved) {
+      (swappable[name] as THREE.IUniform).value = value;
+    }
   };
-  /** The high layer this frame (A): null when off. */
-  let high = null;
-  let cameraKm = 0;
-  /** The shell's own shadow this frame (its pass; 0: none). */
-  let shadowStrength = 0;
+
+  /**
+   * Each field's basis: the slab's for its own field (scale 1, no offset),
+   * else the carried anchor over the scale and shifted by the field's
+   * offset (the same ground-anchored lattice, its cells larger, a
+   * decorrelated patch of it, fixed while the field is).
+   */
+  const setFieldBases = (
+    fields: readonly [
+      CloudShellNoiseCascade["fields"][number],
+      CloudShellNoiseCascade["fields"][number],
+    ],
+    anchor: CloudNoiseAnchor,
+  ) => {
+    fields.forEach(({ scale: s, offsetCells }, f) => {
+      const out = basisVectors[f as 0 | 1];
+      if (s === 1 && offsetCells[0] === 0 && offsetCells[1] === 0) {
+        skyClouds.atmCloudLiveBasis.value.forEach((v, k) => out[k]?.copy(v));
+        return;
+      }
+      scaledBasis(anchor, s, offsetCells, basis, out);
+    });
+  };
+
+  /** The law's deck, march and look into the uniforms (enabled, framed). */
+  const applyLaw = (deckKm: number) => {
+    const half = halfDeckKm(law.thicknessScale);
+    uniforms.uDeckBaseKm.value = deckKm - half;
+    uniforms.uDeckTopKm.value = deckKm + half;
+    uniforms.uThickness.value = law.thicknessScale;
+    uniforms.uSteps.value = law.marchSteps;
+    uniforms.uOctaves.value = law.octaves;
+    uniforms.uNoiseShare.value = law.noiseShare;
+    // The aerial fade (alpha x exp(-distance / 60 km)) made the clouds
+    // see-through from high up (0.68 straight down at 100 km: the owner's
+    // "transparent from about 100 km", round-5 plan C3). None above the
+    // slab's ceiling; below it the slab's share, which the slab's own
+    // fade takes too (setCloudAerial), so the two still draw alike.
+    // The cube of the share: the haze comes in mostly where the slab is
+    // nearly alone, so the hand-over does not turn the clouds see-through
+    // (at 25 km 0.27 of it instead of 0.65). The slab takes the same.
+    uniforms.uAerial.value = slabWeight ** 3;
+  };
+
+  /** The frame's noise, cover, shadow, chart and high layer (on, framed). */
+  const applyFrame = (frame: CloudShellVolumeFrame, frameAt: LatLng) => {
+    const { cascade, cover = 1, shadow = 0 } = frame;
+    applyLaw(frame.deckKm);
+    // The noise's two fields (the cascade's; one at the bottom, the second
+    // then weighted 0): fixed scales, decorrelated offsets, cos / sin
+    // weights, so the clouds morph at one speed all the way down.
+    const first = cascade.fields[0];
+    if (first === undefined) throw new RangeError("the cascade has no field");
+    const fields = [first, cascade.fields[1] ?? first] as const;
+    uniforms.uCells.value.set(fields[0].scale, fields[1].scale);
+    uniforms.uFieldWeights.value.set(cascade.weights[0], cascade.weights[1]);
+    uniforms.uCoverGain.value = cover;
+    // The shell's own shadow (cloudShellShadowStrengths, M2).
+    shadowStrength = shadow;
+    uniforms.uShellIn.value = shellIn;
+    const chart = cloudShellFrame(ellipsoid, frameAt, groundKm, frameMatrix);
+    uniforms.uShellGaussianM.value = chart.gaussianRadiusM;
+    const anchor = groundSky.cloudNoiseAnchor;
+    setFieldBases(fields, anchor);
+    // The high layer (round-5 plan §11, A): its own field (one coarse
+    // scale, its own patch of the lattice) on its own thin deck.
+    high = highLayerFrom(frame.highLayer ?? { on: false });
+    if (high !== null) {
+      scaledBasis(
+        anchor,
+        high.cellScale,
+        CLOUD_HIGH_LAYER.offsetCells,
+        basis,
+        highBasis,
+      );
+    }
+  };
+
+  /** The march's size and the targets this frame draws, fitted to it. */
+  const fitTargets = (): { w: number; h: number } => {
+    renderer.getDrawingBufferSize(size);
+    const w = Math.max(1, Math.round(size.x * resolution));
+    const h = Math.max(1, Math.round(size.y * resolution));
+    fitTarget(target, w, h);
+    if (shadowStrength > 0) fitTarget(shadowTarget, w, h);
+    if (high !== null) fitTarget(highTarget, w, h);
+    uniforms.uTargetSize.value.set(w, h);
+    return { w, h };
+  };
+
+  /** The relief's depth ends the rays when drawn this frame. */
+  const applySceneDepth = (sceneDepthWeight: number) => {
+    const depthOn = sceneDepth?.fresh === true && sceneDepthWeight > 0;
+    uniforms.uSceneDepthWeight.value = depthOn ? sceneDepthWeight : 0;
+    if (depthOn && sceneDepth !== null) {
+      uniforms.uSceneDepth.value = sceneDepth.texture;
+      uniforms.uSceneInverseProjection.value.copy(
+        sceneDepth.camera.projectionMatrixInverse,
+      );
+    }
+  };
+
+  /** The camera, its rays and the sun in the model frame. */
+  const applyView = (
+    camera: THREE.PerspectiveCamera,
+    worldFromEcef: THREE.Matrix4,
+    sunEcef: THREE.Vector3,
+    sunIntensity: number,
+  ) => {
+    ecefFromWorld.copy(worldFromEcef).invert();
+    uniforms.uInverseProjection.value.copy(camera.projectionMatrixInverse);
+    uniforms.uViewToModel.value
+      .copy(scaleToModel)
+      .multiply(rotation.setFromMatrix4(ecefFromWorld))
+      .multiply(rotation.setFromMatrix4(camera.matrixWorld));
+    cameraEcef.setFromMatrixPosition(camera.matrixWorld);
+    cameraEcef.applyMatrix4(ecefFromWorld);
+    uniforms.uCamera.value.set(
+      cameraEcef.x * toModel[0],
+      cameraEcef.y * toModel[1],
+      cameraEcef.z * toModel[2],
+    );
+    uniforms.uSun.value
+      .set(
+        sunEcef.x * toModel[0],
+        sunEcef.y * toModel[1],
+        sunEcef.z * toModel[2],
+      )
+      .normalize();
+    uniforms.uRadiance.value = sunIntensity / ATMOSPHERE_RADIANCE_SCALE;
+  };
+
+  /**
+   * The slab's disc in the model frame (R4d review, finding 1): its centre
+   * (world x, z on the deck; the camera's ground point when the slab
+   * centres on the camera) and its radius; no slab drawn, no share. The
+   * slab's flat deck taken inside its disc (round-5 plan C4), eased in over
+   * the slab's first tenth of share so crossing the ceiling moves no cloud.
+   */
+  const applyDisc = (
+    camera: THREE.PerspectiveCamera,
+    slabTexture: THREE.Texture | null,
+    disc: CloudShellSlabDisc | null,
+    flatten: number,
+  ) => {
+    const slabOn =
+      slabTexture !== null &&
+      slabWeight > 0 &&
+      disc !== null &&
+      disc.radiusM > 0;
+    const ease = Math.min(1, Math.max(0, slabWeight / 0.1));
+    uniforms.uFlatten.value = slabOn
+      ? flatten * ease * ease * (3 - 2 * ease)
+      : 0;
+    if (!slabOn || disc === null) return;
+    const centre = disc.centre ?? {
+      x: camera.matrixWorld.elements[12] ?? 0,
+      z: camera.matrixWorld.elements[14] ?? 0,
+    };
+    discEcef.set(centre.x, disc.deckY, centre.z).applyMatrix4(ecefFromWorld);
+    uniforms.uDiscCentre.value.set(
+      discEcef.x * toModel[0],
+      discEcef.y * toModel[1],
+      discEcef.z * toModel[2],
+    );
+    uniforms.uDiscRadiusKm.value = disc.radiusM / 1000;
+    // The disc's far edge from the frame's origin, and the flat deck's
+    // rise over the sphere there (d^2 / 2R).
+    const centreFromOrigin = Math.hypot(centre.x, centre.z) / 1000;
+    const reachKm = centreFromOrigin + disc.radiusM / 1000;
+    uniforms.uFlatRiseKm.value = (reachKm * reachKm) / (2 * groundKm);
+  };
+
+  /**
+   * The march into its target (the shadow 0), the shadow alone into its
+   * own, the high layer into its own; each cleared to alpha 0, the clear
+   * colour and the render target put back.
+   */
+  const marchTargets = () => {
+    const previous = renderer.getRenderTarget();
+    renderer.getClearColor(clearColour);
+    const clearAlpha = renderer.getClearAlpha();
+    renderer.setClearColor(0x000000, 0);
+    renderer.setRenderTarget(target);
+    renderer.clear(true, false, false);
+    uniforms.uShadow.value = 0;
+    renderer.render(march.scene, quadCamera);
+    // The shadow alone, one column per pixel, into its own target.
+    if (shadowStrength > 0) {
+      renderer.setRenderTarget(shadowTarget);
+      renderer.clear(true, false, false);
+      uniforms.uShadow.value = shadowStrength;
+      uniforms.uShadowPass.value = 1;
+      renderer.render(march.scene, quadCamera);
+      uniforms.uShadowPass.value = 0;
+      uniforms.uShadow.value = 0;
+    }
+    if (high !== null) {
+      renderer.setRenderTarget(highTarget);
+      renderer.clear(true, false, false);
+      marchHighLayer(high);
+    }
+    renderer.setClearColor(clearColour, clearAlpha);
+    renderer.setRenderTarget(previous);
+  };
+
+  /** On, framed and weighing something this frame. */
+  const drawable = () => enabled && framed && (weight > 0 || slabWeight > 0);
+
+  /** The composite's switches and weights, then the mix over the frame. */
+  const drawComposite = (slabTexture: THREE.Texture | null) => {
+    // The high layer at full strength wherever the shell draws (not handed
+    // to the slab), in front of the clouds from above its middle and
+    // behind them from below (premultiplied over, cloudLayerOver).
+    compositeUniforms.uHighOn.value = high !== null && shellIn > 0 ? 1 : 0;
+    compositeUniforms.uShadowOn.value =
+      shadowStrength > 0 && shellIn > 0 ? 1 : 0;
+    compositeUniforms.uHighInFront.value =
+      high !== null && cameraKm > high.altitudeKm ? 1 : 0;
+    // The shell's own fade-in; the composite weighs it per pixel by what
+    // the slab draws (`cloudShellPixelWeight`).
+    compositeUniforms.uShellWeight.value = shellIn;
+    compositeUniforms.tSlab.value = slabTexture;
+    compositeUniforms.uSlabWeight.value = slabTexture === null ? 0 : slabWeight;
+    renderer.render(compositeQuad.scene, quadCamera);
+  };
 
   return {
-    /** On or off (`cloudShellVolume`); idempotent. */
     setEnabled(on) {
       enabled = Boolean(on);
     },
     get enabled() {
       return enabled;
     },
-    /** The march's resolution, a share of the drawing buffer (0.25-1). */
     setResolution(share) {
       if (!(share >= 0.25 && share <= 1)) {
         throw new RangeError(`the resolution must be 0.25-1, got ${share}`);
       }
       resolution = share;
     },
-    /**
-     * This frame's law and shares: `altitudeKm` the camera's height,
-     * `shares` from `cloudShellVolumeShares` (`shellIn`, `shell`, `slab`),
-     * `stations` the law's, `target` the frame's (degrees; null: nothing is
-     * drawn, the chart needs a frame), `deckKm` the deck's middle over the
-     * ground, `cover` the volume's gain, `cascade` the noise's two fields
-     * and weights at this altitude (`cloudShellNoiseCascade`, round-5 plan
-     * C2). Returns `{ weight, slabWeight }`.
-     */
-    update({
-      altitudeKm,
-      shares,
-      stations,
-      target,
-      deckKm,
-      cover = 1,
-      cascade,
-      highLayer = { on: false },
-      shadow = 0,
-    }) {
+    update(frame) {
+      const { altitudeKm, shares, stations, target: frameAt } = frame;
       cameraKm = altitudeKm;
-      framed = target !== null;
+      framed = frameAt !== null;
       law = cloudShellVolumeLaw(altitudeKm, stations);
-      shellIn = enabled && framed ? shares.shellIn : 0;
-      weight = enabled && framed ? shares.shell : 0;
-      slabWeight = enabled && framed ? shares.slab : 0;
-      if (!enabled || !framed) return { weight, slabWeight };
-      const half =
-        ((CLOUD_SLAB.topM - CLOUD_SLAB.baseM) / 2000) * law.thicknessScale;
-      uniforms.uDeckBaseKm.value = deckKm - half;
-      uniforms.uDeckTopKm.value = deckKm + half;
-      uniforms.uThickness.value = law.thicknessScale;
-      uniforms.uSteps.value = law.marchSteps;
-      uniforms.uOctaves.value = law.octaves;
-      uniforms.uNoiseShare.value = law.noiseShare;
-      // The aerial fade (alpha x exp(-distance / 60 km)) made the clouds
-      // see-through from high up (0.68 straight down at 100 km: the owner's
-      // "transparent from about 100 km", round-5 plan C3). None above the
-      // slab's ceiling; below it the slab's share, which the slab's own
-      // fade takes too (setCloudAerial), so the two still draw alike.
-      // The cube of the share: the haze comes in mostly where the slab is
-      // nearly alone, so the hand-over does not turn the clouds see-through
-      // (at 25 km 0.27 of it instead of 0.65). The slab takes the same.
-      uniforms.uAerial.value = slabWeight ** 3;
-      // The noise's two fields (the cascade's; one at the bottom, the second
-      // then weighted 0): fixed scales, decorrelated offsets, cos / sin
-      // weights, so the clouds morph at one speed all the way down.
-      const fields = [
-        cascade.fields[0],
-        cascade.fields[1] ?? cascade.fields[0],
-      ];
-      uniforms.uCells.value.set(fields[0].scale, fields[1].scale);
-      uniforms.uFieldWeights.value.set(cascade.weights[0], cascade.weights[1]);
-      uniforms.uCoverGain.value = cover;
-      // The shell's own shadow (cloudShellShadowStrengths, M2).
-      shadowStrength = shadow;
-      uniforms.uShellIn.value = shellIn;
-      const frame = cloudShellFrame(ellipsoid, target, groundKm, frameMatrix);
-      uniforms.uShellGaussianM.value = frame.gaussianRadiusM;
-      // Each field's basis: the slab's for its own field (scale 1, no
-      // offset), else the carried anchor over the scale and shifted by the
-      // field's offset (the same ground-anchored lattice, its cells larger,
-      // a decorrelated patch of it, fixed while the field is).
-      const anchor = groundSky.cloudNoiseAnchor;
-      fields.forEach(({ scale: s, offsetCells }, f) => {
-        const out = basisVectors[f];
-        if (s === 1 && offsetCells[0] === 0 && offsetCells[1] === 0) {
-          groundSky.cloudUniforms.atmCloudLiveBasis.value.forEach((v, k) =>
-            out[k].copy(v),
-          );
-          return;
-        }
-        cloudLiveBasis(
-          {
-            originKm: [
-              anchor.originKm[0] / s +
-                offsetCells[0] * CLOUD_LIVE_NOISE.baseCellKm,
-              anchor.originKm[1] / s +
-                offsetCells[1] * CLOUD_LIVE_NOISE.baseCellKm,
-            ],
-            rotationRad: anchor.rotationRad,
-          },
-          {},
-          basis,
-        );
-        out.forEach((v, k) =>
-          v.set(
-            basis[4 * k],
-            basis[4 * k + 1],
-            basis[4 * k + 2],
-            basis[4 * k + 3],
-          ),
-        );
-      });
-      // The high layer (round-5 plan §11, A): its own field (one coarse
-      // scale, its own patch of the lattice) on its own thin deck.
-      high = highLayer.on
-        ? {
-            altitudeKm: highLayer.altitudeKm ?? CLOUD_HIGH_LAYER.altitudeKm,
-            cellScale: highLayer.cellScale ?? CLOUD_HIGH_LAYER.cellScale,
-            cover: highLayer.cover ?? CLOUD_HIGH_LAYER.cover,
-            noiseShare: highLayer.noiseShare ?? CLOUD_HIGH_LAYER.noiseShare,
-            // Its shadow (M3): not handed to the slab, it stays to the ground.
-            shadow: highLayer.shadow ?? 0,
-          }
-        : null;
-      if (high !== null) {
-        const [ox, oy] = CLOUD_HIGH_LAYER.offsetCells;
-        cloudLiveBasis(
-          {
-            originKm: [
-              anchor.originKm[0] / high.cellScale +
-                ox * CLOUD_LIVE_NOISE.baseCellKm,
-              anchor.originKm[1] / high.cellScale +
-                oy * CLOUD_LIVE_NOISE.baseCellKm,
-            ],
-            rotationRad: anchor.rotationRad,
-          },
-          {},
-          basis,
-        );
-        highBasis.forEach((v, k) =>
-          v.set(
-            basis[4 * k],
-            basis[4 * k + 1],
-            basis[4 * k + 2],
-            basis[4 * k + 3],
-          ),
-        );
-      }
+      const on = enabled && framed;
+      shellIn = on ? shares.shellIn : 0;
+      weight = on ? shares.shell : 0;
+      slabWeight = on ? shares.slab : 0;
+      if (on && frameAt !== null) applyFrame(frame, frameAt);
       return { weight, slabWeight };
     },
-    /**
-     * Draws the shell into its target and the mix of it and the slab
-     * (`slabTexture`, drawn this frame at its full share, or null) over the
-     * frame. `camera` the globe's, `worldFromEcef` the frame's placement,
-     * `sunEcef` a unit vector, `sunIntensity` the scene's sun,
-     * `sceneDepthWeight` how much the relief's depth ends the rays (the
-     * space pass's). Returns whether anything was drawn.
-     */
-    render(
-      camera,
-      {
-        worldFromEcef,
-        sunEcef,
-        sunIntensity,
-        slabTexture = null,
-        sceneDepthWeight = 0,
-        disc = null,
-        flatten = 1,
-      },
-    ) {
-      if (!enabled || !framed || (weight <= 0 && slabWeight <= 0)) {
-        return false;
-      }
+    render(camera, options) {
+      if (!drawable()) return false;
       const lut = atmosphere.transmittance();
       if (lut === null) return false;
+      const { slabTexture = null, disc = null, flatten = 1 } = options;
       uniforms.atmTransmittanceLut.value = lut;
-      renderer.getDrawingBufferSize(size);
-      const w = Math.max(1, Math.round(size.x * resolution));
-      const h = Math.max(1, Math.round(size.y * resolution));
-      if (target.width !== w || target.height !== h) target.setSize(w, h);
-      if (
-        shadowStrength > 0 &&
-        (shadowTarget.width !== w || shadowTarget.height !== h)
-      ) {
-        shadowTarget.setSize(w, h);
-      }
-      if (
-        high !== null &&
-        (highTarget.width !== w || highTarget.height !== h)
-      ) {
-        highTarget.setSize(w, h);
-      }
-      uniforms.uTargetSize.value.set(w, h);
-      const depthOn = sceneDepth?.fresh === true && sceneDepthWeight > 0;
-      uniforms.uSceneDepthWeight.value = depthOn ? sceneDepthWeight : 0;
-      if (depthOn) {
-        uniforms.uSceneDepth.value = sceneDepth.texture;
-        uniforms.uSceneInverseProjection.value.copy(
-          sceneDepth.camera.projectionMatrixInverse,
-        );
-      }
-      ecefFromWorld.copy(worldFromEcef).invert();
-      uniforms.uInverseProjection.value.copy(camera.projectionMatrixInverse);
-      uniforms.uViewToModel.value
-        .copy(scaleToModel)
-        .multiply(rotation.setFromMatrix4(ecefFromWorld))
-        .multiply(rotation.setFromMatrix4(camera.matrixWorld));
-      cameraEcef.setFromMatrixPosition(camera.matrixWorld);
-      cameraEcef.applyMatrix4(ecefFromWorld);
-      uniforms.uCamera.value.set(
-        cameraEcef.x * toModel[0],
-        cameraEcef.y * toModel[1],
-        cameraEcef.z * toModel[2],
+      const { h } = fitTargets();
+      applySceneDepth(options.sceneDepthWeight ?? 0);
+      applyView(
+        camera,
+        options.worldFromEcef,
+        options.sunEcef,
+        options.sunIntensity,
       );
-      uniforms.uSun.value
-        .set(
-          sunEcef.x * toModel[0],
-          sunEcef.y * toModel[1],
-          sunEcef.z * toModel[2],
-        )
-        .normalize();
-      uniforms.uRadiance.value = sunIntensity / ATMOSPHERE_RADIANCE_SCALE;
-      // The slab's disc in the model frame (R4d review, finding 1): its
-      // centre (world x, z on the deck; the camera's ground point when the
-      // slab centres on the camera) and its radius; no slab drawn, no share.
-      const slabOn =
-        slabTexture !== null &&
-        slabWeight > 0 &&
-        disc !== null &&
-        disc.radiusM > 0;
-
-      // The slab's flat deck taken inside its disc (round-5 plan C4), eased
-      // in over the slab's first tenth of share so crossing the ceiling
-      // moves no cloud.
-      const ease = Math.min(1, Math.max(0, slabWeight / 0.1));
-      uniforms.uFlatten.value = slabOn
-        ? flatten * ease * ease * (3 - 2 * ease)
-        : 0;
-      if (slabOn) {
-        const centre = disc.centre ?? {
-          x: camera.matrixWorld.elements[12],
-          z: camera.matrixWorld.elements[14],
-        };
-        discEcef
-          .set(centre.x, disc.deckY, centre.z)
-          .applyMatrix4(ecefFromWorld);
-        uniforms.uDiscCentre.value.set(
-          discEcef.x * toModel[0],
-          discEcef.y * toModel[1],
-          discEcef.z * toModel[2],
-        );
-        uniforms.uDiscRadiusKm.value = disc.radiusM / 1000;
-        // The disc's far edge from the frame's origin, and the flat deck's
-        // rise over the sphere there (d^2 / 2R).
-        const centreFromOrigin = Math.hypot(centre.x, centre.z) / 1000;
-        const reachKm = centreFromOrigin + disc.radiusM / 1000;
-        uniforms.uFlatRiseKm.value = (reachKm * reachKm) / (2 * groundKm);
-      }
+      applyDisc(camera, slabTexture, disc, flatten);
       // Radians a pixel of the march's target (km of footprint per km).
       uniforms.uPixelAngle.value =
-        2 / (camera.projectionMatrix.elements[5] * h);
-      const previous = renderer.getRenderTarget();
-      if (shellIn > 0) {
-        renderer.getClearColor(clearColour);
-        const clearAlpha = renderer.getClearAlpha();
-        renderer.setClearColor(0x000000, 0);
-        renderer.setRenderTarget(target);
-        renderer.clear(true, false, false);
-        uniforms.uShadow.value = 0;
-        renderer.render(march.scene, quadCamera);
-        // The shadow alone, one column per pixel, into its own target.
-        if (shadowStrength > 0) {
-          renderer.setRenderTarget(shadowTarget);
-          renderer.clear(true, false, false);
-          uniforms.uShadow.value = shadowStrength;
-          uniforms.uShadowPass.value = 1;
-          renderer.render(march.scene, quadCamera);
-          uniforms.uShadowPass.value = 0;
-          uniforms.uShadow.value = 0;
-        }
-        if (high !== null) {
-          renderer.setRenderTarget(highTarget);
-          renderer.clear(true, false, false);
-          marchHighLayer();
-        }
-        renderer.setClearColor(clearColour, clearAlpha);
-        renderer.setRenderTarget(previous);
-      }
-      // The high layer at full strength wherever the shell draws (not handed
-      // to the slab), in front of the clouds from above its middle and
-      // behind them from below (premultiplied over, cloudLayerOver).
-      compositeUniforms.uHighOn.value = high !== null && shellIn > 0 ? 1 : 0;
-      compositeUniforms.uShadowOn.value =
-        shadowStrength > 0 && shellIn > 0 ? 1 : 0;
-      compositeUniforms.uHighInFront.value =
-        high !== null && cameraKm > high.altitudeKm ? 1 : 0;
-      // The shell's own fade-in; the composite weighs it per pixel by what
-      // the slab draws (`cloudShellPixelWeight`).
-      compositeUniforms.uShellWeight.value = shellIn;
-      compositeUniforms.tSlab.value = slabTexture;
-      compositeUniforms.uSlabWeight.value =
-        slabTexture === null ? 0 : slabWeight;
-      renderer.render(compositeQuad.scene, quadCamera);
+        2 / ((camera.projectionMatrix.elements[5] ?? 1) * h);
+      if (shellIn > 0) marchTargets();
+      drawComposite(slabTexture);
       drawn += 1;
       return true;
     },
-    /**
-     * The last shell target read back (debug, slow): its mean alpha and the
-     * share of its pixels over 0.05, by `bands` horizontal bands from the
-     * bottom up when asked. Null before a frame was drawn.
-     */
     readBack(bands = 1) {
       if (drawn === 0) return null;
-      const w = target.width;
-      const h = target.height;
-      const pixels = new Uint16Array(w * h * 4);
-      renderer.readRenderTargetPixels(target, 0, 0, w, h, pixels);
-      const out = [];
-      for (let band = 0; band < bands; band++) {
-        const y0 = Math.floor((band * h) / bands);
-        const y1 = Math.floor(((band + 1) * h) / bands);
-        let sum = 0;
-        let over = 0;
-        for (let y = y0; y < y1; y++) {
-          for (let x = 0; x < w; x++) {
-            const a = THREE.DataUtils.fromHalfFloat(
-              pixels[(y * w + x) * 4 + 3],
-            );
-            sum += a;
-            if (a > 0.05) over += 1;
-          }
-        }
-        const n = Math.max(1, (y1 - y0) * w);
-        out.push({ meanAlpha: sum / n, over: over / n });
-      }
-      return out;
+      return alphaBands(readAlpha(renderer, target), bands);
     },
-    /**
-     * The last shell target's alpha at an `nx` x `ny` grid of pixel
-     * centres, bottom row first (debug, slow). Null before a frame. `which`:
-     * "deck" the march, "high" the high layer, "shadow" the ground shadow
-     * (zeros while it is off).
-     */
     alphaGrid(nx, ny, which = "deck") {
       if (drawn === 0) return null;
       // Off, the shadow target is not drawn and holds an old frame.
       if (which === "shadow" && shadowStrength <= 0) {
-        return new Array(nx * ny).fill(0);
+        return new Array<number>(nx * ny).fill(0);
       }
       const from =
         which === "high"
@@ -1047,21 +1284,7 @@ export function createGlobeCloudShellVolume(
           : which === "shadow"
             ? shadowTarget
             : target;
-      const w = from.width;
-      const h = from.height;
-      const pixels = new Uint16Array(w * h * 4);
-      renderer.readRenderTargetPixels(from, 0, 0, w, h, pixels);
-      const out = new Array(nx * ny);
-      for (let j = 0; j < ny; j++) {
-        for (let i = 0; i < nx; i++) {
-          const x = Math.min(w - 1, Math.floor(((i + 0.5) * w) / nx));
-          const y = Math.min(h - 1, Math.floor(((j + 0.5) * h) / ny));
-          out[j * nx + i] = THREE.DataUtils.fromHalfFloat(
-            pixels[(y * w + x) * 4 + 3],
-          );
-        }
-      }
-      return out;
+      return alphaAtGrid(readAlpha(renderer, from), nx, ny);
     },
     state() {
       return {

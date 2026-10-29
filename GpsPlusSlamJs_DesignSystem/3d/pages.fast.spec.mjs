@@ -202,6 +202,39 @@ test("the globe lab opens with the relief, the band and the recorder, without er
   expect(Number.isFinite(exported.live.altitudeKm)).toBe(true);
   expect(exported.recording.frames).toBeGreaterThan(0);
   expect(exported.events.length).toBeGreaterThan(0);
+  // The space pass's shell is x1 at or below 300 km, and a later hash
+  // change keeps it so. Why: the lab once wrote the page's whole look,
+  // the far x6 included, on every hash change, and the shell's ramp writes
+  // only when its own value changes, so the shell stayed x6 at low
+  // altitude until the camera moved. The globe smokes do not run in CI;
+  // this does. Two hash changes: the first moves the camera to 100 km
+  // (the ramp then writes x1 itself), the second is the one that used to
+  // put x6 back.
+  const base = await page.evaluate(() => location.hash.slice(1));
+  const thicknessAfter = async (hash) => {
+    await page.evaluate((h) => {
+      location.hash = h;
+    }, hash);
+    await frames(page, 5);
+    return page.evaluate(() => {
+      const s = window.__globeLab.state();
+      return {
+        km: s.groundSky.observerAltitudeKm,
+        thickness: s.atmosphere.thickness,
+        applied: s.appliedHash,
+      };
+    });
+  };
+  const low = `${base}&view=44.94871,6.85455,100.000,353.1,-9.2`;
+  const moved = await thicknessAfter(low);
+  expect(moved.km).toBeLessThanOrEqual(300);
+  expect(moved.thickness).toBe(1);
+  const changed = await thicknessAfter(`${low}&atmoThickness=6`);
+  // The lab must have applied the second change, or the x1 below proves
+  // nothing: a hash change the lab never handled leaves x1 too.
+  expect(changed.applied).toContain("atmoThickness=6");
+  expect(changed.km).toBeLessThanOrEqual(300);
+  expect(changed.thickness).toBe(1);
   expect(problems).toEqual([]);
 });
 

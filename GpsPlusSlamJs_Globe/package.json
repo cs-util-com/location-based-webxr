@@ -24,7 +24,8 @@
     "node": ">=26.0.0"
   },
   "dependencies": {
-    "3d-tiles-renderer": "0.5.3"
+    "3d-tiles-renderer": "0.5.3",
+    "gps-plus-slam-app-framework": "workspace:*"
   },
   "peerDependencies": {
     "three": ">=0.170.0"

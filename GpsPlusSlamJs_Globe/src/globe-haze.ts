@@ -3,6 +3,7 @@
  * 2026-10-03-1922, F2b): the framework's sky-matched aerial perspective
  * (`AtmosphereHaze`, an `onBeforeCompile` patch of three's fog chunks) on
  * the relief's tiles, its strength following the ground sky's weight.
+ * Moved out of the globe lab as a pure refactor.
  *
  * - **One `THREE.Fog` for the whole page**, its near and far planes so far
  *   out that three's stock fog never darkens anything: the fog's presence
@@ -20,39 +21,69 @@
  * - **It follows the ground sky** (`sync` after each of its reads), and
  *   waits in three's stock-fog mode until the first one.
  *
- * @see globe-haze.js.md
+ * @see globe-haze.ts.md
  */
 import * as THREE from "three";
 
-import { AtmosphereHaze } from "/fw/visualization/atmosphere/atmosphere-haze.js";
+import {
+  AtmosphereHaze,
+  type HazeSource,
+} from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-haze";
 
 /** The fog's planes (m): far enough that the stock fog never starts. */
-const FOG_OUT_OF_REACH_M = 1e12;
+export const FOG_OUT_OF_REACH_M = 1e12;
+
+/** A tile set whose loaded models the haze patches (3d-tiles-renderer's). */
+interface HazeTiles {
+  addEventListener(
+    type: "load-model",
+    listener: (event: { scene: THREE.Object3D }) => void,
+  ): void;
+}
+
+export interface GlobeHaze {
+  /** Patches every mesh `tiles` loads from now on. */
+  patch(tiles: HazeTiles): void;
+  /** Copies the ground sky's state in (its sun, scale and sky view). */
+  sync(atmosphere: HazeSource): void;
+  /**
+   * The haze's strength: the ground sky's weight times `scale` (the
+   * physical extinction's multiplier; 0 turns it off). A no-op when the
+   * product is unchanged. RangeError as the framework's for a negative or
+   * non-finite product.
+   */
+  setWeight(weight: number, scale: number): void;
+  state(): { synced: boolean; density: number; patched: number };
+  dispose(): void;
+}
 
 /**
  * The haze for `scene` (it sets `scene.fog` once, for the whole page). Call
  * `patch(tiles)` once per carrier it hazes, `sync(atmosphere)` after the
  * ground sky's read, and `setWeight(weight, scale)` every frame.
+ * RangeError as `AtmosphereHaze` for a visibility out of its range.
  */
-export function createGlobeHaze(scene, { visibilityKm }) {
+export function createGlobeHaze(
+  scene: THREE.Scene,
+  { visibilityKm }: { visibilityKm: number },
+): GlobeHaze {
   const haze = new AtmosphereHaze({ visibilityKm, densityScale: 0 });
-  scene.fog = new THREE.Fog(
+  const fog = new THREE.Fog(
     0x000000,
     FOG_OUT_OF_REACH_M,
     FOG_OUT_OF_REACH_M * 2,
   );
+  scene.fog = fog;
   haze.setMode("atmosphere");
   let synced = false;
   let density = 0;
   let patched = 0;
   return {
-    /** Patches every mesh `tiles` loads from now on. */
     patch(tiles) {
       tiles.addEventListener("load-model", ({ scene: model }) => {
         patched += haze.applyToObject(model);
       });
     },
-    /** Copies the ground sky's state in (its sun, scale and sky view). */
     sync(atmosphere) {
       haze.sync({
         sharedUniforms: atmosphere.sharedUniforms,
@@ -60,11 +91,6 @@ export function createGlobeHaze(scene, { visibilityKm }) {
       });
       synced = true;
     },
-    /**
-     * The haze's strength: the ground sky's weight times `scale` (the
-     * physical extinction's multiplier; 0 turns it off). RangeError as the
-     * framework's for a negative or non-finite product.
-     */
     setWeight(weight, scale) {
       const next = weight * scale;
       if (next !== density) {
@@ -77,7 +103,8 @@ export function createGlobeHaze(scene, { visibilityKm }) {
     },
     dispose() {
       haze.dispose();
-      if (scene.fog?.isFog) scene.fog = null;
+      // Only its own fog: one the page set since stays.
+      if (scene.fog === fog) scene.fog = null;
     },
   };
 }

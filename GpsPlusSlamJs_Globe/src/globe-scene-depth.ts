@@ -3,7 +3,8 @@
  * it: the cloud volume's march (volume-cloud plan 2026-10-05-0016, C2) and
  * the space pass's rays below the hand-over (§17; the F2 plan's accepted
  * "no scene depth" limit, M1 R3 minor 10, which drew a hard edge at the
- * ellipsoid's limb on the owner's phone, 2026-10-06).
+ * ellipsoid's limb on the owner's phone, 2026-10-06). Moved out of the
+ * globe lab as a pure refactor.
  *
  * - **The relief's own meshes**, their colour writes off: the displacement
  *   is in their vertex shader, so an override material would draw them
@@ -13,7 +14,7 @@
  *   everything nearer than that too. A reader reconstructs a point through
  *   `camera`'s inverse projection, never the view camera's.
  *
- * @see globe-scene-depth.js.md
+ * @see globe-scene-depth.ts.md
  */
 import * as THREE from "three";
 
@@ -24,8 +25,34 @@ import * as THREE from "three";
  */
 const SCENE_DEPTH_NEAR_M = 10;
 
+export interface GlobeSceneDepth {
+  /** The depth (1 where nothing was drawn). */
+  readonly texture: THREE.DepthTexture;
+  /** The camera it was drawn with: the view camera, its near plane small. */
+  readonly camera: THREE.PerspectiveCamera;
+  /**
+   * Draws the depth of `relief`, and of each object in `extra` (the city,
+   * globe city plan 2026-10-05-0040 §12.5 C4), as `viewCamera` sees them,
+   * into the depth texture; restores the render target, the renderer's
+   * auto-clear and every colour write it turned off.
+   */
+  render(
+    viewCamera: THREE.PerspectiveCamera,
+    relief: THREE.Object3D,
+    extra?: readonly THREE.Object3D[],
+  ): void;
+  /** Marks the depth as not drawn this frame (call at the frame's start). */
+  beginFrame(): void;
+  /** Whether the depth was drawn this frame. */
+  readonly fresh: boolean;
+  state(): { frames: number; fresh: boolean; near: number };
+  dispose(): void;
+}
+
 /** The scene depth for `renderer`, sized to its drawing buffer. */
-export function createGlobeSceneDepth(renderer) {
+export function createGlobeSceneDepth(
+  renderer: THREE.WebGLRenderer,
+): GlobeSceneDepth {
   const texture = new THREE.DepthTexture(1, 1);
   const target = new THREE.WebGLRenderTarget(1, 1, {
     depthBuffer: true,
@@ -37,16 +64,8 @@ export function createGlobeSceneDepth(renderer) {
   let fresh = false;
 
   return {
-    /** The depth (1 where nothing was drawn). */
     texture,
-    /** The camera it was drawn with: the view camera, its near plane small. */
     camera,
-    /**
-     * Draws the depth of `relief` (an Object3D), and of each object in
-     * `extra` (the city, globe city plan 2026-10-05-0040 §12.5 C4), as
-     * `viewCamera` sees them, into the depth texture; restores the render
-     * target, the renderer's auto-clear and every colour write it turned off.
-     */
     render(viewCamera, relief, extra = []) {
       renderer.getDrawingBufferSize(size);
       if (target.width !== size.x || target.height !== size.y) {
@@ -56,12 +75,21 @@ export function createGlobeSceneDepth(renderer) {
       camera.near = Math.min(viewCamera.near, SCENE_DEPTH_NEAR_M);
       camera.updateProjectionMatrix();
       const drawn = [relief, ...extra];
-      const written = [];
+      const written: THREE.Material[] = [];
       for (const root of drawn) {
         root.traverse((o) => {
-          if (o.isMesh && o.material?.colorWrite) {
-            o.material.colorWrite = false;
-            written.push(o.material);
+          // A mesh's single material only, as the lab did (an array's
+          // `colorWrite` is undefined).
+          const material = (o as Partial<THREE.Mesh>).isMesh
+            ? (o as THREE.Mesh).material
+            : undefined;
+          if (
+            material !== undefined &&
+            !Array.isArray(material) &&
+            material.colorWrite
+          ) {
+            material.colorWrite = false;
+            written.push(material);
           }
         });
       }
@@ -77,11 +105,9 @@ export function createGlobeSceneDepth(renderer) {
       frames += 1;
       fresh = true;
     },
-    /** Marks the depth as not drawn this frame (call at the frame's start). */
     beginFrame() {
       fresh = false;
     },
-    /** Whether the depth was drawn this frame. */
     get fresh() {
       return fresh;
     },

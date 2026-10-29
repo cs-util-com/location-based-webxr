@@ -2,7 +2,10 @@
  * The globe atmosphere's numbers and its frame (round-4 plan 2026-09-28-2105
  * DEC-GL4-4), kept free of imports so they are unit-tested under Node.
  *
- * @see globe-atmosphere-frame.js.md
+ * Moved from the globe lab into the Globe package (its air slice); the lab
+ * and the Globe modules read it from here.
+ *
+ * @see globe-atmosphere-frame.ts.md
  */
 
 /**
@@ -35,29 +38,41 @@ export const GLOBE_ATMOSPHERE = {
   strength: 1,
   thickness: 6,
   visibilityKm: 60,
-};
+} as const;
 
 /**
  * The default samples per ray for a device: `coarseSteps` where the
  * primary pointer is coarse (a touch screen), `steps` otherwise.
  */
-export const defaultAtmosphereSteps = (coarsePointer) =>
+export const defaultAtmosphereSteps = (coarsePointer: boolean): number =>
   coarsePointer ? GLOBE_ATMOSPHERE.coarseSteps : GLOBE_ATMOSPHERE.steps;
+
+/** A point or direction as [x, y, z]. */
+type Vec3 = readonly [number, number, number];
 
 const RANGES = {
   steps: [2, 64],
   strength: [0, 4],
   thickness: [1, 10],
-};
+} as const;
+
+/** The look's three values (`atmosphereLook`). */
+export interface AtmosphereLook {
+  steps: number;
+  strength: number;
+  thickness: number;
+}
 
 /**
  * The look, each value from `input` or the default, the steps rounded.
  * RangeError for a value outside its range or not a finite number (the
  * steps become a loop bound in the shader, so a bad one must not reach it).
  */
-export function atmosphereLook(input) {
-  const look = {};
-  for (const key of Object.keys(RANGES)) {
+export function atmosphereLook(
+  input: Partial<Record<keyof AtmosphereLook, number>>,
+): AtmosphereLook {
+  const look: AtmosphereLook = { steps: 0, strength: 0, thickness: 0 };
+  for (const key of Object.keys(RANGES) as (keyof AtmosphereLook)[]) {
     const raw = input[key] ?? GLOBE_ATMOSPHERE[key];
     const value = key === "steps" ? Math.round(raw) : raw;
     const [min, max] = RANGES[key];
@@ -79,11 +94,12 @@ export function atmosphereLook(input) {
  * is lowest (0 at the limb). Exact at mu = 0 (sqrt(pi x / 2)), 1 / mu for
  * a steep ray.
  */
-export const chapman = (x, mu) =>
+const chapman = (x: number, mu: number): number =>
   1 / (Math.max(mu, 0) + 1 / Math.sqrt((Math.PI * x) / 2));
 
 /** Ch(x, mu) / Ch(x / k, mu): the unnormalised ratio. */
-const chapmanRatio = (k, mu, x) => chapman(x, mu) / chapman(x / k, mu);
+const chapmanRatio = (k: number, mu: number, x: number): number =>
+  chapman(x, mu) / chapman(x / k, mu);
 
 /**
  * How much more optical depth a ray needs in a shell drawn k times thicker
@@ -95,7 +111,7 @@ const chapmanRatio = (k, mu, x) => chapman(x, mu) / chapman(x / k, mu);
  * monotonic between. `mu` is the ray's zenith cosine at its LOWEST point
  * in the air (`lowestPointMu`); Rayleigh and Mie each use their own x.
  */
-export const grazingCompensation = (k, mu, x) =>
+export const grazingCompensation = (k: number, mu: number, x: number): number =>
   chapmanRatio(k, mu, x) / chapmanRatio(k, 1, x);
 
 /**
@@ -106,10 +122,15 @@ export const grazingCompensation = (k, mu, x) =>
  * lowest at the camera, where it climbs (1 straight up). `o` and `dir`
  * are [x, y, z] from the centre, `dir` a unit vector.
  */
-export function lowestPointMu(o, dir, tEnter, tEnd) {
+export function lowestPointMu(
+  o: Vec3,
+  dir: Vec3,
+  tEnter: number,
+  tEnd: number,
+): number {
   const b = o[0] * dir[0] + o[1] * dir[1] + o[2] * dir[2];
   const t = Math.min(tEnd, Math.max(tEnter, -b));
-  const p = [o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t];
+  const p: Vec3 = [o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t];
   const len = Math.hypot(p[0], p[1], p[2]);
   return Math.abs(p[0] * dir[0] + p[1] * dir[1] + p[2] * dir[2]) / len;
 }
@@ -134,11 +155,11 @@ float atmLowestPointMu( vec3 o, vec3 dir, float tEnter, float tEnd ) {
 }`;
 
 /** The median of a list of numbers (NaN for an empty list). */
-const medianOf = (values) => {
+const medianOf = (values: readonly number[]): number => {
   const sorted = [...values].sort((x, y) => x - y);
   return sorted.length === 0
     ? Number.NaN
-    : sorted[Math.floor(sorted.length / 2)];
+    : (sorted[Math.floor(sorted.length / 2)] as number);
 };
 
 /**
@@ -147,7 +168,15 @@ const medianOf = (values) => {
  * tenth of a ms, and their ratio; a plain sentence when the pass is not
  * supported or a median is not a positive finite number.
  */
-export function atmosphereCostText({ supported, onMs, offMs }) {
+export function atmosphereCostText({
+  supported,
+  onMs,
+  offMs,
+}: {
+  supported: boolean;
+  onMs: readonly number[];
+  offMs: readonly number[];
+}): string {
   if (!supported) {
     return "Atmosphere: not supported on this device (no float render targets)";
   }
@@ -168,11 +197,14 @@ export function atmosphereCostText({ supported, onMs, offMs }) {
  * far below the look's tolerance. RangeError for a radius that is not a
  * positive finite number.
  */
-export function ellipsoidToModel([a, b, c], groundKm) {
+export function ellipsoidToModel(
+  [a, b, c]: Vec3,
+  groundKm: number,
+): [number, number, number] {
   for (const r of [a, b, c, groundKm]) {
     if (!(r > 0 && Number.isFinite(r))) {
       throw new RangeError(
-        `ellipsoid radii and ground must be positive, got ${[a, b, c]}, ${groundKm}`,
+        `ellipsoid radii and ground must be positive, got ${[a, b, c].join(",")}, ${groundKm}`,
       );
     }
   }
@@ -188,10 +220,14 @@ export function ellipsoidToModel([a, b, c], groundKm) {
  * negative below the ellipsoid. RangeError for a non-finite position (and
  * as `ellipsoidToModel` for the radii).
  */
-export function observerAltitudeKm([x, y, z], ellipsoidRadii, groundKm) {
+export function observerAltitudeKm(
+  [x, y, z]: Vec3,
+  ellipsoidRadii: Vec3,
+  groundKm: number,
+): number {
   if (![x, y, z].every(Number.isFinite)) {
     throw new RangeError(
-      `the camera's position must be finite, got ${[x, y, z]}`,
+      `the camera's position must be finite, got ${[x, y, z].join(",")}`,
     );
   }
   const [kx, ky, kz] = ellipsoidToModel(ellipsoidRadii, groundKm);

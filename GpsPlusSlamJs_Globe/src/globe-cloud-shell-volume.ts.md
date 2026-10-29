@@ -15,8 +15,8 @@ weights whose squares sum to 1: no opacity dip, but the pattern morphs from
 one field into the other over each band (the R4d milestone review, finding
 3: a departure from DEC-R3-6's "one field", for the owner's eye; a cell
 scale sliding with the altitude moved the clouds by tens of km per percent
-of descent). The pass itself is the lab's
-`GpsPlusSlamJs_DesignSystem/labs/globe/globe-cloud-shell-volume.js`.
+of descent). The pass itself is
+`globe-cloud-shell-volume-pass.ts` (moved out of the globe lab).
 
 ## Public API
 

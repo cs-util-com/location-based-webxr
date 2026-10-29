@@ -1,4 +1,4 @@
-# labs/globe/globe-atmosphere.js - the atmosphere seen from space
+# globe-atmosphere.ts - the atmosphere seen from space
 
 - Purpose: round-4 plan 2026-09-28-2105 DEC-GL4-4 (the owner's reference:
   a bright white-cyan band just inside the lit limb, a soft blue halo just
@@ -7,8 +7,12 @@
   thickness slider back down to the physical width). One full-screen pass,
   drawn after the Earth, marches each pixel's ray through the framework's
   PHYSICAL atmosphere, reusing its transmittance and multi-scattering
-  tables (`/fw/visualization/atmosphere/`), which depend on neither the
-  camera nor the sun, so they are built once. The limb, the halo, the fade
+  tables (`gps-plus-slam-app-framework/visualization/atmosphere/`), which depend on neither the
+  camera nor the sun, so they are built once. Moved out of the globe lab
+  as a pure refactor (same shaders, uniforms and draw order); the
+  framework modules are imported by their bare subpaths
+  (`gps-plus-slam-app-framework/visualization/atmosphere/...`), which the
+  lab's import map resolves to the `/fw/` source. The limb, the halo, the fade
   across the terminator and the veil all come out of the same march.
   Chosen over a fresnel rim shell on the research's recommendation A (a
   shell's width is a fixed fraction of the radius, too thick close up,
@@ -18,8 +22,7 @@
   - `supported` - false where float colour buffers cannot be rendered to
     (then `render` does nothing);
   - `look` - a copy of `{ steps, strength, thickness }`;
-  - `setLook(partial)` - any of them (`globe-atmosphere-frame.js`
-    `atmosphereLook`: RangeError outside steps 2-64, strength 0-4,
+  - `setLook(partial)` - any of them (`globe-atmosphere-frame.ts` `atmosphereLook`: RangeError outside steps 2-64, strength 0-4,
     thickness 1-10); a new step count recompiles the march;
   - `render(camera, { worldFromEcef, sunEcef, sunIntensity, skyShare,
 groundShare, sceneDepth, sceneDepthWeight })` - draws the
@@ -29,11 +32,11 @@ groundShare, sceneDepth, sceneDepthWeight })` - draws the
     `sunIntensity` the Earth's sun light's, so the air is lit by the same
     sun as the ground; `skyShare` (0-1, default 1; RangeError outside)
     scales the light of the rays that miss the ground, so below the
-    hand-over edge the ground sky (`globe-ground-sky.js`, F2b) takes the
+    hand-over edge the ground sky (`globe-ground-sky.ts`, F2b) takes the
     sky's pixels; `groundShare` (0-1, default 1; RangeError outside) scales
     the veil over the ground (the lab keeps it at 1: fading it with the
     sky's broke the hand-over's continuity smoke, worst step 4.8 against a
-    bound of 1). `sceneDepth` (optional, `globe-scene-depth.js`) is the
+    bound of 1). `sceneDepth` (optional, `globe-scene-depth.ts`) is the
     drawn relief's depth; when it was drawn this frame (`fresh`), a ray
     ends at the relief rather than the ellipsoid and a relief pixel counts
     as ground (volume-cloud plan §17, 2026-10-06). Without it relief
@@ -63,7 +66,7 @@ groundShare, sceneDepth, sceneDepthWeight })` - draws the
     earlier version of this file claimed the colours could not change,
     and measured, the halo's chromaticity moved 0.09-0.11 between k = 1,
     6 and 10). So each ray's steps are also weighted by
-    `grazingCompensation` (`globe-atmosphere-frame.js`): Chapman's
+    `grazingCompensation` (`globe-atmosphere-frame.ts`): Chapman's
     function at the two scale heights, normalised to 1 straight down
     (review m3), about sqrt(k) at the limb, Rayleigh and Mie each with its
     own scale height (the ozone absorption rides on Rayleigh's weight,
@@ -147,8 +150,13 @@ groundShare, sceneDepth, sceneDepthWeight })` - draws the
   });
   ```
 
-- Tests: `globe-atmosphere-frame.test.mjs` (the frame and the look's
-  ranges). In the browser, `globe-atmosphere.smoke.spec.mjs`: the lit limb
+- Tests: `globe-atmosphere.test.ts` (under Node with a recording fake
+  renderer: the look's validation and its recompile on a new step count
+  only, the shares' and depth weight's ranges, the depth used only when
+  fresh, the radiance per unit of the tables' sun, the tables drawn once,
+  nothing drawn without float targets or at zero shares) and
+  `globe-atmosphere-frame.test.ts` (the frame and the look's ranges). In
+  the browser, the lab's `globe-atmosphere.smoke.spec.mjs`: the lit limb
   brighter inside and just outside, the night limb unchanged, the day side
   bluer, far space untouched, each against the pass off (floors swept
   x0.5-x2); the halo's falloff at both ends of the thickness slider; the
