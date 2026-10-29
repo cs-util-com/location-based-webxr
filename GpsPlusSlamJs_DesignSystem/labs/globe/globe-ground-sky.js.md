@@ -20,7 +20,7 @@ the ground sky's.
 spaceExposure })`
     → `{ weight, exposure }`, once a frame before drawing. `altitudeKm` is
     the observer's height over the ellipsoid's image
-    (`observerAltitudeKm` in `globe-atmosphere-frame.js`), `sunWorld` the
+    (`observerAltitudeKm` in the Globe package's `globe-atmosphere-frame.ts`), `sunWorld` the
     sun's unit direction in the world, `framed` whether the world is the
     target's local frame (F2a). `weight` is the ground sky's share of the
     sky, `exposure` the sun's eased scale in the scene, which IS the

@@ -21,7 +21,7 @@ import {
   luminance,
   meanOf,
 } from "./globe-smoke-helpers.mjs";
-import { GLOBE_ATMOSPHERE } from "./globe-atmosphere-frame.js";
+import { GLOBE_ATMOSPHERE } from "../../../GpsPlusSlamJs_Globe/src/globe-atmosphere-frame.ts";
 
 /**
  * The equinox noon, the camera over 91.86°E, 90° east of the subsolar

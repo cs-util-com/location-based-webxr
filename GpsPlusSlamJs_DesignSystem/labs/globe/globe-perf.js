@@ -547,7 +547,7 @@ export function createGlobePerf(lab) {
   async function waitForCity(limitMs) {
     const t0 = performance.now();
     const elapsed = () => performance.now() - t0;
-    const result = (outcome) => ({ outcome, ms: Math.round(elapsed()) });
+    const result = (how) => ({ outcome: how, ms: Math.round(elapsed()) });
     if (limitMs <= 0) return result("skipped");
     let shownS = -1;
     for (;;) {

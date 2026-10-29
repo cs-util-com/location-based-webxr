@@ -34,7 +34,7 @@ import {
   GLOBE_ATMOSPHERE,
   atmosphereLook,
   ellipsoidToModel,
-} from "./globe-atmosphere-frame.js";
+} from "/globe/globe-atmosphere-frame.js";
 
 /**
  * A full-screen triangle; each corner's ray direction in the model frame
