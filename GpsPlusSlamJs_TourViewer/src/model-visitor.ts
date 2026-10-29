@@ -24,7 +24,7 @@ import {
   toyDragMetres,
   type ModelGesture,
 } from "./model-gestures.js";
-import { modelViewOf, type ModelViewHandle } from "./model-views.js";
+import { mountedModelViews, type ModelViewHandle } from "./model-views.js";
 import {
   createNoteMarkers,
   noteKey,
@@ -44,6 +44,8 @@ export interface ModelCardDom {
   /** Covers the screen while a toy is in hand: takes its pinches and
    *  drags. */
   readonly gestures: HTMLElement;
+  /** Names the section a shown cutaway shows; a tap opens its card. */
+  readonly sectionChip: HTMLButtonElement;
 }
 
 export interface ModelVisitorDeps {
@@ -80,25 +82,23 @@ export interface ModelVisitor {
   openKey(): string | null;
 }
 
-/** Whether `object` and every ancestor is visible. */
-function shown(object: THREE.Object3D): boolean {
+/** Whether `object` is shown under a station's content group of
+ *  `scene`: it and every ancestor visible. */
+function shownIn(object: THREE.Object3D, scene: THREE.Object3D): boolean {
+  let inStation = false;
   for (let o: THREE.Object3D | null = object; o !== null; o = o.parent) {
     if (!o.visible) return false;
+    if (o.name.startsWith("station-content:")) inStation = true;
+    if (o === scene) return inStation;
   }
-  return true;
+  return false;
 }
 
-/** Every shown model view under a station's content group. */
+/** Every shown model view under a station's content group of `scene`:
+ *  read from the mounted views (each frame; climbing a model's
+ *  ancestors, never walking its parts). */
 export function shownModelViews(scene: THREE.Object3D): ModelViewHandle[] {
-  const handles: ModelViewHandle[] = [];
-  for (const group of scene.children) {
-    if (!group.name.startsWith("station-content:")) continue;
-    group.traverse((object) => {
-      const handle = modelViewOf(object);
-      if (handle !== null && shown(object)) handles.push(handle);
-    });
-  }
-  return handles;
+  return mountedModelViews().filter((h) => shownIn(h.model, scene));
 }
 
 /** Whether a tap on the model opens a card of its own: a toy, a cutaway
@@ -159,7 +159,10 @@ export function mountModelVisitorDom(
   reset.hidden = true;
   row.append(prev, reset, next);
   card.append(close, num, title, text, row);
-  parent.append(leaders, layer, gestures, card);
+  const sectionChip = el("button", "model-section-chip", "model-section-chip");
+  sectionChip.type = "button";
+  sectionChip.hidden = true;
+  parent.append(leaders, layer, gestures, sectionChip, card);
   return {
     card,
     num,
@@ -170,6 +173,7 @@ export function mountModelVisitorDom(
     close,
     reset,
     gestures,
+    sectionChip,
     layer,
     leaders,
   };
@@ -181,6 +185,29 @@ interface Finger {
   y: number;
 }
 
+/** The cutaway with sections the chip names: the nearest to `camera`
+ *  (the first without one), or null. */
+function sectionedCutaway(
+  handles: readonly ModelViewHandle[],
+  camera: THREE.Camera | null,
+): ModelViewHandle | null {
+  let best: ModelViewHandle | null = null;
+  let bestD = Infinity;
+  const eye = camera?.getWorldPosition(new THREE.Vector3()) ?? null;
+  for (const h of handles) {
+    if (h.view !== "cutaway" || (h.block.sections?.length ?? 0) === 0) continue;
+    const d =
+      eye === null
+        ? 0
+        : h.model.getWorldPosition(new THREE.Vector3()).distanceTo(eye);
+    if (d < bestD) {
+      bestD = d;
+      best = h;
+    }
+  }
+  return best;
+}
+
 /** A tap moves less than this (px). */
 const TAP_SLOP_PX = 8;
 
@@ -188,6 +215,7 @@ export function createModelVisitor(deps: ModelVisitorDeps): ModelVisitor {
   const { dom } = deps;
   let open: Open | null = null;
   let lastMs: number | null = null;
+  let chipFor: ModelViewHandle | null = null;
 
   const keyOf = (o: Open | null): string | null =>
     o === null
@@ -196,9 +224,24 @@ export function createModelVisitor(deps: ModelVisitorDeps): ModelVisitor {
         ? `note:${noteKey(o.handle.blockId, o.index)}`
         : `model:${o.handle.blockId}`;
 
+  /** The chip stands in for the closed card of a sectioned cutaway (each
+   *  frame: it writes the page only when something changed). */
+  const renderChip = (): void => {
+    const hide = open !== null || chipFor === null;
+    if (dom.sectionChip.hidden !== hide) dom.sectionChip.hidden = hide;
+    if (chipFor === null) return;
+    const sections = chipFor.block.sections ?? [];
+    const i = Math.max(0, chipFor.section());
+    const label = `Section ${i + 1} of ${sections.length}: ${sections[i]?.name ?? ""}`;
+    if (dom.sectionChip.textContent !== label) {
+      dom.sectionChip.textContent = label;
+    }
+  };
+
   const render = (): void => {
     const held = open?.as === "model" && open.handle.view === "toy";
     dom.gestures.hidden = !held;
+    renderChip();
     if (open === null) {
       dom.card.hidden = true;
       dom.num.textContent = "";
@@ -264,6 +307,12 @@ export function createModelVisitor(deps: ModelVisitorDeps): ModelVisitor {
   dom.prev.addEventListener("click", () => step(-1));
   dom.next.addEventListener("click", () => step(1));
   dom.close.addEventListener("click", close);
+  dom.sectionChip.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (chipFor === null) return;
+    open = { as: "model", handle: chipFor };
+    render();
+  });
   dom.reset.addEventListener("click", () => {
     if (open?.as !== "model") return;
     open.handle.resetToy();
@@ -349,6 +398,8 @@ export function createModelVisitor(deps: ModelVisitorDeps): ModelVisitor {
       for (const handle of handles) handle.update(dtS, camera);
       // A card goes with its model.
       if (open !== null && !handles.includes(open.handle)) close();
+      chipFor = sectionedCutaway(handles, camera);
+      renderChip();
       const openNote =
         open?.as === "note" ? noteKey(open.handle.blockId, open.index) : null;
       markers.sync(
@@ -383,6 +434,7 @@ export function createModelVisitor(deps: ModelVisitorDeps): ModelVisitor {
     },
     close,
     stop() {
+      chipFor = null;
       close();
       markers.clear();
       lastMs = null;

@@ -103,6 +103,14 @@ const BRASS = "#f2a54e";
 const MARKER_OFFSET_SHARE = 0.13;
 const MARKER_OFFSET_MIN_M = 0.04;
 const MARKER_OFFSET_MAX_M = 4;
+/** The ghost's feet fade over this share of its height, at most
+ *  `GHOST_FADE_MAX_M`. */
+const GHOST_FADE_SHARE = 0.3;
+const GHOST_FADE_MAX_M = 0.7;
+/** A toy stays within this many metres, plus `TOY_REACH_SIZES` of its
+ *  sizes, of its place. */
+const TOY_REACH_M = 10;
+const TOY_REACH_SIZES = 3;
 /** How fast the facing cut turns after the visitor (per second). */
 const CUT_TURN_RATE = 3;
 
@@ -139,6 +147,7 @@ void main() {
 }`;
 
 const GHOST_FS = `uniform float uTime; uniform float uAppear; uniform float uGround;
+uniform float uFade;
 uniform vec3 uRim; uniform vec3 uCore;
 varying vec3 vN; varying vec3 vV; varying float vY;
 void main() {
@@ -146,7 +155,7 @@ void main() {
   float rim = pow(1.0 - abs(dot(n, v)), 1.6);
   float h = vY - uGround;
   float sweep = smoothstep(0.75, 1.0, 0.5 + 0.5 * sin(h * 2.2 - uTime * 1.3));
-  float foot = smoothstep(0.0, 0.7, h);
+  float foot = smoothstep(0.0, uFade, h);
   vec3 col = mix(uCore, uRim, clamp(rim * 1.2 + sweep * 0.35, 0.0, 1.0));
   float a = (0.4 + 0.58 * rim + 0.2 * sweep) * foot * uAppear;
   gl_FragColor = vec4(col, a);
@@ -165,6 +174,7 @@ function createGhostMaterial(): THREE.ShaderMaterial {
       uTime: { value: 0 },
       uAppear: { value: 1 },
       uGround: { value: 0 },
+      uFade: { value: GHOST_FADE_MAX_M },
       uRim: { value: new THREE.Color(GHOST_RIM) },
       uCore: { value: new THREE.Color(GHOST_CORE) },
     },
@@ -371,7 +381,9 @@ export function mountModelView(
   let clipPlane: THREE.Plane | null = null;
   let frame: THREE.Group | null = null;
   let cutDir: THREE.Vector3 | null = null;
-  const centre = ownBox(model).getCenter(new THREE.Vector3());
+  const restBox = ownBox(model);
+  const centre = restBox.getCenter(new THREE.Vector3());
+  const worldBox = new THREE.Box3();
   if (view === "cutaway") {
     env?.enableClipping();
     clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
@@ -427,7 +439,7 @@ export function mountModelView(
   const placeSection = (): void => {
     const section = sections[sectionIndex];
     if (clipPlane === null || frame === null || section === undefined) return;
-    model.updateMatrixWorld(true);
+    model.updateWorldMatrix(true, false);
     const point = model.localToWorld(new THREE.Vector3(...section.position));
     const normal = new THREE.Vector3(...section.normal)
       .normalize()
@@ -442,7 +454,7 @@ export function mountModelView(
   if (sectionIndex >= 0) placeSection();
 
   let elapsed = 0;
-  return {
+  const handle: ModelViewHandle = {
     blockId: block.id,
     view,
     block,
@@ -450,7 +462,7 @@ export function mountModelView(
     notes,
     notePoints() {
       if (notes.length === 0) return [];
-      model.updateMatrixWorld(true);
+      model.updateWorldMatrix(true, false);
       const q = model.getWorldQuaternion(new THREE.Quaternion());
       const worldScale = model.getWorldScale(scratch).x;
       const offset = Math.min(
@@ -495,12 +507,18 @@ export function mountModelView(
       // carries its heading).
       const step = new THREE.Vector3(dx, 0, dz);
       if (model.parent !== null) {
-        model.parent.updateMatrixWorld(true);
+        model.parent.updateWorldMatrix(true, false);
         step.applyQuaternion(
           model.parent.getWorldQuaternion(scratchQ).invert(),
         );
       }
       model.position.add(step);
+      // Held near its place: a runaway drag never loses the toy.
+      const reach = TOY_REACH_M + TOY_REACH_SIZES * sizeM;
+      const offset = scratch.subVectors(model.position, restPosition);
+      if (offset.length() > reach) {
+        model.position.copy(restPosition).add(offset.setLength(reach));
+      }
     },
     resetToy() {
       if (view !== "toy") return;
@@ -521,7 +539,18 @@ export function mountModelView(
         // The station's fade writes the material's opacity
         // (`content-fade.ts`); the glass reads it as its appear.
         ghost.uniforms["uAppear"]!.value = ghost.opacity;
-        ghost.uniforms["uGround"]!.value = model.getWorldPosition(scratch).y;
+        // The feet are the model's lowest point, wherever its origin is.
+        model.updateWorldMatrix(true, false);
+        if (restBox.isEmpty()) {
+          ghost.uniforms["uGround"]!.value = model.getWorldPosition(scratch).y;
+        } else {
+          worldBox.copy(restBox).applyMatrix4(model.matrixWorld);
+          ghost.uniforms["uGround"]!.value = worldBox.min.y;
+          ghost.uniforms["uFade"]!.value = Math.min(
+            GHOST_FADE_MAX_M,
+            GHOST_FADE_SHARE * (worldBox.max.y - worldBox.min.y),
+          );
+        }
       }
       if (clipPlane === null || frame === null) return;
       // A section rides on the model: its station may have moved.
@@ -532,7 +561,7 @@ export function mountModelView(
       if (camera === null) return;
       // The facing cut: a vertical plane through the model's centre,
       // turned (smoothed) toward the visitor, removing the near half.
-      model.updateMatrixWorld(true);
+      model.updateWorldMatrix(true, false);
       const worldCentre = model.localToWorld(centre.clone());
       const eye = camera.getWorldPosition(new THREE.Vector3());
       const dir = new THREE.Vector3(
@@ -561,8 +590,20 @@ export function mountModelView(
       owned.length = 0;
       model.scale.setScalar(baseScale);
       model.position.copy(restPosition);
+      mounted.delete(handle);
     },
   };
+  mounted.add(handle);
+  return handle;
+}
+
+/** Every view mounted and not yet disposed, in mounting order. */
+const mounted = new Set<ModelViewHandle>();
+
+/** The views mounted and not yet disposed, oldest first: what a page's
+ *  frame loop updates, without walking the scene for them. */
+export function mountedModelViews(): ModelViewHandle[] {
+  return [...mounted];
 }
 
 /** The view mounted on `object` (`content-placement.ts` keeps it in the

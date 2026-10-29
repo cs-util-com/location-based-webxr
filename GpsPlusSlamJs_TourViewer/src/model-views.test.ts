@@ -121,6 +121,49 @@ describe("mountModelView", () => {
     view.dispose();
   });
 
+  // Why: a model whose origin is not at its feet (a centred origin is
+  // common in exported files) had its ground at its middle, so its lower
+  // half faded out; and a fade a fixed 0.7 m tall hid a small model
+  // entirely. The ground is the model's lowest point, and the fade is at
+  // most 0.3 of its height.
+  it("fades a ghost from its lowest point, over at most 0.3 of its height", () => {
+    const parent = new THREE.Group();
+    parent.position.set(0, 7, 0);
+    const model = new THREE.Group();
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1));
+    model.add(mesh);
+    model.scale.setScalar(1.5);
+    parent.add(model);
+    parent.updateMatrixWorld(true);
+    const view = mountModelView(model, block("ghost"), 1.5);
+    view.update(0.016, null);
+    const glass = mesh.material as unknown as THREE.ShaderMaterial;
+    expect(glass.uniforms["uGround"]?.value).toBeCloseTo(7 - 0.75, 9);
+    expect(glass.uniforms["uFade"]?.value).toBeCloseTo(0.3 * 1.5, 9);
+    view.dispose();
+
+    const small = new THREE.Group();
+    const pebble = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1));
+    pebble.position.y = 0.05;
+    small.add(pebble);
+    small.updateMatrixWorld(true);
+    const tiny = mountModelView(small, block("ghost", { sizeM: 0.1 }), 1);
+    tiny.update(0.016, null);
+    const tinyGlass = pebble.material as unknown as THREE.ShaderMaterial;
+    // The geometry is float32: six decimals is its precision.
+    expect(tinyGlass.uniforms["uGround"]?.value).toBeCloseTo(0, 6);
+    expect(tinyGlass.uniforms["uFade"]?.value).toBeCloseTo(0.03, 6);
+    tiny.dispose();
+
+    const { model: tall, mesh: tallMesh } = standing();
+    const big = mountModelView(tall, block("ghost"), 1.5);
+    big.update(0.016, null);
+    const bigGlass = tallMesh.material as unknown as THREE.ShaderMaterial;
+    // 1.5 m tall: 0.3 of it is 0.45 m, under the 0.7 m cap.
+    expect(bigGlass.uniforms["uFade"]?.value).toBeCloseTo(0.45, 9);
+    big.dispose();
+  });
+
   // Why: the cutaway without sections removes the NEAR half - the side
   // toward the visitor - so the inside shows; the far half stays.
   it("cuts a cutaway with a plane facing the visitor, removing the near half", () => {
@@ -289,7 +332,7 @@ describe("mountModelView", () => {
 
   // Why: the notes are the block's, written in the model's own space, so
   // a creator replacing the model's file keeps every note.
-  it("keeps the notes when the model's file is replaced", () => {
+  it("reads the notes from the block, so a model of another file carries the same notes", () => {
     const notes: TourModelBlock["annotations"] = [
       { position: [0, 1, 0], normal: [0, 1, 0], title: "Top" },
     ];
@@ -387,6 +430,22 @@ describe("mountModelView", () => {
     expect(model.scale.x).toBe(1.5);
     expect(model.position.toArray()).toEqual([0, 0, 0]);
     placed.dispose();
+  });
+
+  // Why: a drag that kept going (or a jump in the gesture's ray near the
+  // horizon) carried a toy kilometres away, out of sight with no way back
+  // but Reset. Its offset from its place is held within 10 m plus three
+  // of its sizes.
+  it("keeps a toy within 10 m plus three of its sizes of its place", () => {
+    const { model } = standing([4, 0, 0]);
+    const toy = mountModelView(model, block("toy"), 1.5);
+    toy.moveToy(100, 0);
+    expect(model.position.length()).toBeCloseTo(10 + 3 * 3, 9);
+    toy.moveToy(-2, 0);
+    expect(model.position.x).toBeCloseTo(17, 9);
+    toy.moveToy(0, 1000);
+    expect(model.position.length()).toBeCloseTo(19, 9);
+    toy.dispose();
   });
 
   // Why: the toy's cap is a size in metres - a 40 m model may grow to

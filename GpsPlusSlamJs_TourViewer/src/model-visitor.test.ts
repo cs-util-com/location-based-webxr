@@ -8,7 +8,7 @@
  * the visitor walked away from, would break the tour's own placement.
  */
 import * as THREE from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { mountModelView, type TourModelBlock } from "./model-views.js";
 import {
@@ -159,6 +159,42 @@ describe("the model card", () => {
     expect(dom.card.hidden).toBe(true);
   });
 
+  // Why: nothing on the screen said a cutaway has named sections to step
+  // through, so a visitor who never tapped the model never saw them. A
+  // chip names the section shown and opens the model's card on a tap; it
+  // goes while the card is open and when no such cutaway is shown.
+  it("shows a chip for a cutaway with sections that opens its card", () => {
+    const w = world([
+      block("plain", "cutaway"),
+      block("cut", "cutaway", {
+        sections: [
+          { name: "Across", position: [0, 0, 0], normal: [1, 0, 0] },
+          { name: "Along", position: [0, 0, 0], normal: [0, 0, 1] },
+        ],
+      }),
+    ]);
+    const { visitor, dom } = visitorFor(w, () => null);
+    visitor.tick(0);
+    expect(dom.sectionChip.hidden).toBe(false);
+    expect(dom.sectionChip.textContent).toBe("Section 1 of 2: Across");
+    dom.sectionChip.click();
+    expect(visitor.openKey()).toBe("model:cut");
+    expect(dom.num.textContent).toBe("Section 1 of 2");
+    expect(dom.sectionChip.hidden).toBe(true);
+    dom.next.click();
+    dom.close.click();
+    visitor.tick(16);
+    expect(dom.sectionChip.textContent).toBe("Section 2 of 2: Along");
+    w.station.visible = false;
+    visitor.tick(32);
+    expect(dom.sectionChip.hidden).toBe(true);
+
+    const none = world([block("plain", "cutaway")]);
+    const other = visitorFor(none, () => null);
+    other.visitor.tick(0);
+    expect(other.dom.sectionChip.hidden).toBe(true);
+  });
+
   // Why: a cutaway's card steps the cut through its sections.
   it("steps a cutaway through its sections", () => {
     const w = world([
@@ -297,7 +333,35 @@ describe("the overlay's stacking", () => {
     const markers = zIndexOf(css, ".note-markers");
     const leaders = zIndexOf(css, ".note-leaders");
     const card = zIndexOf(css, ".model-card");
+    const chip = zIndexOf(css, ".model-section-chip");
     expect(gestures).toBeLessThan(Math.min(markers, leaders));
+    expect(chip).toBeGreaterThan(Math.max(markers, leaders));
     expect(card).toBeGreaterThan(Math.max(markers, leaders));
+  });
+});
+
+describe("shownModelViews", () => {
+  // Why: it runs every frame. Walking every node of every station's models
+  // (a model file can hold hundreds) to find the few views was the frame's
+  // cost; the views are known when they are mounted, so it reads that list
+  // and only climbs each model's ancestors.
+  it("finds the shown views without walking the models' parts", () => {
+    const w = world([block("a", "hotspots"), block("b", "ghost")]);
+    const walk = vi.spyOn(THREE.Object3D.prototype, "traverse");
+    try {
+      expect(shownModelViews(w.scene)).toEqual(w.handles);
+      expect(walk).not.toHaveBeenCalled();
+    } finally {
+      walk.mockRestore();
+    }
+  });
+
+  // Why: a view disposed before its model leaves the scene (the station
+  // renderer frees views first) must not be updated or tapped again.
+  it("leaves out a view once it is disposed, and one outside the scene", () => {
+    const w = world([block("a", "hotspots"), block("b", "ghost")]);
+    w.handles[0]!.dispose();
+    expect(shownModelViews(w.scene)).toEqual([w.handles[1]]);
+    expect(shownModelViews(new THREE.Scene())).toEqual([]);
   });
 });

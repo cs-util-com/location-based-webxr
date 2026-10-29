@@ -25,8 +25,16 @@ taps.
     does nothing.
   - `close()`, `stop()` (the card closed, every disc removed), `openKey()`
     (`"note:<key>"`, `"model:<id>"` or null).
-- `shownModelViews(scene)` - the handles under visible
-  `station-content:` groups.
+- `shownModelViews(scene)` - the mounted handles (`mountedModelViews`)
+  whose model is shown under a `station-content:` group of `scene`, in
+  mounting order. It runs every frame, so it climbs each model's
+  ancestors instead of walking the scene; a disposed view is left out.
+- The section chip (`button#model-section-chip`, part of the built DOM):
+  while no card is open and a cutaway with sections is shown (the nearest
+  to the camera), it reads "Section 1 of 3: <name>"; a tap opens that
+  model's card. It sits in the card's place, above the note layers
+  (z 30), and is hidden while the card is open, so the two never stand
+  together. Without it nothing on the screen said a cutaway had sections.
 - `hasModelCard(handle)` - a toy, a cutaway with sections, or a model with
   a title.
 
@@ -55,4 +63,4 @@ while it is shown, and the card (z 31) above them all.
 `model-visitor.test.ts` (jsdom): which models have a card, opening and
 closing on taps, note and section stepping, closing when the model goes,
 the toy's drag, pinch, reset and put-down, other views ignoring gestures,
-the overlay taps, `stop`, and the stylesheet's stacking order.
+the overlay taps, the section chip, `stop`, and the stylesheet's stacking order.
