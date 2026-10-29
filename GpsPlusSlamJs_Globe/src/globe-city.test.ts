@@ -210,6 +210,10 @@ describe("createGlobeCity: load", () => {
     expect(() => city.load({ lat: Number.NaN, lng: 7 }, { zoom: 12 })).toThrow(
       RangeError,
     );
+    // The message names the bad value: JSON would have printed NaN as null.
+    expect(() =>
+      city.load({ lat: Number.POSITIVE_INFINITY, lng: 7 }, { zoom: 12 }),
+    ).toThrow("got Infinity,7");
     for (const zoom of [0, 16, 12.5]) {
       expect(() => city.load(BERN, { zoom })).toThrow(RangeError);
     }

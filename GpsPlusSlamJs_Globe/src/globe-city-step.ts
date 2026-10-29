@@ -12,7 +12,11 @@
  *
  * @see globe-city-step.ts.md
  */
-import type { GlobeCity, GlobeCityLoadHandle } from "./globe-city.js";
+import {
+  keyOf as cityKeyOf,
+  type GlobeCity,
+  type GlobeCityLoadHandle,
+} from "./globe-city.js";
 import { cityShareAt, exaggerationAt } from "./globe-flight.js";
 import type { LatLng } from "./globe-target.js";
 
@@ -77,7 +81,7 @@ export interface GlobeCityStepOptions {
 }
 
 const keyOf = (place: LatLng | null | undefined): string | null =>
-  place ? `${place.lat},${place.lng}` : null;
+  place ? cityKeyOf(place) : null;
 
 /** The step for `city` (`GlobeCityStepOptions`). */
 export function createGlobeCityStep({

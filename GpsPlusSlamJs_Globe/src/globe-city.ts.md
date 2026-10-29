@@ -73,6 +73,8 @@
     trees' shared ones, `disposeCityObjects`), takes the root off its
     parent and ends the worker.
 
+- `keyOf({ lat, lng })`: the target's key `"lat,lng"`, one city load per
+  key; `globe-city-step.ts` keys its warm-up on the same string.
 - The worker's messages (data from a worker): `progress` (`counts`,
   `progress`, `landing`), `settled` and `finished` (`outcome`, `counts`),
   `city` (`ok`, `message`, `stage`, `buildings`, `trees`, `roads`,

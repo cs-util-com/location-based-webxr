@@ -298,6 +298,11 @@ test("the reference views render and settle", async ({ page, context }) => {
     console.log(`${v.name}: settled in ${seconds.toFixed(1)} s`);
   }
   writeFileSync(join(OUT, "views.json"), JSON.stringify(report, null, 2));
+  // The shell set must draw the shell somewhere (views 3-6 did in r980): a
+  // renamed knob would otherwise capture the default look as the shell set.
+  if (process.env.GLOBE_SHOTS_SHELL === "1") {
+    expect(report.some((r) => r.cloudShellVolume?.enabled === true)).toBe(true);
+  }
   // The routes draw their tiles in the page (the OSM pattern, the city
   // fixture's heights); a tile still in flight when the test ends would
   // fail the run after every view passed.

@@ -538,6 +538,9 @@ describe("buildLookdev with the real globe lab", () => {
       "utf8",
     );
     assert.match(worker, /"\/lookdev\/w\/osm-lib\/index\.js"/);
+    // The worker's height law comes from the Globe package: its import is
+    // rebased too, or the worker fails at its first city.
+    assert.match(worker, /"\/lookdev\/w\/globe\/globe-city-heights\.js"/);
     assert.doesNotMatch(worker, /from "gps-plus-slam-osm"/);
   });
 

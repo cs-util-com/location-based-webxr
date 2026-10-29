@@ -194,7 +194,8 @@ interface CityReply {
 }
 
 const NO_JOBS: CityJobCounts = { total: 0, warm: 0, fetched: 0, failed: 0 };
-const keyOf = (target: LatLng) => `${target.lat},${target.lng}`;
+/** A target's key: one city load per key (`globe-city-step.ts` too). */
+export const keyOf = (target: LatLng): string => `${target.lat},${target.lng}`;
 
 /** A material's dither and opacity for the shown share. */
 function fadeMaterial(m: THREE.Material, shown: number): void {
@@ -236,7 +237,7 @@ function placeRoad(o: THREE.Object3D, liftM: number, offset: number): void {
 function checkLoad(target: LatLng, zoom: number): void {
   if (!(Number.isFinite(target?.lat) && Number.isFinite(target?.lng))) {
     throw new RangeError(
-      `a city needs a finite target, got ${JSON.stringify(target)}`,
+      `a city needs a finite target, got ${target?.lat},${target?.lng}`,
     );
   }
   if (!(Number.isInteger(zoom) && zoom >= 1 && zoom <= 15)) {
