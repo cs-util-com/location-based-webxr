@@ -157,7 +157,7 @@ import {
 } from "/globe/globe-atmosphere-frame.js";
 import { createGlobeAir } from "/globe/globe-air.js";
 import { createGlobeGroundSky } from "./globe-ground-sky.js";
-import { createGlobeHaze } from "./globe-haze.js";
+import { createGlobeHaze } from "/globe/globe-haze.js";
 import { createGlobeCloudVolume } from "./globe-cloud-volume.js";
 import { createGlobeCloudShellVolume } from "./globe-cloud-shell-volume.js";
 import { createGlobeSceneDepth } from "./globe-scene-depth.js";
@@ -2364,7 +2364,7 @@ async function start() {
     const s = cloudVolume.state();
     return { centre: s.discCentre, deckY: s.deckY, radiusM: s.radiusM };
   };
-  // The haze (F2b; globe-haze.js): one fog for the whole page, the relief's
+  // The haze (F2b; globe-haze.ts): one fog for the whole page, the relief's
   // tiles patched last, after their own hooks and the stencil writer.
   const haze = createGlobeHaze(scene, {
     visibilityKm: groundSky.atmosphere?.visibilityKm ?? 60,

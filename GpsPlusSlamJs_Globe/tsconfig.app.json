@@ -17,9 +17,24 @@
     "erasableSyntaxOnly": true,
     "declaration": true,
     "sourceMap": true,
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo"
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "paths": {
+      "gps-plus-slam-app-framework/*": ["../GpsPlusSlamJs_AppFramework/src/*"]
+    }
   },
-  "include": ["src/**/*.ts", "src/**/*.json"],
+  // The framework modules this package imports, by source (`paths` above),
+  // and the framework files they import: `composite` needs every file of
+  // the program listed, and a framework import outside these fails here
+  // naming its file (TS6307). Not the whole framework: a few of its files
+  // use syntax this package's `erasableSyntaxOnly` refuses.
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.json",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/**/*.ts",
+    "../GpsPlusSlamJs_AppFramework/src/utils/clamp01.ts",
+    "../GpsPlusSlamJs_AppFramework/src/utils/glsl-float.ts",
+    "../GpsPlusSlamJs_AppFramework/src/utils/smoothstep.ts"
+  ],
   "exclude": [
     "dist",
     "coverage",
@@ -28,6 +43,8 @@
     "src/**/*.spec.ts",
     "src/**/*.property.test.ts",
     "src/**/*.bench.ts",
-    "src/test-utils/**"
+    "src/test-utils/**",
+    "../GpsPlusSlamJs_AppFramework/src/**/*.test.ts",
+    "../GpsPlusSlamJs_AppFramework/src/**/*.property.test.ts"
   ]
 }

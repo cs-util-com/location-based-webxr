@@ -237,6 +237,9 @@ importers:
       3d-tiles-renderer:
         specifier: 0.5.3
         version: 0.5.3(patch_hash=3d54671051af8e55c8c25e5147530a3fe6daaaf49fb746e2daadd5a34b0f1725)(three@0.185.1)
+      gps-plus-slam-app-framework:
+        specifier: workspace:*
+        version: link:../GpsPlusSlamJs_AppFramework
     devDependencies:
       '@eslint/js':
         specifier: ^10.0.1
