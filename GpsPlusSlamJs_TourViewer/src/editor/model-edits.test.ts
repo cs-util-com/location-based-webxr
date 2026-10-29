@@ -160,6 +160,10 @@ describe("notes", () => {
   it("refuses a spot the format does not take", () => {
     for (const at of [
       { position: [0, 0, 0], normal: [0, 0, 0] },
+      // A normal too short to normalise is one the reader refuses as zero,
+      // so the editor must not write it either (the shrunk property case).
+      { position: [0, 0, 0], normal: [0, 0, -5e-324] },
+      { position: [0, 0, 0], normal: [1e-12, 0, -1e-12] },
       { position: [Number.NaN, 0, 0], normal: [0, 1, 0] },
       { position: [10_001, 0, 0], normal: [0, 1, 0] },
     ] as const) {

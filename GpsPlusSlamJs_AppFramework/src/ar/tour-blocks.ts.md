@@ -32,7 +32,9 @@ model | character`.
   `TOUR_MODEL_MAX_NOTES` (32), `TOUR_MODEL_SECTION_RULES` (`name` required
   40), `TOUR_MODEL_MAX_SECTIONS` (4), `TOUR_MODEL_ANIMATION_RULES` (`name`
   required 128), `TOUR_MODEL_SPACE_MAX` (10 000, a point's largest
-  coordinate in the model's own units).
+  coordinate in the model's own units), `TOUR_MODEL_MIN_DIRECTION_LENGTH`
+  (1e-9, the shortest `normal` taken; the editor uses it to refuse what
+  the reader would).
 - `tourBlocksMinor(blocks): number` - the lowest minor `blocks` need: 1
   when a model stands in a view minor 1 added or carries `animation`,
   `annotations` or `sections`; else 0. The writer stamps it.
@@ -103,7 +105,8 @@ model | character`.
     to. Absent means one cut that turns to face the visitor; an empty
     list is refused (a cutaway that cannot cut).
   - A point or direction is three finite numbers and a direction is not
-    zero - malformed at every minor; a coordinate beyond
+    zero (nor shorter than 1e-9, too short to normalise) - malformed at
+    every minor; a coordinate beyond
     `TOUR_MODEL_SPACE_MAX`, too many notes or sections, a text over its
     cap or a non-boolean `autoplay` is a rule a later minor may relax
     (skips the block when lenient). Vectors are kept as written;

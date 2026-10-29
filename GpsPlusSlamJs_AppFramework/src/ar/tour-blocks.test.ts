@@ -683,9 +683,10 @@ describe("a model's views, notes, sections and clip (minor 1)", () => {
     });
   });
 
-  it('notes live on the block, so replacing the model file keeps every one', () => {
-    // Why: a creator who swaps a better scan in must not lose the notes
-    // written on the old one; they stay where their points are.
+  it('notes are read from the block, so a model block naming another file carries the same notes', () => {
+    // Why: notes are written on the block, not in the model file, so a
+    // block that names another asset reads the same notes; that is what
+    // lets a creator swap a better scan in without losing them.
     const before = model({ view: 'hotspots', annotations: [NOTE] });
     const assets = parseTourAssets(
       [
@@ -787,6 +788,14 @@ describe("a model's views, notes, sections and clip (minor 1)", () => {
     expect(() =>
       model(
         { annotations: [{ ...NOTE, normal: [0, 0, 0] }] },
+        { lenient: true }
+      )
+    ).toThrow(/must not be zero/);
+    // A direction too short to normalise is as meaningless as a zero one:
+    // normalising it gives a NaN, or a direction from rounding alone.
+    expect(() =>
+      model(
+        { sections: [{ ...SECTION, normal: [1e-12, 0, -1e-12] }] },
         { lenient: true }
       )
     ).toThrow(/must not be zero/);

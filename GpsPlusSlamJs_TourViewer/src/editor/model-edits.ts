@@ -20,6 +20,7 @@ import {
   TOUR_MODEL_ANIMATION_RULES,
   TOUR_MODEL_MAX_NOTES,
   TOUR_MODEL_MAX_SECTIONS,
+  TOUR_MODEL_MIN_DIRECTION_LENGTH,
   TOUR_MODEL_NOTE_RULES,
   TOUR_MODEL_SECTION_RULES,
   TOUR_MODEL_SPACE_MAX,
@@ -116,7 +117,9 @@ const isVector = (v: unknown, direction: boolean): v is TourModelVector =>
       Number.isFinite(x) &&
       Math.abs(x) <= TOUR_MODEL_SPACE_MAX,
   ) &&
-  (!direction || (v as number[]).some((x) => x !== 0));
+  (!direction ||
+    Math.hypot(...(v as [number, number, number])) >=
+      TOUR_MODEL_MIN_DIRECTION_LENGTH);
 
 /** Whether `at` is a spot the format takes. */
 function isModelSpot(at: ModelSpot): boolean {

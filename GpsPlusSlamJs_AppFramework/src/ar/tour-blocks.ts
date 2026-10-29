@@ -169,6 +169,10 @@ export const TOUR_MODEL_ANIMATION_RULES = {
  *  model file's own units: beyond any model, short of nonsense. */
 export const TOUR_MODEL_SPACE_MAX = 10_000;
 
+/** The shortest a note's or a section's `normal` may be: a shorter one has
+ *  no direction to normalise and is refused as zero. */
+export const TOUR_MODEL_MIN_DIRECTION_LENGTH = 1e-9;
+
 /** A picture's width in the world (m), inclusive. */
 export const TOUR_PICTURE_MIN_WIDTH_M = 0.05;
 export const TOUR_PICTURE_MAX_WIDTH_M = 50;
@@ -509,9 +513,6 @@ function modelSize(
   return { sizeM: metres(v.sizeM, `${ctx.at}.sizeM`, bounds, ctx) };
 }
 
-/** A point or a direction in a model's own space: three finite numbers
- *  (structural, at every minor; a direction also not zero), within
- *  {@link TOUR_MODEL_SPACE_MAX} (a rule a later minor may widen). */
 /** Whether `value` is an array of exactly three finite numbers. */
 function isFiniteTriple(value: unknown): value is TourModelVector {
   return (
@@ -521,6 +522,10 @@ function isFiniteTriple(value: unknown): value is TourModelVector {
   );
 }
 
+/** A point or a direction in a model's own space: three finite numbers
+ *  (structural, at every minor; a direction also not zero, nor too short
+ *  to normalise), within {@link TOUR_MODEL_SPACE_MAX} (a rule a later
+ *  minor may widen). */
 function modelVector(
   value: unknown,
   at: string,
@@ -531,7 +536,7 @@ function modelVector(
     return ctx.fail(`"${at}" must be three finite numbers`);
   }
   const [x, y, z] = value;
-  if (direction && x === 0 && y === 0 && z === 0) {
+  if (direction && Math.hypot(x, y, z) < TOUR_MODEL_MIN_DIRECTION_LENGTH) {
     return ctx.fail(`"${at}" is a direction, so it must not be zero`);
   }
   if (Math.max(Math.abs(x), Math.abs(y), Math.abs(z)) > TOUR_MODEL_SPACE_MAX) {

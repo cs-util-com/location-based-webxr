@@ -36,7 +36,8 @@ and to the editor's default view rule.
   (`parseTourObject(tourObjectRecord(m))`): titles 1-64 code points, texts at
   most 1024, section names 1-40, at most `TOUR_MODEL_MAX_NOTES` (32) notes
   and `TOUR_MODEL_MAX_SECTIONS` (4) sections, finite vectors within
-  `TOUR_MODEL_SPACE_MAX`, never a zero normal, never an empty list (the
+  `TOUR_MODEL_SPACE_MAX`, never a normal shorter than
+  `TOUR_MODEL_MIN_DIRECTION_LENGTH` (the reader refuses it as zero), never an empty list (the
   last one deleted leaves the field out).
 - A new note is named "Note N", a new section "Section N" (N its place in
   the list after the add).

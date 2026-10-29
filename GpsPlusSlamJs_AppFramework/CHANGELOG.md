@@ -22,7 +22,9 @@
   (1.31.0) opens a 4.1 tour leniently: a free model in a new view falls
   back to `placed`, a story model to `card`, the new fields are ignored,
   and that app will not save the tour. `TourModel['view']` widens from
-  `'placed'` to `TourModelWorldView`.
+  `'placed'` to `TourModelWorldView`. A note's or a section's
+  `normal` shorter than `TOUR_MODEL_MIN_DIRECTION_LENGTH` (1e-9) is refused as a zero direction, at every
+  minor.
 
 ## [1.31.0] - 2026-10-28
 

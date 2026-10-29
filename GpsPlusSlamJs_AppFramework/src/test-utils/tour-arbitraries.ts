@@ -34,6 +34,7 @@ import {
   TOUR_MODEL_MAX_NOTES,
   TOUR_MODEL_MAX_SECTIONS,
   TOUR_MODEL_MAX_SIZE_M,
+  TOUR_MODEL_MIN_DIRECTION_LENGTH,
   TOUR_MODEL_MIN_SIZE_M,
   TOUR_MODEL_NOTE_RULES,
   TOUR_MODEL_SECTION_RULES,
@@ -277,7 +278,8 @@ const KIND_FIELDS: Record<
 };
 
 /** A point in a model's own space, within the bound; with `direction`,
- *  never zero. */
+ *  never shorter than `TOUR_MODEL_MIN_DIRECTION_LENGTH` (too short to
+ *  normalise, refused as zero). */
 export function tourModelVectorArbitrary(
   direction = false
 ): fc.Arbitrary<[number, number, number]> {
@@ -291,7 +293,11 @@ export function tourModelVectorArbitrary(
     })
     .map((x) => (x === 0 ? 0 : x));
   const v = fc.tuple(c, c, c);
-  return direction ? v.filter(([x, y, z]) => x !== 0 || y !== 0 || z !== 0) : v;
+  return direction
+    ? v.filter(
+        ([x, y, z]) => Math.hypot(x, y, z) >= TOUR_MODEL_MIN_DIRECTION_LENGTH
+      )
+    : v;
 }
 
 /** A valid model note. */
