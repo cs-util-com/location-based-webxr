@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   BUBBLE,
@@ -6,6 +6,7 @@ import {
   bubbleLayout,
   bubbleTipX,
   dieCutPad,
+  paintFrames,
   pipLayout,
   readAlongColour,
   scrollLayout,
@@ -19,6 +20,177 @@ import {
  *  plus the letter spacing, so every size below is computable by hand. */
 const mono: MeasureText = (text, _font, spacing = 0) =>
   text.length * (30 + spacing);
+
+/**
+ * A canvas that keeps only its alpha, as a mask: enough to follow the
+ * die-cut painter's geometry (where each figure lands, and its margin)
+ * without a browser. `drawImage` copies a source's mask (nearest pixel,
+ * offsets rounded); "source-in" and "source-atop" keep the mask as it is,
+ * as they keep a canvas's alpha; colours and strokes are ignored.
+ */
+class MaskCanvas {
+  width = 0;
+  height = 0;
+  mask = new Uint8Array(0);
+  private op = "source-over";
+
+  sized(w: number, h: number): this {
+    this.width = w;
+    this.height = h;
+    this.mask = new Uint8Array(w * h);
+    return this;
+  }
+
+  at(x: number, y: number): number {
+    if (this.mask.length !== this.width * this.height) {
+      this.mask = new Uint8Array(this.width * this.height);
+    }
+    return x < 0 || y < 0 || x >= this.width || y >= this.height
+      ? 0
+      : this.mask[y * this.width + x]!;
+  }
+
+  /** The opaque pixels' bounds, inclusive; null for none. */
+  bounds(): { x0: number; y0: number; x1: number; y1: number } | null {
+    let b: { x0: number; y0: number; x1: number; y1: number } | null = null;
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        if (this.at(x, y) === 0) continue;
+        b =
+          b === null
+            ? { x0: x, y0: y, x1: x, y1: y }
+            : {
+                x0: Math.min(b.x0, x),
+                y0: Math.min(b.y0, y),
+                x1: Math.max(b.x1, x),
+                y1: Math.max(b.y1, y),
+              };
+      }
+    }
+    return b;
+  }
+
+  getContext(): unknown {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- the context draws into this canvas
+    const self = this;
+    return {
+      set globalCompositeOperation(op: string) {
+        self.op = op;
+      },
+      fillStyle: "",
+      strokeStyle: "",
+      lineWidth: 1,
+      fillRect: () => undefined,
+      beginPath: () => undefined,
+      moveTo: () => undefined,
+      lineTo: () => undefined,
+      stroke: () => undefined,
+      drawImage: (src: MaskCanvas, ...n: number[]) => {
+        self.draw(src, n);
+      },
+    };
+  }
+
+  private draw(src: MaskCanvas, n: number[]): void {
+    this.at(0, 0);
+    if (this.op !== "source-over") return;
+    const [sx, sy, sw, sh, dx, dy, dw, dh] =
+      n.length === 8
+        ? n
+        : n.length === 4
+          ? [0, 0, src.width, src.height, ...n]
+          : [0, 0, src.width, src.height, n[0]!, n[1]!, src.width, src.height];
+    const ox = Math.round(dx!);
+    const oy = Math.round(dy!);
+    for (let y = 0; y < Math.round(dh!); y++) {
+      for (let x = 0; x < Math.round(dw!); x++) {
+        const px = ox + x;
+        const py = oy + y;
+        if (px < 0 || py < 0 || px >= this.width || py >= this.height) {
+          continue;
+        }
+        const v = src.at(
+          sx! + Math.floor(((x + 0.5) * sw!) / dw!),
+          sy! + Math.floor(((y + 0.5) * sh!) / dh!),
+        );
+        if (v !== 0) this.mask[py * this.width + px] = 1;
+      }
+    }
+  }
+}
+
+// Why these tests matter: a frames sheet is cut into four equal cells,
+// and each pose is painted as its own die-cut card. The views' e2e cannot
+// see a wrong cut - the figure's plane is sized once from the first pose
+// and a pose change only swaps its picture - so the cut is pinned here: a
+// sheet whose cells hold figures of known bounds must give four cards of
+// one size, each holding ITS cell's figure, no neighbour's pixels, with
+// the die-cut margin round it.
+describe("paintFrames", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("cuts each cell into its own pose, every card one size, each figure where its cell had it", () => {
+    vi.stubGlobal("document", {
+      createElement: () => new MaskCanvas(),
+    });
+    const cellW = 40;
+    const cellH = 80;
+    // Each cell's figure, inclusive bounds within the cell: the talking
+    // poses differ from idle only inside the head band, the beckon
+    // reaches out to the right edge of its cell.
+    const figures = [
+      { x0: 12, y0: 6, x1: 27, y1: 79 },
+      { x0: 12, y0: 4, x1: 27, y1: 79 },
+      { x0: 12, y0: 2, x1: 27, y1: 79 },
+      { x0: 0, y0: 6, x1: 39, y1: 79 },
+    ];
+    const sheet = new MaskCanvas().sized(cellW * 4, cellH);
+    figures.forEach((f, i) => {
+      for (let y = f.y0; y <= f.y1; y++) {
+        for (let x = f.x0; x <= f.x1; x++) {
+          sheet.mask[y * sheet.width + i * cellW + x] = 1;
+        }
+      }
+    });
+    const poses = paintFrames(sheet as unknown as HTMLCanvasElement);
+    expect(poses).toHaveLength(4);
+    const pad = dieCutPad(cellH);
+    for (const [i, pose] of poses.entries()) {
+      expect(pose, `pose ${String(i)}`).toMatchObject({
+        figureW: cellW,
+        figureH: cellH,
+        pad,
+      });
+      const front = pose.front as unknown as MaskCanvas;
+      expect([front.width, front.height]).toEqual([
+        cellW + 2 * pad,
+        cellH + 2 * pad,
+      ]);
+      // The figure sits `pad` in; its dark edge reaches `pad` beyond it.
+      const f = figures[i]!;
+      expect(front.bounds(), `pose ${String(i)}`).toEqual({
+        x0: f.x0,
+        y0: f.y0,
+        x1: f.x1 + 2 * pad,
+        y1: f.y1 + 2 * pad,
+      });
+      // The back is the same die-cut shape.
+      expect((pose.back as unknown as MaskCanvas).bounds()).toEqual(
+        front.bounds(),
+      );
+    }
+  });
+
+  it("paints nothing for a sheet too small to cut", () => {
+    vi.stubGlobal("document", {
+      createElement: () => new MaskCanvas(),
+    });
+    const tiny = new MaskCanvas().sized(3, 10);
+    expect(paintFrames(tiny as unknown as HTMLCanvasElement)).toEqual([]);
+  });
+});
 
 describe("wrapWords", () => {
   // Why this test matters: the bubble's height and the e2e's head-to-tail

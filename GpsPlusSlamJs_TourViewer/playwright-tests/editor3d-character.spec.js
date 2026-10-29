@@ -242,11 +242,15 @@ test("a story character's view, advance and facing set in the station's inspecto
     character: "wendel",
     pose: { position: [3, 0, 0] },
   });
-  // Facing south: a quarter turn about Up alone from no turn (east).
+  // Facing south: a quarter turn about Up alone from no turn (east), the
+  // turn's SIGN included - north is the opposite quarter turn, whose
+  // components have the same sizes. Read as y*w, which a quaternion's
+  // other sign (-q, the same turn) leaves alone: -1/2 south, +1/2 north.
   const [x, y, z, w] = gate.blocks[0].pose.rotation;
   expect([x, z]).toEqual([0, 0]);
   expect(Math.abs(y)).toBeCloseTo(Math.SQRT1_2, 6);
   expect(Math.abs(w)).toBeCloseTo(Math.SQRT1_2, 6);
+  expect(y * w).toBeCloseTo(-0.5, 6);
   expect(gate.steps[0].advance).toEqual({ mode: "lineEnd" });
 
   const next = await context.newPage();

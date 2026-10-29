@@ -178,8 +178,10 @@ for (const viewport of VIEWPORTS) {
       expect(speaking.beckoning).toBe(false);
       expect(speaking.footer).toBe("Speaking");
       // Seen from the west the next station lies on the screen's left:
-      // the beckon is mirrored, the figure standing in the same place.
-      const idle = await stand(page, "two-stations", 4.8, { voice: "idle" });
+      // the beckon is mirrored. (That every pose is cut as a cell of one
+      // size is pinned by `paintFrames`'s unit test: here the figure's
+      // plane is sized once, from the first pose, so a screen box could
+      // not show a wrong cut.)
       const west = await page.evaluate(async (him) => {
         const check = window.__characterViewsCheck;
         check.setVoice("spoken");
@@ -191,20 +193,6 @@ for (const viewport of VIEWPORTS) {
         return check.state();
       }, HIM);
       expect(west).toMatchObject({ beckoning: true, frame: 3, mirrored: true });
-      const beckonedFrom = await stand(page, "two-stations", 4.8, {
-        voice: "spoken",
-        beckon: true,
-      });
-      // Every pose is a cell of one size: the beckon moves no part of him.
-      // He breathes (his height 0.6 % up and down, a slight sway) between
-      // the two reads, so the edges agree to 2 % of his height; a pose drawn
-      // at another size or place would move them by far more.
-      const tall = idle.parts.figure.bottom - idle.parts.figure.top;
-      for (const k of ["left", "top", "right", "bottom"]) {
-        expect(
-          Math.abs(beckonedFrom.parts.figure[k] - idle.parts.figure[k]),
-        ).toBeLessThan(0.02 * tall);
-      }
       expect(errors).toEqual([]);
     });
 
@@ -249,10 +237,15 @@ for (const viewport of VIEWPORTS) {
       const still = await page.evaluate(async () => {
         const check = window.__characterViewsCheck;
         const frames = new Set();
-        // Fifty frames (some 0.8 s or more): a speaking view flips his mouth
-        // every 115 ms, so a mouth that moved here would be seen.
-        for (let i = 0; i < 50; i++) {
-          await new Promise((r) => requestAnimationFrame(r));
+        // Every frame until 1.5 s of the page's clock have passed (however
+        // many frames a loaded machine draws in it), read from the frames'
+        // own timestamps: a speaking view's first word starts at 260 ms and
+        // flips his mouth every 115 ms, so a mouth that moved here would be
+        // seen. The span is a wait, never an assertion: only the frames
+        // seen are asserted.
+        const frame = () => new Promise((r) => requestAnimationFrame(r));
+        const from = await frame();
+        for (let t = from; t < from + 1500; t = await frame()) {
           frames.add(check.state().frame);
         }
         return [...frames];

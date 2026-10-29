@@ -41,5 +41,5 @@ Layout (wrapping and sizes) is separated from painting, so it can be tested in n
 
 ## Tests
 
-- `character-canvas.test.ts`: wrapping, the bubble width and its clamp, the tail tip, the pip and scroll sizes, the die-cut pad, the sheet's cells and the read-along colours. It uses a mono measure of 30 px per character.
+- `character-canvas.test.ts`: wrapping, the bubble width and its clamp, the tail tip, the pip and scroll sizes, the die-cut pad, the sheet's cells and the read-along colours. It uses a mono measure of 30 px per character. `paintFrames` is followed on a synthetic sheet through a canvas fake that keeps only alpha (a mask): four cards of one size, each holding its own cell's figure and none of a neighbour's, the die-cut margin round it, and nothing for a sheet too small to cut. This replaced the views e2e's screen-box comparison, which could not see a wrong cut (the figure's plane is sized once, from the first pose); a wrong cell offset turns it red.
 - The painted look is checked in the browser by `playwright-tests/character-views.spec.js`.
