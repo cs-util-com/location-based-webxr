@@ -94,7 +94,8 @@ export async function decodeFigure<T>(
 
 /** The asset ids a station's story reads: the blocks its `show` steps
  *  name, in step order, deduplicated - what the story draws
- *  (`scene-view.ts`): a figure only in its stage view, a model in its
+ *  (`scene-view.ts`): a figure in any view but the card (the stage or
+ *  one of the character's story views), a model in its
  *  stage or placed view (a reached placed model stands in the world, B2b), a
  *  character's voice in either. Never a video (K4 review R3): a video
  *  block shows its transcript, and a video may be as large as the tour's
@@ -128,7 +129,9 @@ function storyAssetIds(block: TourBlock): readonly string[] {
       // On the stage, or placed in the world once reached (B2b).
       return block.view === "card" ? [] : [block.asset];
     case "character": {
-      const figure = block.view === "stage" ? [block.image] : [];
+      // Drawn in every view but the card (the plain stage figure, or a
+      // character look in a story view).
+      const figure = block.view === "card" ? [] : [block.image];
       return block.voice === undefined ? figure : [...figure, block.voice];
     }
     case "shortText":

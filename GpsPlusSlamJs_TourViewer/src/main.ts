@@ -940,6 +940,7 @@ const stations = wireVisitorStations({
       title: element("scene-title"),
       description: element("scene-description"),
       speaker: element("scene-speaker"),
+      portrait: element<HTMLImageElement>("scene-portrait"),
       text: element("scene-text"),
       status: element("scene-status"),
       image: element<HTMLImageElement>("scene-image"),

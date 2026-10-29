@@ -82,6 +82,8 @@ import {
 } from "./walk-edge-pill.js";
 import { walkRadarFovDeg } from "./walk-radar-model.js";
 import { stationTitle } from "./station-run.js";
+import { beckonNext } from "./character-views.js";
+import type { CharacterBeckon } from "./character-look.js";
 import { createRollingWindow, type RollingWindow } from "./rolling-window.js";
 import {
   sampleFrameTimes,
@@ -219,6 +221,7 @@ export function wireVisitorStations(deps: {
     | "loadGlbModel"
     | "createAudioElement"
     | "xrProjection0"
+    | "getViewerCamera"
   >;
   dom: {
     guide: StationGuideDom;
@@ -322,6 +325,10 @@ export function wireVisitorStations(deps: {
     // The figure fades with its station's content (`follow` below).
     now: deps.now,
     registerFrame: registerFrameUpdate,
+    // A character look turns and opens to the visitor's camera, and
+    // beckons along the walk (two-stations).
+    getCamera: () => seams.getViewerCamera(),
+    beckonOf: (id) => beckonOf(id),
   });
   // The sheet is drawn after a guide call, never from inside one.
   const calls = createCallGuard(() => {
@@ -434,6 +441,27 @@ export function wireVisitorStations(deps: {
     },
   });
   poseOf = (id) => guide.figurePoseOf(id);
+
+  /** Where the character at `stationId` beckons: the walk's one next
+   *  station (`beckonNext`), as an NUE offset from his own pose; none
+   *  while either pose is unknown. */
+  function beckonOf(stationId: string): CharacterBeckon | null {
+    const tour = guideTour();
+    const progress = selectWalkProgress(arStore.getState());
+    if (tour === null || progress === null) return null;
+    if (!walkOfTour(progress, tour.stations)) return null;
+    const nextId = beckonNext(progress, stationId);
+    const next = tour.stations.find((s) => s.id === nextId);
+    if (nextId === null || next === undefined) return null;
+    const here = guide.figurePoseOf(stationId);
+    const there = guide.poseOf(nextId);
+    if (here === null || there === null) return null;
+    return {
+      dx: there.positionNue[0] - here.positionNue[0],
+      dz: there.positionNue[2] - here.positionNue[2],
+      title: stationTitle(next),
+    };
+  }
 
   const walk = deps.walk;
   /** The note last said in the toast (it lasts 6 s in the store): the

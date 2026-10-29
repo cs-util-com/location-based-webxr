@@ -46,6 +46,11 @@ export default defineConfig({
         modelViewsCheck: fileURLToPath(
           new URL("model-views-check.html", import.meta.url),
         ),
+        // A tour character in each world view without an AR session
+        // (`character-views-check.html.md`), linked from nothing.
+        characterViewsCheck: fileURLToPath(
+          new URL("character-views-check.html", import.meta.url),
+        ),
       },
     },
   },
