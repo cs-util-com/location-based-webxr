@@ -38,7 +38,7 @@ import type { LatLng } from "./globe-target.js";
 export const CITY_ARRIVAL_FADE_MS = 1500;
 
 /** One job family's counts, as the worker reports them. */
-export interface CityJobCounts {
+interface CityJobCounts {
   total: number;
   warm: number;
   fetched: number;
@@ -46,7 +46,7 @@ export interface CityJobCounts {
 }
 
 /** The load's counts: the Overpass tiles and the height tiles. */
-export interface CityLoadCounts {
+interface CityLoadCounts {
   overpass: CityJobCounts;
   dem: CityJobCounts;
 }
@@ -62,7 +62,7 @@ export interface GlobeCityThree {
 }
 
 /** The part of a module `Worker` the city uses. */
-export type GlobeCityWorker = Pick<
+type GlobeCityWorker = Pick<
   Worker,
   "addEventListener" | "postMessage" | "terminate"
 >;
@@ -100,7 +100,7 @@ export interface GlobeCityOptions {
 }
 
 /** The current load as `state()` reports it. */
-export interface GlobeCityLoadState {
+interface GlobeCityLoadState {
   outcome: string | null;
   ended: boolean;
   stages: string[];
@@ -124,7 +124,7 @@ export interface GlobeCityState {
 }
 
 /** What `finished` resolves with. */
-export interface GlobeCityLoadReport {
+interface GlobeCityLoadReport {
   outcome: string;
   counts: CityLoadCounts;
   [key: string]: unknown;

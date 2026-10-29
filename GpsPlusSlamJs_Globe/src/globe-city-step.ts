@@ -46,7 +46,7 @@ export interface GlobeCityFrame {
 }
 
 /** The answer of `gate()`: what a sweep waits for before its first move. */
-export type GlobeCityGate = "idle" | "loading" | "ended" | "gave-up";
+type GlobeCityGate = "idle" | "loading" | "ended" | "gave-up";
 
 export interface GlobeCityStep {
   /** The frame's load, retry and fade (`GlobeCityFrame`). */
