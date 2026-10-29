@@ -28,7 +28,7 @@ export const LECTERN_PAGE = {
   lineWidthPx: 900,
 } as const;
 
-export interface LecternParagraph {
+interface LecternParagraph {
   readonly from: number;
   readonly to: number;
   /** Its first sentence's index, and one past its last. */
@@ -36,7 +36,7 @@ export interface LecternParagraph {
   readonly s1: number;
 }
 
-export interface LecternSentence {
+interface LecternSentence {
   readonly from: number;
   readonly to: number;
   /** Its paragraph's index. */
