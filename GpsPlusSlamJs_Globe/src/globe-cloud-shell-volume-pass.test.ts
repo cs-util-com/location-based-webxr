@@ -10,8 +10,10 @@
  * weighed the slab without its texture would darken the clouds. These
  * tests pin what the lab did, under Node, with the real framework sky from
  * `createGlobeGroundSky` and a recording fake renderer that snapshots the
- * uniforms at each draw. The clouds' look is the lab's smokes and the
- * reference captures.
+ * uniforms at each draw, including the view uniforms (rays, camera, sun,
+ * disc, pixel angle, chart radius) the shader alone reads. The pixels are
+ * the lab's smokes and the shell-on reference capture
+ * (`GLOBE_SHOTS_SHELL=1`); the default capture never draws the shell.
  */
 import * as THREE from "three";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
@@ -220,6 +222,73 @@ const marchDraw = (draws: Draw[]) => {
   const d = draws.find((x) => x.kind === "march");
   if (!d) throw new Error("no march drawn");
   return d;
+};
+
+/** A position in the model sphere's frame: ECEF scaled per axis. */
+const toModel = (v: { x: number; y: number; z: number }) => {
+  const r = WGS84_ELLIPSOID.radius;
+  const km = EARTH_ATMOSPHERE.groundRadiusKm;
+  return new THREE.Vector3(
+    (v.x * km) / r.x,
+    (v.y * km) / r.y,
+    (v.z * km) / r.z,
+  );
+};
+
+/** Each component of `got` (a Vector3) close to `want`'s. */
+const closeTo = (got: unknown, want: THREE.Vector3, digits: number) => {
+  const g = (got as THREE.Vector3).toArray();
+  want.toArray().forEach((w, i) => expect(g[i]).toBeCloseTo(w, digits));
+};
+
+/** A uniform's value (undefined when the pass has no such uniform). */
+const valueOf = (uniforms: Uniforms, name: string): unknown =>
+  uniforms[name]?.value;
+
+/** The Gaussian radius at a latitude, sqrt(M N), from WGS84's a and e². */
+const gaussianM = (latDeg: number) => {
+  const a = 6_378_137;
+  const e2 = 0.00669437999014;
+  const w = 1 - e2 * Math.sin((latDeg * Math.PI) / 180) ** 2;
+  return Math.sqrt(((a * (1 - e2)) / w ** 1.5) * (a / Math.sqrt(w)));
+};
+
+const VIEW_SUN_ECEF = new THREE.Vector3(0.3, -0.8, 0.52);
+const VIEW_DISC = {
+  centre: { x: 3000, z: 4000 } as { x: number; z: number } | null,
+  deckY: 3000,
+  radiusM: 20_000,
+};
+
+/**
+ * A shell at Bern under a placement and a camera that are neither
+ * identities nor commuting, so a multiply in the wrong order shows;
+ * `render(disc)` draws once and returns the march's uniforms.
+ */
+const viewScene = () => {
+  const { shell, draws } = setUp();
+  shell.setEnabled(true);
+  shell.update(frameAt({ target: { lat: 46.948, lng: 7.4474 } }));
+  const worldFromEcef = new THREE.Matrix4()
+    .makeRotationFromEuler(new THREE.Euler(0.4, -0.9, 1.3))
+    .setPosition(1200, -3400, 560);
+  const cam = new THREE.PerspectiveCamera(50, 2, 1, 1e7);
+  cam.position.set(2000, 300_000, -1500);
+  cam.rotation.set(-0.6, 0.3, 0.2);
+  cam.updateMatrixWorld();
+  const render = (disc: typeof VIEW_DISC) => {
+    draws.length = 0;
+    shell.render(cam, {
+      ...renderOptions,
+      worldFromEcef,
+      sunEcef: VIEW_SUN_ECEF,
+      slabTexture: new THREE.Texture(),
+      disc,
+    });
+    return marchDraw(draws).uniforms;
+  };
+  const ecefFromWorld = worldFromEcef.clone().invert();
+  return { shell, cam, ecefFromWorld, render };
 };
 
 describe("createGlobeCloudShellVolume", () => {
@@ -507,6 +576,80 @@ describe("createGlobeCloudShellVolume", () => {
     shell.render(camera(), { ...renderOptions, disc });
     expect(drawAt(draws, -1).snapshot.uSlabWeight).toBe(0);
     expect(marchDraw(draws).snapshot.uFlatten).toBe(0);
+  });
+
+  // Why: the shell's rays, its camera, its sun and the slab's disc are the
+  // pass's whole view of the scene, written once per frame into uniforms
+  // the shader alone reads. A transform multiplied in the wrong order, a
+  // missing scale to the model sphere or a stale chart radius draws the
+  // whole shell in the wrong place, and the default reference capture
+  // never draws the shell (`cloudShellVolume` defaults to 0). Every
+  // expected value is computed here independently of the pass's own
+  // formulas: directions through 4x4 matrices with w = 0, the pixel angle
+  // from the field of view, the Gaussian radius from the meridian and the
+  // prime-vertical radii.
+  it("writes the camera, its rays, the sun and the slab's disc in the model frame", () => {
+    const view = viewScene();
+    const u = view.render(VIEW_DISC);
+    const { cam, ecefFromWorld } = view;
+    // A view-space ray through the camera's rotation, then the frame's,
+    // then the scale to the model sphere (S * R_frame * R_camera).
+    const viewToModel = valueOf(u, "uViewToModel") as THREE.Matrix3;
+    expect(viewToModel).toBeInstanceOf(THREE.Matrix3);
+    for (const [x, y, z] of [
+      [0, 0, -1],
+      [0.3, -0.2, -1],
+      [1, 0, 0],
+      [0, 1, 0],
+    ] as const) {
+      const ecef = new THREE.Vector4(x, y, z, 0)
+        .applyMatrix4(cam.matrixWorld)
+        .applyMatrix4(ecefFromWorld);
+      closeTo(
+        new THREE.Vector3(x, y, z).applyMatrix3(viewToModel),
+        toModel(ecef),
+        12,
+      );
+    }
+    closeTo(
+      valueOf(u, "uCamera"),
+      toModel(cam.position.clone().applyMatrix4(ecefFromWorld)),
+      6,
+    );
+    closeTo(valueOf(u, "uSun"), toModel(VIEW_SUN_ECEF).normalize(), 12);
+    closeTo(
+      valueOf(u, "uDiscCentre"),
+      toModel(new THREE.Vector3(3000, 3000, 4000).applyMatrix4(ecefFromWorld)),
+      9,
+    );
+  });
+
+  it("writes the march's size and pixel angle and the chart's radius, and a camera-centred disc on its ground point", () => {
+    const view = viewScene();
+    const u = view.render(VIEW_DISC);
+    expect((valueOf(u, "uTargetSize") as THREE.Vector2).toArray()).toEqual([
+      8, 4,
+    ]);
+    const tanHalfFov = Math.tan((50 * Math.PI) / 360);
+    expect(valueOf(u, "uPixelAngle")).toBeCloseTo((2 * tanHalfFov) / 4, 12);
+    expect(valueOf(u, "uShellGaussianM")).toBeCloseTo(gaussianM(46.948), 3);
+    // A disc centred on the camera takes the camera's ground point; another
+    // latitude moves the radius; half the resolution halves the target.
+    view.shell.setResolution(0.5);
+    view.shell.update(frameAt({ target: { lat: 0, lng: 7.4474 } }));
+    const v = view.render({ ...VIEW_DISC, centre: null });
+    closeTo(
+      valueOf(v, "uDiscCentre"),
+      toModel(
+        new THREE.Vector3(2000, 3000, -1500).applyMatrix4(view.ecefFromWorld),
+      ),
+      9,
+    );
+    expect(valueOf(v, "uShellGaussianM")).toBeCloseTo(gaussianM(0), 3);
+    expect((valueOf(v, "uTargetSize") as THREE.Vector2).toArray()).toEqual([
+      4, 2,
+    ]);
+    expect(valueOf(v, "uPixelAngle")).toBeCloseTo((2 * tanHalfFov) / 2, 12);
   });
 
   it("ends the rays at the relief's depth only while it is fresh and weighted", () => {

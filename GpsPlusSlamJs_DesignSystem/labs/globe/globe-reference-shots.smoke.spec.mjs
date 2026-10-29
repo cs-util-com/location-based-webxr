@@ -26,6 +26,12 @@
  * (`trace.json`: the camera's pose, the clouds' offset, the world frame's
  * target and the speed dust), stepped frame by frame, so state a refactor
  * changed shows even where no image would.
+ *
+ * `GLOBE_SHOTS_SHELL=1` captures the second set: the same views and trace
+ * with the spherical cloud volume, its high layer and its ground shadow on
+ * (`SHELL_KNOBS`). The shell is off by default (`cloudShellVolume=0`), so
+ * the default set never draws it; a refactor of the clouds captures both
+ * sets, into two folders, so the default look stays covered too.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -48,16 +54,23 @@ const REFERENCE_HASH =
  */
 const PINNED = "&cloudDrift=0";
 
+/**
+ * The second set's knobs (r980 review, verdict 1): the spherical volume,
+ * its high layer and its ground shadow at half strength.
+ */
+const SHELL_KNOBS = "&cloudShellVolume=1&cloudHigh=1&cloudShellShadow=0.5";
+
+/** The link this run captures: the reference, or it with the shell on. */
+const LINK =
+  REFERENCE_HASH + (process.env.GLOBE_SHOTS_SHELL === "1" ? SHELL_KNOBS : "");
+
 const AT = { lat: 46.948, lng: 7.4474 };
 
 /** The instant Playwright's clock is installed at: the link's `time=`. */
 const INSTALL_MS = Date.UTC(2026, 9, 5, 11);
 
 /** The link with its `time=` one second on: a clock restart, then back. */
-const REFERENCE_HASH_NEXT_SECOND = REFERENCE_HASH.replace(
-  "T11:00:00Z",
-  "T11:00:01Z",
-);
+const REFERENCE_HASH_NEXT_SECOND = LINK.replace("T11:00:00Z", "T11:00:01Z");
 
 /** The intro flight's frames the trace records (16 ms each). */
 const TRACE_FRAMES = 240;
@@ -227,7 +240,7 @@ test("the reference views render and settle", async ({ page, context }) => {
   });
   page.on("pageerror", (e) => errors.push(e.message));
   const foreign = [];
-  await openReference(page, context, `${REFERENCE_HASH}${PINNED}`, foreign);
+  await openReference(page, context, `${LINK}${PINNED}`, foreign);
   const report = [];
   for (const v of VIEWS) {
     let altitudeKm = v.altitudeKm;
@@ -267,6 +280,18 @@ test("the reference views render and settle", async ({ page, context }) => {
           : null,
         osmRequests: s.osm?.requests ?? null,
         cameraNear: s.eye?.near ?? null,
+        // The clouds' states (r980 review, verdict 2): the flat layer's
+        // share and the two volumes' switches, shares, laws and decks. A
+        // held view with the drift pinned is deterministic, so this covers
+        // the cloud state the intro trace cannot. `drawn` (a frame count,
+        // set by how long the view took to settle) is left out.
+        cloudFlat: s.cloudFlat ?? null,
+        cloudVolume: s.cloudVolume
+          ? { ...s.cloudVolume, drawn: undefined }
+          : null,
+        cloudShellVolume: s.cloudShellVolume
+          ? { ...s.cloudShellVolume, drawn: undefined }
+          : null,
       };
     });
     report.push({ ...v, view, settledInS: seconds, ...facts });
@@ -299,7 +324,7 @@ test("the drift view and the intro trace on Playwright's clock", async ({
   page.on("pageerror", (e) => errors.push(e.message));
   const foreign = [];
   await page.clock.install({ time: INSTALL_MS });
-  await openReference(page, context, REFERENCE_HASH, foreign);
+  await openReference(page, context, LINK, foreign);
   const approach = VIEWS.find((v) => v.name === "3-approach");
   const view = {
     ...AT,
@@ -352,17 +377,15 @@ test("the drift view and the intro trace on Playwright's clock", async ({
       hash,
     );
   await setHash(REFERENCE_HASH_NEXT_SECOND);
-  await setHash(REFERENCE_HASH);
+  await setHash(LINK);
   await holdView(page, view);
   await page.clock.runFor(5000);
   await page.screenshot({ path: join(OUT, "7-drift.png") });
   // The intro flight from this instant: another target and back restarts
   // it (and re-seeds the clouds), then every frame's state is recorded
   // right after the frame ran.
-  await setHash(
-    `${REFERENCE_HASH.replace("at=46.948,7.4474", "at=0,0")}&cloudDrift=0.5`,
-  );
-  await setHash(REFERENCE_HASH);
+  await setHash(`${LINK.replace("at=46.948,7.4474", "at=0,0")}&cloudDrift=0.5`);
+  await setHash(LINK);
   await page.evaluate(() => {
     const w = /** @type {any} */ (window);
     w.__trace = [];

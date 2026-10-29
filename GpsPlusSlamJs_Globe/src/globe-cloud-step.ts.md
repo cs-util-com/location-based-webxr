@@ -64,6 +64,12 @@ sunIntensity, sceneDepthWeight, flatten })`: the slab over the Earth
   the lab's formula, unchanged.
 - The order the lab had: `plan` before the globe's writes and the sky's
   step, `updateVolumes` after them, `render` in `afterScene`.
+- `plan` must run each frame before `updateVolumes` and `render`, with the
+  same knobs and the same camera altitude: the shares and shadows they use
+  are the last `plan`'s, never recomputed, so a caller that skipped `plan`
+  or changed the knobs between them would draw from a stale plan. The
+  fuller fix (`plan` keeping `cameraAltM` for the later calls) waits for a
+  second caller.
 - The shell is told it is off whenever `plan` gave no shares, so a frame
   that leaves the shell's band never draws it from an older law.
 

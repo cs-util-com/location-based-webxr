@@ -200,6 +200,11 @@ radiusM }` from its state, the centre null on the camera, where its flat
   at 700 / 200 / 50 km and nothing with the switch off or with the tile
   noise; the seam; far clouds at the owner's oblique pose; the descent
   and the cost (see the spec's header). The look is these smokes and the
-  lab's reference captures, never the unit tests.
+  lab's shell-on reference capture (`GLOBE_SHOTS_SHELL=1` on
+  `globe-reference-shots.smoke.spec.mjs`, adding
+  `cloudShellVolume=1&cloudHigh=1&cloudShellShadow=0.5`): the default
+  capture never draws the shell, since `cloudShellVolume` defaults to 0.
+  The unit tests pin the uniforms (the view's included: rays, camera,
+  sun, disc, pixel angle, target size, chart radius), never the pixels.
 - The arithmetic: `globe-cloud-shell-volume.test.ts` and
   `.property.test.ts`.

@@ -10,7 +10,12 @@
   at six views: space, space looking at the sky, the approach (300 km),
   above the clouds (30 km), below the clouds (1.5 km over the ground) and
   street level (2 m), plus `views.json` with each view's credits, tile
-  counts and near plane. Every request to a host other than the dev
+  counts, near plane and cloud states (`cloudFlat`, `cloudVolume`,
+  `cloudShellVolume`, without their frame counts). `GLOBE_SHOTS_SHELL=1`
+  captures the same with the spherical cloud volume, its high layer and
+  its ground shadow on (`cloudShellVolume=1&cloudHigh=1&cloudShellShadow=0.5`;
+  off by default, so only this set draws the shell); a clouds refactor
+  captures and compares both sets. Every request to a host other than the dev
   server fails the capture. A second test runs on Playwright's clock: the
   approach view with the clouds' default drift (`7-drift.png`, after 5 s
   of 16 ms frames from a paused instant) and `trace.json`, the intro
