@@ -3,7 +3,8 @@
  * C4): which place to load and when, the retry of a failed build, and the
  * fade by altitude; plus the flight's warm-up and the gates the lab's test
  * hooks read. Moved out of the globe lab as a pure refactor
- * (editor-on-the-full-globe plan, the city slice).
+ * (editor-on-the-full-globe plan, the city slice), with one later fix:
+ * the retry's cap (the tries count per place).
  *
  * The flight's place, or the link's, is loaded here when no warm-up is
  * running for it (`prefetch=0`, `cityWarm=0`, a stopped flight). A load of

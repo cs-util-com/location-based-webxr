@@ -176,16 +176,42 @@ describe("createGlobeCityStep: the retry of a failed build", () => {
     expect(fake.loads()).toHaveLength(3);
   });
 
-  it("starts the tries again for a new place", () => {
+  // The cap counts per place: a place that failed three times must not
+  // leave the next place given up after its first failure. Without the
+  // restart the cap would cover the whole session, so the new place gets
+  // all its tries here, and a return to an earlier place (a new pin
+  // flight or link, a user action) counts afresh as well.
+  it("starts the tries again for a new place, and for a return to an earlier one", () => {
     const { fake, step, at } = setup();
     fake.set({ phase: "failed" });
-    for (let i = 0; i < 8; i += 1) {
-      at(i * 20_000);
-      step.step(frame());
-    }
-    expect(fake.loads()).toHaveLength(3);
-    step.step(frame({ place: ZURICH }));
-    expect(fake.loads()).toHaveLength(4);
+    let t = 0;
+    /** `count` frames of `place` 20 s apart, every build failing. */
+    const failingFrames = (place: typeof BERN, count: number) => {
+      for (let i = 0; i < count; i += 1) {
+        at(t);
+        step.step(frame({ place }));
+        t += 20_000;
+      }
+    };
+    const loadsOf = (place: typeof BERN) =>
+      fake.loads().filter((c) => c[1] === `${place.lat},${place.lng}`);
+
+    failingFrames(BERN, 8);
+    expect(loadsOf(BERN)).toHaveLength(GLOBE_CITY_RETRY.times);
+    expect(step.gate()).toBe("gave-up");
+
+    failingFrames(ZURICH, 4); // the load, the failure seen, a retry, the failure seen
+    expect(fake.loads()).toHaveLength(GLOBE_CITY_RETRY.times + 2);
+    expect(step.gate()).toBe("loading"); // a try left
+    failingFrames(ZURICH, 4);
+    expect(loadsOf(ZURICH)).toHaveLength(GLOBE_CITY_RETRY.times);
+    expect(fake.loads()).toHaveLength(2 * GLOBE_CITY_RETRY.times);
+    expect(step.gate()).toBe("gave-up");
+
+    failingFrames(BERN, 8);
+    expect(loadsOf(BERN)).toHaveLength(2 * GLOBE_CITY_RETRY.times);
+    expect(fake.loads()).toHaveLength(3 * GLOBE_CITY_RETRY.times);
+    expect(step.gate()).toBe("gave-up");
   });
 
   // A retry that falls due while the city is not wanted (above `topM`

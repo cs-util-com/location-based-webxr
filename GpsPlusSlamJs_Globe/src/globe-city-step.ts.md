@@ -6,7 +6,8 @@
   the lab's test hooks read. Moved out of the globe lab's frame loop
   (`labs/globe/globe-lab.js`) as a pure refactor (editor-on-the-full-globe
   plan `2026-10-27-1850-editor-on-the-full-globe-plan.md`, primary repo,
-  the city slice).
+  the city slice), with one later fix: the retry's cap (the tries count
+  per place, see the invariants).
 - Public API:
   - `GLOBE_CITY_RETRY` `{ afterMs: 10000, times: 3 }` (frozen): a failed
     build is asked for again after 10 s, three loads at most (r790
