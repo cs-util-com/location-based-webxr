@@ -139,6 +139,11 @@ wired into its logic: every interaction is faked.
   2026-10-29. Each cuts the AI's four-pose picture in the browser (alpha, or a
   flood fill from the border on white), offers a steady body when the
   talking frames jitter, and draws its own sample pictures, good and broken.
+- `story-editor-1-step-cards/` ... `story-editor-3-inline-script/` - three
+  directions for the story editor (step cards, a flow graph, an inline
+  script), each with the same sample station, every edit on an in-memory
+  model with undo, the deletion questions, and a preview through a branch;
+  made 2026-10-29.
 - `use-cases-true-colour/` - the start page's use-case pictures in the
   look the page does not use (the place dimmed, the tour's pictures in
   their own colours), with a switch to the shipped route-light look;
