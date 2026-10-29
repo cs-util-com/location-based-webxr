@@ -2492,6 +2492,12 @@ let chosenAtOpen = false;
  *  save slot (`keepInChosenFile`, the "open" claim); null otherwise. */
 let openWriting: string | null = null;
 
+/** The tour whose open waits to write into the file it asked for
+ *  (`keepInChosenFile`), from the open until that write holds the save
+ *  slot or is given up. A Save queued for it meanwhile waits for that
+ *  file (`runQueuedSave`) instead of finding none and being dropped. */
+let openWriteOf: EditorSession | null = null;
+
 /**
  * A tour from a link or the sample asks where to save it IN the open's
  * click, before any await (Chromium opens the dialog only within a few
@@ -2583,11 +2589,22 @@ async function keepInChosenFile(
   // queued and runs after it, and Share and publish waits for it
   // (`savesSettled`). No await lies between the wait's last check and the
   // claim (`waitForSaveSlot`).
-  const handle = await waitForSaveSlot(
-    { busy: saving, end: () => saveEnd, settled: savesSettled },
-    () => stillToChoose(mine, pick),
-  );
+  openWriteOf = mine;
+  let handle: FileSystemFileHandle | null;
+  try {
+    handle = await waitForSaveSlot(
+      { busy: saving, end: () => saveEnd, settled: savesSettled },
+      () => stillToChoose(mine, pick),
+    );
+  } finally {
+    // From here the write holds the slot (no await before its claim), or
+    // there is no write: a queued Save no longer waits for it.
+    if (openWriteOf === mine) openWriteOf = null;
+  }
   if (handle === null) {
+    // A Save queued while the open waited (the dialog was dismissed, or
+    // a Save chose a file meanwhile) runs now that no write will come.
+    if (editor !== null) runQueuedSave(editor);
     // Picked, but no longer to be written (another tour opened, or a Save
     // chose a file meanwhile): not left behind empty and unexplained, in
     // a toast that stays.
@@ -2714,6 +2731,11 @@ async function runSave(
  *  runs once the slot is free, and only for the tour it was asked for. */
 function runQueuedSave(mine: EditorSession): void {
   if (!saveState().queued || editor !== mine || saving()) return;
+  // The open's write into its chosen file is still to come: the Save
+  // stays queued and runs into that file once it is adopted (a save
+  // that ends before the write claims the slot would otherwise find no
+  // file, and drop the Save).
+  if (openWriteOf === mine) return;
   store.dispatch(tourDocumentActions.saveQueued({ queued: false }));
   // A tour with no file to save into asks where to save it, which the
   // browser allows only within a key press or a click - long gone now.

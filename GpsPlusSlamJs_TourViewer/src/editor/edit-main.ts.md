@@ -356,7 +356,12 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     the tour that shows then (every open drops one queued before it), so
     a Ctrl+S in a tour opened meanwhile is not lost. A save's end does
     the same: a save whose tour closed meanwhile (`abandon`) runs the
-    Save queued in the tour that shows, never one pressed before it opened. A restored draft's work is saved by
+    Save queued in the tour that shows, never one pressed before it opened.
+    A Ctrl+S pressed in a tour from a link or the sample while its write
+    into the file its open asked for still waits for the slot
+    (`openWriteOf`) stays queued when the previous save ends, and runs
+    into that file once it is adopted, instead of finding no file and
+    being dropped. A restored draft's work is saved by
     itself like any edit.
   - `body[data-autosave]` is the scheduler's state (`off`, `idle`,
     `waiting`, `held`, `saving`, `paused`), the e2e's readiness mark. In
