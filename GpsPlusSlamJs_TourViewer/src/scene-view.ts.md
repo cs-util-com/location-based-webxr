@@ -41,6 +41,15 @@ time. Plan:
   (a character in the card plays its voice, but no figure stands). A
   block's world view (a pin, a plane, a placed model) is drawn with its
   station's free blocks (`content-placement.ts`), never by a step.
+- **A character in a story view** (`bubble`, `speak`, `two-stations`,
+  `portrait`, `popup`; tour format 4.2) goes to the stage with a look
+  spec `{ view, name, line }` (the line is the caption), which the stage
+  draws as a character look (`scene-stage.ts`, `character-look.ts`). The
+  caption still shows in the card (captions always). The `portrait` view
+  also shows the figure as a round portrait beside his name (`dom.portrait`,
+  measured by `checkPicture` like a picture, hidden on the next step). A
+  character's voice tells the stage when it speaks (`setVoice("speaking")`)
+  and when it has spoken (`"spoken"`); every step change sets `"idle"`.
 - A character's figure goes to the stage as it is; the stage's decoder
   measures it from its own header (the decode cap, `station-prefetch.ts`
   `decodeFigure`).
@@ -75,6 +84,12 @@ time. Plan:
   its sound stopped when the step changes.
 - **Auto steps** advance on `schedule(afterS x 1000)`; a tap first cancels
   the timer. A choice never auto-advances.
+- **`lineEnd` steps** (format 4.2) advance when the step's voice or sound
+  ends, after a 600 ms tail; never while it plays. With no voice, or one
+  that cannot be read or played, the words' reading time stands in
+  (`character-views.ts` `lineReadingMs`, 1.5-60 s). Held, no timer runs;
+  released, the wait starts again. One timer at a time: `armTimer` cancels
+  any earlier one (a voice lost while its step renders arms it early).
 - **Video** (B2b step 3) plays in the card's `<video controls playsinline
 preload="metadata">` (`dom.video`, `SceneVideo`): the clip and its
   poster are read through `loadAsset` as object URLs of the step. The
@@ -130,8 +145,9 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
 - `SceneView.progress(): StoryProgress | null` -
   `{ index, count, autoMs }` of the story playing: the step shown, the
   playable step count (`scene-player.ts` `playableStepCount`) and the
-  current step's auto-advance time (null for a step that waits for a
-  tap); null without a story or for a story with a choice.
+  current step's own timer: the auto time, or a `lineEnd` step's wait once
+  its voice is out of the way (null for a step that waits for a tap or
+  for a voice still playing, and while held); null without a story or for a story with a choice.
 - Tested in `scene-view.test.ts` (the step, the count and the auto
   step's time, nothing without a story, no dots with a choice, `onChange`
   on a start, each step, the end and `stopAll`).
@@ -186,3 +202,8 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   over every step", "says why the station's card picture is missing",
   "drops a card picture that lands after its story ended", "ends a station with no story and nothing to show at once"; the
   e2e `story-blocks.spec.js` at the gate and "a station with no story".
+- Tests: `scene-view.test.ts` "a character's story views and the advance
+  when the line ends" (a story view handed to the stage as a look, the
+  plain stage view without one, a card with no figure; the voice told to
+  the stage; `lineEnd` on the voice's end, never before; the reading time
+  with no voice or a failing one; the hold; the portrait).

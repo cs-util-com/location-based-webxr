@@ -1,0 +1,3001 @@
+<!doctype html>
+<!-- Throwaway prototype: character sheet, variant 2 (one inline panel in the character's inspector). Not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Character look - inspector panel</title>
+    <style>
+      :root {
+        --paper: #232838;
+        --paper-2: #1a1e2b;
+        --card: #2b3144;
+        --card-2: #363d54;
+        --field: #1c2030;
+        --line: #444c64;
+        --ink: #fff;
+        --ink-2: #d0d3dd;
+        --ink-dim: #9ba1b3;
+        --accent: #f2971f;
+        --accent-soft: rgb(242 151 31 / 0.14);
+        --ink-on-accent: #000;
+        --danger: #ef4444;
+        --danger-soft: rgb(239 68 68 / 0.13);
+        --ok: #4cc38a;
+        --ok-soft: rgb(76 195 138 / 0.14);
+        --warn: #f2c94c;
+        --font-ui:
+          "Corbel", "Noto Sans", ui-rounded, "Segoe UI", "Roboto", system-ui,
+          sans-serif;
+        --radius: 14px;
+        --radius-small: 10px;
+        --tap: 44px;
+        --insp-w: 404px;
+      }
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        background: #0e1018;
+        color: var(--ink);
+        font-family: var(--font-ui);
+        font-size: 14px;
+        font-weight: 500;
+        line-height: 1.4;
+        overflow: hidden;
+        -webkit-tap-highlight-color: transparent;
+      }
+      button,
+      input,
+      textarea {
+        font: inherit;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      /* ---------- the app frame: three layouts ---------- */
+      #app {
+        position: fixed;
+        inset: 0;
+        background: var(--paper);
+        overflow: hidden;
+        display: grid;
+      }
+      body.framed #app {
+        inset: auto;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 390px;
+        height: min(844px, calc(100vh - 24px));
+        border-radius: 28px;
+        box-shadow:
+          0 0 0 8px #050608,
+          0 0 0 9px #2a2d33,
+          0 24px 60px rgb(0 0 0 / 0.55);
+      }
+      #top {
+        grid-area: top;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 14px;
+        background: var(--paper-2);
+        border-bottom: 1px solid #2f3546;
+        min-width: 0;
+      }
+      .brand {
+        font-weight: 600;
+        color: var(--ink-dim);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .tourname {
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .mode-seg {
+        display: inline-flex;
+        background: #262b3b;
+        border-radius: 999px;
+        padding: 3px;
+      }
+      .mode-seg span {
+        padding: 4px 12px;
+        border-radius: 999px;
+        color: var(--ink-dim);
+        font-size: 13px;
+      }
+      .mode-seg span.on {
+        background: var(--ink);
+        color: #111;
+      }
+      .grow {
+        flex: 1;
+      }
+      .tour-save {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--ink-dim);
+        font-size: 12.5px;
+        white-space: nowrap;
+      }
+      .tour-save i {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--ok);
+      }
+
+      #rail {
+        grid-area: rail;
+        background: var(--paper-2);
+        border-right: 1px solid #2f3546;
+        padding: 14px 10px;
+        overflow: auto;
+      }
+      .rail-h {
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--ink-dim);
+        margin: 12px 6px 6px;
+      }
+      .rail-h:first-child {
+        margin-top: 0;
+      }
+      .rail-i {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        text-align: left;
+        background: none;
+        border: 0;
+        padding: 8px;
+        border-radius: 10px;
+        color: var(--ink-2);
+      }
+      .rail-i:hover {
+        background: #262b3b;
+      }
+      .rail-i.on {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+      .rail-i .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+        flex: none;
+      }
+      .rail-i .dot.grey {
+        background: #6b7184;
+      }
+      .rail-i small {
+        margin-left: auto;
+        color: var(--ink-dim);
+        font-size: 11.5px;
+      }
+
+      #stage {
+        grid-area: stage;
+        position: relative;
+        overflow: hidden;
+        background: #cfd6df;
+        min-height: 0;
+      }
+      #scene {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .stage-tag {
+        position: absolute;
+        left: 12px;
+        top: 12px;
+        background: rgb(20 24 36 / 0.82);
+        color: var(--ink);
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-size: 12.5px;
+        max-width: calc(100% - 24px);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .stage-tag b {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .stage-hint {
+        position: absolute;
+        left: 50%;
+        bottom: 14px;
+        transform: translateX(-50%);
+        background: rgb(20 24 36 / 0.86);
+        padding: 7px 14px;
+        border-radius: 999px;
+        font-size: 12.5px;
+        white-space: nowrap;
+        max-width: calc(100% - 24px);
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #stage.drag::after {
+        content: "Drop the picture to cut it into four poses";
+        position: absolute;
+        inset: 10px;
+        border: 3px dashed var(--accent);
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        background: rgb(20 24 36 / 0.6);
+        font-size: 18px;
+      }
+
+      #insp {
+        grid-area: insp;
+        background: var(--card);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        border-left: 1px solid #39405a;
+      }
+      #insp.drag .drop {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .sheet-head {
+        display: none;
+      }
+      .insp-scroll {
+        overflow-y: auto;
+        overflow-x: hidden;
+        flex: 1;
+        padding: 14px 16px 24px;
+        overscroll-behavior: contain;
+      }
+
+      #tabs {
+        grid-area: tabs;
+        display: none;
+      }
+
+      /* desktop editor */
+      body[data-layout="desktop"] #app {
+        grid-template-columns: 220px minmax(0, 1fr) var(--insp-w);
+        grid-template-rows: 48px minmax(0, 1fr);
+        grid-template-areas: "top top top" "rail stage insp";
+      }
+      @media (max-width: 1180px) {
+        body[data-layout="desktop"] #app {
+          grid-template-columns: 0 minmax(0, 1fr) var(--insp-w);
+        }
+        body[data-layout="desktop"] #rail {
+          display: none;
+        }
+      }
+
+      /* phone portrait: stage on top, a bottom sheet over it, tab bar */
+      body[data-layout="phone"] #app {
+        grid-template-rows: 46px minmax(0, 1fr) 64px;
+        grid-template-columns: 100%;
+        grid-template-areas: "top" "stage" "tabs";
+      }
+      body[data-layout="phone"] #rail,
+      body[data-layout="land"] #rail {
+        display: none;
+      }
+      body[data-layout="phone"] #insp {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 64px;
+        height: calc((100% - 110px) * 0.62);
+        z-index: 5;
+        border-radius: 18px 18px 0 0;
+        border-left: 0;
+        box-shadow: 0 -10px 30px rgb(0 0 0 / 0.35);
+        transition: height 220ms ease-out;
+      }
+      body[data-layout="phone"] #insp.expanded {
+        height: calc(100% - 46px - 64px - 8px);
+      }
+      body[data-layout="phone"] .sheet-head,
+      body[data-layout="land"] .sheet-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 16px 8px;
+        border: 0;
+        background: none;
+        width: 100%;
+        text-align: left;
+        position: relative;
+        border-bottom: 1px solid #39405a;
+        min-height: 50px;
+      }
+      body[data-layout="phone"] .sheet-head::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 5px;
+        width: 40px;
+        height: 4px;
+        border-radius: 4px;
+        background: #5b6278;
+        transform: translateX(-50%);
+      }
+      .sheet-head .t {
+        font-weight: 600;
+        flex: 1;
+        padding-top: 6px;
+      }
+      .sheet-head .t small {
+        display: block;
+        color: var(--ink-dim);
+        font-weight: 500;
+        font-size: 12px;
+      }
+      .sheet-head .chev {
+        color: var(--ink-dim);
+        font-size: 12.5px;
+        padding-top: 6px;
+      }
+      body[data-layout="land"] .sheet-head .chev {
+        display: none;
+      }
+      body[data-layout="phone"] #tabs,
+      body[data-layout="land"] #tabs {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 6px;
+        padding: 6px 8px;
+        background: var(--paper-2);
+        border-top: 1px solid #2f3546;
+        z-index: 6;
+      }
+      #tabs button {
+        border: 0;
+        border-radius: 12px;
+        background: #2a2f40;
+        color: var(--ink-2);
+        display: grid;
+        place-items: center;
+        gap: 1px;
+        font-size: 11.5px;
+        padding: 4px 0;
+        min-height: 50px;
+      }
+      #tabs button svg {
+        width: 20px;
+        height: 20px;
+      }
+      #tabs button.on {
+        background: var(--accent);
+        color: var(--ink-on-accent);
+      }
+      body[data-layout="phone"] .stage-tag,
+      body[data-layout="land"] .stage-tag {
+        top: 8px;
+        font-size: 12px;
+      }
+      body[data-layout="phone"] .stage-hint {
+        display: none;
+      }
+      body[data-layout="phone"] .desk-only,
+      body[data-layout="land"] .desk-only {
+        display: none !important;
+      }
+      body[data-layout="desktop"] .phone-only {
+        display: none !important;
+      }
+
+      /* phone landscape: stage left, the panel as a side sheet */
+      body[data-layout="land"] #app {
+        grid-template-columns: minmax(0, 1fr) min(400px, 50%);
+        grid-template-rows: 40px minmax(0, 1fr) 58px;
+        grid-template-areas: "top top" "stage insp" "tabs insp";
+      }
+      body[data-layout="land"] #tabs {
+        min-height: 0;
+        padding: 4px 8px;
+      }
+      body[data-layout="land"] #tabs button {
+        min-height: 0;
+        grid-auto-flow: column;
+        gap: 6px;
+      }
+      body[data-layout="land"] .stage-hint {
+        bottom: 8px;
+        font-size: 12px;
+      }
+      body[data-layout="land"] .sheet-head {
+        min-height: 0;
+        padding: 8px 14px;
+      }
+      body[data-layout="land"] .sheet-head .t {
+        padding-top: 0;
+      }
+      body[data-layout="land"] .insp-scroll,
+      body[data-layout="phone"] .insp-scroll {
+        padding: 12px 14px 28px;
+      }
+
+      /* ---------- inspector content ---------- */
+      .sec {
+        padding-bottom: 14px;
+        margin-bottom: 14px;
+        border-bottom: 1px solid #39405a;
+      }
+      .sec:last-child {
+        border-bottom: 0;
+      }
+      .sec-h {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .sec-h h2 {
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .sec-h small {
+        color: var(--ink-dim);
+        font-size: 12px;
+      }
+      details.collapsed > summary {
+        list-style: none;
+        cursor: pointer;
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+      }
+      details.collapsed > summary::-webkit-details-marker {
+        display: none;
+      }
+      details.collapsed > summary::before {
+        content: "+";
+        color: var(--ink-dim);
+        width: 12px;
+      }
+      details.collapsed[open] > summary::before {
+        content: "-";
+      }
+      details.collapsed > summary h2 {
+        font-size: 15px;
+        font-weight: 600;
+      }
+      details.collapsed > summary small {
+        color: var(--ink-dim);
+        font-size: 12px;
+      }
+      .mock-fields {
+        color: var(--ink-dim);
+        font-size: 12.5px;
+        padding: 8px 0 0 20px;
+      }
+      .fld {
+        display: grid;
+        gap: 4px;
+        margin-bottom: 10px;
+      }
+      .fld > span {
+        color: var(--ink-dim);
+        font-size: 12px;
+      }
+      input[type="text"],
+      textarea {
+        width: 100%;
+        background: var(--field);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-small);
+        padding: 9px 11px;
+        color: var(--ink);
+        outline: none;
+        resize: vertical;
+      }
+      input[type="text"]:focus,
+      textarea:focus {
+        border-color: var(--accent);
+      }
+      textarea::placeholder {
+        color: #7d8396;
+      }
+
+      .btn {
+        border: 0;
+        border-radius: var(--radius-small);
+        background: var(--card-2);
+        color: var(--ink);
+        min-height: 40px;
+        padding: 8px 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .btn:hover {
+        background: #414962;
+      }
+      .btn.primary {
+        background: var(--accent);
+        color: var(--ink-on-accent);
+      }
+      .btn.primary:hover {
+        background: #ffa83a;
+      }
+      .btn.danger {
+        background: var(--danger);
+        color: #000;
+      }
+      .btn.small {
+        min-height: 32px;
+        padding: 5px 11px;
+        font-size: 13px;
+      }
+      .btn:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .btn svg {
+        width: 17px;
+        height: 17px;
+        flex: none;
+      }
+      body:not([data-layout="desktop"]) .btn {
+        min-height: var(--tap);
+      }
+      body:not([data-layout="desktop"]) .btn.small {
+        min-height: 38px;
+      }
+      .linkbtn {
+        border: 0;
+        background: none;
+        color: var(--accent);
+        padding: 2px 0;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        font-size: 12.5px;
+      }
+      .hint {
+        color: var(--ink-dim);
+        font-size: 12.5px;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .chip-btn {
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--ink-2);
+        border-radius: 999px;
+        padding: 5px 11px;
+        font-size: 12.5px;
+        text-align: left;
+        line-height: 1.3;
+      }
+      .chip-btn:hover {
+        border-color: var(--accent);
+        color: var(--ink);
+      }
+      .chip-btn.bad {
+        border-style: dashed;
+      }
+      body:not([data-layout="desktop"]) .chip-btn {
+        padding: 8px 12px;
+      }
+
+      /* the Look panel */
+      .look-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 4px 0 4px;
+      }
+      .look-head h3 {
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--ink-2);
+      }
+      .status {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 10px 3px 8px;
+        border-radius: 999px;
+        font-size: 12px;
+        background: #3a4157;
+        color: var(--ink-2);
+        white-space: nowrap;
+      }
+      .status i {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #8a90a3;
+      }
+      .status[data-tone="wait"] {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+      .status[data-tone="wait"] i {
+        background: var(--accent);
+        animation: pulse 1.4s ease-in-out infinite;
+      }
+      .status[data-tone="busy"] i {
+        border: 2px solid var(--ink-dim);
+        border-top-color: var(--ink);
+        background: none;
+        width: 11px;
+        height: 11px;
+        animation: spin 0.8s linear infinite;
+      }
+      .status[data-tone="bad"] {
+        background: var(--danger-soft);
+        color: #ff8585;
+      }
+      .status[data-tone="bad"] i {
+        background: var(--danger);
+      }
+      .status[data-tone="ready"] {
+        background: var(--accent);
+        color: #000;
+      }
+      .status[data-tone="ready"] i {
+        background: #000;
+      }
+      .status[data-tone="ok"] {
+        background: var(--ok-soft);
+        color: var(--ok);
+      }
+      .status[data-tone="ok"] i {
+        background: var(--ok);
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.3;
+        }
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .next {
+        font-size: 13px;
+        color: var(--ink-2);
+        margin-bottom: 10px;
+      }
+      .next b {
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      .part {
+        border-radius: 12px;
+        padding: 10px 12px 12px;
+        margin-bottom: 8px;
+        background: #262b3c;
+        border: 1px solid transparent;
+      }
+      .part.current {
+        border-color: rgb(242 151 31 / 0.55);
+        background: #2a2e3f;
+        box-shadow: inset 4px 0 0 var(--accent);
+      }
+      .part-h {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin-bottom: 8px;
+      }
+      .part-h h4 {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .part-h .sum {
+        margin-left: auto;
+        color: var(--ink-dim);
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 45%;
+      }
+      .num {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 12px;
+        flex: none;
+        border: 1.5px solid #6b7184;
+        color: var(--ink-2);
+      }
+      .part.current .num {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .part.done .num {
+        background: var(--ok);
+        border-color: var(--ok);
+        color: #000;
+        font-size: 0;
+      }
+      .part.done .num::after {
+        content: "";
+        width: 9px;
+        height: 5px;
+        border: 2px solid #000;
+        border-top: 0;
+        border-right: 0;
+        transform: translateY(-1px) rotate(-45deg);
+      }
+      .part.problem {
+        border-color: rgb(239 68 68 / 0.6);
+        box-shadow: inset 4px 0 0 var(--danger);
+      }
+      .part.problem .num {
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+
+      .ideas {
+        margin-top: 7px;
+      }
+      .ideas .lbl {
+        color: var(--ink-dim);
+        font-size: 12px;
+        margin-bottom: 5px;
+        display: block;
+      }
+
+      .why {
+        color: var(--ink-dim);
+        font-size: 12.5px;
+        margin-bottom: 8px;
+      }
+      .prompt {
+        background: #161a26;
+        border: 1px solid #3a4157;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 12.5px;
+        line-height: 1.45;
+        color: #c9ccd6;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        max-height: 190px;
+        overflow-y: auto;
+        user-select: text;
+      }
+      .prompt.tall {
+        max-height: none;
+      }
+      .prompt mark {
+        background: rgb(242 151 31 / 0.22);
+        color: #ffd29a;
+        border-radius: 3px;
+        padding: 0 2px;
+      }
+      .prompt mark.todo {
+        background: rgb(242 151 31 / 0.1);
+        color: var(--accent);
+        outline: 1px dashed rgb(242 151 31 / 0.6);
+      }
+      .prompt mark.fix {
+        background: rgb(76 195 138 / 0.18);
+        color: #a8f0cb;
+      }
+      .prompt-tools {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 4px 0 8px;
+      }
+      .copy-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .copy-row .hint {
+        flex: 1 1 180px;
+      }
+      .fixes {
+        margin: 0 0 8px;
+        padding: 8px 10px;
+        background: var(--ok-soft);
+        border-radius: 10px;
+        font-size: 12.5px;
+      }
+      .fixes b {
+        color: var(--ok);
+        font-weight: 600;
+      }
+      .fixes ul {
+        list-style: none;
+        padding: 0;
+        margin-top: 4px;
+        display: grid;
+        gap: 3px;
+      }
+      .fixes li {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+      }
+      .fixes li span {
+        flex: 1;
+      }
+
+      .drop {
+        border: 2px dashed #576079;
+        border-radius: 12px;
+        padding: 14px 12px;
+        text-align: center;
+        display: grid;
+        gap: 8px;
+        justify-items: center;
+        transition:
+          border-color 120ms,
+          background 120ms;
+      }
+      .part.current .drop {
+        border-color: rgb(242 151 31 / 0.7);
+      }
+      .drop .row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .drop p {
+        color: var(--ink-dim);
+        font-size: 12.5px;
+      }
+      body:not([data-layout="desktop"]) .drop .btn.primary {
+        width: 100%;
+        min-height: 52px;
+        font-size: 15px;
+      }
+      .filerow {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #1f2433;
+        border-radius: 10px;
+        padding: 6px 8px;
+      }
+      .filerow img {
+        width: 64px;
+        height: 42px;
+        object-fit: contain;
+        background: #fff;
+        border-radius: 6px;
+        flex: none;
+      }
+      .filerow img.alpha {
+        background: repeating-conic-gradient(#3a4157 0% 25%, #2b3144 0% 50%) 0
+          0 / 12px 12px;
+      }
+      .filerow .fn {
+        flex: 1;
+        min-width: 0;
+        font-size: 12.5px;
+      }
+      .filerow .fn b {
+        display: block;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .filerow .fn span {
+        color: var(--ink-dim);
+      }
+      .samples {
+        margin-top: 10px;
+      }
+      .samples .lbl {
+        color: var(--ink-dim);
+        font-size: 12px;
+        margin-bottom: 5px;
+        display: block;
+      }
+      .samples .chips + .lbl {
+        margin-top: 8px;
+      }
+
+      .steps {
+        list-style: none;
+        padding: 0;
+        margin: 10px 0 0;
+        display: grid;
+        gap: 2px;
+      }
+      .steps li {
+        display: grid;
+        grid-template-columns: 20px auto 1fr;
+        gap: 8px;
+        align-items: baseline;
+        font-size: 13px;
+        padding: 3px 0;
+        color: var(--ink-dim);
+      }
+      .steps li .ic {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        border: 1.5px solid #5b6278;
+        align-self: center;
+      }
+      .steps li .dt {
+        color: var(--ink-dim);
+        font-size: 12px;
+        text-align: right;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .steps li[data-s="run"] {
+        color: var(--ink);
+      }
+      .steps li[data-s="run"] .ic {
+        border-color: var(--ink-dim);
+        border-top-color: var(--accent);
+        animation: spin 0.7s linear infinite;
+      }
+      .steps li[data-s="ok"] {
+        color: var(--ink-2);
+      }
+      .steps li[data-s="ok"] .ic {
+        background: var(--ok);
+        border-color: var(--ok);
+      }
+      .steps li[data-s="fail"] {
+        color: #ff8585;
+        font-weight: 600;
+      }
+      .steps li[data-s="fail"] .ic {
+        background: var(--danger);
+        border-color: var(--danger);
+      }
+      .steps li[data-s="skip"] {
+        opacity: 0.5;
+      }
+      .steps-sum {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        margin-top: 10px;
+        font-size: 12.5px;
+        color: var(--ink-2);
+      }
+      .steps-sum::before {
+        content: "";
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--ok);
+        flex: none;
+        transform: translateY(1px);
+      }
+      .steps-sum span {
+        flex: 1;
+      }
+
+      .problem {
+        margin-top: 10px;
+        background: var(--danger-soft);
+        border: 1px solid rgb(239 68 68 / 0.5);
+        border-radius: 10px;
+        padding: 10px 12px;
+        display: grid;
+        gap: 8px;
+      }
+      .problem h5 {
+        font-size: 14px;
+        color: #ffb0b0;
+        font-weight: 600;
+      }
+      .problem p {
+        font-size: 13px;
+        color: var(--ink-2);
+      }
+      .problem canvas {
+        width: 100%;
+        height: auto;
+        border-radius: 8px;
+        display: block;
+      }
+      .problem .fixline {
+        font-size: 12.5px;
+        background: #1b1f2c;
+        border-radius: 8px;
+        padding: 7px 9px;
+        color: #a8f0cb;
+      }
+      .problem .fixline small {
+        color: var(--ink-dim);
+        display: block;
+      }
+      .problem .row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .frames {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+      }
+      .frames figure {
+        display: grid;
+        gap: 3px;
+        justify-items: center;
+        text-align: center;
+      }
+      .frames canvas,
+      .cmp canvas {
+        width: 100%;
+        height: auto;
+        border-radius: 8px;
+        display: block;
+        background: linear-gradient(#d9e1e8, #c8d0c0 78%, #b9b29f 78%);
+        outline: 2px solid transparent;
+        outline-offset: -2px;
+      }
+      .frames figure.on canvas {
+        outline-color: var(--accent);
+      }
+      .frames figcaption {
+        font-size: 12px;
+        color: var(--ink-2);
+        line-height: 1.2;
+      }
+      .frames figcaption small {
+        display: block;
+        color: var(--ink-dim);
+        font-size: 11px;
+      }
+      .jit {
+        margin-top: 10px;
+        border-radius: 10px;
+        padding: 10px;
+        background: #1f2433;
+        display: grid;
+        gap: 8px;
+      }
+      .jit.alert {
+        background: rgb(242 201 76 / 0.08);
+        border: 1px solid rgb(242 201 76 / 0.35);
+      }
+      .jit .msg {
+        font-size: 13px;
+        color: var(--ink-2);
+      }
+      .jit .msg b {
+        color: var(--warn);
+        font-weight: 600;
+      }
+      .jit.calm .msg b {
+        color: var(--ok);
+      }
+      .meter {
+        height: 6px;
+        border-radius: 6px;
+        background: #343b50;
+        position: relative;
+        overflow: hidden;
+      }
+      .meter i {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        border-radius: 6px;
+        background: var(--ok);
+      }
+      .jit.alert .meter i {
+        background: var(--warn);
+      }
+      .meter s {
+        position: absolute;
+        top: -2px;
+        bottom: -2px;
+        width: 2px;
+        background: #fff;
+        opacity: 0.7;
+      }
+      .cmp {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .cmp figure {
+        display: grid;
+        gap: 4px;
+      }
+      .cmp figcaption {
+        font-size: 12.5px;
+        text-align: center;
+        color: var(--ink-2);
+      }
+      .cmp figure.pick canvas {
+        outline-color: var(--accent);
+      }
+      .cmp figure.pick figcaption {
+        color: var(--accent);
+      }
+      .cmp-tools {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 13.5px;
+      }
+      .switch input {
+        appearance: none;
+        width: 42px;
+        height: 24px;
+        border-radius: 999px;
+        background: #4a5168;
+        position: relative;
+        transition: background 120ms;
+        flex: none;
+      }
+      .switch input::after {
+        content: "";
+        position: absolute;
+        left: 3px;
+        top: 3px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #fff;
+        transition: transform 120ms;
+      }
+      .switch input:checked {
+        background: var(--accent);
+      }
+      .switch input:checked::after {
+        transform: translateX(18px);
+      }
+      .check {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12.5px;
+        color: var(--ink-dim);
+        cursor: pointer;
+      }
+      .check input {
+        accent-color: var(--danger);
+        width: 16px;
+        height: 16px;
+      }
+      .warns {
+        display: grid;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .warn {
+        font-size: 12.5px;
+        background: rgb(242 201 76 / 0.08);
+        border-left: 3px solid var(--warn);
+        padding: 6px 9px;
+        border-radius: 0 8px 8px 0;
+        color: var(--ink-2);
+      }
+      .warn.info {
+        border-left-color: #7aa7ff;
+        background: rgb(122 167 255 / 0.08);
+      }
+      .retry {
+        margin-top: 10px;
+      }
+      .retry .lbl {
+        color: var(--ink-dim);
+        font-size: 12px;
+        margin-bottom: 5px;
+        display: block;
+      }
+      .savebar {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .savebar .row {
+        display: flex;
+        gap: 8px;
+      }
+      .savebar .row .btn.primary {
+        flex: 1;
+      }
+      .confirm {
+        background: rgb(242 201 76 / 0.1);
+        border: 1px solid rgb(242 201 76 / 0.45);
+        border-radius: 10px;
+        padding: 10px;
+        display: grid;
+        gap: 8px;
+        font-size: 13px;
+      }
+      .confirm .row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .saved-sum {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        background: var(--ok-soft);
+        border-radius: 10px;
+        padding: 8px 10px;
+        margin-bottom: 8px;
+        font-size: 12.5px;
+      }
+      .saved-sum span {
+        flex: 1;
+        min-width: 0;
+        color: var(--ink-2);
+      }
+
+      #toasts {
+        position: fixed;
+        left: 50%;
+        bottom: 18px;
+        transform: translateX(-50%);
+        display: grid;
+        gap: 8px;
+        z-index: 50;
+        width: min(440px, calc(100vw - 24px));
+        pointer-events: none;
+      }
+      body[data-layout="phone"] #toasts {
+        bottom: 78px;
+      }
+      .toast {
+        background: rgb(255 255 255 / 0.94);
+        color: #111;
+        padding: 10px 14px;
+        border-radius: 12px;
+        font-size: 13.5px;
+        box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+        animation: tin 160ms ease-out;
+        pointer-events: auto;
+      }
+      .toast.err {
+        background: var(--danger);
+        color: #000;
+      }
+      @keyframes tin {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+      }
+      .sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+      }
+    
+      body { font-variant-numeric: lining-nums; }
+      .look-top {
+        position: sticky; top: -14px; z-index: 4; background: var(--card);
+        margin: 0 -16px; padding: 8px 16px 2px; box-shadow: 0 10px 10px -10px rgb(0 0 0 / 0.6);
+      }
+      body:not([data-layout="desktop"]) .look-top { top: -12px; margin: 0 -14px; padding: 8px 14px 2px; }
+      body[data-layout="desktop"] #toasts { bottom: auto; top: 60px; left: calc((100vw - var(--insp-w) + 220px) / 2); }
+      @media (max-width: 1180px) { body[data-layout="desktop"] #toasts { left: calc((100vw - var(--insp-w)) / 2); } }
+      body.framed #toasts { left: 50%; top: auto; bottom: 120px; width: 360px; }
+      .part, .jit, .problem, .confirm { scroll-margin-top: 84px; }
+      .cmp-note { font-size: 11.5px; color: var(--ink-dim); text-align: center; grid-column: 1 / -1; margin-top: -2px; }
+      body[data-layout="phone"] #toasts { bottom: auto; top: 54px; }
+      body[data-layout="land"] #toasts { bottom: auto; top: 46px; left: calc((100vw - min(400px, 50vw)) / 2); width: min(380px, calc(50vw - 16px)); }
+      body[data-layout="land"] .sheet-head { display: none; }
+      body[data-layout="land"] #tabs button { grid-auto-flow: column; justify-content: center; gap: 6px; }
+      body[data-layout="land"] .next { margin-bottom: 6px; }
+    </style>
+  </head>
+  <body data-layout="desktop">
+    <div id="app">
+      <header id="top">
+        <span class="brand desk-only">Tour editor</span>
+        <span class="brand phone-only">Creator</span>
+        <span class="tourname">Harbour walk</span>
+        <span class="mode-seg desk-only" aria-hidden="true"
+          ><span>Visitor</span><span>Creator</span
+          ><span class="on">Editor</span></span
+        >
+        <span class="grow"></span>
+        <button class="btn small" id="btnFrame" hidden>
+          See it on a phone
+        </button>
+        <span class="tour-save desk-only"><i></i>Tour saved</span>
+      </header>
+
+      <aside id="rail" aria-label="Tour contents">
+        <div class="rail-h">Tour</div>
+        <button class="rail-i on" data-mock>
+          <span class="dot"></span
+          ><span id="railName">Character: Harbour guide</span
+          ><small>shared</small>
+        </button>
+        <div class="rail-h">Station 1: Harbour steps</div>
+        <button class="rail-i" data-mock>
+          <span class="dot"></span>Guide speaks<small>Two stations</small>
+        </button>
+        <button class="rail-i" data-mock>
+          <span class="dot grey"></span>Old photo<small>picture</small>
+        </button>
+        <div class="rail-h">Station 2: Old gate</div>
+        <button class="rail-i" data-mock>
+          <span class="dot"></span>Guide speaks<small>Bubble</small>
+        </button>
+        <button class="rail-i" data-mock>
+          <span class="dot grey"></span>Gate history<small>text</small>
+        </button>
+      </aside>
+
+      <main id="stage" aria-label="Station preview">
+        <canvas id="scene"></canvas>
+        <div class="stage-tag" id="stageTag">Station 1: Harbour steps</div>
+        <div class="stage-hint" id="stageHint">
+          No look yet - make one in the Character panel
+        </div>
+      </main>
+
+      <aside id="insp" aria-label="Character inspector">
+        <button class="sheet-head" id="sheetHead" aria-expanded="false">
+          <span class="t"
+            ><span id="sheetName">Harbour guide</span
+            ><small>Character - shared by 2 stations</small></span
+          >
+          <span class="chev" id="sheetChev">More room</span>
+        </button>
+        <div class="insp-scroll" id="inspScroll">
+          <details class="sec collapsed desk-only">
+            <summary>
+              <h2>Appearance</h2>
+              <small>station 1 - Two stations view, 1.70 m</small>
+            </summary>
+            <div class="mock-fields">
+              View, line, height and pose of the guide at this station (not part
+              of this prototype).
+            </div>
+          </details>
+
+          <section class="sec" id="charSec">
+            <div class="sec-h desk-only">
+              <h2>Character</h2>
+              <small>tour level, shared by 2 stations</small>
+            </div>
+            <label class="fld"
+              ><span>Name</span
+              ><input
+                type="text"
+                id="cName"
+                value="Harbour guide"
+                maxlength="40"
+            /></label>
+
+            <div id="look">
+              <div class="look-top"><div class="look-head">
+                <h3>Look</h3>
+                <span
+                  class="status"
+                  id="status"
+                  role="status"
+                  aria-live="polite"
+                  ><i></i><span>No look yet</span></span
+                >
+              </div>
+              <p class="next" id="next"></p></div>
+
+              <div class="saved-sum" id="savedSum" hidden>
+                <span id="savedText"></span>
+                <button class="btn small" id="btnNewLook">
+                  Make a new look
+                </button>
+              </div>
+
+              <div class="part" id="pDescribe">
+                <div class="part-h">
+                  <span class="num">1</span>
+                  <h4>Describe your guide</h4>
+                  <span class="sum" id="sumDescribe"></span>
+                </div>
+                <textarea
+                  id="desc"
+                  rows="2"
+                  maxlength="300"
+                  placeholder="Who are they, roughly how old, what do they wear, which drawing style?"
+                ></textarea>
+                <div class="ideas">
+                  <span class="lbl">Or start from an idea:</span>
+                  <div class="chips" id="ideas"></div>
+                </div>
+              </div>
+
+              <div class="part" id="pPrompt">
+                <div class="part-h">
+                  <span class="num">2</span>
+                  <h4>Copy the prompt for an image AI</h4>
+                  <span class="sum" id="sumPrompt"></span>
+                </div>
+                <p class="why">
+                  Your guide needs four poses: standing, two mouth shapes
+                  (swapped quickly while it talks) and pointing the way. An
+                  image AI draws all four in one picture; this panel cuts them
+                  apart. This is the full text you copy:
+                </p>
+                <div
+                  class="prompt"
+                  id="promptBox"
+                  tabindex="0"
+                  aria-label="The full prompt"
+                ></div>
+                <div class="prompt-tools">
+                  <button class="linkbtn" id="btnTall">Show all of it</button>
+                  <span class="hint" id="promptLen"></span>
+                </div>
+                <div class="fixes" id="fixes" hidden>
+                  <b>Hints added for the next try</b>
+                  <ul id="fixList"></ul>
+                </div>
+                <div class="copy-row">
+                  <button class="btn primary" id="btnCopy">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <rect x="8" y="8" width="12" height="12" rx="2" />
+                      <path
+                        d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"
+                      />
+                    </svg>
+                    <span>Copy prompt</span>
+                  </button>
+                  <span class="hint"
+                    >Paste it into an image AI of your choice, such as ChatGPT
+                    or Gemini, in another tab or app. This page sends nothing
+                    anywhere.</span
+                  >
+                </div>
+              </div>
+
+              <div class="part" id="pImage">
+                <div class="part-h">
+                  <span class="num">3</span>
+                  <h4>Bring the picture back</h4>
+                  <span class="sum" id="sumImage"></span>
+                </div>
+                <div class="drop" id="drop">
+                  <p class="desk-only">
+                    When the AI has drawn it: <b>paste it here with Ctrl+V</b>,
+                    drop it here, or pick the saved file.
+                  </p>
+                  <p class="phone-only">
+                    When the AI has drawn it, save the picture to your phone,
+                    then pick it here.
+                  </p>
+                  <div class="row">
+                    <button class="btn primary" id="btnPick">
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <rect x="3" y="4" width="18" height="16" rx="2" />
+                        <circle cx="9" cy="10" r="2" />
+                        <path d="m21 16-5-5-9 9" />
+                      </svg>
+                      <span class="desk-only">Pick the picture file</span
+                      ><span class="phone-only">Pick from photos or files</span>
+                    </button>
+                    <button class="btn" id="btnPaste">Paste picture</button>
+                  </div>
+                </div>
+                <div class="filerow" id="fileRow" hidden>
+                  <img id="fileThumb" alt="" />
+                  <span class="fn"
+                    ><b id="fileName"></b><span id="fileMeta"></span
+                  ></span>
+                  <button class="btn small" id="btnReplace">
+                    Another picture
+                  </button>
+                </div>
+                <input
+                  type="file"
+                  id="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  hidden
+                />
+                <ol class="steps" id="steps" hidden></ol>
+                <div class="steps-sum" id="stepsSum" hidden>
+                  <span id="stepsSumText"></span
+                  ><button class="linkbtn" id="btnSteps">Show steps</button>
+                </div>
+                <div class="problem" id="problem" hidden>
+                  <h5 id="probTitle"></h5>
+                  <p id="probText"></p>
+                  <canvas id="probCanvas" hidden></canvas>
+                  <p class="hint" id="probCap" hidden></p>
+                  <div class="fixline" id="probFix" hidden></div>
+                  <div class="row">
+                    <button class="btn primary" id="btnFixCopy">
+                      Copy prompt with this hint
+                    </button>
+                    <button class="btn" id="btnProbPick">
+                      Pick another picture
+                    </button>
+                  </div>
+                </div>
+              <div class="samples" id="samples">
+                  <span class="lbl"
+                    >No picture yet? Try a sample drawn by this page:</span
+                  >
+                  <div class="chips">
+                    <button class="chip-btn" data-sample="white">
+                      Cartoon on white
+                    </button>
+                    <button class="chip-btn" data-sample="painted">
+                      Painted, see-through
+                    </button>
+                  </div>
+                  <span class="lbl"
+                    >Or see how a broken picture is handled:</span
+                  >
+                  <div class="chips">
+                    <button class="chip-btn bad" data-sample="three">
+                      Only three poses
+                    </button>
+                    <button class="chip-btn bad" data-sample="touching">
+                      Poses touching
+                    </button>
+                    <button class="chip-btn bad" data-sample="checker">
+                      Fake see-through
+                    </button>
+                  </div>
+                </div>
+                </div>
+
+              <div class="part" id="pFrames" hidden>
+                <div class="part-h">
+                  <span class="num">4</span>
+                  <h4>Check the four poses</h4>
+                  <span class="sum" id="sumFrames"></span>
+                </div>
+                <div class="frames" id="frames"></div>
+                <div class="jit" id="jit">
+                  <div class="msg" id="jitMsg"></div>
+                  <div class="meter" id="meter">
+                    <i id="meterBar"></i><s id="meterMark"></s>
+                  </div>
+                  <div class="cmp" id="cmp">
+                    <figure id="cmpRaw">
+                      <canvas id="cvRaw"></canvas>
+                      <figcaption>As drawn</figcaption>
+                    </figure>
+                    <figure id="cmpSteady">
+                      <canvas id="cvSteady"></canvas>
+                      <figcaption>Steady body</figcaption></figure><p class="cmp-note">Both talk on a loop, zoomed on the head and body.</p>
+                  </div>
+                  <div class="cmp-tools">
+                    <label class="switch"
+                      ><input type="checkbox" id="steady" role="switch" />Steady
+                      body</label
+                    >
+                    <label class="check"
+                      ><input type="checkbox" id="showMoves" />Show what moves
+                      (red)</label
+                    >
+                  </div>
+                </div>
+                <div class="warns" id="warns"></div>
+                <div class="retry">
+                  <span class="lbl"
+                    >Not right? Add a hint to the prompt, copy it, and ask the
+                    AI again:</span
+                  >
+                  <div class="chips" id="retryChips"></div>
+                </div>
+                <div class="savebar" id="saveBar">
+                  <div class="confirm" id="confirm" hidden>
+                    <span
+                      ><b>The body will jitter while your guide talks.</b>
+                      Steady body is off, and this picture's body changes
+                      between the talking frames.</span
+                    >
+                    <div class="row">
+                      <button class="btn primary" id="btnSaveSteady">
+                        Turn on steady body and save
+                      </button>
+                      <button class="btn" id="btnSaveRaw">Save as drawn</button>
+                    </div>
+                  </div>
+                  <div class="row">
+                    <button class="btn primary" id="btnSave">Save look</button>
+                    <button class="btn" id="btnDiscard">Discard</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="sec desk-only">
+            <label class="fld"
+              ><span>Voice credit</span
+              ><input type="text" value="Tone pattern, no speech"
+            /></label>
+          </section>
+        </div>
+      </aside>
+
+      <nav id="tabs" aria-label="Edit this block">
+        <button data-mock>
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M4 6h16v10H8l-4 4z" /></svg
+          >View
+        </button>
+        <button data-mock>
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          >
+            <path d="M5 7h14M5 12h14M5 17h9" /></svg
+          >Line
+        </button>
+        <button class="on" aria-current="true">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <circle cx="12" cy="7" r="3.5" />
+            <path d="M5 21c0-4 3-7 7-7s7 3 7 7" /></svg
+          >Look
+        </button>
+        <button data-mock>
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          >
+            <path d="M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4" /></svg
+          >Size
+        </button>
+        <button data-mock>
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          >
+            <path
+              d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"
+            /></svg
+          >Move
+        </button>
+      </nav>
+    </div>
+    <div id="toasts" aria-live="polite"></div>
+
+    <script src="sheet.js"></script>
+    <script>
+      "use strict";
+      const $ = (s, r = document) => r.querySelector(s);
+      const SI = window.SheetImport;
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
+        );
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const pct = (v) =>
+        (v * 100 < 10 ? (v * 100).toFixed(1) : Math.round(v * 100)) + " %";
+
+      /* ---------------- the prompt (plan section 2, verbatim) ---------------- */
+      const PLACEHOLDER =
+        "[DESCRIBE YOUR CHARACTER HERE - who they are, rough age, clothing, colours and drawing style. Example: a friendly medieval knight in a blue tabard with a small round shield, warm storybook illustration style.]";
+      const PROMPT = `Create a character sprite sheet for an outdoor walking-tour app.
+
+Character: {{DESC}}
+
+Layout - follow it exactly:
+- One landscape image with a 3:2 shape (for example 1536 x 1024 pixels).
+- Four full-body drawings of the SAME character side by side in a single row. Each drawing sits centred in its own quarter of the width, with clear empty space between neighbours. No part of one drawing reaches into a neighbour's quarter.
+- Order from left to right:
+  1. IDLE - standing relaxed, facing the viewer, arms at rest, mouth closed, friendly expression.
+  2. TALKING A - exactly like drawing 1, only the mouth half open.
+  3. TALKING B - exactly like drawing 1, only the mouth wide open, as if saying "ah".
+  4. POINTING - same stance and facing as drawing 1, one arm stretched out towards the viewer's RIGHT with an open hand, inviting the viewer to follow that way; mouth closed.
+- All four drawings at the same size and scale: same height, feet standing on the same invisible ground line near the bottom edge, the whole figure visible from the top of the head to the feet, nothing cut off.
+- Drawings 2 and 3 must match drawing 1 in every detail except the mouth: same pose, same outline, same colours, same position in their quarter. They will be swapped quickly to animate speech, so any other difference makes the figure jitter.
+
+Background and style:
+- Transparent background (PNG with alpha). If you cannot produce real transparency, use one flat, pure white background instead: no texture, no gradient, no floor, no checkerboard pattern.
+- Give the figure a thin dark outline so it separates cleanly from the background.
+- No shadow on the ground, no text, no labels, no numbers, no frames, borders or grid lines.
+- Front view, soft even lighting, clear shapes that read well at a small size on a phone screen outdoors.
+- An original character, suitable for all ages - not a copy of an existing character, brand or real person.`;
+      const FIX_HEAD = "Corrections after the last try - follow them strictly:";
+      const FIX = {
+        gap: {
+          label: "Poses touch",
+          line: "Leave a wide empty gap between the four drawings. No part of one drawing may touch or overlap another.",
+        },
+        four: {
+          label: "Not four poses",
+          line: "Draw exactly four full-body drawings side by side in one row: idle, talking A, talking B, pointing. Nothing else in the picture.",
+        },
+        bg: {
+          label: "Background",
+          line: "The background must be one flat, pure white colour or real transparency: no floor, gradient, scenery, shadow or checkerboard pattern.",
+        },
+        outline: {
+          label: "Figure lost",
+          line: "Give the figure a clear dark outline and avoid large white areas on the figure itself.",
+        },
+        size: {
+          label: "Poses differ in size",
+          line: "All four drawings exactly the same height and scale, feet on one ground line.",
+        },
+        mouth: {
+          label: "Mouth does not move",
+          line: "In drawing 2 the mouth is clearly half open, in drawing 3 wide open. Everything else stays the same.",
+        },
+        body: {
+          label: "Body changes",
+          line: "Drawings 2 and 3 must be exact copies of drawing 1 except for the mouth. Do not redraw the body, the clothes or the hair.",
+        },
+        point: {
+          label: "Pointing looks wrong",
+          line: "In drawing 4 one arm points straight out to the viewer's right with an open hand; the rest of the figure stays as in drawing 1.",
+        },
+        style: { label: "Wrong character or style", line: null },
+      };
+      const IDEAS = [
+        "a friendly lighthouse keeper in a yellow raincoat, flat cartoon style",
+        "an old herbalist in a green hooded robe with a long white beard, painted storybook style",
+        "a curious fox in a park ranger uniform, bold cartoon",
+      ];
+      const POSES = [
+        ["Idle", "mouth closed"],
+        ["Talk A", "half open"],
+        ["Talk B", "wide open"],
+        ["Beckon", "points the way"],
+      ];
+
+      /* ---------------- state ---------------- */
+      const S = {
+        desc: "",
+        copied: false,
+        fixes: [],
+        busy: false,
+        error: null,
+        result: null,
+        file: null,
+        steady: false,
+        saved: null,
+        savedSteady: false,
+        savedBytes: 0,
+        reopen: false,
+        tall: false,
+        showSteps: false,
+        showMoves: false,
+        layout: "desktop",
+        framed: false,
+        expanded: false,
+        saving: false,
+        confirm: false,
+      };
+      function lookState() {
+        if (S.busy) return "processing";
+        if (S.error) return "problem";
+        if (S.result && S.result === S.saved && S.steady === S.savedSteady)
+          return "saved";
+        if (S.result) return "ready";
+        if (S.copied) return "waiting";
+        if (S.desc.trim()) return "described";
+        return "empty";
+      }
+      const shown = () => {
+        if (!S.result) return null;
+        const f = S.result.frames;
+        const c = S.result.check;
+        return S.steady ? [f[0], c.steady[1], c.steady[2], f[3]] : f;
+      };
+
+      /* ---------------- prompt ---------------- */
+      function promptText() {
+        let t = PROMPT.replace("{{DESC}}", S.desc.trim() || PLACEHOLDER);
+        if (S.fixes.length)
+          t +=
+            "\n\n" +
+            FIX_HEAD +
+            "\n" +
+            S.fixes.map((k) => "- " + FIX[k].line).join("\n");
+        return t;
+      }
+      function renderPrompt() {
+        const d = S.desc.trim();
+        const [a, b] = PROMPT.split("{{DESC}}");
+        let h =
+          esc(a) +
+          (d
+            ? `<mark>${esc(d)}</mark>`
+            : `<mark class="todo">${esc(PLACEHOLDER)}</mark>`) +
+          esc(b);
+        if (S.fixes.length)
+          h +=
+            "\n\n" +
+            `<mark class="fix">${esc(FIX_HEAD)}\n${S.fixes.map((k) => "- " + esc(FIX[k].line)).join("\n")}</mark>`;
+        $("#promptBox").innerHTML = h;
+        $("#promptBox").classList.toggle("tall", S.tall);
+        $("#btnTall").textContent = S.tall ? "Show less" : "Show all of it";
+        $("#promptLen").textContent =
+          promptText().split(/\s+/).length + " words";
+        $("#fixes").hidden = !S.fixes.length;
+        $("#fixList").innerHTML = S.fixes
+          .map(
+            (k) =>
+              `<li><span>${esc(FIX[k].line)}</span><button class="linkbtn" data-unfix="${k}">Remove</button></li>`,
+          )
+          .join("");
+      }
+
+      async function copyText(t) {
+        try {
+          await navigator.clipboard.writeText(t);
+          return true;
+        } catch (e) {
+          try {
+            const ta = document.createElement("textarea");
+            ta.value = t;
+            ta.style.cssText = "position:fixed;opacity:0;left:0;top:0";
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand("copy");
+            ta.remove();
+            return ok;
+          } catch (e2) {
+            return false;
+          }
+        }
+      }
+      async function copyPrompt(reason) {
+        const btn = $("#btnCopy");
+        const ok = await copyText(promptText());
+        if (!ok) {
+          const r = document.createRange();
+          r.selectNodeContents($("#promptBox"));
+          const sel = getSelection();
+          sel.removeAllRanges();
+          sel.addRange(r);
+          toast(
+            "Could not copy by itself. The prompt is selected: copy it with your device's Copy.",
+            true,
+          );
+          return;
+        }
+        S.copied = true;
+        btn.querySelector("span").textContent = "Copied";
+        clearTimeout(copyPrompt.t);
+        copyPrompt.t = setTimeout(
+          () => (btn.querySelector("span").textContent = "Copy again"),
+          1800,
+        );
+        const where =
+          S.layout === "desktop"
+            ? "paste, drop or pick the picture here"
+            : "save the picture and pick it here";
+        if (reason) toast(reason);
+        else if (!S.desc.trim())
+          toast(
+            "Prompt copied, without a description: the AI will invent a character. Run it, then " +
+              where +
+              ".",
+          );
+        else
+          toast("Prompt copied. Run it in your image AI, then " + where + ".");
+        render();
+      }
+
+      /* ---------------- import ---------------- */
+      const STEP_LABEL = Object.fromEntries(
+        SI.STEPS.map((s) => [s.id, s.label]),
+      );
+      function resetSteps() {
+        $("#steps").innerHTML = SI.STEPS.map(
+          (s) =>
+            `<li data-step="${s.id}" data-s="wait"><span class="ic"></span><span class="lb">${esc(s.label)}</span><span class="dt"></span></li>`,
+        ).join("");
+      }
+      function stepDetail(id, r) {
+        if (id === "read") return `${r.w0} x ${r.h0} px`;
+        if (id === "background")
+          return r.mode === "alpha"
+            ? "see-through, kept"
+            : "flat colour, cut from the edges";
+        if (id === "poses")
+          return `4 found, gaps ${Math.min(...r.gaps)}-${Math.max(...r.gaps)} px`;
+        if (id === "align")
+          return r.mirrored
+            ? "one baseline, pointing flipped"
+            : "one baseline, one scale";
+        if (id === "check") return `body changes ${pct(r.jitter)}`;
+        return "";
+      }
+      function onStep(id, s, r) {
+        const li = $(`#steps li[data-step="${id}"]`);
+        if (!li) return;
+        li.dataset.s = s;
+        if (s === "ok") li.querySelector(".dt").textContent = stepDetail(id, r);
+        if (s === "run") li.querySelector(".dt").textContent = "working...";
+        if (s === "fail") {
+          li.querySelector(".dt").textContent = "did not work";
+          let after = false;
+          for (const x of $("#steps").children) {
+            if (after) {
+              x.dataset.s = "skip";
+              x.querySelector(".dt").textContent = "not reached";
+            }
+            if (x === li) after = true;
+          }
+        }
+      }
+
+      let fileUrl = null;
+      async function importFile(file, sampleNote) {
+        if (S.busy) return;
+        if (!file) return;
+        if (fileUrl) URL.revokeObjectURL(fileUrl);
+        fileUrl = URL.createObjectURL(file);
+        S.file = {
+          name: file.name || "pasted picture",
+          size: file.size,
+          note: sampleNote || "",
+          type: file.type,
+        };
+        S.busy = true;
+        S.error = null;
+        S.confirm = false;
+        S.showSteps = true;
+        resetSteps();
+        render();
+        $("#fileThumb").src = fileUrl;
+        scrollTo$("#pImage");
+        try {
+          const r = await SI.importSheet(file, { onStep, minStepMs: 160 });
+          S.result = r;
+          S.steady = r.check.needsSteady;
+          S.showMoves = r.check.needsSteady;
+          S.showSteps = false;
+          S.busy = false;
+          $("#fileThumb").classList.toggle("alpha", r.bg.mode === "alpha");
+          $("#fileMeta").textContent =
+            `${r.read.w0} x ${r.read.h0} px` +
+            (S.file.note ? " - " + S.file.note : "");
+          render();
+          toast(
+            r.check.needsSteady
+              ? "Cut into four poses. The body moves while talking, so steady body is on - check it."
+              : "Cut into four poses. Check them, then save.",
+          );
+          scrollTo$("#pFrames");
+        } catch (e) {
+          S.busy = false;
+          S.error =
+            e instanceof SI.SheetError
+              ? e
+              : new SI.SheetError("read", "internal", { message: String(e) });
+          S.result = S.saved;
+          S.steady = S.savedSteady;
+          render();
+          const m = explain(S.error);
+          toast(m.toast, true);
+          scrollTo$("#problem");
+        }
+      }
+
+      function explain(e) {
+        const n = SI.STEPS.findIndex((s) => s.id === e.step) + 1;
+        const head = `Step ${n} of 5, "${STEP_LABEL[e.step]}", did not work. `;
+        const i = e.info || {};
+        const M = {
+          "read:not-file": [
+            "That was not a file.",
+            "Pick the picture file the image AI gave you.",
+            null,
+          ],
+          "read:not-image": [
+            "This file is not a picture.",
+            "Pick the PNG, JPEG or WebP picture the image AI gave you.",
+            null,
+          ],
+          "read:decode": [
+            "This file could not be opened as a picture.",
+            "Pick the PNG, JPEG or WebP the AI gave you. A screenshot of it works too.",
+            null,
+          ],
+          "read:too-big": [
+            `The picture is very large (${i.w} x ${i.h} px).`,
+            "Save a smaller copy, under 40 megapixels, and pick that one.",
+            null,
+          ],
+          "read:too-small": [
+            `The picture is only ${i.w} x ${i.h} px, so your guide would look blurry.`,
+            "Download the full-size picture from the AI, not a preview.",
+            null,
+          ],
+          "background:checker": [
+            "The background is a grey and white checkerboard.",
+            "That is a painted pattern, not real see-through. Ask again with this hint, or ask for plain white.",
+            "bg",
+          ],
+          "background:busy": [
+            "The background is not one flat colour.",
+            "It has a pattern, a gradient, a floor or scenery, so the figures cannot be cut out. Ask again with this hint.",
+            "bg",
+          ],
+          "background:empty": [
+            "Almost nothing was left after removing the background.",
+            "The figure may be white on white. Ask again with this hint.",
+            "outline",
+          ],
+          "poses:joined": [
+            `Two poses touch each other, so they cannot be told apart (found ${i.count} shape${i.count === 1 ? "" : "s"}, one about twice as wide).`,
+            "Generate again with this hint, or pick another picture.",
+            "gap",
+          ],
+          "poses:missing": [
+            `Only ${i.count} pose${i.count === 1 ? "" : "s"} found; four are needed: idle, two talking, beckon.`,
+            "Generate again with this hint, or pick another picture.",
+            "four",
+          ],
+          "poses:extra": [
+            `${i.count} separate shapes found; four are expected.`,
+            "There may be text, a label, a shadow or an extra drawing. Generate again with this hint.",
+            "four",
+          ],
+        };
+        const k = e.step + ":" + e.code;
+        const [what, todo, fix] = M[k] || [
+          `Something went wrong inside this step (${i.message || e.code}).`,
+          "Try another picture. If it keeps happening, this is a bug in the app.",
+          null,
+        ];
+        const short = {
+          read: "the picture could not be read",
+          background: "the background could not be removed",
+          poses: "four poses were not found",
+          align: "the poses could not be lined up",
+          check: "the talking frames could not be checked",
+        }[e.step];
+        return {
+          title: head,
+          what,
+          todo,
+          fix,
+          n,
+          toast: `Step ${n} failed: ${short}. See the panel for what to do.`,
+        };
+      }
+
+      /* ---------------- render ---------------- */
+      const STATUS = {
+        empty: ["", "No look yet"],
+        described: ["", "Not made yet"],
+        waiting: ["wait", "Waiting for your picture"],
+        processing: ["busy", "Cutting..."],
+        problem: ["bad", "Problem in step "],
+        ready: ["ready", "Ready - not saved"],
+        saved: ["ok", "Saved"],
+      };
+      function render() {
+        const st = lookState();
+        const [tone, label] = STATUS[st];
+        const chip = $("#status");
+        chip.dataset.tone = tone;
+        chip.querySelector("span").textContent =
+          st === "problem"
+            ? label + explain(S.error).n
+            : S.saving
+              ? "Saving..."
+              : label;
+        if (S.saving) chip.dataset.tone = "busy";
+        const desk = S.layout === "desktop";
+        const nx = {
+          empty:
+            "Start with <b>a few words about your guide</b>. It takes about two minutes, with an image AI of your choice.",
+          described:
+            "Now <b>copy the prompt</b> and paste it into an image AI.",
+          waiting: desk
+            ? "Run the prompt in your image AI. Then <b>paste the picture here with Ctrl+V</b>, drop it, or pick it."
+            : "Run the prompt in your image AI, <b>save the picture</b>, then <b>pick it below</b>.",
+          processing: "Cutting your picture into four poses...",
+          problem:
+            "The red box below says <b>which step failed and what to do</b>.",
+          ready:
+            S.result && S.result.check.needsSteady
+              ? "This picture's body moves while talking, so <b>steady body is on</b>. Compare, then <b>save</b>."
+              : "Check the four poses and the animation, then <b>save</b>.",
+          saved: "Your guide looks like this at both stations.",
+        }[st];
+        $("#next").innerHTML = nx;
+
+        const collapsed = st === "saved" && !S.reopen;
+        $("#savedSum").hidden = !S.saved || S.reopen || st !== "saved";
+        $("#savedText").innerHTML = S.saved
+          ? `Saved look: four poses${S.savedSteady ? ", steady body" : ""}, one ${Math.max(1, Math.round(S.savedBytes / 1024))} KB picture.`
+          : "";
+        for (const id of ["pDescribe", "pPrompt", "pImage"])
+          $("#" + id).hidden = collapsed;
+
+        const partOf = {
+          empty: "pDescribe",
+          described: "pPrompt",
+          waiting: "pImage",
+          processing: "pImage",
+          problem: "pImage",
+          ready: "pFrames",
+          saved: "",
+        }[st];
+        const done = {
+          pDescribe: !!S.desc.trim(),
+          pPrompt: S.copied,
+          pImage: !!S.result && !S.error && !S.busy,
+        };
+        for (const id of ["pDescribe", "pPrompt", "pImage", "pFrames"]) {
+          const el = $("#" + id);
+          el.classList.toggle("current", partOf === id);
+          el.classList.toggle("done", !!done[id] && partOf !== id);
+          el.classList.toggle("problem", st === "problem" && id === "pImage");
+        }
+        $("#sumDescribe").textContent =
+          S.desc.trim() && partOf !== "pDescribe" ? S.desc.trim() : "";
+        $("#sumPrompt").textContent = S.copied
+          ? S.fixes.length
+            ? `copied, ${S.fixes.length} hint${S.fixes.length > 1 ? "s" : ""}`
+            : "copied"
+          : "";
+        $("#sumImage").textContent = S.file && done.pImage ? "cut" : "";
+        renderPrompt();
+
+        // picture part
+        $("#drop").hidden = !!S.file;
+        $("#fileRow").hidden = !S.file;
+        $("#fileName").textContent = S.file ? S.file.name : "";
+        if (S.file && S.busy)
+          $("#fileMeta").textContent =
+            S.file.note || Math.round(S.file.size / 1024) + " KB";
+        $("#btnReplace").disabled = S.busy;
+        $("#samples").hidden = !!(S.result && !S.error) || S.busy;
+        $("#steps").hidden = !(S.busy || S.error || S.showSteps) || !S.file;
+        $("#stepsSum").hidden = !(S.result && !S.busy && !S.error && S.file);
+        if (S.result && S.file) {
+          const r = S.result;
+          $("#stepsSumText").textContent =
+            `Cut in ${(r.ms / 1000).toFixed(1)} s: 4 poses, ${r.bg.mode === "alpha" ? "see-through background" : "background removed"}.`;
+          $("#btnSteps").textContent = S.showSteps
+            ? "Hide steps"
+            : "Show steps";
+        }
+        renderProblem();
+
+        // frames part
+        $("#pFrames").hidden = !S.result || !!S.error;
+        $("#pFrames h4").textContent = st === "saved" ? "The four poses" : "Check the four poses";
+        if (S.result) renderFrames();
+        $("#btnSave").disabled = S.saving || st === "saved";
+        $("#btnSave").textContent = S.saving
+          ? "Saving..."
+          : st === "saved"
+            ? "Saved"
+            : "Save look";
+        $("#btnDiscard").hidden = st === "saved" || S.saving;
+        $("#confirm").hidden = !S.confirm;
+        $("#btnSave").parentElement.hidden = S.confirm;
+        $("#saveBar").hidden = false;
+
+        // stage text
+        const tag = $("#stageTag");
+        const hint = $("#stageHint");
+        const name = $("#cName").value.trim() || "Your guide";
+        $("#sheetName").textContent = name;
+        $("#railName").textContent = "Character: " + name;
+        tag.innerHTML =
+          `Station 1: Harbour steps` +
+          (st === "ready" ? " - <b>preview, not saved</b>" : "");
+        hint.textContent = {
+          empty: "No look yet - make one in the Character panel",
+          described: "No look yet - copy the prompt in the Character panel",
+          waiting: "Drop the AI's picture anywhere here",
+          processing: "Cutting your picture...",
+          problem: "The picture was not used - see the Character panel",
+          ready: "Preview of the new look - save it in the panel",
+          saved: "As visitors will see your guide",
+        }[st];
+        $("#sheetChev").textContent = S.expanded ? "Less room" : "More room";
+        $("#sheetHead").setAttribute("aria-expanded", String(S.expanded));
+        $("#insp").classList.toggle("expanded", S.expanded);
+        stageDirty = true;
+      }
+
+      function renderProblem() {
+        const box = $("#problem");
+        box.hidden = !S.error;
+        if (!S.error) return;
+        const m = explain(S.error);
+        $("#probTitle").textContent = m.title;
+        $("#probText").textContent = m.what + " " + m.todo + (S.saved ? " Your saved look stays as it is." : "");
+        const cv = $("#probCanvas");
+        const a = S.error.info && S.error.info.analysis;
+        cv.hidden = !a;
+        $("#probCap").hidden = !a;
+        if (a) {
+          cv.width = a.width;
+          cv.height = a.height;
+          cv.getContext("2d").drawImage(a, 0, 0);
+          $("#probCap").textContent =
+            "What the panel found: each orange band is one shape it could separate" +
+            (S.error.info.widest >= 0 ? "; the red one holds two poses." : ".");
+        }
+        const fx = $("#probFix");
+        fx.hidden = !m.fix;
+        $("#btnFixCopy").hidden = !m.fix;
+        if (m.fix)
+          fx.innerHTML = `<small>This line will be added to the prompt:</small>${esc(FIX[m.fix].line)}`;
+        $("#btnProbPick").className = m.fix ? "btn" : "btn primary";
+      }
+
+      let frameCanvases = [];
+      function renderFrames() {
+        const r = S.result;
+        const fr = $("#frames");
+        if (fr.dataset.for !== String(r.ms) + r.read.name + r.geo.cellW) {
+          fr.dataset.for = String(r.ms) + r.read.name + r.geo.cellW;
+          fr.innerHTML = POSES.map(
+            ([a, b], i) =>
+              `<figure data-i="${i}"><canvas width="${r.geo.cellW / 2}" height="${r.geo.cellH / 2}"></canvas><figcaption>${a}<small>${b}</small></figcaption></figure>`,
+          ).join("");
+          frameCanvases = [...fr.querySelectorAll("canvas")];
+          const g = r.geo;
+          const y0 = Math.max(0, g.top - 0.04 * g.figH);
+          const chh = Math.min(g.cellH - y0, 0.7 * g.figH);
+          const cw = Math.min(g.cellW, chh * 0.8);
+          S.crop = [(g.cellW - cw) / 2, y0, cw, chh];
+          for (const id of ["cvRaw", "cvSteady"]) {
+            const c = $("#" + id);
+            c.width = Math.round(cw * 0.6);
+            c.height = Math.round(chh * 0.6);
+          }
+        }
+        const f = shown();
+        frameCanvases.forEach((c, i) => {
+          const x = c.getContext("2d");
+          x.clearRect(0, 0, c.width, c.height);
+          x.drawImage(f[i], 0, 0, c.width, c.height);
+        });
+        const ck = r.check;
+        const hi = ck.needsSteady;
+        const jit = $("#jit");
+        jit.classList.toggle("alert", hi);
+        jit.classList.toggle("calm", !hi);
+        const jp = pct(ck.jitter);
+        $("#jitMsg").innerHTML = hi
+          ? `<b>The body moves while talking.</b> ${jp} of the body below the head changes between the talking frames, so your guide would jitter. ` +
+            (S.steady
+              ? "Steady body keeps the standing body and swaps only the head."
+              : "Turn on steady body to keep the body still.")
+          : `<b>The body stays still while talking</b> (${jp} changes, mostly outline). No fix needed.`;
+        $("#meterBar").style.width =
+          Math.min(100, (ck.jitter / 0.2) * 100) + "%";
+        $("#meterMark").style.left = (r.params.jitterWarn / 0.2) * 100 + "%";
+        $("#meter").title =
+          `Body change ${jp}; above ${pct(r.params.jitterWarn)} the body jitters`;
+        $("#cmp").hidden = !hi && !S.steady;
+        $("#showMoves").parentElement.hidden = !hi && !S.steady;
+        $("#steady").checked = S.steady;
+        $("#showMoves").checked = S.showMoves;
+        $("#cmpRaw").classList.toggle("pick", !S.steady);
+        $("#cmpSteady").classList.toggle("pick", S.steady);
+        const w = [];
+        const g = r.geo;
+        if (g.sizeRatio < 0.88)
+          w.push([
+            "",
+            `Pose ${g.smallest + 1} is ${Math.round((1 - g.sizeRatio) * 100)} % shorter than the tallest. Your guide will shrink when it switches to it. Hint: "Poses differ in size".`,
+          ]);
+        if (ck.noMouth)
+          w.push([
+            "",
+            'The mouth hardly changes between the talking frames, so your guide will not seem to speak. Hint: "Mouth does not move".',
+          ]);
+        if (ck.noBeckon)
+          w.push([
+            "",
+            'The beckon pose looks almost like the standing one. Hint: "Pointing looks wrong".',
+          ]);
+        if (g.mirrored)
+          w.push([
+            "info",
+            "The arm pointed to the viewer's left, so the beckon pose was flipped to point right. The app turns it toward the next station anyway.",
+          ]);
+        $("#warns").innerHTML = w
+          .map(([c, t]) => `<div class="warn ${c}">${esc(t)}</div>`)
+          .join("");
+        $("#retryChips").innerHTML = ["body", "mouth", "point", "size", "style"]
+          .map(
+            (k) =>
+              `<button class="chip-btn" data-hint="${k}">${esc(FIX[k].label)}${S.fixes.includes(k) ? " (added)" : ""}</button>`,
+          )
+          .join("");
+        $("#sumFrames").textContent =
+          lookState() === "saved" ? "" : S.steady ? "steady body on" : "";
+      }
+
+      /* ---------------- animation ---------------- */
+      const SCRIPT = [
+        ["talk", 1800],
+        ["idle", 700],
+        ["talk", 1300],
+        ["idle", 600],
+        ["beckon", 1700],
+        ["idle", 900],
+      ];
+      const TALK = [
+        ["talk", 1700],
+        ["idle", 450],
+      ];
+      const hash = (n) => {
+        const s = Math.sin(n * 12.9898 + 4.1) * 43758.5453;
+        return s - Math.floor(s);
+      };
+      function frameAt(t, script) {
+        const total = script.reduce((s, x) => s + x[1], 0);
+        let m = t % total;
+        for (const [k, d] of script) {
+          if (m < d) {
+            if (k === "idle") return { f: 0, k };
+            if (k === "beckon") return { f: 3, k };
+            const st = Math.floor(m / 110); // about 9 swaps a second
+            const r = hash(st + Math.floor(t / total) * 97);
+            return { f: r < 0.14 ? 0 : st % 2 ? 1 : 2, k };
+          }
+          m -= d;
+        }
+        return { f: 0, k: "idle" };
+      }
+
+      /* ---------------- the stage (mock of the station) ---------------- */
+      const scene = $("#scene");
+      let stageDirty = true;
+      let backdrop = null;
+      let lastKey = "";
+      function sizeStage() {
+        const r = $("#stage").getBoundingClientRect();
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        scene.width = Math.max(1, Math.round(r.width * dpr));
+        scene.height = Math.max(1, Math.round(r.height * dpr));
+        backdrop = null;
+        stageDirty = true;
+      }
+      function drawBackdrop(w, h) {
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        const x = c.getContext("2d");
+        const hz = h * 0.5;
+        const sky = x.createLinearGradient(0, 0, 0, hz);
+        sky.addColorStop(0, "#b9cbe0");
+        sky.addColorStop(1, "#e6ebef");
+        x.fillStyle = sky;
+        x.fillRect(0, 0, w, hz);
+        const cols = [
+          "#b7a48f",
+          "#c9b8a2",
+          "#a99886",
+          "#cdbfae",
+          "#b3a593",
+          "#c2ae98",
+        ];
+        let bx = -w * 0.02;
+        let i = 0;
+        while (bx < w) {
+          const bw = w * (0.11 + hash(i) * 0.08);
+          const bh = h * (0.16 + hash(i + 9) * 0.12);
+          x.fillStyle = cols[i % cols.length];
+          x.fillRect(bx, hz - bh, bw, bh);
+          x.fillStyle = "rgba(40,50,70,0.35)";
+          for (
+            let wy = hz - bh + bh * 0.18;
+            wy < hz - bh * 0.2;
+            wy += bh * 0.26
+          )
+            for (
+              let wx = bx + bw * 0.15;
+              wx < bx + bw - bw * 0.15;
+              wx += bw * 0.24
+            )
+              x.fillRect(wx, wy, bw * 0.1, bh * 0.12);
+          x.fillStyle = "rgba(80,60,50,0.4)";
+          x.fillRect(bx - 2, hz - bh - 4, bw + 4, 5);
+          bx += bw;
+          i++;
+        }
+        const g = x.createLinearGradient(0, hz, 0, h);
+        g.addColorStop(0, "#d5cfc3");
+        g.addColorStop(1, "#b8af9f");
+        x.fillStyle = g;
+        x.fillRect(0, hz, w, h - hz);
+        x.strokeStyle = "rgba(60,50,40,0.10)";
+        x.lineWidth = Math.max(1, w / 900);
+        const vx = w * 0.5;
+        for (let k = -14; k <= 14; k++) {
+          x.beginPath();
+          x.moveTo(vx + k * w * 0.012, hz);
+          x.lineTo(vx + k * w * 0.16, h);
+          x.stroke();
+        }
+        for (let k = 1; k < 12; k++) {
+          const y = hz + (h - hz) * Math.pow(k / 12, 1.8);
+          x.beginPath();
+          x.moveTo(0, y);
+          x.lineTo(w, y);
+          x.stroke();
+        }
+        // lamp post and bench
+        const lx = w * 0.8;
+        x.fillStyle = "#3b4150";
+        x.fillRect(lx, hz - h * 0.2, Math.max(3, w * 0.006), h * 0.32);
+        x.beginPath();
+        x.arc(
+          lx + w * 0.003,
+          hz - h * 0.21,
+          Math.max(6, w * 0.012),
+          0,
+          Math.PI * 2,
+        );
+        x.fill();
+        x.fillStyle = "#7a6250";
+        x.fillRect(w * 0.66, hz + h * 0.1, w * 0.12, h * 0.02);
+        x.fillRect(w * 0.665, hz + h * 0.12, w * 0.008, h * 0.04);
+        x.fillRect(w * 0.77, hz + h * 0.12, w * 0.008, h * 0.04);
+        return c;
+      }
+      function roundRect(x, l, t, w, h, r) {
+        x.beginPath();
+        x.roundRect(l, t, w, h, r);
+      }
+      function drawStage(now) {
+        const st = lookState();
+        const frames = st === "processing" ? null : shown();
+        const fa = frames ? frameAt(now, SCRIPT) : { f: -1, k: "none" };
+        let visH = scene.height;
+        if (S.layout === "phone" && !S.expanded) {
+          const sr = $("#stage").getBoundingClientRect();
+          const ir = $("#insp").getBoundingClientRect();
+          visH = Math.max(90, ir.top - sr.top) * (scene.height / Math.max(1, sr.height));
+        }
+        const key = [
+          Math.round(visH),
+          scene.width,
+          scene.height,
+          st,
+          fa.f,
+          fa.k,
+          S.steady,
+          S.result && S.result.ms,
+        ].join("|");
+        if (!stageDirty && key === lastKey) return;
+        lastKey = key;
+        stageDirty = false;
+        const w = scene.width;
+        const h = scene.height;
+        const x = scene.getContext("2d");
+        if (!backdrop) backdrop = drawBackdrop(w, h);
+        x.drawImage(backdrop, 0, 0);
+        const desk = S.layout === "desktop";
+        const feetY = S.layout === "phone" ? visH * 0.92 : h * 0.86;
+        const cx = w * (desk ? 0.42 : 0.4);
+        const ch = Math.min(S.layout === "phone" ? visH * 0.74 : h * (S.layout === "land" ? 0.56 : 0.5), w * 0.8);
+        x.fillStyle = "rgba(30,25,20,0.22)";
+        x.beginPath();
+        x.ellipse(cx, feetY, ch * 0.2, ch * 0.04, 0, 0, Math.PI * 2);
+        x.fill();
+        x.strokeStyle = "#f2b84b";
+        x.lineWidth = Math.max(2, ch * 0.012);
+        x.beginPath();
+        x.ellipse(cx, feetY, ch * 0.3, ch * 0.065, 0, 0, Math.PI * 2);
+        x.stroke();
+        if (frames) {
+          const img = frames[fa.f];
+          const r = S.result.geo;
+          const sc = ch / r.figH;
+          const dw = img.width * sc;
+          const dh = img.height * sc;
+          x.drawImage(img, cx - dw / 2, feetY - r.base * sc, dw, dh);
+          if (fa.k === "talk")
+            bubble(x, cx + ch * 0.16, feetY - ch * 1.02, w, h, ch);
+          if (fa.k === "beckon")
+            chevrons(x, cx + ch * 0.45, feetY - ch * 0.02, ch);
+        } else {
+          // placeholder figure: no look yet
+          x.save();
+          x.fillStyle = "rgba(255,255,255,0.35)";
+          x.strokeStyle = "rgba(40,46,64,0.55)";
+          x.setLineDash([ch * 0.03, ch * 0.025]);
+          x.lineWidth = Math.max(1.5, ch * 0.008);
+          x.beginPath();
+          x.arc(cx, feetY - ch * 0.86, ch * 0.11, 0, Math.PI * 2);
+          x.fill();
+          x.stroke();
+          roundRect(
+            x,
+            cx - ch * 0.17,
+            feetY - ch * 0.72,
+            ch * 0.34,
+            ch * 0.7,
+            ch * 0.1,
+          );
+          x.fill();
+          x.stroke();
+          x.restore();
+          const label =
+            st === "processing"
+              ? "Cutting your picture..."
+              : st === "problem"
+                ? "Picture not used"
+                : "No look yet";
+          x.font = `600 ${Math.max(12, Math.round(ch * 0.05))}px Corbel, "Noto Sans", system-ui, sans-serif`;
+          const tw = x.measureText(label).width;
+          x.fillStyle = "rgba(20,24,36,0.85)";
+          roundRect(
+            x,
+            cx - tw / 2 - 12,
+            feetY - ch * 0.47,
+            tw + 24,
+            ch * 0.09,
+            ch * 0.045,
+          );
+          x.fill();
+          x.fillStyle = "#fff";
+          x.textAlign = "center";
+          x.textBaseline = "middle";
+          x.fillText(label, cx, feetY - ch * 0.425);
+        }
+      }
+      function bubble(x, bx, by, w, h, ch) {
+        const name = $("#cName").value.trim() || "Your guide";
+        const fs = Math.max(11, Math.round(ch * 0.045));
+        x.font = `500 ${fs}px Corbel, "Noto Sans", system-ui, sans-serif`;
+        const lines = ["Welcome to the harbour!", "Follow me to the old gate."];
+        const tw = Math.max(...lines.map((l) => x.measureText(l).width));
+        const bw = tw + fs * 1.6;
+        const bh = fs * 4.2;
+        bx = Math.min(bx, w - bw - 8);
+        by = Math.max(8, by);
+        x.fillStyle = "rgba(20,24,36,0.92)";
+        roundRect(x, bx, by, bw, bh, fs * 0.6);
+        x.fill();
+        x.beginPath();
+        x.moveTo(bx + fs, by + bh);
+        x.lineTo(bx + fs * 0.6, by + bh + fs * 0.8);
+        x.lineTo(bx + fs * 2, by + bh);
+        x.fill();
+        x.fillStyle = "#f2971f";
+        x.font = `600 ${Math.round(fs * 0.75)}px Corbel, "Noto Sans", system-ui, sans-serif`;
+        x.textAlign = "left";
+        x.textBaseline = "top";
+        x.fillText(name.toUpperCase(), bx + fs * 0.8, by + fs * 0.5);
+        x.fillStyle = "#fff";
+        x.font = `500 ${fs}px Corbel, "Noto Sans", system-ui, sans-serif`;
+        lines.forEach((l, i) =>
+          x.fillText(l, bx + fs * 0.8, by + fs * 1.5 + i * fs * 1.2),
+        );
+      }
+      function chevrons(x, sx, sy, ch) {
+        x.fillStyle = "rgba(242,151,31,0.9)";
+        for (let i = 0; i < 3; i++) {
+          const ox = sx + i * ch * 0.12;
+          x.beginPath();
+          x.moveTo(ox, sy - ch * 0.03);
+          x.lineTo(ox + ch * 0.06, sy);
+          x.lineTo(ox, sy + ch * 0.03);
+          x.lineTo(ox + ch * 0.025, sy);
+          x.closePath();
+          x.fill();
+        }
+      }
+
+      function drawPanelAnim(now) {
+        if (!S.result || $("#pFrames").hidden) return;
+        const fa = frameAt(now, SCRIPT);
+        frameCanvases.forEach((c, i) =>
+          c.parentElement.classList.toggle("on", i === fa.f),
+        );
+        if ($("#cmp").hidden) return;
+        const ta = frameAt(now, TALK);
+        const key = ta.f + "|" + S.showMoves + "|" + S.steady;
+        if (drawPanelAnim.k === key) return;
+        drawPanelAnim.k = key;
+        const r = S.result;
+        const raw = r.frames;
+        const sd = [raw[0], r.check.steady[1], r.check.steady[2]];
+        const put = (id, img, overlay) => {
+          const c = $("#" + id);
+          const x = c.getContext("2d");
+          x.clearRect(0, 0, c.width, c.height);
+          const [cx0, cy0, cw, chh] = S.crop;
+          x.drawImage(img, cx0, cy0, cw, chh, 0, 0, c.width, c.height);
+          if (overlay) x.drawImage(overlay, cx0, cy0, cw, chh, 0, 0, c.width, c.height);
+        };
+        put(
+          "cvRaw",
+          raw[ta.f],
+          S.showMoves && ta.f > 0 ? r.check.diffMasks[ta.f] : null,
+        );
+        put("cvSteady", sd[ta.f], null);
+      }
+
+      function loop(now) {
+        drawStage(now);
+        drawPanelAnim(now);
+        requestAnimationFrame(loop);
+      }
+
+      /* ---------------- save ---------------- */
+      async function save(force) {
+        if (!S.result || S.saving) return;
+        if (S.result.check.needsSteady && !S.steady && !force) {
+          S.confirm = true;
+          render();
+          scrollTo$("#confirm");
+          return;
+        }
+        S.confirm = false;
+        S.saving = true;
+        render();
+        try {
+          const sheet = SI.buildSheet(shown());
+          const blob = await new Promise((r) => sheet.toBlob(r, "image/png"));
+          await sleep(450);
+          if (!blob) throw new Error("encode");
+          S.saved = S.result;
+          S.savedSteady = S.steady;
+          S.savedBytes = blob.size;
+          S.reopen = false;
+          S.saving = false;
+          render();
+          toast(
+            `Look saved. ${$("#cName").value.trim() || "Your guide"} looks like this at both stations.`,
+          );
+        } catch (e) {
+          S.saving = false;
+          render();
+          toast(
+            "Saving failed: the picture could not be written. Nothing was changed; try Save again.",
+            true,
+          );
+        }
+      }
+
+      /* ---------------- toasts ---------------- */
+      function toast(t, err) {
+        const el = document.createElement("div");
+        el.className = "toast" + (err ? " err" : "");
+        el.textContent = t;
+        const last = $("#toasts").lastElementChild;
+        if (last && last.textContent === t) last.remove();
+        $("#toasts").appendChild(el);
+        while ($("#toasts").children.length > (S.layout === "desktop" ? 2 : 1))
+          $("#toasts").firstChild.remove();
+        setTimeout(() => el.remove(), err ? 6500 : 4200);
+      }
+      function scrollTo$(sel) {
+        const el = $(sel);
+        if (!el || el.hidden) return;
+        requestAnimationFrame(() =>
+          el.scrollIntoView({ behavior: "smooth", block: "nearest" }),
+        );
+      }
+
+      /* ---------------- layout ---------------- */
+      function layout() {
+        const W = innerWidth;
+        const H = innerHeight;
+        const canFrame = W >= 900 && H > 600;
+        if (!canFrame) S.framed = false;
+        let L =
+          W >= 900 && H > 520
+            ? "desktop"
+            : H <= 520 && W > H
+              ? "land"
+              : "phone";
+        if (S.framed) L = "phone";
+        S.layout = L;
+        document.body.dataset.layout = L;
+        document.body.classList.toggle("framed", S.framed);
+        $("#btnFrame").hidden = !canFrame;
+        $("#btnFrame").textContent = S.framed
+          ? "Desktop view"
+          : "See it on a phone";
+        requestAnimationFrame(() => {
+          sizeStage();
+          render();
+        });
+      }
+
+      /* ---------------- wiring ---------------- */
+      $("#ideas").innerHTML = IDEAS.map(
+        (t) =>
+          `<button class="chip-btn" data-idea="${esc(t)}">${esc(t)}</button>`,
+      ).join("");
+      $("#ideas").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-idea]");
+        if (!b) return;
+        $("#desc").value = b.dataset.idea;
+        S.desc = b.dataset.idea;
+        render();
+      });
+      $("#desc").addEventListener("input", (e) => {
+        S.desc = e.target.value;
+        render();
+      });
+      $("#cName").addEventListener("input", () => render());
+      $("#btnCopy").addEventListener("click", () => copyPrompt());
+      $("#btnTall").addEventListener("click", () => {
+        S.tall = !S.tall;
+        render();
+      });
+      $("#fixList").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-unfix]");
+        if (!b) return;
+        S.fixes = S.fixes.filter((k) => k !== b.dataset.unfix);
+        render();
+      });
+      const pick = () => $("#file").click();
+      $("#btnPick").addEventListener("click", pick);
+      $("#btnReplace").addEventListener("click", pick);
+      $("#btnProbPick").addEventListener("click", pick);
+      $("#file").addEventListener("change", (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f) importFile(f);
+        e.target.value = "";
+      });
+      $("#btnPaste").addEventListener("click", async () => {
+        try {
+          if (!navigator.clipboard || !navigator.clipboard.read)
+            throw new Error("unsupported");
+          const items = await navigator.clipboard.read();
+          for (const it of items) {
+            const t = it.types.find((x) => /^image\//.test(x));
+            if (t) {
+              const b = await it.getType(t);
+              importFile(
+                new File([b], "pasted picture." + t.split("/")[1], { type: t }),
+              );
+              return;
+            }
+          }
+          toast(
+            "There is no picture on the clipboard. In the AI, copy the picture itself, or save it and pick it.",
+            true,
+          );
+        } catch (e) {
+          toast(
+            "This browser does not offer pasting a picture here. Save the picture, then pick it.",
+            true,
+          );
+        }
+      });
+      document.addEventListener("paste", (e) => {
+        const items = (e.clipboardData && e.clipboardData.items) || [];
+        for (const it of items) {
+          if (it.kind === "file" && /^image\//.test(it.type)) {
+            e.preventDefault();
+            const f = it.getAsFile();
+            importFile(
+              f && f.name
+                ? f
+                : new File([f], "pasted picture." + it.type.split("/")[1], {
+                    type: it.type,
+                  }),
+            );
+            return;
+          }
+        }
+        const inField = e.target.closest && e.target.closest("input, textarea");
+        if (!inField)
+          toast(
+            "The clipboard holds no picture. In the AI, right-click the picture and copy the image, or save it and pick it.",
+            true,
+          );
+      });
+      for (const el of [$("#insp"), $("#stage")]) {
+        el.addEventListener("dragover", (e) => {
+          if ([...e.dataTransfer.types].includes("Files")) {
+            e.preventDefault();
+            el.classList.add("drag");
+          }
+        });
+        el.addEventListener("dragleave", (e) => {
+          if (!el.contains(e.relatedTarget)) el.classList.remove("drag");
+        });
+        el.addEventListener("drop", (e) => {
+          e.preventDefault();
+          el.classList.remove("drag");
+          const f = e.dataTransfer.files && e.dataTransfer.files[0];
+          if (f) importFile(f);
+        });
+      }
+      $("#samples").addEventListener("click", async (e) => {
+        const b = e.target.closest("[data-sample]");
+        if (!b || S.busy) return;
+        const k = b.dataset.sample;
+        const f = await SI.makeSample(k);
+        importFile(f, "sample drawn by this page");
+      });
+      $("#btnSteps").addEventListener("click", () => {
+        S.showSteps = !S.showSteps;
+        render();
+      });
+      $("#btnFixCopy").addEventListener("click", () => {
+        const fix = explain(S.error).fix;
+        if (fix && !S.fixes.includes(fix)) S.fixes.push(fix);
+        copyPrompt(
+          "Prompt with the hint copied. Run it again in your image AI, then bring the new picture.",
+        );
+      });
+      $("#retryChips").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-hint]");
+        if (!b) return;
+        const k = b.dataset.hint;
+        if (k === "style") {
+          S.reopen = true;
+          render();
+          $("#desc").focus();
+          scrollTo$("#pDescribe");
+          toast("Change the description, then copy the prompt again.");
+          return;
+        }
+        if (!S.fixes.includes(k)) S.fixes.push(k);
+        S.reopen = true;
+        copyPrompt(
+          `Hint "${FIX[k].label}" added and the prompt copied. Run it again in your image AI, then bring the new picture.`,
+        );
+      });
+      $("#steady").addEventListener("change", (e) => {
+        S.steady = e.target.checked;
+        S.confirm = false;
+        drawPanelAnim.k = "";
+        render();
+      });
+      $("#showMoves").addEventListener("change", (e) => {
+        S.showMoves = e.target.checked;
+        drawPanelAnim.k = "";
+      });
+      $("#btnSave").addEventListener("click", () => save(false));
+      $("#btnSaveSteady").addEventListener("click", () => {
+        S.steady = true;
+        save(true);
+      });
+      $("#btnSaveRaw").addEventListener("click", () => save(true));
+      $("#btnDiscard").addEventListener("click", () => {
+        S.result = S.saved;
+        S.steady = S.savedSteady;
+        S.error = null;
+        S.confirm = false;
+        if (!S.saved) S.file = null;
+        render();
+        toast(
+          S.saved
+            ? "New picture discarded. The saved look stays."
+            : "Picture discarded.",
+        );
+      });
+      $("#btnNewLook").addEventListener("click", () => {
+        S.reopen = true;
+        render();
+        scrollTo$("#pPrompt");
+      });
+      $("#sheetHead").addEventListener("click", () => {
+        if (S.layout !== "phone") return;
+        S.expanded = !S.expanded;
+        render();
+      });
+      $("#btnFrame").addEventListener("click", () => {
+        S.framed = !S.framed;
+        layout();
+      });
+      document
+        .querySelectorAll("[data-mock]")
+        .forEach((b) =>
+          b.addEventListener("click", () =>
+            toast("Not part of this prototype - only the character's Look is."),
+          ),
+        );
+      new ResizeObserver(() => sizeStage()).observe($("#stage"));
+      addEventListener("resize", layout);
+
+      layout();
+      render();
+      requestAnimationFrame(loop);
+      // test hook for the screenshot script
+      window.__proto = { S, render, importFile };
+    </script>
+  </body>
+</html>

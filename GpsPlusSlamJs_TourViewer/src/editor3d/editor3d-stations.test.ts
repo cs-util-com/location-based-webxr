@@ -315,6 +315,46 @@ describe("createStationsLayer", () => {
     expect(models[0]!.position.toArray()).toEqual([0, 0, 2]);
   });
 
+  // Why: the 3D view draws a model by its file, pose and size; its notes,
+  // sections and view are drawn apart (`editor3d-model-parts.ts`). An
+  // edit of those must not load the file again: while it loads, the model
+  // is not drawn and a click waited for on it meets nothing.
+  it("keeps a model drawn through an edit of its notes, sections or view, and draws it anew when it moves", async () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    const assets = [
+      { id: "horse", path: "content/horse.glb", kind: "model" as const },
+    ];
+    const placed = model("m", "horse", 8);
+    layer.setTour(manifest([station("a", 0, 0, [placed])], assets), new Map());
+    layer.update(view(0, 0, null));
+    await settle();
+    const drawn = layer.modelObject("m");
+    expect(drawn).not.toBeNull();
+    const annotated = {
+      ...placed,
+      view: "hotspots",
+      annotations: [{ position: [0, 1, 0], normal: [0, 1, 0], title: "Top" }],
+      sections: [{ name: "Cut", position: [0, 0, 0], normal: [1, 0, 0] }],
+    } as TourBlock;
+    layer.setTour(
+      manifest([station("a", 0, 0, [annotated])], assets),
+      new Map(),
+    );
+    layer.update(view(0, 0, null));
+    expect(layer.modelObject("m")).toBe(drawn);
+    expect(layer.stats().renders).toBe(1);
+    const moved = {
+      ...annotated,
+      pose: { position: [0, 0, 3], rotation: [0, 0, 0, 1] },
+    } as TourBlock;
+    layer.setTour(manifest([station("a", 0, 0, [moved])], assets), new Map());
+    layer.update(view(0, 0, null));
+    await settle();
+    expect(layer.stats().renders).toBe(2);
+    expect(layer.modelObject("m")?.position.toArray()).toEqual([0, 0, 3]);
+  });
+
   // Why: a model whose file is gone or broken leaves the station drawn;
   // the 2D view still lists it.
   it("leaves a model out whose file cannot be read", async () => {

@@ -19,7 +19,7 @@ tour id and the tour details.
 ## Public API
 
 - `TOUR_MANIFEST_VERSION = 4` (the format's major number) and
-  `TOUR_MANIFEST_MINOR = 0` (the newest additive revision of version 4
+  `TOUR_MANIFEST_MINOR = 2` (the newest additive revision of version 4
   this module knows).
 - `parseTourManifest(data: unknown, options?: TourManifestReadOptions): TourManifest`
   - validates every field; throws `TourManifestValidationError` naming the
@@ -35,7 +35,8 @@ tour id and the tour details.
     `cause` is a malformed value.
 - `serializeTourManifest(manifest, options?): string` - re-validates
   through the reader, refuses a manifest of a newer minor, then
-  pretty-prints `{ version: 4, minor: 0, ... }`. The in-memory shape is
+  pretty-prints `{ version: 4, minor, ... }` at the lowest minor the tour
+  needs. The in-memory shape is
   the file's shape (a step's content is `action` in both), so nothing is
   mapped on the way.
 - `createEmptyTourManifest(): TourManifest` - `{ version: 4, minor: 0,
@@ -74,7 +75,8 @@ TourPicture | TourModel` - a free block without its local pose, plus
   link, no code-only station), `blocks[]` and `steps[]`. A step `show`s a
   block of its own station, asks a `choice` (an option's `goto` names a
   step of the station, or is absent: the next step), or asks a `quiz`. A
-  block no step shows must stand in the world (`pin`, `plane`, `placed`).
+  block no step shows must stand in the world (`pin`, `plane`, or a model's `placed`, `ghost`,
+  `hotspots`, `cutaway` or `toy`: `TOUR_WORLD_VIEWS`).
   A station may have no steps (an automatic station: finding it
   completes it).
 - **Every media file is an asset**, a captured photo's too: its bytes stay
@@ -152,10 +154,28 @@ TourPicture | TourModel` - a free block without its local pose, plus
 - **Minor (`minor`, default 0).** Additive revisions of version 4. A
   reader opens any minor; unknown fields are IGNORED at every level and at
   every minor. The writer refuses a manifest whose minor is newer than
-  `TOUR_MANIFEST_MINOR` (it was read with fields dropped). 4.0 has no
-  later minor yet, so the writer writes 0; the minor that adds a field or
-  a value brings back a "lowest minor the tour needs" rule, so an older
-  reader is never handed something it would drop on its own write.
+  `TOUR_MANIFEST_MINOR` (it was read with fields dropped). The writer
+  writes the LOWEST minor the tour needs (`tourBlocksMinor` over every
+  station's blocks, `tourStepsMinor` over every station's story, and 2
+  when the tour declares characters), so an older reader opens fully every tour that uses
+  nothing newer, and is never handed something it would drop on its own
+  write.
+- **Minor 1** (`TOUR_MANIFEST_MINOR = 1`): a model's world views `ghost`,
+  `hotspots`, `cutaway` and `toy`, and its `animation`, `annotations`
+  (notes) and `sections` (`tour-blocks.ts.md`). This reader accepts them
+  in a file of any minor, as the reader of 3.1 accepted the model. A 4.0
+  reader opening a 4.1 tour reads it leniently: a model in a view it does
+  not know falls back to `placed`, and the new fields are ignored.
+  `TourModel['view']` is any `TourModelWorldView`.
+- **Minor 2** (`TOUR_MANIFEST_MINOR = 2`): the tour's recurring
+  characters (`characters`, `tour-characters.ts.md`, read before the
+  stations so a `character` block's `character` reference resolves), the
+  character's five story views `bubble`, `speak`, `two-stations`,
+  `portrait`, `popup`, and the advance `{ mode: 'lineEnd' }`
+  (`tour-story.ts.md`). The writer keeps a referencing block's inline
+  `name` and `image` in step with its declaration, so a 4.0 or 4.1 reader
+  shows the character as a `card` by its name, reads `lineEnd` as a tap,
+  ignores `characters`, and will not save the tour.
 - **Unknown VALUES of a newer minor:** an unknown block kind or view, step
   kind, quiz answer type, advance mode or asset media type degrades as
   `tour-blocks.ts`, `tour-story.ts` and `tour-assets.ts` say (a story
@@ -226,7 +246,8 @@ parseTourManifest({ version: 3, stations: [] }); // throws TourManifestOlderForm
   (`test-utils/tour-arbitraries.ts`: blocks of every kind, free and shown,
   shows, choices and quizzes) with generated details, tour ids, station
   descriptions and card images: serialize->parse is the identity with
-  every local pose the same numbers exactly, written at 4.0; parse is
+  every local pose the same numbers exactly, written at the lowest minor
+  the tour needs (`tourBlocksMinor`); parse is
   idempotent; the writer refuses every tour of a newer minor; every block
   stays in its station, and a kept cover or card image always names an
   image asset, every dropped card image reported.

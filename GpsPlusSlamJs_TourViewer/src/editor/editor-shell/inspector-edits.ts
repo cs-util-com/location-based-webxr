@@ -16,6 +16,10 @@
  * - A heading, of a station or an item: the turn from the heading it has
  *   now, the short way round.
  * - A model's size.
+ * - A model's note title or text (`note-title:<i>`, `note-text:<i>`), a
+ *   section's name (`section-name:<i>`) and its clip's name
+ *   (`anim-name`, its autoplay kept, on for a first clip): a model edit
+ *   (`model-edits.ts`).
  *
  * And "Put on the ground" and "Put items on the ground" (`groundEdit`):
  * heights at the ground the 3D view has loaded, or null while it has not.
@@ -34,6 +38,7 @@ import {
 import { STATION_PREFIX } from "../editor-model.js";
 import { eastNorthOf, placeAtEastNorth } from "../tour-origin.js";
 import { blockFields } from "../block-fields.js";
+import type { ModelEdit } from "../model-edits.js";
 import { headingOfRotation, ON_GROUND_M } from "./inspector-model.js";
 import { inputText } from "../../input-text.js";
 
@@ -57,6 +62,8 @@ export type InspectorEdit =
       readonly field: string;
       readonly value: string;
     }
+  /** One of a model's own edits (`model-edits.ts`). */
+  | { readonly kind: "model"; readonly id: string; readonly edit: ModelEdit }
   /** A pose or a size, written as the 3D view's gestures write them. */
   | { readonly kind: "scene"; readonly edit: GestureEdit }
   /** A turn about up of `deg` clockwise. */
@@ -158,12 +165,49 @@ const AXIS: Readonly<Record<string, 0 | 1 | 2>> = {
   east: 2,
 };
 
+/** A model's own field (`note-title:2`) as its edit, or null for a
+ *  field that is none of them. */
+function modelFieldEdit(
+  item: Extract<WorldBlock, { kind: "model" }>,
+  field: string,
+  value: string,
+): InspectorEdit | null {
+  if (field === "anim-name") {
+    return {
+      kind: "model",
+      id: item.id,
+      edit: {
+        kind: "animation",
+        name: value,
+        autoplay: item.animation?.autoplay ?? true,
+      },
+    };
+  }
+  const match = /^(note-title|note-text|section-name):(\d+)$/.exec(field);
+  if (match === null) return null;
+  const index = Number(match[2]);
+  const edit: ModelEdit =
+    match[1] === "section-name"
+      ? { kind: "section-name", index, value }
+      : {
+          kind: "note-text",
+          index,
+          field: match[1] === "note-title" ? "title" : "text",
+          value,
+        };
+  return { kind: "model", id: item.id, edit };
+}
+
 function itemEdit(
   item: WorldBlock,
   station: TourStation,
   field: string,
   value: string,
 ): InspectorEdit {
+  if (item.kind === "model") {
+    const edit = modelFieldEdit(item, field, value);
+    if (edit !== null) return edit;
+  }
   if (field === "title" && item.kind === "shortText") {
     return { kind: "text", id: item.id, text: value };
   }

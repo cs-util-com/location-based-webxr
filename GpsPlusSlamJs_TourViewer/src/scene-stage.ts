@@ -26,6 +26,14 @@
  * vertical only. A code-only station's pose (from the guide) stands on the
  * estimated ground below the code and is turned about the vertical only,
  * so a model there takes the code's yaw, never its tilt.
+ *
+ * A character in one of the story views (`bubble`, `speak`, `two-stations`,
+ * `portrait`, `popup`; tour format 4.2) stands as a character LOOK
+ * (`character-look.ts`): a die-cut figure that turns itself, with its
+ * bubble, name tag, ring or pop-up stage, updated every rendered frame
+ * against the viewer's camera while it shows. Its fade is the look's own
+ * presence (`setSubtreeOpacity` caches material opacities the look changes
+ * every frame), and its holder is never turned.
  */
 
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
@@ -36,14 +44,32 @@ import {
   stepAlpha,
 } from "./content-fade.js";
 import {
+  createCharacterLook,
+  type CharacterBeckon,
+  type CharacterLook,
+  type CharacterPainters,
+  type CharacterVoice,
+} from "./character-look.js";
+import type { FigureSource } from "./character-canvas.js";
+import type { StageCharacterView } from "./character-views.js";
+import {
   DoubleSide,
   Group,
   Mesh,
   MeshBasicMaterial,
   PlaneGeometry,
+  type Camera,
   type Object3D,
   type Texture,
 } from "three";
+
+/** What a character speaks in one of the story views. */
+export interface StageCharacterLook {
+  readonly view: StageCharacterView;
+  readonly name: string;
+  /** The step's caption: the bubble's or the scroll's line. */
+  readonly line: string;
+}
 
 /** A cut-out character's height (m): a standing adult. */
 export const CHARACTER_HEIGHT_M = 1.7;
@@ -73,16 +99,30 @@ export interface SceneStageDeps {
    *  fade runs; returns its unregister. Absent: the fade advances on
    *  `follow` calls only. */
   registerFrame?(fn: () => void): () => void;
+  /** The viewer's camera, which a character look turns and opens to;
+   *  absent or null: the look stands still until it has one. */
+  getCamera?(): Camera | null;
+  /** Where a character at this station beckons (the next station, as an
+   *  NUE offset from his own pose, and its title), or null for none. */
+  beckonOf?(stationId: string): CharacterBeckon | null;
+  /** The look's painters (tests run without a canvas); default the
+   *  canvas ones. */
+  readonly lookPainters?: CharacterPainters;
 }
 
 export interface SceneStage {
   /** Settles once the figure stands (or the stage moved on). `onWaiting`
-   *  is called once if, decoded, it waits for the station's pose. */
+   *  is called once if, decoded, it waits for the station's pose. With a
+   *  `look`, the figure stands as that story view's character look. */
   showCharacter(
     stationId: string,
     image: Blob,
     onWaiting?: () => void,
+    look?: StageCharacterLook,
   ): Promise<void>;
+  /** The step's voice: a look's ring, footer and beckon follow it. Kept
+   *  across a figure's replacement (the voice may start first). */
+  setVoice(voice: CharacterVoice): void;
   showModel(
     stationId: string,
     model: Blob,
@@ -110,10 +150,14 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     alpha: number;
     target: number;
     lastMs: number;
+    look: CharacterLook | null;
   } | null = null;
   /** Which stations' content shows (`follow`); everything until told. */
   let isShown: (stationId: string) => boolean = () => true;
   let unregisterFrame: (() => void) | null = null;
+  /** The look's per-frame update, registered while a look stands. */
+  let unregisterLook: (() => void) | null = null;
+  let voice: CharacterVoice = "idle";
   let token = 0;
   /** Decoded and waiting for the station's position (no GPS zero yet, or a
    *  code-only station before the visitor's height is known): mounted on
@@ -124,26 +168,60 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     stationId: string;
     root: Object3D;
     character: boolean;
+    look: CharacterLook | null;
     settle: () => void;
   } | null = null;
 
   function clear(): void {
     token += 1;
     if (waiting !== null) {
+      waiting.look?.dispose();
       disposeObject3D(waiting.root);
       waiting.settle();
       waiting = null;
     }
     if (shown === null) return;
     if (shown.inScene) shown.scene.remove(shown.root);
+    shown.look?.dispose();
     disposeObject3D(shown.root);
     shown = null;
     stopFrames();
+    unregisterLook?.();
+    unregisterLook = null;
   }
 
   function stopFrames(): void {
     unregisterFrame?.();
     unregisterFrame = null;
+  }
+
+  /** The look's frame: it turns, opens and beckons against the camera. */
+  function tickLook(): void {
+    const look = shown?.look ?? null;
+    if (shown === null || look === null || !shown.inScene) return;
+    const camera = deps.getCamera?.() ?? null;
+    if (camera === null) return;
+    look.setBeckon(deps.beckonOf?.(shown.stationId) ?? null);
+    look.update({ nowMs: now(), camera });
+  }
+
+  /** Keep the look's frame registered (a session's end clears the
+   *  registry; registering is idempotent per function). Without a frame
+   *  loop the look follows the page's ticks. */
+  function keepLookTicking(): void {
+    if (shown?.look == null) return;
+    if (deps.registerFrame === undefined) tickLook();
+    else unregisterLook = deps.registerFrame(tickLook);
+  }
+
+  /** The figure's fade: a look's own presence, else every material's. */
+  function applyAlpha(
+    root: Object3D,
+    look: CharacterLook | null,
+    alpha: number,
+  ): void {
+    if (look !== null) look.setPresence(alpha);
+    else setSubtreeOpacity(root, alpha);
   }
 
   /** Fade the figure towards its station's presence; it leaves the scene
@@ -164,7 +242,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     shown.alpha = stepAlpha(shown.alpha, target, t - shown.lastMs, fadeMs);
     shown.lastMs = t;
     // The page follows on every tick: a settled figure writes no material.
-    if (shown.alpha !== before) setSubtreeOpacity(shown.root, shown.alpha);
+    if (shown.alpha !== before) applyAlpha(shown.root, shown.look, shown.alpha);
     if (target === 0 && shown.alpha <= 0 && shown.inScene) {
       shown.scene.remove(shown.root);
       shown.inScene = false;
@@ -186,14 +264,16 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     root: Object3D,
     character: boolean,
     onWaiting: (() => void) | undefined,
+    look: CharacterLook | null = null,
   ): Promise<void> {
     if (mine !== token) {
+      look?.dispose();
       disposeObject3D(root);
       return Promise.resolve();
     }
-    if (tryMount(stationId, root, character)) return Promise.resolve();
+    if (tryMount(stationId, root, character, look)) return Promise.resolve();
     return new Promise((settle) => {
-      waiting = { mine, stationId, root, character, settle };
+      waiting = { mine, stationId, root, character, look, settle };
       onWaiting?.();
     });
   }
@@ -203,6 +283,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     stationId: string,
     root: Object3D,
     character: boolean,
+    look: CharacterLook | null,
   ): boolean {
     const scene = deps.getScene();
     const pose = deps.poseOf(stationId);
@@ -216,7 +297,8 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     // faded out, where it does not.
     const visible = isShown(stationId);
     if (visible) scene.add(holder);
-    else setSubtreeOpacity(holder, 0);
+    else applyAlpha(holder, look, 0);
+    look?.setVoice(voice);
     shown = {
       root: holder,
       scene,
@@ -226,7 +308,15 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       alpha: visible ? 1 : 0,
       target: visible ? 1 : 0,
       lastMs: now(),
+      look,
     };
+    // The first frame snaps: the look opens where it stands, no ease-in.
+    const camera = deps.getCamera?.() ?? null;
+    if (look !== null && camera !== null) {
+      look.setBeckon(deps.beckonOf?.(stationId) ?? null);
+      look.update({ nowMs: now(), camera, snap: true });
+    }
+    keepLookTicking();
     return true;
   }
 
@@ -234,17 +324,38 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
   function retryWaiting(): void {
     if (waiting === null || waiting.mine !== token) return;
     const w = waiting;
-    if (!tryMount(w.stationId, w.root, w.character)) return;
+    if (!tryMount(w.stationId, w.root, w.character, w.look)) return;
     waiting = null;
     w.settle();
   }
 
   return {
-    async showCharacter(stationId, image, onWaiting) {
+    async showCharacter(stationId, image, onWaiting, lookSpec) {
       clear();
       const mine = token;
       const texture = await deps.decodeTexture(image);
       if (texture === null) throw new Error("the figure did not decode");
+      if (lookSpec !== undefined) {
+        if (mine !== token) {
+          texture.dispose();
+          return;
+        }
+        // The look paints its own die-cut textures from the decoded image.
+        const look = createCharacterLook({
+          view: lookSpec.view,
+          name: lookSpec.name,
+          line: lookSpec.line,
+          figure: texture.image as FigureSource,
+          heightM: CHARACTER_HEIGHT_M,
+          ...(deps.lookPainters === undefined
+            ? {}
+            : { painters: deps.lookPainters }),
+        });
+        texture.dispose();
+        look.root.name = "station-character";
+        await mount(mine, stationId, look.root, true, onWaiting, look);
+        return;
+      }
       const source = texture.image as
         { width?: number; height?: number } | undefined;
       const aspect =
@@ -274,9 +385,14 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       await mount(mine, stationId, root, false, onWaiting);
     },
     clear,
+    setVoice(next) {
+      voice = next;
+      shown?.look?.setVoice(next);
+    },
     faceVisitor(visitor) {
       retryWaiting();
-      if (shown === null || !shown.character) return;
+      // A look turns itself, against the camera, every frame.
+      if (shown === null || !shown.character || shown.look !== null) return;
       const p = shown.root.position;
       const north = visitor[0] - p.x;
       const east = visitor[2] - p.z;
@@ -287,6 +403,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     follow(next) {
       isShown = next;
       advance();
+      keepLookTicking();
     },
   };
 }

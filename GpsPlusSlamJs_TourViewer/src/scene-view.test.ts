@@ -158,11 +158,16 @@ function harness(
   const stage = {
     showCharacter: vi.fn(
       overrides.showCharacter ??
-        ((_id: string, _image: Blob, _onWaiting?: () => void) =>
-          Promise.resolve()),
+        ((
+          _id: string,
+          _image: Blob,
+          _onWaiting?: () => void,
+          _look?: unknown,
+        ) => Promise.resolve()),
     ),
     showModel: vi.fn(() => Promise.resolve()),
     clear: vi.fn(),
+    setVoice: vi.fn(),
   };
   const view = createSceneView({
     dom,
@@ -1088,5 +1093,162 @@ describe("the story card's dots and its redraw", () => {
     const ended = h.changes.count;
     h.view.stopAll();
     expect(h.changes.count).toBeGreaterThan(ended);
+  });
+});
+
+describe("a character's story views and the advance when the line ends", () => {
+  /** A step showing the knight in `view`, moving on as `advance` says. */
+  function knight(
+    id: string,
+    view: "stage" | "bubble" | "two-stations" | "portrait" | "card",
+    advance: TourStep["advance"],
+    voice = true,
+  ): TourStep {
+    return {
+      ...showing(id, {
+        kind: "character",
+        view,
+        name: "Sir Kay",
+        image: "knight",
+        caption: "Welcome to the castle, traveller.",
+        ...(voice ? { voice: "voice" } : {}),
+      }),
+      advance,
+    };
+  }
+
+  /** The onEnded the view handed to the last `audio.play`. */
+  function endVoice(h: ReturnType<typeof harness>): void {
+    const call = h.audio.play.mock.calls.at(-1) as unknown as
+      [Blob, () => void] | undefined;
+    call?.[1]();
+  }
+
+  // Why this test matters: a story view is drawn by the stage's character
+  // look, so the stage must be told the view, the name and the line.
+  it("hands a story view to the stage as a character look, and the stage view as the plain cut-out", async () => {
+    const h = harness();
+    h.view.offer(
+      station("gate", [
+        knight("a", "bubble", { mode: "tap" }),
+        knight("b", "stage", { mode: "tap" }),
+        knight("c", "card", { mode: "tap" }),
+      ]),
+    );
+    await settle();
+    expect(h.stage.showCharacter.mock.calls[0]?.[3]).toEqual({
+      view: "bubble",
+      name: "Sir Kay",
+      line: "Welcome to the castle, traveller.",
+    });
+    h.view.continueTapped();
+    await settle();
+    expect(h.stage.showCharacter.mock.calls[1]?.[3]).toBeUndefined();
+    h.view.continueTapped();
+    await settle();
+    expect(h.stage.showCharacter).toHaveBeenCalledTimes(2);
+  });
+
+  // Why this test matters: the ring, the "Speaking" footer and the beckon
+  // all follow the voice, so the stage must hear when it starts and ends.
+  it("tells the stage when the voice speaks and when it has spoken, and idles on the next step", async () => {
+    const h = harness();
+    h.view.offer(
+      station("gate", [
+        knight("a", "two-stations", { mode: "tap" }),
+        tap("b", "Onwards."),
+      ]),
+    );
+    await settle();
+    expect(h.stage.setVoice).toHaveBeenLastCalledWith("speaking");
+    endVoice(h);
+    expect(h.stage.setVoice).toHaveBeenLastCalledWith("spoken");
+    h.view.continueTapped();
+    expect(h.stage.setVoice).toHaveBeenLastCalledWith("idle");
+  });
+
+  // Why this test matters: lineEnd moves on when the voice ends (after
+  // its short tail), never while it plays - not on a fixed timer.
+  it("moves a lineEnd step on once its voice ends, not before", async () => {
+    const h = harness();
+    h.view.offer(
+      station("gate", [
+        knight("a", "bubble", { mode: "lineEnd" }),
+        tap("b", "Onwards."),
+      ]),
+    );
+    await settle();
+    expect(h.timers.filter((t) => !t.cancelled)).toHaveLength(0);
+    expect(h.view.progress()?.autoMs).toBeNull();
+    endVoice(h);
+    const live = h.timers.filter((t) => !t.cancelled);
+    expect(live).toHaveLength(1);
+    expect(live[0]?.ms).toBe(600);
+    live[0]?.fn();
+    expect(h.dom.text.textContent).toBe("Onwards.");
+  });
+
+  // Why this test matters: with no voice (or one that cannot play) the
+  // words' reading time stands in, so a lineEnd story never stalls.
+  it("moves a lineEnd step with no voice on after the words' reading time, and one whose voice fails too", async () => {
+    const h = harness();
+    h.view.offer(
+      station("gate", [
+        knight("a", "bubble", { mode: "lineEnd" }, false),
+        tap("b", "Onwards."),
+      ]),
+    );
+    const live = h.timers.filter((t) => !t.cancelled);
+    expect(live).toHaveLength(1);
+    expect(live[0]?.ms).toBeGreaterThan(1500);
+    expect(h.view.progress()?.autoMs).toBe(live[0]?.ms);
+
+    const failing = harness({ play: () => Promise.reject(new Error("no")) });
+    failing.view.offer(
+      station("gate", [
+        knight("a", "bubble", { mode: "lineEnd" }),
+        tap("b", "Onwards."),
+      ]),
+    );
+    await settle();
+    await settle();
+    const left = failing.timers.filter((t) => !t.cancelled);
+    expect(left).toHaveLength(1);
+    expect(left[0]?.ms).toBe(live[0]?.ms);
+  });
+
+  it("holds a lineEnd step while the visitor is asked, and waits the reading time again on release", () => {
+    const h = harness();
+    h.view.offer(
+      station("gate", [
+        knight("a", "bubble", { mode: "lineEnd" }, false),
+        tap("b", "Onwards."),
+      ]),
+    );
+    h.view.holdStep(true);
+    expect(h.timers.filter((t) => !t.cancelled)).toHaveLength(0);
+    expect(h.view.progress()?.autoMs).toBeNull();
+    h.view.holdStep(false);
+    expect(h.timers.filter((t) => !t.cancelled)).toHaveLength(1);
+  });
+
+  // Why this test matters: the portrait view shows his face beside his
+  // name in the card, and only for that step.
+  it("shows the portrait in the card for the portrait view, and hides it on the next step", async () => {
+    const h = harness();
+    const portrait = { src: "", alt: "", hidden: true };
+    (h.dom as { portrait?: typeof portrait }).portrait = portrait;
+    h.view.offer(
+      station("gate", [
+        knight("a", "portrait", { mode: "tap" }),
+        tap("b", "Onwards."),
+      ]),
+    );
+    await settle();
+    await settle();
+    expect(portrait.hidden).toBe(false);
+    expect(portrait.alt).toBe("Sir Kay");
+    h.view.continueTapped();
+    expect(portrait.hidden).toBe(true);
   });
 });
