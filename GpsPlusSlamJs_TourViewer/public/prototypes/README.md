@@ -133,6 +133,12 @@ wired into its logic: every interaction is faked.
   error" button that draws every block and its target 1 m off; made
   2026-10-25. Section 0 of each page's notes says what it costs and where
   it fails.
+- `character-sheet-1-guided-steps/` ... `character-sheet-3-make-your-character/` -
+  three directions for making a guide character from an image AI (guided
+  steps, one inspector panel, a playful card with a live stand-in); made
+  2026-10-29. Each cuts the AI's four-pose picture in the browser (alpha, or a
+  flood fill from the border on white), offers a steady body when the
+  talking frames jitter, and draws its own sample pictures, good and broken.
 - `use-cases-true-colour/` - the start page's use-case pictures in the
   look the page does not use (the place dimmed, the tour's pictures in
   their own colours), with a switch to the shipped route-light look;

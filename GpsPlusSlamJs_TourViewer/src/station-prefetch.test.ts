@@ -157,6 +157,33 @@ describe("stationAssetIds", () => {
     expect(stationAssetIds(s)).toEqual(["voice"]);
   });
 
+  // Why: a character in a story view (bubble, speak, two-stations,
+  // portrait, popup) stands in the world as a look made from his figure,
+  // so the figure must be read ahead like a stage figure; a station
+  // reached before it was read would show him late.
+  it("reads a character's figure for his story views as for the stage", () => {
+    for (const view of [
+      "bubble",
+      "speak",
+      "two-stations",
+      "portrait",
+      "popup",
+    ] as const) {
+      const s = told([
+        {
+          id: "a",
+          kind: "character",
+          view,
+          name: "K",
+          image: "knight",
+          caption: "c",
+          pose: POSE,
+        },
+      ]);
+      expect(stationAssetIds(s), view).toEqual(["knight"]);
+    }
+  });
+
   it("never lists a video: K4 shows its transcript, and a video may be 256 MiB (R3)", () => {
     // Why this test matters (K4 review R3): the prefetch read video files
     // nothing played, up to the K0 entry cap each, over a phone's data.

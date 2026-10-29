@@ -107,6 +107,23 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   `.danger`, shows its key in a `<kbd>` hidden from screen readers and
   announces it by `aria-keyshortcuts="Delete"`. A code has none
   (read-only in the 3D view).
+- A model's parts (`modelParts`, after Size, before Position), as the
+  station blocks prototype's editor mode arranges them:
+  - `.isec.mview` - the view as chips (`data-act="view:<view>"`,
+    `aria-pressed`), and a line on what the view does;
+  - `.isec.manim` - the clip's name (`anim-name`) and "Plays by itself"
+    (`anim-autoplay`, disabled without a clip);
+  - `.isec.mnotes` - a card per note (`.anno[data-note]`, `.on` in
+    focus): its number (`note:<i>`), title (`note-title:<i>`) and text
+    (`note-text:<i>`) with their counters, "Pick on model"
+    (`note-place:<i>`), Delete (`note-delete:<i>`) and its place; then
+    "+ Add note (click the model)" (`note-add`, disabled when full), and a
+    hint when the view does not show notes;
+  - `.isec.msections` - a card per section (`.anno[data-section]`): its
+    number, name (`section-name:<i>`), "Place on model", Flip and Delete;
+    then "+ Add section (click the model)" and what a section does.
+  - A button waiting for a click on the model reads "Click the model...",
+    pressed (`.mini.on`).
 
 ## Invariants & assumptions
 

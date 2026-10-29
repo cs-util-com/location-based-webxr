@@ -1,0 +1,3405 @@
+<!doctype html>
+<!-- Throwaway prototype: character sheet from an image AI, direction 1 (a guided wizard of steps). Not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Guide character steps</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #2a2824;
+        --ink-dim: #57534a;
+        --ink-3: #8c8577;
+        --paper: #f4eedf;
+        --paper-3: #ddd2b6;
+        --card: #fbf8ef;
+        --line: #c9bea3;
+        --line-soft: #e6dcc5;
+        --route: #cf4428;
+        --accent-ink: #8a4b00;
+        --ok: #3d6b3a;
+        --ok-soft: #dfe9d6;
+        --warn: #9a6a00;
+        --warn-soft: #f6e7c1;
+        --danger: #a3321f;
+        --danger-soft: #f7dcd4;
+        --serif:
+          "Iowan Old Style", "Palatino Linotype", palatino, "Book Antiqua",
+          georgia, serif;
+        --sans: system-ui, -apple-system, "Segoe UI", roboto, sans-serif;
+        --radius: 16px;
+        --shadow: 0 1px 2px rgb(42 40 36 / 8%), 0 10px 32px rgb(42 40 36 / 16%);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 15px;
+        line-height: 1.45;
+        overflow: hidden;
+      }
+      button,
+      input,
+      textarea {
+        font: inherit;
+        color: inherit;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent-ink);
+        outline-offset: 2px;
+      }
+      .kicker {
+        font-weight: 700;
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--ink-dim);
+      }
+      .btn {
+        border: 1.5px solid var(--ink);
+        background: transparent;
+        border-radius: 999px;
+        padding: 9px 16px;
+        cursor: pointer;
+        font-weight: 600;
+        line-height: 1.2;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 44px;
+        text-align: center;
+      }
+      .btn:hover {
+        background: rgb(42 40 36 / 6%);
+      }
+      .btn.primary {
+        background: var(--ink);
+        color: var(--card);
+      }
+      .btn.primary:hover {
+        background: #3d3a34;
+      }
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: progress;
+      }
+      .btn.big {
+        padding: 12px 22px;
+        font-size: 16px;
+      }
+      .btn.small {
+        min-height: 36px;
+        padding: 6px 12px;
+        font-size: 13.5px;
+      }
+      .btn.done {
+        background: var(--ok);
+        border-color: var(--ok);
+        color: #fff;
+      }
+      .link {
+        border: 0;
+        background: none;
+        padding: 4px 0;
+        color: var(--accent-ink);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      /* ---------- the editor behind (desktop) / creator mode (phone) ---------- */
+      .editor {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        grid-template-rows: 52px 1fr;
+      }
+      .ed-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 18px;
+        background: var(--card);
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .ed-bar b {
+        font-family: var(--serif);
+        font-size: 19px;
+      }
+      .ed-bar .tag {
+        margin-left: auto;
+        font-size: 12px;
+        color: var(--ink-3);
+      }
+      .ed-main {
+        display: grid;
+        grid-template-columns: 280px 1fr 360px;
+        gap: 14px;
+        padding: 14px;
+        min-height: 0;
+      }
+      .ed-panel {
+        background: var(--card);
+        border: 1px solid var(--line-soft);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 16px;
+        overflow: auto;
+      }
+      .ed-stations ol {
+        margin: 10px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+      .ed-stations li {
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: #fff;
+        border: 1px solid var(--line-soft);
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .ed-stations li i {
+        font-style: normal;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: var(--route);
+        color: #fff;
+        display: grid;
+        place-items: center;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .ed-map {
+        border-radius: var(--radius);
+        background: var(--paper-3);
+        overflow: hidden;
+        position: relative;
+      }
+      .ed-map svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .guide-card {
+        margin-top: 12px;
+        border: 1.5px dashed var(--line);
+        border-radius: 14px;
+        padding: 14px;
+        display: grid;
+        gap: 10px;
+      }
+      .guide-card.has {
+        border-style: solid;
+        background: #fff;
+      }
+      .guide-card .row {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .guide-card canvas {
+        width: 72px;
+        height: 96px;
+        border-radius: 10px;
+        background: var(--paper);
+        flex: none;
+      }
+      .guide-card p {
+        color: var(--ink-dim);
+        font-size: 14px;
+      }
+
+      /* ---------- the wizard ---------- */
+      .veil {
+        position: fixed;
+        inset: 0;
+        background: rgb(42 40 36 / 0.38);
+      }
+      .wiz {
+        position: fixed;
+        inset: 0;
+        background: var(--card);
+        display: grid;
+        grid-template-rows: auto auto auto 1fr auto;
+        grid-template-areas: "head" "rail" "where" "body" "actions";
+        min-width: 0;
+      }
+      .wiz-head {
+        grid-area: head;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px 6px;
+      }
+      .wiz-head .t {
+        flex: 1;
+        min-width: 0;
+      }
+      .wiz-head h1 {
+        font-family: var(--serif);
+        font-size: 20px;
+        line-height: 1.15;
+      }
+      .icon-btn {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 1px solid var(--line-soft);
+        background: #fff;
+        cursor: pointer;
+        font-size: 20px;
+        line-height: 1;
+        flex: none;
+      }
+      .restart {
+        font-size: 13px;
+      }
+
+      .rail {
+        grid-area: rail;
+        padding: 4px 12px 0;
+        min-width: 0;
+      }
+      .rail ol {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+      }
+      .rail li {
+        flex: 1;
+        position: relative;
+        min-width: 0;
+      }
+      .rail li + li::before {
+        content: "";
+        position: absolute;
+        top: 21px;
+        right: 50%;
+        width: 100%;
+        height: 2px;
+        background: var(--line-soft);
+        z-index: 0;
+      }
+      .rail li[data-state="done"] + li::before,
+      .rail li[data-state="done"] + li[data-state="current"]::before {
+        background: var(--ok);
+      }
+      .rail button {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        border: 0;
+        background: none;
+        padding: 0;
+        display: grid;
+        justify-items: center;
+        cursor: pointer;
+        min-height: 44px;
+        align-content: center;
+      }
+      .rail button:disabled {
+        cursor: default;
+      }
+      .dot {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        font-size: 14px;
+        background: var(--card);
+        border: 2px solid var(--line);
+        color: var(--ink-3);
+        transition: transform 0.2s;
+      }
+      li[data-state="done"] .dot {
+        background: var(--ok);
+        border-color: var(--ok);
+        color: #fff;
+      }
+      li[data-state="warn"] .dot {
+        background: var(--warn-soft);
+        border-color: var(--warn);
+        color: var(--warn);
+      }
+      li[data-state="failed"] .dot {
+        background: var(--danger);
+        border-color: var(--danger);
+        color: #fff;
+      }
+      li.current .dot {
+        border-color: var(--ink);
+        color: var(--ink);
+        transform: scale(1.12);
+        box-shadow: 0 0 0 4px rgb(42 40 36 / 10%);
+      }
+      li.current[data-state="done"] .dot {
+        color: #fff;
+      }
+      li.current[data-state="failed"] .dot {
+        color: #fff;
+        border-color: var(--danger);
+        box-shadow: 0 0 0 4px var(--danger-soft);
+      }
+      .rail .txt {
+        display: none;
+      }
+      .where {
+        grid-area: where;
+        padding: 6px 16px 8px;
+        border-bottom: 1px solid var(--line-soft);
+        font-size: 14px;
+      }
+      .where b {
+        font-weight: 700;
+      }
+      .where .fail {
+        color: var(--danger);
+        font-weight: 600;
+      }
+
+      .body {
+        grid-area: body;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 16px 16px 24px;
+        min-width: 0;
+      }
+      .panel {
+        display: grid;
+        gap: 16px;
+        max-width: 720px;
+        margin: 0 auto;
+        min-width: 0;
+      }
+      .panel h2 {
+        font-family: var(--serif);
+        font-size: 24px;
+        line-height: 1.15;
+      }
+      .lead {
+        font-size: 16px;
+        color: var(--ink);
+      }
+      .dim {
+        color: var(--ink-dim);
+      }
+      .small {
+        font-size: 13.5px;
+      }
+
+      .actions {
+        grid-area: actions;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 16px;
+        padding-bottom: max(10px, env(safe-area-inset-bottom));
+        border-top: 1px solid var(--line-soft);
+        background: var(--card);
+      }
+      .actions .spacer {
+        flex: 1;
+      }
+      .actions .primary {
+        min-width: 0;
+        flex: 0 1 auto;
+      }
+
+      /* greet */
+      .greet {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        background: var(--ok-soft);
+        border: 1px solid #b9cfac;
+        border-radius: 14px;
+        padding: 12px 14px;
+      }
+      .greet .sun {
+        font-size: 22px;
+        line-height: 1;
+        color: var(--ok);
+        font-weight: 700;
+      }
+      .greet p {
+        font-size: 15px;
+      }
+      .greet .x {
+        margin-left: auto;
+        border: 0;
+        background: none;
+        cursor: pointer;
+        font-size: 18px;
+        min-width: 32px;
+        min-height: 32px;
+      }
+
+      /* step 1 */
+      .poses {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+      }
+      .pose {
+        background: #fff;
+        border: 1px solid var(--line-soft);
+        border-radius: 12px;
+        padding: 6px;
+        text-align: center;
+        font-size: 12.5px;
+        color: var(--ink-dim);
+      }
+      .pose canvas {
+        width: 100%;
+        aspect-ratio: 3 / 4;
+        display: block;
+      }
+      .pose b {
+        display: block;
+        color: var(--ink);
+        font-size: 13px;
+      }
+      label.field {
+        display: grid;
+        gap: 6px;
+        font-weight: 600;
+      }
+      textarea,
+      input[type="text"] {
+        width: 100%;
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+        background: #fff;
+        font-weight: 400;
+        resize: vertical;
+      }
+      textarea:focus,
+      input[type="text"]:focus {
+        outline: none;
+        border-color: var(--ink);
+      }
+      .field-msg {
+        color: var(--danger);
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .chip {
+        border: 1px solid var(--line);
+        background: #fff;
+        border-radius: 999px;
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 13.5px;
+        min-height: 40px;
+        text-align: left;
+      }
+      .chip:hover {
+        border-color: var(--ink);
+      }
+      .tip {
+        background: #fff;
+        border: 1px solid var(--line-soft);
+        border-radius: 12px;
+        padding: 12px 14px;
+        font-size: 14px;
+        color: var(--ink-dim);
+      }
+      .tip b {
+        color: var(--ink);
+      }
+
+      /* step 2 */
+      .prompt {
+        margin: 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 13px;
+        line-height: 1.5;
+        background: #fff;
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+        padding: 14px;
+        max-height: 42vh;
+        overflow-y: auto;
+      }
+      .prompt mark {
+        background: #fbe2a6;
+        color: var(--ink);
+        border-radius: 4px;
+        padding: 0 2px;
+      }
+      .prompt mark.hint {
+        background: #d9e8f7;
+      }
+      .prompt mark.empty {
+        background: var(--danger-soft);
+      }
+      .copy-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+      .copy-msg {
+        font-size: 14.5px;
+        font-weight: 600;
+      }
+      .copy-msg.ok {
+        color: var(--ok);
+      }
+      .copy-msg.bad {
+        color: var(--danger);
+      }
+      .hints {
+        display: grid;
+        gap: 6px;
+      }
+      .hints li {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+        background: #eef4fa;
+        border-radius: 10px;
+        padding: 6px 10px;
+        font-size: 14px;
+      }
+      .hints ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 6px;
+      }
+
+      /* step 3 */
+      .howto {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 10px;
+        counter-reset: h;
+      }
+      .howto li {
+        display: grid;
+        grid-template-columns: 36px 1fr;
+        gap: 12px;
+        align-items: start;
+        background: #fff;
+        border: 1px solid var(--line-soft);
+        border-radius: 12px;
+        padding: 12px;
+      }
+      .howto li::before {
+        counter-increment: h;
+        content: counter(h);
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: var(--paper);
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+      }
+      .howto b {
+        display: block;
+      }
+      .calm {
+        background: var(--ok-soft);
+        border-radius: 12px;
+        padding: 12px 14px;
+        font-size: 14.5px;
+      }
+
+      /* step 4 */
+      .drop {
+        border: 2px dashed var(--line);
+        border-radius: 16px;
+        padding: 22px 16px;
+        display: grid;
+        gap: 10px;
+        justify-items: center;
+        text-align: center;
+        background: #fff;
+      }
+      .drop.over {
+        border-color: var(--ink);
+        background: var(--warn-soft);
+      }
+      .drop .or {
+        color: var(--ink-dim);
+        font-size: 14px;
+      }
+      .phases {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 6px;
+        background: #fff;
+        border: 1px solid var(--line-soft);
+        border-radius: 12px;
+        padding: 12px 14px;
+      }
+      .phases li {
+        display: grid;
+        grid-template-columns: 24px 1fr;
+        gap: 10px;
+        align-items: start;
+        font-size: 14.5px;
+        color: var(--ink-3);
+      }
+      .phases li .m {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 2px solid var(--line);
+        margin-top: 1px;
+        display: grid;
+        place-items: center;
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .phases li[data-s="running"] {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .phases li[data-s="running"] .m {
+        border-color: var(--ink);
+        border-top-color: transparent;
+        animation: spin 0.8s linear infinite;
+      }
+      .phases li[data-s="done"] {
+        color: var(--ink);
+      }
+      .phases li[data-s="done"] .m {
+        background: var(--ok);
+        border-color: var(--ok);
+        color: #fff;
+      }
+      .phases li[data-s="failed"] {
+        color: var(--danger);
+        font-weight: 600;
+      }
+      .phases li[data-s="failed"] .m {
+        background: var(--danger);
+        border-color: var(--danger);
+        color: #fff;
+      }
+      .phases .note {
+        display: block;
+        font-weight: 400;
+        font-size: 13px;
+        color: var(--ink-dim);
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .errcard {
+        border: 1.5px solid var(--danger);
+        background: var(--danger-soft);
+        border-radius: 14px;
+        padding: 14px;
+        display: grid;
+        gap: 12px;
+      }
+      .errcard h3 {
+        font-size: 17px;
+        color: var(--danger);
+      }
+      .errcard .where-failed {
+        font-size: 14px;
+      }
+      .errcard canvas {
+        width: 100%;
+        border-radius: 10px;
+        background: #fff;
+        display: block;
+      }
+      .errcard .btns {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .errcard .hint-text {
+        background: #fff;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 14px;
+      }
+      .samples {
+        display: grid;
+        gap: 8px;
+      }
+      .samples .chips .chip.bad {
+        border-style: dashed;
+      }
+
+      /* step 5 */
+      .summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .pill {
+        border-radius: 999px;
+        padding: 5px 11px;
+        font-size: 13px;
+        font-weight: 600;
+        background: var(--ok-soft);
+        color: var(--ok);
+      }
+      .pill.warn {
+        background: var(--warn-soft);
+        color: var(--warn);
+      }
+      .stage {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .stage figure {
+        margin: 0;
+        background: #fff;
+        border: 1px solid var(--line-soft);
+        border-radius: 12px;
+        padding: 6px;
+        text-align: center;
+        min-width: 0;
+      }
+      .stage canvas {
+        width: 100%;
+        aspect-ratio: 3 / 4;
+        display: block;
+        border-radius: 8px;
+      }
+      .stage figcaption {
+        font-size: 13.5px;
+        font-weight: 600;
+        padding-top: 4px;
+      }
+      .seg {
+        display: inline-flex;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        overflow: hidden;
+        background: #fff;
+      }
+      .seg button {
+        border: 0;
+        background: none;
+        padding: 7px 12px;
+        cursor: pointer;
+        font-size: 13px;
+        min-height: 36px;
+      }
+      .seg button[aria-pressed="true"] {
+        background: var(--ink);
+        color: var(--card);
+      }
+      .seg-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        font-size: 13.5px;
+        color: var(--ink-dim);
+      }
+      .notice {
+        border-radius: 14px;
+        padding: 14px;
+        display: grid;
+        gap: 12px;
+      }
+      .notice.warn {
+        background: var(--warn-soft);
+        border: 1.5px solid #e0c275;
+      }
+      .notice.ok {
+        background: var(--ok-soft);
+        border: 1px solid #b9cfac;
+      }
+      .notice h3 {
+        font-size: 17px;
+      }
+      .choices {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .choice {
+        background: #fff;
+        border: 2px solid var(--line-soft);
+        border-radius: 14px;
+        padding: 8px;
+        cursor: pointer;
+        display: grid;
+        gap: 4px;
+        align-content: start;
+        position: relative;
+        min-width: 0;
+      }
+      .choice input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .choice canvas {
+        width: 100%;
+        aspect-ratio: 3 / 4;
+        display: block;
+        border-radius: 8px;
+      }
+      .choice b {
+        font-size: 15px;
+      }
+      .choice .why {
+        font-size: 13px;
+        color: var(--ink-dim);
+      }
+      .choice .badge {
+        justify-self: start;
+        font-size: 11.5px;
+        font-weight: 700;
+        border-radius: 999px;
+        padding: 2px 8px;
+      }
+      .choice .badge.rec {
+        background: var(--ok);
+        color: #fff;
+      }
+      .choice .badge.bad {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+      .choice:has(input:checked) {
+        border-color: var(--ink);
+        box-shadow: 0 0 0 3px rgb(42 40 36 / 12%);
+      }
+      .choice:has(input:checked)::after {
+        content: "\2713  Chosen";
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        background: var(--ink);
+        color: var(--card);
+        font-size: 12px;
+        font-weight: 700;
+        border-radius: 999px;
+        padding: 3px 9px;
+      }
+      .choice:has(input:focus-visible) {
+        outline: 2px solid var(--accent-ink);
+        outline-offset: 2px;
+      }
+      .choice-msg {
+        color: var(--danger);
+        font-weight: 700;
+      }
+      .shake {
+        animation: shake 0.4s;
+      }
+      @keyframes shake {
+        25% {
+          transform: translateX(-6px);
+        }
+        75% {
+          transform: translateX(6px);
+        }
+      }
+      .movemap {
+        display: grid;
+        grid-template-columns: 96px 1fr;
+        gap: 12px;
+        align-items: center;
+        font-size: 14px;
+      }
+      .movemap canvas {
+        width: 96px;
+        aspect-ratio: 1 / 2;
+        background: #fff;
+        border-radius: 8px;
+        display: block;
+      }
+      .frames {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+      }
+      .frames figure {
+        margin: 0;
+        text-align: center;
+        font-size: 12.5px;
+        color: var(--ink-dim);
+        min-width: 0;
+      }
+      .frames canvas {
+        width: 100%;
+        aspect-ratio: 1 / 2;
+        display: block;
+        border-radius: 8px;
+        border: 1px solid var(--line-soft);
+      }
+      details.more {
+        background: #fff;
+        border: 1px solid var(--line-soft);
+        border-radius: 12px;
+        padding: 10px 14px;
+      }
+      details.more summary {
+        cursor: pointer;
+        font-weight: 600;
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+      }
+      details.more ul {
+        margin: 8px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+      details.more li {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        font-size: 14px;
+      }
+      .warnline {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        background: var(--warn-soft);
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-size: 14px;
+      }
+      .check-line {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 14.5px;
+        min-height: 40px;
+        cursor: pointer;
+      }
+      .check-line input {
+        width: 20px;
+        height: 20px;
+      }
+
+      /* step 6 */
+      .save-grid {
+        display: grid;
+        grid-template-columns: 160px 1fr;
+        gap: 16px;
+        align-items: start;
+      }
+      .save-grid canvas {
+        width: 100%;
+        aspect-ratio: 3 / 4;
+        border-radius: 12px;
+        display: block;
+      }
+      .facts {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 4px;
+        font-size: 14px;
+        color: var(--ink-dim);
+      }
+      .facts b {
+        color: var(--ink);
+      }
+      .saved {
+        background: var(--ok-soft);
+        border-radius: 14px;
+        padding: 16px;
+        display: grid;
+        gap: 8px;
+      }
+      .saved h3 {
+        font-family: var(--serif);
+        font-size: 22px;
+        color: var(--ok);
+      }
+
+      /* toasts */
+      .toasts {
+        position: fixed;
+        left: 50%;
+        top: 8px;
+        transform: translateX(-50%);
+        display: grid;
+        gap: 8px;
+        z-index: 50;
+        width: min(440px, calc(100vw - 32px));
+        pointer-events: none;
+      }
+      .toast {
+        background: var(--ink);
+        color: var(--card);
+        border-radius: 12px;
+        padding: 10px 14px;
+        font-size: 14.5px;
+        box-shadow: var(--shadow);
+        animation: tin 0.2s;
+      }
+      .toast.err {
+        background: var(--danger);
+        color: #fff;
+      }
+      @keyframes tin {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+      }
+
+      /* ---------- phone: no editor chrome ---------- */
+      .stage .frames-fig {
+        grid-column: 1 / -1;
+      }
+      .choices .movemap {
+        grid-column: 1 / -1;
+      }
+      .errcard canvas {
+        max-height: 240px;
+        object-fit: contain;
+      }
+      @media (max-width: 899px) {
+        .ed-main {
+          grid-template-columns: 1fr;
+        }
+        .ed-stations,
+        .ed-map {
+          display: none;
+        }
+        .veil {
+          display: none;
+        }
+      }
+      /* ---------- phone landscape: compact chrome ---------- */
+      @media (max-height: 520px) {
+        .wiz {
+          grid-template-rows: auto 1fr auto;
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-areas: "head" "body" "actions";
+        }
+        .wiz-head {
+          padding: 6px 12px;
+          flex-wrap: nowrap;
+        }
+        .wiz-head .kicker {
+          display: none;
+        }
+        .wiz-head h1 {
+          font-size: 15px;
+        }
+        .wiz-head .t {
+          flex: 0 1 auto;
+        }
+        .wiz-head .rail-slot {
+          flex: 1;
+          min-width: 0;
+        }
+        .rail {
+          padding: 0;
+        }
+        .rail button {
+          min-height: 36px;
+        }
+        .dot {
+          width: 26px;
+          height: 26px;
+          font-size: 12px;
+        }
+        .rail li + li::before {
+          top: 17px;
+        }
+        .where {
+          display: none;
+        }
+        .body {
+          padding: 10px 16px 16px;
+        }
+        .actions {
+          padding: 6px 12px;
+        }
+        .btn {
+          min-height: 40px;
+          padding: 7px 14px;
+        }
+        .prompt {
+          max-height: 50vh;
+        }
+        .poses {
+          grid-template-columns: repeat(4, 92px);
+        }
+        .stage {
+          grid-template-columns: repeat(2, 150px);
+        }
+        .choices {
+          grid-template-columns: repeat(2, 170px);
+        }
+        .toasts {
+          top: 4px;
+          left: 12px;
+          transform: none;
+          width: 380px;
+        }
+      }
+      /* ---------- desktop: a dialog over the editor, stepper as a left rail ---------- */
+      @media (min-width: 900px) and (min-height: 521px) {
+        .wiz {
+          inset: auto;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: min(1100px, calc(100vw - 64px));
+          height: min(840px, calc(100vh - 48px));
+          border-radius: 20px;
+          box-shadow: 0 20px 60px rgb(42 40 36 / 30%);
+          overflow: hidden;
+          grid-template-columns: 270px minmax(0, 1fr);
+          grid-template-rows: auto 1fr auto;
+          grid-template-areas: "head head" "rail body" "rail actions";
+        }
+        .wiz-head {
+          padding: 16px 22px;
+          border-bottom: 1px solid var(--line-soft);
+        }
+        .wiz-head h1 {
+          font-size: 24px;
+        }
+        .where {
+          display: none;
+        }
+        .rail {
+          background: var(--paper);
+          padding: 18px 12px;
+          border-right: 1px solid var(--line-soft);
+          overflow-y: auto;
+        }
+        .rail ol {
+          flex-direction: column;
+          gap: 4px;
+        }
+        .rail li + li::before {
+          top: auto;
+          bottom: 50%;
+          right: auto;
+          left: 31px;
+          width: 2px;
+          height: 100%;
+        }
+        .rail button {
+          grid-template-columns: 40px 1fr;
+          justify-items: start;
+          text-align: left;
+          gap: 10px;
+          padding: 8px;
+          border-radius: 12px;
+          min-height: 60px;
+        }
+        .rail button:not(:disabled):hover {
+          background: rgb(42 40 36 / 5%);
+        }
+        .rail li.current button {
+          background: var(--card);
+          box-shadow: 0 1px 3px rgb(42 40 36 / 12%);
+        }
+        .rail .dot {
+          justify-self: center;
+        }
+        .rail .txt {
+          display: grid;
+          min-width: 0;
+        }
+        .rail .lbl {
+          font-weight: 600;
+          font-size: 14.5px;
+          color: var(--ink);
+        }
+        .rail li[data-state="todo"]:not(.current) .lbl {
+          color: var(--ink-3);
+        }
+        .rail .sub {
+          font-size: 12.5px;
+          color: var(--ink-dim);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .rail li[data-state="failed"] .sub {
+          color: var(--danger);
+          font-weight: 600;
+          white-space: normal;
+        }
+        .rail li[data-state="warn"] .sub {
+          color: var(--warn);
+          font-weight: 600;
+        }
+        .rail-foot {
+          margin-top: 18px;
+          padding: 12px;
+          font-size: 12.5px;
+          color: var(--ink-dim);
+          border-top: 1px solid var(--line-soft);
+        }
+        .body {
+          padding: 24px 32px 32px;
+        }
+        .actions {
+          padding: 14px 32px;
+        }
+        .stage {
+          grid-template-columns: 220px 220px minmax(0, 1fr);
+          align-items: start;
+        }
+        .choices {
+          grid-template-columns: 220px 220px minmax(0, 1fr);
+        }
+        .choices .movemap {
+          grid-column: auto;
+          grid-template-columns: 1fr;
+          align-self: start;
+        }
+        .choices .movemap canvas {
+          width: 110px;
+        }
+        .stage .frames-fig {
+          grid-column: auto;
+        }
+        .toasts {
+          top: 14px;
+          bottom: auto;
+        }
+      }
+      @media (max-width: 899px), (max-height: 520px) {
+        .rail-foot {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- the editor this wizard opens from -->
+    <div class="editor" aria-hidden="true" id="editor">
+      <div class="ed-bar">
+        <b>Old Town Walk</b
+        ><span class="dim small" id="edMode">Tour editor</span
+        ><span class="tag">Prototype - nothing is saved to a server</span>
+      </div>
+      <div class="ed-main">
+        <div class="ed-panel ed-stations">
+          <p class="kicker">Stations</p>
+          <ol>
+            <li><i>1</i>Market fountain</li>
+            <li><i>2</i>The old mill</li>
+            <li><i>3</i>Town wall gate</li>
+            <li><i>4</i>Chapel steps</li>
+            <li><i>5</i>Riverside lookout</li>
+          </ol>
+        </div>
+        <div class="ed-map">
+          <svg viewBox="0 0 600 600" preserveAspectRatio="xMidYMid slice">
+            <rect width="600" height="600" fill="#e4dac0" />
+            <path
+              d="M0 420 C120 380 200 470 320 430 S520 360 600 400"
+              stroke="#b9cfe0"
+              stroke-width="40"
+              fill="none"
+            />
+            <path
+              d="M80 120 L220 210 L330 160 L420 300 L520 260"
+              stroke="#cf4428"
+              stroke-width="5"
+              stroke-dasharray="10 8"
+              fill="none"
+            />
+            <g fill="#cf4428">
+              <circle cx="80" cy="120" r="12" />
+              <circle cx="220" cy="210" r="12" />
+              <circle cx="330" cy="160" r="12" />
+              <circle cx="420" cy="300" r="12" />
+              <circle cx="520" cy="260" r="12" />
+            </g>
+          </svg>
+        </div>
+        <div class="ed-panel">
+          <p class="kicker">Tour settings</p>
+          <div class="guide-card" id="guideCard">
+            <div class="row">
+              <canvas id="guideThumb" width="144" height="192"></canvas>
+              <div>
+                <b id="guideTitle">Guide character</b>
+                <p id="guideText">
+                  No guide yet. A guide stands at your stations, talks, and
+                  points the way to the next one.
+                </p>
+              </div>
+            </div>
+            <button class="btn primary" id="openWiz" type="button">
+              Make a guide with an image AI
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="veil" id="veil"></div>
+
+    <div
+      class="wiz"
+      id="wiz"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="wizTitle"
+    >
+      <header class="wiz-head">
+        <div class="t">
+          <p class="kicker">Guide character</p>
+          <h1 id="wizTitle">Make your guide</h1>
+        </div>
+        <div class="rail-slot" id="railSlotLandscape"></div>
+        <button class="link restart" id="restart" type="button">
+          Start over
+        </button>
+        <button
+          class="icon-btn"
+          id="closeWiz"
+          type="button"
+          aria-label="Close. Your progress is kept."
+        >
+          &times;
+        </button>
+      </header>
+      <nav class="rail" id="rail" aria-label="Steps">
+        <ol id="steps"></ol>
+        <p class="rail-foot">
+          This page remembers where you are. You can close it, switch apps, or
+          come back tomorrow.
+        </p>
+      </nav>
+      <p class="where" id="where" aria-live="polite"></p>
+
+      <main class="body" id="body">
+        <!-- 1 describe -->
+        <section class="panel" data-panel="0">
+          <div class="greet" data-greet hidden></div>
+          <h2>Who is your guide?</h2>
+          <p class="lead">
+            Your tour can have a guide who stands at the stations, talks, and
+            points visitors on to the next one. You do not need to draw: an
+            image AI draws it, and this page does the cutting.
+          </p>
+          <div>
+            <p class="small dim" style="margin-bottom: 6px">
+              The image AI draws these four poses side by side in one picture:
+            </p>
+            <div class="poses" id="poseExplainer"></div>
+          </div>
+          <label class="field">
+            Describe your guide in a few words
+            <textarea
+              id="desc"
+              rows="3"
+              placeholder="For example: a friendly squirrel forest ranger with a green hat, flat cartoon style"
+            ></textarea>
+          </label>
+          <p class="field-msg" id="descMsg" hidden>
+            Write a few words about your guide first. Any idea is fine, you can
+            change it later.
+          </p>
+          <div>
+            <p class="small dim" style="margin-bottom: 6px">
+              Need an idea? Tap one to start from it.
+            </p>
+            <div class="chips" id="ideas"></div>
+          </div>
+          <p class="tip">
+            <b>Tip:</b> flat cartoon styles with clean outlines move most
+            smoothly when they talk. Painted styles work too; this page can
+            steady them for you.
+          </p>
+          <p class="small">
+            Already have a picture from an image AI?
+            <button class="link" type="button" data-go="3">
+              Bring it in now
+            </button>
+          </p>
+        </section>
+
+        <!-- 2 prompt -->
+        <section class="panel" data-panel="1">
+          <h2>Copy the prompt</h2>
+          <p class="lead">
+            This is the whole text for the image AI. Your words are
+            <mark style="background: #fbe2a6">highlighted</mark>. Nothing is
+            hidden, and this page sends nothing anywhere: you copy it and paste
+            it yourself.
+          </p>
+          <div class="hints" id="hintsBox" hidden>
+            <p class="small">
+              <b>Added after your last picture</b> (they are in the text,
+              <mark style="background: #d9e8f7">in blue</mark>):
+            </p>
+            <ul id="hintsList"></ul>
+          </div>
+          <pre
+            class="prompt"
+            id="prompt"
+            tabindex="0"
+            aria-label="The prompt for the image AI"
+          ></pre>
+          <div class="copy-row">
+            <button class="btn primary big" id="copyBtn" type="button">
+              Copy the prompt
+            </button>
+            <button class="btn" id="shareBtn" type="button" hidden>
+              Send to an app
+            </button>
+            <button class="link" type="button" data-go="0">
+              Change my description
+            </button>
+          </div>
+          <p class="copy-msg" id="copyMsg" aria-live="polite"></p>
+        </section>
+
+        <!-- 3 generate -->
+        <section class="panel" data-panel="2">
+          <h2>Make the picture in your image AI</h2>
+          <p class="lead">
+            Now switch to an image AI of your choice, such as ChatGPT or Gemini,
+            in another tab or app.
+          </p>
+          <ol class="howto">
+            <li>
+              <span><b>Open your image AI</b>and start a new chat.</span>
+            </li>
+            <li>
+              <span
+                ><b>Paste the prompt and send it</b>On a phone, long-press the
+                text box and choose Paste. On a computer, press Ctrl+V.</span
+              >
+            </li>
+            <li>
+              <span
+                ><b>Wait for the picture</b>It can take a minute. It should show
+                four figures of your guide in a row.</span
+              >
+            </li>
+            <li>
+              <span
+                ><b>Keep the picture</b>On a phone, long-press it and choose
+                Save or Download. On a computer, right-click it and choose Copy
+                image, or save it.</span
+              >
+            </li>
+          </ol>
+          <p class="calm">
+            Take your time. This page remembers where you are, even if your
+            phone closes it while you are away. When you come back, you land on
+            the next step.
+          </p>
+          <p class="tip">
+            <b>Good to know:</b> if the AI offers a transparent background
+            (PNG), take it; a plain white background works too. If the picture
+            looks wrong, bring it anyway: this page tells you what is wrong and
+            what to ask for.
+          </p>
+        </section>
+
+        <!-- 4 image -->
+        <section class="panel" data-panel="3">
+          <div class="greet" data-greet hidden></div>
+          <h2>Bring the picture back</h2>
+          <p class="lead">
+            Choose the picture your image AI made. This page cuts it into the
+            four poses right away, on this device.
+          </p>
+          <div class="drop" id="drop">
+            <button class="btn primary big" id="pickBtn" type="button">
+              Choose the picture
+            </button>
+            <span class="or" id="dropHint">from your photos or files</span>
+          </div>
+          <ol class="phases" id="phases" hidden aria-live="polite"></ol>
+          <div class="errcard" id="errcard" hidden role="alert"></div>
+          <div class="samples">
+            <p class="small dim">
+              No picture yet? Try a sample to see how it works:
+            </p>
+            <div class="chips">
+              <button class="chip" type="button" data-sample="flat">
+                Flat cartoon on white
+              </button>
+              <button class="chip" type="button" data-sample="painted">
+                Painted, transparent (the body jumps)
+              </button>
+              <button class="chip bad" type="button" data-sample="touching">
+                Goes wrong: two poses touch
+              </button>
+              <button class="chip bad" type="button" data-sample="three">
+                Goes wrong: only three poses
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5 check -->
+        <section class="panel" data-panel="4">
+          <div class="greet" data-greet hidden></div>
+          <h2>Check your guide</h2>
+          <div class="summary" id="summary"></div>
+          <div class="seg-row">
+            Seen on
+            <div class="seg" id="groundSeg">
+              <button type="button" data-ground="world" aria-pressed="true">
+                Outdoors
+              </button>
+              <button type="button" data-ground="paper" aria-pressed="false">
+                Plain
+              </button>
+              <button type="button" data-ground="checks" aria-pressed="false">
+                Checks
+              </button>
+            </div>
+          </div>
+          <div id="jitterBox"></div>
+          <div class="stage">
+            <figure>
+              <canvas id="pvTalk" width="300" height="400"></canvas>
+              <figcaption>Talking</figcaption>
+            </figure>
+            <figure>
+              <canvas id="pvBeckon" width="300" height="400"></canvas>
+              <figcaption>Pointing the way</figcaption>
+            </figure>
+            <figure class="frames-fig">
+              <div class="frames" id="framesStrip"></div>
+              <figcaption>The four poses as they will be saved</figcaption>
+            </figure>
+          </div>
+          <div id="warnBox" style="display: grid; gap: 8px"></div>
+          <details class="more" id="moreBox">
+            <summary>
+              Something not right? Ask the image AI again with a hint
+            </summary>
+            <ul id="moreList"></ul>
+          </details>
+        </section>
+
+        <!-- 6 save -->
+        <section class="panel" data-panel="5">
+          <h2>Name and save your guide</h2>
+          <div class="save-grid">
+            <canvas id="pvSave" width="300" height="400"></canvas>
+            <div style="display: grid; gap: 12px; min-width: 0">
+              <label class="field"
+                >What is your guide called?<input
+                  type="text"
+                  id="guideName"
+                  placeholder="For example: Ranger Rita"
+                  maxlength="40"
+              /></label>
+              <ul class="facts" id="facts"></ul>
+            </div>
+          </div>
+          <div class="saved" id="savedBox" hidden></div>
+        </section>
+      </main>
+
+      <footer class="actions">
+        <button class="btn" id="backBtn" type="button">Back</button>
+        <span class="spacer"></span>
+        <button class="btn primary" id="nextBtn" type="button">Next</button>
+      </footer>
+    </div>
+
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+    <input
+      type="file"
+      id="file"
+      accept="image/png,image/jpeg,image/webp,image/*"
+      hidden
+    />
+
+    <script src="import.js"></script>
+    <script>
+      "use strict";
+      const $ = (s, r = document) => r.querySelector(s);
+      const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const esc = (t) =>
+        String(t).replace(
+          /[&<>"]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
+        );
+      const KEY = "charwiz-proto-1";
+      const STEPS = [
+        { label: "Describe your guide", short: "Describe" },
+        { label: "Copy the prompt", short: "Copy the prompt" },
+        { label: "Make the picture", short: "Make the picture" },
+        { label: "Bring the picture back", short: "Bring the picture back" },
+        { label: "Check your guide", short: "Check your guide" },
+        { label: "Name and save", short: "Name and save" },
+      ];
+
+      // ---------------------------------------------------------------- state
+      const fresh = () => ({
+        step: 0,
+        maxStep: 0,
+        desc: "",
+        hints: [],
+        copiedAt: 0,
+        leftAt: 0,
+        imageName: "",
+        failure: null,
+        choice: null,
+        mirror: false,
+        name: "",
+        savedAt: 0,
+        savedKb: 0,
+        open: true,
+        steadyAnyway: false,
+      });
+      let S = fresh();
+      try {
+        const raw = localStorage.getItem(KEY);
+        if (raw) S = { ...fresh(), ...JSON.parse(raw) };
+      } catch (e) {
+        /* private mode: work without memory */
+      }
+      const persist = () => {
+        try {
+          localStorage.setItem(KEY, JSON.stringify(S));
+        } catch (e) {}
+      };
+      let R = null; // the import result: { frames, check, steady, name }
+      let failDetail = null;
+      let busy = false;
+      let ground = "world";
+      let slow = false;
+      let version = 0; // bumps when frames change, so animations redraw
+
+      // ---------------------------------------------------------------- the prompt
+      const PROMPT_HEAD =
+        "Create a character sprite sheet for an outdoor walking-tour app.\n\nCharacter: ";
+      const PROMPT_EMPTY =
+        "[DESCRIBE YOUR CHARACTER HERE - who they are, rough age, clothing, colours and drawing style. Example: a friendly medieval knight in a blue tabard with a small round shield, warm storybook illustration style.]";
+      const PROMPT_BODY = `
+
+Layout - follow it exactly:
+- One landscape image with a 3:2 shape (for example 1536 x 1024 pixels).
+- Four full-body drawings of the SAME character side by side in a single row. Each drawing sits centred in its own quarter of the width, with clear empty space between neighbours. No part of one drawing reaches into a neighbour's quarter.
+- Order from left to right:
+  1. IDLE - standing relaxed, facing the viewer, arms at rest, mouth closed, friendly expression.
+  2. TALKING A - exactly like drawing 1, only the mouth half open.
+  3. TALKING B - exactly like drawing 1, only the mouth wide open, as if saying "ah".
+  4. POINTING - same stance and facing as drawing 1, one arm stretched out towards the viewer's RIGHT with an open hand, inviting the viewer to follow that way; mouth closed.
+- All four drawings at the same size and scale: same height, feet standing on the same invisible ground line near the bottom edge, the whole figure visible from the top of the head to the feet, nothing cut off.
+- Drawings 2 and 3 must match drawing 1 in every detail except the mouth: same pose, same outline, same colours, same position in their quarter. They will be swapped quickly to animate speech, so any other difference makes the figure jitter.
+
+Background and style:
+- Transparent background (PNG with alpha). If you cannot produce real transparency, use one flat, pure white background instead: no texture, no gradient, no floor, no checkerboard pattern.
+- Give the figure a thin dark outline so it separates cleanly from the background.
+- No shadow on the ground, no text, no labels, no numbers, no frames, borders or grid lines.
+- Front view, soft even lighting, clear shapes that read well at a small size on a phone screen outdoors.
+- An original character, suitable for all ages - not a copy of an existing character, brand or real person.`;
+      const HINTS_HEAD =
+        "\n\nExtra notes - important, the last picture got this wrong:";
+      function promptText() {
+        let t = PROMPT_HEAD + (S.desc.trim() || PROMPT_EMPTY) + PROMPT_BODY;
+        if (S.hints.length)
+          t += HINTS_HEAD + S.hints.map((h) => "\n- " + h).join("");
+        return t;
+      }
+      function promptHtml() {
+        const d = S.desc.trim();
+        let h =
+          esc(PROMPT_HEAD) +
+          (d
+            ? `<mark>${esc(d)}</mark>`
+            : `<mark class="empty">${esc(PROMPT_EMPTY)}</mark>`) +
+          esc(PROMPT_BODY);
+        if (S.hints.length)
+          h +=
+            esc(HINTS_HEAD) +
+            S.hints
+              .map((x) => '\n- <mark class="hint">' + esc(x) + "</mark>")
+              .join("");
+        return h;
+      }
+
+      const HINTS = {
+        joined:
+          "Leave a clear empty gap, at least a finger wide, between all four drawings. They must not touch or overlap.",
+        missing: "Draw exactly four figures, no more and no fewer.",
+        extra:
+          "Exactly four figures and nothing else: no text, labels, props, ground shadows or small extra drawings.",
+        checkerboard:
+          "Use real transparency, or else one flat pure white background. Do not draw a grey and white checkerboard pattern.",
+        busy: "Use one flat, pure white background: no scenery, floor, texture or gradient.",
+        empty:
+          "Give each figure a thick, closed dark outline, on a flat pure white background.",
+        jitter:
+          "Drawings 2 and 3 must be exact copies of drawing 1 with only the mouth changed. Use a flat cartoon style with clean outlines.",
+        mouth:
+          "In drawing 2 the mouth is clearly half open, and in drawing 3 it is wide open and much bigger.",
+        "beckon-left":
+          "In drawing 4 the arm points to the RIGHT side of the picture (the viewer's right).",
+        "beckon-same":
+          "Drawing 4 must clearly differ: one arm stretched far out to the right with an open hand.",
+        sizes:
+          "All four figures exactly the same height, standing on the same ground line.",
+        holes: "Give the figure a thick, closed dark outline all around.",
+        halo: "Use real transparency (PNG). If not possible, a pure white background with a thick dark outline.",
+        cut: "Show the whole figure, from the top of the head to the feet, with empty space around it. Nothing cut off.",
+      };
+
+      // ---------------------------------------------------------------- sample drawings
+      const INK = "#1f1b16";
+      function mulberry(a) {
+        return () => {
+          a |= 0;
+          a = (a + 0x6d2b79f5) | 0;
+          let t = Math.imul(a ^ (a >>> 15), 1 | a);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+      function fs(ctx, fill, lw = 8) {
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.lineWidth = lw;
+        ctx.strokeStyle = INK;
+        ctx.stroke();
+      }
+      function limb(ctx, p, wd, col) {
+        ctx.beginPath();
+        ctx.moveTo(p[0][0], p[0][1]);
+        ctx.quadraticCurveTo(p[1][0], p[1][1], p[2][0], p[2][1]);
+        ctx.lineCap = "round";
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = wd + 14;
+        ctx.stroke();
+        ctx.strokeStyle = col;
+        ctx.lineWidth = wd;
+        ctx.stroke();
+      }
+      function disc(ctx, x, y, r, col, lw = 7) {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        fs(ctx, col, lw);
+      }
+      function openHand(ctx, x, y, rot, skin) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(rot);
+        for (const fx of [-15, -5, 5, 15]) {
+          ctx.beginPath();
+          ctx.roundRect(fx - 5, -50, 10, 34, 5);
+          fs(ctx, skin, 5);
+        }
+        ctx.beginPath();
+        ctx.roundRect(-22, -22, 44, 40, 14);
+        fs(ctx, skin, 6);
+        ctx.beginPath();
+        ctx.roundRect(-34, -14, 14, 26, 7);
+        fs(ctx, skin, 5);
+        ctx.restore();
+      }
+      // a flat cartoon park guide; design space: 300 wide, 800 high, feet at y = 800
+      function drawCartoon(ctx, cx, baseY, H, pose) {
+        const u = H / 800;
+        const skin = "#f2c79b";
+        const coat = "#2f8f74";
+        ctx.save();
+        ctx.translate(cx, baseY - H);
+        ctx.scale(u, u);
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        for (const x of [-52, 12]) {
+          ctx.beginPath();
+          ctx.roundRect(x, 560, 40, 200, 12);
+          fs(ctx, "#5b4632");
+        }
+        for (const s of [-1, 1]) {
+          ctx.beginPath();
+          ctx.ellipse(s * 36, 768, 44, 26, 0, 0, Math.PI * 2);
+          fs(ctx, "#3a2a1c");
+        }
+        limb(
+          ctx,
+          [
+            [-72, 320],
+            [-118, 440],
+            [-104, 556],
+          ],
+          42,
+          coat,
+        );
+        disc(ctx, -104, 562, 24, skin);
+        if (pose === 3) {
+          limb(
+            ctx,
+            [
+              [72, 320],
+              [168, 264],
+              [230, 206],
+            ],
+            42,
+            coat,
+          );
+          openHand(ctx, 244, 190, 0.85, skin);
+        } else {
+          limb(
+            ctx,
+            [
+              [72, 320],
+              [118, 440],
+              [104, 556],
+            ],
+            42,
+            coat,
+          );
+          disc(ctx, 104, 562, 24, skin);
+        }
+        ctx.beginPath();
+        ctx.moveTo(-78, 300);
+        ctx.quadraticCurveTo(0, 282, 78, 300);
+        ctx.lineTo(104, 600);
+        ctx.quadraticCurveTo(0, 622, -104, 600);
+        ctx.closePath();
+        fs(ctx, coat);
+        ctx.beginPath();
+        ctx.rect(-94, 466, 188, 30);
+        fs(ctx, "#6b4a2b", 6);
+        ctx.beginPath();
+        ctx.rect(-16, 462, 32, 38);
+        fs(ctx, "#e3b341", 6);
+        ctx.beginPath();
+        for (let i = 0; i < 10; i++) {
+          const a = -Math.PI / 2 + (i * Math.PI) / 5;
+          const r = i % 2 ? 9 : 20;
+          ctx.lineTo(-44 + Math.cos(a) * r, 370 + Math.sin(a) * r);
+        }
+        ctx.closePath();
+        fs(ctx, "#e3b341", 5);
+        ctx.beginPath();
+        ctx.arc(0, 172, 100, 0, Math.PI * 2);
+        fs(ctx, skin);
+        ctx.fillStyle = "rgba(214,110,90,0.45)";
+        for (const s of [-1, 1]) {
+          ctx.beginPath();
+          ctx.ellipse(s * 62, 200, 16, 10, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        for (const s of [-1, 1]) {
+          ctx.beginPath();
+          ctx.ellipse(s * 38, 160, 21, 25, 0, 0, Math.PI * 2);
+          fs(ctx, "#ffffff", 6);
+          ctx.fillStyle = INK;
+          ctx.beginPath();
+          ctx.arc(s * 38 + 3, 166, 10, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#fff";
+          ctx.beginPath();
+          ctx.arc(s * 38 + 6, 161, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.beginPath();
+        ctx.ellipse(0, 190, 10, 8, 0, 0, Math.PI * 2);
+        fs(ctx, "#d99772", 5);
+        if (pose === 1) {
+          ctx.beginPath();
+          ctx.ellipse(0, 222, 22, 11, 0, 0, Math.PI * 2);
+          fs(ctx, "#5a1d1a", 6);
+        } else if (pose === 2) {
+          ctx.beginPath();
+          ctx.ellipse(0, 222, 26, 24, 0, 0, Math.PI * 2);
+          fs(ctx, "#5a1d1a", 6);
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(-15, 202, 30, 8);
+          ctx.fillStyle = "#d65a5a";
+          ctx.beginPath();
+          ctx.ellipse(0, 236, 14, 7, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(-22, 214);
+          ctx.quadraticCurveTo(0, 232, 22, 214);
+          ctx.strokeStyle = INK;
+          ctx.lineWidth = 7;
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.ellipse(0, 92, 148, 28, 0, 0, Math.PI * 2);
+        fs(ctx, "#a8732f");
+        ctx.beginPath();
+        ctx.moveTo(-82, 90);
+        ctx.quadraticCurveTo(-78, 10, 0, 10);
+        ctx.quadraticCurveTo(78, 10, 82, 90);
+        ctx.closePath();
+        fs(ctx, "#a8732f");
+        ctx.beginPath();
+        ctx.rect(-80, 62, 160, 20);
+        fs(ctx, "#5b3a1a", 5);
+        ctx.restore();
+      }
+      // a painted storyteller: every frame is "redrawn" (new brush seed, body nudged) like a painting AI does
+      function drawPainted(ctx, cx, baseY, H, pose, seed, nudge) {
+        const u = H / 800;
+        const rnd = mulberry(seed);
+        const head = mulberry(7);
+        const nx = nudge.dx;
+        const hem = nudge.hem;
+        ctx.save();
+        ctx.translate(cx, baseY - H);
+        ctx.scale(u, u);
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        const robe = () => {
+          ctx.beginPath();
+          ctx.moveTo(-70 + nx, 260);
+          ctx.quadraticCurveTo(0, 240, 70 + nx, 260);
+          ctx.quadraticCurveTo(110 + nx, 520, 128 + hem, 780);
+          ctx.quadraticCurveTo(0, 806 + hem, -128 - hem, 780);
+          ctx.quadraticCurveTo(-110 + nx, 520, -70 + nx, 260);
+          ctx.closePath();
+        };
+        const g = ctx.createLinearGradient(-130, 0, 130, 0);
+        g.addColorStop(0, "#2c3a7a");
+        g.addColorStop(0.5, "#4659a8");
+        g.addColorStop(1, "#27336c");
+        const sleeve = "#3a4b94";
+        const skin = "#e9b98f";
+        // left sleeve
+        limb(
+          ctx,
+          [
+            [-62 + nx, 290],
+            [-112 + nx, 430],
+            [-96 + nx * 1.5, 560],
+          ],
+          54,
+          sleeve,
+        );
+        disc(ctx, -96 + nx * 1.5, 566, 22, skin);
+        robe();
+        fs(ctx, g, 7);
+        ctx.save();
+        robe();
+        ctx.clip();
+        for (let i = 0; i < 260; i++) {
+          const x = -130 + rnd() * 260;
+          const y = 250 + rnd() * 560;
+          const l = 20 + rnd() * 50;
+          const a = 1.3 + rnd() * 0.5;
+          ctx.strokeStyle =
+            rnd() < 0.5 ? "rgba(140,160,230,0.35)" : "rgba(15,20,50,0.35)";
+          ctx.lineWidth = 4 + rnd() * 9;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+          ctx.stroke();
+        }
+        ctx.fillStyle = "#c99a3a";
+        ctx.fillRect(-120, 430 + nudge.dy, 240, 20);
+        ctx.restore();
+        robe();
+        ctx.lineWidth = 7;
+        ctx.strokeStyle = INK;
+        ctx.stroke();
+        if (pose === 3) {
+          limb(
+            ctx,
+            [
+              [62 + nx, 290],
+              [160, 250],
+              [226, 200],
+            ],
+            54,
+            sleeve,
+          );
+          openHand(ctx, 240, 186, 0.85, skin);
+        } else {
+          limb(
+            ctx,
+            [
+              [62 + nx, 290],
+              [112 + nx, 430],
+              [96 + nx * 1.5, 560],
+            ],
+            54,
+            sleeve,
+          );
+          disc(ctx, 96 + nx * 1.5, 566, 22, skin);
+        }
+        // beard (long: crosses the head band, like real painted guides)
+        ctx.beginPath();
+        ctx.moveTo(-58, 170);
+        ctx.quadraticCurveTo(-60, 330, 0 + nx * 0.6, 430);
+        ctx.quadraticCurveTo(60, 330, 58, 170);
+        ctx.closePath();
+        fs(ctx, "#d8d4cc", 6);
+        ctx.save();
+        ctx.clip();
+        for (let i = 0; i < 90; i++) {
+          const r = i < 30 ? head : rnd;
+          const x = -55 + r() * 110;
+          const y = 170 + r() * 260;
+          ctx.strokeStyle =
+            r() < 0.5 ? "rgba(255,255,255,0.6)" : "rgba(120,110,100,0.4)";
+          ctx.lineWidth = 3 + r() * 4;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + (r() - 0.5) * 10, y + 30);
+          ctx.stroke();
+        }
+        ctx.restore();
+        // face
+        ctx.beginPath();
+        ctx.arc(0, 150, 58, 0, Math.PI * 2);
+        fs(ctx, skin, 6);
+        for (const s of [-1, 1]) {
+          ctx.fillStyle = "#ffffff";
+          ctx.beginPath();
+          ctx.ellipse(s * 22, 142, 10, 7, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = INK;
+          ctx.beginPath();
+          ctx.arc(s * 22 + 1, 143, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.strokeStyle = "#efefef";
+        ctx.lineWidth = 9;
+        for (const s of [-1, 1]) {
+          ctx.beginPath();
+          ctx.moveTo(s * 10, 128);
+          ctx.lineTo(s * 36, 122);
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.ellipse(0, 166, 9, 12, 0, 0, Math.PI * 2);
+        fs(ctx, "#d79e74", 4);
+        // moustache and mouth sit inside the head band
+        if (pose === 1) {
+          ctx.beginPath();
+          ctx.ellipse(0, 198, 15, 7, 0, 0, Math.PI * 2);
+          fs(ctx, "#4a1814", 5);
+        } else if (pose === 2) {
+          ctx.beginPath();
+          ctx.ellipse(0, 202, 17, 16, 0, 0, Math.PI * 2);
+          fs(ctx, "#4a1814", 5);
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(-14, 196);
+          ctx.quadraticCurveTo(0, 204, 14, 196);
+          ctx.strokeStyle = INK;
+          ctx.lineWidth = 5;
+          ctx.stroke();
+        }
+        for (const s of [-1, 1]) {
+          ctx.beginPath();
+          ctx.moveTo(0, 184);
+          ctx.quadraticCurveTo(s * 20, 180, s * 34, 194);
+          ctx.strokeStyle = INK;
+          ctx.lineWidth = 14;
+          ctx.stroke();
+          ctx.strokeStyle = "#e6e2da";
+          ctx.lineWidth = 8;
+          ctx.stroke();
+        }
+        // hat
+        ctx.beginPath();
+        ctx.ellipse(0, 100, 112, 22, 0, 0, Math.PI * 2);
+        fs(ctx, "#33407e", 6);
+        ctx.beginPath();
+        ctx.moveTo(-64, 98);
+        ctx.quadraticCurveTo(-30, 40, 40, 2);
+        ctx.quadraticCurveTo(20, 50, 64, 98);
+        ctx.closePath();
+        fs(ctx, "#33407e", 6);
+        ctx.fillStyle = "#e3c25a";
+        ctx.beginPath();
+        ctx.arc(-10, 70, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(16, 48, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      async function makeSample(kind) {
+        const W = 1536,
+          Hh = 1024;
+        const c = CharImport.makeCanvas(W, Hh);
+        const ctx = c.getContext("2d");
+        const white = kind !== "painted";
+        if (white) {
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, W, Hh);
+        }
+        if (kind === "painted") {
+          const nudges = [
+            { dx: 0, dy: 0, hem: 0 },
+            { dx: 5, dy: 3, hem: 6 },
+            { dx: -4, dy: -2, hem: -5 },
+            { dx: 1, dy: 1, hem: 2 },
+          ];
+          [200, 560, 920, 1260].forEach((x, i) =>
+            drawPainted(ctx, x, 980, 800, i, 100 + i * 31, nudges[i]),
+          );
+        } else {
+          const layout = {
+            flat: [
+              [200, 0],
+              [570, 1],
+              [925, 2],
+              [1250, 3],
+            ],
+            touching: [
+              [190, 0],
+              [520, 1],
+              [750, 2],
+              [1220, 3],
+            ],
+            three: [
+              [270, 0],
+              [760, 1],
+              [1230, 3],
+            ],
+          }[kind];
+          for (const [x, p] of layout) drawCartoon(ctx, x, 975, 760, p);
+        }
+        const blob = await new Promise((r) =>
+          c.toBlob(r, white ? "image/jpeg" : "image/png", 0.9),
+        );
+        return blob;
+      }
+      const SAMPLE_NAMES = {
+        flat: "Sample: flat cartoon",
+        painted: "Sample: painted storyteller",
+        touching: "Sample: two poses touch",
+        three: "Sample: three poses",
+      };
+
+      // ---------------------------------------------------------------- canvas helpers
+      function paintGround(ctx, W, H, g) {
+        if (g === "paper") {
+          ctx.fillStyle = "#fbf8ef";
+          ctx.fillRect(0, 0, W, H);
+          return;
+        }
+        if (g === "checks") {
+          const s = 16;
+          for (let y = 0; y < H; y += s)
+            for (let x = 0; x < W; x += s) {
+              ctx.fillStyle = (x / s + y / s) % 2 ? "#d9d9d9" : "#f4f4f4";
+              ctx.fillRect(x, y, s, s);
+            }
+          return;
+        }
+        const sky = ctx.createLinearGradient(0, 0, 0, H * 0.62);
+        sky.addColorStop(0, "#cfe3ee");
+        sky.addColorStop(1, "#eef3e6");
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = "#9aa77e";
+        ctx.fillRect(0, H * 0.6, W, H * 0.06);
+        const gr = ctx.createLinearGradient(0, H * 0.62, 0, H);
+        gr.addColorStop(0, "#8fb36b");
+        gr.addColorStop(1, "#5f8a45");
+        ctx.fillStyle = gr;
+        ctx.fillRect(0, H * 0.64, W, H);
+      }
+      function drawFigure(canvas, frame, g, mirror) {
+        const ctx = canvas.getContext("2d");
+        const W = canvas.width,
+          H = canvas.height;
+        ctx.clearRect(0, 0, W, H);
+        paintGround(ctx, W, H, g);
+        const base = H * 0.95;
+        ctx.fillStyle =
+          g === "world" ? "rgba(20,40,10,0.28)" : "rgba(0,0,0,0.14)";
+        ctx.beginPath();
+        ctx.ellipse(W / 2, base, W * 0.17, H * 0.022, 0, 0, Math.PI * 2);
+        ctx.fill();
+        if (!frame) return;
+        const s = (H * 0.9) / frame.height;
+        ctx.save();
+        if (mirror) {
+          ctx.translate(W, 0);
+          ctx.scale(-1, 1);
+        }
+        ctx.drawImage(
+          frame,
+          W / 2 - (frame.width * s) / 2,
+          base - frame.height * 0.96 * s,
+          frame.width * s,
+          frame.height * s,
+        );
+        ctx.restore();
+      }
+      const PAT = [1, 2, 1, 2, 2, 1, 0, 1, 2, 1, 2, 0, 1, 2, 2, 1];
+      function talkIndex(t) {
+        const p = t % 2800;
+        if (p < 900 || p > 2620) return 0;
+        return PAT[Math.floor((p - 900) / 110) % PAT.length];
+      }
+      function beckonIndex(t) {
+        const p = t % 3200;
+        return p > 1000 && p < 2900 ? 3 : 0;
+      }
+      const anims = [];
+      function anim(canvas, kind, frames) {
+        const a = { canvas, kind, frames, key: "" };
+        anims.push(a);
+        return a;
+      }
+      function loop(t) {
+        for (const a of anims) {
+          if (!a.canvas.isConnected || a.canvas.offsetParent === null) continue;
+          const fr = a.frames();
+          if (!fr) continue;
+          const tt = a.kind === "talk" && slow ? t * 0.3 : t;
+          const idx =
+            a.kind === "talk"
+              ? talkIndex(tt)
+              : a.kind === "beckon"
+                ? beckonIndex(t)
+                : 0;
+          const mirror = idx === 3 && S.mirror;
+          const key = idx + "|" + ground + "|" + version + "|" + mirror;
+          if (key === a.key) continue;
+          a.key = key;
+          drawFigure(a.canvas, fr[idx], a.ground || ground, mirror);
+        }
+        requestAnimationFrame(loop);
+      }
+
+      // ---------------------------------------------------------------- frames to save
+      function steadyFrames() {
+        if (!R) return null;
+        if (!R.steady) R.steady = CharImport.steadyBody(R.frames, R.check);
+        return R.steady;
+      }
+      function chosenFrames() {
+        if (!R) return null;
+        return S.choice === "steady" || (!R.check.jitter && S.steadyAnyway)
+          ? steadyFrames()
+          : R.frames;
+      }
+      function sheetFrom(frames, scale = 1) {
+        const w = frames[0].width * scale,
+          h = frames[0].height * scale;
+        const c = CharImport.makeCanvas(w * 4, h);
+        const ctx = c.getContext("2d");
+        frames.forEach((f, i) => {
+          ctx.save();
+          if (i === 3 && S.mirror && scale === 1) {
+            ctx.translate(w * 4, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(f, 0, 0, w, h);
+          } else ctx.drawImage(f, i * w, 0, w, h);
+          ctx.restore();
+        });
+        return c;
+      }
+      function storeSheet() {
+        try {
+          localStorage.setItem(
+            KEY + ":sheet",
+            sheetFrom(R.frames, 0.5).toDataURL("image/png"),
+          );
+        } catch (e) {
+          /* too big for this browser's storage: the step will ask for the picture again */
+        }
+      }
+      async function restoreSheet() {
+        let url = null;
+        try {
+          url = localStorage.getItem(KEY + ":sheet");
+        } catch (e) {}
+        if (!url) return false;
+        const img = new Image();
+        img.src = url;
+        try {
+          await img.decode();
+        } catch (e) {
+          return false;
+        }
+        const cw = img.width / 4,
+          ch = img.height;
+        const frames = [0, 1, 2, 3].map((i) => {
+          const c = CharImport.makeCanvas(512, 1024);
+          c.getContext("2d").drawImage(img, i * cw, 0, cw, ch, 0, 0, 512, 1024);
+          return c;
+        });
+        R = {
+          frames,
+          check: CharImport.checkFrames(frames),
+          steady: null,
+          name: S.imageName,
+        };
+        version++;
+        return true;
+      }
+
+      // ---------------------------------------------------------------- toasts and greeting
+      function toast(msg, err) {
+        const t = document.createElement("div");
+        t.className = "toast" + (err ? " err" : "");
+        t.textContent = msg;
+        const box = $("#toasts");
+        while (box.children.length >= 1) box.firstElementChild.remove();
+        box.append(t);
+        setTimeout(() => t.remove(), err ? 6500 : 3500);
+      }
+      let greetHtml = "";
+      function greet(html) {
+        greetHtml = html;
+        renderGreet();
+      }
+      function renderGreet() {
+        for (const g of $$("[data-greet]")) {
+          const inPanel = g.closest("[data-panel]");
+          const show = greetHtml && Number(inPanel.dataset.panel) === S.step;
+          g.hidden = !show;
+          if (show) {
+            g.innerHTML =
+              '<span class="sun" aria-hidden="true">&#10003;</span><p>' +
+              greetHtml +
+              '</p><button class="x" type="button" aria-label="Dismiss">&times;</button>';
+            g.querySelector(".x").onclick = () => greet("");
+          }
+        }
+      }
+      function ago(ts) {
+        const m = Math.round((Date.now() - ts) / 60000);
+        return m < 1
+          ? "just now"
+          : m === 1
+            ? "a minute ago"
+            : m < 90
+              ? m + " minutes ago"
+              : Math.round(m / 60) + " hours ago";
+      }
+
+      // ---------------------------------------------------------------- stepper
+      function stepInfo(i) {
+        const d = S.desc.trim();
+        switch (i) {
+          case 0:
+            return d
+              ? {
+                  st: "done",
+                  sub: '"' + (d.length > 34 ? d.slice(0, 32) + "..." : d) + '"',
+                }
+              : { st: "todo", sub: "A few words" };
+          case 1:
+            return S.copiedAt
+              ? { st: "done", sub: "Copied " + ago(S.copiedAt) }
+              : S.maxStep > 1
+                ? {
+                    st: "todo",
+                    sub: S.hints.length
+                      ? "Changed - copy it again"
+                      : "Not copied yet",
+                  }
+                : { st: "todo", sub: "One button" };
+          case 2:
+            return S.maxStep > 2 && (S.copiedAt || R)
+              ? { st: "done", sub: "In your image AI" }
+              : { st: "todo", sub: "In another tab or app" };
+          case 3:
+            return S.failure
+              ? { st: "failed", sub: S.failure.short }
+              : R
+                ? { st: "done", sub: R.name }
+                : { st: "todo", sub: "Choose, paste or drop it" };
+          case 4:
+            return !R
+              ? { st: "todo", sub: "Poses and animation" }
+              : R.check.jitter && !S.choice
+                ? { st: "warn", sub: "Needs your choice" }
+                : {
+                    st: "done",
+                    sub:
+                      S.choice === "steady" || S.steadyAnyway
+                        ? "Steady body on"
+                        : R.check.jitter
+                          ? "As drawn (body jumps)"
+                          : "Looks steady",
+                  };
+          case 5:
+            return S.savedAt
+              ? { st: "done", sub: "Saved" }
+              : { st: "todo", sub: "Give it a name" };
+        }
+      }
+      function reachable(i) {
+        if (i <= 2) return i <= S.maxStep || i === 0;
+        if (i === 3) return S.maxStep >= 1 || true;
+        if (i === 4) return !!R;
+        if (i === 5) return !!R && !(R.check.jitter && !S.choice);
+        return false;
+      }
+      function renderSteps() {
+        const ol = $("#steps");
+        ol.innerHTML = "";
+        STEPS.forEach((s, i) => {
+          const info = stepInfo(i);
+          const li = document.createElement("li");
+          li.dataset.state = info.st;
+          if (i === S.step) li.classList.add("current");
+          const mark =
+            info.st === "done" && i !== S.step
+              ? "&#10003;"
+              : info.st === "failed"
+                ? "!"
+                : info.st === "warn"
+                  ? "!"
+                  : String(i + 1);
+          li.innerHTML = `<button type="button" ${reachable(i) ? "" : "disabled"} aria-current="${i === S.step ? "step" : "false"}" aria-label="Step ${i + 1}: ${esc(s.label)}. ${esc(info.sub)}"><span class="dot">${mark}</span><span class="txt"><span class="lbl">${esc(s.label)}</span><span class="sub">${esc(info.sub)}</span></span></button>`;
+          li.querySelector("button").onclick = () => go(i);
+          ol.append(li);
+        });
+        const cur = stepInfo(S.step);
+        $("#where").innerHTML =
+          `Step ${S.step + 1} of 6: <b>${esc(STEPS[S.step].label)}</b>` +
+          (cur.st === "failed"
+            ? ` <span class="fail">- ${esc(cur.sub)}</span>`
+            : cur.st === "warn"
+              ? ` <span class="fail" style="color: var(--warn)">- ${esc(cur.sub)}</span>`
+              : "");
+      }
+      // in phone landscape the stepper moves into the header row
+      const mqLand = matchMedia("(max-height: 520px)");
+      function placeRail() {
+        (mqLand.matches ? $("#railSlotLandscape") : $("#wiz")).append(
+          $("#rail"),
+        );
+        if (!mqLand.matches) $("#wiz").insertBefore($("#rail"), $("#where"));
+      }
+      mqLand.addEventListener("change", placeRail);
+
+      // ---------------------------------------------------------------- navigation
+      function go(i) {
+        if (!reachable(i)) return;
+        S.step = i;
+        S.maxStep = Math.max(S.maxStep, Math.min(i, 3));
+        persist();
+        render();
+        $("#body").scrollTop = 0;
+      }
+      function render() {
+        renderSteps();
+        for (const p of $$("[data-panel]"))
+          p.hidden = Number(p.dataset.panel) !== S.step;
+        renderGreet();
+        const back = $("#backBtn");
+        const next = $("#nextBtn");
+        back.hidden = S.step === 0;
+        back.textContent = "Back";
+        next.disabled = false;
+        next.className = "btn primary";
+        if (S.step === 0) next.textContent = "Next: get the prompt";
+        if (S.step === 1) {
+          $("#prompt").innerHTML = promptHtml();
+          renderHints();
+          renderCopy();
+          next.textContent = "Next: make the picture";
+        }
+        if (S.step === 2) next.textContent = "I have the picture";
+        if (S.step === 3) {
+          next.textContent = busy
+            ? "Cutting the picture..."
+            : R && !S.failure
+              ? "Next: check your guide"
+              : S.failure
+                ? "Choose another picture"
+                : "Choose the picture";
+          next.disabled = busy;
+          $("#pickBtn").disabled = busy;
+          $("#pickBtn").textContent = busy
+            ? "Cutting the picture..."
+            : S.failure
+              ? "Choose another picture"
+              : "Choose the picture";
+        }
+        if (S.step === 4) {
+          renderCheck();
+          next.textContent = "Next: name and save";
+        }
+        if (S.step === 5) {
+          renderSave();
+          next.textContent = S.savedAt ? "Close" : "Save the guide";
+        }
+        renderEditorCard();
+      }
+      $("#backBtn").onclick = () => go(Math.max(0, S.step - 1));
+      $("#nextBtn").onclick = () => {
+        if (S.step === 0) {
+          if (S.desc.trim().length < 3) {
+            $("#descMsg").hidden = false;
+            $("#desc").focus();
+            return;
+          }
+          S.maxStep = Math.max(S.maxStep, 1);
+          go(1);
+        } else if (S.step === 1) {
+          S.maxStep = Math.max(S.maxStep, 2);
+          go(2);
+        } else if (S.step === 2) {
+          S.maxStep = Math.max(S.maxStep, 3);
+          go(3);
+        } else if (S.step === 3) {
+          if (R && !S.failure) go(4);
+          else $("#file").click();
+        } else if (S.step === 4) {
+          if (R.check.jitter && !S.choice) {
+            const m = $("#choiceMsg");
+            m.hidden = false;
+            const box = $("#jitterBox .notice");
+            box.classList.remove("shake");
+            void box.offsetWidth;
+            box.classList.add("shake");
+            box.scrollIntoView({ behavior: "smooth", block: "center" });
+            return;
+          }
+          go(5);
+        } else if (S.step === 5) {
+          if (S.savedAt) closeWiz();
+          else save();
+        }
+      };
+      for (const b of $$("[data-go]"))
+        b.onclick = () => go(Number(b.dataset.go));
+
+      // ---------------------------------------------------------------- step 1
+      const IDEAS = [
+        "a friendly squirrel forest ranger with a green hat, flat cartoon style",
+        "an old lighthouse keeper in a yellow raincoat, storybook watercolour style",
+        "a small cheerful dragon who loves old books, flat cartoon style",
+        "a medieval market woman with a basket of apples, warm painted style",
+      ];
+      for (const t of IDEAS) {
+        const b = document.createElement("button");
+        b.className = "chip";
+        b.type = "button";
+        b.textContent = t;
+        b.onclick = () => {
+          $("#desc").value = t;
+          onDesc();
+        };
+        $("#ideas").append(b);
+      }
+      const POSE_LABELS = [
+        ["Resting", "mouth closed"],
+        ["Talking", "mouth half open"],
+        ["Talking", "mouth wide open"],
+        ["Pointing", "the way on"],
+      ];
+      POSE_LABELS.forEach(([a, b], i) => {
+        const f = document.createElement("div");
+        f.className = "pose";
+        const c = document.createElement("canvas");
+        c.width = 180;
+        c.height = 240;
+        const ctx = c.getContext("2d");
+        drawCartoon(ctx, i === 3 ? 70 : 90, 232, 200, i);
+        f.append(c);
+        f.insertAdjacentHTML("beforeend", `<b>${i + 1}. ${a}</b>${b}`);
+        $("#poseExplainer").append(f);
+      });
+      function onDesc() {
+        const v = $("#desc").value;
+        if (v !== S.desc) {
+          S.desc = v;
+          if (S.copiedAt) S.copiedAt = 0;
+        }
+        $("#descMsg").hidden = true;
+        persist();
+        renderSteps();
+      }
+      $("#desc").addEventListener("input", onDesc);
+
+      // ---------------------------------------------------------------- step 2
+      function renderHints() {
+        $("#hintsBox").hidden = !S.hints.length;
+        $("#hintsList").innerHTML = "";
+        S.hints.forEach((h, i) => {
+          const li = document.createElement("li");
+          li.innerHTML = `<span>${esc(h)}</span>`;
+          const b = document.createElement("button");
+          b.className = "link small";
+          b.type = "button";
+          b.textContent = "Remove";
+          b.onclick = () => {
+            S.hints.splice(i, 1);
+            S.copiedAt = 0;
+            persist();
+            render();
+          };
+          li.append(b);
+          $("#hintsList").append(li);
+        });
+      }
+      function renderCopy() {
+        const b = $("#copyBtn");
+        const m = $("#copyMsg");
+        if (S.copiedAt) {
+          b.textContent = "✓ Copied - copy again";
+          b.classList.add("done");
+          m.className = "copy-msg ok";
+          m.textContent =
+            "Copied " + ago(S.copiedAt) + ". Now paste it into your image AI.";
+        } else {
+          b.textContent = "Copy the prompt";
+          b.classList.remove("done");
+          if (!m.classList.contains("bad")) {
+            m.className = "copy-msg";
+            m.textContent = S.hints.length
+              ? "The text changed since your last copy. Copy it again."
+              : "";
+          }
+        }
+      }
+      $("#copyBtn").onclick = async () => {
+        const b = $("#copyBtn");
+        const m = $("#copyMsg");
+        const text = promptText();
+        b.disabled = true;
+        b.textContent = "Copying...";
+        let ok = false;
+        try {
+          await navigator.clipboard.writeText(text);
+          ok = true;
+        } catch (e) {
+          const sel = getSelection();
+          const r = document.createRange();
+          r.selectNodeContents($("#prompt"));
+          sel.removeAllRanges();
+          sel.addRange(r);
+          try {
+            ok = document.execCommand("copy");
+          } catch (e2) {
+            ok = false;
+          }
+        }
+        b.disabled = false;
+        if (ok) {
+          S.copiedAt = Date.now();
+          persist();
+          m.classList.remove("bad");
+          toast(
+            "Prompt copied (" +
+              text.length.toLocaleString("en") +
+              " characters)",
+          );
+        } else {
+          S.copiedAt = 0;
+          m.className = "copy-msg bad";
+          m.textContent =
+            "Your browser did not let this page copy. The text is now selected: press Ctrl+C, or on a phone tap Copy.";
+          toast(
+            "Could not copy automatically - the text is selected for you",
+            true,
+          );
+        }
+        renderCopy();
+        renderSteps();
+      };
+      if (navigator.share && matchMedia("(pointer: coarse)").matches)
+        $("#shareBtn").hidden = false;
+      $("#shareBtn").onclick = async () => {
+        try {
+          await navigator.share({ text: promptText() });
+          S.copiedAt = Date.now();
+          persist();
+          render();
+          toast("Prompt sent");
+        } catch (e) {
+          if (e.name !== "AbortError")
+            toast("Sending did not work. Use Copy instead.", true);
+        }
+      };
+
+      // ---------------------------------------------------------------- the import
+      function renderPhases(states) {
+        const ol = $("#phases");
+        ol.hidden = false;
+        ol.innerHTML = "";
+        for (const p of CharImport.PHASES) {
+          const s = states[p.id] || { s: "todo" };
+          const li = document.createElement("li");
+          li.dataset.s = s.s;
+          li.innerHTML = `<span class="m">${s.s === "done" ? "&#10003;" : s.s === "failed" ? "!" : ""}</span><span>${esc(p.label)}${s.note ? `<span class="note">${esc(s.note)}</span>` : ""}</span>`;
+          ol.append(li);
+        }
+      }
+      async function runImport(blob, name) {
+        if (busy) return;
+        busy = true;
+        S.failure = null;
+        failDetail = null;
+        R = null;
+        S.choice = null;
+        S.mirror = false;
+        S.steadyAnyway = false;
+        S.savedAt = 0;
+        $("#errcard").hidden = true;
+        greet("");
+        if (S.step !== 3) S.step = 3;
+        S.maxStep = Math.max(S.maxStep, 3);
+        const states = {};
+        renderPhases(states);
+        render();
+        try {
+          const r = await CharImport.analyze(blob, {}, (id, s, note) => {
+            states[id] = { s, note };
+            renderPhases(states);
+          });
+          R = { frames: r.frames, check: r.check, steady: null, name };
+          version++;
+          S.imageName = name;
+          persist();
+          storeSheet();
+          toast('Four poses found in "' + name + '"');
+          busy = false;
+          await sleep(500);
+          go(4);
+          if (R.check.jitter)
+            setTimeout(
+              () => toast("One choice needed: the body jumps while talking"),
+              300,
+            );
+        } catch (e) {
+          const known = e instanceof CharImport.ImportError;
+          S.failure = {
+            phase: known ? e.phase : "check",
+            code: known ? e.code : "unknown",
+            message: e.message,
+            short: known ? e.message : "Something went wrong",
+          };
+          if (!known) {
+            states.check = { s: "failed", note: e.message };
+            renderPhases(states);
+            console.error(e);
+          }
+          failDetail = known ? e.detail : null;
+          S.imageName = name;
+          persist();
+          renderError();
+          requestAnimationFrame(() => $("#errcard").scrollIntoView({ block: "start", behavior: "smooth" }));
+          toast("Step 4 did not work: " + S.failure.short, true);
+        } finally {
+          busy = false;
+          render();
+        }
+      }
+      const EXPLAIN = {
+        joined: (d) =>
+          `The image AI drew two poses so close together that they touch (marked in red). This page needs a little empty space between all four poses to tell them apart.`,
+        missing: (d) =>
+          `The image AI drew only ${d.runs.length} figure${d.runs.length === 1 ? "" : "s"}. Your guide needs exactly four: resting, two talking, and pointing.`,
+        extra: (d) =>
+          `We found ${d.runs.length} separate shapes instead of four. Often that is text, a label, a shadow or a small extra drawing.`,
+        checkerboard: () =>
+          "The image AI painted a grey and white checkerboard to look like transparency. It is part of the picture, so it cannot be cut away.",
+        busy: () =>
+          "The background is not one plain colour (scenery, a floor or a texture), so the figures cannot be cut out cleanly.",
+        empty: () => "We could not find any figure in this picture.",
+        "not-image": () =>
+          "This file is not a picture. Choose a PNG, JPEG or WebP file. On a phone, a saved picture is usually in Photos or Downloads.",
+        decode: () =>
+          "This picture could not be opened. Choose a PNG, JPEG or WebP file. If you took a screenshot, that works too.",
+        "too-big": () =>
+          "This picture is very large. Ask the image AI for a smaller one, or choose a smaller copy (about 1536 x 1024 pixels is plenty).",
+        "too-small": () =>
+          "This picture is too small to hold four clear poses. Ask the image AI for about 1536 x 1024 pixels.",
+        unknown: () =>
+          "Something unexpected went wrong while cutting the picture. Try again, or choose another picture.",
+      };
+      function renderError() {
+        const f = S.failure;
+        const card = $("#errcard");
+        if (!f) {
+          card.hidden = true;
+          return;
+        }
+        const phase = CharImport.PHASES.find((p) => p.id === f.phase);
+        const hint = HINTS[f.code];
+        card.hidden = false;
+        card.innerHTML = `<h3>This picture did not work - and here is what to do</h3>
+          <p class="where-failed">The problem is in <b>${esc(phase ? phase.label.toLowerCase() : "cutting the picture")}</b>: ${esc(f.message)}</p>
+          <p>${esc((EXPLAIN[f.code] || EXPLAIN.unknown)(failDetail || { runs: [] }))}</p>
+          ${failDetail && failDetail.runs ? '<canvas id="errOverlay"></canvas>' : ""}
+          ${hint ? `<div class="hint-text"><b>Ask the image AI again with this hint added to the prompt:</b><br>"${esc(hint)}"</div>` : ""}
+          <div class="btns">
+            ${hint ? '<button class="btn primary" type="button" id="errRetry">Add the hint and copy the prompt again</button>' : ""}
+            <button class="btn" type="button" id="errPick">Choose another picture</button>
+          </div>`;
+        if (hint) $("#errRetry").onclick = () => retryWithHint(f.code);
+        $("#errPick").onclick = () => $("#file").click();
+        if (failDetail && failDetail.runs && failDetail.img)
+          drawOverlay($("#errOverlay"), failDetail);
+      }
+      function drawOverlay(canvas, d) {
+        const k = Math.min(1, 900 / d.w);
+        canvas.width = Math.round(d.w * k);
+        canvas.height = Math.round(d.h * k);
+        const tmp = CharImport.makeCanvas(d.w, d.h);
+        tmp.getContext("2d").putImageData(d.img, 0, 0);
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
+        d.runs.forEach((r, i) => {
+          const bad = (d.joined || []).includes(i);
+          ctx.strokeStyle = bad ? "#d0331c" : "#3d6b3a";
+          ctx.lineWidth = bad ? 6 : 4;
+          ctx.setLineDash(bad ? [] : [12, 8]);
+          ctx.strokeRect(
+            r.x0 * k - 4,
+            r.y0 * k - 4,
+            (r.x1 - r.x0) * k + 8,
+            (r.y1 - r.y0) * k + 8,
+          );
+          ctx.setLineDash([]);
+          ctx.fillStyle = bad ? "#d0331c" : "#3d6b3a";
+          ctx.font = "bold 28px system-ui";
+          const label = bad ? "touching" : String(i + 1);
+          const tw = ctx.measureText(label).width + 16;
+          ctx.fillRect(r.x0 * k - 4, r.y0 * k - 40, tw, 36);
+          ctx.fillStyle = "#fff";
+          ctx.fillText(label, r.x0 * k + 4, r.y0 * k - 12);
+        });
+      }
+      function retryWithHint(code) {
+        const h = HINTS[code];
+        if (h && !S.hints.includes(h)) S.hints.push(h);
+        S.copiedAt = 0;
+        S.failure = null;
+        failDetail = null;
+        $("#errcard").hidden = true;
+        $("#phases").hidden = true;
+        R = null;
+        S.choice = null;
+        S.savedAt = 0;
+        persist();
+        go(1);
+        toast(
+          "Hint added to the prompt. Copy it and ask your image AI for a new picture.",
+        );
+      }
+      $("#file").addEventListener("change", () => {
+        const f = $("#file").files[0];
+        $("#file").value = "";
+        if (f) runImport(f, f.name);
+      });
+      $("#pickBtn").onclick = () => $("#file").click();
+      for (const b of $$("[data-sample]"))
+        b.onclick = async () => {
+          const k = b.dataset.sample;
+          const blob = await makeSample(k);
+          runImport(blob, SAMPLE_NAMES[k]);
+        };
+      const drop = $("#drop");
+      if (matchMedia("(pointer: fine)").matches)
+        $("#dropHint").textContent =
+          "or paste it here with Ctrl+V, or drop the file on this box";
+      ["dragenter", "dragover"].forEach((ev) =>
+        $("#wiz").addEventListener(ev, (e) => {
+          e.preventDefault();
+          if (S.step === 3) drop.classList.add("over");
+        }),
+      );
+      ["dragleave", "drop"].forEach((ev) =>
+        $("#wiz").addEventListener(ev, (e) => {
+          e.preventDefault();
+          drop.classList.remove("over");
+        }),
+      );
+      $("#wiz").addEventListener("drop", (e) => {
+        const f = [...(e.dataTransfer?.files || [])][0];
+        if (f) runImport(f, f.name);
+        else
+          toast(
+            "Nothing to use was dropped. Drop the picture file itself.",
+            true,
+          );
+      });
+      document.addEventListener("paste", (e) => {
+        if (e.target.closest && e.target.closest("textarea, input")) return;
+        const f = [...(e.clipboardData?.files || [])].find((x) =>
+          x.type.startsWith("image/"),
+        );
+        if (f) {
+          e.preventDefault();
+          openWiz();
+          runImport(f, "Pasted picture");
+        } else if (S.step === 3)
+          toast(
+            "That was text, not a picture. In your image AI, right-click the picture and choose Copy image, or save it and choose the file.",
+            true,
+          );
+      });
+
+      // ---------------------------------------------------------------- step 5
+      let checkVersion = -1;
+      const pct = (x) => Math.round(x * 100);
+      function renderCheck() {
+        if (!R) return;
+        const c = R.check;
+        const needs = c.jitter && !S.choice;
+        $("#summary").innerHTML =
+          `<span class="pill">&#10003; 4 poses found</span><span class="pill">&#10003; Background removed</span><span class="pill">&#10003; Lined up on one ground line</span>` +
+          (c.jitter
+            ? `<span class="pill warn">${needs ? "! " : ""}The body jumps while talking${S.choice === "steady" ? " - steadied" : ""}</span>`
+            : '<span class="pill">&#10003; The body stays still while talking</span>');
+        if (checkVersion !== version) {
+          buildCheck();
+          checkVersion = version;
+        }
+        if (c.jitter) {
+          for (const r of $$('input[name="steady"]'))
+            r.checked = r.value === S.choice;
+          $("#choiceMsg").hidden = true;
+        }
+        renderFrameStrip();
+      }
+      function buildCheck() {
+        const c = R.check;
+        const box = $("#jitterBox");
+        if (c.jitter) {
+          box.innerHTML = `<div class="notice warn">
+            <h3>Your guide's body jumps when it talks - please choose a version</h3>
+            <p>The image AI redrew the whole figure for each mouth, so the clothes and outline move between the talking poses. Besides the mouth, <b>${pct(c.bodyDiff)} in every 100</b> dots of the body change (a steady figure changes fewer than 5). Watch the two versions:</p>
+            <div class="choices">
+              <label class="choice"><input type="radio" name="steady" value="drawn" /><canvas id="pvDrawn" width="240" height="320"></canvas><span class="badge bad">Body jumps</span><b>As drawn</b><span class="why">Exactly the AI's picture. Visitors see the body flicker while it talks.</span></label>
+              <label class="choice"><input type="radio" name="steady" value="steady" /><canvas id="pvSteady" width="240" height="320"></canvas><span class="badge rec">Recommended</span><b>Steady body</b><span class="why">Only the head moves. We keep the body of pose 1 and take just the head from the talking poses.</span></label>
+              <div class="movemap"><canvas id="moveMap" width="192" height="384"></canvas><span><b>What moves, besides the mouth</b> (red). Above the dashed line is the head: the steady body keeps that part from the talking poses, so the mouth still moves.</span></div>
+            </div>
+            <div class="seg-row"><label class="check-line"><input type="checkbox" id="slowBox" ${slow ? "checked" : ""}/> Play slowly, to see the difference</label></div>
+            <p class="choice-msg" id="choiceMsg" hidden>Choose one of the two versions above first, so nothing jumps by surprise.</p>
+          </div>`;
+          for (const r of $$('input[name="steady"]'))
+            r.onchange = () => {
+              S.choice = r.value;
+              persist();
+              render();
+              toast(
+                r.value === "steady"
+                  ? "Steady body chosen"
+                  : "Kept as drawn - the body will jump while talking",
+              );
+            };
+          $("#slowBox").onchange = (e) => {
+            slow = e.target.checked;
+          };
+          anim($("#pvDrawn"), "talk", () => R && R.frames);
+          anim($("#pvSteady"), "talk", () => R && steadyFrames());
+          drawMoveMap($("#moveMap"));
+        } else {
+          box.innerHTML = `<div class="notice ok"><h3>Your guide stands still while it talks</h3>
+            <p>Only the mouth changes. Elsewhere ${pct(c.bodyDiff) < 1 ? "less than 1" : pct(c.bodyDiff)} in every 100 dots of the body change (fewer than 5 looks steady).</p>
+            <label class="check-line"><input type="checkbox" id="steadyAnyway" ${S.steadyAnyway ? "checked" : ""}/> Use the steady body anyway (keeps the body of pose 1)</label></div>`;
+          $("#steadyAnyway").onchange = (e) => {
+            S.steadyAnyway = e.target.checked;
+            persist();
+            version++;
+            checkVersion = version;
+            render();
+          };
+        }
+        // warnings with their own fixes
+        const wb = $("#warnBox");
+        wb.innerHTML = "";
+        const W = {
+          mouth:
+            "The mouth hardly changes between the poses, so the talking may be hard to see.",
+          "beckon-left":
+            "The pointing arm seems to point to the left. Your guide should point to the right; the app turns it toward the next station.",
+          "beckon-same":
+            "The pointing pose looks almost like the resting pose.",
+          sizes: "One pose is drawn smaller than the others.",
+        };
+        for (const w of c.warnings) {
+          const d = document.createElement("div");
+          d.className = "warnline";
+          d.innerHTML = `<span>${esc(W[w])}</span>`;
+          if (w === "beckon-left") {
+            const t = document.createElement("label");
+            t.className = "check-line";
+            t.innerHTML = `<input type="checkbox" ${S.mirror ? "checked" : ""}/> Turn the pointing pose around`;
+            t.querySelector("input").onchange = (e) => {
+              S.mirror = e.target.checked;
+              persist();
+            };
+            d.append(t);
+          }
+          const b = document.createElement("button");
+          b.className = "btn small";
+          b.type = "button";
+          b.textContent = "Ask again with a hint";
+          b.onclick = () => retryWithHint(w);
+          d.append(b);
+          wb.append(d);
+        }
+        const more = [
+          ["The figure has holes or missing parts", "holes"],
+          ["There is a white edge around the figure", "halo"],
+          ["A pose is cut off at the edge", "cut"],
+          ["The talking poses differ in more than the mouth", "jitter"],
+        ];
+        $("#moreList").innerHTML = "";
+        for (const [label, code] of more) {
+          const li = document.createElement("li");
+          li.innerHTML = `<span>${esc(label)}</span>`;
+          const b = document.createElement("button");
+          b.className = "btn small";
+          b.type = "button";
+          b.textContent = "Add a hint and ask again";
+          b.onclick = () => retryWithHint(code);
+          li.append(b);
+          $("#moreList").append(li);
+        }
+        const li = document.createElement("li");
+        li.innerHTML = "<span>It is not the guide I described</span>";
+        const b = document.createElement("button");
+        b.className = "btn small";
+        b.type = "button";
+        b.textContent = "Change the description";
+        b.onclick = () => {
+          R = null;
+          S.choice = null;
+          persist();
+          go(0);
+        };
+        li.append(b);
+        $("#moreList").append(li);
+        const li2 = document.createElement("li");
+        li2.innerHTML = "<span>I have a better picture</span>";
+        const b2 = document.createElement("button");
+        b2.className = "btn small";
+        b2.type = "button";
+        b2.textContent = "Choose another picture";
+        b2.onclick = () => {
+          go(3);
+          $("#file").click();
+        };
+        li2.append(b2);
+        $("#moreList").append(li2);
+      }
+      function drawMoveMap(canvas) {
+        const W = canvas.width,
+          H = canvas.height;
+        const ctx = canvas.getContext("2d");
+        const get = (f) => {
+          const c = CharImport.makeCanvas(W, H);
+          c.getContext("2d").drawImage(f, 0, 0, W, H);
+          return c.getContext("2d").getImageData(0, 0, W, H);
+        };
+        const a = get(R.frames[0]);
+        const b = get(R.frames[2]);
+        const out = ctx.createImageData(W, H);
+        const k = W / R.frames[0].width;
+        const band = R.check.bandEnd * k;
+        for (let i = 0; i < W * H; i++) {
+          const p = i * 4;
+          const y = Math.floor(i / W);
+          const aa = a.data[p + 3] >= 128,
+            bb = b.data[p + 3] >= 128;
+          if (!aa && !bb) continue;
+          const diff =
+            aa !== bb ||
+            Math.max(
+              Math.abs(a.data[p] - b.data[p]),
+              Math.abs(a.data[p + 1] - b.data[p + 1]),
+              Math.abs(a.data[p + 2] - b.data[p + 2]),
+            ) > 48;
+          const red = diff && y > band;
+          out.data[p] = red ? 214 : 200;
+          out.data[p + 1] = red ? 40 : 196;
+          out.data[p + 2] = red ? 30 : 186;
+          out.data[p + 3] = 255;
+        }
+        ctx.putImageData(out, 0, 0);
+        ctx.strokeStyle = "#2a2824";
+        ctx.setLineDash([6, 4]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, band);
+        ctx.lineTo(W, band);
+        ctx.stroke();
+      }
+      function renderFrameStrip() {
+        const fr = chosenFrames();
+        const strip = $("#framesStrip");
+        strip.innerHTML = "";
+        ["1. Resting", "2. Talking", "3. Talking wide", "4. Pointing"].forEach(
+          (l, i) => {
+            const f = document.createElement("figure");
+            const c = document.createElement("canvas");
+            c.width = 128;
+            c.height = 256;
+            drawFigure(c, fr[i], "checks", i === 3 && S.mirror);
+            f.append(c);
+            f.insertAdjacentHTML("beforeend", l);
+            strip.append(f);
+          },
+        );
+      }
+      for (const b of $$("#groundSeg button"))
+        b.onclick = () => {
+          ground = b.dataset.ground;
+          for (const x of $$("#groundSeg button"))
+            x.setAttribute("aria-pressed", String(x === b));
+        };
+
+      // ---------------------------------------------------------------- step 6
+      function renderSave() {
+        if (!R) return;
+        $("#guideName").value = S.name;
+        const steady = S.choice === "steady" || S.steadyAnyway;
+        $("#facts").innerHTML =
+          `<li><b>4 poses</b>: resting, two talking, pointing</li>
+          <li><b>${steady ? "Steady body: on" : R.check.jitter ? "As drawn: the body jumps while talking" : "Body stands still"}</b>${R.check.jitter ? ' <button class="link small" type="button" data-go-check>change</button>' : ""}</li>
+          <li>From: ${esc(R.name)}</li>
+          <li>Saved as one picture of 4 x 512 x 1024 pixels with a transparent background</li>`;
+        const gc = $("[data-go-check]");
+        if (gc) gc.onclick = () => go(4);
+        const sb = $("#savedBox");
+        if (S.savedAt) {
+          sb.hidden = false;
+          sb.innerHTML = `<h3>Saved. ${esc(S.name || "Your guide")} is your tour's guide now.</h3><p>It will stand at your stations, talk when visitors listen, and point the way to the next station. (${S.savedKb} KB)</p><p class="small">You can change it any time from the tour settings.</p>`;
+        } else sb.hidden = true;
+      }
+      $("#guideName").addEventListener("input", (e) => {
+        S.name = e.target.value;
+        persist();
+      });
+      async function save() {
+        const btn = $("#nextBtn");
+        btn.disabled = true;
+        btn.textContent = "Saving...";
+        try {
+          const sheet = sheetFrom(chosenFrames());
+          const blob = await new Promise((r) => sheet.toBlob(r, "image/png"));
+          if (!blob) throw new Error("the picture could not be written");
+          await sleep(500); // stands in for the write into the tour
+          S.savedAt = Date.now();
+          S.savedKb = Math.round(blob.size / 1024);
+          persist();
+          toast("Saved: " + (S.name || "your guide"));
+        } catch (e) {
+          toast(
+            "Saving did not work: " +
+              e.message +
+              ". Your guide is still here - try again.",
+            true,
+          );
+        } finally {
+          render();
+        }
+      }
+
+      // ---------------------------------------------------------------- open, close, come back
+      function renderEditorCard() {
+        $("#guideThumb").hidden = !S.savedAt;
+        const card = $("#guideCard");
+        const btn = $("#openWiz");
+        $("#edMode").textContent = matchMedia("(max-width: 899px)").matches
+          ? "Creator mode"
+          : "Tour editor";
+        if (S.savedAt) {
+          card.classList.add("has");
+          $("#guideTitle").textContent = S.name || "Your guide";
+          $("#guideText").textContent =
+            "Your tour guide. It stands at your stations, talks and points the way.";
+          btn.textContent = "Change the guide";
+          btn.className = "btn";
+        } else if (S.desc || S.step > 0) {
+          card.classList.remove("has");
+          $("#guideTitle").textContent = "Guide character - in progress";
+          $("#guideText").textContent =
+            "You stopped at step " +
+            (S.step + 1) +
+            " of 6: " +
+            STEPS[S.step].label.toLowerCase() +
+            ".";
+          btn.textContent = "Continue where you left off";
+          btn.className = "btn primary";
+        } else {
+          card.classList.remove("has");
+          btn.textContent = "Make a guide with an image AI";
+          btn.className = "btn primary";
+        }
+      }
+      function openWiz() {
+        S.open = true;
+        persist();
+        $("#wiz").hidden = false;
+        $("#veil").hidden = false;
+        render();
+      }
+      function closeWiz() {
+        S.open = false;
+        persist();
+        $("#wiz").hidden = true;
+        $("#veil").hidden = true;
+        renderEditorCard();
+      }
+      $("#openWiz").onclick = () => {
+        if (S.savedAt) {
+          S.step = 4;
+          S.savedAt = 0;
+        }
+        openWiz();
+      };
+      $("#closeWiz").onclick = () => {
+        closeWiz();
+        toast("Closed. Your progress is kept.");
+      };
+      $("#restart").onclick = () => {
+        if (
+          !confirm(
+            "Start over? Your description, hints and picture on this page are cleared.",
+          )
+        )
+          return;
+        S = fresh();
+        R = null;
+        failDetail = null;
+        greet("");
+        try {
+          localStorage.removeItem(KEY);
+          localStorage.removeItem(KEY + ":sheet");
+        } catch (e) {}
+        $("#desc").value = "";
+        $("#phases").hidden = true;
+        $("#errcard").hidden = true;
+        render();
+      };
+      // the author leaves for the image AI and comes back: land them on "bring the picture back"
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+          S.leftAt = Date.now();
+          persist();
+          return;
+        }
+        const away = Date.now() - (S.leftAt || Date.now());
+        if (
+          away > 1500 &&
+          ((S.step === 1 && S.copiedAt) || S.step === 2) &&
+          !busy
+        ) {
+          openWiz();
+          S.maxStep = Math.max(S.maxStep, 3);
+          go(3);
+          greet(
+            "<b>Welcome back.</b> Did your image AI make the picture? Choose it below" +
+              (matchMedia("(pointer: fine)").matches
+                ? ", or paste it here with Ctrl+V"
+                : "") +
+              '. <button class="link" type="button" onclick="go(2)">Not yet? See how to make it</button>',
+          );
+        }
+      });
+
+      // ---------------------------------------------------------------- start
+      anim($("#pvTalk"), "talk", () => chosenFrames());
+      anim($("#pvBeckon"), "beckon", () => chosenFrames());
+      anim($("#pvSave"), "talk", () => chosenFrames());
+      anim($("#guideThumb"), "talk", () =>
+        S.savedAt ? chosenFrames() : null,
+      ).ground = "paper";
+      requestAnimationFrame(loop);
+      (async () => {
+        $("#desc").value = S.desc;
+        placeRail();
+        const hadState = S.step > 0 || S.desc;
+        if (S.step >= 4 || S.savedAt) {
+          const ok = await restoreSheet();
+          if (!ok) {
+            S.step = 3;
+            S.choice = null;
+            S.savedAt = 0;
+          }
+        }
+        if (S.failure && S.step === 3) {
+          S.failure = null;
+        } // the failed picture itself is not kept; ask again calmly
+        if (S.open === false) {
+          $("#wiz").hidden = true;
+          $("#veil").hidden = true;
+        } else openWiz();
+        if (hadState) {
+          if ((S.step === 1 && S.copiedAt) || S.step === 2) {
+            S.maxStep = Math.max(S.maxStep, 3);
+            S.step = 3;
+            greet(
+              `<b>Welcome back.</b> You copied the prompt ${ago(S.copiedAt || S.leftAt || Date.now())}. When your image AI has made the picture, choose it below. <button class="link" type="button" onclick="go(2)">Not ready? See how to make it</button>`,
+            );
+          } else if (S.step === 3)
+            greet(
+              "<b>Welcome back.</b> You were about to bring in the picture from your image AI. Choose it below whenever you are ready.",
+            );
+          else if (S.step >= 4)
+            greet(
+              "<b>Welcome back.</b> Everything is as you left it: " +
+                STEPS[S.step].label.toLowerCase() +
+                ".",
+            );
+          else greet("<b>Welcome back.</b> Your description is still here.");
+        }
+        render();
+        persist();
+      })();
+      window.go = go;
+    </script>
+  </body>
+</html>

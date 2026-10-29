@@ -89,7 +89,28 @@ export interface AnchorPlacement {
     readonly halo: { readonly w: number; readonly h: number };
     readonly scan: { readonly w: number; readonly h: number };
     readonly poster: { readonly w: number; readonly h: number };
+    /** The scan frame's top edge on the screen, once it has closed in. */
+    readonly frameTop: number;
   } | null;
+}
+
+/** The gap kept between the found-tour chip and the scan frame (px). */
+const CHIP_GAP_PX = 3;
+
+/**
+ * How far the found-tour chip rises from its place (px) so that its
+ * bottom stays `CHIP_GAP_PX` above the scan frame's top: 0 where it
+ * already clears, never so far that it leaves the screen (2 px kept), and
+ * 0 for input that is not finite (a layout not read yet).
+ */
+export function chipLift(
+  chipTopPx: number,
+  chipHeightPx: number,
+  frameTopPx: number,
+): number {
+  if (![chipTopPx, chipHeightPx, frameTopPx].every(Number.isFinite)) return 0;
+  const over = chipTopPx + chipHeightPx + CHIP_GAP_PX - frameTopPx;
+  return Math.max(0, Math.min(over, chipTopPx - 2));
 }
 
 export function anchorPlacement(
@@ -119,6 +140,8 @@ export function anchorPlacement(
       halo: { w: bw + 10, h: bh + 10 },
       scan: { w: bw + 16, h: bh + 16 },
       poster: { w: bw, h: (bh * 70) / 46 },
+      // the halo 5 px out, the scan frame 3 px further
+      frameTop: y0 - 8,
     };
   }
   return { at, pinMarginTop: -(A.ground[1] - pin[1]) - 4, board };
@@ -281,6 +304,8 @@ export function createPhoneView(dom: FilmDom): PhoneView {
     polaroid: dom.polaroid,
   };
   const memo = new Map<HTMLElement, Record<string, string>>();
+  /** How far the chip is lifted now (px). */
+  let chipLifted = 0;
   const css = (el: HTMLElement, prop: string, v: string) => {
     const k = memo.get(el) ?? {};
     if (k[prop] === v) return;
@@ -364,6 +389,11 @@ export function createPhoneView(dom: FilmDom): PhoneView {
         css(E.scan, "top", "-3px");
         css(E.posterF, "width", `${pl.board.poster.w.toFixed(1)}px`);
         css(E.posterF, "height", `${pl.board.poster.h.toFixed(1)}px`);
+        // The chip at its place (its lift taken back out), against the
+        // frame: on a small screen it rises clear of the frame.
+        const top = E.chip.offsetTop + chipLifted;
+        chipLifted = chipLift(top, E.chip.offsetHeight, pl.board.frameTop);
+        css(E.chip, "--lf-chip-lift", `${chipLifted.toFixed(1)}px`);
       }
     },
   };

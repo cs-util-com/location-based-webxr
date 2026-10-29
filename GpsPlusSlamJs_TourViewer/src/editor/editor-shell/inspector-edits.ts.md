@@ -60,6 +60,9 @@ null`:
     nothing left: none.
   - Null while the ground under any of them has not loaded: the shell
     waits (`ground-wait.ts`).
+- A model's `note-title:<i>`, `note-text:<i>`, `section-name:<i>` and
+  `anim-name` fields are `{ kind: "model", id, edit }` (`model-edits.ts`);
+  a clip's name keeps its autoplay, on for a first clip.
 
 ## Invariants & assumptions
 

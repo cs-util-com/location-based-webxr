@@ -227,6 +227,8 @@ describe("buildInspector", () => {
       stationId: "a",
       text: "Fountain, 1612",
       sizeM: null,
+      // Only a model has notes, sections and a view.
+      model: null,
       // B2c: its other text fields, by the format's caps.
       fields: [
         {

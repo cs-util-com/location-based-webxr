@@ -323,6 +323,18 @@ changes`; a label is cut at 40 characters, a label-less note is "a
   file at your link is called"). Done derives the name of the file at the
   tour's link from a dated save with it, also after a reopen
   (`editor-link.ts` `doneHostedName`).
+- `editModel(id, edit)` - one of a model's own edits (`model-edits.ts`:
+  its view, a note, a section, its clip), one undo step named for the part
+  and the model ("the title of note 2 of The arch"). Refused for an id that
+  is no model (`NOT_A_MODEL_EDIT`) and for what the format refuses, in
+  words. The default view rule applies only to a model placed in this
+  session whose view the creator has not touched (`defaultViews`): every
+  model read from the file, restored from a draft or copied counts as the
+  creator's choice, so a reopen never hands a saved view back to the rule
+  (the r973 review: the old in-memory set of chosen views let a first note
+  override a saved view after a reopen). A `view` edit - the chip already
+  pressed included - takes the model out of the rule for good; an undo
+  does not put it back.
 
 ## Invariants & assumptions
 

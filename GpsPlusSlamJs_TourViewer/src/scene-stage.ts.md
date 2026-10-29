@@ -25,6 +25,12 @@ tour's other content (`content-placement.ts`). Plan:
       figure mounted at once (the story says what it waits for; the
       guide's `figurePoseOf` holds the pose back until the alignment has
       a heading, r881 re-review M-B);
+  - `showCharacter(stationId, imageBlob, onWaiting?, look?)` with a `look`
+    (`StageCharacterLook { view, name, line }`, a story view of tour
+    format 4.2): the decoded image is painted into a character look
+    (`character-look.ts`) and the decoded texture is freed;
+  - `setVoice(voice)` - `"idle" | "speaking" | "spoken"`, kept across a
+    figure's replacement (the voice may start before the figure stands);
   - `clear()` - remove and dispose;
   - `faceVisitor(nue)` - mount what waits for its position, then turn a
     standing character about the vertical.
@@ -37,7 +43,10 @@ tour's other content (`content-placement.ts`). Plan:
   `checkGlbInert`); optional `now()` (default `Date.now`), `fadeMs`
   (default `CONTENT_FADE_MS`, as the station's own content) and
   `registerFrame(fn)` (the AR frame loop, registered only while a fade
-  runs).
+  runs, and while a character look stands); optional `getCamera()` (the
+  viewer's camera a look turns and opens to; null: it stands still),
+  `beckonOf(stationId)` (the next station as an NUE offset from his pose
+  and its title, or null) and `lookPainters` (tests run without a canvas).
 - `CHARACTER_HEIGHT_M` (1.7).
 
 ## Invariants & assumptions
@@ -71,6 +80,14 @@ tour's other content (`content-placement.ts`). Plan:
   by the framework's `disposeObject3D` (every texture slot of a material,
   not only `map`: K4 review R12; no second dispose walk here, DEC-H3).
 
+- **A character look** turns itself every rendered frame against the
+  camera (its holder is never turned; `faceVisitor` leaves it alone). It
+  opens at once on mounting (the first update snaps), fades by its own
+  `setPresence` (never `setSubtreeOpacity`, which caches material
+  opacities the look changes per frame), and its frame is registered again
+  on every `follow` (a session's end clears the frame registry). `clear`
+  disposes the look and unregisters its frame.
+
 ## Examples
 
 ```ts
@@ -90,3 +107,8 @@ stage.faceVisitor(visitorNue);
   back at 0 and fades in without a second decode; waits off the scene when
   decoded while hidden; `clear` frees a hidden figure; no material write
   while it stands settled).
+- `scene-stage.test.ts` "a character in a story view stands as a
+  character look": it stands unturned and opens at once, ticks per frame
+  (the bubble closes as the camera walks off), follows a voice set before
+  it stood (the beckon is asked), fades by its presence and leaves the
+  scene, `clear` stops its frames, and no camera is no error.

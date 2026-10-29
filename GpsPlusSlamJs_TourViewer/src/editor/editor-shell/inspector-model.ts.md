@@ -67,6 +67,14 @@ origin?, groundAt? })` ->
   turn; an item: move and turn, a model also a size dot; a code: none,
   read-only), or how to select when nothing is (and that a right click
   on the ground starts a station).
+- `MODEL_VIEW_CHOICES` - the format's world views with their labels, in
+  the inspector's order.
+- `ItemInspector.model` - for a model, its parts
+  (`InspectorModelParts`: the view, the notes with title, text and place,
+  whether the notes are full, the sections with name, place and normal,
+  whether the sections are full, the clip or null, and the store's
+  `modelFocus` and `modelPick`); null for every other item.
+- `buildInspector` takes the store's `modelFocus` and `modelPick`.
 
 ## Invariants & assumptions
 
