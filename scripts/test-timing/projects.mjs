@@ -349,6 +349,14 @@ export const PROJECTS = [
           'stylelint "*.css" "3d/*.css" --config config/stylelint.config.mjs --allow-empty-input',
         counts: null,
       },
+      // The globe lab's scope check: only no-undef and no-shadow, on the
+      // lab's page modules (config/eslint.config.mjs says why).
+      {
+        name: "lint",
+        command:
+          'eslint "labs/globe/*.js" --config config/eslint.config.mjs --max-warnings 0',
+        counts: null,
+      },
       {
         name: "check:tokens",
         command: "node check-tokens.mjs",

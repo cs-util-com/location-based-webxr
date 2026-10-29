@@ -32,3 +32,10 @@ atmosphere).
 
 `glsl-float.test.ts` — integers, decimals, small values with exponents,
 non-finite rejection.
+
+## Import path
+
+`gps-plus-slam-app-framework/utils/glsl-float`, a built subpath of the published package
+(a tsdown entry since 2026-10-28): the globe lab loads it by page path, and
+the typed Globe package will import it through the package. The guard
+`tests/repo-config/framework-deep-imports-are-built.test.js` keeps it an entry.

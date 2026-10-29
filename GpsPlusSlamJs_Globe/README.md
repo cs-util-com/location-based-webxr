@@ -95,8 +95,10 @@ its sidecar; the globe lab shows them all (`eye=1`, `osm=1`,
 `reliefMeshLevel=17`, `reliefSource=mapterhorn`, `reliefDevice=desktop`: the
 relief cache's budget is per device class, and Mapterhorn on the phone's
 budget stalls on a desktop window), and its `globe-editor-blocks` smoke holds
-them on the real page. The package depends on neither the framework nor
-the Osm library: their URLs, attributions and geoid are passed in.
+them on the real page. The package depends on the framework's atmosphere
+modules (the space pass's and the ground sky's models, the haze),
+imported by bare subpath (`gps-plus-slam-app-framework/visualization/...`),
+and not on the Osm library: its URLs, attributions and geoid are passed in.
 
 ## How it is served
 
@@ -107,6 +109,11 @@ to the installed library. So the source keeps to the served dialect:
 `.js`-suffixed relative imports, only the lab's import-mapped bare
 specifiers, and erasable syntax (`verbatimModuleSyntax`,
 `erasableSyntaxOnly`). A root repo-config test walks the graph.
+Each framework module the package imports has its own EXACT entry in the
+lab's import map (`labs/globe/index.html`), pointing at
+`/fw/.../<module>.js`: the route table rewrites only a `.js` request to
+its `.ts` source, so a prefix entry (a key ending in `/`) would map the
+bare, suffix-less subpath to a URL that 404s.
 
 ## Gate
 

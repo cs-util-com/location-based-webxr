@@ -73,3 +73,10 @@ strongest cause; no supported cause; refused intervals; an empty run; the
 schema, device, target and per-run verdicts; `"inf"` and no NaN; the raw
 counts; the pool (a cause supported only pooled, every kind); the worst
 frames across runs; device-string cut; the 10 KB quick-sweep budget.
+
+## Import path
+
+`gps-plus-slam-app-framework/utils/frame-run-report`, a built subpath of the published package
+(a tsdown entry since 2026-10-28): the globe lab loads it by page path, and
+the typed Globe package will import it through the package. The guard
+`tests/repo-config/framework-deep-imports-are-built.test.js` keeps it an entry.

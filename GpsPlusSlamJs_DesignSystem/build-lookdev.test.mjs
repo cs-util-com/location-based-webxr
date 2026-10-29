@@ -505,8 +505,12 @@ describe("buildLookdev with the real globe lab", () => {
   // a preview whose city never builds, while every local smoke passes.
   it("emits the city: its worker and library graph in the worker view, the three.js entry", () => {
     for (const rel of [
-      "labs/globe/globe-city.js",
+      "globe/globe-city.js",
+      "globe/globe-city-step.js",
       "w/labs/globe/globe-city-worker.js",
+      // The city's heights spec, a Globe module the worker loads by its
+      // route: in the worker view, its types stripped.
+      "w/globe/globe-city-heights.js",
       "w/osm-lib/index.js",
       "w/osm-lib/mesh/city.js",
       "w/osm-lib/elevation/terrain-field.js",
